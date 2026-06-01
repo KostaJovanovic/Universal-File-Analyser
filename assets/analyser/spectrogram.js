@@ -1,8 +1,57 @@
 /* Analyser - spectrogram engine
-   - Radix-2 Cooley-Tukey FFT (in-place, complex)
-   - STFT with selectable window + FFT size + hop
-   - Linear/log frequency rendering
-   - Colormaps: viridis, magma, inferno, grayscale, phosphor */
+ * ===============================
+ *
+ * Pure-JS spectrogram pipeline with no audio-library dependency.
+ *
+ *
+ * What is an FFT?
+ * ---------------
+ * Audio is a stream of amplitude samples — how loud the speaker should push
+ * the air at each moment in time. That tells you *when* sound happened, but
+ * not *what frequencies* were in it.
+ *
+ * A Fourier transform answers the second question: given a chunk of samples,
+ * it decomposes them into a sum of sine waves at different frequencies and
+ * tells you how strong each frequency is. Loosely:
+ *
+ *     time-domain samples  ──FFT──►  frequency-domain bins
+ *     (loudness over time)            (energy at each pitch)
+ *
+ * The "F" in FFT is "Fast" — the naive algorithm is O(N²); the Fast Fourier
+ * Transform reorganises the work into a recursive butterfly that runs in
+ * O(N log N). For N=2048 that's the difference between ~4M operations and
+ * ~22k. Cheap enough to do hundreds of times per second.
+ *
+ * Below we use the radix-2 Cooley-Tukey variant: it requires N to be a power
+ * of two, runs in place on real+imag arrays, and is small enough to ship
+ * inline rather than pulling in a 50KB FFT library.
+ *
+ *
+ * What is a spectrogram?
+ * ----------------------
+ * A spectrogram is one FFT per short slice of the audio, stacked side by side.
+ * Each vertical column shows the frequency content at one instant; reading
+ * left-to-right plays the recording back as a heat-map. We slide a window of
+ * `fftSize` samples across the buffer in steps of `hopSize` (the "STFT" —
+ * Short-Time Fourier Transform), and colour each cell by the bin's magnitude.
+ *
+ *
+ * Pipeline
+ * --------
+ *   samples (Float32Array) ──► computeSpectrogram() ──► { data, frames, bins }
+ *                                       │
+ *                                       └── windowed STFT via radix-2 FFT,
+ *                                           per-cell magnitudes in dB.
+ *
+ *   spectrogram + canvas    ──► renderSpectrogram()  ──► pixels
+ *                                       │
+ *                                       └── for each pixel y, map to a frequency
+ *                                           (linear or log) and a bin index,
+ *                                           sample the row, run through a
+ *                                           colormap, blit.
+ *
+ *   Built-in colormaps: viridis · magma · inferno · grayscale · phosphor.
+ *   Window functions:   hann · hamming · blackman · rect. */
 
 // ---------- WINDOWS ----------
 export const windows = {
@@ -32,7 +81,17 @@ export const windows = {
 };
 
 // ---------- FFT (radix-2 in-place, complex) ----------
-// real[], imag[] of length N (power of 2). Result in-place.
+/**
+ * Radix-2 Cooley-Tukey FFT.
+ *
+ * Operates in place on two equal-length arrays (real & imaginary). Length must
+ * be a power of two. After the call, `real[k]` / `imag[k]` hold the k-th
+ * frequency bin. ~O(N log N), no allocations inside the hot loop.
+ *
+ * Step 1: bit-reversal permutation (reorders inputs so the butterflies can
+ *         walk the array contiguously).
+ * Step 2: log2(N) passes of butterflies, doubling the sub-FFT size each pass.
+ */
 export function fft(real, imag) {
   const n = real.length;
   if ((n & (n - 1)) !== 0) throw new Error('FFT size must be a power of 2');
@@ -71,9 +130,19 @@ export function fft(real, imag) {
 
 // ---------- STFT / spectrogram computation ----------
 /**
- * Compute spectrogram magnitudes in dB.
- * Returns { frames, bins, sampleRate, fftSize, hopSize, data, dbMin, dbMax }
- * data is a Float32Array of length frames*bins (row-major: row = time frame).
+ * Compute a short-time Fourier transform of `samples`.
+ *
+ *   options: { fftSize, hopSize, window }
+ *     fftSize  - power-of-two window length         (default 2048)
+ *     hopSize  - samples between consecutive frames (default fftSize/4)
+ *     window   - 'hann' | 'hamming' | 'blackman' | 'rect'
+ *
+ *   returns:  { frames, bins, sampleRate, fftSize, hopSize, data, dbMin, dbMax }
+ *     data is a row-major Float32Array of dB values, length frames*bins,
+ *     where row f, bin b lives at data[f*bins + b].
+ *
+ * Each frame is windowed, FFT'd, normalised so absolute dB values are
+ * comparable across window choices, then converted to dB (20 log10).
  */
 export function computeSpectrogram(samples, sampleRate, options = {}) {
   const fftSize  = options.fftSize  || 2048;
@@ -185,8 +254,20 @@ export const colormaps = {
 
 // ---------- RENDERING ----------
 /**
- * Render a precomputed spectrogram (from computeSpectrogram) to a canvas.
- * opts: { scale: 'log'|'linear', colormap: name, dbFloor, dbCeil, minHz, maxHz }
+ * Paint a precomputed spectrogram onto a canvas.
+ *
+ *   opts: {
+ *     scale     - 'log' | 'linear'        (y-axis frequency mapping)
+ *     colormap  - 'viridis' | 'magma' | 'inferno' | 'grayscale' | 'phosphor'
+ *     dbFloor   - clamp values below this to colormap min  (default -90)
+ *     dbCeil    - clamp values above this to colormap max  (default -10)
+ *     minHz     - bottom of frequency axis                 (default 20)
+ *     maxHz     - top of frequency axis                    (default sampleRate/2)
+ *   }
+ *
+ * Strategy: for each output pixel (x, y) precompute the input frame index and
+ * fractional bin index, then sample with linear interpolation between adjacent
+ * bins. Writes pixels via a single ImageData blit.
  */
 export function renderSpectrogram(canvas, spec, opts = {}) {
   const { frames, bins, sampleRate, data } = spec;

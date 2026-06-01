@@ -354,9 +354,23 @@ async function ensureTesseract() {
   return window.Tesseract;
 }
 
-// Auto mode: download English first → run English → while that's happening, download
-// Serbian (Latin + Cyrillic) in the background → once English text shows, run Serbian
-// and append. A "Skip English" button short-circuits to Serbian-only.
+/**
+ * Two-pass OCR pipeline used by the default "Auto" language option.
+ *
+ *   1. Start the English worker download.
+ *   2. Start the Serbian (Latin + Cyrillic) worker download IN PARALLEL — so
+ *      while we're recognising English text, Serbian models keep streaming
+ *      from the CDN in the background.
+ *   3. Once the English worker is ready, run recognition with it and append
+ *      the text. (Unless the user pressed "Skip English" — see below.)
+ *   4. Await the Serbian worker (likely already loaded by now), recognise,
+ *      append the text.
+ *
+ * The `getSkipEng()` flag and `registerEngWorker` callback let the caller
+ * (the OCR card) abort the English half mid-flight when the user clicks
+ * "Skip English": the English worker is terminated and we jump straight to
+ * the Serbian phase. Useful when you already know the text isn't English.
+ */
 async function runOcrAuto(file, ui) {
   const { setPhase, setProgress, appendResult, getSkipEng, registerEngWorker } = ui;
   const T = await ensureTesseract();

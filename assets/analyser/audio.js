@@ -511,6 +511,11 @@ async function startLive(resultsEl, liveBtn) {
 
   const ctxC = canvas.getContext('2d');
 
+  // Resizing the canvas wipes its bitmap, which would lose the streaming
+  // history in live mode. `preserve` snapshots the old contents into a temp
+  // canvas, then redraws the rightmost slice (most recent audio) anchored
+  // to the right edge of the new size — so the stream visually continues
+  // instead of restarting from black.
   function sizeCanvas(preserve = true) {
     const newW = availableWidth();
     const newH = isFs() ? availableHeight() : state.height;

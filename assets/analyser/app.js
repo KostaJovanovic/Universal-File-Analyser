@@ -69,6 +69,17 @@ function classifyFile(file) {
 }
 
 // ---------- magic-byte guess (for unknown files) ----------
+/**
+ * Best-effort format identification from the first ~128 bytes of a file.
+ *
+ * File formats start with distinctive byte sequences ("magic numbers") that
+ * the OS and tools use to tell them apart even when the extension lies. This
+ * function checks against the most common ones (PDF, PNG, JPEG, ZIP, MP3,
+ * MP4, ELF, etc.). When nothing matches, it falls back to a printable-ASCII
+ * heuristic to detect plain-text files.
+ *
+ * Returns a short human-readable label like "PNG image" or "ZIP container".
+ */
 function guessFormat(b) {
   if (!b || b.length < 4) return 'unknown';
   const a = (s, l) => Array.from(b.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
@@ -212,6 +223,11 @@ function boot() {
   // Before the first file lands the whole page is a drop target and an overlay
   // appears while a file is being dragged. After the first file, drops anywhere
   // still route through handleFile but the overlay no longer flashes.
+  //
+  // Why a `dragCounter`? `dragenter` / `dragleave` fire for every child element
+  // the cursor crosses, not just the page boundary. Counting +1/-1 instead of
+  // toggling on a single boolean prevents flicker while dragging across the
+  // header, nav, dropzones, etc.
   window.addEventListener('dragenter', (e) => {
     if (!hasFiles(e)) return;
     dragCounter++;
