@@ -417,7 +417,7 @@ button { font-family: inherit; }
 /* ---------- PALETTE ---------- */
 .anr-palette {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  grid-template-columns: repeat(8, 1fr);
   gap: 0;
   margin: 0;
   border-top: 1px solid var(--hairline);
@@ -427,21 +427,29 @@ button { font-family: inherit; }
   aspect-ratio: 1 / 1;
   position: relative;
   font-family: var(--font-mono);
-  font-size: var(--t-tiny);
+  font-size: clamp(8px, 1.1vw, 11px);
   color: var(--fg);
   border-right: 1px solid var(--hairline);
   border-bottom: 1px solid var(--hairline);
+  overflow: hidden;
 }
 .anr-swatch span {
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  padding: 6px 8px;
+  padding: 4px 4px;
   background: var(--bg);
-  text-align: left;
+  text-align: center;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.02em;
   border-top: 1px solid var(--hairline);
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+/* On very narrow screens, two rows of four are friendlier than tiny squares */
+@media (max-width: 480px) {
+  .anr-palette { grid-template-columns: repeat(4, 1fr); }
 }
 
 /* ---------- MAP ---------- */
