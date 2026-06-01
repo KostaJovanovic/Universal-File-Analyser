@@ -803,6 +803,23 @@ function boot() {
 
   async function handleFile(file) {
     if (!file) return;
+
+    // Clear all previous results
+    photoResults.innerHTML = ''; photoResults.hidden = true;
+    audioResults.innerHTML = ''; audioResults.hidden = true;
+    videoResults.innerHTML = ''; videoResults.hidden = true;
+    unknownResults.innerHTML = ''; unknownResults.hidden = true;
+
+    // Clear preview slots
+    const previewSlots = ['photoPreview', 'photoOcrSlot', 'photoHistSlot', 'videoPreview'];
+    for (const id of previewSlots) {
+      const slot = $(id);
+      if (slot) slot.innerHTML = '';
+    }
+
+    // Clear nav indicators
+    document.querySelectorAll('.nav-link.has-data').forEach(link => link.classList.remove('has-data'));
+
     firstFileLoaded = true;
     if (pageDropEl) pageDropEl.hidden = true;
     let kind = classifyFile(file);

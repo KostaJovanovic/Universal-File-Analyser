@@ -1226,10 +1226,21 @@ export async function renderPhoto(file, resultsEl) {
 
   // ---- LSB steganography analysis ----
   const lsbCard = el('div', { class: 'anr-card' });
-  lsbCard.appendChild(el('h3', {}, 'LSB Analysis'));
+  const lsbHead = el('h3', {});
+  lsbHead.appendChild(document.createTextNode('LSB Analysis'));
+  const lsbHelpBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'What is LSB analysis?' }, '[?]');
+  const lsbHelpText = el('div', { class: 'anr-info-panel', style: 'display:none;' });
+  lsbHelpText.innerHTML =
+    'LSB (Least Significant Bit) analysis isolates the lowest bit of each colour channel (R, G, B) and renders it as a black-and-white image. ' +
+    'In a normal photograph these planes look like random noise. Visible patterns, text, or structure in the LSB plane can indicate ' +
+    'steganographic data (hidden messages embedded in the image) or heavy editing. Click a preview to open it at full resolution.';
+  lsbHelpBtn.addEventListener('click', () => {
+    lsbHelpText.style.display = lsbHelpText.style.display === 'none' ? 'block' : 'none';
+  });
+  lsbHead.appendChild(lsbHelpBtn);
+  lsbCard.appendChild(lsbHead);
+  lsbCard.appendChild(lsbHelpText);
   renderLsbPlanes(img, lsbCard);
-  lsbCard.appendChild(el('p', { style: 'margin:8px 0 0; font-size:12px; opacity:0.7;' },
-    'Least significant bit plane — patterns may indicate hidden data'));
   resultsEl.appendChild(lsbCard);
 
   const raw = buildRawDump(exif);
