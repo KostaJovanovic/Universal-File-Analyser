@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analyser</title>
+  <meta name="description" content="Photo and sound analysis. Everything runs locally in your browser.">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="icon" href="assets/icon.png">
+  <link rel="apple-touch-icon" href="assets/icon.png">
+  <link rel="manifest" href="manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="assets/analyser.css">
+</head>
+<body>
+
+<div id="pageDrop" class="page-drop" hidden aria-hidden="true">
+  <div class="page-drop-inner">
+    <span class="page-drop-icon" aria-hidden="true">+</span>
+    <strong>Drop anywhere</strong>
+    <p>Photo, sound, or anything else &mdash; I&rsquo;ll figure it out</p>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="grid">
+    <div class="site-mark">
+      <span class="site-kicker">A &mdash; 01 / 03</span>
+      <h1 class="site-title">Analyser</h1>
+      <p class="site-sub">A small forensic tool for photos and sound. Drop a file. Everything is read in your browser; nothing is uploaded.</p>
+    </div>
+    <div class="site-meta">
+      <dl>
+        <dt>Version</dt><dd>0.1</dd>
+        <dt>Status</dt><dd><span class="dot"></span> Local-only</dd>
+        <dt>Offline</dt><dd>After first load</dd>
+      </dl>
+    </div>
+  </div>
+</header>
+
+<nav class="site-nav" aria-label="Primary">
+  <a href="#photo" class="nav-link is-active"><span class="nav-num">01</span><span>Photo</span></a>
+  <a href="#audio" class="nav-link"><span class="nav-num">02</span><span>Sound</span></a>
+  <a href="#about" class="nav-link"><span class="nav-num">03</span><span>About</span></a>
+</nav>
+
+<main class="site-main">
+
+  <section class="quickdrop" aria-label="Pick a file to analyse">
+    <div class="quickdrop-grid">
+      <div class="anr-dropzone quickdrop-zone" id="photoDrop" data-kind="photo">
+        <label class="anr-dropzone-inner" for="photoInput">
+          <span class="anr-drop-icon" aria-hidden="true">+</span>
+          <strong>Drop a photo</strong>
+          <p>or <span class="anr-pick-link">tap to pick</span></p>
+          <input type="file" accept="image/*" id="photoInput" hidden>
+          <p class="anr-hint">JPEG &middot; HEIC &middot; PNG &middot; WEBP &middot; RAW</p>
+        </label>
+      </div>
+
+      <div class="anr-dropzone quickdrop-zone" id="audioDrop" data-kind="audio">
+        <label class="anr-dropzone-inner" for="audioInput">
+          <span class="anr-drop-icon" aria-hidden="true">+</span>
+          <strong>Drop a sound</strong>
+          <p>or <span class="anr-pick-link">tap to pick</span></p>
+          <input type="file" accept="audio/*" id="audioInput" hidden>
+          <p class="anr-hint">MP3 &middot; WAV &middot; M4A &middot; FLAC &middot; OGG &middot; OPUS</p>
+        </label>
+        <div class="anr-audio-modes">
+          <button type="button" id="audioRecord" class="anr-btn"><span class="anr-rec-dot" aria-hidden="true">&#9679;</span> Record</button>
+          <button type="button" id="audioLive"   class="anr-btn">Live spectrogram</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div id="unknownResults" class="anr-results anr-unknown-results" hidden></div>
+
+  <section id="photo" class="section">
+    <div class="grid">
+      <aside class="section-meta">
+        <span class="section-num">01</span>
+        <span class="section-kicker">Photo</span>
+        <div id="photoPreview"  class="section-meta-slot section-meta-preview-slot"></div>
+        <div id="photoOcrSlot"  class="section-meta-slot"></div>
+        <div id="photoHistSlot" class="section-meta-slot"></div>
+      </aside>
+      <div class="section-content">
+        <h2 class="section-head">Read every byte of metadata a camera left behind.</h2>
+        <p class="section-lede">JPEG, HEIC, PNG, WEBP, RAW. EXIF, IPTC, XMP, ICC. Dimensions, exact aspect ratio, RGB histogram, dominant palette, GPS map, on-device OCR.</p>
+
+        <div id="photoResults" class="anr-results" hidden></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="audio" class="section">
+    <div class="grid">
+      <aside class="section-meta">
+        <span class="section-num">02</span>
+        <span class="section-kicker">Sound</span>
+      </aside>
+      <div class="section-content">
+        <h2 class="section-head">Inspect the spectrum of any audio source.</h2>
+        <p class="section-lede">Open a file, record from the mic, or visualise it live. Linear or logarithmic axis, adjustable FFT size and window, choice of colourmap, save as PNG, fullscreen.</p>
+
+        <div id="audioResults" class="anr-results" hidden></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="about" class="section">
+    <div class="grid">
+      <aside class="section-meta">
+        <span class="section-num">03</span>
+        <span class="section-kicker">About</span>
+      </aside>
+      <div class="section-content">
+        <h2 class="section-head">Everything runs in your browser.</h2>
+        <p class="section-lede">Files are read on your device. No upload, no analytics, no servers in the loop.</p>
+
+        <dl class="anr-defs">
+          <dt>Metadata</dt>
+          <dd><a href="https://github.com/MikeKovarik/exifr" target="_blank" rel="noopener">exifr</a> &mdash; EXIF &middot; IPTC &middot; XMP &middot; ICC.</dd>
+
+          <dt>OCR</dt>
+          <dd><a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">tesseract.js</a> &mdash; auto runs English + Serbian (Latin&nbsp;+ Cyrillic). Picker for other languages.</dd>
+
+          <dt>Map</dt>
+          <dd><a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a> with OpenStreetMap tiles. Loaded only if the photo has GPS.</dd>
+
+          <dt>Audio</dt>
+          <dd>Native Web Audio API plus a hand-written radix-2 FFT.</dd>
+
+          <dt>Install</dt>
+          <dd>Add to home screen for an offline PWA.</dd>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="footer-row">
+    <p class="footer-mark">Analyser</p>
+    <p class="footer-meta">2026 &mdash; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
+  </div>
+</footer>
+
+<noscript>
+  <div class="anr-error" style="margin: 24px;">This page needs JavaScript to read your files.</div>
+</noscript>
+
+<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
+<script type="module" src="assets/analyser/app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function (e) { console.warn('SW failed:', e); });
+    });
+  }
+</script>
+
+</body>
+</html>
