@@ -611,7 +611,11 @@ export async function renderVideo(file, resultsEl) {
     const ts = playerEl.currentTime;
     const frameFile = new File([blob], `frame_${ts.toFixed(3)}s.png`, { type: 'image/png' });
     const photoResults = document.getElementById('photoResults');
-    if (photoResults) renderPhoto(frameFile, photoResults);
+    if (photoResults) {
+      renderPhoto(frameFile, photoResults);
+      const photoSection = document.getElementById('photo');
+      if (photoSection) window.scrollTo({ top: photoSection.getBoundingClientRect().top + window.scrollY - 56, behavior: 'smooth' });
+    }
     analyseFrameBtn.disabled = false;
     analyseFrameBtn.textContent = 'Analyse frame';
   }}, 'Analyse frame');

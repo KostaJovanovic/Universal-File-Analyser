@@ -712,6 +712,36 @@ button { font-family: inherit; }
   letter-spacing: 0.08em;
 }
 
+/* ---------- INFO BUTTON / PANEL ---------- */
+.anr-info-btn {
+  float: right;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.08em;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  line-height: inherit;
+}
+.anr-info-btn:hover { color: var(--accent); }
+.anr-info-panel {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--muted);
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+  padding: 12px 0 16px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 14px;
+}
+.anr-info-panel strong {
+  color: var(--fg);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
 /* ---------- TRANSPORT ---------- */
 .anr-transport { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
 .anr-transport audio { flex: 1; min-width: 0; }

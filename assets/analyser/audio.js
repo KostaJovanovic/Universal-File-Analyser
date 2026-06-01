@@ -636,7 +636,24 @@ function buildTimeAxis(axisEl, durationSec) {
 // --- Spectrogram UI panel (shared for file + recording) ---
 export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   const card = el('div', { class: 'anr-card anr-spec-card' });
-  card.appendChild(el('h3', {}, 'Spectrogram'));
+
+  const specHead = el('h3', {});
+  specHead.appendChild(document.createTextNode('Spectrogram'));
+  const specHelpBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'What do these options do?' }, '[?]');
+  const specHelpText = el('div', { class: 'anr-info-panel', style: 'display:none;' });
+  specHelpText.innerHTML =
+    '<strong>Axis</strong> Log maps frequencies logarithmically (closer to human hearing). Linear spaces them evenly.<br>' +
+    '<strong>FFT</strong> Fast Fourier Transform window size. Larger = better frequency resolution but lower time resolution.<br>' +
+    '<strong>Window</strong> Windowing function applied before the FFT. Hann is a good default; Blackman reduces spectral leakage; Rect (rectangular) applies no smoothing.<br>' +
+    '<strong>Colour</strong> Colour mapping for intensity values. Magma, viridis, and inferno are perceptually uniform.<br>' +
+    '<strong>Zoom</strong> Horizontal zoom. Stretches the time axis so you can see finer detail.<br>' +
+    '<strong>Height</strong> Vertical size of the spectrogram canvas in pixels.';
+  specHelpBtn.addEventListener('click', () => {
+    specHelpText.style.display = specHelpText.style.display === 'none' ? 'block' : 'none';
+  });
+  specHead.appendChild(specHelpBtn);
+  card.appendChild(specHead);
+  card.appendChild(specHelpText);
 
   // --- controls ---
   const controls = el('div', { class: 'anr-controls' });
@@ -649,6 +666,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   fftSel.value = '2048';
   const winSel  = el('select', {}, ['hann','hamming','blackman','rect'].map((v) => el('option', { value: v }, v)));
   const cmapSel = el('select', {}, Object.keys(colormaps).map((v) => el('option', { value: v }, v)));
+  cmapSel.value = 'magma';
   const zoomSel = el('select', {}, ['1','1.5','2','3','4','6','8','12','16'].map((v) => el('option', { value: v }, v + 'x')));
   zoomSel.value = '1';
   const heightSel = el('select', {}, ['240','320','420','560','720','900'].map((v) => el('option', { value: v }, v + 'px')));
@@ -686,7 +704,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   card.appendChild(status);
 
   let state = {
-    scale: 'log', cmap: 'viridis', fftSize: 2048, winName: 'hann',
+    scale: 'log', cmap: 'magma', fftSize: 2048, winName: 'hann',
     zoom: 1, height: 420
   };
   let cached = null;
@@ -1220,6 +1238,7 @@ async function startLive(resultsEl, liveBtn) {
   const fftSel    = el('select', {}, ['512','1024','2048','4096','8192'].map((v) => el('option', { value: v }, v)));
   fftSel.value = '2048';
   const cmapSel   = el('select', {}, Object.keys(colormaps).map((v) => el('option', { value: v }, v)));
+  cmapSel.value = 'magma';
   const heightSel = el('select', {}, ['240','320','420','560','720','900'].map((v) => el('option', { value: v }, v + 'px')));
   heightSel.value = '420';
   const fsBtn     = el('button', { type: 'button', class: 'anr-fs-btn' }, 'Fullscreen');
@@ -1245,7 +1264,7 @@ async function startLive(resultsEl, liveBtn) {
   card.appendChild(wrap);
   resultsEl.appendChild(card);
 
-  let state = { scale: 'log', cmap: 'viridis', height: 420 };
+  let state = { scale: 'log', cmap: 'magma', height: 420 };
 
   function isFs() { return document.fullscreenElement === card; }
   function availableWidth()  { return Math.max(200, (wrap.clientWidth || 600) - 48); }
