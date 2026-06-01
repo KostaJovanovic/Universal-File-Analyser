@@ -12,6 +12,8 @@ const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tess
 const LEAFLET_CSS   = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
 const LEAFLET_JS    = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
 const HEIC2ANY_URL  = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+const MAGICK_WASM_URL = 'https://cdn.jsdelivr.net/npm/@imagemagick/magick-wasm@0.0.37/dist/index.mjs';
+const MAGICK_WASM_DIR = 'https://cdn.jsdelivr.net/npm/@imagemagick/magick-wasm@0.0.37/dist/';
 
 const TESSERACT_LANGS = [
   ['eng', 'English'],
@@ -479,10 +481,73 @@ async function convertHeic(file) {
 
 async function extractRawPreview(file) {
   if (!window.exifr) throw new Error('exifr not loaded');
-  const buf = await file.arrayBuffer();
-  const thumb = await exifr.thumbnailBuffer(buf);
+  const thumb = await exifr.thumbnail(file);
   if (!thumb) throw new Error('No embedded preview found');
   return new File([thumb], file.name.replace(/\.[^.]+$/, '_preview.jpg'), { type: 'image/jpeg' });
+}
+
+async function fetchWithProgress(url, onProgress) {
+  const resp = await fetch(url);
+  const total = parseInt(resp.headers.get('content-length') || '0', 10);
+  if (!total || !resp.body) return new Uint8Array(await resp.arrayBuffer());
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    if (onProgress) onProgress(loaded / total);
+  }
+  const out = new Uint8Array(loaded);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.length; }
+  return out;
+}
+
+let magickReady = null;
+async function convertWithImageMagick(file, container) {
+  const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
+  const labelEl = el('div', { class: 'anr-progress-label' }, 'loading imagemagick (~15 mb)');
+  const wrap = el('div', { class: 'anr-progress' }, [barEl, labelEl]);
+  if (container) container.appendChild(wrap);
+
+  function setBar(frac) {
+    const ch = parseFloat(getComputedStyle(barEl).fontSize) * 0.6 || 8;
+    const total = Math.max(10, Math.floor((barEl.parentElement.clientWidth - ch * 2) / ch));
+    const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
+    barEl.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
+  }
+
+  if (!magickReady) {
+    setBar(0);
+    const mod = await import(MAGICK_WASM_URL);
+    const wasmBytes = await fetchWithProgress(MAGICK_WASM_DIR + 'magick.wasm', (p) => setBar(p * 0.9));
+    setBar(0.95);
+    labelEl.textContent = 'initialising';
+    await mod.initializeImageMagick(wasmBytes);
+    magickReady = mod;
+  }
+  setBar(1);
+  labelEl.textContent = 'converting raw';
+
+  const { ImageMagick, MagickFormat } = magickReady;
+  const data = new Uint8Array(await file.arrayBuffer());
+  return new Promise((resolve, reject) => {
+    try {
+      ImageMagick.read(data, (image) => {
+        image.write(MagickFormat.Jpeg, (jpegData) => {
+          wrap.remove();
+          const blob = new Blob([jpegData], { type: 'image/jpeg' });
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+        });
+      });
+    } catch (e) {
+      wrap.remove();
+      reject(e);
+    }
+  });
 }
 
 async function makeMap(container, lat, lon, label) {
@@ -594,9 +659,8 @@ function makeOcrCard(file) {
 
   const langSel = el('select', {});
   langSel.appendChild(el('option', { value: 'auto' },        'Auto: English then Serbian'));
-  langSel.appendChild(el('option', { value: 'srp+srp_latn' }, 'Serbian (Latin + Cyrillic)'));
-  langSel.appendChild(el('option', { value: 'srp_latn' },     'Serbian Latin only'));
-  langSel.appendChild(el('option', { value: 'srp' },          'Serbian Cyrillic only'));
+  langSel.appendChild(el('option', { value: 'srp_latn' },     'Serbian Latin'));
+  langSel.appendChild(el('option', { value: 'srp' },          'Serbian Cyrillic'));
   langSel.appendChild(el('option', { value: 'eng' },          'English only'));
   for (const [code, name] of TESSERACT_LANGS) {
     if (code === 'eng' || code === 'srp' || code === 'srp_latn') continue;
@@ -604,7 +668,7 @@ function makeOcrCard(file) {
   }
   langSel.value = 'auto';
 
-  const runBtn  = el('button', { type: 'button', class: 'anr-btn' }, 'Re-run');
+  const runBtn  = el('button', { type: 'button', class: 'anr-btn' }, 'Run');
   const skipBtn = el('button', { type: 'button', class: 'anr-btn', style: 'display:none;' }, 'Skip English');
 
   const controlsRow = el('div', { class: 'anr-controls' }, [
@@ -703,20 +767,30 @@ function makeOcrCard(file) {
   });
   langSel.addEventListener('change', syncSkipBtn);
 
-  // Auto-run on creation
-  setTimeout(run, 600);
-
   return card;
 }
 
 // ---------- LSB steganography planes ----------
+function makeLsbPlane(srcData, w, h, offset) {
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  const out = ctx.createImageData(w, h);
+  const od = out.data;
+  for (let i = 0; i < w * h; i++) {
+    const v = (srcData[i * 4 + offset] & 1) * 255;
+    od[i * 4] = v; od[i * 4 + 1] = v; od[i * 4 + 2] = v; od[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(out, 0, 0);
+  return cv;
+}
+
 function renderLsbPlanes(img, container) {
   const MAX_W = 400;
   const scale = Math.min(1, MAX_W / img.naturalWidth);
   const w = Math.max(1, Math.round(img.naturalWidth * scale));
   const h = Math.max(1, Math.round(img.naturalHeight * scale));
 
-  // Draw source image scaled down
   const srcCv = document.createElement('canvas');
   srcCv.width = w; srcCv.height = h;
   const srcCtx = srcCv.getContext('2d', { willReadFrequently: true });
@@ -732,26 +806,46 @@ function renderLsbPlanes(img, container) {
   const wrap = el('div', { style: 'display:flex; gap:12px; flex-wrap:wrap;' });
 
   for (const ch of channels) {
-    const cv = document.createElement('canvas');
-    cv.width = w; cv.height = h;
+    const cv = makeLsbPlane(srcData, w, h, ch.offset);
     cv.style.maxWidth = '100%';
     cv.style.imageRendering = 'pixelated';
-    const ctx = cv.getContext('2d');
-    const out = ctx.createImageData(w, h);
-    const od = out.data;
-
-    for (let i = 0; i < w * h; i++) {
-      const v = (srcData[i * 4 + ch.offset] & 1) * 255;
-      od[i * 4]     = v;
-      od[i * 4 + 1] = v;
-      od[i * 4 + 2] = v;
-      od[i * 4 + 3] = 255;
-    }
-    ctx.putImageData(out, 0, 0);
 
     cv.style.cursor = 'zoom-in';
     cv.addEventListener('click', () => {
-      openLightbox(cv.toDataURL('image/png'), 'LSB ' + ch.label + ' plane', 'LSB bit plane: ' + ch.label);
+      const previewSrc = cv.toDataURL('image/png');
+      const caption = 'LSB bit plane: ' + ch.label + '  (' + img.naturalWidth + ' × ' + img.naturalHeight + ')';
+      openLightbox(previewSrc, 'LSB ' + ch.label + ' plane', 'Loading full resolution…');
+      setTimeout(() => {
+        const fullCv = document.createElement('canvas');
+        fullCv.width = img.naturalWidth; fullCv.height = img.naturalHeight;
+        const fCtx = fullCv.getContext('2d', { willReadFrequently: true });
+        fCtx.drawImage(img, 0, 0);
+        const fullData = fCtx.getImageData(0, 0, img.naturalWidth, img.naturalHeight).data;
+        const fullPlane = makeLsbPlane(fullData, img.naturalWidth, img.naturalHeight, ch.offset);
+        const fullSrc = fullPlane.toDataURL('image/png');
+        if (lightboxEl && !lightboxEl.hidden) {
+          const lbImg = lightboxEl.querySelector('.lightbox-img-wrap img:first-child');
+          if (lbImg) {
+            lbImg.src = fullSrc;
+            lbImg.onload = () => {
+              const wrap = lightboxEl.querySelector('.lightbox-img-wrap');
+              if (wrap) sizeWrap(wrap, img.naturalWidth, img.naturalHeight);
+            };
+          }
+          const meta = lightboxEl.querySelector('.lightbox-meta');
+          if (meta) meta.textContent = caption;
+          const toolbar = lightboxEl.querySelector('.lightbox-toolbar');
+          if (toolbar) {
+            const saveBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' }, 'Save PNG');
+            saveBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const a = el('a', { href: fullSrc, download: 'lsb_' + ch.label.toLowerCase() + '.png' });
+              document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 500);
+            });
+            toolbar.appendChild(saveBtn);
+          }
+        }
+      }, 50);
     });
 
     const col = el('div', { style: 'flex:1; min-width:100px; text-align:center;' }, [
@@ -866,8 +960,6 @@ export async function renderPhoto(file, resultsEl) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Loading "${file.name}"...`));
-  const section = resultsEl.closest('.section') || resultsEl;
-  window.scrollTo({ top: section.getBoundingClientRect().top + window.scrollY - 56, behavior: 'smooth' });
 
   let imgInfo;
   let convertedFile = null;
@@ -892,10 +984,16 @@ export async function renderPhoto(file, resultsEl) {
       try {
         convertedFile = await extractRawPreview(file);
         imgInfo = await loadImageFromFile(convertedFile);
-      } catch (e2) {
+      } catch (_) {
         resultsEl.innerHTML = '';
-        resultsEl.appendChild(el('div', { class: 'anr-error' }, 'Could not extract preview from RAW file: ' + (e2 && e2.message ? e2.message : e2)));
-        return;
+        try {
+          convertedFile = await convertWithImageMagick(file, resultsEl);
+          imgInfo = await loadImageFromFile(convertedFile);
+        } catch (e3) {
+          resultsEl.innerHTML = '';
+          resultsEl.appendChild(el('div', { class: 'anr-error' }, 'Could not decode RAW file: ' + (e3 && e3.message ? e3.message : e3)));
+          return;
+        }
       }
     } else {
       resultsEl.innerHTML = '';
@@ -927,7 +1025,7 @@ export async function renderPhoto(file, resultsEl) {
 
   resultsEl.innerHTML = '';
 
-  // ---- Preview thumb in section-meta column (click to open lightbox + color picker) ----
+  // ---- Preview thumb in section-meta column ----
   const previewSlot = document.getElementById('photoPreview');
   if (previewSlot) {
     previewSlot.innerHTML = '';
@@ -945,46 +1043,6 @@ export async function renderPhoto(file, resultsEl) {
     thumb.appendChild(el('p', { class: 'section-meta-preview-caption' },
       `${img.naturalWidth} × ${img.naturalHeight} · ${fmtBytes(file.size)}`));
 
-    const pickerCanvas = document.createElement('canvas');
-    pickerCanvas.width = img.naturalWidth;
-    pickerCanvas.height = img.naturalHeight;
-    pickerCanvas.getContext('2d').drawImage(img, 0, 0);
-
-    const tooltip = el('div', { class: 'anr-picker-tooltip' });
-    tooltip.hidden = true;
-    imgWrap.appendChild(tooltip);
-
-    thumbImg.style.cursor = 'crosshair';
-    thumbImg.addEventListener('mousemove', (e) => {
-      const rect = thumbImg.getBoundingClientRect();
-      const sx = (e.clientX - rect.left) / rect.width;
-      const sy = (e.clientY - rect.top)  / rect.height;
-      const px = Math.min(pickerCanvas.width - 1, Math.max(0, Math.floor(sx * pickerCanvas.width)));
-      const py = Math.min(pickerCanvas.height - 1, Math.max(0, Math.floor(sy * pickerCanvas.height)));
-      const [r, g, b] = pickerCanvas.getContext('2d').getImageData(px, py, 1, 1).data;
-      const hex = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
-      const hsl = rgbToHsl(r, g, b);
-      tooltip.innerHTML = '';
-      tooltip.appendChild(el('span', { class: 'anr-picker-swatch', style: 'background:' + hex }));
-      tooltip.appendChild(document.createTextNode(hex + '  rgb(' + r + ',' + g + ',' + b + ')  hsl(' + hsl + ')'));
-      tooltip.hidden = false;
-      tooltip.style.left = (sx * 100) + '%';
-      tooltip.style.top = Math.max(0, e.clientY - rect.top - 32) + 'px';
-    });
-    thumbImg.addEventListener('mouseleave', () => { tooltip.hidden = true; });
-    thumbImg.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const rect = thumbImg.getBoundingClientRect();
-      const sx = (e.clientX - rect.left) / rect.width;
-      const sy = (e.clientY - rect.top)  / rect.height;
-      const px = Math.min(pickerCanvas.width - 1, Math.max(0, Math.floor(sx * pickerCanvas.width)));
-      const py = Math.min(pickerCanvas.height - 1, Math.max(0, Math.floor(sy * pickerCanvas.height)));
-      const [r, g, b] = pickerCanvas.getContext('2d').getImageData(px, py, 1, 1).data;
-      const hex = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
-      navigator.clipboard.writeText(hex).catch(() => {});
-      tooltip.classList.add('is-copied');
-      setTimeout(() => tooltip.classList.remove('is-copied'), 800);
-    });
 
     const focusCv = document.createElement('canvas');
     focusCv.width = focus.cols; focusCv.height = focus.rows;

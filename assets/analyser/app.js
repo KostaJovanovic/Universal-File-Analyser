@@ -135,7 +135,6 @@ function guessFormat(b) {
 async function renderSvg(file, resultsEl) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
-  window.scrollTo({ top: resultsEl.getBoundingClientRect().top + window.scrollY - 56, behavior: 'smooth' });
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Inspecting SVG "${file.name}"…`));
 
   let svgText;
@@ -284,7 +283,6 @@ async function renderSvg(file, resultsEl) {
 async function renderCsv(file, resultsEl) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
-  window.scrollTo({ top: resultsEl.getBoundingClientRect().top + window.scrollY - 56, behavior: 'smooth' });
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Parsing "${file.name}"…`));
 
   let text;
@@ -475,7 +473,6 @@ async function renderCsv(file, resultsEl) {
 async function renderUnknown(file, resultsEl) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
-  window.scrollTo({ top: resultsEl.getBoundingClientRect().top + window.scrollY - 56, behavior: 'smooth' });
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Inspecting "${file.name}"…`));
 
   let headBytes;
@@ -857,30 +854,39 @@ function boot() {
       if (el) el.classList.add('has-data');
     }
 
+    function scrollToEl(target) {
+      const section = target.closest('.section') || target;
+      window.scrollTo({ top: section.getBoundingClientRect().top + window.scrollY - 56, behavior: 'smooth' });
+    }
+
     if (kind === 'photo') {
       markNav('#photo');
+      scrollToEl(photoResults);
       renderPhoto(file, photoResults);
     } else if (kind === 'audio') {
       markNav('#audio');
+      scrollToEl(audioResults);
       renderAudio(file, audioResults);
     } else if (kind === 'video') {
       markNav('#video');
       markNav('#audio');
+      markNav('#photo');
+      scrollToEl(videoResults);
       renderVideo(file, videoResults);
     } else if (kind === 'pdf') {
-      markNav('#about');
+      scrollToEl(unknownResults);
       renderPdf(file, unknownResults);
     } else if (kind === 'zip') {
-      markNav('#about');
+      scrollToEl(unknownResults);
       renderArchive(file, unknownResults);
     } else if (kind === 'svg') {
-      markNav('#about');
+      scrollToEl(unknownResults);
       renderSvg(file, unknownResults);
     } else if (kind === 'csv') {
-      markNav('#about');
+      scrollToEl(unknownResults);
       renderCsv(file, unknownResults);
     } else {
-      markNav('#about');
+      scrollToEl(unknownResults);
       renderUnknown(file, unknownResults);
     }
   }

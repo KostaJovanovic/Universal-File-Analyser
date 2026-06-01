@@ -469,6 +469,18 @@ button { font-family: inherit; }
 .anr-histogram { height: 200px; }
 .anr-waveform { height: 96px; }
 
+.anr-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: #fff;
+  pointer-events: none;
+  z-index: 3;
+  will-change: left;
+}
+
 /* ---------- PALETTE ---------- */
 .anr-palette {
   display: grid;
@@ -521,6 +533,8 @@ button { font-family: inherit; }
   height: 360px;
   border: 1px solid var(--hairline);
   background: var(--surface);
+  position: relative;
+  z-index: 1;
 }
 
 /* ---------- SPECTROGRAM ---------- */
@@ -895,7 +909,6 @@ details[open] summary::after { content: "\2212"; }
   padding: 32px var(--pad-x);
   max-width: 1440px;
   margin: 0 auto;
-  background: var(--bg);
 }
 .footer-row {
   display: flex;
@@ -1094,6 +1107,7 @@ details[open] summary::after { content: "\2212"; }
   display: none;
   align-items: center;
   justify-content: center;
+  padding: 12px;
   padding-bottom: 5vh;
   cursor: zoom-out;
   -webkit-tap-highlight-color: transparent;
@@ -1129,6 +1143,9 @@ details[open] summary::after { content: "\2212"; }
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
 }
 .lightbox-img-wrap {
   position: relative;
@@ -1277,19 +1294,7 @@ details[open] summary::after { content: "\2212"; }
 }
 .anr-focus-overlay[hidden] { display: none; }
 
-.anr-focus-dot {
-  position: absolute;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.3), 0 1px 4px rgba(0,0,0,0.4);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  z-index: 5;
-}
-.anr-focus-dot[hidden] { display: none; }
+
 
 /* ---------- DARK MODE (E1) ---------- */
 :root[data-theme="dark"] {
