@@ -789,7 +789,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Decoding "${file.name}"...`));
-  { const s = resultsEl.closest('.section') || resultsEl; window.scrollTo({ top: s.getBoundingClientRect().top + window.scrollY - 56, behavior: 'smooth' }); }
+
 
   let header = {};
   try { header = await peekContainer(file); } catch (e) { /* ignore */ }
@@ -1148,7 +1148,7 @@ async function startRecording(resultsEl, recordBtn) {
 
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
-  { const s = resultsEl.closest('.section') || resultsEl; window.scrollTo({ top: s.getBoundingClientRect().top + window.scrollY - 56, behavior: 'smooth' }); }
+
   const liveCard = el('div', { class: 'anr-card' });
   liveCard.appendChild(el('h3', {}, 'Recording...'));
   const timer = el('p', { class: 'anr-hint' }, '0.0 s');
@@ -1205,7 +1205,7 @@ async function startLive(resultsEl, liveBtn) {
 
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
-  { const s = resultsEl.closest('.section') || resultsEl; window.scrollTo({ top: s.getBoundingClientRect().top + window.scrollY - 56, behavior: 'smooth' }); }
+
 
   // --- card / controls ---
   const card = el('div', { class: 'anr-card anr-spec-card' });

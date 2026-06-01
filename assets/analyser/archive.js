@@ -92,7 +92,6 @@ function parseZipEntries(buf) {
 export async function renderArchive(file, resultsEl) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
-  window.scrollTo({ top: resultsEl.getBoundingClientRect().top + window.scrollY - 56, behavior: 'smooth' });
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading ZIP archive "${file.name}"…`));
 
   let buf;

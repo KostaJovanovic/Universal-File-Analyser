@@ -1,1 +1,7 @@
-{}
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(magick *)"
+    ]
+  }
+}

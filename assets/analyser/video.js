@@ -6,6 +6,76 @@
 import { makeSpectrogramPanel } from './audio.js';
 import { renderPhoto } from './photo.js';
 
+// ---------- progress-tracked fetch ----------
+async function fetchWithProgress(url, onProgress) {
+  const resp = await fetch(url);
+  const total = parseInt(resp.headers.get('content-length') || '0', 10);
+  if (!total || !resp.body) return new Uint8Array(await resp.arrayBuffer());
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    if (onProgress) onProgress(loaded / total);
+  }
+  const out = new Uint8Array(loaded);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.length; }
+  return out;
+}
+
+function makeBlobURL(data, type) {
+  return URL.createObjectURL(new Blob([data], { type }));
+}
+
+// ---------- FFmpeg WASM fallback (lazy) ----------
+let ffmpegInstance = null;
+async function loadFFmpeg(onProgress) {
+  if (ffmpegInstance) return ffmpegInstance;
+  const { FFmpeg } = await import('https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js');
+  const base = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
+  const coreJS = makeBlobURL(await fetchWithProgress(base + '/ffmpeg-core.js', (p) => onProgress && onProgress(p * 0.1)), 'text/javascript');
+  const wasmData = await fetchWithProgress(base + '/ffmpeg-core.wasm', (p) => onProgress && onProgress(0.1 + p * 0.85));
+  const wasmURL = makeBlobURL(wasmData, 'application/wasm');
+  const workerJS = makeBlobURL(await fetchWithProgress(base + '/ffmpeg-core.worker.js', (p) => onProgress && onProgress(0.95 + p * 0.05)), 'text/javascript');
+  const ff = new FFmpeg();
+  await ff.load({ coreURL: coreJS, wasmURL, workerURL: workerJS });
+  ffmpegInstance = ff;
+  return ff;
+}
+
+async function ffmpegExtractAudio(file, container) {
+  const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
+  const labelEl = el('div', { class: 'anr-progress-label' }, 'loading ffmpeg (~30 mb)');
+  const wrap = el('div', { class: 'anr-progress' }, [barEl, labelEl]);
+  container.appendChild(wrap);
+
+  function setBar(frac) {
+    const ch = parseFloat(getComputedStyle(barEl).fontSize) * 0.6 || 8;
+    const total = Math.max(10, Math.floor((barEl.parentElement.clientWidth - ch * 2) / ch));
+    const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
+    barEl.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
+  }
+
+  const ff = await loadFFmpeg((p) => { setBar(p); });
+  labelEl.textContent = 'extracting audio';
+  setBar(1);
+  const { fetchFile } = await import('https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js');
+  await ff.writeFile('input', await fetchFile(file));
+  await ff.exec(['-i', 'input', '-vn', '-acodec', 'pcm_s16le', '-ar', '48000', '-ac', '2', 'output.wav']);
+  const data = await ff.readFile('output.wav');
+  await ff.deleteFile('input');
+  await ff.deleteFile('output.wav');
+  wrap.remove();
+  const wavBlob = new Blob([data.buffer || data], { type: 'audio/wav' });
+  const ac = new (window.AudioContext || window.webkitAudioContext)();
+  const buf = await wavBlob.arrayBuffer();
+  return await ac.decodeAudioData(buf);
+}
+
 // ---------- helpers ----------
 
 function el(tag, attrs = {}, children = []) {
@@ -73,6 +143,155 @@ let audioCtx = null;
 function getAudioCtx() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   return audioCtx;
+}
+
+// ---------- MP4 PCM audio extraction ----------
+
+function parseBoxes(view, start, end) {
+  const boxes = [];
+  let pos = start;
+  while (pos + 8 <= end) {
+    let size = view.getUint32(pos);
+    const type = String.fromCharCode(view.getUint8(pos+4), view.getUint8(pos+5), view.getUint8(pos+6), view.getUint8(pos+7));
+    if (size === 0) break;
+    if (size === 1 && pos + 16 <= end) {
+      size = Number(view.getBigUint64(pos + 8));
+      boxes.push({ type, offset: pos, size, headerSize: 16 });
+    } else {
+      boxes.push({ type, offset: pos, size, headerSize: 8 });
+    }
+    pos += size;
+  }
+  return boxes;
+}
+
+function findBox(view, start, end, path) {
+  const parts = path.split('.');
+  let boxes = parseBoxes(view, start, end);
+  for (let i = 0; i < parts.length; i++) {
+    const target = parts[i];
+    const match = boxes.find(b => b.type === target);
+    if (!match) return null;
+    if (i === parts.length - 1) return match;
+    const containers = new Set(['moov','trak','mdia','minf','stbl','udta','edts']);
+    const inner = match.offset + match.headerSize + (containers.has(match.type) ? 0 : 0);
+    boxes = parseBoxes(view, match.offset + match.headerSize, match.offset + match.size);
+  }
+  return null;
+}
+
+function findAllBoxes(view, start, end, type) {
+  const result = [];
+  const stack = [{ s: start, e: end }];
+  const containers = new Set(['moov','trak','mdia','minf','stbl','udta','edts','dinf','meta','ilst']);
+  while (stack.length) {
+    const { s, e } = stack.pop();
+    for (const b of parseBoxes(view, s, e)) {
+      if (b.type === type) result.push(b);
+      if (containers.has(b.type)) stack.push({ s: b.offset + b.headerSize, e: b.offset + b.size });
+    }
+  }
+  return result;
+}
+
+function extractPcmFromMp4(arrayBuffer) {
+  const view = new DataView(arrayBuffer);
+  const fileEnd = arrayBuffer.byteLength;
+
+  const traks = findAllBoxes(view, 0, fileEnd, 'trak');
+  for (const trak of traks) {
+    const trakEnd = trak.offset + trak.size;
+    const trakStart = trak.offset + trak.headerSize;
+
+    const stsdBoxes = findAllBoxes(view, trakStart, trakEnd, 'stsd');
+    if (!stsdBoxes.length) continue;
+    const stsd = stsdBoxes[0];
+    const stsdData = stsd.offset + stsd.headerSize + 8;
+    if (stsdData + 8 > fileEnd) continue;
+    const codecFcc = String.fromCharCode(
+      view.getUint8(stsdData + 4), view.getUint8(stsdData + 5),
+      view.getUint8(stsdData + 6), view.getUint8(stsdData + 7));
+    const pcmCodecs = new Set(['twos','sowt','lpcm','in16','in24','in32','raw ','NONE','ulaw','alaw']);
+    if (!pcmCodecs.has(codecFcc)) continue;
+
+    const base = stsdData + 8;
+    const channels = view.getUint16(base + 16);
+    const bitsPerSample = view.getUint16(base + 18);
+    const sampleRate = view.getUint16(base + 24);
+
+    const stszBoxes = findAllBoxes(view, trakStart, trakEnd, 'stsz');
+    const stcoBoxes = findAllBoxes(view, trakStart, trakEnd, 'stco');
+    const co64Boxes = findAllBoxes(view, trakStart, trakEnd, 'co64');
+    const stscBoxes = findAllBoxes(view, trakStart, trakEnd, 'stsc');
+    if (!stcoBoxes.length && !co64Boxes.length) continue;
+
+    const chunkOffsets = [];
+    if (stcoBoxes.length) {
+      const box = stcoBoxes[0];
+      const d = box.offset + box.headerSize;
+      const count = view.getUint32(d + 4);
+      for (let i = 0; i < count; i++) chunkOffsets.push(view.getUint32(d + 8 + i * 4));
+    } else {
+      const box = co64Boxes[0];
+      const d = box.offset + box.headerSize;
+      const count = view.getUint32(d + 4);
+      for (let i = 0; i < count; i++) chunkOffsets.push(Number(view.getBigUint64(d + 8 + i * 8)));
+    }
+
+    let samplesPerChunk = 1;
+    let chunkSampleSize = 0;
+    if (stscBoxes.length) {
+      const box = stscBoxes[0];
+      const d = box.offset + box.headerSize;
+      const count = view.getUint32(d + 4);
+      if (count > 0) samplesPerChunk = view.getUint32(d + 8 + 4);
+    }
+    if (stszBoxes.length) {
+      const box = stszBoxes[0];
+      const d = box.offset + box.headerSize;
+      chunkSampleSize = view.getUint32(d + 4);
+    }
+
+    const bytesPerSample = bitsPerSample / 8;
+    const frameSize = bytesPerSample * channels;
+    const bigEndian = codecFcc === 'twos' || codecFcc === 'in16' || codecFcc === 'in24' || codecFcc === 'in32';
+
+    const allSamples = [];
+    for (const offset of chunkOffsets) {
+      const chunkBytes = samplesPerChunk * (chunkSampleSize || frameSize);
+      if (offset + chunkBytes > fileEnd) break;
+      for (let i = 0; i < chunkBytes; i += bytesPerSample) {
+        const pos = offset + i;
+        if (pos + bytesPerSample > fileEnd) break;
+        let val;
+        if (bytesPerSample === 2) {
+          val = bigEndian ? view.getInt16(pos) : view.getInt16(pos, true);
+          allSamples.push(val / 0x8000);
+        } else if (bytesPerSample === 3) {
+          const b0 = view.getUint8(pos), b1 = view.getUint8(pos+1), b2 = view.getUint8(pos+2);
+          val = bigEndian ? ((b0 << 24 | b1 << 16 | b2 << 8) >> 8) : ((b2 << 24 | b1 << 16 | b0 << 8) >> 8);
+          allSamples.push(val / 0x800000);
+        } else if (bytesPerSample === 4) {
+          val = bigEndian ? view.getInt32(pos) : view.getInt32(pos, true);
+          allSamples.push(val / 0x80000000);
+        }
+      }
+    }
+
+    if (allSamples.length === 0) continue;
+
+    const totalFrames = Math.floor(allSamples.length / channels);
+    const ac = new OfflineAudioContext(channels, totalFrames, sampleRate);
+    const audioBuf = ac.createBuffer(channels, totalFrames, sampleRate);
+    for (let ch = 0; ch < channels; ch++) {
+      const chData = audioBuf.getChannelData(ch);
+      for (let i = 0; i < totalFrames; i++) {
+        chData[i] = allSamples[i * channels + ch];
+      }
+    }
+    return audioBuf;
+  }
+  return null;
 }
 
 // ---------- container detection from magic bytes ----------
@@ -294,7 +513,7 @@ export async function renderVideo(file, resultsEl) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Loading "${file.name}"…`));
-  { const s = resultsEl.closest('.section') || resultsEl; window.scrollTo({ top: s.getBoundingClientRect().top + window.scrollY - 56, behavior: 'smooth' }); }
+
 
   let header = {};
   try { header = await peekVideoContainer(file); } catch (_) {}
@@ -381,7 +600,23 @@ export async function renderVideo(file, resultsEl) {
     }
   }}, 'Next frame →');
 
-  playerCard.appendChild(el('div', { class: 'anr-btn-row' }, [prevFrameBtn, frameTimeLabel, nextFrameBtn]));
+  const analyseFrameBtn = el('button', { type: 'button', class: 'anr-btn', onclick: async () => {
+    if (!vw || !vh) return;
+    analyseFrameBtn.disabled = true;
+    analyseFrameBtn.textContent = 'Capturing…';
+    const cv = document.createElement('canvas');
+    cv.width = vw; cv.height = vh;
+    cv.getContext('2d').drawImage(playerEl, 0, 0, vw, vh);
+    const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+    const ts = playerEl.currentTime;
+    const frameFile = new File([blob], `frame_${ts.toFixed(3)}s.png`, { type: 'image/png' });
+    const photoResults = document.getElementById('photoResults');
+    if (photoResults) renderPhoto(frameFile, photoResults);
+    analyseFrameBtn.disabled = false;
+    analyseFrameBtn.textContent = 'Analyse frame';
+  }}, 'Analyse frame');
+
+  playerCard.appendChild(el('div', { class: 'anr-btn-row' }, [prevFrameBtn, frameTimeLabel, nextFrameBtn, analyseFrameBtn]));
 
   resultsEl.appendChild(playerCard);
 
@@ -485,7 +720,7 @@ export async function renderVideo(file, resultsEl) {
     captureCard.appendChild(captureOut);
     resultsEl.appendChild(captureCard);
 
-    captureBtn.addEventListener('click', async () => {
+    async function captureFrame() {
       captureBtn.disabled = true;
       captureBtn.textContent = 'Capturing…';
       const cv = document.createElement('canvas');
@@ -507,7 +742,10 @@ export async function renderVideo(file, resultsEl) {
       captureBtn.textContent = 'Capture current frame';
       const photoResults = document.getElementById('photoResults');
       if (photoResults) renderPhoto(frameFile, photoResults);
-    });
+    }
+    captureBtn.addEventListener('click', captureFrame);
+
+    playerEl.addEventListener('loadeddata', () => captureFrame(), { once: true });
 
     // ---- Contact sheet / thumbnail grid ----
     const sheetCard = el('div', { class: 'anr-card' });
@@ -647,43 +885,125 @@ export async function renderVideo(file, resultsEl) {
     resultsEl.appendChild(sceneCard);
   }
 
-  // ---- Audio track extraction ----
-  const audioCard = el('div', { class: 'anr-card' });
-  audioCard.appendChild(el('h3', {}, 'Audio track'));
-  const audioStatus = el('p', { class: 'anr-info' }, 'Decoding audio track…');
-  audioCard.appendChild(audioStatus);
-  resultsEl.appendChild(audioCard);
+  // ---- Audio track extraction (renders into the Sound section) ----
+  const audioResultsEl = document.getElementById('audioResults');
+  if (audioResultsEl) {
+    audioResultsEl.hidden = false;
+    const audioCard = el('div', { class: 'anr-card' });
+    audioCard.appendChild(el('h3', {}, 'Audio track'));
+    const audioStatus = el('p', { class: 'anr-info' }, 'Decoding audio from video…');
+    audioCard.appendChild(audioStatus);
+    audioResultsEl.appendChild(audioCard);
 
-  try {
-    const ac = getAudioCtx();
-    const buf = await file.arrayBuffer();
-    const audioBuf = await ac.decodeAudioData(buf.slice(0));
+    try {
+      const ac = getAudioCtx();
+      const buf = await file.arrayBuffer();
+      let audioBuf;
+      try {
+        audioBuf = await ac.decodeAudioData(buf.slice(0));
+      } catch (_) {
+        audioStatus.textContent = 'Trying PCM extraction…';
+        audioBuf = extractPcmFromMp4(buf);
+      }
+      if (!audioBuf) {
+        audioStatus.textContent = 'Web Audio failed, using FFmpeg…';
+        audioBuf = await ffmpegExtractAudio(file, audioCard);
+      }
 
-    audioStatus.remove();
+      audioStatus.remove();
 
-    const mono = getMono(audioBuf);
-    const stats = computeStats(mono);
+      const mono = getMono(audioBuf);
+      const stats = computeStats(mono);
+      const audioDuration = audioBuf.duration;
 
-    const at = el('table', { class: 'anr-readout' });
-    at.appendChild(row('Duration', formatDuration(audioBuf.duration)));
-    at.appendChild(row('Sample rate', audioBuf.sampleRate.toLocaleString() + ' Hz'));
-    at.appendChild(row('Channels', audioBuf.numberOfChannels));
-    at.appendChild(row('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)'));
-    at.appendChild(row('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)'));
-    at.appendChild(row('Samples', mono.length.toLocaleString()));
-    audioCard.appendChild(at);
+      // Encode WAV for playback
+      const wavChannels = audioBuf.numberOfChannels;
+      const wavSr = audioBuf.sampleRate;
+      const wavSamples = audioBuf.length;
+      const wavBps = 16;
+      const wavBlock = wavChannels * (wavBps / 8);
+      const wavDataSize = wavSamples * wavBlock;
+      const wavBuf = new ArrayBuffer(44 + wavDataSize);
+      const wavView = new DataView(wavBuf);
+      let wo = 0;
+      const ws = (s) => { for (let i = 0; i < s.length; i++) wavView.setUint8(wo++, s.charCodeAt(i)); };
+      ws('RIFF'); wavView.setUint32(wo, 36 + wavDataSize, true); wo += 4; ws('WAVEfmt ');
+      wavView.setUint32(wo, 16, true); wo += 4;
+      wavView.setUint16(wo, 1, true); wo += 2;
+      wavView.setUint16(wo, wavChannels, true); wo += 2;
+      wavView.setUint32(wo, wavSr, true); wo += 4;
+      wavView.setUint32(wo, wavSr * wavBlock, true); wo += 4;
+      wavView.setUint16(wo, wavBlock, true); wo += 2;
+      wavView.setUint16(wo, wavBps, true); wo += 2;
+      ws('data'); wavView.setUint32(wo, wavDataSize, true); wo += 4;
+      const chData = [];
+      for (let c = 0; c < wavChannels; c++) chData.push(audioBuf.getChannelData(c));
+      for (let i = 0; i < wavSamples; i++) {
+        for (let c = 0; c < wavChannels; c++) {
+          let s = chData[c][i];
+          s = Math.max(-1, Math.min(1, s));
+          wavView.setInt16(wo, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+          wo += 2;
+        }
+      }
+      const wavUrl = URL.createObjectURL(new Blob([wavBuf], { type: 'audio/wav' }));
 
-    const waveCanvas = el('canvas', { class: 'anr-waveform' });
-    waveCanvas.width = 1024; waveCanvas.height = 80;
-    audioCard.appendChild(waveCanvas);
-    renderWaveform(waveCanvas, mono);
+      // Player
+      const playerCard = el('div', { class: 'anr-card' });
+      playerCard.appendChild(el('h3', {}, 'Extracted audio'));
+      const audioPlayer = el('audio', { controls: '', src: wavUrl });
+      audioPlayer.style.cssText = 'width:100%; display:block;';
+      playerCard.appendChild(audioPlayer);
+      audioResultsEl.appendChild(playerCard);
 
-    const basename = (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio';
-    resultsEl.appendChild(makeSpectrogramPanel(mono, audioBuf.sampleRate, { basename }));
-  } catch (_) {
-    audioStatus.remove();
-    audioCard.appendChild(el('p', { class: 'anr-hint' },
-      'No audio track found, or format not supported by this browser.'));
+      // Info table
+      const at = el('table', { class: 'anr-readout' });
+      at.appendChild(row('Duration', formatDuration(audioDuration)));
+      at.appendChild(row('Sample rate', wavSr.toLocaleString() + ' Hz'));
+      at.appendChild(row('Channels', wavChannels));
+      at.appendChild(row('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)'));
+      at.appendChild(row('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)'));
+      at.appendChild(row('Samples', mono.length.toLocaleString()));
+      audioCard.appendChild(at);
+
+      // Waveform with playhead overlay
+      const waveWrap = el('div', { style: 'position:relative; width:100%;' });
+      const waveCanvas = el('canvas', { class: 'anr-waveform' });
+      waveCanvas.width = 1024; waveCanvas.height = 80;
+      renderWaveform(waveCanvas, mono);
+      const waveLine = el('div', { class: 'anr-playhead' });
+      waveWrap.appendChild(waveCanvas);
+      waveWrap.appendChild(waveLine);
+      audioCard.appendChild(waveWrap);
+
+      // Spectrogram
+      const basename = (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio';
+      audioResultsEl.appendChild(makeSpectrogramPanel(mono, audioBuf.sampleRate, { basename }));
+
+      // Sync playhead at 60fps
+      let rafId = null;
+      function tickPlayhead() {
+        const pct = audioDuration > 0 ? (audioPlayer.currentTime / audioDuration) * 100 : 0;
+        waveLine.style.left = pct + '%';
+        if (!audioPlayer.paused) rafId = requestAnimationFrame(tickPlayhead);
+      }
+      audioPlayer.addEventListener('play', () => { rafId = requestAnimationFrame(tickPlayhead); });
+      audioPlayer.addEventListener('pause', tickPlayhead);
+      audioPlayer.addEventListener('seeked', tickPlayhead);
+
+      // Click waveform to seek
+      waveCanvas.style.cursor = 'pointer';
+      waveCanvas.addEventListener('click', (e) => {
+        const rect = waveCanvas.getBoundingClientRect();
+        const frac = (e.clientX - rect.left) / rect.width;
+        audioPlayer.currentTime = frac * audioDuration;
+      });
+    } catch (e) {
+      console.warn('Audio extraction failed:', e);
+      audioStatus.remove();
+      audioCard.appendChild(el('p', { class: 'anr-hint' },
+        'Audio decode failed: ' + (e && e.message || 'unknown error') + '. Try converting to MP4 (H.264 + AAC).'));
+    }
   }
 
   // ---- SHA-256 ----
