@@ -7,16 +7,14 @@
    - On-device OCR via lazy-loaded Tesseract.js with language picker
    - SHA-256 file hash */
 
-import { el, row, rowHelp, fmtBytes, h3help, fileExt, sha256Hex } from './util.js';
+import { el, row, rowHelp, fmtBytes, h3help, fileExt, sha256Hex, loadScript, loadCss } from './util.js';
 import { HEIC_EXTS, RAW_EXTS } from './formats.js';
+import { convertHeic, extractRawPreview, convertWithImageMagick } from './photo-convert.js';
 
 const JSQR_URL      = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
 const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js';
 const LEAFLET_CSS   = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
 const LEAFLET_JS    = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-const HEIC2ANY_URL  = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
-const MAGICK_WASM_URL = 'https://cdn.jsdelivr.net/npm/@imagemagick/magick-wasm@0.0.40/dist/index.mjs';
-const MAGICK_WASM_DIR = 'https://cdn.jsdelivr.net/npm/@imagemagick/magick-wasm@0.0.40/dist/';
 
 const TESSERACT_LANGS = [
   ['eng', 'English', '4 MB'],
@@ -412,118 +410,6 @@ function toHex(c) {
 }
 
 // ---------- GPS / Leaflet (lazy) ----------
-function loadCss(href) {
-  return new Promise((resolve) => {
-    if (document.querySelector(`link[href="${href}"]`)) return resolve();
-    const l = document.createElement('link');
-    l.rel = 'stylesheet'; l.href = href;
-    l.onload = resolve; l.onerror = resolve;
-    document.head.appendChild(l);
-  });
-}
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) return resolve();
-    const s = document.createElement('script');
-    s.src = src;
-    s.onload = resolve; s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
-
-async function convertHeic(file) {
-  await loadScript(HEIC2ANY_URL);
-  const blob = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
-  const out = Array.isArray(blob) ? blob[0] : blob;
-  return new File([out], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
-}
-
-async function extractRawPreview(file) {
-  const buf = new Uint8Array(await file.arrayBuffer());
-  const jpegs = [];
-  for (let i = 0; i < buf.length - 1; i++) {
-    if (buf[i] === 0xFF && buf[i + 1] === 0xD8) {
-      for (let j = i + 2; j < buf.length - 1; j++) {
-        if (buf[j] === 0xFF && buf[j + 1] === 0xD9) {
-          jpegs.push({ offset: i, length: j + 2 - i });
-          i = j + 1;
-          break;
-        }
-      }
-    }
-  }
-  if (jpegs.length === 0) throw new Error('No embedded JPEG found');
-  jpegs.sort((a, b) => b.length - a.length);
-  const best = jpegs[0];
-  const jpegData = buf.slice(best.offset, best.offset + best.length);
-  return new File([jpegData], file.name.replace(/\.[^.]+$/, '_preview.jpg'), { type: 'image/jpeg' });
-}
-
-async function fetchWithProgress(url, onProgress) {
-  const resp = await fetch(url);
-  const total = parseInt(resp.headers.get('content-length') || '0', 10);
-  if (!total || !resp.body) return new Uint8Array(await resp.arrayBuffer());
-  const reader = resp.body.getReader();
-  const chunks = [];
-  let loaded = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    loaded += value.length;
-    if (onProgress) onProgress(loaded / total);
-  }
-  const out = new Uint8Array(loaded);
-  let off = 0;
-  for (const c of chunks) { out.set(c, off); off += c.length; }
-  return out;
-}
-
-let magickReady = null;
-async function convertWithImageMagick(file, container) {
-  const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
-  const labelEl = el('div', { class: 'anr-progress-label' }, 'loading imagemagick (~15 mb)');
-  const wrap = el('div', { class: 'anr-progress' }, [barEl, labelEl]);
-  if (container) container.appendChild(wrap);
-
-  function setBar(frac) {
-    const ch = parseFloat(getComputedStyle(barEl).fontSize) * 0.6 || 8;
-    const total = Math.max(10, Math.floor((barEl.parentElement.clientWidth - ch * 2) / ch));
-    const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
-    barEl.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
-  }
-
-  if (!magickReady) {
-    setBar(0);
-    const mod = await import(MAGICK_WASM_URL);
-    const wasmBytes = await fetchWithProgress(MAGICK_WASM_DIR + 'magick.wasm', (p) => setBar(p * 0.9));
-    setBar(0.95);
-    labelEl.textContent = 'initialising';
-    await mod.initializeImageMagick(wasmBytes);
-    magickReady = mod;
-  }
-  setBar(1);
-  labelEl.textContent = 'converting raw';
-
-  const { ImageMagick, MagickFormat } = magickReady;
-  const data = new Uint8Array(await file.arrayBuffer());
-  return new Promise((resolve, reject) => {
-    try {
-      ImageMagick.read(data, (image) => {
-        image.quality = 92;
-        image.write(MagickFormat.Jpeg, (jpegData) => {
-          wrap.remove();
-          const blob = new Blob([jpegData], { type: 'image/jpeg' });
-          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
-        });
-      });
-    } catch (e) {
-      wrap.remove();
-      reject(e);
-    }
-  });
-}
-
 async function makeMap(container, lat, lon, label) {
   try {
     await loadCss(LEAFLET_CSS);
