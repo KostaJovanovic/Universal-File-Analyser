@@ -54,6 +54,16 @@
  *   Window functions:   hann · hamming · blackman · rect. */
 
 // ---------- WINDOWS ----------
+/*
+ * A "window" fades each chunk of audio in and out at its edges before the FFT.
+ * Without it, the hard cut at the chunk's edges shows up as fake frequencies
+ * smeared across the spectrogram ("spectral leakage"). Fading the edges to zero
+ * removes that smear. The four windows fade in slightly different shapes:
+ *   hann     - smooth, balanced. The default and usually the right pick.
+ *   hamming  - similar to hann, with a slightly different leakage trade-off.
+ *   blackman - fades hardest: cleanest, but blurs nearby frequencies together.
+ *   rect     - no fade at all: sharpest detail, but the most leakage.
+ */
 export const windows = {
   hann: (N) => {
     const w = new Float32Array(N);

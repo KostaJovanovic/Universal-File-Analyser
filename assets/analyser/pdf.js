@@ -1,6 +1,8 @@
 /* Analyser - PDF module
    Lazy-loads pdf.js from CDN, extracts metadata, text, and page thumbnails. */
 
+import { el, row, fmtBytes } from './util.js';
+
 const PDFJS_URL   = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.mjs';
 const WORKER_URL  = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs';
 
@@ -11,36 +13,6 @@ async function loadPdfJs() {
   pdfjsLib = await import(PDFJS_URL);
   pdfjsLib.GlobalWorkerOptions.workerSrc = WORKER_URL;
   return pdfjsLib;
-}
-
-// ---------- helpers (same as other modules) ----------
-function el(tag, attrs = {}, children = []) {
-  const e = document.createElement(tag);
-  for (const k in attrs) {
-    if (k === 'class') e.className = attrs[k];
-    else if (k === 'html') e.innerHTML = attrs[k];
-    else if (k.startsWith('on')) e.addEventListener(k.slice(2), attrs[k]);
-    else e.setAttribute(k, attrs[k]);
-  }
-  for (const c of (Array.isArray(children) ? children : [children])) {
-    if (c == null) continue;
-    e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
-  }
-  return e;
-}
-
-function row(label, value) {
-  return el('tr', {}, [
-    el('th', {}, label),
-    el('td', {}, value == null || value === '' ? '-' : String(value))
-  ]);
-}
-
-function fmtBytes(n) {
-  if (n == null) return '-';
-  if (n < 1024) return n + ' B';
-  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-  return (n / (1024 * 1024)).toFixed(2) + ' MB';
 }
 
 function fmtDate(d) {

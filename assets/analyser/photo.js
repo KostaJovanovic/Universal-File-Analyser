@@ -7,6 +7,8 @@
    - On-device OCR via lazy-loaded Tesseract.js with language picker
    - SHA-256 file hash */
 
+import { el, row, fmtBytes, h3help, fileExt, sha256Hex } from './util.js';
+
 const JSQR_URL      = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
 const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js';
 const LEAFLET_CSS   = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
@@ -51,45 +53,6 @@ const TESSERACT_LANGS = [
 ];
 
 // ---------- helpers ----------
-function el(tag, attrs = {}, children = []) {
-  const e = document.createElement(tag);
-  for (const k in attrs) {
-    if (k === 'class') e.className = attrs[k];
-    else if (k === 'html') e.innerHTML = attrs[k];
-    else if (k.startsWith('on')) e.addEventListener(k.slice(2), attrs[k]);
-    else e.setAttribute(k, attrs[k]);
-  }
-  for (const c of (Array.isArray(children) ? children : [children])) {
-    if (c == null) continue;
-    e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
-  }
-  return e;
-}
-
-function row(label, value) {
-  return el('tr', {}, [
-    el('th', {}, label),
-    el('td', {}, value == null || value === '' ? '-' : String(value))
-  ]);
-}
-
-function h3help(title, helpHtml) {
-  const h = el('h3', {});
-  h.appendChild(document.createTextNode(title));
-  const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
-  const panel = el('div', { class: 'anr-info-panel', style: 'display:none;', html: helpHtml });
-  btn.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
-  h.appendChild(btn);
-  return [h, panel];
-}
-
-function fmtBytes(n) {
-  if (n == null) return '-';
-  if (n < 1024) return n + ' B';
-  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-  return (n / (1024 * 1024)).toFixed(2) + ' MB';
-}
-
 function gcd(a, b) { return b ? gcd(b, a % b) : a; }
 
 function aspectRatio(w, h) {
@@ -106,13 +69,6 @@ function loadImageFromFile(file) {
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not load image')); };
     img.src = url;
   });
-}
-
-async function sha256Hex(file) {
-  if (!crypto.subtle) return null;
-  const buf = await file.arrayBuffer();
-  const hash = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // ---------- exif formatting ----------
@@ -476,11 +432,6 @@ function loadScript(src) {
 
 const HEIC_EXTS = new Set(['heic', 'heif', 'heics', 'heifs']);
 const RAW_EXTS = new Set(['arw', 'cr2', 'cr3', 'nef', 'dng', 'raf', 'rw2', 'orf', 'pef', 'sr2', 'srw', 'x3f', 'raw']);
-
-function fileExt(name) {
-  const m = (name || '').match(/\.([^.]+)$/);
-  return m ? m[1].toLowerCase() : '';
-}
 
 async function convertHeic(file) {
   await loadScript(HEIC2ANY_URL);
