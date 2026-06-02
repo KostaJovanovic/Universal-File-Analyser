@@ -2,56 +2,59 @@
 
 ## Adding a new file type
 
-When adding support for a new file format, update **all** of these locations:
+**`assets/analyser/formats.js` is the single source of truth for supported file
+types.** The format overlay (index.html), the "All supported file types" tables
+(about.html), the overlay search, and the `classifyFile()` routing in app.js are
+all driven from it — edit one file and they all update.
 
-### 1. Classification (app.js)
-File: `assets/analyser/app.js`
+### 1. The catalog (formats.js) — almost always the only file you touch
+File: `assets/analyser/formats.js`
 
-- **Photo/Audio/Video**: Add the extension to `PHOTO_EXTS`, `AUDIO_EXTS`, or `VIDEO_EXTS` sets at the top of the file. These drive the `classifyFile()` function that routes dropped files to the correct renderer.
-- **New category**: If the format doesn't fit photo/audio/video, add a new branch in `classifyFile()` and in the `handleFile()` switch (around line 160). See how `csv`, `svg`, `pdf`, `zip`, `proprietary` are handled.
+- **Routing**: add the lowercase extension to the right classification set —
+  `PHOTO_EXTS`, `AUDIO_EXTS`, `VIDEO_EXTS`, `CSV_EXTS`, or `SVG_EXTS`. These drive
+  `classifyFile()` in app.js.
+- **Display + search**: add (or extend) a row in `FULL_ANALYSIS` (deep analysis)
+  or `IDENTIFICATION` (identification-only). Each row is
+  `{ label, exts, tags, note? }`:
+  - `exts` — space-separated extension list (curated casing) shown in the tables.
+  - `tags` — extra search keywords: software/brand names and synonyms so a user
+    can find SLDPRT by typing "solidworks". This is what makes the overlay search
+    by origin work.
+  - `note` — optional prose shown instead of the ext list on the about page
+    (e.g. PDF).
+- **Photo conversion**: if it's a photo needing conversion, also add it to
+  `HEIC_EXTS` (heic2any) or `RAW_EXTS` (ImageMagick WASM) in this same file.
 
-### 2. Photo subtype sets (photo.js)
-File: `assets/analyser/photo.js`
+That's it for the common cases (a new photo/audio/video extension, or a new
+identification-only format that also needs a parser — see step 2).
 
-- `HEIC_EXTS` — extensions that need HEIC-to-JPEG conversion via heic2any before analysis.
-- `RAW_EXTS` — extensions that need RAW-to-PNG conversion via ImageMagick WASM before analysis.
-- If the new format is a photo that needs conversion, add it to the appropriate set.
+### 2. Header parser for identification-only formats (proprietary.js)
+File: `assets/analyser/proprietary.js`
 
-### 3. Renderer (new formats)
-- **Photo/Audio/Video**: The existing `renderPhoto`, `renderAudio`, `renderVideo` handle all files in their category. No new renderer needed unless the format needs special treatment.
-- **Proprietary / identification-only**: Add an entry to the `FORMATS` object in `assets/analyser/proprietary.js`. Each key is a lowercase extension, each value is `{ name, category, magic?, parse? }`. The `magic` array matches header bytes; `parse(view, file)` extracts metadata rows.
-- **Full analysis (new category)**: Create a new module (e.g. `assets/analyser/newtype.js`), export `renderNewtype(file, resultsEl)`, import it in `app.js`, and wire it into `handleFile()`.
+- Add an entry to the `FORMATS` object: key is the lowercase extension, value is
+  `{ app, icon, magic?, parse?, zip? }`. `magic` matches header bytes; `parse`
+  is a hint (`'text'`/`'xml'`/`'html'`). Add a dedicated `parseXxx()` if the
+  format has a header worth decoding (see `parsePsd`, `parseDwg`, etc.).
+- `formats.js` holds the *catalog/display*; `proprietary.js` holds the *parsing
+  logic*. A purely identification-only format that just needs to be listed can
+  live in `formats.js` alone, but to extract metadata it needs a `FORMATS` entry
+  here too.
 
-### 4. About page (about.html)
-File: `about.html`, section `id="what"`
+### 3. New top-level category (rare)
+If the format isn't photo/audio/video/csv/svg and needs its own renderer:
+- Create a module (e.g. `assets/analyser/newtype.js`), export
+  `renderNewtype(file, resultsEl)`.
+- Import it in app.js and add a branch in `classifyFile()` and `handleFile()`.
+  See how `csv`, `svg`, `pdf`, `zip`, `proprietary` are wired.
+- Add the new module to the `SHELL` array in `sw.js` for offline caching.
 
-- **Capabilities list** (`<dl class="about-caps">`): If the format adds new analysis capabilities, update or add a `<dt>`/`<dd>` entry.
-- **Supported formats dropdown** (`<details class="about-formats">`): Add the extension to the correct table — "Full analysis" if it gets deep analysis, "Identification + basic metadata" if it's proprietary/identification-only.
-
-### 5. Format help overlay (index.html)
-File: `index.html`, inside `<div id="fmtOverlay">`
-
-- Add the extension to the matching `<tr data-fmt>` row in the correct table.
-- Update the `data-tags` attribute on that row if the format has a well-known origin/software name (e.g. `solidworks` for SLDPRT). This makes it searchable by software name.
-
-### 6. Service worker (sw.js)
-File: `sw.js`
-
-- If you created a new JS module, add it to the `SHELL` array so it's cached for offline use.
-
-### 7. Dropzone hints (index.html)
-File: `index.html`, quickdrop section
-
-- The first dropzone ("Drop a photo or video") lists key photo/video extensions as hints.
-- The second dropzone ("Drop a sound") lists audio extensions.
-- The third dropzone ("Drop any file") lists other categories.
-- Only update these if the new format is common enough to be worth calling out.
-
-### 8. Patch notes (about.html)
-File: `about.html`, section `id="when"`
-
-- When the change is committed, add a new patch entry at the top (before the current latest). See the HTML comment above the section for the format: version number, date/time from `git log --format="%ai"`, and a short description.
-- Move the 4th-from-top entry into the `<details class="about-formats">` dropdown (only 3 latest are visible).
+### 4. Optional polish (only if the format is common)
+- **Dropzone hints** (`index.html`, quickdrop section): the three dropzones list
+  example extensions. Update only if the format is worth calling out.
+- **Patch notes** (`about.html`, section `id="when"`): on commit, add a new entry
+  at the top (version + date/time from `git log --format="%ai"` + short note).
+  Move the 4th-from-top entry into the `<details class="about-formats">` dropdown
+  (only the 3 latest stay visible).
 
 ## Version numbering
 
@@ -77,6 +80,7 @@ assets/
   analyser.css      — all styles
   analyser/
     app.js          — entry point, file classification, boot()
+    formats.js      — central format catalog (sets + display tables + renderers)
     photo.js        — photo analysis (EXIF, histogram, OCR, etc.)
     audio.js        — audio analysis (waveform, spectrogram, player)
     audio-analysis.js — audio stats helpers

@@ -469,6 +469,29 @@ button { font-family: inherit; }
   margin: 0 0 32px;
 }
 
+/* Heading mirrored into the numbered meta card (clone created in app.js). Hidden
+   by default; on mobile, once the section has analysed a file (.is-analysed), it
+   replaces the original head + lede so the results lead. Desktop keeps the full
+   head + lede and never shows this clone. */
+.section-meta-head { display: none; }
+.section.is-tappable .section-head,
+.section.is-tappable .section-lede,
+.section.is-tappable .section-meta-head { cursor: pointer; }
+@media (max-width: 700px) {
+  .section.is-analysed .section-head,
+  .section.is-analysed .section-lede { display: none; }
+  .section.is-analysed .section-meta-head {
+    display: block;
+    margin: 12px 0 0;
+    font-size: var(--t-body);   /* a bit smaller than the full .section-head */
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+    max-width: 22ch;
+  }
+}
+
 @media (max-width: 900px) {
   .section-meta { grid-column: 1 / -1; position: static; margin-bottom: 8px; }
   .section-content { grid-column: 1 / -1; }
@@ -491,6 +514,16 @@ button { font-family: inherit; }
 .anr-dropzone:hover .anr-dropzone-inner {
   opacity: 0.6;
 }
+/* Hovering the dropzone tints its whole outer border accent (above). The
+   buttons inside draw their own inner borders (Info's top/left, the audio
+   strip's top, the Record/Live divider), so tint those to match — otherwise the
+   card edge goes red while the button edges stay dark. */
+.anr-dropzone:hover .fmt-help-btn {
+  border-top-color: var(--accent);
+  border-left-color: var(--accent);
+}
+.anr-dropzone:hover .anr-audio-modes { border-top-color: var(--accent); }
+.anr-dropzone:hover .anr-audio-modes .anr-btn { border-right-color: var(--accent); }
 .anr-dropzone.is-dragover {
   background: var(--surface);
   outline: 2px dashed var(--accent);
@@ -537,6 +570,19 @@ button { font-family: inherit; }
   overflow-wrap: break-word;
   overflow-wrap: anywhere;
 }
+/* The "analysis may be limited" caveat. Styled like a hint but kept on its own
+   class so it survives the mobile rule that hides the format-list hints. */
+.anr-drop-warn {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--muted);
+  opacity: 0.5;
+  margin-top: 14px !important;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  overflow-wrap: anywhere;
+}
+.quickdrop-zone .anr-drop-warn { margin-top: 10px !important; }
 
 .anr-audio-modes {
   display: flex;
@@ -1609,18 +1655,43 @@ details[open] summary::after { content: "\2212"; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* Top-align so the icon + heading line up across all three zones regardless
+     of how much content (hints/buttons) sits below them. */
+  justify-content: flex-start;
   padding: clamp(24px, 4vw, 48px) 18px;
 }
 .quickdrop-zone .anr-dropzone-inner strong {
   font-size: clamp(16px, 1.8vw, 22px);
   margin: 2px 0 4px;
+  color: var(--accent);
 }
 .quickdrop-zone .anr-drop-icon {
   font-size: clamp(22px, 3.5vw, 34px);
   margin-bottom: 6px;
 }
-.quickdrop-zone .anr-hint { margin-top: 10px !important; }
+.quickdrop-zone .anr-hint {
+  margin-top: 10px !important;
+  /* Keep the format list to a single row. If it would wrap to a second line
+     (e.g. the photo zone lists both photo and video extensions), truncate the
+     overflow with an ellipsis instead — a taller hint would push this zone out
+     of line with the other two. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+}
+
+/* Touch devices can't drag-drop a file, so the zones read "Pick …" instead of
+   "Drop …", and the format lists are dropped for a cleaner tap target. The
+   "Info" button still opens the full supported-formats list. */
+.tap-word { display: none; }
+@media (pointer: coarse) {
+  .drop-word { display: none; }
+  .tap-word { display: inline; }
+  /* Photo/video and sound keep their format lists; only the "any file" zone
+     hides its list (the Info button already opens the full catalogue). */
+  #videoDrop .anr-hint { display: none; }
+}
 
 /* Format help button — matches .anr-audio-modes .anr-btn style */
 .fmt-help-btn {
@@ -1641,7 +1712,7 @@ details[open] summary::after { content: "\2212"; }
   padding: 11px 8px;
   width: auto;
   z-index: 2;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.2s ease;
 }
 .fmt-help-btn:hover { background: var(--fg); color: var(--bg); border-top-color: var(--fg); border-left-color: var(--fg); }
 
@@ -1660,7 +1731,6 @@ details[open] summary::after { content: "\2212"; }
 .fmt-overlay-inner {
   background: var(--bg);
   border: 1px solid var(--hairline);
-  border-radius: 6px;
   max-width: 640px;
   width: 100%;
   max-height: 80vh;
@@ -1696,7 +1766,6 @@ details[open] summary::after { content: "\2212"; }
   letter-spacing: 0.04em;
   background: var(--surface);
   border: 1px solid var(--hairline);
-  border-radius: 3px;
   color: var(--fg);
   outline: none;
 }
@@ -1708,10 +1777,19 @@ details[open] summary::after { content: "\2212"; }
 .fmt-section-label {
   font-family: var(--font-mono);
   font-size: var(--t-tiny);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--muted);
-  margin: 16px 0 6px;
+  color: var(--fg);
+  font-weight: 500;
+  margin: 26px 0 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+}
+/* First section ("Full analysis") needs no divider above it. */
+.fmt-section-label:first-child {
+  margin-top: 4px;
+  padding-top: 0;
+  border-top: none;
 }
 .fmt-table td {
   font-family: var(--font-mono);
@@ -1726,6 +1804,7 @@ details[open] summary::after { content: "\2212"; }
   padding: 0;
   border-top: 1px solid var(--hairline);
   gap: 0;
+  transition: border-color 0.2s ease;
 }
 .quickdrop-zone .anr-audio-modes .anr-btn {
   flex: 1 1 0;
@@ -2200,7 +2279,74 @@ details[open] summary::after { content: "\2212"; }
   .nav-search.is-open .nav-search-btn { display: block; }
   .nav-search.is-open .nav-search-input,
   .nav-search.is-open .nav-search-arrow { display: none; }
+  /* About page: drop the home + search controls on mobile so the four section
+     links get the full nav width. (The nav is a sibling of main.about-page, so
+     :has() on the body is used to detect the page.) */
+  body:has(.about-page) .nav-home,
+  body:has(.about-page) .nav-search { display: none; }
+  /* Hiding home + search removes the 48px-tall buttons that otherwise set the
+     bar's height, so the links alone would make the nav noticeably shorter.
+     Pad the links to keep the about-page nav the same height as the main one. */
+  body:has(.about-page) .nav-link { padding-top: 16px; padding-bottom: 16px; }
 }
+
+/* ---------- Confirmation modal (mobile upload guard) ---------- */
+/* Built in app.js by anrConfirm(). Swiss styling: flat bg, single hard border,
+   monospace kicker/buttons, accent on the primary action. */
+.anr-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.anr-modal.is-open { opacity: 1; }
+.anr-modal-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  padding: 24px;
+  transform: translateY(8px);
+  transition: transform 0.18s ease;
+}
+.anr-modal.is-open .anr-modal-card { transform: none; }
+.anr-modal-kicker {
+  margin: 0 0 12px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.anr-modal-title {
+  margin: 0 0 22px;
+  font-size: var(--t-body);
+  line-height: 1.35;
+  color: var(--fg);
+}
+.anr-modal-actions { display: flex; gap: 10px; }
+.anr-modal-btn {
+  flex: 1;
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  color: var(--fg);
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.anr-modal-cancel:hover { background: var(--surface); }
+.anr-modal-ok { background: var(--fg); color: var(--bg); }
+.anr-modal-ok:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 /* ---------- UTILITY / REFACTOR CLASSES ---------- */
 .is-hidden { display: none !important; }

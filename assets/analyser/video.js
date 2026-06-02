@@ -661,6 +661,98 @@ function seekAndPaint(video, t) {
   });
 }
 
+// ---------- visible-player fallback (iOS Safari) ----------
+// The hidden probe above is parked 1px/near-invisible/z-index:-1 so it stays
+// out of the layout, but iOS Safari refuses to allocate a decode surface for a
+// video that small/hidden, so `loadeddata` never fires and even ordinary H.264
+// files time out into the "could not load" error. A real, *visible* <video>
+// element plays those same files. When the probe fails (and it isn't an AVI we
+// can decode ourselves), we render this player instead: native controls,
+// container/resolution/duration read straight off the loaded element, an
+// on-demand frame grab into the photo section, and a SHA-256. Returns true if
+// the player loaded (so the caller skips the error), false otherwise.
+async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) {
+  const playerCard = el('div', { class: 'anr-card' });
+  playerCard.appendChild(el('h3', {}, 'Player'));
+  const playerEl = el('video', { src: url, controls: '', playsinline: '' });
+  playerEl.setAttribute('webkit-playsinline', '');
+  playerEl.style.cssText = 'width:100%; max-height:480px; background:#0a0a0a; display:block; border:1px solid var(--hairline);';
+  playerCard.appendChild(playerEl);
+  resultsEl.appendChild(playerCard);
+
+  // A visible element loads on iOS where the probe didn't; wait for metadata.
+  const loaded = await new Promise((resolve) => {
+    let done = false;
+    const finish = (ok) => { if (!done) { done = true; resolve(ok); } };
+    playerEl.onloadedmetadata = () => finish(true);
+    playerEl.onerror = () => finish(false);
+    if (signal) signal.addEventListener('abort', () => finish(false));
+    setTimeout(() => finish(false), 12000);
+  });
+  if (!loaded) { playerCard.remove(); return false; }
+
+  const vw = playerEl.videoWidth, vh = playerEl.videoHeight, dur = playerEl.duration;
+
+  // File info — placed above the player.
+  const infoCard = el('div', { class: 'anr-card' });
+  infoCard.appendChild(el('h3', {}, 'File info'));
+  const tbl = el('table', { class: 'anr-readout' });
+  tbl.appendChild(row('Name', file.name));
+  tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
+  tbl.appendChild(row('MIME', file.type || '-'));
+  if (header && header.container) tbl.appendChild(row('Container', header.container));
+  if (vw && vh) {
+    tbl.appendChild(row('Resolution', `${vw} × ${vh} px`));
+    tbl.appendChild(row('Aspect ratio', aspectRatio(vw, vh)));
+  }
+  if (isFinite(dur) && dur > 0) tbl.appendChild(row('Duration', formatDuration(dur)));
+  infoCard.appendChild(tbl);
+  resultsEl.insertBefore(infoCard, playerCard);
+
+  // On-demand frame grab — captures whatever frame is currently displayed and
+  // hands it to the photo analyser. (Auto-capture is unreliable on iOS until a
+  // frame has actually painted, so this is gated on a user tap.)
+  if (vw && vh) {
+    const grabCard = el('div', { class: 'anr-card' });
+    grabCard.appendChild(el('h3', {}, 'Frame'));
+    grabCard.appendChild(el('p', { class: 'anr-hint' },
+      'Play or scrub to a frame, then capture it for full photo analysis.'));
+    const grabBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse current frame');
+    grabBtn.onclick = async () => {
+      grabBtn.disabled = true; grabBtn.textContent = 'Capturing…';
+      try {
+        const cv = document.createElement('canvas');
+        cv.width = vw; cv.height = vh;
+        cv.getContext('2d').drawImage(playerEl, 0, 0, vw, vh);
+        const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+        const t = playerEl.currentTime || 0;
+        const frameFile = new File([blob], `frame_${t.toFixed(3)}s.png`, { type: 'image/png' });
+        const photoResults = document.getElementById('photoResults');
+        if (photoResults) {
+          renderPhoto(frameFile, photoResults);
+          const photoSection = document.getElementById('photo');
+          if (photoSection) window.scrollTo({ top: photoSection.getBoundingClientRect().top + window.scrollY - 56, behavior: 'smooth' });
+        }
+      } catch (_) {}
+      grabBtn.disabled = false; grabBtn.textContent = 'Analyse current frame';
+    };
+    grabCard.appendChild(grabBtn);
+    resultsEl.appendChild(grabCard);
+  }
+
+  // SHA-256 integrity hash.
+  if (file.size <= 500 * 1024 * 1024) {
+    const hashCard = el('div', { class: 'anr-card' });
+    hashCard.appendChild(el('h3', {}, 'Integrity'));
+    const hashOut = el('p', { class: 'anr-hint', style: 'word-break:break-all;' }, 'computing SHA-256…');
+    hashCard.appendChild(hashOut);
+    resultsEl.appendChild(hashCard);
+    sha256Hex(file).then((h) => { hashOut.textContent = h ? 'SHA-256: ' + h : 'SHA-256 unavailable'; });
+  }
+
+  return true;
+}
+
 // ---------- main render ----------
 
 // Tears down the previous video's persistent listeners/observers when a new
@@ -699,7 +791,7 @@ export async function renderVideo(file, resultsEl) {
     await new Promise((resolve, reject) => {
       probe.onloadeddata = resolve;
       probe.onerror = () => reject(new Error('format not supported'));
-      setTimeout(() => reject(new Error('timeout')), 15000); // iOS can hang on loadeddata
+      setTimeout(() => reject(new Error('timeout')), 8000); // iOS can hang here; fall back to a visible player below
       probe.src = url;
     });
     // iOS won't paint a frame for a video that has never played — play, wait
@@ -919,6 +1011,11 @@ export async function renderVideo(file, resultsEl) {
 
       return;
     }
+
+    // Not an AVI we can decode — but the probe may simply have failed on iOS.
+    // Try a real visible player before declaring the file unplayable.
+    const shownFallback = await renderVisibleVideoFallback(file, url, header, resultsEl, renderSignal);
+    if (shownFallback) return;
 
     resultsEl.appendChild(el('div', { class: 'anr-error' },
       'Could not load this video. Format may not be supported by your browser.'));
