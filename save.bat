@@ -35,6 +35,13 @@ echo.
 
 set SAVE_ERROR=0
 
+for /f %%i in ('git rev-list --count HEAD 2^>nul') do set COMMIT_COUNT=%%i
+if not defined COMMIT_COUNT set COMMIT_COUNT=0
+set /a NEXT_VER=%COMMIT_COUNT%+1
+echo Bumping version to 0.%NEXT_VER%
+
+powershell -Command "(Get-Content 'index.html') -replace '<dt>Version</dt><dd>[^<]*</dd>', '<dt>Version</dt><dd>0.%NEXT_VER%</dd>' | Set-Content 'index.html' -Encoding utf8"
+
 git add .
 git status
 

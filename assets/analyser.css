@@ -1199,6 +1199,15 @@ details[open] summary::after { content: "\2212"; }
   word-break: break-word;
   line-height: 1.4;
 }
+.anr-raw-warning {
+  margin: 6px 4px 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent, #e60023);
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  opacity: 0.8;
+}
 
 /* On smaller viewports, meta column already drops below section-content; reorder so
    the preview thumb stays compact and the OCR/histogram sit clearly below it */
@@ -1262,8 +1271,16 @@ details[open] summary::after { content: "\2212"; }
 }
 .lightbox-img-wrap {
   position: relative;
-  box-shadow: 0 0 0 3px #fff;
 }
+.lightbox-peaking {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+.lightbox-peaking[hidden] { display: none; }
 .lightbox-focus-map {
   position: absolute;
   inset: 0;
@@ -1289,6 +1306,8 @@ details[open] summary::after { content: "\2212"; }
 .lightbox-focus-dot[hidden] { display: none; }
 .lightbox-toolbar {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 6px;
   margin-top: 8px;
 }
