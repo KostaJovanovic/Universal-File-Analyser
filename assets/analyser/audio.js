@@ -1357,14 +1357,23 @@ async function startLive(resultsEl, liveBtn) {
   cmapSel.value = 'magma';
   const heightSel = el('select', {}, ['240','320','420','560','720','900'].map((v) => el('option', { value: v }, v + 'px')));
   heightSel.value = '420';
+  const speedSel  = el('select', {}, [['1','Slow'],['2','Normal'],['3','Fast'],['4','Faster'],['6','Fastest']].map(([v,l]) => el('option', { value: v }, l)));
+  speedSel.value = '2';
+  const saveBtn   = el('button', { type: 'button', class: 'anr-fs-btn' }, 'Save PNG');
   const fsBtn     = el('button', { type: 'button', class: 'anr-fs-btn' }, 'Fullscreen');
+  const recBtn    = el('button', { type: 'button', class: 'anr-btn' }, '● Record');
+  const pauseBtn  = el('button', { type: 'button', class: 'anr-btn' }, 'Pause');
   const stopBtn   = el('button', { type: 'button', class: 'anr-btn' }, 'Stop');
 
   controls.appendChild(el('div', { class: 'anr-control' }, [el('label', {}, 'Axis'),   toggle]));
   controls.appendChild(el('div', { class: 'anr-control' }, [el('label', {}, 'FFT'),    fftSel]));
   controls.appendChild(el('div', { class: 'anr-control' }, [el('label', {}, 'Colour'), cmapSel]));
   controls.appendChild(el('div', { class: 'anr-control' }, [el('label', {}, 'Height'), heightSel]));
+  controls.appendChild(el('div', { class: 'anr-control' }, [el('label', {}, 'Speed'),  speedSel]));
+  controls.appendChild(el('div', { class: 'anr-control' }, [saveBtn]));
   controls.appendChild(el('div', { class: 'anr-control' }, [fsBtn]));
+  controls.appendChild(el('div', { class: 'anr-control' }, [recBtn]));
+  controls.appendChild(el('div', { class: 'anr-control' }, [pauseBtn]));
   controls.appendChild(el('div', { class: 'anr-control' }, [stopBtn]));
   card.appendChild(controls);
 
@@ -1379,6 +1388,7 @@ async function startLive(resultsEl, liveBtn) {
   wrap.appendChild(yWrap); wrap.appendChild(scrollEl);
   card.appendChild(wrap);
   resultsEl.appendChild(card);
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   let state = { scale: 'log', cmap: 'magma', height: 420 };
 
@@ -1459,12 +1469,15 @@ async function startLive(resultsEl, liveBtn) {
   window.addEventListener('resize', onWinResize);
 
   let dbData = new Float32Array(analyser.frequencyBinCount);
-  const colW = 2;
+  let colW = 2;
   let stopped = false;
+  let paused = false;
   liveBtn.classList.add('is-active');
+  speedSel.addEventListener('change', () => { colW = parseInt(speedSel.value, 10); });
 
   function tick() {
     if (stopped) return;
+    if (paused) return requestAnimationFrame(tick);
     const bins = analyser.frequencyBinCount;
     if (dbData.length !== bins) dbData = new Float32Array(bins);
     analyser.getFloatFrequencyData(dbData);
@@ -1516,6 +1529,52 @@ async function startLive(resultsEl, liveBtn) {
   }
   requestAnimationFrame(tick);
 
+  saveBtn.addEventListener('click', () => {
+    canvas.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = el('a', { href: url, download: 'live-spectrogram.png' });
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
+    }, 'image/png');
+  });
+
+  pauseBtn.addEventListener('click', () => {
+    paused = !paused;
+    pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+  });
+
+  let liveRec = null;
+  recBtn.addEventListener('click', () => {
+    if (liveRec) {
+      liveRec.stop();
+      return;
+    }
+    const mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/webm']
+      .find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+    liveRec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    const chunks = [];
+    liveRec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    liveRec.onstop = async () => {
+      recBtn.classList.remove('is-recording');
+      recBtn.textContent = '● Record';
+      const blob = new Blob(chunks, { type: mime || 'audio/webm' });
+      const ext = (mime.match(/audio\/(\w+)/) || [, 'webm'])[1];
+      const file = new File([blob], 'recording.' + ext, { type: blob.type });
+      liveRec = null;
+      stopped = true;
+      liveBtn.classList.remove('is-active');
+      stream.getTracks().forEach((t) => t.stop());
+      try { src.disconnect(); } catch (_) {}
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+      window.removeEventListener('resize', onWinResize);
+      await renderAudio(file, resultsEl);
+    };
+    liveRec.start();
+    recBtn.classList.add('is-recording');
+    recBtn.textContent = '■ Stop rec';
+  });
+
   stopBtn.addEventListener('click', () => {
     stopped = true;
     liveBtn.classList.remove('is-active');
@@ -1524,6 +1583,11 @@ async function startLive(resultsEl, liveBtn) {
     document.removeEventListener('fullscreenchange', onFsChange);
     document.removeEventListener('webkitfullscreenchange', onFsChange);
     window.removeEventListener('resize', onWinResize);
+    if (document.fullscreenElement === card) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    }
+    card.remove();
+    if (!resultsEl.children.length) resultsEl.hidden = true;
   });
 }
 

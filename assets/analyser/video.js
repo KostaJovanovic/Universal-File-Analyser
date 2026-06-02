@@ -19,7 +19,7 @@ async function fetchWithProgress(url, onProgress) {
     if (done) break;
     chunks.push(value);
     loaded += value.length;
-    if (onProgress) onProgress(loaded / total);
+    if (onProgress) onProgress(Math.min(1, loaded / total));
   }
   const out = new Uint8Array(loaded);
   let off = 0;
@@ -661,7 +661,8 @@ export async function renderVideo(file, resultsEl) {
     analyseFrameBtn.textContent = 'Analyse frame';
   }}, 'Analyse frame');
 
-  playerCard.appendChild(el('div', { class: 'anr-btn-row' }, [prevFrameBtn, frameTimeLabel, nextFrameBtn, analyseFrameBtn]));
+  const frameNavGroup = el('div', { class: 'anr-frame-nav' }, [prevFrameBtn, frameTimeLabel, nextFrameBtn]);
+  playerCard.appendChild(el('div', { class: 'anr-btn-row' }, [frameNavGroup, analyseFrameBtn]));
 
   resultsEl.appendChild(playerCard);
 
@@ -755,51 +756,13 @@ export async function renderVideo(file, resultsEl) {
     }
   }
 
-  // ---- Frame capture ----
+  // ---- Contact sheet / thumbnail grid ----
   if (vw && vh) {
-    const captureCard = el('div', { class: 'anr-card' });
-    captureCard.appendChild(el('h3', {}, 'Frame capture'));
-    captureCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:12px !important;' },
-      'Seek the video to any point, then capture for full photo analysis'));
-    const captureBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Capture current frame');
-    captureCard.appendChild(el('div', { class: 'anr-btn-row' }, [captureBtn]));
-    const captureOut = el('div');
-    captureCard.appendChild(captureOut);
-    resultsEl.appendChild(captureCard);
-
-    async function captureFrame() {
-      captureBtn.disabled = true;
-      captureBtn.textContent = 'Capturing…';
-      const cv = document.createElement('canvas');
-      cv.width = vw; cv.height = vh;
-      cv.getContext('2d').drawImage(playerEl, 0, 0, vw, vh);
-      const blob = await new Promise((r) => cv.toBlob(r, 'image/png'));
-      const ts = playerEl.currentTime;
-      const frameFile = new File([blob], `frame_${ts.toFixed(3)}s.png`, { type: 'image/png' });
-
-      captureOut.innerHTML = '';
-      captureOut.appendChild(el('img', {
-        src: URL.createObjectURL(blob),
-        alt: 'Captured frame',
-        style: 'max-width:100%; max-height:180px; margin-top:10px; border:1px solid var(--hairline); display:block;'
-      }));
-      captureOut.appendChild(el('p', { class: 'anr-hint' },
-        `Captured at ${formatDuration(ts)} — photo analysis in section 01`));
-      captureBtn.disabled = false;
-      captureBtn.textContent = 'Capture current frame';
-      const photoResults = document.getElementById('photoResults');
-      if (photoResults) renderPhoto(frameFile, photoResults);
-    }
-    captureBtn.addEventListener('click', captureFrame);
-
-    playerEl.addEventListener('loadeddata', () => captureFrame(), { once: true });
-
-    // ---- Contact sheet / thumbnail grid ----
     const sheetCard = el('div', { class: 'anr-card' });
-    const [shH, shHelp] = h3help('Contact sheet', 'A 4×4 grid of 16 evenly-spaced thumbnails from across the video. Gives you a visual overview of the entire video at a glance, similar to film contact sheets.');
+    const [shH, shHelp] = h3help('Contact sheet', 'A 4×2 grid of 8 evenly-spaced thumbnails from across the video. Gives you a visual overview of the entire video at a glance, similar to film contact sheets.');
     sheetCard.appendChild(shH); sheetCard.appendChild(shHelp);
     sheetCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:12px !important;' },
-      '4×4 grid of 16 evenly-spaced thumbnails from the video'));
+      '4×2 grid of 8 evenly-spaced thumbnails from the video'));
     const sheetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Generate contact sheet');
     const sheetOut = el('div');
 
@@ -807,7 +770,7 @@ export async function renderVideo(file, resultsEl) {
       sheetBtn.disabled = true;
       sheetBtn.textContent = 'Generating…';
 
-      const cols = 4, rows = 4, total = cols * rows;
+      const cols = 4, rows = 2, total = cols * rows;
       const thumbW = Math.round(vw * (320 / Math.max(vw, vh)));
       const thumbH = Math.round(vh * (320 / Math.max(vw, vh)));
       const pad = 4;
@@ -870,7 +833,7 @@ export async function renderVideo(file, resultsEl) {
       sceneBtn.disabled = true;
       sceneBtn.textContent = 'Analysing…';
 
-      const changes = await detectSceneChanges(playerEl, 35);
+      const changes = await detectSceneChanges(playerEl, 55);
 
       sceneOut.innerHTML = '';
 
@@ -883,12 +846,12 @@ export async function renderVideo(file, resultsEl) {
       if (changes.length && isFinite(dur) && dur > 0) {
         // Timeline bar with markers
         const timeline = el('div', {
-          style: 'position:relative; height:24px; background:#1a1a1a; border:1px solid var(--hairline); border-radius:3px; margin-bottom:14px;'
+          style: 'position:relative; height:24px; background:var(--surface); border:1px solid var(--hairline); border-radius:3px; margin-bottom:14px;'
         });
         for (const sc of changes) {
           const pct = (sc.time / dur) * 100;
           const marker = el('div', {
-            style: 'position:absolute; top:2px; bottom:2px; width:2px; background:#e60023; border-radius:1px; left:' + pct + '%;',
+            style: 'position:absolute; top:2px; bottom:2px; width:2px; background:var(--accent); border-radius:1px; left:' + pct + '%;',
             title: formatDuration(sc.time)
           });
           marker.addEventListener('click', () => {

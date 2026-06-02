@@ -169,7 +169,7 @@ export async function renderPdf(file, resultsEl) {
       const canvas = el('canvas', {
         width: String(Math.floor(scaled.width)),
         height: String(Math.floor(scaled.height)),
-        style: 'border: 1px solid var(--c-border, #ccc); border-radius: 4px;'
+        style: 'border: 1px solid var(--hairline); border-radius: 4px;'
       });
       const ctx = canvas.getContext('2d');
       await page.render({ canvasContext: ctx, viewport: scaled }).promise;
