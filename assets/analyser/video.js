@@ -3,8 +3,9 @@
    frame capture (routed to photo analysis), audio track extraction
    (waveform + spectrogram via audio module). */
 
-import { makeSpectrogramPanel, makePlayer } from './audio.js';
+import { makeSpectrogramPanel, makePlayer, buildHistogramCard } from './audio.js';
 import { renderPhoto } from './photo.js';
+import { el, row, fmtBytes, h3help, sha256Hex } from './util.js';
 
 // ---------- progress-tracked fetch ----------
 async function fetchWithProgress(url, onProgress) {
@@ -77,46 +78,6 @@ async function ffmpegExtractAudio(file, container) {
 
 // ---------- helpers ----------
 
-function el(tag, attrs = {}, children = []) {
-  const e = document.createElement(tag);
-  for (const k in attrs) {
-    if (k === 'class') e.className = attrs[k];
-    else if (k === 'html') e.innerHTML = attrs[k];
-    else if (k.startsWith('on')) e.addEventListener(k.slice(2), attrs[k]);
-    else e.setAttribute(k, attrs[k]);
-  }
-  for (const c of (Array.isArray(children) ? children : [children])) {
-    if (c == null) continue;
-    e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
-  }
-  return e;
-}
-
-function row(label, value) {
-  return el('tr', {}, [
-    el('th', {}, label),
-    el('td', {}, value == null || value === '' ? '-' : String(value))
-  ]);
-}
-
-function h3help(title, helpHtml) {
-  const h = el('h3', {});
-  h.appendChild(document.createTextNode(title));
-  const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
-  const panel = el('div', { class: 'anr-info-panel', style: 'display:none;', html: helpHtml });
-  btn.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
-  h.appendChild(btn);
-  return [h, panel];
-}
-
-function fmtBytes(n) {
-  if (n == null) return '-';
-  if (n < 1024) return n + ' B';
-  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-  if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(2) + ' MB';
-  return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
-}
-
 function gcd(a, b) { return b ? gcd(b, a % b) : a; }
 
 function aspectRatio(w, h) {
@@ -139,13 +100,6 @@ function fmtDate(d) {
   if (!d) return '-';
   if (d instanceof Date) return d.toISOString().replace('T', ' ').replace(/\..*$/, '');
   return String(d);
-}
-
-async function sha256Hex(file) {
-  if (!crypto.subtle) return null;
-  const buf = await file.arrayBuffer();
-  const hash = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 let audioCtx = null;
@@ -172,21 +126,6 @@ function parseBoxes(view, start, end) {
     pos += size;
   }
   return boxes;
-}
-
-function findBox(view, start, end, path) {
-  const parts = path.split('.');
-  let boxes = parseBoxes(view, start, end);
-  for (let i = 0; i < parts.length; i++) {
-    const target = parts[i];
-    const match = boxes.find(b => b.type === target);
-    if (!match) return null;
-    if (i === parts.length - 1) return match;
-    const containers = new Set(['moov','trak','mdia','minf','stbl','udta','edts']);
-    const inner = match.offset + match.headerSize + (containers.has(match.type) ? 0 : 0);
-    boxes = parseBoxes(view, match.offset + match.headerSize, match.offset + match.size);
-  }
-  return null;
 }
 
 function findAllBoxes(view, start, end, type) {
@@ -447,8 +386,7 @@ async function detectSceneChanges(video, threshold) {
 
   for (let i = 0; i <= sampleCount; i++) {
     const t = Math.min(i * interval, dur - 0.05);
-    video.currentTime = t;
-    await new Promise(r => { video.onseeked = r; });
+    await seekAndPaint(video, t);
 
     cmpCtx.drawImage(video, 0, 0, tw, th);
     const frame = cmpCtx.getImageData(0, 0, tw, th);
@@ -536,9 +474,43 @@ function renderWaveform(canvas, samples) {
   c.strokeRect(0, 0, w, h);
 }
 
+// ---------- iOS-safe frame capture ----------
+// On iOS Safari, `loadeddata`/`seeked` can fire before a frame is actually
+// composited, so drawImage() returns a black canvas. requestVideoFrameCallback
+// fires only on a real painted frame; we gate every capture on it (with a
+// rAF + timeout fallback for browsers/situations where it's unavailable).
+function whenFramePainted(video) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    if ('requestVideoFrameCallback' in video) video.requestVideoFrameCallback(() => finish());
+    else requestAnimationFrame(finish);
+    setTimeout(finish, 2000);
+  });
+}
+
+function seekAndPaint(video, t) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    if ('requestVideoFrameCallback' in video) video.requestVideoFrameCallback(() => finish());
+    else video.addEventListener('seeked', () => requestAnimationFrame(finish), { once: true });
+    video.currentTime = t;
+    setTimeout(finish, 2500);
+  });
+}
+
 // ---------- main render ----------
 
+// Tears down the previous video's persistent listeners/observers when a new
+// file is analysed.
+let videoRenderAbort = null;
+
 export async function renderVideo(file, resultsEl) {
+  if (videoRenderAbort) videoRenderAbort.abort();
+  videoRenderAbort = new AbortController();
+  const renderSignal = videoRenderAbort.signal;
+
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Loading "${file.name}"…`));
@@ -549,18 +521,33 @@ export async function renderVideo(file, resultsEl) {
 
   const url = URL.createObjectURL(file);
 
-  const probe = document.createElement('video');
-  probe.preload = 'auto';
+  // The probe must be IN THE DOM (and not display:none) for iOS Safari to give
+  // it a decode surface — otherwise frames never paint and captures are black.
+  // It's parked 1px/near-transparent in the corner via .anr-video-probe.
+  const probe = el('video', { class: 'anr-video-probe' });
   probe.muted = true;
-  probe.playsInline = true;
+  probe.defaultMuted = true;
+  probe.setAttribute('muted', '');
+  probe.setAttribute('playsinline', '');
+  probe.setAttribute('webkit-playsinline', '');
+  probe.setAttribute('preload', 'auto');
+  document.body.appendChild(probe);
+  renderSignal.addEventListener('abort', () => probe.remove());
 
   try {
     await new Promise((resolve, reject) => {
       probe.onloadeddata = resolve;
       probe.onerror = () => reject(new Error('format not supported'));
+      setTimeout(() => reject(new Error('timeout')), 15000); // iOS can hang on loadeddata
       probe.src = url;
     });
+    // iOS won't paint a frame for a video that has never played — play, wait
+    // for a real painted frame, then pause before capturing.
+    try { await probe.play(); } catch (_) {}
+    await whenFramePainted(probe);
+    probe.pause();
   } catch (_) {
+    probe.remove();
     resultsEl.innerHTML = '';
     resultsEl.appendChild(el('div', { class: 'anr-error' },
       'Could not load this video. Format may not be supported by your browser.'));
@@ -589,14 +576,16 @@ export async function renderVideo(file, resultsEl) {
     previewSlot.appendChild(thumb);
   }
 
-  probe.pause();
   probe.removeAttribute('src');
   probe.load();
+  probe.remove();
 
   // ---- Player ----
   const playerCard = el('div', { class: 'anr-card' });
   playerCard.appendChild(el('h3', {}, 'Player'));
-  const playerEl = el('video', { src: url });
+  // playsinline keeps playback inline on iPhone instead of forcing fullscreen.
+  const playerEl = el('video', { src: url, playsinline: '' });
+  playerEl.setAttribute('webkit-playsinline', '');
   playerEl.style.cssText = 'width:100%; max-height:480px; background:#0a0a0a; display:block; border:1px solid var(--hairline); cursor:pointer;';
   playerEl.addEventListener('click', () => { if (playerEl.paused) playerEl.play(); else playerEl.pause(); });
   playerCard.appendChild(playerEl);
@@ -788,8 +777,7 @@ export async function renderVideo(file, resultsEl) {
 
       for (let i = 0; i < total; i++) {
         const t = total > 1 ? (safeDur * i) / (total - 1) : 0;
-        playerEl.currentTime = t;
-        await new Promise(r => { playerEl.onseeked = r; });
+        await seekAndPaint(playerEl, t);
 
         const c = i % cols;
         const r = Math.floor(i / cols);
@@ -910,6 +898,7 @@ export async function renderVideo(file, resultsEl) {
       lastAudioHeight = newHeight;
     });
     scrollCompensator.observe(audioResultsEl);
+    renderSignal.addEventListener('abort', () => scrollCompensator.disconnect());
 
     const audioCard = el('div', { class: 'anr-card' });
     audioCard.appendChild(el('h3', {}, 'Audio track'));
@@ -1005,9 +994,12 @@ export async function renderVideo(file, resultsEl) {
       waveWrap.appendChild(waveLine);
       audioCard.appendChild(waveWrap);
 
+      // Amplitude histogram (same labeled card the audio module uses)
+      audioResultsEl.appendChild(buildHistogramCard(mono));
+
       // Spectrogram (with playhead + click-to-seek)
       const basename = (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio';
-      audioResultsEl.appendChild(makeSpectrogramPanel(mono, audioBuf.sampleRate, { basename, audioEl: audioPlayer }));
+      audioResultsEl.appendChild(makeSpectrogramPanel(mono, audioBuf.sampleRate, { basename, audioEl: audioPlayer, signal: renderSignal }));
 
       // Sync waveform playhead at 60fps
       function tickPlayhead() {
@@ -1029,14 +1021,30 @@ export async function renderVideo(file, resultsEl) {
       }
       waveCanvas.addEventListener('click', (e) => seekFromX(e.clientX));
 
-      // Drag playhead on waveform
+      // Drag playhead on waveform — window listeners live only during a drag.
       let waveDragging = false;
-      waveLine.addEventListener('mousedown', (e) => { waveDragging = true; e.preventDefault(); });
-      window.addEventListener('mousemove', (e) => { if (waveDragging) seekFromX(e.clientX); });
-      window.addEventListener('mouseup', () => { waveDragging = false; });
-      waveLine.addEventListener('touchstart', (e) => { waveDragging = true; e.preventDefault(); }, { passive: false });
-      window.addEventListener('touchmove', (e) => { if (waveDragging && e.touches[0]) seekFromX(e.touches[0].clientX); });
-      window.addEventListener('touchend', () => { waveDragging = false; });
+      function onWaveMouseMove(e) { if (waveDragging) seekFromX(e.clientX); }
+      function onWaveMouseUp() {
+        waveDragging = false;
+        window.removeEventListener('mousemove', onWaveMouseMove);
+        window.removeEventListener('mouseup', onWaveMouseUp);
+      }
+      waveLine.addEventListener('mousedown', (e) => {
+        waveDragging = true; e.preventDefault();
+        window.addEventListener('mousemove', onWaveMouseMove);
+        window.addEventListener('mouseup', onWaveMouseUp);
+      });
+      function onWaveTouchMove(e) { if (waveDragging && e.touches[0]) seekFromX(e.touches[0].clientX); }
+      function onWaveTouchEnd() {
+        waveDragging = false;
+        window.removeEventListener('touchmove', onWaveTouchMove);
+        window.removeEventListener('touchend', onWaveTouchEnd);
+      }
+      waveLine.addEventListener('touchstart', (e) => {
+        waveDragging = true; e.preventDefault();
+        window.addEventListener('touchmove', onWaveTouchMove, { passive: false });
+        window.addEventListener('touchend', onWaveTouchEnd);
+      }, { passive: false });
     } catch (e) {
       console.warn('Audio extraction failed:', e);
       audioStatus.remove();

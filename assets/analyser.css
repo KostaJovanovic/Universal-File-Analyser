@@ -141,6 +141,17 @@ button { font-family: inherit; }
   margin: 0;
 }
 
+/* Byline directly under the title. Its size is a fixed fraction of the title
+   size (--t-mega), so the two scale together and the byline's right edge stays
+   anchored just left of the "y" at every viewport width. */
+.site-byline {
+  font-size: calc(var(--t-mega) * 0.3);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin: -5px 0 0;
+}
+
 .site-sub {
   font-size: clamp(15px, 1.6vw, 18px);
   color: var(--muted);
@@ -196,6 +207,27 @@ button { font-family: inherit; }
 .nav-link.is-active.has-data::after {
   background: var(--bg);
 }
+.nav-home {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  border-left: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
+}
+.nav-home-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--fg);
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.nav-home-btn:hover { opacity: 1; }
+
 .nav-search {
   margin-left: auto;
   display: flex;
@@ -727,9 +759,24 @@ button { font-family: inherit; }
   scrollbar-color: #444 #0a0a0a;
   scrollbar-width: thin;
 }
-.anr-spec-scroll::-webkit-scrollbar { height: 8px; }
-.anr-spec-scroll::-webkit-scrollbar-track { background: #0a0a0a; }
-.anr-spec-scroll::-webkit-scrollbar-thumb { background: #444; }
+/* Stylized spectrogram scrollbar — desktop/fine-pointer only. On iOS Safari and
+   other touch devices the custom styling is skipped so the native overlay
+   scrollbar is used (it can't be fully styled there anyway). */
+.anr-spec-scroll { scrollbar-width: thin; scrollbar-color: #3a3a3a #0a0a0a; }
+@media (hover: hover) and (pointer: fine) {
+  .anr-spec-scroll::-webkit-scrollbar { height: 11px; }
+  .anr-spec-scroll::-webkit-scrollbar-track {
+    background: #0a0a0a;
+    border-top: 1px solid #222;
+  }
+  .anr-spec-scroll::-webkit-scrollbar-thumb {
+    background: #3a3a3a;
+    border: 2px solid #0a0a0a;       /* inset gap so the thumb reads as a bar */
+    border-radius: 0;                /* sharp corners, matching the UI */
+  }
+  .anr-spec-scroll::-webkit-scrollbar-thumb:hover { background: #555; }
+  .anr-spec-scroll::-webkit-scrollbar-thumb:active { background: var(--accent); }
+}
 
 .anr-spec-canvas-wrap { position: relative; flex: 0 0 auto; }
 .anr-spec-canvas { display: block; image-rendering: pixelated; }
@@ -1159,7 +1206,12 @@ details[open] summary::after { content: "\2212"; }
 .footer-bottom .footer-meta a { color: rgba(255,255,255,0.5); }
 :root[data-theme="dark"] .site-footer--about {
   background: #141414;
+  color: #e8e8e8;
 }
+/* Footer is dark in both themes, but its text/links are coloured var(--bg) —
+   which flips to near-black in dark mode. Force them light. */
+:root[data-theme="dark"] .site-footer--about a,
+:root[data-theme="dark"] .footer-bottom .footer-mark { color: #e8e8e8; }
 :root[data-theme="dark"] .about-defs > div { border-top-color: #333; }
 :root[data-theme="dark"] .footer-bottom { border-top-color: #333; }
 
@@ -1690,10 +1742,193 @@ details[open] summary::after { content: "\2212"; }
   .anr-btn, .anr-fs-btn { min-height: 40px; padding: 10px 14px; }
   .anr-toggle button { min-height: 36px; padding: 8px 12px; }
   .anr-control select { min-height: 36px; padding: 6px 8px; }
-  .nav-link { padding: 14px 8px; }
+  /* Tighten the nav so home + 3 links + search fit on narrow phones (~360px)
+     without the search button overflowing off the right edge. */
+  .site-nav { padding-left: 14px; padding-right: 14px; }
+  .nav-link { padding: 14px 4px; gap: 6px; min-width: 0; }
   .site-about-link { min-height: 36px; display: inline-flex; align-items: center; }
   .nav-search {}
   .nav-search.is-open .nav-search-btn { display: block; }
   .nav-search.is-open .nav-search-input,
   .nav-search.is-open .nav-search-arrow { display: none; }
+}
+
+/* ---------- UTILITY / REFACTOR CLASSES ---------- */
+.is-hidden { display: none !important; }
+
+/* Scrollable <pre> blocks (formerly inline max-height/overflow) */
+.anr-pre-scroll    { max-height: 500px; overflow: auto; }
+.anr-pre-scroll-sm { max-height: 300px; overflow: auto; }
+
+/* SVG inspector */
+.anr-svg-preview {
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 12px;
+  overflow: auto;
+  max-height: 500px;
+  background: repeating-conic-gradient(var(--surface) 0% 25%, var(--bg) 0% 50%) 50% / 16px 16px;
+}
+.anr-svg-error { color: var(--accent); }
+.anr-svg-palette { display: flex; flex-wrap: wrap; gap: 6px; }
+.anr-svg-swatch-item { text-align: center; }
+.anr-svg-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  border: 1px solid var(--hairline);
+  cursor: pointer;
+}
+.anr-svg-swatch-label {
+  font-size: 10px;
+  max-width: 50px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+/* CSV / TSV data table */
+.anr-table-wrap {
+  overflow: auto;
+  max-height: 500px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+}
+.anr-table-data {
+  width: auto;
+  min-width: 100%;
+  white-space: nowrap;
+}
+.anr-table-sticky {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 1;
+}
+
+/* JSON / XML syntax highlighting */
+.anr-syn-key     { font-weight: bold; }
+.anr-syn-str     { color: #5a9e5a; }
+.anr-syn-num     { color: #5b9fd6; }
+.anr-syn-kw      { color: #e89a2e; font-weight: bold; }
+.anr-syn-comment { color: #888; }
+.anr-syn-tag     { color: #5b9fd6; font-weight: bold; }
+.anr-syn-attr    { color: #e89a2e; }
+.anr-syn-error   { color: #e55; margin: 4px 0; }
+.anr-fmt-summary { cursor: pointer; font-weight: bold; margin: 8px 0; }
+.anr-hash-out    { word-break: break-all; font-size: 12px; margin: 4px 0 0; }
+
+/* Waveform selection overlay */
+.anr-wave-wrap { position: relative; display: inline-block; width: 100%; }
+.anr-wave-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  background: transparent;
+}
+.anr-sel-controls { gap: 8px; margin-top: 6px; }
+.anr-sel-label { font-size: 0.85em; opacity: 0.8; }
+.anr-btn-sm { font-size: 0.82em; padding: 3px 10px; }
+
+/* Hidden video probe for frame capture. Kept renderable (NOT display:none) and
+   in the DOM so iOS Safari allocates a decode surface and actually paints. */
+.anr-video-probe {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0.01;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* ---------- MOBILE LAYOUT TUNING ---------- */
+@media (max-width: 700px) {
+  /* Result content lines up with the dropzones (14px from the screen edge)
+     instead of being pushed in by the section-content box. The cards are
+     transparent, so the section-content frame is what we pull in. */
+  .section .grid { padding-left: 14px; padding-right: 14px; }
+  /* The frame sits 14px from the screen edge (via the grid padding); a small
+     inner gutter keeps text from touching its border. */
+  .section-content {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .anr-unknown-results:not([hidden]) { padding-left: 14px; padding-right: 14px; }
+
+  /* Spectrogram settings: pack into a tidy 2-up grid so they take far less
+     vertical space. Each control's select/toggle/button fills its cell. */
+  .anr-spec-card .anr-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 12px;
+    align-items: center;
+  }
+  .anr-spec-card .anr-control { min-width: 0; }
+  .anr-spec-card .anr-control > label { white-space: nowrap; flex: 0 0 auto; }
+  /* select flexes into the space left after the label — no fixed width,
+     so the label and select never overlap in a narrow cell. */
+  .anr-spec-card .anr-control select { flex: 1 1 auto; min-width: 0; }
+  .anr-spec-card .anr-control .anr-toggle { display: flex; flex: 1 1 auto; }
+  .anr-spec-card .anr-control .anr-toggle button { flex: 1 1 auto; }
+  .anr-spec-card .anr-control .anr-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 auto;
+    width: 100%;
+  }
+  /* Play/pause spans the full width on mobile so it reads as part of the
+     control block instead of a lone floating button. */
+  .anr-spec-card .anr-spec-play { width: 100%; }
+}
+
+/* ---------- GRABBABLE PLAYHEAD + SPECTROGRAM TRANSPORT ---------- */
+/* A wider invisible hit-area around the 1px line so it's easy to grab and drag;
+   the visible line stays 1px via the ::before. */
+.anr-playhead.is-grabbable {
+  width: 13px;
+  margin-left: -6px;
+  background: transparent;
+  pointer-events: auto;
+  cursor: col-resize;
+}
+.anr-playhead.is-grabbable::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #fff;
+}
+
+.anr-spec-transport {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+.anr-spec-play { min-width: 120px; }
+
+/* ---------- HISTOGRAM AXIS MARKINGS ---------- */
+.anr-hist-axis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+}
+.anr-hist-caption {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: center;
+  margin: 6px 0 0;
 }

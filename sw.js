@@ -1,7 +1,7 @@
 /* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v10';
+const VERSION = 'analyser-v12';
 const SHELL = [
   './',
   './index.html',
@@ -9,12 +9,19 @@ const SHELL = [
   './assets/analyser.css',
   './assets/fonts.css',
   './assets/analyser/app.js',
+  './assets/analyser/util.js',
+  './assets/analyser/search.js',
   './assets/analyser/photo.js',
   './assets/analyser/audio.js',
+  './assets/analyser/audio-analysis.js',
+  './assets/analyser/audio-codec.js',
   './assets/analyser/video.js',
   './assets/analyser/spectrogram.js',
   './assets/analyser/pdf.js',
   './assets/analyser/archive.js',
+  './assets/analyser/svg.js',
+  './assets/analyser/csv.js',
+  './assets/analyser/unknown.js',
   './assets/favicon.svg',
   './assets/icon.png',
   'https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js'

@@ -3,154 +3,20 @@
    Renders waveform, file info, and an interactive spectrogram. */
 
 import {
-  computeSpectrogram, renderSpectrogram, colormaps, windows,
+  computeSpectrogram, renderSpectrogram, colormaps,
   frequencyTicks, timeTicks, formatHz, formatTime
 } from './spectrogram.js';
+import { el, row, fmtBytes, h3help } from './util.js';
+import {
+  computeStats, computeCentroid, computeLufs,
+  detectPitch, detectBPM, computeStereoStats
+} from './audio-analysis.js';
+import { peekContainer, adtsToM4a } from './audio-codec.js';
 
 let audioCtx = null;
 function ctx() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   return audioCtx;
-}
-
-function fmtBytes(n) {
-  if (n == null) return '-';
-  if (n < 1024) return n + ' B';
-  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-  return (n / (1024 * 1024)).toFixed(2) + ' MB';
-}
-
-function el(tag, attrs = {}, children = []) {
-  const e = document.createElement(tag);
-  for (const k in attrs) {
-    if (k === 'class') e.className = attrs[k];
-    else if (k === 'html') e.innerHTML = attrs[k];
-    else if (k.startsWith('on')) e.addEventListener(k.slice(2), attrs[k]);
-    else e.setAttribute(k, attrs[k]);
-  }
-  for (const c of (Array.isArray(children) ? children : [children])) {
-    if (c == null) continue;
-    e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
-  }
-  return e;
-}
-
-function row(label, value) {
-  return el('tr', {}, [
-    el('th', {}, label),
-    el('td', {}, value == null || value === '' ? '-' : String(value))
-  ]);
-}
-
-function h3help(title, helpHtml) {
-  const h = el('h3', {});
-  h.appendChild(document.createTextNode(title));
-  const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
-  const panel = el('div', { class: 'anr-info-panel', style: 'display:none;', html: helpHtml });
-  btn.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
-  h.appendChild(btn);
-  return [h, panel];
-}
-
-// --- File header peek (sample rate, bit depth, codec hints) ---
-async function peekContainer(file) {
-  const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
-  const ascii = (s, l) => String.fromCharCode(...head.slice(s, s + l));
-
-  // WAV
-  if (ascii(0, 4) === 'RIFF' && ascii(8, 4) === 'WAVE') {
-    // fmt chunk usually at offset 12
-    const dv = new DataView(head.buffer);
-    const fmtId = ascii(12, 4);
-    if (fmtId === 'fmt ') {
-      const audioFormat = dv.getUint16(20, true);
-      const channels    = dv.getUint16(22, true);
-      const sampleRate  = dv.getUint32(24, true);
-      const byteRate    = dv.getUint32(28, true);
-      const bitDepth    = dv.getUint16(34, true);
-      const formatName  = { 1: 'PCM', 3: 'IEEE Float', 6: 'A-law', 7: 'µ-law', 0xFFFE: 'WAVE_FORMAT_EXTENSIBLE' }[audioFormat] || ('0x' + audioFormat.toString(16));
-      return { container: 'WAV', codec: formatName, channels, sampleRate, bitDepth, bitrate: byteRate * 8 };
-    }
-    return { container: 'WAV' };
-  }
-  // FLAC
-  if (ascii(0, 4) === 'fLaC') return { container: 'FLAC' };
-  // OGG
-  if (ascii(0, 4) === 'OggS') return { container: 'OGG' };
-  // ID3-tagged MP3
-  if (ascii(0, 3) === 'ID3') return { container: 'MP3', codec: 'MPEG Layer 3' };
-  // AAC ADTS — 12-bit sync 0xFFF, layer=0
-  if (head[0] === 0xFF && (head[1] & 0xF0) === 0xF0 && (head[1] & 0x06) === 0x00)
-    return { container: 'AAC', codec: 'AAC (ADTS)' };
-  // Raw MPEG frame (FF Ex/Fx)
-  if (head[0] === 0xFF && (head[1] & 0xE0) === 0xE0) return { container: 'MP3', codec: 'MPEG audio' };
-  // MP4/M4A
-  if (ascii(4, 4) === 'ftyp') return { container: 'MP4/M4A', codec: ascii(8, 4).trim() };
-  // Opus in OGG handled above
-  return { container: 'unknown' };
-}
-
-// --- AAC ADTS → M4A container (browser compat) ---
-function adtsToM4a(arrayBuffer) {
-  const src = new Uint8Array(arrayBuffer);
-  const RATES = [96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350];
-  const frameData = [], frameSizes = [];
-  let profile, freqIdx, chanCfg, i = 0;
-  if (src.length > 10 && src[0] === 0x49 && src[1] === 0x44 && src[2] === 0x33)
-    i = 10 + (((src[6]&0x7F)<<21)|((src[7]&0x7F)<<14)|((src[8]&0x7F)<<7)|(src[9]&0x7F));
-  while (i + 7 <= src.length) {
-    if (src[i] !== 0xFF || (src[i+1] & 0xF6) !== 0xF0) { i++; continue; }
-    profile = ((src[i+2]>>6)&3)+1; freqIdx = (src[i+2]>>2)&0xF;
-    chanCfg = ((src[i+2]&1)<<2)|((src[i+3]>>6)&3);
-    if (freqIdx >= 13) { i++; continue; }
-    const len = ((src[i+3]&3)<<11)|(src[i+4]<<3)|((src[i+5]>>5)&7);
-    if (len < 7 || i + len > src.length) break;
-    const hdr = (src[i+1]&1) ? 7 : 9;
-    frameData.push(src.slice(i+hdr, i+len)); frameSizes.push(len-hdr);
-    i += len;
-  }
-  if (!frameSizes.length) return null;
-  const rate = RATES[freqIdx]||44100, ch = chanCfg||2, N = frameSizes.length;
-  let rawSize = 0; for (const s of frameSizes) rawSize += s;
-  const stszBox = 20+N*4, moov = 540+N*4, total = 568+N*4+rawSize, chunkOff = 568+N*4;
-  const out = new Uint8Array(total), dv = new DataView(out.buffer);
-  let o = 0;
-  const w4 = v => { dv.setUint32(o,v); o+=4; };
-  const w2 = v => { dv.setUint16(o,v); o+=2; };
-  const w1 = v => { out[o++]=v; };
-  const ws = s => { for(let j=0;j<s.length;j++) out[o++]=s.charCodeAt(j); };
-  const sk = n => { o+=n; };
-  const bx = (t,s) => { w4(s); ws(t); };
-  bx('ftyp',20); ws('M4A '); w4(0); ws('isom');
-  bx('moov',moov);
-  bx('mvhd',108); sk(4); sk(8); w4(rate); w4(N*1024);
-  w4(0x00010000); w2(0x0100); sk(10);
-  w4(0x00010000); sk(12); w4(0x00010000); sk(12); w4(0x40000000);
-  sk(24); w4(2);
-  bx('trak',424+N*4);
-  bx('tkhd',92); sk(3); w1(3); sk(8); w4(1); sk(4); w4(N*1024); sk(8); sk(4);
-  w2(0x0100); sk(2);
-  w4(0x00010000); sk(12); w4(0x00010000); sk(12); w4(0x40000000); sk(8);
-  bx('mdia',324+N*4);
-  bx('mdhd',32); sk(4); sk(8); w4(rate); w4(N*1024); w2(0x55C4); sk(2);
-  bx('hdlr',33); sk(4); sk(4); ws('soun'); sk(12); w1(0);
-  bx('minf',251+N*4);
-  bx('smhd',16); sk(8);
-  bx('dinf',36); bx('dref',28); sk(4); w4(1); bx('url ',12); sk(3); w1(1);
-  bx('stbl',191+N*4);
-  bx('stsd',91); sk(4); w4(1);
-  bx('mp4a',75); sk(6); w2(1); sk(8); w2(ch); w2(16); sk(4); w4(rate<<16);
-  bx('esds',39); sk(4);
-  w1(0x03); w1(25); w2(1); w1(0);
-  w1(0x04); w1(17); w1(0x40); w1(0x15); sk(3); w4(0); w4(0);
-  w1(0x05); w1(2); w1((profile<<3)|(freqIdx>>1)); w1(((freqIdx&1)<<7)|(chanCfg<<3));
-  w1(0x06); w1(1); w1(0x02);
-  bx('stts',24); sk(4); w4(1); w4(N); w4(1024);
-  bx('stsc',28); sk(4); w4(1); w4(1); w4(N); w4(1);
-  bx('stsz',stszBox); sk(4); w4(0); w4(N); for(const s of frameSizes) w4(s);
-  bx('stco',20); sk(4); w4(1); w4(chunkOff);
-  bx('mdat',8+rawSize); for(const f of frameData){ out.set(f,o); o+=f.length; }
-  return out.buffer;
 }
 
 // --- Decode helpers ---
@@ -173,327 +39,38 @@ function getMono(audioBuffer) {
   return out;
 }
 
-function computeStats(samples) {
-  let peak = 0, sumSq = 0, clipped = 0;
-  for (let i = 0; i < samples.length; i++) {
-    const a = Math.abs(samples[i]);
-    if (a > peak) peak = a;
-    sumSq += samples[i] * samples[i];
-    if (a >= 0.999) clipped++;
+// Make a playhead line grabbable, so you can drag it to scrub. `seekFromClientX`
+// maps a pointer x to a seek (and repositions the line). Works for mouse + touch.
+// Window listeners are attached only for the duration of a drag and removed on
+// release, so they don't accumulate as new files are analysed.
+function attachScrub(lineEl, seekFromClientX) {
+  lineEl.classList.add('is-grabbable');
+
+  function onMouseMove(e) { seekFromClientX(e.clientX); }
+  function onMouseUp() {
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
   }
-  const rms = Math.sqrt(sumSq / samples.length);
-  const peakDb = 20 * Math.log10(peak + 1e-12);
-  const rmsDb  = 20 * Math.log10(rms  + 1e-12);
-  return { peak, rms, peakDb, rmsDb, clipped };
-}
+  lineEl.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    seekFromClientX(e.clientX);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  });
 
-function computeCentroid(samples, sampleRate) {
-  const N = 4096;
-  const frames = Math.floor(samples.length / N);
-  if (frames === 0) return null;
-  let totalCentroid = 0;
-  for (let f = 0; f < frames; f++) {
-    const re = new Float32Array(N), im = new Float32Array(N);
-    for (let i = 0; i < N; i++) re[i] = samples[f * N + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / N));
-    for (let s = 1; s < N; s <<= 1) {
-      for (let k = 0; k < N; k += s << 1) {
-        for (let j = 0; j < s; j++) {
-          const a = -Math.PI * j / s;
-          const wr = Math.cos(a), wi = Math.sin(a);
-          const tr = re[k + j + s] * wr - im[k + j + s] * wi;
-          const ti = re[k + j + s] * wi + im[k + j + s] * wr;
-          re[k + j + s] = re[k + j] - tr; im[k + j + s] = im[k + j] - ti;
-          re[k + j] += tr; im[k + j] += ti;
-        }
-      }
-    }
-    let num = 0, den = 0;
-    for (let i = 0; i < N / 2; i++) {
-      const mag = Math.sqrt(re[i] * re[i] + im[i] * im[i]);
-      const freq = (i * sampleRate) / N;
-      num += freq * mag;
-      den += mag;
-    }
-    if (den > 0) totalCentroid += num / den;
+  function onTouchMove(e) {
+    if (e.touches[0]) { e.preventDefault(); seekFromClientX(e.touches[0].clientX); }
   }
-  return totalCentroid / frames;
-}
-
-// --- LUFS integrated loudness (K-weighted) ---
-function computeLufs(samples, sampleRate) {
-  // Apply K-weighting: Stage 1 - high shelf +4 dB at 1681 Hz
-  // Stage 2 - high-pass at 38 Hz
-  // Both implemented as biquad filters on the sample array
-
-  function applyBiquad(x, b0, b1, b2, a1, a2) {
-    const y = new Float32Array(x.length);
-    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-    for (let i = 0; i < x.length; i++) {
-      const xi = x[i];
-      const yi = b0 * xi + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-      y[i] = yi;
-      x2 = x1; x1 = xi;
-      y2 = y1; y1 = yi;
-    }
-    return y;
+  function onTouchEnd() {
+    window.removeEventListener('touchmove', onTouchMove);
+    window.removeEventListener('touchend', onTouchEnd);
   }
-
-  // Stage 1: High shelf at 1681 Hz, +4 dB gain
-  // Using RBJ cookbook high-shelf formula
-  const shelfF0 = 1681.974450955533;
-  const shelfG  = 3.999843853973347; // dB
-  const shelfQ  = 0.7071752369554196;
-  const A1  = Math.pow(10, shelfG / 40);
-  const w1  = 2 * Math.PI * shelfF0 / sampleRate;
-  const sin1 = Math.sin(w1), cos1 = Math.cos(w1);
-  const alpha1 = sin1 / (2 * shelfQ);
-  const a0_s = (A1 + 1) - (A1 - 1) * cos1 + 2 * Math.sqrt(A1) * alpha1;
-  const hs_b0 = (A1 * ((A1 + 1) + (A1 - 1) * cos1 + 2 * Math.sqrt(A1) * alpha1)) / a0_s;
-  const hs_b1 = (-2 * A1 * ((A1 - 1) + (A1 + 1) * cos1)) / a0_s;
-  const hs_b2 = (A1 * ((A1 + 1) + (A1 - 1) * cos1 - 2 * Math.sqrt(A1) * alpha1)) / a0_s;
-  const hs_a1 = (2 * ((A1 - 1) - (A1 + 1) * cos1)) / a0_s;
-  const hs_a2 = ((A1 + 1) - (A1 - 1) * cos1 - 2 * Math.sqrt(A1) * alpha1) / a0_s;
-
-  // Stage 2: High-pass at 38 Hz (Butterworth, Q = 0.5)
-  const hpF0 = 38.13547087602444;
-  const hpQ  = 0.5003270373238773;
-  const w2  = 2 * Math.PI * hpF0 / sampleRate;
-  const sin2 = Math.sin(w2), cos2 = Math.cos(w2);
-  const alpha2 = sin2 / (2 * hpQ);
-  const a0_h = 1 + alpha2;
-  const hp_b0 = ((1 + cos2) / 2) / a0_h;
-  const hp_b1 = (-(1 + cos2)) / a0_h;
-  const hp_b2 = ((1 + cos2) / 2) / a0_h;
-  const hp_a1 = (-2 * cos2) / a0_h;
-  const hp_a2 = (1 - alpha2) / a0_h;
-
-  // Apply filters
-  const stage1 = applyBiquad(samples, hs_b0, hs_b1, hs_b2, hs_a1, hs_a2);
-  const filtered = applyBiquad(stage1, hp_b0, hp_b1, hp_b2, hp_a1, hp_a2);
-
-  // Mean square of filtered signal
-  let sumSq = 0;
-  for (let i = 0; i < filtered.length; i++) {
-    sumSq += filtered[i] * filtered[i];
-  }
-  const meanSquare = sumSq / filtered.length;
-
-  // Convert to LUFS
-  const lufs = -0.691 + 10 * Math.log10(meanSquare + 1e-30);
-  return lufs;
-}
-
-// --- Pitch detection (YIN autocorrelation) ---
-function detectPitch(samples, sampleRate) {
-  const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  const W = 4096;
-  const threshold = 0.15;
-
-  // Take a window from the middle of the audio
-  const mid = Math.floor(samples.length / 2);
-  const start = Math.max(0, mid - Math.floor(W / 2));
-  const end = Math.min(samples.length, start + W);
-  const len = end - start;
-  if (len < W / 2) return null;
-
-  const buf = samples.subarray(start, end);
-  const halfLen = Math.floor(len / 2);
-
-  // Step 1: Difference function
-  const d = new Float32Array(halfLen);
-  for (let tau = 0; tau < halfLen; tau++) {
-    let sum = 0;
-    for (let j = 0; j < halfLen; j++) {
-      const diff = buf[j] - buf[j + tau];
-      sum += diff * diff;
-    }
-    d[tau] = sum;
-  }
-
-  // Step 2: Cumulative mean normalized difference function
-  const dPrime = new Float32Array(halfLen);
-  dPrime[0] = 1;
-  let runningSum = 0;
-  for (let tau = 1; tau < halfLen; tau++) {
-    runningSum += d[tau];
-    dPrime[tau] = d[tau] * tau / runningSum;
-  }
-
-  // Step 3: Find the first minimum below threshold
-  // Start from tau corresponding to ~20 Hz max period down to high freq
-  const minTau = Math.max(2, Math.floor(sampleRate / 2000)); // up to 2000 Hz
-  const maxTau = Math.min(halfLen - 1, Math.floor(sampleRate / 20)); // down to 20 Hz
-  let bestTau = -1;
-
-  for (let tau = minTau; tau < maxTau; tau++) {
-    if (dPrime[tau] < threshold) {
-      // Find the local minimum in this dip
-      while (tau + 1 < maxTau && dPrime[tau + 1] < dPrime[tau]) {
-        tau++;
-      }
-      bestTau = tau;
-      break;
-    }
-  }
-
-  if (bestTau < 0) return null;
-
-  // Step 4: Parabolic interpolation for sub-sample accuracy
-  let betterTau = bestTau;
-  if (bestTau > 0 && bestTau < halfLen - 1) {
-    const s0 = dPrime[bestTau - 1];
-    const s1 = dPrime[bestTau];
-    const s2 = dPrime[bestTau + 1];
-    const shift = (s0 - s2) / (2 * (s0 - 2 * s1 + s2));
-    if (Math.abs(shift) < 1) {
-      betterTau = bestTau + shift;
-    }
-  }
-
-  const frequency = sampleRate / betterTau;
-
-  // Sanity check
-  if (frequency < 20 || frequency > 5000 || !isFinite(frequency)) return null;
-
-  // Convert to note name and cents
-  const semitone = 12 * Math.log2(frequency / 440) + 69;
-  const roundedSemitone = Math.round(semitone);
-  const cents = Math.round((semitone - roundedSemitone) * 100);
-  const noteIndex = ((roundedSemitone % 12) + 12) % 12;
-  const octave = Math.floor(roundedSemitone / 12) - 1;
-  const note = NOTE_NAMES[noteIndex] + octave;
-
-  return { frequency, note, cents };
-}
-
-// --- BPM / Tempo detection (onset detection + autocorrelation) ---
-function detectBPM(samples, sampleRate) {
-  const N = 1024;                    // FFT window size
-  const hop = N / 2;                 // 50 % overlap
-  const halfN = N / 2;
-  const numFrames = Math.floor((samples.length - N) / hop);
-  if (numFrames < 4) return null;
-
-  // Compute magnitude spectra for each frame
-  const mags = [];
-  for (let f = 0; f < numFrames; f++) {
-    const off = f * hop;
-    const re = new Float32Array(N);
-    const im = new Float32Array(N);
-    // Hann window + copy
-    for (let i = 0; i < N; i++) {
-      re[i] = samples[off + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / N));
-    }
-    // In-place radix-2 FFT (same pattern as computeCentroid)
-    for (let s = 1; s < N; s <<= 1) {
-      for (let k = 0; k < N; k += s << 1) {
-        for (let j = 0; j < s; j++) {
-          const a = -Math.PI * j / s;
-          const wr = Math.cos(a), wi = Math.sin(a);
-          const tr = re[k + j + s] * wr - im[k + j + s] * wi;
-          const ti = re[k + j + s] * wi + im[k + j + s] * wr;
-          re[k + j + s] = re[k + j] - tr;
-          im[k + j + s] = im[k + j] - ti;
-          re[k + j] += tr;
-          im[k + j] += ti;
-        }
-      }
-    }
-    const mag = new Float32Array(halfN);
-    for (let i = 0; i < halfN; i++) {
-      mag[i] = Math.sqrt(re[i] * re[i] + im[i] * im[i]);
-    }
-    mags.push(mag);
-  }
-
-  // Spectral flux: sum of positive magnitude differences between consecutive frames
-  const flux = new Float32Array(numFrames);
-  for (let f = 1; f < numFrames; f++) {
-    let sum = 0;
-    for (let i = 0; i < halfN; i++) {
-      const diff = mags[f][i] - mags[f - 1][i];
-      if (diff > 0) sum += diff;
-    }
-    flux[f] = sum;
-  }
-
-  // Adaptive peak picking: onset if flux > local mean * 1.5
-  const medianW = 8;
-  const onsets = new Float32Array(numFrames);
-  for (let f = medianW; f < numFrames - medianW; f++) {
-    let localMean = 0;
-    for (let j = f - medianW; j <= f + medianW; j++) localMean += flux[j];
-    localMean /= (2 * medianW + 1);
-    onsets[f] = (flux[f] > localMean * 1.5 && flux[f] > 0) ? flux[f] : 0;
-  }
-
-  // Autocorrelation of the onset signal to find dominant period
-  // Search between 60 and 200 BPM
-  const framesPerSec = sampleRate / hop;
-  const minLag = Math.floor(framesPerSec * 60 / 200); // 200 BPM
-  const maxLag = Math.ceil(framesPerSec * 60 / 60);   // 60 BPM
-  if (maxLag >= numFrames) return null;
-
-  let bestLag = minLag;
-  let bestCorr = -Infinity;
-  for (let lag = minLag; lag <= maxLag && lag < numFrames; lag++) {
-    let corr = 0;
-    const len = numFrames - lag;
-    for (let i = 0; i < len; i++) {
-      corr += onsets[i] * onsets[i + lag];
-    }
-    if (corr > bestCorr) {
-      bestCorr = corr;
-      bestLag = lag;
-    }
-  }
-
-  // Parabolic interpolation around the peak for sub-frame accuracy
-  let refinedLag = bestLag;
-  if (bestLag > minLag && bestLag < maxLag) {
-    let corrPrev = 0, corrNext = 0;
-    const len = numFrames - bestLag;
-    for (let i = 0; i < len; i++) {
-      if (i + bestLag - 1 >= 0 && i + bestLag - 1 < numFrames)
-        corrPrev += onsets[i] * onsets[i + bestLag - 1];
-      if (i + bestLag + 1 < numFrames)
-        corrNext += onsets[i] * onsets[i + bestLag + 1];
-    }
-    const denom = corrPrev - 2 * bestCorr + corrNext;
-    if (Math.abs(denom) > 1e-12) {
-      const shift = 0.5 * (corrPrev - corrNext) / denom;
-      if (Math.abs(shift) < 1) refinedLag = bestLag + shift;
-    }
-  }
-
-  const periodSec = refinedLag / framesPerSec;
-  const bpm = 60 / periodSec;
-
-  // Clamp to reasonable range
-  if (bpm < 60 || bpm > 200 || !isFinite(bpm)) return null;
-  return Math.round(bpm);
-}
-
-// --- Stereo analysis: phase correlation, width, vectorscope ---
-function computeStereoStats(left, right) {
-  let sumLR = 0, sumLL = 0, sumRR = 0;
-  let sumMid = 0, sumSide = 0;
-  const n = Math.min(left.length, right.length);
-  for (let i = 0; i < n; i++) {
-    sumLR += left[i] * right[i];
-    sumLL += left[i] * left[i];
-    sumRR += right[i] * right[i];
-    const mid  = (left[i] + right[i]) * 0.5;
-    const side = (left[i] - right[i]) * 0.5;
-    sumMid  += mid * mid;
-    sumSide += side * side;
-  }
-  const denom = Math.sqrt(sumLL * sumRR);
-  const correlation = denom > 1e-12 ? sumLR / denom : 0;
-  const width = 1 - Math.abs(correlation);
-  const midLevel  = Math.sqrt(sumMid / n);
-  const sideLevel = Math.sqrt(sumSide / n);
-  return { correlation, width, midLevel, sideLevel };
+  lineEl.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    if (e.touches[0]) seekFromClientX(e.touches[0].clientX);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd);
+  }, { passive: false });
 }
 
 function renderVectorscope(canvas, left, right) {
@@ -686,12 +263,30 @@ export function makePlayer(mediaEl) {
       seeking = false;
     }
   });
-  trackEl.addEventListener('mousedown', (e) => { dragging = true; scrub(e.clientX); e.preventDefault(); });
-  window.addEventListener('mousemove', (e) => { if (dragging) { scrub(e.clientX); tick(); } });
-  window.addEventListener('mouseup', () => { dragging = false; });
-  trackEl.addEventListener('touchstart', (e) => { dragging = true; scrub(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
-  window.addEventListener('touchmove', (e) => { if (dragging && e.touches[0]) scrub(e.touches[0].clientX); });
-  window.addEventListener('touchend', () => { dragging = false; });
+  // Window listeners are added on press and removed on release so they don't
+  // pile up across files.
+  function onMouseMove(e) { if (dragging) { scrub(e.clientX); tick(); } }
+  function onMouseUp() {
+    dragging = false;
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+  }
+  trackEl.addEventListener('mousedown', (e) => {
+    dragging = true; scrub(e.clientX); e.preventDefault();
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  });
+  function onTouchMove(e) { if (dragging && e.touches[0]) scrub(e.touches[0].clientX); }
+  function onTouchEnd() {
+    dragging = false;
+    window.removeEventListener('touchmove', onTouchMove);
+    window.removeEventListener('touchend', onTouchEnd);
+  }
+  trackEl.addEventListener('touchstart', (e) => {
+    dragging = true; scrub(e.touches[0].clientX); e.preventDefault();
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd);
+  }, { passive: false });
 
   function tick() {
     const d = mediaEl.duration || 0;
@@ -784,12 +379,31 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       const frac = (e.clientX - rect.left) / rect.width;
       opts.audioEl.currentTime = frac * audioDur();
     });
+    // Grab the playhead line and drag to scrub.
+    attachScrub(specLine, (clientX) => {
+      const rect = canvas.getBoundingClientRect();
+      const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      opts.audioEl.currentTime = frac * audioDur();
+      specLine.style.left = (frac * 100) + '%';
+    });
   }
 
   scrollEl.appendChild(canvasWrap); scrollEl.appendChild(axisX);
 
   wrap.appendChild(yWrap); wrap.appendChild(scrollEl);
   card.appendChild(wrap);
+
+  // Transport: play/pause the source right under the spectrogram.
+  if (opts.audioEl) {
+    const playBtn = el('button', { type: 'button', class: 'anr-btn anr-spec-play' }, '▶ Play');
+    const syncPlay = () => { playBtn.textContent = opts.audioEl.paused ? '▶ Play' : '❚❚ Pause'; };
+    playBtn.addEventListener('click', () => { if (opts.audioEl.paused) opts.audioEl.play(); else opts.audioEl.pause(); });
+    opts.audioEl.addEventListener('play', syncPlay);
+    opts.audioEl.addEventListener('pause', syncPlay);
+    opts.audioEl.addEventListener('ended', syncPlay);
+    syncPlay();
+    card.appendChild(el('div', { class: 'anr-spec-transport' }, [playBtn]));
+  }
 
   const status = el('p', { class: 'anr-hint anr-spec-hint', style: 'margin: 6px 0 0; text-align: right;' }, 'computing...');
   card.appendChild(status);
@@ -874,8 +488,12 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     fsBtn.textContent = isFs() ? 'Exit fullscreen' : 'Fullscreen';
     requestAnimationFrame(recompute);
   }
-  document.addEventListener('fullscreenchange', onFsChange);
-  document.addEventListener('webkitfullscreenchange', onFsChange);
+  // opts.signal (an AbortSignal) lets the caller tear these document/window
+  // listeners down when a new file is analysed, instead of leaking the cached
+  // spectrogram data they close over.
+  const sig = opts.signal;
+  document.addEventListener('fullscreenchange', onFsChange, { signal: sig });
+  document.addEventListener('webkitfullscreenchange', onFsChange, { signal: sig });
 
   let resizeRaf;
   window.addEventListener('resize', () => {
@@ -884,7 +502,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       const newW = Math.max(200, Math.round(availableWidth() * state.zoom));
       if (Math.abs(newW - canvas.width) > 2 || isFs()) recompute();
     });
-  });
+  }, { signal: sig });
 
   // Defer until in DOM so clientWidth is real
   setTimeout(recompute, 0);
@@ -893,93 +511,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   return card;
 }
 
-// --- Render uploaded / recorded audio results ---
-export async function renderAudio(file, resultsEl, opts = {}) {
-  resultsEl.hidden = false;
-  resultsEl.innerHTML = '';
-  resultsEl.appendChild(el('div', { class: 'anr-info' }, `Decoding "${file.name}"...`));
-
-
-  let header = {};
-  try { header = await peekContainer(file); } catch (e) { /* ignore */ }
-
-  let playbackFile = file;
-  let audioBuffer;
-
-  if (header.container === 'AAC') {
-    try {
-      const wrapped = adtsToM4a(await file.arrayBuffer());
-      if (wrapped) {
-        playbackFile = new File([wrapped], file.name.replace(/\.[^.]+$/, '.m4a'), { type: 'audio/mp4' });
-        audioBuffer = await ctx().decodeAudioData(wrapped.slice(0));
-      }
-    } catch (_) {}
-  }
-
-  if (!audioBuffer) {
-    try {
-      audioBuffer = await decodeFile(file);
-    } catch (e) {
-      resultsEl.innerHTML = '';
-      resultsEl.appendChild(el('div', { class: 'anr-error' }, 'Could not decode this file. Format may not be supported by your browser.'));
-      return;
-    }
-  }
-
-  resultsEl.innerHTML = '';
-
-  const mono = getMono(audioBuffer);
-  const stats = computeStats(mono);
-
-  // ---- File info card ----
-  const infoCard = el('div', { class: 'anr-card' });
-  infoCard.appendChild(el('h3', {}, 'File info'));
-  const audioUrl = URL.createObjectURL(playbackFile);
-  const audioEl = el('audio', { src: audioUrl });
-  audioEl.style.display = 'none';
-  infoCard.appendChild(audioEl);
-  infoCard.appendChild(makePlayer(audioEl));
-
-  const tbl = el('table', { class: 'anr-readout' });
-  tbl.appendChild(row('Name',           file.name));
-  tbl.appendChild(row('Size',           fmtBytes(file.size)));
-  tbl.appendChild(row('MIME',           file.type || header.container || '-'));
-  if (header.container) tbl.appendChild(row('Container',     header.container));
-  if (header.codec)     tbl.appendChild(row('Codec',         header.codec));
-  tbl.appendChild(row('Duration',       formatTime(audioBuffer.duration)));
-  tbl.appendChild(row('Sample rate',    audioBuffer.sampleRate.toLocaleString() + ' Hz'));
-  tbl.appendChild(row('Channels',       audioBuffer.numberOfChannels));
-  if (header.bitDepth)  tbl.appendChild(row('Bit depth',     header.bitDepth + ' bit'));
-  if (header.bitrate)   tbl.appendChild(row('Bitrate',       (header.bitrate / 1000).toFixed(0) + ' kbps'));
-  tbl.appendChild(row('Peak',           stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)'));
-  tbl.appendChild(row('RMS',            stats.rms.toFixed(3)  + '  (' + stats.rmsDb.toFixed(1)  + ' dBFS)'));
-  const lufsValue = computeLufs(mono, audioBuffer.sampleRate);
-  tbl.appendChild(row('Loudness',       (isFinite(lufsValue) ? lufsValue.toFixed(1) + ' LUFS' : '-')));
-  if (stats.clipped > 0) {
-    const pct = ((stats.clipped / mono.length) * 100).toFixed(3);
-    tbl.appendChild(row('Clipping', stats.clipped.toLocaleString() + ' samples  (' + pct + '%)'));
-  } else {
-    tbl.appendChild(row('Clipping', 'None'));
-  }
-  const centroid = computeCentroid(mono, audioBuffer.sampleRate);
-  if (centroid != null) {
-    const label = centroid < 1500 ? 'warm' : centroid < 4000 ? 'neutral' : 'bright';
-    tbl.appendChild(row('Spectral centroid', Math.round(centroid).toLocaleString() + ' Hz  (' + label + ')'));
-  }
-  const pitchResult = detectPitch(mono, audioBuffer.sampleRate);
-  if (pitchResult) {
-    const centsStr = pitchResult.cents >= 0 ? '+' + pitchResult.cents : String(pitchResult.cents);
-    tbl.appendChild(row('Pitch', pitchResult.note + '  (' + pitchResult.frequency.toFixed(1) + ' Hz, ' + centsStr + ' cents)'));
-  } else {
-    tbl.appendChild(row('Pitch', 'N/A'));
-  }
-  const bpm = detectBPM(mono, audioBuffer.sampleRate);
-  tbl.appendChild(row('BPM', bpm != null ? bpm + ' BPM' : 'N/A'));
-  tbl.appendChild(row('Total samples',  mono.length.toLocaleString()));
-  infoCard.appendChild(tbl);
-  resultsEl.appendChild(infoCard);
-
-  // ---- Waveform card ----
+function buildWaveformCard(file, mono, audioBuffer, audioEl) {
   const waveCard = el('div', { class: 'anr-card' });
   const [waveH, waveHelp] = h3help('Waveform', 'Amplitude over time. Click and drag to select a region, then zoom in or export the selection as a WAV file. The white playhead line shows the current playback position.');
   waveCard.appendChild(waveH); waveCard.appendChild(waveHelp);
@@ -994,11 +526,11 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   let zoomStart = 0, zoomEnd = mono.length;
 
   // Overlay canvas for selection highlight
-  const overlayCanvas = el('canvas', { class: 'anr-waveform', style: 'position:absolute; top:0; left:0; pointer-events:none; background:transparent;' });
+  const overlayCanvas = el('canvas', { class: 'anr-waveform anr-wave-overlay' });
   overlayCanvas.width = waveCanvas.width;
   overlayCanvas.height = waveCanvas.height;
 
-  const waveWrap = el('div', { style: 'position:relative; display:inline-block; width:100%;' });
+  const waveWrap = el('div', { class: 'anr-wave-wrap' });
   waveCard.replaceChild(waveWrap, waveCanvas);
   waveWrap.appendChild(waveCanvas);
   waveWrap.appendChild(overlayCanvas);
@@ -1023,12 +555,21 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   audioEl.addEventListener('pause', tickWaveLine);
   audioEl.addEventListener('seeked', tickWaveLine);
 
+  // Grab the playhead line and drag to scrub (respects the current zoom window).
+  attachScrub(waveLine, (clientX) => {
+    const rect = waveCanvas.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const sample = zoomStart + frac * (zoomEnd - zoomStart);
+    audioEl.currentTime = (sample / mono.length) * audioBuffer.duration;
+    tickWaveLine();
+  });
+
   // Selection info + buttons container (shown when selection exists)
-  const selInfo = el('div', { class: 'anr-controls', style: 'display:none; flex-wrap:wrap; gap:8px; margin-top:6px; align-items:center;' });
-  const selLabel = el('span', { style: 'font-size:0.85em; opacity:0.8;' }, '');
-  const zoomBtn = el('button', { type: 'button', class: 'anr-btn', style: 'font-size:0.82em; padding:3px 10px;' }, 'Zoom');
-  const resetZoomBtn = el('button', { type: 'button', class: 'anr-btn', style: 'font-size:0.82em; padding:3px 10px; display:none;' }, 'Reset zoom');
-  const exportBtn = el('button', { type: 'button', class: 'anr-btn', style: 'font-size:0.82em; padding:3px 10px;' }, 'Export WAV');
+  const selInfo = el('div', { class: 'anr-controls anr-sel-controls is-hidden' });
+  const selLabel = el('span', { class: 'anr-sel-label' }, '');
+  const zoomBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Zoom');
+  const resetZoomBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm is-hidden' }, 'Reset zoom');
+  const exportBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Export WAV');
   selInfo.appendChild(selLabel);
   selInfo.appendChild(zoomBtn);
   selInfo.appendChild(resetZoomBtn);
@@ -1051,10 +592,10 @@ export async function renderAudio(file, resultsEl, opts = {}) {
 
   function updateSelInfo() {
     if (selStart == null || selEnd == null || selStart === selEnd) {
-      selInfo.style.display = 'none';
+      selInfo.classList.add('is-hidden');
       return;
     }
-    selInfo.style.display = 'flex';
+    selInfo.classList.remove('is-hidden');
     const s = Math.min(selStart, selEnd);
     const e = Math.max(selStart, selEnd);
     const selSamples = mono.subarray(s, e);
@@ -1073,6 +614,20 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     return Math.round(zoomStart + frac * visLen);
   }
 
+  // Finish a selection on release; the window listener is added on mousedown
+  // and removed here so it doesn't persist across files.
+  function onSelectMouseUp() {
+    window.removeEventListener('mouseup', onSelectMouseUp);
+    if (!isSelecting) return;
+    isSelecting = false;
+    if (selStart != null && selEnd != null && selStart !== selEnd) {
+      // Normalize order
+      if (selStart > selEnd) { const tmp = selStart; selStart = selEnd; selEnd = tmp; }
+      updateSelInfo();
+    }
+    drawOverlay();
+  }
+
   waveCanvas.style.cursor = 'crosshair';
   waveCanvas.addEventListener('mousedown', (e) => {
     isSelecting = true;
@@ -1081,22 +636,12 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     drawOverlay();
     updateSelInfo();
     e.preventDefault();
+    window.addEventListener('mouseup', onSelectMouseUp);
   });
 
   waveCanvas.addEventListener('mousemove', (e) => {
     if (!isSelecting) return;
     selEnd = xToSample(e.clientX);
-    drawOverlay();
-  });
-
-  window.addEventListener('mouseup', () => {
-    if (!isSelecting) return;
-    isSelecting = false;
-    if (selStart != null && selEnd != null && selStart !== selEnd) {
-      // Normalize order
-      if (selStart > selEnd) { const tmp = selStart; selStart = selEnd; selEnd = tmp; }
-      updateSelInfo();
-    }
     drawOverlay();
   });
 
@@ -1118,7 +663,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     selEnd = null;
     redrawWaveform();
     updateSelInfo();
-    resetZoomBtn.style.display = '';
+    resetZoomBtn.classList.remove('is-hidden');
   });
 
   resetZoomBtn.addEventListener('click', () => {
@@ -1128,7 +673,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     selEnd = null;
     redrawWaveform();
     updateSelInfo();
-    resetZoomBtn.style.display = 'none';
+    resetZoomBtn.classList.add('is-hidden');
   });
 
   exportBtn.addEventListener('click', () => {
@@ -1184,50 +729,162 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
   });
+  return waveCard;
+}
 
-  resultsEl.appendChild(waveCard);
-
-  // ---- Amplitude histogram ----
+// --- Amplitude histogram card (shared by the audio + video modules) ---
+export function buildHistogramCard(samples) {
   const histCard = el('div', { class: 'anr-card' });
-  const [ahH, ahHelp] = h3help('Histogram', 'Amplitude distribution. Shows how often each sample value occurs across the entire audio. The red centre line marks silence (zero). A tall spike at centre means lots of silence; spread across the range means loud, dynamic audio.');
+  const [ahH, ahHelp] = h3help('Histogram',
+    'Amplitude distribution — how often each sample value occurs across the whole clip. ' +
+    'The horizontal axis is amplitude from −1 to +1 (0 = silence, marked by the red line; ' +
+    '±1 = full scale). The vertical axis is the relative number of samples at each amplitude. ' +
+    'A tall spike at the centre means lots of quiet; energy spread toward the edges means a loud, dynamic signal.');
   histCard.appendChild(ahH); histCard.appendChild(ahHelp);
   const histCanvas = el('canvas', { class: 'anr-histogram' });
   histCanvas.width = 1024; histCanvas.height = 200;
   histCard.appendChild(histCanvas);
-  {
-    const bins = 256;
-    const counts = new Uint32Array(bins);
-    for (let i = 0; i < mono.length; i++) {
-      const idx = Math.min(bins - 1, Math.max(0, Math.floor((mono[i] + 1) * 0.5 * bins)));
-      counts[idx]++;
-    }
-    let maxCount = 0;
-    for (let i = 0; i < bins; i++) if (counts[i] > maxCount) maxCount = counts[i];
-    const hctx = histCanvas.getContext('2d');
-    const cw = histCanvas.width, ch = histCanvas.height;
-    hctx.fillStyle = '#0a0a0a';
-    hctx.fillRect(0, 0, cw, ch);
-    const barW = cw / bins;
-    for (let i = 0; i < bins; i++) {
-      const h = maxCount > 0 ? (counts[i] / maxCount) * ch : 0;
-      const t = i / bins;
-      const g = Math.round(180 + t * 75);
-      hctx.fillStyle = `rgb(${g},${g},${g})`;
-      hctx.fillRect(i * barW, ch - h, barW, h);
-    }
-    hctx.strokeStyle = '#e60023';
-    hctx.lineWidth = 1;
-    const center = Math.floor(bins / 2) * barW;
-    hctx.beginPath();
-    hctx.moveTo(center, 0);
-    hctx.lineTo(center, ch);
-    hctx.stroke();
+
+  const bins = 256;
+  const counts = new Uint32Array(bins);
+  for (let i = 0; i < samples.length; i++) {
+    const idx = Math.min(bins - 1, Math.max(0, Math.floor((samples[i] + 1) * 0.5 * bins)));
+    counts[idx]++;
   }
-  resultsEl.appendChild(histCard);
+  let maxCount = 0;
+  for (let i = 0; i < bins; i++) if (counts[i] > maxCount) maxCount = counts[i];
+  const hctx = histCanvas.getContext('2d');
+  const cw = histCanvas.width, ch = histCanvas.height;
+  hctx.fillStyle = '#0a0a0a';
+  hctx.fillRect(0, 0, cw, ch);
+  const barW = cw / bins;
+  for (let i = 0; i < bins; i++) {
+    const h = maxCount > 0 ? (counts[i] / maxCount) * ch : 0;
+    const t = i / bins;
+    const g = Math.round(180 + t * 75);
+    hctx.fillStyle = `rgb(${g},${g},${g})`;
+    hctx.fillRect(i * barW, ch - h, barW, h);
+  }
+  hctx.strokeStyle = '#e60023';
+  hctx.lineWidth = 1;
+  const center = Math.floor(bins / 2) * barW;
+  hctx.beginPath();
+  hctx.moveTo(center, 0);
+  hctx.lineTo(center, ch);
+  hctx.stroke();
+
+  // Axis markings: amplitude ticks under the canvas + a units caption.
+  histCard.appendChild(el('div', { class: 'anr-hist-axis' }, [
+    el('span', {}, '−1.0'), el('span', {}, '−0.5'), el('span', {}, '0'),
+    el('span', {}, '+0.5'), el('span', {}, '+1.0')
+  ]));
+  histCard.appendChild(el('p', { class: 'anr-hist-caption' },
+    'Amplitude (0 = silence)  ·  height = relative sample count'));
+  return histCard;
+}
+
+// Tears down the previous render's persistent spectrogram listeners when a new
+// audio file is analysed.
+let audioRenderAbort = null;
+
+// --- Render uploaded / recorded audio results ---
+export async function renderAudio(file, resultsEl, opts = {}) {
+  if (audioRenderAbort) audioRenderAbort.abort();
+  audioRenderAbort = new AbortController();
+  const renderSignal = audioRenderAbort.signal;
+
+  resultsEl.hidden = false;
+  resultsEl.innerHTML = '';
+  resultsEl.appendChild(el('div', { class: 'anr-info' }, `Decoding "${file.name}"...`));
+
+
+  let header = {};
+  try { header = await peekContainer(file); } catch (e) { /* ignore */ }
+
+  let playbackFile = file;
+  let audioBuffer;
+
+  if (header.container === 'AAC') {
+    try {
+      const wrapped = adtsToM4a(await file.arrayBuffer());
+      if (wrapped) {
+        playbackFile = new File([wrapped], file.name.replace(/\.[^.]+$/, '.m4a'), { type: 'audio/mp4' });
+        audioBuffer = await ctx().decodeAudioData(wrapped.slice(0));
+      }
+    } catch (_) {}
+  }
+
+  if (!audioBuffer) {
+    try {
+      audioBuffer = await decodeFile(file);
+    } catch (e) {
+      resultsEl.innerHTML = '';
+      resultsEl.appendChild(el('div', { class: 'anr-error' }, 'Could not decode this file. Format may not be supported by your browser.'));
+      return;
+    }
+  }
+
+  resultsEl.innerHTML = '';
+
+  const mono = getMono(audioBuffer);
+  const stats = computeStats(mono);
+
+  // ---- File info card ----
+  const infoCard = el('div', { class: 'anr-card' });
+  infoCard.appendChild(el('h3', {}, 'File info'));
+  const audioUrl = URL.createObjectURL(playbackFile);
+  const audioEl = el('audio', { src: audioUrl, class: 'is-hidden' });
+  infoCard.appendChild(audioEl);
+  infoCard.appendChild(makePlayer(audioEl));
+
+  const tbl = el('table', { class: 'anr-readout' });
+  tbl.appendChild(row('Name',           file.name));
+  tbl.appendChild(row('Size',           fmtBytes(file.size)));
+  tbl.appendChild(row('MIME',           file.type || header.container || '-'));
+  if (header.container) tbl.appendChild(row('Container',     header.container));
+  if (header.codec)     tbl.appendChild(row('Codec',         header.codec));
+  tbl.appendChild(row('Duration',       formatTime(audioBuffer.duration)));
+  tbl.appendChild(row('Sample rate',    audioBuffer.sampleRate.toLocaleString() + ' Hz'));
+  tbl.appendChild(row('Channels',       audioBuffer.numberOfChannels));
+  if (header.bitDepth)  tbl.appendChild(row('Bit depth',     header.bitDepth + ' bit'));
+  if (header.bitrate)   tbl.appendChild(row('Bitrate',       (header.bitrate / 1000).toFixed(0) + ' kbps'));
+  tbl.appendChild(row('Peak',           stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)'));
+  tbl.appendChild(row('RMS',            stats.rms.toFixed(3)  + '  (' + stats.rmsDb.toFixed(1)  + ' dBFS)'));
+  const lufsValue = computeLufs(mono, audioBuffer.sampleRate);
+  tbl.appendChild(row('Loudness',       (isFinite(lufsValue) ? lufsValue.toFixed(1) + ' LUFS' : '-')));
+  if (stats.clipped > 0) {
+    const pct = ((stats.clipped / mono.length) * 100).toFixed(3);
+    tbl.appendChild(row('Clipping', stats.clipped.toLocaleString() + ' samples  (' + pct + '%)'));
+  } else {
+    tbl.appendChild(row('Clipping', 'None'));
+  }
+  const centroid = computeCentroid(mono, audioBuffer.sampleRate);
+  if (centroid != null) {
+    const label = centroid < 1500 ? 'warm' : centroid < 4000 ? 'neutral' : 'bright';
+    tbl.appendChild(row('Spectral centroid', Math.round(centroid).toLocaleString() + ' Hz  (' + label + ')'));
+  }
+  const pitchResult = detectPitch(mono, audioBuffer.sampleRate);
+  if (pitchResult) {
+    const centsStr = pitchResult.cents >= 0 ? '+' + pitchResult.cents : String(pitchResult.cents);
+    tbl.appendChild(row('Pitch', pitchResult.note + '  (' + pitchResult.frequency.toFixed(1) + ' Hz, ' + centsStr + ' cents)'));
+  } else {
+    tbl.appendChild(row('Pitch', 'N/A'));
+  }
+  const bpm = detectBPM(mono, audioBuffer.sampleRate);
+  tbl.appendChild(row('BPM', bpm != null ? bpm + ' BPM' : 'N/A'));
+  tbl.appendChild(row('Total samples',  mono.length.toLocaleString()));
+  infoCard.appendChild(tbl);
+  resultsEl.appendChild(infoCard);
+
+  // ---- Waveform card ----
+  resultsEl.appendChild(buildWaveformCard(file, mono, audioBuffer, audioEl));
+
+  // ---- Amplitude histogram ----
+  resultsEl.appendChild(buildHistogramCard(mono));
 
   // ---- Spectrogram ----
   const basename = (file.name || 'spectrogram').replace(/\.[^/.]+$/, '');
-  resultsEl.appendChild(makeSpectrogramPanel(mono, audioBuffer.sampleRate, { basename, audioEl }));
+  resultsEl.appendChild(makeSpectrogramPanel(mono, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal }));
 
   // ---- Stereo Width / Vectorscope card (stereo files only) ----
   if (audioBuffer.numberOfChannels >= 2) {
