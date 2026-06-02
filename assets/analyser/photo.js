@@ -8,6 +8,7 @@
    - SHA-256 file hash */
 
 import { el, row, rowHelp, fmtBytes, h3help, fileExt, sha256Hex } from './util.js';
+import { HEIC_EXTS, RAW_EXTS } from './formats.js';
 
 const JSQR_URL      = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
 const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js';
@@ -429,9 +430,6 @@ function loadScript(src) {
     document.head.appendChild(s);
   });
 }
-
-const HEIC_EXTS = new Set(['heic', 'heif', 'heics', 'heifs']);
-const RAW_EXTS = new Set(['arw', 'cr2', 'cr3', 'nef', 'dng', 'raf', 'rw2', 'orf', 'pef', 'sr2', 'srw', 'x3f', 'raw']);
 
 async function convertHeic(file) {
   await loadScript(HEIC2ANY_URL);

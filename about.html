@@ -116,40 +116,8 @@
 
         <details class="about-formats">
           <summary>All supported file types</summary>
-
-          <p class="anr-readout-section">Full analysis</p>
-          <table class="anr-readout about-readout">
-            <tr><th>Photo</th><td><span class="about-exts">JPG JPEG PNG GIF WebP HEIC HEIF BMP TIFF AVIF JXL ICO RAW ARW CR2 CR3 NEF DNG RAF RW2 ORF PEF SR2 SRW X3F</span></td></tr>
-            <tr><th>Sound</th><td><span class="about-exts">MP3 WAV M4A AAC FLAC OGG OPUS AIFF WMA AMR AC3 DTS MKA MIDI</span></td></tr>
-            <tr><th>Video</th><td><span class="about-exts">MP4 MOV AVI MKV WebM WMV FLV 3GP MPG MPEG MTS M2TS TS VOB OGV</span></td></tr>
-            <tr><th>PDF</th><td>Metadata, text extraction, page previews, OCR scanning</td></tr>
-            <tr><th>Archives</th><td><span class="about-exts">ZIP</span></td></tr>
-            <tr><th>Data</th><td><span class="about-exts">CSV TSV SVG</span></td></tr>
-            <tr><th>Web / code</th><td><span class="about-exts">HTML CSS JS TS TSX JSX JSON YAML XML MD</span></td></tr>
-          </table>
-
-          <p class="anr-readout-section">Identification + basic metadata</p>
-          <table class="anr-readout about-readout">
-            <tr><th>Documents</th><td><span class="about-exts">DOC DOCX XLS XLSX PPT PPTX PPSX ODT ODS ODP ODG Pages Numbers Keynote</span></td></tr>
-            <tr><th>Adobe</th><td><span class="about-exts">PSD PSB AI INDD INDT IDML AEP AET PRPROJ MOGRT SESX XD FLA SWF XMP LRtemplate LRcat ACV ACO ASL ABR GRD PAT</span></td></tr>
-            <tr><th>Design</th><td><span class="about-exts">FIG Sketch afphoto afdesign afpub Procreate XCF KRA PDN SPP SBSAR SBS</span></td></tr>
-            <tr><th>CAD</th><td><span class="about-exts">DWG DXF DWT SLDPRT SLDASM SLDDRW F3D F3Z IPT IAM IDW 3DM SKP 3DS MAX C4D HIP ZPR ZTL MA MB CATPART CATPRODUCT PRT ASM BRD SCH KiCad</span></td></tr>
-            <tr><th>CAD exchange</th><td><span class="about-exts">STEP STP IGES IGS SAT X_T X_B</span></td></tr>
-            <tr><th>3D / printing</th><td><span class="about-exts">STL OBJ FBX glTF GLB PLY USDZ USD USDA 3MF AMF BLEND</span></td></tr>
-            <tr><th>Archives</th><td><span class="about-exts">RAR 7Z TAR GZ BZ2 XZ ZST TGZ</span></td></tr>
-            <tr><th>Fonts</th><td><span class="about-exts">TTF OTF WOFF WOFF2 TTC</span></td></tr>
-            <tr><th>eBooks</th><td><span class="about-exts">EPUB MOBI AZW AZW3 FB2 DJVU</span></td></tr>
-            <tr><th>Subtitles</th><td><span class="about-exts">SRT VTT ASS SSA SUB</span></td></tr>
-            <tr><th>Music production</th><td><span class="about-exts">ALS ALP FLP RPP LOGIC LOGICX PTX CPR BAND</span></td></tr>
-            <tr><th>Databases</th><td><span class="about-exts">SQLite DB MDB ACCDB</span></td></tr>
-            <tr><th>GIS / mapping</th><td><span class="about-exts">SHP KML KMZ GPX GeoJSON</span></td></tr>
-            <tr><th>Disk images</th><td><span class="about-exts">ISO IMG VHD VHDX VMDK QCOW2 VDI</span></td></tr>
-            <tr><th>Game engines</th><td><span class="about-exts">UNITYPACKAGE UASSET UMAP GODOT TSCN TRES</span></td></tr>
-            <tr><th>Config</th><td><span class="about-exts">TOML INI ENV CONF CFG PROPERTIES</span></td></tr>
-            <tr><th>Executables</th><td><span class="about-exts">EXE DLL MSI APK IPA DMG AppImage</span></td></tr>
-            <tr><th>Video editing</th><td><span class="about-exts">DRP</span></td></tr>
-            <tr><th>Other</th><td><span class="about-exts">TORRENT</span></td></tr>
-          </table>
+          <!-- Tables are generated from assets/analyser/formats.js by app.js (renderAboutFormats). -->
+          <div id="aboutFormats"></div>
         </details>
       </div>
     </div>
@@ -187,40 +155,72 @@
       <div class="section-content">
         <h2 class="section-head">Update notes.</h2>
 
-        <div class="patch-entry patch-milestone">
-          <p class="patch-version">1.0</p>
-          <p class="patch-date">2 June 2026, 16:25</p>
+        <div class="patch-entry">
+          <p class="patch-version">1.3</p>
+          <p class="patch-date">2 June 2026, 19:14</p>
           <ul class="patch-list">
-            <li>About page with SPA-style page transitions</li>
-            <li>Added identification for 100+ proprietary file formats (Adobe, CAD, 3D, Office, executables)</li>
-            <li>PDF: full-page rendering, improved text extraction</li>
-            <li>Dark mode persistence across pages</li>
-            <li>Automated version numbering via save.bat</li>
+            <li>Central format catalog &mdash; one file now drives the supported-types list, the overlay search, and the about-page tables</li>
+            <li>iPhone: videos that the off-screen decoder couldn&rsquo;t open now fall back to a working player with metadata and frame capture</li>
+            <li>Mobile: tap a section card to pick a file (with a confirmation prompt); the heading moves into the numbered card once a file is analysed</li>
+            <li>Dropzone format lists kept to a single row; squared-off supported-formats popup</li>
+            <li>&ldquo;Install as app&rdquo; button; confirmation tick on clearing the offline cache</li>
           </ul>
         </div>
 
         <div class="patch-entry">
-          <p class="patch-version">0.16</p>
-          <p class="patch-date">2 June 2026, 06:17</p>
+          <p class="patch-version">1.2</p>
+          <p class="patch-date">2 June 2026, 17:49</p>
           <ul class="patch-list">
-            <li>Codebase refactored into separate modules (util, search, audio-analysis, audio-codec)</li>
-            <li>Added search across all metadata fields</li>
-            <li>Added CSV and SVG file handlers</li>
-            <li>Added unknown file identification with hex dump</li>
+            <li>Added &ldquo;?&rdquo; pop-up explanations for audio and photo stats (RMS, peak, spectral centroid, and the rest)</li>
+            <li>Restored the scrubber under the spectrogram; the playhead now tracks correctly when zoomed</li>
           </ul>
         </div>
 
         <div class="patch-entry">
-          <p class="patch-version">0.15</p>
-          <p class="patch-date">2 June 2026, 04:48</p>
+          <p class="patch-version">1.1</p>
+          <p class="patch-date">2 June 2026, 17:27</p>
           <ul class="patch-list">
-            <li>Audio: touch-friendly scrubber, improved mobile seek</li>
-            <li>Spectrogram player under spectrogram on mobile</li>
+            <li>AVI (Motion-JPEG) playback and direct audio extraction without re-encoding</li>
+            <li>Folder-drop overview</li>
+            <li>Identification for 100+ more proprietary formats</li>
+            <li>SPA navigation refinements</li>
           </ul>
         </div>
 
         <details class="about-formats">
           <summary>Older updates</summary>
+
+          <div class="patch-entry patch-milestone">
+            <p class="patch-version">1.0</p>
+            <p class="patch-date">2 June 2026, 16:25</p>
+            <ul class="patch-list">
+              <li>About page with SPA-style page transitions</li>
+              <li>Added identification for 100+ proprietary file formats (Adobe, CAD, 3D, Office, executables)</li>
+              <li>PDF: full-page rendering, improved text extraction</li>
+              <li>Dark mode persistence across pages</li>
+              <li>Automated version numbering via save.bat</li>
+            </ul>
+          </div>
+
+          <div class="patch-entry">
+            <p class="patch-version">0.16</p>
+            <p class="patch-date">2 June 2026, 06:17</p>
+            <ul class="patch-list">
+              <li>Codebase refactored into separate modules (util, search, audio-analysis, audio-codec)</li>
+              <li>Added search across all metadata fields</li>
+              <li>Added CSV and SVG file handlers</li>
+              <li>Added unknown file identification with hex dump</li>
+            </ul>
+          </div>
+
+          <div class="patch-entry">
+            <p class="patch-version">0.15</p>
+            <p class="patch-date">2 June 2026, 04:48</p>
+            <ul class="patch-list">
+              <li>Audio: touch-friendly scrubber, improved mobile seek</li>
+              <li>Spectrogram player under spectrogram on mobile</li>
+            </ul>
+          </div>
 
           <div class="patch-entry">
             <p class="patch-version">0.14</p>

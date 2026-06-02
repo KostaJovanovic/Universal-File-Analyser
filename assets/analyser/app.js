@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 19;
+const COMMIT_COUNT = 20;
 const VERSION_OFFSET = 17;
 
 import { initPhoto, renderPhoto } from './photo.js';
@@ -17,28 +17,49 @@ import { renderCsv } from './csv.js';
 import { renderUnknown } from './unknown.js';
 import { renderProprietary, isProprietaryExt } from './proprietary.js';
 import { initSearch } from './search.js';
-import { fileExt } from './util.js';
+import { fileExt, el } from './util.js';
 import { walkItems, renderFolder } from './folder.js';
+import {
+  PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, CSV_EXTS, SVG_EXTS,
+  renderFmtOverlay, renderAboutFormats
+} from './formats.js';
 
 function $(id) { return document.getElementById(id); }
 
-// ---------- file classification ----------
-const PHOTO_EXTS = new Set([
-  'jpg','jpeg','jpe','jif','jfif','png','gif','webp','heic','heif','heics','heifs',
-  'bmp','tif','tiff','avif','jxl','ico',
-  'raw','arw','cr2','cr3','nef','dng','raf','rw2','orf','pef','sr2','srw','x3f'
-]);
-const AUDIO_EXTS = new Set([
-  'mp3','wav','wave','m4a','m4b','aac','flac','ogg','oga','opus',
-  'aiff','aif','aifc','wma','weba','amr','ac3','dts','mka','mid','midi'
-]);
-const VIDEO_EXTS = new Set([
-  'mp4','m4v','mov','avi','mkv','webm','wmv','flv',
-  '3gp','3g2','mpg','mpeg','mts','m2ts','ts','vob','ogv'
-]);
+// Swiss-style confirmation modal. Resolves true on confirm, false on
+// cancel/backdrop-dismiss. Used as the mobile "did you mean to upload?" guard
+// so a stray tap on a dropzone doesn't immediately pop the native file picker.
+function anrConfirm(title, okLabel) {
+  return new Promise((resolve) => {
+    const cancelBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, 'Cancel');
+    const okBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-ok' }, okLabel || 'Choose file');
+    const card = el('div', { class: 'anr-modal-card' }, [
+      el('p', { class: 'anr-modal-kicker' }, 'Upload'),
+      el('p', { class: 'anr-modal-title' }, title),
+      el('div', { class: 'anr-modal-actions' }, [cancelBtn, okBtn])
+    ]);
+    const overlay = el('div', { class: 'anr-modal' }, card);
+    document.body.appendChild(overlay);
 
-const CSV_EXTS = new Set(['csv', 'tsv']);
-const SVG_EXTS = new Set(['svg']);
+    let settled = false;
+    const close = (val) => {
+      if (settled) return;
+      settled = true;
+      overlay.classList.remove('is-open');
+      setTimeout(() => overlay.remove(), 180);
+      resolve(val);
+    };
+    cancelBtn.addEventListener('click', () => close(false));
+    okBtn.addEventListener('click', () => close(true));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(false); });
+    // Defer the open class one frame so the CSS fade/slide transition runs.
+    requestAnimationFrame(() => overlay.classList.add('is-open'));
+  });
+}
+
+// ---------- file classification ----------
+// Extension sets live in formats.js (the central catalog). See that file to
+// add a new type — the overlay, about page, and search update automatically.
 
 function classifyFile(file) {
   const t = (file.type || '').toLowerCase();
@@ -97,6 +118,13 @@ function boot() {
       if (slot) slot.innerHTML = '';
     }
 
+    // Reset the mobile post-analysis layout (heading moved into the meta card,
+    // lede hidden) so a fresh file starts from the default section layout.
+    ['photo', 'audio', 'video'].forEach((id) => {
+      const sec = $(id);
+      if (sec) sec.classList.remove('is-analysed');
+    });
+
     // Clear nav indicators
     document.querySelectorAll('.nav-link.has-data').forEach(link => link.classList.remove('has-data'));
 
@@ -151,6 +179,10 @@ function boot() {
       if (el) el.classList.add('has-data');
     }
 
+    // Mobile only (gated by CSS): flag a section as having analysed a file, which
+    // moves its heading up into the numbered card and hides the lede.
+    function markAnalysed(id) { const sec = $(id); if (sec) sec.classList.add('is-analysed'); }
+
     function scrollTo(hash) {
       const el = document.querySelector(hash);
       if (el) {
@@ -161,16 +193,20 @@ function boot() {
 
     if (kind === 'photo') {
       markNav('#photo');
+      markAnalysed('photo');
       scrollTo('#photo');
       renderPhoto(file, photoResults);
     } else if (kind === 'audio') {
       markNav('#audio');
+      markAnalysed('audio');
       scrollTo('#audio');
       renderAudio(file, audioResults);
     } else if (kind === 'video') {
       markNav('#video');
       markNav('#audio');
       markNav('#photo');
+      markAnalysed('video');
+      markAnalysed('photo');
       scrollTo('#video');
       renderVideo(file, videoResults);
     } else if (kind === 'pdf') {
@@ -217,6 +253,46 @@ function boot() {
     resultsEl: videoResults,
     onFile:    handleFile
   });
+
+  // ----- Mobile: tap a section card to upload (with confirm) -----
+  // On touch devices, tapping a section's description card (its number +
+  // heading + lede, or the heading once it's been moved up after analysis)
+  // offers to open a file picker for that section's type. A Swiss-style modal
+  // confirms first so a stray tap while scrolling doesn't pop the picker. The
+  // top dropzones are deliberately left alone (instant on tap).
+  // The photo dropzone handles both photos and videos, so the photo and video
+  // sections share photoInput (image/* + video/*).
+  if (window.matchMedia('(pointer: coarse)').matches) {
+    const sectionUploads = [
+      { id: 'photo', input: 'photoInput', prompt: 'Open a photo or video to analyse?' },
+      { id: 'audio', input: 'audioInput', prompt: 'Open a sound file to analyse?' },
+      { id: 'video', input: 'photoInput', prompt: 'Open a photo or video to analyse?' }
+    ];
+    for (const s of sectionUploads) {
+      const section = $(s.id);
+      const input = $(s.input);
+      if (!section || !input) continue;
+
+      // Mirror the heading into the numbered meta card. It stays hidden until
+      // the section has analysed a file (see the .section-meta-head CSS), then
+      // takes the place of the original head + lede on mobile. Created once.
+      const meta = section.querySelector('.section-meta');
+      const head = section.querySelector('.section-head');
+      if (meta && head && !meta.querySelector('.section-meta-head')) {
+        const clone = el('p', { class: 'section-meta-head' }, head.textContent);
+        const kicker = meta.querySelector('.section-kicker');
+        if (kicker) kicker.after(clone); else meta.appendChild(clone);
+      }
+
+      // Only the description text opens the picker — never the results/controls
+      // below it, which stay interactive.
+      section.addEventListener('click', (e) => {
+        if (!e.target.closest('.section-head, .section-lede, .section-meta-head, .section-num, .section-kicker')) return;
+        anrConfirm(s.prompt).then((ok) => { if (ok) input.click(); });
+      });
+      section.classList.add('is-tappable');
+    }
+  }
 
   // ----- Page-level drag/drop (window listeners added once) -----
   if (!boot._once) {
@@ -456,12 +532,13 @@ function boot() {
 
   const TIERS = {
     essentials: [
-      './index.html', './manifest.json', './assets/analyser.css', './assets/fonts.css',
-      './assets/analyser/app.js', './assets/analyser/util.js', './assets/analyser/search.js',
+      './', './index.html', './about.html', './manifest.json', './assets/analyser.css', './assets/fonts.css',
+      './assets/analyser/app.js', './assets/analyser/formats.js', './assets/analyser/util.js', './assets/analyser/search.js',
       './assets/analyser/photo.js', './assets/analyser/audio.js', './assets/analyser/audio-analysis.js',
       './assets/analyser/audio-codec.js', './assets/analyser/video.js', './assets/analyser/spectrogram.js',
       './assets/analyser/pdf.js', './assets/analyser/archive.js', './assets/analyser/svg.js',
       './assets/analyser/csv.js', './assets/analyser/unknown.js', './assets/analyser/proprietary.js',
+      './assets/analyser/folder.js', './assets/analyser/navigate.js',
       './assets/favicon.svg', './assets/icon.png',
       'https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js',
       './assets/fonts/geist-latin.woff2', './assets/fonts/geist-latin-ext.woff2',
@@ -589,6 +666,11 @@ function boot() {
       setTimeout(() => { clearBtn.textContent = 'Clear offline cache'; }, 3000);
     });
   }
+
+  // ----- Supported-formats catalog (generated from formats.js) -----
+  // index.html has #fmtBody (the overlay); about.html has #aboutFormats.
+  renderFmtOverlay($('fmtBody'));
+  renderAboutFormats($('aboutFormats'));
 
   // ----- Format help overlay -----
   const fmtBtn = $('fmtHelpBtn');
