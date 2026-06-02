@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 18;
+const COMMIT_COUNT = 19;
 const VERSION_OFFSET = 17;
 
 import { initPhoto, renderPhoto } from './photo.js';
@@ -550,19 +550,26 @@ function boot() {
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
     deferredPrompt = e;
-    if (installBtn) installBtn.hidden = false;
   });
   if (installBtn) {
     installBtn.addEventListener('click', async () => {
-      if (!deferredPrompt) return;
-      deferredPrompt.prompt();
-      const result = await deferredPrompt.userChoice;
-      if (result.outcome === 'accepted') installBtn.hidden = true;
-      deferredPrompt = null;
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const result = await deferredPrompt.userChoice;
+        if (result.outcome === 'accepted') installBtn.textContent = 'Installed ✓';
+        deferredPrompt = null;
+        return;
+      }
+      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const msg = isIos
+        ? 'Tap the Share button, then "Add to Home Screen".'
+        : 'Open browser menu (⋮), then "Install app" or "Add to Home Screen".';
+      installBtn.textContent = msg;
+      setTimeout(() => { installBtn.textContent = 'Install as app'; }, 5000);
     });
   }
   window.addEventListener('appinstalled', () => {
-    if (installBtn) installBtn.hidden = true;
+    if (installBtn) installBtn.textContent = 'Installed ✓';
     deferredPrompt = null;
   });
 
@@ -578,6 +585,8 @@ function boot() {
         const sizes = { essentials: '~47 MB', everything: '~57 MB', complete: '~190 MB' };
         b.querySelector('.offline-size').textContent = sizes[tier];
       });
+      clearBtn.textContent = 'Cache cleared ✓';
+      setTimeout(() => { clearBtn.textContent = 'Clear offline cache'; }, 3000);
     });
   }
 
@@ -592,7 +601,7 @@ function boot() {
       e.stopPropagation();
       fmtOverlay.hidden = false;
       document.body.style.overflow = 'hidden';
-      if (fmtSearch) { fmtSearch.value = ''; fmtSearch.focus(); }
+      if (fmtSearch) { fmtSearch.value = ''; if (matchMedia('(pointer:fine)').matches) fmtSearch.focus(); }
       fmtOverlay.querySelectorAll('tr[data-fmt]').forEach(r => r.classList.remove('is-hidden'));
       fmtOverlay.querySelectorAll('.fmt-section-label').forEach(l => l.style.display = '');
     });

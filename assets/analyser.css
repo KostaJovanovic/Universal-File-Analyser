@@ -1015,6 +1015,43 @@ button { font-family: inherit; }
   line-height: inherit;
 }
 .anr-info-btn:hover { color: var(--accent); }
+
+/* ---------- TIP POPUP (inline row help) ---------- */
+.anr-readout th { position: relative; }
+.anr-tip-btn {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.08em;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  line-height: inherit;
+  opacity: 0.4;
+}
+.anr-tip-btn:hover { color: var(--accent); opacity: 1; }
+.anr-tip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  min-width: 260px;
+  max-width: 380px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--muted);
+  line-height: 1.65;
+  letter-spacing: 0.02em;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.15);
+  white-space: normal;
+  word-break: normal;
+}
+.anr-tip.is-active { display: block; }
 .anr-info-panel {
   font-family: var(--font-mono);
   font-size: var(--t-tiny);
@@ -2324,8 +2361,6 @@ details[open] summary::after { content: "\2212"; }
 }
 
 .anr-spec-transport {
-  display: flex;
-  justify-content: center;
   margin-top: 10px;
 }
 .anr-spec-play { min-width: 120px; }

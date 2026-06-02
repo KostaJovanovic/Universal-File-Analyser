@@ -23,6 +23,31 @@ export function row(label, value) {
   ]);
 }
 
+export function rowHelp(label, value, helpText) {
+  if (!rowHelp._init) {
+    rowHelp._init = true;
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.anr-tip.is-active').forEach(t => t.classList.remove('is-active'));
+    });
+  }
+  const th = el('th', {});
+  th.appendChild(document.createTextNode(label + ' '));
+  const btn = el('button', { type: 'button', class: 'anr-tip-btn', title: 'Info' }, '[?]');
+  const tip = el('div', { class: 'anr-tip' }, helpText);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasActive = tip.classList.contains('is-active');
+    document.querySelectorAll('.anr-tip.is-active').forEach(t => t.classList.remove('is-active'));
+    if (!wasActive) tip.classList.add('is-active');
+  });
+  th.appendChild(btn);
+  th.appendChild(tip);
+  return el('tr', {}, [
+    th,
+    el('td', {}, value == null || value === '' ? '-' : String(value))
+  ]);
+}
+
 export function fmtBytes(n) {
   if (n == null) return '-';
   if (n < 1024) return n + ' B';
