@@ -7,7 +7,7 @@
    - On-device OCR via lazy-loaded Tesseract.js with language picker
    - SHA-256 file hash */
 
-import { el, row, fmtBytes, h3help, fileExt, sha256Hex } from './util.js';
+import { el, row, rowHelp, fmtBytes, h3help, fileExt, sha256Hex } from './util.js';
 
 const JSQR_URL      = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
 const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js';
@@ -1163,13 +1163,16 @@ export async function renderPhoto(file, resultsEl) {
   tbl.appendChild(row('Dimensions',    `${w} × ${h} px`));
   tbl.appendChild(row('Aspect ratio',  aspectRatio(w, h)));
   tbl.appendChild(row('Megapixels',    mp + ' MP'));
-  tbl.appendChild(row('Sharpness',    sharpness.toFixed(1) + '  (' + sharpnessLabel(sharpness) + ')'));
+  tbl.appendChild(rowHelp('Sharpness', sharpness.toFixed(1) + '  (' + sharpnessLabel(sharpness) + ')',
+    'Laplacian variance of the luminance channel. Higher = sharper detail. Below 50 is typically blurry, above 200 is very sharp.'));
   const fpx = Math.round(focus.focusX / pixData.width * w);
   const fpy = Math.round(focus.focusY / pixData.height * h);
-  tbl.appendChild(row('Focus point',  fpx + ', ' + fpy + '  (estimated)'));
+  tbl.appendChild(rowHelp('Focus point', fpx + ', ' + fpy + '  (estimated)',
+    'Estimated by finding the region with highest local sharpness (Laplacian variance in a sliding window across the image).'));
   const avgHex = '#' + [colorStats.avgR, colorStats.avgG, colorStats.avgB].map((v) => v.toString(16).padStart(2, '0')).join('');
   tbl.appendChild(row('Average colour', avgHex + '  (R' + colorStats.avgR + ' G' + colorStats.avgG + ' B' + colorStats.avgB + ')'));
-  tbl.appendChild(row('Tonal split',   colorStats.shadows + '% shadows · ' + colorStats.midtones + '% midtones · ' + colorStats.highlights + '% highlights'));
+  tbl.appendChild(rowHelp('Tonal split', colorStats.shadows + '% shadows · ' + colorStats.midtones + '% midtones · ' + colorStats.highlights + '% highlights',
+    'Pixel luminance distribution. Shadows = darkest 25%, midtones = middle 50%, highlights = brightest 25%.'));
   if (exif && exif.Orientation != null) {
     tbl.appendChild(row('Orientation', (ORIENTATIONS[exif.Orientation] || exif.Orientation)));
   }
@@ -1309,7 +1312,8 @@ export async function renderPhoto(file, resultsEl) {
   hashCard.appendChild(hashH); hashCard.appendChild(hashHelp);
   const phash = computePHash(img);
   const hashTbl = el('table', { class: 'anr-readout' });
-  hashTbl.appendChild(row('pHash', phash));
+  hashTbl.appendChild(rowHelp('pHash', phash,
+    'Perceptual hash — a fingerprint of image content. Similar images produce similar hashes, even after resizing or compression.'));
   const shaRow = row('SHA-256', 'computing…');
   hashTbl.appendChild(shaRow);
   hashCard.appendChild(hashTbl);

@@ -5,7 +5,7 @@
 
 import { makeSpectrogramPanel, makePlayer, buildHistogramCard } from './audio.js';
 import { renderPhoto } from './photo.js';
-import { el, row, fmtBytes, h3help, sha256Hex } from './util.js';
+import { el, row, rowHelp, fmtBytes, h3help, sha256Hex } from './util.js';
 
 // ---------- progress-tracked fetch ----------
 async function fetchWithProgress(url, onProgress) {
@@ -865,8 +865,10 @@ export async function renderVideo(file, resultsEl) {
         at.appendChild(row('Duration', formatDuration(audioBuf.duration)));
         at.appendChild(row('Sample rate', audioBuf.sampleRate.toLocaleString() + ' Hz'));
         at.appendChild(row('Channels', audioBuf.numberOfChannels));
-        at.appendChild(row('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)'));
-        at.appendChild(row('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)'));
+        at.appendChild(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)',
+          'Highest sample amplitude. dBFS = decibels relative to full scale (0 dBFS = digital maximum).'));
+        at.appendChild(rowHelp('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)',
+          'Root Mean Square — average signal power, closer to perceived loudness than peak.'));
         at.appendChild(row('Samples', mono.length.toLocaleString()));
         audioCard.appendChild(at);
 
@@ -1437,8 +1439,10 @@ export async function renderVideo(file, resultsEl) {
       at.appendChild(row('Duration', formatDuration(audioDuration)));
       at.appendChild(row('Sample rate', wavSr.toLocaleString() + ' Hz'));
       at.appendChild(row('Channels', wavChannels));
-      at.appendChild(row('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)'));
-      at.appendChild(row('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)'));
+      at.appendChild(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)',
+        'Highest sample amplitude. dBFS = decibels relative to full scale (0 dBFS = digital maximum).'));
+      at.appendChild(rowHelp('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)',
+        'Root Mean Square — average signal power, closer to perceived loudness than peak.'));
       at.appendChild(row('Samples', mono.length.toLocaleString()));
       audioCard.appendChild(at);
 

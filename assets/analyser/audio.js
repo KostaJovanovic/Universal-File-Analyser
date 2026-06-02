@@ -6,7 +6,7 @@ import {
   computeSpectrogram, renderSpectrogram, colormaps,
   frequencyTicks, timeTicks, formatHz, formatTime
 } from './spectrogram.js';
-import { el, row, fmtBytes, h3help } from './util.js';
+import { el, row, rowHelp, fmtBytes, h3help } from './util.js';
 import {
   computeStats, computeCentroid, computeLufs,
   detectPitch, detectBPM, computeStereoStats
@@ -365,10 +365,19 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     const specLine = el('div', { class: 'anr-playhead' });
     canvasWrap.appendChild(specLine);
     const audioDur = () => opts.audioEl.duration || (samples.length / sampleRate);
+    function scrollToLine() {
+      if (canvas.clientWidth <= scrollEl.clientWidth) return;
+      const linePos = canvasWrap.clientWidth * parseFloat(specLine.style.left || '0') / 100;
+      const viewLeft = scrollEl.scrollLeft;
+      const viewRight = viewLeft + scrollEl.clientWidth;
+      if (linePos < viewLeft + 20 || linePos > viewRight - 20)
+        scrollEl.scrollLeft = linePos - scrollEl.clientWidth / 3;
+    }
     function tickSpec() {
       const d = audioDur();
       const pct = d > 0 ? (opts.audioEl.currentTime / d) * 100 : 0;
       specLine.style.left = pct + '%';
+      scrollToLine();
       if (!opts.audioEl.paused) requestAnimationFrame(tickSpec);
     }
     opts.audioEl.addEventListener('play', () => requestAnimationFrame(tickSpec));
@@ -841,30 +850,39 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   tbl.appendChild(row('Channels',       audioBuffer.numberOfChannels));
   if (header.bitDepth)  tbl.appendChild(row('Bit depth',     header.bitDepth + ' bit'));
   if (header.bitrate)   tbl.appendChild(row('Bitrate',       (header.bitrate / 1000).toFixed(0) + ' kbps'));
-  tbl.appendChild(row('Peak',           stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)'));
-  tbl.appendChild(row('RMS',            stats.rms.toFixed(3)  + '  (' + stats.rmsDb.toFixed(1)  + ' dBFS)'));
+  tbl.appendChild(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)',
+    'Highest sample amplitude in the file. dBFS = decibels relative to full scale, where 0 dBFS is the digital maximum.'));
+  tbl.appendChild(rowHelp('RMS', stats.rms.toFixed(3)  + '  (' + stats.rmsDb.toFixed(1)  + ' dBFS)',
+    'Root Mean Square — average signal power, closer to perceived loudness than peak. Typical mastered music sits around −10 dBFS.'));
   const lufsValue = computeLufs(mono, audioBuffer.sampleRate);
-  tbl.appendChild(row('Loudness',       (isFinite(lufsValue) ? lufsValue.toFixed(1) + ' LUFS' : '-')));
+  tbl.appendChild(rowHelp('Loudness', (isFinite(lufsValue) ? lufsValue.toFixed(1) + ' LUFS' : '-'),
+    'Perceived loudness per ITU-R BS.1770. Accounts for human hearing sensitivity. Streaming targets: Spotify −14, YouTube −14, Apple −16 LUFS.'));
   if (stats.clipped > 0) {
     const pct = ((stats.clipped / mono.length) * 100).toFixed(3);
-    tbl.appendChild(row('Clipping', stats.clipped.toLocaleString() + ' samples  (' + pct + '%)'));
+    tbl.appendChild(rowHelp('Clipping', stats.clipped.toLocaleString() + ' samples  (' + pct + '%)',
+      'Samples at or beyond the digital ceiling (0 dBFS). Causes audible distortion. More clipped samples = harsher artifacts.'));
   } else {
-    tbl.appendChild(row('Clipping', 'None'));
+    tbl.appendChild(rowHelp('Clipping', 'None',
+      'Samples at or beyond the digital ceiling (0 dBFS). None detected in this file.'));
   }
   const centroid = computeCentroid(mono, audioBuffer.sampleRate);
   if (centroid != null) {
     const label = centroid < 1500 ? 'warm' : centroid < 4000 ? 'neutral' : 'bright';
-    tbl.appendChild(row('Spectral centroid', Math.round(centroid).toLocaleString() + ' Hz  (' + label + ')'));
+    tbl.appendChild(rowHelp('Spectral centroid', Math.round(centroid).toLocaleString() + ' Hz  (' + label + ')',
+      'Frequency "center of mass" of the spectrum. Below 1500 Hz sounds warm/dark, above 4000 Hz sounds bright/sharp. Useful for comparing tonal character.'));
   }
   const pitchResult = detectPitch(mono, audioBuffer.sampleRate);
   if (pitchResult) {
     const centsStr = pitchResult.cents >= 0 ? '+' + pitchResult.cents : String(pitchResult.cents);
-    tbl.appendChild(row('Pitch', pitchResult.note + '  (' + pitchResult.frequency.toFixed(1) + ' Hz, ' + centsStr + ' cents)'));
+    tbl.appendChild(rowHelp('Pitch', pitchResult.note + '  (' + pitchResult.frequency.toFixed(1) + ' Hz, ' + centsStr + ' cents)',
+      'Fundamental frequency via autocorrelation. Cents = deviation from the nearest note (±50 cents = half a semitone).'));
   } else {
-    tbl.appendChild(row('Pitch', 'N/A'));
+    tbl.appendChild(rowHelp('Pitch', 'N/A',
+      'Fundamental frequency via autocorrelation. Could not detect a clear pitch in this audio.'));
   }
   const bpm = detectBPM(mono, audioBuffer.sampleRate);
-  tbl.appendChild(row('BPM', bpm != null ? bpm + ' BPM' : 'N/A'));
+  tbl.appendChild(rowHelp('BPM', bpm != null ? bpm + ' BPM' : 'N/A',
+    'Beats per minute via onset envelope analysis. Most reliable on rhythmic material with a clear beat.'));
   tbl.appendChild(row('Total samples',  mono.length.toLocaleString()));
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
@@ -894,14 +912,19 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     const corrHint = stereo.correlation > 0.8 ? 'mono-like'
                    : stereo.correlation < -0.2 ? 'out of phase'
                    : stereo.correlation < 0.3 ? 'wide' : 'normal';
-    stereoTbl.appendChild(row('Phase correlation', stereo.correlation.toFixed(3) + '  (' + corrPct + '%, ' + corrHint + ')'));
-    stereoTbl.appendChild(row('Stereo width',      stereo.width.toFixed(3)));
-    stereoTbl.appendChild(row('Mid level',         stereo.midLevel.toFixed(4)));
-    stereoTbl.appendChild(row('Side level',        stereo.sideLevel.toFixed(4)));
+    stereoTbl.appendChild(rowHelp('Phase correlation', stereo.correlation.toFixed(3) + '  (' + corrPct + '%, ' + corrHint + ')',
+      'Left/right channel similarity. +1 = identical (mono), 0 = unrelated, negative = out of phase (problematic on mono speakers).'));
+    stereoTbl.appendChild(rowHelp('Stereo width', stereo.width.toFixed(3),
+      'Spatial separation between channels. 0 = mono, 1 = maximum stereo spread.'));
+    stereoTbl.appendChild(rowHelp('Mid level', stereo.midLevel.toFixed(4),
+      'Center (mono) component: (L+R)/2. Carries vocals, bass, and center-panned elements.'));
+    stereoTbl.appendChild(rowHelp('Side level', stereo.sideLevel.toFixed(4),
+      'Difference (stereo) component: (L−R)/2. Carries reverb, panned instruments, and spatial content.'));
     const msRatio = stereo.midLevel > 1e-12
       ? (stereo.sideLevel / stereo.midLevel).toFixed(3)
       : '-';
-    stereoTbl.appendChild(row('Side / Mid ratio',  msRatio));
+    stereoTbl.appendChild(rowHelp('Side / Mid ratio', msRatio,
+      'Ratio of side to mid energy. Below 0.5 = center-heavy mix, above 1.0 = very wide/spatial mix.'));
     stereoCard.appendChild(stereoTbl);
 
     // Vectorscope canvas
