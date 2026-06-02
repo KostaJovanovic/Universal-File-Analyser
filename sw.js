@@ -14,6 +14,7 @@ const SHELL = [
   './assets/analyser/formats.js',
   './assets/analyser/search.js',
   './assets/analyser/photo.js',
+  './assets/analyser/photo-convert.js',
   './assets/analyser/audio.js',
   './assets/analyser/audio-analysis.js',
   './assets/analyser/audio-codec.js',

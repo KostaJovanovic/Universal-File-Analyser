@@ -78,6 +78,28 @@ export async function sha256Hex(file) {
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Lazy-load an external stylesheet/script by injecting a <link>/<script> tag,
+// resolving once it's ready (and immediately if already present). Used to pull
+// in heavy optional libraries (Leaflet, Tesseract, heic2any, jsQR) on demand.
+export function loadCss(href) {
+  return new Promise((resolve) => {
+    if (document.querySelector(`link[href="${href}"]`)) return resolve();
+    const l = document.createElement('link');
+    l.rel = 'stylesheet'; l.href = href;
+    l.onload = resolve; l.onerror = resolve;
+    document.head.appendChild(l);
+  });
+}
+export function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
 // Snap a measured frame rate to the nearest standard rate when it's within
 // 0.5 fps (so 29.96 reads as 29.97), otherwise keep two decimals. Shared by the
 // video module and its container parser.
