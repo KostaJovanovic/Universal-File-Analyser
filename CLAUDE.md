@@ -58,9 +58,9 @@ If the format isn't photo/audio/video/csv/svg and needs its own renderer:
 
 ## Version numbering
 
-Formula: `1.(commit_count - 31)`. The constant `COMMIT_COUNT` in `app.js` is updated automatically by `save.bat` on each commit. `VERSION_OFFSET` is 31 (the offset is also hardcoded in `save.bat` on the `set /a MINOR` line — keep the two in sync). Don't change these manually.
+Formula: `1.(commit_count - 32)`. The constant `COMMIT_COUNT` in `app.js` is updated automatically by `save.bat` on each commit. `VERSION_OFFSET` is 32 (the offset is also hardcoded in `save.bat` on the `set /a MINOR` line — keep the two in sync). Don't change these manually.
 
-The offset was reset to 31 at the 1.0 release (commit #31) so that commit displays `1.0`; the earlier pre-1.0 history used offsets of 25 and, before that, plain `0.{commit_count}`.
+The offset was reset so that the next `save.bat` commit (#32) displays `1.0`; the earlier pre-1.0 history used offsets of 31 and 25 and, before that, plain `0.{commit_count}`.
 
 ## SPA navigation
 
