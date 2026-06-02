@@ -42,6 +42,16 @@ function row(label, value) {
   ]);
 }
 
+function h3help(title, helpHtml) {
+  const h = el('h3', {});
+  h.appendChild(document.createTextNode(title));
+  const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
+  const panel = el('div', { class: 'anr-info-panel', style: 'display:none;', html: helpHtml });
+  btn.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
+  h.appendChild(btn);
+  return [h, panel];
+}
+
 // --- File header peek (sample rate, bit depth, codec hints) ---
 async function peekContainer(file) {
   const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
@@ -633,27 +643,83 @@ function buildTimeAxis(axisEl, durationSec) {
   }
 }
 
+// --- Custom player (replaces native <audio>/<video> controls) ---
+export function makePlayer(mediaEl) {
+  function fmt(sec) {
+    if (!isFinite(sec) || sec < 0) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return m + ':' + String(s).padStart(2, '0');
+  }
+  const playBtn = el('button', { type: 'button', class: 'anr-player-play' }, '▶');
+  const fillEl = el('div', { class: 'anr-player-fill' });
+  const trackEl = el('div', { class: 'anr-player-track' }, [fillEl]);
+  const timeEl = el('span', { class: 'anr-player-time' }, '0:00 / 0:00');
+  const container = el('div', { class: 'anr-player' }, [playBtn, trackEl, timeEl]);
+
+  playBtn.addEventListener('click', () => {
+    if (mediaEl.paused) mediaEl.play(); else mediaEl.pause();
+  });
+  mediaEl.addEventListener('play', () => { playBtn.textContent = '❚❚'; tick(); });
+  mediaEl.addEventListener('pause', () => { playBtn.textContent = '▶'; });
+  mediaEl.addEventListener('ended', () => { playBtn.textContent = '▶'; });
+
+  let dragging = false;
+  let seeking = false;
+  let pendingFrac = null;
+  function scrub(clientX) {
+    const rect = trackEl.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    if (seeking) {
+      pendingFrac = frac;
+    } else {
+      seeking = true;
+      mediaEl.currentTime = frac * (mediaEl.duration || 0);
+    }
+  }
+  mediaEl.addEventListener('seeked', () => {
+    if (pendingFrac !== null) {
+      const f = pendingFrac;
+      pendingFrac = null;
+      mediaEl.currentTime = f * (mediaEl.duration || 0);
+    } else {
+      seeking = false;
+    }
+  });
+  trackEl.addEventListener('mousedown', (e) => { dragging = true; scrub(e.clientX); e.preventDefault(); });
+  window.addEventListener('mousemove', (e) => { if (dragging) { scrub(e.clientX); tick(); } });
+  window.addEventListener('mouseup', () => { dragging = false; });
+  trackEl.addEventListener('touchstart', (e) => { dragging = true; scrub(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
+  window.addEventListener('touchmove', (e) => { if (dragging && e.touches[0]) scrub(e.touches[0].clientX); });
+  window.addEventListener('touchend', () => { dragging = false; });
+
+  function tick() {
+    const d = mediaEl.duration || 0;
+    const pct = d > 0 ? (mediaEl.currentTime / d) * 100 : 0;
+    fillEl.style.width = pct + '%';
+    timeEl.textContent = fmt(mediaEl.currentTime) + ' / ' + fmt(d);
+    if (!mediaEl.paused) requestAnimationFrame(tick);
+  }
+  mediaEl.addEventListener('seeked', tick);
+  mediaEl.addEventListener('loadedmetadata', tick);
+  tick();
+
+  return container;
+}
+
 // --- Spectrogram UI panel (shared for file + recording) ---
 export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   const card = el('div', { class: 'anr-card anr-spec-card' });
 
-  const specHead = el('h3', {});
-  specHead.appendChild(document.createTextNode('Spectrogram'));
-  const specHelpBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'What do these options do?' }, '[?]');
-  const specHelpText = el('div', { class: 'anr-info-panel', style: 'display:none;' });
-  specHelpText.innerHTML =
+  const [specH, specHelp] = h3help('Spectrogram',
     '<strong>Axis</strong> Log maps frequencies logarithmically (closer to human hearing). Linear spaces them evenly.<br>' +
     '<strong>FFT</strong> Fast Fourier Transform window size. Larger = better frequency resolution but lower time resolution.<br>' +
     '<strong>Window</strong> Windowing function applied before the FFT. Hann is a good default; Blackman reduces spectral leakage; Rect (rectangular) applies no smoothing.<br>' +
     '<strong>Colour</strong> Colour mapping for intensity values. Magma, viridis, and inferno are perceptually uniform.<br>' +
     '<strong>Zoom</strong> Horizontal zoom. Stretches the time axis so you can see finer detail.<br>' +
-    '<strong>Height</strong> Vertical size of the spectrogram canvas in pixels.';
-  specHelpBtn.addEventListener('click', () => {
-    specHelpText.style.display = specHelpText.style.display === 'none' ? 'block' : 'none';
-  });
-  specHead.appendChild(specHelpBtn);
-  card.appendChild(specHead);
-  card.appendChild(specHelpText);
+    '<strong>Height</strong> Vertical size of the spectrogram canvas in pixels.');
+  card.appendChild(specH);
+  card.appendChild(specHelp);
 
   // --- controls ---
   const controls = el('div', { class: 'anr-controls' });
@@ -693,9 +759,33 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   yWrap.appendChild(axisY); yWrap.appendChild(corner);
 
   const scrollEl = el('div', { class: 'anr-spec-scroll' });
+  const canvasWrap = el('div', { class: 'anr-spec-canvas-wrap' });
   const canvas   = el('canvas', { class: 'anr-spec-canvas' });
   const axisX    = el('div', { class: 'anr-spec-xaxis' });
-  scrollEl.appendChild(canvas); scrollEl.appendChild(axisX);
+  canvasWrap.appendChild(canvas);
+
+  if (opts.audioEl) {
+    const specLine = el('div', { class: 'anr-playhead' });
+    canvasWrap.appendChild(specLine);
+    const audioDur = () => opts.audioEl.duration || (samples.length / sampleRate);
+    function tickSpec() {
+      const d = audioDur();
+      const pct = d > 0 ? (opts.audioEl.currentTime / d) * 100 : 0;
+      specLine.style.left = pct + '%';
+      if (!opts.audioEl.paused) requestAnimationFrame(tickSpec);
+    }
+    opts.audioEl.addEventListener('play', () => requestAnimationFrame(tickSpec));
+    opts.audioEl.addEventListener('pause', tickSpec);
+    opts.audioEl.addEventListener('seeked', tickSpec);
+    canvas.style.cursor = 'pointer';
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const frac = (e.clientX - rect.left) / rect.width;
+      opts.audioEl.currentTime = frac * audioDur();
+    });
+  }
+
+  scrollEl.appendChild(canvasWrap); scrollEl.appendChild(axisX);
 
   wrap.appendChild(yWrap); wrap.appendChild(scrollEl);
   card.appendChild(wrap);
@@ -843,8 +933,11 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // ---- File info card ----
   const infoCard = el('div', { class: 'anr-card' });
   infoCard.appendChild(el('h3', {}, 'File info'));
-  const audioEl = el('audio', { controls: '', src: URL.createObjectURL(playbackFile), style: 'width:100%; margin-bottom:8px;' });
+  const audioUrl = URL.createObjectURL(playbackFile);
+  const audioEl = el('audio', { src: audioUrl });
+  audioEl.style.display = 'none';
   infoCard.appendChild(audioEl);
+  infoCard.appendChild(makePlayer(audioEl));
 
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Name',           file.name));
@@ -887,7 +980,8 @@ export async function renderAudio(file, resultsEl, opts = {}) {
 
   // ---- Waveform card ----
   const waveCard = el('div', { class: 'anr-card' });
-  waveCard.appendChild(el('h3', {}, 'Waveform'));
+  const [waveH, waveHelp] = h3help('Waveform', 'Amplitude over time. Click and drag to select a region, then zoom in or export the selection as a WAV file. The white playhead line shows the current playback position.');
+  waveCard.appendChild(waveH); waveCard.appendChild(waveHelp);
   const waveCanvas = el('canvas', { class: 'anr-waveform' });
   waveCanvas.width = 1024; waveCanvas.height = 80;
   waveCard.appendChild(waveCanvas);
@@ -899,7 +993,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   let zoomStart = 0, zoomEnd = mono.length;
 
   // Overlay canvas for selection highlight
-  const overlayCanvas = el('canvas', { class: 'anr-waveform', style: 'position:absolute; top:0; left:0; pointer-events:none;' });
+  const overlayCanvas = el('canvas', { class: 'anr-waveform', style: 'position:absolute; top:0; left:0; pointer-events:none; background:transparent;' });
   overlayCanvas.width = waveCanvas.width;
   overlayCanvas.height = waveCanvas.height;
 
@@ -907,6 +1001,26 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   waveCard.replaceChild(waveWrap, waveCanvas);
   waveWrap.appendChild(waveCanvas);
   waveWrap.appendChild(overlayCanvas);
+
+  // Waveform playhead synced with audio
+  const waveLine = el('div', { class: 'anr-playhead' });
+  waveWrap.appendChild(waveLine);
+  function tickWaveLine() {
+    const d = audioBuffer.duration;
+    const currentSample = (audioEl.currentTime / d) * mono.length;
+    const visLen = zoomEnd - zoomStart;
+    const pct = ((currentSample - zoomStart) / visLen) * 100;
+    if (pct >= 0 && pct <= 100) {
+      waveLine.style.left = pct + '%';
+      waveLine.hidden = false;
+    } else {
+      waveLine.hidden = true;
+    }
+    if (!audioEl.paused) requestAnimationFrame(tickWaveLine);
+  }
+  audioEl.addEventListener('play', () => requestAnimationFrame(tickWaveLine));
+  audioEl.addEventListener('pause', tickWaveLine);
+  audioEl.addEventListener('seeked', tickWaveLine);
 
   // Selection info + buttons container (shown when selection exists)
   const selInfo = el('div', { class: 'anr-controls', style: 'display:none; flex-wrap:wrap; gap:8px; margin-top:6px; align-items:center;' });
@@ -1074,7 +1188,8 @@ export async function renderAudio(file, resultsEl, opts = {}) {
 
   // ---- Amplitude histogram ----
   const histCard = el('div', { class: 'anr-card' });
-  histCard.appendChild(el('h3', {}, 'Histogram'));
+  const [ahH, ahHelp] = h3help('Histogram', 'Amplitude distribution. Shows how often each sample value occurs across the entire audio. The red centre line marks silence (zero). A tall spike at centre means lots of silence; spread across the range means loud, dynamic audio.');
+  histCard.appendChild(ahH); histCard.appendChild(ahHelp);
   const histCanvas = el('canvas', { class: 'anr-histogram' });
   histCanvas.width = 1024; histCanvas.height = 200;
   histCard.appendChild(histCanvas);
@@ -1111,7 +1226,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
 
   // ---- Spectrogram ----
   const basename = (file.name || 'spectrogram').replace(/\.[^/.]+$/, '');
-  resultsEl.appendChild(makeSpectrogramPanel(mono, audioBuffer.sampleRate, { basename }));
+  resultsEl.appendChild(makeSpectrogramPanel(mono, audioBuffer.sampleRate, { basename, audioEl }));
 
   // ---- Stereo Width / Vectorscope card (stereo files only) ----
   if (audioBuffer.numberOfChannels >= 2) {
@@ -1120,7 +1235,8 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     const stereo = computeStereoStats(left, right);
 
     const stereoCard = el('div', { class: 'anr-card' });
-    stereoCard.appendChild(el('h3', {}, 'Stereo analysis'));
+    const [stH, stHelp] = h3help('Stereo analysis', '<strong>Phase correlation</strong> measures how similar the left and right channels are. +1 = identical (mono), 0 = unrelated, negative = out of phase (can cause cancellation on mono speakers).<br><strong>Stereo width</strong> is derived from correlation. Higher = wider stereo image.<br><strong>Mid/Side</strong> splits the signal into centre (mid) and difference (side) components.<br>The <strong>vectorscope</strong> plots left vs right samples. A vertical line = mono; a circle = wide stereo; a horizontal line = out of phase.');
+    stereoCard.appendChild(stH); stereoCard.appendChild(stHelp);
 
     const stereoTbl = el('table', { class: 'anr-readout' });
     const corrPct  = (stereo.correlation * 100).toFixed(1);

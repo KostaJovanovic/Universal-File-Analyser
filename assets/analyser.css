@@ -583,7 +583,8 @@ button { font-family: inherit; }
 .anr-spec-scroll::-webkit-scrollbar-track { background: #0a0a0a; }
 .anr-spec-scroll::-webkit-scrollbar-thumb { background: #444; }
 
-.anr-spec-canvas { display: block; image-rendering: pixelated; flex: 0 0 auto; }
+.anr-spec-canvas-wrap { position: relative; flex: 0 0 auto; }
+.anr-spec-canvas { display: block; image-rendering: pixelated; }
 .anr-spec-xaxis {
   height: 20px; flex: 0 0 auto;
   background: #0a0a0a;
@@ -740,6 +741,71 @@ button { font-family: inherit; }
   color: var(--fg);
   text-transform: uppercase;
   letter-spacing: 0.1em;
+}
+
+/* ---------- CUSTOM PLAYER ---------- */
+.anr-player {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  margin-bottom: 14px;
+}
+.anr-player-play {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+  font-family: var(--font-sans);
+  line-height: 1;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.anr-player-play:hover {
+  background: var(--fg);
+  color: var(--bg);
+}
+.anr-player-track {
+  flex: 1 1 auto;
+  height: 32px;
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.anr-player-track::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 3px;
+  background: var(--rule);
+}
+.anr-player-fill {
+  height: 3px;
+  background: var(--accent);
+  width: 0%;
+  pointer-events: none;
+  position: relative;
+  z-index: 1;
+}
+.anr-player-time {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 80px;
+  text-align: right;
 }
 
 /* ---------- TRANSPORT ---------- */
@@ -920,6 +986,22 @@ details[open] summary::after { content: "\2212"; }
   font-size: var(--t-small);
   color: rgba(255,255,255,0.8);
 }
+.about-details {
+  border-top: none;
+  padding: 0;
+  margin: 0 0 32px;
+}
+.about-details summary {
+  color: rgba(255,255,255,0.8);
+  border-bottom: none;
+  padding: 14px 0;
+  justify-content: start;
+  gap: 8px;
+}
+.about-details summary:hover { color: var(--accent); }
+.about-details summary::after { color: rgba(255,255,255,0.3); }
+.about-details .about-defs { margin: 0; }
+
 .footer-bottom {
   border-top: 1px solid rgba(255,255,255,0.15);
   padding-top: 24px;
@@ -1080,7 +1162,8 @@ details[open] summary::after { content: "\2212"; }
   align-items: stretch;
   gap: 4px;
 }
-.section-meta-slot .anr-control select {
+.section-meta-slot .anr-control select,
+.section-meta-slot .anr-dropdown {
   width: 100%;
 }
 .section-meta-slot .anr-control .anr-btn {
@@ -1359,6 +1442,73 @@ details[open] summary::after { content: "\2212"; }
 .dark-toggle:hover {
   background: var(--fg);
   color: var(--bg);
+}
+
+/* ---------- CUSTOM DROPDOWN ---------- */
+.anr-dropdown {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  user-select: none;
+}
+.anr-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--hairline);
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 160px;
+}
+.anr-dropdown-trigger::after {
+  content: '\25BE';
+  font-size: 0.75em;
+  opacity: 0.5;
+}
+.anr-dropdown-trigger.is-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.anr-dropdown-list {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-top: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.anr-dropdown.is-open .anr-dropdown-list { display: block; }
+.anr-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.anr-dropdown-item:hover { background: var(--hairline); }
+.anr-dropdown-item.is-selected { background: var(--fg); color: var(--bg); }
+.anr-dropdown-item-size {
+  margin-left: auto;
+  color: rgba(128,128,128,0.7);
+  font-size: 0.85em;
+}
+.anr-dropdown-item.is-selected .anr-dropdown-item-size {
+  color: rgba(128,128,128,0.9);
 }
 
 /* ---------- MOBILE TOUCH-TARGET POLISH ---------- */
