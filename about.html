@@ -156,6 +156,17 @@
       <div class="section-content">
         <h2 class="section-head">Update notes.</h2>
 
+        <div class="patch-entry">
+          <p class="patch-version">1.2</p>
+          <p class="patch-date">2 June 2026, 21:04</p>
+          <ul class="patch-list">
+            <li>Dark mode follows the OS setting when no preference is saved</li>
+            <li>Settings auto-expire after 7 days to keep localStorage clean in long-unused browsers</li>
+            <li>Navigation bar uses CSS grid for consistent column sizing across pages</li>
+            <li>Header letter-weight sweep no longer conflicts with the mouse hover effect</li>
+          </ul>
+        </div>
+
         <div class="patch-entry patch-milestone">
           <p class="patch-version">1.0</p>
           <p class="patch-date">2 June 2026</p>
@@ -191,19 +202,19 @@
           </ul>
         </div>
 
-        <div class="patch-entry">
-          <p class="patch-version">0.23</p>
-          <p class="patch-date">2 June 2026, 19:38</p>
-          <ul class="patch-list">
-            <li>Scene detection now runs automatically, scores each cut by confidence, and tucks the thumbnails into a dropdown</li>
-            <li>Photos with no GPS fix no longer show a 0,0 / NaN map</li>
-            <li>Spam-safe contact email in the footer</li>
-            <li>Internal: split the audio transport into its own module</li>
-          </ul>
-        </div>
-
         <details class="about-formats">
           <summary>Older updates</summary>
+
+          <div class="patch-entry">
+            <p class="patch-version">0.23</p>
+            <p class="patch-date">2 June 2026, 19:38</p>
+            <ul class="patch-list">
+              <li>Scene detection now runs automatically, scores each cut by confidence, and tucks the thumbnails into a dropdown</li>
+              <li>Photos with no GPS fix no longer show a 0,0 / NaN map</li>
+              <li>Spam-safe contact email in the footer</li>
+              <li>Internal: split the audio transport into its own module</li>
+            </ul>
+          </div>
 
           <div class="patch-entry">
             <p class="patch-version">0.22</p>
