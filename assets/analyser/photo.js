@@ -619,8 +619,15 @@ async function ensureTesseract() {
 
 function makeOcrCard(file, img) {
   const card = el('div', { class: 'anr-card' });
-  const [ocrH, ocrHelp] = h3help('OCR — Extract text', '<strong>Optical Character Recognition</strong> scans the image for text using <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>, an open-source OCR engine running entirely in your browser.<br><br><strong>How it works:</strong> the image is upscaled if needed, then Tesseract looks for letter-shaped patterns, groups them into words and lines, and assigns a confidence score to each word. Words below 60% confidence are filtered out to reduce noise.<br><br><strong>Limitations:</strong> Tesseract was designed for scanned documents — clean text on plain backgrounds. On photos it will often hallucinate text from textures, foliage, buildings, or noise. Handwriting, stylised fonts, low contrast, small text, and rotated or curved text all reduce accuracy significantly. Results are best on screenshots, signs, printed labels, and document photos.');
-  card.appendChild(ocrH); card.appendChild(ocrHelp);
+  const det = el('details');
+  const ocrHelpText = '<strong>Optical Character Recognition</strong> scans the image for text using <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>, an open-source OCR engine running entirely in your browser.<br><br><strong>How it works:</strong> the image is upscaled if needed, then Tesseract looks for letter-shaped patterns, groups them into words and lines, and assigns a confidence score to each word. Words below 60% confidence are filtered out to reduce noise.<br><br><strong>Limitations:</strong> Tesseract was designed for scanned documents — clean text on plain backgrounds. On photos it will often hallucinate text from textures, foliage, buildings, or noise. Handwriting, stylised fonts, low contrast, small text, and rotated or curved text all reduce accuracy significantly. Results are best on screenshots, signs, printed labels, and document photos.';
+  const ocrInfoBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
+  const summary = el('summary', {}, ['OCR — Extract text', ocrInfoBtn]);
+  det.appendChild(summary);
+  const detContent = el('div');
+  const ocrPanel = el('div', { class: 'anr-info-panel', style: 'display:none;', html: ocrHelpText });
+  ocrInfoBtn.addEventListener('click', (e) => { e.preventDefault(); ocrPanel.style.display = ocrPanel.style.display === 'none' ? 'block' : 'none'; });
+  detContent.appendChild(ocrPanel);
 
   const ocrCanvas = img ? prepareOcrCanvas(img) : null;
   const ocrInput = ocrCanvas || file;
@@ -664,14 +671,14 @@ function makeOcrCard(file, img) {
     el('div', { class: 'anr-control' }, [el('label', {}, 'Lang'), dropdown]),
     el('div', { class: 'anr-control' }, [runBtn])
   ]);
-  card.appendChild(controlsRow);
+  detContent.appendChild(controlsRow);
 
   const progressWrap  = el('div', { class: 'anr-progress', style: 'display:none' });
   const progressBar   = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const progressLabel = el('div', { class: 'anr-progress-label' }, '');
   progressWrap.appendChild(progressBar);
   progressWrap.appendChild(progressLabel);
-  card.appendChild(progressWrap);
+  detContent.appendChild(progressWrap);
 
   function setBar(frac) {
     const ch = parseFloat(getComputedStyle(progressBar).fontSize) * 0.6 || 8;
@@ -681,7 +688,7 @@ function makeOcrCard(file, img) {
   }
 
   const out = el('pre', { class: 'anr-ocr-text' });
-  card.appendChild(out);
+  detContent.appendChild(out);
 
   let busy = false;
   let activeWorker = null;
@@ -760,6 +767,8 @@ function makeOcrCard(file, img) {
     if (busy) stop(); else run();
   });
 
+  det.appendChild(detContent);
+  card.appendChild(det);
   return card;
 }
 
@@ -1360,9 +1369,14 @@ export async function renderPhoto(file, resultsEl) {
 
   // ---- LSB steganography analysis ----
   const lsbCard = el('div', { class: 'anr-card' });
+  const lsbDet = el('details');
   const [lsbH, lsbHelp] = h3help('LSB Analysis', 'LSB (Least Significant Bit) analysis isolates the lowest bit of each colour channel (R, G, B) and renders it as a black-and-white image. In a normal photograph these planes look like random noise. Visible patterns, text, or structure in the LSB plane can indicate steganographic data (hidden messages embedded in the image) or heavy editing. Click a preview to open it at full resolution.');
-  lsbCard.appendChild(lsbH); lsbCard.appendChild(lsbHelp);
-  renderLsbPlanes(img, lsbCard);
+  lsbDet.appendChild(el('summary', {}, 'LSB Analysis'));
+  const lsbContent = el('div');
+  lsbContent.appendChild(lsbHelp);
+  renderLsbPlanes(img, lsbContent);
+  lsbDet.appendChild(lsbContent);
+  lsbCard.appendChild(lsbDet);
   resultsEl.appendChild(lsbCard);
 
   const raw = buildRawDump(exif);
