@@ -16,38 +16,38 @@ const MAGICK_WASM_URL = 'https://cdn.jsdelivr.net/npm/@imagemagick/magick-wasm@0
 const MAGICK_WASM_DIR = 'https://cdn.jsdelivr.net/npm/@imagemagick/magick-wasm@0.0.37/dist/';
 
 const TESSERACT_LANGS = [
-  ['eng', 'English'],
-  ['srp', 'Serbian (Cyrillic)'],
-  ['srp_latn', 'Serbian (Latin)'],
-  ['hrv', 'Croatian'],
-  ['deu', 'German'],
-  ['fra', 'French'],
-  ['ita', 'Italian'],
-  ['spa', 'Spanish'],
-  ['rus', 'Russian'],
-  ['ell', 'Greek'],
-  ['ara', 'Arabic'],
-  ['jpn', 'Japanese'],
-  ['chi_sim', 'Chinese (Simplified)'],
-  ['chi_tra', 'Chinese (Traditional)'],
-  ['kor', 'Korean'],
-  ['heb', 'Hebrew'],
-  ['tur', 'Turkish'],
-  ['ukr', 'Ukrainian'],
-  ['pol', 'Polish'],
-  ['ron', 'Romanian'],
-  ['hun', 'Hungarian'],
-  ['ces', 'Czech'],
-  ['slk', 'Slovak'],
-  ['slv', 'Slovenian'],
-  ['bul', 'Bulgarian'],
-  ['mkd', 'Macedonian'],
-  ['nld', 'Dutch'],
-  ['por', 'Portuguese'],
-  ['swe', 'Swedish'],
-  ['nor', 'Norwegian'],
-  ['fin', 'Finnish'],
-  ['dan', 'Danish']
+  ['eng', 'English', '4 MB'],
+  ['srp', 'Serbian (Cyrillic)', '2 MB'],
+  ['srp_latn', 'Serbian (Latin)', '2 MB'],
+  ['hrv', 'Croatian', '2 MB'],
+  ['deu', 'German', '4 MB'],
+  ['fra', 'French', '4 MB'],
+  ['ita', 'Italian', '4 MB'],
+  ['spa', 'Spanish', '5 MB'],
+  ['rus', 'Russian', '4 MB'],
+  ['ell', 'Greek', '2 MB'],
+  ['ara', 'Arabic', '2 MB'],
+  ['jpn', 'Japanese', '14 MB'],
+  ['chi_sim', 'Chinese (Simplified)', '18 MB'],
+  ['chi_tra', 'Chinese (Traditional)', '25 MB'],
+  ['kor', 'Korean', '5 MB'],
+  ['heb', 'Hebrew', '2 MB'],
+  ['tur', 'Turkish', '4 MB'],
+  ['ukr', 'Ukrainian', '3 MB'],
+  ['pol', 'Polish', '4 MB'],
+  ['ron', 'Romanian', '2 MB'],
+  ['hun', 'Hungarian', '4 MB'],
+  ['ces', 'Czech', '3 MB'],
+  ['slk', 'Slovak', '3 MB'],
+  ['slv', 'Slovenian', '2 MB'],
+  ['bul', 'Bulgarian', '2 MB'],
+  ['mkd', 'Macedonian', '1 MB'],
+  ['nld', 'Dutch', '5 MB'],
+  ['por', 'Portuguese', '4 MB'],
+  ['swe', 'Swedish', '3 MB'],
+  ['nor', 'Norwegian', '4 MB'],
+  ['fin', 'Finnish', '4 MB'],
+  ['dan', 'Danish', '4 MB']
 ];
 
 // ---------- helpers ----------
@@ -71,6 +71,16 @@ function row(label, value) {
     el('th', {}, label),
     el('td', {}, value == null || value === '' ? '-' : String(value))
   ]);
+}
+
+function h3help(title, helpHtml) {
+  const h = el('h3', {});
+  h.appendChild(document.createTextNode(title));
+  const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
+  const panel = el('div', { class: 'anr-info-panel', style: 'display:none;', html: helpHtml });
+  btn.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
+  h.appendChild(btn);
+  return [h, panel];
 }
 
 function fmtBytes(n) {
@@ -571,110 +581,73 @@ async function makeMap(container, lat, lon, label) {
 }
 
 // ---------- OCR (lazy) ----------
+function prepareOcrCanvas(img) {
+  const MIN_DIM = 2000;
+  let w = img.naturalWidth, h = img.naturalHeight;
+  const scale = Math.max(1, MIN_DIM / Math.min(w, h));
+  w = Math.round(w * scale);
+  h = Math.round(h * scale);
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, w, h);
+  return cv;
+}
+
 async function ensureTesseract() {
   if (window.Tesseract) return window.Tesseract;
   await loadScript(TESSERACT_URL);
   return window.Tesseract;
 }
 
-/**
- * Two-pass OCR pipeline used by the default "Auto" language option.
- *
- *   1. Start the English worker download.
- *   2. Start the Serbian (Latin + Cyrillic) worker download IN PARALLEL — so
- *      while we're recognising English text, Serbian models keep streaming
- *      from the CDN in the background.
- *   3. Once the English worker is ready, run recognition with it and append
- *      the text. (Unless the user pressed "Skip English" — see below.)
- *   4. Await the Serbian worker (likely already loaded by now), recognise,
- *      append the text.
- *
- * The `getSkipEng()` flag and `registerEngWorker` callback let the caller
- * (the OCR card) abort the English half mid-flight when the user clicks
- * "Skip English": the English worker is terminated and we jump straight to
- * the Serbian phase. Useful when you already know the text isn't English.
- */
-async function runOcrAuto(file, ui) {
-  const { setPhase, setProgress, appendResult, getSkipEng, registerEngWorker } = ui;
-  const T = await ensureTesseract();
+function makeOcrCard(file, img) {
+  const card = el('div', { class: 'anr-card' });
+  const [ocrH, ocrHelp] = h3help('OCR — Extract text', '<strong>Optical Character Recognition</strong> scans the image for text using <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>, an open-source OCR engine running entirely in your browser.<br><br><strong>How it works:</strong> the image is upscaled if needed, then Tesseract looks for letter-shaped patterns, groups them into words and lines, and assigns a confidence score to each word. Words below 60% confidence are filtered out to reduce noise.<br><br><strong>Limitations:</strong> Tesseract was designed for scanned documents — clean text on plain backgrounds. On photos it will often hallucinate text from textures, foliage, buildings, or noise. Handwriting, stylised fonts, low contrast, small text, and rotated or curved text all reduce accuracy significantly. Results are best on screenshots, signs, printed labels, and document photos.');
+  card.appendChild(ocrH); card.appendChild(ocrHelp);
 
-  setPhase('Downloading English…');
+  const ocrCanvas = img ? prepareOcrCanvas(img) : null;
+  const ocrInput = ocrCanvas || file;
 
-  // Kick off BOTH downloads in parallel. Serbian continues in the background
-  // while English is analysing.
-  let engWorker = null, srpWorker = null;
-  const engPromise = T.createWorker('eng', undefined, {
-    logger: (m) => setProgress(m, 'eng')
-  }).then((w) => { engWorker = w; registerEngWorker(w); return w; });
+  const langState = { value: 'eng', disabled: false };
+  const dropdown = el('div', { class: 'anr-dropdown' });
+  const trigger = el('div', { class: 'anr-dropdown-trigger' }, 'English');
+  const list = el('ul', { class: 'anr-dropdown-list' });
 
-  const srpPromise = T.createWorker('srp+srp_latn', undefined, {
-    logger: (m) => setProgress(m, 'srp')
+  for (const [code, name, size] of TESSERACT_LANGS) {
+    const item = el('li', { class: 'anr-dropdown-item' + (code === 'eng' ? ' is-selected' : '') }, [
+      el('span', {}, name),
+      el('span', { class: 'anr-dropdown-item-size' }, '[' + size + ']')
+    ]);
+    item.dataset.value = code;
+    item.addEventListener('click', () => {
+      if (langState.disabled) return;
+      langState.value = code;
+      trigger.childNodes[0].textContent = name;
+      list.querySelectorAll('.anr-dropdown-item').forEach(li => li.classList.remove('is-selected'));
+      item.classList.add('is-selected');
+      dropdown.classList.remove('is-open');
+    });
+    list.appendChild(item);
+  }
+
+  trigger.addEventListener('click', () => {
+    if (langState.disabled) return;
+    dropdown.classList.toggle('is-open');
+  });
+  document.addEventListener('click', (e) => {
+    if (!dropdown.contains(e.target)) dropdown.classList.remove('is-open');
   });
 
-  // English phase
-  try {
-    await engPromise;
-  } catch (e) {
-    appendResult('[English download failed: ' + (e && e.message ? e.message : e) + ']');
-  }
-
-  if (!getSkipEng() && engWorker) {
-    setPhase('Running English…');
-    try {
-      const r = await engWorker.recognize(file);
-      if (!getSkipEng()) appendResult('── English ──\n' + ((r.data && r.data.text) || '(no text)'));
-    } catch (e) {
-      if (!getSkipEng()) appendResult('[English OCR aborted]');
-    }
-    try { await engWorker.terminate(); } catch (_) {}
-  } else if (engWorker) {
-    setPhase('Skipped English.');
-    try { await engWorker.terminate(); } catch (_) {}
-  }
-
-  // Serbian phase (download may or may not still be in flight)
-  setPhase('Waiting for Serbian model…');
-  try {
-    srpWorker = await srpPromise;
-  } catch (e) {
-    appendResult('[Serbian download failed: ' + (e && e.message ? e.message : e) + ']');
-    return;
-  }
-
-  setPhase('Running Serbian (Latin + Cyrillic)…');
-  try {
-    const r = await srpWorker.recognize(file);
-    appendResult('── Serbian (Latin + Cyrillic) ──\n' + ((r.data && r.data.text) || '(no text)'));
-  } catch (e) {
-    appendResult('[Serbian OCR failed: ' + (e && e.message ? e.message : e) + ']');
-  }
-  try { await srpWorker.terminate(); } catch (_) {}
-
-  setPhase('Done.');
-}
-
-function makeOcrCard(file) {
-  const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'OCR'));
-
-  const langSel = el('select', {});
-  langSel.appendChild(el('option', { value: 'auto' },        'Auto: English then Serbian'));
-  langSel.appendChild(el('option', { value: 'srp_latn' },     'Serbian Latin'));
-  langSel.appendChild(el('option', { value: 'srp' },          'Serbian Cyrillic'));
-  langSel.appendChild(el('option', { value: 'eng' },          'English only'));
-  for (const [code, name] of TESSERACT_LANGS) {
-    if (code === 'eng' || code === 'srp' || code === 'srp_latn') continue;
-    langSel.appendChild(el('option', { value: code }, name + '  [' + code + ']'));
-  }
-  langSel.value = 'auto';
+  dropdown.appendChild(trigger);
+  dropdown.appendChild(list);
 
   const runBtn  = el('button', { type: 'button', class: 'anr-btn' }, 'Run');
-  const skipBtn = el('button', { type: 'button', class: 'anr-btn', style: 'display:none;' }, 'Skip English');
 
   const controlsRow = el('div', { class: 'anr-controls' }, [
-    el('div', { class: 'anr-control' }, [el('label', {}, 'Lang'), langSel]),
-    el('div', { class: 'anr-control' }, [runBtn]),
-    el('div', { class: 'anr-control' }, [skipBtn])
+    el('div', { class: 'anr-control' }, [el('label', {}, 'Lang'), dropdown]),
+    el('div', { class: 'anr-control' }, [runBtn])
   ]);
   card.appendChild(controlsRow);
 
@@ -696,76 +669,81 @@ function makeOcrCard(file) {
   card.appendChild(out);
 
   let busy = false;
-  let skipEng = false;
-  let engWorkerRef = null;
-
-  function syncSkipBtn() {
-    skipBtn.style.display = (langSel.value === 'auto' && busy) ? '' : 'none';
-  }
+  let activeWorker = null;
 
   async function run() {
     if (busy) return;
     busy = true;
-    skipEng = false;
-    engWorkerRef = null;
-    runBtn.disabled = true;
-    langSel.disabled = true;
+    runBtn.textContent = 'Stop';
+    langState.disabled = true;
+    trigger.classList.add('is-disabled');
+    dropdown.classList.remove('is-open');
     out.textContent = '';
     progressWrap.style.display = '';
     setBar(0);
     progressLabel.textContent = 'starting…';
-    syncSkipBtn();
 
-    const setProgress = (m, which) => {
+    const setProgress = (m) => {
       if (m && m.progress != null) {
         const status = m.status || 'working';
         const isRecognising = status === 'recognizing text';
         setBar(isRecognising ? m.progress : 0);
-        progressLabel.textContent =
-          (which ? which + ' ' : '') + status + '  ' + (m.progress * 100).toFixed(0) + '%';
+        progressLabel.textContent = status + '  ' + (m.progress * 100).toFixed(0) + '%';
       }
-    };
-    const setPhase = (s) => { progressLabel.textContent = s; };
-    const appendResult = (text) => {
-      out.textContent = out.textContent ? (out.textContent + '\n\n' + text) : text;
     };
 
     try {
-      if (langSel.value === 'auto') {
-        await runOcrAuto(file, {
-          setPhase, setProgress, appendResult,
-          getSkipEng: () => skipEng,
-          registerEngWorker: (w) => { engWorkerRef = w; }
-        });
+      const T = await ensureTesseract();
+      activeWorker = await T.createWorker(langState.value, undefined, { logger: setProgress });
+      progressLabel.textContent = 'Recognising…';
+      const r = await activeWorker.recognize(ocrInput);
+      await activeWorker.terminate();
+      activeWorker = null;
+      const MIN_CONF = 60;
+      const MIN_WORD_LEN = 2;
+      const words = (r.data && r.data.words) || [];
+      const good = words.filter(w => w.confidence >= MIN_CONF && w.text.trim().length >= MIN_WORD_LEN);
+      if (good.length === 0) {
+        out.textContent = '(no text detected)';
       } else {
-        const T = await ensureTesseract();
-        const worker = await T.createWorker(langSel.value, undefined, { logger: setProgress });
-        setPhase('Recognising…');
-        const r = await worker.recognize(file);
-        out.textContent = (r.data && r.data.text) || '(no text)';
-        await worker.terminate();
+        const lines = {};
+        for (const w of good) {
+          const key = w.line ? w.line.text : '_';
+          if (!lines[key]) lines[key] = [];
+          lines[key].push(w.text);
+        }
+        out.textContent = Object.values(lines).map(ws => ws.join(' ')).join('\n');
       }
       setBar(1);
-      if (!progressLabel.textContent || /\d/.test(progressLabel.textContent)) progressLabel.textContent = 'done';
+      progressLabel.textContent = good.length ? 'done' : 'no text found';
     } catch (e) {
-      out.textContent = '[OCR failed: ' + (e && e.message ? e.message : e) + ']';
-      progressLabel.textContent = 'failed';
+      if (!busy) {
+        out.textContent = '';
+        progressLabel.textContent = 'stopped';
+      } else {
+        out.textContent = '[OCR failed: ' + (e && e.message ? e.message : e) + ']';
+        progressLabel.textContent = 'failed';
+      }
     } finally {
       busy = false;
-      runBtn.disabled = false;
-      langSel.disabled = false;
-      syncSkipBtn();
+      activeWorker = null;
+      runBtn.textContent = 'Run';
+      langState.disabled = false;
+      trigger.classList.remove('is-disabled');
     }
   }
 
-  runBtn.addEventListener('click', run);
-  skipBtn.addEventListener('click', () => {
-    skipEng = true;
-    progressLabel.textContent = 'Skipping English…';
-    if (engWorkerRef) { try { engWorkerRef.terminate(); } catch (_) {} }
-    skipBtn.style.display = 'none';
+  function stop() {
+    busy = false;
+    if (activeWorker) {
+      try { activeWorker.terminate(); } catch (_) {}
+      activeWorker = null;
+    }
+  }
+
+  runBtn.addEventListener('click', () => {
+    if (busy) stop(); else run();
   });
-  langSel.addEventListener('change', syncSkipBtn);
 
   return card;
 }
@@ -1151,7 +1129,8 @@ export async function renderPhoto(file, resultsEl) {
   if (histSlot) {
     histSlot.innerHTML = '';
     const histCard = el('div', { class: 'anr-card' });
-    histCard.appendChild(el('h3', {}, 'Histogram'));
+    const [histH, histHelp] = h3help('Histogram', 'RGB colour histogram. Shows the distribution of red, green, and blue intensity values across all pixels. Peaks on the left mean dark tones dominate; peaks on the right mean bright tones. Click to open in lightbox.');
+    histCard.appendChild(histH); histCard.appendChild(histHelp);
     const histCanvas = el('canvas', { class: 'anr-histogram' });
     histCanvas.width = 1024; histCanvas.height = 200;
     histCanvas.style.cursor = 'zoom-in';
@@ -1165,7 +1144,8 @@ export async function renderPhoto(file, resultsEl) {
 
   // ---- Palette ----
   const palCard = el('div', { class: 'anr-card' });
-  palCard.appendChild(el('h3', {}, 'Dominant colours'));
+  const [palH, palHelp] = h3help('Dominant colours', 'Extracted via median-cut colour quantization. The image is repeatedly split along the colour channel with the widest range until 8 representative colours remain. Click a swatch to copy its hex value.');
+  palCard.appendChild(palH); palCard.appendChild(palHelp);
   const palDiv = el('div', { class: 'anr-palette' });
   const totalPx = pixData.width * pixData.height;
   for (const c of palette) {
@@ -1207,12 +1187,13 @@ export async function renderPhoto(file, resultsEl) {
   const ocrSlot = document.getElementById('photoOcrSlot');
   if (ocrSlot) {
     ocrSlot.innerHTML = '';
-    ocrSlot.appendChild(makeOcrCard(file));
+    ocrSlot.appendChild(makeOcrCard(file, img));
   }
 
   // ---- Hash + raw EXIF dump (collapsible) ----
   const hashCard = el('div', { class: 'anr-card' });
-  hashCard.appendChild(el('h3', {}, 'Integrity'));
+  const [hashH, hashHelp] = h3help('Integrity', '<strong>pHash</strong> (perceptual hash) is a fingerprint of the image content. Similar-looking images produce similar hashes, even after resizing or recompression. Useful for finding duplicates.<br><strong>SHA-256</strong> is a cryptographic hash of the raw file bytes. Any change to the file, even one bit, produces a completely different hash. Useful for verifying a file has not been tampered with.');
+  hashCard.appendChild(hashH); hashCard.appendChild(hashHelp);
   const phash = computePHash(img);
   const hashTbl = el('table', { class: 'anr-readout' });
   hashTbl.appendChild(row('pHash', phash));
@@ -1226,20 +1207,8 @@ export async function renderPhoto(file, resultsEl) {
 
   // ---- LSB steganography analysis ----
   const lsbCard = el('div', { class: 'anr-card' });
-  const lsbHead = el('h3', {});
-  lsbHead.appendChild(document.createTextNode('LSB Analysis'));
-  const lsbHelpBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'What is LSB analysis?' }, '[?]');
-  const lsbHelpText = el('div', { class: 'anr-info-panel', style: 'display:none;' });
-  lsbHelpText.innerHTML =
-    'LSB (Least Significant Bit) analysis isolates the lowest bit of each colour channel (R, G, B) and renders it as a black-and-white image. ' +
-    'In a normal photograph these planes look like random noise. Visible patterns, text, or structure in the LSB plane can indicate ' +
-    'steganographic data (hidden messages embedded in the image) or heavy editing. Click a preview to open it at full resolution.';
-  lsbHelpBtn.addEventListener('click', () => {
-    lsbHelpText.style.display = lsbHelpText.style.display === 'none' ? 'block' : 'none';
-  });
-  lsbHead.appendChild(lsbHelpBtn);
-  lsbCard.appendChild(lsbHead);
-  lsbCard.appendChild(lsbHelpText);
+  const [lsbH, lsbHelp] = h3help('LSB Analysis', 'LSB (Least Significant Bit) analysis isolates the lowest bit of each colour channel (R, G, B) and renders it as a black-and-white image. In a normal photograph these planes look like random noise. Visible patterns, text, or structure in the LSB plane can indicate steganographic data (hidden messages embedded in the image) or heavy editing. Click a preview to open it at full resolution.');
+  lsbCard.appendChild(lsbH); lsbCard.appendChild(lsbHelp);
   renderLsbPlanes(img, lsbCard);
   resultsEl.appendChild(lsbCard);
 

@@ -871,39 +871,39 @@ function boot() {
       if (el) el.classList.add('has-data');
     }
 
-    function scrollToEl(target) {
-      const section = target.closest('.section') || target;
-      window.scrollTo({ top: section.getBoundingClientRect().top + window.scrollY - 56, behavior: 'smooth' });
+    function scrollTo(hash) {
+      location.hash = hash;
+      setTimeout(() => history.replaceState(null, '', location.pathname + location.search), 2000);
     }
 
     if (kind === 'photo') {
       markNav('#photo');
-      scrollToEl(photoResults);
+      scrollTo('#photo');
       renderPhoto(file, photoResults);
     } else if (kind === 'audio') {
       markNav('#audio');
-      scrollToEl(audioResults);
+      scrollTo('#audio');
       renderAudio(file, audioResults);
     } else if (kind === 'video') {
       markNav('#video');
       markNav('#audio');
       markNav('#photo');
-      scrollToEl(videoResults);
+      scrollTo('#video');
       renderVideo(file, videoResults);
     } else if (kind === 'pdf') {
-      scrollToEl(unknownResults);
+      scrollTo('#unknownResults');
       renderPdf(file, unknownResults);
     } else if (kind === 'zip') {
-      scrollToEl(unknownResults);
+      scrollTo('#unknownResults');
       renderArchive(file, unknownResults);
     } else if (kind === 'svg') {
-      scrollToEl(unknownResults);
+      scrollTo('#unknownResults');
       renderSvg(file, unknownResults);
     } else if (kind === 'csv') {
-      scrollToEl(unknownResults);
+      scrollTo('#unknownResults');
       renderCsv(file, unknownResults);
     } else {
-      scrollToEl(unknownResults);
+      scrollTo('#unknownResults');
       renderUnknown(file, unknownResults);
     }
   }

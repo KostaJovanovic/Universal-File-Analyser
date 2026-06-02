@@ -3,7 +3,7 @@
    frame capture (routed to photo analysis), audio track extraction
    (waveform + spectrogram via audio module). */
 
-import { makeSpectrogramPanel } from './audio.js';
+import { makeSpectrogramPanel, makePlayer } from './audio.js';
 import { renderPhoto } from './photo.js';
 
 // ---------- progress-tracked fetch ----------
@@ -31,18 +31,17 @@ function makeBlobURL(data, type) {
   return URL.createObjectURL(new Blob([data], { type }));
 }
 
-// ---------- FFmpeg WASM fallback (lazy) ----------
+// ---------- FFmpeg WASM fallback (lazy, single-threaded) ----------
 let ffmpegInstance = null;
 async function loadFFmpeg(onProgress) {
   if (ffmpegInstance) return ffmpegInstance;
   const { FFmpeg } = await import('https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js');
-  const base = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
-  const coreJS = makeBlobURL(await fetchWithProgress(base + '/ffmpeg-core.js', (p) => onProgress && onProgress(p * 0.1)), 'text/javascript');
-  const wasmData = await fetchWithProgress(base + '/ffmpeg-core.wasm', (p) => onProgress && onProgress(0.1 + p * 0.85));
+  const base = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd';
+  const coreJS = makeBlobURL(await fetchWithProgress(base + '/ffmpeg-core.js', (p) => onProgress && onProgress(p * 0.3)), 'text/javascript');
+  const wasmData = await fetchWithProgress(base + '/ffmpeg-core.wasm', (p) => onProgress && onProgress(0.3 + p * 0.7));
   const wasmURL = makeBlobURL(wasmData, 'application/wasm');
-  const workerJS = makeBlobURL(await fetchWithProgress(base + '/ffmpeg-core.worker.js', (p) => onProgress && onProgress(0.95 + p * 0.05)), 'text/javascript');
   const ff = new FFmpeg();
-  await ff.load({ coreURL: coreJS, wasmURL, workerURL: workerJS });
+  await ff.load({ coreURL: coreJS, wasmURL });
   ffmpegInstance = ff;
   return ff;
 }
@@ -98,6 +97,16 @@ function row(label, value) {
     el('th', {}, label),
     el('td', {}, value == null || value === '' ? '-' : String(value))
   ]);
+}
+
+function h3help(title, helpHtml) {
+  const h = el('h3', {});
+  h.appendChild(document.createTextNode(title));
+  const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
+  const panel = el('div', { class: 'anr-info-panel', style: 'display:none;', html: helpHtml });
+  btn.addEventListener('click', () => { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
+  h.appendChild(btn);
+  return [h, panel];
 }
 
 function fmtBytes(n) {
@@ -327,7 +336,7 @@ async function peekVideoContainer(file) {
   return { container: 'unknown' };
 }
 
-// ---------- frame rate detection via requestVideoFrameCallback ----------
+// ---------- frame rate detection ----------
 
 function roundFps(raw) {
   const standard = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120, 240];
@@ -339,54 +348,74 @@ function roundFps(raw) {
   return minDiff < 0.5 ? closest : Math.round(raw * 100) / 100;
 }
 
-async function detectFps(url) {
-  if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) return null;
+async function detectFpsFromContainer(file) {
+  const size = Math.min(file.size, 4 * 1024 * 1024);
+  const buf = await file.slice(0, size).arrayBuffer();
+  const view = new DataView(buf);
+  if (size < 12) return null;
+  const ftyp = String.fromCharCode(view.getUint8(4), view.getUint8(5), view.getUint8(6), view.getUint8(7));
+  if (ftyp !== 'ftyp') return null;
 
-  const v = document.createElement('video');
-  v.muted = true;
-  v.playsInline = true;
-  v.preload = 'auto';
-  v.src = url;
+  const traks = findAllBoxes(view, 0, size, 'trak');
+  for (const trak of traks) {
+    const trakStart = trak.offset + trak.headerSize;
+    const trakEnd = Math.min(trak.offset + trak.size, size);
 
+    const vmhd = findAllBoxes(view, trakStart, trakEnd, 'vmhd');
+    if (!vmhd.length) continue;
+
+    const mdhdBoxes = findAllBoxes(view, trakStart, trakEnd, 'mdhd');
+    if (!mdhdBoxes.length) continue;
+    const mdhd = mdhdBoxes[0];
+    const mdhdData = mdhd.offset + mdhd.headerSize;
+    if (mdhdData + 24 > size) continue;
+    const mdhdVersion = view.getUint8(mdhdData);
+    const timescale = mdhdVersion === 1
+      ? view.getUint32(mdhdData + 20)
+      : view.getUint32(mdhdData + 12);
+
+    const sttsBoxes = findAllBoxes(view, trakStart, trakEnd, 'stts');
+    if (!sttsBoxes.length) continue;
+    const stts = sttsBoxes[0];
+    const sttsData = stts.offset + stts.headerSize;
+    if (sttsData + 16 > size) continue;
+    const entryCount = view.getUint32(sttsData + 4);
+    if (entryCount < 1) continue;
+    const sampleDuration = view.getUint32(sttsData + 12);
+    if (sampleDuration <= 0 || timescale <= 0) continue;
+
+    const fps = timescale / sampleDuration;
+    if (fps > 1 && fps < 1000) return roundFps(fps);
+  }
+  return null;
+}
+
+async function detectFpsWithFfmpeg(file, onProgress) {
+  const ff = await loadFFmpeg(onProgress);
+  const { fetchFile } = await import('https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js');
+  await ff.writeFile('probe', await fetchFile(file));
+  let log = '';
+  ff.on('log', ({ message }) => { log += message + '\n'; });
+  await ff.exec(['-i', 'probe', '-f', 'null', '-t', '2', '-']);
+  await ff.deleteFile('probe');
+  const m = log.match(/(\d+(?:\.\d+)?) fps/);
+  if (m) return roundFps(parseFloat(m[1]));
+  const tbr = log.match(/(\d+(?:\.\d+)?) tbr/);
+  if (tbr) return roundFps(parseFloat(tbr[1]));
+  return null;
+}
+
+async function detectFps(file, fpsCell) {
+  const containerFps = await detectFpsFromContainer(file);
+  if (containerFps) return containerFps;
+  if (fpsCell) fpsCell.textContent = 'loading ffmpeg…';
   try {
-    await new Promise((resolve, reject) => {
-      v.oncanplay = resolve;
-      v.onerror = reject;
-      setTimeout(reject, 8000);
+    return await detectFpsWithFfmpeg(file, (p) => {
+      if (fpsCell) fpsCell.textContent = 'loading ffmpeg… ' + Math.round(p * 100) + '%';
     });
   } catch (_) {
-    v.removeAttribute('src');
-    v.load();
     return null;
   }
-
-  return new Promise((resolve) => {
-    const times = [];
-    let done = false;
-
-    function finish() {
-      if (done) return;
-      done = true;
-      v.pause();
-      v.removeAttribute('src');
-      v.load();
-      if (times.length < 2) { resolve(null); return; }
-      let total = 0;
-      for (let i = 1; i < times.length; i++) total += times[i] - times[i - 1];
-      const avg = total / (times.length - 1);
-      resolve(avg > 0 ? roundFps(1 / avg) : null);
-    }
-
-    function onFrame(_now, meta) {
-      times.push(meta.mediaTime);
-      if (times.length >= 20 || (times.length > 2 && meta.mediaTime > 1)) { finish(); return; }
-      v.requestVideoFrameCallback(onFrame);
-    }
-
-    v.requestVideoFrameCallback(onFrame);
-    v.play().catch(() => finish());
-    setTimeout(finish, 5000);
-  });
 }
 
 // ---------- scene change detection ----------
@@ -567,18 +596,30 @@ export async function renderVideo(file, resultsEl) {
   // ---- Player ----
   const playerCard = el('div', { class: 'anr-card' });
   playerCard.appendChild(el('h3', {}, 'Player'));
-  const playerEl = el('video', { controls: '', src: url });
-  playerEl.style.cssText = 'width:100%; max-height:480px; background:#0a0a0a; display:block; border:1px solid var(--hairline);';
+  const playerEl = el('video', { src: url });
+  playerEl.style.cssText = 'width:100%; max-height:480px; background:#0a0a0a; display:block; border:1px solid var(--hairline); cursor:pointer;';
+  playerEl.addEventListener('click', () => { if (playerEl.paused) playerEl.play(); else playerEl.pause(); });
   playerCard.appendChild(playerEl);
+  playerCard.appendChild(makePlayer(playerEl));
 
   // ---- Frame-by-frame navigation ----
-  const frameTimeLabel = el('span', { class: 'anr-hint', style: 'min-width:90px; text-align:center; font-variant-numeric:tabular-nums;' }, '0:00.000');
+  let detectedFps = 30;
+  const frameTimeLabel = el('span', { class: 'anr-hint', style: 'min-width:110px; text-align:center; font-variant-numeric:tabular-nums;' }, '00:00:00:00');
 
   function updateFrameTimeLabel() {
     const t = playerEl.currentTime;
-    const m = Math.floor(t / 60);
-    const s = t % 60;
-    frameTimeLabel.textContent = m + ':' + s.toFixed(3).padStart(6, '0');
+    const fps = detectedFps;
+    const totalFrames = Math.floor(t * fps);
+    const f = totalFrames % Math.round(fps);
+    const totalSec = Math.floor(t);
+    const s = totalSec % 60;
+    const m = Math.floor(totalSec / 60) % 60;
+    const h = Math.floor(totalSec / 3600);
+    frameTimeLabel.textContent =
+      String(h).padStart(2, '0') + ':' +
+      String(m).padStart(2, '0') + ':' +
+      String(s).padStart(2, '0') + ':' +
+      String(f).padStart(2, '0');
   }
 
   playerEl.addEventListener('timeupdate', updateFrameTimeLabel);
@@ -649,8 +690,10 @@ export async function renderVideo(file, resultsEl) {
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
 
-  detectFps(url).then((fps) => {
-    fpsRow.querySelector('td').textContent = fps != null ? fps + ' fps' : 'N/A';
+  const fpsCell = fpsRow.querySelector('td');
+  detectFps(file, fpsCell).then((fps) => {
+    fpsCell.textContent = fps != null ? fps + ' fps' : 'N/A';
+    if (fps != null) { detectedFps = fps; updateFrameTimeLabel(); }
   });
 
   // ---- Metadata via exifr ----
@@ -753,7 +796,8 @@ export async function renderVideo(file, resultsEl) {
 
     // ---- Contact sheet / thumbnail grid ----
     const sheetCard = el('div', { class: 'anr-card' });
-    sheetCard.appendChild(el('h3', {}, 'Contact sheet'));
+    const [shH, shHelp] = h3help('Contact sheet', 'A 4×4 grid of 16 evenly-spaced thumbnails from across the video. Gives you a visual overview of the entire video at a glance, similar to film contact sheets.');
+    sheetCard.appendChild(shH); sheetCard.appendChild(shHelp);
     sheetCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:12px !important;' },
       '4×4 grid of 16 evenly-spaced thumbnails from the video'));
     const sheetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Generate contact sheet');
@@ -817,9 +861,8 @@ export async function renderVideo(file, resultsEl) {
 
     // ---- Scene change detection ----
     const sceneCard = el('div', { class: 'anr-card' });
-    sceneCard.appendChild(el('h3', {}, 'Scene changes'));
-    sceneCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:12px !important;' },
-      'Detect scene changes by comparing consecutive frames (pixel difference)'));
+    const [scH, scHelp] = h3help('Scene changes', 'Compares consecutive frames by computing the mean pixel difference. When the difference exceeds a threshold, a scene change is marked. Click any thumbnail or timeline marker to jump to that point in the video.');
+    sceneCard.appendChild(scH); sceneCard.appendChild(scHelp);
     const sceneBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Detect scene changes');
     const sceneOut = el('div');
 
@@ -893,6 +936,18 @@ export async function renderVideo(file, resultsEl) {
   const audioResultsEl = document.getElementById('audioResults');
   if (audioResultsEl) {
     audioResultsEl.hidden = false;
+
+    // Scroll compensation: when audio section expands above the video section,
+    // adjust scroll so the video section stays in place
+    let lastAudioHeight = audioResultsEl.offsetHeight;
+    const scrollCompensator = new ResizeObserver(() => {
+      const newHeight = audioResultsEl.offsetHeight;
+      const delta = newHeight - lastAudioHeight;
+      if (delta > 0) window.scrollBy(0, delta);
+      lastAudioHeight = newHeight;
+    });
+    scrollCompensator.observe(audioResultsEl);
+
     const audioCard = el('div', { class: 'anr-card' });
     audioCard.appendChild(el('h3', {}, 'Audio track'));
     const audioStatus = el('p', { class: 'anr-info' }, 'Decoding audio from video…');
@@ -952,12 +1007,13 @@ export async function renderVideo(file, resultsEl) {
       }
       const wavUrl = URL.createObjectURL(new Blob([wavBuf], { type: 'audio/wav' }));
 
-      // Player
+      // Custom player (hidden audio element + styled controls)
+      const audioPlayer = el('audio', { src: wavUrl });
+      audioPlayer.style.display = 'none';
       const playerCard = el('div', { class: 'anr-card' });
       playerCard.appendChild(el('h3', {}, 'Extracted audio'));
-      const audioPlayer = el('audio', { controls: '', src: wavUrl });
-      audioPlayer.style.cssText = 'width:100%; display:block;';
       playerCard.appendChild(audioPlayer);
+      playerCard.appendChild(makePlayer(audioPlayer));
       audioResultsEl.appendChild(playerCard);
 
       // Info table
@@ -970,38 +1026,54 @@ export async function renderVideo(file, resultsEl) {
       at.appendChild(row('Samples', mono.length.toLocaleString()));
       audioCard.appendChild(at);
 
-      // Waveform with playhead overlay
+      // Waveform with draggable playhead
       const waveWrap = el('div', { style: 'position:relative; width:100%;' });
       const waveCanvas = el('canvas', { class: 'anr-waveform' });
       waveCanvas.width = 1024; waveCanvas.height = 80;
       renderWaveform(waveCanvas, mono);
       const waveLine = el('div', { class: 'anr-playhead' });
+      waveLine.style.pointerEvents = 'auto';
+      waveLine.style.width = '7px';
+      waveLine.style.marginLeft = '-3px';
+      waveLine.style.cursor = 'col-resize';
+      waveLine.style.background = 'transparent';
+      waveLine.style.borderLeft = '1px solid #fff';
       waveWrap.appendChild(waveCanvas);
       waveWrap.appendChild(waveLine);
       audioCard.appendChild(waveWrap);
 
-      // Spectrogram
+      // Spectrogram (with playhead + click-to-seek)
       const basename = (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio';
-      audioResultsEl.appendChild(makeSpectrogramPanel(mono, audioBuf.sampleRate, { basename }));
+      audioResultsEl.appendChild(makeSpectrogramPanel(mono, audioBuf.sampleRate, { basename, audioEl: audioPlayer }));
 
-      // Sync playhead at 60fps
-      let rafId = null;
+      // Sync waveform playhead at 60fps
       function tickPlayhead() {
         const pct = audioDuration > 0 ? (audioPlayer.currentTime / audioDuration) * 100 : 0;
         waveLine.style.left = pct + '%';
-        if (!audioPlayer.paused) rafId = requestAnimationFrame(tickPlayhead);
+        if (!audioPlayer.paused) requestAnimationFrame(tickPlayhead);
       }
-      audioPlayer.addEventListener('play', () => { rafId = requestAnimationFrame(tickPlayhead); });
+      audioPlayer.addEventListener('play', () => requestAnimationFrame(tickPlayhead));
       audioPlayer.addEventListener('pause', tickPlayhead);
       audioPlayer.addEventListener('seeked', tickPlayhead);
 
       // Click waveform to seek
       waveCanvas.style.cursor = 'pointer';
-      waveCanvas.addEventListener('click', (e) => {
+      function seekFromX(clientX) {
         const rect = waveCanvas.getBoundingClientRect();
-        const frac = (e.clientX - rect.left) / rect.width;
+        const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
         audioPlayer.currentTime = frac * audioDuration;
-      });
+        tickPlayhead();
+      }
+      waveCanvas.addEventListener('click', (e) => seekFromX(e.clientX));
+
+      // Drag playhead on waveform
+      let waveDragging = false;
+      waveLine.addEventListener('mousedown', (e) => { waveDragging = true; e.preventDefault(); });
+      window.addEventListener('mousemove', (e) => { if (waveDragging) seekFromX(e.clientX); });
+      window.addEventListener('mouseup', () => { waveDragging = false; });
+      waveLine.addEventListener('touchstart', (e) => { waveDragging = true; e.preventDefault(); }, { passive: false });
+      window.addEventListener('touchmove', (e) => { if (waveDragging && e.touches[0]) seekFromX(e.touches[0].clientX); });
+      window.addEventListener('touchend', () => { waveDragging = false; });
     } catch (e) {
       console.warn('Audio extraction failed:', e);
       audioStatus.remove();
@@ -1013,7 +1085,8 @@ export async function renderVideo(file, resultsEl) {
   // ---- SHA-256 ----
   if (file.size <= 500 * 1024 * 1024) {
     const hashCard = el('div', { class: 'anr-card' });
-    hashCard.appendChild(el('h3', {}, 'Integrity'));
+    const [vhH, vhHelp] = h3help('Integrity', '<strong>SHA-256</strong> is a cryptographic hash of the raw file bytes. Any change to the file, even one bit, produces a completely different hash. Useful for verifying a file has not been tampered with.');
+    hashCard.appendChild(vhH); hashCard.appendChild(vhHelp);
     const hashOut = el('p', { class: 'anr-hint', style: 'word-break:break-all;' }, 'computing SHA-256…');
     hashCard.appendChild(hashOut);
     resultsEl.appendChild(hashCard);

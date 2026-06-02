@@ -3,5 +3,6 @@
     "allow": [
       "PowerShell(magick *)"
     ]
-  }
+  },
+  "spinnerTipsEnabled": false
 }
