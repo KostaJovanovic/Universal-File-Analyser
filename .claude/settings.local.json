@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(magick *)"
+      "PowerShell(magick *)",
+      "Bash(rtk ls *)"
     ]
   },
   "spinnerTipsEnabled": false

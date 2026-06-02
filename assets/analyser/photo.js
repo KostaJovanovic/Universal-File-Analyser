@@ -12,8 +12,8 @@ const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tess
 const LEAFLET_CSS   = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
 const LEAFLET_JS    = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
 const HEIC2ANY_URL  = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
-const MAGICK_WASM_URL = 'https://cdn.jsdelivr.net/npm/@imagemagick/magick-wasm@0.0.37/dist/index.mjs';
-const MAGICK_WASM_DIR = 'https://cdn.jsdelivr.net/npm/@imagemagick/magick-wasm@0.0.37/dist/';
+const MAGICK_WASM_URL = 'https://cdn.jsdelivr.net/npm/@imagemagick/magick-wasm@0.0.40/dist/index.mjs';
+const MAGICK_WASM_DIR = 'https://cdn.jsdelivr.net/npm/@imagemagick/magick-wasm@0.0.40/dist/';
 
 const TESSERACT_LANGS = [
   ['eng', 'English', '4 MB'],
@@ -490,10 +490,24 @@ async function convertHeic(file) {
 }
 
 async function extractRawPreview(file) {
-  if (!window.exifr) throw new Error('exifr not loaded');
-  const thumb = await exifr.thumbnail(file);
-  if (!thumb) throw new Error('No embedded preview found');
-  return new File([thumb], file.name.replace(/\.[^.]+$/, '_preview.jpg'), { type: 'image/jpeg' });
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const jpegs = [];
+  for (let i = 0; i < buf.length - 1; i++) {
+    if (buf[i] === 0xFF && buf[i + 1] === 0xD8) {
+      for (let j = i + 2; j < buf.length - 1; j++) {
+        if (buf[j] === 0xFF && buf[j + 1] === 0xD9) {
+          jpegs.push({ offset: i, length: j + 2 - i });
+          i = j + 1;
+          break;
+        }
+      }
+    }
+  }
+  if (jpegs.length === 0) throw new Error('No embedded JPEG found');
+  jpegs.sort((a, b) => b.length - a.length);
+  const best = jpegs[0];
+  const jpegData = buf.slice(best.offset, best.offset + best.length);
+  return new File([jpegData], file.name.replace(/\.[^.]+$/, '_preview.jpg'), { type: 'image/jpeg' });
 }
 
 async function fetchWithProgress(url, onProgress) {
@@ -547,6 +561,7 @@ async function convertWithImageMagick(file, container) {
   return new Promise((resolve, reject) => {
     try {
       ImageMagick.read(data, (image) => {
+        image.quality = 92;
         image.write(MagickFormat.Jpeg, (jpegData) => {
           wrap.remove();
           const blob = new Blob([jpegData], { type: 'image/jpeg' });
@@ -858,7 +873,19 @@ function ensureLightbox() {
   const dot = document.createElement('div');
   dot.className = 'lightbox-focus-dot';
   dot.hidden = true;
+  const peakingCanvas = document.createElement('canvas');
+  peakingCanvas.className = 'lightbox-peaking';
+  peakingCanvas.hidden = true;
+  const highlightsCanvas = document.createElement('canvas');
+  highlightsCanvas.className = 'lightbox-peaking';
+  highlightsCanvas.hidden = true;
+  const shadowsCanvas = document.createElement('canvas');
+  shadowsCanvas.className = 'lightbox-peaking';
+  shadowsCanvas.hidden = true;
   wrap.appendChild(img);
+  wrap.appendChild(peakingCanvas);
+  wrap.appendChild(highlightsCanvas);
+  wrap.appendChild(shadowsCanvas);
   wrap.appendChild(mapOverlay);
   wrap.appendChild(dot);
   const toolbar = document.createElement('div');
@@ -888,6 +915,88 @@ function sizeWrap(wrap, w, h) {
   wrap.style.width = Math.round(w * scale) + 'px';
   wrap.style.height = Math.round(h * scale) + 'px';
 }
+function computePeaking(imgEl, canvas) {
+  const w = imgEl.naturalWidth, h = imgEl.naturalHeight;
+  const scale = Math.min(1, 2000 / Math.max(w, h));
+  const sw = Math.round(w * scale), sh = Math.round(h * scale);
+  const tmp = document.createElement('canvas');
+  tmp.width = sw; tmp.height = sh;
+  const tctx = tmp.getContext('2d');
+  tctx.drawImage(imgEl, 0, 0, sw, sh);
+  const id = tctx.getImageData(0, 0, sw, sh);
+  const d = id.data;
+
+  canvas.width = sw; canvas.height = sh;
+  const ctx = canvas.getContext('2d');
+  const out = ctx.createImageData(sw, sh);
+  const od = out.data;
+  const threshold = 220;
+
+  for (let y = 1; y < sh - 1; y++) {
+    for (let x = 1; x < sw - 1; x++) {
+      const i = (y * sw + x) * 4;
+      const tl = ((y-1)*sw+(x-1))*4, tc = ((y-1)*sw+x)*4, tr = ((y-1)*sw+(x+1))*4;
+      const ml = (y*sw+(x-1))*4,                            mr = (y*sw+(x+1))*4;
+      const bl = ((y+1)*sw+(x-1))*4, bc = ((y+1)*sw+x)*4, br = ((y+1)*sw+(x+1))*4;
+
+      let maxEdge = 0;
+      for (let c = 0; c < 3; c++) {
+        const gx = -d[tl+c] - 2*d[ml+c] - d[bl+c] + d[tr+c] + 2*d[mr+c] + d[br+c];
+        const gy = -d[tl+c] - 2*d[tc+c] - d[tr+c] + d[bl+c] + 2*d[bc+c] + d[br+c];
+        const mag = Math.sqrt(gx*gx + gy*gy);
+        if (mag > maxEdge) maxEdge = mag;
+      }
+
+      if (maxEdge > threshold) {
+        const a = Math.min(230, Math.round((maxEdge - threshold) * 1.0));
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= sw || ny < 0 || ny >= sh) continue;
+            const ni = (ny * sw + nx) * 4;
+            if (a > od[ni + 3]) {
+              od[ni]     = 230;
+              od[ni + 1] = 20;
+              od[ni + 2] = 20;
+              od[ni + 3] = a;
+            }
+          }
+        }
+      }
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+}
+
+function computeExposureOverlay(imgEl, canvas, mode) {
+  const w = imgEl.naturalWidth, h = imgEl.naturalHeight;
+  const scale = Math.min(1, 2000 / Math.max(w, h));
+  const sw = Math.round(w * scale), sh = Math.round(h * scale);
+  const tmp = document.createElement('canvas');
+  tmp.width = sw; tmp.height = sh;
+  const tctx = tmp.getContext('2d');
+  tctx.drawImage(imgEl, 0, 0, sw, sh);
+  const id = tctx.getImageData(0, 0, sw, sh);
+  const d = id.data;
+
+  canvas.width = sw; canvas.height = sh;
+  const ctx = canvas.getContext('2d');
+  const out = ctx.createImageData(sw, sh);
+  const od = out.data;
+
+  for (let i = 0; i < d.length; i += 4) {
+    const lum = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+    if (mode === 'highlights' && lum > 245) {
+      od[i] = 230; od[i+1] = 20; od[i+2] = 20;
+      od[i+3] = Math.min(255, Math.round((lum - 245) * 25));
+    } else if (mode === 'shadows' && lum < 10) {
+      od[i] = 40; od[i+1] = 100; od[i+2] = 230;
+      od[i+3] = Math.min(255, Math.round((10 - lum) * 25));
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+}
+
 function openLightbox(src, alt, metaText, focusOpts) {
   const lb = ensureLightbox();
   const wrap = lb.querySelector('.lightbox-img-wrap');
@@ -900,10 +1009,45 @@ function openLightbox(src, alt, metaText, focusOpts) {
   lbImg.alt = alt || '';
   lbImg.onload = () => { sizeWrap(wrap, lbImg.naturalWidth, lbImg.naturalHeight); };
   if (lbImg.complete && lbImg.naturalWidth) sizeWrap(wrap, lbImg.naturalWidth, lbImg.naturalHeight);
+  const overlays = wrap.querySelectorAll('.lightbox-peaking');
+  const peakingCv = overlays[0], highlightsCv = overlays[1], shadowsCv = overlays[2];
+  peakingCv.hidden = true;
+  highlightsCv.hidden = true;
+  shadowsCv.hidden = true;
   mapOverlay.hidden = true;
   mapOverlay.src = '';
   dot.hidden = true;
   lb.querySelector('.lightbox-meta').textContent = metaText || '';
+
+  let peakingReady = false, highlightsReady = false, shadowsReady = false;
+
+  const peakBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' }, 'Focus peaking');
+  peakBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!peakingReady) { computePeaking(lbImg, peakingCv); peakingReady = true; }
+    peakingCv.hidden = !peakingCv.hidden;
+    peakBtn.classList.toggle('is-active', !peakingCv.hidden);
+  });
+
+  const hlBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' }, 'Highlights');
+  hlBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!highlightsReady) { computeExposureOverlay(lbImg, highlightsCv, 'highlights'); highlightsReady = true; }
+    highlightsCv.hidden = !highlightsCv.hidden;
+    hlBtn.classList.toggle('is-active', !highlightsCv.hidden);
+  });
+
+  const shBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' }, 'Shadows');
+  shBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!shadowsReady) { computeExposureOverlay(lbImg, shadowsCv, 'shadows'); shadowsReady = true; }
+    shadowsCv.hidden = !shadowsCv.hidden;
+    shBtn.classList.toggle('is-active', !shadowsCv.hidden);
+  });
+
+  toolbar.appendChild(peakBtn);
+  toolbar.appendChild(hlBtn);
+
   if (focusOpts) {
     const mapSrc = focusOpts.focusCv.toDataURL();
     mapOverlay.src = mapSrc;
@@ -921,8 +1065,11 @@ function openLightbox(src, alt, metaText, focusOpts) {
       dot.hidden = !dot.hidden;
       ptBtn.classList.toggle('is-active', !dot.hidden);
     });
+    toolbar.appendChild(shBtn);
     toolbar.appendChild(mapBtn);
     toolbar.appendChild(ptBtn);
+  } else {
+    toolbar.appendChild(shBtn);
   }
   lb.hidden = false;
   document.body.style.overflow = 'hidden';
@@ -958,14 +1105,14 @@ export async function renderPhoto(file, resultsEl) {
       }
     } else if (RAW_EXTS.has(ext)) {
       resultsEl.innerHTML = '';
-      resultsEl.appendChild(el('div', { class: 'anr-info' }, 'Extracting embedded preview from RAW…'));
       try {
-        convertedFile = await extractRawPreview(file);
+        convertedFile = await convertWithImageMagick(file, resultsEl);
         imgInfo = await loadImageFromFile(convertedFile);
       } catch (_) {
         resultsEl.innerHTML = '';
+        resultsEl.appendChild(el('div', { class: 'anr-info' }, 'Full decode failed — using embedded preview…'));
         try {
-          convertedFile = await convertWithImageMagick(file, resultsEl);
+          convertedFile = await extractRawPreview(file);
           imgInfo = await loadImageFromFile(convertedFile);
         } catch (e3) {
           resultsEl.innerHTML = '';
@@ -1035,6 +1182,10 @@ export async function renderPhoto(file, resultsEl) {
     }
     fCtx.putImageData(fImg, 0, 0);
 
+    if (convertedFile && RAW_EXTS.has(fileExt(file.name))) {
+      thumb.appendChild(el('p', { class: 'anr-raw-warning' },
+        'Full sensor resolution may not be available for all camera models.'));
+    }
     previewSlot.appendChild(thumb);
   }
 
@@ -1064,7 +1215,9 @@ export async function renderPhoto(file, resultsEl) {
   }
   if (convertedFile) {
     const ext = fileExt(file.name).toUpperCase();
-    tbl.appendChild(row('Converted', ext + ' → JPEG (embedded preview)'));
+    const isPreview = convertedFile.name.includes('_preview');
+    const convLabel = isPreview ? 'embedded preview' : 'full resolution';
+    tbl.appendChild(row('Converted', ext + ' → JPEG (' + convLabel + ')'));
   }
   infoCard.appendChild(tbl);
 
@@ -1097,7 +1250,7 @@ export async function renderPhoto(file, resultsEl) {
   }
 
   // ---- GPS ----
-  if (exif && exif.latitude != null && exif.longitude != null) {
+  if (exif && exif.latitude != null && exif.longitude != null && !(exif.latitude === 0 && exif.longitude === 0)) {
     const gpsCard = el('div', { class: 'anr-card' });
     gpsCard.appendChild(el('h3', {}, 'GPS'));
     const lat = exif.latitude, lon = exif.longitude;
