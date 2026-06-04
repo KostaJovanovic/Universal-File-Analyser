@@ -1518,6 +1518,14 @@ audio { width: 100%; }
   margin-bottom: 14px;
 }
 
+/* MIDI instrument / track lists */
+.anr-midi-list { margin: 0; padding-left: 20px; font-size: var(--t-small); line-height: 1.7; color: var(--fg); }
+.anr-midi-list li { word-break: break-word; }
+
+/* GPX/KML/GeoJSON map */
+.anr-geo-map { width: 100%; height: 380px; border: 1px solid var(--hairline); background: var(--surface); }
+.anr-geo-map .anr-hint { padding: 16px; }
+
 /* LRC timed-lyrics list */
 .anr-lrc-list { max-height: 460px; overflow: auto; font-size: var(--t-small); line-height: 1.5; }
 .anr-lrc-line { display: flex; gap: 12px; padding: 1px 0; }
@@ -1733,6 +1741,37 @@ details[open] summary::after { content: "\2212"; }
   color: rgba(255,255,255,0.5);
   margin: 0 0 12px;
 }
+.offline-heading-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
+.offline-heading-row .offline-heading { margin-bottom: 0; }
+/* [?] dropdown listing each download tier - only shown on mobile, where the
+   per-tier descriptions are hidden. Same plain "[?]" style as the rest of the
+   site (.anr-info-btn), tinted for the dark footer. */
+.offline-help { display: none; }
+.offline-help-btn {
+  display: inline-block;   /* not list-item -> no disclosure +/- marker */
+  list-style: none; cursor: pointer; user-select: none;
+  font-family: var(--font-mono); font-size: var(--t-tiny); letter-spacing: 0.08em;
+  color: rgba(255,255,255,0.5); padding: 0;
+}
+.offline-help-btn::-webkit-details-marker { display: none; }
+.offline-help-btn::marker { content: ''; }
+.offline-help-btn:hover,
+.offline-help[open] .offline-help-btn { color: var(--accent); }
+/* The panel is a normal-flow block (a real dropdown that pushes the download
+   buttons down), revealed when the [?] details is open. */
+.offline-help-panel { display: none; margin: 0 0 14px; }
+.offline-section:has(.offline-help[open]) .offline-help-panel { display: block; }
+.offline-help-panel > div {
+  padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.12);
+  font-family: var(--font-sans); font-size: var(--t-small); line-height: 1.45;
+  color: rgba(255,255,255,0.8);
+}
+.offline-help-panel > div:first-child { border-top: none; }
+.offline-help-panel strong {
+  color: #fff; font-family: var(--font-mono); font-size: var(--t-tiny);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.offline-help-panel span { color: rgba(255,255,255,0.45); font-size: 11px; margin-left: 6px; }
 .offline-options {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1762,6 +1801,8 @@ details[open] summary::after { content: "\2212"; }
   .offline-btn { padding: 10px 8px; }
   .offline-tier { font-size: var(--t-tiny); }
   .offline-desc { display: none; }
+  /* Descriptions are hidden here, so reveal the [?] that lists them instead. */
+  .offline-help { display: block; }
   .offline-size { font-size: 10px; }
   /* Match the tiers' tighter mobile gap and let labels wrap inside their cell. */
   .offline-bottom-row { gap: 6px; }

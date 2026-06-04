@@ -202,7 +202,19 @@
     <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
   </div>
   <div class="offline-section" id="offlineSection">
-    <p class="offline-heading">Download for offline use</p>
+    <div class="offline-heading-row">
+      <p class="offline-heading">Download for offline use</p>
+      <!-- Mobile-only: the per-tier feature text is hidden on small screens, so
+           this [?] drops down what each download includes. -->
+      <details class="offline-help">
+        <summary class="offline-help-btn" aria-label="What each download includes">[?]</summary>
+      </details>
+    </div>
+    <div class="offline-help-panel">
+      <div><strong>Essentials</strong> <span>~46 MB</span><br>Full app (all viewers), fonts, metadata, FFmpeg, ImageMagick</div>
+      <div><strong>Everything</strong> <span>~72 MB</span><br>Essentials + OCR (English), PDF, maps, QR, HEIC, archives</div>
+      <div><strong>Complete</strong> <span>~290 MB</span><br>Everything + all OCR languages</div>
+    </div>
     <div class="offline-options">
       <button type="button" class="offline-btn" data-tier="essentials">
         <span class="offline-tier">Essentials</span>
@@ -225,7 +237,7 @@
     </div>
     <div class="offline-bottom-row">
       <button type="button" class="offline-install" id="offlineInstall">Install as app</button>
-      <button type="button" class="offline-clear" id="offlineClear">Clear all site data</button>
+      <button type="button" class="offline-clear" id="offlineClear">Clear storage</button>
       <details class="about-details">
         <summary>Dependencies</summary>
     <dl class="about-defs">
