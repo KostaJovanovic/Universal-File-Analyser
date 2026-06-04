@@ -929,13 +929,6 @@ function parseIso(buf) {
 }
 
 // ---------- Adobe InDesign ----------
-function parseIndd(buf) {
-  if (buf.length < 16) return null;
-  const sig = ascii(buf, 0, 16);
-  if (!sig.startsWith('\x06\x06')) return null;
-  return null;
-}
-
 // ---------- ZIP-based doc metadata (DOCX, XLSX, PPTX, EPUB, ODF) ----------
 async function parseZipMeta(file, ext) {
   try {
@@ -2014,6 +2007,7 @@ const PARSERS = {
   '7z':  c => parse7z(c.head),
   sqlite: c => parseSqlite(c.head),
   db:    c => parseSqlite(c.head),
+  lrcat: c => parseSqlite(c.head),   // Lightroom catalog is a SQLite database
   xcf:   c => parseXcf(c.head),
   torrent: c => parseTorrent(c.file),
   als:   c => parseGzipXmlProject(c.file, c.ext),

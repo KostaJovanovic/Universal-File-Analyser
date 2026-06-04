@@ -1,7 +1,7 @@
 /* Analyser - PDF module
    Lazy-loads pdf.js from CDN, extracts metadata, text, and page thumbnails. */
 
-import { el, row, rowHelp, fmtBytes, errorCard } from './util.js';
+import { el, row, rowHelp, fmtBytes, errorCard, integrityCard } from './util.js';
 import { renderPhoto } from './photo.js';
 
 // Resolved against this module's URL so the dynamic import() gets a valid
@@ -161,6 +161,7 @@ export async function renderPdf(file, resultsEl) {
   infoCard.appendChild(tbl);
   infoCard.appendChild(el('div', { class: 'anr-btn-row' }, [openBtn]));
   resultsEl.appendChild(infoCard);
+  resultsEl.appendChild(integrityCard(file));
 
   // --- Text extraction (all pages, revealed in batches of 3) ---
   const textCard = el('div', { class: 'anr-card' });
@@ -516,7 +517,11 @@ export async function renderPdf(file, resultsEl) {
               setTimeout(() => URL.revokeObjectURL(url), 1000);
             }, 'image/png');
           });
-          imgGrid.appendChild(link);
+          const wrap = el('div', { style: 'text-align:center;' }, [link]);
+          const aBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', style: 'margin-top:4px;' }, 'Analyse');
+          aBtn.addEventListener('click', () => cv.toBlob((b) => { if (b && window._anrHandleFile) window._anrHandleFile(new File([b], 'pdf-image.png', { type: 'image/png' })); }, 'image/png'));
+          wrap.appendChild(aBtn);
+          imgGrid.appendChild(wrap);
           if (found >= 300) break;
         }
         if (found >= 300) break;

@@ -989,24 +989,23 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   scrollbar-color: #444 #0a0a0a;
   scrollbar-width: thin;
 }
-/* Stylized spectrogram scrollbar - desktop/fine-pointer only. On iOS Safari and
-   other touch devices the custom styling is skipped so the native overlay
-   scrollbar is used (it can't be fully styled there anyway). */
+/* Spectrogram scrollbar - square, monochrome, on-brand (matches the UI's sharp
+   corners and accent). Applied on all pointer types so it doesn't fall back to a
+   rounded native bar in touch/device-emulation; iOS Safari's overlay scrollbar
+   can't be fully styled, but it stays out of the way there. */
 .anr-spec-scroll { scrollbar-width: thin; scrollbar-color: #3a3a3a #0a0a0a; }
-@media (hover: hover) and (pointer: fine) {
-  .anr-spec-scroll::-webkit-scrollbar { height: 11px; }
-  .anr-spec-scroll::-webkit-scrollbar-track {
-    background: #0a0a0a;
-    border-top: 1px solid #222;
-  }
-  .anr-spec-scroll::-webkit-scrollbar-thumb {
-    background: #3a3a3a;
-    border: 2px solid #0a0a0a;       /* inset gap so the thumb reads as a bar */
-    border-radius: 0;                /* sharp corners, matching the UI */
-  }
-  .anr-spec-scroll::-webkit-scrollbar-thumb:hover { background: #555; }
-  .anr-spec-scroll::-webkit-scrollbar-thumb:active { background: var(--accent); }
+.anr-spec-scroll::-webkit-scrollbar { height: 10px; }
+.anr-spec-scroll::-webkit-scrollbar-track {
+  background: #0a0a0a;
+  border-top: 1px solid #222;
 }
+.anr-spec-scroll::-webkit-scrollbar-thumb {
+  background: #3a3a3a;
+  border: 2px solid #0a0a0a;       /* inset gap so the thumb reads as a bar */
+  border-radius: 0;                /* sharp corners, matching the UI */
+}
+.anr-spec-scroll::-webkit-scrollbar-thumb:hover { background: #555; }
+.anr-spec-scroll::-webkit-scrollbar-thumb:active { background: var(--accent); }
 
 .anr-spec-canvas-wrap { position: relative; flex: 0 0 auto; }
 .anr-spec-canvas { display: block; image-rendering: pixelated; }
@@ -1053,9 +1052,14 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   border-color: #444;
 }
 /* Center the spectrogram vertically in the available area when it's shorter than
-   the screen (otherwise it sits anchored at the top). */
-.anr-spec-card:fullscreen .anr-spec-scroll,
-.anr-spec-card:-webkit-full-screen .anr-spec-scroll { justify-content: center; }
+   the screen. The canvas-wrap fills the remaining height and the canvas fills it
+   via height:100%, so the spectrogram fills the screen with no gap. Scoped to the
+   file panel's canvas-wrap so the live card (canvas directly in the scroll) keeps
+   its own JS sizing. */
+.anr-spec-card:fullscreen .anr-spec-canvas-wrap,
+.anr-spec-card:-webkit-full-screen .anr-spec-canvas-wrap { flex: 1 1 0; min-height: 0; }
+.anr-spec-card:fullscreen .anr-spec-canvas-wrap > .anr-spec-canvas,
+.anr-spec-card:-webkit-full-screen .anr-spec-canvas-wrap > .anr-spec-canvas { height: 100%; }
 /* Height is meaningless in fullscreen (the canvas auto-fills), so hide it. */
 .anr-spec-card:fullscreen .anr-ctl-height,
 .anr-spec-card:-webkit-full-screen .anr-ctl-height { display: none; }

@@ -2,7 +2,7 @@
    Lazy-loads fflate from CDN to inspect ZIP archives without full extraction.
    Uses the shared folder/archive modules for treemap, breakdown, and tree. */
 
-import { el, row, rowHelp, fmtBytes, buildFileTree, isUnreadableError, cloudFileWarning, errorCard } from './util.js';
+import { el, row, rowHelp, fmtBytes, buildFileTree, isUnreadableError, cloudFileWarning, errorCard, integrityCard } from './util.js';
 import { normalizeArchive, renderBreakdownCards, renderViewToggle, categorizeExt } from './folder-archive-shared.js';
 import { ARCHIVE_EXTS } from './formats.js';
 
@@ -44,6 +44,7 @@ function parseZipEntries(buf) {
     if (view.getUint32(pos, true) !== 0x02014b50) break;
 
     const compMethod    = view.getUint16(pos + 10, true);
+    const crc           = view.getUint32(pos + 16, true);
     const compSize      = view.getUint32(pos + 20, true);
     const uncompSize    = view.getUint32(pos + 24, true);
     const nameLen       = view.getUint16(pos + 28, true);
@@ -52,7 +53,7 @@ function parseZipEntries(buf) {
     const name          = decoder.decode(bytes.slice(pos + 46, pos + 46 + nameLen));
     const isDir         = name.endsWith('/');
 
-    entries.push({ name, compSize, uncompSize, compMethod, isDir });
+    entries.push({ name, compSize, uncompSize, compMethod, crc, isDir });
     pos += 46 + nameLen + extraLen + commentLen;
   }
 
@@ -128,8 +129,16 @@ export async function renderArchive(file, resultsEl) {
   tbl.appendChild(rowHelp('Total uncompressed', fmtBytes(totalUncomp), 'The combined size of all files once they are extracted from the archive.'));
   tbl.appendChild(rowHelp('Total compressed', fmtBytes(totalComp), 'The combined size of all files as they are stored inside the archive, after compression.'));
   tbl.appendChild(rowHelp('Compression ratio', ratio + '%', 'How much space the archive saves versus the uncompressed total, computed as 1 − compressed ÷ uncompressed. Higher percentages mean a smaller archive; 0% means no compression.'));
+  // Compression methods used across the entries (8 = Deflate, 0 = Stored, etc.).
+  const METHODS = { 0: 'Stored', 8: 'Deflate', 9: 'Deflate64', 12: 'BZIP2', 14: 'LZMA', 93: 'Zstandard', 95: 'XZ', 99: 'AES' };
+  const methodCounts = {};
+  for (const e of fileEntries) { const n = METHODS[e.compMethod] || ('Method ' + e.compMethod); methodCounts[n] = (methodCounts[n] || 0) + 1; }
+  const methodStr = Object.entries(methodCounts).map(([k, v]) => k + ' ×' + v).join(', ');
+  if (methodStr) tbl.appendChild(rowHelp('Compression', methodStr, 'The compression method(s) used for the entries. Deflate is the standard ZIP method; Stored means no compression.'));
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
+  // SHA-256 of the whole archive (was previously missing for ZIP).
+  resultsEl.appendChild(integrityCard(file));
 
   // --- Category breakdown ---
   const items = normalizeArchive(entries);
@@ -232,7 +241,7 @@ export async function renderArchive(file, resultsEl) {
       const details = el('details', {});
       const summary = el('summary', {
         style: 'cursor: pointer; font-weight: bold; margin: 4px 0; font-size: 13px;'
-      }, entry.name + '  (' + fmtBytes(entry.uncompSize) + ')');
+      }, entry.name + '  (' + fmtBytes(entry.uncompSize) + ' · CRC ' + (entry.crc >>> 0).toString(16).padStart(8, '0') + ')');
       details.appendChild(summary);
 
       const pre = el('pre', { class: 'anr-ocr-text' }, '');

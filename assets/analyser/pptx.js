@@ -133,8 +133,11 @@ export async function renderPptx(file, resultsEl) {
             const bytes = await zip.bytes(imgPath).catch(() => null);
             if (bytes) {
               const ext = (imgPath.match(/\.(\w+)$/) || [, 'png'])[1];
-              const blob = new Blob([bytes], { type: 'image/' + (ext === 'jpg' ? 'jpeg' : ext) });
-              slideBox.appendChild(el('img', { src: URL.createObjectURL(blob), class: 'anr-pptx-img' }));
+              const mime = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
+              const blob = new Blob([bytes], { type: mime });
+              const img = el('img', { src: URL.createObjectURL(blob), class: 'anr-pptx-img', title: 'Click to analyse as photo', style: 'cursor: pointer;' });
+              img.addEventListener('click', () => { if (window._anrHandleFile) window._anrHandleFile(new File([bytes], 'slide-image.' + ext, { type: mime })); });
+              slideBox.appendChild(img);
             }
           }
         }

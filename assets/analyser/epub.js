@@ -111,13 +111,18 @@ export async function renderEpub(file, resultsEl) {
     const coverPath = resolvePath(opfPath, manifest[coverId].href);
     const bytes = await zip.bytes(coverPath).catch(() => null);
     if (bytes) {
-      const blob = new Blob([bytes], { type: manifest[coverId].type || 'image/jpeg' });
+      const mime = manifest[coverId].type || 'image/jpeg';
+      const blob = new Blob([bytes], { type: mime });
       const coverCard = el('div', { class: 'anr-card' });
       coverCard.appendChild(el('h3', {}, 'Cover'));
       coverCard.appendChild(el('img', {
         src: URL.createObjectURL(blob),
         style: 'max-width:240px;max-height:360px;border:1px solid var(--hairline);display:block;'
       }));
+      const ext = (mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+      const coverBtn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:10px;' }, 'Analyse as photo');
+      coverBtn.addEventListener('click', () => { if (window._anrHandleFile) window._anrHandleFile(new File([bytes], 'cover.' + ext, { type: mime })); });
+      coverCard.appendChild(coverBtn);
       resultsEl.appendChild(coverCard);
     }
   }

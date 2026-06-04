@@ -6,7 +6,7 @@ import {
   computeSpectrogram, renderSpectrogram, colormaps,
   frequencyTicks, timeTicks, formatHz, formatTime
 } from './spectrogram.js';
-import { el, row, rowHelp, fmtBytes, h3help, errorCard } from './util.js';
+import { el, row, rowHelp, fmtBytes, h3help, errorCard, integrityCard } from './util.js';
 import {
   computeStats, computeCentroid, computeLufs,
   detectPitch, detectBPM, computeStereoStats
@@ -221,7 +221,13 @@ function buildFreqAxis(axisEl, sampleRate, scale) {
       frac = (hz - minHz) / (maxHz - minHz);
     }
     const span = el('span', {}, formatHz(hz));
-    span.style.top = ((1 - frac) * 100) + '%';
+    const topPct = (1 - frac) * 100;
+    span.style.top = topPct + '%';
+    // The axis clips overflow, so the edge labels (0 Hz at the bottom, the Nyquist
+    // at the top) would be half cut by the default translateY(-50%) centering.
+    // Pin them just inside instead.
+    if (topPct > 98) span.style.transform = 'translateY(-100%)';
+    else if (topPct < 2) span.style.transform = 'translateY(0)';
     axisEl.appendChild(span);
   }
 }
@@ -504,28 +510,28 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   };
   let cached = null;
 
-  // Cached fullscreen canvas height. Measured only when entering fullscreen or on
-  // resize - never re-measured on a setting change. The canvas height is the flex
-  // remainder of the card, so re-measuring per setting let any sibling-row reflow
-  // feed back into the canvas size (settings appeared to grow/shrink it).
-  let fsH = 0;
   function isFs() { return document.fullscreenElement === card; }
   function availableWidth() {
     const total = wrap.clientWidth || 600;
     return Math.max(200, total - 44 - 4);
   }
-  function availableHeight() {
-    return Math.max(160, (wrap.clientHeight || state.height + 22) - 22);
-  }
   function sizeCanvas() {
     const baseW = availableWidth();
     const w = Math.max(200, Math.round(baseW * state.zoom));
-    const h = isFs() ? (fsH || availableHeight()) : state.height;
-    canvas.width  = w;
-    canvas.height = h;
-    canvas.style.width  = w + 'px';
-    canvas.style.height = h + 'px';
-    axisX.style.width   = w + 'px';
+    canvas.width = w;
+    canvas.style.width = w + 'px';
+    axisX.style.width = w + 'px';
+    if (isFs()) {
+      // Fullscreen: CSS fills the canvas (canvas-wrap is flex:1, canvas height:100%),
+      // so the DISPLAY always fills with no gap. We only read the resolved height to
+      // size the bitmap - reading clientHeight can't feed back into layout, so there's
+      // no shrink loop (the earlier flex-basis/measurement approaches had).
+      canvas.style.height = '100%';
+      canvas.height = Math.max(160, canvas.clientHeight || 160);
+    } else {
+      canvas.style.height = state.height + 'px';
+      canvas.height = state.height;
+    }
   }
 
   function recompute() {
@@ -585,8 +591,11 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   // listeners down when a new file is analysed, instead of leaking the cached
   // spectrogram data they close over.
   const sig = opts.signal;
-  attachFullscreen(card, fsBtn, allowFs, sig, (fs) => {
-    requestAnimationFrame(() => { fsH = fs ? availableHeight() : 0; recompute(); });
+  attachFullscreen(card, fsBtn, allowFs, sig, () => {
+    // Recompute on the next frame and again once the fullscreen layout settles, so
+    // the bitmap height catches up to the CSS-filled display.
+    requestAnimationFrame(recompute);
+    setTimeout(recompute, 120);
   });
 
   let resizeRaf;
@@ -594,7 +603,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     cancelAnimationFrame(resizeRaf);
     resizeRaf = requestAnimationFrame(() => {
       const newW = Math.max(200, Math.round(availableWidth() * state.zoom));
-      if (Math.abs(newW - canvas.width) > 2 || isFs()) { if (isFs()) fsH = availableHeight(); recompute(); }
+      if (Math.abs(newW - canvas.width) > 2 || isFs()) recompute();
     });
   }, { signal: sig });
 
@@ -911,6 +920,47 @@ export function buildHistogramCard(samples) {
 // audio file is analysed.
 let audioRenderAbort = null;
 
+// Fallback when the browser can't decode the audio (e.g. WMA, AC3, DTS, AMR,
+// undecodable MKA). There's no waveform/spectrogram, but the container info, tags,
+// lyrics, and cover art are all readable straight from the bytes.
+async function renderUndecodableAudio(file, header, resultsEl) {
+  const infoCard = el('div', { class: 'anr-card' });
+  infoCard.appendChild(el('h3', {}, 'Audio file'));
+  infoCard.appendChild(el('p', { class: 'anr-hint', style: 'margin: 0 0 10px;' },
+    "Your browser can't decode this format, so there's no waveform or spectrogram - but the container info, tags, and cover art below were read straight from the file."));
+  const tbl = el('table', { class: 'anr-readout' });
+  tbl.appendChild(row('Name', file.name));
+  tbl.appendChild(row('Size', fmtBytes(file.size)));
+  tbl.appendChild(row('MIME', file.type || '-'));
+  if (header.container) tbl.appendChild(row('Container', header.container));
+  if (header.codec) tbl.appendChild(row('Codec', header.codec));
+  if (header.sampleRate) tbl.appendChild(row('Sample rate', header.sampleRate.toLocaleString() + ' Hz'));
+  if (header.channels) tbl.appendChild(row('Channels', String(header.channels)));
+  if (header.bitDepth) tbl.appendChild(row('Bit depth', header.bitDepth + '-bit'));
+  if (header.bitrate) tbl.appendChild(row('Bitrate', Math.round(header.bitrate / 1000) + ' kbps'));
+  infoCard.appendChild(tbl);
+  resultsEl.appendChild(infoCard);
+
+  try {
+    const meta = await readAudioTags(file);
+    if (meta && meta.tags && meta.tags.length) {
+      const card = el('div', { class: 'anr-card' });
+      card.appendChild(el('h3', {}, 'Tags'));
+      const t = el('table', { class: 'anr-readout' });
+      for (const [n, v] of meta.tags) t.appendChild(row(n, v));
+      card.appendChild(t); resultsEl.appendChild(card);
+    }
+    if (meta && meta.lyrics) {
+      const card = el('div', { class: 'anr-card' });
+      card.appendChild(el('h3', {}, 'Lyrics'));
+      card.appendChild(el('pre', { class: 'anr-lyrics' }, meta.lyrics));
+      resultsEl.appendChild(card);
+    }
+  } catch (_) {}
+  try { const art = await extractCoverArt(file); if (art && art.bytes && art.bytes.length) resultsEl.appendChild(buildCoverArtCard(art, file)); } catch (_) {}
+  resultsEl.appendChild(integrityCard(file));
+}
+
 // --- Render uploaded / recorded audio results ---
 export async function renderAudio(file, resultsEl, opts = {}) {
   if (audioRenderAbort) audioRenderAbort.abort();
@@ -943,7 +993,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
       audioBuffer = await decodeFile(file);
     } catch (e) {
       resultsEl.innerHTML = '';
-      resultsEl.appendChild(errorCard('Could not decode this file. Format may not be supported by your browser.'));
+      await renderUndecodableAudio(file, header, resultsEl);
       return;
     }
   }
@@ -1000,10 +1050,10 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   if (pitchResult) {
     const centsStr = pitchResult.cents >= 0 ? '+' + pitchResult.cents : String(pitchResult.cents);
     tbl.appendChild(rowHelp('Pitch', pitchResult.note + '  (' + pitchResult.frequency.toFixed(1) + ' Hz, ' + centsStr + ' cents)',
-      'Fundamental frequency via autocorrelation. Cents = deviation from the nearest note (±50 cents = half a semitone).'));
+      'Fundamental frequency via the YIN algorithm. Cents = deviation from the nearest note (±50 cents = half a semitone).'));
   } else {
     tbl.appendChild(rowHelp('Pitch', 'N/A',
-      'Fundamental frequency via autocorrelation. Could not detect a clear pitch in this audio.'));
+      'Fundamental frequency via the YIN algorithm. Could not detect a clear pitch in this audio.'));
   }
   const tagBpm = await readTagBPM(file).catch(() => null);
   const estBpm = detectBPM(mono, audioBuffer.sampleRate);
