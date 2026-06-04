@@ -621,7 +621,7 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Name', file.name));
   tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
-  tbl.appendChild(row('MIME', file.type || '-'));
+  tbl.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
   if (header && header.container) tbl.appendChild(row('Container', header.container + (header.brand ? '  (' + header.brand + ')' : '')));
   if (vw && vh) {
     tbl.appendChild(row('Resolution', `${vw} × ${vh} px`));
@@ -961,7 +961,7 @@ export async function renderVideo(file, resultsEl) {
       const tbl = el('table', { class: 'anr-readout' });
       tbl.appendChild(row('Name', file.name));
       tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
-      tbl.appendChild(row('MIME', file.type || '-'));
+      tbl.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
       tbl.appendChild(row('Container', header.container || 'AVI'));
       if (avi.codec) tbl.appendChild(row('Video codec', avi.codec.toUpperCase()));
       if (avi.audioCodec) tbl.appendChild(row('Audio codec', avi.audioCodec.toUpperCase()));
@@ -1373,7 +1373,7 @@ export async function renderVideo(file, resultsEl) {
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Name', file.name));
   tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
-  tbl.appendChild(row('MIME', file.type || '-'));
+  tbl.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
   if (header.container)
     tbl.appendChild(row('Container', header.container + (header.brand ? '  (' + header.brand + ')' : '')));
   tbl.appendChild(row('Resolution', vw && vh ? `${vw} × ${vh} px` : '-'));

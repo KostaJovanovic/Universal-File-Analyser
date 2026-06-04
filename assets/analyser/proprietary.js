@@ -3,7 +3,7 @@
    and magic bytes. Extracts whatever metadata is accessible without
    full format parsers. */
 
-import { el, row, fmtBytes, sha256Row } from './util.js';
+import { el, row, rowHelp, fmtBytes, sha256Row } from './util.js';
 import { openZip } from './zip.js';
 
 // ---------- format database ----------
@@ -2104,7 +2104,7 @@ export async function renderProprietary(file, container) {
   }
 
   // MIME type if available
-  if (file.type) tbl.appendChild(row('MIME type', file.type));
+  if (file.type) tbl.appendChild(rowHelp('MIME type', file.type, "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
 
   // Last modified
   if (file.lastModified) {

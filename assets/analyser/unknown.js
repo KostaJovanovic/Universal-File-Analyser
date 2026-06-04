@@ -196,7 +196,7 @@ export async function renderUnknown(file, resultsEl) {
   tbl.appendChild(row('Application', 'Unknown'));
   tbl.appendChild(row('Name',     file.name));
   tbl.appendChild(row('Size',     `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
-  tbl.appendChild(row('MIME',     file.type || '-'));
+  tbl.appendChild(rowHelp('MIME',     file.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
   tbl.appendChild(row('Modified', file.lastModified ? new Date(file.lastModified).toISOString().replace('T', ' ').replace(/\..*$/, '') : '-'));
   tbl.appendChild(row('Extension', fileExt(file.name) || '-'));
   tbl.appendChild(rowHelp('Magic guess', guess, 'A best-effort file-type identification read from the first few "magic" bytes of the file. It is used when the extension is unknown, missing, or possibly wrong.'));

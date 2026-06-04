@@ -1375,14 +1375,18 @@ export async function renderPhoto(file, resultsEl) {
   const lsbDet = el('details');
   const lsbHelp = el('div', { class: 'anr-info-panel is-hidden', html: 'LSB (Least Significant Bit) analysis isolates the lowest bit of each colour channel (R, G, B) and renders it as a black-and-white image. In a normal photograph these planes look like random noise. Visible patterns, text, or structure in the LSB plane can indicate steganographic data (hidden messages embedded in the image) or heavy editing. Click a preview to open it at full resolution.' });
   const lsbSummary = el('summary', {});
-  lsbSummary.appendChild(document.createTextNode('LSB Analysis '));
-  const lsbInfoBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
+  // Title + [?] grouped in one span so the summary's flex space-between keeps them
+  // together on the left (only the open/close marker sits at the right edge).
+  const lsbTitle = el('span', {});
+  lsbTitle.appendChild(document.createTextNode('LSB Analysis '));
+  const lsbInfoBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info', style: 'float:none;' }, '[?]');
   lsbInfoBtn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
     lsbHelp.classList.toggle('is-hidden');
   });
-  lsbSummary.appendChild(lsbInfoBtn);
+  lsbTitle.appendChild(lsbInfoBtn);
+  lsbSummary.appendChild(lsbTitle);
   lsbDet.appendChild(lsbSummary);
   const lsbContent = el('div');
   lsbContent.appendChild(lsbHelp);

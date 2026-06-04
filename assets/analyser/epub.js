@@ -112,18 +112,18 @@ export async function renderEpub(file, resultsEl) {
     const bytes = await zip.bytes(coverPath).catch(() => null);
     if (bytes) {
       const mime = manifest[coverId].type || 'image/jpeg';
-      const blob = new Blob([bytes], { type: mime });
-      const coverCard = el('div', { class: 'anr-card' });
-      coverCard.appendChild(el('h3', {}, 'Cover'));
-      coverCard.appendChild(el('img', {
-        src: URL.createObjectURL(blob),
-        style: 'max-width:240px;max-height:360px;border:1px solid var(--hairline);display:block;'
-      }));
       const ext = (mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
-      const coverBtn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:10px;' }, 'Analyse as photo');
-      coverBtn.addEventListener('click', () => { if (window._anrHandleFile) window._anrHandleFile(new File([bytes], 'cover.' + ext, { type: mime })); });
-      coverCard.appendChild(coverBtn);
-      resultsEl.appendChild(coverCard);
+      // A slim label, then the cover auto-analysed as a photo inline below it.
+      const labelCard = el('div', { class: 'anr-card' });
+      labelCard.appendChild(el('h3', {}, 'Cover'));
+      labelCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' },
+        'The book’s cover image, analysed as a photo below.'));
+      resultsEl.appendChild(labelCard);
+      const photoBox = el('div');
+      resultsEl.appendChild(photoBox);
+      import('./photo.js')
+        .then(({ renderPhoto }) => renderPhoto(new File([bytes], 'cover.' + ext, { type: mime }), photoBox))
+        .catch(() => {});
     }
   }
 
