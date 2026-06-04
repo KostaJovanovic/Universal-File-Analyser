@@ -302,6 +302,44 @@ const specGroup = (title, items) => el('div', { class: 'anr-control-group' }, [
   el('span', { class: 'anr-control-group-label' }, title),
   el('div', { class: 'anr-control-group-items' }, items),
 ]);
+// Save the canvas as a PNG download (shared by both spectrogram panels).
+function specSavePng(canvas, basename) {
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = el('a', { href: url, download: (basename || 'spectrogram') + '.png' });
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
+  }, 'image/png');
+}
+// Wire fullscreen for a spectrogram card: the toggle button, a floating ✕ exit
+// button (shown only in fullscreen via CSS), and the fullscreenchange handlers.
+// `onChange(isFullscreen)` lets each panel do its own resize. Shared by both panels.
+function attachFullscreen(card, fsBtn, allowFs, sig, onChange) {
+  if (!allowFs || !fsBtn) return () => {};
+  const isFs = () => document.fullscreenElement === card;
+  const exitFs = () => { if (document.fullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document); };
+  fsBtn.addEventListener('click', () => {
+    if (document.fullscreenElement) exitFs();
+    else (card.requestFullscreen || card.webkitRequestFullscreen).call(card);
+  });
+  const fsClose = el('button', { type: 'button', class: 'anr-spec-fs-close', title: 'Exit fullscreen (Esc)', 'aria-label': 'Exit fullscreen' }, '✕');
+  fsClose.addEventListener('click', exitFs);
+  card.appendChild(fsClose);
+  const onFsChange = () => {
+    const fs = isFs();
+    fsBtn.textContent = fs ? 'Exit fullscreen' : 'Fullscreen';
+    onChange(fs);
+  };
+  const o = sig ? { signal: sig } : undefined;
+  document.addEventListener('fullscreenchange', onFsChange, o);
+  document.addEventListener('webkitfullscreenchange', onFsChange, o);
+  return () => {
+    document.removeEventListener('fullscreenchange', onFsChange);
+    document.removeEventListener('webkitfullscreenchange', onFsChange);
+    fsClose.remove();
+  };
+}
 
 // --- Custom player (replaces native <audio>/<video> controls) ---
 // --- Spectrogram UI panel (shared for file + recording) ---
@@ -541,38 +579,15 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     renderOnly();                           // pixels only - no recompute/resize/rescan
   });
 
-  saveBtn.addEventListener('click', () => {
-    canvas.toBlob((blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = el('a', { href: url, download: (opts.basename || 'spectrogram') + '.png' });
-      document.body.appendChild(a); a.click();
-      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
-    }, 'image/png');
-  });
+  saveBtn.addEventListener('click', () => specSavePng(canvas, opts.basename));
 
   // opts.signal (an AbortSignal) lets the caller tear these document/window
   // listeners down when a new file is analysed, instead of leaking the cached
   // spectrogram data they close over.
   const sig = opts.signal;
-  if (allowFs) {
-    const exitFs = () => { if (document.fullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document); };
-    fsBtn.addEventListener('click', () => {
-      if (document.fullscreenElement) exitFs();
-      else (card.requestFullscreen || card.webkitRequestFullscreen).call(card);
-    });
-    // Always-visible exit affordance in the top-right while fullscreen (the
-    // "Exit fullscreen" button in the actions row is easy to miss). CSS shows it
-    // only in fullscreen.
-    const fsClose = el('button', { type: 'button', class: 'anr-spec-fs-close', title: 'Exit fullscreen (Esc)', 'aria-label': 'Exit fullscreen' }, '✕');
-    fsClose.addEventListener('click', exitFs);
-    card.appendChild(fsClose);
-    const onFsChange = () => {
-      fsBtn.textContent = isFs() ? 'Exit fullscreen' : 'Fullscreen';
-      requestAnimationFrame(() => { fsH = isFs() ? availableHeight() : 0; recompute(); });
-    };
-    document.addEventListener('fullscreenchange', onFsChange, { signal: sig });
-    document.addEventListener('webkitfullscreenchange', onFsChange, { signal: sig });
-  }
+  attachFullscreen(card, fsBtn, allowFs, sig, (fs) => {
+    requestAnimationFrame(() => { fsH = fs ? availableHeight() : 0; recompute(); });
+  });
 
   let resizeRaf;
   window.addEventListener('resize', () => {
@@ -1314,21 +1329,7 @@ async function startLive(resultsEl, liveBtn) {
   cmapSel.addEventListener('change',   () => { state.cmap = cmapSel.value; });
   heightSel.addEventListener('change', () => { state.height = parseInt(heightSel.value, 10); sizeCanvas(); });
 
-  function onFsChange() {
-    if (fsBtn) fsBtn.textContent = isFs() ? 'Exit fullscreen' : 'Fullscreen';
-    requestAnimationFrame(() => sizeCanvas());
-  }
-  if (allowFs) {
-    fsBtn.addEventListener('click', () => {
-      if (document.fullscreenElement) {
-        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-      } else {
-        (card.requestFullscreen || card.webkitRequestFullscreen).call(card);
-      }
-    });
-    document.addEventListener('fullscreenchange', onFsChange);
-    document.addEventListener('webkitfullscreenchange', onFsChange);
-  }
+  const detachFs = attachFullscreen(card, fsBtn, allowFs, null, () => { requestAnimationFrame(() => sizeCanvas()); });
 
   let liveRaf;
   function onWinResize() {
@@ -1404,14 +1405,7 @@ async function startLive(resultsEl, liveBtn) {
   }
   requestAnimationFrame(tick);
 
-  saveBtn.addEventListener('click', () => {
-    canvas.toBlob((blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = el('a', { href: url, download: 'live-spectrogram.png' });
-      document.body.appendChild(a); a.click();
-      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
-    }, 'image/png');
-  });
+  saveBtn.addEventListener('click', () => specSavePng(canvas, 'live-spectrogram'));
 
   // Pause and the Live toggle drive the same `paused` flag (the tick loop just
   // freezes when paused - the mic stream stays open). applyPause keeps both
@@ -1448,8 +1442,7 @@ async function startLive(resultsEl, liveBtn) {
       stream.getTracks().forEach((t) => t.stop());
       try { src.disconnect(); } catch (_) {}
       teardownCapture();
-      document.removeEventListener('fullscreenchange', onFsChange);
-      document.removeEventListener('webkitfullscreenchange', onFsChange);
+      detachFs();
       window.removeEventListener('resize', onWinResize);
       await renderAudio(file, resultsEl);
     };
@@ -1471,8 +1464,7 @@ async function startLive(resultsEl, liveBtn) {
     stream.getTracks().forEach((t) => t.stop());
     try { src.disconnect(); } catch (_) {}
     teardownCapture();
-    document.removeEventListener('fullscreenchange', onFsChange);
-    document.removeEventListener('webkitfullscreenchange', onFsChange);
+    detachFs();
     window.removeEventListener('resize', onWinResize);
     liveBtn.removeEventListener('click', closeLive);
     if (document.fullscreenElement === card) {

@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 41;
+const COMMIT_COUNT = 44;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). A commit listed in RELEASE_COMMITS bumps the
@@ -38,6 +38,9 @@ import { renderEpub } from './epub.js';
 import { renderPptx } from './pptx.js';
 import { renderStl } from './stl.js';
 import { renderLrc } from './lrc.js';
+import { renderMidi } from './midi.js';
+import { renderSubtitles } from './subtitles.js';
+import { renderGeo } from './geo.js';
 import { initSearch } from './search.js';
 import { fileExt, el, asciiBar, probeReadable, isUnreadableError, cloudFileWarning } from './util.js';
 import { walkItems, renderFolder } from './folder.js';
@@ -186,6 +189,11 @@ function classifyFile(file) {
   if (ext === 'pptx') return 'pptx';
   if (ext === 'stl') return 'stl';
   if (ext === 'lrc') return 'lrc';
+  // MIDI is a score, not decodable audio - route it before the AUDIO_EXTS check.
+  if (ext === 'mid' || ext === 'midi') return 'midi';
+  // Subtitles + geo files are otherwise identification-only (proprietary.js).
+  if (ext === 'srt' || ext === 'vtt' || ext === 'ass' || ext === 'ssa') return 'subtitles';
+  if (ext === 'gpx' || ext === 'kml' || ext === 'geojson') return 'geo';
   if (PHOTO_EXTS.has(ext)) return 'photo';
   if (AUDIO_EXTS.has(ext)) return 'audio';
   if (VIDEO_EXTS.has(ext)) return 'video';
@@ -207,6 +215,9 @@ const ROUTES = {
   pptx:        { render: renderPptx,        results: 'unknown', scroll: '#unknownResults' },
   stl:         { render: renderStl,         results: 'unknown', scroll: '#unknownResults' },
   lrc:         { render: renderLrc,         results: 'unknown', scroll: '#unknownResults' },
+  midi:        { render: renderMidi,        results: 'unknown', scroll: '#unknownResults' },
+  subtitles:   { render: renderSubtitles,   results: 'unknown', scroll: '#unknownResults' },
+  geo:         { render: renderGeo,         results: 'unknown', scroll: '#unknownResults' },
   pdf:         { render: renderPdf,         results: 'unknown', scroll: '#unknownResults' },
   zip:         { render: renderArchive,     results: 'unknown', scroll: '#unknownResults' },
   svg:         { render: renderSvg,         results: 'unknown', scroll: '#unknownResults' },
@@ -1086,7 +1097,7 @@ function boot() {
         b.querySelector('.offline-size').textContent = sizes[tier];
       });
       clearBtn.textContent = 'All data cleared ✓';
-      setTimeout(() => { clearBtn.textContent = 'Clear all site data'; }, 3000);
+      setTimeout(() => { clearBtn.textContent = 'Clear storage'; }, 3000);
     });
   }
 

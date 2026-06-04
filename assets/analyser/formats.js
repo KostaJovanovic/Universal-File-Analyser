@@ -67,7 +67,7 @@ export const PHOTO_EXTS = new Set([
 
 export const AUDIO_EXTS = new Set([
   'mp3','wav','wave','m4a','m4b','aac','flac','ogg','oga','opus',
-  'aiff','aif','aifc','wma','weba','amr','ac3','dts','mka','mid','midi'
+  'aiff','aif','aifc','wma','weba','amr','ac3','dts','mka'
 ]);
 
 export const VIDEO_EXTS = new Set([
@@ -105,7 +105,7 @@ export const ARCHIVE_EXTS = new Set([
 
 export const FULL_ANALYSIS = [
   { label: 'Photo',     exts: 'JPG JPEG JIF JFIF PNG GIF WebP HEIC HEIF BMP TIFF AVIF JXL ICO RAW ARW CR2 CR3 NEF DNG RAF RW2 ORF PEF SR2 SRW X3F', tags: 'image picture camera photograph sony nikon canon fuji olympus pentax sigma samsung apple google pixel', desc: 'View EXIF, GPS, camera settings, histograms, OCR text, and AI-generation markers in JPG, PNG, HEIC, WebP, TIFF, and RAW photos from Sony, Nikon, Canon, Fujifilm, and more.' },
-  { label: 'Sound',     exts: 'MP3 WAV M4A M4B AAC FLAC OGG OPUS AIFF WMA AMR AC3 DTS MKA MIDI', tags: 'audio music podcast recording microphone audiobook', desc: 'Inspect the waveform, spectrogram, codec, bitrate, channels, and tags of MP3, WAV, FLAC, M4A, AAC, OGG, and Opus audio.' },
+  { label: 'Sound',     exts: 'MP3 WAV M4A M4B AAC FLAC OGG OPUS AIFF WMA AMR AC3 DTS MKA', tags: 'audio music podcast recording microphone audiobook', desc: 'Inspect the waveform, spectrogram, codec, bitrate, channels, and tags of MP3, WAV, FLAC, M4A, AAC, OGG, and Opus audio.' },
   { label: 'Video',     exts: 'MP4 MOV AVI MKV WebM WMV FLV 3GP 3G2 MPG MPEG MTS M2TS TS VOB OGV', tags: 'movie film clip recording screen', desc: 'Read the container, codec, resolution, and frame rate of MP4, MOV, MKV, AVI, and WebM video, step through frames, and extract the audio track.' },
   { label: 'PDF',       exts: 'PDF', tags: 'adobe acrobat document', desc: 'View pages, extract text and embedded images, run OCR, and read the metadata of PDF documents.' },
   { label: 'Office docs', exts: 'DOCX XLSX PPTX EPUB', tags: 'microsoft word excel powerpoint slides spreadsheet ebook epub viewer reader', desc: 'Open and read Microsoft Word (DOCX), Excel (XLSX), and PowerPoint (PPTX), plus EPUB e-books - text, tables, slides, and chapters.' },
@@ -113,6 +113,9 @@ export const FULL_ANALYSIS = [
   { label: 'Archives',  exts: 'ZIP', tags: 'compressed zip', desc: 'Browse the file tree and compression details of ZIP archives without extracting them.' },
   { label: 'Data',      exts: 'CSV TSV SVG', tags: 'spreadsheet vector markup data table', desc: 'Preview CSV and TSV tables with per-column stats, and view or rasterise SVG vector graphics.' },
   { label: 'Lyrics',    exts: 'LRC', tags: 'lyrics synced timed karaoke song subtitle text', desc: 'Parse .lrc timed-lyric files: read the artist/title/album ID tags and every timestamped line.' },
+  { label: 'Subtitles', exts: 'SRT VTT ASS SSA', tags: 'subtitle caption closed captions srt webvtt substation alpha timed text cues', desc: 'Parse subtitle cues and timing from SubRip (SRT), WebVTT, and ASS/SSA: cue count, on-screen time, and a full timed cue list.' },
+  { label: 'MIDI',      exts: 'MID MIDI', tags: 'midi music score sequencer general gm synthesizer notes tempo instruments', desc: 'Parse Standard MIDI Files: format, tempo (BPM), time signature, General MIDI instruments, track names, note counts, and duration.' },
+  { label: 'Map data',  exts: 'GPX KML GeoJSON', tags: 'gps track waypoint route geojson kml google earth strava garmin map coordinates location gis', desc: 'Parse GPX tracks, KML placemarks, and GeoJSON features - counts, distance, elevation, time span, and bounds - plotted on an OpenStreetMap map.' },
   { label: 'Web / code', exts: 'HTML CSS JS TS TSX JSX JSON YAML XML MD', tags: 'programming development website react typescript javascript node', desc: 'Preview and inspect HTML, CSS, JavaScript, TypeScript, JSON, YAML, XML, and Markdown source files.' },
 ];
 
@@ -126,10 +129,10 @@ export const IDENTIFICATION = [
   { label: 'Archives',        exts: 'RAR 7Z TAR GZ BZ2 XZ ZST TGZ', tags: 'winrar 7zip compressed archive tar gzip bzip zstandard', desc: 'Identify and read metadata from RAR, 7z, TAR, GZip, BZip2, XZ, and Zstandard archives.' },
   { label: 'Fonts',           exts: 'TTF OTF WOFF WOFF2 TTC', tags: 'font typeface typography truetype opentype web woff', desc: 'Preview fonts and read their metadata: TrueType (TTF), OpenType (OTF), web fonts (WOFF, WOFF2), and collections (TTC), with variable-axis animation.' },
   { label: 'eBooks',          exts: 'MOBI AZW AZW3 FB2 DJVU', tags: 'ebook kindle amazon reader kobo calibre', desc: 'Identify e-book files: Kindle (MOBI, AZW, AZW3), FictionBook (FB2), and DjVu.' },
-  { label: 'Subtitles',       exts: 'SRT VTT ASS SSA SUB', tags: 'subtitle caption closed captions srt webvtt', desc: 'Identify and read subtitle and caption files: SubRip (SRT), WebVTT (VTT), and SSA/ASS.' },
+  { label: 'Subtitles (other)', exts: 'SUB', tags: 'subtitle caption microdvd subviewer', desc: 'Identify MicroDVD/SubViewer (SUB) subtitle files. SRT, VTT, and ASS/SSA get full cue parsing (see above).' },
   { label: 'Music production', exts: 'ALS ALP FLP RPP LOGIC LOGICX PTX CPR BAND', tags: 'ableton fl studio fruity loops reaper logic pro tools cubase garageband steinberg daw', desc: 'Identify DAW project files and read version, tempo, and plugin data: Ableton Live (ALS), FL Studio (FLP), Reaper (RPP), Logic Pro, Pro Tools (PTX), and Cubase (CPR).' },
   { label: 'Databases',       exts: 'SQLite DB MDB ACCDB', tags: 'sqlite microsoft access database sql', desc: 'Identify and read metadata from SQLite, Microsoft Access (MDB, ACCDB), and other databases.' },
-  { label: 'GIS / mapping',   exts: 'SHP KML KMZ GPX GeoJSON', tags: 'geographic gis mapping google earth shapefile esri garmin strava', desc: 'Identify geographic and mapping files: Shapefile (SHP), Google Earth (KML, KMZ), GPX tracks, and GeoJSON.' },
+  { label: 'GIS / mapping',   exts: 'SHP KMZ', tags: 'geographic gis mapping google earth shapefile esri kmz', desc: 'Identify geographic files: Shapefile (SHP) and zipped Google Earth (KMZ). GPX, KML, and GeoJSON get full parsing + a map (see above).' },
   { label: 'Disk images',     exts: 'ISO IMG VHD VHDX VMDK QCOW2 VDI', tags: 'virtual machine disk image hyper-v vmware virtualbox qemu boot', desc: 'Identify disk and virtual-machine images: ISO, VHD/VHDX (Hyper-V), VMDK (VMware), QCOW2 (QEMU), and VDI (VirtualBox).' },
   { label: 'Game engines',    exts: 'UNITYPACKAGE UASSET UMAP GODOT TSCN TRES', tags: 'unity unreal godot game development asset', desc: 'Identify game-engine assets: Unity (UNITYPACKAGE), Unreal Engine (UASSET, UMAP), and Godot (TSCN, TRES).' },
   { label: 'Game saves',      exts: 'BEPIS', tags: 'ultrakill save game progress slot bepis hakita', desc: 'Identify game save files, including ULTRAKILL saves (BEPIS), and read their stored progress.' },
