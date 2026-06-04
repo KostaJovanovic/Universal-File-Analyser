@@ -1198,7 +1198,7 @@ export async function renderPhoto(file, resultsEl) {
   tbl.appendChild(rowHelp('Average colour', avgHex + '  (R' + colorStats.avgR + ' G' + colorStats.avgG + ' B' + colorStats.avgB + ')',
     'The mean RGB colour of every pixel, shown as a hex swatch. Gives a quick sense of the image\'s overall tint and brightness.'));
   tbl.appendChild(rowHelp('Tonal split', colorStats.shadows + '% shadows · ' + colorStats.midtones + '% midtones · ' + colorStats.highlights + '% highlights',
-    'Pixel luminance distribution. Shadows = darkest 25%, midtones = middle 50%, highlights = brightest 25%.'));
+    'Pixel luminance split by fixed brightness cutoffs (0–255): shadows < 64, midtones 64–191, highlights ≥ 192.'));
   if (exif && exif.Orientation != null) {
     tbl.appendChild(row('Orientation', (ORIENTATIONS[exif.Orientation] || exif.Orientation)));
   }
@@ -1312,7 +1312,7 @@ export async function renderPhoto(file, resultsEl) {
 
   // ---- Palette ----
   const palCard = el('div', { class: 'anr-card' });
-  const [palH, palHelp] = h3help('Dominant colours', 'Extracted via median-cut colour quantization. The image is repeatedly split along the colour channel with the widest range until 8 representative colours remain. Click a swatch to copy its hex value.');
+  const [palH, palHelp] = h3help('Dominant colours', 'Extracted by quantizing every pixel into a 32-level-per-channel RGB cube, counting how many pixels fall in each cell, then merging near-duplicates - the 8 most populated colours are shown. Click a swatch to copy its hex value.');
   palCard.appendChild(palH); palCard.appendChild(palHelp);
   const palDiv = el('div', { class: 'anr-palette' });
   const totalPx = pixData.width * pixData.height;

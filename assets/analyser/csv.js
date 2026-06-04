@@ -2,7 +2,7 @@
    Detects the delimiter, parses quoted fields, infers per-column types,
    reports numeric statistics, and previews the first 100 rows. */
 
-import { el, row, rowHelp, fmtBytes, fileExt, errorCard } from './util.js';
+import { el, row, rowHelp, fmtBytes, fileExt, errorCard, integrityCard } from './util.js';
 
 // Simple CSV parser that handles quoted fields
 function parseCsvLine(line, delim) {
@@ -187,4 +187,6 @@ export async function renderCsv(file, resultsEl) {
   tableWrap.appendChild(table);
   tableCard.appendChild(tableWrap);
   resultsEl.appendChild(tableCard);
+
+  resultsEl.appendChild(integrityCard(file));
 }

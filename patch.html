@@ -175,6 +175,58 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">1.16</p>
+          <p class="patch-name">Inside Out</p>
+          <p class="patch-date">4 June 2026, 12:33</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span>Pictures buried inside documents can now be <strong>analysed in place</strong> - click an image in a <a href="about.html#ext-docx">Word</a>, <a href="about.html#ext-pptx">PowerPoint</a>, or <a href="about.html#ext-epub">EPUB</a> file, or in a <a href="about.html#ext-pdf">PDF</a>, and the full photo analysis (EXIF, histogram, colours, OCR&hellip;) runs on it.</li>
+            <li><span class="patch-tag">New</span>Audio your browser can&rsquo;t play - <strong>WMA</strong>, <strong>AC3</strong>, <strong>DTS</strong>, <strong>AMR</strong> - no longer just errors out: the container details, <strong>tags</strong>, <strong>lyrics</strong>, and <strong>cover art</strong> are read straight from the file.</li>
+            <li><span class="patch-tag">New</span><a href="about.html#ext-zip">ZIP</a> archives now report the <strong>compression method</strong> each file uses (Deflate, Stored&hellip;) and show a <strong>CRC checksum</strong> per entry.</li>
+            <li><span class="patch-tag">New</span><strong>Lightroom catalogs</strong> (LRCAT) are now read as the SQLite databases they are.</li>
+            <li>A <strong>SHA-256 fingerprint</strong> now appears for ZIP, <a href="about.html#ext-csv">CSV</a>, <a href="about.html#ext-svg">SVG</a>, PDF, and undecodable audio too - it was missing for these.</li>
+            <li><span class="patch-tag is-fix">Fix</span>The <a href="about.html#what">spectrogram</a> now truly fills the screen in fullscreen with no gap, and the bottom (0&nbsp;Hz) and top frequency labels are no longer clipped.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Clearer, more accurate explanations for the photo brightness histogram and the dominant-colour picker.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">1.15</p>
+          <p class="patch-name">On the Map</p>
+          <p class="patch-date">4 June 2026, 07:19</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong><a href="about.html#ext-srt">Subtitle</a></strong> files (SRT, WebVTT, ASS/SSA) now open as a full <strong>timed cue list</strong> - cue count, total on-screen time, and every line with its timecode.</li>
+            <li><span class="patch-tag">New</span><strong><a href="about.html#ext-mid">MIDI</a></strong> files are parsed into a readable score - <strong>tempo</strong> (BPM), time signature, track names, the General MIDI instruments used, note counts, and length. (MIDI is a score, not recorded sound, so there&rsquo;s no playback.)</li>
+            <li><span class="patch-tag">New</span><strong>Map data</strong> - drop a <a href="about.html#ext-gpx">GPX</a> track, <a href="about.html#ext-kml">KML</a>, or <a href="about.html#ext-geojson">GeoJSON</a> file and the route is <strong>plotted on a map</strong>, with distance, elevation range, time span, and bounds.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">1.14</p>
+          <p class="patch-name">Full Frame</p>
+          <p class="patch-date">4 June 2026, 06:47</p>
+          <ul class="patch-list">
+            <li>The audio <strong>amplitude histogram</strong> now sits directly under the <a href="about.html#what">spectrogram</a>, lined up with what you&rsquo;re looking at.</li>
+            <li><span class="patch-tag">New</span>A floating <strong>exit-fullscreen button</strong> appears in fullscreen, and the now-meaningless <strong>Height</strong> control is hidden there - the view fills the screen on its own.</li>
+          </ul>
+        </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
+          <div class="patch-entry">
+            <p class="patch-version">1.13</p>
+            <p class="patch-name">Liner Notes</p>
+            <p class="patch-date">4 June 2026, 06:31</p>
+            <ul class="patch-list">
+              <li><span class="patch-tag">New</span>Music files now surface their <strong>tags and lyrics</strong> - artist, album, year and the rest from ID3, Vorbis, MP4 and Opus - plus embedded or <strong>.lrc</strong> timed lyrics, each in its own card.</li>
+              <li><span class="patch-tag">New</span><strong><a href="about.html#ext-flac">FLAC</a></strong> files now report their true <strong>sample rate, bit depth, and channel count</strong> from the stream header.</li>
+              <li><span class="patch-tag">New</span>The <a href="about.html#what">spectrogram</a> controls are reorganised into tidy <strong>View / Resolution / Actions</strong> groups, and the <strong>Live</strong> microphone view keeps a rolling buffer so you can <strong>analyse the last 15 seconds</strong> at any moment.</li>
+              <li><span class="patch-tag is-fix">Fix</span>Analysing a video&rsquo;s scenes no longer hijacks the player - detection runs off-screen while you keep scrubbing, and very large videos skip automatic detection (start it by hand).</li>
+              <li><span class="patch-tag is-fix">Fix</span>Recorded-audio scrubbing and seeking now behave; the mobile navbar stays pinned and the footer links stack cleanly.</li>
+            </ul>
+          </div>
+
+          <div class="patch-entry">
           <p class="patch-version">1.12</p>
           <p class="patch-name">Fine Tuning</p>
           <p class="patch-date">4 June 2026, 04:43</p>
@@ -209,9 +261,6 @@
             <li><span class="patch-tag is-fix">Fix</span>Typography tidied site-wide (em-dashes to hyphens) and the footer dependency list realigned.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
           <div class="patch-entry">
             <p class="patch-version">1.09</p>

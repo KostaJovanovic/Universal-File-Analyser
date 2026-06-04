@@ -44,7 +44,16 @@ function runImage(run, imageMap) {
   const im = document.createElement('img');
   im.src = url;
   im.loading = 'lazy';
-  im.style.cssText = 'max-width:100%;height:auto;display:block;margin:10px 0;';
+  im.title = 'Click to analyse as photo';
+  im.style.cssText = 'max-width:100%;height:auto;display:block;margin:10px 0;cursor:pointer;';
+  // Re-fetch the blob URL into a File and run the full photo pipeline on click.
+  im.addEventListener('click', async () => {
+    try {
+      const blob = await (await fetch(url)).blob();
+      const ext = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+      if (window._anrHandleFile) window._anrHandleFile(new File([blob], 'docx-image.' + ext, { type: blob.type }));
+    } catch (_) {}
+  });
   // Size from the drawing extent (EMU → px at 96dpi) when present.
   let extent = null;
   for (const n of run.getElementsByTagName('*')) { if (n.localName === 'extent') { extent = n; break; } }

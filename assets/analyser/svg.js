@@ -2,7 +2,7 @@
    Renders an SVG at actual size, then reports stats, element counts,
    colour palette, and text content. */
 
-import { el, row, rowHelp, fmtBytes, errorCard } from './util.js';
+import { el, row, rowHelp, fmtBytes, errorCard, integrityCard } from './util.js';
 import { renderPhoto } from './photo.js';
 
 export async function renderSvg(file, resultsEl) {
@@ -199,4 +199,6 @@ export async function renderSvg(file, resultsEl) {
     }
     resultsEl.appendChild(textCard);
   }
+
+  resultsEl.appendChild(integrityCard(file));
 }
