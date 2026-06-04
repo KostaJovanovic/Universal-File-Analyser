@@ -357,7 +357,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     ctl('Colour', cmapSel),
     ctl('Sensitivity', sensIn, sensOut),
     ctl('Zoom', zoomSel),
-    ctl('Height', heightSel),
+    // Height is hidden in fullscreen (the canvas auto-fills there).
+    el('div', { class: 'anr-control anr-ctl-height' }, [el('label', {}, 'Height'), heightSel]),
   ]));
   controls.appendChild(group('Resolution', [
     ctl('FFT', fftSel),
@@ -554,13 +555,17 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   // spectrogram data they close over.
   const sig = opts.signal;
   if (allowFs) {
+    const exitFs = () => { if (document.fullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document); };
     fsBtn.addEventListener('click', () => {
-      if (document.fullscreenElement) {
-        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-      } else {
-        (card.requestFullscreen || card.webkitRequestFullscreen).call(card);
-      }
+      if (document.fullscreenElement) exitFs();
+      else (card.requestFullscreen || card.webkitRequestFullscreen).call(card);
     });
+    // Always-visible exit affordance in the top-right while fullscreen (the
+    // "Exit fullscreen" button in the actions row is easy to miss). CSS shows it
+    // only in fullscreen.
+    const fsClose = el('button', { type: 'button', class: 'anr-spec-fs-close', title: 'Exit fullscreen (Esc)', 'aria-label': 'Exit fullscreen' }, '✕');
+    fsClose.addEventListener('click', exitFs);
+    card.appendChild(fsClose);
     const onFsChange = () => {
       fsBtn.textContent = isFs() ? 'Exit fullscreen' : 'Fullscreen';
       requestAnimationFrame(() => { fsH = isFs() ? availableHeight() : 0; recompute(); });
@@ -1033,12 +1038,12 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // ---- Waveform card ----
   resultsEl.appendChild(buildWaveformCard(file, mono, audioBuffer, audioEl));
 
-  // ---- Amplitude histogram ----
-  resultsEl.appendChild(buildHistogramCard(mono));
-
   // ---- Spectrogram ----
   const basename = (file.name || 'spectrogram').replace(/\.[^/.]+$/, '');
   resultsEl.appendChild(makeSpectrogramPanel(mono, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, capture: true }));
+
+  // ---- Amplitude histogram (under the spectrogram) ----
+  resultsEl.appendChild(buildHistogramCard(mono));
 
   // ---- Stereo Width / Vectorscope card (stereo files only) ----
   if (audioBuffer.numberOfChannels >= 2) {
@@ -1227,7 +1232,7 @@ async function startLive(resultsEl, liveBtn) {
   controls.appendChild(group('View', [
     ctl('Axis', toggle),
     ctl('Colour', cmapSel),
-    ctl('Height', heightSel),
+    el('div', { class: 'anr-control anr-ctl-height' }, [el('label', {}, 'Height'), heightSel]),
     ctl('Speed', speedSel),
   ]));
   controls.appendChild(group('Resolution', [

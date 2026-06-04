@@ -1056,6 +1056,32 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
    the screen (otherwise it sits anchored at the top). */
 .anr-spec-card:fullscreen .anr-spec-scroll,
 .anr-spec-card:-webkit-full-screen .anr-spec-scroll { justify-content: center; }
+/* Height is meaningless in fullscreen (the canvas auto-fills), so hide it. */
+.anr-spec-card:fullscreen .anr-ctl-height,
+.anr-spec-card:-webkit-full-screen .anr-ctl-height { display: none; }
+
+/* Floating exit-fullscreen button (top-right), only shown while fullscreen. */
+.anr-spec-fs-close { display: none; }
+.anr-spec-card:fullscreen .anr-spec-fs-close,
+.anr-spec-card:-webkit-full-screen .anr-spec-fs-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 10;
+  width: 34px;
+  height: 34px;
+  font-size: 16px;
+  line-height: 1;
+  background: #1a1a1a;
+  color: #fff;
+  border: 1px solid #444;
+  cursor: pointer;
+}
+.anr-spec-card:fullscreen .anr-spec-fs-close:hover,
+.anr-spec-card:-webkit-full-screen .anr-spec-fs-close:hover { background: #fff; color: #000; }
 .anr-spec-card:fullscreen .anr-spec-wrap,
 .anr-spec-card:-webkit-full-screen .anr-spec-wrap {
   flex: 1 1 auto;
