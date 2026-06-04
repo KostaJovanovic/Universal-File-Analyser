@@ -81,7 +81,7 @@ export async function renderCsv(file, resultsEl) {
   tbl.appendChild(row('Application', 'CSV / TSV Spreadsheet'));
   tbl.appendChild(row('Name', file.name));
   tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
-  tbl.appendChild(rowHelp('Delimiter', delimiter === '\t' ? 'Tab' : 'Comma', 'The character used to separate columns in the file — a comma (.csv) or a tab (.tsv).'));
+  tbl.appendChild(rowHelp('Delimiter', delimiter === '\t' ? 'Tab' : 'Comma', 'The character used to separate columns in the file - a comma (.csv) or a tab (.tsv).'));
   tbl.appendChild(row('Columns', String(colCount)));
   tbl.appendChild(row('Data rows', String(hasHeader ? totalRows - 1 : totalRows)));
   statsCard.appendChild(tbl);

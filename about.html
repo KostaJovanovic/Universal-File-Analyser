@@ -87,35 +87,29 @@
   <div class="grid">
     <div class="site-mark">
       <span class="site-kicker">A 02 - 05</span>
-      <h1 class="site-title"><a href="index.html" style="color:inherit;text-decoration:none">Analyser</a></h1>
-      <p class="site-byline">by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
+      <h1 class="site-title">About</h1>
+      <p class="site-byline"><a href="index.html" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
       <p class="site-sub">A small, local, forensic tool for photos, sound, and video. Just drop a file. Everything is read and processed in your browser; nothing is uploaded.</p>
+      <nav class="site-mark-nav" aria-label="Pages">
+        <a href="index.html" class="header-btn">Home</a>
+        <a href="patch.html" class="header-btn">Changelog</a>
+      </nav>
     </div>
     <div class="site-meta">
       <dl>
         <dt>Version</dt><dd id="versionNum">1.0</dd>
         <dt>Status</dt><dd><span class="dot"></span> Local-only</dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
-        <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle">DAY</button></dd>
-        <dt>About</dt><dd><a href="index.html" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Back</a></dd>
+        <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle">&#9728;&#65038; DAY</button></dd>
       </dl>
     </div>
   </div>
 </header>
 
 <nav class="site-nav" aria-label="Primary">
-  <div class="nav-home" id="navHomeWrap">
-    <button type="button" class="nav-home-btn" id="navHomeBtn" aria-label="Home - scroll to top"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1.5 7.1 7.5 1.8l6 5.3"/><path d="M3.2 6.1V13.2h8.6V6.1"/></svg></button>
-  </div>
   <a href="#why" class="nav-link"><span class="nav-num">i</span><span>Why</span></a>
-  <a href="#when" class="nav-link"><span class="nav-num">ii</span><span>When</span></a>
-  <a href="#where" class="nav-link"><span class="nav-num">iii</span><span>Where</span></a>
-  <a href="#what" class="nav-link"><span class="nav-num">iv</span><span>What</span></a>
-
-  <div class="nav-search" id="navSearchWrap">
-    <button type="button" class="nav-search-btn" id="navSearchBtn" aria-label="Search"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6.5" cy="6.5" r="5"/><line x1="10" y1="10" x2="14" y2="14"/></svg></button>
-    <input type="text" id="navSearch" class="nav-search-input" placeholder="Search" autocomplete="off" spellcheck="false">
-  </div>
+  <a href="#where" class="nav-link"><span class="nav-num">ii</span><span>Where</span></a>
+  <a href="#what" class="nav-link"><span class="nav-num">iii</span><span>What</span></a>
 </nav>
 
 <main class="site-main about-page">
@@ -136,416 +130,10 @@
     </div>
   </section>
 
-  <!--
-    PATCH NOTES - one entry per git push, newest first.
-    Latest 3 visible; older ones inside the <details> dropdown.
-    Version: 1.(commit_count - 25). Pre-1.0 commits use 0.N.
-    Date/time: from `git log --format="%ai"`, local timezone (+0200 CEST).
-    Content: run `git diff PREV..NEW --stat` and summarise what was added/changed/removed.
-  -->
-  <section id="when" class="section">
-    <div class="grid">
-      <aside class="section-meta">
-        <span class="section-num">ii</span>
-        <span class="section-kicker">When</span>
-      </aside>
-      <div class="section-content">
-        <h2 class="section-head">Update notes.</h2>
-
-        <div class="patch-entry">
-          <p class="patch-version">1.5</p>
-          <p class="patch-date">3 June 2026, 14:39</p>
-          <ul class="patch-list">
-            <li>Folders and ZIP archives now open in an interactive treemap - every file is sized by how much disk it uses; click a folder to zoom in, click a file to analyse it - with a file-type breakdown and support for archives nested inside archives</li>
-            <li>Cloud-only files (OneDrive, iCloud, Google Drive, Dropbox) that aren&rsquo;t downloaded to this device yet are now detected and explained - for both images and other files - instead of failing with a generic error</li>
-            <li>Audio files with embedded cover art now show the artwork, which you can open and analyse as a photo</li>
-            <li>Programs and libraries (EXE, DLL) now surface far more detail - version info, copyright, linker and subsystem versions, and security mitigations - with the copyright field now read correctly</li>
-            <li>Steam and Valve files (VDF, ACF) are now parsed - App ID, name, install directory, and the full key tree</li>
-            <li>Videos no longer briefly play while being analysed on desktop</li>
-            <li>Every loading bar now uses the same <code>[////////]</code> style, including the folder, large-file, and checksum bars that used to slide; the folder pop-up bar fills the card and moves at a calmer pace</li>
-            <li>New &ldquo;Links&rdquo; button in the header, with a confirmation before leaving the site; the byline and Links now point to link.valjdakosta.com</li>
-            <li>Dark-mode button now reads DAY / NIGHT, and a &ldquo;copy as path&rdquo; button was added to files in the treemap</li>
-            <li>File dropzones now mention that folders are accepted; the supported-formats list wraps cleanly, closes when you drop a file, and gained M4B, 3G2, Grasshopper (GH/GHX), KiCad PCB, and CRDOWNLOAD</li>
-            <li>Cursor pop-ups now dismiss when you scroll</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
-          <p class="patch-version">1.4</p>
-          <p class="patch-date">3 June 2026, 03:34</p>
-          <ul class="patch-list">
-            <li>OCR now bundles only English for offline use; every other language - including the Serbian variants - streams from a CDN on demand and is cached after first use, keeping the app&rsquo;s download small</li>
-            <li>All 32 languages still appear in the picker, with the non-bundled ones marked &ldquo;online&rdquo;</li>
-            <li>The &ldquo;Complete&rdquo; offline download still fetches every language, so full offline OCR is unchanged</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
-          <p class="patch-version">1.3</p>
-          <p class="patch-date">3 June 2026, 03:25</p>
-          <ul class="patch-list">
-            <li>The video-to-audio extractor (FFmpeg) and the larger OCR language packs now download from a CDN the first time they&rsquo;re needed - with a progress bar - then stay cached for offline use, instead of weighing down the first load</li>
-            <li>All 32 OCR languages still appear in the picker: the nine most common stay bundled, the rest are marked &ldquo;online&rdquo; and stream on demand (the Complete download still grabs every language)</li>
-            <li>Unknown or mistyped addresses now return to the home page instead of showing a 404</li>
-          </ul>
-        </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
-
-        <div class="patch-entry">
-          <p class="patch-version">1.2</p>
-          <p class="patch-date">3 June 2026, 03:02</p>
-          <ul class="patch-list">
-            <li>The app now updates itself - a freshly-deployed version is detected and applied automatically, with no hard-refresh needed</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
-          <p class="patch-version">1.1</p>
-          <p class="patch-date">3 June 2026, 02:44</p>
-          <ul class="patch-list">
-            <li>A loading bar now slides up from the bottom of the window while a large file is being read, matching the other progress bars</li>
-            <li>The About page lists a plain-language description for every supported format, with deep-links to each format and file extension</li>
-            <li>Refined page titles, descriptions, and link previews, with a correctly-sized social-sharing banner</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry patch-milestone">
-          <p class="patch-version">1.0</p>
-          <p class="patch-date">3 June 2026</p>
-          <ul class="patch-list">
-            <li>DOCX viewer now renders embedded images inline, alongside the text, tables, and headings</li>
-            <li>Everything needed for offline use is now bundled locally - OCR and the video-to-audio extractor (FFmpeg) no longer reach out to a CDN and work with no connection</li>
-            <li>OCR now offers 32 languages to download, including Cyrillic, Greek, Hebrew, Arabic, and CJK scripts</li>
-            <li>Offline download tiers rebalanced: Essentials (~46 MB), Everything (~72 MB), Complete with all OCR languages (~290 MB)</li>
-            <li>&ldquo;Clear all site data&rdquo; wipes every cache, database, and stored value - only your dark-mode preference is kept</li>
-            <li>The browser&rsquo;s native video player is now hidden everywhere except iPhone, where iOS needs it for playback</li>
-            <li>Search-engine and social-sharing support: page descriptions, link previews with a banner image, structured data, sitemap, and robots.txt</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
-          <p class="patch-version">0.29</p>
-          <p class="patch-date">3 June 2026, 00:51</p>
-          <ul class="patch-list">
-            <li>Every dependency is now hosted locally (FFmpeg, ImageMagick, Tesseract OCR, PDF.js, Leaflet maps, QR decoding, and more) - the whole app can run offline with nothing loaded from a CDN</li>
-            <li>Spreadsheet viewer - opens XLSX workbooks with a tab per sheet</li>
-            <li>E-book reader - opens EPUB files with chapter-by-chapter navigation</li>
-            <li>Slide viewer - opens PowerPoint PPTX presentations as slide cards</li>
-            <li>3D model viewer - opens STL files in an interactive WebGL view with orbit, zoom, spin, and dimensions</li>
-            <li>FL Studio projects (.flp): reads version, tempo, title, channels, and plugins</li>
-            <li>CNC G-code: identifies the machine, controller, and toolpath alongside the existing 3D-printing analysis</li>
-            <li>New identification and metadata for X.509 certificates (.crt), MSI installers, After Effects projects (.aepx), partial downloads (.part), CDP4 data (.cdp), RTF documents, ULTRAKILL saves (.bepis), and Dolby surround codecs (E-AC-3, TrueHD)</li>
-            <li>Font files show a live preview; variable fonts animate through their weight range</li>
-            <li>PDF: extract embedded images, export any page as a PNG, hover a page to Analyse or OCR it, and a &ldquo;Show next 3 pages&rdquo; button for long documents</li>
-            <li>SVG files get a smaller preview and an &ldquo;Analyse as image&rdquo; button that rasterises them for photo analysis</li>
-            <li>Folder drops and ZIP archives now use a collapsible, expandable tree instead of a flat text list</li>
-            <li>Surround-sound channel layouts (5.1, 7.1, Atmos) detected and labelled</li>
-            <li>SHA-256 hashing shows a progress bar; file integrity details grouped into their own card</li>
-            <li>Proper 192px and 512px app icons for a clean install on every device</li>
-            <li>Fixes: spectrogram playhead tracks correctly when zoomed, and the address bar no longer shows &ldquo;index.html&rdquo; after navigating back</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
-          <p class="patch-version">0.28</p>
-          <p class="patch-date">2 June 2026, 21:45</p>
-          <ul class="patch-list">
-            <li>Published the 0.27 update notes and tidied older releases into the &ldquo;Older updates&rdquo; dropdown</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
-          <p class="patch-version">0.27</p>
-          <p class="patch-date">2 June 2026, 21:04</p>
-          <ul class="patch-list">
-            <li>Dark mode follows the OS setting when no preference is saved</li>
-            <li>Settings auto-expire after 7 days to keep localStorage clean in long-unused browsers</li>
-            <li>Navigation bar uses CSS grid for consistent column sizing across pages</li>
-            <li>Header letter-weight sweep no longer conflicts with the mouse hover effect</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
-          <p class="patch-version">0.26</p>
-          <p class="patch-date">2 June 2026</p>
-          <ul class="patch-list">
-            <li>DOCX viewer - opens Word documents with formatted text, tables, headings, and metadata, similar to the PDF viewer</li>
-            <li>AI detection - photos are checked for AI-generation markers in metadata (Stable Diffusion, DALL-E, Midjourney, Firefly, etc.)</li>
-            <li>GCode analysis - detects slicer, printer, filament, layer height, temperatures, print dimensions from 3D printing files</li>
-            <li>Log file origin - identifies Apache, Nginx, syslog, Python, Java/Log4j, Android logcat, JSON structured, and other log formats</li>
-            <li>iPhone video: full analysis now available - frame-by-frame navigation, timecode, contact sheet, scene detection, and audio extraction</li>
-            <li>Photo/video file picker on mobile uses explicit extensions instead of MIME wildcards (no more camera popup on iOS)</li>
-            <li>Header letter-weight sweep plays once on desktop load; repeats periodically on mobile</li>
-            <li>Background grid no longer disappears on wide displays</li>
-            <li>Edge hairlines no longer drift sideways on wide displays</li>
-            <li>PNG favicon added alongside SVG</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
-          <p class="patch-version">0.24</p>
-          <p class="patch-date">2 June 2026, 21:00</p>
-          <ul class="patch-list">
-            <li>Proprietary files now extract program version, author, and metadata from fonts (TTF/OTF), FL Studio, RAR, 7z, SQLite, GIMP XCF, torrent, Ableton, Premiere, and ZIP-based documents (DOCX/XLSX/PPTX/EPUB/ODF)</li>
-            <li>BPM read from file tags (ID3 TBPM, MP4 tmpo) when available; algorithmic estimates marked with (est)</li>
-            <li>Transparent images show a checkerboard background; lightbox adds a Transparency toggle</li>
-            <li>LSB analysis lightbox uses left/right arrows to cycle R, G, B instead of separate picture controls</li>
-            <li>PDF page previews are clickable - open in a lightbox with page navigation arrows</li>
-            <li>HTML files get a sandboxed rendered preview alongside the source</li>
-            <li>Text/code previews add an &ldquo;Open full&rdquo; button to view in a new tab</li>
-            <li>Mobile: header letter-weight animation on load (left-to-right sweep)</li>
-            <li>Mobile: section heading sits beside the number instead of below it after analysis</li>
-            <li>Lightbox close button no longer covered by photos</li>
-            <li>Contact email is display-only (no clickable mailto)</li>
-          </ul>
-        </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.23</p>
-            <p class="patch-date">2 June 2026, 19:38</p>
-            <ul class="patch-list">
-              <li>Scene detection now runs automatically, scores each cut by confidence, and tucks the thumbnails into a dropdown</li>
-              <li>Photos with no GPS fix no longer show a 0,0 / NaN map</li>
-              <li>Spam-safe contact email in the footer</li>
-              <li>Internal: split the audio transport into its own module</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.22</p>
-            <p class="patch-date">2 June 2026, 19:31</p>
-            <ul class="patch-list">
-              <li>Internal: split photo HEIC/RAW conversion into its own module</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.21</p>
-            <p class="patch-date">2 June 2026, 19:27</p>
-            <ul class="patch-list">
-              <li>Vertical edge guides on wide displays, marking where the page ends</li>
-              <li>Internal: began modularising the codebase - AVI container parsing split out, shared helpers consolidated</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.20</p>
-            <p class="patch-date">2 June 2026, 19:14</p>
-            <ul class="patch-list">
-              <li>Central format catalog - one file now drives the supported-types list, the overlay search, and the about-page tables</li>
-              <li>iPhone: videos that the off-screen decoder couldn&rsquo;t open now fall back to a working player with metadata and frame capture</li>
-              <li>Mobile: tap a section card to pick a file (with a confirmation prompt); the heading moves into the numbered card once a file is analysed</li>
-              <li>Dropzone format lists kept to a single row; squared-off supported-formats popup</li>
-              <li>&ldquo;Install as app&rdquo; button; confirmation tick on clearing the offline cache</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.19</p>
-            <p class="patch-date">2 June 2026, 17:49</p>
-            <ul class="patch-list">
-              <li>Added &ldquo;?&rdquo; pop-up explanations for audio and photo stats (RMS, peak, spectral centroid, and the rest)</li>
-              <li>Restored the scrubber under the spectrogram; the playhead now tracks correctly when zoomed</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.18</p>
-            <p class="patch-date">2 June 2026, 17:27</p>
-            <ul class="patch-list">
-              <li>AVI (Motion-JPEG) playback and direct audio extraction without re-encoding</li>
-              <li>Folder-drop overview</li>
-              <li>Identification for 100+ more proprietary formats</li>
-              <li>SPA navigation refinements</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.17 <small>(first release)</small></p>
-            <p class="patch-date">2 June 2026, 16:25</p>
-            <ul class="patch-list">
-              <li>About page with SPA-style page transitions</li>
-              <li>Added identification for 100+ proprietary file formats (Adobe, CAD, 3D, Office, executables)</li>
-              <li>PDF: full-page rendering, improved text extraction</li>
-              <li>Dark mode persistence across pages</li>
-              <li>Automated version numbering via save.bat</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.16</p>
-            <p class="patch-date">2 June 2026, 06:17</p>
-            <ul class="patch-list">
-              <li>Codebase refactored into separate modules (util, search, audio-analysis, audio-codec)</li>
-              <li>Added search across all metadata fields</li>
-              <li>Added CSV and SVG file handlers</li>
-              <li>Added unknown file identification with hex dump</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.15</p>
-            <p class="patch-date">2 June 2026, 04:48</p>
-            <ul class="patch-list">
-              <li>Audio: touch-friendly scrubber, improved mobile seek</li>
-              <li>Spectrogram player under spectrogram on mobile</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.14</p>
-            <p class="patch-date">2 June 2026, 04:41</p>
-            <ul class="patch-list">
-              <li>Scroll-spy sticky nav with active section highlighting</li>
-              <li>Audio: spectrogram colourmap selection, adjustable FFT size</li>
-              <li>Smooth anchor scrolling</li>
-              <li>Dark mode toggle in header</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.13</p>
-            <p class="patch-date">2 June 2026, 03:35</p>
-            <ul class="patch-list">
-              <li>Offline download tiers (Essentials ~46 MB, Everything ~72 MB, Complete ~290 MB)</li>
-              <li>PWA install prompt</li>
-              <li>Header letter-proximity hover effect</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.12</p>
-            <p class="patch-date">2 June 2026, 03:11</p>
-            <ul class="patch-list">
-              <li>Photo: HEIC/RAW conversion with ImageMagick WASM</li>
-              <li>Version numbering system via save.bat</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.11</p>
-            <p class="patch-date">2 June 2026, 02:39</p>
-            <ul class="patch-list">
-              <li>Video: custom scrubber with waveform playhead</li>
-              <li>Audio: codec detection from file headers (MP3, AAC, FLAC, OGG, WAV)</li>
-              <li>Photo: OCR text recognition, QR code scanning</li>
-              <li>iOS Safari video capture compatibility</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.10</p>
-            <p class="patch-date">2 June 2026, 01:58</p>
-            <ul class="patch-list">
-              <li>Audio: amplitude histogram</li>
-              <li>Favicon refinements</li>
-              <li>Dark mode colour adjustments</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.9</p>
-            <p class="patch-date">2 June 2026, 01:34</p>
-            <ul class="patch-list">
-              <li>Video: scene change detection with timeline and thumbnail grid</li>
-              <li>Video: contact sheet generator (4&times;2 grid)</li>
-              <li>Video: frame-by-frame navigation with editable timecode</li>
-              <li>New favicon set (32px PNG and SVG)</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.8</p>
-            <p class="patch-date">2 June 2026, 00:38</p>
-            <ul class="patch-list">
-              <li>CSS redesign: Swiss-style grid layout, new section structure</li>
-              <li>Photo: GPS map with Leaflet and OpenStreetMap</li>
-              <li>Restructured page layout</li>
-              <li>Removed old icon assets</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.7</p>
-            <p class="patch-date">1 June 2026, 23:16</p>
-            <ul class="patch-list">
-              <li>Added PDF viewer with text extraction and page previews</li>
-              <li>Added ZIP archive browser with sizes, dates, compression ratios</li>
-              <li>Self-hosted Geist font family (Latin, Cyrillic, Vietnamese)</li>
-              <li>Video: FFmpeg WASM for audio extraction and frame rate detection</li>
-              <li>Removed layout mockups</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.6</p>
-            <p class="patch-date">1 June 2026, 21:53</p>
-            <ul class="patch-list">
-              <li>Removed unused favicon alternatives</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.5</p>
-            <p class="patch-date">1 June 2026, 21:52</p>
-            <ul class="patch-list">
-              <li>Audio: microphone recording and live spectrogram</li>
-              <li>Favicon designs (multiple SVG concepts)</li>
-              <li>Photo: improved HEIF support</li>
-              <li>Background layout mockups</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.4</p>
-            <p class="patch-date">1 June 2026, 21:13</p>
-            <ul class="patch-list">
-              <li>Added video module: playback, container and codec detection, audio extraction</li>
-              <li>Audio: AAC ADTS container support</li>
-              <li>Photo: HEIC conversion, RGB histogram, dominant colour palette</li>
-              <li>Page-wide drag and drop</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.3</p>
-            <p class="patch-date">1 June 2026, 20:18</p>
-            <ul class="patch-list">
-              <li>Spectrogram: fullscreen mode, window function selector</li>
-              <li>Enhanced FFT implementation</li>
-              <li>File classification improvements</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.2</p>
-            <p class="patch-date">1 June 2026, 20:08</p>
-            <ul class="patch-list">
-              <li>Fixed CSS layout: progress bar labels, container spacing</li>
-            </ul>
-          </div>
-
-          <div class="patch-entry">
-            <p class="patch-version">0.1</p>
-            <p class="patch-date">1 June 2026, 20:08</p>
-            <ul class="patch-list">
-              <li>Initial release</li>
-              <li>Photo: EXIF, IPTC, XMP, and ICC metadata extraction</li>
-              <li>Audio: waveform and spectrogram visualisation</li>
-              <li>Progressive Web App with service worker</li>
-            </ul>
-          </div>
-        </details>
-      </div>
-    </div>
-  </section>
-
   <section id="where" class="section">
     <div class="grid">
       <aside class="section-meta">
-        <span class="section-num">iii</span>
+        <span class="section-num">ii</span>
         <span class="section-kicker">Where</span>
       </aside>
       <div class="section-content">
@@ -561,7 +149,7 @@
   <section id="what" class="section">
     <div class="grid">
       <aside class="section-meta">
-        <span class="section-num">iv</span>
+        <span class="section-num">iii</span>
         <span class="section-kicker">What</span>
       </aside>
       <div class="section-content">

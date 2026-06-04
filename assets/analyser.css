@@ -172,6 +172,14 @@ button { font-family: inherit; }
   letter-spacing: -0.045em;
   margin: 0;
 }
+/* PATCH NOTES PAGE: no left meta rail and no navbar, so the notes column is
+   centred. The title uses the normal --t-mega size, like the other pages. */
+.patch-page .section .grid { display: block; }
+.patch-page .section-content {
+  grid-column: auto;
+  max-width: 760px;
+  margin: 0 auto;
+}
 
 /* Byline directly under the title. Its size is a fixed fraction of the title
    size (--t-mega), so the two scale together and the byline's right edge stays
@@ -203,6 +211,18 @@ button { font-family: inherit; }
 .site-byline:hover .site-byline-link::after { width: 100%; }
 .site-byline-link:hover::after { background: #e53e3e; }
 
+/* CHANGELOG header. "Changelog" is one long word, so tighten the tracking to keep
+   it on a single row (the title keeps the normal --t-mega size). Then nudge only
+   the "valjdakosta" word down so the tail of the title's "g" clears it - position:
+   relative shifts it visually without reflow, so "Analyser by" and everything below
+   stay at their current height. The offset is in em (of the byline, which scales
+   with --t-mega) so it tracks the title size across viewports. */
+.site-mark--changelog .site-title { letter-spacing: -0.09em; }
+.site-mark--changelog .site-byline-link {
+  position: relative;
+  top: 0.37em;
+}
+
 .site-sub {
   font-size: clamp(15px, 1.6vw, 18px);
   color: var(--muted);
@@ -210,6 +230,30 @@ button { font-family: inherit; }
   max-width: 50ch;
   line-height: 1.45;
 }
+
+/* Cross-page buttons (About / Patch notes) sitting under the header text.
+   Outlined mono pills matching the footer nav button; filled when current. */
+.site-mark-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 24px 0 0;
+}
+/* Same look as the old top-right chips (.dark-toggle): small outlined mono
+   pill that inverts on hover. */
+.header-btn {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--fg);
+  text-decoration: none;
+}
+.header-btn:hover { background: var(--fg); color: var(--bg); }
 
 @media (max-width: 800px) {
   .site-mark { grid-column: 1 / -1; }
@@ -232,7 +276,10 @@ button { font-family: inherit; }
   margin: 0 auto;
   padding: 0 var(--pad-x);
 }
-body:has(.about-page) .site-nav { grid-template-columns: 48px repeat(4, 1fr) auto; }
+/* About page nav is just the 3 section links (Why / Where / What) - no home or
+   search chrome - so size it to 3 equal columns instead of the home+links+search
+   grid the main page uses. */
+body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
 .nav-link {
   min-width: 0;
   padding: 16px 4px;
@@ -1803,16 +1850,77 @@ details[open] summary::after { content: "\2212"; }
   line-height: 1.6;
 }
 .patch-list li { padding: 1px 0; }
-.patch-milestone {}
+
+/* Each patch carries a short codename, shown between the version and the date. */
+.patch-name {
+  font-size: var(--t-h3);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  margin: 2px 0 0;
+}
+.patch-milestone .patch-name { color: var(--accent); }
+
+/* Inline emphasis inside patch notes */
+.patch-list strong { color: var(--fg); font-weight: 600; }
+.patch-list em { font-style: normal; color: var(--accent); }
+.patch-list u { text-decoration-color: var(--accent); text-underline-offset: 2px; }
+.patch-list a {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 2px;
+}
+.patch-list a:hover { color: var(--accent); text-decoration-color: var(--accent); }
+
+/* Little category tags: New / Fix / Faster */
+.patch-tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 5px;
+  margin-right: 6px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 2px;
+  vertical-align: 1px;
+}
+.patch-tag.is-fix { border-color: var(--muted); color: var(--muted); }
+.patch-tag.is-faster { border-color: var(--fg); color: var(--fg); }
+
+/* The crowned 1.0 release entry */
+.patch-milestone {
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  padding: 16px;
+  margin: 18px 0;
+  background: rgba(230, 0, 35, 0.05);
+}
+.patch-milestone .patch-version {
+  color: var(--accent);
+  font-size: var(--t-small);
+}
 .patch-milestone .patch-version::after {
-  content: 'RELEASE WOOOOOOOOOO';
+  content: 'RELEASE WOOOOO';
   margin-left: 8px;
   font-size: 9px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--accent);
   vertical-align: middle;
+  animation: patchWoo 1.6s ease-in-out infinite;
 }
+@keyframes patchWoo {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .patch-milestone .patch-version::after { animation: none; }
+}
+:root[data-theme="dark"] .patch-milestone { background: rgba(255, 51, 71, 0.08); }
 
 /* ---------- FOOTER ---------- */
 .site-footer {

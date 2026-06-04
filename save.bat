@@ -38,9 +38,13 @@ set SAVE_ERROR=0
 for /f %%i in ('git rev-list --count HEAD 2^>nul') do set COMMIT_COUNT=%%i
 if not defined COMMIT_COUNT set COMMIT_COUNT=0
 set /a NEXT_COUNT=%COMMIT_COUNT%+1
-set /a MINOR=%NEXT_COUNT%-32
-if %MINOR% lss 0 set MINOR=0
-echo Bumping version to 1.%MINOR% (commit %NEXT_COUNT%)
+
+rem Version label mirrors analyserVersion() in app.js. RELEASE is the commit that
+rem is crowned 1.0 - keep it in sync with RELEASE_COMMITS in app.js. Commits before
+rem it read 0.NN, the release reads 1.0, and commits after it read 1.NN.
+set RELEASE=29
+for /f %%v in ('powershell -NoProfile -Command "$n=%NEXT_COUNT%; $r=%RELEASE%; if($n -lt $r){'0.{0:D2}' -f $n} elseif($n -eq $r){'1.0'} else{'1.{0:D2}' -f ($n-$r)}"') do set VERLABEL=%%v
+echo Bumping version to %VERLABEL% (commit %NEXT_COUNT%)
 
 powershell -Command "(Get-Content 'assets/analyser/app.js') -replace 'const COMMIT_COUNT = \d+;', 'const COMMIT_COUNT = %NEXT_COUNT%;' | Set-Content 'assets/analyser/app.js' -Encoding utf8"
 
