@@ -210,7 +210,8 @@ export async function sha256Hex(file) {
 }
 
 export function sha256Row(file) {
-  const hashRow = row('SHA-256', '');
+  const hashRow = rowHelp('SHA-256', '',
+    "SHA-256 is a cryptographic fingerprint of the file's exact bytes. Identical files share the same hash; changing even a single byte changes it completely - useful for verifying a file hasn't been altered or matches a known copy.");
   const td = hashRow.querySelector('td');
   const bar = asciiBar();
   bar.indeterminate();

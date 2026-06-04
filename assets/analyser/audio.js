@@ -614,34 +614,37 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   return card;
 }
 
+// Known music-tag fields that earn an inline [?] explanation; everything else
+// renders as a plain row. Keyed by the display label set in audio-codec.js.
+const TAG_HELP = {
+  ISRC: "The International Standard Recording Code uniquely identifies a specific audio recording (not the song or the release). It reads as CC-XXX-YY-NNNNN: country, registrant, year, and a per-recording number. Labels and stores use it for royalty tracking and to match the same recording across services.",
+};
+function tagRow(name, value) {
+  return TAG_HELP[name] ? rowHelp(name, value, TAG_HELP[name]) : row(name, value);
+}
+
 function buildCoverArtCard(art, file) {
-  const blob = new Blob([art.bytes], { type: art.mime });
-  const url = URL.createObjectURL(blob);
-  const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Embedded cover art'));
+  // Embedded cover art is auto-analysed as a photo, inline. A slim label card
+  // marks where it came from, then the full photo analysis renders below it.
+  const frag = document.createDocumentFragment();
 
-  const img = el('img', { src: url, class: 'anr-coverart', alt: 'Embedded cover art' });
-  card.appendChild(img);
-
-  const tbl = el('table', { class: 'anr-readout' });
-  const dimRow = row('Dimensions', '…');
-  tbl.appendChild(dimRow);
-  tbl.appendChild(row('Type', art.mime));
-  tbl.appendChild(row('Size', fmtBytes(art.bytes.length)));
-  card.appendChild(tbl);
-  img.addEventListener('load', () => {
-    if (img.naturalWidth) dimRow.querySelector('td').textContent = img.naturalWidth + ' × ' + img.naturalHeight;
-  });
+  const labelCard = el('div', { class: 'anr-card' });
+  labelCard.appendChild(el('h3', {}, 'Embedded cover art'));
+  labelCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' },
+    'Pulled from the file’s metadata (' + art.mime + ' · ' + fmtBytes(art.bytes.length) + ') and analysed as a photo below.'));
+  frag.appendChild(labelCard);
 
   const ext = art.mime === 'image/png' ? 'png' : art.mime === 'image/bmp' ? 'bmp' : 'jpg';
   const base = (file.name || 'cover').replace(/\.[^.]+$/, '') || 'cover';
-  const analyseBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
-    const artFile = new File([art.bytes], base + '-cover.' + ext, { type: art.mime });
-    if (window._anrHandleFile) window._anrHandleFile(artFile);
-  } }, 'Analyse as photo');
-  card.appendChild(analyseBtn);
+  const artFile = new File([art.bytes], base + '-cover.' + ext, { type: art.mime });
 
-  return card;
+  // Lazy-load the photo module (kept out of the audio bundle) only when there is
+  // actually cover art to analyse, then render the analysis into its own box.
+  const photoBox = el('div');
+  frag.appendChild(photoBox);
+  import('./photo.js').then(({ renderPhoto }) => renderPhoto(artFile, photoBox)).catch(() => {});
+
+  return frag;
 }
 
 function buildWaveformCard(file, mono, audioBuffer, audioEl) {
@@ -931,7 +934,7 @@ async function renderUndecodableAudio(file, header, resultsEl) {
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Name', file.name));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
-  tbl.appendChild(row('MIME', file.type || '-'));
+  tbl.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
   if (header.container) tbl.appendChild(row('Container', header.container));
   if (header.codec) tbl.appendChild(row('Codec', header.codec));
   if (header.sampleRate) tbl.appendChild(row('Sample rate', header.sampleRate.toLocaleString() + ' Hz'));
@@ -947,7 +950,7 @@ async function renderUndecodableAudio(file, header, resultsEl) {
       const card = el('div', { class: 'anr-card' });
       card.appendChild(el('h3', {}, 'Tags'));
       const t = el('table', { class: 'anr-readout' });
-      for (const [n, v] of meta.tags) t.appendChild(row(n, v));
+      for (const [n, v] of meta.tags) t.appendChild(tagRow(n, v));
       card.appendChild(t); resultsEl.appendChild(card);
     }
     if (meta && meta.lyrics) {
@@ -1014,7 +1017,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Name',           file.name));
   tbl.appendChild(row('Size',           fmtBytes(file.size)));
-  tbl.appendChild(row('MIME',           file.type || header.container || '-'));
+  tbl.appendChild(rowHelp('MIME',       file.type || header.container || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
   if (header.container) tbl.appendChild(row('Container',     header.container));
   if (header.codec)     tbl.appendChild(row('Codec',         header.codec));
   tbl.appendChild(row('Duration',       formatTime(audioBuffer.duration)));
@@ -1072,6 +1075,13 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
 
+  // ---- Spectrogram (sits directly under the file info) ----
+  const basename = (file.name || 'spectrogram').replace(/\.[^/.]+$/, '');
+  resultsEl.appendChild(makeSpectrogramPanel(mono, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, capture: true }));
+
+  // ---- Amplitude histogram (under the spectrogram) ----
+  resultsEl.appendChild(buildHistogramCard(mono));
+
   // ---- Embedded cover art (filled in asynchronously so it doesn't block) ----
   const coverSlot = el('div');
   resultsEl.appendChild(coverSlot);
@@ -1088,7 +1098,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
       const card = el('div', { class: 'anr-card' });
       card.appendChild(el('h3', {}, 'Tags'));
       const tbl = el('table', { class: 'anr-readout' });
-      for (const [name, value] of meta.tags) tbl.appendChild(row(name, value));
+      for (const [name, value] of meta.tags) tbl.appendChild(tagRow(name, value));
       card.appendChild(tbl);
       tagSlot.appendChild(card);
     }
@@ -1102,13 +1112,6 @@ export async function renderAudio(file, resultsEl, opts = {}) {
 
   // ---- Waveform card ----
   resultsEl.appendChild(buildWaveformCard(file, mono, audioBuffer, audioEl));
-
-  // ---- Spectrogram ----
-  const basename = (file.name || 'spectrogram').replace(/\.[^/.]+$/, '');
-  resultsEl.appendChild(makeSpectrogramPanel(mono, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, capture: true }));
-
-  // ---- Amplitude histogram (under the spectrogram) ----
-  resultsEl.appendChild(buildHistogramCard(mono));
 
   // ---- Stereo Width / Vectorscope card (stereo files only) ----
   if (audioBuffer.numberOfChannels >= 2) {

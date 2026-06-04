@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 45;
+const COMMIT_COUNT = 46;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). A commit listed in RELEASE_COMMITS bumps the
@@ -689,15 +689,6 @@ function boot() {
       if (_handleFile) for (const file of files) _handleFile(file);
     });
 
-  if (window._anrPendingFile && photoResults) {
-    handleFile(window._anrPendingFile);
-    delete window._anrPendingFile;
-  }
-  if (window._anrPendingFolder && unknownResults) {
-    renderFolder(window._anrPendingFolder, unknownResults);
-    delete window._anrPendingFolder;
-  }
-
   // ----- Version number -----
   const verEl = $('versionNum');
   if (verEl) {
@@ -814,6 +805,19 @@ function boot() {
 
     boot._once = true;
   } // end one-time guard
+
+  // A file dropped on the About / Changelog page stashes itself here and
+  // navigates home; pick it up once this (home) boot has the result containers.
+  // Runs every boot - NOT inside the one-time guard - so it fires on the
+  // anr:navigate boot that the drop triggers, not only on a cold first load.
+  if (window._anrPendingFile && photoResults) {
+    handleFile(window._anrPendingFile);
+    delete window._anrPendingFile;
+  }
+  if (window._anrPendingFolder && unknownResults) {
+    renderFolder(window._anrPendingFolder, unknownResults);
+    delete window._anrPendingFolder;
+  }
 
   // Re-bind the header letter effect to the (possibly swapped) title.
   setupHeaderFx();
