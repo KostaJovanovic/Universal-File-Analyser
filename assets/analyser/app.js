@@ -4,8 +4,24 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 40;
-const VERSION_OFFSET = 32;
+const COMMIT_COUNT = 41;
+// Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
+// 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
+// two digits - 0.09, 0.10, 0.11). A commit listed in RELEASE_COMMITS bumps the
+// major version and resets the counter, so it shows as "1.0" and the commit right
+// after it is "1.01". To crown a future 2.0, append its commit number here (keep
+// the list sorted ascending, and mirror the RELEASE constant in save.bat).
+const RELEASE_COMMITS = [29];
+
+function analyserVersion(n, releases) {
+  let major = 0, base = 0;
+  for (const r of releases) {
+    if (n >= r) { major += 1; base = r; } else break;
+  }
+  if (major === 0) return '0.' + String(n).padStart(2, '0');
+  const minor = n - base;
+  return major + '.' + (minor === 0 ? '0' : String(minor).padStart(2, '0'));
+}
 
 import { initPhoto, renderPhoto } from './photo.js';
 import { initAudio, renderAudio } from './audio.js';
@@ -111,13 +127,16 @@ function hideDropLoader() {
 
 // Cursor-style confirm popup (reuses the treemap .anr-treemap-menu look) shown
 // when the "Links" button is clicked, so leaving the site is deliberate.
-function showLinkConfirm(anchor) {
+function showLinkConfirm(anchor, opts) {
+  opts = opts || {};
   document.querySelectorAll('.anr-link-confirm').forEach((n) => n.remove());
   const url = anchor.getAttribute('href');
+  const message = opts.message || 'This link leads to link.valjdakosta.com, proceed?';
+  const onProceed = opts.onProceed || function () { window.open(url, '_blank', 'noopener'); };
   const cancelBtn = el('button', { class: 'anr-tm-btn' }, 'Cancel');
   const okBtn = el('button', { class: 'anr-tm-btn anr-tm-btn-ok' }, 'Proceed');
   const menu = el('div', { class: 'anr-treemap-menu anr-link-confirm' }, [
-    el('div', { class: 'anr-tm-q' }, 'This link leads to link.valjdakosta.com, proceed?'),
+    el('div', { class: 'anr-tm-q' }, message),
     el('div', { class: 'anr-tm-actions' }, [cancelBtn, okBtn]),
   ]);
   document.body.appendChild(menu);
@@ -139,7 +158,7 @@ function showLinkConfirm(anchor) {
   function onOut(e) { if (!menu.contains(e.target) && e.target !== anchor) close(); }
   function onKey(e) { if (e.key === 'Escape') close(); }
   cancelBtn.addEventListener('click', close);
-  okBtn.addEventListener('click', () => { close(); window.open(url, '_blank', 'noopener'); });
+  okBtn.addEventListener('click', () => { close(); onProceed(); });
   setTimeout(() => {
     document.addEventListener('mousedown', onOut, true);
     document.addEventListener('keydown', onKey, true);
@@ -204,6 +223,148 @@ function hasFiles(e) {
 let _handleFile = null;
 let _scrollHandler = null;
 
+// Header letter-proximity / sweep effect. Re-runs per navigation because
+// navigate.js swaps .site-mark (so the title text changes between pages); the
+// guard on the element keeps it from binding twice to the same header.
+function setupHeaderFx() {
+  const mark = document.querySelector('.site-mark');
+  const title = document.querySelector('.site-title');
+  const byline = document.querySelector('.site-byline');
+  if (!mark || !title || !byline || mark._anrFx) return;
+  mark._anrFx = true;
+  if (setupHeaderFx._iv) clearInterval(setupHeaderFx._iv);
+
+
+    function splitText(container, baseWeight) {
+      const spacing = getComputedStyle(container).letterSpacing;
+      const spans = [];
+      function makeSpan(ch, parent) {
+        const s = document.createElement('span');
+        s.textContent = ch;
+        s.style.display = 'inline-block';
+        s.style.fontWeight = baseWeight;
+        s.style.letterSpacing = spacing;
+        if (ch === ' ') s.style.width = '0.25em';
+        parent.appendChild(s);
+        // A space gets a <wbr> so multi-word titles ("Patch Notes") can still
+        // wrap on narrow screens - the letter spans are inline-block with no
+        // whitespace between them, which would otherwise be one unbreakable run.
+        if (ch === ' ') parent.appendChild(document.createElement('wbr'));
+        spans.push({ el: s, base: baseWeight });
+      }
+      const nodes = [...container.childNodes];
+      container.textContent = '';
+      for (const node of nodes) {
+        if (node.nodeType === 3) {
+          for (const ch of node.textContent) makeSpan(ch, container);
+        } else {
+          const text = node.textContent;
+          node.textContent = '';
+          container.appendChild(node);
+          for (const ch of text) makeSpan(ch, node);
+        }
+      }
+      return spans;
+    }
+
+    function initLetters() {
+      title.style.width = title.offsetWidth + 'px';
+      title.style.height = title.offsetHeight + 'px';
+      byline.style.width = byline.offsetWidth + 'px';
+      byline.style.height = byline.offsetHeight + 'px';
+      const letters = [
+        ...splitText(title, 600),
+        ...splitText(byline, 700)
+      ];
+      title.style.width = '';
+      title.style.height = '';
+      byline.style.width = '';
+      byline.style.height = '';
+      return letters;
+    }
+
+    var sweepRunning = false;
+    var sweepCleanup = 0;
+
+    function makeSweep(letters, radius, duration) {
+      return function sweep() {
+        sweepRunning = true;
+        const rect = mark.getBoundingClientRect();
+        const sx = rect.left - radius;
+        const ex = rect.right + radius;
+        const cy = rect.top + rect.height * 0.5;
+        const span = ex - sx;
+        let t0 = null;
+        function frame(ts) {
+          if (!sweepRunning) return;
+          if (!t0) t0 = ts;
+          const p = Math.min(1, (ts - t0) / duration);
+          const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+          const vx = sx + e * span;
+          for (const l of letters) {
+            const r = l.el.getBoundingClientRect();
+            const d = Math.hypot(vx - (r.left + r.width / 2), cy - (r.top + r.height / 2));
+            const f = Math.min(1, d / radius);
+            l.el.style.fontWeight = Math.round(l.base * f + 300 * (1 - f));
+          }
+          if (p < 1) requestAnimationFrame(frame);
+          else {
+            for (const l of letters) {
+              l.el.style.transition = 'font-weight 0.4s ease';
+              l.el.style.fontWeight = l.base;
+            }
+            sweepCleanup = setTimeout(() => {
+              for (const l of letters) l.el.style.transition = '';
+              sweepRunning = false;
+            }, 500);
+          }
+        }
+        requestAnimationFrame(frame);
+      };
+    }
+
+    if (title && byline && mark && window.matchMedia('(hover:hover) and (pointer:fine)').matches) {
+      const letters = initLetters();
+      const RADIUS = 120;
+      let mx = -9999, my = -9999, raf = 0, inside = false;
+
+      function tick() {
+        for (const l of letters) {
+          const r = l.el.getBoundingClientRect();
+          const dist = Math.hypot(mx - (r.left + r.width / 2), my - (r.top + r.height / 2));
+          const t = Math.min(1, dist / RADIUS);
+          l.el.style.fontWeight = Math.round(l.base * t + 300 * (1 - t));
+        }
+        if (inside) raf = requestAnimationFrame(tick);
+      }
+
+      mark.addEventListener('mouseenter', () => {
+        if (sweepRunning) {
+          sweepRunning = false;
+          clearTimeout(sweepCleanup);
+          for (const l of letters) l.el.style.transition = '';
+        }
+        inside = true;
+        raf = requestAnimationFrame(tick);
+      });
+      mark.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+      mark.addEventListener('mouseleave', () => {
+        inside = false;
+        cancelAnimationFrame(raf);
+        for (const l of letters) {
+          l.el.style.transition = 'font-weight 0.3s ease';
+          l.el.style.fontWeight = l.base;
+        }
+      });
+
+      setTimeout(makeSweep(letters, RADIUS, 3500), 800);
+    } else if (title && byline && mark && window.matchMedia('(pointer: coarse)').matches) {
+      const letters = initLetters();
+      const sweep = makeSweep(letters, 80, 3500);
+      setTimeout(sweep, 800);
+      setupHeaderFx._iv = setInterval(sweep, 8000);
+    }
+}
 function boot() {
   if (!window.exifr) {
     console.warn('exifr not loaded yet; photo metadata will be missing until it loads.');
@@ -543,8 +704,7 @@ function boot() {
   // ----- Version number -----
   const verEl = $('versionNum');
   if (verEl) {
-    const minor = Math.max(0, COMMIT_COUNT - VERSION_OFFSET);
-    verEl.textContent = '1.' + minor;
+    verEl.textContent = analyserVersion(COMMIT_COUNT, RELEASE_COMMITS);
   }
 
   // ----- Contact email -----
@@ -604,13 +764,13 @@ function boot() {
   const darkBtn = $('darkToggle');
   if (darkBtn) {
     // Label shows the CURRENT mode: NIGHT while dark, DAY while light.
-    darkBtn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? 'NIGHT' : 'DAY';
+    darkBtn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☾︎ NIGHT' : '☀︎ DAY';
     darkBtn.addEventListener('click', () => {
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
       const next = isDark ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
       anrSet('anr-theme', next);
-      darkBtn.textContent = next === 'dark' ? 'NIGHT' : 'DAY';
+      darkBtn.textContent = next === 'dark' ? '☾︎ NIGHT' : '☀︎ DAY';
     });
   }
 
@@ -632,141 +792,54 @@ function boot() {
       }
     });
 
-    // ----- Header letter-proximity effect (one-time) -----
-    const mark = document.querySelector('.site-mark');
-    const title = document.querySelector('.site-title');
-    const byline = document.querySelector('.site-byline');
-
-    function splitText(container, baseWeight) {
-      const spacing = getComputedStyle(container).letterSpacing;
-      const spans = [];
-      function makeSpan(ch, parent) {
-        const s = document.createElement('span');
-        s.textContent = ch;
-        s.style.display = 'inline-block';
-        s.style.fontWeight = baseWeight;
-        s.style.letterSpacing = spacing;
-        if (ch === ' ') s.style.width = '0.25em';
-        parent.appendChild(s);
-        spans.push({ el: s, base: baseWeight });
-      }
-      const nodes = [...container.childNodes];
-      container.textContent = '';
-      for (const node of nodes) {
-        if (node.nodeType === 3) {
-          for (const ch of node.textContent) makeSpan(ch, container);
-        } else {
-          const text = node.textContent;
-          node.textContent = '';
-          container.appendChild(node);
-          for (const ch of text) makeSpan(ch, node);
-        }
-      }
-      return spans;
-    }
-
-    function initLetters() {
-      title.style.width = title.offsetWidth + 'px';
-      title.style.height = title.offsetHeight + 'px';
-      byline.style.width = byline.offsetWidth + 'px';
-      byline.style.height = byline.offsetHeight + 'px';
-      const letters = [
-        ...splitText(title, 600),
-        ...splitText(byline, 700)
-      ];
-      title.style.width = '';
-      title.style.height = '';
-      byline.style.width = '';
-      byline.style.height = '';
-      return letters;
-    }
-
-    var sweepRunning = false;
-    var sweepCleanup = 0;
-
-    function makeSweep(letters, radius, duration) {
-      return function sweep() {
-        sweepRunning = true;
-        const rect = mark.getBoundingClientRect();
-        const sx = rect.left - radius;
-        const ex = rect.right + radius;
-        const cy = rect.top + rect.height * 0.5;
-        const span = ex - sx;
-        let t0 = null;
-        function frame(ts) {
-          if (!sweepRunning) return;
-          if (!t0) t0 = ts;
-          const p = Math.min(1, (ts - t0) / duration);
-          const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-          const vx = sx + e * span;
-          for (const l of letters) {
-            const r = l.el.getBoundingClientRect();
-            const d = Math.hypot(vx - (r.left + r.width / 2), cy - (r.top + r.height / 2));
-            const f = Math.min(1, d / radius);
-            l.el.style.fontWeight = Math.round(l.base * f + 300 * (1 - f));
-          }
-          if (p < 1) requestAnimationFrame(frame);
-          else {
-            for (const l of letters) {
-              l.el.style.transition = 'font-weight 0.4s ease';
-              l.el.style.fontWeight = l.base;
-            }
-            sweepCleanup = setTimeout(() => {
-              for (const l of letters) l.el.style.transition = '';
-              sweepRunning = false;
-            }, 500);
-          }
-        }
-        requestAnimationFrame(frame);
-      };
-    }
-
-    if (title && byline && mark && window.matchMedia('(hover:hover) and (pointer:fine)').matches) {
-      const letters = initLetters();
-      const RADIUS = 120;
-      let mx = -9999, my = -9999, raf = 0, inside = false;
-
-      function tick() {
-        for (const l of letters) {
-          const r = l.el.getBoundingClientRect();
-          const dist = Math.hypot(mx - (r.left + r.width / 2), my - (r.top + r.height / 2));
-          const t = Math.min(1, dist / RADIUS);
-          l.el.style.fontWeight = Math.round(l.base * t + 300 * (1 - t));
-        }
-        if (inside) raf = requestAnimationFrame(tick);
-      }
-
-      mark.addEventListener('mouseenter', () => {
-        if (sweepRunning) {
-          sweepRunning = false;
-          clearTimeout(sweepCleanup);
-          for (const l of letters) l.el.style.transition = '';
-        }
-        inside = true;
-        raf = requestAnimationFrame(tick);
-      });
-      mark.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
-      mark.addEventListener('mouseleave', () => {
-        inside = false;
-        cancelAnimationFrame(raf);
-        for (const l of letters) {
-          l.el.style.transition = 'font-weight 0.3s ease';
-          l.el.style.fontWeight = l.base;
-        }
-      });
-
-      setTimeout(makeSweep(letters, RADIUS, 3500), 800);
-    } else if (title && byline && mark && window.matchMedia('(pointer: coarse)').matches) {
-      const letters = initLetters();
-      const sweep = makeSweep(letters, 80, 3500);
-      setTimeout(sweep, 800);
-      setInterval(sweep, 8000);
-    }
+    // Header letter FX is initialised per-navigation by setupHeaderFx() (defined above).
 
     setInterval(anrSweep, ANR_REFRESH);
 
+    // Deep-links in the patch notes (and anywhere else) jump to an #anchor, then
+    // quietly clean the hash out of the address bar a few seconds later so the URL
+    // stays tidy and shareable. replaceState doesn't re-scroll, so the user stays
+    // put. We only strip if the hash hasn't changed in the meantime (no new jump).
+    const HASH_CLEAN_DELAY = 3000;
+    let hashCleanTimer = null;
+    const scheduleHashClean = () => {
+      if (hashCleanTimer) clearTimeout(hashCleanTimer);
+      if (!location.hash) return;
+      const target = location.hash;
+      hashCleanTimer = setTimeout(() => {
+        if (location.hash === target) {
+          history.replaceState(null, '', location.pathname + location.search);
+        }
+      }, HASH_CLEAN_DELAY);
+    };
+    window.addEventListener('hashchange', scheduleHashClean);
+    scheduleHashClean(); // handle a hash present on initial load
+
     boot._once = true;
   } // end one-time guard
+
+  // Re-bind the header letter effect to the (possibly swapped) title.
+  setupHeaderFx();
+
+  // Tapping a hyperlink inside the patch notes asks for confirmation first
+  // (same cursor-style popup as the external "Links" button) before following
+  // it, then navigates on Proceed.
+  document.querySelectorAll('.patch-list a[href]').forEach((a) => {
+    if (a._confirmBound) return;
+    a._confirmBound = true;
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const href = a.getAttribute('href') || '';
+      let dest = 'another page';
+      if (href.indexOf('about.html') === 0) dest = 'the About page';
+      else if (href === '/' || href.indexOf('index') === 0) dest = 'the analyser';
+      showLinkConfirm(a, {
+        message: 'This link leads to ' + dest + ', proceed?',
+        onProceed: function () { window.location.href = href; }
+      });
+    });
+  });
 
   // ----- Scroll-spy for the sticky nav (re-binds per page) -----
   const links = Array.from(document.querySelectorAll('.site-nav a[href^="#"]'));

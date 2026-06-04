@@ -4,13 +4,13 @@
   function swap(doc) {
     document.title = doc.title;
 
-    var oldKicker = document.querySelector('.site-kicker');
-    var newKicker = doc.querySelector('.site-kicker');
-    if (oldKicker && newKicker) oldKicker.textContent = newKicker.textContent;
-
-    var oldLastDd = document.querySelector('.site-meta dl dd:last-of-type');
-    var newLastDd = doc.querySelector('.site-meta dl dd:last-of-type');
-    if (oldLastDd && newLastDd) oldLastDd.innerHTML = newLastDd.innerHTML;
+    // Swap the whole site-mark (kicker + title + byline + sub) so per-page
+    // headers ("About", "Patch Notes", "Analyser") follow the navigation. The
+    // fresh title has no letter-spans yet; app.js's setupHeaderFx() re-binds the
+    // hover/sweep effect when it handles the anr:navigate event below.
+    var oldMark = document.querySelector('.site-mark');
+    var newMark = doc.querySelector('.site-mark');
+    if (oldMark && newMark) oldMark.replaceWith(newMark);
 
     var oldNav = document.querySelector('.site-nav');
     var newNav = doc.querySelector('.site-nav');

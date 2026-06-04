@@ -326,7 +326,7 @@ export async function renderStl(file, resultsEl) {
   const dz = geo.bbox.max[2] - geo.bbox.min[2];
   tbl.appendChild(rowHelp('Bounding box', `${dx.toFixed(2)} × ${dy.toFixed(2)} × ${dz.toFixed(2)} (units)`, 'The smallest axis-aligned box that encloses the model, as width × depth × height. STL files are unitless, so these are in whatever units the file assumes (often mm).'));
   tbl.appendChild(rowHelp('Surface area', geo.area.toFixed(2) + ' units²', 'The combined area of all triangles in the mesh, expressed in the model’s own units squared.'));
-  tbl.appendChild(rowHelp('Volume', geo.volume.toFixed(2) + ' units³ (if watertight)', 'The enclosed volume in the model’s units cubed. Only meaningful if the mesh is watertight — a fully closed solid with no holes or gaps.'));
+  tbl.appendChild(rowHelp('Volume', geo.volume.toFixed(2) + ' units³ (if watertight)', 'The enclosed volume in the model’s units cubed. Only meaningful if the mesh is watertight - a fully closed solid with no holes or gaps.'));
   tbl.appendChild(sha256Row(file));
   statsCard.appendChild(tbl);
   statsCard.appendChild(el('p', { class: 'anr-hint', style: 'font-size:12px;margin-top:8px;' },

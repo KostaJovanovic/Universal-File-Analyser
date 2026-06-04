@@ -68,7 +68,7 @@ export async function renderSvg(file, resultsEl) {
   }
   // Count all nodes
   const allElements = doc.getElementsByTagName('*');
-  tbl.appendChild(rowHelp('Total elements', String(allElements.length), 'The total count of all SVG nodes in the file — shapes, groups, paths, and every other tag.'));
+  tbl.appendChild(rowHelp('Total elements', String(allElements.length), 'The total count of all SVG nodes in the file - shapes, groups, paths, and every other tag.'));
 
   statsCard.appendChild(tbl);
 

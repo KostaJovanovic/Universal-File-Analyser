@@ -290,7 +290,7 @@ export async function renderUnknown(file, resultsEl) {
         card.appendChild(el('div', { class: 'anr-readout-section' }, 'JSON statistics'));
         const jsTbl = el('table', { class: 'anr-readout' });
         jsTbl.appendChild(rowHelp('Total keys', stats.keys.toLocaleString(), 'The total number of object keys across the whole JSON document, counting nested objects.'));
-        jsTbl.appendChild(rowHelp('Max depth', stats.maxDepth, 'How deeply nested the structure is — the maximum number of levels of objects and arrays inside one another.'));
+        jsTbl.appendChild(rowHelp('Max depth', stats.maxDepth, 'How deeply nested the structure is - the maximum number of levels of objects and arrays inside one another.'));
         if (stats.arrays.length > 0) {
           jsTbl.appendChild(rowHelp('Arrays', stats.arrays.length + ' (lengths: ' + stats.arrays.join(', ') + ')', 'The number of arrays found in the document, with the length (item count) of each one listed.'));
         }
@@ -327,7 +327,7 @@ export async function renderUnknown(file, resultsEl) {
         card.appendChild(el('div', { class: 'anr-readout-section' }, 'XML statistics'));
         const xmlTbl = el('table', { class: 'anr-readout' });
         xmlTbl.appendChild(rowHelp('Elements', xstats.count.toLocaleString(), 'The total number of XML tags (nodes) in the document.'));
-        xmlTbl.appendChild(rowHelp('Max depth', xstats.maxDepth, 'How deeply nested the structure is — the maximum number of levels of elements contained inside one another.'));
+        xmlTbl.appendChild(rowHelp('Max depth', xstats.maxDepth, 'How deeply nested the structure is - the maximum number of levels of elements contained inside one another.'));
         card.appendChild(xmlTbl);
 
         let formattedXml = '';
