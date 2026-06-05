@@ -175,6 +175,33 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">1.23</p>
+          <p class="patch-name">Developed</p>
+          <p class="patch-date">5 June 2026, 16:10</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Many more camera RAW formats</strong> now open with the full photo analysis - Hasselblad (<a href="about.html#ext-3fr">3FR</a>), Phase One (<a href="about.html#ext-iiq">IIQ</a>), Leica, Kodak, Minolta, GoPro and others - while rare cinema RAW (RED, Blackmagic, ARRIRAW) is identified.</li>
+            <li><span class="patch-tag">New</span>The camera <strong>shutter actuation count</strong> is now read from RAW files and JPEGs that record it - useful for gauging how much a used camera body has been worn.</li>
+            <li><span class="patch-tag">New</span><strong>RAW develop settings</strong> - drop a RAW together with its <a href="about.html#ext-xmp">.xmp</a> sidecar (the kind Photoshop, Lightroom and Camera Raw save), or use the new <strong>Import XMP settings</strong> button under the thumbnail, and the applied edits (exposure, contrast, white balance, crop, rating&hellip;) are listed. Capture One and DxO sidecars are read too.</li>
+            <li><span class="patch-tag">New</span><strong>Computational-photo</strong> wrappers are flagged - Apple ProRAW and Live Photo, Google and Samsung Motion Photo, and Ultra HDR gain maps.</li>
+            <li><span class="patch-tag is-fix">Fix</span>The greyed-out Photo, Sound and Video tabs are no longer highlighted as you scroll a non-media file&rsquo;s results.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">1.22</p>
+          <p class="patch-name">Omnivore</p>
+          <p class="patch-date">5 June 2026, 16:10</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Hundreds more file formats</strong> are now recognised - across images, audio, video, documents, archives, 3D, maps, email, security, gaming and science - so far fewer files come back as &ldquo;unknown&rdquo;. <a href="about.html">Browse the full list</a>.</li>
+            <li><span class="patch-tag">New</span>New full viewers: <strong>comic books</strong> (<a href="about.html#ext-cbz">CBZ</a>, <a href="about.html#ext-cbr">CBR</a>) open as a page-by-page reader like the PDF one; <strong><a href="about.html#ext-sqlite">SQLite</a> databases</strong> and <a href="about.html#ext-sql">.sql</a> dumps show their full schema - tables, columns, row counts and a data sample; and <strong><a href="about.html#ext-jp2">JPEG&nbsp;2000</a></strong> images decode and display.</li>
+            <li><span class="patch-tag">New</span>Much <strong>deeper analysis</strong> of files you could already open: the AI-generation prompt hidden in a <a href="about.html#ext-png">PNG</a>, an <a href="about.html#ext-mp3">MP3</a>&rsquo;s <strong>bitrate</strong>, video codec / rotation / HDR, <a href="about.html#ext-pdf">PDF</a> bookmarks, forms and permissions, Word tracked-changes and <a href="about.html#ext-xlsx">Excel</a> formulas, <a href="about.html#ext-zip">ZIP</a> safety warnings, and <a href="about.html#ext-gpx">GPX</a> elevation profiles.</li>
+            <li><span class="patch-tag">New</span><strong>Smart type detection</strong> - drop a file with no extension, or the wrong one, and Analyser works out what it really is and offers to open it that way.</li>
+            <li><span class="patch-tag is-fix">Fix</span><a href="about.html#ext-csv">CSV</a> files with quoted line breaks now parse correctly, <a href="about.html#ext-svg">SVG</a> previews are sanitised for safety, and the in-page <strong>search</strong> reveals matches tucked inside collapsed sections.</li>
+            <li>The navbar now greys out the Photo, Sound and Video tabs for a non-media file, so they can&rsquo;t mislead.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">1.21</p>
           <p class="patch-name">Magnetic Type</p>
           <p class="patch-date">5 June 2026, 02:04</p>
@@ -183,6 +210,9 @@
             <li><span class="patch-tag is-fix">Fix</span>The letter spacing in headings now holds steady when you <strong>zoom the page</strong> in your browser, instead of the gaps drifting apart.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">1.20</p>
@@ -208,9 +238,6 @@
             <li><span class="patch-tag is-fix">Fix</span><a href="about.html#ext-md">Markdown</a> files now open in the Markdown viewer reliably, and the &ldquo;view source&rdquo; popup behaves.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
           <div class="patch-entry">
             <p class="patch-version">1.18</p>

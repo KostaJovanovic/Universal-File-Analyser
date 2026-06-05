@@ -863,6 +863,29 @@ const FORMATS = {
   lit:     { app: 'MS Reader eBook', icon: 'LIT', chunk: 'docs' },
   kfx:     { app: 'Amazon KFX', icon: 'KFX', chunk: 'docs' },
 
+  // Camera RAW edit sidecars (lazy chunk: parsers-raw.js)
+  aae:     { app: 'Apple Photos Adjustments', icon: 'AAE', chunk: 'raw' },
+  pp3:     { app: 'RawTherapee Profile', icon: 'PP3', chunk: 'raw' },
+  cos:     { app: 'Capture One Settings', icon: 'COS', chunk: 'raw' },
+  cof:     { app: 'Capture One Sidecar', icon: 'COF', chunk: 'raw' },
+  cop:     { app: 'Capture One Preview', icon: 'COP', chunk: 'raw' },
+  comask:  { app: 'Capture One Mask', icon: 'MASK', chunk: 'raw' },
+  dop:     { app: 'DxO PhotoLab Sidecar', icon: 'DOP', chunk: 'raw' },
+  nksc:    { app: 'Nikon NX Studio Sidecar', icon: 'NKSC', chunk: 'raw' },
+
+  // Cinema RAW & rare camera RAW (identification-only - no in-browser decoder)
+  r3d:     { app: 'REDCODE RAW', icon: 'R3D' },
+  braw:    { app: 'Blackmagic RAW', icon: 'BRAW' },
+  crm:     { app: 'Canon Cinema RAW Light', icon: 'CRM' },
+  ari:     { app: 'ARRIRAW', icon: 'ARI' },
+  arx:     { app: 'ARRIRAW', icon: 'ARX' },
+  cine:    { app: 'Phantom CINE', icon: 'CINE' },
+  fpf:     { app: 'FLIR Public Image', icon: 'FPF' },
+  eip:     { app: 'Capture One EIP', icon: 'EIP', zip: true },
+  bay:     { app: 'Casio Bayer RAW', icon: 'BAY' },
+  pxn:     { app: 'Logitech Fotoman RAW', icon: 'PXN' },
+  rwz:     { app: 'Rawzor Compressed RAW', icon: 'RWZ' },
+
   // Adobe After Effects XML project
   aepx:    { app: 'Adobe After Effects (XML)', icon: 'Ae', parse: 'xml' },
 

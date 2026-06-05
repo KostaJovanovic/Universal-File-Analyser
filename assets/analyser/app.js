@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 51;
+const COMMIT_COUNT = 52;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). A commit listed in RELEASE_COMMITS bumps the
@@ -594,8 +594,12 @@ function boot() {
     ['photo', 'audio', 'video'].forEach((id) => { const sec = $(id); if (sec) sec.hidden = false; });
   }
 
-  async function handleFile(file, force) {
+  async function handleFile(file, opts) {
     if (!file) return;
+    // opts carries either a forced type ({kind, ext}, from the sniff popup) or a
+    // paired RAW develop-settings sidecar ({sidecarXmp}, from a RAW+XMP drop).
+    const force = (opts && opts.kind) ? opts : null;
+    const sidecarXmp = (opts && opts.sidecarXmp) || null;
     hideTypeSuggestion();
     // If the "Supported formats" overlay is open, drop/paste/pick dismisses it.
     const fmtOv = $('fmtOverlay');
@@ -737,9 +741,14 @@ function boot() {
     (route.analysed || []).forEach(markAnalysed);
     scrollTo(route.scroll);
     const extOverride = force && force.ext;
-    const renderPromise = ((kind === 'proprietary' || kind === 'comic') && extOverride)
-      ? route.render(file, resultsByName[route.results], extOverride)
-      : route.render(file, resultsByName[route.results]);
+    let renderPromise;
+    if ((kind === 'proprietary' || kind === 'comic') && extOverride) {
+      renderPromise = route.render(file, resultsByName[route.results], extOverride);
+    } else if (kind === 'photo' && sidecarXmp) {
+      renderPromise = route.render(file, resultsByName[route.results], { sidecarXmp });
+    } else {
+      renderPromise = route.render(file, resultsByName[route.results]);
+    }
     // Hide the bottom loader once the renderer settles (or immediately if it
     // wasn't async). Errors still dismiss it so it can't get stuck on screen.
     // If this load was cancelled (or superseded by a newer one) leave the loader
@@ -899,7 +908,25 @@ function boot() {
         }
         return;
       }
-      if (_handleFile) for (const file of files) _handleFile(file);
+      if (_handleFile) {
+        const list = Array.from(files);
+        // Pair a RAW/photo with its same-named .xmp develop-settings sidecar (as
+        // written by Photoshop / Lightroom / Camera Raw) so the develop settings
+        // show alongside the photo. A matched .xmp is consumed; everything else
+        // analyses on its own.
+        const baseOf = (n) => n.replace(/\.[^.]+$/, '').toLowerCase();
+        const extOf = (n) => (n.split('.').pop() || '').toLowerCase();
+        const xmpByBase = new Map();
+        for (const f of list) if (extOf(f.name) === 'xmp') xmpByBase.set(baseOf(f.name), f);
+        const consumed = new Set();
+        for (const f of list) {
+          if (extOf(f.name) === 'xmp') continue;
+          const xmp = PHOTO_EXTS.has(extOf(f.name)) ? xmpByBase.get(baseOf(f.name)) : null;
+          if (xmp) { consumed.add(xmp); _handleFile(f, { sidecarXmp: xmp }); }
+          else _handleFile(f);
+        }
+        for (const f of list) if (extOf(f.name) === 'xmp' && !consumed.has(f)) _handleFile(f);
+      }
     });
 
   // ----- Version number -----
@@ -1086,7 +1113,9 @@ function boot() {
     for (const s of sections) {
       if (s.el.offsetTop <= y) active = s;
     }
-    for (const s of sections) s.a.classList.toggle('is-active', s === active);
+    // A greyed-out (disabled) nav link is never highlighted - its section isn't
+    // really on the page for a non-media file.
+    for (const s of sections) s.a.classList.toggle('is-active', s === active && !s.a.classList.contains('is-disabled'));
   };
   window.addEventListener('scroll', _scrollHandler, { passive: true });
   _scrollHandler();
@@ -1148,6 +1177,7 @@ function boot() {
       './assets/analyser/parsers-disk.js', './assets/analyser/parsers-sci.js', './assets/analyser/parsers-osmisc.js',
       './assets/analyser/parsers-image.js', './assets/analyser/parsers-threed.js', './assets/analyser/parsers-geodata.js',
       './assets/analyser/parsers-audio.js', './assets/analyser/parsers-video.js', './assets/analyser/parsers-docs.js',
+      './assets/analyser/parsers-raw.js',
       './assets/favicon.svg', './assets/icon.png', './assets/icon-192.png', './assets/icon-512.png',
       './assets/vendor/exifr.umd.js',
       './assets/fonts/geist-latin.woff2', './assets/fonts/geist-latin-ext.woff2',
