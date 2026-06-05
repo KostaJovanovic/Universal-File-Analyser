@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 49;
+const COMMIT_COUNT = 50;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). A commit listed in RELEASE_COMMITS bumps the
@@ -249,6 +249,70 @@ function hasFiles(e) {
 let _handleFile = null;
 let _scrollHandler = null;
 
+// Splits an element's text into per-letter inline-block <span>s, each carrying a
+// base font-weight, so a proximity effect can vary letters independently. Bakes
+// letter-spacing as an em ratio (survives browser zoom on vw-sized type). Each
+// word's letters are grouped in a nowrap wrapper so the inline-block letters can
+// only break at the spaces between words, never mid-word; the spaces themselves
+// are real break opportunities. Returns an array of { el, base } for every letter
+// span. Shared by the header sweep/hover effect and the per-section hover effect.
+function splitText(container, baseWeight) {
+  // Bake letter-spacing as an em ratio of the font size, not the computed px.
+  // The title font-size is vw-based, so browser zoom rescales it; a fixed px
+  // spacing would not follow, leaving the gaps between the inline-block letters
+  // drifting on zoom. em tracks each span's font-size, so the spacing scales
+  // together with the letters.
+  const cs = getComputedStyle(container);
+  const lsPx = parseFloat(cs.letterSpacing);
+  const fsPx = parseFloat(cs.fontSize);
+  const spacing = (isNaN(lsPx) || !fsPx) ? 'normal' : (lsPx / fsPx) + 'em';
+  const spans = [];
+  let word = null;  // current per-word wrapper; null between words
+  function makeSpan(ch, parent) {
+    if (ch === ' ') {
+      // Space ends the word and becomes the sole wrap point: a fixed-width
+      // inline-block (so the header sweep glides smoothly across the gap) plus a
+      // <wbr> so the line can break here. Without grouping, adjacent inline-block
+      // letters break between themselves and a word can split mid-letter.
+      word = null;
+      const sp = document.createElement('span');
+      sp.style.display = 'inline-block';
+      sp.style.width = '0.25em';
+      parent.appendChild(sp);
+      parent.appendChild(document.createElement('wbr'));
+      return;
+    }
+    if (!word) {
+      word = document.createElement('span');
+      word.style.display = 'inline-block';
+      word.style.whiteSpace = 'nowrap';
+      parent.appendChild(word);
+    }
+    const s = document.createElement('span');
+    s.textContent = ch;
+    s.style.display = 'inline-block';
+    s.style.fontWeight = baseWeight;
+    s.style.letterSpacing = spacing;
+    word.appendChild(s);
+    spans.push({ el: s, base: baseWeight });
+  }
+  const nodes = [...container.childNodes];
+  container.textContent = '';
+  for (const node of nodes) {
+    word = null;  // never carry a word across a child-element boundary (e.g. the byline <a>)
+    if (node.nodeType === 3) {
+      for (const ch of node.textContent) makeSpan(ch, container);
+    } else {
+      const text = node.textContent;
+      node.textContent = '';
+      container.appendChild(node);
+      for (const ch of text) makeSpan(ch, node);
+    }
+    word = null;
+  }
+  return spans;
+}
+
 // Header letter-proximity / sweep effect. Re-runs per navigation because
 // navigate.js swaps .site-mark (so the title text changes between pages); the
 // guard on the element keeps it from binding twice to the same header.
@@ -260,47 +324,7 @@ function setupHeaderFx() {
   mark._anrFx = true;
   if (setupHeaderFx._iv) clearInterval(setupHeaderFx._iv);
 
-
-    function splitText(container, baseWeight) {
-      // Bake letter-spacing as an em ratio of the font size, not the computed px.
-      // The title font-size is vw-based, so browser zoom rescales it; a fixed px
-      // spacing would not follow, leaving the gaps between the inline-block letters
-      // drifting on zoom. em tracks each span's font-size, so the spacing scales
-      // together with the letters.
-      const cs = getComputedStyle(container);
-      const lsPx = parseFloat(cs.letterSpacing);
-      const fsPx = parseFloat(cs.fontSize);
-      const spacing = (isNaN(lsPx) || !fsPx) ? 'normal' : (lsPx / fsPx) + 'em';
-      const spans = [];
-      function makeSpan(ch, parent) {
-        const s = document.createElement('span');
-        s.textContent = ch;
-        s.style.display = 'inline-block';
-        s.style.fontWeight = baseWeight;
-        s.style.letterSpacing = spacing;
-        if (ch === ' ') s.style.width = '0.25em';
-        parent.appendChild(s);
-        // A space gets a <wbr> so multi-word titles ("Patch Notes") can still
-        // wrap on narrow screens - the letter spans are inline-block with no
-        // whitespace between them, which would otherwise be one unbreakable run.
-        if (ch === ' ') parent.appendChild(document.createElement('wbr'));
-        spans.push({ el: s, base: baseWeight });
-      }
-      const nodes = [...container.childNodes];
-      container.textContent = '';
-      for (const node of nodes) {
-        if (node.nodeType === 3) {
-          for (const ch of node.textContent) makeSpan(ch, container);
-        } else {
-          const text = node.textContent;
-          node.textContent = '';
-          container.appendChild(node);
-          for (const ch of text) makeSpan(ch, node);
-        }
-      }
-      return spans;
-    }
-
+    // letters are split via the shared module-level splitText() defined above.
     function initLetters() {
       title.style.width = title.offsetWidth + 'px';
       title.style.height = title.offsetHeight + 'px';
@@ -373,6 +397,61 @@ function setupHeaderFx() {
       setTimeout(() => startSweep(RADIUS_TOUCH), 800);
       setupHeaderFx._iv = setInterval(() => startSweep(RADIUS_TOUCH), 8000);
     }
+}
+
+// Section-heading hover effect. Reuses the header's "letters thin toward the
+// cursor" feel on each section's number / kicker / heading - but hover-only,
+// with NO intro sweep (no "wave"). Desktop fine-pointer only. Re-runs per
+// navigation; the per-section guard keeps it from binding twice. Each section is
+// independent, so hovering section 01 never disturbs section 02.
+function setupSectionFx() {
+  if (!window.matchMedia('(hover:hover) and (pointer:fine)').matches) return;
+  // The header uses a 120px radius tuned to its huge --t-mega title. Section
+  // headings are much smaller type, so scale the radius down by the same ratio
+  // their heading font size is to the title's - a proportionally smaller pull.
+  // Read at runtime so it tracks the responsive clamp() sizes.
+  const titleEl = document.querySelector('.site-title');
+  const titlePx = (titleEl && parseFloat(getComputedStyle(titleEl).fontSize)) || 150;
+  document.querySelectorAll('.section').forEach(section => {
+    if (section._anrSectionFx) return;
+    const heads = section.querySelectorAll('.section-num, .section-kicker, .section-head');
+    if (!heads.length) return;
+    section._anrSectionFx = true;
+
+    const headEl = section.querySelector('.section-head') || heads[0];
+    const headPx = parseFloat(getComputedStyle(headEl).fontSize) || 50;
+    const RADIUS = 120 * (headPx / titlePx);
+
+    const letters = [];
+    heads.forEach(el => {
+      const base = parseInt(getComputedStyle(el).fontWeight, 10) || 400;
+      letters.push(...splitText(el, base));
+    });
+
+    let mx = -9999, my = -9999, inside = false, raf = 0, running = false;
+    const weight = (l) => {
+      const r = l.el.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const t = inside ? Math.min(1, Math.hypot(mx - cx, my - cy) / RADIUS) : 1;
+      return Math.round(l.base * t + 300 * (1 - t));
+    };
+    const settle = () => {
+      for (const l of letters) { l.el.style.transition = 'font-weight 0.4s ease'; l.el.style.fontWeight = l.base; }
+      setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 500);
+    };
+    const frame = () => {
+      for (const l of letters) l.el.style.fontWeight = weight(l);
+      if (inside) raf = requestAnimationFrame(frame);
+      else { running = false; settle(); }
+    };
+    section.addEventListener('mouseenter', () => {
+      inside = true;
+      for (const l of letters) l.el.style.transition = '';
+      if (!running) { running = true; raf = requestAnimationFrame(frame); }
+    });
+    section.addEventListener('mousemove', (e) => { mx = e.clientX; my = e.clientY; });
+    section.addEventListener('mouseleave', () => { inside = false; });
+  });
 }
 function boot() {
   if (!window.exifr) {
@@ -841,6 +920,8 @@ function boot() {
 
   // Re-bind the header letter effect to the (possibly swapped) title.
   setupHeaderFx();
+  // Hover effect on each section's number / kicker / heading (no sweep).
+  setupSectionFx();
 
   // link.valjdakosta.com links open in this tab - except the "Other stuff" one,
   // which keeps its confirm popup -> new tab (bound below). Runs every navigation
