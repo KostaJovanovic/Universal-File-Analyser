@@ -10,6 +10,7 @@
 import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, isUnreadableError, cloudFileWarning, errorCard } from './util.js';
 import { HEIC_EXTS, RAW_EXTS } from './formats.js';
 import { convertHeic, extractRawPreview, convertWithImageMagick } from './photo-convert.js';
+import { ascii, latin1, utf8, inflate } from './binutil.js';
 
 const JSQR_URL      = 'assets/vendor/jsQR.js';
 const TESSERACT_URL = 'assets/vendor/tesseract/tesseract.min.js';
@@ -1069,6 +1070,379 @@ function closeLightbox() {
   document.body.style.overflow = '';
 }
 
+// ---------- container structure (additive) ----------
+// Read the raw bytes the photo pipeline (img decode + exifr) ignores and surface
+// the file's *container* layout: chunk/marker structure, bit depth, chroma, and
+// — most useful of all — AI-generation prompts embedded in PNG text chunks
+// (AUTOMATIC1111 'parameters', ComfyUI 'prompt'/'workflow', NovelAI 'Comment'/
+// 'Dream', etc). Returns { rows: [[label,value],…], ai: [{key,value}] } or null
+// when the format isn't one we structurally parse / has nothing extra to add.
+// Everything here is best-effort and must never throw out to the caller.
+
+// Keys whose tEXt/iTXt/zTXt value is (or contains) an AI-generation prompt.
+const PNG_AI_TEXT_KEYS = new Set([
+  'parameters',          // AUTOMATIC1111 / Stable Diffusion WebUI
+  'prompt', 'workflow',  // ComfyUI (JSON)
+  'comment', 'dream',    // NovelAI / others
+  'description', 'title', 'sd-metadata', 'invokeai_metadata', 'invokeai'
+]);
+
+function pngColourType(t) {
+  return { 0: 'Grayscale', 2: 'RGB', 3: 'Palette (indexed)', 4: 'Grayscale + alpha', 6: 'RGBA' }[t] || ('type ' + t);
+}
+
+function parsePngContainer(bytes) {
+  const rows = [];
+  const text = [];          // { key, value } for every text chunk
+  const seen = new Set();
+  let frames = 0, loops = null, hasPLTE = false, hasTRNS = false;
+  let pos = 8;              // skip the 8-byte signature
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  while (pos + 8 <= bytes.length) {
+    const len = dv.getUint32(pos); pos += 4;
+    const type = ascii(bytes, pos, 4); pos += 4;
+    const dataStart = pos;
+    if (len > bytes.length - pos) break;   // truncated / lying length
+    seen.add(type);
+    if (type === 'IHDR' && len >= 13) {
+      const w = dv.getUint32(dataStart), h = dv.getUint32(dataStart + 4);
+      const depth = bytes[dataStart + 8], ctype = bytes[dataStart + 9];
+      const interlace = bytes[dataStart + 12];
+      rows.push(['PNG image', w + ' × ' + h + ' px']);
+      rows.push(['Bit depth', depth + '-bit / channel']);
+      rows.push(['Colour type', pngColourType(ctype)]);
+      rows.push(['Interlace', interlace === 1 ? 'Adam7 (progressive)' : 'None']);
+    } else if (type === 'PLTE') {
+      hasPLTE = true;
+      rows.push(['Palette', (len / 3) + ' colours']);
+    } else if (type === 'tRNS') {
+      hasTRNS = true;
+    } else if (type === 'pHYs' && len >= 9) {
+      const px = dv.getUint32(dataStart), py = dv.getUint32(dataStart + 4);
+      const unit = bytes[dataStart + 8];
+      if (unit === 1) {     // pixels per metre → DPI
+        rows.push(['Resolution', Math.round(px * 0.0254) + ' × ' + Math.round(py * 0.0254) + ' dpi']);
+      } else {
+        rows.push(['Pixel aspect', px + ':' + py]);
+      }
+    } else if (type === 'gAMA' && len >= 4) {
+      rows.push(['Gamma', (dv.getUint32(dataStart) / 100000).toFixed(4)]);
+    } else if (type === 'sRGB') {
+      rows.push(['Colour space', 'sRGB (tagged)']);
+    } else if (type === 'acTL' && len >= 8) {
+      frames = dv.getUint32(dataStart);
+      const lc = dv.getUint32(dataStart + 4);
+      loops = lc === 0 ? 'infinite' : lc;
+    } else if (type === 'tEXt') {
+      const raw = bytes.subarray(dataStart, dataStart + len);
+      const nul = raw.indexOf(0);
+      if (nul > 0) text.push({ key: latin1(raw.subarray(0, nul)), value: latin1(raw.subarray(nul + 1)) });
+    } else if (type === 'iTXt') {
+      const raw = bytes.subarray(dataStart, dataStart + len);
+      const nul = raw.indexOf(0);
+      if (nul > 0) {
+        const key = latin1(raw.subarray(0, nul));
+        const compressed = raw[nul + 1] === 1;
+        // skip: compression flag (1) + method (1) + language tag (cstr) + translated key (cstr)
+        let p = nul + 3;
+        while (p < raw.length && raw[p] !== 0) p++; p++;        // language tag
+        while (p < raw.length && raw[p] !== 0) p++; p++;        // translated keyword
+        let value;
+        if (compressed) value = null;                          // inflated below (async)
+        else value = utf8(raw.subarray(p));
+        text.push({ key, value, deflate: compressed ? raw.subarray(p) : null });
+      }
+    } else if (type === 'zTXt') {
+      const raw = bytes.subarray(dataStart, dataStart + len);
+      const nul = raw.indexOf(0);
+      if (nul > 0) {
+        const key = latin1(raw.subarray(0, nul));
+        // raw[nul+1] = compression method (0 = zlib); compressed data follows
+        text.push({ key, value: null, deflate: raw.subarray(nul + 2) });
+      }
+    }
+    pos = dataStart + len + 4;   // skip data + CRC
+    if (type === 'IEND') break;
+  }
+  if (hasPLTE || hasTRNS) {
+    const parts = [];
+    if (hasPLTE) parts.push('palette');
+    if (hasTRNS) parts.push('transparency (tRNS)');
+    rows.push(['Ancillary', parts.join(' + ')]);
+  }
+  if (frames > 0) {
+    rows.push(['Animation', 'APNG · ' + frames + ' frames']);
+    if (loops != null) rows.push(['Loop count', String(loops)]);
+  }
+  return { rows, text };
+}
+
+function parseJpegContainer(bytes) {
+  const rows = [];
+  let pos = 2;   // skip SOI
+  let sof = null, progressive = false, hasExif = false, comment = null, adobe = null, jfif = null;
+  while (pos + 4 <= bytes.length) {
+    if (bytes[pos] !== 0xFF) { pos++; continue; }
+    let marker = bytes[pos + 1];
+    while (marker === 0xFF && pos + 2 < bytes.length) { pos++; marker = bytes[pos + 1]; }
+    pos += 2;
+    if (marker === 0xD9 || marker === 0xDA) break;          // EOI / start of scan
+    if (marker >= 0xD0 && marker <= 0xD7) continue;          // RSTn (no length)
+    if (pos + 2 > bytes.length) break;
+    const seg = (bytes[pos] << 8) | bytes[pos + 1];
+    const dataStart = pos + 2, dataEnd = pos + seg;
+    if ((marker >= 0xC0 && marker <= 0xCF) && marker !== 0xC4 && marker !== 0xC8 && marker !== 0xCC) {
+      // SOFn frame header
+      const precision = bytes[dataStart];
+      const h = (bytes[dataStart + 1] << 8) | bytes[dataStart + 2];
+      const w = (bytes[dataStart + 3] << 8) | bytes[dataStart + 4];
+      const comps = bytes[dataStart + 5];
+      progressive = (marker === 0xC2 || marker === 0xC6 || marker === 0xCA || marker === 0xCE);
+      let chroma = null;
+      if (comps === 3) {
+        // sampling factors of the luma (first) component → subsampling label
+        const hv = bytes[dataStart + 7];
+        const hi = hv >> 4, vi = hv & 0x0F;
+        chroma = hi === 2 && vi === 2 ? '4:2:0' : hi === 2 && vi === 1 ? '4:2:2'
+          : hi === 1 && vi === 1 ? '4:4:4' : hi === 1 && vi === 2 ? '4:4:0' : hi + 'x' + vi;
+      }
+      sof = { precision, w, h, comps, chroma };
+    } else if (marker === 0xE0 && ascii(bytes, dataStart, 4) === 'JFIF') {
+      const units = bytes[dataStart + 7];
+      const xd = (bytes[dataStart + 8] << 8) | bytes[dataStart + 9];
+      const yd = (bytes[dataStart + 10] << 8) | bytes[dataStart + 11];
+      if (units === 1) jfif = xd + ' × ' + yd + ' dpi';
+      else if (units === 2) jfif = xd + ' × ' + yd + ' dpcm';
+      else jfif = 'aspect ' + xd + ':' + yd;
+    } else if (marker === 0xE1 && ascii(bytes, dataStart, 4) === 'Exif') {
+      hasExif = true;
+    } else if (marker === 0xEE && ascii(bytes, dataStart, 5) === 'Adobe') {
+      const t = bytes[dataStart + 11];
+      adobe = t === 0 ? 'unknown/RGB or CMYK' : t === 1 ? 'YCbCr' : t === 2 ? 'YCCK' : ('transform ' + t);
+    } else if (marker === 0xFE) {
+      comment = latin1(bytes.subarray(dataStart, Math.min(dataEnd, bytes.length))).trim();
+    }
+    pos += seg;
+  }
+  if (sof) {
+    rows.push(['JPEG image', sof.w + ' × ' + sof.h + ' px']);
+    rows.push(['Bit depth', sof.precision + '-bit / channel']);
+    rows.push(['Mode', progressive ? 'Progressive' : 'Baseline']);
+    rows.push(['Components', sof.comps + (sof.comps === 1 ? ' (grayscale)' : sof.comps === 3 ? ' (YCbCr)' : sof.comps === 4 ? ' (CMYK/YCCK)' : '')]);
+    if (sof.chroma) rows.push(['Chroma subsampling', sof.chroma]);
+  }
+  if (jfif) rows.push(['JFIF density', jfif]);
+  if (adobe) rows.push(['Adobe transform', adobe]);
+  if (hasExif) rows.push(['EXIF', 'present (APP1)']);
+  if (comment) rows.push(['Comment', comment]);
+  return rows.length ? { rows, text: [] } : null;
+}
+
+function parseGifContainer(bytes) {
+  const rows = [];
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const w = dv.getUint16(6, true), h = dv.getUint16(8, true);
+  const packed = bytes[10];
+  const gctSize = (packed & 0x80) ? (2 << (packed & 0x07)) : 0;
+  rows.push(['GIF image', w + ' × ' + h + ' px']);
+  rows.push(['Version', ascii(bytes, 0, 6)]);
+  if (gctSize) rows.push(['Global colour table', gctSize + ' colours']);
+  // walk blocks for animation
+  let pos = 13 + (gctSize ? gctSize * 3 : 0);
+  let frameCount = 0, totalDelay = 0, loop = null;
+  while (pos < bytes.length) {
+    const b = bytes[pos];
+    if (b === 0x3B) break;                                   // trailer
+    if (b === 0x2C) {                                        // image descriptor
+      frameCount++;
+      const lp = bytes[pos + 9];
+      pos += 10 + ((lp & 0x80) ? (2 << (lp & 0x07)) * 3 : 0);
+      pos++;                                                 // LZW min code size
+      while (pos < bytes.length && bytes[pos] !== 0) pos += bytes[pos] + 1;
+      pos++;
+    } else if (b === 0x21) {                                 // extension
+      const label = bytes[pos + 1];
+      if (label === 0xF9) {                                  // graphic control
+        totalDelay += dv.getUint16(pos + 4, true);
+      } else if (label === 0xFF && ascii(bytes, pos + 3, 8) === 'NETSCAPE') {
+        loop = dv.getUint16(pos + 16, true);
+      }
+      pos += 2;
+      while (pos < bytes.length && bytes[pos] !== 0) pos += bytes[pos] + 1;
+      pos++;
+    } else { pos++; }
+  }
+  if (frameCount > 1) {
+    rows.push(['Animation', frameCount + ' frames']);
+    if (totalDelay) rows.push(['Total duration', (totalDelay / 100).toFixed(2) + ' s']);
+    if (loop != null) rows.push(['Loop count', loop === 0 ? 'infinite' : String(loop)]);
+  }
+  return { rows, text: [] };
+}
+
+function parseWebpContainer(bytes) {
+  const rows = [];
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const fourcc = ascii(bytes, 12, 4);
+  if (fourcc === 'VP8 ') {
+    rows.push(['WebP', 'lossy (VP8)']);
+  } else if (fourcc === 'VP8L') {
+    rows.push(['WebP', 'lossless (VP8L)']);
+  } else if (fourcc === 'VP8X') {
+    rows.push(['WebP', 'extended (VP8X)']);
+    const flags = bytes[20];
+    const feat = [];
+    if (flags & 0x10) feat.push('alpha');
+    if (flags & 0x02) feat.push('animation');
+    if (flags & 0x08) feat.push('EXIF');
+    if (flags & 0x04) feat.push('XMP');
+    if (flags & 0x20) feat.push('ICC');
+    if (feat.length) rows.push(['Features', feat.join(', ')]);
+    // canvas dimensions: 24-bit each, stored minus one
+    const cw = (bytes[24] | (bytes[25] << 8) | (bytes[26] << 16)) + 1;
+    const ch = (bytes[27] | (bytes[28] << 8) | (bytes[29] << 16)) + 1;
+    rows.push(['Canvas', cw + ' × ' + ch + ' px']);
+    if (flags & 0x02) {
+      // find ANIM chunk for loop count + count ANMF frames
+      let pos = 12, frames = 0, loop = null;
+      while (pos + 8 <= bytes.length) {
+        const cc = ascii(bytes, pos, 4);
+        const sz = dv.getUint32(pos + 4, true);
+        if (cc === 'ANIM') loop = dv.getUint16(pos + 8 + 4, true);
+        else if (cc === 'ANMF') frames++;
+        pos += 8 + sz + (sz & 1);
+      }
+      if (frames) rows.push(['Animation', frames + ' frames']);
+      if (loop != null) rows.push(['Loop count', loop === 0 ? 'infinite' : String(loop)]);
+    }
+  } else {
+    return null;
+  }
+  return { rows, text: [] };
+}
+
+function parseBmpContainer(bytes) {
+  const rows = [];
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const headerSize = dv.getUint32(14, true);
+  if (headerSize < 40 || bytes.length < 38) return null;     // not BITMAPINFOHEADER
+  const w = dv.getInt32(18, true), h = dv.getInt32(22, true);
+  const bpp = dv.getUint16(28, true);
+  const compression = dv.getUint32(30, true);
+  const xppm = dv.getInt32(38, true), yppm = dv.getInt32(42, true);
+  const COMP = { 0: 'none (BI_RGB)', 1: 'RLE8', 2: 'RLE4', 3: 'bitfields', 4: 'JPEG', 5: 'PNG' };
+  rows.push(['BMP image', w + ' × ' + Math.abs(h) + ' px']);
+  rows.push(['Bit depth', bpp + '-bit']);
+  rows.push(['Compression', COMP[compression] || String(compression)]);
+  if (xppm > 0) rows.push(['Resolution', Math.round(xppm * 0.0254) + ' × ' + Math.round(yppm * 0.0254) + ' dpi']);
+  return { rows, text: [] };
+}
+
+// Sniff format from magic bytes and dispatch. Async because PNG zTXt/compressed
+// iTXt prompts need inflate(). Returns { rows, ai } or null.
+async function peekImageContainer(file) {
+  // A 4 MiB head covers every container header and any reasonable text/prompt
+  // chunk; AI prompts in PNG sit near the front, before the IDAT pixel data.
+  const SLICE = 4 * 1024 * 1024;
+  const buf = await (file.size > SLICE ? file.slice(0, SLICE) : file).arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  if (bytes.length < 16) return null;
+
+  let parsed = null;
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+    parsed = parsePngContainer(bytes);
+  } else if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+    parsed = parseJpegContainer(bytes);
+  } else if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
+    parsed = parseGifContainer(bytes);
+  } else if (ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 4) === 'WEBP') {
+    parsed = parseWebpContainer(bytes);
+  } else if (bytes[0] === 0x42 && bytes[1] === 0x4D) {
+    parsed = parseBmpContainer(bytes);
+  }
+  if (!parsed) return null;
+
+  // Resolve any compressed PNG text chunks, then pull out AI prompts.
+  const ai = [];
+  if (parsed.text && parsed.text.length) {
+    for (const t of parsed.text) {
+      if (t.value == null && t.deflate) {
+        // zlib stream → try 'deflate' (zlib-wrapped) then 'deflate-raw'.
+        let out = await inflate(t.deflate, 'deflate');
+        if (!out) out = await inflate(t.deflate, 'deflate-raw');
+        t.value = out ? utf8(out) : null;
+      }
+    }
+    for (const t of parsed.text) {
+      if (!t.value) continue;
+      const k = (t.key || '').toLowerCase();
+      if (PNG_AI_TEXT_KEYS.has(k)) ai.push({ key: t.key, value: t.value });
+    }
+    // Surface non-AI text-chunk keywords compactly in the rows table too.
+    const otherKeys = parsed.text
+      .filter(t => t.value && !PNG_AI_TEXT_KEYS.has((t.key || '').toLowerCase()))
+      .map(t => t.key)
+      .filter(Boolean);
+    if (otherKeys.length) parsed.rows.push(['Text chunks', otherKeys.join(', ')]);
+  }
+
+  if (!parsed.rows.length && !ai.length) return null;
+  return { rows: parsed.rows, ai };
+}
+
+// Pretty-format an AI prompt value: ComfyUI/A1111 JSON is parsed for the positive
+// prompt where easy, otherwise the raw text is shown verbatim.
+function formatAiPrompt(value) {
+  const out = { pretty: null, raw: value };
+  const trimmed = value.trim();
+  if (trimmed.startsWith('{')) {
+    try {
+      const obj = JSON.parse(trimmed);
+      // ComfyUI 'workflow'/'prompt' graphs: hunt for CLIPTextEncode positive text.
+      const texts = [];
+      const walk = (o) => {
+        if (!o || typeof o !== 'object') return;
+        if (o.class_type === 'CLIPTextEncode' && o.inputs && typeof o.inputs.text === 'string')
+          texts.push(o.inputs.text);
+        for (const v of Object.values(o)) if (v && typeof v === 'object') walk(v);
+      };
+      walk(obj);
+      if (texts.length) out.pretty = texts.join('\n---\n');
+      else out.pretty = JSON.stringify(obj, null, 2);
+    } catch (_) { /* not valid JSON — fall through to raw */ }
+  }
+  return out;
+}
+
+function buildContainerCard(container) {
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Container structure'));
+  if (container.rows.length) {
+    const t = el('table', { class: 'anr-readout' });
+    for (const [k, v] of container.rows) t.appendChild(row(k, v));
+    card.appendChild(t);
+  }
+  for (const a of container.ai) {
+    const det = el('details', { open: '' });
+    const isPrompt = /^(parameters|prompt|workflow|dream|sd-metadata|invokeai)/i.test(a.key);
+    det.appendChild(el('summary', {}, [
+      el('span', { class: 'anr-summary-label', style: 'color:var(--accent);font-weight:600;' },
+        (isPrompt ? 'AI prompt' : 'Embedded text') + '  ·  ' + a.key)
+    ]));
+    const { pretty, raw } = formatAiPrompt(a.value);
+    const pre = el('pre', { class: 'anr-ocr-text', style: 'white-space:pre-wrap;word-break:break-word;' }, pretty || raw);
+    det.appendChild(pre);
+    if (pretty && pretty !== raw) {
+      const rawDet = el('details');
+      rawDet.appendChild(el('summary', {}, 'Raw metadata'));
+      rawDet.appendChild(el('pre', { class: 'anr-ocr-text', style: 'white-space:pre-wrap;word-break:break-word;' }, raw));
+      det.appendChild(rawDet);
+    }
+    card.appendChild(det);
+  }
+  return card;
+}
+
 // ---------- main render ----------
 export async function renderPhoto(file, resultsEl, opts = {}) {
   // Inline mode (e.g. embedded cover art analysed inside the audio section):
@@ -1297,6 +1671,16 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     aiCard.appendChild(el('h3', {}, 'AI detection'));
     aiCard.appendChild(el('p', { class: 'anr-hint' }, 'No AI-generation markers found in metadata.'));
     resultsEl.appendChild(aiCard);
+  }
+
+  // ---- Container structure (raw bytes the img/exifr pipeline ignores) ----
+  // Best-effort and fully isolated: a parse failure must never break the rest of
+  // the photo analysis, and nothing is appended when there's nothing to show.
+  try {
+    const container = await peekImageContainer(file);
+    if (container) resultsEl.appendChild(buildContainerCard(container));
+  } catch (e) {
+    console.warn('container peek failed:', e);
   }
 
   // ---- GPS ----

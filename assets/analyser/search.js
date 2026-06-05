@@ -56,8 +56,13 @@ export function initSearch() {
       const old = document.querySelector('.anr-search-current');
       if (old) old.classList.remove('anr-search-current');
       matchIdx = ((i % matches.length) + matches.length) % matches.length;
-      matches[matchIdx].classList.add('anr-search-current');
-      matches[matchIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const m = matches[matchIdx];
+      // Reveal the match if it sits inside a collapsed <details> (e.g. a schema /
+      // sample-data / source block) so the scroll lands on something visible.
+      let p = m.parentElement;
+      while (p) { if (p.tagName === 'DETAILS' && !p.open) p.open = true; p = p.parentElement; }
+      m.classList.add('anr-search-current');
+      m.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     const SYNONYMS = {
@@ -117,7 +122,7 @@ export function initSearch() {
       megapixels: ['mp'],
       dim: ['dimensions', 'resolution', 'width', 'height'],
       dimensions: ['dim', 'resolution', 'width', 'height'],
-      width: ['dimensions', 'resolution'],
+      width: ['dimensions', 'resolution', 'stereo width'],
       height: ['dimensions', 'resolution'],
       ar: ['aspect ratio'],
       ratio: ['aspect ratio'],
@@ -225,7 +230,6 @@ export function initSearch() {
       'bit depth': ['bitdepth', 'bits'],
       samples: ['total samples'],
       phase: ['phase correlation'],
-      width: ['stereo width'],
       mid: ['mid level', 'mid/side'],
       side: ['side level', 'side / mid', 'mid/side'],
       // archive
@@ -254,6 +258,24 @@ export function initSearch() {
       ext: ['extension'],
       extension: ['ext'],
       magic: ['magic guess'],
+      app: ['application', 'software'],
+      application: ['app', 'software'],
+      // databases / SQL
+      database: ['table', 'schema', 'rows', 'sqlite'],
+      table: ['tables', 'rows', 'columns', 'schema'],
+      schema: ['ddl', 'create table', 'columns', 'table'],
+      sql: ['sqlite', 'database', 'table', 'dialect'],
+      sqlite: ['database', 'table', 'schema'],
+      ddl: ['schema', 'create table'],
+      // comics / pages
+      comic: ['page', 'pages', 'comicinfo', 'series'],
+      page: ['pages'],
+      series: ['title', 'issue'],
+      // 3D / geo / misc
+      vertices: ['vertex', 'triangles', 'faces'],
+      triangles: ['faces', 'vertices', 'polygons'],
+      track: ['gpx', 'route', 'elevation'],
+      ascent: ['elevation gain', 'climb'],
     };
 
     function expandQuery(q) {
@@ -278,16 +300,17 @@ export function initSearch() {
       if (!q) return;
       const terms = expandQuery(q);
       for (const container of document.querySelectorAll('.anr-results')) {
+        if (container.hidden) continue;
         for (const card of container.querySelectorAll('.anr-card')) {
-          if (textMatches(card.textContent, terms)) {
+          // Prefer highlighting the specific matching rows inside a card (any
+          // table - readouts, sample data, etc.); fall back to the whole card when
+          // the match is in prose / a <pre> / a list rather than a table row.
+          const rows = [...card.querySelectorAll('table tr')].filter((tr) => textMatches(tr.textContent, terms));
+          if (rows.length) {
+            for (const tr of rows) { tr.classList.add('anr-search-highlight'); matches.push(tr); }
+          } else if (textMatches(card.textContent, terms)) {
             card.classList.add('anr-search-highlight');
             matches.push(card);
-          }
-        }
-        for (const tr of container.querySelectorAll('.anr-readout tr')) {
-          if (textMatches(tr.textContent, terms)) {
-            tr.classList.add('anr-search-highlight');
-            matches.push(tr);
           }
         }
       }

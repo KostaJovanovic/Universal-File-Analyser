@@ -37,6 +37,7 @@ export async function renderPptx(file, resultsEl) {
   // ---- Presentation: slide size + slide order ----
   let slideW = 960, slideH = 540;
   const slideOrder = [];
+  const hiddenSlides = new Set();
   if (zip.has('ppt/presentation.xml')) {
     const pres = parseXml(await zip.text('ppt/presentation.xml'));
     const sz = pres.getElementsByTagName('p:sldSz')[0] || pres.getElementsByTagName('sldSz')[0];
@@ -53,7 +54,12 @@ export async function renderPptx(file, resultsEl) {
     }
     for (const sid of pres.getElementsByTagName('p:sldId')) {
       const rid = sid.getAttribute('r:id') || sid.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
-      if (rels[rid]) slideOrder.push(resolveRel('ppt/presentation.xml', rels[rid]));
+      if (rels[rid]) {
+        const path = resolveRel('ppt/presentation.xml', rels[rid]);
+        slideOrder.push(path);
+        // sld @show='0' marks the slide as hidden during a slideshow.
+        if (sid.getAttribute('show') === '0') hiddenSlides.add(path);
+      }
     }
   }
   if (!slideOrder.length) {
@@ -82,9 +88,22 @@ export async function renderPptx(file, resultsEl) {
     const app = parseXml(await zip.text('docProps/app.xml'));
     const a = app.getElementsByTagName('Application')[0];
     if (a) metaTbl.appendChild(row('Application', a.textContent));
+    // HiddenSlides count from extended properties (additive).
+    try {
+      const hs = app.getElementsByTagName('HiddenSlides')[0];
+      if (hs && hs.textContent && hs.textContent !== '0') metaTbl.appendChild(row('Hidden slides (declared)', hs.textContent));
+    } catch (_) { /* ignore */ }
   }
   metaCard.appendChild(metaTbl);
   resultsEl.appendChild(metaCard);
+
+  // ---- Structure card (outline / tables / hyperlinks) — populated after the
+  //      slide loop below, inserted here so it appears above the slides. ----
+  const structCard = el('div', { class: 'anr-card' });
+  resultsEl.appendChild(structCard);
+  const outline = [];       // { num, title, hidden }
+  let totalHyperlinks = 0;
+  const tableReports = [];  // { num, rows, cols }
 
   // ---- Slides ----
   const slidesCard = el('div', { class: 'anr-card' });
@@ -104,6 +123,8 @@ export async function renderPptx(file, resultsEl) {
       const doc = parseXml(xml);
 
       // Shape text, separating title placeholders from body text.
+      let slideTitle = '';
+      let firstText = '';
       for (const sp of doc.getElementsByTagName('p:sp')) {
         const ph = sp.getElementsByTagName('p:ph')[0];
         const phType = ph ? (ph.getAttribute('type') || '') : '';
@@ -115,9 +136,41 @@ export async function renderPptx(file, resultsEl) {
           if (line.trim()) paras.push(line);
         }
         if (!paras.length) continue;
+        if (isTitle && !slideTitle) slideTitle = paras.join(' ');
+        if (!firstText) firstText = paras[0];
         const block = el('div', { class: isTitle ? 'anr-pptx-title' : 'anr-pptx-body' });
         for (const line of paras) block.appendChild(el('p', {}, line));
         slideBox.appendChild(block);
+      }
+
+      // Outline entry (title, else first text on slide), plus hidden flag.
+      try {
+        outline.push({ num: i + 1, title: slideTitle || firstText || '(no text)', hidden: hiddenSlides.has(slidePath) });
+      } catch (_) { /* ignore */ }
+
+      // On-slide tables (a:tbl): report row/col counts.
+      try {
+        for (const tbl of doc.getElementsByTagName('a:tbl')) {
+          const rows = tbl.getElementsByTagName('a:tr');
+          let cols = 0;
+          const grid = tbl.getElementsByTagName('a:gridCol');
+          if (grid.length) cols = grid.length;
+          else if (rows.length) cols = rows[0].getElementsByTagName('a:tc').length;
+          tableReports.push({ num: i + 1, rows: rows.length, cols });
+        }
+      } catch (_) { /* ignore */ }
+
+      // Hyperlinks (a:hlinkClick with a relationship id).
+      try {
+        for (const hl of doc.getElementsByTagName('a:hlinkClick')) {
+          const rid = hl.getAttribute('r:id') || hl.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+          if (rid) totalHyperlinks++;
+        }
+      } catch (_) { /* ignore */ }
+
+      // Mark hidden slides visually.
+      if (hiddenSlides.has(slidePath)) {
+        slideBox.appendChild(el('div', { class: 'anr-pptx-num', style: 'left:auto;right:6px;background:var(--accent);' }, 'Hidden'));
       }
 
       // Embedded images via slide rels.
@@ -164,6 +217,37 @@ export async function renderPptx(file, resultsEl) {
   }
 
   if (!slideOrder.length) slidesCard.appendChild(el('p', { class: 'anr-hint' }, 'No slides found.'));
+
+  // ---- Populate structure card (additive) ----
+  try {
+    const hiddenCount = outline.filter((o) => o.hidden).length;
+    const hasContent = outline.length || tableReports.length || totalHyperlinks || hiddenCount;
+    if (hasContent) {
+      structCard.appendChild(el('h3', {}, 'Outline & structure'));
+      const t = el('table', { class: 'anr-readout' });
+      if (hiddenCount) t.appendChild(row('Hidden slides', hiddenCount));
+      if (tableReports.length) {
+        t.appendChild(row('Tables', tableReports.length + ' (' + tableReports.map((r) => 'slide ' + r.num + ': ' + r.rows + '×' + r.cols).join(', ') + ')'));
+      }
+      if (totalHyperlinks) t.appendChild(row('Hyperlinks', totalHyperlinks));
+      structCard.appendChild(t);
+      if (outline.length) {
+        const det = el('details', { style: 'margin-top:8px;' });
+        det.appendChild(el('summary', {}, 'Slide outline (' + outline.length + ')'));
+        const ol = el('ol', { style: 'margin:6px 0;padding-left:24px;' });
+        for (const o of outline) {
+          const li = el('li', { style: 'margin:2px 0;' });
+          li.appendChild(document.createTextNode(o.title.length > 120 ? o.title.slice(0, 120) + '…' : o.title));
+          if (o.hidden) li.appendChild(el('span', { class: 'anr-hint', style: 'margin-left:6px;' }, '(hidden)'));
+          ol.appendChild(li);
+        }
+        det.appendChild(ol);
+        structCard.appendChild(det);
+      }
+    } else {
+      structCard.remove();
+    }
+  } catch (_) { try { structCard.remove(); } catch (__) { /* ignore */ } }
 
   resultsEl.appendChild(integrityCard(file));
 }

@@ -394,6 +394,232 @@ async function detectFpsFromContainer(file) {
   return null;
 }
 
+// ---------- codec / rotation / HDR detection (ISOBMFF) ----------
+// Walks the SAME moov/trak boxes as the fps detector to surface, per track:
+// video codec (from stsd FourCC + avcC/hvcC profile/level), display rotation
+// (from the tkhd 3x3 matrix), HDR/colour (from a 'colr' nclx box, plus mdcv/clli
+// presence), and audio codec + channel count. Purely additive and best-effort:
+// any failure is swallowed so the existing fps/preview/frame-stepping path is
+// never affected.
+
+const VIDEO_CODEC_NAMES = {
+  avc1: 'H.264 / AVC', avc3: 'H.264 / AVC',
+  hvc1: 'H.265 / HEVC', hev1: 'H.265 / HEVC',
+  av01: 'AV1', vp09: 'VP9', vp08: 'VP8',
+  mp4v: 'MPEG-4 Visual', 'dvh1': 'Dolby Vision (HEVC)', 'dvhe': 'Dolby Vision (HEVC)',
+  s263: 'H.263', 'mjpg': 'Motion JPEG', jpeg: 'Motion JPEG'
+};
+const AUDIO_CODEC_NAMES = {
+  mp4a: 'AAC', alac: 'Apple Lossless (ALAC)', 'ac-3': 'Dolby Digital (AC-3)',
+  'ec-3': 'Dolby Digital Plus (E-AC-3)', 'Opus': 'Opus', sowt: 'PCM', twos: 'PCM',
+  lpcm: 'PCM', 'in24': 'PCM (24-bit)', 'in32': 'PCM (32-bit)', samr: 'AMR'
+};
+// H.264 profile_idc -> friendly name (subset that matters for consumer video).
+const H264_PROFILES = {
+  66: 'Baseline', 77: 'Main', 88: 'Extended', 100: 'High',
+  110: 'High 10', 122: 'High 4:2:2', 244: 'High 4:4:4'
+};
+// ISO/IEC 23001-8 colour primaries / transfer characteristics codes we care about.
+const COLOUR_PRIMARIES = { 1: 'BT.709', 5: 'BT.601 (PAL)', 6: 'BT.601 (NTSC)', 9: 'BT.2020' };
+const TRANSFER_CHARS = { 1: 'BT.709', 6: 'BT.601', 16: 'PQ', 18: 'HLG' };
+
+function fcc(view, p) {
+  return String.fromCharCode(view.getUint8(p), view.getUint8(p + 1), view.getUint8(p + 2), view.getUint8(p + 3));
+}
+
+// Derive a 0/90/180/270 display rotation from the tkhd 3x3 transform matrix.
+// The matrix stores a,b,c,d as 16.16 fixed-point; rotation maps to the sign/
+// magnitude pattern of (a,b,c,d). Returns 0 for identity / unknown.
+function rotationFromMatrix(a, b, c, d) {
+  const r = (x) => Math.round(x);
+  a = r(a); b = r(b); c = r(c); d = r(d);
+  if (a === 1 && b === 0 && c === 0 && d === 1) return 0;
+  if (a === 0 && b === 1 && c === -1 && d === 0) return 90;
+  if (a === -1 && b === 0 && c === 0 && d === -1) return 180;
+  if (a === 0 && b === -1 && c === 1 && d === 0) return 270;
+  // Fall back to atan2 of the first row for non-canonical matrices.
+  const deg = Math.round(Math.atan2(b, a) * 180 / Math.PI);
+  return ((deg % 360) + 360) % 360;
+}
+
+async function detectIsobmffTracks(file) {
+  if (file.size < 12) return null;
+  const headBuf = await file.slice(0, Math.min(file.size, 64)).arrayBuffer();
+  const hv = new DataView(headBuf);
+  if (fcc(hv, 4) !== 'ftyp') return null;
+
+  // Find the moov box (same top-level walk as detectFpsFromContainer).
+  let moovOffset = -1, moovSize = 0, pos = 0;
+  while (pos < file.size) {
+    const headerBuf = await file.slice(pos, pos + 16).arrayBuffer();
+    const dv = new DataView(headerBuf);
+    if (headerBuf.byteLength < 8) break;
+    let boxSize = dv.getUint32(0);
+    const type = fcc(dv, 4);
+    if (boxSize === 1 && headerBuf.byteLength >= 16) {
+      boxSize = dv.getUint32(8) * 0x100000000 + dv.getUint32(12);
+    }
+    if (boxSize < 8) break;
+    if (type === 'moov') { moovOffset = pos; moovSize = boxSize; break; }
+    pos += boxSize;
+  }
+  if (moovOffset < 0 || moovSize > 20 * 1024 * 1024) return null;
+
+  const moovBuf = await file.slice(moovOffset, moovOffset + moovSize).arrayBuffer();
+  const view = new DataView(moovBuf);
+  const result = { video: null, audio: null };
+
+  const traks = findAllBoxes(view, 8, moovSize, 'trak');
+  for (const trak of traks) {
+    const trakStart = trak.offset + trak.headerSize;
+    const trakEnd = Math.min(trak.offset + trak.size, moovSize);
+    const isVideo = findAllBoxes(view, trakStart, trakEnd, 'vmhd').length > 0;
+    const isAudio = findAllBoxes(view, trakStart, trakEnd, 'smhd').length > 0;
+
+    const stsdBoxes = findAllBoxes(view, trakStart, trakEnd, 'stsd');
+    if (!stsdBoxes.length) continue;
+    const stsd = stsdBoxes[0];
+    // stsd: 8-byte box header + 4 version/flags + 4 entry-count, then the first
+    // sample-entry box (4 size + 4 FourCC).
+    const entryStart = stsd.offset + stsd.headerSize + 8;
+    if (entryStart + 8 > moovSize) continue;
+    const sampleEntryBox = view.getUint32(entryStart);
+    const codecFcc = fcc(view, entryStart + 4);
+
+    if (isVideo && !result.video) {
+      const v = { codec: codecFcc, codecName: VIDEO_CODEC_NAMES[codecFcc] || codecFcc };
+
+      // Rotation from tkhd matrix. tkhd: version(1) flags(3) then times; matrix
+      // sits at a fixed offset from the box data start (version-dependent).
+      try {
+        const tkhd = findAllBoxes(view, trakStart, trakEnd, 'tkhd')[0];
+        if (tkhd) {
+          const d = tkhd.offset + tkhd.headerSize;
+          const ver = view.getUint8(d);
+          // matrix starts after: ver/flags(4) + create+modify+trackID+reserved+duration
+          // + reserved(8) + layer(2)+altGroup(2)+volume(2)+reserved(2)
+          const matrixOff = d + (ver === 1 ? 4 + 8 + 8 + 4 + 4 + 8 : 4 + 4 + 4 + 4 + 4 + 8) + 8;
+          if (matrixOff + 36 <= moovSize) {
+            const fx = (o) => view.getInt32(matrixOff + o) / 65536; // 16.16 fixed
+            const a = fx(0), b = fx(4), c = fx(12), dd = fx(16);
+            const rot = rotationFromMatrix(a, b, c, dd);
+            if (rot) v.rotation = rot;
+          }
+        }
+      } catch (_) {}
+
+      // Profile/level from avcC (H.264) or hvcC (HEVC), searched within stbl.
+      try {
+        if (codecFcc === 'avc1' || codecFcc === 'avc3') {
+          const avcc = findAllBoxes(view, trakStart, trakEnd, 'avcC')[0];
+          if (avcc) {
+            const d = avcc.offset + avcc.headerSize; // configVer(1) profile(1) compat(1) level(1)
+            const profileIdc = view.getUint8(d + 1);
+            const levelIdc = view.getUint8(d + 3);
+            if (H264_PROFILES[profileIdc]) v.profile = H264_PROFILES[profileIdc];
+            if (levelIdc) v.level = (levelIdc / 10).toFixed(1).replace(/\.0$/, '');
+          }
+        } else if (codecFcc === 'hvc1' || codecFcc === 'hev1' || codecFcc === 'dvh1' || codecFcc === 'dvhe') {
+          const hvcc = findAllBoxes(view, trakStart, trakEnd, 'hvcC')[0];
+          if (hvcc) {
+            const d = hvcc.offset + hvcc.headerSize; // configVer(1) then profile space/tier/idc byte
+            const b1 = view.getUint8(d + 1);
+            const tier = (b1 & 0x20) ? 'High' : 'Main';
+            const profileIdc = b1 & 0x1f;
+            const HEVC_PROFILES = { 1: 'Main', 2: 'Main 10', 3: 'Main Still Picture', 4: 'Range Ext' };
+            if (HEVC_PROFILES[profileIdc]) v.profile = HEVC_PROFILES[profileIdc] + ' (' + tier + ')';
+            // general_level_idc is at offset d+12 in hvcC.
+            const levelIdc = view.getUint8(d + 12);
+            if (levelIdc) v.level = (levelIdc / 30).toFixed(1);
+          }
+        }
+      } catch (_) {}
+
+      // Colour / HDR from a 'colr' box (nclx variant) within the sample entry,
+      // plus presence of mastering-display (mdcv) / content-light (clli) boxes.
+      try {
+        // The sample-entry box spans [entryStart, entryStart+sampleEntryBox); colr/
+        // mdcv/clli live inside it. Search the whole trak (cheap, harmless).
+        const colr = findAllBoxes(view, entryStart, Math.min(entryStart + sampleEntryBox, moovSize), 'colr')[0]
+                  || findAllBoxes(view, trakStart, trakEnd, 'colr')[0];
+        if (colr) {
+          const d = colr.offset + colr.headerSize;
+          const colourType = fcc(view, d);
+          if (colourType === 'nclx' && d + 10 <= moovSize) {
+            const primaries = view.getUint16(d + 4);
+            const transfer = view.getUint16(d + 6);
+            const matrix = view.getUint16(d + 8);
+            v.primaries = COLOUR_PRIMARIES[primaries] || ('code ' + primaries);
+            v.transfer = TRANSFER_CHARS[transfer] || ('code ' + transfer);
+            v.matrixCoef = matrix;
+            // HDR detection: PQ (16) or HLG (18) transfer, typically with BT.2020.
+            if (transfer === 16) v.hdr = 'PQ (' + (v.primaries) + ')';
+            else if (transfer === 18) v.hdr = 'HLG (' + (v.primaries) + ')';
+          }
+        }
+        if (findAllBoxes(view, trakStart, trakEnd, 'mdcv').length) v.mdcv = true;
+        if (findAllBoxes(view, trakStart, trakEnd, 'clli').length) v.clli = true;
+      } catch (_) {}
+
+      result.video = v;
+    } else if (isAudio && !result.audio) {
+      const a = { codec: codecFcc, codecName: AUDIO_CODEC_NAMES[codecFcc] || codecFcc };
+      try {
+        // Audio sample entry: after the 8-byte box hdr + 8 reserved, channelcount
+        // is a uint16, then samplesize, predefined, reserved, then sample rate.
+        const base = entryStart + 8 + 8;
+        if (base + 4 <= moovSize) {
+          const channels = view.getUint16(base);
+          if (channels > 0 && channels <= 24) a.channels = channels;
+        }
+      } catch (_) {}
+      result.audio = a;
+    }
+  }
+
+  if (!result.video && !result.audio) return null;
+  return result;
+}
+
+// Append codec/rotation/HDR/audio-codec rows to an existing readout <table>,
+// next to the resolution/fps rows. Only adds rows that were actually found.
+// Wrapped by the caller in try/catch; itself defends against partial data.
+function appendTrackRows(tbl, tracks) {
+  if (!tracks) return;
+  const v = tracks.video, a = tracks.audio;
+  if (v) {
+    if (v.codecName) {
+      let label = v.codecName;
+      const extra = [];
+      if (v.profile) extra.push(v.profile);
+      if (v.level) extra.push('L' + v.level);
+      if (extra.length) label += '  (' + extra.join(', ') + ')';
+      tbl.appendChild(rowHelp('Video codec', label,
+        'The video compression format and (where available) its profile/level, read from the MP4/MOV sample-description and codec-config boxes. The profile/level indicate which encoding features and bitrate ceiling were used.'));
+    }
+    if (v.rotation) {
+      const orient = (v.rotation === 90 || v.rotation === 270) ? 'portrait' : 'landscape';
+      tbl.appendChild(rowHelp('Rotation', v.rotation + '°  (' + orient + ')',
+        'A display rotation stored in the track header transform matrix. Phones record sensor-native orientation and add this flag so players rotate the picture upright on playback.'));
+    }
+    if (v.hdr) {
+      let hdrText = v.hdr;
+      if (v.mdcv || v.clli) hdrText += '  · ' + [v.mdcv ? 'mastering display' : '', v.clli ? 'content-light' : ''].filter(Boolean).join(' + ') + ' metadata';
+      tbl.appendChild(rowHelp('HDR', hdrText,
+        'High Dynamic Range signalling from the colour box: PQ (HDR10/Dolby Vision) or HLG transfer, usually with the wide BT.2020 colour gamut. Mastering-display / content-light metadata further describe the HDR grade.'));
+    } else if (v.primaries && v.transfer && (v.primaries !== '-' || v.transfer !== '-')) {
+      tbl.appendChild(rowHelp('Colour', v.primaries + ' · ' + v.transfer,
+        'Colour primaries and transfer function (gamma) signalled in the MP4 colour box - they tell a player how to map the stored values to displayed colour. BT.709 is standard HD; BT.2020 is wide-gamut/UHD.'));
+    }
+  }
+  if (a && a.codecName) {
+    let label = a.codecName;
+    if (a.channels) label += '  (' + (a.channels === 1 ? 'mono' : a.channels === 2 ? 'stereo' : a.channels + 'ch') + ')';
+    tbl.appendChild(rowHelp('Audio codec', label,
+      'The audio compression format and channel layout of the embedded sound track, read from the MP4/MOV sample-description box.'));
+  }
+}
+
 async function detectFpsWithFfmpeg(file, onProgress) {
   const ff = await loadFFmpeg(onProgress);
   const { fetchFile } = await import(new URL('../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
@@ -634,6 +860,13 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
   const fpsRow = row('Frame rate', 'detecting…');
   tbl.appendChild(fpsRow);
   if (vw && vh) tbl.appendChild(rowHelp('Frame size', ((vw * vh) / 1_000_000).toFixed(2) + ' MP', 'Pixels per frame in megapixels (width × height ÷ 1,000,000). A rough indicator of how much raw image data each frame holds before compression.'));
+  // Codec / rotation / HDR / audio-codec from the ISOBMFF moov walk (best-effort).
+  try {
+    if (header && (/^(MP4|M4V|QuickTime MOV|3GP|3G2)/.test(header.container || '') || /MP4 \//.test(header.container || ''))) {
+      const tracks = await detectIsobmffTracks(file);
+      appendTrackRows(tbl, tracks);
+    }
+  } catch (_) {}
   infoCard.appendChild(tbl);
   resultsEl.insertBefore(infoCard, playerCard);
 
@@ -1387,6 +1620,14 @@ export async function renderVideo(file, resultsEl) {
     const mp = ((vw * vh) / 1_000_000).toFixed(2);
     tbl.appendChild(rowHelp('Frame size', mp + ' MP', 'Pixels per frame in megapixels (width × height ÷ 1,000,000). A rough indicator of how much raw image data each frame holds before compression.'));
   }
+  // Codec / rotation / HDR / audio-codec from the ISOBMFF moov walk (mp4/mov/
+  // m4v/3gp). Best-effort and fully guarded so it never affects fps/preview.
+  try {
+    if (/^(MP4|M4V|QuickTime MOV|3GP|3G2)/.test(header.container || '') || /MP4 \//.test(header.container || '')) {
+      const tracks = await detectIsobmffTracks(file);
+      appendTrackRows(tbl, tracks);
+    }
+  } catch (_) {}
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
 

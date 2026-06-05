@@ -30,22 +30,209 @@ export async function peekContainer(file) {
     const sampleRate = (b[18] << 12) | (b[19] << 4) | (b[20] >> 4);   // 20 bits
     const channels   = ((b[20] >> 1) & 0x07) + 1;                     // 3 bits
     const bitDepth   = (((b[20] & 0x01) << 4) | (b[21] >> 4)) + 1;    // 5 bits
-    if (sampleRate > 0) return { container: 'FLAC', codec: 'FLAC (lossless)', sampleRate, channels, bitDepth };
-    return { container: 'FLAC', codec: 'FLAC (lossless)' };
+    const base = { container: 'FLAC', codec: 'FLAC (lossless)' };
+    if (sampleRate > 0) {
+      Object.assign(base, { sampleRate, channels, bitDepth });
+      // Extra STREAMINFO facts: total samples (36 bits), MD5 of the raw audio
+      // (16 bytes), and the lossless compression ratio vs. uncompressed PCM.
+      try {
+        Object.assign(base, detailFlac(b, file.size, sampleRate, channels, bitDepth));
+      } catch (_) { /* best-effort */ }
+    }
+    return base;
   }
   // OGG
   if (ascii(0, 4) === 'OggS') return { container: 'OGG' };
   // ID3-tagged MP3
-  if (ascii(0, 3) === 'ID3') return { container: 'MP3', codec: 'MPEG Layer 3' };
+  if (ascii(0, 3) === 'ID3') {
+    const base = { container: 'MP3', codec: 'MPEG Layer 3' };
+    try { Object.assign(base, await detailMp3(file)); } catch (_) { /* best-effort */ }
+    return base;
+  }
   // AAC ADTS - 12-bit sync 0xFFF, layer=0
   if (head[0] === 0xFF && (head[1] & 0xF0) === 0xF0 && (head[1] & 0x06) === 0x00)
     return { container: 'AAC', codec: 'AAC (ADTS)' };
   // Raw MPEG frame (FF Ex/Fx)
-  if (head[0] === 0xFF && (head[1] & 0xE0) === 0xE0) return { container: 'MP3', codec: 'MPEG audio' };
+  if (head[0] === 0xFF && (head[1] & 0xE0) === 0xE0) {
+    const base = { container: 'MP3', codec: 'MPEG audio' };
+    try { Object.assign(base, await detailMp3(file)); } catch (_) { /* best-effort */ }
+    return base;
+  }
   // MP4/M4A
   if (ascii(4, 4) === 'ftyp') return { container: 'MP4/M4A', codec: ascii(8, 4).trim() };
   // Opus in OGG handled above
   return { container: 'unknown' };
+}
+
+// --- FLAC STREAMINFO extras (total samples, MD5, compression ratio) ---
+// `b` is the file head (>= 42 bytes), with STREAMINFO data starting at offset 8.
+function detailFlac(b, fileSize, sampleRate, channels, bitDepth) {
+  const out = {};
+  // total samples: 36-bit field. Laid out after sampleRate(20)+channels(3)+
+  // bitsPerSample(5) = 28 bits into the 8 bytes starting at b[18], so it's the low
+  // 4 bits of b[21] plus all of b[22..25]. Compute the low 32 bits unsigned, then
+  // add the top nibble * 2^32 to avoid 32-bit shift overflow.
+  const low32 = ((b[22] << 24) | (b[23] << 16) | (b[24] << 8) | b[25]) >>> 0;
+  const total = (b[21] & 0x0F) * 0x100000000 + low32;
+  if (total > 0) out.totalSamples = total;
+
+  // MD5 of the unencoded audio: 16 bytes immediately after the 8-byte field block.
+  if (b.length >= 42) {
+    let md5 = '';
+    let nonZero = false;
+    for (let i = 26; i < 42; i++) {
+      md5 += b[i].toString(16).padStart(2, '0');
+      if (b[i] !== 0) nonZero = true;
+    }
+    if (nonZero) out.flacMd5 = md5;
+  }
+
+  // Compression ratio vs. uncompressed PCM of the same samples.
+  if (total > 0 && fileSize > 0 && sampleRate > 0) {
+    const uncompressed = total * channels * Math.ceil(bitDepth / 8);
+    if (uncompressed > 0) out.compressionRatio = uncompressed / fileSize;
+  }
+  return out;
+}
+
+// --- MP3 frame / Xing / VBRI / LAME decode (bitrate, CBR/VBR, encoder) ---
+// MPEG audio bitrate table [version][layer][index], kbps. version: 1=MPEG1,
+// 2=MPEG2/2.5. layer index: 1=L1,2=L2,3=L3.
+const MP3_BITRATES = {
+  1: { // MPEG1
+    1: [0,32,64,96,128,160,192,224,256,288,320,352,384,416,448],
+    2: [0,32,48,56,64,80,96,112,128,160,192,224,256,320,384],
+    3: [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320],
+  },
+  2: { // MPEG2 / MPEG2.5
+    1: [0,32,48,56,64,80,96,112,128,144,160,176,192,224,256],
+    2: [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160],
+    3: [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160],
+  },
+};
+const MP3_SRATE = {
+  3: [44100, 48000, 32000],   // MPEG1
+  2: [22050, 24000, 16000],   // MPEG2
+  0: [11025, 12000, 8000],    // MPEG2.5
+};
+const MP3_LAME_PRESETS = {
+  // a small map of common LAME preset codes (from the LAME tag) to names
+  0xFB: 'V0', 0xF4: 'V2', 0x3C0: 'CBR 320',
+};
+
+async function detailMp3(file) {
+  // Read enough for an ID3v2 tag + the first audio frame's Xing/VBRI header.
+  const cap = Math.min(file.size, 64 * 1024);
+  const buf = new Uint8Array(await file.slice(0, cap).arrayBuffer());
+
+  // Skip an ID3v2 tag if present (synchsafe size at offsets 6-9).
+  let off = 0;
+  if (buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) {
+    const tagSize = ((buf[6] & 0x7F) << 21) | ((buf[7] & 0x7F) << 14) |
+                    ((buf[8] & 0x7F) << 7) | (buf[9] & 0x7F);
+    off = 10 + tagSize;
+    const footer = (buf[5] & 0x10) ? 10 : 0;   // ID3v2.4 footer
+    off += footer;
+  }
+
+  // Find the first valid MPEG audio frame header (11 sync bits + sane fields).
+  let h = -1;
+  for (let i = off; i + 4 <= buf.length; i++) {
+    if (buf[i] !== 0xFF || (buf[i + 1] & 0xE0) !== 0xE0) continue;
+    const verBits = (buf[i + 1] >> 3) & 0x03;   // 0=2.5 1=reserved 2=2 3=1
+    const layerBits = (buf[i + 1] >> 1) & 0x03; // 0=reserved 1=L3 2=L2 3=L1
+    const brIdx = (buf[i + 2] >> 4) & 0x0F;
+    const srIdx = (buf[i + 2] >> 2) & 0x03;
+    if (verBits === 1 || layerBits === 0 || brIdx === 0 || brIdx === 0x0F || srIdx === 3) continue;
+    h = i; break;
+  }
+  if (h < 0) return {};
+
+  const verBits = (buf[h + 1] >> 3) & 0x03;
+  const layerBits = (buf[h + 1] >> 1) & 0x03;
+  const brIdx = (buf[h + 2] >> 4) & 0x0F;
+  const srIdx = (buf[h + 2] >> 2) & 0x03;
+  const padding = (buf[h + 2] >> 1) & 0x01;
+  const chMode = (buf[h + 3] >> 6) & 0x03;      // 0=stereo 1=joint 2=dual 3=mono
+
+  const layer = 4 - layerBits;                  // 1/2/3
+  const verName = verBits === 3 ? 'MPEG-1' : verBits === 2 ? 'MPEG-2' : 'MPEG-2.5';
+  const brVer = verBits === 3 ? 1 : 2;          // bitrate table group
+  const frameBitrate = (MP3_BITRATES[brVer][layer] || [])[brIdx] || 0;  // kbps
+  const sampleRate = (MP3_SRATE[verBits] || MP3_SRATE[2])[srIdx] || 0;
+  const channels = chMode === 3 ? 1 : 2;
+  const chName = chMode === 0 ? 'stereo' : chMode === 1 ? 'joint stereo'
+              : chMode === 2 ? 'dual channel' : 'mono';
+
+  const out = {
+    codec: `${verName} Audio Layer ${layer}`,
+    mpegVersion: verName,
+    mpegLayer: 'Layer ' + layer,
+    channelMode: chName,
+  };
+  if (sampleRate > 0) out.sampleRate = sampleRate;
+  if (channels > 0) out.channels = channels;
+
+  // Locate the Xing/Info or VBRI header within this frame.
+  // Xing/Info side-info offset: MPEG1 mono=21, else 36; MPEG2 mono=13, else 21.
+  let vbr = false, frameCount = 0, encoder = null, hasXing = false, hasVbri = false;
+  const xingOff = h + 4 + (verBits === 3 ? (channels === 1 ? 17 : 32)
+                                         : (channels === 1 ? 9 : 17));
+  const tag4 = (p) => p + 4 <= buf.length
+    ? String.fromCharCode(buf[p], buf[p + 1], buf[p + 2], buf[p + 3]) : '';
+  const xt = tag4(xingOff);
+  if (xt === 'Xing' || xt === 'Info') {
+    hasXing = true;
+    vbr = xt === 'Xing';            // 'Info' = CBR with a Xing-style TOC
+    const flags = (buf[xingOff + 4] << 24 | buf[xingOff + 5] << 16 |
+                   buf[xingOff + 6] << 8 | buf[xingOff + 7]) >>> 0;
+    let p = xingOff + 8;
+    if (flags & 0x01) { frameCount = ((buf[p] << 24 | buf[p + 1] << 16 | buf[p + 2] << 8 | buf[p + 3]) >>> 0); p += 4; }
+    if (flags & 0x02) p += 4;       // bytes field
+    if (flags & 0x04) p += 100;     // TOC
+    if (flags & 0x08) p += 4;       // quality
+    // LAME / encoder tag: 9 ASCII bytes (e.g. "LAME3.100").
+    if (p + 9 <= buf.length) {
+      const enc = String.fromCharCode(...buf.slice(p, p + 9)).replace(/\0+$/, '').trim();
+      if (/^(LAME|Lavf|Lavc|GOGO|Xing)/i.test(enc)) {
+        encoder = enc;
+        // LAME revision/preset byte sits a little further on; surface the preset
+        // code when it maps to a known name.
+        const presetCode = (buf[p + 21] << 8 | buf[p + 22]);
+        if (MP3_LAME_PRESETS[presetCode]) encoder += ' (' + MP3_LAME_PRESETS[presetCode] + ')';
+      } else if (enc && /[ -~]/.test(enc[0])) {
+        encoder = enc;
+      }
+    }
+  } else {
+    // VBRI header is always 32 bytes after the frame header (Fraunhofer encoders).
+    const vbriOff = h + 4 + 32;
+    if (tag4(vbriOff) === 'VBRI') { hasVbri = true; vbr = true; encoder = 'Fraunhofer (VBRI)'; }
+  }
+
+  // Bitrate text: CBR uses the frame's table value; VBR averages over the file.
+  if (vbr) {
+    let avg = 0;
+    // Prefer frame-count-based duration when available, else fall back to the
+    // frame header bitrate as a rough hint.
+    if (frameCount > 0 && sampleRate > 0) {
+      const samplesPerFrame = layer === 1 ? 384 : (verBits === 3 ? 1152 : 576);
+      const duration = (frameCount * samplesPerFrame) / sampleRate;
+      if (duration > 0) avg = Math.round((file.size * 8) / duration / 1000);
+    }
+    if (!avg) avg = frameBitrate;
+    if (avg > 0) {
+      out.bitrate = avg * 1000;            // bits/sec (numeric, for existing row)
+      out.bitrateText = '~' + avg + ' kbps VBR';
+    }
+  } else if (frameBitrate > 0) {
+    out.bitrate = frameBitrate * 1000;
+    out.bitrateText = frameBitrate + ' kbps CBR';
+  }
+
+  if (encoder) out.encoder = encoder;
+  if (frameCount > 0) out.frameCount = frameCount;
+  return out;
 }
 
 // --- AAC ADTS → M4A container (browser compat) ---

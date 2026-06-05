@@ -5,6 +5,48 @@
 import { el, row, rowHelp, fmtBytes, errorCard, integrityCard } from './util.js';
 import { renderPhoto } from './photo.js';
 
+// Scan a parsed SVG document for active/unsafe content, strip it, and return
+// { findings, safe } where `safe` is sanitised serialised markup for the
+// preview (null if there's no <svg> root). The preview injects markup via
+// innerHTML, so an untrusted SVG could otherwise run inline event handlers,
+// embed arbitrary HTML through <foreignObject>, or phone home through external
+// references. We remove <script>/<foreignObject>, on* handlers, javascript:
+// links, and external/remote refs before anything is rendered.
+function sanitizeSvg(doc) {
+  const findings = [];
+  const root = doc.querySelector('svg');
+  if (!root) return { findings, safe: null };
+
+  const scripts = doc.querySelectorAll('script');
+  if (scripts.length) findings.push(scripts.length + ' <script> element' + (scripts.length > 1 ? 's' : ''));
+  scripts.forEach((n) => n.remove());
+
+  const fo = doc.querySelectorAll('foreignObject');
+  if (fo.length) findings.push(fo.length + ' <foreignObject> (embedded HTML)');
+  fo.forEach((n) => n.remove());
+
+  let handlers = 0, jsLinks = 0, extRefs = 0;
+  for (const node of doc.querySelectorAll('*')) {
+    for (const attr of Array.from(node.attributes)) {
+      const name = attr.name.toLowerCase();
+      const val = (attr.value || '').trim();
+      if (name.startsWith('on')) { node.removeAttribute(attr.name); handlers++; continue; }
+      if (name === 'href' || name === 'src' || name.endsWith(':href')) {
+        if (/^javascript:/i.test(val)) { node.removeAttribute(attr.name); jsLinks++; }
+        else if (/^(https?:)?\/\//i.test(val) || /^data:text\/html/i.test(val)) { node.removeAttribute(attr.name); extRefs++; }
+      }
+    }
+  }
+  if (handlers) findings.push(handlers + ' inline event handler' + (handlers > 1 ? 's' : '') + ' (on*)');
+  if (jsLinks) findings.push(jsLinks + ' javascript: link' + (jsLinks > 1 ? 's' : ''));
+  if (extRefs) findings.push(extRefs + ' external/remote reference' + (extRefs > 1 ? 's' : ''));
+
+  let safe;
+  try { safe = new XMLSerializer().serializeToString(root); }
+  catch (_) { safe = null; }
+  return { findings, safe };
+}
+
 export async function renderSvg(file, resultsEl) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
@@ -21,28 +63,44 @@ export async function renderSvg(file, resultsEl) {
 
   resultsEl.innerHTML = '';
 
-  // --- Preview card: render the SVG, capped so it doesn't dominate the page ---
+  // Parse first so we can sanitise BEFORE rendering (see sanitizeSvg above).
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgText, 'image/svg+xml');
+  const parseErr = doc.querySelector('parsererror');
+  const svgRoot = doc.querySelector('svg');
+  const { findings, safe } = sanitizeSvg(doc);
+
+  // --- Preview card: render the (sanitised) SVG, capped so it doesn't dominate ---
   const previewCard = el('div', { class: 'anr-card' });
   previewCard.appendChild(el('h3', {}, 'SVG preview'));
-  const svgContainer = el('div', { class: 'anr-svg-preview', html: svgText });
-  svgContainer.style.maxHeight = '400px';
-  svgContainer.style.overflow = 'auto';
-  previewCard.appendChild(svgContainer);
+  if (safe) {
+    const svgContainer = el('div', { class: 'anr-svg-preview', html: safe });
+    svgContainer.style.maxHeight = '400px';
+    svgContainer.style.overflow = 'auto';
+    previewCard.appendChild(svgContainer);
+  } else {
+    previewCard.appendChild(el('p', { class: 'anr-hint' }, 'Could not safely render this SVG (invalid XML).'));
+  }
   resultsEl.appendChild(previewCard);
+
+  // --- Security card: list anything stripped from the preview ---
+  if (findings.length) {
+    const secCard = el('div', { class: 'anr-card' });
+    secCard.appendChild(el('h3', {}, 'Security'));
+    secCard.appendChild(el('p', { class: 'anr-hint anr-svg-error' }, 'Potentially unsafe content was found and removed from the preview:'));
+    const ul = el('ul', { class: 'anr-svg-warnings' });
+    for (const f of findings) ul.appendChild(el('li', {}, f));
+    secCard.appendChild(ul);
+    resultsEl.appendChild(secCard);
+  }
 
   // --- Stats card ---
   const statsCard = el('div', { class: 'anr-card' });
   statsCard.appendChild(el('h3', {}, 'SVG statistics'));
 
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(svgText, 'image/svg+xml');
-  const parseErr = doc.querySelector('parsererror');
-
   if (parseErr) {
     statsCard.appendChild(el('p', { class: 'anr-hint anr-svg-error' }, 'SVG parse error - stats may be incomplete'));
   }
-
-  const svgRoot = doc.querySelector('svg');
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Application', 'SVG Vector Image'));
   tbl.appendChild(row('Name', file.name));
@@ -110,7 +168,7 @@ export async function renderSvg(file, resultsEl) {
     canvas.width = cw;
     canvas.height = ch;
     const ctx = canvas.getContext('2d');
-    const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+    const blob = new Blob([safe || svgText], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
