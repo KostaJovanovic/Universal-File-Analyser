@@ -2777,6 +2777,8 @@ details[open] summary::after { content: "\2212"; }
   line-height: 1.4;
   opacity: 0.8;
 }
+/* "Import XMP settings" button under the thumbnail (RAW files only). */
+.anr-raw-xmp-import { margin-top: 8px; text-align: center; }
 
 /* On smaller viewports, meta column already drops below section-content; reorder so
    the preview thumb stays compact and the OCR/histogram sit clearly below it */

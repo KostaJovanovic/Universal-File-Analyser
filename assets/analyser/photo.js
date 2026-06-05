@@ -142,6 +142,13 @@ function buildExifSections(exif) {
   if (exif.Software)         camera.push(['Software', exif.Software]);
   if (exif.SerialNumber)     camera.push(['Body s/n', exif.SerialNumber]);
   if (exif.LensSerialNumber) camera.push(['Lens s/n', exif.LensSerialNumber]);
+  // Shutter actuation count - cameras that record it keep it under various
+  // maker-note names; surface the first present positive value. This is the
+  // camera body's lifetime shutter wear (useful when buying a used camera).
+  const shutter = [exif.ShutterCount, exif.ShutterCount2, exif.MechanicalShutterCount,
+    exif.ImageCount, exif.ActuationCount, exif.TotalShutterReleases, exif.ShutterCounter,
+    exif.ImageNumber, exif.FileNumber].find((v) => v != null && Number(v) > 0);
+  if (shutter != null) camera.push(['Shutter count', Number(shutter).toLocaleString() + ' actuations']);
   if (camera.length) sections.push({ title: 'Camera & lens', rows: camera });
 
   const exposure = [];
@@ -189,6 +196,103 @@ function buildExifSections(exif) {
   if (icc.length) sections.push({ title: 'ICC profile', rows: icc });
 
   return sections;
+}
+
+// Detect computational-photography wrappers - ProRAW, Apple Live Photo, Google/
+// Samsung Motion Photo, Ultra HDR gain maps, depth maps - from the parsed EXIF/
+// XMP plus a scan of the file head + tail for the markers/trailers they use.
+// Returns [[label, value], ...]; empty when nothing is found.
+async function detectComputational(file, exif) {
+  const rows = [];
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  let blob = '';
+  try {
+    const head = new Uint8Array(await file.slice(0, 131072).arrayBuffer());
+    blob = new TextDecoder('latin1').decode(head);
+    if (file.size > 131072) {
+      const tail = new Uint8Array(await file.slice(Math.max(0, file.size - 262144)).arrayBuffer());
+      blob += new TextDecoder('latin1').decode(tail);
+    }
+  } catch (_) {}
+
+  if (ext === 'dng' && exif && /apple/i.test(exif.Make || '')) {
+    rows.push(['Apple ProRAW', 'yes - a computational DNG written by an iPhone']);
+  }
+  if (exif && (exif.ContentIdentifier || exif.MediaGroupUUID)) {
+    rows.push(['Live Photo', 'yes - pairs with a .mov via Content Identifier']);
+  } else if (/com\.apple\.quicktime\.content\.identifier|ContentIdentifier/i.test(blob)) {
+    rows.push(['Live Photo', 'likely - Apple Content Identifier present (pairs with a .mov)']);
+  }
+  if (/GCamera:MotionPhoto|MotionPhoto>|GCamera:MicroVideo|MicroVideoOffset/i.test(blob)) {
+    rows.push(['Motion Photo', 'yes - Google Motion Photo with an embedded MP4']);
+  } else if (/MotionPhoto_Data|Samsung[^<]{0,40}MotionPhoto/i.test(blob)) {
+    rows.push(['Motion Photo', 'yes - Samsung Motion Photo (embedded MP4 trailer)']);
+  }
+  if (/hdrgm:|GainMapMax|GainMapMin|hdr_gain_map|UltraHDR/i.test(blob)) {
+    rows.push(['Ultra HDR', 'yes - gain-map HDR (hdrgm); renders brighter on HDR displays']);
+  }
+  if (/(depth|disparity)map|PortraitEffectsMatte|xmp:depth/i.test(blob)) {
+    rows.push(['Depth map', 'likely - an auxiliary depth/disparity image is present']);
+  }
+  return rows;
+}
+
+// ---------- RAW develop-settings sidecar (.xmp) ----------
+// Parse the develop recipe an Adobe (or compatible) raw developer writes into a
+// .xmp sidecar next to a RAW file (crs: = Camera Raw Settings namespace), plus
+// rating / label / keywords. Returns [[label, value], ...] or null.
+function parseDevelopSettings(xmpText) {
+  if (!xmpText) return null;
+  const get = (ns, key) => {
+    let m = xmpText.match(new RegExp(ns + ':' + key + '\\s*=\\s*"([^"]*)"'));
+    if (m) return m[1];
+    m = xmpText.match(new RegExp('<' + ns + ':' + key + '>([^<]*)</'));
+    return m ? m[1] : null;
+  };
+  const crs = (k) => get('crs', k);
+  const rows = [];
+  const sw = get('xmp', 'CreatorTool') || (crs('Version') ? 'Camera Raw ' + crs('Version') : null);
+  if (sw) rows.push(['Edited with', sw]);
+  if (crs('ProcessVersion')) rows.push(['Process version', crs('ProcessVersion')]);
+  if (crs('CameraProfile')) rows.push(['Camera profile', crs('CameraProfile')]);
+  const wb = crs('WhiteBalance');
+  if (wb) rows.push(['White balance', wb + (crs('Temperature') ? '  (' + crs('Temperature') + 'K, tint ' + (crs('Tint') || '0') + ')' : '')]);
+  const signed = (v) => (Number(v) > 0 ? '+' : '') + v;
+  const tone = [['Exposure', 'Exposure2012'], ['Contrast', 'Contrast2012'], ['Highlights', 'Highlights2012'],
+    ['Shadows', 'Shadows2012'], ['Whites', 'Whites2012'], ['Blacks', 'Blacks2012']]
+    .map(([l, k]) => { const v = crs(k); return v != null ? l + ' ' + signed(v) : null; }).filter(Boolean);
+  if (tone.length) rows.push(['Tone', tone.join('  ·  ')]);
+  const presence = [['Texture', 'Texture'], ['Clarity', 'Clarity2012'], ['Dehaze', 'Dehaze'],
+    ['Vibrance', 'Vibrance'], ['Saturation', 'Saturation']]
+    .map(([l, k]) => { const v = crs(k); return (v != null && v !== '0') ? l + ' ' + signed(v) : null; }).filter(Boolean);
+  if (presence.length) rows.push(['Presence', presence.join('  ·  ')]);
+  if (crs('HasCrop') === 'True') rows.push(['Crop', 'cropped' + (crs('CropAngle') && crs('CropAngle') !== '0' ? '  (rotated ' + (+crs('CropAngle')).toFixed(1) + '°)' : '')]);
+  if (crs('LensProfileEnable') === '1') rows.push(['Lens corrections', 'enabled']);
+  const rating = get('xmp', 'Rating');
+  if (rating) rows.push(['Rating', '★'.repeat(Math.max(0, Math.min(5, +rating))) + '  (' + rating + ')']);
+  const lbl = get('xmp', 'Label');
+  if (lbl) rows.push(['Label', lbl]);
+  const kw = xmpText.match(/<dc:subject>[\s\S]*?<\/dc:subject>/);
+  if (kw) { const items = [...kw[0].matchAll(/<rdf:li[^>]*>([^<]+)<\/rdf:li>/g)].map((m) => m[1]); if (items.length) rows.push(['Keywords', items.join(', ')]); }
+  const all = new Set([...xmpText.matchAll(/crs:(\w+)[=>]/g)].map((m) => m[1]));
+  if (all.size) rows.push(['Total adjustments', String(all.size)]);
+  return rows.length ? rows : null;
+}
+
+function buildDevelopCard(xmpText, label) {
+  const rows = parseDevelopSettings(xmpText);
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Develop settings (XMP sidecar)'));
+  if (!rows) {
+    card.appendChild(el('p', { class: 'anr-hint' }, 'No develop settings were found in the XMP' + (label ? ' (' + label + ')' : '') + '.'));
+    return card;
+  }
+  const t = el('table', { class: 'anr-readout' });
+  for (const [k, v] of rows) t.appendChild(row(k, v));
+  card.appendChild(t);
+  card.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px;' },
+    (label ? 'From ' + label + ' - the' : 'The') + ' non-destructive edits a raw developer recorded; the RAW pixels themselves are unchanged.'));
+  return card;
 }
 
 // ---------- AI detection ----------
@@ -1512,6 +1616,10 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   try {
     exif = await exifr.parse(file, {
       tiff: true, exif: true, gps: true, iptc: true, xmp: true, icc: true, ihdr: true,
+      // makerNote unlocks maker-specific fields - most importantly the shutter
+      // actuation count (Nikon/Pentax/Sony and some others store it there, in both
+      // RAW files and JPEGs).
+      makerNote: true,
       mergeOutput: true, translateValues: true, translateKeys: true, reviveValues: true,
       sanitize: true, silentErrors: true
     });
@@ -1535,6 +1643,15 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   resultsEl.innerHTML = '';
 
   // ---- Preview thumb in section-meta column ----
+  // Develop-settings (.xmp sidecar) card. showDevelop fills/replaces it; it's fed
+  // either by a RAW+XMP drop (opts.sidecarXmp) or the per-RAW "Import XMP" button.
+  const developContainer = el('div');
+  const showDevelop = (xmpText, label) => {
+    developContainer.innerHTML = '';
+    developContainer.appendChild(buildDevelopCard(xmpText, label));
+    developContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+
   const previewSlot = inline ? el('div') : document.getElementById('photoPreview');
   if (inline) resultsEl.appendChild(previewSlot);
   if (previewSlot) {
@@ -1573,6 +1690,28 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
         'Full sensor resolution may not be available for all camera models.'));
     }
     previewSlot.appendChild(thumb);
+
+    // RAW only: a button under the thumbnail to import the .xmp develop-settings
+    // sidecar a raw developer (Photoshop / Lightroom / Camera Raw) saved alongside.
+    if (RAW_EXTS.has(fileExt(file.name))) {
+      const xmpInput = el('input', { type: 'file', accept: '.xmp', hidden: '' });
+      const importBtn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:10px;font-size:11px;width:100%;' }, 'Import XMP settings');
+      importBtn.addEventListener('click', () => xmpInput.click());
+      xmpInput.addEventListener('change', async () => {
+        const f = xmpInput.files && xmpInput.files[0];
+        if (!f) return;
+        importBtn.textContent = 'Reading…';
+        try { showDevelop(await f.text(), f.name); importBtn.textContent = 'Replace XMP settings'; }
+        catch (_) { importBtn.textContent = 'Could not read XMP'; }
+      });
+      previewSlot.appendChild(el('div', { class: 'anr-raw-xmp-import' }, [importBtn, xmpInput]));
+    }
+  }
+  // Develop-settings card sits at the top of the results column (empty until an
+  // XMP sidecar is dropped with the RAW or imported via the button above).
+  resultsEl.appendChild(developContainer);
+  if (opts && opts.sidecarXmp) {
+    try { showDevelop(await opts.sidecarXmp.text(), opts.sidecarXmp.name); } catch (_) {}
   }
 
   // ---- Basic info ----
@@ -1682,6 +1821,21 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   } catch (e) {
     console.warn('container peek failed:', e);
   }
+
+  // ---- Computational photo (ProRAW / Live Photo / Motion Photo / Ultra HDR) ----
+  try {
+    const comp = await detectComputational(file, exif);
+    if (comp.length) {
+      const card = el('div', { class: 'anr-card' });
+      card.appendChild(el('h3', {}, 'Computational photo'));
+      const t = el('table', { class: 'anr-readout' });
+      for (const [k, v] of comp) t.appendChild(row(k, v));
+      card.appendChild(t);
+      card.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px;' },
+        'Detected from XMP / maker metadata and embedded markers.'));
+      resultsEl.appendChild(card);
+    }
+  } catch (e) { /* never break the rest of the analysis */ }
 
   // ---- GPS ----
   // Number.isFinite (not `!= null`) so NaN/undefined coordinates are rejected -
