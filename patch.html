@@ -175,43 +175,102 @@
              ===================================================================== -->
 
         <div class="patch-entry">
-          <p class="patch-version">1.16</p>
-          <p class="patch-name">Inside Out</p>
-          <p class="patch-date">4 June 2026, 12:33</p>
+          <p class="patch-version">1.21</p>
+          <p class="patch-name">Magnetic Type</p>
+          <p class="patch-date">5 June 2026, 02:04</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span>Pictures buried inside documents can now be <strong>analysed in place</strong> - click an image in a <a href="about.html#ext-docx">Word</a>, <a href="about.html#ext-pptx">PowerPoint</a>, or <a href="about.html#ext-epub">EPUB</a> file, or in a <a href="about.html#ext-pdf">PDF</a>, and the full photo analysis (EXIF, histogram, colours, OCR&hellip;) runs on it.</li>
-            <li><span class="patch-tag">New</span>Audio your browser can&rsquo;t play - <strong>WMA</strong>, <strong>AC3</strong>, <strong>DTS</strong>, <strong>AMR</strong> - no longer just errors out: the container details, <strong>tags</strong>, <strong>lyrics</strong>, and <strong>cover art</strong> are read straight from the file.</li>
-            <li><span class="patch-tag">New</span><a href="about.html#ext-zip">ZIP</a> archives now report the <strong>compression method</strong> each file uses (Deflate, Stored&hellip;) and show a <strong>CRC checksum</strong> per entry.</li>
-            <li><span class="patch-tag">New</span><strong>Lightroom catalogs</strong> (LRCAT) are now read as the SQLite databases they are.</li>
-            <li>A <strong>SHA-256 fingerprint</strong> now appears for ZIP, <a href="about.html#ext-csv">CSV</a>, <a href="about.html#ext-svg">SVG</a>, PDF, and undecodable audio too - it was missing for these.</li>
-            <li><span class="patch-tag is-fix">Fix</span>The <a href="about.html#what">spectrogram</a> now truly fills the screen in fullscreen with no gap, and the bottom (0&nbsp;Hz) and top frequency labels are no longer clipped.</li>
-            <li><span class="patch-tag is-fix">Fix</span>Clearer, more accurate explanations for the photo brightness histogram and the dominant-colour picker.</li>
+            <li>The playful <strong>title effect</strong> - where letters thin out as your cursor passes over them - now reaches the <strong>section headings</strong> on the <a href="about.html#why">About</a> and Changelog pages too, so hovering a heading gives the same gentle pull.</li>
+            <li><span class="patch-tag is-fix">Fix</span>The letter spacing in headings now holds steady when you <strong>zoom the page</strong> in your browser, instead of the gaps drifting apart.</li>
           </ul>
         </div>
 
         <div class="patch-entry">
-          <p class="patch-version">1.15</p>
-          <p class="patch-name">On the Map</p>
-          <p class="patch-date">4 June 2026, 07:19</p>
+          <p class="patch-version">1.20</p>
+          <p class="patch-name">House Style</p>
+          <p class="patch-date">5 June 2026, 01:40</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong><a href="about.html#ext-srt">Subtitle</a></strong> files (SRT, WebVTT, ASS/SSA) now open as a full <strong>timed cue list</strong> - cue count, total on-screen time, and every line with its timecode.</li>
-            <li><span class="patch-tag">New</span><strong><a href="about.html#ext-mid">MIDI</a></strong> files are parsed into a readable score - <strong>tempo</strong> (BPM), time signature, track names, the General MIDI instruments used, note counts, and length. (MIDI is a score, not recorded sound, so there&rsquo;s no playback.)</li>
-            <li><span class="patch-tag">New</span><strong>Map data</strong> - drop a <a href="about.html#ext-gpx">GPX</a> track, <a href="about.html#ext-kml">KML</a>, or <a href="about.html#ext-geojson">GeoJSON</a> file and the route is <strong>plotted on a map</strong>, with distance, elevation range, time span, and bounds.</li>
+            <li>A full <strong>visual tidy-up</strong> across the whole app - one consistent accent red, matching spacing and type sizes, and unified hover and focus states everywhere - so every page and panel now looks of a piece.</li>
+            <li><span class="patch-tag">New</span>Every button, link, and control now shows a clear <strong>keyboard focus outline</strong> when you tab to it, so the app is far easier to use without a mouse. (It stays hidden for mouse clicks.)</li>
+            <li><span class="patch-tag is-fix">Fix</span>The layout now switches to its single-column phone view at one <strong>consistent screen width</strong>, so the header and the page body always change together.</li>
           </ul>
         </div>
 
         <div class="patch-entry">
-          <p class="patch-version">1.14</p>
-          <p class="patch-name">Full Frame</p>
-          <p class="patch-date">4 June 2026, 06:47</p>
+          <p class="patch-version">1.19</p>
+          <p class="patch-name">Sign Posts</p>
+          <p class="patch-date">5 June 2026, 00:53</p>
           <ul class="patch-list">
-            <li>The audio <strong>amplitude histogram</strong> now sits directly under the <a href="about.html#what">spectrogram</a>, lined up with what you&rsquo;re looking at.</li>
-            <li><span class="patch-tag">New</span>A floating <strong>exit-fullscreen button</strong> appears in fullscreen, and the now-meaningless <strong>Height</strong> control is hidden there - the view fills the screen on its own.</li>
+            <li><span class="patch-tag">New</span><strong>Shortcut files</strong> are now decoded - Windows shortcuts (<a href="about.html#ext-lnk">LNK</a>) reveal the <strong>target path</strong>, arguments, working directory, icon, hotkey, and window state, while internet (<a href="about.html#ext-url">URL</a>) and macOS web shortcuts (<a href="about.html#ext-webloc">WEBLOC</a>) show the address they point to.</li>
+            <li><span class="patch-tag">New</span><strong><a href="about.html#ext-thm">THM</a></strong> files - the small JPEG thumbnail a camera saves next to each video clip - now open with the full photo analysis.</li>
+            <li><span class="patch-tag">New</span><strong>Canon camera catalogs</strong> (<a href="about.html#ext-ctg">CTG</a>) - the hidden DCIM index a Canon camera keeps - are read for the folder they track and its photo, movie, and voice-memo counts.</li>
+            <li><span class="patch-tag">New</span><strong>Raw disk images</strong> (<a href="about.html#ext-img">IMG</a>) now have their <strong>partition table</strong> (MBR/GPT) and first filesystem decoded - FAT, NTFS, or exFAT, with the volume label and size.</li>
+            <li><span class="patch-tag">New</span><strong><a href="about.html#ext-rec">REC</a></strong> files are identified, telling apart PVR/DVR video recordings from data-recovery session files.</li>
+            <li><span class="patch-tag is-fix">Fix</span><a href="about.html#ext-md">Markdown</a> files now open in the Markdown viewer reliably, and the &ldquo;view source&rdquo; popup behaves.</li>
           </ul>
         </div>
 
         <details class="about-formats">
           <summary>Older updates</summary>
+
+          <div class="patch-entry">
+            <p class="patch-version">1.18</p>
+            <p class="patch-name">Marked Up</p>
+            <p class="patch-date">4 June 2026, 23:27</p>
+            <ul class="patch-list">
+              <li><span class="patch-tag">New</span><strong><a href="about.html#ext-md">Markdown</a></strong> files now open as a fully <strong>formatted, readable page</strong> - headings, lists, tables, code blocks, and links - instead of raw text.</li>
+              <li><span class="patch-tag">New</span>The <a href="about.html#what">spectrogram</a> gains a <strong>Reassigned</strong> view alongside the standard one, sharpening blurry tones into crisp lines, with the analysis settings tucked into a tidy <strong>Advanced</strong> dropdown.</li>
+              <li><span class="patch-tag">New</span>You can now <strong>zoom the spectrogram</strong> in much further (up to 48x) with a scrollbar to pan along, and the <strong>Peak</strong> stat now points to the <strong>loudest moment</strong> - its timestamp and level - rather than the loudest frequency.</li>
+              <li>The photo <strong>aspect ratio</strong> now also names the nearest standard ratio (like 16:9 or 4:3) next to the exact figure.</li>
+              <li><span class="patch-tag is-fix">Fix</span>The file-loading animation no longer stutters under heavy load - it now runs smoothly while a big file is being read.</li>
+            </ul>
+          </div>
+
+          <div class="patch-entry">
+            <p class="patch-version">1.17</p>
+            <p class="patch-name">In the Picture</p>
+            <p class="patch-date">4 June 2026, 13:18</p>
+            <ul class="patch-list">
+              <li><span class="patch-tag">New</span><strong>Cover art</strong> in music files and <a href="about.html#ext-epub">EPUB</a> books is now <strong>fully analysed as a photo right where it appears</strong> - dimensions, colours, EXIF, and the rest show inline, with no extra click.</li>
+              <li><span class="patch-tag">New</span>More readouts now carry a plain-language <strong>&ldquo;?&rdquo; note</strong> - the <strong>MIME type</strong> line across photos, audio, video and documents, and the <strong>ISRC</strong> recording code in music tags - explaining what each one means.</li>
+              <li><span class="patch-tag is-fix">Fix</span>Dropping a file onto the About or Changelog page now reliably hands it to the analyser instead of occasionally doing nothing.</li>
+            </ul>
+          </div>
+
+          <div class="patch-entry">
+            <p class="patch-version">1.16</p>
+            <p class="patch-name">Inside Out</p>
+            <p class="patch-date">4 June 2026, 12:33</p>
+            <ul class="patch-list">
+              <li><span class="patch-tag">New</span>Pictures buried inside documents can now be <strong>analysed in place</strong> - click an image in a <a href="about.html#ext-docx">Word</a>, <a href="about.html#ext-pptx">PowerPoint</a>, or <a href="about.html#ext-epub">EPUB</a> file, or in a <a href="about.html#ext-pdf">PDF</a>, and the full photo analysis (EXIF, histogram, colours, OCR&hellip;) runs on it.</li>
+              <li><span class="patch-tag">New</span>Audio your browser can&rsquo;t play - <strong>WMA</strong>, <strong>AC3</strong>, <strong>DTS</strong>, <strong>AMR</strong> - no longer just errors out: the container details, <strong>tags</strong>, <strong>lyrics</strong>, and <strong>cover art</strong> are read straight from the file.</li>
+              <li><span class="patch-tag">New</span><a href="about.html#ext-zip">ZIP</a> archives now report the <strong>compression method</strong> each file uses (Deflate, Stored&hellip;) and show a <strong>CRC checksum</strong> per entry.</li>
+              <li><span class="patch-tag">New</span><strong>Lightroom catalogs</strong> (LRCAT) are now read as the SQLite databases they are.</li>
+              <li>A <strong>SHA-256 fingerprint</strong> now appears for ZIP, <a href="about.html#ext-csv">CSV</a>, <a href="about.html#ext-svg">SVG</a>, PDF, and undecodable audio too - it was missing for these.</li>
+              <li><span class="patch-tag is-fix">Fix</span>The <a href="about.html#what">spectrogram</a> now truly fills the screen in fullscreen with no gap, and the bottom (0&nbsp;Hz) and top frequency labels are no longer clipped.</li>
+              <li><span class="patch-tag is-fix">Fix</span>Clearer, more accurate explanations for the photo brightness histogram and the dominant-colour picker.</li>
+            </ul>
+          </div>
+
+          <div class="patch-entry">
+            <p class="patch-version">1.15</p>
+            <p class="patch-name">On the Map</p>
+            <p class="patch-date">4 June 2026, 07:19</p>
+            <ul class="patch-list">
+              <li><span class="patch-tag">New</span><strong><a href="about.html#ext-srt">Subtitle</a></strong> files (SRT, WebVTT, ASS/SSA) now open as a full <strong>timed cue list</strong> - cue count, total on-screen time, and every line with its timecode.</li>
+              <li><span class="patch-tag">New</span><strong><a href="about.html#ext-mid">MIDI</a></strong> files are parsed into a readable score - <strong>tempo</strong> (BPM), time signature, track names, the General MIDI instruments used, note counts, and length. (MIDI is a score, not recorded sound, so there&rsquo;s no playback.)</li>
+              <li><span class="patch-tag">New</span><strong>Map data</strong> - drop a <a href="about.html#ext-gpx">GPX</a> track, <a href="about.html#ext-kml">KML</a>, or <a href="about.html#ext-geojson">GeoJSON</a> file and the route is <strong>plotted on a map</strong>, with distance, elevation range, time span, and bounds.</li>
+            </ul>
+          </div>
+
+          <div class="patch-entry">
+            <p class="patch-version">1.14</p>
+            <p class="patch-name">Full Frame</p>
+            <p class="patch-date">4 June 2026, 06:47</p>
+            <ul class="patch-list">
+              <li>The audio <strong>amplitude histogram</strong> now sits directly under the <a href="about.html#what">spectrogram</a>, lined up with what you&rsquo;re looking at.</li>
+              <li><span class="patch-tag">New</span>A floating <strong>exit-fullscreen button</strong> appears in fullscreen, and the now-meaningless <strong>Height</strong> control is hidden there - the view fills the screen on its own.</li>
+            </ul>
+          </div>
 
           <div class="patch-entry">
             <p class="patch-version">1.13</p>

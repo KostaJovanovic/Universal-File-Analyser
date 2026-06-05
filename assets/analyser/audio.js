@@ -1127,7 +1127,13 @@ async function renderUndecodableAudio(file, header, resultsEl) {
   if (header.sampleRate) tbl.appendChild(row('Sample rate', header.sampleRate.toLocaleString() + ' Hz'));
   if (header.channels) tbl.appendChild(row('Channels', String(header.channels)));
   if (header.bitDepth) tbl.appendChild(row('Bit depth', header.bitDepth + '-bit'));
-  if (header.bitrate) tbl.appendChild(row('Bitrate', Math.round(header.bitrate / 1000) + ' kbps'));
+  if (header.bitrateText || header.bitrate) tbl.appendChild(row('Bitrate',
+    header.bitrateText || (Math.round(header.bitrate / 1000) + ' kbps')));
+  try {
+    if (header.encoder) tbl.appendChild(row('Encoder', header.encoder));
+    if (header.compressionRatio) tbl.appendChild(row('Compression', header.compressionRatio.toFixed(2) + ':1'));
+    if (header.flacMd5) tbl.appendChild(row('Audio MD5', header.flacMd5));
+  } catch (_) {}
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
 
@@ -1213,8 +1219,18 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   tbl.appendChild(row('Channels',       audioBuffer.numberOfChannels + describeChannels(audioBuffer.numberOfChannels)));
   if (header.bitDepth)  tbl.appendChild(rowHelp('Bit depth',     header.bitDepth + ' bit',
     'Bits used to store each audio sample. More bits give greater dynamic range and lower quantization noise - CD audio is 16-bit.'));
-  if (header.bitrate)   tbl.appendChild(rowHelp('Bitrate',       (header.bitrate / 1000).toFixed(0) + ' kbps',
-    'Compressed data rate in kilobits per second for lossy formats. Higher generally means better quality and a larger file.'));
+  if (header.bitrateText || header.bitrate) tbl.appendChild(rowHelp('Bitrate',
+    header.bitrateText || ((header.bitrate / 1000).toFixed(0) + ' kbps'),
+    'Compressed data rate in kilobits per second for lossy formats. Higher generally means better quality and a larger file. VBR shows the average across the file.'));
+  try {
+    if (header.encoder) tbl.appendChild(rowHelp('Encoder', header.encoder,
+      'Software/library that encoded this file, read from the Xing/LAME/VBRI header.'));
+    if (header.compressionRatio) tbl.appendChild(rowHelp('Compression',
+      header.compressionRatio.toFixed(2) + ':1',
+      'Lossless compression ratio versus uncompressed PCM of the same samples (higher means a smaller file for the same audio).'));
+    if (header.flacMd5) tbl.appendChild(rowHelp('Audio MD5', header.flacMd5,
+      "FLAC's MD5 checksum of the raw decoded audio, stored in STREAMINFO. Lets a decoder verify the audio survived re-encoding intact."));
+  } catch (_) {}
   tbl.appendChild(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)',
     'Highest sample amplitude in the file. dBFS = decibels relative to full scale, where 0 dBFS is the digital maximum.'));
   tbl.appendChild(rowHelp('RMS', stats.rms.toFixed(3)  + '  (' + stats.rmsDb.toFixed(1)  + ' dBFS)',

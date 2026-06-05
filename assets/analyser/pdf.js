@@ -130,9 +130,11 @@ export async function renderPdf(file, resultsEl) {
 
   // Metadata
   let meta = {};
+  let metaXmp = null;
   try {
     const info = await pdf.getMetadata();
     meta = (info && info.info) || {};
+    metaXmp = (info && info.metadata) || null;
   } catch (_) {}
   tbl.appendChild(row('Title', meta.Title));
   tbl.appendChild(row('Author', meta.Author));
@@ -162,6 +164,166 @@ export async function renderPdf(file, resultsEl) {
   infoCard.appendChild(el('div', { class: 'anr-btn-row' }, [openBtn]));
   resultsEl.appendChild(infoCard);
   resultsEl.appendChild(integrityCard(file));
+
+  // --- Document structure (outline, forms, links, attachments, security) ---
+  // Everything here is additive and best-effort: each pdf.js call may reject or
+  // be absent, so every step is guarded and only rows with real data are shown.
+  // A failure here must never break text extraction / thumbnails / OCR below.
+  try {
+    const structCard = el('div', { class: 'anr-card' });
+    structCard.appendChild(el('h3', {}, 'Document structure & security'));
+    const stbl = el('table', { class: 'anr-readout' });
+    let structRows = 0;       // count of plain readout rows added
+    const extras = [];        // collapsible <details> blocks to append after the table
+    const addRow = (node) => { stbl.appendChild(node); structRows++; };
+
+    // -- Outline / table of contents --
+    try {
+      const outline = await pdf.getOutline().catch(() => null);
+      if (Array.isArray(outline) && outline.length) {
+        addRow(rowHelp('Outline entries', String(outline.length),
+          'Top-level bookmarks in the document outline (table of contents). Nested sub-bookmarks are shown indented in the expandable list below.'));
+        const det = el('details');
+        det.appendChild(el('summary', {}, 'Outline / table of contents'));
+        const list = el('ul', { style: 'margin:8px 0 0;padding-left:18px;font-size:13px;' });
+        for (const item of outline) {
+          const title = (item && item.title) ? String(item.title).trim() : '(untitled)';
+          const li = el('li', { style: 'margin:2px 0;' }, title);
+          // Recurse one level into children.
+          if (item && Array.isArray(item.items) && item.items.length) {
+            const sub = el('ul', { style: 'margin:2px 0;padding-left:16px;opacity:0.8;' });
+            for (const child of item.items) {
+              const ct = (child && child.title) ? String(child.title).trim() : '(untitled)';
+              sub.appendChild(el('li', { style: 'margin:2px 0;' }, ct));
+            }
+            li.appendChild(sub);
+          }
+          list.appendChild(li);
+        }
+        det.appendChild(list);
+        extras.push(det);
+      }
+    } catch (_) {}
+
+    // -- Attachments / embedded files --
+    try {
+      const att = await pdf.getAttachments().catch(() => null);
+      const names = att ? Object.keys(att) : [];
+      if (names.length) {
+        addRow(rowHelp('Embedded files', String(names.length),
+          'Files attached inside the PDF (the PDF acts as a container). Listed below.'));
+        const det = el('details');
+        det.appendChild(el('summary', {}, 'Embedded files'));
+        const list = el('ul', { style: 'margin:8px 0 0;padding-left:18px;font-size:13px;' });
+        for (const n of names) {
+          const entry = att[n];
+          const fname = (entry && entry.filename) ? String(entry.filename) : String(n);
+          const len = entry && entry.content && entry.content.length;
+          const label = len ? `${fname}  (${fmtBytes(len)})` : fname;
+          list.appendChild(el('li', { style: 'margin:2px 0;' }, label));
+        }
+        det.appendChild(list);
+        extras.push(det);
+      }
+    } catch (_) {}
+
+    // -- Embedded JavaScript (security flag) --
+    try {
+      let hasJs = false;
+      try {
+        const jsActions = await pdf.getJSActions().catch(() => null);
+        if (jsActions && Object.keys(jsActions).length) hasJs = true;
+      } catch (_) {}
+      // OpenAction-level JavaScript (auto-run on open) is a separate, older path.
+      if (!hasJs && typeof pdf.getOpenAction === 'function') {
+        try {
+          const oa = await pdf.getOpenAction().catch(() => null);
+          if (oa && (oa.action === 'JavaScript' || oa.dest === undefined && oa.action)) {
+            // Only flag when an action is actually present; be conservative.
+            if (oa.action === 'JavaScript') hasJs = true;
+          }
+        } catch (_) {}
+      }
+      if (hasJs) {
+        addRow(rowHelp('Embedded JavaScript', '⚠ yes',
+          'The PDF contains document-level JavaScript that a viewer may execute. Embedded scripts can be benign (form logic) but are also a common malware vector, so treat unexpected scripts with caution.'));
+      }
+    } catch (_) {}
+
+    // -- Permissions / encryption --
+    try {
+      const encrypted = !!(meta && (meta.IsEncrypted || meta.Encrypted));
+      let perms = null;
+      try { perms = await pdf.getPermissions().catch(() => null); } catch (_) {}
+      // getPermissions() returns a non-null array only when usage is restricted.
+      if (encrypted || Array.isArray(perms)) {
+        addRow(rowHelp('Encrypted', encrypted ? 'yes' : 'no',
+          'Whether the PDF is encrypted. Encrypted PDFs may still open without a password but can restrict actions such as printing, copying text, or editing.'));
+      }
+      if (Array.isArray(perms) && lib.PermissionFlag) {
+        const PF = lib.PermissionFlag;
+        const has = (flag) => flag != null && perms.indexOf(flag) !== -1;
+        const allowed = [];
+        if (has(PF.PRINT) || has(PF.PRINT_HIGH_QUALITY)) allowed.push('print');
+        if (has(PF.COPY)) allowed.push('copy');
+        if (has(PF.MODIFY_CONTENTS) || has(PF.MODIFY_ANNOTATIONS)) allowed.push('modify');
+        const allActions = ['print', 'copy', 'modify'];
+        const denied = allActions.filter((a) => allowed.indexOf(a) === -1);
+        addRow(rowHelp('Allowed actions', allowed.length ? allowed.join(', ') : 'none',
+          'Actions the document permissions allow. Restricted actions (e.g. printing, copying text, modifying) are enforced by the encryption handler.'));
+        if (denied.length) addRow(row('Restricted actions', denied.join(', ')));
+      }
+    } catch (_) {}
+
+    // -- Annotations / form fields / links (first ~20 pages, capped) --
+    try {
+      const cap = Math.min(pdf.numPages, 20);
+      let widgets = 0, links = 0, others = 0;
+      for (let i = 1; i <= cap; i++) {
+        try {
+          const page = await pdf.getPage(i);
+          const anns = await page.getAnnotations().catch(() => null);
+          if (!Array.isArray(anns)) continue;
+          for (const a of anns) {
+            const t = a && a.subtype;
+            if (t === 'Widget') widgets++;
+            else if (t === 'Link') links++;
+            else others++;
+          }
+        } catch (_) {}
+      }
+      const scope = pdf.numPages > cap ? ` (first ${cap} pages)` : '';
+      if (widgets) addRow(rowHelp('Form fields', String(widgets) + scope,
+        'Interactive form fields (text boxes, checkboxes, buttons) counted across the scanned pages. Indicates a fillable AcroForm.'));
+      if (links) addRow(row('Links', String(links) + scope));
+      if (others) addRow(row('Annotations', String(others) + scope));
+    } catch (_) {}
+
+    // -- XMP metadata (Keywords / Subject / PDF/A) --
+    try {
+      const getXmp = (key) => {
+        if (!metaXmp || typeof metaXmp.get !== 'function') return null;
+        try { const v = metaXmp.get(key); return v ? String(v).trim() : null; } catch (_) { return null; }
+      };
+      const subject = (meta && meta.Subject) || getXmp('dc:description');
+      const keywords = (meta && meta.Keywords) || getXmp('pdf:Keywords');
+      if (keywords) addRow(row('Keywords', keywords));
+      if (subject) addRow(row('Subject', subject));
+      const part = getXmp('pdfaid:part');
+      if (part) {
+        const conf = getXmp('pdfaid:conformance');
+        addRow(rowHelp('PDF/A', 'PDF/A-' + part + (conf ? conf.toUpperCase() : ''),
+          'The document declares conformance to PDF/A, an ISO archival profile that requires self-contained, long-term-preservable files.'));
+      }
+    } catch (_) {}
+
+    // Only show the card if we actually surfaced something.
+    if (structRows || extras.length) {
+      structCard.appendChild(stbl);
+      for (const d of extras) structCard.appendChild(d);
+      resultsEl.appendChild(structCard);
+    }
+  } catch (_) { /* never break the rest of the render */ }
 
   // --- Text extraction (all pages, revealed in batches of 3) ---
   const textCard = el('div', { class: 'anr-card' });

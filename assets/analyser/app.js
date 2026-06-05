@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 50;
+const COMMIT_COUNT = 51;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). A commit listed in RELEASE_COMMITS bumps the
@@ -42,12 +42,13 @@ import { renderMidi } from './midi.js';
 import { renderSubtitles } from './subtitles.js';
 import { renderGeo } from './geo.js';
 import { renderMarkdown } from './markdown.js';
+import { renderComic } from './comic.js';
 import { initSearch } from './search.js';
 import { fileExt, el, probeReadable, isUnreadableError, cloudFileWarning } from './util.js';
 import { walkItems, renderFolder } from './folder.js';
 import {
   PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, CSV_EXTS, SVG_EXTS,
-  renderFmtOverlay, renderAboutFormats
+  renderFmtOverlay, renderAboutFormats, formatCount
 } from './formats.js';
 
 function $(id) { return document.getElementById(id); }
@@ -137,6 +138,79 @@ function hideDropLoader() {
   }
 }
 
+// ---------- true file-type sniffing ----------
+// Detect what a file ACTUALLY is from its leading bytes, independent of its name,
+// so a file with no extension (or an extension that lies) can still be analysed
+// correctly. Returns { kind, ext, label } where kind is a ROUTES key and ext
+// drives the proprietary/comic renderers, or null if nothing is recognised.
+async function sniffFileType(file) {
+  let b;
+  try { b = new Uint8Array(await file.slice(0, 264).arrayBuffer()); } catch (_) { return null; }
+  if (!b.length) return null;
+  const a = (s, n) => { let r = ''; for (let i = s; i < s + n && i < b.length; i++) r += String.fromCharCode(b[i]); return r; };
+  const m = (sig, off = 0) => { for (let i = 0; i < sig.length; i++) if (b[off + i] !== sig[i]) return false; return true; };
+
+  if (a(0, 5) === '%PDF-') return { kind: 'pdf', ext: 'pdf', label: 'PDF document' };
+  if (m([0x89, 0x50, 0x4E, 0x47])) return { kind: 'photo', ext: 'png', label: 'PNG image' };
+  if (m([0xFF, 0xD8, 0xFF])) return { kind: 'photo', ext: 'jpg', label: 'JPEG image' };
+  if (a(0, 3) === 'GIF') return { kind: 'photo', ext: 'gif', label: 'GIF image' };
+  if (m([0x42, 0x4D]) && b.length > 14) return { kind: 'photo', ext: 'bmp', label: 'BMP image' };
+  if (m([0x49, 0x49, 0x2A, 0x00]) || m([0x4D, 0x4D, 0x00, 0x2A])) return { kind: 'photo', ext: 'tiff', label: 'TIFF image' };
+  if (m([0x38, 0x42, 0x50, 0x53])) return { kind: 'proprietary', ext: 'psd', label: 'Photoshop PSD' };
+  if (a(0, 4) === 'RIFF') {
+    const f = a(8, 4);
+    if (f === 'WEBP') return { kind: 'photo', ext: 'webp', label: 'WebP image' };
+    if (f === 'WAVE') return { kind: 'audio', ext: 'wav', label: 'WAV audio' };
+    if (f === 'AVI ') return { kind: 'video', ext: 'avi', label: 'AVI video' };
+  }
+  if (a(4, 4) === 'ftyp') {
+    const brand = a(8, 4);
+    if (/heic|heix|hevc|mif1|heif/i.test(brand)) return { kind: 'photo', ext: 'heic', label: 'HEIC image' };
+    if (/avif/i.test(brand)) return { kind: 'photo', ext: 'avif', label: 'AVIF image' };
+    if (/m4a|m4b/i.test(brand)) return { kind: 'audio', ext: 'm4a', label: 'M4A audio' };
+    if (/3gp|3g2/i.test(brand)) return { kind: 'video', ext: '3gp', label: '3GP video' };
+    return { kind: 'video', ext: 'mp4', label: 'MP4 video' };
+  }
+  if (m([0x1A, 0x45, 0xDF, 0xA3])) return { kind: 'video', ext: 'mkv', label: 'Matroska / WebM video' };
+  if (a(0, 4) === 'OggS') return { kind: 'audio', ext: 'ogg', label: 'Ogg audio' };
+  if (a(0, 3) === 'ID3' || (b[0] === 0xFF && (b[1] & 0xE0) === 0xE0)) return { kind: 'audio', ext: 'mp3', label: 'MP3 audio' };
+  if (a(0, 4) === 'fLaC') return { kind: 'audio', ext: 'flac', label: 'FLAC audio' };
+  if (m([0x50, 0x4B, 0x03, 0x04]) || m([0x50, 0x4B, 0x05, 0x06])) return { kind: 'zip', ext: 'zip', label: 'ZIP archive' };
+  if (a(0, 4) === 'Rar!') return { kind: 'proprietary', ext: 'rar', label: 'RAR archive' };
+  if (m([0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C])) return { kind: 'proprietary', ext: '7z', label: '7-Zip archive' };
+  if (a(0, 6) === 'SQLite') return { kind: 'proprietary', ext: 'sqlite', label: 'SQLite database' };
+  if (m([0x1F, 0x8B])) return { kind: 'proprietary', ext: 'gz', label: 'GZip archive' };
+  if (m([0x7F, 0x45, 0x4C, 0x46])) return { kind: 'proprietary', ext: 'elf', label: 'ELF executable' };
+  if (m([0x4D, 0x5A])) return { kind: 'proprietary', ext: 'exe', label: 'Windows executable' };
+  if (m([0xC5, 0xD0, 0xD3, 0xC7]) || a(0, 4) === '%!PS') return { kind: 'proprietary', ext: 'eps', label: 'PostScript / EPS' };
+  if (b.length >= 132 && a(128, 4) === 'DICM') return { kind: 'proprietary', ext: 'dcm', label: 'DICOM medical image' };
+  const start = a(0, Math.min(b.length, 220)).trimStart();
+  if (start.startsWith('<svg') || (start.includes('<svg') && start.includes('xmlns'))) return { kind: 'svg', ext: 'svg', label: 'SVG image' };
+  return null;
+}
+
+// Bottom-of-window suggestion popup (same look as the drop loader) offering to
+// re-analyse a file as its sniffed true type.
+let _typeSuggestEl = null;
+function hideTypeSuggestion() {
+  if (!_typeSuggestEl) return;
+  const e = _typeSuggestEl; _typeSuggestEl = null;
+  e.classList.remove('is-open');
+  setTimeout(() => e.remove(), 200);
+}
+function showTypeSuggestion(sniff, onAccept) {
+  hideTypeSuggestion();
+  const label = el('div', { class: 'anr-drop-loader-label' }, 'This looks like a ' + sniff.label + '.');
+  const dismiss = el('button', { type: 'button', class: 'anr-drop-loader-cancel' }, 'Dismiss');
+  dismiss.addEventListener('click', hideTypeSuggestion);
+  const head = el('div', { class: 'anr-drop-loader-head' }, [label, dismiss]);
+  const yes = el('button', { type: 'button', class: 'anr-btn', style: 'font-size:11px;padding:4px 12px;' }, 'Analyse as ' + sniff.label);
+  yes.addEventListener('click', () => { hideTypeSuggestion(); onAccept(); });
+  _typeSuggestEl = el('div', { class: 'anr-drop-loader', role: 'status' }, [head, el('div', { style: 'margin-top:8px;' }, [yes])]);
+  document.body.appendChild(_typeSuggestEl);
+  requestAnimationFrame(() => _typeSuggestEl.classList.add('is-open'));
+}
+
 // Cursor-style confirm popup (reuses the treemap .anr-treemap-menu look) shown
 // when the "Links" button is clicked, so leaving the site is deliberate.
 function showLinkConfirm(anchor, opts) {
@@ -205,6 +279,7 @@ function classifyFile(file) {
   // Markdown gets a real rendered view - route it before the proprietary `md`
   // (plain-text) entry would otherwise catch it.
   if (ext === 'md' || ext === 'markdown') return 'markdown';
+  if (ext === 'cbz' || ext === 'cbr' || ext === 'cbt' || ext === 'cb7') return 'comic';
   if (PHOTO_EXTS.has(ext)) return 'photo';
   if (AUDIO_EXTS.has(ext)) return 'audio';
   if (VIDEO_EXTS.has(ext)) return 'video';
@@ -230,6 +305,7 @@ const ROUTES = {
   subtitles:   { render: renderSubtitles,   results: 'unknown', scroll: '#unknownResults' },
   geo:         { render: renderGeo,         results: 'unknown', scroll: '#unknownResults' },
   markdown:    { render: renderMarkdown,    results: 'unknown', scroll: '#unknownResults' },
+  comic:       { render: renderComic,       results: 'unknown', scroll: '#unknownResults' },
   pdf:         { render: renderPdf,         results: 'unknown', scroll: '#unknownResults' },
   zip:         { render: renderArchive,     results: 'unknown', scroll: '#unknownResults' },
   svg:         { render: renderSvg,         results: 'unknown', scroll: '#unknownResults' },
@@ -385,12 +461,16 @@ function setupHeaderFx() {
     }
 
     if (window.matchMedia('(hover:hover) and (pointer:fine)').matches) {
-      mark.addEventListener('mouseenter', () => {
-        inside = true;
-        for (const l of letters) l.el.style.transition = '';
+      const activateHover = () => {
+        if (!inside) { inside = true; for (const l of letters) l.el.style.transition = ''; }
         ensureRunning();
-      });
-      mark.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+      };
+      mark.addEventListener('mouseenter', activateHover);
+      // Also activate on mousemove: mousemove only fires while the pointer is over
+      // the header, so this catches the case where the cursor was already inside
+      // when the page loaded (or during the intro sweep), when mouseenter never
+      // fires and hover would otherwise stay dead until you leave and re-enter.
+      mark.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; activateHover(); });
       mark.addEventListener('mouseleave', () => { inside = false; });  // settles once the sweep also ends
       setTimeout(() => startSweep(RADIUS_HOVER), 800);
     } else if (window.matchMedia('(pointer: coarse)').matches) {
@@ -406,27 +486,31 @@ function setupHeaderFx() {
 // independent, so hovering section 01 never disturbs section 02.
 function setupSectionFx() {
   if (!window.matchMedia('(hover:hover) and (pointer:fine)').matches) return;
-  // The header uses a 120px radius tuned to its huge --t-mega title. Section
-  // headings are much smaller type, so scale the radius down by the same ratio
-  // their heading font size is to the title's - a proportionally smaller pull.
-  // Read at runtime so it tracks the responsive clamp() sizes.
-  const titleEl = document.querySelector('.site-title');
-  const titlePx = (titleEl && parseFloat(getComputedStyle(titleEl).fontSize)) || 150;
+  const RADIUS = 120;
   document.querySelectorAll('.section').forEach(section => {
     if (section._anrSectionFx) return;
     const heads = section.querySelectorAll('.section-num, .section-kicker, .section-head');
     if (!heads.length) return;
     section._anrSectionFx = true;
 
-    const headEl = section.querySelector('.section-head') || heads[0];
-    const headPx = parseFloat(getComputedStyle(headEl).fontSize) || 50;
-    const RADIUS = 120 * (headPx / titlePx);
-
     const letters = [];
     heads.forEach(el => {
       const base = parseInt(getComputedStyle(el).fontWeight, 10) || 400;
       letters.push(...splitText(el, base));
     });
+
+    // Freeze text wrapping during hover. The per-letter weight change alters word
+    // widths, which would otherwise reflow the heading onto different lines as the
+    // cursor moves. Lock each word's box to its base-weight width (measured once on
+    // first hover - the widest state, since the effect only lightens letters) and
+    // release it on settle so the heading stays freely responsive when idle.
+    const words = [...new Set(letters.map((l) => l.el.parentElement).filter(Boolean))];
+    let baseWidths = null;
+    const lockWidths = () => {
+      if (!baseWidths) baseWidths = words.map((w) => w.offsetWidth);
+      words.forEach((w, i) => { w.style.width = baseWidths[i] + 'px'; });
+    };
+    const unlockWidths = () => { for (const w of words) w.style.width = ''; };
 
     let mx = -9999, my = -9999, inside = false, raf = 0, running = false;
     const weight = (l) => {
@@ -437,7 +521,9 @@ function setupSectionFx() {
     };
     const settle = () => {
       for (const l of letters) { l.el.style.transition = 'font-weight 0.4s ease'; l.el.style.fontWeight = l.base; }
-      setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 500);
+      // Release the width locks only after letters have eased back to base weight,
+      // so removing them can't itself cause a reflow.
+      setTimeout(() => { for (const l of letters) l.el.style.transition = ''; unlockWidths(); }, 500);
     };
     const frame = () => {
       for (const l of letters) l.el.style.fontWeight = weight(l);
@@ -445,6 +531,7 @@ function setupSectionFx() {
       else { running = false; settle(); }
     };
     section.addEventListener('mouseenter', () => {
+      lockWidths();                 // measure/apply base widths before any weight change
       inside = true;
       for (const l of letters) l.el.style.transition = '';
       if (!running) { running = true; raf = requestAnimationFrame(frame); }
@@ -491,8 +578,10 @@ function boot() {
       if (sec) sec.classList.remove('is-analysed');
     });
 
-    // Clear nav indicators
+    // Clear nav indicators and re-enable the media nav links (a fresh load
+    // re-disables them if the new file isn't photo/audio/video - see handleFile).
     document.querySelectorAll('.nav-link.has-data').forEach(link => link.classList.remove('has-data'));
+    document.querySelectorAll('.nav-link.is-disabled').forEach(link => link.classList.remove('is-disabled'));
   }
 
   // Stop the in-flight load: drop its results and restore the empty page state
@@ -505,8 +594,9 @@ function boot() {
     ['photo', 'audio', 'video'].forEach((id) => { const sec = $(id); if (sec) sec.hidden = false; });
   }
 
-  async function handleFile(file) {
+  async function handleFile(file, force) {
     if (!file) return;
+    hideTypeSuggestion();
     // If the "Supported formats" overlay is open, drop/paste/pick dismisses it.
     const fmtOv = $('fmtOverlay');
     if (fmtOv && !fmtOv.hidden) { fmtOv.hidden = true; document.body.style.overflow = ''; }
@@ -537,10 +627,10 @@ function boot() {
       return;
     }
 
-    let kind = classifyFile(file);
+    let kind = force ? force.kind : classifyFile(file);
 
     // For files classified as 'unknown', check magic bytes for PDF / ZIP / SVG / CSV
-    if (kind === 'unknown') {
+    if (!force && kind === 'unknown') {
       try {
         const head = new Uint8Array(await file.slice(0, 128).arrayBuffer());
         const a = (s, l) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
@@ -566,6 +656,24 @@ function boot() {
             const tabConsistent = avgTabs >= 1 && tabs.every((c) => Math.abs(c - avgTabs) <= 1);
             if (commaConsistent || tabConsistent) kind = 'csv';
           }
+        }
+      } catch (_) {}
+    }
+
+    // Offer to re-analyse as the sniffed true type when the file has no extension
+    // or its extension disagrees with its actual content. Shown as a popup once
+    // the normal (extension-based) analysis has rendered.
+    let suggestion = null;
+    if (!force) {
+      try {
+        const sniff = await sniffFileType(file);
+        if (token.cancelled) return;
+        const noExt = !fileExt(file.name);
+        const zipFamily = new Set(['docx', 'xlsx', 'pptx', 'epub', 'zip', 'comic']);
+        const offerable = noExt || kind === 'unknown' || kind === 'proprietary'
+          || kind === 'photo' || kind === 'audio' || kind === 'video';
+        if (sniff && sniff.kind !== kind && !(sniff.kind === 'zip' && zipFamily.has(kind)) && offerable) {
+          suggestion = sniff;
         }
       } catch (_) {}
     }
@@ -613,6 +721,14 @@ function boot() {
       if (sectionVideo) sectionVideo.hidden = true;
     }
 
+    // The Photo/Sound/Video nav links only make sense when their section is on the
+    // page. Grey out + disable any whose section is now hidden (a non-media file
+    // hides them); Home and Search are separate controls and always stay live.
+    [['#photo', sectionPhoto], ['#audio', sectionAudio], ['#video', sectionVideo]].forEach(([href, sec]) => {
+      const link = document.querySelector('.site-nav a[href="' + href + '"]');
+      if (link) link.classList.toggle('is-disabled', !sec || sec.hidden);
+    });
+
     const route = ROUTES[kind] || ROUTES.unknown;
     const resultsByName = {
       photo: photoResults, audio: audioResults, video: videoResults, unknown: unknownResults,
@@ -620,7 +736,10 @@ function boot() {
     (route.nav || []).forEach(markNav);
     (route.analysed || []).forEach(markAnalysed);
     scrollTo(route.scroll);
-    const renderPromise = route.render(file, resultsByName[route.results]);
+    const extOverride = force && force.ext;
+    const renderPromise = ((kind === 'proprietary' || kind === 'comic') && extOverride)
+      ? route.render(file, resultsByName[route.results], extOverride)
+      : route.render(file, resultsByName[route.results]);
     // Hide the bottom loader once the renderer settles (or immediately if it
     // wasn't async). Errors still dismiss it so it can't get stuck on screen.
     // If this load was cancelled (or superseded by a newer one) leave the loader
@@ -635,6 +754,9 @@ function boot() {
       }
       if (_currentToken !== token) return;   // superseded by a newer load
       hideDropLoader();
+      if (suggestion) {
+        showTypeSuggestion(suggestion, () => handleFile(file, { kind: suggestion.kind, ext: suggestion.ext }));
+      }
     });
   }
   _handleFile = handleFile;
@@ -1019,7 +1141,13 @@ function boot() {
       './assets/analyser/docx.js', './assets/analyser/xlsx.js', './assets/analyser/epub.js',
       './assets/analyser/pptx.js', './assets/analyser/stl.js', './assets/analyser/zip.js',
       './assets/analyser/lrc.js', './assets/analyser/midi.js', './assets/analyser/subtitles.js',
-      './assets/analyser/geo.js', './assets/analyser/markdown.js',
+      './assets/analyser/geo.js', './assets/analyser/markdown.js', './assets/analyser/comic.js',
+      './assets/analyser/binutil.js', './assets/analyser/plist.js', './assets/analyser/cfbf.js', './assets/analyser/sqlite.js', './assets/analyser/libarchive-loader.js', './assets/analyser/openjpeg-loader.js', './assets/analyser/xz-loader.js', './assets/analyser/ghostscript-loader.js', './assets/analyser/parsers-dev.js',
+      './assets/analyser/parsers-archive.js', './assets/analyser/parsers-email.js',
+      './assets/analyser/parsers-security.js', './assets/analyser/parsers-gaming.js',
+      './assets/analyser/parsers-disk.js', './assets/analyser/parsers-sci.js', './assets/analyser/parsers-osmisc.js',
+      './assets/analyser/parsers-image.js', './assets/analyser/parsers-threed.js', './assets/analyser/parsers-geodata.js',
+      './assets/analyser/parsers-audio.js', './assets/analyser/parsers-video.js', './assets/analyser/parsers-docs.js',
       './assets/favicon.svg', './assets/icon.png', './assets/icon-192.png', './assets/icon-512.png',
       './assets/vendor/exifr.umd.js',
       './assets/fonts/geist-latin.woff2', './assets/fonts/geist-latin-ext.woff2',
@@ -1056,7 +1184,17 @@ function boot() {
       './assets/vendor/heic2any.min.js',
       './assets/vendor/pdfjs/pdf.min.mjs',
       './assets/vendor/pdfjs/pdf.worker.min.mjs',
-      './assets/vendor/fflate.js'
+      './assets/vendor/fflate.js',
+      './assets/vendor/lottie/lottie.min.js',
+      './assets/vendor/sqljs/sql-wasm.js',
+      './assets/vendor/sqljs/sql-wasm.wasm',
+      './assets/vendor/fzstd.js',
+      './assets/vendor/libarchive/la-archive.js',
+      './assets/vendor/libarchive/worker-bundle.js',
+      './assets/vendor/libarchive/wasm-gen/libarchive.wasm',
+      './assets/vendor/openjpeg/openjpegwasm.js',
+      './assets/vendor/openjpeg/openjpegwasm.wasm',
+      './assets/vendor/xzwasm/xzwasm.min.js'
     ],
     // Only English is bundled (in the "everything" tier); every other OCR
     // language is pulled from the CDN (not hosted in the repo). They all land
@@ -1067,6 +1205,13 @@ function boot() {
       'ukr', 'pol', 'ron', 'hun', 'ces', 'slk', 'slv', 'bul', 'mkd', 'nld',
       'swe', 'nor', 'fin', 'dan'
     ].map(c => 'https://tessdata.projectnaptha.com/4.0.0/' + c + '.traineddata.gz')
+      // Ghostscript (~16 MB) for EPS/PostScript rendering - heaviest tier only.
+      .concat([
+        './assets/vendor/ghostscript/gs.mjs',
+        './assets/vendor/ghostscript/browser.js',
+        './assets/vendor/ghostscript/gs.js',
+        './assets/vendor/ghostscript/gs.wasm'
+      ])
   };
 
   document.querySelectorAll('.offline-btn').forEach(btn => {
@@ -1209,9 +1354,23 @@ function boot() {
   }
 
   // ----- Supported-formats catalog (generated from formats.js) -----
-  // index.html has #fmtBody (the overlay); about.html has #aboutFormats.
+  // index.html has #fmtBody (the overlay); about.html has #aboutFormats and its
+  // own copy of #fmtBody (the same overlay markup).
   renderFmtOverlay($('fmtBody'));
   renderAboutFormats($('aboutFormats'));
+
+  // Drop the live format count into every element that asks for it (popup
+  // header, feature bullets, and the clickable "N supported formats"
+  // affordances). data-fmt-count="bare" gets just the number; otherwise the
+  // element keeps its template text with {n} substituted, or falls back to
+  // "N supported formats".
+  const fmtN = formatCount();
+  document.querySelectorAll('[data-fmt-count]').forEach(elm => {
+    const mode = elm.getAttribute('data-fmt-count');
+    if (mode === 'bare') elm.textContent = String(fmtN);
+    else if (elm.dataset.fmtCountTpl) elm.textContent = elm.dataset.fmtCountTpl.replace('{n}', fmtN);
+    else elm.textContent = fmtN + ' supported formats';
+  });
 
   // Deep-links into the (collapsed) supported-formats list: landing on
   // /about.html#ext-sldprt or #fmt-cad from a search result should expand the
@@ -1232,41 +1391,64 @@ function boot() {
   }
 
   // ----- Format help overlay -----
-  const fmtBtn = $('fmtHelpBtn');
+  // Any element with the [data-fmt-open] attribute (the dropzone Info button,
+  // the feature bullets, the "N supported formats" affordance, the about-page
+  // summary) opens the popup. The overlay markup lives on both index.html and
+  // about.html, so this runs per-navigation.
   const fmtOverlay = $('fmtOverlay');
   const fmtClose = $('fmtOverlayClose');
   const fmtSearch = $('fmtSearch');
-  if (fmtBtn && fmtOverlay) {
-    fmtBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+  if (fmtOverlay) {
+    const items = fmtOverlay.querySelectorAll('.fmt-item');
+    const labels = fmtOverlay.querySelectorAll('.fmt-section-label');
+
+    function applyFilter() {
+      const q = fmtSearch ? fmtSearch.value.trim().toLowerCase() : '';
+      items.forEach(it => {
+        const text = (
+          it.querySelector('.fmt-item-label').textContent + ' ' +
+          it.querySelector('.fmt-item-exts').textContent + ' ' +
+          (it.dataset.tags || '') + ' ' +
+          it.querySelector('.fmt-item-desc').textContent
+        ).toLowerCase();
+        const match = !q || text.includes(q);
+        it.classList.toggle('is-hidden', !match);
+        // Auto-open matches so the matched text shows; collapse when cleared.
+        it.open = q ? match : false;
+      });
+      labels.forEach(label => {
+        const list = label.nextElementSibling;
+        if (!list) return;
+        const visible = list.querySelectorAll('.fmt-item:not(.is-hidden)').length;
+        label.style.display = visible ? '' : 'none';
+      });
+    }
+
+    function openFmt() {
       fmtOverlay.hidden = false;
       document.body.style.overflow = 'hidden';
-      if (fmtSearch) { fmtSearch.value = ''; if (matchMedia('(pointer:fine)').matches) fmtSearch.focus(); }
-      fmtOverlay.querySelectorAll('tr[data-fmt]').forEach(r => r.classList.remove('is-hidden'));
-      fmtOverlay.querySelectorAll('.fmt-section-label').forEach(l => l.style.display = '');
-    });
+      if (fmtSearch) {
+        fmtSearch.value = '';
+        if (matchMedia('(pointer:fine)').matches) fmtSearch.focus();
+      }
+      applyFilter();
+    }
     function closeFmt() { fmtOverlay.hidden = true; document.body.style.overflow = ''; }
+
+    document.querySelectorAll('[data-fmt-open]').forEach(trigger => {
+      if (trigger._fmtWired) return;
+      trigger._fmtWired = true;
+      trigger.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openFmt();
+      });
+    });
+
     if (fmtClose) fmtClose.addEventListener('click', closeFmt);
     fmtOverlay.addEventListener('click', (e) => { if (e.target === fmtOverlay) closeFmt(); });
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !fmtOverlay.hidden) closeFmt(); });
-    if (fmtSearch) {
-      const rows = fmtOverlay.querySelectorAll('tr[data-fmt]');
-      const labels = fmtOverlay.querySelectorAll('.fmt-section-label');
-      fmtSearch.addEventListener('input', () => {
-        const q = fmtSearch.value.trim().toLowerCase();
-        rows.forEach(r => {
-          const text = (r.querySelector('th').textContent + ' ' + r.querySelector('td').textContent + ' ' + (r.dataset.tags || '')).toLowerCase();
-          r.classList.toggle('is-hidden', q && !text.includes(q));
-        });
-        labels.forEach(label => {
-          const table = label.nextElementSibling;
-          if (!table) return;
-          const visible = table.querySelectorAll('tr[data-fmt]:not(.is-hidden)').length;
-          label.style.display = visible ? '' : 'none';
-        });
-      });
-    }
+    if (fmtSearch) fmtSearch.addEventListener('input', applyFilter);
   }
 
   // ----- Search -----

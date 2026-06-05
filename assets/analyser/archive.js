@@ -43,7 +43,11 @@ function parseZipEntries(buf) {
   for (let i = 0; i < entryCount && pos < cdOffset + cdSize; i++) {
     if (view.getUint32(pos, true) !== 0x02014b50) break;
 
+    const versionMadeBy = view.getUint16(pos + 4, true);
+    const flags         = view.getUint16(pos + 8, true);
     const compMethod    = view.getUint16(pos + 10, true);
+    const modTime       = view.getUint16(pos + 12, true);
+    const modDate       = view.getUint16(pos + 14, true);
     const crc           = view.getUint32(pos + 16, true);
     const compSize      = view.getUint32(pos + 20, true);
     const uncompSize    = view.getUint32(pos + 24, true);
@@ -53,7 +57,20 @@ function parseZipEntries(buf) {
     const name          = decoder.decode(bytes.slice(pos + 46, pos + 46 + nameLen));
     const isDir         = name.endsWith('/');
 
-    entries.push({ name, compSize, uncompSize, compMethod, crc, isDir });
+    // Scan the extra field for a Zip64 extended-information record (id 0x0001).
+    let zip64 = false;
+    {
+      let ep = pos + 46 + nameLen;
+      const extraEnd = ep + extraLen;
+      while (ep + 4 <= extraEnd) {
+        const id = view.getUint16(ep, true);
+        const sz = view.getUint16(ep + 2, true);
+        if (id === 0x0001) { zip64 = true; break; }
+        ep += 4 + sz;
+      }
+    }
+
+    entries.push({ name, compSize, uncompSize, compMethod, crc, isDir, flags, versionMadeBy, modTime, modDate, zip64 });
     pos += 46 + nameLen + extraLen + commentLen;
   }
 
@@ -80,6 +97,58 @@ function guessMime(ext) {
 function extOf(name) {
   const m = name.match(/\.([^./\\]+)$/);
   return m ? m[1].toLowerCase() : '';
+}
+
+// ---------- safety / metadata helpers ----------
+
+// Decode a DOS date+time pair (as stored in the ZIP central directory) into a
+// readable local timestamp. Returns '' when the fields are zero/invalid.
+function dosDateTime(modDate, modTime) {
+  try {
+    if (!modDate) return '';
+    const day    = modDate & 0x1f;
+    const month  = (modDate >> 5) & 0x0f;
+    const year   = ((modDate >> 9) & 0x7f) + 1980;
+    const sec    = (modTime & 0x1f) * 2;
+    const min    = (modTime >> 5) & 0x3f;
+    const hour   = (modTime >> 11) & 0x1f;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+    const d = new Date(year, month - 1, day, hour, min, sec);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(min)}:${pad(sec)}`;
+  } catch { return ''; }
+}
+
+// The high byte of "version made by" identifies the host OS that created the entry.
+const HOST_OS = {
+  0: 'MS-DOS / FAT', 1: 'Amiga', 2: 'OpenVMS', 3: 'Unix', 4: 'VM/CMS', 5: 'Atari ST',
+  6: 'OS/2 HPFS', 7: 'Macintosh', 8: 'Z-System', 9: 'CP/M', 10: 'Windows NTFS',
+  11: 'MVS', 12: 'VSE', 13: 'Acorn Risc', 14: 'VFAT', 15: 'alternate MVS',
+  16: 'BeOS', 17: 'Tandem', 18: 'OS/400', 19: 'OS X (Darwin)',
+};
+
+// An entry is encrypted when general-purpose bit 0 of its flags is set.
+function isEncrypted(e) {
+  return ((e.flags || 0) & 0x0001) !== 0;
+}
+
+// A name is "unsafe" if it would escape the extraction directory: a parent
+// traversal segment, an absolute POSIX path, or a Windows drive/UNC path.
+function isUnsafePath(name) {
+  if (!name) return false;
+  const n = name.replace(/\\/g, '/');
+  if (n.startsWith('/')) return true;                 // absolute POSIX
+  if (/^[a-zA-Z]:/.test(n)) return true;              // C:\  drive letter
+  if (name.startsWith('\\\\') || name.startsWith('//')) return true; // UNC
+  const parts = n.split('/');
+  return parts.indexOf('..') !== -1;                  // parent traversal
+}
+
+// Per-entry compression ratio (uncompressed ÷ compressed). 0 when not measurable.
+function entryRatio(e) {
+  if (!e || e.isDir || !e.compSize || !e.uncompSize) return 0;
+  return e.uncompSize / e.compSize;
 }
 
 // ---------- main render ----------
@@ -139,6 +208,87 @@ export async function renderArchive(file, resultsEl) {
   resultsEl.appendChild(infoCard);
   // SHA-256 of the whole archive (was previously missing for ZIP).
   resultsEl.appendChild(integrityCard(file));
+
+  // --- Safety / integrity inspection (additive; only shown when noteworthy) ---
+  try {
+    const encrypted = fileEntries.filter(isEncrypted);
+    const unsafe    = entries.filter((e) => isUnsafePath(e.name));
+    const overallRatio = totalComp > 0 ? totalUncomp / totalComp : 0;
+    const worstEntry = fileEntries.reduce((w, e) => {
+      const r = entryRatio(e);
+      return r > (w ? entryRatio(w) : 0) ? e : w;
+    }, null);
+    const worstRatio = worstEntry ? entryRatio(worstEntry) : 0;
+    const zip64 = entries.some((e) => e.zip64);
+
+    const ratioSuspicious = overallRatio > 100 || worstRatio > 1000;
+    const hasFindings = encrypted.length > 0 || unsafe.length > 0 || ratioSuspicious || zip64;
+
+    if (hasFindings) {
+      const safeCard = el('div', { class: 'anr-card' });
+      safeCard.appendChild(el('h3', {}, 'Safety'));
+      const stbl = el('table', { class: 'anr-readout' });
+
+      if (encrypted.length > 0) {
+        const allEnc = encrypted.length === fileEntries.length;
+        const note = allEnc
+          ? ' — every file is encrypted, so contents cannot be previewed or extracted here.'
+          : '';
+        stbl.appendChild(rowHelp(
+          'Encrypted entries',
+          `${encrypted.length} of ${fileEntries.length}${note}`,
+          'Files protected with a password (general-purpose flag bit 0). Analyser can list these entries but cannot decompress or preview their contents without the password.'
+        ));
+      }
+
+      if (unsafe.length > 0) {
+        const sample = unsafe.slice(0, 5).map((e) => e.name).join(', ');
+        const more = unsafe.length > 5 ? `, …(+${unsafe.length - 5} more)` : '';
+        stbl.appendChild(rowHelp(
+          '⚠ Unsafe paths',
+          `${unsafe.length} (path traversal) — ${sample}${more}`,
+          'Entry names that contain "../", start with "/", or use a drive letter/UNC path. A naïve extractor could be tricked into writing these files outside the intended folder (a "Zip Slip" attack). Analyser never writes them to disk.'
+        ));
+      }
+
+      if (ratioSuspicious) {
+        const detail = worstRatio > 1000 && worstEntry
+          ? `overall ${overallRatio.toFixed(0)}:1; one entry "${worstEntry.name}" expands ${worstRatio.toFixed(0)}:1`
+          : `overall ${overallRatio.toFixed(0)}:1`;
+        stbl.appendChild(rowHelp(
+          '⚠ Suspicious compression ratio',
+          detail,
+          'A very high uncompressed-to-compressed ratio can indicate a "zip bomb" — a small archive that expands to an enormous size to exhaust memory or disk. Treat unfamiliar archives like this with caution.'
+        ));
+      }
+
+      if (zip64) {
+        stbl.appendChild(rowHelp(
+          'ZIP64',
+          'Yes (large-archive extensions present)',
+          'This archive uses the ZIP64 format, which lifts the 4 GB / 65,535-entry limits of classic ZIP. It is normal for large archives.'
+        ));
+      }
+
+      // Host OS / creating tool, from the first non-trivial "version made by".
+      const vmb = (fileEntries[0] || entries[0] || {}).versionMadeBy;
+      if (vmb != null) {
+        const hostName = HOST_OS[(vmb >> 8) & 0xff] || ('host ' + ((vmb >> 8) & 0xff));
+        const ver = (vmb & 0xff) / 10;
+        stbl.appendChild(rowHelp(
+          'Created on',
+          `${hostName} (ZIP spec ${ver.toFixed(1)})`,
+          'The host operating system and ZIP specification version recorded by the tool that produced this archive ("version made by" in the central directory).'
+        ));
+      }
+
+      safeCard.appendChild(stbl);
+      resultsEl.appendChild(safeCard);
+    }
+  } catch (e) {
+    // Safety inspection is best-effort; never break ZIP browsing over it.
+    if (window.console) console.warn('ZIP safety inspection failed:', e);
+  }
 
   // --- Category breakdown ---
   const items = normalizeArchive(entries);
@@ -239,9 +389,16 @@ export async function renderArchive(file, resultsEl) {
 
     for (const entry of previewable.slice(0, 20)) {
       const details = el('details', {});
+      let summaryMeta = '';
+      try {
+        const r = entryRatio(entry);
+        const mt = dosDateTime(entry.modDate, entry.modTime);
+        if (r > 1) summaryMeta += ' · ' + r.toFixed(1) + ':1';
+        if (mt) summaryMeta += ' · ' + mt;
+      } catch { /* metadata is optional */ }
       const summary = el('summary', {
         style: 'cursor: pointer; font-weight: bold; margin: 4px 0; font-size: 13px;'
-      }, entry.name + '  (' + fmtBytes(entry.uncompSize) + ' · CRC ' + (entry.crc >>> 0).toString(16).padStart(8, '0') + ')');
+      }, entry.name + '  (' + fmtBytes(entry.uncompSize) + ' · CRC ' + (entry.crc >>> 0).toString(16).padStart(8, '0') + summaryMeta + ')');
       details.appendChild(summary);
 
       const pre = el('pre', { class: 'anr-ocr-text' }, '');

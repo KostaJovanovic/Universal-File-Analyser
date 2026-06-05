@@ -1,7 +1,7 @@
 /* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v42';
+const VERSION = 'analyser-v53';
 const SHELL = [
   './',
   './index.html',
@@ -32,8 +32,31 @@ const SHELL = [
   './assets/analyser/subtitles.js',
   './assets/analyser/geo.js',
   './assets/analyser/markdown.js',
+  './assets/analyser/comic.js',
   './assets/analyser/unknown.js',
   './assets/analyser/proprietary.js',
+  './assets/analyser/binutil.js',
+  './assets/analyser/plist.js',
+  './assets/analyser/cfbf.js',
+  './assets/analyser/sqlite.js',
+  './assets/analyser/libarchive-loader.js',
+  './assets/analyser/openjpeg-loader.js',
+  './assets/analyser/xz-loader.js',
+  './assets/analyser/ghostscript-loader.js',
+  './assets/analyser/parsers-dev.js',
+  './assets/analyser/parsers-archive.js',
+  './assets/analyser/parsers-email.js',
+  './assets/analyser/parsers-security.js',
+  './assets/analyser/parsers-gaming.js',
+  './assets/analyser/parsers-disk.js',
+  './assets/analyser/parsers-sci.js',
+  './assets/analyser/parsers-osmisc.js',
+  './assets/analyser/parsers-image.js',
+  './assets/analyser/parsers-threed.js',
+  './assets/analyser/parsers-geodata.js',
+  './assets/analyser/parsers-audio.js',
+  './assets/analyser/parsers-video.js',
+  './assets/analyser/parsers-docs.js',
   './assets/analyser/docx.js',
   './assets/analyser/xlsx.js',
   './assets/analyser/epub.js',

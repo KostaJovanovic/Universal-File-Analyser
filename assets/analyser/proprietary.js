@@ -81,11 +81,11 @@ const FORMATS = {
 
   // 3D mesh
   stl:     { app: 'STL (3D printing)', icon: 'STL' },
-  obj:     { app: 'Wavefront OBJ', icon: 'OBJ' },
+  obj:     { app: 'Wavefront OBJ', icon: 'OBJ', chunk: 'threed' },
   fbx:     { app: 'Autodesk FBX', icon: 'FBX', magic: [0x4B, 0x61, 0x79, 0x64] },
-  gltf:    { app: 'glTF 3D Scene', icon: 'GL' },
+  gltf:    { app: 'glTF 3D Scene', icon: 'GL', chunk: 'threed' },
   glb:     { app: 'glTF Binary', icon: 'GL', magic: [0x67, 0x6C, 0x54, 0x46] },
-  ply:     { app: 'PLY Point Cloud / Mesh', icon: 'PLY' },
+  ply:     { app: 'PLY Point Cloud / Mesh', icon: 'PLY', chunk: 'threed' },
   usdz:    { app: 'Universal Scene Description (Apple AR)', icon: 'USD' },
   usd:     { app: 'Universal Scene Description', icon: 'USD' },
   usda:    { app: 'Universal Scene Description ASCII', icon: 'USD' },
@@ -122,8 +122,8 @@ const FORMATS = {
   sketch:  { app: 'Sketch', icon: 'SK', zip: true },
 
   // 3D printing
-  '3mf':   { app: '3D Manufacturing Format', icon: '3MF', zip: true },
-  amf:     { app: 'Additive Manufacturing File', icon: 'AMF' },
+  '3mf':   { app: '3D Manufacturing Format', icon: '3MF', zip: true, chunk: 'threed' },
+  amf:     { app: 'Additive Manufacturing File', icon: 'AMF', chunk: 'threed' },
 
   // Figma (local)
   fig:     { app: 'Figma', icon: 'FG' },
@@ -177,12 +177,12 @@ const FORMATS = {
   // Archives
   rar:     { app: 'RAR Archive', icon: 'RAR', magic: [0x52, 0x61, 0x72, 0x21] },
   '7z':    { app: '7-Zip Archive', icon: '7Z', magic: [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C] },
-  tar:     { app: 'Tar Archive', icon: 'TAR' },
-  gz:      { app: 'Gzip Archive', icon: 'GZ', magic: [0x1F, 0x8B] },
-  bz2:     { app: 'Bzip2 Archive', icon: 'BZ2', magic: [0x42, 0x5A, 0x68] },
-  xz:      { app: 'XZ Archive', icon: 'XZ', magic: [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00] },
-  zst:     { app: 'Zstandard Archive', icon: 'ZST', magic: [0x28, 0xB5, 0x2F, 0xFD] },
-  tgz:     { app: 'Gzipped Tar Archive', icon: 'TGZ', magic: [0x1F, 0x8B] },
+  tar:     { app: 'Tar Archive', icon: 'TAR', chunk: 'archive' },
+  gz:      { app: 'Gzip Archive', icon: 'GZ', magic: [0x1F, 0x8B], chunk: 'archive' },
+  bz2:     { app: 'Bzip2 Archive', icon: 'BZ2', magic: [0x42, 0x5A, 0x68], chunk: 'archive' },
+  xz:      { app: 'XZ Archive', icon: 'XZ', magic: [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00], chunk: 'archive' },
+  zst:     { app: 'Zstandard Archive', icon: 'ZST', magic: [0x28, 0xB5, 0x2F, 0xFD], chunk: 'archive' },
+  tgz:     { app: 'Gzipped Tar Archive', icon: 'TGZ', magic: [0x1F, 0x8B], chunk: 'archive' },
 
   // Disk images
   iso:     { app: 'ISO Disk Image', icon: 'ISO' },
@@ -217,12 +217,14 @@ const FORMATS = {
 
   // Database
   sqlite:  { app: 'SQLite Database', icon: 'SQL', magic: [0x53, 0x51, 0x4C, 0x69, 0x74, 0x65] },
+  sqlite3: { app: 'SQLite Database', icon: 'SQL', magic: [0x53, 0x51, 0x4C, 0x69, 0x74, 0x65] },
+  db3:     { app: 'SQLite Database', icon: 'SQL' },
   db:      { app: 'Database File', icon: 'DB' },
   mdb:     { app: 'Microsoft Access Database', icon: 'MDB' },
   accdb:   { app: 'Microsoft Access Database', icon: 'MDB' },
 
   // GIS / Mapping
-  shp:     { app: 'ESRI Shapefile', icon: 'SHP' },
+  shp:     { app: 'ESRI Shapefile', icon: 'SHP', chunk: 'geodata' },
   kml:     { app: 'Keyhole Markup Language (Google Earth)', icon: 'KML', parse: 'xml' },
   kmz:     { app: 'KML Archive (Google Earth)', icon: 'KMZ', zip: true },
   gpx:     { app: 'GPS Exchange Format', icon: 'GPX', parse: 'xml' },
@@ -254,7 +256,7 @@ const FORMATS = {
   toml:    { app: 'TOML Config', icon: 'TML', parse: 'text' },
   ini:     { app: 'INI Config', icon: 'INI', parse: 'text' },
   env:     { app: 'Environment Variables', icon: 'ENV', parse: 'text' },
-  conf:    { app: 'Configuration File', icon: 'CNF', parse: 'text' },
+  conf:    { app: 'Configuration File', icon: 'CNF', parse: 'text', chunk: 'security' },
   cfg:     { app: 'Configuration File', icon: 'CFG', parse: 'text' },
   properties: { app: 'Java Properties', icon: 'PRP', parse: 'text' },
 
@@ -282,6 +284,584 @@ const FORMATS = {
   xml:     { app: 'XML Document', icon: 'XML', parse: 'xml' },
   md:      { app: 'Markdown', icon: 'MD', parse: 'text' },
   txt:     { app: 'Plain Text', icon: 'TXT', parse: 'text' },
+
+  // Developer / data / serialization (lazy parser chunk: parsers-dev.js)
+  jwt:     { app: 'JSON Web Token', icon: 'JWT', chunk: 'dev' },
+  har:     { app: 'HTTP Archive', icon: 'HAR', chunk: 'dev' },
+  ipynb:   { app: 'Jupyter Notebook', icon: 'IPY', chunk: 'dev' },
+  jsonl:   { app: 'JSON Lines', icon: 'JSL', chunk: 'dev' },
+  ndjson:  { app: 'Newline-delimited JSON', icon: 'NDJ', chunk: 'dev' },
+  diff:    { app: 'Unified Diff', icon: 'DIF', chunk: 'dev' },
+  patch:   { app: 'Patch File', icon: 'PAT', chunk: 'dev' },
+  wasm:    { app: 'WebAssembly Binary', icon: 'WASM', chunk: 'dev', magic: [0x00, 0x61, 0x73, 0x6d] },
+  class:   { app: 'Java Class File', icon: 'CLS', chunk: 'dev', magic: [0xCA, 0xFE, 0xBA, 0xBE] },
+  npy:     { app: 'NumPy Array', icon: 'NPY', chunk: 'dev', magic: [0x93, 0x4E, 0x55, 0x4D, 0x50, 0x59] },
+  safetensors: { app: 'Safetensors Model', icon: 'ST', chunk: 'dev' },
+  gguf:    { app: 'GGUF Model (GGML)', icon: 'GGUF', chunk: 'dev', magic: [0x47, 0x47, 0x55, 0x46] },
+  map:     { app: 'Source Map', icon: 'MAP', chunk: 'dev' },
+  sql:     { app: 'SQL Dump', icon: 'SQL', chunk: 'dev' },
+  sln:     { app: 'Visual Studio Solution', icon: 'SLN', chunk: 'dev' },
+  csproj:  { app: '.NET Project (C#)', icon: 'NET', chunk: 'dev' },
+  vbproj:  { app: '.NET Project (VB)', icon: 'NET', chunk: 'dev' },
+  fsproj:  { app: '.NET Project (F#)', icon: 'NET', chunk: 'dev' },
+  vcxproj: { app: 'Visual C++ Project', icon: 'NET', chunk: 'dev' },
+  gradle:  { app: 'Gradle Build Script', icon: 'GRDL', chunk: 'dev' },
+  tf:      { app: 'Terraform Config', icon: 'TF', chunk: 'dev' },
+  tfstate: { app: 'Terraform State', icon: 'TFS', chunk: 'dev' },
+  editorconfig: { app: 'EditorConfig', icon: 'EC', chunk: 'dev' },
+  proto:   { app: 'Protocol Buffers Schema', icon: 'PB', chunk: 'dev' },
+  graphql: { app: 'GraphQL Schema', icon: 'GQL', chunk: 'dev' },
+  gql:     { app: 'GraphQL Schema', icon: 'GQL', chunk: 'dev' },
+  sarif:   { app: 'SARIF Analysis Report', icon: 'SAR', chunk: 'dev' },
+  pyc:     { app: 'Python Bytecode', icon: 'PYC', chunk: 'dev' },
+  plist:   { app: 'Apple Property List', icon: 'PLST', chunk: 'dev' },
+
+  // Archives / packages / installers (lazy parser chunk: parsers-archive.js)
+  lz4:     { app: 'LZ4 Frame', icon: 'LZ4', chunk: 'archive' },
+  lzma:    { app: 'LZMA Stream', icon: 'LZMA', chunk: 'archive' },
+  txz:     { app: 'XZ Tarball', icon: 'TXZ', chunk: 'archive' },
+  tzst:    { app: 'Zstandard Tarball', icon: 'TZST', chunk: 'archive' },
+  z:       { app: 'compress (.Z)', icon: 'Z', chunk: 'archive' },
+  cpio:    { app: 'cpio Archive', icon: 'CPIO', chunk: 'archive' },
+  a:       { app: 'Unix ar / Static Library', icon: 'AR', chunk: 'archive' },
+  whl:     { app: 'Python Wheel', icon: 'WHL', chunk: 'archive' },
+  nupkg:   { app: 'NuGet Package', icon: 'NUPKG', chunk: 'archive' },
+  crx:     { app: 'Chrome Extension', icon: 'CRX', chunk: 'archive' },
+  xpi:     { app: 'Firefox Add-on', icon: 'XPI', chunk: 'archive' },
+  vsix:    { app: 'VS Code Extension', icon: 'VSIX', chunk: 'archive' },
+  asar:    { app: 'Electron ASAR', icon: 'ASAR', chunk: 'archive' },
+  appx:    { app: 'Windows App Package', icon: 'APPX', chunk: 'archive' },
+  msix:    { app: 'Windows App Package', icon: 'MSIX', chunk: 'archive' },
+  apkg:    { app: 'Anki Deck Package', icon: 'APKG', chunk: 'archive' },
+  conda:   { app: 'Conda Package', icon: 'CONDA', chunk: 'archive' },
+  deb:     { app: 'Debian Package', icon: 'DEB', chunk: 'archive' },
+  rpm:     { app: 'RPM Package', icon: 'RPM', chunk: 'archive' },
+  gem:     { app: 'RubyGems Package', icon: 'GEM', chunk: 'archive' },
+  cab:     { app: 'Microsoft Cabinet', icon: 'CAB', chunk: 'archive' },
+  ace:     { app: 'ACE Archive', icon: 'ACE', chunk: 'archive' },
+  arj:     { app: 'ARJ Archive', icon: 'ARJ', chunk: 'archive' },
+  lzh:     { app: 'LHA / LZH Archive', icon: 'LZH', chunk: 'archive' },
+  lha:     { app: 'LHA / LZH Archive', icon: 'LHA', chunk: 'archive' },
+  zoo:     { app: 'Zoo Archive', icon: 'ZOO', chunk: 'archive' },
+  arc:     { app: 'ARC Archive', icon: 'ARC', chunk: 'archive' },
+
+  // Email / calendar / contacts / PIM (lazy parser chunk: parsers-email.js)
+  eml:     { app: 'Email Message (MIME)', icon: 'EML', chunk: 'email' },
+  emlx:    { app: 'Apple Mail Message', icon: 'EMLX', chunk: 'email' },
+  mbox:    { app: 'Mbox Mailbox', icon: 'MBOX', chunk: 'email' },
+  ics:     { app: 'iCalendar', icon: 'ICS', chunk: 'email' },
+  ical:    { app: 'iCalendar', icon: 'ICAL', chunk: 'email' },
+  ifb:     { app: 'iCalendar Free/Busy', icon: 'IFB', chunk: 'email' },
+  vcf:     { app: 'vCard Contact', icon: 'VCF', chunk: 'email' },
+  vcard:   { app: 'vCard Contact', icon: 'VCRD', chunk: 'email' },
+  vcs:     { app: 'vCalendar 1.0', icon: 'VCS', chunk: 'email' },
+  ldif:    { app: 'LDIF (LDAP Export)', icon: 'LDIF', chunk: 'email' },
+  contact: { app: 'Windows Contact', icon: 'CON', chunk: 'email' },
+  msg:     { app: 'Outlook Message', icon: 'MSG', chunk: 'email' },
+  pst:     { app: 'Outlook Personal Store', icon: 'PST', chunk: 'email' },
+  ost:     { app: 'Outlook Offline Store', icon: 'OST', chunk: 'email' },
+  nsf:     { app: 'NES Sound Format', icon: 'NSF', chunk: 'audio' },
+  edb:     { app: 'Exchange / ESE Database', icon: 'EDB', chunk: 'email' },
+  dbx:     { app: 'Outlook Express Database', icon: 'DBX', chunk: 'email' },
+
+  // Security / crypto / keys / certs / forensics (lazy parser chunk: parsers-security.js)
+  key:     { app: 'PEM Private/Public Key', icon: 'KEY', chunk: 'security' },
+  pub:     { app: 'OpenSSH Public Key', icon: 'PUB', chunk: 'security' },
+  p8:      { app: 'PKCS#8 Key', icon: 'P8', chunk: 'security' },
+  csr:     { app: 'PKCS#10 Cert Request', icon: 'CSR', chunk: 'security' },
+  crl:     { app: 'X.509 CRL', icon: 'CRL', chunk: 'security' },
+  p7b:     { app: 'PKCS#7 Cert Bundle', icon: 'P7B', chunk: 'security' },
+  p7c:     { app: 'PKCS#7 Cert Bundle', icon: 'P7C', chunk: 'security' },
+  ppk:     { app: 'PuTTY Private Key', icon: 'PPK', chunk: 'security' },
+  ovpn:    { app: 'OpenVPN Profile', icon: 'VPN', chunk: 'security' },
+  wg:      { app: 'WireGuard Config', icon: 'WG', chunk: 'security' },
+  jks:     { app: 'Java KeyStore', icon: 'JKS', chunk: 'security' },
+  keystore:{ app: 'Java KeyStore', icon: 'JKS', chunk: 'security' },
+  jceks:   { app: 'Java KeyStore (JCEKS)', icon: 'JCEK', chunk: 'security' },
+  known_hosts: { app: 'OpenSSH known_hosts', icon: 'SSH', chunk: 'security' },
+  authorized_keys: { app: 'OpenSSH authorized_keys', icon: 'SSH', chunk: 'security' },
+  mobileconfig: { app: 'Apple Config Profile', icon: 'MCF', chunk: 'security' },
+  mobileprovision: { app: 'Apple Provisioning Profile', icon: 'MPV', chunk: 'security' },
+  reg:     { app: 'Windows Registry Export', icon: 'REG', chunk: 'security' },
+  pcap:    { app: 'libpcap Capture', icon: 'PCAP', chunk: 'security' },
+  cap:     { app: 'libpcap Capture', icon: 'CAP', chunk: 'security' },
+  pcapng:  { app: 'PCAP Next Generation', icon: 'PCPN', chunk: 'security' },
+  ntar:    { app: 'PCAP Next Generation', icon: 'NTAR', chunk: 'security' },
+  p12:     { app: 'PKCS#12 / PFX Bundle', icon: 'P12', chunk: 'security' },
+  pfx:     { app: 'PKCS#12 / PFX Bundle', icon: 'PFX', chunk: 'security' },
+  kdbx:    { app: 'KeePass Database', icon: 'KDBX', chunk: 'security' },
+  evtx:    { app: 'Windows Event Log', icon: 'EVTX', chunk: 'security' },
+  pf:      { app: 'Windows Prefetch', icon: 'PF', chunk: 'security' },
+  hive:    { app: 'Registry Hive', icon: 'HIVE', chunk: 'security' },
+  dmp:     { app: 'Crash / Memory Dump', icon: 'DMP', chunk: 'security' },
+  e01:     { app: 'EnCase Forensic Image', icon: 'E01', chunk: 'security' },
+  etl:     { app: 'Event Trace Log', icon: 'ETL', chunk: 'security' },
+
+  // Game ROMs / engine assets (lazy parser chunk: parsers-gaming.js)
+  nes:     { app: 'NES ROM (iNES)', icon: 'NES', chunk: 'gaming' },
+  gb:      { app: 'Game Boy ROM', icon: 'GB', chunk: 'gaming' },
+  gbc:     { app: 'Game Boy Color ROM', icon: 'GBC', chunk: 'gaming' },
+  gba:     { app: 'Game Boy Advance ROM', icon: 'GBA', chunk: 'gaming' },
+  sfc:     { app: 'SNES ROM', icon: 'SFC', chunk: 'gaming' },
+  smc:     { app: 'SNES ROM (copier)', icon: 'SMC', chunk: 'gaming' },
+  nds:     { app: 'Nintendo DS ROM', icon: 'NDS', chunk: 'gaming' },
+  dsi:     { app: 'Nintendo DSi ROM', icon: 'DSI', chunk: 'gaming' },
+  z64:     { app: 'Nintendo 64 ROM (big-endian)', icon: 'N64', chunk: 'gaming' },
+  n64:     { app: 'Nintendo 64 ROM (little-endian)', icon: 'N64', chunk: 'gaming' },
+  v64:     { app: 'Nintendo 64 ROM (byteswapped)', icon: 'N64', chunk: 'gaming' },
+  gen:     { app: 'Sega Genesis / Mega Drive ROM', icon: 'GEN', chunk: 'gaming' },
+  smd:     { app: 'Sega Mega Drive ROM (SMD)', icon: 'SMD', chunk: 'gaming' },
+  ips:     { app: 'IPS ROM Patch', icon: 'IPS', chunk: 'gaming' },
+  bps:     { app: 'BPS ROM Patch', icon: 'BPS', chunk: 'gaming' },
+  ups:     { app: 'UPS ROM Patch', icon: 'UPS', chunk: 'gaming' },
+  ppf:     { app: 'PPF ROM/CD Patch', icon: 'PPF', chunk: 'gaming' },
+  wad:     { app: 'Doom WAD', icon: 'WAD', chunk: 'gaming' },
+  nbt:     { app: 'Minecraft NBT Data', icon: 'NBT', chunk: 'gaming' },
+  schematic: { app: 'Minecraft Schematic', icon: 'SCH', chunk: 'gaming' },
+  schem:   { app: 'Minecraft Schematic (Sponge)', icon: 'SCHM', chunk: 'gaming' },
+  litematic: { app: 'Litematica Schematic', icon: 'LITM', chunk: 'gaming' },
+  mcworld: { app: 'Minecraft Bedrock World', icon: 'MCW', chunk: 'gaming' },
+  mcpack:  { app: 'Minecraft Bedrock Pack', icon: 'MCP', chunk: 'gaming' },
+  mcaddon: { app: 'Minecraft Bedrock Add-on', icon: 'MCA', chunk: 'gaming' },
+  ase:     { app: 'Aseprite Sprite', icon: 'ASE', chunk: 'gaming' },
+  aseprite:{ app: 'Aseprite Sprite', icon: 'ASE', chunk: 'gaming' },
+  pck:     { app: 'Godot Resource Pack', icon: 'PCK', chunk: 'gaming' },
+  pak:     { app: 'Quake PACK Archive', icon: 'PAK', chunk: 'gaming' },
+  pk3:     { app: 'id Tech 3 Archive (ZIP)', icon: 'PK3', chunk: 'gaming' },
+  pk4:     { app: 'id Tech 4 Archive (ZIP)', icon: 'PK4', chunk: 'gaming' },
+  bsp:     { app: 'Compiled Map (BSP)', icon: 'BSP', chunk: 'gaming' },
+  vpk:     { app: 'Valve Pak', icon: 'VPK', chunk: 'gaming' },
+  vtf:     { app: 'Valve Texture', icon: 'VTF', chunk: 'gaming' },
+  vmt:     { app: 'Valve Material', icon: 'VMT', chunk: 'gaming' },
+  ktx:     { app: 'KTX GPU Texture', icon: 'KTX', chunk: 'gaming' },
+  ktx2:    { app: 'KTX2 GPU Texture', icon: 'KTX2', chunk: 'gaming' },
+  tmx:     { app: 'Tiled Map (XML)', icon: 'TMX', chunk: 'gaming' },
+  tmj:     { app: 'Tiled Map (JSON)', icon: 'TMJ', chunk: 'gaming' },
+  tsj:     { app: 'Tiled Tileset (JSON)', icon: 'TSJ', chunk: 'gaming' },
+  love:    { app: 'LÖVE (Love2D) Game', icon: 'LOVE', chunk: 'gaming' },
+  sc2replay: { app: 'StarCraft II Replay (MPQ)', icon: 'SC2', chunk: 'gaming' },
+  mpq:     { app: 'Blizzard MoPaQ Archive', icon: 'MPQ', chunk: 'gaming' },
+  cia:     { app: 'Nintendo 3DS CIA', icon: 'CIA', chunk: 'gaming' },
+  nsp:     { app: 'Nintendo Switch NSP', icon: 'NSP', chunk: 'gaming' },
+  xci:     { app: 'Nintendo Switch XCI', icon: 'XCI', chunk: 'gaming' },
+  rpa:     { app: "Ren'Py Archive", icon: 'RPA', chunk: 'gaming' },
+  rgssad:  { app: 'RPG Maker Archive', icon: 'RGS', chunk: 'gaming' },
+  rgss3a:  { app: 'RPG Maker VX Ace Archive', icon: 'RGS', chunk: 'gaming' },
+
+  // Disk images / filesystems / firmware / virtualization (lazy chunk: parsers-disk.js)
+  ovf:     { app: 'OVF Descriptor', icon: 'OVF', chunk: 'disk' },
+  ova:     { app: 'OVF Appliance', icon: 'OVA', chunk: 'disk' },
+  vbox:    { app: 'VirtualBox Settings', icon: 'VBOX', chunk: 'disk' },
+  vmx:     { app: 'VMware VM Config', icon: 'VMX', chunk: 'disk' },
+  cue:     { app: 'Cue Sheet', icon: 'CUE', chunk: 'disk' },
+  ccd:     { app: 'CloneCD Control', icon: 'CCD', chunk: 'disk' },
+  nrg:     { app: 'Nero Disc Image', icon: 'NRG', chunk: 'disk' },
+  mds:     { app: 'Alcohol 120% Descriptor', icon: 'MDS', chunk: 'disk' },
+  mdf:     { app: 'Alcohol 120% Media', icon: 'MDF', chunk: 'disk' },
+  hex:     { app: 'Intel HEX', icon: 'HEX', chunk: 'disk' },
+  srec:    { app: 'Motorola S-record', icon: 'SREC', chunk: 'disk' },
+  s19:     { app: 'Motorola S-record', icon: 'S19', chunk: 'disk' },
+  s28:     { app: 'Motorola S-record', icon: 'S28', chunk: 'disk' },
+  s37:     { app: 'Motorola S-record', icon: 'S37', chunk: 'disk' },
+  mot:     { app: 'Motorola S-record', icon: 'MOT', chunk: 'disk' },
+  uf2:     { app: 'UF2 Firmware', icon: 'UF2', chunk: 'disk' },
+  elf:     { app: 'ELF Executable', icon: 'ELF', chunk: 'disk' },
+  axf:     { app: 'ARM ELF Image', icon: 'AXF', chunk: 'disk' },
+  o:       { app: 'ELF Object File', icon: 'O', chunk: 'disk' },
+  so:      { app: 'ELF Shared Object', icon: 'SO', chunk: 'disk' },
+  dtb:     { app: 'Device Tree Blob', icon: 'DTB', chunk: 'disk' },
+  dtbo:    { app: 'Device Tree Overlay', icon: 'DTBO', chunk: 'disk' },
+  uimage:  { app: 'U-Boot uImage', icon: 'UIMG', chunk: 'disk' },
+  gpt:     { app: 'GUID Partition Table', icon: 'GPT', chunk: 'disk' },
+  mbr:     { app: 'Master Boot Record', icon: 'MBR', chunk: 'disk' },
+  ext4:    { app: 'ext4 Filesystem', icon: 'EXT4', chunk: 'disk' },
+  ext:     { app: 'ext Filesystem', icon: 'EXT', chunk: 'disk' },
+  squashfs:{ app: 'SquashFS Image', icon: 'SQFS', chunk: 'disk' },
+  sfs:     { app: 'SquashFS Image', icon: 'SFS', chunk: 'disk' },
+  cramfs:  { app: 'cramfs Image', icon: 'CRFS', chunk: 'disk' },
+  romfs:   { app: 'romfs Image', icon: 'ROFS', chunk: 'disk' },
+  wim:     { app: 'Windows Imaging', icon: 'WIM', chunk: 'disk' },
+  swm:     { app: 'Split WIM', icon: 'SWM', chunk: 'disk' },
+  esd:     { app: 'Windows ESD', icon: 'ESD', chunk: 'disk' },
+  ewf:     { app: 'EnCase / EWF Image', icon: 'EWF', chunk: 'disk' },
+  jffs2:   { app: 'JFFS2 Firmware', icon: 'JFFS', chunk: 'disk' },
+  ubifs:   { app: 'UBIFS Firmware', icon: 'UBI', chunk: 'disk' },
+  yaffs2:  { app: 'YAFFS2 Image', icon: 'YAFS', chunk: 'disk' },
+  isz:     { app: 'Compressed ISO', icon: 'ISZ', chunk: 'disk' },
+  cdi:     { app: 'DiscJuggler Image', icon: 'CDI', chunk: 'disk' },
+  vmsn:    { app: 'VMware Snapshot State', icon: 'VMSN', chunk: 'disk' },
+  vmem:    { app: 'VMware Guest Memory', icon: 'VMEM', chunk: 'disk' },
+  binwalk: { app: 'Raw Firmware Dump', icon: 'FW', chunk: 'disk' },
+
+  // Science / medical / engineering (lazy chunk: parsers-sci.js)
+  dcm:     { app: 'DICOM Medical Image', icon: 'DCM', chunk: 'sci' },
+  dicom:   { app: 'DICOM Medical Image', icon: 'DCM', chunk: 'sci' },
+  nii:     { app: 'NIfTI Neuroimaging', icon: 'NII', chunk: 'sci' },
+  fit:     { app: 'Garmin FIT Activity', icon: 'FIT', chunk: 'sci' },
+  tcx:     { app: 'Garmin TCX Activity', icon: 'TCX', chunk: 'sci' },
+  fits:    { app: 'FITS Astronomy Image', icon: 'FITS', chunk: 'sci' },
+  fts:     { app: 'FITS Astronomy Image', icon: 'FTS', chunk: 'sci' },
+  fasta:   { app: 'FASTA Sequence', icon: 'FA', chunk: 'sci' },
+  fa:      { app: 'FASTA Sequence', icon: 'FA', chunk: 'sci' },
+  fna:     { app: 'FASTA Sequence', icon: 'FNA', chunk: 'sci' },
+  faa:     { app: 'FASTA Sequence', icon: 'FAA', chunk: 'sci' },
+  fastq:   { app: 'FASTQ Reads', icon: 'FQ', chunk: 'sci' },
+  fq:      { app: 'FASTQ Reads', icon: 'FQ', chunk: 'sci' },
+  mol:     { app: 'Molecular Structure', icon: 'MOL', chunk: 'sci' },
+  sdf:     { app: 'Molecular Structure (SDF)', icon: 'SDF', chunk: 'sci' },
+  mol2:    { app: 'Molecular Structure (MOL2)', icon: 'ML2', chunk: 'sci' },
+  cif:     { app: 'Crystallographic CIF', icon: 'CIF', chunk: 'sci' },
+  mmcif:   { app: 'Macromolecular CIF', icon: 'CIF', chunk: 'sci' },
+  xyz:     { app: 'XYZ Molecular Coordinates', icon: 'XYZ', chunk: 'sci' },
+  gbr:     { app: 'Gerber PCB', icon: 'GBR', chunk: 'sci' },
+  gbl:     { app: 'Gerber PCB', icon: 'GBL', chunk: 'sci' },
+  gtl:     { app: 'Gerber PCB', icon: 'GTL', chunk: 'sci' },
+  drl:     { app: 'Excellon Drill', icon: 'DRL', chunk: 'sci' },
+  xln:     { app: 'Excellon Drill', icon: 'XLN', chunk: 'sci' },
+  cir:     { app: 'SPICE Netlist', icon: 'CIR', chunk: 'sci' },
+  sp:      { app: 'SPICE Netlist', icon: 'SP', chunk: 'sci' },
+  spi:     { app: 'SPICE Netlist', icon: 'SPI', chunk: 'sci' },
+  spice:   { app: 'SPICE Netlist', icon: 'SPC', chunk: 'sci' },
+  edf:     { app: 'Biosignal (EDF)', icon: 'EDF', chunk: 'sci' },
+  bdf:     { app: 'Biosignal (BDF)', icon: 'BDF', chunk: 'sci' },
+  jdx:     { app: 'JCAMP-DX Spectrum', icon: 'JDX', chunk: 'sci' },
+  dx:      { app: 'JCAMP-DX Spectrum', icon: 'DX', chunk: 'sci' },
+  sav:     { app: 'SPSS Dataset', icon: 'SAV', chunk: 'sci' },
+  dta:     { app: 'Stata Dataset', icon: 'DTA', chunk: 'sci' },
+  sas7bdat:{ app: 'SAS Dataset', icon: 'SAS', chunk: 'sci' },
+  vtk:     { app: 'VTK / ParaView', icon: 'VTK', chunk: 'sci' },
+  vtu:     { app: 'VTK Unstructured', icon: 'VTU', chunk: 'sci' },
+  vtp:     { app: 'VTK PolyData', icon: 'VTP', chunk: 'sci' },
+  vti:     { app: 'VTK Image', icon: 'VTI', chunk: 'sci' },
+  segy:    { app: 'SEG-Y Seismic', icon: 'SGY', chunk: 'sci' },
+  sgy:     { app: 'SEG-Y Seismic', icon: 'SGY', chunk: 'sci' },
+  bam:     { app: 'Genomics BAM', icon: 'BAM', chunk: 'sci' },
+  sam:     { app: 'Genomics SAM', icon: 'SAM', chunk: 'sci' },
+  bcf:     { app: 'Genomics BCF', icon: 'BCF', chunk: 'sci' },
+  hea:     { app: 'WFDB Header', icon: 'HEA', chunk: 'sci' },
+
+  // OS-specific / system / misc (lazy chunk: parsers-osmisc.js)
+  opml:    { app: 'OPML Outline', icon: 'OPML', chunk: 'osmisc' },
+  rss:     { app: 'RSS Feed', icon: 'RSS', chunk: 'osmisc' },
+  atom:    { app: 'Atom Feed', icon: 'ATOM', chunk: 'osmisc' },
+  desktop: { app: 'Linux Desktop Entry', icon: 'DESK', chunk: 'osmisc' },
+  nfo:     { app: 'NFO / Scene Notes', icon: 'NFO', chunk: 'osmisc' },
+  service: { app: 'systemd Unit', icon: 'SVC', chunk: 'osmisc' },
+  crash:   { app: 'Apple Crash Report', icon: 'CRSH', chunk: 'osmisc' },
+  ab:      { app: 'Android Backup', icon: 'AB', chunk: 'osmisc' },
+  job:     { app: 'Task Scheduler Job', icon: 'JOB', chunk: 'osmisc' },
+  pol:     { app: 'Group Policy (Registry.pol)', icon: 'POL', chunk: 'osmisc' },
+  scr:     { app: 'Windows Screensaver', icon: 'SCR', chunk: 'osmisc' },
+  ds_store:{ app: 'macOS .DS_Store', icon: 'DS', chunk: 'osmisc' },
+  thumbsdb:{ app: 'Windows Thumbs.db', icon: 'THMB', chunk: 'osmisc' },
+  dsym:    { app: 'dSYM Debug Symbols', icon: 'DSYM', chunk: 'osmisc' },
+  dwarf:   { app: 'DWARF Debug Symbols', icon: 'DWRF', chunk: 'osmisc' },
+  sdb:     { app: 'Shim Database', icon: 'SDB', chunk: 'osmisc' },
+
+  // Images - decoded/metadata (lazy chunk: parsers-image.js)
+  tga:     { app: 'Truevision TGA', icon: 'TGA', chunk: 'image' },
+  icb:     { app: 'Truevision TGA', icon: 'TGA', chunk: 'image' },
+  vda:     { app: 'Truevision TGA', icon: 'TGA', chunk: 'image' },
+  vst:     { app: 'Truevision TGA', icon: 'TGA', chunk: 'image' },
+  qoi:     { app: 'QOI Image', icon: 'QOI', chunk: 'image' },
+  ppm:     { app: 'Netpbm Pixmap', icon: 'PPM', chunk: 'image' },
+  pgm:     { app: 'Netpbm Graymap', icon: 'PGM', chunk: 'image' },
+  pbm:     { app: 'Netpbm Bitmap', icon: 'PBM', chunk: 'image' },
+  pnm:     { app: 'Netpbm Image', icon: 'PNM', chunk: 'image' },
+  pam:     { app: 'Netpbm PAM', icon: 'PAM', chunk: 'image' },
+  pcx:     { app: 'PCX (PC Paintbrush)', icon: 'PCX', chunk: 'image' },
+  ff:      { app: 'farbfeld Image', icon: 'FF', chunk: 'image' },
+  farbfeld:{ app: 'farbfeld Image', icon: 'FF', chunk: 'image' },
+  wbmp:    { app: 'Wireless Bitmap', icon: 'WBMP', chunk: 'image' },
+  xbm:     { app: 'X BitMap', icon: 'XBM', chunk: 'image' },
+  xpm:     { app: 'X PixMap', icon: 'XPM', chunk: 'image' },
+  ras:     { app: 'Sun Raster', icon: 'RAS', chunk: 'image' },
+  sun:     { app: 'Sun Raster', icon: 'RAS', chunk: 'image' },
+  sgi:     { app: 'SGI / IRIS RGB', icon: 'SGI', chunk: 'image' },
+  bw:      { app: 'SGI Grayscale', icon: 'SGI', chunk: 'image' },
+  hdr:     { app: 'Radiance HDR', icon: 'HDR', chunk: 'image' },
+  dds:     { app: 'DirectDraw Surface', icon: 'DDS', chunk: 'image' },
+  exr:     { app: 'OpenEXR', icon: 'EXR', chunk: 'image' },
+  jp2:     { app: 'JPEG 2000', icon: 'JP2', chunk: 'image' },
+  j2k:     { app: 'JPEG 2000 Codestream', icon: 'J2K', chunk: 'image' },
+  jpf:     { app: 'JPEG 2000 (JPX)', icon: 'JPF', chunk: 'image' },
+  jpx:     { app: 'JPEG 2000 (JPX)', icon: 'JPX', chunk: 'image' },
+  jpc:     { app: 'JPEG 2000 Codestream', icon: 'JPC', chunk: 'image' },
+  j2c:     { app: 'JPEG 2000 Codestream', icon: 'J2C', chunk: 'image' },
+  jxr:     { app: 'JPEG XR', icon: 'JXR', chunk: 'image' },
+  wdp:     { app: 'JPEG XR (HD Photo)', icon: 'WDP', chunk: 'image' },
+  hdp:     { app: 'JPEG XR (HD Photo)', icon: 'HDP', chunk: 'image' },
+  eps:     { app: 'Encapsulated PostScript', icon: 'EPS', chunk: 'image' },
+  epsf:    { app: 'Encapsulated PostScript', icon: 'EPS', chunk: 'image' },
+  epsi:    { app: 'Encapsulated PostScript', icon: 'EPS', chunk: 'image' },
+  ps:      { app: 'PostScript', icon: 'PS', chunk: 'image' },
+  wmf:     { app: 'Windows Metafile', icon: 'WMF', chunk: 'image' },
+  emf:     { app: 'Enhanced Metafile', icon: 'EMF', chunk: 'image' },
+  emz:     { app: 'Compressed EMF', icon: 'EMZ', chunk: 'image' },
+  icns:    { app: 'Apple Icon Image', icon: 'ICNS', chunk: 'image' },
+  cur:     { app: 'Windows Cursor', icon: 'CUR', chunk: 'image' },
+  ani:     { app: 'Animated Cursor', icon: 'ANI', chunk: 'image' },
+  mng:     { app: 'MNG Animation', icon: 'MNG', chunk: 'image' },
+  lottie:  { app: 'Lottie Animation', icon: 'LOT', chunk: 'image' },
+  pict:    { app: 'Apple PICT', icon: 'PICT', chunk: 'image' },
+  pct:     { app: 'Apple PICT', icon: 'PICT', chunk: 'image' },
+  flif:    { app: 'FLIF Image', icon: 'FLIF', chunk: 'image' },
+  jbig2:   { app: 'JBIG2 Image', icon: 'JBG2', chunk: 'image' },
+  jb2:     { app: 'JBIG2 Image', icon: 'JBG2', chunk: 'image' },
+  jbig:    { app: 'JBIG Image', icon: 'JBIG', chunk: 'image' },
+  bie:     { app: 'JBIG Codestream', icon: 'BIE', chunk: 'image' },
+  cgm:     { app: 'Computer Graphics Metafile', icon: 'CGM', chunk: 'image' },
+  cdr:     { app: 'CorelDRAW Drawing', icon: 'CDR', chunk: 'image' },
+
+  // 3D / CAD / point clouds (lazy chunk: parsers-threed.js)
+  off:     { app: 'OFF Mesh', icon: 'OFF', chunk: 'threed' },
+  vox:     { app: 'MagicaVoxel', icon: 'VOX', chunk: 'threed' },
+  dae:     { app: 'COLLADA', icon: 'DAE', chunk: 'threed' },
+  zae:     { app: 'COLLADA (Zip)', icon: 'ZAE', chunk: 'threed' },
+  usdc:    { app: 'USD Crate (Binary)', icon: 'USDC', chunk: 'threed' },
+  x3d:     { app: 'X3D', icon: 'X3D', chunk: 'threed' },
+  x3dv:    { app: 'X3D (Classic VRML)', icon: 'X3DV', chunk: 'threed' },
+  wrl:     { app: 'VRML', icon: 'WRL', chunk: 'threed' },
+  vrml:    { app: 'VRML', icon: 'VRML', chunk: 'threed' },
+  lwo:     { app: 'LightWave Object', icon: 'LWO', chunk: 'threed' },
+  lws:     { app: 'LightWave Scene', icon: 'LWS', chunk: 'threed' },
+  drawio:  { app: 'draw.io Diagram', icon: 'DIO', chunk: 'threed' },
+  dio:     { app: 'draw.io Diagram', icon: 'DIO', chunk: 'threed' },
+  md2:     { app: 'Quake II Model', icon: 'MD2', chunk: 'threed' },
+  md3:     { app: 'Quake III Model', icon: 'MD3', chunk: 'threed' },
+  mdl:     { app: 'Quake / Studiomdl Model', icon: 'MDL', chunk: 'threed' },
+  vrm:     { app: 'VRM Avatar', icon: 'VRM', chunk: 'threed' },
+  jt:      { app: 'JT (Jupiter Tessellation)', icon: 'JT', chunk: 'threed' },
+  las:     { app: 'LAS Point Cloud', icon: 'LAS', chunk: 'threed' },
+  laz:     { app: 'LAZ Point Cloud', icon: 'LAZ', chunk: 'threed' },
+  pcd:     { app: 'PCD Point Cloud', icon: 'PCD', chunk: 'threed' },
+  pts:     { app: 'ASCII Point Cloud', icon: 'PTS', chunk: 'threed' },
+  e57:     { app: 'E57 Point Cloud', icon: 'E57', chunk: 'threed' },
+  ifc:     { app: 'IFC (BIM)', icon: 'IFC', chunk: 'threed' },
+  ifczip:  { app: 'IFCZIP (BIM)', icon: 'IFCZ', chunk: 'threed' },
+  splat:   { app: 'Gaussian Splat', icon: 'SPLT', chunk: 'threed' },
+  spz:     { app: 'Compressed Gaussian Splat', icon: 'SPZ', chunk: 'threed' },
+  abc:     { app: 'Alembic', icon: 'ABC', chunk: 'threed' },
+  vdb:     { app: 'OpenVDB', icon: 'VDB', chunk: 'threed' },
+  prc:     { app: 'PRC (3D PDF)', icon: 'PRC', chunk: 'threed' },
+  fls:     { app: 'FARO Scan', icon: 'FLS', chunk: 'threed' },
+  fws:     { app: 'FARO Scan', icon: 'FWS', chunk: 'threed' },
+
+  // Geospatial / GIS (lazy chunk: parsers-geodata.js)
+  topojson:{ app: 'TopoJSON', icon: 'TOPO', chunk: 'geodata' },
+  osm:     { app: 'OpenStreetMap XML', icon: 'OSM', chunk: 'geodata' },
+  shx:     { app: 'Shapefile Index', icon: 'SHX', chunk: 'geodata' },
+  dbf:     { app: 'dBASE Table', icon: 'DBF', chunk: 'geodata' },
+  prj:     { app: 'Projection (WKT)', icon: 'PRJ', chunk: 'geodata' },
+  cpg:     { app: 'Code Page', icon: 'CPG', chunk: 'geodata' },
+  pgw:     { app: 'World File', icon: 'PGW', chunk: 'geodata' },
+  tfw:     { app: 'World File', icon: 'TFW', chunk: 'geodata' },
+  jgw:     { app: 'World File', icon: 'JGW', chunk: 'geodata' },
+  wld:     { app: 'World File', icon: 'WLD', chunk: 'geodata' },
+  gml:     { app: 'GML (Geography Markup)', icon: 'GML', chunk: 'geodata' },
+  nmea:    { app: 'NMEA 0183 GPS', icon: 'NMEA', chunk: 'geodata' },
+  nmea0183:{ app: 'NMEA 0183 GPS', icon: 'NMEA', chunk: 'geodata' },
+  igc:     { app: 'IGC Flight Log', icon: 'IGC', chunk: 'geodata' },
+  tab:     { app: 'MapInfo TAB', icon: 'TAB', chunk: 'geodata' },
+  mif:     { app: 'MapInfo Interchange', icon: 'MIF', chunk: 'geodata' },
+  vrt:     { app: 'GDAL Virtual Raster', icon: 'VRT', chunk: 'geodata' },
+  pmtiles: { app: 'PMTiles', icon: 'PMT', chunk: 'geodata' },
+  dt0:     { app: 'DTED Terrain', icon: 'DT0', chunk: 'geodata' },
+  dt1:     { app: 'DTED Terrain', icon: 'DT1', chunk: 'geodata' },
+  dt2:     { app: 'DTED Terrain', icon: 'DT2', chunk: 'geodata' },
+  dted:    { app: 'DTED Terrain', icon: 'DTED', chunk: 'geodata' },
+  asc:     { app: 'Esri ASCII Grid', icon: 'ASC', chunk: 'geodata' },
+  hgt:     { app: 'SRTM Height', icon: 'HGT', chunk: 'geodata' },
+  grib:    { app: 'GRIB Weather', icon: 'GRIB', chunk: 'geodata' },
+  grb:     { app: 'GRIB Weather', icon: 'GRB', chunk: 'geodata' },
+  grib2:   { app: 'GRIB2 Weather', icon: 'GRB2', chunk: 'geodata' },
+  cdf:     { app: 'NetCDF', icon: 'CDF', chunk: 'geodata' },
+  nc4:     { app: 'NetCDF-4', icon: 'NC4', chunk: 'geodata' },
+  pbf:     { app: 'OSM PBF', icon: 'PBF', chunk: 'geodata' },
+  gpkg:    { app: 'GeoPackage', icon: 'GPKG', chunk: 'geodata' },
+  mbtiles: { app: 'MBTiles', icon: 'MBT', chunk: 'geodata' },
+  sid:     { app: 'MrSID', icon: 'SID', chunk: 'geodata' },
+  ecw:     { app: 'ECW', icon: 'ECW', chunk: 'geodata' },
+  gdb:     { app: 'Esri File Geodatabase', icon: 'GDB', chunk: 'geodata' },
+
+  // The Sims / Maxis package (DBPF)
+  package: { app: 'The Sims Package (DBPF)', icon: 'DBPF', chunk: 'gaming' },
+
+  // Audio - extra codecs / trackers / chiptune (lazy chunk: parsers-audio.js)
+  ape:     { app: "Monkey's Audio", icon: 'APE', chunk: 'audio' },
+  wv:      { app: 'WavPack', icon: 'WV', chunk: 'audio' },
+  tak:     { app: 'TAK Lossless', icon: 'TAK', chunk: 'audio' },
+  tta:     { app: 'True Audio', icon: 'TTA', chunk: 'audio' },
+  ofr:     { app: 'OptimFROG', icon: 'OFR', chunk: 'audio' },
+  ofs:     { app: 'OptimFROG DualStream', icon: 'OFS', chunk: 'audio' },
+  shn:     { app: 'Shorten', icon: 'SHN', chunk: 'audio' },
+  dsf:     { app: 'DSD Stream File', icon: 'DSF', chunk: 'audio' },
+  dff:     { app: 'DSDIFF', icon: 'DFF', chunk: 'audio' },
+  mpc:     { app: 'Musepack', icon: 'MPC', chunk: 'audio' },
+  'mp+':   { app: 'Musepack', icon: 'MPC', chunk: 'audio' },
+  mpp:     { app: 'Musepack', icon: 'MPC', chunk: 'audio' },
+  caf:     { app: 'Core Audio Format', icon: 'CAF', chunk: 'audio' },
+  rf64:    { app: 'RF64', icon: 'RF64', chunk: 'audio' },
+  bw64:    { app: 'BW64', icon: 'BW64', chunk: 'audio' },
+  w64:     { app: 'Sony Wave64', icon: 'W64', chunk: 'audio' },
+  au:      { app: 'Sun/NeXT Audio', icon: 'AU', chunk: 'audio' },
+  snd:     { app: 'Sun/NeXT Audio', icon: 'SND', chunk: 'audio' },
+  voc:     { app: 'Creative Voice', icon: 'VOC', chunk: 'audio' },
+  bwf:     { app: 'Broadcast Wave', icon: 'BWF', chunk: 'audio' },
+  spx:     { app: 'Speex', icon: 'SPX', chunk: 'audio' },
+  awb:     { app: 'AMR-WB', icon: 'AWB', chunk: 'audio' },
+  qcp:     { app: 'Qualcomm PureVoice', icon: 'QCP', chunk: 'audio' },
+  '3ga':   { app: '3GPP Audio', icon: '3GA', chunk: 'audio' },
+  m4r:     { app: 'iPhone Ringtone', icon: 'M4R', chunk: 'audio' },
+  gsm:     { app: 'GSM 06.10', icon: 'GSM', chunk: 'audio' },
+  mp2:     { app: 'MPEG Layer II', icon: 'MP2', chunk: 'audio' },
+  mp1:     { app: 'MPEG Layer I', icon: 'MP1', chunk: 'audio' },
+  sf2:     { app: 'SoundFont 2', icon: 'SF2', chunk: 'audio' },
+  sf3:     { app: 'SoundFont 3', icon: 'SF3', chunk: 'audio' },
+  sfz:     { app: 'SFZ Instrument', icon: 'SFZ', chunk: 'audio' },
+  dls:     { app: 'Downloadable Sounds', icon: 'DLS', chunk: 'audio' },
+  rmi:     { app: 'RIFF MIDI', icon: 'RMI', chunk: 'audio' },
+  mmf:     { app: 'SMAF (Yamaha)', icon: 'MMF', chunk: 'audio' },
+  gig:     { app: 'GigaStudio', icon: 'GIG', chunk: 'audio' },
+  rtttl:   { app: 'RTTTL Ringtone', icon: 'RTL', chunk: 'audio' },
+  rtx:     { app: 'RTTTL Ringtone', icon: 'RTX', chunk: 'audio' },
+  imy:     { app: 'iMelody', icon: 'IMY', chunk: 'audio' },
+  sap:     { app: 'Atari SAP', icon: 'SAP', chunk: 'audio' },
+  mod:     { app: 'Amiga Module', icon: 'MOD', chunk: 'audio' },
+  xm:      { app: 'Extended Module', icon: 'XM', chunk: 'audio' },
+  it:      { app: 'Impulse Tracker', icon: 'IT', chunk: 'audio' },
+  s3m:     { app: 'Scream Tracker 3', icon: 'S3M', chunk: 'audio' },
+  stm:     { app: 'Scream Tracker 2', icon: 'STM', chunk: 'audio' },
+  mtm:     { app: 'MultiTracker', icon: 'MTM', chunk: 'audio' },
+  med:     { app: 'OctaMED', icon: 'MED', chunk: 'audio' },
+  mmd:     { app: 'OctaMED', icon: 'MMD', chunk: 'audio' },
+  '669':   { app: 'Composer 669', icon: '669', chunk: 'audio' },
+  far:     { app: 'Farandole Composer', icon: 'FAR', chunk: 'audio' },
+  okt:     { app: 'Oktalyzer', icon: 'OKT', chunk: 'audio' },
+  nsfe:    { app: 'NES Sound Format (Extended)', icon: 'NSFE', chunk: 'audio' },
+  spc:     { app: 'SNES SPC700', icon: 'SPC', chunk: 'audio' },
+  vgm:     { app: 'Video Game Music', icon: 'VGM', chunk: 'audio' },
+  vgz:     { app: 'Video Game Music', icon: 'VGZ', chunk: 'audio' },
+  gbs:     { app: 'Game Boy Sound', icon: 'GBS', chunk: 'audio' },
+  ay:      { app: 'AY Chiptune', icon: 'AY', chunk: 'audio' },
+  ym:      { app: 'Atari ST YM', icon: 'YM', chunk: 'audio' },
+  aup:     { app: 'Audacity Project', icon: 'AUP', chunk: 'audio' },
+  aup3:    { app: 'Audacity 3 Project', icon: 'AUP3', chunk: 'audio' },
+  mo3:     { app: 'MO3 Compressed Module', icon: 'MO3', chunk: 'audio' },
+  umx:     { app: 'Unreal Music Package', icon: 'UMX', chunk: 'audio' },
+  psf:     { app: 'Portable Sound Format', icon: 'PSF', chunk: 'audio' },
+  minipsf: { app: 'Portable Sound Format', icon: 'PSF', chunk: 'audio' },
+  psf2:    { app: 'Portable Sound Format 2', icon: 'PSF2', chunk: 'audio' },
+  sfark:   { app: 'sfArk SoundFont', icon: 'SFRK', chunk: 'audio' },
+  mqa:     { app: 'MQA', icon: 'MQA', chunk: 'audio' },
+
+  // Video / streaming (lazy chunk: parsers-video.js)
+  m3u8:    { app: 'HLS Playlist', icon: 'M3U8', chunk: 'video' },
+  m3u:     { app: 'M3U Playlist', icon: 'M3U', chunk: 'video' },
+  mpd:     { app: 'MPEG-DASH Manifest', icon: 'MPD', chunk: 'video' },
+  ism:     { app: 'Smooth Streaming', icon: 'ISM', chunk: 'video' },
+  ismc:    { app: 'Smooth Streaming Manifest', icon: 'ISMC', chunk: 'video' },
+  f4m:     { app: 'Adobe HDS Manifest', icon: 'F4M', chunk: 'video' },
+  asx:     { app: 'WMP Playlist', icon: 'ASX', chunk: 'video' },
+  wpl:     { app: 'WMP Playlist', icon: 'WPL', chunk: 'video' },
+  xspf:    { app: 'XSPF Playlist', icon: 'XSPF', chunk: 'video' },
+  pls:     { app: 'PLS Playlist', icon: 'PLS', chunk: 'video' },
+  mxf:     { app: 'Material Exchange Format', icon: 'MXF', chunk: 'video' },
+  gxf:     { app: 'General Exchange Format', icon: 'GXF', chunk: 'video' },
+  lxf:     { app: 'Leitch Exchange Format', icon: 'LXF', chunk: 'video' },
+  dv:      { app: 'Raw DV Video', icon: 'DV', chunk: 'video' },
+  dif:     { app: 'Raw DV Video', icon: 'DIF', chunk: 'video' },
+  asf:     { app: 'Advanced Systems Format', icon: 'ASF', chunk: 'video' },
+  'dvr-ms':{ app: 'Windows Recorded TV', icon: 'DVRMS', chunk: 'video' },
+  rm:      { app: 'RealMedia', icon: 'RM', chunk: 'video' },
+  rmvb:    { app: 'RealMedia VBR', icon: 'RMVB', chunk: 'video' },
+  divx:    { app: 'DivX Video', icon: 'DIVX', chunk: 'video' },
+  f4v:     { app: 'Flash MP4 Video', icon: 'F4V', chunk: 'video' },
+  insv:    { app: 'Insta360 Video', icon: 'INSV', chunk: 'video' },
+  insp:    { app: 'Insta360 Photo', icon: 'INSP', chunk: 'video' },
+  lrv:     { app: 'Low-Res Video Proxy', icon: 'LRV', chunk: 'video' },
+  gifv:    { app: 'GIFV (Video GIF)', icon: 'GIFV', chunk: 'video' },
+  ivf:     { app: 'IVF (VPx/AV1)', icon: 'IVF', chunk: 'video' },
+  y4m:     { app: 'YUV4MPEG2', icon: 'Y4M', chunk: 'video' },
+  m2v:     { app: 'MPEG-2 Video', icon: 'M2V', chunk: 'video' },
+  m1v:     { app: 'MPEG-1 Video', icon: 'M1V', chunk: 'video' },
+  mpv:     { app: 'MPEG Video', icon: 'MPV', chunk: 'video' },
+  '264':   { app: 'Raw H.264 Stream', icon: 'H264', chunk: 'video' },
+  h264:    { app: 'Raw H.264 Stream', icon: 'H264', chunk: 'video' },
+  avc:     { app: 'Raw H.264 / AVC', icon: 'AVC', chunk: 'video' },
+  '265':   { app: 'Raw H.265 Stream', icon: 'H265', chunk: 'video' },
+  h265:    { app: 'Raw H.265 Stream', icon: 'H265', chunk: 'video' },
+  hevc:    { app: 'Raw HEVC Stream', icon: 'HEVC', chunk: 'video' },
+  obu:     { app: 'AV1 OBU Stream', icon: 'OBU', chunk: 'video' },
+  m2p:     { app: 'MPEG-2 Program Stream', icon: 'M2P', chunk: 'video' },
+  h2v:     { app: 'MPEG-2 Stream', icon: 'H2V', chunk: 'video' },
+  m2t:     { app: 'MPEG-2 Transport', icon: 'M2T', chunk: 'video' },
+  trp:     { app: 'PVR/DVB Recording', icon: 'TRP', chunk: 'video' },
+  tp:      { app: 'PVR/DVB Recording', icon: 'TP', chunk: 'video' },
+  wtv:     { app: 'Windows Recorded TV', icon: 'WTV', chunk: 'video' },
+  ogm:     { app: 'Ogg Media', icon: 'OGM', chunk: 'video' },
+  nut:     { app: 'NUT Container', icon: 'NUT', chunk: 'video' },
+  dpx:     { app: 'Digital Picture Exchange', icon: 'DPX', chunk: 'video' },
+  cin:     { app: 'Cineon', icon: 'CIN', chunk: 'video' },
+  dav:     { app: 'Dahua DVR Video', icon: 'DAV', chunk: 'video' },
+  yuv:     { app: 'Raw YUV', icon: 'YUV', chunk: 'video' },
+
+  // Documents / ebooks / publishing (lazy chunk: parsers-docs.js)
+  cbz:     { app: 'Comic Book ZIP', icon: 'CBZ', chunk: 'docs' },
+  cbt:     { app: 'Comic Book TAR', icon: 'CBT', chunk: 'docs' },
+  xps:     { app: 'XPS Document', icon: 'XPS', chunk: 'docs' },
+  oxps:    { app: 'OpenXPS Document', icon: 'OXPS', chunk: 'docs' },
+  hwpx:    { app: 'Hangul HWPX', icon: 'HWPX', chunk: 'docs' },
+  fb3:     { app: 'FictionBook 3', icon: 'FB3', chunk: 'docs' },
+  ibooks:  { app: 'iBooks Author', icon: 'IBKS', chunk: 'docs' },
+  scriv:   { app: 'Scrivener Project', icon: 'SCRV', chunk: 'docs' },
+  scrivx:  { app: 'Scrivener Index', icon: 'SCRX', chunk: 'docs' },
+  abw:     { app: 'AbiWord Document', icon: 'ABW', chunk: 'docs' },
+  zabw:    { app: 'AbiWord (gzip)', icon: 'ZABW', chunk: 'docs' },
+  sxw:     { app: 'StarOffice Writer', icon: 'SXW', chunk: 'docs' },
+  sxc:     { app: 'StarOffice Calc', icon: 'SXC', chunk: 'docs' },
+  sxi:     { app: 'StarOffice Impress', icon: 'SXI', chunk: 'docs' },
+  fodt:    { app: 'ODF Flat Text', icon: 'FODT', chunk: 'docs' },
+  fods:    { app: 'ODF Flat Spreadsheet', icon: 'FODS', chunk: 'docs' },
+  fodp:    { app: 'ODF Flat Slides', icon: 'FODP', chunk: 'docs' },
+  fodg:    { app: 'ODF Flat Graphics', icon: 'FODG', chunk: 'docs' },
+  ott:     { app: 'ODF Text Template', icon: 'OTT', chunk: 'docs' },
+  ots:     { app: 'ODF Sheet Template', icon: 'OTS', chunk: 'docs' },
+  otp:     { app: 'ODF Slides Template', icon: 'OTP', chunk: 'docs' },
+  dotx:    { app: 'Word Template', icon: 'DOTX', chunk: 'docs' },
+  dotm:    { app: 'Word Macro Template', icon: 'DOTM', chunk: 'docs' },
+  vsdx:    { app: 'Visio Drawing', icon: 'VSDX', chunk: 'docs' },
+  tex:     { app: 'TeX / LaTeX Source', icon: 'TEX', chunk: 'docs' },
+  latex:   { app: 'LaTeX Source', icon: 'LTX', chunk: 'docs' },
+  sty:     { app: 'LaTeX Style', icon: 'STY', chunk: 'docs' },
+  cls:     { app: 'LaTeX Class', icon: 'CLS', chunk: 'docs' },
+  bib:     { app: 'BibTeX Bibliography', icon: 'BIB', chunk: 'docs' },
+  rst:     { app: 'reStructuredText', icon: 'RST', chunk: 'docs' },
+  adoc:    { app: 'AsciiDoc', icon: 'ADOC', chunk: 'docs' },
+  asciidoc:{ app: 'AsciiDoc', icon: 'ADOC', chunk: 'docs' },
+  org:     { app: 'Emacs Org-mode', icon: 'ORG', chunk: 'docs' },
+  textile: { app: 'Textile Markup', icon: 'TXTL', chunk: 'docs' },
+  tei:     { app: 'TEI XML', icon: 'TEI', chunk: 'docs' },
+  rmd:     { app: 'R Markdown', icon: 'RMD', chunk: 'docs' },
+  qmd:     { app: 'Quarto Document', icon: 'QMD', chunk: 'docs' },
+  rtfd:    { app: 'Rich Text Directory', icon: 'RTFD', chunk: 'docs' },
+  mht:     { app: 'MHTML Web Archive', icon: 'MHT', chunk: 'docs' },
+  mhtml:   { app: 'MHTML Web Archive', icon: 'MHTML', chunk: 'docs' },
+  warc:    { app: 'Web ARChive', icon: 'WARC', chunk: 'docs' },
+  maff:    { app: 'Mozilla Archive', icon: 'MAFF', chunk: 'docs' },
+  jats:    { app: 'JATS Journal XML', icon: 'JATS', chunk: 'docs' },
+  nxml:    { app: 'JATS (NXML)', icon: 'NXML', chunk: 'docs' },
+  dvi:     { app: 'TeX DVI', icon: 'DVI', chunk: 'docs' },
+  cbr:     { app: 'Comic Book RAR', icon: 'CBR', chunk: 'docs' },
+  cb7:     { app: 'Comic Book 7-Zip', icon: 'CB7', chunk: 'docs' },
+  chm:     { app: 'Compiled HTML Help', icon: 'CHM', chunk: 'docs' },
+  wpd:     { app: 'WordPerfect Document', icon: 'WPD', chunk: 'docs' },
+  hwp:     { app: 'Hangul HWP', icon: 'HWP', chunk: 'docs' },
+  qxd:     { app: 'QuarkXPress', icon: 'QXD', chunk: 'docs' },
+  qxp:     { app: 'QuarkXPress', icon: 'QXP', chunk: 'docs' },
+  pmd:     { app: 'PageMaker', icon: 'PMD', chunk: 'docs' },
+  lit:     { app: 'MS Reader eBook', icon: 'LIT', chunk: 'docs' },
+  kfx:     { app: 'Amazon KFX', icon: 'KFX', chunk: 'docs' },
 
   // Adobe After Effects XML project
   aepx:    { app: 'Adobe After Effects (XML)', icon: 'Ae', parse: 'xml' },
@@ -892,7 +1472,7 @@ function parse7z(buf) {
 }
 
 // ---------- SQLite ----------
-function parseSqlite(buf) {
+async function parseSqlite(buf, file) {
   if (buf.length < 100) return null;
   const sig = ascii(buf, 0, 15);
   if (sig !== 'SQLite format 3') return null;
@@ -901,13 +1481,79 @@ function parseSqlite(buf) {
   const ps = pageSize === 1 ? 65536 : pageSize;
   const writeVer = buf[18];
   const readVer = buf[19];
-  const journal = { 1: 'legacy', 2: 'WAL' };
-  return {
+  const journal = { 1: 'legacy (rollback)', 2: 'WAL' };
+  const out = {
     'Page size': ps.toLocaleString() + ' bytes',
-    'Write format': journal[writeVer] || writeVer,
-    'Read format': journal[readVer] || readVer,
-    'SQLite version': view.getUint32(96) ? String(view.getUint32(96)) : undefined
+    'Journal mode': journal[writeVer] || String(writeVer),
+    'SQLite version': view.getUint32(96) ? String(view.getUint32(96)) : undefined,
   };
+
+  // Deep analysis with the vendored sql.js engine (lazy-loaded). Skipped for very
+  // large files to avoid loading the whole DB into memory; any failure (engine
+  // unavailable, encrypted/corrupt DB) cleanly falls back to the header facts above.
+  if (file && file.size < 268435456) {
+    try {
+      const { sqliteAnalysis } = await import('./sqlite.js');
+      const a = await sqliteAnalysis(file);
+      if (a) {
+        const totalRows = a.tables.reduce((s, t) => s + (t.rows || 0), 0);
+        if (a.pragma.encoding) out['Encoding'] = a.pragma.encoding;
+        if (a.pragma.page_count) out['Pages'] = Number(a.pragma.page_count).toLocaleString();
+        if (a.pragma.user_version) out['user_version'] = a.pragma.user_version;
+        if (a.pragma.application_id) out['application_id'] = a.pragma.application_id;
+        out['Tables'] = a.tables.length;
+        if (a.views.length) out['Views'] = a.views.length;
+        if (a.indexes.length) out['Indexes'] = a.indexes.length;
+        if (a.triggers.length) out['Triggers'] = a.triggers.length;
+        out['Total rows'] = totalRows.toLocaleString();
+
+        const sections = [];
+        if (a.tables.length) {
+          const t = el('table', { class: 'anr-readout' });
+          t.appendChild(el('tr', {}, [el('th', {}, 'Table'), el('th', {}, 'Rows'), el('th', {}, 'Cols')]));
+          for (const tb of a.tables) {
+            t.appendChild(el('tr', {}, [
+              el('td', {}, tb.name),
+              el('td', {}, tb.rows != null ? Number(tb.rows).toLocaleString() : '?'),
+              el('td', {}, String(tb.cols.length)),
+            ]));
+          }
+          sections.push({ title: 'Tables (' + a.tables.length + ')', node: t, open: true });
+
+          const cols = el('div', {});
+          for (const tb of a.tables) {
+            cols.appendChild(el('div', { class: 'anr-readout-section' },
+              tb.name + (tb.rows != null ? ' — ' + Number(tb.rows).toLocaleString() + ' rows' : '')));
+            const ct = el('table', { class: 'anr-readout' });
+            for (const c of tb.cols) ct.appendChild(row(c.name + (c.pk ? ' (PK)' : ''), c.type));
+            cols.appendChild(ct);
+          }
+          sections.push({ title: 'Columns', node: cols });
+        }
+        if (a.ddl) {
+          const pre = el('pre', { class: 'anr-code', style: 'max-height:400px;overflow:auto;font-size:12px;white-space:pre-wrap;' });
+          pre.textContent = a.ddl;
+          sections.push({ title: 'Schema (CREATE statements)', node: pre });
+        }
+        if (a.sample && a.sample.rows.length) {
+          const wrap = el('div', { class: 'anr-table-wrap' });
+          const st = el('table', { class: 'anr-readout anr-table-data' });
+          const hr = el('tr', {});
+          for (const c of a.sample.columns) hr.appendChild(el('th', {}, String(c)));
+          st.appendChild(hr);
+          for (const r of a.sample.rows) {
+            const tr = el('tr', {});
+            for (const cell of r) tr.appendChild(el('td', {}, cell == null ? 'NULL' : String(cell).slice(0, 160)));
+            st.appendChild(tr);
+          }
+          wrap.appendChild(st);
+          sections.push({ title: 'Sample data — ' + a.sample.table + ' (first 5 rows)', node: wrap });
+        }
+        if (sections.length) out._sections = sections;
+      }
+    } catch (_) { /* sql.js unavailable - header-only */ }
+  }
+  return out;
 }
 
 // ---------- GIMP XCF ----------
@@ -2364,9 +3010,11 @@ const PARSERS = {
   flp:   c => parseFlp(c.file),
   rar:   c => parseRar(c.head),
   '7z':  c => parse7z(c.head),
-  sqlite: c => parseSqlite(c.head),
-  db:    c => parseSqlite(c.head),
-  lrcat: c => parseSqlite(c.head),   // Lightroom catalog is a SQLite database
+  sqlite: c => parseSqlite(c.head, c.file),
+  sqlite3: c => parseSqlite(c.head, c.file),
+  db3:   c => parseSqlite(c.head, c.file),
+  db:    c => parseSqlite(c.head, c.file),
+  lrcat: c => parseSqlite(c.head, c.file),   // Lightroom catalog is a SQLite database
   xcf:   c => parseXcf(c.head),
   torrent: c => parseTorrent(c.file),
   als:   c => parseGzipXmlProject(c.file, c.ext),
@@ -2403,8 +3051,8 @@ const PARSERS = {
 };
 
 // ---------- main render ----------
-export async function renderProprietary(file, container) {
-  const ext = extFromName(file.name);
+export async function renderProprietary(file, container, extOverride) {
+  const ext = extOverride || extFromName(file.name);
   const fmt = FORMATS[ext];
   if (!fmt) return false;
 
@@ -2426,6 +3074,20 @@ export async function renderProprietary(file, container) {
   // sync or async; the result is awaited. Aliases (e.g. psd/psb) share an entry.
   const fn = PARSERS[ext];
   if (fn) extra = await fn({ head, file, ext });
+
+  // Lazily-loaded parser chunks. New formats register a `chunk` in FORMATS and
+  // ship their parser in parsers-<chunk>.js, so the boot bundle stays flat as the
+  // format count grows (the chunk is fetched only when such a file is opened).
+  // Each chunk exports a PARSERS map: ext -> ({head,file,ext}) => rows object,
+  // using the same return shape as the built-in parsers (plain key/value pairs,
+  // plus optional `_`-prefixed payloads handled below).
+  if (!extra && !fn && fmt.chunk) {
+    try {
+      const mod = await import('./parsers-' + fmt.chunk + '.js');
+      const lazyFn = mod.PARSERS && mod.PARSERS[ext];
+      if (lazyFn) extra = await lazyFn({ head, file, ext });
+    } catch (e) { /* chunk unavailable - fall through to generic handling */ }
+  }
 
   // ISO: primary volume descriptor at sector 16 (32768 bytes)
   if (!extra && ext === 'iso' && file.size > 32868) {
@@ -2477,6 +3139,12 @@ export async function renderProprietary(file, container) {
   }
 
   card.appendChild(tbl);
+
+  // Optional decoded preview supplied by a parser (e.g. a <canvas>/<img> from an
+  // image-format chunk, or a small chart). Rendered right under the readout.
+  if (extra && extra._previewNode instanceof Node) {
+    card.appendChild(extra._previewNode);
+  }
 
   // Font preview (TTF/OTF/WOFF/WOFF2/TTC) - render sample text live with the font.
   if (ext === 'ttf' || ext === 'otf' || ext === 'woff' || ext === 'woff2' || ext === 'ttc') {
@@ -2574,6 +3242,19 @@ export async function renderProprietary(file, container) {
     pre.textContent = xmpData.raw;
     det.appendChild(pre);
     card.appendChild(det);
+  }
+
+  // Optional extra collapsible sections supplied by a parser as `_sections`:
+  // an array of { title, node, open? } - used for file lists, hex blocks,
+  // per-track tables, decoded sub-structures, etc.
+  if (extra && Array.isArray(extra._sections)) {
+    for (const sec of extra._sections) {
+      if (!sec || !(sec.node instanceof Node)) continue;
+      const det = el('details', sec.open ? { style: 'margin-top:14px;', open: '' } : { style: 'margin-top:14px;' });
+      det.appendChild(el('summary', {}, sec.title || 'Details'));
+      det.appendChild(sec.node);
+      card.appendChild(det);
+    }
   }
 
   container.appendChild(card);

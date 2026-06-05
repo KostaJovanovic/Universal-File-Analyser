@@ -275,6 +275,158 @@ async function extractMeta(zip) {
   return fields;
 }
 
+// ---------- Collaboration / extra metadata (additive) ----------
+
+// Build a card surfacing comments, tracked changes, hyperlinks, protection
+// flags and extended document properties. Returns an .anr-card element, or
+// null when nothing of interest was found. Fully guarded so a failure here
+// never affects the main document rendering.
+async function buildCollabCard(zip) {
+  try {
+    const card = el('div', { class: 'anr-card' });
+    card.appendChild(el('h3', {}, 'Collaboration & metadata'));
+    const tbl = el('table', { class: 'anr-readout' });
+    const detailsBlocks = []; // collapsible blocks appended after the table
+    let any = false;
+
+    // --- Comments (word/comments.xml) ---
+    try {
+      if (zip.has('word/comments.xml')) {
+        const xml = await zip.text('word/comments.xml');
+        if (xml) {
+          const cdoc = new DOMParser().parseFromString(xml, 'application/xml');
+          const comments = cdoc.getElementsByTagNameNS(W, 'comment');
+          if (comments.length) {
+            const authors = new Set();
+            const snippets = [];
+            for (const c of comments) {
+              const a = wAttr(c, 'author');
+              if (a) authors.add(a);
+              let txt = '';
+              for (const t of c.getElementsByTagNameNS(W, 't')) txt += t.textContent;
+              txt = txt.trim();
+              if (txt) snippets.push({ author: a, text: txt });
+            }
+            tbl.appendChild(row('Comments', comments.length + (authors.size ? ' (by ' + [...authors].join(', ') + ')' : '')));
+            any = true;
+            if (snippets.length) {
+              const det = el('details', { style: 'margin-top:8px;' });
+              det.appendChild(el('summary', {}, 'View comments (' + snippets.length + ')'));
+              for (const s of snippets.slice(0, 50)) {
+                const p = el('p', { style: 'margin:6px 0;' });
+                if (s.author) p.appendChild(el('strong', {}, s.author + ': '));
+                p.appendChild(document.createTextNode(s.text.length > 300 ? s.text.slice(0, 300) + '…' : s.text));
+                det.appendChild(p);
+              }
+              detailsBlocks.push(det);
+            }
+          }
+        }
+      }
+    } catch (_) { /* ignore */ }
+
+    // --- Tracked changes (w:ins / w:del in document.xml) ---
+    try {
+      if (zip.has('word/document.xml')) {
+        const xml = await zip.text('word/document.xml');
+        if (xml) {
+          const ddoc = new DOMParser().parseFromString(xml, 'application/xml');
+          const ins = ddoc.getElementsByTagNameNS(W, 'ins');
+          const del = ddoc.getElementsByTagNameNS(W, 'del');
+          const n = ins.length + del.length;
+          if (n) {
+            const authors = new Set();
+            for (const e of [...ins, ...del]) { const a = wAttr(e, 'author'); if (a) authors.add(a); }
+            tbl.appendChild(row('Tracked changes', n + (authors.size ? ' (by ' + [...authors].join(', ') + ')' : '')));
+            any = true;
+          }
+        }
+      }
+    } catch (_) { /* ignore */ }
+
+    // --- External hyperlinks (word/_rels/document.xml.rels) ---
+    try {
+      if (zip.has('word/_rels/document.xml.rels')) {
+        const xml = await zip.text('word/_rels/document.xml.rels');
+        if (xml) {
+          const rdoc = new DOMParser().parseFromString(xml, 'application/xml');
+          const links = [];
+          for (const r of rdoc.getElementsByTagName('Relationship')) {
+            const type = r.getAttribute('Type') || '';
+            const target = r.getAttribute('Target') || '';
+            const ext = (r.getAttribute('TargetMode') || '') === 'External';
+            if (/hyperlink/i.test(type) && (ext || /^https?:/i.test(target)) && target) links.push(target);
+          }
+          if (links.length) {
+            tbl.appendChild(row('External links', links.length));
+            any = true;
+            const det = el('details', { style: 'margin-top:8px;' });
+            det.appendChild(el('summary', {}, 'View links (' + links.length + ')'));
+            for (const u of links.slice(0, 100)) {
+              const a = el('a', { href: u, target: '_blank', rel: 'noopener noreferrer', style: 'display:block;word-break:break-all;color:var(--accent);' }, u);
+              det.appendChild(a);
+            }
+            detailsBlocks.push(det);
+          }
+        }
+      }
+    } catch (_) { /* ignore */ }
+
+    // --- Settings: trackChanges / documentProtection ---
+    try {
+      if (zip.has('word/settings.xml')) {
+        const xml = await zip.text('word/settings.xml');
+        if (xml) {
+          const sdoc = new DOMParser().parseFromString(xml, 'application/xml');
+          if (sdoc.getElementsByTagNameNS(W, 'trackChanges').length) {
+            tbl.appendChild(row('Track changes', 'On (enabled in settings)'));
+            any = true;
+          }
+          const prot = sdoc.getElementsByTagNameNS(W, 'documentProtection')[0];
+          if (prot) {
+            const edit = wAttr(prot, 'edit');
+            tbl.appendChild(row('Document protection', edit ? 'Restricted: ' + edit : 'Enabled'));
+            any = true;
+          }
+        }
+      }
+    } catch (_) { /* ignore */ }
+
+    // --- Extended properties (app.xml: Company / Manager / TotalTime) ---
+    try {
+      if (zip.has('docProps/app.xml')) {
+        const xml = await zip.text('docProps/app.xml');
+        if (xml) {
+          const grab = (tag) => { const m = xml.match(new RegExp('<' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+          const company = grab('Company'); if (company) { tbl.appendChild(row('Company', company)); any = true; }
+          const manager = grab('Manager'); if (manager) { tbl.appendChild(row('Manager', manager)); any = true; }
+          const total = grab('TotalTime');
+          if (total && total !== '0') { tbl.appendChild(row('Editing time', total + ' min')); any = true; }
+        }
+      }
+    } catch (_) { /* ignore */ }
+
+    // --- Core: subject / keywords ---
+    try {
+      if (zip.has('docProps/core.xml')) {
+        const xml = await zip.text('docProps/core.xml');
+        if (xml) {
+          const grab = (tag) => { const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+          const subject = grab('subject'); if (subject) { tbl.appendChild(row('Subject', subject)); any = true; }
+          const keywords = grab('keywords'); if (keywords) { tbl.appendChild(row('Keywords', keywords)); any = true; }
+        }
+      }
+    } catch (_) { /* ignore */ }
+
+    if (!any) return null;
+    card.appendChild(tbl);
+    for (const d of detailsBlocks) card.appendChild(d);
+    return card;
+  } catch (_) {
+    return null;
+  }
+}
+
 // ---------- Main render ----------
 
 export async function renderDocx(file, container) {
@@ -315,6 +467,11 @@ export async function renderDocx(file, container) {
       tbl.appendChild(row('Last modified', new Date(file.lastModified).toLocaleString()));
     infoCard.appendChild(tbl);
     container.appendChild(infoCard);
+
+    try {
+      const collab = await buildCollabCard(zip);
+      if (collab) container.appendChild(collab);
+    } catch (_) { /* never block document rendering */ }
 
     const imageMap = await buildImageMap(zip);
 

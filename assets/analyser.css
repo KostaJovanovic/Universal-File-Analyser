@@ -355,6 +355,13 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
 .nav-link:hover { background: var(--surface); color: var(--fg); }
 .nav-link.is-active { background: var(--fg); color: var(--bg); }
 .nav-link.is-active .nav-num { color: var(--bg); opacity: 0.5; }
+/* Greyed-out + unresponsive when the link's section isn't on the page (e.g. the
+   analysed file isn't photo/audio/video). Home and Search are separate controls. */
+.nav-link.is-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+  cursor: default;
+}
 .nav-link.has-data::after {
   content: '';
   width: 6px;
@@ -590,6 +597,17 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   line-height: 1.05;
   margin: 0 0 16px;
   max-width: 22ch;
+}
+/* Section headings react to hover (the per-letter weight effect), so show the
+   normal arrow cursor rather than the text I-beam - on the elements AND on the
+   per-letter <span>s the hover effect injects (so the I-beam never shows over the
+   glyphs). user-select:none also keeps a stray drag from selecting the text. The
+   .is-tappable pointer rule below is more specific, so mobile tap still wins. */
+.section-num, .section-kicker, .section-head,
+.section-num span, .section-kicker span, .section-head span {
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .section-lede {
   font-size: clamp(14px, 1.4vw, 17px);
@@ -2510,18 +2528,91 @@ details[open] summary::after { content: "\2212"; }
   padding-top: 0;
   border-top: none;
 }
-.fmt-table td {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  word-spacing: 6px;
-  text-transform: uppercase;
-  line-height: 1.8;
+/* Collapsible per-format rows (shared by the overlay and the about page).
+   Each row is a native <details class="fmt-item"> revealing its description on
+   click. Sharp corners, accent on open, to match the rest of the site. */
+.fmt-list { margin: 0; }
+.fmt-item {
+  border-top: 1px solid var(--hairline);
 }
-/* Wrap the ext lists between tokens, never mid-extension - .anr-readout's
-   break-all would otherwise split "AMR" into "AM" / "R". */
-.fmt-table th, .fmt-table td { word-break: normal; overflow-wrap: break-word; }
-.fmt-table tr.is-hidden { display: none; }
+.fmt-item:first-child { border-top: none; }
+.fmt-item.is-hidden { display: none; }
+.fmt-item-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 0;
+  position: relative;
+}
+.fmt-item-summary::-webkit-details-marker { display: none; }
+.fmt-item-summary::after {
+  content: '+';
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--muted);
+  flex: none;
+}
+.fmt-item[open] > .fmt-item-summary::after { content: '\2212'; }
+.fmt-item-summary:hover { color: var(--accent); }
+.fmt-item-summary:hover .fmt-item-ext { color: var(--accent); }
+.fmt-item-label {
+  flex: none;
+  min-width: 100px;
+  font-family: var(--font-sans);
+  font-size: var(--t-small);
+  font-weight: 500;
+  color: var(--fg);
+}
+.fmt-item-exts {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  word-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--muted);
+  line-height: 1.7;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+.fmt-item-ext { scroll-margin-top: 84px; }
+.fmt-item[open] > .fmt-item-summary { color: var(--accent); }
+.fmt-item-desc {
+  padding: 0 0 12px;
+  font-family: var(--font-sans);
+  font-size: var(--t-small);
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 60ch;
+  scroll-margin-top: 84px;
+}
+.fmt-item { scroll-margin-top: 84px; }
+
+/* Clickable "N supported formats" affordance (dropzone hint + about page). */
+.fmt-count-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--hairline);
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+.fmt-count-link:hover { color: var(--accent); text-decoration-color: var(--accent); }
+.about-formats-actions { margin: 8px 0 0; }
+.fmt-overlay-count {
+  font-family: var(--font-mono);
+  font-size: 0.62em;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  vertical-align: middle;
+  margin-left: 6px;
+}
 .quickdrop-zone .anr-audio-modes {
   padding: 0;
   border-top: 1px solid var(--hairline);

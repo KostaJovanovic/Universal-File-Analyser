@@ -122,6 +122,20 @@ export const FULL_ANALYSIS = [
 ];
 
 export const IDENTIFICATION = [
+  { label: 'Developer / data', exts: 'JWT HAR IPYNB JSONL NDJSON DIFF PATCH WASM CLASS NPY Safetensors GGUF MAP SQL SLN CSPROJ VBPROJ FSPROJ VCXPROJ Gradle TF TFState EditorConfig PROTO GraphQL GQL SARIF PYC PLIST', tags: 'developer code json web token jwt auth http archive har devtools jupyter notebook ipynb webassembly wasm java class bytecode numpy npy safetensors gguf llm ai model machine learning source map sourcemap sql dump database visual studio solution sln dotnet msbuild csproj terraform tfstate protobuf protocol buffers graphql sarif python pyc property list plist apple serialization', desc: 'Identify and read metadata from developer and data files: JWT tokens (header + claims + expiry), HAR captures, Jupyter notebooks, WebAssembly, Java class files, NumPy/Safetensors/GGUF model files, source maps, SQL dumps, Visual Studio/.NET projects, Terraform, Protobuf, GraphQL, SARIF, Python bytecode, and Apple property lists (XML + binary).' },
+  { label: 'Archives (packages)', exts: 'LZ4 LZMA Z CPIO A WHL NUPKG CRX XPI VSIX ASAR APPX MSIX APKG CONDA DEB RPM GEM CAB ACE ARJ LZH LHA ZOO ARC', tags: 'archive package installer compression lz4 lzma compress lzw cpio initramfs unix ar static library python wheel pip pypa nuget dotnet chrome extension firefox addon vs code vsix electron asar windows app package msix anki conda anaconda debian ubuntu apt dpkg redhat fedora rpm rubygems gem microsoft cabinet ace arj lha lharc zoo arc', desc: 'Read software packages and Unix archive streams: Python wheels, NuGet, Chrome/Firefox/VS Code extensions, Electron ASAR, Windows APPX/MSIX, Debian (DEB), RPM, RubyGems, conda, Anki, Microsoft CAB, cpio and ar — showing name, version, dependencies and the file tree — plus lz4/lzma/compress stream headers.' },
+  { label: 'Email / calendar / contacts', exts: 'EML EMLX MBOX ICS ICAL IFB VCF VCARD VCS LDIF CONTACT MSG PST OST NSF EDB DBX', tags: 'email mime rfc822 mail message thunderbird outlook apple mail gmail imap eml emlx mbox icalendar ics calendar event meeting invite vevent vtodo rrule google calendar vcard contact address book vcf vcs ldif ldap directory spf dkim dmarc attachment pst ost exchange ese lotus notes domino nsf dbx outlook express pim', desc: 'Open email and personal-information files: .eml/.emlx/.mbox messages (From/To/Subject/Date, Received hops, SPF/DKIM/DMARC, attachments, body preview), iCalendar .ics/.ical and .vcs (events, times, recurrence, organiser/attendees), vCard .vcf contacts (fields + inline base64 photo), LDIF directory exports and Windows .contact — with Outlook .msg/.pst, IBM Notes .nsf, Exchange .edb and Outlook Express .dbx identified.' },
+  { label: 'Security / keys / certs', exts: 'KEY PUB P8 CSR CRL P7B P7C PPK OVPN WG JKS KEYSTORE JCEKS MOBILECONFIG MOBILEPROVISION REG PCAP PCAPNG P12 PFX KDBX EVTX', tags: 'openssl ssh openssh putty rsa ed25519 ecdsa pkcs1 pkcs8 pkcs10 pkcs7 pkcs12 pfx cms x509 certificate csr crl certbot letsencrypt keystore java jks jceks tomcat apns apple mdm provisioning mobileconfig wireguard openvpn vpn registry regedit forensics keepass encase prefetch etw wireshark tcpdump pcap fingerprint sha256 private key secret credentials', desc: 'Inspect security and crypto files: PEM private/public keys (RSA/EC/Ed25519, PKCS#1 vs PKCS#8, encryption), OpenSSH .pub with SHA-256 fingerprint, PuTTY .ppk, PKCS#10 CSR, X.509 CRL, PKCS#7 bundles, OpenVPN/WireGuard configs, Java KeyStores, Apple .mobileconfig/.mobileprovision, Windows .reg (with autorun flagging), and pcap/pcapng captures — warning when a private key or secret is present.' },
+  { label: 'Game ROMs / assets', exts: 'NES GB GBC GBA SFC SMC NDS DSI Z64 N64 V64 GEN SMD IPS BPS UPS PPF WAD NBT MCWORLD ASE PCK PAK PK3 BSP VPK VTF VMT KTX KTX2 TMX TMJ LOVE PACKAGE MPQ CIA NSP XCI', tags: 'rom emulator emulation console retro nintendo nes famicom game boy gameboy gbc advance gba snes super famicom super nintendo nintendo ds dsi nintendo 64 n64 sega genesis mega drive ips bps ups ppf patch romhack doom wad slade minecraft nbt schematic litematica bedrock aseprite sprite godot quake idtech valve source engine vpk vtf vmt bsp pico-8 love2d love tiled tmx ktx ktx2 gpu texture the sims sims3 sims4 maxis dbpf package simcity spore cas mods starcraft mpq blizzard 3ds switch nsp xci citra ryujinx renpy rpg maker fceux mesen mgba snes9x project64 mednafen', desc: 'Inspect game ROMs, patches and engine assets: iNES/NES2.0, Game Boy/Color/Advance, SNES, Nintendo DS/DSi, Nintendo 64, and Sega Genesis ROM headers (title, mapper, region, checksum); IPS/BPS/UPS/PPF patches; Doom WAD lumps; Minecraft NBT/schematics and Bedrock bundles; Aseprite sprites; Godot .pck; Quake/id Tech PAK/PK3; Source BSP/VPK/VTF/VMT; KTX/KTX2 textures; Tiled maps; LÖVE games; PICO-8 carts — plus MPQ, 3DS/Switch and Ren’Py/RPG Maker identification.' },
+  { label: 'Disk images / firmware', exts: 'OVF OVA VBOX VMX CUE CCD NRG MDS MDF HEX SREC S19 S28 S37 MOT UF2 ELF AXF O SO DTB DTBO UIMAGE GPT MBR EXT4 EXT SQUASHFS SFS CRAMFS ROMFS WIM SWM ESD EWF JFFS2 UBIFS YAFFS2 ISZ CDI VMSN VMEM', tags: 'disk image firmware virtual machine vm vmware virtualbox oracle ovf ova appliance vmx vbox hypervisor cue sheet clonecd nero alcohol optical cd dvd partition gpt mbr efi boot intel hex motorola s-record srec microcontroller mcu embedded uf2 raspberry pi pico micro:bit elf axf gcc clang arm risc-v avr x86 executable shared object device tree dtb u-boot uimage flash router iot openwrt ext4 ext3 squashfs cramfs romfs linux filesystem superblock wim esd swm windows imaging encase ewf forensic jffs2 ubifs yaffs2 nand', desc: 'Inspect virtual-machine descriptors (VMware .vmx, VirtualBox .vbox, OVF/OVA), disc images (Nero .nrg, Alcohol .mds/.mdf, CloneCD), embedded firmware (Intel HEX, Motorola S-record, UF2, ELF/AXF, Device Tree Blobs, U-Boot uImage), partition tables (MBR/GPT with GUIDs), Linux filesystem superblocks (ext2/3/4, SquashFS, cramfs, romfs) and Windows imaging (WIM/ESD) — reading headers directly, no upload.' },
+  { label: 'Science / medical / engineering', exts: 'DCM DICOM NII FIT TCX FITS FTS FASTA FA FNA FAA FASTQ FQ MOL SDF MOL2 CIF MMCIF XYZ GBR GBL GTL DRL XLN CIR SP SPI SPICE EDF BDF JDX DX SAV DTA SAS7BDAT VTK VTU VTP VTI SEGY SGY BAM SAM BCF HEA', tags: 'dicom medical imaging ct mri x-ray pacs radiology garmin strava zwift activity fit tcx fits astronomy nasa telescope nifti neuroimaging brain fasta fastq dna rna protein genomics ncbi illumina sequencing chemistry molecule mdl sdf mol2 rdkit chemdraw cif crystallography xyz avogadro vmd gerber pcb kicad altium eagle excellon drill spice ltspice ngspice netlist eeg ecg edf bdf biosignal jcamp spectroscopy ir nmr spss stata sas statistics dataset vtk paraview kitware mesh fea cfd simulation seg-y seismic bam sam vcf variant samtools wfdb physionet', desc: 'Open scientific, medical and engineering files: DICOM scans, NIfTI brain volumes, Garmin FIT/TCX activities, FITS astronomy frames, FASTA/FASTQ sequences, chemistry structures (MOL/SDF/MOL2/CIF/XYZ), Gerber/Excellon PCB data, SPICE netlists, EDF/BDF biosignals, JCAMP-DX spectra, SPSS/Stata/SAS datasets and VTK/ParaView meshes — metadata extracted entirely in-browser.' },
+  { label: 'System / misc', exts: 'OPML RSS ATOM DESKTOP NFO SERVICE CRASH AB JOB POL SCR DS_STORE THUMBSDB DSYM DWARF SDB', tags: 'opml feed reader subscriptions rss atom syndication podcast enclosure freedesktop linux desktop launcher application nfo scene release ascii art cp437 systemd unit service daemon apple crash report ips panic exception android backup adb windows task scheduler job group policy registry.pol preg screensaver pe executable macos ds_store finder thumbs.db thumbnail dsym dwarf debug symbols shim database sdb', desc: 'Inspect OS and system files: OPML subscription lists, RSS/Atom feeds, Linux .desktop launchers and systemd .service units, scene .nfo ASCII art (CP437), Apple .crash reports, Android .ab backups, Windows Task Scheduler .job, Group Policy Registry.pol, and .scr screensaver PE headers, plus identification of .DS_Store, Thumbs.db, dSYM/DWARF and shim .sdb.' },
+  { label: 'Images (more)', exts: 'TGA QOI PPM PGM PBM PNM PAM PCX FF FARBFELD WBMP XBM XPM RAS SGI BW HDR DDS EXR JP2 J2K JPF JPX JPC JXR WDP HDP EPS PS WMF EMF EMZ ICNS CUR ANI MNG LOTTIE', tags: 'truevision targa tga game texture qoi quite ok image netpbm portable pixmap graymap bitmap pam zsoft pcx paintbrush farbfeld suckless wbmp wireless x11 xbm xpm sun raster sgi iris radiance hdr rgbe high dynamic range directdraw surface dds directx bcn dxt bc7 openexr exr ilm vfx jpeg 2000 jp2 openjpeg jpeg xr hd photo wmphoto encapsulated postscript eps ghostscript windows metafile emf wmf apple icns icon cursor cur ani mng lottie bodymovin airbnb after effects pict flif jbig coreldraw cdr', desc: 'Decode and preview extra still-image formats in pure JavaScript - Truevision TGA, QOI, Netpbm (PPM/PGM/PBM), PCX, farbfeld, WBMP, XBM/XPM, Sun Raster and SGI are fully rendered - and read header metadata from codec-heavy formats: Radiance HDR, DirectDraw Surface (DDS) game textures, OpenEXR, JPEG 2000, JPEG XR, EPS/PostScript, Windows WMF/EMF metafiles, Apple ICNS icons, CUR/ANI cursors, MNG and Lottie animations.' },
+  { label: '3D / CAD / point clouds (more)', exts: 'OBJ PLY GLTF 3MF AMF OFF VOX DAE ZAE USDC X3D WRL VRML LWO LWS DRAWIO MD2 MD3 MDL VRM JT LAS LAZ PCD PTS E57 IFC IFCZIP SPLAT SPZ', tags: 'wavefront obj stanford ply khronos gltf collada dae blender maya magicavoxel vox lightwave newtek drawio diagrams.net quake id software studiomdl lidar point cloud asprs las laz laszip leica faro pcl ros e57 bim buildingsmart ifc revit archicad siemens jt jupiter tessellation usd usdc vrm vroid avatar gaussian splat spz scaniverse niantic openvdb alembic 3mf amf additive manufacturing voxel mesh scene off', desc: 'Header and metadata extraction for 3D meshes, voxels, BIM, point clouds and Gaussian splats: Wavefront OBJ, Stanford PLY, OFF, glTF, 3MF/AMF, MagicaVoxel VOX, COLLADA DAE/ZAE, USD crate, X3D/VRML, LightWave LWO/LWS, draw.io, Quake MD2/MD3/MDL, VRM avatars, Siemens JT, LAS/LAZ/PCD/PTS/E57 LiDAR clouds, IFC BIM, and .splat/.spz - vertex/face/point counts, bounding boxes, units and authoring tool.' },
+  { label: 'Geospatial / GIS', exts: 'TopoJSON OSM SHP SHX DBF PRJ CPG PGW TFW JGW WLD GML NMEA IGC TAB MIF VRT PMTiles DT0 DT1 DT2 DTED ASC HGT GRIB GRB GRIB2 CDF NC4 PBF GPKG MBTiles SID ECW GDB', tags: 'gis geospatial shapefile esri arcgis qgis gdal ogr topojson d3 openstreetmap osm mapinfo dbase dbf wkt crs epsg projection prj world file georeferencing gml nmea gps igc paragliding flight log dted terrain elevation srtm hgt esri ascii grid pmtiles protomaps grib grib2 netcdf weather geopackage gpkg mbtiles mapbox mrsid ecw geodatabase vrt raster', desc: 'Inspect geospatial and GIS files without a map: TopoJSON, OpenStreetMap XML, Esri Shapefile siblings (SHP/SHX/DBF/PRJ/CPG), world files, GML, NMEA GPS logs, IGC flight logs, MapInfo TAB/MIF, GDAL VRT, PMTiles, DTED terrain, Esri ASCII grids and SRTM .hgt - surfacing CRS/EPSG, feature/record counts, bounding boxes and elevation ranges. GRIB/NetCDF/GeoPackage/MBTiles/MrSID/ECW identified.' },
+  { label: 'Audio (more)', exts: 'APE WV TAK TTA OFR DSF DFF MPC CAF RF64 BW64 W64 AU SND VOC BWF SPX AWB QCP 3GA M4R GSM MP2 MP1 SF2 SF3 SFZ DLS RMI MMF GIG RTTTL IMY SAP MOD XM IT S3M STM MTM MED 669 FAR OKT NSF NSFE SPC VGM VGZ GBS AY YM AUP AUP3 PSF', tags: "monkeys audio ape wavpack wv tak true audio tta optimfrog dsd dsf dsdiff dff sacd musepack mpc core audio caf rf64 bw64 wave64 w64 sun next au snd creative voice voc broadcast wave bwf smpte timecode speex spx amr-wb awb qualcomm qcp purevoice 3gpp 3ga iphone ringtone m4r gsm mpeg layer 2 mp2 soundfont sf2 sf3 sfz sampler downloadable sounds dls riff midi rmi smaf yamaha gigastudio gig rtttl nokia ringtone imelody imy atari sap protracker amiga mod fasttracker xm impulse tracker it scream tracker s3m stm multitracker mtm octamed med composer 669 farandole far oktalyzer okt nes sound nsf famicom snes spc700 spc vgm vgz game boy gbs ay zx spectrum ym atari st audacity aup aup3 chiptune tracker module", desc: 'Identify many more audio formats: lossless/hi-res codecs (Monkey’s Audio, WavPack, TAK, True Audio, DSD/SACD, Musepack), pro containers (Core Audio, RF64/BW64, Wave64, Sun AU, Broadcast Wave with timecode), speech/mobile (Speex, AMR-WB, QCP, 3GA, M4R, GSM), MPEG Layer I/II, instrument banks (SoundFont, SFZ, DLS, RIFF MIDI, GigaStudio), ringtones (RTTTL, iMelody, SAP), tracker modules (MOD, XM, IT, S3M, OctaMED, 669, Oktalyzer), chiptunes (NES NSF, SNES SPC, VGM, Game Boy GBS, AY, YM) and Audacity projects.' },
+  { label: 'Video / streaming (more)', exts: 'M3U8 M3U MPD ISM ISMC F4M ASX WPL XSPF PLS MXF GXF LXF DV DIF ASF DVR-MS RM RMVB DIVX F4V INSV INSP LRV GIFV IVF Y4M M2V M1V MPV H264 H265 HEVC AVC OBU M2P M2T TRP WTV OGM NUT DPX CIN DAV YUV', tags: 'hls m3u8 apple playlist mpeg-dash mpd manifest adaptive bitrate smooth streaming ism microsoft adobe hds f4m asx wpl xspf pls winamp playlist mxf material exchange smpte avid sony xdcam gxf lxf dv dvcam ntsc pal asf advanced systems wmv realmedia rm rmvb realvideo divx f4v flash insta360 insv insp 360 lrv gopro dji proxy gifv imgur ivf vp8 vp9 av1 y4m yuv4mpeg raw h264 avc h265 hevc x264 x265 obu aom mpeg-2 program transport stream pat pmt wtv windows media center dvr-ms ogm ogg nut ffmpeg dpx cineon cin dahua dav cctv pvr dvb', desc: 'Inspect streaming manifests and video containers: HLS/DASH/Smooth Streaming/HDS manifests and playlists; pro/broadcast MXF/GXF/LXF/DV; ASF/.dvr-ms and RealMedia; DivX/F4V/Insta360/GoPro proxies/GIFV; raw elementary streams (IVF, Y4M, MPEG-1/2, H.264/H.265 SPS, AV1 OBU); MPEG program/transport and PVR/DVB recordings; Windows Recorded TV, Ogg Media, NUT; DPX/Cineon/Dahua/.yuv identified.' },
+  { label: 'Documents / ebooks (more)', exts: 'CBZ CBR CBT CB7 XPS OXPS HWPX HWP FB3 IBOOKS SCRIV ABW SXW SXC FODT FODS OTT DOTX DOTM VSDX TEX LATEX BIB RST ADOC ORG TEXTILE TEI RMD QMD RTFD MHT MHTML WARC MAFF JATS NXML DVI CHM WPD QXD PMD LIT KFX', tags: 'comic book cbz cbr cbt cb7 comicinfo manga reader xps oxps openxps hwpx hwp hancom hangul korean fictionbook fb3 ibooks apple author scrivener abiword abw staroffice openoffice sxw sxc odf flat fodt template ott dotx dotm macro visio vsdx tex latex bibtex bibliography restructuredtext rst asciidoc adoc org-mode emacs textile tei r markdown rmd quarto qmd rtfd mhtml mht web archive warc maff mozilla jats nxml pubmed journal dvi chm help wordperfect wpd quarkxpress qxd pagemaker pmd ms reader lit kindle kfx', desc: 'Open documents, ebooks and publishing files beyond Office: comic books (CBZ/CBT with ComicInfo + first-page preview; CBR/CB7 identified), Microsoft XPS, Hangul HWPX, FictionBook FB3, iBooks, Scrivener, AbiWord, StarOffice, ODF flat XML and templates, Word templates (DOTX/DOTM macro detection), Visio VSDX, TeX/LaTeX/BibTeX, reStructuredText, AsciiDoc, Org-mode, TEI, R Markdown/Quarto, RTFD, MHTML and WARC/MAFF web archives, JATS journal XML and TeX DVI.' },
   { label: 'Documents',       exts: 'DOC XLS PPT PPSX ODT ODS ODP ODG RTF Pages Numbers Keynote', tags: 'microsoft office word excel powerpoint apple iwork libreoffice openoffice google docs sheets slides rich text format wordpad', desc: 'Identify and read metadata from legacy and open-document files: Microsoft Word, Excel, and PowerPoint (DOC, XLS, PPT), Apple iWork (Pages, Numbers, Keynote), LibreOffice/OpenOffice (ODT, ODS, ODP), and RTF.' },
   { label: 'Adobe',           exts: 'PSD PSB AI INDD INDT IDML AEP AEPX AET PRPROJ MOGRT SESX XD FLA SWF XMP LRtemplate LRcat ACV ACO ASL ABR GRD PAT', tags: 'photoshop illustrator indesign after effects premiere pro audition xd animate flash lightroom substance', desc: 'Identify Adobe project files and read their metadata: Photoshop (PSD, PSB), Illustrator (AI), InDesign (INDD), After Effects (AEP, AEPX), Premiere Pro (PRPROJ), XD, Animate (FLA), and Lightroom.' },
   { label: 'Design',          exts: 'FIG Sketch afphoto afdesign afpub Procreate XCF KRA PDN SPP SBSAR SBS', tags: 'figma sketch affinity photo designer publisher procreate gimp krita paint.net substance painter', desc: 'Identify design-app files: Figma (FIG), Sketch, Affinity Photo/Designer/Publisher, Procreate, GIMP (XCF), Krita (KRA), Paint.NET, and Substance.' },
@@ -133,7 +147,7 @@ export const IDENTIFICATION = [
   { label: 'eBooks',          exts: 'MOBI AZW AZW3 FB2 DJVU', tags: 'ebook kindle amazon reader kobo calibre', desc: 'Identify e-book files: Kindle (MOBI, AZW, AZW3), FictionBook (FB2), and DjVu.' },
   { label: 'Subtitles (other)', exts: 'SUB', tags: 'subtitle caption microdvd subviewer', desc: 'Identify MicroDVD/SubViewer (SUB) subtitle files. SRT, VTT, and ASS/SSA get full cue parsing (see above).' },
   { label: 'Music production', exts: 'ALS ALP FLP RPP LOGIC LOGICX PTX CPR BAND', tags: 'ableton fl studio fruity loops reaper logic pro tools cubase garageband steinberg daw', desc: 'Identify DAW project files and read version, tempo, and plugin data: Ableton Live (ALS), FL Studio (FLP), Reaper (RPP), Logic Pro, Pro Tools (PTX), and Cubase (CPR).' },
-  { label: 'Databases',       exts: 'SQLite DB MDB ACCDB', tags: 'sqlite microsoft access database sql', desc: 'Identify and read metadata from SQLite, Microsoft Access (MDB, ACCDB), and other databases.' },
+  { label: 'Databases',       exts: 'SQLite SQLite3 DB DB3 MDB ACCDB SQL', tags: 'sqlite sqlite3 microsoft access database sql dump schema table query rows ddl', desc: 'Open SQLite databases (.sqlite/.db/.sqlite3) and read their full schema in-browser - every table with its columns and row counts, views, indexes, triggers, the CREATE-statement DDL, and a sample of the largest table. Also parses .sql dumps (dialect, tables, columns, INSERT counts) and identifies Microsoft Access (MDB, ACCDB).' },
   { label: 'GIS / mapping',   exts: 'SHP KMZ', tags: 'geographic gis mapping google earth shapefile esri kmz', desc: 'Identify geographic files: Shapefile (SHP) and zipped Google Earth (KMZ). GPX, KML, and GeoJSON get full parsing + a map (see above).' },
   { label: 'Disk images',     exts: 'ISO IMG VHD VHDX VMDK QCOW2 VDI', tags: 'virtual machine disk image hyper-v vmware virtualbox qemu boot partition table mbr gpt fat16 fat32 ntfs exfat volume sd card usb raw dd clone', desc: 'Identify disk and virtual-machine images: ISO, VHD/VHDX (Hyper-V), VMDK (VMware), QCOW2 (QEMU), and VDI (VirtualBox). For raw IMG images it decodes the partition table (MBR/GPT) and the first volume\'s filesystem - FAT16/32, NTFS, exFAT - with label, cluster size, and volume size.' },
   { label: 'Recordings',      exts: 'REC', tags: 'pvr dvr recording video mpeg transport stream topfield humax camera cctv getdataback reclaime recovery session', desc: 'Identify REC files, telling apart PVR/DVR video recordings (MPEG-TS / MPEG program stream) from data-recovery session files (GetDataBack, ReclaiMe) and reading their details.' },
@@ -153,56 +167,81 @@ export const IDENTIFICATION = [
   { label: 'Other',           exts: 'TORRENT PART CRDOWNLOAD', tags: 'bittorrent peer to peer p2p download partial incomplete chrome firefox crdownload', desc: 'Identify BitTorrent files (TORRENT) and their file list, plus partial or incomplete downloads (PART, CRDOWNLOAD).' },
 ];
 
+// ---------- count helper ----------
+
+// Total number of distinct extension tokens across the whole catalog. Used for
+// the "N supported formats" affordance in the UI. Tokens are compared
+// lower-cased so e.g. "JPG" and "jpg" count once.
+export function formatCount() {
+  const seen = new Set();
+  for (const r of [...FULL_ANALYSIS, ...IDENTIFICATION]) {
+    for (const t of r.exts.split(/\s+/)) {
+      if (t) seen.add(t.toLowerCase());
+    }
+  }
+  return seen.size;
+}
+
 // ---------- renderers ----------
 
-// Format help overlay on index.html. Generates section labels + searchable
-// tables into the given container (#fmtBody). Rows carry data-fmt and data-tags
-// so the search box in app.js can filter them.
-export function renderFmtOverlay(container) {
-  if (!container) return;
+const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+// Shared collapsible row used by BOTH the overlay (#fmtBody) and the about page
+// (#aboutFormats). Each format is a native <details class="fmt-item"> whose
+// <summary> shows the label + extension list and whose body reveals the
+// keyword-rich description on click.
+//
+//   opts.anchors - when true (about page) put id="fmt-<slug>" on the <details>
+//                  and id="ext-<ext>" on each extension span so #fmt-… / #ext-…
+//                  deep-links resolve and the desc text stays indexable in the
+//                  DOM even while collapsed.
+function fmtItem(r, opts = {}) {
+  const extNodes = [];
+  r.exts.split(/\s+/).forEach((t, i) => {
+    if (!t) return;
+    if (extNodes.length) extNodes.push(' ');
+    const attrs = { class: 'fmt-item-ext' };
+    if (opts.anchors) attrs.id = 'ext-' + t.toLowerCase();
+    extNodes.push(el('span', attrs, t));
+  });
+  const summary = el('summary', { class: 'fmt-item-summary' }, [
+    el('span', { class: 'fmt-item-label' }, r.label),
+    el('span', { class: 'fmt-item-exts' }, extNodes)
+  ]);
+  const detailsAttrs = { class: 'fmt-item', 'data-tags': r.tags || '' };
+  if (opts.anchors) detailsAttrs.id = 'fmt-' + slugify(r.label);
+  return el('details', detailsAttrs, [
+    summary,
+    el('div', { class: 'fmt-item-desc' }, r.desc || '')
+  ]);
+}
+
+// Render both catalog sections as collapsible items into a container.
+function renderFmtItems(container, opts) {
   container.innerHTML = '';
   const section = (title, rows) => {
     container.appendChild(el('p', { class: 'fmt-section-label' }, title));
-    const table = el('table', { class: 'anr-readout fmt-table' });
-    for (const r of rows) {
-      table.appendChild(el('tr', { 'data-fmt': '', 'data-tags': r.tags || '' }, [
-        el('th', {}, r.label),
-        el('td', {}, r.exts)
-      ]));
-    }
-    container.appendChild(table);
+    const list = el('div', { class: 'fmt-list' });
+    for (const r of rows) list.appendChild(fmtItem(r, opts));
+    container.appendChild(list);
   };
   section('Full analysis', FULL_ANALYSIS);
   section('Identification + basic metadata', IDENTIFICATION);
 }
 
-// "All supported file types" tables on about.html. Same data, about-page
-// styling. PDF-style rows with a `note` render the prose instead of the list.
+// Format help overlay on index.html / about.html. Each format is a collapsible
+// dropdown; the description is hidden until the user opens it. Items carry
+// data-tags so the search box in app.js can filter them.
+export function renderFmtOverlay(container) {
+  if (!container) return;
+  renderFmtItems(container, { anchors: false });
+}
+
+// "All supported file types" list on about.html. Same collapsible look, but
+// each item keeps id="fmt-<slug>" and each extension keeps id="ext-<ext>", and
+// the description text stays in the DOM (inside the collapsed body) so SEO and
+// #fmt-… / #ext-… deep-links keep working.
 export function renderAboutFormats(container) {
   if (!container) return;
-  container.innerHTML = '';
-  const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  const section = (title, rows) => {
-    container.appendChild(el('p', { class: 'anr-readout-section' }, title));
-    const table = el('table', { class: 'anr-readout about-readout' });
-    for (const r of rows) {
-      // Each extension token gets an id (e.g. #ext-sldprt) so a "how to open a
-      // .sldprt file" link can deep-link straight to it; the row carries a
-      // category id (e.g. #fmt-cad). `desc` is the indexable, keyword-rich line
-      // that search engines match against.
-      const extNodes = [];
-      r.exts.split(/\s+/).forEach((t, i) => {
-        if (i) extNodes.push(' ');
-        extNodes.push(el('span', { class: 'about-ext', id: 'ext-' + t.toLowerCase() }, t));
-      });
-      const td = el('td', {}, [
-        el('span', { class: 'about-exts' }, extNodes),
-        r.desc ? el('span', { class: 'about-fmt-desc' }, r.desc) : null
-      ]);
-      table.appendChild(el('tr', { id: 'fmt-' + slug(r.label) }, [el('th', {}, r.label), td]));
-    }
-    container.appendChild(table);
-  };
-  section('Full analysis', FULL_ANALYSIS);
-  section('Identification + basic metadata', IDENTIFICATION);
+  renderFmtItems(container, { anchors: true });
 }

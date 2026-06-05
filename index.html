@@ -46,7 +46,7 @@
       "Audio spectrogram and waveform visualisation",
       "Video frame and codec analysis",
       "PDF, archive, and document inspection",
-      "Identification of 200+ file formats",
+      "Identification of 740+ file formats",
       "Works offline as a Progressive Web App"
     ]
   }
@@ -132,10 +132,10 @@
           <span class="anr-drop-icon" aria-hidden="true">+</span>
           <strong><span class="drop-word">Drop</span><span class="tap-word">Pick</span> any file or folder</strong>
           <input type="file" id="videoInput" hidden>
-          <p class="anr-hint">PDF &middot; ZIP &middot; CSV &middot; SVG &middot; Folders &middot; 200+ formats</p>
+          <p class="anr-hint">PDF &middot; ZIP &middot; CSV &middot; SVG &middot; Folders &middot; <button type="button" class="fmt-count-link" data-fmt-open data-fmt-count data-fmt-count-tpl="{n}+ formats">740+ formats</button></p>
           <p class="anr-drop-warn">Analysis may be limited for some formats</p>
         </label>
-        <button type="button" class="fmt-help-btn" id="fmtHelpBtn" aria-label="Supported formats">Info</button>
+        <button type="button" class="fmt-help-btn" id="fmtHelpBtn" data-fmt-open aria-label="Supported formats">Info</button>
       </div>
     </div>
   </section>
@@ -143,7 +143,7 @@
   <div id="fmtOverlay" class="fmt-overlay" hidden>
     <div class="fmt-overlay-inner">
       <div class="fmt-overlay-header">
-        <h3>Supported formats</h3>
+        <h3>Supported formats <span class="fmt-overlay-count" data-fmt-count="bare">740</span></h3>
         <button type="button" class="fmt-overlay-close" id="fmtOverlayClose">&times;</button>
       </div>
       <input type="text" class="fmt-overlay-search" id="fmtSearch" placeholder="Search formats..." autocomplete="off" spellcheck="false">
@@ -221,27 +221,27 @@
       </details>
     </div>
     <div class="offline-help-panel">
-      <div><strong>Essentials</strong> <span>~46 MB</span><br>Whole app - every viewer, fonts, EXIF, FFmpeg, ImageMagick</div>
-      <div><strong>Everything</strong> <span>~72 MB</span><br>Essentials + OCR (English), PDF, maps, QR, HEIC, archives</div>
-      <div><strong>Complete</strong> <span>~290 MB</span><br>Everything + all OCR languages (30+)</div>
+      <div><strong>Essentials</strong> <span>~48 MB</span><br>Whole app - every viewer, fonts, EXIF, FFmpeg, ImageMagick</div>
+      <div><strong>Everything</strong> <span>~72 MB</span><br>Essentials + OCR (English), PDF, maps, QR, HEIC, archives, SQLite, comics, JPEG 2000</div>
+      <div><strong>Complete</strong> <span>~310 MB</span><br>Everything + all OCR languages (30+) + EPS/PostScript rendering</div>
     </div>
     <div class="offline-options">
       <button type="button" class="offline-btn" data-tier="essentials">
         <span class="offline-tier">Essentials</span>
         <span class="offline-desc">Whole app - every viewer, fonts, EXIF, FFmpeg, ImageMagick</span>
-        <span class="offline-size">~46 MB</span>
+        <span class="offline-size">~48 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
       <button type="button" class="offline-btn" data-tier="everything">
         <span class="offline-tier">Everything</span>
-        <span class="offline-desc">Essentials + OCR (English), PDF, maps, QR, HEIC, archives</span>
+        <span class="offline-desc">Essentials + OCR (English), PDF, maps, QR, HEIC, archives, SQLite, comics, JPEG 2000</span>
         <span class="offline-size">~72 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
       <button type="button" class="offline-btn" data-tier="complete">
         <span class="offline-tier">Complete</span>
-        <span class="offline-desc">Everything + all OCR languages (30+)</span>
-        <span class="offline-size">~290 MB</span>
+        <span class="offline-desc">Everything + all OCR languages (30+) + EPS/PostScript rendering</span>
+        <span class="offline-size">~310 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
     </div>
@@ -262,7 +262,7 @@
       <div><dt>FFmpeg</dt><dd><a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener">ffmpeg.wasm</a>. Audio extraction and frame rate detection for formats the browser can't decode natively. The ~31 MB core is fetched from a CDN the first time it's needed (then cached for offline use).</dd></div>
       <div><dt>PDF</dt><dd><a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a> by Mozilla. Renders PDF pages, extracts text, and supports OCR scanning of image-only pages via Tesseract. Loaded only for PDF files.</dd></div>
       <div><dt>Archives</dt><dd><a href="https://github.com/101arrowz/fflate" target="_blank" rel="noopener">fflate</a>. Fast ZIP decompression in the browser.</dd></div>
-      <div><dt>File ID</dt><dd>Built-in identification for 200+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 740+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Install</dt><dd>Add to home screen for an offline PWA. Service worker caches the app shell. Use the buttons above to pre-cache heavy dependencies.</dd></div>
         </dl>
       </details>
