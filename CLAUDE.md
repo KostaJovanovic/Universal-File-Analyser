@@ -63,20 +63,20 @@ If the format isn't photo/audio/video/csv/svg and needs its own renderer:
 
 Every commit is its own version. The number after the dot is the commit's
 1-based position **within its major era**, zero-padded to two digits: `0.01`,
-`0.02`, … `0.09`, `0.10`, `0.11`. A commit listed in `RELEASE_COMMITS` (in
+`0.02`, … `0.09`, `0.10`, `0.11`. Each commit listed in `RELEASE_COMMITS` (in
 `app.js`) bumps the major version and resets the counter, so that commit shows as
-`1.0` and the commit right after it is `1.01`.
+`X.0` and the commit right after it is `X.01`.
 
 - `COMMIT_COUNT` in `app.js` is the current commit number, bumped automatically by
   `save.bat` on each commit. Don't change it manually.
 - `RELEASE_COMMITS` in `app.js` is the sorted list of commit numbers crowned as
-  major releases. It is currently `[29]` (commit 29 = `1.0`). To crown a future
-  `2.0`, append that commit's number. The display logic lives in
-  `analyserVersion()` in `app.js`.
-- `save.bat` mirrors this with a `RELEASE=29` constant (used only to echo the
-  version it's bumping to). **Keep `RELEASE` in sync with `RELEASE_COMMITS`** — if
-  you ever crown a second release, save.bat's single-`RELEASE` echo will need
-  extending, but the real source of truth is `analyserVersion()`.
+  major releases. It is currently `[29, 60]` (commit 29 = `1.0`, commit 60 =
+  `2.0`). To crown a future `3.0`, append that commit's number. The display logic
+  lives in `analyserVersion()` in `app.js`.
+- `save.bat` mirrors this with a `RELEASES=29,60` constant (used only to echo the
+  version it's bumping to). **Keep `RELEASES` in sync with `RELEASE_COMMITS`** —
+  its PowerShell snippet now walks the full list exactly like `analyserVersion()`,
+  so crowning another release is just appending the commit number in both places.
 
 History note: the scheme was reset on 3 June 2026 — every commit was re-derived
 into this 0.NN / 1.0 / 1.NN sequence (commit 29, the "Checkpoint" mega-update with

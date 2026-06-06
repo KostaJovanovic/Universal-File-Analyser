@@ -813,6 +813,250 @@ async function parseMbtiles(file, ext) {
 }
 
 // =====================================================================
+//  OSM o5m / o5c (osmconvert binary)
+// =====================================================================
+async function parseO5m(file, ext) {
+  const b = await readBytes(file, Math.min(file.size, 8_000_000));
+  // o5m: 0xFF reset then 0xE0 'o5m2' header; o5c (change) uses the same framing.
+  if (b.length < 6 || b[0] !== 0xff) return null;
+  // The header value follows 0xE0 + a length byte; scan a small window for the magic.
+  let magic = '';
+  for (let i = 1; i < Math.min(b.length, 16); i++) {
+    const s = ascii(b, i, 4);
+    if (s === 'o5m2' || s === 'o5c2') { magic = s; break; }
+  }
+  const out = {
+    'Format': ext === 'o5c'
+      ? 'OSM o5c change file (osmconvert binary)'
+      : 'OSM o5m binary (osmconvert)',
+  };
+  if (magic) out['Header magic'] = magic + (magic === 'o5c2' ? ' (change data)' : ' (data)');
+  // Count top-level dataset markers (each object record begins with its type byte).
+  const counts = { node: 0, way: 0, relation: 0 };
+  let resets = 0;
+  for (let i = 0; i < b.length; i++) {
+    const m = b[i];
+    if (m === 0x10) counts.node++;
+    else if (m === 0x11) counts.way++;
+    else if (m === 0x12) counts.relation++;
+    else if (m === 0xfe || m === 0xff) resets++;
+  }
+  // Note: marker tallies are approximate - object-content bytes may coincidentally
+  // equal a marker value; this is an upper-bound estimate, not an exact OSM count.
+  out['Nodes (approx)'] = counts.node.toLocaleString();
+  out['Ways (approx)'] = counts.way.toLocaleString();
+  out['Relations (approx)'] = counts.relation.toLocaleString();
+  if (resets) out['Reset markers'] = resets.toLocaleString();
+  out['Note'] = 'Marker tallies are upper-bound estimates from a byte scan'
+    + (file.size > 8_000_000 ? ' of the first 8 MB' : '')
+    + '; o5m is a varint/delta-encoded binary - exact counts need a full o5m decoder.';
+  return out;
+}
+
+// =====================================================================
+//  Esri Layer files: .lyr (OLE binary) / .lyrx (ArcGIS Pro JSON)
+// =====================================================================
+async function parseLyrx(file) {
+  let j; try { j = JSON.parse(await readText(file, 16_000_000)); } catch (_) { return null; }
+  if (!j || typeof j !== 'object') return null;
+  // ArcGIS Pro .lyrx documents carry a "version" and a "layerDefinitions" array.
+  if (!Array.isArray(j.layerDefinitions) && j.type !== 'CIMLayerDocument') return null;
+  const out = { 'Format': 'Esri ArcGIS Pro Layer (.lyrx, CIM JSON)' };
+  if (j.version) out['CIM version'] = String(j.version);
+  if (j.build) out['Build'] = String(j.build);
+  const defs = Array.isArray(j.layerDefinitions) ? j.layerDefinitions : [];
+  out['Layer definitions'] = defs.length;
+  const lines = [];
+  for (const d of defs.slice(0, 60)) {
+    if (!d || typeof d !== 'object') continue;
+    const name = d.name || '(unnamed)';
+    const type = (d.type || '').replace(/^CIM/, '');
+    let line = name + (type ? '  [' + type + ']' : '');
+    // Feature table / data connection hints.
+    const conn = d.featureTable && d.featureTable.dataConnection;
+    if (conn) {
+      if (conn.dataset) line += '  ← ' + conn.dataset;
+      if (conn.workspaceConnectionString) {
+        const ws = String(conn.workspaceConnectionString).match(/DATABASE=([^;]+)/i);
+        if (ws) line += '  (' + ws[1] + ')';
+      }
+    }
+    if (d.featureTable && d.featureTable.displayField) line += '  display: ' + d.featureTable.displayField;
+    lines.push(line);
+  }
+  if (lines.length) out._sections = [{ title: 'Layers (' + defs.length + ')', node: preBlock(lines.join('\n')), open: true }];
+  return out;
+}
+
+async function parseLyr(file) {
+  const b = await readBytes(file, 64);
+  // Esri .lyr is an OLE2 / Compound File: D0 CF 11 E0 A1 B1 1A E1.
+  const OLE = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+  const isOle = b.length >= 8 && OLE.every((v, i) => b[i] === v);
+  if (!isOle) return null;
+  return {
+    'Format': 'Esri Layer file (.lyr, ArcMap)',
+    'Container': 'OLE2 Compound File (D0 CF 11 E0)',
+    'Note': 'Legacy ArcMap layer symbology/source. Binary CIM/objectstream content is '
+      + 'proprietary - identification only. The newer .lyrx is JSON and is parsed in full.',
+  };
+}
+
+// =====================================================================
+//  QGIS project: .qgs (XML) / .qgz (ZIP wrapping a .qgs)
+// =====================================================================
+async function parseQgs(file) {
+  const text = await readText(file, 8_000_000);
+  if (!/<qgis\b/i.test(text)) return null;
+  const out = { 'Format': 'QGIS project (.qgs, XML)' };
+  const ver = (text.match(/<qgis\b[^>]*\bversion\s*=\s*"([^"]*)"/i) || [])[1];
+  if (ver) out['QGIS version'] = ver;
+  const title = (text.match(/<title>([^<]*)<\/title>/i) || [])[1];
+  if (title && title.trim()) out['Project title'] = title.trim();
+  // Project CRS.
+  const srs = text.match(/<projectCrs>[\s\S]*?<\/projectCrs>/i);
+  if (srs) {
+    const auth = (srs[0].match(/<authid>([^<]+)<\/authid>/i) || [])[1];
+    const desc = (srs[0].match(/<description>([^<]+)<\/description>/i) || [])[1];
+    if (auth || desc) out['Project CRS'] = [auth, desc].filter(Boolean).join(' - ');
+  }
+  // Map layers: <maplayer> / <layer-tree-layer>.
+  const layers = Array.from(text.matchAll(/<maplayer\b[\s\S]*?<\/maplayer>/gi));
+  const treeLayers = (text.match(/<layer-tree-layer\b/gi) || []).length;
+  out['Map layers'] = layers.length || treeLayers;
+  const lines = [];
+  const byProvider = {};
+  for (const m of layers.slice(0, 80)) {
+    const blk = m[0];
+    const name = (blk.match(/<layername>([^<]*)<\/layername>/i) || [])[1] || '(unnamed)';
+    const prov = (blk.match(/<provider[^>]*>([^<]*)<\/provider>/i) || [])[1] || '';
+    const geom = (blk.match(/\bgeometry\s*=\s*"([^"]*)"/i) || [])[1] || '';
+    if (prov) byProvider[prov] = (byProvider[prov] || 0) + 1;
+    let line = name;
+    if (geom) line += '  [' + geom + ']';
+    if (prov) line += '  (' + prov + ')';
+    const src = (blk.match(/<datasource>([^<]*)<\/datasource>/i) || [])[1];
+    if (src) line += '\n    ' + src.slice(0, 160);
+    lines.push(line);
+  }
+  if (Object.keys(byProvider).length) out['Data providers'] = topCounts(byProvider, 10);
+  if (lines.length) out._sections = [{ title: 'Layers (' + (layers.length || treeLayers) + ')', node: preBlock(lines.join('\n')), open: true }];
+  if (text.length >= 8_000_000) out['Note'] = 'parsed the first 8 MB only';
+  return out;
+}
+
+async function parseQgz(file) {
+  // .qgz is a ZIP (PK\x03\x04) bundling the .qgs project plus a .qgd attribute DB.
+  const b = await readBytes(file, 64);
+  if (b.length < 4 || b[0] !== 0x50 || b[1] !== 0x4b) return null;
+  return {
+    'Format': 'QGIS project archive (.qgz, ZIP)',
+    'Container': 'ZIP (PK) bundling a .qgs project + .qgd auxiliary database',
+    'Note': 'The .qgs inside is the XML project parsed in full when opened directly. '
+      + 'Unzip the .qgz to inspect the project XML and the bundled SQLite .qgd store.',
+  };
+}
+
+// =====================================================================
+//  Shapefile spatial index: .sbn / .sbx (Esri binary)
+// =====================================================================
+async function parseSbn(file, ext) {
+  const b = await readBytes(file, 100);
+  if (b.length < 32) return null;
+  const r = new Reader(b); // big-endian header, like .shp/.shx
+  const code = r.u32();
+  if (code !== 9994) return null;
+  // .sbn / .sbx share the .shp 100-byte header layout: file code 9994 (BE),
+  // file length in 16-bit words at byte 24 (BE), then a LE bounding box.
+  r.seek(24);
+  const wordLen = r.u32();
+  r.le(true);
+  r.seek(36);
+  const minX = r.f64(), minY = r.f64(), maxX = r.f64(), maxY = r.f64();
+  const out = {
+    'Format': ext === 'sbx'
+      ? 'Shapefile spatial index offsets (.sbx, Esri)'
+      : 'Shapefile spatial bin index (.sbn, Esri)',
+    'File code': '9994 (Esri index)',
+    'File length': fmtBytes(wordLen * 2),
+  };
+  if ([minX, minY, maxX, maxY].every((n) => isFinite(n)) && (minX || minY || maxX || maxY)) {
+    out['Bounding box'] = fmtBBox(minX, minY, maxX, maxY);
+  }
+  out['Note'] = 'Esri spatial index sidecar for a .shp (the .sbn bin tree pairs with the '
+    + '.sbx offset table). Speeds up spatial queries; not needed to read the shapes.';
+  return out;
+}
+
+// =====================================================================
+//  GMT / GDAL colour palette table (.cpt)
+// =====================================================================
+async function parseCpt(file) {
+  const text = await readText(file, 256_000);
+  const lines = text.split(/\r?\n/);
+  // A CPT is text: comment/keyword lines (#) plus "z0 r g b z1 r g b" slice rows,
+  // and optional B/F/N lines for background/foreground/NODATA colours.
+  let slices = 0, colourModel = 'RGB', hasBFN = false;
+  let zMin = Infinity, zMax = -Infinity;
+  let looksCpt = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line[0] === '#') {
+      const cm = line.match(/COLOR_MODEL\s*=\s*\+?(\w+)/i);
+      if (cm) { colourModel = cm[1].toUpperCase(); looksCpt = true; }
+      continue;
+    }
+    if (/^[BFN]\b/.test(line)) { hasBFN = true; looksCpt = true; continue; }
+    // Slice row: starts with a number (z value), then colour fields.
+    const m = line.match(/^(-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s+\S+/);
+    if (m) {
+      slices++;
+      const z0 = parseFloat(m[1]);
+      if (isFinite(z0)) { zMin = Math.min(zMin, z0); zMax = Math.max(zMax, z0); }
+      // Trailing z of the slice (col index 4 in "z0 r g b z1 r g b").
+      const parts = line.split(/\s+/);
+      const z1 = parseFloat(parts[4]);
+      if (isFinite(z1)) { zMin = Math.min(zMin, z1); zMax = Math.max(zMax, z1); }
+      looksCpt = true;
+    }
+  }
+  if (!looksCpt || !slices) return null;
+  const out = {
+    'Format': 'Colour palette table (.cpt, GMT / GDAL)',
+    'Colour model': colourModel,
+    'Colour slices': slices.toLocaleString(),
+  };
+  if (isFinite(zMin) && isFinite(zMax)) out['Value (z) range'] = fc(zMin) + ' … ' + fc(zMax);
+  if (hasBFN) out['Background/Foreground/NODATA'] = 'defined (B / F / N entries)';
+  out['Note'] = 'Maps data values to colours for GMT and GDAL raster styling.';
+  return out;
+}
+
+// =====================================================================
+//  ENVI / Esri band-interleaved rasters: .bil / .bip / .bsq
+//  (raw binary bands paired with a text .hdr header sidecar)
+// =====================================================================
+async function parseBandRaster(file, ext) {
+  const INTERLEAVE = {
+    bil: 'BIL - band interleaved by line',
+    bip: 'BIP - band interleaved by pixel',
+    bsq: 'BSQ - band sequential',
+  };
+  // These are headerless raw rasters; geometry/bands live in a companion .hdr
+  // (ENVI keyword text or an Esri .blw/.hdr). We can only identify + point at the sidecar.
+  return {
+    'Format': 'Band-interleaved raster (.' + ext + ', ENVI / Esri)',
+    'Interleave': INTERLEAVE[ext] || ext.toUpperCase(),
+    'Data size': fmtBytes(file.size),
+    'Companion header': '.hdr (ENVI keyword text: samples, lines, bands, data type, '
+      + 'byte order, map info / CRS) - required to interpret the raw band data',
+    'Note': 'Raw, headerless pixel data - dimensions, band count, data type and extent '
+      + 'come from the paired .hdr sidecar. Drop the .hdr to read those fields.',
+  };
+}
+
+// =====================================================================
 //  Identification-only (rare AND hard, or needs a SQLite reader)
 // =====================================================================
 function idOnly(file, ext) {
@@ -870,6 +1114,18 @@ export const PARSERS = {
   asc: (c) => parseEsriAscii(c.file),
   grd: (c) => parseEsriAscii(c.file),
   hgt: (c) => parseHgt(c.file, c.file),
+  o5m: (c) => parseO5m(c.file, c.ext),
+  o5c: (c) => parseO5m(c.file, c.ext),
+  lyrx: (c) => parseLyrx(c.file),
+  lyr: (c) => parseLyr(c.file),
+  qgs: (c) => parseQgs(c.file),
+  qgz: (c) => parseQgz(c.file),
+  sbn: (c) => parseSbn(c.file, c.ext),
+  sbx: (c) => parseSbn(c.file, c.ext),
+  cpt: (c) => parseCpt(c.file),
+  bil: (c) => parseBandRaster(c.file, c.ext),
+  bip: (c) => parseBandRaster(c.file, c.ext),
+  bsq: (c) => parseBandRaster(c.file, c.ext),
 
   // Identification-only (rare AND hard, or needs a SQLite reader)
   grib: (c) => idOnly(c.file, c.ext),

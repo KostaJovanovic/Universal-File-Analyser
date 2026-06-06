@@ -60,6 +60,9 @@
 
   /* Layout */
   --nav-offset: 60px;
+  /* Standalone section dividers echo the navbar's structure - a hairline, a band
+     of page-fill, then a hairline - at half the navbar's height (see --nav-offset). */
+  --rule-band-h: calc(var(--nav-offset) / 2);
   --radius:     0;
 
   /* Rhythm */
@@ -170,6 +173,42 @@ input:not([type="range"]):focus-visible,
   max-width: 1440px;
   margin: 0 auto;
 }
+
+/* Free-floating section dividers (a hairline with empty space on both sides)
+   echo the navbar's structure: a hairline, a strip of page-fill at half the
+   navbar height, then a hairline - replacing the old single rules. Applies to
+   the home page's numbered sections and the dropzone strip; bars that sit flush
+   against another element (the header above the navbar) keep a plain hairline,
+   and the changelog's entry rules stay single lines by request. The band is
+   drawn as an ::after where the old border-bottom sat. */
+.section::after,
+.quickdrop::after,
+body:has(.patch-page) .site-header::after {
+  content: '';
+  display: block;
+  height: var(--rule-band-h);
+  background: var(--bg);
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.section::after { margin-top: var(--pad-y); }
+/* The changelog page has no navbar beneath the header, so that header divider is
+   free-floating - give it the band. Other pages keep the plain hairline (the
+   navbar sits flush against it). */
+body:has(.patch-page) .site-header { border-bottom: none; padding-bottom: 0; }
+body:has(.patch-page) .site-header::after { margin-top: clamp(28px, 4vw, 48px); }
+/* The dropzone strip carries its own horizontal padding, so pull the band back
+   out to the full-bleed width the old border-bottom spanned. */
+.quickdrop::after {
+  margin-top: 24px;
+  margin-left: calc(-1 * var(--pad-x));
+  margin-right: calc(-1 * var(--pad-x));
+}
+/* No band where a section sits directly above the footer - the footer keeps its
+   own plain top hairline. Restore that section's bottom padding, which the
+   band's margin-top would otherwise have supplied. */
+.section:last-of-type::after { display: none; }
+.section:last-of-type { padding-bottom: var(--pad-y); }
 
 .site-mark {
   grid-column: 1 / span 8;
@@ -530,8 +569,7 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
 
 /* ---------- SECTIONS ---------- */
 .section {
-  padding: var(--pad-y) 0;
-  border-bottom: 1px solid var(--hairline);
+  padding: var(--pad-y) 0 0;
   scroll-margin-top: var(--nav-offset);
   max-width: 1440px;
   margin: 0 auto;
@@ -2126,6 +2164,22 @@ details[open] summary::after { content: "\2212"; }
 }
 .offline-btn.is-done .offline-bar .offline-bar-fill { color: var(--accent); }
 .offline-btn.is-done.is-fading .offline-bar .offline-bar-fill { color: rgba(255,255,255,0.8); transition: color 1s ease; }
+/* "✓ Cached" badge pinned to the bottom of a tier button once its files are in
+   the offline cache. Persisted across reloads via localStorage; the accent tint
+   stays even after the border fades, so the cached tier reads at a glance. */
+.offline-cached[hidden] { display: none; }
+.offline-cached {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+@media (max-width: 700px) { .offline-cached { font-size: 9px; } }
 
 /* Install + Clear share the same outlined button shape as everything else.
    Clear keeps muted text so the destructive action stays de-emphasised. */
@@ -2208,7 +2262,6 @@ details[open] summary::after { content: "\2212"; }
 }
 
 /* ---------- ABOUT PAGE ---------- */
-.about-page .section { border-bottom: 1px solid var(--hairline); }
 .about-block { margin-top: 16px; }
 .about-block p { color: var(--muted); max-width: 60ch; line-height: 1.6; margin: 0 0 12px; }
 .about-block p:last-child { margin-bottom: 0; }
@@ -2464,10 +2517,9 @@ details[open] summary::after { content: "\2212"; }
 
 /* ---------- QUICKDROP (fields lifted above section 01) ---------- */
 .quickdrop {
-  padding: 20px var(--pad-x) 24px;
+  padding: 20px var(--pad-x) 0;
   max-width: 1440px;
   margin: 0 auto;
-  border-bottom: 1px solid var(--hairline);
 }
 /* Replaces the three dropzones once a file is loaded; reloads to a clean page.
    Swiss treatment: a mono, tracked, uppercase label in a sharp-cornered box that

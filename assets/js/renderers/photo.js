@@ -12,6 +12,60 @@ import { HEIC_EXTS, RAW_EXTS } from '../core/formats.js';
 import { convertHeic, extractRawPreview, convertWithImageMagick } from './photo-convert.js';
 import { ascii, latin1, utf8, inflate } from '../core/binutil.js';
 
+// ---------- Browser-undecodable images ----------
+// Some image formats a web browser has no decoder for, so an <img> can't paint
+// them. When the decode fails (and the file is readable - not a cloud
+// placeholder) we surface a clear "browser limitation" banner, like the ProRes
+// video path, plus whatever metadata exifr can still read from the bytes -
+// rather than a bare "couldn't load" error. Keyed by lowercase extension; the
+// generic message covers anything not listed.
+const UNDISPLAYABLE_IMAGES = {
+  jxl: 'JPEG XL',
+  tif: 'TIFF', tiff: 'TIFF',
+  jp2: 'JPEG 2000', j2k: 'JPEG 2000', jpf: 'JPEG 2000', jpx: 'JPEG 2000', jpc: 'JPEG 2000', j2c: 'JPEG 2000',
+  tga: 'Targa (TGA)', dds: 'DirectDraw Surface (DDS)', exr: 'OpenEXR', hdr: 'Radiance HDR', pic: 'Radiance HDR',
+  pcx: 'PCX', sgi: 'SGI image', rgb: 'SGI image', ras: 'Sun Raster',
+  xcf: 'GIMP XCF', psd: 'Photoshop PSD', psb: 'Photoshop PSB',
+  cdr: 'CorelDRAW', wmf: 'Windows Metafile', emf: 'Enhanced Metafile', farbfeld: 'farbfeld',
+};
+
+function undecodableImageBanner(ext) {
+  const name = UNDISPLAYABLE_IMAGES[ext];
+  const msg = name
+    ? name + ' images can’t be decoded by web browsers, so the picture can’t be shown here. The file is fine - convert it to PNG or JPEG to view it. Any metadata below was read straight from the file.'
+    : 'Your browser can’t decode this image, so the picture can’t be shown here. The file itself may be fine - converting it to PNG or JPEG usually makes it viewable. Any metadata below was read straight from the file.';
+  return el('div', { class: 'anr-info' }, msg);
+}
+
+// Shown when the browser can't display the image: the banner above, basic file
+// info, and any EXIF/IPTC/XMP metadata exifr can still read from the raw bytes.
+async function renderUndisplayableImage(file, ext, resultsEl) {
+  resultsEl.appendChild(undecodableImageBanner(ext));
+  const info = el('div', { class: 'anr-card' });
+  info.appendChild(el('h3', {}, 'File info'));
+  const t = el('table', { class: 'anr-readout' });
+  t.appendChild(row('Name', file.name));
+  t.appendChild(row('Size', fmtBytes(file.size) + '  (' + file.size.toLocaleString() + ' bytes)'));
+  t.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is the standard label for the file's format. The browser reads it from the extension or the OS, so it's a hint rather than proof of the real format."));
+  info.appendChild(t);
+  resultsEl.appendChild(info);
+  let exif = null;
+  try {
+    exif = await exifr.parse(file, { tiff: true, exif: true, gps: true, iptc: true, xmp: true, icc: true, mergeOutput: true, translateValues: true, translateKeys: true, reviveValues: true, sanitize: true, silentErrors: true });
+  } catch (_) {}
+  if (exif && typeof exif === 'object') {
+    const entries = Object.entries(exif).filter(([k, v]) => v != null && (typeof v !== 'object' || v instanceof Date)).slice(0, 80);
+    if (entries.length) {
+      const card = el('div', { class: 'anr-card' });
+      card.appendChild(el('h3', {}, 'Metadata'));
+      const mt = el('table', { class: 'anr-readout' });
+      for (const [k, v] of entries) mt.appendChild(row(k, v instanceof Date ? v.toLocaleString() : String(v)));
+      card.appendChild(mt);
+      resultsEl.appendChild(card);
+    }
+  }
+}
+
 const JSQR_URL      = 'assets/vendor/jsQR.js';
 const TESSERACT_URL = 'assets/vendor/tesseract/tesseract.min.js';
 const LEAFLET_CSS   = 'assets/vendor/leaflet/leaflet.css';
@@ -1727,7 +1781,10 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
       if (unreadable) {
         resultsEl.appendChild(cloudFileWarning(file));
       } else {
-        resultsEl.appendChild(errorCard('Could not load this image. The format may not be supported by your browser.'));
+        // Readable, but the browser has no decoder for this image format. Show a
+        // clear browser-limitation banner (like the ProRes video path) plus any
+        // metadata still readable from the bytes - not a bare error.
+        await renderUndisplayableImage(file, ext, resultsEl);
       }
       return;
     }

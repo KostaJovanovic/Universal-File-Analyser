@@ -3,7 +3,8 @@
    and magic bytes. Extracts whatever metadata is accessible without
    full format parsers. */
 
-import { el, row, rowHelp, fmtBytes, sha256Row } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, sha256Row, preBlock } from '../core/util.js';
+import { findBytes, utf16 } from '../core/binutil.js';
 import { openZip } from './zip.js';
 
 // ---------- format database ----------
@@ -18,6 +19,7 @@ const FORMATS = {
   aep:     { app: 'Adobe After Effects', icon: 'Ae' },
   aet:     { app: 'Adobe After Effects Template', icon: 'Ae' },
   prproj:  { app: 'Adobe Premiere Pro', icon: 'Pr' },
+  prel:    { app: 'Adobe Premiere Elements', icon: 'Pr' },
   mogrt:   { app: 'Adobe Motion Graphics Template', icon: 'Ae' },
   sesx:    { app: 'Adobe Audition', icon: 'Au' },
   xd:      { app: 'Adobe XD', icon: 'Xd' },
@@ -161,6 +163,15 @@ const FORMATS = {
 
   // DaVinci Resolve
   drp:     { app: 'DaVinci Resolve Project', icon: 'DR' },
+  drt:     { app: 'DaVinci Resolve Timeline', icon: 'DR' },
+
+  // Vegas Pro (Sony / MAGIX)
+  veg:     { app: 'VEGAS Pro Project', icon: 'VEG' },
+  vf:      { app: 'VEGAS Pro Project Backup', icon: 'VEG' },
+
+  // Wondershare Filmora
+  wfp:     { app: 'Wondershare Filmora Project', icon: 'FIL' },
+  wsp:     { app: 'Wondershare Filmora Sub-project', icon: 'FIL' },
 
   // Music production
   als:     { app: 'Ableton Live Set', icon: 'ABL' },
@@ -930,6 +941,251 @@ const FORMATS = {
   // REC: ambiguous - a PVR/DVR video recording OR a data-recovery session.
   // parseRec() sniffs the content to tell which.
   rec:     { app: 'REC File', icon: 'REC' },
+
+  // ===== Developer / data / serialization (parsers-dev.js) =====
+  lock:    { app: 'Dependency Lockfile', icon: 'LOCK', chunk: 'dev', parse: 'text' },
+  json5:   { app: 'JSON5', icon: 'JS5', chunk: 'dev', parse: 'text' },
+  jsonc:   { app: 'JSON with Comments', icon: 'JSNC', chunk: 'dev', parse: 'text' },
+  hjson:   { app: 'Hjson', icon: 'HJSN', chunk: 'dev', parse: 'text' },
+  pb:      { app: 'Protobuf Message', icon: 'PB', chunk: 'dev' },
+  msgpack: { app: 'MessagePack', icon: 'MPK', chunk: 'dev' },
+  mpk:     { app: 'MessagePack', icon: 'MPK', chunk: 'dev' },
+  bson:    { app: 'BSON (MongoDB)', icon: 'BSON', chunk: 'dev' },
+  cbor:    { app: 'CBOR', icon: 'CBOR', chunk: 'dev' },
+  pkl:     { app: 'Python Pickle', icon: 'PKL', chunk: 'dev' },
+  pickle:  { app: 'Python Pickle', icon: 'PKL', chunk: 'dev' },
+  npz:     { app: 'NumPy Zipped Arrays', icon: 'NPZ', chunk: 'dev', zip: true },
+  jar:     { app: 'Java Archive', icon: 'JAR', chunk: 'dev', zip: true },
+  war:     { app: 'Java Web Archive', icon: 'WAR', chunk: 'dev', zip: true },
+  ear:     { app: 'Java Enterprise Archive', icon: 'EAR', chunk: 'dev', zip: true },
+  fbs:     { app: 'FlatBuffers Schema', icon: 'FBS', chunk: 'dev', parse: 'text' },
+  thrift:  { app: 'Apache Thrift IDL', icon: 'THRF', chunk: 'dev', parse: 'text' },
+  capnp:   { app: "Cap'n Proto Schema", icon: 'CPNP', chunk: 'dev', parse: 'text' },
+  hcl:     { app: 'HashiCorp HCL', icon: 'HCL', chunk: 'dev', parse: 'text' },
+  mat:     { app: 'MATLAB MAT-file', icon: 'MAT', chunk: 'dev' },
+  rdb:     { app: 'Redis RDB Dump', icon: 'RDB', chunk: 'dev', magic: [0x52, 0x45, 0x44, 0x49, 0x53] },
+  arrow:   { app: 'Apache Arrow IPC', icon: 'ARRW', chunk: 'dev', magic: [0x41, 0x52, 0x52, 0x4F, 0x57, 0x31] },
+  feather: { app: 'Apache Arrow Feather', icon: 'FTHR', chunk: 'dev' },
+  parquet: { app: 'Apache Parquet', icon: 'PQT', chunk: 'dev', magic: [0x50, 0x41, 0x52, 0x31] },
+  orc:     { app: 'Apache ORC', icon: 'ORC', chunk: 'dev' },
+  desc:    { app: 'Protobuf Descriptor Set', icon: 'DESC', chunk: 'dev' },
+  dump:    { app: 'SQL Dump', icon: 'SQL', chunk: 'dev' },
+
+  // ===== Archives / packages / installers (parsers-archive.js) =====
+  jnlp:    { app: 'Java Web Start (JNLP)', icon: 'JNLP', parse: 'xml' },
+  msu:     { app: 'Windows Update Standalone', icon: 'MSU', magic: [0x4D, 0x53, 0x43, 0x46], chunk: 'archive' },
+  xar:     { app: 'XAR Archive', icon: 'XAR', magic: [0x78, 0x61, 0x72, 0x21], chunk: 'archive' },
+  pkg:     { app: 'macOS Installer Package', icon: 'PKG', magic: [0x78, 0x61, 0x72, 0x21], chunk: 'archive' },
+  mpkg:    { app: 'macOS Meta Installer', icon: 'MPKG', magic: [0x78, 0x61, 0x72, 0x21], chunk: 'archive' },
+  snap:    { app: 'Snap Package (SquashFS)', icon: 'SNAP', chunk: 'archive' },
+  flatpak: { app: 'Flatpak Bundle', icon: 'FLAT', chunk: 'archive' },
+  sit:     { app: 'StuffIt Archive', icon: 'SIT', chunk: 'archive' },
+  sitx:    { app: 'StuffIt X Archive', icon: 'SITX', chunk: 'archive' },
+  lzo:     { app: 'lzop Compressed', icon: 'LZO', magic: [0x89, 0x4C, 0x5A, 0x4F], chunk: 'archive' },
+  br:      { app: 'Brotli Stream', icon: 'BR', chunk: 'archive' },
+  tlz:     { app: 'LZMA/XZ Tarball', icon: 'TLZ', chunk: 'archive' },
+  tbz:     { app: 'Bzip2 Tarball', icon: 'TBZ', magic: [0x42, 0x5A, 0x68], chunk: 'archive' },
+  tz:      { app: 'compress Tarball', icon: 'TZ', magic: [0x1F, 0x9D], chunk: 'archive' },
+
+  // ===== 3D / CAD / mesh / scene (parsers-threed.js) =====
+  drc:     { app: 'Draco Compressed Mesh', icon: 'DRC', magic: [0x44, 0x52, 0x41, 0x43, 0x4F], chunk: 'threed' },
+  ksplat:  { app: 'Block-Compressed Splat', icon: 'KSPL', chunk: 'threed' },
+  u3d:     { app: 'Universal 3D', icon: 'U3D', chunk: 'threed' },
+  '3dxml': { app: '3DXML (Dassault)', icon: '3DXM', zip: true, chunk: 'threed' },
+  x:       { app: 'DirectX Model', icon: 'X', chunk: 'threed' },
+  qb:      { app: 'Qubicle Binary', icon: 'QB', chunk: 'threed' },
+  wings:   { app: 'Wings3D Model', icon: 'WNGS', chunk: 'threed' },
+  rvt:     { app: 'Autodesk Revit Project', icon: 'RVT', chunk: 'threed' },
+  rfa:     { app: 'Autodesk Revit Family', icon: 'RFA', chunk: 'threed' },
+  rte:     { app: 'Revit Project Template', icon: 'RTE', chunk: 'threed' },
+  rft:     { app: 'Revit Family Template', icon: 'RFT', chunk: 'threed' },
+  par:     { app: 'Solid Edge Part', icon: 'PAR', chunk: 'threed' },
+  psm:     { app: 'Solid Edge Sheet Metal', icon: 'PSM', chunk: 'threed' },
+  pwd:     { app: 'Solid Edge Weldment', icon: 'PWD', chunk: 'threed' },
+  nwd:     { app: 'Navisworks Published', icon: 'NWD', chunk: 'threed' },
+  nwf:     { app: 'Navisworks File Set', icon: 'NWF', chunk: 'threed' },
+  nwc:     { app: 'Navisworks Cache', icon: 'NWC', chunk: 'threed' },
+  model:   { app: 'CATIA V4 Model', icon: 'CATV4', chunk: 'threed' },
+  exp:     { app: 'CATIA V4 Export', icon: 'EXP', chunk: 'threed' },
+  dlv:     { app: 'CATIA V4 Result', icon: 'DLV', chunk: 'threed' },
+  session: { app: 'CATIA V4 Session', icon: 'SESN', chunk: 'threed' },
+  cl3:     { app: 'FARO Scan (CL3)', icon: 'CL3', chunk: 'threed' },
+  clr:     { app: 'FARO Scan (CLR)', icon: 'CLR', chunk: 'threed' },
+  tzf:     { app: 'Trimble Scan (TZF)', icon: 'TZF', chunk: 'threed' },
+  vsd:     { app: 'Visio Drawing (Binary)', icon: 'VSD', chunk: 'threed' },
+
+  // ===== Disk images / filesystems / firmware / VM (parsers-disk.js) =====
+  trx:     { app: 'TRX Firmware', icon: 'TRX', magic: [0x48, 0x44, 0x52, 0x30], chunk: 'disk' },
+  dfu:     { app: 'USB DFU Firmware', icon: 'DFU', chunk: 'disk' },
+  fd:      { app: 'UEFI / BIOS Firmware', icon: 'FD', chunk: 'disk' },
+  rom:     { app: 'UEFI / BIOS / ROM Image', icon: 'ROM', chunk: 'disk' },
+  ubi:     { app: 'UBI Volume', icon: 'UBI', magic: [0x55, 0x42, 0x49, 0x23], chunk: 'disk' },
+  simg:    { app: 'Android Sparse Image', icon: 'SIMG', magic: [0x3A, 0xFF, 0x26, 0xED], chunk: 'disk' },
+  itb:     { app: 'Flattened Image Tree', icon: 'ITB', magic: [0xD0, 0x0D, 0xFE, 0xED], chunk: 'disk' },
+  dsk:     { app: 'Raw Floppy / Disk Image', icon: 'DSK', chunk: 'disk' },
+  ima:     { app: 'Raw Floppy Image', icon: 'IMA', chunk: 'disk' },
+  vfd:     { app: 'Virtual Floppy Disk', icon: 'VFD', chunk: 'disk' },
+  vmsd:    { app: 'VMware Snapshot Metadata', icon: 'VMSD', chunk: 'disk' },
+  nvram:   { app: 'VMware NVRAM', icon: 'NVRM', chunk: 'disk' },
+  pvm:     { app: 'Parallels VM Bundle', icon: 'PVM', chunk: 'disk' },
+  hdd:     { app: 'Parallels / Virtual PC Disk', icon: 'HDD', chunk: 'disk' },
+  mf:      { app: 'OVF Manifest', icon: 'MF', chunk: 'disk' },
+  vbk:     { app: 'Veeam Backup', icon: 'VBK', chunk: 'disk' },
+
+  // ===== Gaming / emulation / console / game assets (parsers-gaming.js) =====
+  assets:   { app: 'Unity Asset Bundle', icon: 'UNTY', chunk: 'gaming' },
+  bundle:   { app: 'Unity Asset Bundle', icon: 'UNTY', chunk: 'gaming' },
+  resource: { app: 'Unity Asset Bundle', icon: 'UNTY', chunk: 'gaming' },
+  utoc:     { app: 'Unreal IO Store TOC', icon: 'UTOC', chunk: 'gaming' },
+  ucas:     { app: 'Unreal IO Store Data', icon: 'UCAS', chunk: 'gaming' },
+  uexp:     { app: 'Unreal Cooked Export', icon: 'UEXP', chunk: 'gaming' },
+  umd:      { app: 'Unreal Cooked Asset', icon: 'UMD', chunk: 'gaming' },
+  cso:      { app: 'Compressed ISO (CISO)', icon: 'CSO', magic: [0x43, 0x49, 0x53, 0x4F], chunk: 'gaming' },
+  chd:      { app: 'MAME Compressed Image', icon: 'CHD', magic: [0x4D, 0x43, 0x6F, 0x6D, 0x70, 0x72, 0x48, 0x44], chunk: 'gaming' },
+  fsb:      { app: 'FMOD Sound Bank', icon: 'FSB', magic: [0x46, 0x53, 0x42, 0x35], chunk: 'gaming' },
+  bank:     { app: 'FMOD Studio Bank', icon: 'BANK', chunk: 'gaming' },
+  bnk:      { app: 'Wwise Sound Bank', icon: 'BNK', magic: [0x42, 0x4B, 0x48, 0x44], chunk: 'gaming' },
+  wem:      { app: 'Wwise Audio', icon: 'WEM', chunk: 'gaming' },
+  spine:    { app: 'Spine Skeleton', icon: 'SPIN', chunk: 'gaming' },
+  skel:     { app: 'Spine Skeleton (binary)', icon: 'SKEL', chunk: 'gaming' },
+  atlas:    { app: 'Spine / Sprite Atlas', icon: 'ATLS', chunk: 'gaming' },
+  yyp:      { app: 'GameMaker Project', icon: 'YYP', chunk: 'gaming' },
+  yy:       { app: 'GameMaker Resource', icon: 'YY', chunk: 'gaming' },
+  gmx:      { app: 'GameMaker (legacy) Resource', icon: 'GMX', chunk: 'gaming' },
+  mca:      { app: 'Minecraft Region (Anvil)', icon: 'MCA', chunk: 'gaming' },
+  mcr:      { app: 'Minecraft Region (legacy)', icon: 'MCR', chunk: 'gaming' },
+  mctemplate: { app: 'Minecraft Bedrock Template', icon: 'MCT', chunk: 'gaming' },
+  '3dsx':   { app: '3DS Homebrew', icon: '3DSX', magic: [0x33, 0x44, 0x53, 0x58], chunk: 'gaming' },
+  a78:      { app: 'Atari 7800 ROM', icon: 'A78', chunk: 'gaming' },
+  a26:      { app: 'Atari 2600 ROM', icon: 'A26', chunk: 'gaming' },
+  lnx:      { app: 'Atari Lynx ROM', icon: 'LNX', magic: [0x4C, 0x59, 0x4E, 0x58], chunk: 'gaming' },
+  j64:      { app: 'Atari Jaguar ROM', icon: 'J64', chunk: 'gaming' },
+  pce:      { app: 'PC Engine ROM', icon: 'PCE', chunk: 'gaming' },
+  gg:       { app: 'Sega Game Gear ROM', icon: 'GG', chunk: 'gaming' },
+  sms:      { app: 'Sega Master System ROM', icon: 'SMS', chunk: 'gaming' },
+  ws:       { app: 'WonderSwan ROM', icon: 'WS', chunk: 'gaming' },
+  wsc:      { app: 'WonderSwan Color ROM', icon: 'WSC', chunk: 'gaming' },
+  w3x:      { app: 'Warcraft III Map', icon: 'W3X', magic: [0x48, 0x4D, 0x33, 0x57], chunk: 'gaming' },
+  w3m:      { app: 'Warcraft III Map', icon: 'W3M', magic: [0x48, 0x4D, 0x33, 0x57], chunk: 'gaming' },
+  rpyc:     { app: "Ren'Py Compiled Script", icon: 'RPYC', chunk: 'gaming' },
+  rvdata2:  { app: 'RPG Maker VX Ace Data', icon: 'RVD2', magic: [0x04, 0x08], chunk: 'gaming' },
+  rxdata:   { app: 'RPG Maker XP Data', icon: 'RXD', magic: [0x04, 0x08], chunk: 'gaming' },
+  pyxel:    { app: 'Pyxel Edit Document', icon: 'PYXL', chunk: 'gaming' },
+  ldtk:     { app: 'LDtk Level Project', icon: 'LDTK', chunk: 'gaming' },
+  tic:      { app: 'TIC-80 Cartridge', icon: 'TIC', chunk: 'gaming' },
+  xdelta:   { app: 'xdelta3 Patch (VCDIFF)', icon: 'XDLT', magic: [0xD6, 0xC3, 0xC4], chunk: 'gaming' },
+  basis:    { app: 'Basis Universal Texture', icon: 'BASI', magic: [0x73, 0x42], chunk: 'gaming' },
+  srm:      { app: 'Emulator Battery Save', icon: 'SRM', chunk: 'gaming' },
+  state:    { app: 'Emulator Save State', icon: 'STAT', chunk: 'gaming' },
+  dsv:      { app: 'DeSmuME Save', icon: 'DSV', chunk: 'gaming' },
+  dsm:      { app: 'DeSmuME Movie', icon: 'DSM', chunk: 'gaming' },
+  vbm:      { app: 'VBA Movie', icon: 'VBM', magic: [0x56, 0x42, 0x4D, 0x1A], chunk: 'gaming' },
+  fm2:      { app: 'FCEUX Movie', icon: 'FM2', chunk: 'gaming' },
+
+  // ===== Documents / ebooks / publishing (parsers-docs.js) =====
+  dita:    { app: 'DITA Topic', icon: 'DITA', parse: 'xml', chunk: 'docs' },
+  ditamap: { app: 'DITA Map', icon: 'DMAP', parse: 'xml', chunk: 'docs' },
+  sla:     { app: 'Scribus Document', icon: 'SLA', chunk: 'docs' },
+  scd:     { app: 'Scribus Legacy', icon: 'SCD', chunk: 'docs' },
+  wps:     { app: 'MS Works WP', icon: 'WPS', chunk: 'docs' },
+  wpt:     { app: 'MS Works Template', icon: 'WPT', chunk: 'docs' },
+  wri:     { app: 'Windows Write', icon: 'WRI', chunk: 'docs' },
+  dot:     { app: 'Word 97 Template', icon: 'DOT', chunk: 'docs' },
+  sdw:     { app: 'StarOffice Writer 5', icon: 'SDW', chunk: 'docs' },
+  sdc:     { app: 'StarOffice Calc 5', icon: 'SDC', chunk: 'docs' },
+  sdd:     { app: 'StarOffice Impress 5', icon: 'SDD', chunk: 'docs' },
+  snb:     { app: 'Shanda Bambook eBook', icon: 'SNB', chunk: 'docs' },
+  lrf:     { app: 'Sony BBeB Book', icon: 'LRF', magic: [0x4C, 0x00, 0x52, 0x00, 0x46, 0x00], chunk: 'docs' },
+  lrx:     { app: 'Sony BBeB (DRM)', icon: 'LRX', chunk: 'docs' },
+  tcr:     { app: 'Psion / EBookwise TCR', icon: 'TCR', magic: [0x42, 0x4F, 0x4F, 0x4B, 0x44, 0x4F, 0x55, 0x47], chunk: 'docs' },
+  cba:     { app: 'Comic Book ACE', icon: 'CBA', chunk: 'docs' },
+  fm:      { app: 'FrameMaker Document', icon: 'FM', chunk: 'docs' },
+  book:    { app: 'FrameMaker Book', icon: 'BOOK', chunk: 'docs' },
+  awt:     { app: 'AbiWord Template', icon: 'AWT', chunk: 'docs' },
+  sxd:     { app: 'StarOffice Draw', icon: 'SXD', zip: true, chunk: 'docs' },
+  otg:     { app: 'ODF Graphics Template', icon: 'OTG', zip: true, chunk: 'docs' },
+  pm6:     { app: 'PageMaker 6', icon: 'PM6', chunk: 'docs' },
+  p65:     { app: 'PageMaker 6.5', icon: 'P65', chunk: 'docs' },
+  pt6:     { app: 'PageMaker Template', icon: 'PT6', chunk: 'docs' },
+  adf:     { app: 'AsciiDoc', icon: 'ADF', parse: 'text', chunk: 'docs' },
+
+  // ===== Email / calendar / contacts / PIM (parsers-email.js) =====
+  olm:     { app: 'Outlook for Mac Archive', icon: 'OLM', zip: true, chunk: 'email' },
+  oft:     { app: 'Outlook Template', icon: 'OFT', magic: [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1], chunk: 'email' },
+  p7m:     { app: 'S/MIME Encrypted Message', icon: 'P7M', chunk: 'email' },
+  p7s:     { app: 'S/MIME Signature', icon: 'P7S', chunk: 'email' },
+  msf:     { app: 'Mozilla Mail Summary', icon: 'MSF', chunk: 'email' },
+  mab:     { app: 'Mozilla Address Book', icon: 'MAB', chunk: 'email' },
+  mbx:     { app: 'Eudora / OE Mailbox', icon: 'MBX', chunk: 'email' },
+  toc:     { app: 'Eudora Table of Contents', icon: 'TOC', chunk: 'email' },
+  vmg:     { app: 'vMessage SMS Backup', icon: 'VMG', parse: 'text', chunk: 'email' },
+  vnt:     { app: 'vNote', icon: 'VNT', parse: 'text', chunk: 'email' },
+  xcal:    { app: 'iCalendar (XML)', icon: 'XCAL', parse: 'xml', chunk: 'email' },
+  jcal:    { app: 'iCalendar (JSON)', icon: 'JCAL', chunk: 'email' },
+  xcard:   { app: 'vCard (XML)', icon: 'XCRD', parse: 'xml', chunk: 'email' },
+  jcard:   { app: 'vCard (JSON)', icon: 'JCRD', chunk: 'email' },
+  ldi:     { app: 'LDIF (LDAP Export)', icon: 'LDI', parse: 'text', chunk: 'email' },
+  pab:     { app: 'Personal Address Book', icon: 'PAB', chunk: 'email' },
+  wab:     { app: 'Windows Address Book', icon: 'WAB', chunk: 'email' },
+  abbu:    { app: 'Apple Address Book Backup', icon: 'ABBU', chunk: 'email' },
+
+  // ===== Security / crypto / keys / forensics (parsers-security.js) =====
+  pgp:     { app: 'OpenPGP Data', icon: 'PGP', chunk: 'security' },
+  gpg:     { app: 'OpenPGP Data', icon: 'GPG', chunk: 'security' },
+  sig:     { app: 'OpenPGP Signature', icon: 'SIG', chunk: 'security' },
+  evt:     { app: 'Windows Event Log (legacy)', icon: 'EVT', magic: [0x30, 0x00, 0x00, 0x00, 0x4C, 0x66, 0x4C, 0x65], chunk: 'security' },
+  yar:     { app: 'YARA Rules', icon: 'YARA', parse: 'text', chunk: 'security' },
+  yara:    { app: 'YARA Rules', icon: 'YARA', parse: 'text', chunk: 'security' },
+  rules:   { app: 'Snort / Suricata IDS Rules', icon: 'IDS', parse: 'text', chunk: 'security' },
+  stix:    { app: 'STIX Threat Intel', icon: 'STIX', parse: 'text', chunk: 'security' },
+  ioc:     { app: 'OpenIOC Indicator', icon: 'IOC', parse: 'xml', chunk: 'security' },
+  saz:     { app: 'Fiddler Session Archive', icon: 'SAZ', zip: true, chunk: 'security' },
+  '1pux':  { app: '1Password Export', icon: '1PUX', zip: true, chunk: 'security' },
+  opvault: { app: '1Password OPVault', icon: 'OPV', chunk: 'security' },
+  keychain:{ app: 'Apple Keychain', icon: 'KEYC', magic: [0x6B, 0x79, 0x63, 0x68], chunk: 'security' },
+  aff:     { app: 'AFF Forensic Image', icon: 'AFF', chunk: 'security' },
+  aff4:    { app: 'AFF4 Forensic Image', icon: 'AFF4', zip: true, chunk: 'security' },
+  kdb:     { app: 'KeePass 1.x Database', icon: 'KDB', magic: [0x03, 0xD9, 0xA2, 0x9A], chunk: 'security' },
+  pvk:     { app: 'Microsoft Private Key', icon: 'PVK', magic: [0xB0, 0xB5, 0xF1, 0x1E], chunk: 'security' },
+
+  // ===== Scientific / medical / engineering / simulation (parsers-sci.js) =====
+  rds:     { app: 'R Serialized Object', icon: 'RDS', magic: [0x58, 0x0a], chunk: 'sci' },
+  rdata:   { app: 'R Workspace', icon: 'RDA', chunk: 'sci' },
+  rda:     { app: 'R Workspace', icon: 'RDA', chunk: 'sci' },
+  ab1:     { app: 'ABIF Sequencing Trace', icon: 'AB1', magic: [0x41, 0x42, 0x49, 0x46], chunk: 'sci' },
+  poscar:  { app: 'VASP POSCAR (DFT)', icon: 'VASP', parse: 'text', chunk: 'sci' },
+  cube:    { app: 'Gaussian Cube', icon: 'CUBE', parse: 'text', chunk: 'sci' },
+  xsf:     { app: 'XCrySDen Structure', icon: 'XSF', parse: 'text', chunk: 'sci' },
+  cdx:     { app: 'ChemDraw Binary', icon: 'CDX', magic: [0x56, 0x6a, 0x43, 0x44, 0x30, 0x31, 0x30, 0x30], chunk: 'sci' },
+  cdxml:   { app: 'ChemDraw XML', icon: 'CDXM', parse: 'xml', chunk: 'sci' },
+  abf:     { app: 'Axon Binary File', icon: 'ABF', magic: [0x41, 0x42, 0x46], chunk: 'sci' },
+  tdms:    { app: 'NI TDMS', icon: 'TDMS', magic: [0x54, 0x44, 0x53, 0x6d], chunk: 'sci' },
+  vhdr:    { app: 'BrainVision Header', icon: 'EEG', parse: 'text', chunk: 'sci' },
+  vmrk:    { app: 'BrainVision Markers', icon: 'EEGM', parse: 'text', chunk: 'sci' },
+  cnt:     { app: 'Neuroscan EEG', icon: 'CNT', chunk: 'sci' },
+  eeg:     { app: 'EEG Data', icon: 'EEG', chunk: 'sci' },
+  set:     { app: 'EEGLAB Dataset', icon: 'SET', chunk: 'sci' },
+  vts:     { app: 'VTK Structured Grid', icon: 'VTS', parse: 'xml', chunk: 'sci' },
+  vtr:     { app: 'VTK Rectilinear Grid', icon: 'VTR', parse: 'xml', chunk: 'sci' },
+  net:     { app: 'SPICE Netlist', icon: 'NET', parse: 'text', chunk: 'sci' },
+  msh:     { app: 'Gmsh Mesh', icon: 'MSH', parse: 'text', chunk: 'sci' },
+  inp:     { app: 'Abaqus / Nastran Deck', icon: 'INP', parse: 'text', chunk: 'sci' },
+  cdb:     { app: 'ANSYS CDB Archive', icon: 'CDB', parse: 'text', chunk: 'sci' },
+  wfm:     { app: 'Oscilloscope Waveform', icon: 'WFM', chunk: 'sci' },
+
+  // ===== Geospatial / GIS / remote sensing (parsers-geodata.js) =====
+  o5m:     { app: 'OSM o5m binary', icon: 'O5M', magic: [0xFF, 0xE0], chunk: 'geodata' },
+  o5c:     { app: 'OSM o5c change', icon: 'O5C', magic: [0xFF, 0xE0], chunk: 'geodata' },
+  lyr:     { app: 'Esri Layer (ArcMap)', icon: 'LYR', chunk: 'geodata' },
+  lyrx:    { app: 'Esri ArcGIS Pro Layer', icon: 'LYRX', parse: 'text', chunk: 'geodata' },
+  qgs:     { app: 'QGIS Project (XML)', icon: 'QGS', parse: 'xml', chunk: 'geodata' },
+  qgz:     { app: 'QGIS Project (ZIP)', icon: 'QGZ', zip: true, chunk: 'geodata' },
+  sbn:     { app: 'Shapefile Spatial Index', icon: 'SBN', chunk: 'geodata' },
+  sbx:     { app: 'Shapefile Spatial Index', icon: 'SBX', chunk: 'geodata' },
+  cpt:     { app: 'Colour Palette (GMT/GDAL)', icon: 'CPT', parse: 'text', chunk: 'geodata' },
+  bil:     { app: 'Band-Interleaved Raster', icon: 'BIL', chunk: 'geodata' },
+  bip:     { app: 'Band-Interleaved Raster', icon: 'BIP', chunk: 'geodata' },
+  bsq:     { app: 'Band-Sequential Raster', icon: 'BSQ', chunk: 'geodata' },
 };
 
 // ---------- helpers ----------
@@ -1714,11 +1970,15 @@ async function parseGzipXmlProject(file, ext) {
     const head = new Uint8Array(await file.slice(0, 2).arrayBuffer());
     if (head[0] !== 0x1F || head[1] !== 0x8B) return null;
     if (typeof DecompressionStream === 'undefined') return null;
-    const chunk = file.slice(0, Math.min(file.size, 65536));
+    // Premiere projects can be large; read a generous decompressed window so the
+    // sequence / media counts are representative. Ableton sets are small.
+    const isPremiere = (ext === 'prproj' || ext === 'prel');
+    const limit = isPremiere ? 6 * 1024 * 1024 : 8192;
+    const chunk = file.slice(0, Math.min(file.size, isPremiere ? 16 * 1024 * 1024 : 65536));
     const ds = new DecompressionStream('gzip');
     const reader = chunk.stream().pipeThrough(ds).getReader();
     let xml = '';
-    while (xml.length < 8192) {
+    while (xml.length < limit) {
       const { done, value } = await reader.read();
       if (done) break;
       xml += new TextDecoder().decode(value, { stream: true });
@@ -1730,11 +1990,53 @@ async function parseGzipXmlProject(file, ext) {
       if (ver) fields['Creator'] = ver[1];
       const schema = xml.match(/SchemaChangeCount="(\d+)"/);
       if (schema) fields['Schema version'] = schema[1];
-    } else if (ext === 'prproj') {
-      const ver = xml.match(/Version="([^"]+)"/);
-      if (ver) fields['Project version'] = ver[1];
-      const build = xml.match(/<Build>([^<]+)</);
-      if (build) fields['Build'] = build[1];
+      return Object.keys(fields).length ? fields : null;
+    }
+
+    // Premiere Pro (.prproj) / Premiere Elements (.prel) - PremiereData XML model.
+    fields['Application'] = ext === 'prel' ? 'Adobe Premiere Elements' : 'Adobe Premiere Pro';
+    const ver = xml.match(/<Project[^>]*\bVersion="([^"]+)"/) || xml.match(/\bVersion="([^"]+)"/);
+    if (ver) fields['Project version'] = ver[1];
+    const app = xml.match(/<Application>([^<]+)</) || xml.match(/ApplicationBuildVersion>([^<]+)</);
+    if (app) fields['Created with'] = app[1];
+    const build = xml.match(/<Build>([^<]+)</) || xml.match(/AppVersion>([^<]+)</);
+    if (build) fields['Build'] = build[1];
+
+    // Sequences: each timeline is a <Sequence> object in the model.
+    const seqCount = (xml.match(/<Sequence\b/g) || []).length;
+    if (seqCount) fields['Sequences'] = seqCount;
+
+    // Media items: <Media>, <VideoClip>, <AudioClip> reference clips on the
+    // timeline; <MasterClip> / <ClipProjectItem> are project-bin media items.
+    const masterClips = (xml.match(/<MasterClip\b/g) || []).length;
+    const projItems = (xml.match(/<ProjectItem\b/g) || xml.match(/<ClipProjectItem\b/g) || []).length;
+    const mediaItems = masterClips || projItems;
+    if (mediaItems) fields['Media items'] = mediaItems;
+    const clips = (xml.match(/<(?:Video|Audio)Clip\b/g) || []).length;
+    if (clips) fields['Timeline clips'] = clips;
+
+    // Frame rate (Premiere stores ticks/frame = TIcksPerSecond/fps; 254016000000
+    // ticks per second). Surface FrameRate if present as plain text.
+    const tsm = xml.match(/<FrameRate>(\d+)<\/FrameRate>/) || xml.match(/Timebase>(\d+)</);
+    if (tsm) {
+      const tb = parseInt(tsm[1], 10);
+      const fps = 254016000000 / tb;
+      if (isFinite(fps) && fps > 0 && fps < 1000) fields['Frame rate'] = (Math.round(fps * 1000) / 1000) + ' fps';
+      else fields['Frame rate'] = tsm[1];
+    }
+    const wh = xml.match(/<Width>(\d+)<\/Width>[\s\S]{0,200}?<Height>(\d+)<\/Height>/) ||
+               xml.match(/FrameWidth>(\d+)<[\s\S]{0,200}?FrameHeight>(\d+)</);
+    if (wh) fields['Resolution'] = wh[1] + ' x ' + wh[2] + ' px';
+
+    // Referenced media file paths (FilePath / ActualMediaFilePath / pathurls).
+    const paths = [...new Set([
+      ...[...xml.matchAll(/<(?:ActualMediaFilePath|FilePath|RelativePath)>([^<]+)</g)].map(m => m[1]),
+      ...[...xml.matchAll(/<PathURL>([^<]+)</g)].map(m => m[1]),
+    ])].map(p => p.replace(/&amp;/g, '&').replace(/^file:\/+/, '/'));
+    if (paths.length) {
+      fields['Referenced media'] = paths.length;
+      fields._sections = [{ title: 'Referenced media (' + paths.length + ')',
+        node: preBlock(paths.slice(0, 60).join('\n')) }];
     }
     return Object.keys(fields).length ? fields : null;
   } catch (_) {
@@ -2262,25 +2564,512 @@ function parseX509(der) {
 async function parseAepx(file) {
   try {
     const text = await file.text();
-    const fields = {};
-    // Footage / asset references
-    const assets = [...text.matchAll(/fullpath="([^"]+)"/g)].map(m => m[1]);
+    const fields = { 'Format': 'After Effects XML project (AEPX)' };
+    const unesc = (s) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+
+    // After Effects build / version string (e.g. <string>13.8x274</string> near
+    // the head, or a Build attribute). AEPX carries a "BuildNumber" / version.
+    const ver = text.match(/aebx_version="([^"]+)"/i) ||
+                text.match(/BuildNumber="([^"]+)"/i) ||
+                text.match(/<ProjectVersion>([^<]+)</i);
+    if (ver) fields['After Effects version'] = ver[1];
+
+    // Footage / asset references (fullpath="..." inside file references).
+    const assets = [...text.matchAll(/fullpath="([^"]+)"/g)].map(m => unesc(m[1]));
     const uniqAssets = [...new Set(assets)];
     if (uniqAssets.length) {
-      fields['Assets'] = uniqAssets.length;
-      fields['_fileList'] = uniqAssets.slice(0, 30).map(a => a.replace(/&amp;/g, '&'));
+      fields['Referenced assets'] = uniqAssets.length;
     }
-    // Effect match-names (ADBE ...) used across comps
+
+    // Effect / plugin match-names (ADBE ...) used across comps.
     const effects = [...new Set([...text.matchAll(/<string>(ADBE [^<]+)<\/string>/g)].map(m => m[1]))];
-    if (effects.length) fields['Effects'] = effects.length;
-    // Plain string names (comp / layer / folder names) - first few, filtered
+    if (effects.length) fields['Effects / plugins'] = effects.length;
+
+    // Composition metadata lives in <comp> ... blocks with <cdta>. Surface counts
+    // and the first frame-rate / dimensions we can recover. AEPX exposes these as
+    // human-readable hex blobs, but it also often carries explicit attributes.
+    const compCount = (text.match(/<comp\b/g) || []).length || (text.match(/<idta/g) || []).length;
+    if (compCount) fields['Compositions'] = compCount;
+    const layerCount = (text.match(/<Layr\b/g) || text.match(/<layr\b/gi) || []).length;
+    if (layerCount) fields['Layers'] = layerCount;
+
+    // Frame rate (fps) and dimensions sometimes appear as plain attributes.
+    const fps = text.match(/frameRate="([\d.]+)"/i) || text.match(/<fps>([\d.]+)</i);
+    if (fps) fields['Frame rate'] = parseFloat(fps[1]) + ' fps';
+    const dim = text.match(/width="(\d+)"[^>]*height="(\d+)"/i);
+    if (dim) fields['Dimensions'] = dim[1] + ' x ' + dim[2] + ' px';
+    const dur = text.match(/duration="([\d.]+)"/i);
+    if (dur) fields['Duration'] = parseFloat(dur[1]).toFixed(2) + ' s';
+
+    // Expressions (ExtendScript / JS) live in <string> blocks; heuristically count
+    // ones that look like code.
+    const exprs = [...text.matchAll(/<string>([^<]{8,})<\/string>/g)]
+      .map(m => m[1]).filter(s => /[;={}()]/.test(s) && /(thisComp|time|wiggle|linear|value|thisLayer)/.test(s));
+    if (exprs.length) fields['Expressions'] = exprs.length;
+
+    // Named items (comp / layer / folder names) - filtered.
     const names = [...new Set([...text.matchAll(/<string>([^<]{1,60})<\/string>/g)]
-      .map(m => m[1]).filter(s => !s.startsWith('ADBE ') && /[a-zA-Z]/.test(s)))];
+      .map(m => m[1]).filter(s => !s.startsWith('ADBE ') && /[a-zA-Z]/.test(s) && !/[;={}]/.test(s)))];
     if (names.length) fields['Named items'] = names.length;
-    // Composition count (each comp has a <Layr> grouping under an <Item>)
-    const comps = (text.match(/<idta/g) || []).length;
-    if (comps) fields['Items'] = comps;
-    return Object.keys(fields).length ? fields : { 'Type': 'After Effects XML project' };
+
+    const sections = [];
+    if (uniqAssets.length) {
+      sections.push({ title: 'Referenced assets (' + uniqAssets.length + ')',
+        node: preBlock(uniqAssets.slice(0, 60).join('\n')) });
+    }
+    if (effects.length) {
+      sections.push({ title: 'Effects / plugins (' + effects.length + ')',
+        node: preBlock(effects.slice(0, 80).join('\n')) });
+    }
+    if (names.length) {
+      sections.push({ title: 'Named items (' + names.length + ')',
+        node: preBlock(names.slice(0, 80).join('\n')) });
+    }
+    if (exprs.length) {
+      sections.push({ title: 'Expressions (' + exprs.length + ')',
+        node: preBlock(exprs.slice(0, 20).map(unesc).join('\n\n')) });
+    }
+    if (sections.length) fields._sections = sections;
+    return fields;
+  } catch (_) {
+    return null;
+  }
+}
+
+// ---------- After Effects binary project (.aep / .aet) ----------
+// .aep is a RIFX container: big-endian RIFF. Magic 'RIFX', a 4-byte BE size, then
+// the form type 'Egg!'. The body is a tree of chunks (4-char FourCC + 4-byte BE
+// length, padded to even). We walk the tree and harvest cheap signals; the bulk
+// of the body (binary property blobs) stays opaque, which we note honestly.
+async function parseAep(file) {
+  try {
+    // RIFX files can be large; a few MB is plenty to harvest match-names, paths
+    // and structure counts without pulling the whole project into memory.
+    const cap = Math.min(file.size, 8 * 1024 * 1024);
+    const buf = new Uint8Array(await file.slice(0, cap).arrayBuffer());
+    if (ascii(buf, 0, 4) !== 'RIFX') return null;
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const form = ascii(buf, 8, 4);
+    const fields = { 'Container': 'RIFX (big-endian RIFF)' };
+    fields['Form type'] = form + (form === 'Egg!' ? '  (After Effects project)' : '');
+
+    // Walk top-level + nested chunks (bounded) counting structural FourCCs and
+    // collecting tdmn match-names. We do a flat scan over the captured window for
+    // robustness against AE's deep nesting.
+    let comps = 0, layers = 0, items = 0, folders = 0, footage = 0;
+    const matchNames = new Set();
+    let aeVersion = null;
+
+    let p = 12; // past RIFX + size + form
+    const end = buf.length;
+    while (p + 8 <= end) {
+      const fourcc = ascii(buf, p, 4);
+      const len = dv.getUint32(p + 4, false); // big-endian
+      const dataStart = p + 8;
+      if (len < 0 || dataStart + len > end + 8) break;
+      const dataEnd = Math.min(dataStart + len, end);
+
+      if (fourcc === 'LIST') {
+        // LIST has a 4-char list-type then nested chunks; recurse by stepping in.
+        const listType = ascii(buf, dataStart, 4);
+        if (listType === 'Item' || listType === 'idta') items++;
+        // Step into the list body so nested chunks are walked.
+        p = dataStart + 4;
+        continue;
+      }
+
+      if (fourcc === 'cdta') comps++;        // composition data
+      else if (fourcc === 'ldta') layers++;  // layer data
+      else if (fourcc === 'idta') items++;   // item data (comp/folder/footage)
+      else if (fourcc === 'fdta') folders++; // folder data
+      else if (fourcc === 'sspc' || fourcc === 'pin ' || fourcc === 'Pin ') footage++;
+      else if (fourcc === 'tdmn') {
+        // Effect / property match-name: a NUL-terminated ASCII string.
+        const s = ascii(buf, dataStart, Math.min(len, 128)).replace(/ .*$/, '').trim();
+        if (s && s !== 'ADBE Group End' && /[A-Za-z]/.test(s)) matchNames.add(s);
+      }
+
+      // advance, chunks are word (2-byte) aligned
+      let next = dataStart + len;
+      if (next & 1) next++;
+      if (next <= p) break; // safety
+      p = next;
+    }
+
+    // Effect match-names that start with "ADBE " are the user-facing effects.
+    const effectNames = [...matchNames].filter(m => m.startsWith('ADBE ') &&
+      !/Group End|Vector|Marker|Time Remap|Transform Group|Root Vectors/.test(m));
+
+    // Harvest referenced footage paths: AE stores them as UTF-8 strings in 'Utf8'
+    // chunks and platform paths; a string sweep catches drive/UNC/posix paths.
+    const fullText = utf16Safe(buf);
+    const paths = harvestPaths(buf);
+
+    // Version string: AE writes something like "After Effects 24.0" or a numeric
+    // build in the head region; sweep the ASCII for a recognisable token.
+    const headAscii = asciiRun(buf, 0, Math.min(buf.length, 8192));
+    const vm = headAscii.match(/After Effects[^\d]{0,8}(\d{1,2}(?:\.\d+)*)/i) ||
+               headAscii.match(/\bAE\b[^\d]{0,4}(\d{2}\.\d)/);
+    if (vm) aeVersion = vm[1];
+
+    if (aeVersion) fields['After Effects version'] = aeVersion;
+    if (items) fields['Items (comps / folders / footage)'] = items;
+    if (comps) fields['Compositions'] = comps;
+    if (layers) fields['Layers'] = layers;
+    if (folders) fields['Folders'] = folders;
+    if (effectNames.length) fields['Effects / plugins'] = effectNames.length;
+    else if (matchNames.size) fields['Property match-names'] = matchNames.size;
+    if (paths.length) fields['Referenced asset paths'] = paths.length;
+    if (cap < file.size) fields['Scanned'] = fmtBytes(cap) + ' of ' + fmtBytes(file.size);
+
+    const sections = [];
+    if (effectNames.length) {
+      sections.push({ title: 'Effects / plugins (' + effectNames.length + ')',
+        node: preBlock(effectNames.slice(0, 80).join('\n')) });
+    }
+    const otherNames = [...matchNames].filter(m => !m.startsWith('ADBE '));
+    if (otherNames.length) {
+      sections.push({ title: 'Other match-names (' + otherNames.length + ')',
+        node: preBlock(otherNames.slice(0, 60).join('\n')) });
+    }
+    if (paths.length) {
+      sections.push({ title: 'Referenced asset paths (' + paths.length + ')',
+        node: preBlock(paths.slice(0, 60).join('\n')) });
+    }
+    if (sections.length) fields._sections = sections;
+
+    fields['Note'] = 'RIFX structure walked - match-names, paths and item/comp/layer ' +
+      'counts are decoded. The binary property blobs (keyframes, transforms) are ' +
+      'only partially decoded.';
+    return fields;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Printable ASCII run (preserves position, used for windowed text sweeps).
+function asciiRun(buf, start, end) {
+  let s = '';
+  for (let i = start; i < end && i < buf.length; i++) {
+    const c = buf[i];
+    s += (c >= 32 && c < 127) ? String.fromCharCode(c) : ' ';
+  }
+  return s;
+}
+
+// Best-effort UTF-16 decode of a binary buffer (tolerant), for path/string sweeps.
+function utf16Safe(buf) {
+  try { return utf16(buf, true) + '\n' + utf16(buf, false); } catch (_) { return ''; }
+}
+
+// Harvest plausible filesystem paths (Windows drive, UNC, or POSIX) from a binary
+// buffer by scanning both ASCII and UTF-16 string runs.
+function harvestPaths(buf) {
+  const out = new Set();
+  const re = /(?:[A-Za-z]:\\|\\\\[^\s"<>|*?]+\\|\/(?:Users|Volumes|home|Applications|Movies)\/)[^ "<>|*?\n\r]{2,200}/g;
+  // ASCII pass
+  const aRun = asciiRun(buf, 0, buf.length);
+  for (const m of aRun.matchAll(re)) {
+    const s = m[0].trim().replace(/\s+$/, '');
+    if (s.length > 4 && /\.[A-Za-z0-9]{2,5}\b/.test(s)) out.add(s);
+  }
+  // UTF-16 pass
+  const u = utf16Safe(buf);
+  for (const m of u.matchAll(re)) {
+    const s = m[0].trim().replace(/\s+$/, '');
+    if (s.length > 4 && /\.[A-Za-z0-9]{2,5}\b/.test(s)) out.add(s);
+  }
+  return [...out].slice(0, 200);
+}
+
+// ---------- VEGAS Pro project (.veg / .vf) ----------
+// Sony / MAGIX VEGAS Pro project. The body is a proprietary RIFF-like / structured
+// binary. We confirm the signature and harvest any embedded version/build string
+// and referenced media paths via a string sweep. Deep parse is infeasible.
+async function parseVeg(file) {
+  try {
+    const cap = Math.min(file.size, 4 * 1024 * 1024);
+    const buf = new Uint8Array(await file.slice(0, cap).arrayBuffer());
+    const fields = { 'Application': 'VEGAS Pro (Sony / MAGIX)' };
+
+    // VEG files commonly begin with RIFF/RIFX or a 'Vegas'/'VEG' marker; surface
+    // whatever signature is present.
+    if (ascii(buf, 0, 4) === 'RIFF') fields['Container'] = 'RIFF (little-endian)';
+    else if (ascii(buf, 0, 4) === 'RIFX') fields['Container'] = 'RIFX (big-endian)';
+    else if (buf[0] === 0xD0 && buf[1] === 0xCF) fields['Container'] = 'OLE compound document';
+
+    const headAscii = asciiRun(buf, 0, Math.min(buf.length, 16384));
+    const u = utf16Safe(buf);
+    const verm = (u + ' ' + headAscii).match(/VEGAS\s*(?:Pro)?\s*(\d{1,2}(?:\.\d+)*)/i) ||
+                 (u + ' ' + headAscii).match(/Vegas[^\d]{0,12}(\d{2}\.\d)/i);
+    if (verm) fields['Version / build'] = verm[1];
+
+    const paths = harvestPaths(buf);
+    // Media references in VEG often sit in the second half of the file.
+    if (file.size > cap) {
+      const tail = new Uint8Array(await file.slice(file.size - Math.min(file.size, 2 * 1024 * 1024)).arrayBuffer());
+      for (const p of harvestPaths(tail)) paths.push(p);
+    }
+    const uniqPaths = [...new Set(paths)];
+    if (uniqPaths.length) {
+      fields['Referenced media'] = uniqPaths.length;
+      fields._sections = [{ title: 'Referenced media (' + uniqPaths.length + ')',
+        node: preBlock(uniqPaths.slice(0, 60).join('\n')) }];
+    }
+    if (cap < file.size) fields['Scanned'] = fmtBytes(cap) + ' (head) of ' + fmtBytes(file.size);
+    fields['Note'] = 'VEGAS projects are a proprietary binary - signature, version ' +
+      'and media paths are surfaced; the timeline structure stays opaque.';
+    return fields;
+  } catch (_) {
+    return null;
+  }
+}
+
+// ---------- DaVinci Resolve project / timeline (.drp / .drt) ----------
+// A .drp may begin with a SQLite database ('SQLite format 3\0') or be a custom
+// binary (often a gzip/zstd blob or a DRP XML). We detect the container and
+// surface cheap signals: Resolve version, project/timeline name, media paths.
+async function parseDrp(file, ext) {
+  try {
+    const cap = Math.min(file.size, 4 * 1024 * 1024);
+    const buf = new Uint8Array(await file.slice(0, cap).arrayBuffer());
+    const isTimeline = ext === 'drt';
+    const fields = { 'Application': 'DaVinci Resolve (Blackmagic Design)' };
+    fields['Kind'] = isTimeline ? 'Timeline (.drt)' : 'Project (.drp)';
+
+    if (ascii(buf, 0, 15) === 'SQLite format 3') {
+      fields['Container'] = 'SQLite database';
+    } else if (buf[0] === 0x1F && buf[1] === 0x8B) {
+      fields['Container'] = 'GZIP-compressed';
+    } else if (buf[0] === 0x50 && buf[1] === 0x4B) {
+      fields['Container'] = 'ZIP archive';
+    } else if (ascii(buf, 0, 5) === '<?xml' || ascii(buf, 0, 1) === '<') {
+      fields['Container'] = 'XML';
+    } else if (ascii(buf, 0, 1) === '{') {
+      fields['Container'] = 'JSON';
+    }
+
+    const headAscii = asciiRun(buf, 0, Math.min(buf.length, 32768));
+    const u = utf16Safe(buf);
+    const blob = headAscii + ' ' + u;
+    const verm = blob.match(/Resolve[^\d]{0,16}(\d{1,2}(?:\.\d+)*)/i) ||
+                 blob.match(/DaVinci[^\d]{0,16}(\d{2}\.\d)/i);
+    if (verm) fields['Resolve version'] = verm[1];
+    const namem = blob.match(/(?:ProjectName|TimelineName|"name")\s*[=:]\s*["']?([^"'<>\n\r]{1,80})/i);
+    if (namem) fields[isTimeline ? 'Timeline name' : 'Project name'] = namem[1].trim();
+
+    const paths = harvestPaths(buf);
+    const uniqPaths = [...new Set(paths)];
+    if (uniqPaths.length) {
+      fields['Referenced media'] = uniqPaths.length;
+      fields._sections = [{ title: 'Referenced media (' + uniqPaths.length + ')',
+        node: preBlock(uniqPaths.slice(0, 60).join('\n')) }];
+    }
+    if (cap < file.size) fields['Scanned'] = fmtBytes(cap) + ' of ' + fmtBytes(file.size);
+    fields['Note'] = 'Container detected and cheap strings (version, name, media ' +
+      'paths) harvested. The database / binary body is not fully decoded.';
+    return fields;
+  } catch (_) {
+    return null;
+  }
+}
+
+// ---------- Wondershare Filmora project (.wfp / .wsp) ----------
+// Newer Filmora projects are JSON (or wrap a JSON project model); older .wfp are
+// binary. Detect JSON vs binary and extract version/resolution/duration/tracks
+// for JSON; for binary, ID + any embedded version.
+async function parseFilmora(file, ext) {
+  try {
+    const cap = Math.min(file.size, 6 * 1024 * 1024);
+    const buf = new Uint8Array(await file.slice(0, cap).arrayBuffer());
+    const fields = { 'Application': 'Wondershare Filmora' };
+    fields['Kind'] = ext === 'wsp' ? 'Sub-project (.wsp)' : 'Project (.wfp)';
+
+    // Is there a JSON document (whole-file or embedded)? Find the first '{' that
+    // begins a plausible Filmora model.
+    let jsonText = null;
+    const headStr = asciiRun(buf, 0, buf.length);
+    const braceIdx = headStr.indexOf('{');
+    if (braceIdx >= 0) {
+      const candidate = headStr.slice(braceIdx);
+      // Try to parse the largest balanced JSON object we can cheaply find.
+      jsonText = extractJsonObject(candidate);
+    }
+
+    let model = null;
+    if (jsonText) { try { model = JSON.parse(jsonText); } catch (_) { model = null; } }
+
+    if (model && typeof model === 'object') {
+      fields['Format'] = 'JSON project model';
+      const root = model.project || model;
+      const ver = root.version || root.appVersion || model.version || root.editVersion;
+      if (ver) fields['Filmora version'] = String(ver);
+      const platform = root.platform || model.platform || root.os;
+      if (platform) fields['Platform'] = String(platform);
+      const w = root.width || (root.canvas && root.canvas.width) || root.projectWidth;
+      const h = root.height || (root.canvas && root.canvas.height) || root.projectHeight;
+      if (w && h) fields['Resolution'] = w + ' x ' + h + ' px';
+      const fpsv = root.fps || root.frameRate || (root.canvas && root.canvas.fps);
+      if (fpsv) fields['Frame rate'] = parseFloat(fpsv) + ' fps';
+      const durv = root.duration || root.totalDuration;
+      if (durv) {
+        const secs = durv > 1e6 ? durv / 1e6 : durv; // microseconds -> seconds heuristic
+        fields['Duration'] = secs.toFixed(2) + ' s';
+      }
+      const tracks = root.tracks || (root.timeline && root.timeline.tracks) || model.tracks;
+      if (Array.isArray(tracks)) {
+        fields['Tracks'] = tracks.length;
+        let clips = 0;
+        for (const t of tracks) {
+          const items = t.clips || t.items || t.segments;
+          if (Array.isArray(items)) clips += items.length;
+        }
+        if (clips) fields['Clips'] = clips;
+      }
+      const clipsArr = root.clips || model.clips;
+      if (Array.isArray(clipsArr) && !fields['Clips']) fields['Clips'] = clipsArr.length;
+    } else {
+      // Binary .wfp - older format. Confirm + harvest version/paths.
+      fields['Format'] = 'Binary project';
+      if (buf[0] === 0x50 && buf[1] === 0x4B) fields['Container'] = 'ZIP archive';
+      else if (buf[0] === 0xD0 && buf[1] === 0xCF) fields['Container'] = 'OLE compound document';
+      const blob = asciiRun(buf, 0, Math.min(buf.length, 32768)) + ' ' + utf16Safe(buf);
+      const verm = blob.match(/Filmora[^\d]{0,12}(\d{1,2}(?:\.\d+)*)/i);
+      if (verm) fields['Filmora version'] = verm[1];
+    }
+
+    const paths = harvestPaths(buf);
+    const uniqPaths = [...new Set(paths)];
+    if (uniqPaths.length) {
+      fields['Referenced media'] = uniqPaths.length;
+      fields._sections = [{ title: 'Referenced media (' + uniqPaths.length + ')',
+        node: preBlock(uniqPaths.slice(0, 60).join('\n')) }];
+    }
+    if (cap < file.size) fields['Scanned'] = fmtBytes(cap) + ' of ' + fmtBytes(file.size);
+    return fields;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Extract the first balanced top-level JSON object from a string (best effort).
+function extractJsonObject(s) {
+  if (s[0] !== '{') return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = 0; i < s.length && i < 6 * 1024 * 1024; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+    } else {
+      if (ch === '"') inStr = true;
+      else if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) return s.slice(0, i + 1); }
+    }
+  }
+  return null;
+}
+
+// ---------- CapCut draft (draft_content.json) ----------
+// CapCut desktop drafts are a folder with draft_content.json. We are handed it as
+// a .json file. The model has keys like materials, tracks, canvas_config, duration
+// (microseconds), draft_id, last_modified_platform / app version.
+function isCapcutModel(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  // Require a couple of distinctive CapCut keys to avoid hijacking normal JSON.
+  const hasMaterials = obj.materials && typeof obj.materials === 'object';
+  const hasTracks = Array.isArray(obj.tracks);
+  const hasCanvas = obj.canvas_config && typeof obj.canvas_config === 'object';
+  const hasDraftId = typeof obj.draft_id === 'string' || typeof obj.id === 'string';
+  return (hasMaterials && hasTracks) || (hasCanvas && hasTracks) ||
+         (hasTracks && hasDraftId && (obj.duration !== undefined));
+}
+
+function buildCapcutFields(obj) {
+  const fields = { 'Application': 'CapCut (ByteDance)' };
+  fields['Format'] = 'CapCut draft (draft_content.json)';
+
+  const platform = obj.last_modified_platform || obj.platform;
+  if (platform && typeof platform === 'object') {
+    const appv = platform.app_version || platform.appVersion;
+    if (appv) fields['CapCut version'] = String(appv);
+    if (platform.os) fields['Platform'] = String(platform.os) +
+      (platform.os_version ? ' ' + platform.os_version : '');
+  } else if (typeof platform === 'string') {
+    fields['Platform'] = platform;
+  }
+  if (obj.draft_id) fields['Draft ID'] = String(obj.draft_id);
+
+  const cc = obj.canvas_config;
+  if (cc && (cc.width || cc.height)) {
+    fields['Canvas resolution'] = (cc.width || '?') + ' x ' + (cc.height || '?') + ' px';
+    if (cc.ratio) fields['Aspect ratio'] = String(cc.ratio);
+  }
+  if (typeof obj.fps === 'number') fields['Frame rate'] = obj.fps + ' fps';
+
+  if (typeof obj.duration === 'number') {
+    // CapCut durations are in microseconds.
+    const secs = obj.duration / 1e6;
+    fields['Duration'] = secs.toFixed(2) + ' s';
+  }
+
+  if (Array.isArray(obj.tracks)) {
+    fields['Tracks'] = obj.tracks.length;
+    let segs = 0;
+    const byType = {};
+    for (const t of obj.tracks) {
+      if (Array.isArray(t.segments)) segs += t.segments.length;
+      if (t.type) byType[t.type] = (byType[t.type] || 0) + 1;
+    }
+    if (segs) fields['Segments (clips)'] = segs;
+    const tt = Object.keys(byType);
+    if (tt.length) fields['Track types'] = tt.map(k => k + ' x' + byType[k]).join(', ');
+  }
+
+  // Materials by type: CapCut groups them under named arrays in `materials`.
+  const m = obj.materials;
+  if (m && typeof m === 'object') {
+    const counts = [];
+    const pick = (key, label) => {
+      if (Array.isArray(m[key]) && m[key].length) counts.push(label + ': ' + m[key].length);
+    };
+    pick('videos', 'Videos');
+    pick('audios', 'Audios');
+    pick('texts', 'Texts');
+    pick('stickers', 'Stickers');
+    pick('video_effects', 'Effects');
+    pick('effects', 'Effects');
+    pick('transitions', 'Transitions');
+    pick('images', 'Images');
+    if (counts.length) fields['Materials'] = counts.join(', ');
+    // Total material count across all arrays.
+    let total = 0;
+    for (const k in m) if (Array.isArray(m[k])) total += m[k].length;
+    if (total) fields['Total materials'] = total;
+  }
+  return fields;
+}
+
+// Given a .json file, return a CapCut readout if it is a CapCut draft, else null
+// (so normal JSON rendering proceeds untouched).
+async function parseCapcut(file) {
+  try {
+    // CapCut drafts can be large; cap the read but they are usually a few MB.
+    if (file.size > 64 * 1024 * 1024) return null;
+    const text = await file.text();
+    // Fast pre-check before the (potentially big) JSON.parse: must mention the
+    // distinctive keys. Avoids parsing every ordinary JSON file fully.
+    const isNamed = /draft_content\.json$/i.test(file.name || '');
+    if (!isNamed && !/"canvas_config"|"draft_id"|"last_modified_platform"/.test(text.slice(0, 4096) + text.slice(-2048))) {
+      // Cheap probe failed and filename isn't the canonical one - not CapCut.
+      if (!/"materials"[\s\S]{0,200}"tracks"|"tracks"[\s\S]{0,200}"segments"/.test(text.slice(0, 8192))) return null;
+    }
+    let obj;
+    try { obj = JSON.parse(text); } catch (_) { return null; }
+    if (!isCapcutModel(obj)) return null;
+    return buildCapcutFields(obj);
   } catch (_) {
     return null;
   }
@@ -3043,6 +3832,16 @@ const PARSERS = {
   als:   c => parseGzipXmlProject(c.file, c.ext),
   alp:   c => parseGzipXmlProject(c.file, c.ext),
   prproj: c => parseGzipXmlProject(c.file, c.ext),
+  prel:  c => parseGzipXmlProject(c.file, c.ext),
+  aep:   c => parseAep(c.file),
+  aet:   c => parseAep(c.file),
+  veg:   c => parseVeg(c.file),
+  vf:    c => parseVeg(c.file),
+  drp:   c => parseDrp(c.file, c.ext),
+  drt:   c => parseDrp(c.file, c.ext),
+  wfp:   c => parseFilmora(c.file, c.ext),
+  wsp:   c => parseFilmora(c.file, c.ext),
+  json:  c => parseCapcut(c.file),
   gcode: c => parseGcode(c.file),
   gco:   c => parseGcode(c.file),
   nc:    c => parseGcode(c.file),

@@ -14,8 +14,11 @@
    No top-level side effects. */
 
 import { el, row, fmtBytes, preBlock } from '../core/util.js';
-import { Reader, ascii, findBytes, latin1, utf8 } from '../core/binutil.js';
+import { Reader, ascii, findBytes, latin1, utf8, utf16, inflate } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
+
+// Lazily imported on first OLE/CFBF document; cached at module scope.
+let openCfbf;
 
 // ---------- small shared helpers ----------
 
@@ -892,6 +895,232 @@ async function parseDvi(file) {
   return out;
 }
 
+// ---------- DITA topic / map (.dita / .ditamap) ----------
+async function parseDita(file, ext) {
+  const text = await fileText(file, 6 * 1024 * 1024);
+  if (!/<(?:[\w.-]+:)?(?:dita|topic|concept|task|reference|glossentry|map|bookmap)\b/i.test(text) &&
+      !/-\/\/OASIS\/\/DTD DITA/i.test(text)) return null;
+  const isMap = ext === 'ditamap' || /<(?:[\w.-]+:)?(?:map|bookmap)\b/i.test(text);
+  const out = { 'Format': isMap ? 'DITA map (.ditamap)' : 'DITA topic (.dita)' };
+  // Root element after the prolog gives the topic / map type.
+  const rootM = text.match(/<((?:[\w.-]+:)?(?:dita|topic|concept|task|reference|glossentry|troubleshooting|map|bookmap|subjectScheme)\b)/i);
+  if (rootM) out['Root type'] = rootM[1];
+  const dt = text.match(/<!DOCTYPE\s+\S+\s+PUBLIC\s+"([^"]+)"/i);
+  if (dt) out['DOCTYPE'] = dt[1];
+  const t = tag(text, 'title') || tag(text, 'navtitle'); if (t) out['Title'] = t;
+  const id = pick(text, /<(?:[\w.-]+:)?(?:topic|concept|task|reference|map|bookmap)\b[^>]*\bid="([^"]+)"/i);
+  if (id) out['Topic id'] = id;
+  if (isMap) {
+    out['Topic refs'] = countRe(text, /<(?:[\w.-]+:)?topicref\b/gi);
+    out['Map refs'] = countRe(text, /<(?:[\w.-]+:)?mapref\b/gi);
+    out['Key definitions'] = countRe(text, /<(?:[\w.-]+:)?keydef\b/gi);
+    // Reference targets (first 60).
+    const hrefs = Array.from(text.matchAll(/<(?:[\w.-]+:)?(?:topicref|mapref|chapter)\b[^>]*\bhref="([^"]+)"/gi)).map((m) => m[1]);
+    if (hrefs.length) out._sections = [{ title: 'References (' + hrefs.length + ')', node: preBlock(hrefs.slice(0, 60).join('\n')) }];
+  } else {
+    out['Sections'] = countRe(text, /<(?:[\w.-]+:)?section\b/gi);
+    out['Paragraphs'] = countRe(text, /<(?:[\w.-]+:)?p[\s>]/gi);
+    out['Steps'] = countRe(text, /<(?:[\w.-]+:)?step\b/gi) || undefined;
+    out['Cross references'] = countRe(text, /<(?:[\w.-]+:)?xref\b/gi);
+    out['Conref / keyref'] = countRe(text, /\bconref="|\bconkeyref="|\bkeyref="/gi) || undefined;
+  }
+  out['Images'] = countRe(text, /<(?:[\w.-]+:)?image\b/gi);
+  return out;
+}
+
+// ---------- Scribus document (.sla / .scd) ----------
+async function parseScribus(file, ext) {
+  // .sla is XML (sometimes gzip-compressed); .scd is the legacy variant.
+  let bytes = new Uint8Array(await file.slice(0, Math.min(file.size, 16 * 1024 * 1024)).arrayBuffer());
+  let text;
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    const inflated = await inflate(bytes, 'gzip');
+    if (inflated) text = utf8(inflated);
+  }
+  if (!text) text = latin1(bytes.subarray(0, 4 * 1024 * 1024));
+  if (!/<SCRIBUSUTF8NEW\b/i.test(text) && !/<SCRIBUS\b/i.test(text)) return null;
+  const out = { 'Format': 'Scribus document (.' + ext + ')' };
+  const ver = pick(text, /<SCRIBUSUTF8NEW[^>]*\bVersion="([^"]+)"/i) || pick(text, /<SCRIBUS[^>]*\bVersion="([^"]+)"/i);
+  if (ver) out['Scribus version'] = ver;
+  // DOCUMENT element carries author/title/page geometry.
+  const doc = (text.match(/<DOCUMENT\b([^>]*)>/i) || [])[1] || '';
+  const title = pick(doc, /\bTITLE="([^"]*)"/i); if (title) out['Title'] = title;
+  const author = pick(doc, /\bAUTHOR="([^"]*)"/i); if (author) out['Author'] = author;
+  const kw = pick(doc, /\bKEYWORDS="([^"]*)"/i); if (kw) out['Keywords'] = kw;
+  const w = pick(doc, /\bPAGEWIDTH="([^"]+)"/i);
+  const h = pick(doc, /\bPAGEHEIGHT="([^"]+)"/i);
+  if (w && h) out['Page size'] = Math.round(parseFloat(w)) + ' × ' + Math.round(parseFloat(h)) + ' pt';
+  out['Pages'] = countRe(text, /<PAGE\b/gi);
+  out['Master pages'] = countRe(text, /<MASTERPAGE\b/gi) || undefined;
+  out['Objects'] = countRe(text, /<PAGEOBJECT\b/gi);
+  const fonts = new Set(Array.from(text.matchAll(/<PAGEOBJECT\b[^>]*\bIFONT="([^"]+)"/gi)).map((m) => m[1]));
+  if (fonts.size) out['Fonts used'] = fonts.size;
+  out['Embedded images'] = countRe(text, /\bPFILE="[^"]+\.(?:png|jpe?g|tiff?|gif|psd|eps)"/gi) || undefined;
+  return out;
+}
+
+// ---------- OLE / CFBF documents (.wps .wpt .wri .dot .sdw .sdc .sdd) ----------
+// Decode the SummaryInformation property set (FMTID is implicit; we scan the
+// stream for the VT_LPSTR Title/Author/Subject values via the property table).
+function oleSummary(out, bytes) {
+  if (!bytes || bytes.length < 48) return;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  try {
+    // Property-set header: byte order (0xFFFE), then at 0x2C section offset.
+    if (dv.getUint16(0, true) !== 0xfffe) return;
+    const secOff = dv.getUint32(0x2c, true);
+    if (secOff + 8 > bytes.length) return;
+    const numProps = dv.getUint32(secOff + 4, true);
+    if (numProps > 256) return;
+    const PID = { 2: 'Title', 3: 'Subject', 4: 'Author', 5: 'Keywords', 6: 'Comments', 8: 'Last author' };
+    for (let i = 0; i < numProps; i++) {
+      const e = secOff + 8 + i * 8;
+      if (e + 8 > bytes.length) break;
+      const pid = dv.getUint32(e, true);
+      const off = secOff + dv.getUint32(e + 4, true);
+      if (!PID[pid] || off + 8 > bytes.length) continue;
+      const type = dv.getUint32(off, true);
+      if (type !== 30 && type !== 31) continue; // VT_LPSTR / VT_LPWSTR
+      const len = dv.getUint32(off + 4, true);
+      if (len <= 0 || len > 2048 || off + 8 + len > bytes.length) continue;
+      let val;
+      if (type === 31) val = utf16(bytes.subarray(off + 8, off + 8 + len * 2), true).replace(/\0+$/, '');
+      else val = latin1(bytes.subarray(off + 8, off + 8 + len)).replace(/\0+$/, '');
+      val = val.trim();
+      if (val && !out[PID[pid]]) out[PID[pid]] = val;
+    }
+  } catch (_) {}
+}
+
+const OLE_DOC = {
+  wps: 'Microsoft Works word processor (.wps)',
+  wpt: 'Microsoft Works template (.wpt)',
+  wri: 'Windows Write (.wri)',
+  dot: 'Word 97-2003 template (.dot)',
+  sdw: 'StarOffice 5.x Writer (.sdw)',
+  sdc: 'StarOffice 5.x Calc (.sdc)',
+  sdd: 'StarOffice 5.x Impress / Draw (.sdd)',
+};
+async function parseOleDoc(file, ext) {
+  // .wri is a flat binary (not CFBF) with a 0x31BE / 0x32BE magic.
+  const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
+  const isCfbf = head[0] === 0xd0 && head[1] === 0xcf && head[2] === 0x11 && head[3] === 0xe0;
+  if (ext === 'wri' && !isCfbf) {
+    const w0 = head[0] | (head[1] << 8);
+    if (w0 !== 0xbe31 && w0 !== 0xbe32) return null;
+    const out = { 'Format': OLE_DOC.wri };
+    out['Signature'] = '0x' + w0.toString(16).toUpperCase() + (w0 === 0xbe32 ? ' (with OLE objects)' : ' (text only)');
+    // Word count of the document text is at offset 0x60 (fcMac - 0x80 region varies);
+    // surface only what is reliable: the magic + a note.
+    out['Note'] = 'Windows Write binary; drop into a converter to extract body text.';
+    return out;
+  }
+  if (!isCfbf) return null;
+  let cf; try { ({ openCfbf } = await import('../lib/cfbf.js')); cf = await openCfbf(file); } catch (_) { return null; }
+  if (!cf) return null;
+  const out = { 'Format': OLE_DOC[ext] || ('OLE document (.' + ext + ')') };
+  out['Container'] = 'OLE2 / CFBF v' + cf.version;
+  const names = cf.names();
+  // Identify the embedded application from characteristic stream names.
+  const has = (re) => names.some((n) => re.test(n));
+  if (has(/^WksSSWorkBook$/i)) out['Works module'] = 'Spreadsheet';
+  else if (has(/^CONTENTS$/i) && ext.startsWith('wp')) out['Works module'] = 'Word processor';
+  if (has(/^StarWriterDocument$|StarWriter/i)) out['StarOffice module'] = 'Writer';
+  else if (has(/^StarCalcDocument$|StarCalc/i)) out['StarOffice module'] = 'Calc';
+  else if (has(/^StarDrawDocument|StarImpress/i)) out['StarOffice module'] = 'Draw / Impress';
+  if (has(/^WordDocument$/i)) out['Word stream'] = 'WordDocument present';
+  if (has(/^Workbook$|^Book$/i)) out['Excel stream'] = 'Workbook present';
+  // SummaryInformation -> Title / Author / etc.
+  const si = cf.readStream((e) => /SummaryInformation$/i.test(e.name) && !/Document/i.test(e.name));
+  if (si) oleSummary(out, si);
+  out['Streams'] = cf.entries.filter((e) => e.type === 2).length;
+  return out;
+}
+
+// ---------- Shanda Bambook ebook (.snb) ----------
+async function parseSnb(file) {
+  let zip; try { zip = await openZip(file); } catch (_) { return null; }
+  const names = zip.names();
+  if (!names.some((n) => /snbf\//i.test(n)) && !names.some((n) => /^(?:snbf|snbc)/i.test(n))) {
+    // Some SNB are not plain ZIP; bail to identification.
+    return null;
+  }
+  const out = { 'Format': 'Shanda Bambook ebook (.snb)' };
+  const bookName = names.find((n) => /book\.snbf$/i.test(n)) || names.find((n) => /snbf\/book/i.test(n));
+  if (bookName) {
+    const xml = await zip.text(bookName);
+    const t = tag(xml, 'book-name') || tag(xml, 'title'); if (t) out['Title'] = t;
+    const a = tag(xml, 'author'); if (a) out['Author'] = a;
+    const pub = tag(xml, 'publisher'); if (pub) out['Publisher'] = pub;
+    const lang = tag(xml, 'language'); if (lang) out['Language'] = lang;
+  }
+  out['Chapters'] = names.filter((n) => /snbc\/.+\.snbc$/i.test(n) || /chapter\d+/i.test(n)).length || undefined;
+  out['Images'] = names.filter((n) => /\.(png|jpe?g|gif)$/i.test(n)).length;
+  out['Cover'] = names.some((n) => /cover/i.test(n)) ? 'present' : 'none';
+  return Object.keys(out).length > 1 ? out : null;
+}
+
+// ---------- Sony BBeB book (.lrf / .lrx) ----------
+async function parseLrf(file, ext) {
+  const b = new Uint8Array(await file.slice(0, 0x60).arrayBuffer());
+  // Magic: 'L','R','F' as UTF-16LE 'LRF\0' -> bytes 4C 00 52 00 46 00 ...
+  // The first 8 bytes are the L/R/F GUID-style signature; check 'L\0R\0F\0'.
+  const sigOk = b[0] === 0x4c && b[2] === 0x52 && b[4] === 0x46;
+  if (!sigOk && !(b[0] === 0x4c && b[1] === 0x52 && b[2] === 0x46)) return null;
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const out = { 'Format': ext === 'lrx' ? 'Sony BBeB book - DRM (.lrx)' : 'Sony BBeB book (.lrf)' };
+  // Version at offset 0x08 (u16 LE).
+  const version = dv.getUint16(0x08, true);
+  if (version) out['BBeB version'] = version;
+  out['Object count'] = dv.getUint32(0x10, true) >>> 0 || undefined;
+  if (ext === 'lrx') out['DRM'] = 'encrypted (Sony Marlin DRM)';
+  out['Note'] = 'BBeB metadata (title / author) lives in a compressed object table; identification + header only.';
+  return out;
+}
+
+// ---------- Psion / EBookwise TCR (.tcr) ----------
+async function parseTcr(file) {
+  const b = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  const sig = ascii(b, 0, 8);
+  if (sig !== 'BOOKDOUG' && sig !== '!!8-Bit!') return null;
+  const out = { 'Format': 'Psion / EBookwise TCR ebook (.tcr)' };
+  out['Signature'] = sig === 'BOOKDOUG' ? 'BOOKDOUG' : '!!8-Bit!!';
+  out['Compression'] = 'PalmDoc-style dictionary (256 entries)';
+  out['Note'] = 'Compressed text book; body needs the embedded code dictionary to expand.';
+  return out;
+}
+
+// ---------- FrameMaker (.mif / .fm / .book) ----------
+async function parseFrame(file, ext) {
+  const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  const headStr = ascii(head, 0, 16);
+  // MIF is text ('<MIFFile N.NN>'); binary .fm/.book start with '<MakerFile'.
+  if (/^<MIFFile/i.test(headStr) || ext === 'mif') {
+    const text = await fileText(file, 4 * 1024 * 1024);
+    if (!/<MIFFile/i.test(text)) return null;
+    const out = { 'Format': 'FrameMaker Interchange Format (.mif)' };
+    const ver = pick(text, /<MIFFile\s+([\d.]+)/i); if (ver) out['MIF version'] = ver;
+    out['Fonts (PgfFont/Font)'] = countRe(text, /<PgfFont\b|<Font\b/gi) || undefined;
+    out['Paragraph formats'] = countRe(text, /<Pgf\b/gi) || undefined;
+    out['Text flows'] = countRe(text, /<TextFlow\b/gi) || undefined;
+    out['Pages'] = countRe(text, /<Page\b/gi) || undefined;
+    out['Tables'] = countRe(text, /<Tbl\b/gi) || undefined;
+    out['Imported graphics'] = countRe(text, /<ImportObject\b/gi) || undefined;
+    return out;
+  }
+  if (/^<MakerFile/i.test(headStr) || /^<MakerDictionary/i.test(headStr) || /^<MakerScreenFont/i.test(headStr)) {
+    const out = { 'Format': ext === 'book' ? 'FrameMaker book (.book)' : 'FrameMaker binary document (.fm)' };
+    const sig = headStr.match(/^<Maker\w+/i);
+    if (sig) out['Signature'] = sig[0] + ' ...';
+    // Version string follows the signature on the first line, e.g. "<MakerFile 12.0>".
+    const verStr = ascii(new Uint8Array(await file.slice(0, 32).arrayBuffer()), 0, 32);
+    const v = verStr.match(/<Maker\w+\s+([\d.]+)/i); if (v) out['Version'] = v[1];
+    out['Note'] = 'FrameMaker binary; structure is proprietary - identification + version only.';
+    return out;
+  }
+  return null;
+}
+
 // ---------- identification-only (rare AND hard) ----------
 function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
 
@@ -910,9 +1139,11 @@ export const PARSERS = {
   scrivx: (c) => parseScriv(c.file, c.ext),
   abw: (c) => parseAbw(c.file, c.ext),
   zabw: (c) => parseAbw(c.file, c.ext),
+  awt: (c) => parseAbw(c.file, c.ext),
   sxw: (c) => parseSx(c.file, c.ext),
   sxc: (c) => parseSx(c.file, c.ext),
   sxi: (c) => parseSx(c.file, c.ext),
+  sxd: (c) => parseSx(c.file, c.ext),
   fodt: (c) => parseFodt(c.file, c.ext),
   fods: (c) => parseFodt(c.file, c.ext),
   fodp: (c) => parseFodt(c.file, c.ext),
@@ -920,6 +1151,7 @@ export const PARSERS = {
   ott: (c) => parseOtt(c.file, c.ext),
   ots: (c) => parseOtt(c.file, c.ext),
   otp: (c) => parseOtt(c.file, c.ext),
+  otg: (c) => parseOtt(c.file, c.ext),
   dotx: (c) => parseDotx(c.file, c.ext),
   dotm: (c) => parseDotx(c.file, c.ext),
   vsdx: (c) => parseVsdx(c.file),
@@ -932,6 +1164,7 @@ export const PARSERS = {
   rst: (c) => parseRst(c.file),
   adoc: (c) => parseAdoc(c.file),
   asciidoc: (c) => parseAdoc(c.file),
+  adf: (c) => parseAdoc(c.file),
   org: (c) => parseOrg(c.file),
   textile: (c) => parseTextile(c.file),
   tei: (c) => parseTei(c.file),
@@ -947,6 +1180,29 @@ export const PARSERS = {
   jats: (c) => parseJats(c.file),
   nxml: (c) => parseJats(c.file),
   dvi: (c) => parseDvi(c.file),
+  // DITA
+  dita: (c) => parseDita(c.file, c.ext),
+  ditamap: (c) => parseDita(c.file, c.ext),
+  // Scribus desktop publishing
+  sla: (c) => parseScribus(c.file, c.ext),
+  scd: (c) => parseScribus(c.file, c.ext),
+  // OLE / CFBF word processors and StarOffice 5.x binaries
+  wps: (c) => parseOleDoc(c.file, c.ext),
+  wpt: (c) => parseOleDoc(c.file, c.ext),
+  wri: (c) => parseOleDoc(c.file, c.ext),
+  dot: (c) => parseOleDoc(c.file, c.ext),
+  sdw: (c) => parseOleDoc(c.file, c.ext),
+  sdc: (c) => parseOleDoc(c.file, c.ext),
+  sdd: (c) => parseOleDoc(c.file, c.ext),
+  // ebooks
+  snb: (c) => parseSnb(c.file),
+  lrf: (c) => parseLrf(c.file, c.ext),
+  lrx: (c) => parseLrf(c.file, c.ext),
+  tcr: (c) => parseTcr(c.file),
+  // FrameMaker
+  mif: (c) => parseFrame(c.file, c.ext),
+  fm: (c) => parseFrame(c.file, c.ext),
+  book: (c) => parseFrame(c.file, c.ext),
   // Comic Book RAR / 7-Zip: extract + preview via libarchive WASM, falling
   // back to identification rows if the decoder fails to load or parse.
   cbr: async (c) => (await parseComicArchive(c.file, 'cbr')) ||
@@ -961,6 +1217,10 @@ export const PARSERS = {
   qxd: ident('QuarkXPress Document (.qxd)', 'Quark proprietary binary; identification only.'),
   qxp: ident('QuarkXPress Project (.qxp)', 'Quark proprietary binary; identification only.'),
   pmd: ident('Adobe PageMaker (.pmd)', 'PageMaker proprietary binary; identification only.'),
+  pm6: ident('Adobe PageMaker 6 (.pm6)', 'PageMaker 6.x proprietary binary; identification only.'),
+  p65: ident('Adobe PageMaker 6.5 (.p65)', 'PageMaker 6.5 proprietary binary; identification only.'),
+  pt6: ident('Adobe PageMaker 6.5 template (.pt6)', 'PageMaker 6.5 template; proprietary binary, identification only.'),
+  cba: ident('Comic Book ACE (.cba)', 'ACE-compressed comic; no in-browser ACE decoder exists - identification only.'),
   lit: ident('Microsoft Reader eBook (.lit)', 'ITOLITLS DRM container; identification only.'),
   kfx: ident('Amazon Kindle KFX (.kfx)', 'Amazon KFX/KDF container; identification only.'),
 };

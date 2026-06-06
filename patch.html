@@ -180,14 +180,49 @@
                - let the newest version here disagree with app.js.
              ===================================================================== -->
 
+        <div class="patch-entry patch-milestone">
+          <p class="patch-version">2.0</p>
+          <p class="patch-name">Wide Angle</p>
+          <p class="patch-date">6 June 2026, 05:10</p>
+          <ul class="patch-list">
+            <li><strong>The second big one</strong> - Analyser now recognises well over a hundred more formats and looks deeper into the ones it already knew.</li>
+            <li><span class="patch-tag">New</span><strong>Over 120 new file types</strong> are identified, with version, author and header details pulled out where they exist - spanning <strong>developer &amp; data</strong> files, <strong>archives</strong>, <strong>3D &amp; CAD</strong>, <strong>disk images &amp; firmware</strong>, <strong>game assets</strong>, <strong>documents &amp; e-books</strong>, <strong>email &amp; contacts</strong>, <strong>security &amp; certificates</strong>, <strong>science &amp; engineering</strong>, and <strong>maps &amp; GIS</strong>.</li>
+            <li><span class="patch-tag">New</span><strong>Video-editing projects</strong> read in far more detail - <strong>After Effects</strong>, <strong>Premiere Pro</strong>, <strong>Sony Vegas</strong>, <strong>DaVinci Resolve</strong>, <strong>Filmora</strong> and <strong>CapCut</strong> now surface what is inside the project rather than just naming it.</li>
+            <li><span class="patch-tag">New</span><strong>10-bit video is now read in full.</strong> Analyser reports the <strong>bit depth and chroma subsampling</strong> (4:2:0 / 4:2:2 / 4:4:4) of H.264 and HEVC, so footage like <strong>Sony XAVC HS / FX-series</strong> is correctly flagged as 10-bit 4:2:2.</li>
+            <li><span class="patch-tag">New</span>When a photo or video <strong>can&rsquo;t be shown because of a browser limitation</strong> - 10-bit 4:2:2 footage, PSD, EXR, TGA and the like - a clear banner now explains why and <strong>recommends VLC</strong> for video, instead of a dead, empty player.</li>
+            <li><span class="patch-tag">New</span>Your <strong>offline downloads remember themselves</strong> - each tier shows a <strong>&ldquo;Cached&rdquo; tag with its version</strong> the moment the page loads, and quietly refreshes itself when the app updates.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Large videos load faster</strong> - the first frame is grabbed only when you ask for it, and the checksum is skipped by default on big files. The <strong>spectrogram</strong> now opens on its <strong>logarithmic</strong> frequency axis, closer to how you hear.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">1.29</p>
+          <p class="patch-name">Field Guide</p>
+          <p class="patch-date">6 June 2026, 02:41</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span>The <strong>supported-formats list</strong> has been rebuilt - formats are now <strong>grouped by category</strong> (images, audio, video, documents, 3D &amp; CAD, archives, maps, games&hellip;) with <strong>filter chips</strong> to narrow it at a tap, a <strong>FULL</strong> or <strong>ID</strong> badge on each row showing whether it opens in a viewer or is identified from its header, <strong>highlighted search matches</strong>, a running count, and an <strong>expand-all</strong> toggle. On a phone it slides up as a bottom sheet.</li>
+            <li><span class="patch-tag">New</span>The photo <strong>brightness histogram</strong> now spans the <strong>full width</strong> above the image and can be <strong>clicked to zoom</strong>.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Reading text from images and PDFs</strong> now uses <strong>one language picker</strong>, with a built-in <code>[?]</code> note on what it can and can&rsquo;t do and a clearer per-language download hint; the button now reads <strong>Extract text</strong>.</li>
+            <li><span class="patch-tag is-fix">Fix</span>If an <a href="about.html#where">offline download</a> can&rsquo;t fetch every file - you&rsquo;re offline, or a server is unreachable - it now says <strong>how many failed and lets you retry</strong>, instead of stopping quietly. The recommended <strong>Everything</strong> tier is marked with a small crown.</li>
+            <li><span class="patch-tag is-fix">Fix</span>The <strong>lightbox</strong> re-fits the image when you rotate or resize the window, the <strong>heading hover</strong> effect thins in faster and no longer reflows after a resize, and the photo <strong>colour palette</strong> keeps its single row on large phones.</li>
+          </ul>
+        </div>
+
         <div class="patch-entry">
           <p class="patch-version">1.28</p>
           <p class="patch-name">In Brief</p>
           <p class="patch-date">5 June 2026, 20:30</p>
           <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Professional video formats</strong> the browser can&rsquo;t play - editing and intermediate codecs like <strong>Apple ProRes</strong>, <strong>Avid DNxHD/DNxHR</strong>, <strong>GoPro CineForm</strong>, DV and uncompressed - are now <strong>named</strong>, and their <strong>first visible frame is pulled out with FFmpeg</strong> for a preview you can analyse, instead of a blunt &ldquo;can&rsquo;t play&rdquo; error.</li>
+            <li><span class="patch-tag">New</span>The photo <strong>location map</strong> now works <strong>fully offline</strong> - its markers and controls are bundled with the app rather than fetched from the internet.</li>
+            <li><span class="patch-tag">New</span><strong>Result cards fold away</strong> - click any card&rsquo;s heading to collapse it, so a long analysis is easier to scan. Once a file is loaded, the dropzones tuck into a single <strong>Analyse next file?</strong> button.</li>
+            <li><span class="patch-tag">New</span>A plain-language <code>[?]</code> note now appears <strong>automatically beside dozens more readouts</strong> - container, codec, aspect ratio, bitrate, channels and the rest.</li>
             <li><span class="patch-tag">New</span>The Changelog gains a <strong>tl;dr</strong> button - one tap condenses every release, top to bottom, into a sentence or two apiece, so you can skim the whole history at a glance. Tap it again for the full notes.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">1.27</p>
@@ -209,9 +244,6 @@
             <li><span class="patch-tag is-fix">Fix</span><strong>Open PDF in browser</strong> now opens the file in a new tab instead of prompting to download it.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">1.25</p>
