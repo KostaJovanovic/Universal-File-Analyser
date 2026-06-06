@@ -1959,9 +1959,28 @@ export async function renderVideo(file, resultsEl, opts = {}) {
           renderSignal.addEventListener('abort', stop);
 
           frameCard.appendChild(playerBar);
+
+          // Sound toggle: when the AVI carries PCM audio it stays the master clock
+          // either way (so the frames keep their sync); this only mutes/unmutes what
+          // you hear. Same segmented control the rest of the site uses.
+          if (hasAudio) {
+            const soundToggle = el('div', { class: 'anr-toggle' });
+            const soundOnBtn = el('button', { type: 'button', class: 'is-active' }, 'SOUND');
+            const soundOffBtn = el('button', { type: 'button' }, 'MUTED');
+            soundToggle.appendChild(soundOnBtn); soundToggle.appendChild(soundOffBtn);
+            const setSound = (on) => {
+              frameAudioEl.muted = !on;
+              soundOnBtn.classList.toggle('is-active', on);
+              soundOffBtn.classList.toggle('is-active', !on);
+            };
+            soundOnBtn.addEventListener('click', () => setSound(true));
+            soundOffBtn.addEventListener('click', () => setSound(false));
+            frameCard.appendChild(el('div', { style: 'margin-top:8px; text-align:center;' }, [soundToggle]));
+          }
+
           // Frame counter + rate (and whether sound is along for the ride), centered.
           frameCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:4px; text-align:center;' },
-            [frameLabel, document.createTextNode(` · ${fps} fps${hasAudio ? ' · with sound' : ' · loop'}`)]));
+            [frameLabel, document.createTextNode(` · ${fps} fps${hasAudio ? '' : ' · loop'}`)]));
           // Symmetric frame stepping: Prev | Next.
           frameCard.appendChild(el('div', { class: 'anr-frame-grid', style: 'margin-top:10px;' }, [prevBtn, nextBtn]));
           if (heavy) {

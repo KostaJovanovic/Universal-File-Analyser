@@ -181,6 +181,30 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">2.08</p>
+          <p class="patch-name">Sound Check</p>
+          <p class="patch-date">7 June 2026, 00:15</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Mute the sound on AVI playback.</strong> The frame player for <a href="about.html#ext-avi">.avi</a> clips (and similar) now carries a <strong>SOUND / MUTED</strong> toggle, so you can run the frames with or without the clip&rsquo;s audio. Either way the picture stays perfectly in sync.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">2.07</p>
+          <p class="patch-name">Reel Time</p>
+          <p class="patch-date">6 June 2026, 19:10</p>
+          <ul class="patch-list">
+            <li><strong>Videos the browser can&rsquo;t open get a real player</strong> - frame by frame, in sync with their sound - plus raw H.264 support.</li>
+            <li><span class="patch-tag">New</span><strong>Motion-JPEG AVI</strong> clips (the kind older cameras record) now get a proper <strong>frame-by-frame player</strong> with the site&rsquo;s stylised scrubber: press play and the extracted frames run at the clip&rsquo;s frame rate on a loop, or scrub and step through them with <strong>Prev / Next</strong>.</li>
+            <li><span class="patch-tag">New</span>Those <strong>AVI frames now play in sync with the clip&rsquo;s own sound</strong>, with the audio keeping the frames on time.</li>
+            <li><span class="patch-tag">New</span><strong>Raw H.264 / H.265 streams</strong> (<a href="about.html#ext-h264">.h264</a>, .265 and the like - the bare elementary streams dash-cams and capture cards write) are now <strong>remuxed to MP4 in the browser</strong>, so they open in the normal player.</li>
+            <li><span class="patch-tag">New</span>Dropping a video no longer analyses its <strong>sound and first frame</strong> on its own - there are now <strong>Analyse audio</strong> and <strong>Analyse photo</strong> buttons so you decide when to run them, with a loading popup while the audio works.</li>
+            <li><span class="patch-tag">New</span>The frame tools - <strong>Analyse frame</strong>, <strong>Frame grab</strong> and <strong>Generate contact sheet</strong> - now sit together in one row, with the <strong>frames shown above the file details</strong>.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Auto-scroll to a dropped video</strong> no longer overshoots when the audio and photo buttons load in above its section.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">2.06</p>
           <p class="patch-name">Calling Card</p>
           <p class="patch-date">6 June 2026, 17:55</p>
@@ -188,6 +212,9 @@
             <li><span class="patch-tag">New</span><strong>Windows programs show their icon.</strong> Drop an <a href="about.html#ext-exe">.exe</a> or <a href="about.html#ext-dll">.dll</a> and Analyser now digs the <strong>application icon</strong> out of the file&rsquo;s resources and runs it through the full <strong>photo analysis</strong> - preview, colours, dimensions and the rest - alongside the usual version and publisher details.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.05</p>
@@ -209,9 +236,6 @@
             <li><span class="patch-tag is-fix">Fix</span>The new <strong>editing-timeline</strong> formats (EDL, FCPXML, OTIO) now sit under <strong>Video</strong> in the supported-formats list, so the changelog and <a href="about.html#what">About-page</a> deep-links to them land in the right section instead of under &ldquo;System &amp; disk&rdquo;.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.03</p>
