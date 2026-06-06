@@ -31,11 +31,23 @@ export function makePlayer(mediaEl, knownDuration) {
   const container = el('div', { class: 'anr-player' }, [playBtn, trackEl, timeEl]);
 
   playBtn.addEventListener('click', () => {
-    if (mediaEl.paused) mediaEl.play(); else mediaEl.pause();
+    // Once playback has ended the button is a replay control: restart from 0.
+    if (mediaEl.ended) { mediaEl.currentTime = 0; mediaEl.play(); }
+    else if (mediaEl.paused) mediaEl.play();
+    else mediaEl.pause();
   });
-  mediaEl.addEventListener('play', () => { playBtn.textContent = '❚❚'; tick(); });
-  mediaEl.addEventListener('pause', () => { playBtn.textContent = '▶'; });
-  mediaEl.addEventListener('ended', () => { playBtn.textContent = '▶'; });
+  mediaEl.addEventListener('play', () => {
+    playBtn.textContent = '❚❚'; playBtn.classList.remove('is-replay');
+    playBtn.setAttribute('aria-label', 'Pause');
+    tick();
+  });
+  // On a natural end some browsers fire 'pause' too; don't let it overwrite the
+  // replay glyph (guard on mediaEl.ended, which is already true by then).
+  mediaEl.addEventListener('pause', () => { if (!mediaEl.ended) { playBtn.textContent = '▶'; playBtn.setAttribute('aria-label', 'Play'); } });
+  mediaEl.addEventListener('ended', () => {
+    playBtn.textContent = '↻'; playBtn.classList.add('is-replay');
+    playBtn.setAttribute('aria-label', 'Replay from start');
+  });
 
   let dragging = false;
   function scrub(clientX) {

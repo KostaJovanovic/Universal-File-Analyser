@@ -96,8 +96,13 @@ function fmtDate(d) {
 function openPdfInTab(file) {
   const blob = file.type === 'application/pdf' ? file : new Blob([file], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank', 'noopener');
-  if (!win) {
+  // Don't pass 'noopener' in the features string: with it, window.open returns
+  // null even when it succeeds, which used to trip the "popup blocked" fallback
+  // below and open the PDF a SECOND time. We null the opener on the new window
+  // instead for the same safety, so the fallback only runs when truly blocked.
+  const win = window.open(url, '_blank');
+  if (win) { try { win.opener = null; } catch (_) {} }
+  else {
     const a = document.createElement('a');
     a.href = url; a.target = '_blank'; a.rel = 'noopener';
     document.body.appendChild(a); a.click(); a.remove();

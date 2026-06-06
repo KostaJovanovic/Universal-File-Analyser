@@ -4,7 +4,11 @@
       "PowerShell(magick *)",
       "Bash(rtk ls *)",
       "Bash(git -C \"C:/Users/Kosta/OneDrive - Flatsoft/Projekti/file analyser\" ls-files)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(rtk grep *)",
+      "Bash(unzip -l \"vratilo v1.3mf\")",
+      "Bash(unzip -p \"vratilo v1.3mf\" \"3D/3dmodel.model\")",
+      "Bash(unzip -p \"vratilo v1.3mf\" \"3D/_rels/3dmodel.model.rels\")"
     ]
   },
   "spinnerTipsEnabled": false
