@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 64;
+const COMMIT_COUNT = 65;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -914,6 +914,15 @@ function boot() {
     } else {
       renderPromise = route.render(file, resultsByName[route.results]);
     }
+
+    // Autoscroll straight to the media section so the player/analysis is in view
+    // the moment a video or audio file is dropped (the section is already
+    // revealed above). rAF lets the just-unhidden section lay out first.
+    const autoScrollSec = kind === 'video' ? sectionVideo : kind === 'audio' ? sectionAudio : null;
+    if (autoScrollSec) {
+      requestAnimationFrame(() => autoScrollSec.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    }
+
     // Hide the bottom loader once the renderer settles (or immediately if it
     // wasn't async). Errors still dismiss it so it can't get stuck on screen.
     // If this load was cancelled (or superseded by a newer one) leave the loader

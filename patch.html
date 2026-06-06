@@ -181,6 +181,18 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">2.05</p>
+          <p class="patch-name">Green Light</p>
+          <p class="patch-date">6 June 2026, 17:50</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>Ordinary videos no longer get turned away.</strong> A bug in how Analyser read a video&rsquo;s colour format could misread a perfectly normal <strong>8-bit H.264 / HEVC</strong> file as exotic 4:2:2 or 12-bit footage and show the &ldquo;can&rsquo;t play this - use VLC&rdquo; banner instead of playing it. It now reads the format reliably, so playable files play.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>AVI clips</strong> (the Motion-JPEG kind older cameras record, like Canon <code>MVI_*.AVI</code>) now reliably show their <strong>frames and extracted audio</strong> again, rather than the unplayable banner or a black player - Analyser decodes them itself instead of waiting on the browser.</li>
+            <li><span class="patch-tag">New</span>Dropping a <strong>video or audio file</strong> now <strong>scrolls straight to its section</strong>, so the player and analysis are in front of you without a scroll.</li>
+            <li><span class="patch-tag">New</span><strong>PDF page previews moved to the top</strong> of the results and lost their duplicate buttons: the <strong>Open-in-browser</strong> buttons are gone, and on a <strong>phone or tablet</strong> each preview&rsquo;s <strong>Analyse / OCR / PNG</strong> buttons are now always visible and tappable instead of hidden behind a hover you can&rsquo;t do on touch.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">2.04</p>
           <p class="patch-name">Cross Reference</p>
           <p class="patch-date">6 June 2026, 17:15</p>
@@ -203,6 +215,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry patch-milestone">
           <p class="patch-version">2.0</p>
           <p class="patch-name">Wide Angle</p>
@@ -217,9 +232,6 @@
             <li><span class="patch-tag is-fix">Fix</span><strong>Large videos load faster</strong> - the first frame is grabbed only when you ask for it, and the checksum is skipped by default on big files. The <strong>spectrogram</strong> now opens on its <strong>logarithmic</strong> frequency axis, closer to how you hear.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">1.29</p>

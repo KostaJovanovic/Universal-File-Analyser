@@ -89,27 +89,6 @@ function fmtDate(d) {
 }
 
 // ---------- main render ----------
-// Open a PDF in a new browser tab. A File with an empty/blank MIME type (e.g.
-// one rebuilt by the type-detection path) makes the browser download a blob URL
-// instead of rendering it, so wrap the bytes in an explicitly typed Blob. Falls
-// back to a same-gesture anchor click if the popup is blocked.
-function openPdfInTab(file) {
-  const blob = file.type === 'application/pdf' ? file : new Blob([file], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  // Don't pass 'noopener' in the features string: with it, window.open returns
-  // null even when it succeeds, which used to trip the "popup blocked" fallback
-  // below and open the PDF a SECOND time. We null the opener on the new window
-  // instead for the same safety, so the fallback only runs when truly blocked.
-  const win = window.open(url, '_blank');
-  if (win) { try { win.opener = null; } catch (_) {} }
-  else {
-    const a = document.createElement('a');
-    a.href = url; a.target = '_blank'; a.rel = 'noopener';
-    document.body.appendChild(a); a.click(); a.remove();
-  }
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-}
-
 export async function renderPdf(file, resultsEl) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
@@ -177,9 +156,7 @@ export async function renderPdf(file, resultsEl) {
     const hMm = (hPt / 72 * 25.4).toFixed(1);
     tbl.appendChild(rowHelp('Page 1 size', `${wPt.toFixed(0)} x ${hPt.toFixed(0)} pt  (${wIn} x ${hIn} in / ${wMm} x ${hMm} mm)`, 'The physical dimensions of the first page, shown in points with inch and millimetre equivalents. 1 point equals 1/72 of an inch.'));
   } catch (_) {}
-  const openBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => openPdfInTab(file) }, 'Open PDF in browser');
   infoCard.appendChild(tbl);
-  infoCard.appendChild(el('div', { class: 'anr-btn-row' }, [openBtn]));
   resultsEl.appendChild(infoCard);
   resultsEl.appendChild(integrityCard(file));
 
@@ -395,12 +372,11 @@ export async function renderPdf(file, resultsEl) {
 
   // --- Thumbnail previews (first 4 pages, click to view full page) ---
   const thumbCard = el('div', { class: 'anr-card' });
-  const thumbHeadRow = el('div', { style: 'display:flex;align-items:center;gap:10px;' });
-  thumbHeadRow.appendChild(el('h3', {}, 'Page previews'));
-  const openPdfBtn = el('button', { type: 'button', class: 'anr-btn', style: 'font-size:11px;padding:3px 10px;' }, 'Open in browser');
-  openPdfBtn.addEventListener('click', () => openPdfInTab(file));
-  thumbHeadRow.appendChild(openPdfBtn);
-  thumbCard.appendChild(thumbHeadRow);
+  thumbCard.appendChild(el('h3', {}, 'Page previews'));
+
+  // Touch devices have no hover, so the per-page action buttons (Analyse / OCR /
+  // PNG) that normally appear on hover are shown permanently there instead.
+  const isTouch = !!(window.matchMedia && window.matchMedia('(hover: none), (pointer: coarse)').matches);
   const thumbContainer = el('div', {
     style: 'display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-start;'
   });
@@ -527,7 +503,7 @@ export async function renderPdf(file, resultsEl) {
       // Hover actions: analyse the page as a photo, or OCR just this page.
       const actions = el('div', {
         style: 'position:absolute;top:6px;left:6px;right:6px;display:flex;gap:6px;justify-content:center;' +
-               'opacity:0;transition:opacity 0.15s;pointer-events:none;'
+               (isTouch ? 'opacity:1;pointer-events:auto;' : 'opacity:0;transition:opacity 0.15s;pointer-events:none;')
       });
       const btnStyle = 'font-size:10px;padding:2px 6px;background:var(--bg);border:1px solid var(--hairline);' +
                        'color:var(--fg);cursor:pointer;font-family:var(--font-mono);';
@@ -601,8 +577,10 @@ export async function renderPdf(file, resultsEl) {
         actions,
         el('div', { style: 'font-size: 11px; margin-top: 4px; opacity: 0.7;' }, `Page ${pageNum}`)
       ]);
-      wrapper.addEventListener('mouseenter', () => { actions.style.opacity = '1'; actions.style.pointerEvents = 'auto'; });
-      wrapper.addEventListener('mouseleave', () => { actions.style.opacity = '0'; actions.style.pointerEvents = 'none'; });
+      if (!isTouch) {
+        wrapper.addEventListener('mouseenter', () => { actions.style.opacity = '1'; actions.style.pointerEvents = 'auto'; });
+        wrapper.addEventListener('mouseleave', () => { actions.style.opacity = '0'; actions.style.pointerEvents = 'none'; });
+      }
       thumbContainer.appendChild(wrapper);
     } catch (_) {}
   }
@@ -644,7 +622,9 @@ export async function renderPdf(file, resultsEl) {
 
   thumbCard.appendChild(thumbContainer);
   thumbCard.appendChild(thumbBtnRow);
-  resultsEl.appendChild(thumbCard);
+  // Page previews sit above the "PDF document" info card so the pages are the
+  // first thing you see.
+  resultsEl.insertBefore(thumbCard, infoCard);
 
   // --- Embedded image extraction ---
   const imgCard = el('div', { class: 'anr-card' });

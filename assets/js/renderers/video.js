@@ -771,11 +771,21 @@ async function detectIsobmffTracks(file) {
                 for (let i = 0; i < numPps && p + 2 <= avccEnd; i++) p += 2 + view.getUint16(p);
               }
               if (p + 3 <= avccEnd) {
-                const chromaIdc = view.getUint8(p) & 0x03;
-                const depthLuma = (view.getUint8(p + 1) & 0x07) + 8;
-                const depthChroma = (view.getUint8(p + 2) & 0x07) + 8;
-                if (CHROMA_FORMATS[chromaIdc] !== undefined) v.chroma = CHROMA_FORMATS[chromaIdc];
-                if (depthLuma >= 8 && depthLuma <= 16) v.bitDepth = Math.max(depthLuma, depthChroma);
+                const b0 = view.getUint8(p), b1 = view.getUint8(p + 1), b2 = view.getUint8(p + 2);
+                // The avcC chroma/bit-depth extension is OPTIONAL even on High
+                // profile (100); many ordinary 8-bit 4:2:0 files omit it. Its
+                // reserved bits are all 1s (chroma byte: top 6; depth bytes: top
+                // 5), so validate them before trusting the values - otherwise
+                // trailing/padding bytes get misread as 4:2:2/4:4:4 or 12-bit+,
+                // wrongly routing a perfectly playable file to the "can't play"
+                // banner.
+                if ((b0 & 0xFC) === 0xFC && (b1 & 0xF8) === 0xF8 && (b2 & 0xF8) === 0xF8) {
+                  const chromaIdc = b0 & 0x03;
+                  const depthLuma = (b1 & 0x07) + 8;
+                  const depthChroma = (b2 & 0x07) + 8;
+                  if (CHROMA_FORMATS[chromaIdc] !== undefined) v.chroma = CHROMA_FORMATS[chromaIdc];
+                  if (depthLuma >= 8 && depthLuma <= 16) v.bitDepth = Math.max(depthLuma, depthChroma);
+                }
               }
             }
           }
@@ -795,11 +805,17 @@ async function detectIsobmffTracks(file) {
             // chroma_format_idc (d+16, low 2 bits) and bit_depth_luma/chroma_minus8
             // (d+17 / d+18, low 3 bits each) are at fixed offsets in the hvcC record.
             if (d + 19 <= hvccEnd) {
-              const chromaIdc = view.getUint8(d + 16) & 0x03;
-              const depthLuma = (view.getUint8(d + 17) & 0x07) + 8;
-              const depthChroma = (view.getUint8(d + 18) & 0x07) + 8;
-              if (CHROMA_FORMATS[chromaIdc] !== undefined) v.chroma = CHROMA_FORMATS[chromaIdc];
-              if (depthLuma >= 8 && depthLuma <= 16) v.bitDepth = Math.max(depthLuma, depthChroma);
+              const b0 = view.getUint8(d + 16), b1 = view.getUint8(d + 17), b2 = view.getUint8(d + 18);
+              // Reserved bits are all 1s in a real hvcC record; validating them
+              // guards against misreading a truncated/odd box as exotic chroma or
+              // high bit depth and wrongly flagging a playable file unplayable.
+              if ((b0 & 0xFC) === 0xFC && (b1 & 0xF8) === 0xF8 && (b2 & 0xF8) === 0xF8) {
+                const chromaIdc = b0 & 0x03;
+                const depthLuma = (b1 & 0x07) + 8;
+                const depthChroma = (b2 & 0x07) + 8;
+                if (CHROMA_FORMATS[chromaIdc] !== undefined) v.chroma = CHROMA_FORMATS[chromaIdc];
+                if (depthLuma >= 8 && depthLuma <= 16) v.bitDepth = Math.max(depthLuma, depthChroma);
+              }
             }
           }
         }
@@ -1544,6 +1560,12 @@ export async function renderVideo(file, resultsEl) {
   renderSignal.addEventListener('abort', () => probe.remove());
 
   try {
+    // AVI never plays reliably through <video> - it's typically Motion-JPEG or DV,
+    // for which browsers ship no decoder. Depending on the browser the probe either
+    // errors, times out, or "loads" and paints a black frame (so the player looks
+    // broken / wrongly trips the unplayable banner). Skip it entirely and let our
+    // own AVI parser render the frames + extracted audio (the catch block below).
+    if (header.container === 'AVI') throw new Error('avi-use-parser');
     await new Promise((resolve, reject) => {
       probe.onloadeddata = resolve;
       probe.onerror = () => reject(new Error('format not supported'));
@@ -1605,8 +1627,13 @@ export async function renderVideo(file, resultsEl) {
       let aviData = null;
       try { aviData = await extractAviData(file, avi); } catch (_) {}
 
-      // MJPEG frame viewer
-      if (aviData && aviData.videoFrames.length) {
+      // MJPEG frame viewer. Only show it when the extracted chunks are genuine
+      // JPEGs (SOI marker FF D8) - a non-MJPEG AVI (DV, etc.) yields raw chunks
+      // that aren't displayable images, so skip the viewer and just show metadata.
+      const framesAreJpeg = aviData && aviData.videoFrames.length &&
+        new Uint8Array(aviData.videoFrames[0].slice(0, 2))[0] === 0xFF &&
+        new Uint8Array(aviData.videoFrames[0].slice(0, 2))[1] === 0xD8;
+      if (framesAreJpeg) {
         const frames = aviData.videoFrames;
         const frameCard = el('div', { class: 'anr-card' });
         frameCard.appendChild(el('h3', {}, 'Frames'));
