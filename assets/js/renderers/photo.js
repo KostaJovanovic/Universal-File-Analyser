@@ -87,18 +87,14 @@ async function ocrLangCached(code) {
   }
 }
 
-// Size/status span for a language menu item. Starts as "[size · …]" then resolves
-// to "offline" (bundled), "downloaded" (already cached) or "download" (fetched on
-// first use). Shared by the popup and the inline image-OCR dropdown.
+// Size/status span for a language menu item. Languages already available offline
+// (bundled or previously cached) show nothing - just the language name. Only
+// languages that still need fetching show a "[size · download]" hint.
 function ocrLangSizeSpan(code, size) {
-  const span = el('span', { class: 'anr-dropdown-item-size' }, '[' + size + ' · …]');
+  const span = el('span', { class: 'anr-dropdown-item-size' }, '');
   ocrLangCached(code).then((cached) => {
-    if (LOCAL_OCR_LANGS.has(code)) {
-      span.textContent = '[' + size + ' · offline]';
-      span.classList.add('is-downloaded');
-    } else if (cached) {
-      span.textContent = '[' + size + ' · downloaded]';
-      span.classList.add('is-downloaded');
+    if (LOCAL_OCR_LANGS.has(code) || cached) {
+      span.textContent = '';
     } else {
       span.textContent = '[' + size + ' · download]';
     }
@@ -116,6 +112,9 @@ let _sessionOcrLang = null;
 // Used by the image OCR picker to default to the same language.
 export function sessionOcrLang() { return _sessionOcrLang; }
 
+// What OCR is and its caveats - shown via the "?" button in the language picker.
+const OCR_HELP_HTML = '<strong>Optical Character Recognition</strong> scans the image for text using <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>, an open-source OCR engine running entirely in your browser.<br><br><strong>How it works:</strong> the image is upscaled if needed, then Tesseract looks for letter-shaped patterns, groups them into words and lines, and assigns a confidence score to each word. Words below 60% confidence are filtered out to reduce noise.<br><br><strong>Limitations:</strong> Tesseract was designed for scanned documents - clean text on plain backgrounds. On photos it will often hallucinate text from textures, foliage, buildings, or noise. Handwriting, stylised fonts, low contrast, small text, and rotated or curved text all reduce accuracy significantly. Results are best on screenshots, signs, printed labels, and document photos.';
+
 export function pickOcrLanguage(opts = {}) {
   // Once "Remember for this session" is ticked, skip the popup and reuse that
   // language for every OCR until the page is reloaded.
@@ -130,8 +129,9 @@ export function pickOcrLanguage(opts = {}) {
       el('button', { type: 'button', class: 'fmt-overlay-close', 'aria-label': 'Cancel' }, '×')
     ]);
     panel.appendChild(head);
-    panel.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 20px 12px;' },
-      'Pick the language of the text. English works offline; the rest download once, then are cached.'));
+    const hintP = el('p', { class: 'anr-hint', style: 'margin:0 20px 12px;' },
+      'Pick the language of the text. English works offline; the rest download once, then are cached.');
+    panel.appendChild(hintP);
     const list = el('ul', { class: 'anr-ocr-lang-list' });
     const items = [];
     for (const [code, name, size] of TESSERACT_LANGS) {
@@ -150,13 +150,26 @@ export function pickOcrLanguage(opts = {}) {
       list.appendChild(item);
     }
     panel.appendChild(list);
+    // "?" help text occupies the same area as the language list: clicking the
+    // info button swaps the list (and its hint) for this panel, and back.
+    const helpPanel = el('div', { class: 'anr-ocr-lang-help-panel', html: OCR_HELP_HTML });
+    helpPanel.hidden = true;
+    panel.appendChild(helpPanel);
     const rememberRow = el('label', { class: 'anr-ocr-lang-remember' }, [
       remember, el('span', {}, 'Remember for this session')
     ]);
     panel.appendChild(rememberRow);
+    const helpBtn = el('button', { type: 'button', class: 'anr-ocr-lang-help', 'aria-label': 'About OCR' }, '?');
+    helpBtn.addEventListener('click', () => {
+      const showHelp = helpPanel.hidden;   // about to open the help
+      helpPanel.hidden = !showHelp;
+      list.hidden = showHelp;
+      hintP.hidden = showHelp;
+      helpBtn.classList.toggle('is-active', showHelp);
+    });
     const cancelBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Cancel');
     const runBtn = el('button', { type: 'button', class: 'anr-btn anr-ocr-lang-run' }, 'Run OCR');
-    panel.appendChild(el('div', { class: 'anr-ocr-lang-actions' }, [cancelBtn, runBtn]));
+    panel.appendChild(el('div', { class: 'anr-ocr-lang-actions' }, [helpBtn, cancelBtn, runBtn]));
     backdrop.appendChild(panel);
 
     function close(val) {
@@ -776,59 +789,18 @@ async function ensureTesseract() {
 function makeOcrCard(file, img) {
   const card = el('div', { class: 'anr-card' });
   const det = el('details');
-  const ocrHelpText = '<strong>Optical Character Recognition</strong> scans the image for text using <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>, an open-source OCR engine running entirely in your browser.<br><br><strong>How it works:</strong> the image is upscaled if needed, then Tesseract looks for letter-shaped patterns, groups them into words and lines, and assigns a confidence score to each word. Words below 60% confidence are filtered out to reduce noise.<br><br><strong>Limitations:</strong> Tesseract was designed for scanned documents - clean text on plain backgrounds. On photos it will often hallucinate text from textures, foliage, buildings, or noise. Handwriting, stylised fonts, low contrast, small text, and rotated or curved text all reduce accuracy significantly. Results are best on screenshots, signs, printed labels, and document photos.';
-  const ocrInfoBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
-  const summary = el('summary', {}, [el('span', { class: 'anr-summary-label' }, ['OCR - Extract text', ocrInfoBtn])]);
+  // The "?" help now lives in the language picker popup (see pickOcrLanguage).
+  const summary = el('summary', {}, [el('span', { class: 'anr-summary-label' }, ['OCR - Extract text'])]);
   det.appendChild(summary);
   const detContent = el('div');
-  const ocrPanel = el('div', { class: 'anr-info-panel is-hidden', html: ocrHelpText });
-  wireInfoToggle(ocrInfoBtn, ocrPanel);
-  detContent.appendChild(ocrPanel);
 
   const ocrCanvas = img ? prepareOcrCanvas(img) : null;
   const ocrInput = ocrCanvas || file;
 
-  const langState = { value: sessionOcrLang() || 'eng', disabled: false };
-  const _curLang = TESSERACT_LANGS.find((l) => l[0] === langState.value);
-  const dropdown = el('div', { class: 'anr-dropdown' });
-  const trigger = el('div', { class: 'anr-dropdown-trigger' }, _curLang ? _curLang[1] : 'English');
-  const list = el('ul', { class: 'anr-dropdown-list' });
-
-  for (const [code, name, size] of TESSERACT_LANGS) {
-    const item = el('li', { class: 'anr-dropdown-item' + (code === langState.value ? ' is-selected' : '') }, [
-      el('span', {}, name),
-      ocrLangSizeSpan(code, size)
-    ]);
-    item.dataset.value = code;
-    item.addEventListener('click', () => {
-      if (langState.disabled) return;
-      langState.value = code;
-      trigger.childNodes[0].textContent = name;
-      list.querySelectorAll('.anr-dropdown-item').forEach(li => li.classList.remove('is-selected'));
-      item.classList.add('is-selected');
-      dropdown.classList.remove('is-open');
-    });
-    list.appendChild(item);
-  }
-
-  trigger.addEventListener('click', () => {
-    if (langState.disabled) return;
-    dropdown.classList.toggle('is-open');
-  });
-  document.addEventListener('click', (e) => {
-    if (!dropdown.contains(e.target)) dropdown.classList.remove('is-open');
-  });
-
-  dropdown.appendChild(trigger);
-  dropdown.appendChild(list);
-
-  const runBtn  = el('button', { type: 'button', class: 'anr-btn' }, 'Run');
-
-  const controlsRow = el('div', { class: 'anr-controls' }, [
-    el('div', { class: 'anr-control' }, [el('label', {}, 'Lang'), dropdown]),
-    el('div', { class: 'anr-control' }, [runBtn])
-  ]);
-  detContent.appendChild(controlsRow);
+  // Same flow as PDF OCR: a single button that opens the shared language picker
+  // (pickOcrLanguage) before running, rather than an inline language dropdown.
+  const runBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Extract text');
+  detContent.appendChild(el('div', { class: 'anr-btn-row' }, [runBtn]));
 
   const progressWrap  = el('div', { class: 'anr-progress', style: 'display:none' });
   const progressBar   = el('div', { class: 'anr-progress-bar' }, '[                    ]');
@@ -852,11 +824,11 @@ function makeOcrCard(file, img) {
 
   async function run() {
     if (busy) return;
+    // Modal language picker - the same one PDF OCR uses. Cancelling aborts.
+    const lang = await pickOcrLanguage({ title: 'OCR language' });
+    if (!lang) return;
     busy = true;
     runBtn.textContent = 'Stop';
-    langState.disabled = true;
-    trigger.classList.add('is-disabled');
-    dropdown.classList.remove('is-open');
     out.textContent = '';
     progressWrap.style.display = '';
     setBar(0);
@@ -873,10 +845,10 @@ function makeOcrCard(file, img) {
 
     try {
       const T = await ensureTesseract();
-      activeWorker = await T.createWorker(langState.value, undefined, {
+      activeWorker = await T.createWorker(lang, undefined, {
         logger: setProgress,
         workerPath: 'assets/vendor/tesseract/worker.min.js',
-        langPath: LOCAL_OCR_LANGS.has(langState.value) ? 'assets/vendor/tesseract' : TESS_CDN_LANGPATH,
+        langPath: ocrLangPath(lang),
         corePath: 'assets/vendor/tesseract'
       });
       progressLabel.textContent = 'Recognising…';
@@ -911,9 +883,7 @@ function makeOcrCard(file, img) {
     } finally {
       busy = false;
       activeWorker = null;
-      runBtn.textContent = 'Run';
-      langState.disabled = false;
-      trigger.classList.remove('is-disabled');
+      runBtn.textContent = 'Extract text';
     }
   }
 
@@ -1109,12 +1079,26 @@ function ensureLightbox() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !lightboxEl.hidden) closeLightbox();
   });
+  // Re-fit the image to the viewport on resize / device rotation while the
+  // lightbox is open, so it scales correctly at any window size (rAF-coalesced).
+  let resizeRaf = 0;
+  window.addEventListener('resize', () => {
+    if (lightboxEl.hidden) return;
+    cancelAnimationFrame(resizeRaf);
+    resizeRaf = requestAnimationFrame(() => {
+      const im = wrap.querySelector('img:first-child');
+      if (im && im.naturalWidth) sizeWrap(wrap, im.naturalWidth, im.naturalHeight);
+    });
+  });
   document.body.appendChild(lightboxEl);
   return lightboxEl;
 }
 function sizeWrap(wrap, w, h) {
+  // Fit the image to the viewport, reserving ~140px of vertical room for the
+  // toolbar, meta line and padding so nothing clips on short / landscape windows.
+  // Re-run on resize (see ensureLightbox) so it stays correct at any window size.
   const maxW = window.innerWidth * 0.9;
-  const maxH = window.innerHeight * 0.85;
+  const maxH = Math.max(160, window.innerHeight - 140);
   const scale = Math.min(maxW / w, maxH / h, 1);
   wrap.style.width = Math.round(w * scale) + 'px';
   wrap.style.height = Math.round(h * scale) + 'px';
@@ -1201,7 +1185,7 @@ function computeExposureOverlay(imgEl, canvas, mode) {
   ctx.putImageData(out, 0, 0);
 }
 
-function openLightbox(src, alt, metaText, focusOpts, showAlpha) {
+function openLightbox(src, alt, metaText, focusOpts, showAlpha, photoTools = true) {
   const lb = ensureLightbox();
   const wrap = lb.querySelector('.lightbox-img-wrap');
   const lbImg = wrap.querySelector('img:first-child');
@@ -1209,6 +1193,9 @@ function openLightbox(src, alt, metaText, focusOpts, showAlpha) {
   const dot = wrap.querySelector('.lightbox-focus-dot');
   const toolbar = lb.querySelector('.lightbox-toolbar');
   toolbar.innerHTML = '';
+  // Photo-analysis tools (focus peaking, exposure overlays, focus map) only make
+  // sense for actual photos - hide the whole toolbar for histograms and the like.
+  toolbar.hidden = !photoTools;
   wrap.classList.remove('anr-checkerboard');
   lbImg.src = src;
   lbImg.alt = alt || '';
@@ -1224,6 +1211,7 @@ function openLightbox(src, alt, metaText, focusOpts, showAlpha) {
   dot.hidden = true;
   lb.querySelector('.lightbox-meta').textContent = metaText || '';
 
+  if (photoTools) {
   let peakingReady = false, highlightsReady = false, shadowsReady = false;
 
   const peakBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' }, 'Focus peaking');
@@ -1284,6 +1272,7 @@ function openLightbox(src, alt, metaText, focusOpts, showAlpha) {
     });
     toolbar.appendChild(mapBtn);
     toolbar.appendChild(ptBtn);
+  }
   }
   lb.hidden = false;
   document.body.style.overflow = 'hidden';
@@ -1966,6 +1955,18 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     resultsEl.appendChild(aiCard);
   }
 
+  // ---- Histogram (full-width, in the body just above the container structure) ----
+  const histBlock = el('div', { class: 'anr-hist-block' });
+  const histCanvas = el('canvas', { class: 'anr-histogram' });
+  histCanvas.width = 1024; histCanvas.height = 200;
+  histCanvas.style.cursor = 'zoom-in';
+  histCanvas.addEventListener('click', () => {
+    openLightbox(histCanvas.toDataURL('image/png'), 'RGB Histogram', 'RGB Histogram', null, false, false);
+  });
+  histBlock.appendChild(histCanvas);
+  renderHistogram(histCanvas, hist);
+  resultsEl.appendChild(histBlock);
+
   // ---- Container structure (raw bytes the img/exifr pipeline ignores) ----
   // Best-effort and fully isolated: a parse failure must never break the rest of
   // the photo analysis, and nothing is appended when there's nothing to show.
@@ -2022,25 +2023,6 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     gpsCard.appendChild(mapDiv);
     resultsEl.appendChild(gpsCard);
     makeMap(mapDiv, lat, lon, file.name);
-  }
-
-  // ---- Histogram in section-meta column ----
-  const histSlot = inline ? el('div') : document.getElementById('photoHistSlot');
-  if (inline) resultsEl.appendChild(histSlot);
-  if (histSlot) {
-    histSlot.innerHTML = '';
-    const histCard = el('div', { class: 'anr-card' });
-    const [histH, histHelp] = h3help('Histogram', 'RGB colour histogram. Shows the distribution of red, green, and blue intensity values across all pixels. Peaks on the left mean dark tones dominate; peaks on the right mean bright tones. Click to open in lightbox.');
-    histCard.appendChild(histH); histCard.appendChild(histHelp);
-    const histCanvas = el('canvas', { class: 'anr-histogram' });
-    histCanvas.width = 1024; histCanvas.height = 200;
-    histCanvas.style.cursor = 'zoom-in';
-    histCanvas.addEventListener('click', () => {
-      openLightbox(histCanvas.toDataURL('image/png'), 'RGB Histogram', 'RGB Histogram');
-    });
-    histCard.appendChild(histCanvas);
-    renderHistogram(histCanvas, hist);
-    histSlot.appendChild(histCard);
   }
 
   // ---- Palette ----

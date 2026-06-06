@@ -138,6 +138,7 @@
   </section>
 
   <button type="button" id="analyseNext" class="analyse-next" hidden>Analyse next file?</button>
+  <button type="button" id="scrollToData" class="scroll-to-data" hidden aria-label="Scroll to the analysis"></button>
 
   <div id="fmtOverlay" class="fmt-overlay" hidden>
     <div class="fmt-overlay-inner">
@@ -146,7 +147,12 @@
         <button type="button" class="fmt-overlay-close" id="fmtOverlayClose">&times;</button>
       </div>
       <input type="text" class="fmt-overlay-search" id="fmtSearch" placeholder="Search formats..." autocomplete="off" spellcheck="false">
-      <!-- Tables are generated from assets/js/core/formats.js by app.js (renderFmtOverlay). -->
+      <!-- Category chips + the format list are generated from assets/js/core/formats.js by app.js. -->
+      <div class="fmt-chips" id="fmtChips" role="tablist" aria-label="Filter formats by category"></div>
+      <div class="fmt-status">
+        <span class="fmt-result-count" id="fmtResultCount"></span>
+        <button type="button" class="fmt-toggle-all" id="fmtToggleAll">Expand all</button>
+      </div>
       <div class="fmt-overlay-body" id="fmtBody"></div>
     </div>
   </div>
@@ -220,26 +226,27 @@
       </details>
     </div>
     <div class="offline-help-panel">
-      <div><strong>Essentials</strong> <span>~48 MB</span><br>Whole app - every viewer, fonts, EXIF, FFmpeg, ImageMagick</div>
-      <div><strong>Everything</strong> <span>~72 MB</span><br>Essentials + OCR (English), PDF, maps, QR, HEIC, archives, SQLite, comics, JPEG 2000</div>
-      <div><strong>Complete</strong> <span>~310 MB</span><br>Everything + all OCR languages (30+) + EPS/PostScript rendering</div>
+      <div><strong>Essentials</strong> <span>~48 MB</span><br>The whole app - open and inspect any file, fully offline</div>
+      <div><strong>Everything</strong> <span>~72 MB</span><br>Adds reading text in images, PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos and archives</div>
+      <div><strong>Complete</strong> <span>~310 MB</span><br>Adds reading text in 30+ languages, plus EPS/PostScript graphics</div>
     </div>
     <div class="offline-options">
       <button type="button" class="offline-btn" data-tier="essentials">
         <span class="offline-tier">Essentials</span>
-        <span class="offline-desc">Whole app - every viewer, fonts, EXIF, FFmpeg, ImageMagick</span>
+        <span class="offline-desc">The whole app - open and inspect any file, fully offline</span>
         <span class="offline-size">~48 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
       <button type="button" class="offline-btn" data-tier="everything">
+        <span class="offline-rec"><svg class="offline-rec-crown" viewBox="0 0 24 18" fill="currentColor" aria-hidden="true"><path d="M2 16V6l6 4 4-6 4 6 6-4v10z"/></svg><span class="offline-rec-text">recommended</span></span>
         <span class="offline-tier">Everything</span>
-        <span class="offline-desc">Essentials + OCR (English), PDF, maps, QR, HEIC, archives, SQLite, comics, JPEG 2000</span>
+        <span class="offline-desc">Adds reading text in images, PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos and archives</span>
         <span class="offline-size">~72 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
       <button type="button" class="offline-btn" data-tier="complete">
         <span class="offline-tier">Complete</span>
-        <span class="offline-desc">Everything + all OCR languages (30+) + EPS/PostScript rendering</span>
+        <span class="offline-desc">Adds reading text in 30+ languages, plus EPS/PostScript graphics</span>
         <span class="offline-size">~310 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>

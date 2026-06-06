@@ -539,6 +539,11 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
 .section-meta {
   grid-column: 1 / span 3;
   align-self: start;
+  /* Pin the number + kicker to the left while its section scrolls past. The
+     containing block is the grid, so it stays put until the section ends, then
+     scrolls away with it. Reset to static on mobile (see ≤900px override). */
+  position: sticky;
+  top: calc(var(--nav-offset) + 16px);
   padding-top: 4px;
   background: var(--bg);
   padding: 24px;
@@ -946,7 +951,10 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   background: var(--media-bg);
   border: 1px solid var(--hairline);
 }
-.anr-histogram { height: 200px; }
+/* No fixed aspect ratio: width:100% with height auto lets the canvas scale to
+   its own 1024x200 pixels at any window size. */
+.anr-histogram { height: auto; }
+.anr-hist-block { margin: 0 0 56px; }   /* same body rhythm as .anr-card */
 .anr-waveform { height: 96px; }
 
 .anr-playhead {
@@ -1002,8 +1010,10 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   overflow: hidden;
   text-overflow: clip;
 }
-/* On very narrow screens, two rows of four are friendlier than tiny squares */
-@media (max-width: 420px) {
+/* On phones, two rows of four (4x2) are friendlier than eight tiny squares.
+   600px so it catches every phone in portrait - the old 420px missed the wider
+   modern handsets (Pro Max ~430, large Androids 412-480), leaving them at 8. */
+@media (max-width: 600px) {
   .anr-palette { grid-template-columns: repeat(4, 1fr); }
 }
 
@@ -1989,6 +1999,18 @@ details[open] summary::after { content: "\2212"; }
    so the download buttons and the Install/Clear/Dependencies row are identical
    widths - content can't push a track wider than its third. */
 .offline-options > * { min-width: 0; }
+/* Failure note under the download buttons (created by app.js on a failed tier). */
+.offline-status {
+  margin: 14px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  line-height: 1.6;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+}
+.offline-status[hidden] { display: none; }
 
 /* Same 3-column grid as the download tiers above, so Install / Clear /
    Dependencies line up at the same width as the download buttons. This base
@@ -2030,6 +2052,7 @@ details[open] summary::after { content: "\2212"; }
   .offline-bottom-row:has(.offline-install.is-expanded) { grid-template-columns: repeat(2, 1fr); }
 }
 .offline-btn {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -2041,6 +2064,31 @@ details[open] summary::after { content: "\2212"; }
   text-align: left;
   font-family: var(--font-sans);
   transition: border-color 0.2s ease, background 0.2s ease;
+}
+/* "Recommended" crown badge, top-right of the Everything tier. Faint + decorative
+   (pointer-events:none so it never intercepts the button click). */
+.offline-rec {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  pointer-events: none;
+  color: rgba(255,255,255,0.5);
+}
+.offline-rec-crown { width: 14px; height: auto; display: block; }
+.offline-rec-text {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.4);
+}
+@media (max-width: 700px) {
+  /* Keep just the crown when the buttons get narrow. */
+  .offline-rec { top: 6px; right: 6px; }
+  .offline-rec-text { display: none; }
 }
 .offline-btn:hover { border-color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.05); }
 .offline-btn.is-done { border-color: var(--accent); }
@@ -2454,6 +2502,29 @@ details[open] summary::after { content: "\2212"; }
 .analyse-next:hover::after { transform: translateX(5px); }
 .analyse-next:active { transform: translateY(1px); }
 .analyse-next[hidden] { display: none; }
+/* Square down-arrow under "Analyse next file?" - jumps to the first analysed
+   section. Same Swiss idiom as .analyse-next (square, hairline, invert hover). */
+.scroll-to-data {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 22px;
+  font-size: 1.2em;
+  line-height: 1;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--fg);
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+.scroll-to-data::after { content: '\2193'; transition: transform 0.18s ease; }
+.scroll-to-data:hover { background: var(--fg); color: var(--bg); }
+.scroll-to-data:hover::after { transform: translateY(3px); }
+.scroll-to-data:active { transform: translateY(1px); }
+.scroll-to-data[hidden] { display: none; }
 .quickdrop-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -2572,9 +2643,49 @@ details[open] summary::after { content: "\2212"; }
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+  align-items: center;
   padding: 12px 20px 20px;
 }
 .anr-ocr-lang-run { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+/* Square "?" button pinned to the bottom-left of the actions row (margin-right
+   auto pushes Cancel/Run to the right). Toggles the OCR help panel above it. */
+.anr-ocr-lang-help {
+  margin-right: auto;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 1;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.anr-ocr-lang-help:hover { color: var(--fg); border-color: var(--fg); }
+.anr-ocr-lang-help.is-active { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+/* Occupies the same slot as the language list (it replaces it when toggled). */
+.anr-ocr-lang-help-panel {
+  margin: 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  line-height: 1.7;
+  color: var(--muted);
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.anr-ocr-lang-help-panel[hidden] { display: none; }
+.anr-ocr-lang-help-panel strong { color: var(--fg); text-transform: uppercase; letter-spacing: 0.08em; }
+.anr-ocr-lang-help-panel a { color: var(--accent); }
 .anr-ocr-lang-remember {
   display: flex;
   align-items: center;
@@ -2639,9 +2750,9 @@ details[open] summary::after { content: "\2212"; }
 .fmt-overlay-inner {
   background: var(--bg);
   border: 1px solid var(--hairline);
-  max-width: 640px;
+  max-width: 760px;
   width: 100%;
-  max-height: 80vh;
+  max-height: 82vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2682,6 +2793,8 @@ details[open] summary::after { content: "\2212"; }
 .fmt-overlay-body {
   padding: 0 20px 20px;
   overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;          /* let the body scroll instead of growing the modal */
 }
 .fmt-section-label {
   font-family: var(--font-mono);
@@ -2728,7 +2841,6 @@ details[open] summary::after { content: "\2212"; }
 .fmt-item-summary::-webkit-details-marker { display: none; }
 .fmt-item-summary::after {
   content: '+';
-  margin-left: auto;
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--muted);
@@ -2768,6 +2880,119 @@ details[open] summary::after { content: "\2212"; }
   scroll-margin-top: 84px;
 }
 .fmt-item { scroll-margin-top: 84px; }
+
+/* ---- Category chips (modal filter) ---- */
+.fmt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 20px 12px;
+}
+.fmt-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 0;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.fmt-chip:hover { color: var(--fg); border-color: var(--fg); }
+.fmt-chip.is-active { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+
+/* ---- Status line: result count + expand/collapse-all ---- */
+.fmt-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 20px 10px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.fmt-toggle-all {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+.fmt-toggle-all:hover { color: var(--accent); }
+.fmt-toggle-all:disabled { opacity: 0.4; cursor: default; }
+
+/* ---- Per-row depth badge (FULL = viewer, ID = identification) ---- */
+.fmt-item-badge {
+  flex: none;
+  margin-left: auto;          /* pushes the badge + the +/- glyph to the right */
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  padding: 2px 6px;
+  border: 1px solid var(--hairline);
+  color: var(--muted);
+}
+.fmt-item-badge.is-full { color: var(--accent); border-color: var(--accent); }
+.fmt-item[open] > .fmt-item-summary .fmt-item-badge.is-id { border-color: var(--fg); color: var(--fg); }
+
+/* ---- Search match highlight ---- */
+.fmt-mark {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: 0;
+  padding: 0 1px;
+}
+
+/* ---- Empty state ---- */
+.fmt-empty {
+  margin: 28px 0 8px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.fmt-empty[hidden] { display: none; }
+
+/* First *visible* category header drops its divider (JS sets is-first-visible as
+   the chip filter hides whole categories). */
+.fmt-section-label.is-first-visible {
+  margin-top: 4px;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* Mobile: turn the centred modal into a bottom sheet; chips scroll sideways. */
+@media (max-width: 700px) {
+  .fmt-overlay { align-items: flex-end; padding: 0; }
+  .fmt-overlay-inner {
+    max-width: 100%;
+    max-height: 90vh;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+  }
+  .fmt-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .fmt-chips::-webkit-scrollbar { display: none; }
+}
 
 /* Clickable "N supported formats" affordance (dropzone hint + about page). */
 .fmt-count-link {
@@ -2896,7 +3121,7 @@ details[open] summary::after { content: "\2212"; }
   width: 100%;
 }
 .section-meta-slot .anr-ocr-text { font-size: 12px; max-height: 220px; margin-top: 14px; }
-.section-meta-slot .anr-histogram { height: 160px; }
+/* Keep the 2:1 ratio in the sidebar too - width drives the height there. */
 
 .section-meta-preview {
   border: 1px solid var(--hairline);

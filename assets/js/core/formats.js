@@ -182,6 +182,91 @@ export const IDENTIFICATION_CORE = [
 // Whole identification catalog (Core + Extended), for formatCount() and search.
 export const IDENTIFICATION = [...IDENTIFICATION_CORE, ...IDENTIFICATION_EXTENDED];
 
+// ---------- categories (display grouping) ----------
+// The overlay + about list group formats by domain category instead of by the
+// old depth tiers. Each catalog row's `label` maps to one category via CAT_OF;
+// the depth (viewer vs identification) becomes a per-row badge derived from which
+// array the row lives in. CATEGORIES is the display order and the chip labels.
+export const CATEGORIES = [
+  { key: 'images',    label: 'Images' },
+  { key: 'audio',     label: 'Audio' },
+  { key: 'video',     label: 'Video' },
+  { key: 'design',    label: 'Design' },
+  { key: 'documents', label: 'Documents & ebooks' },
+  { key: 'data',      label: 'Data & code' },
+  { key: 'threed',    label: '3D / CAD / engineering' },
+  { key: 'archives',  label: 'Archives' },
+  { key: 'maps',      label: 'Maps & GIS' },
+  { key: 'games',     label: 'Games' },
+  { key: 'security',  label: 'Email & security' },
+  { key: 'system',    label: 'System & disk' },
+];
+
+// label -> category key. Every catalog row label must appear here (verified at
+// load by an assertion in dev; unmapped rows fall back to 'system').
+const CAT_OF = {
+  // Images
+  'Photo': 'images', 'Images (more)': 'images', 'RAW sidecars / cinema': 'images',
+  // Design
+  'Adobe': 'design', 'Design': 'design',
+  // Audio
+  'Sound': 'audio', 'Audio (more)': 'audio', 'Surround audio': 'audio',
+  'Music production': 'audio', 'MIDI': 'audio', 'Lyrics': 'audio',
+  // Video
+  'Video': 'video', 'Video / streaming (more)': 'video', 'Video editing': 'video',
+  'Subtitles': 'video', 'Subtitles (other)': 'video',
+  // Documents & ebooks
+  'PDF': 'documents', 'Office docs': 'documents', 'Documents': 'documents',
+  'Documents / ebooks (more)': 'documents', 'eBooks': 'documents', 'Fonts': 'documents',
+  // Data & code
+  'Data': 'data', 'Web / code': 'data', 'Developer / data': 'data',
+  'Databases': 'data', 'Config': 'data', 'Logs': 'data',
+  // 3D / CAD / engineering
+  '3D model': 'threed', '3D / printing': 'threed', 'CAD': 'threed',
+  'CAD exchange': 'threed', '3D / CAD / point clouds (more)': 'threed',
+  'Engineering': 'threed', 'CNC / 3D print': 'threed',
+  'Science / medical / engineering': 'threed',
+  // Archives
+  'Archives': 'archives', 'Archives (packages)': 'archives',
+  // Maps & GIS
+  'Map data': 'maps', 'GIS / mapping': 'maps', 'Geospatial / GIS': 'maps',
+  // Games
+  'Game ROMs / assets': 'games', 'Game engines': 'games', 'Game saves': 'games',
+  'Valve / Steam': 'games',
+  // Email & security
+  'Email / calendar / contacts': 'security', 'Security / keys / certs': 'security',
+  'Certificates': 'security',
+  // System & disk
+  'Disk images': 'system', 'Disk images / firmware': 'system', 'Executables': 'system',
+  'System / misc': 'system', 'Shortcuts': 'system', 'Recordings': 'system',
+  'Camera catalog': 'system', 'Other': 'system',
+};
+
+// Every catalog row tagged with its depth ('full' = viewer + deep metadata, 'id'
+// = identified + header metadata) and category key. Depth comes from which array
+// the row lives in (so the two same-named 'Archives' rows keep distinct depths).
+function allRows() {
+  const tagged = [
+    ...FULL_ANALYSIS.map((r) => ({ r, depth: 'full' })),
+    ...IDENTIFICATION_CORE.map((r) => ({ r, depth: 'id' })),
+    ...IDENTIFICATION_EXTENDED.map((r) => ({ r, depth: 'id' })),
+  ];
+  return tagged.map(({ r, depth }) => ({ ...r, depth, cat: CAT_OF[r.label] || 'system' }));
+}
+
+// Distinct extension count per category key - used for chip labels and the count
+// line so the numbers stay consistent with formatCount() (lower-cased tokens).
+export function categoryCounts() {
+  const sets = {};
+  for (const r of allRows()) {
+    const set = sets[r.cat] || (sets[r.cat] = new Set());
+    for (const t of r.exts.split(/\s+/)) if (t) set.add(t.toLowerCase());
+  }
+  const out = {};
+  for (const k in sets) out[k] = sets[k].size;
+  return out;
+}
+
 // ---------- count helper ----------
 
 // Total number of distinct extension tokens across the whole catalog. Used for
@@ -212,18 +297,26 @@ const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-
 //                  DOM even while collapsed.
 function fmtItem(r, opts = {}) {
   const extNodes = [];
-  r.exts.split(/\s+/).forEach((t, i) => {
+  r.exts.split(/\s+/).forEach((t) => {
     if (!t) return;
     if (extNodes.length) extNodes.push(' ');
     const attrs = { class: 'fmt-item-ext' };
     if (opts.anchors) attrs.id = 'ext-' + t.toLowerCase();
     extNodes.push(el('span', attrs, t));
   });
+  // Depth badge: FULL = opens in a viewer with deep metadata; ID = identified +
+  // header metadata only. Sits at the right of the summary, before the +/- glyph.
+  const isFull = r.depth === 'full';
+  const badge = el('span', {
+    class: 'fmt-item-badge ' + (isFull ? 'is-full' : 'is-id'),
+    title: isFull ? 'Opens in a viewer with deep metadata' : 'Identified + header metadata',
+  }, isFull ? 'Full' : 'ID');
   const summary = el('summary', { class: 'fmt-item-summary' }, [
     el('span', { class: 'fmt-item-label' }, r.label),
-    el('span', { class: 'fmt-item-exts' }, extNodes)
+    el('span', { class: 'fmt-item-exts' }, extNodes),
+    badge,
   ]);
-  const detailsAttrs = { class: 'fmt-item', 'data-tags': r.tags || '' };
+  const detailsAttrs = { class: 'fmt-item', 'data-tags': r.tags || '', 'data-cat': r.cat || '' };
   if (opts.anchors) detailsAttrs.id = 'fmt-' + slugify(r.label);
   return el('details', detailsAttrs, [
     summary,
@@ -231,20 +324,23 @@ function fmtItem(r, opts = {}) {
   ]);
 }
 
-// Render both catalog sections as collapsible items into a container.
+// Render the catalog grouped by domain category into a container. Each category
+// is a heading (with its extension count) followed by its rows; every <details>
+// carries data-cat so the overlay's chip filter can show/hide whole categories.
 function renderFmtItems(container, opts) {
   container.innerHTML = '';
-  const section = (title, rows, note) => {
-    const head = el('p', { class: 'fmt-section-label' }, title);
-    if (note) head.appendChild(el('span', { class: 'fmt-section-note' }, note));
+  const rows = allRows();
+  const counts = categoryCounts();
+  for (const c of CATEGORIES) {
+    const catRows = rows.filter((r) => r.cat === c.key);
+    if (!catRows.length) continue;
+    const head = el('p', { class: 'fmt-section-label', 'data-cat-head': c.key }, c.label);
+    head.appendChild(el('span', { class: 'fmt-section-note' }, (counts[c.key] || 0) + ' formats'));
     container.appendChild(head);
-    const list = el('div', { class: 'fmt-list' });
-    for (const r of rows) list.appendChild(fmtItem(r, opts));
+    const list = el('div', { class: 'fmt-list', 'data-cat-list': c.key });
+    for (const r of catRows) list.appendChild(fmtItem(r, opts));
     container.appendChild(list);
-  };
-  section('Full analysis', FULL_ANALYSIS, 'viewer + deep metadata');
-  section('Core formats', IDENTIFICATION_CORE, 'identified + header metadata');
-  section('Extended formats', IDENTIFICATION_EXTENDED, 'the long tail of newer formats');
+  }
 }
 
 // Format help overlay on index.html / about.html. Each format is a collapsible
