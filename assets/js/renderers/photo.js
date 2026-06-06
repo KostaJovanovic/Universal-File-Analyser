@@ -1933,7 +1933,11 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     // of a standard ratio. Show only that standard ratio, unqualified (no "≈").
     aspectVal = `${approx}  (${(w / h).toFixed(4)})`;
   } else if (approx && approx !== exactReduced) {
-    aspectVal = `${aspectRatio(w, h)}  ≈ ${approx}`;
+    // Show the nearest-standard ratio with its own decimal in brackets, so it
+    // can be read directly against the exact proportion (e.g. "258:145 (1.7793)
+    // ≈ 16:9 (1.7778)").
+    const approxStr = approxDec !== null ? `${approx} (${approxDec.toFixed(4)})` : approx;
+    aspectVal = `${aspectRatio(w, h)}  ≈ ${approxStr}`;
   } else {
     aspectVal = aspectRatio(w, h);
   }

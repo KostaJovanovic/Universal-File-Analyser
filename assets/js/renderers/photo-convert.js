@@ -44,11 +44,18 @@ export async function convertHeic(file) {
 // Pull the largest embedded JPEG preview out of a RAW file by scanning for
 // SOI/EOI (FFD8..FFD9) markers - most RAWs ship a full-size JPEG preview, so
 // this avoids a full RAW decode. Throws if none is found.
+//
+// Raw Bayer sensor data contains stray FFD8/FFD9 byte pairs, so a blind
+// "largest FFD8..FFD9 span wins" scan can pick a multi-megabyte chunk of noise
+// over the genuine preview (seen on Sony FX30 ARWs). Guard against that by
+// requiring a real SOI: a genuine JPEG always follows FFD8 with another marker
+// (FF Cx/Dx/Ex...), i.e. byte[i+2] === 0xFF. Stray matches in sensor data
+// almost never satisfy that, so they're skipped.
 export async function extractRawPreview(file) {
   const buf = new Uint8Array(await file.arrayBuffer());
   const jpegs = [];
   for (let i = 0; i < buf.length - 1; i++) {
-    if (buf[i] === 0xFF && buf[i + 1] === 0xD8) {
+    if (buf[i] === 0xFF && buf[i + 1] === 0xD8 && buf[i + 2] === 0xFF) {
       for (let j = i + 2; j < buf.length - 1; j++) {
         if (buf[j] === 0xFF && buf[j + 1] === 0xD9) {
           jpegs.push({ offset: i, length: j + 2 - i });
