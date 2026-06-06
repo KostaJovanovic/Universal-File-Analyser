@@ -146,18 +146,22 @@ export function renderBreakdownCards(items, resultsEl, extraSummaryRows) {
 // ---------- view toggle (treemap / tree) ----------
 
 export function renderViewToggle(container, items, treeObj, treeOpts, onFileClick) {
+  // Tree section, shown above the treemap as its own (collapsible) card.
+  const treeCard = el('div', { class: 'anr-card' });
+  treeCard.appendChild(el('h3', {}, 'File tree'));
+  const treeFullOpts = {
+    ...treeOpts,
+    fileAccent: (key) => categoryColor(categorizeExt(extOf(key))),
+  };
+  treeCard.appendChild(buildFileTree(treeObj, treeFullOpts));
+  container.appendChild(treeCard);
+
+  // Treemap section below.
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Contents'));
+  card.appendChild(el('h3', {}, 'Treemap'));
 
-  // Controls bar - toggle + legend in one row
+  // Category legend.
   const controls = el('div', { class: 'anr-view-controls' });
-  const toggle = el('div', { class: 'anr-toggle' });
-  const btnTreemap = el('button', { class: 'is-active' }, 'Treemap');
-  const btnTree = el('button', {}, 'Tree');
-  toggle.appendChild(btnTreemap);
-  toggle.appendChild(btnTree);
-  controls.appendChild(toggle);
-
   const legend = el('div', { class: 'anr-treemap-legend' });
   const bk = buildCategoryBreakdown(items);
   for (const cat of CATEGORIES) {
@@ -172,53 +176,31 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
   const contentArea = el('div', { class: 'anr-treemap-content' });
   card.appendChild(contentArea);
 
-  function showTreemap() {
-    btnTreemap.classList.add('is-active');
-    btnTree.classList.remove('is-active');
-    contentArea.innerHTML = '';
-    const wrap = el('div', { class: 'anr-treemap-wrap' });
-    const canvas = document.createElement('canvas');
-    wrap.appendChild(canvas);
-    contentArea.appendChild(wrap);
+  const wrap = el('div', { class: 'anr-treemap-wrap' });
+  const canvas = document.createElement('canvas');
+  wrap.appendChild(canvas);
+  contentArea.appendChild(wrap);
 
-    function draw() {
-      const rect = wrap.getBoundingClientRect();
-      const w = Math.floor(rect.width);
-      const h = Math.max(380, Math.min(560, Math.round(w * 0.6)));
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      canvas.style.width = w + 'px';
-      canvas.style.height = h + 'px';
-      renderTreemap(canvas, items, { categoryColor, onFileClick });
-    }
-
-    draw();
-    attachTreemapEvents(canvas, wrap, items, { categoryColor, onFileClick });
-
-    const ro = new ResizeObserver(() => {
-      clearTimeout(canvas._roTimer);
-      canvas._roTimer = setTimeout(draw, 150);
-    });
-    ro.observe(wrap);
-    canvas._ro = ro;
+  function draw() {
+    const rect = wrap.getBoundingClientRect();
+    const w = Math.floor(rect.width);
+    const h = Math.max(380, Math.min(560, Math.round(w * 0.6)));
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    renderTreemap(canvas, items, { categoryColor, onFileClick });
   }
 
-  function showTree() {
-    btnTree.classList.add('is-active');
-    btnTreemap.classList.remove('is-active');
-    contentArea.innerHTML = '';
-    const fullOpts = {
-      ...treeOpts,
-      fileAccent: (key) => categoryColor(categorizeExt(extOf(key))),
-    };
-    const tree = buildFileTree(treeObj, fullOpts);
-    contentArea.appendChild(tree);
-  }
+  draw();
+  attachTreemapEvents(canvas, wrap, items, { categoryColor, onFileClick });
+  const ro = new ResizeObserver(() => {
+    clearTimeout(canvas._roTimer);
+    canvas._roTimer = setTimeout(draw, 150);
+  });
+  ro.observe(wrap);
+  canvas._ro = ro;
 
-  btnTreemap.addEventListener('click', showTreemap);
-  btnTree.addEventListener('click', showTree);
-
-  showTreemap();
   container.appendChild(card);
 }

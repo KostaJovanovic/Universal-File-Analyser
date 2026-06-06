@@ -4,7 +4,7 @@
    (waveform + spectrogram via audio module). */
 
 import { makeSpectrogramPanel, makePlayer, buildHistogramCard } from './audio.js';
-import { renderPhoto, revealPhotoSection } from './photo.js';
+import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
 import { el, row, rowHelp, fmtBytes, h3help, sha256Row, integrityCard, roundFps, asciiBar } from '../core/util.js';
 import { parseAviHeader, extractAviData, encodeWav } from './video-avi.js';
 
@@ -26,6 +26,140 @@ function applyVideoControls(playerEl) {
     playerEl.style.cursor = 'pointer';
     playerEl.addEventListener('click', () => { if (playerEl.paused) playerEl.play(); else playerEl.pause(); });
   }
+}
+
+// A generated contact-sheet image. Click opens it full-size in the shared
+// lightbox (no photo tools - it's a thumbnail grid, not a single photo).
+function sheetImg(dataUrl) {
+  return el('img', {
+    src: dataUrl,
+    alt: 'Contact sheet',
+    style: 'max-width:100%; margin-top:10px; border:1px solid var(--hairline); display:block; cursor:zoom-in;',
+    onclick: () => openLightbox(dataUrl, 'Contact sheet', 'Contact sheet', null, false, false)
+  });
+}
+
+// Smooth-scroll to the photo section. Called after the user explicitly clicks an
+// "Analyse frame" button (not on the silent auto-analysis of the first frame).
+function scrollToPhoto() {
+  const sec = document.getElementById('photo');
+  if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// The frame controls shown under a video player: an editable, button-styled
+// timecode (click to set hours/minutes/seconds/frame individually and seek
+// there) on top, then a 2×2 grid of Prev/Next frame and Analyse/Frame-grab.
+// "Analyse frame" sends the current frame to the photo section; "Frame grab"
+// downloads it as a PNG. `getFps` returns the current detected frame rate (it may
+// update asynchronously). Returns { wrap, refresh }; call refresh() when fps
+// becomes known so the frame field of the timecode is accurate.
+function buildFrameControls(playerEl, getFps, file) {
+  const fps = () => { const f = getFps(); return (f && isFinite(f) && f > 0) ? f : 30; };
+  const pad = (n) => String(n).padStart(2, '0');
+  function parts(t) {
+    const rf = Math.round(fps());
+    const ts = Math.floor(t);
+    let f = Math.floor((t - ts) * fps() + 1e-6);
+    if (f >= rf) f = rf - 1;
+    return { h: Math.floor(ts / 3600), m: Math.floor((ts % 3600) / 60), s: ts % 60, f };
+  }
+
+  const label = el('span', { class: 'anr-timecode-label' }, 'TIMECODE');
+  const display = el('span', { class: 'anr-timecode-value' }, '00:00:00:00');
+  const mkSeg = () => el('input', { class: 'anr-tc-seg', type: 'text', inputmode: 'numeric', maxlength: '2', spellcheck: 'false', autocomplete: 'off' });
+  const sH = mkSeg(), sM = mkSeg(), sS = mkSeg(), sF = mkSeg();
+  const sep = () => el('span', { class: 'anr-tc-sep' }, ':');
+  const editWrap = el('span', { class: 'anr-timecode-edit', style: 'display:none;' }, [sH, sep(), sM, sep(), sS, sep(), sF]);
+  const hint = el('span', { class: 'anr-timecode-hint', style: 'display:none;' }, 'hour : min : sec : frame');
+  const tc = el('div', { class: 'anr-timecode', role: 'button', tabindex: '0', title: 'Click to edit - set hours, minutes, seconds and frame' }, [label, display, editWrap, hint]);
+
+  let editing = false;
+  function refresh() { if (editing) return; const p = parts(playerEl.currentTime); display.textContent = `${pad(p.h)}:${pad(p.m)}:${pad(p.s)}:${pad(p.f)}`; }
+  function enterEdit() {
+    editing = true; playerEl.pause();
+    const p = parts(playerEl.currentTime);
+    sH.value = pad(p.h); sM.value = pad(p.m); sS.value = pad(p.s); sF.value = pad(p.f);
+    display.style.display = 'none'; editWrap.style.display = ''; hint.style.display = '';
+    sH.focus(); sH.select();
+  }
+  function exitEdit() { editing = false; editWrap.style.display = 'none'; hint.style.display = 'none'; display.style.display = ''; }
+  function commit() {
+    if (!editing) return;
+    const rf = Math.round(fps());
+    const clamp = (v, max) => { v = parseInt(v, 10) || 0; return Math.max(0, max != null ? Math.min(v, max) : v); };
+    const h = clamp(sH.value), m = clamp(sM.value, 59), s = clamp(sS.value, 59), f = clamp(sF.value, Math.max(0, rf - 1));
+    let t = h * 3600 + m * 60 + s + f / fps();
+    if (isFinite(playerEl.duration)) t = Math.min(t, playerEl.duration);
+    exitEdit();
+    playerEl.currentTime = Math.max(0, t);
+    refresh();
+  }
+  tc.addEventListener('click', (e) => { if (!editing && !editWrap.contains(e.target)) enterEdit(); });
+  tc.addEventListener('keydown', (e) => { if (!editing && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); enterEdit(); } });
+  editWrap.addEventListener('focusout', (e) => { if (!editWrap.contains(e.relatedTarget)) commit(); });
+  const order = [sH, sM, sS, sF];
+  for (const seg of order) {
+    seg.addEventListener('input', () => {
+      seg.value = seg.value.replace(/\D/g, '').slice(0, 2);
+      if (seg.value.length === 2) { const i = order.indexOf(seg); if (i < 3) { order[i + 1].focus(); order[i + 1].select(); } }
+    });
+    seg.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); exitEdit(); refresh(); }
+    });
+  }
+
+  // Live timecode while playing.
+  let raf = 0;
+  function tick() { refresh(); if (!playerEl.paused) raf = requestAnimationFrame(tick); }
+  playerEl.addEventListener('play', () => { raf = requestAnimationFrame(tick); });
+  playerEl.addEventListener('pause', () => { cancelAnimationFrame(raf); refresh(); });
+  playerEl.addEventListener('seeked', refresh);
+
+  function grabCanvas() {
+    const vw = playerEl.videoWidth, vh = playerEl.videoHeight;
+    if (!vw || !vh) return null;
+    const cv = document.createElement('canvas'); cv.width = vw; cv.height = vh;
+    cv.getContext('2d').drawImage(playerEl, 0, 0, vw, vh);
+    return cv;
+  }
+  const prevBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => { playerEl.pause(); playerEl.currentTime = Math.max(0, playerEl.currentTime - 1 / fps()); } }, '← Prev frame');
+  const nextBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
+    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) { playerEl.requestVideoFrameCallback(() => { playerEl.pause(); refresh(); }); playerEl.play(); }
+    else { playerEl.currentTime = Math.min(playerEl.duration || Infinity, playerEl.currentTime + 1 / fps()); }
+  } }, 'Next frame →');
+  const analyseBtn = el('button', { type: 'button', class: 'anr-btn', onclick: async () => {
+    const cv = grabCanvas(); if (!cv) return;
+    analyseBtn.disabled = true; analyseBtn.textContent = 'Capturing…';
+    try {
+      const blob = await new Promise((r) => cv.toBlob(r, 'image/png'));
+      const frameFile = new File([blob], `frame_${playerEl.currentTime.toFixed(3)}s.png`, { type: 'image/png' });
+      const pr = document.getElementById('photoResults');
+      if (pr) { renderPhoto(frameFile, pr); scrollToPhoto(); }
+    } catch (_) {}
+    analyseBtn.disabled = false; analyseBtn.textContent = 'Analyse frame';
+  } }, 'Analyse frame');
+  const grabBtn = el('button', { type: 'button', class: 'anr-btn', onclick: async () => {
+    const cv = grabCanvas(); if (!cv) return;
+    grabBtn.disabled = true;
+    try {
+      const blob = await new Promise((r) => cv.toBlob(r, 'image/png'));
+      // Name the grab after the timecode (HH-MM-SS-FF; ':' is illegal in filenames).
+      const p = parts(playerEl.currentTime);
+      const tc = `${pad(p.h)}-${pad(p.m)}-${pad(p.s)}-${pad(p.f)}`;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (file.name || 'video').replace(/\.[^.]+$/, '') + `_${tc}.png`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    } catch (_) {}
+    grabBtn.disabled = false;
+  } }, 'Frame grab');
+
+  const grid = el('div', { class: 'anr-frame-grid' }, [prevBtn, nextBtn, analyseBtn, grabBtn]);
+  const wrap = el('div', { class: 'anr-frame-wrap' }, [tc, grid]);
+  refresh();
+  return { wrap, refresh };
 }
 
 // "Download audio (WAV)" link for the extracted-audio cards. Reuses the blob URL
@@ -869,6 +1003,7 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
       const analyseBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
         const pr = revealPhotoSection();
         renderPhoto(frameFile, pr, { sourceNote: 'First frame extracted from ' + file.name + ' (the video itself can’t be decoded in the browser).' });
+        scrollToPhoto();
       } }, 'Analyse in Photo section');
       prevCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [analyseBtn]));
     } catch (_) {
@@ -1146,55 +1281,16 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
   // Detect FPS
   let detectedFps = 30;
   const fpsCell = fpsRow.querySelector('td');
+  let frameControls = null;
   detectFps(file, fpsCell).then((fps) => {
     fpsCell.textContent = fps != null ? fps + ' fps' : 'N/A';
-    if (fps != null) { detectedFps = fps; updateTc(); }
+    if (fps != null) { detectedFps = fps; if (frameControls) frameControls.refresh(); }
   });
 
-  // Frame-by-frame navigation + timecode
-  function fmtTc(t) {
-    const f = Math.floor(t * detectedFps) % Math.round(detectedFps);
-    const ts = Math.floor(t);
-    return String(Math.floor(ts / 3600)).padStart(2, '0') + ':' +
-      String(Math.floor((ts % 3600) / 60)).padStart(2, '0') + ':' +
-      String(ts % 60).padStart(2, '0') + ':' + String(f).padStart(2, '0');
-  }
-  const tcDisplay = el('span', { class: 'anr-timecode-value' }, '00:00:00:00');
-  const tcLabel = el('span', { class: 'anr-timecode-label' }, 'TIMECODE');
-  const frameTimeLabel = el('div', { class: 'anr-timecode' }, [tcLabel, tcDisplay]);
-  function updateTc() { tcDisplay.textContent = fmtTc(playerEl.currentTime); }
-  let tcRaf = 0;
-  function tickTc() { updateTc(); if (!playerEl.paused) tcRaf = requestAnimationFrame(tickTc); }
-  playerEl.addEventListener('play', () => { tcRaf = requestAnimationFrame(tickTc); });
-  playerEl.addEventListener('pause', () => { cancelAnimationFrame(tcRaf); updateTc(); });
-  playerEl.addEventListener('seeked', updateTc);
-
+  // Frame-by-frame navigation, editable timecode, and frame grab (shared helper).
   if (vw && vh) {
-    const prevFrameBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
-      playerEl.pause(); playerEl.currentTime = Math.max(0, playerEl.currentTime - 1 / detectedFps);
-    }}, '← Prev frame');
-    const nextFrameBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
-      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-        playerEl.requestVideoFrameCallback(() => { playerEl.pause(); updateTc(); });
-        playerEl.play();
-      } else {
-        playerEl.currentTime = Math.min(playerEl.duration, playerEl.currentTime + 1 / detectedFps);
-      }
-    }}, 'Next frame →');
-    const analyseBtn = el('button', { type: 'button', class: 'anr-btn', onclick: async () => {
-      analyseBtn.disabled = true; analyseBtn.textContent = 'Capturing…';
-      try {
-        const cv = document.createElement('canvas'); cv.width = vw; cv.height = vh;
-        cv.getContext('2d').drawImage(playerEl, 0, 0, vw, vh);
-        const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
-        const frameFile = new File([blob], `frame_${playerEl.currentTime.toFixed(3)}s.png`, { type: 'image/png' });
-        const pr = document.getElementById('photoResults');
-        if (pr) { renderPhoto(frameFile, pr); }
-      } catch (_) {}
-      analyseBtn.disabled = false; analyseBtn.textContent = 'Analyse frame';
-    }}, 'Analyse frame');
-    const frameGrid = el('div', { class: 'anr-frame-grid' }, [frameTimeLabel, analyseBtn, prevFrameBtn, nextFrameBtn]);
-    playerCard.appendChild(el('div', { class: 'anr-frame-wrap' }, [frameGrid]));
+    frameControls = buildFrameControls(playerEl, () => detectedFps, file);
+    playerCard.appendChild(frameControls.wrap);
   }
 
   // EXIF metadata
@@ -1241,8 +1337,7 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
         ctx.drawImage(playerEl, pad + c * (tw + pad), pad + r * (th + pad), tw, th);
       }
       sheetOut.innerHTML = '';
-      sheetOut.appendChild(el('img', { src: gc.toDataURL('image/png'), alt: 'Contact sheet',
-        style: 'max-width:100%;margin-top:10px;border:1px solid var(--hairline);display:block;' }));
+      sheetOut.appendChild(sheetImg(gc.toDataURL('image/png')));
       sheetBtn.disabled = false; sheetBtn.textContent = 'Generate contact sheet';
     });
     sheetCard.appendChild(el('div', { class: 'anr-btn-row' }, [sheetBtn]));
@@ -1547,6 +1642,7 @@ export async function renderVideo(file, resultsEl) {
           const photoResults = document.getElementById('photoResults');
           if (photoResults) {
             renderPhoto(frameFile, photoResults);
+            scrollToPhoto();
           }
         }}, 'Analyse frame');
 
@@ -1582,10 +1678,7 @@ export async function renderVideo(file, resultsEl) {
               URL.revokeObjectURL(img.src);
             }
             sheetOut.innerHTML = '';
-            sheetOut.appendChild(el('img', {
-              src: gridCanvas.toDataURL('image/png'), alt: 'Contact sheet',
-              style: 'max-width:100%; margin-top:10px; border:1px solid var(--hairline); display:block;'
-            }));
+            sheetOut.appendChild(sheetImg(gridCanvas.toDataURL('image/png')));
             sheetBtn.disabled = false;
             sheetBtn.textContent = 'Generate contact sheet';
           });
@@ -1766,127 +1859,10 @@ export async function renderVideo(file, resultsEl) {
   const sceneBadge = el('div', { class: 'anr-video-analysing' }, 'Analysing…');
   playerCard.appendChild(sceneBadge);
 
-  // ---- Frame-by-frame navigation ----
+  // ---- Frame-by-frame navigation, editable timecode, and frame grab ----
   let detectedFps = 30;
-
-  function fmtTimecode(t) {
-    const fps = detectedFps;
-    const totalFrames = Math.floor(t * fps);
-    const f = totalFrames % Math.round(fps);
-    const totalSec = Math.floor(t);
-    const s = totalSec % 60;
-    const m = Math.floor(totalSec / 60) % 60;
-    const h = Math.floor(totalSec / 3600);
-    return String(h).padStart(2, '0') + ':' +
-      String(m).padStart(2, '0') + ':' +
-      String(s).padStart(2, '0') + ':' +
-      String(f).padStart(2, '0');
-  }
-
-  function parseTimecode(str) {
-    const parts = str.split(':').map(Number);
-    if (parts.length !== 4 || parts.some(isNaN)) return null;
-    const [h, m, s, f] = parts;
-    return h * 3600 + m * 60 + s + f / detectedFps;
-  }
-
-  const tcDisplay = el('span', { class: 'anr-timecode-value' }, '00:00:00:00');
-  const tcInput = el('input', {
-    type: 'text',
-    class: 'anr-timecode-input',
-    maxlength: '11',
-    spellcheck: 'false',
-    autocomplete: 'off'
-  });
-  tcInput.style.display = 'none';
-
-  const tcLabel = el('span', { class: 'anr-timecode-label' }, 'TIMECODE');
-  const tcHint = el('span', { class: 'anr-timecode-hint' }, 'hour : min : sec : frame');
-  tcHint.style.display = 'none';
-  const frameTimeLabel = el('div', { class: 'anr-timecode' }, [tcLabel, tcDisplay, tcInput]);
-
-  function updateFrameTimeLabel() {
-    tcDisplay.textContent = fmtTimecode(playerEl.currentTime);
-  }
-
-  tcDisplay.addEventListener('click', () => {
-    playerEl.pause();
-    tcInput.value = tcDisplay.textContent;
-    tcDisplay.style.display = 'none';
-    tcInput.style.display = '';
-    tcHint.style.display = '';
-    tcInput.focus();
-    tcInput.select();
-  });
-
-  function commitTimecode() {
-    const t = parseTimecode(tcInput.value);
-    if (t !== null && isFinite(playerEl.duration)) {
-      playerEl.currentTime = Math.max(0, Math.min(playerEl.duration, t));
-    }
-    tcInput.style.display = 'none';
-    tcHint.style.display = 'none';
-    tcDisplay.style.display = '';
-    updateFrameTimeLabel();
-  }
-
-  tcInput.addEventListener('blur', commitTimecode);
-  tcInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); tcInput.blur(); }
-    if (e.key === 'Escape') {
-      tcInput.style.display = 'none';
-      tcHint.style.display = 'none';
-      tcDisplay.style.display = '';
-    }
-  });
-
-  let tcRaf = 0;
-  function tickTimecode() {
-    updateFrameTimeLabel();
-    if (!playerEl.paused) tcRaf = requestAnimationFrame(tickTimecode);
-  }
-  playerEl.addEventListener('play', () => { tcRaf = requestAnimationFrame(tickTimecode); });
-  playerEl.addEventListener('pause', () => { cancelAnimationFrame(tcRaf); updateFrameTimeLabel(); });
-  playerEl.addEventListener('seeked', updateFrameTimeLabel);
-
-  const prevFrameBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
-    playerEl.pause();
-    playerEl.currentTime = Math.max(0, playerEl.currentTime - 1 / 30);
-  }}, '← Prev frame');
-
-  const nextFrameBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
-    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-      playerEl.requestVideoFrameCallback(() => {
-        playerEl.pause();
-        updateFrameTimeLabel();
-      });
-      playerEl.play();
-    } else {
-      playerEl.currentTime = Math.min(playerEl.duration, playerEl.currentTime + 1 / 30);
-    }
-  }}, 'Next frame →');
-
-  const analyseFrameBtn = el('button', { type: 'button', class: 'anr-btn', onclick: async () => {
-    if (!vw || !vh) return;
-    analyseFrameBtn.disabled = true;
-    analyseFrameBtn.textContent = 'Capturing…';
-    const cv = document.createElement('canvas');
-    cv.width = vw; cv.height = vh;
-    cv.getContext('2d').drawImage(playerEl, 0, 0, vw, vh);
-    const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
-    const ts = playerEl.currentTime;
-    const frameFile = new File([blob], `frame_${ts.toFixed(3)}s.png`, { type: 'image/png' });
-    const photoResults = document.getElementById('photoResults');
-    if (photoResults) {
-      renderPhoto(frameFile, photoResults);
-    }
-    analyseFrameBtn.disabled = false;
-    analyseFrameBtn.textContent = 'Analyse frame';
-  }}, 'Analyse frame');
-
-  const frameGrid = el('div', { class: 'anr-frame-grid' }, [frameTimeLabel, analyseFrameBtn, prevFrameBtn, nextFrameBtn]);
-  const frameWrap = el('div', { class: 'anr-frame-wrap' }, [tcHint, frameGrid]);
-  playerCard.appendChild(frameWrap);
+  const frameControls = buildFrameControls(playerEl, () => detectedFps, file);
+  playerCard.appendChild(frameControls.wrap);
 
   resultsEl.appendChild(playerCard);
 
@@ -1926,7 +1902,7 @@ export async function renderVideo(file, resultsEl) {
   const fpsCell = fpsRow.querySelector('td');
   detectFps(file, fpsCell).then((fps) => {
     fpsCell.textContent = fps != null ? fps + ' fps' : 'N/A';
-    if (fps != null) { detectedFps = fps; updateFrameTimeLabel(); }
+    if (fps != null) { detectedFps = fps; frameControls.refresh(); }
   });
 
   // ---- Metadata via exifr ----
@@ -2030,12 +2006,7 @@ export async function renderVideo(file, resultsEl) {
       }
 
       sheetOut.innerHTML = '';
-      const img = el('img', {
-        src: gridCanvas.toDataURL('image/png'),
-        alt: 'Contact sheet',
-        style: 'max-width:100%; margin-top:10px; border:1px solid var(--hairline); display:block;'
-      });
-      sheetOut.appendChild(img);
+      sheetOut.appendChild(sheetImg(gridCanvas.toDataURL('image/png')));
 
       const saveBtn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:8px;', onclick: () => {
         const a = document.createElement('a');

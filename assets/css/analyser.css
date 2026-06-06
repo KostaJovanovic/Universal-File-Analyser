@@ -857,6 +857,8 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
 }
 .anr-frame-wrap { margin: 8px 0; }
 .anr-frame-wrap .anr-frame-grid { margin: 0; }
+/* Space between the timecode button and the frame-control grid below it. */
+.anr-frame-wrap .anr-timecode { margin-bottom: 8px; }
 .anr-timecode-hint {
   font-family: var(--font-mono);
   font-size: var(--t-tiny);
@@ -867,8 +869,96 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   text-align: center;
   display: block;
 }
+/* The timecode is an editable readout, not a button - keep it subtle: a quiet
+   border that just picks up on hover (no inversion / fill). */
+.anr-timecode { transition: border-color 0.12s ease; }
 .anr-timecode:hover { border-color: var(--fg); }
 :root[data-theme="dark"] .anr-timecode { background: var(--surface); }
+/* Per-field editing: HH:MM:SS:FF, each segment focusable and seek-on-commit. */
+.anr-timecode-edit {
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+}
+.anr-tc-seg {
+  width: 2ch;
+  font: inherit;
+  text-align: center;
+  border: none;
+  background: transparent;
+  color: inherit;
+  outline: none;
+  padding: 0;
+}
+.anr-tc-seg:focus { background: var(--accent); color: var(--accent-fg); }
+.anr-tc-sep { opacity: 0.5; padding: 0 1px; }
+
+/* ---------- EDITING TIMELINE VIEWER ---------- */
+.anr-tl-scroll { width: 100%; overflow-x: auto; }
+.anr-tl-ruler {
+  position: relative;
+  height: 16px;
+  margin-left: 44px;
+  border-bottom: 1px solid var(--hairline);
+}
+.anr-tl-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted);
+  white-space: nowrap;
+  border-left: 1px solid var(--hairline);
+  padding-left: 3px;
+}
+.anr-tl-tick:first-child { transform: none; }
+.anr-tl-rows { margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }
+.anr-tl-row { display: flex; align-items: stretch; gap: 8px; }
+.anr-tl-rowlabel {
+  flex: 0 0 36px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-align: right;
+  align-self: center;
+}
+.anr-tl-lane {
+  position: relative;
+  flex: 1 1 auto;
+  height: 26px;
+  background: var(--media-bg);
+  border: 1px solid var(--hairline);
+}
+.anr-tl-clip {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  min-width: 2px;
+  border: 1px solid var(--hairline);
+  overflow: hidden;
+  box-sizing: border-box;
+  cursor: default;
+}
+.anr-tl-clip.is-video { background: var(--accent); color: var(--accent-fg); }
+.anr-tl-clip.is-audio { background: var(--surface, #e8e8e8); color: var(--fg); }
+.anr-tl-cliplabel {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 22px;
+  padding: 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:root[data-theme="dark"] .anr-tl-clip.is-audio { background: #2a2a2a; }
 
 /* ---------- RESULTS / CARDS ---------- */
 .anr-results { margin: 0; scroll-margin-top: var(--nav-offset); }
@@ -915,7 +1005,10 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
 .anr-card > h3:hover::after { color: var(--accent); }
 .anr-card.is-collapsed > h3 { margin-bottom: 0; }
 .anr-card.is-collapsed > h3::after { content: "+"; }   /* plus = closed */
-.anr-card.is-collapsed > :not(h3) { display: none; }
+/* !important so it wins over inline display (e.g. the video player carries an
+   inline display:block, which would otherwise keep it visible when collapsed -
+   hiding the controls around it but not the player itself). */
+.anr-card.is-collapsed > :not(h3) { display: none !important; }
 .anr-card-empty { color: var(--muted); font-style: italic; }
 
 /* ---------- PREVIEW ---------- */
@@ -1577,6 +1670,8 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   background: var(--fg);
   color: var(--bg);
 }
+/* Replay state (playback ended): the ↻ glyph reads thin at the play/pause size. */
+.anr-player-play.is-replay { font-size: 16px; }
 .anr-player-track {
   flex: 1 1 auto;
   height: 32px;
@@ -2179,7 +2274,15 @@ details[open] summary::after { content: "\2212"; }
   align-items: center;
   gap: 5px;
 }
-@media (max-width: 700px) { .offline-cached { font-size: 9px; } }
+/* Badge parts: desktop shows "✓ Cached · v2.0"; the dash variant of the
+   separator is desktop-hidden. */
+.offline-cached-dash { display: none; }
+@media (max-width: 700px) {
+  .offline-cached { font-size: 9px; }
+  /* Mobile trims to just "Cached - v2.0": no checkmark, the · swapped for a -. */
+  .offline-cached-check, .offline-cached-dot { display: none; }
+  .offline-cached-dash { display: inline; }
+}
 
 /* Install + Clear share the same outlined button shape as everything else.
    Clear keeps muted text so the destructive action stays de-emphasised. */
@@ -3090,6 +3193,9 @@ details[open] summary::after { content: "\2212"; }
 @media (max-width: 420px) {
   .site-nav { padding-left: 14px; padding-right: 14px; }
   .quickdrop { padding-left: 14px; padding-right: 14px; }
+  /* The full-bleed divider band's negative margins must match the padding
+     override above (14px), not var(--pad-x), or it overshoots the page edge. */
+  .quickdrop::after { margin-left: -14px; margin-right: -14px; }
   .quickdrop-grid { gap: 12px; }
   .quickdrop-zone .anr-dropzone-inner { padding: 18px 10px; }
   .quickdrop-zone .anr-dropzone-inner strong { font-size: 14px; }

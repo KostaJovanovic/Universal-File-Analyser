@@ -1239,7 +1239,7 @@ function computeExposureOverlay(imgEl, canvas, mode) {
   ctx.putImageData(out, 0, 0);
 }
 
-function openLightbox(src, alt, metaText, focusOpts, showAlpha, photoTools = true) {
+export function openLightbox(src, alt, metaText, focusOpts, showAlpha, photoTools = true) {
   const lb = ensureLightbox();
   const wrap = lb.querySelector('.lightbox-img-wrap');
   const lbImg = wrap.querySelector('img:first-child');
@@ -1878,6 +1878,15 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     }
     previewSlot.appendChild(thumb);
 
+    // Download the displayed image. For HEIC/RAW the preview is a converted JPEG,
+    // so offer it under a .jpg name; otherwise it's the original file's own bytes.
+    const dlName = convertedFile ? (file.name.replace(/\.[^.]+$/, '') + '.jpg') : file.name;
+    const dlBtn = el('a', {
+      href: url, download: dlName, class: 'anr-btn',
+      style: 'margin-top:10px;font-size:11px;width:100%;text-align:center;text-decoration:none;display:block;box-sizing:border-box;'
+    }, convertedFile ? 'Download photo (JPEG)' : 'Download photo');
+    previewSlot.appendChild(dlBtn);
+
     // RAW only: a button under the thumbnail to import the .xmp develop-settings
     // sidecar a raw developer (Photoshop / Lightroom / Camera Raw) saved alongside.
     if (RAW_EXTS.has(fileExt(file.name))) {
@@ -2017,7 +2026,10 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   }
 
   // ---- Histogram (full-width, in the body just above the container structure) ----
-  const histBlock = el('div', { class: 'anr-hist-block' });
+  const histBlock = el('div', { class: 'anr-card anr-hist-block' });
+  const [histH, histHelp] = h3help('RGB histogram',
+    'Per-channel tonal distribution: how many pixels sit at each brightness level for red, green and blue (0 = black on the left, 255 = white on the right). Click to enlarge.');
+  histBlock.appendChild(histH); histBlock.appendChild(histHelp);
   const histCanvas = el('canvas', { class: 'anr-histogram' });
   histCanvas.width = 1024; histCanvas.height = 200;
   histCanvas.style.cursor = 'zoom-in';

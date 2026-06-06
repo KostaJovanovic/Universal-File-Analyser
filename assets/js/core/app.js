@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 61;
+const COMMIT_COUNT = 62;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -38,6 +38,8 @@ import { renderXlsx } from '../renderers/xlsx.js';
 import { renderEpub } from '../renderers/epub.js';
 import { renderPptx } from '../renderers/pptx.js';
 import { renderStl } from '../renderers/stl.js';
+import { renderModel3d } from '../renderers/model3d.js';
+import { renderTimeline } from '../renderers/timeline.js';
 import { renderLrc } from '../renderers/lrc.js';
 import { renderMidi } from '../renderers/midi.js';
 import { renderSubtitles } from '../renderers/subtitles.js';
@@ -272,6 +274,12 @@ function classifyFile(file) {
   if (ext === 'epub') return 'epub';
   if (ext === 'pptx') return 'pptx';
   if (ext === 'stl') return 'stl';
+  // 3D models with an interactive WebGL viewer. Native meshes: STL (above), OBJ,
+  // PLY, OFF, 3MF, AMF. B-rep CAD via OpenCASCADE: STEP, IGES, BREP.
+  if (ext === '3mf' || ext === 'amf' || ext === 'obj' || ext === 'ply' || ext === 'off') return 'model3d';
+  if (ext === 'step' || ext === 'stp' || ext === 'iges' || ext === 'igs' || ext === 'brep') return 'model3d';
+  // Editing timelines (interchange formats): visual track/clip timeline view.
+  if (ext === 'edl' || ext === 'fcpxml' || ext === 'otio') return 'timeline';
   if (ext === 'lrc') return 'lrc';
   // MIDI is a score, not decodable audio - route it before the AUDIO_EXTS check.
   if (ext === 'mid' || ext === 'midi') return 'midi';
@@ -302,6 +310,8 @@ const ROUTES = {
   epub:        { render: renderEpub,        results: 'unknown', scroll: '#unknownResults' },
   pptx:        { render: renderPptx,        results: 'unknown', scroll: '#unknownResults' },
   stl:         { render: renderStl,         results: 'unknown', scroll: '#unknownResults' },
+  model3d:     { render: renderModel3d,     results: 'unknown', scroll: '#unknownResults' },
+  timeline:    { render: renderTimeline,    results: 'unknown', scroll: '#unknownResults' },
   lrc:         { render: renderLrc,         results: 'unknown', scroll: '#unknownResults' },
   midi:        { render: renderMidi,        results: 'unknown', scroll: '#unknownResults' },
   subtitles:   { render: renderSubtitles,   results: 'unknown', scroll: '#unknownResults' },
@@ -1479,7 +1489,16 @@ function boot() {
   }
   function markCached(btn, version) {
     const badge = cachedBadge(btn);
-    badge.textContent = '✓ Cached · v' + analyserVersion(version, RELEASE_COMMITS);
+    // Parts are separate spans so the responsive trimming is pure CSS: on mobile
+    // the checkmark and the · separator are hidden (a - is shown instead), so the
+    // badge reads just "Cached - v2.0". Desktop keeps "✓ Cached · v2.0".
+    const ver = 'v' + analyserVersion(version, RELEASE_COMMITS);
+    badge.textContent = '';
+    badge.appendChild(el('span', { class: 'offline-cached-check' }, '✓'));
+    badge.appendChild(el('span', {}, 'Cached'));
+    badge.appendChild(el('span', { class: 'offline-cached-dot' }, '·'));
+    badge.appendChild(el('span', { class: 'offline-cached-dash' }, '-'));
+    badge.appendChild(el('span', {}, ver));
     badge.hidden = false;
     btn.classList.add('is-done', 'is-fading');
   }

@@ -380,19 +380,36 @@ export async function sha256Hex(file) {
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Above this size SHA-256 isn't computed automatically (hashing reads the whole
+// file and is slow for big media); the user can trigger it with a button instead.
+const SHA256_AUTO_LIMIT = 50 * 1024 * 1024; // 50 MB
+
 export function sha256Row(file) {
   const hashRow = rowHelp('SHA-256', '',
     "SHA-256 is a cryptographic fingerprint of the file’s exact bytes. Identical files share the same hash; changing even a single byte changes it completely - useful for verifying a file hasn't been altered or matches a known copy.");
   const td = hashRow.querySelector('td');
-  const bar = asciiBar();
-  bar.indeterminate();
   td.textContent = '';
-  td.appendChild(bar);
-  sha256Hex(file).then(h => {
-    bar.stop();
-    td.textContent = h || 'unavailable';
-    td.style.wordBreak = 'break-all';
-  });
+
+  function compute() {
+    const bar = asciiBar();
+    bar.indeterminate();
+    td.textContent = '';
+    td.appendChild(bar);
+    sha256Hex(file).then(h => {
+      bar.stop();
+      td.textContent = h || 'unavailable';
+      td.style.wordBreak = 'break-all';
+    });
+  }
+
+  if (file && file.size > SHA256_AUTO_LIMIT) {
+    const btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Calculate SHA-256');
+    btn.addEventListener('click', () => compute(), { once: true });
+    td.appendChild(btn);
+    td.appendChild(el('span', { class: 'anr-hint', style: 'margin-left:8px;' }, `not computed automatically over ${fmtBytes(SHA256_AUTO_LIMIT)}`));
+  } else {
+    compute();
+  }
   return hashRow;
 }
 

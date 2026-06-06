@@ -1,6 +1,11 @@
 (function () {
   if (!document.startViewTransition) return;
 
+  // The path we're currently showing. Hash-only history changes (the sticky
+  // #photo / #audio / #video nav strip, and back/forward across those) keep this
+  // value, so popstate can tell a same-page scroll from a real page change.
+  var currentPath = location.pathname;
+
   function swap(doc) {
     document.title = doc.title;
 
@@ -46,6 +51,7 @@
         var doc = new DOMParser().parseFromString(html, 'text/html');
         document.startViewTransition(function () {
           swap(doc);
+          currentPath = new URL(url).pathname;
           if (push) history.pushState(null, '', url);
           window.dispatchEvent(new Event('anr:navigate'));
         });
@@ -74,6 +80,11 @@
   });
 
   window.addEventListener('popstate', function () {
+    // A hash-only move within the same document (the #photo/#audio/#video nav
+    // strip, or going back/forward across those jumps) must stay a native scroll.
+    // Re-fetching and swapping the page here would tear down the live analysis
+    // results, players and blob URLs. Only swap when the path itself changed.
+    if (location.pathname === currentPath) return;
     navigateTo(location.href, false);
   });
 })();

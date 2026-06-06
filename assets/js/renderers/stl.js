@@ -26,7 +26,7 @@ function parseStlGeometry(buf) {
     : parseBinaryStl(buf);
 }
 
-function makeResult(format, posArr, normArr) {
+export function makeResult(format, posArr, normArr) {
   const count = posArr.length / 9;
   const positions = new Float32Array(posArr);
   const normals = new Float32Array(normArr);
@@ -247,30 +247,14 @@ function buildViewer(geo) {
   return { wrap, ok: true, state, resize, start: () => { resize(); requestAnimationFrame(loop); }, markDirty: () => { dirty = true; } };
 }
 
-// ---------- entry point ----------
-export async function renderStl(file, resultsEl) {
-  resultsEl.hidden = false;
-  resultsEl.innerHTML = '';
-  resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));
-
-  let geo;
-  try {
-    const buf = await file.arrayBuffer();
-    geo = parseStlGeometry(buf);
-  } catch (e) {
-    resultsEl.innerHTML = '';
-    resultsEl.appendChild(errorCard('Could not read STL: ' + (e && e.message)));
-    return;
-  }
-  resultsEl.innerHTML = '';
-  if (!geo || !geo.count) {
-    resultsEl.appendChild(errorCard('No triangles found in this STL.'));
-    return;
-  }
-
-  // ---- 3D viewer card ----
+// Build a "3D model" card around a geometry: the WebGL viewer plus the spin /
+// reset / colour / fullscreen controls. Returns { viewCard, viewer }. The caller
+// appends viewCard to the DOM, then calls startViewer(viewer) once it's attached
+// (the viewer measures its container, so it must be in the document first).
+// Reused by the STL, STEP/IGES and 3MF renderers.
+export function buildViewerCard(geo, title = '3D model') {
   const viewCard = el('div', { class: 'anr-card' });
-  viewCard.appendChild(el('h3', {}, '3D model'));
+  viewCard.appendChild(el('h3', {}, title));
   const viewer = buildViewer(geo);
   viewCard.appendChild(viewer.wrap);
 
@@ -306,11 +290,41 @@ export async function renderStl(file, resultsEl) {
     controls.appendChild(fsBtn);
     viewCard.appendChild(controls);
   }
-  resultsEl.appendChild(viewCard);
-  if (viewer.ok) {
-    viewer.start();
-    window.addEventListener('resize', viewer.resize);
+  return { viewCard, viewer };
+}
+
+// Start a viewer once its card is attached to the document.
+export function startViewer(viewer) {
+  if (!viewer || !viewer.ok) return;
+  viewer.start();
+  window.addEventListener('resize', viewer.resize);
+}
+
+// ---------- entry point ----------
+export async function renderStl(file, resultsEl) {
+  resultsEl.hidden = false;
+  resultsEl.innerHTML = '';
+  resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));
+
+  let geo;
+  try {
+    const buf = await file.arrayBuffer();
+    geo = parseStlGeometry(buf);
+  } catch (e) {
+    resultsEl.innerHTML = '';
+    resultsEl.appendChild(errorCard('Could not read STL: ' + (e && e.message)));
+    return;
   }
+  resultsEl.innerHTML = '';
+  if (!geo || !geo.count) {
+    resultsEl.appendChild(errorCard('No triangles found in this STL.'));
+    return;
+  }
+
+  // ---- 3D viewer card ----
+  const { viewCard, viewer } = buildViewerCard(geo, '3D model');
+  resultsEl.appendChild(viewCard);
+  startViewer(viewer);
 
   // ---- Geometry stats ----
   const statsCard = el('div', { class: 'anr-card' });

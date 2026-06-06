@@ -1361,6 +1361,36 @@ async function parseXmp(file) {
 }
 
 // ---------- PE / EXE ----------
+
+// Per-field explanations for the PE/EXE readout. Attached to the parse result as
+// `_help` so the generic renderer shows them as tooltips (scoped to PE results, so
+// e.g. a STEP file's own "Description" field isn't given the PE meaning).
+const PE_HELP = {
+  'Format': 'The Portable Executable format and bitness of this file: PE32 = 32-bit, PE32+ = 64-bit. This describes the executable itself.',
+  'Architecture': 'The CPU the executable’s own machine code targets (x86 = 32-bit, x64 = 64-bit, ARM64). Note: software installers (NSIS, Inno Setup, …) are usually 32-bit stubs even when the program they install is 64-bit — so a file named "win64" can correctly read as 32-bit here.',
+  'Sections': 'Number of PE sections — contiguous regions such as code (.text), data (.data) and resources (.rsrc) the loader maps into memory.',
+  'Compile date': 'The timestamp the linker wrote into the PE header at build time. It can be zeroed or forged, so treat it as a hint.',
+  'Characteristics': 'COFF header flags describing the image: whether it’s an EXE or DLL, large-address-aware, relocations stripped, and so on.',
+  'Section names': 'The names of the PE sections. Unusual names hint at the toolchain or a packer (e.g. UPX0/UPX1 = UPX-packed; .ndata = NSIS installer).',
+  'Linker version': 'Version of the linker that produced the file — often maps to the Visual Studio / toolchain version used.',
+  'Subsystem': 'The environment the executable expects: Windows GUI, Console, native driver, EFI application, etc.',
+  'Subsystem version': 'Minimum OS subsystem version required to load and run the image.',
+  'Image size': 'Total size the image occupies in memory once loaded — not the file size on disk.',
+  'Security mitigations': 'Exploit-mitigation flags compiled into the binary: ASLR, DEP/NX, Control Flow Guard, Force-Integrity, No-SEH, and similar.',
+  'Entry point': 'The relative virtual address where execution begins after the loader maps the image.',
+  '.NET': 'The file carries a .NET CLR header — it’s a managed (.NET) assembly rather than pure native code.',
+  'Imported DLLs': 'How many external DLLs the executable links against, counted from its import table.',
+  'File version': 'The file’s version number from its VS_VERSIONINFO resource (FILEVERSION).',
+  'Product version': 'The version of the product this file belongs to, from VS_VERSIONINFO (PRODUCTVERSION).',
+  'Product name': 'The product name declared in the file’s version resource.',
+  'Description': 'The file description from the version resource — what the vendor calls this binary.',
+  'Company': 'The publisher / company name from the version resource.',
+  'Copyright': 'The legal copyright string from the version resource.',
+  'Original filename': 'The name the file was built as, from the version resource — useful when a file has since been renamed.',
+  'Internal name': 'The internal module name from the version resource.',
+  'Installer': 'The installer framework that produced this executable. Installer stubs are typically 32-bit even when they deploy 64-bit software.'
+};
+
 function parsePe(buf) {
   if (buf.length < 64 || buf[0] !== 0x4D || buf[1] !== 0x5A) return null;
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -1380,7 +1410,8 @@ function parsePe(buf) {
     'Format': peType,
     'Architecture': arch,
     'Sections': numSections,
-    'Compile date': date
+    'Compile date': date,
+    _help: PE_HELP
   };
 
   // COFF characteristics (peOffset + 22)
@@ -1407,6 +1438,23 @@ function parsePe(buf) {
     if (nm) secNames.push(nm);
   }
   if (secNames.length) result['Section names'] = secNames.join(', ');
+
+  // Installer-stub detection. Explains the common "win64 installer reads as
+  // 32-bit" surprise: NSIS / Inno stubs are 32-bit even when the bundled
+  // software is 64-bit. Section names are the most reliable signal; otherwise
+  // scan the head for the framework's ASCII marker.
+  let installer = null;
+  if (secNames.includes('.ndata')) installer = 'NSIS (Nullsoft Scriptable Install System)';
+  else if (secNames.includes('.wixburn')) installer = 'WiX Burn bundle';
+  else {
+    try {
+      const txt = new TextDecoder('latin1').decode(buf.subarray(0, Math.min(buf.length, 65536)));
+      if (/Inno Setup/.test(txt)) installer = 'Inno Setup';
+      else if (/InstallShield/.test(txt)) installer = 'InstallShield';
+      else if (/Nullsoft|\bNSIS\b/.test(txt)) installer = 'NSIS (Nullsoft Scriptable Install System)';
+    } catch (_) {}
+  }
+  if (installer) result['Installer'] = installer;
 
   const optBase = peOffset + 24;
   if (optBase + 2 > buf.length) return result;
@@ -2367,22 +2415,156 @@ async function parseLogOrigin(file) {
 }
 
 // ---------- STEP / IGES text peek ----------
+
+// Split a STEP entity's argument list into top-level args, respecting nested
+// parentheses and quoted strings ('' is an escaped quote inside a STEP string).
+function splitStepArgs(s) {
+  const args = [];
+  let depth = 0, inStr = false, cur = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      cur += c;
+      if (c === "'") { if (s[i + 1] === "'") { cur += "'"; i++; } else inStr = false; }
+    } else if (c === "'") { inStr = true; cur += c; }
+    else if (c === '(') { depth++; cur += c; }
+    else if (c === ')') { depth--; cur += c; }
+    else if (c === ',' && depth === 0) { args.push(cur.trim()); cur = ''; }
+    else cur += c;
+  }
+  if (cur.trim()) args.push(cur.trim());
+  return args;
+}
+
+// Pull the (...) body of a STEP header entity by name, e.g. FILE_NAME(...).
+function stepEntityBody(text, name) {
+  const m = new RegExp(name + '\\s*\\(', 'i').exec(text);
+  if (!m) return null;
+  let i = text.indexOf('(', m.index);
+  const start = i + 1;
+  let depth = 0, inStr = false;
+  for (; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) { if (c === "'") { if (text[i + 1] === "'") i++; else inStr = false; } }
+    else if (c === "'") inStr = true;
+    else if (c === '(') depth++;
+    else if (c === ')') { depth--; if (depth === 0) return text.slice(start, i); }
+  }
+  return null;
+}
+
+// Decode a STEP string literal: strip quotes, unescape '' and the \X2\..\X0\ /
+// \X\ unicode forms. '$' and '*' are the "unset" markers, treated as empty.
+function stepStr(tok) {
+  if (!tok) return '';
+  tok = tok.trim();
+  if (tok === '$' || tok === '*') return '';
+  const m = tok.match(/^'([\s\S]*)'$/);
+  if (!m) return tok;
+  return m[1].replace(/''/g, "'")
+    .replace(/\\X2\\([0-9A-Fa-f]+)\\X0\\/g, (_, h) => { let o = ''; for (let k = 0; k < h.length; k += 4) o += String.fromCharCode(parseInt(h.substr(k, 4), 16)); return o; })
+    .replace(/\\X\\([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .trim();
+}
+
+// A STEP arg that is a list of strings, e.g. ('Alice','Bob') -> ['Alice','Bob'].
+function stepStrList(tok) {
+  if (!tok) return [];
+  const inner = tok.trim().replace(/^\(/, '').replace(/\)$/, '');
+  return splitStepArgs(inner).map(stepStr).filter(Boolean);
+}
+
+// Normalise an originating-system / preprocessor string to a known CAD product.
+function detectCadApp(s) {
+  const u = (s || '').toUpperCase();
+  const map = [
+    [/SOLIDWORKS/, 'SolidWorks'],
+    [/CATIA/, 'CATIA'],
+    [/UNIGRAPHICS|\bNX\b|SIEMENS\s*NX/, 'Siemens NX'],
+    [/SOLID\s*EDGE/, 'Solid Edge'],
+    [/CREO|PRO\/?ENGINEER|PRO-ENGINEER|PRO\/E/, 'PTC Creo / Pro-ENGINEER'],
+    [/INVENTOR/, 'Autodesk Inventor'],
+    [/FUSION/, 'Autodesk Fusion'],
+    [/AUTOCAD/, 'AutoCAD'],
+    [/SPACECLAIM/, 'ANSYS SpaceClaim'],
+    [/ONSHAPE/, 'Onshape'],
+    [/FREECAD/, 'FreeCAD'],
+    [/RHINOCEROS|RHINO3D|\bRHINO\b/, 'Rhino'],
+    [/KOMPAS/, 'KOMPAS-3D'],
+    [/BRICSCAD/, 'BricsCAD'],
+    [/SKETCHUP/, 'SketchUp'],
+    [/TINKERCAD/, 'Tinkercad'],
+    [/OPEN\s*CASCADE|OPENCASCADE|OCCT/, 'Open CASCADE'],
+    [/ST-DEVELOPER|STEP\s*TOOLS/, 'ST-Developer (STEP Tools)'],
+    [/DASSAULT/, 'Dassault Systèmes'],
+    [/AUTODESK/, 'Autodesk'],
+  ];
+  for (const [re, label] of map) if (re.test(u)) return label;
+  return null;
+}
+
+// Map a FILE_SCHEMA name (or its embedded ISO 10303 part number) to its friendly
+// STEP application protocol.
+function stepProtocol(schema) {
+  const u = (schema || '').toUpperCase();
+  if (/MANAGED_MODEL_BASED_3D_ENGINEERING/.test(u) || /10303\s+242/.test(u)) return 'AP242 - Managed model-based 3D engineering';
+  if (/AUTOMOTIVE_DESIGN/.test(u) || /10303\s+214/.test(u)) return 'AP214 - Automotive mechanical design';
+  if (/CONFIG_CONTROL_DESIGN/.test(u) || /10303\s+203/.test(u)) return 'AP203 - Configuration-controlled 3D design';
+  if (/STRUCTURAL_ANALYSIS_DESIGN/.test(u) || /10303\s+209/.test(u)) return 'AP209 - Multidisciplinary analysis & design';
+  if (/ELECTRONIC_ASSEMBLY_INTERCONNECT|10303\s+210/.test(u)) return 'AP210 - Electronic assembly & interconnect';
+  if (/SHIP_/.test(u) || /10303\s+21[567]/.test(u)) return 'AP215/216/217 - Ship structures';
+  return null;
+}
+
+// Parse the ISO-10303-21 HEADER (FILE_DESCRIPTION / FILE_NAME / FILE_SCHEMA),
+// surfacing the originating CAD system + version, preprocessor, author, schema
+// and application protocol.
+export function parseStepHeader(text) {
+  const fdBody = stepEntityBody(text, 'FILE_DESCRIPTION');
+  const fnBody = stepEntityBody(text, 'FILE_NAME');
+  const fsBody = stepEntityBody(text, 'FILE_SCHEMA');
+
+  let descList = [], impl = '';
+  if (fdBody) { const a = splitStepArgs(fdBody); descList = stepStrList(a[0]); impl = stepStr(a[1]); }
+
+  // FILE_NAME(name, time_stamp, (authors), (orgs), preprocessor, originating_system, authorization)
+  let name = '', ts = '', authors = [], orgs = [], preproc = '', origSys = '', auth = '';
+  if (fnBody) {
+    const a = splitStepArgs(fnBody);
+    name = stepStr(a[0]); ts = stepStr(a[1]);
+    authors = stepStrList(a[2]); orgs = stepStrList(a[3]);
+    preproc = stepStr(a[4]); origSys = stepStr(a[5]); auth = stepStr(a[6]);
+  }
+
+  let schema = '', proto = '';
+  if (fsBody) { schema = stepStrList(fsBody).join(', '); proto = stepProtocol(schema); }
+
+  const app = detectCadApp(origSys + ' ' + preproc);
+
+  const fields = {};
+  if (app) fields['CAD software'] = app;
+  if (origSys) fields['Originating system'] = origSys;
+  if (preproc) fields['Preprocessor'] = preproc;
+  if (proto) fields['Application protocol'] = proto;
+  if (schema) fields['Schema'] = schema;
+  if (name) fields['Model name'] = name;
+  if (authors.length) fields['Author'] = authors.join(', ');
+  if (orgs.length) fields['Organisation'] = orgs.join(', ');
+  if (ts) fields['Exported'] = ts;
+  if (auth && auth.toLowerCase() !== 'none') fields['Authorization'] = auth;
+  if (descList.length) fields['Description'] = descList.join('; ');
+  if (impl) fields['Implementation level'] = impl;
+  return Object.keys(fields).length ? fields : null;
+}
+
 async function parseTextCad(file, format) {
   try {
-    const text = await file.slice(0, 4096).text();
-    const fields = {};
-    if (format === 'STEP') {
-      const desc = text.match(/DESCRIPTION\s*\(\s*'([^']+)'/);
-      if (desc) fields['Description'] = desc[1];
-      const impl = text.match(/IMPLEMENTATION_LEVEL\s*=\s*'([^']+)'/i) || text.match(/implementation_level\s*\(\s*'([^']+)'/i);
-      if (impl) fields['Implementation level'] = impl[1];
-      const schema = text.match(/FILE_SCHEMA\s*\(\s*\(\s*'([^']+)'/i);
-      if (schema) fields['Schema'] = schema[1];
-      const author = text.match(/FILE_NAME\s*\([^,]*,\s*'([^']+)'/i);
-      if (author) fields['Timestamp'] = author[1];
-      const org = text.match(/ORIGINATING_SYSTEM\s*=\s*'([^']+)'/i) || text.match(/originating_system\s*\(\s*'([^']+)'/i);
-      if (org) fields['Originating system'] = org[1];
-    } else if (format === 'IGES') {
+    // The HEADER sits at the very start; read generously so a long
+    // FILE_DESCRIPTION / author list still fits before the DATA section.
+    const text = await file.slice(0, format === 'STEP' ? 32768 : 4096).text();
+    if (format === 'STEP') return parseStepHeader(text);
+    if (format === 'IGES') {
+      const fields = {};
       const lines = text.split('\n');
       if (lines.length > 0) {
         const start = lines[0];
@@ -2390,8 +2572,9 @@ async function parseTextCad(file, format) {
           fields['Sending system'] = start.slice(24, 48).trim() || undefined;
         }
       }
+      return Object.keys(fields).length ? fields : null;
     }
-    return Object.keys(fields).length ? fields : null;
+    return null;
   } catch (_) {
     return null;
   }
@@ -3934,10 +4117,12 @@ export async function renderProprietary(file, container, extOverride) {
 
   let extraFileList = null;
   if (extra) {
+    // Optional per-field tooltips (e.g. the PE/EXE readout sets extra._help).
+    const help = extra._help || null;
     for (const [k, v] of Object.entries(extra)) {
       if (k === '_fileList') { extraFileList = v; continue; }
       if (k.startsWith('_')) continue;   // internal payloads (e.g. _font, _readableText)
-      if (v !== undefined) tbl.appendChild(row(k, String(v)));
+      if (v !== undefined) tbl.appendChild(help && help[k] ? rowHelp(k, String(v), help[k]) : row(k, String(v)));
     }
   }
 
