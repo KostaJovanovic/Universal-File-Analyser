@@ -865,6 +865,372 @@ async function parseWim(file, ext) {
 }
 
 // ===================================================================
+//                       Firmware headers (binary)
+// ===================================================================
+
+// ---------- TRX firmware (Broadcom / OpenWrt, 'HDR0') ----------
+async function parseTrx(file) {
+  const b = await readBytes(file, 32);
+  // magic 'HDR0' (0x30524448 LE) at offset 0.
+  if (!(b[0] === 0x48 && b[1] === 0x44 && b[2] === 0x52 && b[3] === 0x30)) return null;
+  const r = new Reader(b, true);
+  r.seek(4);
+  const length = r.u32();
+  const crc32 = r.u32();
+  const flagsVer = r.u32();
+  const version = (flagsVer >>> 16) & 0xff;     // low byte of high half
+  const flags = flagsVer & 0xffff;
+  const out = {
+    'Format': 'TRX firmware (Broadcom / OpenWrt)',
+    'Header version': version || 1,
+    'Image length': fmtBytes(length),
+    'CRC32': hex(crc32),
+  };
+  // Partition offsets: 3 (v1) or 4 (v2) u32 offsets follow.
+  const nOff = version >= 2 ? 4 : 3;
+  const offs = [];
+  for (let i = 0; i < nOff; i++) { const o = r.u32(); if (o) offs.push('partition ' + i + ' @ ' + hex(o)); }
+  if (flags) out['Flags'] = hex(flags, 4);
+  if (offs.length) out._sections = [{ title: 'Partition offsets (' + offs.length + ')', node: preBlock(offs.join('\n')) }];
+  return out;
+}
+
+// ---------- DFU image (STMicro DfuSe / plain DFU suffix) ----------
+async function parseDfu(file) {
+  const out = { 'Format': 'USB DFU firmware' };
+  // DfuSe images start with the ASCII prefix 'DfuSe'.
+  try {
+    const head = await readBytes(file, 11);
+    if (ascii(head, 0, 5) === 'DfuSe') {
+      out['Format'] = 'DfuSe firmware (STMicro)';
+      out['DfuSe version'] = head[5];
+      const r = new Reader(head, true); r.seek(6);
+      out['Image size'] = fmtBytes(r.u32());
+      out['Targets'] = head[10];
+    }
+  } catch (_) {}
+  // Trailing 16-byte DFU suffix: ...'UFD' signature at offset 8 of the suffix,
+  // suffix length byte at offset 11, total 16 bytes at end of file.
+  try {
+    const tail = await readRange(file, file.size - 16, file.size);
+    if (tail.length === 16 && tail[10] === 0x55 && tail[9] === 0x46 && tail[8] === 0x44) {
+      // bytes are stored 'UFD' reversed in the stream ('D','F','U' little-endian);
+      // suffix layout: bcdDevice(2) idProduct(2) idVendor(2) bcdDFU(2) 'UFD'(3) len(1) crc(4)
+      const r = new Reader(tail, true);
+      const bcdDevice = r.u16();
+      const idProduct = r.u16();
+      const idVendor = r.u16();
+      const bcdDFU = r.u16();
+      r.skip(3); // 'UFD'
+      const sufLen = r.u8();
+      const crc = r.u32();
+      out['DFU suffix'] = 'present (' + sufLen + ' bytes)';
+      out['USB vendor ID'] = idVendor === 0xffff ? 'any' : hex(idVendor, 4);
+      out['USB product ID'] = idProduct === 0xffff ? 'any' : hex(idProduct, 4);
+      if (bcdDevice !== 0xffff) out['Device release'] = hex(bcdDevice, 4);
+      out['DFU spec'] = hex(bcdDFU, 4);
+      out['Suffix CRC32'] = hex(crc);
+    } else if (out['Format'] === 'USB DFU firmware') {
+      out['Note'] = 'No DfuSe prefix or DFU suffix found; raw download image.';
+    }
+  } catch (_) {}
+  return out;
+}
+
+// ---------- UEFI / BIOS firmware volume (fd / rom) ----------
+async function parseUefiFv(file) {
+  const b = await readBytes(file, 72);
+  // EFI Firmware Volume header: 16-byte zero vector, 16-byte FS GUID,
+  // then u64 FvLength, then signature '_FVH' at offset 40.
+  if (ascii(b, 40, 4) !== '_FVH') {
+    // Some images carry a leading Intel Flash Descriptor (0x5AA5F00F at 0x10).
+    const fd = await readRange(file, 0x10, 0x14);
+    if (!(fd.length === 4 && fd[0] === 0x5a && fd[1] === 0xa5 && fd[2] === 0xf0 && fd[3] === 0x0f)) return null;
+    return {
+      'Format': 'UEFI / BIOS firmware image',
+      'Intel Flash Descriptor': 'present (0x5AA5F00F @ 0x10)',
+      'Image size': fmtBytes(file.size),
+      'Note': 'SPI flash descriptor region; firmware volumes follow. Identification only.',
+    };
+  }
+  const fsGuid = fmtGuid(b, 16);
+  const r = new Reader(b, true);
+  r.seek(32);
+  const fvLength = Number(r.u64());
+  r.seek(44);
+  r.u32(); // header checksum + ext offset packed; skip
+  const revision = b[55];
+  const KNOWN = {
+    '8C8CE578-8A3D-4F1C-9935-896185C32DD3': 'FFS v2',
+    '5473C07A-3DCB-4DCA-BD6F-1E9689E7349A': 'FFS v3',
+  };
+  return {
+    'Format': 'UEFI / BIOS firmware volume',
+    'Filesystem GUID': fsGuid + (KNOWN[fsGuid.toUpperCase()] ? ' (' + KNOWN[fsGuid.toUpperCase()] + ')' : ''),
+    'Volume length': fmtBytes(fvLength),
+    'Header revision': revision || '-',
+    'Image size': fmtBytes(file.size),
+  };
+}
+
+// ---------- UBI volume ('UBI#' erase-counter header) ----------
+async function parseUbi(file) {
+  const b = await readBytes(file, 64);
+  // EC header magic 'UBI#' (0x55424923 BE) at offset 0.
+  if (ascii(b, 0, 4) !== 'UBI#') return null;
+  const r = new Reader(b); // big-endian on flash
+  r.seek(4);
+  const version = r.u8();
+  r.skip(3); // padding1
+  const ecHi = r.u32(), ecLo = r.u32(); // 64-bit erase counter
+  const eraseCount = ecHi * 0x100000000 + ecLo;
+  const vidHdrOffset = r.u32();
+  const dataOffset = r.u32();
+  const imageSeq = r.u32();
+  return {
+    'Format': 'UBI volume (Linux MTD)',
+    'UBI version': version,
+    'Erase counter': eraseCount.toLocaleString(),
+    'VID header offset': vidHdrOffset,
+    'Data offset': dataOffset,
+    'Image sequence': hex(imageSeq),
+    'Note': 'Unsorted Block Image header; volume contents are LEB-mapped (identification level).',
+  };
+}
+
+// ---------- Android sparse image (simg, 0x3AFF26ED) ----------
+const SPARSE_CHUNK = { 0xcac1: 'raw', 0xcac2: 'fill', 0xcac3: 'don\'t care', 0xcac4: 'CRC32' };
+async function parseAndroidSparse(file) {
+  const b = await readBytes(file, 28);
+  // magic 0xED26FF3A little-endian at offset 0.
+  if (!(b[0] === 0x3a && b[1] === 0xff && b[2] === 0x26 && b[3] === 0xed)) return null;
+  const r = new Reader(b, true);
+  r.seek(4);
+  const major = r.u16();
+  const minor = r.u16();
+  r.u16(); // file header size
+  r.u16(); // chunk header size
+  const blockSize = r.u32();
+  const totalBlocks = r.u32();
+  const totalChunks = r.u32();
+  const imageChecksum = r.u32();
+  return {
+    'Format': 'Android sparse image',
+    'Version': major + '.' + minor,
+    'Block size': fmtBytes(blockSize),
+    'Total blocks': totalBlocks.toLocaleString(),
+    'Total chunks': totalChunks.toLocaleString(),
+    'Expanded size': fmtBytes(totalBlocks * blockSize),
+    'Image CRC32': imageChecksum ? hex(imageChecksum) : '(unset)',
+    'Note': 'AOSP libsparse container; expand with simg2img before mounting.',
+  };
+}
+
+// ===================================================================
+//                       Raw floppy / disk images (FAT BPB)
+// ===================================================================
+
+const FAT_MEDIA = {
+  0xf0: '3.5" 1.44/2.88 MB', 0xf8: 'fixed disk', 0xf9: '3.5" 720 KB / 5.25" 1.2 MB',
+  0xfa: '5.25" 320 KB', 0xfb: '3.5" 640 KB', 0xfc: '5.25" 180 KB', 0xfd: '5.25" 360 KB',
+  0xfe: '5.25" 160 KB', 0xff: '5.25" 320 KB',
+};
+const FLOPPY_GEOMETRY = {
+  368640: '5.25" 360 KB', 737280: '3.5" 720 KB', 1228800: '5.25" 1.2 MB',
+  1474560: '3.5" 1.44 MB', 2949120: '3.5" 2.88 MB', 1638400: '5.25" 1.6 MB',
+};
+async function parseFloppy(file, ext) {
+  const b = await readBytes(file, 512);
+  const out = { 'Format': 'Raw disk / floppy image (.' + ext + ')' };
+  if (FLOPPY_GEOMETRY[file.size]) out['Geometry (by size)'] = FLOPPY_GEOMETRY[file.size];
+  out['Image size'] = fmtBytes(file.size);
+  if (b.length < 512) return out;
+  const bootable = b[510] === 0x55 && b[511] === 0xaa;
+  // FAT BIOS Parameter Block: jump (EB.. / E9..) then OEM name at 3, bytes/sector at 11.
+  const jump = b[0];
+  if (jump === 0xeb || jump === 0xe9) {
+    const oem = ascii(b, 3, 8).replace(/\0+$/, '').trim();
+    const r = new Reader(b, true);
+    const bytesPerSector = r.seek(11).u16();
+    const sectorsPerCluster = r.u8();
+    r.seek(19);
+    const totalSectors16 = r.u16();
+    const mediaType = r.seek(21).u8();
+    r.seek(32);
+    const totalSectors32 = r.u32();
+    if (bytesPerSector === 512 || bytesPerSector === 1024 || bytesPerSector === 2048 || bytesPerSector === 4096) {
+      out['Boot sector'] = 'FAT BIOS Parameter Block';
+      if (oem) out['OEM name'] = oem;
+      out['Bytes/sector'] = bytesPerSector;
+      out['Sectors/cluster'] = sectorsPerCluster;
+      if (FAT_MEDIA[mediaType]) out['Media descriptor'] = FAT_MEDIA[mediaType] + ' (' + hex(mediaType, 2) + ')';
+      const total = totalSectors16 || totalSectors32;
+      if (total) out['Total sectors'] = total.toLocaleString();
+      // FAT type label sits at 0x36 (FAT12/16) or 0x52 (FAT32).
+      const fs16 = ascii(b, 0x36, 8).replace(/\0+$/, '').trim();
+      const fs32 = ascii(b, 0x52, 8).replace(/\0+$/, '').trim();
+      const fsType = /^FAT/i.test(fs16) ? fs16 : (/^FAT/i.test(fs32) ? fs32 : null);
+      if (fsType) out['FAT type'] = fsType;
+      // Volume label: FAT12/16 @ 0x2B, FAT32 @ 0x47 (11 bytes).
+      const lbl16 = ascii(b, 0x2b, 11).replace(/[\0\s]+$/, '').trim();
+      const lbl32 = ascii(b, 0x47, 11).replace(/[\0\s]+$/, '').trim();
+      const label = fsType && /32/.test(fsType) ? lbl32 : lbl16;
+      if (label && label !== 'NO NAME') out['Volume label'] = label;
+    }
+  }
+  if (!out['Boot sector']) {
+    out['Boot signature'] = bootable ? '0x55AA present' : 'absent';
+    out['Note'] = 'Raw sector image; no FAT BIOS Parameter Block recognised.';
+  }
+  return out;
+}
+
+// ===================================================================
+//                       VMware / Parallels descriptors
+// ===================================================================
+
+// ---------- VMware snapshot metadata (.vmsd key=value) ----------
+async function parseVmsd(file) {
+  const text = await file.slice(0, Math.min(file.size, 512 * 1024)).text();
+  const kv = {};
+  let lines = 0;
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^\s*([\w.:]+)\s*=\s*"?(.*?)"?\s*$/);
+    if (m) { kv[m[1].toLowerCase()] = m[2]; lines++; }
+  }
+  if (lines < 1 || !('snapshot.numsnapshots' in kv) && !('snapshot.current' in kv) && !Object.keys(kv).some((k) => /^snapshot\d+\./.test(k))) return null;
+  const out = { 'Format': 'VMware snapshot metadata (.vmsd)' };
+  if (kv['snapshot.numsnapshots'] != null) out['Snapshots'] = kv['snapshot.numsnapshots'];
+  if (kv['snapshot.current'] != null) out['Current snapshot UID'] = kv['snapshot.current'];
+  // snapshotN.displayName / .createTimeHigh / .filename
+  const names = [];
+  const seen = new Set();
+  for (const [k, v] of Object.entries(kv)) {
+    const m = k.match(/^snapshot(\d+)\.displayname$/);
+    if (m && !seen.has(m[1])) { seen.add(m[1]); names.push('#' + m[1] + ': ' + v); }
+  }
+  if (names.length) out._sections = [{ title: 'Snapshot names (' + names.length + ')', node: preBlock(names.join('\n')) }];
+  return out;
+}
+
+// ---------- VMware NVRAM (BIOS / UEFI variable store) ----------
+async function parseNvram(file) {
+  const b = await readBytes(file, 64);
+  const out = { 'Format': 'VMware NVRAM', 'Size': fmtBytes(file.size) };
+  // VMware NVRAM begins with 'MRVN' tag; UEFI builds embed an EFI FV later.
+  if (ascii(b, 0, 4) === 'MRVN') {
+    out['Signature'] = 'MRVN (VMware NVRAM)';
+  } else {
+    out['Signature'] = '(no MRVN tag)';
+  }
+  // Heuristic firmware type: scan the first 64 KiB for an EFI '_FVH' volume.
+  try {
+    const scan = await readBytes(file, Math.min(file.size, 64 * 1024));
+    const fvh = findBytes(scan, new Uint8Array([0x5f, 0x46, 0x56, 0x48])); // '_FVH'
+    out['Firmware type'] = fvh >= 0 ? 'UEFI (EFI firmware volume present)' : 'BIOS (legacy)';
+  } catch (_) {}
+  out['Note'] = 'Virtual machine non-volatile RAM (boot order, EFI variables).';
+  return out;
+}
+
+// ---------- Parallels disk descriptor / config (pvm bundle, hdd) ----------
+async function parseParallels(file, ext) {
+  // .pvm is a bundle directory; a dropped file is usually DiskDescriptor.xml,
+  // config.pvs, or the .hdd disk. Probe the leading bytes for each shape.
+  const head = await readBytes(file, Math.min(file.size, 64 * 1024));
+  const text = latin1(head);
+  // Parallels expandable disk image header signature 'WithoutFreeSpace' /
+  // 'WithFreeSpace' appears in the .hdd binary header.
+  const sigMatch = text.match(/With(?:out)?FreeSpace/);
+  if (ext === 'hdd' && sigMatch) {
+    const r = new Reader(head, true);
+    r.seek(16);
+    const version = r.u32();
+    const heads = r.u32();
+    const cylinders = r.u32();
+    const tracks = r.u32();
+    return {
+      'Format': 'Parallels virtual disk (.hdd)',
+      'Signature': sigMatch[0],
+      'Version': version,
+      'Cylinders': cylinders,
+      'Heads': heads,
+      'Sectors/track': tracks,
+      'Image size': fmtBytes(file.size),
+    };
+  }
+  // XML descriptor (DiskDescriptor.xml or config.pvs).
+  if (/<Parallels_disk_image/i.test(text) || /<ParallelsSavedStates/i.test(text) || /<ParallelsVirtualMachine/i.test(text)) {
+    const out = { 'Format': ext === 'hdd' ? 'Parallels disk descriptor' : 'Parallels VM bundle (.pvm)' };
+    const cyl = xmlText(text, 'Cylinders');
+    const heads = xmlText(text, 'Heads');
+    const sectors = xmlText(text, 'Sectors');
+    const blockSize = xmlText(text, 'Block_size') || xmlText(text, 'BlockSize');
+    const name = xmlAttr(text, 'ParallelsVirtualMachine', 'name') || xmlText(text, 'Name');
+    if (name) out['VM name'] = name;
+    if (cyl && heads && sectors) {
+      out['Geometry'] = cyl + ' cyl / ' + heads + ' heads / ' + sectors + ' sectors';
+      const size = Number(cyl) * Number(heads) * Number(sectors) * 512;
+      if (size > 0) out['Virtual size'] = fmtBytes(size);
+    }
+    if (blockSize) out['Block size'] = blockSize + ' sectors';
+    return out;
+  }
+  // Legacy Connectix/Microsoft Virtual PC .hdd uses a 'conectix' footer.
+  if (ext === 'hdd') {
+    try {
+      const tail = await readRange(file, file.size - 512, file.size);
+      if (ascii(tail, 0, 8) === 'conectix') {
+        return {
+          'Format': 'Virtual PC hard disk (legacy .hdd)',
+          'Footer': 'conectix',
+          'Image size': fmtBytes(file.size),
+          'Note': 'Microsoft/Connectix Virtual PC disk; shares the VHD footer layout.',
+        };
+      }
+    } catch (_) {}
+  }
+  return { 'Format': ext === 'hdd' ? 'Parallels / Virtual PC disk (.hdd)' : 'Parallels VM bundle (.pvm)', 'Size': fmtBytes(file.size), 'Note': 'Parallels Desktop container; metadata lives in DiskDescriptor.xml / config.pvs.' };
+}
+
+// ===================================================================
+//                       Backup / manifest (text)
+// ===================================================================
+
+// ---------- OVF manifest (.mf, 'SHA256(file)= hash' lines) ----------
+async function parseOvfManifest(file) {
+  const text = await file.slice(0, Math.min(file.size, 256 * 1024)).text();
+  // Lines look like: SHA256(disk.vmdk)= 9f86d0...
+  const re = /^(SHA\d+|MD5)\s*\(([^)]+)\)\s*=\s*([0-9a-fA-F]+)\s*$/gm;
+  const entries = [];
+  const algos = {};
+  let m;
+  while ((m = re.exec(text))) {
+    entries.push({ algo: m[1].toUpperCase(), file: m[2], hash: m[3] });
+    algos[m[1].toUpperCase()] = (algos[m[1].toUpperCase()] || 0) + 1;
+  }
+  if (!entries.length) return null;
+  const out = {
+    'Format': 'OVF manifest (.mf)',
+    'Files': entries.length,
+    'Algorithm': Object.entries(algos).map(([k, v]) => k + ' (' + v + ')').join(', '),
+  };
+  const lines = entries.map((e) => e.algo + '  ' + e.file + '\n      ' + e.hash);
+  out._sections = [{ title: 'Checksums (' + entries.length + ')', node: preBlock(lines.join('\n')), open: true }];
+  return out;
+}
+
+// ---------- Veeam backup (.vbk, identification) ----------
+async function parseVbk(file) {
+  const out = {
+    'Format': 'Veeam backup file (.vbk)',
+    'Image size': fmtBytes(file.size),
+    'Note': 'Veeam Backup & Replication full backup; encrypted/compressed block store. Job metadata lives in the companion .vbm XML. Identification only.',
+  };
+  return out;
+}
+
+// ===================================================================
 //                       identification-only (rare AND hard)
 // ===================================================================
 function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
@@ -913,6 +1279,26 @@ export const PARSERS = {
   wim: (c) => parseWim(c.file, c.ext),
   swm: (c) => parseWim(c.file, c.ext),
   esd: (c) => parseWim(c.file, c.ext),
+  // Firmware headers
+  trx: (c) => parseTrx(c.file),
+  dfu: (c) => parseDfu(c.file),
+  fd: (c) => parseUefiFv(c.file),
+  rom: (c) => parseUefiFv(c.file),
+  ubi: (c) => parseUbi(c.file),
+  simg: (c) => parseAndroidSparse(c.file),
+  itb: (c) => parseDtb(c.file),
+  // Raw floppy / disk images
+  dsk: (c) => parseFloppy(c.file, c.ext),
+  ima: (c) => parseFloppy(c.file, c.ext),
+  vfd: (c) => parseFloppy(c.file, c.ext),
+  // VMware / Parallels descriptors
+  vmsd: (c) => parseVmsd(c.file),
+  nvram: (c) => parseNvram(c.file),
+  pvm: (c) => parseParallels(c.file, c.ext),
+  hdd: (c) => parseParallels(c.file, c.ext),
+  // Backup / manifest
+  mf: (c) => parseOvfManifest(c.file),
+  vbk: (c) => parseVbk(c.file),
   // identification-only: rare AND hard (no native decoder)
   e01: ident('EnCase / EWF forensic image', 'Expert Witness Format; sectioned container with case/hash metadata. Identification only (no in-browser decoder).'),
   ewf: ident('EnCase / EWF forensic image', 'Expert Witness Format. Identification only.'),

@@ -10,8 +10,9 @@
    counts and metadata. Dependency-free. */
 
 import { el, row, fmtBytes, preBlock } from '../core/util.js';
-import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, utf8, gunzip } from '../core/binutil.js';
+import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, utf8, utf16, gunzip } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
+import { openCfbf } from '../lib/cfbf.js';
 
 // ---------- small helpers ----------
 
@@ -879,6 +880,322 @@ async function parseSpz(file) {
   };
 }
 
+// ---------- Draco compressed mesh (.drc) ----------
+async function parseDraco(file) {
+  // Header: 'DRACO' magic, major u8, minor u8, encoderType u8, encoderMethod u8,
+  //         flags u16 (all big-endian).
+  const b = await head(file, 16);
+  if (ascii(b, 0, 5) !== 'DRACO') return null;
+  const r = new Reader(b, false); r.seek(5);
+  const major = r.u8(), minor = r.u8();
+  const encoderType = r.u8();
+  const encoderMethod = r.u8();
+  const out = {
+    'Format': 'Draco compressed mesh',
+    'Draco version': major + '.' + minor,
+  };
+  out['Geometry type'] = encoderType === 0 ? 'point cloud' : encoderType === 1 ? 'triangular mesh' : 'type ' + encoderType;
+  if (encoderType === 1) out['Method'] = encoderMethod === 0 ? 'edgebreaker' : encoderMethod === 1 ? 'sequential' : 'method ' + encoderMethod;
+  out['File size'] = fmtBytes(file.size);
+  out['Note'] = 'Google Draco geometry compression (glTF / web). Full attribute decode needs the Draco library.';
+  return out;
+}
+
+// ---------- DirectX model (.x - text 'xof ' or binary) ----------
+async function parseDirectX(file) {
+  const b = await head(file, Math.min(file.size, SAMPLE));
+  if (ascii(b, 0, 4) !== 'xof ') return null;
+  // 16-byte header: 'xof ', 4-byte version (e.g. '0303'), 4-byte format
+  // ('txt ', 'bin ', 'tzip', 'bzip'), 4-byte float size ('0032'/'0064').
+  const hdr = latin1(b.subarray(0, 16));
+  const verMaj = hdr.slice(4, 6), verMin = hdr.slice(6, 8);
+  const format = hdr.slice(8, 12).trim();
+  const floatBits = hdr.slice(12, 16);
+  const fmtMap = { txt: 'text', bin: 'binary', tzip: 'compressed text', bzip: 'compressed binary' };
+  const out = {
+    'Format': 'DirectX model (.x)',
+    'Version': verMaj + '.' + verMin,
+    'Encoding': (fmtMap[format] || format) + (/^\d+$/.test(floatBits) ? ' (' + parseInt(floatBits, 10) + '-bit floats)' : ''),
+  };
+  if (format === 'txt') {
+    const text = latin1(b);
+    out['Meshes'] = (text.match(/\bMesh\b/g) || []).length;
+    out['Frames'] = (text.match(/\bFrame\b/g) || []).length;
+    out['Materials'] = (text.match(/\bMaterial\b/g) || []).length;
+    const anims = (text.match(/\bAnimationSet\b/g) || []).length;
+    if (anims) out['Animation sets'] = anims;
+    if (file.size > SAMPLE) out['Note'] = 'counts from first 2 MB';
+  } else {
+    out['Note'] = 'binary token stream - counts need full token decode';
+  }
+  return out;
+}
+
+// ---------- Qubicle Binary (.qb) ----------
+async function parseQb(file) {
+  // Header: version u32 (e.g. 0x01010000), colorFormat u32, zAxisOrientation u32,
+  //         compressed u32, visibilityMaskEncoded u32, numMatrices u32. Then per
+  //         matrix: nameLen u8, name, sizeX/Y/Z u32, posX/Y/Z i32, voxel data.
+  const b = await head(file, Math.min(file.size, 256 * 1024));
+  const r = new Reader(b, true);
+  const verBytes = b.subarray(0, 4);
+  const version = verBytes[0] + '.' + verBytes[1] + '.' + verBytes[2] + '.' + verBytes[3];
+  r.skip(4);
+  const colorFormat = r.u32();
+  const zOrient = r.u32();
+  const compressed = r.u32();
+  r.u32(); // visibilityMaskEncoded
+  const numMatrices = r.u32();
+  if (numMatrices === 0 || numMatrices > 100000) return null;
+  const out = {
+    'Format': 'Qubicle Binary (voxel)',
+    'Version': version,
+    'Colour format': colorFormat === 0 ? 'RGBA' : 'BGRA',
+    'Z-axis orientation': zOrient === 0 ? 'left-handed' : 'right-handed',
+    'Compression': compressed ? 'RLE' : 'none',
+    'Matrices': numMatrices,
+  };
+  // Read matrix names + dimensions (only safe to walk when uncompressed; for the
+  // header summary we just read names/dims which precede voxel data either way).
+  const names = []; let totalVoxels = 0;
+  try {
+    for (let i = 0; i < numMatrices && r.remaining() > 16; i++) {
+      const nameLen = r.u8();
+      if (nameLen > r.remaining()) break;
+      const name = r.ascii(nameLen).replace(/[^\x20-\x7e]/g, '');
+      const sx = r.u32(), sy = r.u32(), sz = r.u32();
+      r.skip(12); // posX/Y/Z (i32 each)
+      names.push(name + ' (' + sx + 'x' + sy + 'x' + sz + ')');
+      totalVoxels += sx * sy * sz;
+      if (compressed) break; // can't skip RLE voxel data cheaply
+      const voxBytes = sx * sy * sz * 4;
+      if (voxBytes > r.remaining()) break;
+      r.skip(voxBytes);
+    }
+  } catch (_) {}
+  if (names.length) out['Matrix list'] = names.slice(0, 8).join(', ') + (names.length > 8 ? ', ...' : '');
+  if (!compressed && totalVoxels) out['Grid voxels'] = totalVoxels.toLocaleString();
+  return out;
+}
+
+// ---------- ksplat (block-compressed Gaussian splat) ----------
+async function parseKsplat(file) {
+  // GaussianSplats3D / SuperSplat .ksplat: 4096-byte header. Common layout has a
+  // version major/minor near the start and a max-section-count; section headers
+  // follow. Layout has changed across versions, so we identify + read conservatively.
+  const b = await head(file, Math.min(file.size, 8192));
+  const r = new Reader(b, true);
+  const versionMajor = r.u8();
+  const versionMinor = r.u8();
+  // Plausibility: versions are small.
+  if (versionMajor > 20) return null;
+  const out = {
+    'Format': 'KSplat (block-compressed Gaussian splat)',
+    'Version': versionMajor + '.' + versionMinor,
+    'File size': fmtBytes(file.size),
+    'Note': 'GaussianSplats3D / SuperSplat compressed 3DGS. Splat counts live in per-section headers; full decode needs the loader.',
+  };
+  return out;
+}
+
+// ---------- Universal 3D (.u3d, ECMA-363) ----------
+async function parseU3d(file) {
+  // First block is the File Header block: blockType u32 = 0x00443355, then dataSize
+  // u32, metaDataSize u32, then version i16 (major), i16 (minor), profile u32.
+  const b = await head(file, 64);
+  const r = new Reader(b, true);
+  const blockType = r.u32();
+  if (blockType !== 0x00443355) return null; // 'U3D\0' file-header marker
+  const dataSize = r.u32();
+  r.u32(); // metaDataSize
+  const verMajor = r.i16 ? r.i16() : r.u16();
+  const verMinor = r.i16 ? r.i16() : r.u16();
+  const profile = r.u32();
+  const profiles = [];
+  if (profile & 0x1) profiles.push('extensible');
+  if (profile & 0x2) profiles.push('no compression');
+  if (profile & 0x4) profiles.push('defined units');
+  const out = {
+    'Format': 'Universal 3D (ECMA-363)',
+    'Version': verMajor + (verMinor ? '.' + verMinor : ''),
+    'Header data size': dataSize,
+  };
+  if (profiles.length) out['Profile flags'] = profiles.join(', ');
+  out['Note'] = 'U3D scene (3D PDF). Mesh/node counts need full block-stream decode.';
+  return out;
+}
+
+// ---------- 3DXML (Dassault, ZIP/XML) ----------
+async function parse3dxml(file) {
+  let zip; try { zip = await openZip(file); } catch (_) { return null; }
+  const names = zip.names();
+  const rootName = names.find((n) => /\.3dxml$/i.test(n)) || names.find((n) => /^[^/]+\.3dxml$/i.test(n));
+  // The manifest names the root; fall back to a 3dxml member or Manifest.
+  let xml = null, used = null;
+  for (const cand of [rootName, names.find((n) => /Manifest\.xml$/i.test(n)), names.find((n) => /\.3dxml$/i.test(n))]) {
+    if (!cand) continue;
+    try { const t = await zip.text(cand); if (t && /<\w/.test(t)) { xml = t; used = cand; break; } } catch (_) {}
+  }
+  if (!xml) return null;
+  const out = { 'Format': '3DXML (Dassault)' };
+  if (used) out['Root document'] = used;
+  const app = (xml.match(/<Application[^>]*>([^<]+)<\/Application>/i) || [])[1] ||
+              (xml.match(/applicationName="([^"]+)"/i) || [])[1];
+  if (app) out['Application'] = app;
+  const ver = (xml.match(/SchemaVersion="([^"]+)"/i) || [])[1] || (xml.match(/<Schema[^>]*version="([^"]+)"/i) || [])[1];
+  if (ver) out['Schema version'] = ver;
+  const refs = (xml.match(/<Reference3D\b/gi) || []).length;
+  const instances = (xml.match(/<Instance3D\b/gi) || []).length;
+  const reps = (xml.match(/<ReferenceRep\b/gi) || []).length;
+  if (refs) out['Product references'] = refs;
+  if (instances) out['Instances'] = instances;
+  if (reps) out['Representations'] = reps;
+  const reps3d = names.filter((n) => /\.3DRep$/i.test(n)).length;
+  if (reps3d) out['3DRep parts'] = reps3d;
+  out['Members'] = names.filter((n) => !/\/$/.test(n)).length;
+  return out;
+}
+
+// ---------- Wings3D (.wings - Erlang term binary, gzipped) ----------
+async function parseWings(file) {
+  const raw = await head(file, Math.min(file.size, 1024 * 1024));
+  // File starts with the ASCII tag '#!WINGS-1.0\r\n' then a gzip stream of an
+  // Erlang external term (which itself begins with 0x83).
+  const tag = latin1(raw.subarray(0, 16));
+  if (!/^#!WINGS/i.test(tag)) return null;
+  const out = { 'Format': 'Wings3D model' };
+  const verM = tag.match(/^#!WINGS-([\d.]+)/i);
+  if (verM) out['File tag version'] = verM[1];
+  // Locate the gzip stream after the tag and inflate.
+  let gzStart = -1;
+  for (let i = 0; i < raw.length - 1; i++) { if (raw[i] === 0x1f && raw[i + 1] === 0x8b) { gzStart = i; break; } }
+  if (gzStart >= 0) {
+    try {
+      const all = new Uint8Array(await file.arrayBuffer());
+      const inf = await gunzip(all.subarray(gzStart));
+      if (inf && inf.length) {
+        const text = latin1(inf);
+        // Erlang term holds shape/material atoms; count object/material markers.
+        const objects = (text.match(/\bobject_mode\b/g) || []).length || (text.match(/\bwe\b/g) || []).length;
+        const mats = (text.match(/\bdiffuse\b/g) || []).length;
+        if (objects) out['Objects (approx)'] = objects;
+        if (mats) out['Material refs (approx)'] = mats;
+      }
+    } catch (_) {}
+  }
+  out['Note'] = 'Wings3D subdivision model (gzipped Erlang term). Exact counts need a term decoder.';
+  return out;
+}
+
+// ---------- Autodesk Revit (.rvt/.rfa/.rte/.rft - OLE/CFBF) ----------
+const REVIT_KIND = { rvt: 'Revit project', rfa: 'Revit family', rte: 'Revit project template', rft: 'Revit family template' };
+async function parseRevit(file, ext) {
+  let cfbf; try { cfbf = await openCfbf(file); } catch (_) { cfbf = null; }
+  if (!cfbf) return null;
+  const out = { 'Format': REVIT_KIND[ext] || 'Autodesk Revit document' };
+  // BasicFileInfo stream holds a UTF-16 blob with the Revit build/version string.
+  let bytes = null;
+  try { bytes = cfbf.readStream((c) => /BasicFileInfo/i.test(c.name)); } catch (_) {}
+  if (bytes && bytes.length) {
+    const txt = utf16(bytes, true).replace(/ /g, '');
+    const build = (txt.match(/Revit Build:\s*([^\r\n]+)/i) || [])[1];
+    if (build) out['Revit build'] = build.trim();
+    const ver = (txt.match(/Version Name:\s*([^\r\n]+)/i) || [])[1] ||
+                (txt.match(/Autodesk Revit\s+([0-9]{4}[^\r\n]*)/i) || [])[1] ||
+                (txt.match(/Format:\s*([0-9]{4})/i) || [])[1];
+    if (ver) out['Version'] = ver.trim();
+    const central = /Central Model Path:\s*(\S+)/i.exec(txt);
+    if (central && central[1]) out['Central model'] = central[1].trim();
+    if (/IsSingleUserCloudModel|IsLocal/i.test(txt)) {
+      const wsm = /Worksharing:\s*([^\r\n]+)/i.exec(txt);
+      if (wsm) out['Worksharing'] = wsm[1].trim();
+    }
+  }
+  out['OLE streams'] = cfbf.entries.filter((e) => e.type === 2).length;
+  if (!out['Version'] && !out['Revit build']) out['Note'] = 'Autodesk Revit OLE2 document - version blob not located.';
+  return out;
+}
+
+// ---------- Solid Edge (.par/.psm/.pwd - OLE/CFBF) ----------
+const SE_KIND = { par: 'Solid Edge Part', psm: 'Solid Edge Sheet Metal', pwd: 'Solid Edge Weldment' };
+async function parseSolidEdge(file, ext) {
+  let cfbf; try { cfbf = await openCfbf(file); } catch (_) { cfbf = null; }
+  if (!cfbf) return null;
+  const out = { 'Format': SE_KIND[ext] || 'Solid Edge document' };
+  // SummaryInformation / document streams carry the application + version.
+  let ver = null;
+  try {
+    const si = cfbf.readStream((c) => /SummaryInformation/i.test(c.name));
+    if (si) {
+      const txt = latin1(si);
+      const m = txt.match(/Solid Edge[^\d]*([\d.]+)/i) || txt.match(/Version[^\d]*([\d.]+)/i);
+      if (m) ver = m[1];
+    }
+  } catch (_) {}
+  if (ver) out['Solid Edge version'] = ver;
+  out['OLE streams'] = cfbf.entries.filter((e) => e.type === 2).length;
+  out['Note'] = 'Siemens Solid Edge OLE2 document - identification only.';
+  return out;
+}
+
+// ---------- legacy Visio binary (.vsd - OLE/CFBF) ----------
+async function parseVsd(file) {
+  let cfbf; try { cfbf = await openCfbf(file); } catch (_) { cfbf = null; }
+  if (!cfbf) return null;
+  const out = { 'Format': 'Visio Drawing (legacy binary)' };
+  const names = cfbf.entries.map((e) => e.name);
+  const visio = names.some((n) => /VisioDocument/i.test(n));
+  if (!visio) return null;
+  out['Container'] = 'OLE2 compound (VisioDocument stream)';
+  out['OLE streams'] = cfbf.entries.filter((e) => e.type === 2).length;
+  out['Note'] = 'Pre-2013 binary Visio. Use .vsdx for full page/metadata extraction.';
+  return out;
+}
+
+// ---------- Autodesk Navisworks (.nwd/.nwf/.nwc) ----------
+const NW_KIND = { nwd: 'published model', nwf: 'aggregated file set', nwc: 'cache file' };
+async function parseNavisworks(file, ext) {
+  const b = await head(file, 256);
+  const text = latin1(b);
+  // Navisworks files open with an XML-ish header line naming the product/version.
+  const isNw = /Navisworks|LcOp|\bRoamer\b/i.test(text) || /^<\?xml/.test(text) && /nwd|nwc|nwf/i.test(text);
+  const out = {
+    'Format': 'Autodesk Navisworks (' + (NW_KIND[ext] || ext) + ')',
+  };
+  const verM = text.match(/Navisworks[^0-9]*([0-9]{1,4}(?:\.[0-9]+)?)/i);
+  if (verM) out['Navisworks version'] = verM[1];
+  if (!isNw && !verM) {
+    out['Note'] = 'Autodesk Navisworks ' + (NW_KIND[ext] || '') + ' - proprietary binary, identification only.';
+  } else {
+    out['Note'] = 'Autodesk Navisworks ' + (NW_KIND[ext] || '') + '. Proprietary container - identification only.';
+  }
+  return out;
+}
+
+// ---------- CATIA V4 (.model/.exp/.dlv/.session) ----------
+async function parseCatiaV4(file, ext) {
+  const b = await head(file, 512);
+  const text = latin1(b);
+  // CATIA V4 files carry a 'CATIA' / 'V4' signature in the leading record.
+  if (!/CATIA/i.test(text)) {
+    // Some .model files lead with a numeric record header; still identify by ext.
+    return {
+      'Format': 'CATIA V4 ' + ext.toUpperCase(),
+      'Note': 'Dassault CATIA V4 legacy geometry - proprietary binary, identification only.',
+    };
+  }
+  const out = { 'Format': 'CATIA V4 ' + ext.toUpperCase() };
+  const verM = text.match(/V4[^0-9]*([0-9]+(?:\.[0-9]+)?)/i) || text.match(/RELEASE[^0-9]*([0-9.]+)/i);
+  if (verM) out['Version'] = verM[1];
+  out['Note'] = 'Dassault CATIA V4 legacy geometry - identification only.';
+  return out;
+}
+
+// ---------- proprietary scanner point clouds (.cl3/.clr/.tzf) ----------
+function scanner(name, vendor) {
+  return () => ({ 'Format': name, 'Note': vendor + ' - proprietary scan binary, identification only.' });
+}
+
 // ---------- identification-only (rare AND hard) ----------
 function ident(name, note) {
   return () => ({ 'Format': name, 'Note': note });
@@ -948,6 +1265,40 @@ export const PARSERS = {
   // Gaussian splats
   splat: (c) => parseSplat(c.file),
   spz:   (c) => parseSpz(c.file),
+  ksplat: (c) => parseKsplat(c.file),
+
+  // compressed / exchange mesh
+  drc:   (c) => parseDraco(c.file),
+  x:     (c) => parseDirectX(c.file),
+  qb:    (c) => parseQb(c.file),
+  u3d:   (c) => parseU3d(c.file),
+  '3dxml': (c) => parse3dxml(c.file),
+  wings: (c) => parseWings(c.file),
+
+  // Autodesk Revit (OLE/CFBF)
+  rvt:   (c) => parseRevit(c.file, c.ext),
+  rfa:   (c) => parseRevit(c.file, c.ext),
+  rte:   (c) => parseRevit(c.file, c.ext),
+  rft:   (c) => parseRevit(c.file, c.ext),
+
+  // Siemens Solid Edge (OLE/CFBF)
+  par:   (c) => parseSolidEdge(c.file, c.ext),
+  psm:   (c) => parseSolidEdge(c.file, c.ext),
+  pwd:   (c) => parseSolidEdge(c.file, c.ext),
+
+  // legacy Visio binary (OLE/CFBF)
+  vsd:   (c) => parseVsd(c.file),
+
+  // Autodesk Navisworks
+  nwd:   (c) => parseNavisworks(c.file, c.ext),
+  nwf:   (c) => parseNavisworks(c.file, c.ext),
+  nwc:   (c) => parseNavisworks(c.file, c.ext),
+
+  // CATIA V4 legacy
+  model:   (c) => parseCatiaV4(c.file, c.ext),
+  exp:     (c) => parseCatiaV4(c.file, c.ext),
+  dlv:     (c) => parseCatiaV4(c.file, c.ext),
+  session: (c) => parseCatiaV4(c.file, c.ext),
 
   // identification-only (rare AND hard)
   abc:   (c) => parseAbc(c.file),
@@ -955,4 +1306,7 @@ export const PARSERS = {
   prc:   ident('PRC (3D PDF)', 'Adobe/ISO 3D PDF stream. Tessellation/B-rep decode needs a dedicated PRC reader.'),
   fls:   ident('FARO scan (FLS)', 'FARO laser-scan project. Proprietary binary - identification only.'),
   fws:   ident('FARO workspace (FWS)', 'FARO scan workspace. Proprietary binary - identification only.'),
+  cl3:   scanner('FARO scan (CL3)', 'FARO Scene point cloud'),
+  clr:   scanner('FARO scan (CLR)', 'FARO Scene compressed point cloud'),
+  tzf:   scanner('Trimble scan (TZF)', 'Trimble RealWorks / scanner'),
 };

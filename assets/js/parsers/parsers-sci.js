@@ -1267,6 +1267,476 @@ async function parseHea(file) {
   return out;
 }
 
+// ============================================================================
+// R serialized objects: .rds / .RData / .rda  (RDX2/RDX3 + XDR / gzip)
+// ============================================================================
+const R_SEXP = {
+  0: 'NULL', 1: 'symbol', 2: 'pairlist', 3: 'closure', 4: 'environment',
+  6: 'language', 9: 'char', 10: 'logical', 13: 'integer', 14: 'double',
+  15: 'complex', 16: 'character', 19: 'list', 20: 'expression', 24: 'raw',
+  25: 'S4 object', 238: 'altrep',
+};
+async function parseRds(file, ext) {
+  let buf = await readSlice(file, 0, Math.min(file.size, 4096));
+  if (buf.length < 6) return null;
+  // R serialization files may be gzip ('\x1f\x8b'), bzip2 ('BZh') or raw. We can
+  // only inflate gzip dependency-free; bzip2/xz fall through to header sniff.
+  let compression = 'none';
+  if (buf[0] === 0x1f && buf[1] === 0x8b) {
+    compression = 'gzip';
+    const inflated = await gunzip(await readSlice(file, 0, Math.min(file.size, 65536)));
+    if (inflated && inflated.length >= 6) buf = inflated.subarray(0, 4096);
+    else { buf = null; }
+  } else if (buf[0] === 0x42 && buf[1] === 0x5a && buf[2] === 0x68) {
+    compression = 'bzip2';
+  } else if (buf[0] === 0xfd && ascii(buf, 1, 4) === '7zXZ') {
+    compression = 'xz';
+  }
+  // After (optional) decompression the stream begins with the serialization
+  // format byte: 'X'(0x58)=XDR binary, 'A'=ASCII, 'B'=binary, or the workspace
+  // wrapper 'RDX2'/'RDX3' (older .RData prepend "RDX2\n").
+  const out = { 'Format': ext === 'rds' ? 'R serialized object (.rds)' : 'R workspace (.RData)' };
+  if (compression !== 'none') out['Compression'] = compression;
+  let fmt = null, off = 0;
+  if (buf) {
+    const head = ascii(buf, 0, 5);
+    if (/^RDX[23]\n/.test(head)) { out['Workspace header'] = head.slice(0, 4); off = head.indexOf('\n') + 1; }
+    const c = buf[off];
+    if (c === 0x58) fmt = 'XDR binary';            // 'X'
+    else if (c === 0x41) fmt = 'ASCII';            // 'A'
+    else if (c === 0x42) fmt = 'binary little-endian'; // 'B'
+  }
+  if (!fmt && compression === 'none') return null; // not an R stream we recognise
+  if (fmt) out['Serialization'] = fmt;
+  // XDR header: format byte, '\n', then int32 (version), int32 (writer Rver),
+  // int32 (min Rver) - all big-endian. Decode the R version that wrote it.
+  if (buf && fmt === 'XDR binary' && buf[off] === 0x58 && buf[off + 1] === 0x0a) {
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const p = off + 2;
+    if (p + 12 <= buf.length) {
+      const ver = dv.getInt32(p, false);
+      const writer = dv.getInt32(p + 4, false);
+      out['Serial version'] = ver;
+      if (writer > 0) out['Written by R'] = ((writer >> 16) & 0xff) + '.' + ((writer >> 8) & 0xff) + '.' + (writer & 0xff);
+      // First object after the three version ints: SEXP type in low byte of int32.
+      if (p + 16 <= buf.length) {
+        const flags = dv.getInt32(p + 12, false);
+        const type = flags & 0xff;
+        if (R_SEXP[type]) out['Top-level object'] = R_SEXP[type];
+      }
+    }
+  }
+  out['Note'] = 'Object graph decode is a future R dep';
+  return out;
+}
+
+// ============================================================================
+// ABIF / AB1 sequencing trace (Applied Biosystems)
+// ============================================================================
+async function parseAb1(file) {
+  const buf = await readSlice(file, 0, Math.min(file.size, 131072));
+  if (buf.length < 128 || ascii(buf, 0, 4) !== 'ABIF') return null;
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const version = dv.getUint16(4, false);  // big-endian throughout
+  // Root directory entry sits at offset 6: name(4) number(i32) elemtype(i16)
+  // elemsize(i16) numelements(i32) datasize(i32) dataoffset(i32) ...
+  const dirEntries = dv.getInt32(6 + 8, false);
+  const dirOffset = dv.getInt32(6 + 16, false);
+  const out = { 'Format': 'ABIF sequencing trace (AB1)' };
+  out['Version'] = (version / 100).toFixed(2);
+  out['Directory entries'] = dirEntries;
+  // ABIF string values: pString = len byte + chars; cString = NUL-terminated.
+  const readVal = (off, type, size) => {
+    if (off < 0 || off + size > buf.length) return null;
+    if (type === 18) return ascii(buf, off + 1, Math.max(0, size - 1)).replace(/\0+$/, ''); // pString
+    if (type === 19) return ascii(buf, off, size).replace(/\0+$/, '');                       // cString
+    if (type === 2) return ascii(buf, off, size).replace(/\0+$/, '');                        // char array
+    return null;
+  };
+  const want = {
+    SMPL1: 'Sample name', MCHN1: 'Machine', MODL1: 'Instrument model',
+    DySN1: 'Dye set', RUND1: 'Run date', RUNT1: 'Run time', PBAS2: null,
+  };
+  let basesLen = null;
+  if (dirEntries > 0 && dirEntries < 5000 && dirOffset > 0) {
+    for (let i = 0; i < dirEntries; i++) {
+      const e = dirOffset + i * 28;
+      if (e + 28 > buf.length) break;
+      const name = ascii(buf, e, 4);
+      const num = dv.getInt32(e + 4, false);
+      const etype = dv.getUint16(e + 8, false);
+      const esize = dv.getUint16(e + 10, false);
+      const nelem = dv.getInt32(e + 12, false);
+      const dsize = dv.getInt32(e + 16, false);
+      // For data <= 4 bytes the value is inline at offset 20; else it's a pointer.
+      const doff = dsize <= 4 ? e + 20 : dv.getInt32(e + 20, false);
+      const key = name + num;
+      if (key === 'PBAS2') { basesLen = nelem; continue; }
+      if (key in want && want[key]) {
+        const v = readVal(doff, etype, dsize);
+        if (v && v.trim()) out[want[key]] = v.trim().slice(0, 80);
+      }
+    }
+  }
+  if (basesLen != null) out['Base-called length'] = basesLen.toLocaleString() + ' bp';
+  out['Note'] = '4-colour chromatogram render is a future trace dep';
+  return out;
+}
+
+// ============================================================================
+// DFT structures: POSCAR (VASP), .cube (Gaussian), .xsf (XCrySDen) - text
+// ============================================================================
+async function parsePoscar(file) {
+  const text = await readText(file, 1_000_000);
+  if (!text) return null;
+  const lines = text.split(/\r?\n/);
+  if (lines.length < 8) return null;
+  // POSCAR: line1 comment, line2 scale, lines 3-5 lattice vectors, line6 element
+  // symbols (VASP5) OR counts (VASP4), line7 counts, then Direct/Cartesian.
+  const scale = parseFloat((lines[1] || '').trim());
+  if (!Number.isFinite(scale)) return null;
+  const vec = (l) => (l || '').trim().split(/\s+/).map(Number);
+  const a = vec(lines[2]), b = vec(lines[3]), c = vec(lines[4]);
+  if (a.length !== 3 || b.length !== 3 || c.length !== 3 ||
+      a.concat(b, c).some((n) => !Number.isFinite(n))) return null;
+  const len = (v) => Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) * (scale > 0 ? scale : 1);
+  const out = { 'Format': 'VASP POSCAR/CONTCAR (DFT structure)' };
+  const comment = (lines[0] || '').trim();
+  if (comment) out['Comment'] = comment.slice(0, 100);
+  out['Scale'] = scale;
+  out['Lattice lengths'] = [len(a), len(b), len(c)].map((v) => v.toFixed(4)).join(', ') + ' Å';
+  // VASP5 species line is alphabetic; counts line is the next numeric line.
+  let symbols = null, counts = null;
+  const l6 = (lines[5] || '').trim();
+  if (l6 && /[A-Za-z]/.test(l6)) { symbols = l6.split(/\s+/); counts = (lines[6] || '').trim().split(/\s+/).map((n) => parseInt(n, 10)); }
+  else { counts = l6.split(/\s+/).map((n) => parseInt(n, 10)); }
+  if (counts && counts.every((n) => Number.isFinite(n)) && counts.length) {
+    const total = counts.reduce((s, n) => s + n, 0);
+    out['Atoms'] = total.toLocaleString();
+    if (symbols && symbols.length === counts.length) {
+      out['Composition'] = symbols.map((s, i) => s + counts[i]).join(' ');
+    }
+  }
+  return out;
+}
+
+async function parseCube(file) {
+  const text = await readText(file, 1_000_000);
+  if (!text) return null;
+  const lines = text.split(/\r?\n/);
+  if (lines.length < 6) return null;
+  // Gaussian cube: 2 comment lines, then "natoms x0 y0 z0", then 3 grid lines
+  // "n vx vy vz". natoms may be negative (DSET_IDS present). Fail soft - .cube
+  // is a generic extension (also used by image cube maps etc.).
+  const a3 = (lines[2] || '').trim().split(/\s+/);
+  const g1 = (lines[3] || '').trim().split(/\s+/);
+  const g2 = (lines[4] || '').trim().split(/\s+/);
+  const g3 = (lines[5] || '').trim().split(/\s+/);
+  if (a3.length < 4 || g1.length < 4 || g2.length < 4 || g3.length < 4) return null;
+  const natoms = parseInt(a3[0], 10);
+  const nx = parseInt(g1[0], 10), ny = parseInt(g2[0], 10), nz = parseInt(g3[0], 10);
+  if (![natoms, nx, ny, nz].every(Number.isFinite)) return null;
+  if (!Number.isFinite(parseFloat(a3[1])) || nx <= 0 || ny <= 0 || nz <= 0) return null;
+  const out = { 'Format': 'Gaussian cube (volumetric)' };
+  const c1 = (lines[0] || '').trim(), c2 = (lines[1] || '').trim();
+  if (c1) out['Comment'] = c1.slice(0, 100);
+  if (c2 && c2 !== c1) out['Subtitle'] = c2.slice(0, 100);
+  out['Atoms'] = Math.abs(natoms).toLocaleString();
+  out['Grid'] = nx + ' × ' + ny + ' × ' + nz;
+  out['Grid points'] = (nx * ny * nz).toLocaleString();
+  return out;
+}
+
+async function parseXsf(file) {
+  const text = await readText(file, 1_000_000);
+  if (!text) return null;
+  // XCrySDen Structure File: keyword-driven (CRYSTAL/SLAB/MOLECULE/ATOMS/
+  // PRIMVEC/BEGIN_BLOCK_DATAGRID_3D ...).
+  if (!/\b(CRYSTAL|SLAB|POLYMER|MOLECULE|ATOMS|PRIMVEC|CONVVEC|ANIMSTEPS|BEGIN_BLOCK_DATAGRID)\b/.test(text)) return null;
+  const out = { 'Format': 'XCrySDen Structure File (XSF)' };
+  const periodic = (text.match(/^\s*(CRYSTAL|SLAB|POLYMER|MOLECULE)\b/m) || [])[1];
+  if (periodic) out['Dimensionality'] = periodic;
+  const anim = (text.match(/^\s*ANIMSTEPS\s+(\d+)/m) || [])[1];
+  if (anim) out['Animation steps'] = parseInt(anim, 10);
+  // PRIMCOORD's first number on the following line is the atom count.
+  const pc = text.match(/PRIMCOORD\s*\r?\n\s*(\d+)/);
+  if (pc) out['Atoms (PRIMCOORD)'] = parseInt(pc[1], 10).toLocaleString();
+  else {
+    const at = text.match(/^\s*ATOMS\b[\s\S]*?(?=^\s*[A-Z_]{4,}|$(?![\s\S]))/m);
+    if (at) out['Atom lines'] = (at[0].match(/^\s*\d+\s+[-\d.]/gm) || []).length;
+  }
+  const grids = (text.match(/BEGIN_DATAGRID_3D|BEGIN_BLOCK_DATAGRID_3D/g) || []).length;
+  if (grids) out['3D datagrids'] = grids;
+  return out;
+}
+
+// ============================================================================
+// ChemDraw: .cdx (binary) / .cdxml (XML)
+// ============================================================================
+async function parseCdx(file, ext) {
+  if (ext === 'cdxml') {
+    const text = await readText(file, 2_000_000);
+    if (!text || !/<CDXML\b/i.test(text)) return null;
+    const out = { 'Format': 'ChemDraw XML (CDXML)' };
+    const ver = (text.match(/<CDXML[^>]*\bCreationProgram="([^"]+)"/i) || [])[1];
+    if (ver) out['Creator'] = ver.slice(0, 80);
+    out['Fragments'] = (text.match(/<fragment\b/gi) || []).length;
+    out['Atoms (nodes)'] = (text.match(/<n\b/gi) || []).length;
+    out['Bonds'] = (text.match(/<b\b/gi) || []).length;
+    out['Text labels'] = (text.match(/<t\b/gi) || []).length;
+    return out;
+  }
+  const buf = await readSlice(file, 0, 64);
+  if (ascii(buf, 0, 8) !== 'VjCD0100') return null;
+  const out = { 'Format': 'ChemDraw binary (CDX)' };
+  out['Signature'] = 'VjCD0100';
+  out['Note'] = 'Object-tree decode is a future ChemDraw dep';
+  return out;
+}
+
+// ============================================================================
+// Axon Binary File (.abf) - Molecular Devices pCLAMP
+// ============================================================================
+const ABF_OP_MODES = { 1: 'event-driven variable-length', 2: 'event-driven fixed-length', 3: 'gap-free', 4: 'high-speed oscilloscope', 5: 'episodic stimulation' };
+async function parseAbf(file) {
+  const buf = await readSlice(file, 0, 512);
+  if (buf.length < 16) return null;
+  const sig = ascii(buf, 0, 4);
+  if (sig !== 'ABF ' && sig !== 'ABF2') return null;
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const out = { 'Format': 'Axon Binary File (pCLAMP)' };
+  if (sig === 'ABF2') {
+    // ABF2: 'ABF2', then version as 4 bytes (mantissa/build) at offset 4.
+    out['Format version'] = 'ABF2';
+    const vMinor = dv.getUint16(4, true);
+    const vMajor = dv.getUint16(6, true);
+    if (vMajor) out['File version'] = vMajor + '.' + vMinor;
+    out['Note'] = 'Section table / sweep decode is a future electrophysiology dep';
+    return out;
+  }
+  // ABF1: 'ABF ' then f32 version at offset 4. Many fields are i16/i32/f32.
+  const fileVer = dv.getFloat32(4, true);
+  if (Number.isFinite(fileVer) && fileVer > 0) out['File version'] = fileVer.toFixed(2);
+  const opMode = dv.getInt16(8, true);
+  if (ABF_OP_MODES[opMode]) out['Acquisition mode'] = ABF_OP_MODES[opMode];
+  const adcChannels = dv.getInt16(120, true);
+  if (adcChannels > 0 && adcChannels < 64) out['ADC channels'] = adcChannels;
+  out['Note'] = 'Sweep waveform render is a future electrophysiology dep';
+  return out;
+}
+
+// ============================================================================
+// NI TDMS (.tdms) - National Instruments LabVIEW
+// ============================================================================
+async function parseTdms(file) {
+  const buf = await readSlice(file, 0, 28);
+  if (buf.length < 28 || ascii(buf, 0, 4) !== 'TDSm') return null;
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const out = { 'Format': 'NI TDMS (LabVIEW measurement)' };
+  // ToC bitmask @4, version @8, next-segment offset @12 (u64), raw-data offset @20.
+  const toc = dv.getUint32(4, true);
+  const version = dv.getUint32(8, true);
+  out['Version'] = version === 4713 ? '2.0 (4713)' : version === 4712 ? '1.0 (4712)' : String(version);
+  const flags = [];
+  if (toc & 0x2) flags.push('meta data');
+  if (toc & 0x8) flags.push('raw data');
+  if (toc & 0x20) flags.push('DAQmx raw data');
+  if (toc & 0x40) flags.push('interleaved');
+  if (toc & 0x80) flags.push('big-endian');
+  if (toc & 0x4) flags.push('new object list');
+  if (flags.length) out['Segment contains'] = flags.join(', ');
+  const nextSeg = Number(dv.getBigUint64(12, true));
+  if (Number.isFinite(nextSeg) && nextSeg > 0) out['First segment'] = fmtBytes(nextSeg + 28);
+  out['Note'] = 'Group/channel + property decode is a future TDMS dep';
+  return out;
+}
+
+// ============================================================================
+// BrainVision EEG: .vhdr (header INI), .vmrk (markers) - text
+// ============================================================================
+async function parseBrainVision(file, ext) {
+  const text = await readText(file, 1_000_000);
+  if (!text) return null;
+  if (ext === 'vmrk') {
+    if (!/Brain\s*Vision/i.test(text) && !/\[Marker Infos\]/i.test(text)) return null;
+    const out = { 'Format': 'BrainVision markers (.vmrk)' };
+    const dataFile = (text.match(/DataFile=([^\r\n]+)/i) || [])[1];
+    if (dataFile) out['Data file'] = dataFile.trim();
+    const markers = (text.match(/^Mk\d+=/gim) || []).length;
+    out['Markers'] = markers.toLocaleString();
+    const types = Array.from(new Set(Array.from(text.matchAll(/^Mk\d+=([^,]+),/gim)).map((m) => m[1].trim()))).filter(Boolean);
+    if (types.length) out['Marker types'] = types.slice(0, 12).join(', ');
+    return out;
+  }
+  // .vhdr - INI-style "Brain Vision Data Exchange Header File".
+  if (!/Brain\s*Vision/i.test(text) && !/\[Common Infos\]/i.test(text)) return null;
+  const out = { 'Format': 'BrainVision header (.vhdr)' };
+  const grab = (key) => { const m = text.match(new RegExp('^' + key + '=([^\\r\\n]+)', 'im')); return m ? m[1].trim() : null; };
+  const dataFile = grab('DataFile'); if (dataFile) out['Data file'] = dataFile;
+  const markerFile = grab('MarkerFile'); if (markerFile) out['Marker file'] = markerFile;
+  const nch = grab('NumberOfChannels'); if (nch) out['Channels'] = parseInt(nch, 10);
+  const si = grab('SamplingInterval');
+  if (si) {
+    const us = parseFloat(si);
+    out['Sampling interval'] = us + ' µs' + (us > 0 ? ' (' + Math.round(1e6 / us) + ' Hz)' : '');
+  }
+  const fmt = grab('DataFormat') || grab('BinaryFormat');
+  if (fmt) out['Data format'] = fmt;
+  const orient = grab('DataOrientation'); if (orient) out['Orientation'] = orient;
+  // Channel labels live under [Channel Infos] as "Ch1=label,ref,res,unit".
+  const labels = Array.from(text.matchAll(/^Ch\d+=([^,\r\n]+)/gim)).map((m) => m[1].trim());
+  if (labels.length) out._sections = [{ title: 'Channel labels (' + labels.length + ')', node: preBlock(labels.join(' ')) }];
+  return out;
+}
+
+// ============================================================================
+// Generic EEG container (.eeg / .cnt) - fail-soft identification
+// ============================================================================
+async function parseEeg(file, ext) {
+  const buf = await readSlice(file, 0, 900);
+  if (buf.length < 16) return null;
+  if (ext === 'cnt') {
+    // Neuroscan CNT begins with the ASCII tag "Version 3.0" in the SETUP block.
+    const head = ascii(buf, 0, 20);
+    if (!/^Version 3\.\d/.test(head)) return null;
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const out = { 'Format': 'Neuroscan continuous EEG (.cnt)' };
+    out['Header tag'] = head.replace(/\0+$/, '').trim();
+    // Channel count is a u16 at offset 370 in the Neuroscan SETUP structure.
+    const nchan = dv.getUint16(370, true);
+    if (nchan > 0 && nchan < 1024) out['Channels'] = nchan;
+    out['Note'] = 'Continuous-data decode is a future Neuroscan dep';
+    return out;
+  }
+  // Bare .eeg: BrainVision binary data file (paired with .vhdr) - no own header.
+  // Only claim it when the bytes look like a BrainVision text data file, else
+  // fail soft so a misrouted .eeg falls back to the generic card.
+  const head = ascii(buf, 0, 64);
+  if (/Brain\s*Vision/i.test(head)) {
+    return { 'Format': 'BrainVision EEG data (.eeg)', 'Note': 'Binary samples paired with a .vhdr header (channels/rate live there)' };
+  }
+  return null;
+}
+
+// ============================================================================
+// EEGLAB .set - careful: also a generic extension. .set is a MAT-file (CFBF or
+// MAT 5 "MATLAB 5.0"), or HDF5 (v7.3). Fail soft otherwise.
+// ============================================================================
+async function parseEeglabSet(file) {
+  const buf = await readSlice(file, 0, 128);
+  if (buf.length < 16) return null;
+  const head = ascii(buf, 0, 19);
+  const isMat5 = head.startsWith('MATLAB 5.0 MAT-file');
+  const isHdf5 = buf[0] === 0x89 && ascii(buf, 1, 3) === 'HDF';
+  if (!isMat5 && !isHdf5) return null; // not an EEGLAB MAT-file - bail
+  const out = { 'Format': 'EEGLAB dataset (.set)' };
+  out['Container'] = isHdf5 ? 'HDF5 (MAT v7.3)' : 'MAT-file v5';
+  if (isMat5) {
+    const desc = ascii(buf, 0, 116).replace(/\0+$/, '').trim();
+    if (desc) out['Header'] = desc.slice(0, 100);
+  }
+  out['Note'] = 'EEG struct (channels/srate/events) needs a MAT-file dep';
+  return out;
+}
+
+// ============================================================================
+// FEA / CFD decks: Gmsh .msh, Abaqus/Nastran .inp, ANSYS .cdb - text
+// ============================================================================
+async function parseMsh(file) {
+  const text = await readText(file, 2_000_000);
+  if (!text || !/\$MeshFormat/.test(text)) return null;
+  const out = { 'Format': 'Gmsh mesh (.msh)' };
+  const fmt = text.match(/\$MeshFormat\s*\r?\n\s*([\d.]+)\s+(\d+)\s+(\d+)/);
+  if (fmt) {
+    out['Version'] = fmt[1];
+    out['Storage'] = fmt[2] === '0' ? 'ASCII' : 'binary';
+  }
+  const nodeM = text.match(/\$Nodes\s*\r?\n\s*([\d\s]+?)\r?\n/);
+  if (nodeM) {
+    const nums = nodeM[1].trim().split(/\s+/).map(Number);
+    // v4 line is "numEntityBlocks numNodes minTag maxTag"; v2 is just "numNodes".
+    out['Nodes'] = (nums.length >= 2 ? nums[1] : nums[0]).toLocaleString();
+  }
+  const elemM = text.match(/\$Elements\s*\r?\n\s*([\d\s]+?)\r?\n/);
+  if (elemM) {
+    const nums = elemM[1].trim().split(/\s+/).map(Number);
+    out['Elements'] = (nums.length >= 2 ? nums[1] : nums[0]).toLocaleString();
+  }
+  const pn = (text.match(/\$PhysicalNames\s*\r?\n\s*(\d+)/) || [])[1];
+  if (pn) out['Physical groups'] = parseInt(pn, 10);
+  return out;
+}
+
+async function parseInp(file) {
+  const text = await readText(file, 2_000_000);
+  if (!text) return null;
+  // Abaqus/Nastran/CalculiX decks are keyword text. Abaqus uses "*KEYWORD";
+  // Nastran uses fixed/free-field "GRID"/"CHEXA"/"BEGIN BULK". Fail soft for the
+  // many other .inp uses (config files etc.).
+  const isAbaqus = /^\s*\*(NODE|ELEMENT|MATERIAL|STEP|HEADING|PART|INSTANCE)\b/im.test(text);
+  const isNastran = /^\s*(BEGIN BULK|GRID\b|CHEXA|CTETRA|CQUAD4|SOL\s+\d)/im.test(text);
+  if (!isAbaqus && !isNastran) return null;
+  const out = { 'Format': isAbaqus ? 'Abaqus input deck (.inp)' : 'Nastran bulk data (.inp)' };
+  if (isAbaqus) {
+    const heading = (text.match(/^\s*\*HEADING\s*\r?\n([^\r\n*]+)/im) || [])[1];
+    if (heading) out['Heading'] = heading.trim().slice(0, 100);
+    out['Nodes'] = (text.match(/^\s*\*NODE\b/gim) || []).length + ' block(s)';
+    out['Element blocks'] = (text.match(/^\s*\*ELEMENT\b/gim) || []).length;
+    out['Materials'] = (text.match(/^\s*\*MATERIAL\b/gim) || []).length;
+    out['Steps'] = (text.match(/^\s*\*STEP\b/gim) || []).length;
+    const etypes = Array.from(new Set(Array.from(text.matchAll(/^\s*\*ELEMENT[^\r\n]*\bTYPE=([A-Za-z0-9]+)/gim)).map((m) => m[1])));
+    if (etypes.length) out['Element types'] = etypes.slice(0, 12).join(', ');
+  } else {
+    out['GRID points'] = (text.match(/^\s*GRID\b/gim) || []).length.toLocaleString();
+    const sol = (text.match(/^\s*SOL\s+(\d+)/im) || [])[1];
+    if (sol) out['Solution sequence'] = 'SOL ' + sol;
+    const elems = Array.from(new Set(Array.from(text.matchAll(/^\s*(C[A-Z0-9]{3,5})\b/gim)).map((m) => m[1].toUpperCase())));
+    if (elems.length) out['Element cards'] = elems.slice(0, 12).join(', ');
+  }
+  return out;
+}
+
+async function parseCdb(file) {
+  const text = await readText(file, 2_000_000);
+  if (!text) return null;
+  // ANSYS CDB archive: command-stream text with NBLOCK/EBLOCK and a leading
+  // /COM or /PREP7 banner. Fail soft - .cdb is also a generic database ext.
+  if (!/NBLOCK|EBLOCK|\/PREP7|\/COM,ANSYS|ET\s*,\s*\d/i.test(text)) return null;
+  const out = { 'Format': 'ANSYS CDB archive (.cdb)' };
+  const banner = (text.match(/^\/COM,([^\r\n]+)/im) || [])[1];
+  if (banner) out['Banner'] = banner.trim().slice(0, 100);
+  // NBLOCK line is "NBLOCK,6,SOLID,    maxnode,    numnodes".
+  const nb = text.match(/NBLOCK\s*,[^\r\n]*?,\s*(\d+)\s*,\s*(\d+)/i);
+  if (nb) out['Nodes'] = parseInt(nb[2] || nb[1], 10).toLocaleString();
+  const eb = text.match(/EBLOCK\s*,\s*\d+[^\r\n]*?,\s*(\d+)/i);
+  if (eb) out['Element block size'] = parseInt(eb[1], 10).toLocaleString();
+  const ets = Array.from(new Set(Array.from(text.matchAll(/^\s*ET\s*,\s*\d+\s*,\s*(\d+)/gim)).map((m) => m[1])));
+  if (ets.length) out['Element types (ET)'] = ets.slice(0, 12).join(', ');
+  const mps = (text.match(/^\s*MP\s*,/gim) || []).length;
+  if (mps) out['Material props (MP)'] = mps;
+  return out;
+}
+
+// ============================================================================
+// Oscilloscope waveform (.wfm) - Tektronix / generic
+// ============================================================================
+async function parseWfm(file) {
+  const buf = await readSlice(file, 0, 16);
+  if (buf.length < 4) return null;
+  // Tektronix WFM: bytes 0-1 = byte-order verifier (':WFM' rare); modern files
+  // start with ':WFM#003' or 0x0F0F (endian) marker. Keep it identify-only.
+  const head = ascii(buf, 0, 8);
+  const out = { 'Format': 'Oscilloscope waveform (.wfm)' };
+  if (/^:WFM/.test(head) || head.startsWith(':WFM#')) {
+    out['Signature'] = head.replace(/[^\x20-\x7e]/g, '').slice(0, 8);
+    out['Vendor'] = 'Tektronix';
+  } else {
+    out['Vendor'] = 'unknown (vendor-specific binary)';
+  }
+  out['Note'] = 'Sample decode varies by scope vendor (future waveform dep)';
+  return out;
+}
+
 // ---------- dispatch ----------
 export const PARSERS = {
   // Medical imaging
@@ -1319,6 +1789,38 @@ export const PARSERS = {
   vtu: (c) => parseVtk(c.file, c.ext),
   vtp: (c) => parseVtk(c.file, c.ext),
   vti: (c) => parseVtk(c.file, c.ext),
+  vts: (c) => parseVtk(c.file, c.ext),
+  vtr: (c) => parseVtk(c.file, c.ext),
+  // R serialized data
+  rds: (c) => parseRds(c.file, c.ext),
+  rdata: (c) => parseRds(c.file, c.ext),
+  rda: (c) => parseRds(c.file, c.ext),
+  // Bio sequencing trace
+  ab1: (c) => parseAb1(c.file),
+  // DFT / computational chemistry structures
+  poscar: (c) => parsePoscar(c.file),
+  cube: (c) => parseCube(c.file),
+  xsf: (c) => parseXsf(c.file),
+  // ChemDraw
+  cdx: (c) => parseCdx(c.file, c.ext),
+  cdxml: (c) => parseCdx(c.file, c.ext),
+  // Electrophysiology / instrumentation
+  abf: (c) => parseAbf(c.file),
+  tdms: (c) => parseTdms(c.file),
+  // EEG / MEG
+  vhdr: (c) => parseBrainVision(c.file, c.ext),
+  vmrk: (c) => parseBrainVision(c.file, c.ext),
+  cnt: (c) => parseEeg(c.file, c.ext),
+  eeg: (c) => parseEeg(c.file, c.ext),
+  set: (c) => parseEeglabSet(c.file),
+  // SPICE netlist (extra)
+  net: (c) => parseSpice(c.file),
+  // FEA / CFD decks
+  msh: (c) => parseMsh(c.file),
+  inp: (c) => parseInp(c.file),
+  cdb: (c) => parseCdb(c.file),
+  // Oscilloscope waveform
+  wfm: (c) => parseWfm(c.file),
   // Identification-only (rare AND hard)
   segy: (c) => parseSegy(c.file),
   sgy: (c) => parseSegy(c.file),

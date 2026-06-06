@@ -975,6 +975,725 @@ async function parsePackage(file) {
   };
 }
 
+// ---------- Unity asset bundle (.assets/.bundle/.resource) ----------
+// UnityFS (and legacy UnityRaw/UnityWeb) bundles begin with a NUL-terminated
+// signature string, a big-endian format version, then two NUL-terminated
+// version strings (Unity generation + full engine version).
+async function parseUnity(file) {
+  const head = await readSlice(file, 0, 256);
+  const sig = cleanAscii(head, 0, 16).split('\0')[0];
+  if (sig !== 'UnityFS' && sig !== 'UnityRaw' && sig !== 'UnityWeb' && sig !== 'UnityArchive') return null;
+  // Signature is NUL-terminated; walk past it.
+  let p = 0;
+  while (p < head.length && head[p] !== 0) p++;
+  p++; // skip the NUL
+  const r = new Reader(head, true); // big-endian
+  r.seek(p);
+  const formatVer = r.u32();
+  // Two NUL-terminated strings follow: Unity generation and engine version.
+  function cstr() {
+    let s = '';
+    while (r.pos < head.length) { const c = r.u8(); if (c === 0) break; if (c >= 32 && c < 127) s += String.fromCharCode(c); }
+    return s;
+  }
+  const genVer = cstr();
+  const engineVer = cstr();
+  const out = {
+    'Format': 'Unity asset bundle (' + sig + ')',
+    'Bundle version': formatVer,
+  };
+  if (genVer) out['Unity generation'] = genVer;
+  if (engineVer) out['Engine version'] = engineVer;
+  if (sig === 'UnityFS') {
+    // FS header continues with total file size (i64) and block-info sizes (u32).
+    out['Total size'] = fmtBytes(file.size);
+  }
+  out['Note'] = 'Serialised Unity objects (meshes, textures, audio, MonoBehaviours); contents are LZ4/LZMA-compressed.';
+  return out;
+}
+
+// ---------- CHD (MAME compressed disc/hard-disk image) ----------
+const CHD_COMPRESSORS = {
+  0x6e6f6e65: 'none', 0x7a6c6962: 'zlib', 0x7a73746d: 'libzstd', 0x6c7a6d61: 'lzma',
+  0x666c6163: 'FLAC', 0x68756666: 'Huffman', 0x61766875: 'A/V Huffman',
+  0x63646c7a: 'CD LZMA', 0x63647a6c: 'CD zlib', 0x6364666c: 'CD FLAC',
+};
+async function parseChd(file) {
+  const head = await readSlice(file, 0, 124);
+  if (ascii(head, 0, 8) !== 'MComprHD') return null;
+  const r = new Reader(head, true); r.seek(8);
+  const headerLen = r.u32();
+  const version = r.u32();
+  const out = { 'Format': 'MAME CHD compressed image', 'CHD version': version };
+  // v5 layout: four 32-bit compressor codes at 0x10, then logical/map/meta sizes.
+  if (version >= 5) {
+    const comps = [];
+    for (let i = 0; i < 4; i++) { const c = r.u32(); if (c) comps.push(CHD_COMPRESSORS[c] || ('0x' + c.toString(16))); }
+    out['Compression'] = comps.length ? comps.join(', ') : 'none';
+    const logical = r.u64num();
+    out['Logical size'] = fmtBytes(logical);
+    r.seek(0x54); // hunkbytes (v5)
+    out['Hunk size'] = fmtBytes(r.u32());
+  } else {
+    const flags = r.u32();
+    const compression = r.u32();
+    out['Compression'] = CHD_COMPRESSORS[compression] || ('code ' + compression);
+    out['Read-only'] = (flags & 0x02) ? 'no' : 'yes';
+  }
+  out['Header length'] = fmtBytes(headerLen);
+  return out;
+}
+
+// ---------- CISO (compressed ISO: PSP / Dreamcast) ----------
+async function parseCiso(file) {
+  const head = await readSlice(file, 0, 24);
+  const magic = ascii(head, 0, 4);
+  if (magic !== 'CISO' && magic !== 'ZISO') return null;
+  const r = new Reader(head, true); r.seek(4); r.le(true);
+  const headerSize = r.u32();
+  const totalBytes = r.u64num();
+  const blockSize = r.u32();
+  const version = r.u8();
+  return {
+    'Format': (magic === 'ZISO' ? 'ZISO' : 'CISO') + ' compressed disc image',
+    'Version': version,
+    'Uncompressed size': fmtBytes(totalBytes),
+    'Block size': fmtBytes(blockSize),
+    'Note': 'Block-compressed ISO (PSP / Dreamcast); blocks are deflate-compressed.',
+  };
+}
+
+// ---------- FMOD sound bank (.fsb / .bank) ----------
+const FSB5_CODECS = {
+  0: 'none', 1: 'PCM8', 2: 'PCM16', 3: 'PCM24', 4: 'PCM32', 5: 'PCMFLOAT',
+  6: 'GCADPCM', 7: 'IMAADPCM', 8: 'VAG', 9: 'HEVAG', 10: 'XMA', 11: 'MPEG',
+  12: 'CELT', 13: 'AT9', 14: 'XWMA', 15: 'Vorbis', 16: 'FADPCM', 17: 'Opus',
+};
+async function parseFsb(file) {
+  const head = await readSlice(file, 0, 64);
+  // FMOD bank (.bank) wraps an FSB5 in a RIFF/FEV container; FSB5 magic may be
+  // at the start or appear shortly after a 'RIFF' header.
+  let base = -1;
+  if (ascii(head, 0, 4) === 'FSB5') base = 0;
+  else if (ascii(head, 0, 4) === 'RIFF') {
+    // Scan a window for an embedded FSB5 sound bank.
+    const scan = await readSlice(file, 0, Math.min(file.size, 1 << 16));
+    const idx = findBytes(scan, [0x46, 0x53, 0x42, 0x35]);
+    if (idx >= 0) base = idx;
+    if (base < 0) {
+      return {
+        'Format': 'FMOD bank (.bank, RIFF/FEV)',
+        'Note': 'FMOD Studio bank; embedded FSB5 audio not located in the scanned window.',
+      };
+    }
+  }
+  if (base < 0) return null;
+  const r = new Reader(base ? await readSlice(file, base, 64) : head, true);
+  r.seek(4); r.le(true);
+  const version = r.u32();
+  const numSamples = r.u32();
+  const sampleHeaderSize = r.u32();
+  const nameTableSize = r.u32();
+  const dataSize = r.u32();
+  const mode = r.u32();
+  const out = {
+    'Format': base ? 'FMOD bank (.bank) with FSB5' : 'FMOD sound bank (FSB5)',
+    'FSB version': version,
+    'Samples': numSamples,
+    'Codec': FSB5_CODECS[mode] || ('code ' + mode),
+    'Audio data': fmtBytes(dataSize),
+    'Names present': nameTableSize > 0 ? 'yes' : 'no',
+  };
+  return out;
+}
+
+// ---------- Wwise sound bank (.bnk) / audio (.wem) ----------
+async function parseWwise(file, ext) {
+  const head = await readSlice(file, 0, 64);
+  const id = ascii(head, 0, 4);
+  if (id === 'BKHD') {
+    const r = new Reader(head, true); r.seek(4); r.le(true);
+    const sectionLen = r.u32();
+    const bankVersion = r.u32();
+    const bankId = r.u32();
+    return {
+      'Format': 'Wwise sound bank (.bnk)',
+      'Bank version': bankVersion,
+      'Bank ID': '0x' + bankId.toString(16).toUpperCase(),
+      'BKHD section size': fmtBytes(sectionLen),
+      'Note': 'Audiokinetic Wwise SoundBank; sections (BKHD/DIDX/DATA/HIRC) index embedded WEM audio.',
+    };
+  }
+  if (id === 'RIFF' || id === 'RIFX') {
+    const little = id === 'RIFF';
+    const r = new Reader(head, little); r.seek(4);
+    const riffSize = r.u32();
+    const form = ascii(head, 8, 4);
+    return {
+      'Format': 'Wwise encoded audio (.wem)',
+      'Container': id + ' / ' + form,
+      'Byte order': little ? 'little-endian' : 'big-endian',
+      'RIFF size': fmtBytes(riffSize),
+      'Note': 'Wwise WEM audio (Vorbis/Opus/WAVE variant); codec lives in the fmt chunk.',
+    };
+  }
+  return null;
+}
+
+// ---------- Spine animation (.spine/.skel/.atlas) ----------
+async function parseSpine(file, ext) {
+  if (ext === 'atlas') {
+    const text = await file.slice(0, Math.min(file.size, 1 << 18)).text();
+    // .atlas is plain text: blank line, page image name, size:/format:, then regions.
+    const lines = text.split(/\r?\n/);
+    const pages = [];
+    let regions = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const ln = lines[i];
+      if (/\.(png|webp|jpg|jpeg)\s*$/i.test(ln.trim())) pages.push(ln.trim());
+      else if (ln && !/^\s/.test(ln) && !/:/.test(ln) && pages.length) regions++;
+    }
+    if (!pages.length && !/size:|format:/.test(text)) return null;
+    const out = { 'Format': 'Spine texture atlas (.atlas)', 'Pages': pages.length, 'Regions': regions };
+    if (pages.length) out._sections = [{ title: 'Atlas pages', node: preBlock(pages.slice(0, 50).join('\n')) }];
+    return out;
+  }
+  // .json export, or binary .skel.
+  let text = null;
+  try { text = await file.slice(0, Math.min(file.size, 1 << 20)).text(); } catch (_) {}
+  if (text) {
+    try {
+      const j = JSON.parse(text);
+      if (j.skeleton && (j.bones || j.slots || j.animations)) {
+        const sk = j.skeleton;
+        const out = { 'Format': 'Spine skeleton (JSON)' };
+        if (sk.spine) out['Spine version'] = sk.spine;
+        if (sk.hash) out['Skeleton hash'] = sk.hash;
+        if (sk.width != null) out['Setup size'] = sk.width + ' x ' + sk.height;
+        out['Bones'] = (j.bones || []).length;
+        out['Slots'] = (j.slots || []).length;
+        out['Skins'] = j.skins ? (Array.isArray(j.skins) ? j.skins.length : Object.keys(j.skins).length) : 0;
+        const anims = j.animations ? Object.keys(j.animations) : [];
+        out['Animations'] = anims.length;
+        if (anims.length) out._sections = [{ title: 'Animations', node: preBlock(anims.slice(0, 80).join('\n')) }];
+        return out;
+      }
+    } catch (_) { /* not JSON - probably binary .skel */ }
+  }
+  // Binary .skel: first field is a NUL-terminated hash, then a version string.
+  const head = await readSlice(file, 0, 128);
+  // Spine 3.8+ binary starts with an 8-byte length-prefixed structure; surface
+  // any embedded printable version like "4.1.24" near the head.
+  const asciiHead = latin1(head);
+  const verMatch = asciiHead.match(/\b(\d\.\d+\.\d+)\b/);
+  if (!verMatch && !/skel/i.test(ext)) return null;
+  const out = { 'Format': 'Spine skeleton (binary .skel)' };
+  if (verMatch) out['Spine version'] = verMatch[1];
+  out['Note'] = 'Esoteric Software Spine binary skeleton; full bone/animation listing needs the SkeletonBinary reader.';
+  return out;
+}
+
+// ---------- GameMaker project (.yyp/.yy JSON, .gmx XML) ----------
+async function parseGameMaker(file, ext) {
+  const text = await file.slice(0, Math.min(file.size, 2 << 20)).text();
+  if (ext === 'gmx') {
+    if (!/<(assets|room|object|sprite|GameMakerProject)\b/i.test(text)) return null;
+    const doc = new DOMParser().parseFromString(text, 'application/xml');
+    if (doc.querySelector('parsererror')) return null;
+    const root = doc.documentElement;
+    const out = { 'Format': 'GameMaker Studio resource (.gmx)', 'Root element': root.tagName };
+    const counts = {};
+    for (const tag of ['sprite', 'object', 'room', 'sound', 'script', 'background', 'font', 'shader', 'timeline']) {
+      const n = doc.querySelectorAll(tag).length;
+      if (n) counts[tag] = n;
+    }
+    const summary = Object.entries(counts).map(([k, v]) => k + ': ' + v).join('  ');
+    if (summary) out['Resources'] = summary;
+    return out;
+  }
+  // .yyp / .yy are JSON5-ish (GameMaker writes trailing commas); parse leniently.
+  let j = null;
+  try { j = JSON.parse(text); } catch (_) {
+    try { j = JSON.parse(text.replace(/,(\s*[}\]])/g, '$1')); } catch (_) { /* give up */ }
+  }
+  if (!j || typeof j !== 'object') return null;
+  const isProject = Array.isArray(j.resources) || j.resourceType === 'GMProject';
+  const out = { 'Format': isProject ? 'GameMaker project (.yyp)' : 'GameMaker resource (.yy)' };
+  if (j.resourceType) out['Resource type'] = j.resourceType;
+  if (j.name) out['Name'] = String(j.name).slice(0, 120);
+  if (j.MetaData && j.MetaData.IDEVersion) out['IDE version'] = j.MetaData.IDEVersion;
+  if (Array.isArray(j.resources)) out['Resources'] = j.resources.length;
+  if (Array.isArray(j.RoomOrderNodes)) out['Rooms'] = j.RoomOrderNodes.length;
+  if (Array.isArray(j.AudioGroups)) out['Audio groups'] = j.AudioGroups.length;
+  if (Array.isArray(j.configs && j.configs.children)) out['Configs'] = j.configs.children.length;
+  return out;
+}
+
+// ---------- Unreal cooked assets (.utoc/.ucas/.uexp/.umd) ----------
+async function parseUnreal(file, ext) {
+  const head = await readSlice(file, 0, 32);
+  // .utoc IO store table-of-contents: 16-byte magic "-==--==--==--==-".
+  if (ext === 'utoc') {
+    const magic = ascii(head, 0, 16);
+    if (magic !== '-==--==--==--==-') return null;
+    const r = new Reader(head, true); r.seek(16); r.le(true);
+    const version = r.u8();
+    return {
+      'Format': 'Unreal IO Store TOC (.utoc)',
+      'TOC version': version,
+      'Note': 'Unreal Engine 4/5 cooked package index; pairs with a .ucas data container (entries are compressed/encrypted).',
+    };
+  }
+  const labels = {
+    ucas: 'Unreal IO Store container (.ucas)',
+    uexp: 'Unreal cooked export data (.uexp)',
+    umd: 'Unreal cooked asset (.umd)',
+  };
+  const notes = {
+    ucas: 'Bulk export/data blob indexed by a sibling .utoc; not standalone-parsable.',
+    uexp: 'Serialised UObject exports paired with a .uasset/.umap header.',
+    umd: 'Unreal cooked map/asset data; full parse needs the UE package serialiser.',
+  };
+  return {
+    'Format': labels[ext] || 'Unreal cooked asset',
+    'Note': notes[ext] || 'Unreal Engine cooked asset; identification only.',
+  };
+}
+
+// ---------- Minecraft region (.mca Anvil / .mcr legacy) ----------
+async function parseMcRegion(file, ext) {
+  // A region file is a fixed 4 KiB location table + 4 KiB timestamp table, then
+  // chunk payloads. Each location entry is a 3-byte sector offset + 1-byte count.
+  if (file.size < 8192) return null;
+  const head = await readSlice(file, 0, 8192);
+  let populated = 0, maxSector = 0, totalSectors = 0;
+  for (let i = 0; i < 1024; i++) {
+    const off = (head[i * 4] << 16) | (head[i * 4 + 1] << 8) | head[i * 4 + 2];
+    const count = head[i * 4 + 3];
+    if (off !== 0 || count !== 0) { populated++; totalSectors += count; maxSector = Math.max(maxSector, off + count); }
+  }
+  // Sanity: a valid region has at least one chunk and offsets that fit the file.
+  if (populated === 0) return null;
+  if (maxSector * 4096 > file.size + 4096) return null;
+  // Read first populated chunk's compression byte for a format hint.
+  let compression = '-';
+  try {
+    const r = new Reader(head, true);
+    for (let i = 0; i < 1024; i++) {
+      const off = (head[i * 4] << 16) | (head[i * 4 + 1] << 8) | head[i * 4 + 2];
+      if (off >= 2) {
+        const chunk = await readSlice(file, off * 4096, 5);
+        const comp = chunk[4];
+        compression = comp === 1 ? 'GZip' : comp === 2 ? 'Zlib' : comp === 3 ? 'uncompressed' : comp === 4 ? 'LZ4' : 'scheme ' + comp;
+        break;
+      }
+    }
+  } catch (_) {}
+  return {
+    'Format': ext === 'mcr' ? 'Minecraft region (.mcr, legacy)' : 'Minecraft region (.mca, Anvil)',
+    'Populated chunks': populated + ' / 1024',
+    'Chunk compression': compression,
+    'Data sectors used': totalSectors + ' (' + fmtBytes(totalSectors * 4096) + ')',
+    'Note': 'A 32x32 grid of chunks; coordinates come from the r.X.Z filename.',
+  };
+}
+
+// ---------- 3DS homebrew (.3dsx) ----------
+async function parse3dsx(file) {
+  const head = await readSlice(file, 0, 44);
+  if (ascii(head, 0, 4) !== '3DSX') return null;
+  const r = new Reader(head, true); r.seek(4); r.le(true);
+  const headerSize = r.u16();
+  const relocHeaderSize = r.u16();
+  const formatVer = r.u32();
+  const flags = r.u32();
+  const codeSegSize = r.u32();
+  const rodataSegSize = r.u32();
+  const dataSegSize = r.u32();
+  const bssSize = r.u32();
+  const out = {
+    'Format': '3DS homebrew executable (.3dsx)',
+    'Format version': formatVer,
+    'Code segment': fmtBytes(codeSegSize),
+    'Read-only data': fmtBytes(rodataSegSize),
+    'Data segment': fmtBytes(dataSegSize),
+    'BSS size': fmtBytes(bssSize),
+    'Extended header (SMDH)': headerSize > 32 ? 'present' : 'no',
+  };
+  return out;
+}
+
+// ---------- Atari ROMs (.a78 / .lnx / .a26 / .j64) ----------
+const A78_MAPPER = ['Linear (no bank)', 'Atari SuperGame', 'Activision', 'Absolute'];
+async function parseAtari(file, ext) {
+  const head = await readSlice(file, 0, 128);
+  if (ext === 'a78') {
+    // A78 header v2/v3: byte 0 = version, "ATARI7800" at offset 1.
+    if (ascii(head, 1, 9) !== 'ATARI7800') return null;
+    const out = {
+      'Format': 'Atari 7800 ROM (.a78)',
+      'Header version': head[0],
+      'Title': cleanAscii(head, 17, 32) || '(none)',
+    };
+    const romSize = (head[49] << 24) | (head[50] << 16) | (head[51] << 8) | head[52];
+    if (romSize > 0) out['ROM size'] = fmtBytes(romSize);
+    out['Cartridge type'] = '0x' + ((head[53] << 8) | head[54]).toString(16);
+    return out;
+  }
+  if (ext === 'lnx') {
+    // Atari Lynx .lnx: "LYNX" magic at byte 0.
+    if (ascii(head, 0, 4) !== 'LYNX') return null;
+    const r = new Reader(head, true); r.seek(4); r.le(true);
+    const bank0 = r.u16();
+    const bank1 = r.u16();
+    const version = r.u16();
+    return {
+      'Format': 'Atari Lynx ROM (.lnx)',
+      'Header version': version,
+      'Bank 0 page size': fmtBytes(bank0),
+      'Bank 1 page size': fmtBytes(bank1),
+      'Cartridge name': cleanAscii(head, 10, 32) || '(none)',
+      'Manufacturer': cleanAscii(head, 42, 16) || '-',
+    };
+  }
+  // .a26 (Atari 2600) and .j64 (Jaguar) are typically headerless raw dumps.
+  const labels = { a26: 'Atari 2600 ROM (.a26)', j64: 'Atari Jaguar ROM (.j64)' };
+  return {
+    'Format': labels[ext] || 'Atari ROM',
+    'ROM size': fmtBytes(file.size),
+    'Note': ext === 'a26'
+      ? 'Atari 2600 cartridge; bank-switching scheme is inferred from size by the emulator.'
+      : 'Atari Jaguar cartridge image; headerless raw ROM.',
+  };
+}
+
+// ---------- Sega 8-bit (.sms Master System / .gg Game Gear) ----------
+const SMS_REGION = { 3: 'SMS Japan', 4: 'SMS Export', 5: 'GG Japan', 6: 'GG Export', 7: 'GG International' };
+async function parseSega8(file, ext) {
+  // The "TMR SEGA" header sits at 0x7FF0 (also mirrored at 0x1FF0 / 0x3FF0).
+  const size = file.size;
+  const candidates = [0x7FF0, 0x3FF0, 0x1FF0];
+  let base = -1, buf = null;
+  for (const c of candidates) {
+    if (c + 16 > size) continue;
+    const slice = await readSlice(file, c, 16);
+    if (ascii(slice, 0, 8) === 'TMR SEGA') { base = c; buf = slice; break; }
+  }
+  if (base < 0) {
+    // Header is optional - fall back to a size-based identification.
+    return {
+      'Format': ext === 'gg' ? 'Sega Game Gear ROM (.gg)' : 'Sega Master System ROM (.sms)',
+      'ROM size': fmtBytes(size),
+      'Header': 'no TMR SEGA header found',
+    };
+  }
+  const r = new Reader(buf, true); r.seek(10); r.le(true);
+  const checksum = r.u16();
+  // BCD product code (2.5 bytes) + version nibble at 0x0E-0x0F.
+  const regByte = buf[15];
+  const region = regByte >> 4;
+  const romCode = regByte & 0x0F;
+  return {
+    'Format': ext === 'gg' ? 'Sega Game Gear ROM (.gg)' : 'Sega Master System ROM (.sms)',
+    'TMR SEGA header': 'at 0x' + base.toString(16).toUpperCase(),
+    'Checksum': '0x' + checksum.toString(16).toUpperCase().padStart(4, '0'),
+    'Region': SMS_REGION[region] || ('code ' + region),
+    'ROM size code': '0x' + romCode.toString(16),
+  };
+}
+
+// ---------- WonderSwan (.ws / .wsc) ----------
+async function parseWonderSwan(file, ext) {
+  // Bandai WonderSwan stores a 16-byte footer in the last bytes of the ROM.
+  const size = file.size;
+  if (size < 16) return null;
+  const foot = await readSlice(file, size - 16, 16);
+  const publisher = foot[6];
+  const system = foot[7]; // 0 = mono, 1 = color
+  const gameId = foot[8];
+  const romSizeCode = foot[10];
+  const saveType = foot[11];
+  const flags = foot[12];
+  const checksum = foot[14] | (foot[15] << 8);
+  return {
+    'Format': ext === 'wsc' ? 'WonderSwan Color ROM (.wsc)' : 'WonderSwan ROM (.ws)',
+    'Publisher ID': '0x' + publisher.toString(16),
+    'System': system === 1 ? 'WonderSwan Color' : 'WonderSwan (mono)',
+    'Game ID': '0x' + gameId.toString(16),
+    'ROM size code': '0x' + romSizeCode.toString(16),
+    'Save type': '0x' + saveType.toString(16),
+    'Orientation': (flags & 0x01) ? 'vertical' : 'horizontal',
+    'Checksum': '0x' + checksum.toString(16).toUpperCase().padStart(4, '0'),
+  };
+}
+
+// ---------- PC Engine / TurboGrafx-16 (.pce) ----------
+async function parsePce(file) {
+  // .pce is a raw HuCard dump; common copier header is 512 bytes (size % 1024 == 512).
+  const size = file.size;
+  const hasHeader = (size % 1024) === 512;
+  return {
+    'Format': 'PC Engine / TurboGrafx-16 ROM (.pce)',
+    'Copier header': hasHeader ? 'present (512 bytes, stripped by emulators)' : 'none',
+    'ROM size': fmtBytes(hasHeader ? size - 512 : size),
+    'Note': 'NEC HuCard image; some dumps store data bit-reversed and are de-swizzled on load.',
+  };
+}
+
+// ---------- Warcraft III map (.w3x / .w3m, MPQ-based) ----------
+async function parseW3Map(file) {
+  const head = await readSlice(file, 0, 12);
+  if (ascii(head, 0, 4) !== 'HM3W') return null;
+  // After "HM3W" + 4 reserved bytes, a NUL-terminated map name follows at 0x08.
+  const buf = await readSlice(file, 0, 256);
+  let name = '';
+  for (let i = 8; i < buf.length; i++) { const c = buf[i]; if (c === 0) break; if (c >= 32 && c < 127) name += String.fromCharCode(c); }
+  const r = new Reader(buf, true); r.seek(8 + name.length + 1); r.le(true);
+  let flags = 0, maxPlayers = 0;
+  try { flags = r.u32(); maxPlayers = r.u32(); } catch (_) {}
+  return {
+    'Format': 'Warcraft III map (.w3x / .w3m)',
+    'Map name': name || '(none)',
+    'Max players': maxPlayers || '-',
+    'Flags': '0x' + (flags >>> 0).toString(16),
+    'Note': 'A Warcraft III map is an MPQ archive with an HM3W header; scripts/assets live inside the MPQ.',
+  };
+}
+
+// ---------- Ren'Py compiled script (.rpyc) ----------
+async function parseRpyc(file) {
+  const head = await readSlice(file, 0, 16);
+  // RPYC2 files begin with "RENPY RPC2".
+  if (!startsWithAscii(head, 'RENPY RPC2')) {
+    // Older .rpyc are a raw zlib stream (0x78) of a pickled AST - identify only.
+    if (head[0] === 0x78) {
+      return {
+        'Format': "Ren'Py compiled script (.rpyc, legacy)",
+        'Note': 'Zlib-compressed pickled AST (pre-RPC2 slot format); decompiling needs unrpyc.',
+      };
+    }
+    return null;
+  }
+  // RPC2 slot table: after the 10-byte magic, repeating (slot u32, offset u32,
+  // length u32) records terminated by a zero slot.
+  const buf = await readSlice(file, 0, 256);
+  const r = new Reader(buf, true); r.seek(10); r.le(true);
+  const slots = [];
+  try {
+    for (let i = 0; i < 16; i++) {
+      const slot = r.u32();
+      if (slot === 0) break;
+      const offset = r.u32();
+      const length = r.u32();
+      slots.push({ slot, offset, length });
+    }
+  } catch (_) {}
+  return {
+    'Format': "Ren'Py compiled script (.rpyc, RPC2)",
+    'Slots': slots.length,
+    'Slot 1 payload': slots[0] ? fmtBytes(slots[0].length) + ' (zlib)' : '-',
+    'Note': 'Slot 1 holds the zlib-compressed pickled AST; .rpy source is recoverable with unrpyc.',
+  };
+}
+
+// ---------- RPG Maker data (.rvdata2 / .rxdata, Ruby Marshal) ----------
+async function parseRubyMarshal(file, ext) {
+  const head = await readSlice(file, 0, 32);
+  // Ruby Marshal streams start with the version pair 0x04 0x08.
+  if (!(head[0] === 0x04 && head[1] === 0x08)) return null;
+  const TYPES = {
+    0x40: 'object link', 0x49: 'IVAR-wrapped', 0x5B: 'Array ([)', 0x7B: 'Hash ({)',
+    0x6F: 'Object (o)', 0x75: 'User-defined (u)', 0x55: 'User marshal (U)',
+    0x22: 'String (")', 0x3A: 'Symbol (:)', 0x69: 'Integer (i)',
+  };
+  const labels = { rvdata2: 'RPG Maker VX Ace data (.rvdata2)', rxdata: 'RPG Maker XP data (.rxdata)' };
+  const topType = head[2];
+  return {
+    'Format': labels[ext] || 'RPG Maker data',
+    'Marshal version': head[0] + '.' + head[1],
+    'Top-level object': TYPES[topType] || ('byte 0x' + topType.toString(16)),
+    'Size': fmtBytes(file.size),
+    'Note': 'Ruby Marshal dump (RGSS game data: maps, actors, items); full decode needs a Marshal reader.',
+  };
+}
+
+// ---------- Pyxel Edit document (.pyxel, ZIP) ----------
+async function parsePyxel(file) {
+  let zip;
+  try { zip = await openZip(file); } catch (_) { return null; }
+  if (!zip || !zip.entries.length) return null;
+  const docEntry = zip.entries.find((e) => /docData\.json$/i.test(e.name));
+  if (!docEntry && !zip.names().some((n) => /\.(png|json)$/i.test(n))) return null;
+  const out = { 'Format': 'Pyxel Edit document (.pyxel, ZIP)', 'Entries': zip.entries.length };
+  if (docEntry) {
+    try {
+      const j = JSON.parse(await zip.text(docEntry.name));
+      if (j.tileset) out['Tile size'] = (j.tileset.tileWidth || '?') + ' x ' + (j.tileset.tileHeight || '?');
+      if (j.canvas) {
+        out['Canvas'] = (j.canvas.width || '?') + ' x ' + (j.canvas.height || '?');
+        if (j.canvas.numLayers != null) out['Layers'] = j.canvas.numLayers;
+      }
+      if (j.animations) out['Animations'] = Array.isArray(j.animations) ? j.animations.length : Object.keys(j.animations).length;
+      if (j.palette && j.palette.colors) out['Palette colours'] = j.palette.colors.length;
+    } catch (_) {}
+  }
+  out._sections = [{ title: 'Files (' + zip.entries.length + ', sample)', node: preBlock(zip.names().slice(0, 200).join('\n')) }];
+  return out;
+}
+
+// ---------- TIC-80 cartridge (.tic) ----------
+const TIC_CHUNKS = {
+  1: 'tiles', 2: 'sprites', 3: 'cover (deprecated)', 4: 'map', 5: 'code', 6: 'flags',
+  9: 'samples (SFX)', 10: 'waveforms', 12: 'palette', 14: 'music patterns',
+  15: 'music tracks', 17: 'code (zip)', 18: 'default', 19: 'screen', 20: 'binary',
+};
+async function parseTic(file) {
+  // A .tic cart is a flat list of chunks: 1 byte (bank<<5 | type), 16-bit size,
+  // 1 reserved byte, then payload.
+  const buf = await readSlice(file, 0, Math.min(file.size, 1 << 16));
+  if (buf.length < 4) return null;
+  const r = new Reader(buf, true); r.le(true);
+  const chunks = {};
+  let count = 0;
+  while (r.pos + 4 <= buf.length && count < 256) {
+    const tag = r.u8();
+    const type = tag & 0x1F;
+    const size = r.u16();
+    r.skip(1); // reserved
+    if (type === 0 && size === 0) break;
+    if (!TIC_CHUNKS[type] && type !== 0) { /* unknown but keep walking */ }
+    chunks[type] = (chunks[type] || 0) + 1;
+    count++;
+    if (size === 0) break;
+    r.skip(size);
+  }
+  if (!count) return null;
+  const present = Object.keys(chunks).map((t) => TIC_CHUNKS[t] || ('type ' + t));
+  return {
+    'Format': 'TIC-80 cartridge (.tic)',
+    'Chunks': count,
+    'Sections present': present.join(', ') || '(none)',
+    'Note': 'TIC-80 fantasy-console cart; code/graphics/sound stored as tagged chunks.',
+  };
+}
+
+// ---------- xdelta3 patch (.xdelta) ----------
+async function parseXdelta(file) {
+  const head = await readSlice(file, 0, 8);
+  // VCDIFF magic: 0xD6 0xC3 0xC4 'C' (xdelta3) then a version byte.
+  if (!(head[0] === 0xD6 && head[1] === 0xC3 && head[2] === 0xC4)) return null;
+  return {
+    'Format': 'xdelta3 patch (VCDIFF)',
+    'VCDIFF version': head[4],
+    'Header indicator': '0x' + head[5].toString(16),
+    'Note': 'RFC 3284 VCDIFF binary delta (commonly an xdelta3 ROM patch); apply with the source file.',
+  };
+}
+
+// ---------- Basis Universal texture (.basis) ----------
+async function parseBasis(file) {
+  const head = await readSlice(file, 0, 24);
+  // Basis files start with the 2-byte signature 0x73 0x42 ('sB').
+  if (!(head[0] === 0x73 && head[1] === 0x42)) return null;
+  const r = new Reader(head, true); r.seek(2); r.le(true);
+  const headerSize = r.u16();
+  const headerCrc = r.u16();
+  const dataSize = r.u32();
+  return {
+    'Format': 'Basis Universal texture (.basis)',
+    'Header size': headerSize + ' bytes',
+    'Data size': fmtBytes(dataSize),
+    'Note': 'Binomial Basis Universal supercompressed GPU texture; transcodes to BCn/ASTC/ETC at load.',
+  };
+}
+
+// ---------- LDtk level project (.ldtk JSON) ----------
+async function parseLdtk(file) {
+  let j; try { j = JSON.parse(await file.slice(0, Math.min(file.size, 4 << 20)).text()); } catch (_) { return null; }
+  if (!j || (!j.__header__ && !j.levels && j.jsonVersion === undefined)) return null;
+  const out = { 'Format': 'LDtk level project (.ldtk)' };
+  if (j.jsonVersion) out['LDtk version'] = j.jsonVersion;
+  if (j.defaultGridSize) out['Default grid size'] = j.defaultGridSize + ' px';
+  out['Levels'] = (j.levels || []).length;
+  if (j.defs) {
+    if (Array.isArray(j.defs.layers)) out['Layer definitions'] = j.defs.layers.length;
+    if (Array.isArray(j.defs.entities)) out['Entity definitions'] = j.defs.entities.length;
+    if (Array.isArray(j.defs.tilesets)) out['Tilesets'] = j.defs.tilesets.length;
+  }
+  if (j.worldGridWidth) out['World grid'] = j.worldGridWidth + ' x ' + (j.worldGridHeight || '?');
+  return out;
+}
+
+// ---------- Emulator saves / movies (.srm/.state/.dsv/.dsm/.vbm/.fm2) ----------
+async function parseEmuSave(file, ext) {
+  const head = await readSlice(file, 0, Math.min(file.size, 256));
+  // FCEUX .fm2 movies are plain text key/value lines.
+  if (ext === 'fm2') {
+    const text = latin1(head);
+    if (!/^version\s+\d/m.test(text) && !/\bemuVersion\b/.test(text)) {
+      // Still likely an fm2 - read more thoroughly.
+    }
+    const full = await file.slice(0, Math.min(file.size, 1 << 16)).text();
+    const get = (k) => (full.match(new RegExp('^' + k + '\\s+(.+)$', 'm')) || [])[1];
+    const out = { 'Format': 'FCEUX movie (.fm2)' };
+    if (get('version')) out['Movie version'] = get('version').trim();
+    if (get('emuVersion')) out['Emulator version'] = get('emuVersion').trim();
+    if (get('rerecordCount')) out['Rerecords'] = get('rerecordCount').trim();
+    if (get('romFilename')) out['ROM'] = get('romFilename').trim();
+    if (get('romChecksum')) out['ROM checksum'] = get('romChecksum').trim();
+    const frames = (full.match(/^\|/gm) || []).length;
+    if (frames) out['Input frames'] = frames;
+    return out;
+  }
+  // DeSmuME .dsm movies are also text with a header block.
+  if (ext === 'dsm') {
+    const full = await file.slice(0, Math.min(file.size, 1 << 16)).text();
+    if (!/version\s+\d/i.test(full) && !/rerecordCount/i.test(full)) return null;
+    const get = (k) => (full.match(new RegExp('^' + k + '\\s+(.+)$', 'm')) || [])[1];
+    const out = { 'Format': 'DeSmuME movie (.dsm)' };
+    if (get('version')) out['Movie version'] = get('version').trim();
+    if (get('emuVersion')) out['Emulator version'] = get('emuVersion').trim();
+    if (get('rerecordCount')) out['Rerecords'] = get('rerecordCount').trim();
+    if (get('romSerial') || get('romFilename')) out['ROM'] = (get('romFilename') || get('romSerial')).trim();
+    return out;
+  }
+  // DeSmuME .dsv save has a "|-DESMUME SAVE-|" footer.
+  if (ext === 'dsv') {
+    const size = file.size;
+    const foot = await readSlice(file, Math.max(0, size - 16), 16);
+    const tag = latin1(foot);
+    const out = { 'Format': 'DeSmuME save (.dsv)', 'Save size': fmtBytes(size) };
+    out['Footer'] = /DESMUME SAVE/.test(tag) ? '|-DESMUME SAVE-| present' : 'not found';
+    return out;
+  }
+  // VisualBoyAdvance .vbm movie: "VBM\x1A" magic.
+  if (ext === 'vbm') {
+    if (!(head[0] === 0x56 && head[1] === 0x42 && head[2] === 0x4D && head[3] === 0x1A)) return null;
+    const r = new Reader(head, true); r.seek(4); r.le(true);
+    const version = r.u32();
+    const uid = r.u32();
+    const frameCount = r.u32();
+    const rerecords = r.u32();
+    const out = {
+      'Format': 'VisualBoyAdvance movie (.vbm)',
+      'Movie version': version,
+      'Frame count': frameCount,
+      'Rerecords': rerecords,
+    };
+    out['ROM title'] = cleanAscii(head, 0x40, 12) || '-';
+    return out;
+  }
+  // .srm / .state - generic battery save / save state.
+  const labels = { srm: 'Emulator battery save (.srm)', state: 'Emulator save state (.state)' };
+  return {
+    'Format': labels[ext] || 'Emulator save',
+    'Size': fmtBytes(file.size),
+    'Note': ext === 'srm'
+      ? 'Cartridge SRAM/battery save; size hints at the mapper (e.g. 8 KB, 32 KB, 128 KB).'
+      : 'Emulator save state; layout is emulator- and core-specific (often zlib-compressed).',
+  };
+}
+
 export const PARSERS = {
   // ROM headers
   nes: wrap((c) => parseNes(c.head)),
@@ -1031,7 +1750,75 @@ export const PARSERS = {
   // LÖVE / fantasy console
   love: wrap((c) => parseLove(c.file)),
   p8: wrap((c) => parseP8(c.file)),
+  tic: wrap((c) => parseTic(c.file)),
   package: wrap((c) => parsePackage(c.file)),
+
+  // Unity / Unreal engine assets
+  assets: wrap((c) => parseUnity(c.file)),
+  bundle: wrap((c) => parseUnity(c.file)),
+  resource: wrap((c) => parseUnity(c.file)),
+  utoc: wrap((c) => parseUnreal(c.file, c.ext)),
+  ucas: wrap((c) => parseUnreal(c.file, c.ext)),
+  uexp: wrap((c) => parseUnreal(c.file, c.ext)),
+  umd: wrap((c) => parseUnreal(c.file, c.ext)),
+
+  // Compressed disc images
+  cso: wrap((c) => parseCiso(c.file)),
+  chd: wrap((c) => parseChd(c.file)),
+
+  // Sound banks (FMOD / Wwise)
+  fsb: wrap((c) => parseFsb(c.file)),
+  bank: wrap((c) => parseFsb(c.file)),
+  bnk: wrap((c) => parseWwise(c.file, c.ext)),
+  wem: wrap((c) => parseWwise(c.file, c.ext)),
+
+  // Spine animation
+  spine: wrap((c) => parseSpine(c.file, c.ext)),
+  skel: wrap((c) => parseSpine(c.file, c.ext)),
+  atlas: wrap((c) => parseSpine(c.file, c.ext)),
+
+  // GameMaker
+  yyp: wrap((c) => parseGameMaker(c.file, c.ext)),
+  yy: wrap((c) => parseGameMaker(c.file, c.ext)),
+  gmx: wrap((c) => parseGameMaker(c.file, c.ext)),
+
+  // Minecraft region + Bedrock template bundle
+  mca: wrap((c) => parseMcRegion(c.file, c.ext)),
+  mcr: wrap((c) => parseMcRegion(c.file, c.ext)),
+  mctemplate: wrap((c) => parseMcZip(c.file, c.ext)),
+
+  // Console ROMs (more)
+  '3dsx': wrap((c) => parse3dsx(c.file)),
+  a78: wrap((c) => parseAtari(c.file, c.ext)),
+  lnx: wrap((c) => parseAtari(c.file, c.ext)),
+  a26: wrap((c) => parseAtari(c.file, c.ext)),
+  j64: wrap((c) => parseAtari(c.file, c.ext)),
+  sms: wrap((c) => parseSega8(c.file, c.ext)),
+  gg: wrap((c) => parseSega8(c.file, c.ext)),
+  ws: wrap((c) => parseWonderSwan(c.file, c.ext)),
+  wsc: wrap((c) => parseWonderSwan(c.file, c.ext)),
+  pce: wrap((c) => parsePce(c.file)),
+
+  // Maps / scripts / data
+  w3x: wrap((c) => parseW3Map(c.file)),
+  w3m: wrap((c) => parseW3Map(c.file)),
+  rpyc: wrap((c) => parseRpyc(c.file)),
+  rvdata2: wrap((c) => parseRubyMarshal(c.file, c.ext)),
+  rxdata: wrap((c) => parseRubyMarshal(c.file, c.ext)),
+  pyxel: wrap((c) => parsePyxel(c.file)),
+  ldtk: wrap((c) => parseLdtk(c.file)),
+
+  // Patches / textures
+  xdelta: wrap((c) => parseXdelta(c.file)),
+  basis: wrap((c) => parseBasis(c.file)),
+
+  // Emulator saves / movies
+  srm: wrap((c) => parseEmuSave(c.file, c.ext)),
+  state: wrap((c) => parseEmuSave(c.file, c.ext)),
+  dsv: wrap((c) => parseEmuSave(c.file, c.ext)),
+  dsm: wrap((c) => parseEmuSave(c.file, c.ext)),
+  vbm: wrap((c) => parseEmuSave(c.file, c.ext)),
+  fm2: wrap((c) => parseEmuSave(c.file, c.ext)),
 
   // identification-only (rare + hard)
   sc2replay: wrap((c) => idOnly(c.file, c.ext)),

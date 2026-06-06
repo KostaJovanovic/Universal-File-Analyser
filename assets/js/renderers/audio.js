@@ -504,8 +504,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   // --- controls ---
   const controls = el('div', { class: 'anr-controls' });
   const toggle = el('div', { class: 'anr-toggle' });
-  const btnLog = el('button', { type: 'button' }, 'LOG');
-  const btnLin = el('button', { type: 'button', class: 'is-active' }, 'LINEAR');
+  const btnLog = el('button', { type: 'button', class: 'is-active' }, 'LOG');
+  const btnLin = el('button', { type: 'button' }, 'LINEAR');
   toggle.appendChild(btnLog); toggle.appendChild(btnLin);
 
   const modeSel = el('select', {}, [
@@ -657,7 +657,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   card.appendChild(status);
 
   let state = {
-    mode: 'stft', scale: 'linear', cmap: 'magma', fftSize: 2048, winName: 'hann',
+    mode: 'stft', scale: 'log', cmap: 'magma', fftSize: 2048, winName: 'hann',
     zoom: 1, height: 320, dbFloor: -90
   };
   let cached = null;
@@ -1476,8 +1476,8 @@ async function startLive(resultsEl, liveBtn) {
 
   const controls = el('div', { class: 'anr-controls' });
   const toggle = el('div', { class: 'anr-toggle' });
-  const btnLog = el('button', { type: 'button' }, 'LOG');
-  const btnLin = el('button', { type: 'button', class: 'is-active' }, 'LINEAR');
+  const btnLog = el('button', { type: 'button', class: 'is-active' }, 'LOG');
+  const btnLin = el('button', { type: 'button' }, 'LINEAR');
   toggle.appendChild(btnLog); toggle.appendChild(btnLin);
 
   const fftSel    = el('select', {}, ['512','1024','2048','4096','8192'].map((v) => el('option', { value: v }, v)));
@@ -1532,7 +1532,7 @@ async function startLive(resultsEl, liveBtn) {
   card.appendChild(wrap);
   resultsEl.appendChild(card);
 
-  let state = { scale: 'linear', cmap: 'magma', height: 320 };
+  let state = { scale: 'log', cmap: 'magma', height: 320 };
 
   function isFs() { return document.fullscreenElement === card; }
   function availableWidth()  { return Math.max(200, (wrap.clientWidth || 600) - 48); }

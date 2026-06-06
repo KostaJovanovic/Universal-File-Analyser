@@ -17,6 +17,7 @@ import { el, row, fmtBytes, preBlock } from '../core/util.js';
 import { Reader, ascii, findBytes, latin1, utf8, utf16, filetimeToDate } from '../core/binutil.js';
 import { parsePlist } from '../lib/plist.js';
 import { openCfbf } from '../lib/cfbf.js';
+import { openZip } from '../renderers/zip.js';
 
 // ---------- shared helpers ----------
 
@@ -691,6 +692,453 @@ async function parseMsg(file) {
   return out;
 }
 
+// ---------- olm (Outlook for Mac archive - ZIP) ----------
+// An .olm is a ZIP whose members are per-folder Messages_*.xml/*.xml plus a
+// Local/Accounts.xml manifest, with attachments under Attachments/. We list the
+// folder tree and count messages without decompressing every blob.
+async function parseOlm(file) {
+  let zip; try { zip = await openZip(file); } catch (_) { return null; }
+  if (!zip || !zip.entries.length) return null;
+  const ents = zip.entries;
+  // Sanity: must smell like an OLM (message XML and/or the Outlook manifest).
+  const looksOlm = ents.some((e) => /(^|\/)message_|messages_|\.xml$/i.test(e.name)) &&
+    ents.some((e) => /accounts\.xml$/i.test(e.name) || /(^|\/)(Local|com\.microsoft\.__Messages)/i.test(e.name) || /message/i.test(e.name));
+  if (!looksOlm) return null;
+
+  const msgXml = ents.filter((e) => /\.xml$/i.test(e.name) && /message/i.test(e.name));
+  const attachEnts = ents.filter((e) => /(^|\/)attachments?\//i.test(e.name) && !/\/$/.test(e.name));
+  const totalUncomp = ents.reduce((s, e) => s + (e.uncompSize || 0), 0);
+
+  // Folder tree from member paths (top two levels).
+  const folders = {};
+  for (const e of ents) {
+    const top = e.name.split('/')[0];
+    if (!top) continue;
+    folders[top] = (folders[top] || 0) + 1;
+  }
+  const folderList = Object.entries(folders).sort((a, b) => b[1] - a[1]).slice(0, 25)
+    .map(([k, v]) => v + '  ' + k).join('\n');
+
+  const out = {
+    'Format': 'Outlook for Mac archive (.olm, ZIP)',
+    'ZIP members': ents.length.toLocaleString(),
+    'Message XML files': msgXml.length.toLocaleString(),
+    'Attachments': attachEnts.length.toLocaleString(),
+  };
+  if (totalUncomp) out['Uncompressed size'] = fmtBytes(totalUncomp);
+
+  const sections = [];
+  if (folderList) sections.push({ title: 'Top-level entries', node: preBlock(folderList) });
+  const sampleNames = msgXml.slice(0, 40).map((e) => e.name).join('\n') ||
+    ents.slice(0, 40).map((e) => e.name).join('\n');
+  if (sampleNames) sections.push({ title: 'Member sample', node: preBlock(sampleNames), open: true });
+  out._sections = sections;
+  return out;
+}
+
+// ---------- p7m / p7s (S/MIME - PKCS#7 / CMS) ----------
+// A .p7m carries an encrypted/enveloped message, .p7s a detached signature. Both
+// are CMS (RFC 5652) ContentInfo: either DER (SEQUENCE 0x30) or PEM-armoured
+// base64. We don't run a full ASN.1 decoder (the security chunk owns deep cert
+// parsing); we identify the CMS content type by its OID and surface the basics.
+const CMS_OIDS = {
+  '2a864886f70d010701': 'data',
+  '2a864886f70d010702': 'signed-data',
+  '2a864886f70d010703': 'enveloped-data',
+  '2a864886f70d010704': 'signed-and-enveloped-data',
+  '2a864886f70d010705': 'digested-data',
+  '2a864886f70d010706': 'encrypted-data',
+  '2a864886f70d010709100103': 'authenticated-enveloped-data',
+};
+const CMS_OID_LABEL = {
+  'data': 'Data',
+  'signed-data': 'Signed data (signature)',
+  'enveloped-data': 'Enveloped data (encrypted)',
+  'signed-and-enveloped-data': 'Signed and enveloped data',
+  'digested-data': 'Digested data',
+  'encrypted-data': 'Encrypted data',
+  'authenticated-enveloped-data': 'Authenticated enveloped data',
+};
+
+function hexOf(bytes, start, len) {
+  let s = '';
+  for (let i = start; i < start + len && i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, '0');
+  return s;
+}
+
+async function parseP7(file, ext) {
+  const head = new Uint8Array(await file.slice(0, Math.min(file.size, 256 * 1024)).arrayBuffer());
+  if (!head.length) return null;
+
+  let der = head, armoured = false;
+  // PEM-armoured? ("-----BEGIN PKCS7-----" / "-----BEGIN CMS-----")
+  const asText = latin1(head.subarray(0, 64));
+  if (/-----BEGIN (PKCS7|CMS|SIGNED MESSAGE)-----/.test(asText) || asText.trimStart().startsWith('-----BEGIN')) {
+    armoured = true;
+    const full = latin1(new Uint8Array(await file.slice(0, Math.min(file.size, 512 * 1024)).arrayBuffer()));
+    const m = full.match(/-----BEGIN [^-]+-----([\s\S]*?)-----END/);
+    if (m) {
+      try {
+        const bin = atob(m[1].replace(/\s+/g, ''));
+        der = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) der[i] = bin.charCodeAt(i);
+      } catch (_) { der = head; }
+    }
+  }
+  // Must be a DER SEQUENCE to be CMS.
+  if (der[0] !== 0x30) {
+    // Not recognisable CMS - bail to ident card so we don't mislabel.
+    if (!armoured) return null;
+  }
+
+  // Find the eContentType OID by scanning for a known PKCS#7 OID byte run.
+  let contentType = '';
+  for (const [hex, name] of Object.entries(CMS_OIDS)) {
+    const needle = [];
+    for (let i = 0; i < hex.length; i += 2) needle.push(parseInt(hex.substr(i, 2), 16));
+    if (findBytes(der, needle) >= 0) { contentType = name; if (name !== 'data') break; }
+  }
+
+  const out = {
+    'Format': ext === 'p7s'
+      ? 'S/MIME signature (PKCS#7 / CMS, .p7s)'
+      : 'S/MIME message (PKCS#7 / CMS, .p7m)',
+    'Encoding': armoured ? 'PEM (base64-armoured)' : 'DER (binary)',
+  };
+  if (contentType) out['CMS content type'] = CMS_OID_LABEL[contentType] || contentType;
+
+  // Count embedded X.509 certificates (each a SEQUENCE containing the cert OID
+  // run is awkward; instead count signerInfo/issuer hints heuristically).
+  const certMarker = [0x06, 0x03, 0x55, 0x04];   // id-at (2.5.4.x) appears in DNs
+  let dnCount = 0, from = 0;
+  while (true) {
+    const idx = findBytes(der, certMarker, from);
+    if (idx < 0) break; dnCount++; from = idx + 4;
+    if (dnCount > 5000) break;
+  }
+  if (dnCount) out['Directory-name attributes'] = dnCount + ' (issuer/subject DN components)';
+  out['Note'] = 'Deep certificate/signer decoding lives in the security tools; here we identify the CMS envelope.';
+  return out;
+}
+
+// ---------- Mozilla Mork (.msf summary, .mab address book) ----------
+// Mork is Mozilla's old text database (Thunderbird/Netscape). It is line-oriented
+// ASCII with a dict of hex-keyed atoms and rows. A full Mork parser is large; we
+// decode the atom dictionary and surface cached human strings (subjects, senders,
+// names, emails) plus table/row counts - enough for a useful readout.
+function parseMork(text) {
+  // Atom dictionaries: <(KEY=VALUE)(KEY=VALUE)...> ; values may contain $XX hex
+  // escapes and \) escapes. Collect KEY -> decoded VALUE.
+  const atoms = {};
+  const unescape = (v) => v
+    .replace(/\\\r?\n/g, '')                                   // line continuation
+    .replace(/\\([)\\$])/g, '$1')                              // escaped metachars
+    .replace(/\$([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  const dictRe = /\(([0-9A-Fa-f]+)\s*[=^]\s*([^)]*)\)/g;
+  let m;
+  while ((m = dictRe.exec(text)) !== null) {
+    const key = m[1].toLowerCase();
+    if (atoms[key] == null) atoms[key] = unescape(m[2]);
+  }
+  // Rows: [-?id(col=val)...] / table groups {...}. Count rough structure.
+  const rowCount = (text.match(/\[[\-0-9A-Fa-f:]+\(/g) || []).length;
+  const tableCount = (text.match(/\{[\-0-9A-Fa-f:]+\s*\{/g) || []).length;
+
+  // Heuristically classify atom values: emails, dates, plausible names/subjects.
+  const values = Object.values(atoms).filter((v) => v && v.length > 1 && v.length < 400);
+  const emails = [...new Set(values.filter((v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)))];
+  const texty = values.filter((v) => /[A-Za-z]/.test(v) && !/^[0-9A-Fa-f]+$/.test(v) && v.indexOf('@') < 0);
+
+  return { atoms, emails, texty, rowCount, tableCount, atomCount: Object.keys(atoms).length };
+}
+
+async function parseMsf(file) {
+  const text = await readText(file, 8 * 1024 * 1024);
+  if (!text) return null;
+  if (!/<!--\s*<mdb:mork|^\/\/\s*<!--\s*<mdb:mork|BeMs/m.test(text.slice(0, 4000)) && text.indexOf('mork') < 0) return null;
+  const { emails, texty, rowCount, tableCount, atomCount } = parseMork(text);
+
+  const out = {
+    'Format': 'Mozilla Mail Summary (.msf, Mork)',
+    'Application': 'Thunderbird / Netscape / SeaMonkey',
+    'Atoms (dictionary)': atomCount.toLocaleString(),
+  };
+  if (tableCount) out['Tables'] = tableCount.toLocaleString();
+  if (rowCount) out['Rows (cached headers)'] = rowCount.toLocaleString();
+  if (emails.length) out['Distinct addresses'] = emails.length.toLocaleString();
+
+  const sections = [];
+  // Cached subjects/senders are the longer textual atoms.
+  const sample = texty.filter((v) => v.length >= 3).slice(0, 60).map((v) => '  ' + v).join('\n');
+  if (sample) sections.push({ title: 'Cached strings (subjects / senders)', node: preBlock(sample), open: true });
+  if (emails.length) sections.push({ title: 'Addresses', node: preBlock(emails.slice(0, 80).map((e) => '  ' + e).join('\n')) });
+  if (sections.length) out._sections = sections;
+  return out;
+}
+
+async function parseMab(file) {
+  const text = await readText(file, 8 * 1024 * 1024);
+  if (!text) return null;
+  if (text.indexOf('mork') < 0 && !/<!--\s*<mdb:mork/.test(text.slice(0, 4000))) return null;
+  const { atoms, emails, texty, rowCount, atomCount } = parseMork(text);
+
+  // Mab address books cache contact display names + emails as atoms; phone-ish
+  // atoms are digit runs.
+  const phones = [...new Set(Object.values(atoms).filter((v) => /^[+()\d][\d\s().+-]{5,}$/.test(v)))];
+  const names = texty.filter((v) => /[A-Za-z]/.test(v) && v.indexOf('@') < 0 && v.length >= 2);
+
+  const out = {
+    'Format': 'Mozilla Address Book (.mab, Mork)',
+    'Application': 'Thunderbird / Netscape / SeaMonkey',
+    'Atoms (dictionary)': atomCount.toLocaleString(),
+  };
+  if (rowCount) out['Rows (contacts/cards)'] = rowCount.toLocaleString();
+  if (emails.length) out['Distinct emails'] = emails.length.toLocaleString();
+  if (phones.length) out['Phone-like values'] = phones.length.toLocaleString();
+
+  const sections = [];
+  if (emails.length) sections.push({ title: 'Emails', node: preBlock(emails.slice(0, 80).map((e) => '  ' + e).join('\n')), open: true });
+  const nameSample = names.slice(0, 60).map((v) => '  ' + v).join('\n');
+  if (nameSample) sections.push({ title: 'Cached names / fields', node: preBlock(nameSample) });
+  if (sections.length) out._sections = sections;
+  return out;
+}
+
+// ---------- Eudora mailbox (.mbx) + table of contents (.toc) ----------
+// A Eudora .mbx is essentially an mbox-style concatenation of RFC 822 messages
+// (separated by "From ???@???" pseudo-envelopes). The .toc is a binary index of
+// fixed-size records; we surface the message count and any plaintext summaries.
+async function parseMbx(file) {
+  const raw = await readText(file);
+  if (!raw) return null;
+  // Eudora separator is "From ???@???" but many .mbx are plain mbox too.
+  if (!/^From [^\n]*\r?\n/m.test(raw) && !/^[\w-]+:\s/m.test(raw.slice(0, 2000))) return null;
+  const out = await parseMbox(file);
+  if (out) {
+    out['Format'] = 'Eudora / Outlook Express mailbox (.mbx)';
+    return out;
+  }
+  // Single message fallback.
+  if (/^[\w-]+:\s/m.test(raw.slice(0, 2000))) {
+    const { out: mo, sections } = analyseMime(raw);
+    const res = { 'Format': 'Eudora mailbox (.mbx, single message)', ...mo };
+    res._sections = sections;
+    return res;
+  }
+  return null;
+}
+
+async function parseToc(file) {
+  const head = new Uint8Array(await file.slice(0, Math.min(file.size, 256 * 1024)).arrayBuffer());
+  if (!head.length) return null;
+  const txt = latin1(head);
+  // Eudora .toc starts with a version word then a folder name; it's mostly binary
+  // but carries readable subject/sender strings. Heuristic identification only.
+  const printable = txt.replace(/[^\x20-\x7E]+/g, ' ').split(/\s{2,}/).map((s) => s.trim())
+    .filter((s) => s.length >= 4 && /[A-Za-z]/.test(s));
+  const out = {
+    'Format': 'Eudora table of contents (.toc)',
+    'Application': 'Qualcomm Eudora',
+    'Role': 'Binary index of an accompanying .mbx mailbox',
+  };
+  // The folder name is usually the first readable run.
+  if (printable.length) out['Folder / label'] = printable[0].slice(0, 80);
+  if (printable.length > 1) {
+    out._sections = [{ title: 'Embedded strings (subjects / senders)', node: preBlock(printable.slice(1, 60).join('\n')), open: true }];
+  }
+  return out;
+}
+
+// ---------- Outlook Template (.oft - CFBF, like .msg) ----------
+async function parseOft(file) {
+  const res = await parseMsg(file);
+  if (res) {
+    res['Format'] = 'Outlook Template (.oft, CFBF/OLE)';
+    res['Template'] = 'yes (reusable message form)';
+    return res;
+  }
+  // Not a valid MAPI CFBF - still identify it.
+  let cfbf; try { cfbf = await openCfbf(file); } catch (_) { return null; }
+  if (!cfbf) return null;
+  return {
+    'Format': 'Outlook Template (.oft, CFBF/OLE)',
+    'Template': 'yes',
+    'Note': 'Compound File detected but no readable MAPI streams.',
+  };
+}
+
+// ---------- vMessage (.vmg) / vNote (.vnt) - vObject text ----------
+function parseVobjectText(text) {
+  // Shared light parser for BEGIN:VMSG / BEGIN:VNOTE blocks (vObject / vMessage
+  // 1.0). Properties are NAME[;PARAM]:VALUE; bodies may be quoted-printable.
+  const lines = unfoldIcal(text);
+  const props = [];
+  for (const raw of lines) {
+    const ci = raw.indexOf(':');
+    if (ci < 0) continue;
+    const head = raw.slice(0, ci);
+    const value = raw.slice(ci + 1);
+    const segs = head.split(';');
+    const name = segs.shift().toUpperCase();
+    const params = {};
+    for (const s of segs) { const i = s.indexOf('='); if (i > 0) params[s.slice(0, i).toUpperCase()] = s.slice(i + 1); else params[s.toUpperCase()] = true; }
+    props.push({ name, params, value });
+  }
+  return props;
+}
+
+function maybeQp(value, params) {
+  if (params && (params['ENCODING'] === 'QUOTED-PRINTABLE' || params['QUOTED-PRINTABLE'])) {
+    try { return decodeQuotedPrintable(value); } catch (_) { return value; }
+  }
+  return value;
+}
+
+async function parseVmg(file) {
+  const text = await readText(file, 1024 * 1024);
+  if (!text || !/BEGIN:VMSG/i.test(text)) return null;
+  const props = parseVobjectText(text);
+  const get = (n) => { const p = props.find((x) => x.name === n); return p ? maybeQp(p.value, p.params) : ''; };
+
+  const blocks = (text.match(/BEGIN:VMSG/gi) || []).length;
+  const out = { 'Format': 'vMessage SMS backup (.vmg)', 'Application': 'Nokia / Sony Ericsson / Siemens phones' };
+  if (blocks > 1) out['Messages'] = blocks;
+
+  // VMSG carries VENV/VBODY/VCARD sub-blocks. Pull common fields.
+  const sender = get('TEL') || get('FROM') || get('X-IRMC-N');
+  const date = get('X-NOK-DT') || get('DATE') || get('X-MESSAGE-TIME');
+  const status = get('X-MESSAGE-TYPE') || get('X-IRMC-STATUS') || get('STATUS');
+  if (sender) out['Sender / number'] = sender;
+  if (date) out['Date'] = date;
+  if (status) out['Status / type'] = status;
+
+  // Body is the text inside the innermost VBODY.
+  const bodyM = text.match(/BEGIN:VBODY([\s\S]*?)END:VBODY/i);
+  if (bodyM) {
+    let body = bodyM[1];
+    const props2 = parseVobjectText(body);
+    const textProp = props2.find((p) => p.name === 'X-IRMC-BODY' || p.name === 'BODY');
+    let msg = textProp ? maybeQp(textProp.value, textProp.params) : body;
+    msg = msg.replace(/^[\s\r\n]+|[\s\r\n]+$/g, '');
+    if (msg) out._sections = [{ title: 'Message text', node: preBlock(msg.slice(0, 4000)), open: true }];
+  }
+  return out;
+}
+
+async function parseVnt(file) {
+  const text = await readText(file, 1024 * 1024);
+  if (!text || !/BEGIN:VNOTE/i.test(text)) return null;
+  const props = parseVobjectText(text);
+  const get = (n) => { const p = props.find((x) => x.name === n); return p ? maybeQp(p.value, p.params) : ''; };
+
+  const out = { 'Format': 'vNote (.vnt)', 'Application': 'Nokia / Sony / Samsung phones' };
+  const body = get('BODY');
+  const created = get('DCREATED') || get('CREATED');
+  const modified = get('LAST-MODIFIED');
+  const cls = get('CLASS');
+  const subj = get('SUMMARY');
+  if (subj) out['Summary'] = subj;
+  if (created) out['Created'] = created;
+  if (modified) out['Modified'] = modified;
+  if (cls) out['Class'] = cls;
+  if (body) out._sections = [{ title: 'Note text', node: preBlock(body.replace(/^[\s\r\n]+|[\s\r\n]+$/g, '').slice(0, 4000)), open: true }];
+  return out;
+}
+
+// ---------- xCal / jCal (XML / JSON iCalendar) ----------
+async function parseXcal(file) {
+  const text = await readText(file, 4 * 1024 * 1024);
+  if (!text || !/<(icalendar|vcalendar)\b/i.test(text)) return null;
+  let doc; try { doc = new DOMParser().parseFromString(text, 'application/xml'); } catch (_) { return null; }
+  if (!doc || doc.querySelector('parsererror')) return null;
+  const tag = (n) => doc.getElementsByTagName(n).length || [...doc.getElementsByTagName('*')].filter((e) => e.localName === n).length;
+  const out = {
+    'Format': 'xCal - iCalendar in XML (RFC 6321)',
+    'Events (vevent)': tag('vevent'),
+    'To-dos (vtodo)': tag('vtodo'),
+  };
+  if (tag('vjournal')) out['Journals'] = tag('vjournal');
+  if (tag('vfreebusy')) out['Free/busy'] = tag('vfreebusy');
+  const prod = [...doc.getElementsByTagName('*')].find((e) => e.localName === 'prodid');
+  if (prod && prod.textContent.trim()) out['Product (PRODID)'] = prod.textContent.trim();
+  const summaries = [...doc.getElementsByTagName('*')].filter((e) => e.localName === 'summary').map((e) => e.textContent.trim()).filter(Boolean).slice(0, 20);
+  if (summaries.length) out._sections = [{ title: 'Event summaries', node: preBlock(summaries.map((s) => '  ' + s).join('\n')), open: true }];
+  return out;
+}
+
+async function parseJcal(file) {
+  const text = await readText(file, 4 * 1024 * 1024);
+  if (!text) return null;
+  let data; try { data = JSON.parse(text); } catch (_) { return null; }
+  // jCal: ["vcalendar", [props], [components]].
+  if (!Array.isArray(data) || data[0] !== 'vcalendar') return null;
+  const counts = {};
+  const summaries = [];
+  const walk = (comp) => {
+    if (!Array.isArray(comp)) return;
+    const [name, , subs] = comp;
+    if (typeof name === 'string') counts[name] = (counts[name] || 0) + 1;
+    const props = comp[1];
+    if (Array.isArray(props)) for (const p of props) if (Array.isArray(p) && p[0] === 'summary' && summaries.length < 20) summaries.push(String(p[3]));
+    if (Array.isArray(subs)) for (const s of subs) walk(s);
+  };
+  walk(data);
+  const out = {
+    'Format': 'jCal - iCalendar in JSON (RFC 7265)',
+    'Events (vevent)': counts.vevent || 0,
+    'To-dos (vtodo)': counts.vtodo || 0,
+  };
+  if (counts.vjournal) out['Journals'] = counts.vjournal;
+  if (summaries.length) out._sections = [{ title: 'Event summaries', node: preBlock(summaries.map((s) => '  ' + s).join('\n')), open: true }];
+  return out;
+}
+
+// ---------- xCard / jCard (XML / JSON vCard) ----------
+async function parseXcard(file) {
+  const text = await readText(file, 4 * 1024 * 1024);
+  if (!text || !/<vcards\b|<vcard\b/i.test(text)) return null;
+  let doc; try { doc = new DOMParser().parseFromString(text, 'application/xml'); } catch (_) { return null; }
+  if (!doc || doc.querySelector('parsererror')) return null;
+  const cards = [...doc.getElementsByTagName('*')].filter((e) => e.localName === 'vcard');
+  if (!cards.length) return null;
+  const out = { 'Format': 'xCard - vCard in XML (RFC 6351)', 'Cards': cards.length };
+  const detail = [];
+  cards.slice(0, 5).forEach((card, i) => {
+    const localText = (ln) => { const e = [...card.getElementsByTagName('*')].find((x) => x.localName === ln); return e ? e.textContent.trim() : ''; };
+    const allText = (ln) => [...card.getElementsByTagName('*')].filter((x) => x.localName === ln).map((x) => x.textContent.trim()).filter(Boolean);
+    const fn = localText('fn') || localText('text');
+    const bits = [(i + 1) + '. ' + (fn || '(no name)')];
+    for (const e of allText('email')) bits.push('   email: ' + e);
+    for (const t of allText('tel')) bits.push('   tel: ' + t);
+    detail.push(bits.join('\n'));
+  });
+  out._sections = [{ title: 'First cards', node: preBlock(detail.join('\n\n')), open: true }];
+  return out;
+}
+
+async function parseJcard(file) {
+  const text = await readText(file, 4 * 1024 * 1024);
+  if (!text) return null;
+  let data; try { data = JSON.parse(text); } catch (_) { return null; }
+  // jCard: ["vcard", [props]] or an array of such.
+  const cards = (Array.isArray(data) && data[0] === 'vcard') ? [data]
+    : (Array.isArray(data) && data.every((d) => Array.isArray(d) && d[0] === 'vcard')) ? data : null;
+  if (!cards || !cards.length) return null;
+  const out = { 'Format': 'jCard - vCard in JSON (RFC 7095)', 'Cards': cards.length };
+  const detail = [];
+  cards.slice(0, 5).forEach((card, i) => {
+    const props = Array.isArray(card[1]) ? card[1] : [];
+    const get = (n) => { const p = props.find((x) => Array.isArray(x) && x[0] === n); return p ? String(p[3]) : ''; };
+    const all = (n) => props.filter((x) => Array.isArray(x) && x[0] === n).map((x) => String(x[3]));
+    const bits = [(i + 1) + '. ' + (get('fn') || '(no name)')];
+    for (const e of all('email')) bits.push('   email: ' + e);
+    for (const t of all('tel')) bits.push('   tel: ' + t);
+    detail.push(bits.join('\n'));
+  });
+  out._sections = [{ title: 'First cards', node: preBlock(detail.join('\n\n')), open: true }];
+  return out;
+}
+
 // ---------- identification-only (binary container PIM) ----------
 // These need a proprietary DB engine (pst/ost/nsf/edb/dbx) we don't ship.
 // Surface a minimal identification card.
@@ -700,6 +1148,9 @@ const IDENT = {
   nsf: { Format: 'IBM/HCL Notes database (.nsf)', Note: 'Notes Storage Facility; on-disk NSF format needs the Notes engine to read documents.' },
   edb: { Format: 'Exchange / ESE database (.edb)', Note: 'Extensible Storage Engine (Jet Blue) page store; requires an ESE reader.' },
   dbx: { Format: 'Outlook Express database (.dbx)', Note: 'Legacy OE mail store; proprietary B-tree index needs a DBX reader.' },
+  pab: { Format: 'Personal Address Book (.pab)', Note: 'Legacy Outlook MAPI address book; proprietary store, superseded by Contacts in the PST.' },
+  wab: { Format: 'Windows Address Book (.wab)', Note: 'Outlook Express / Windows Contacts store; proprietary record format needs a WAB reader.' },
+  abbu: { Format: 'Apple Address Book Backup (.abbu)', Note: 'macOS Contacts backup bundle (a folder/package of AddressBook SQLite + plists); open the bundle to inspect its contents.' },
 };
 
 function identCard(ext) {
@@ -719,13 +1170,37 @@ export const PARSERS = {
   vcard: (c) => parseVcf(c.file),
   vcs: (c) => parseVcs(c.file),
   ldif: (c) => parseLdif(c.file),
+  ldi: (c) => parseLdif(c.file),           // LDIF alias
   contact: (c) => parseContact(c.file),
   // Outlook .msg — full CFBF/OLE extraction (falls back to ident card if invalid).
   msg: (c) => parseMsg(c.file),
+  oft: (c) => parseOft(c.file),            // Outlook template (CFBF, like .msg)
+  // Outlook for Mac archive (ZIP).
+  olm: (c) => parseOlm(c.file),
+  // S/MIME (PKCS#7 / CMS).
+  p7m: (c) => parseP7(c.file, 'p7m'),
+  p7s: (c) => parseP7(c.file, 'p7s'),
+  // Mozilla Mork stores.
+  msf: (c) => parseMsf(c.file),
+  mab: (c) => parseMab(c.file),
+  // Eudora / Outlook Express mailbox + index.
+  mbx: (c) => parseMbx(c.file),
+  toc: (c) => parseToc(c.file),
+  // vObject phone backups.
+  vmg: (c) => parseVmg(c.file),
+  vnt: (c) => parseVnt(c.file),
+  // XML / JSON iCalendar + vCard.
+  xcal: (c) => parseXcal(c.file),
+  jcal: (c) => parseJcal(c.file),
+  xcard: (c) => parseXcard(c.file),
+  jcard: (c) => parseJcard(c.file),
   // identification-only
   pst: (c) => identCard('pst'),
   ost: (c) => identCard('ost'),
   nsf: (c) => identCard('nsf'),
   edb: (c) => identCard('edb'),
   dbx: (c) => identCard('dbx'),
+  pab: (c) => identCard('pab'),
+  wab: (c) => identCard('wab'),
+  abbu: (c) => identCard('abbu'),
 };

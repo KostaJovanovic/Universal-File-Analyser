@@ -13,7 +13,7 @@
    ace, …) stay identification-only. No top-level side effects. */
 
 import { el, row, fmtBytes, preBlock, fmtDate, loadScript } from '../core/util.js';
-import { Reader, ascii, matchMagic, latin1, utf8, gunzip } from '../core/binutil.js';
+import { Reader, ascii, matchMagic, latin1, utf8, gunzip, inflate } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 import { xzDecompress } from '../lib/xz-loader.js';
 
@@ -1021,6 +1021,212 @@ async function parseConda(file) {
   return out;
 }
 
+// ---------- XAR (.xar, .pkg, .mpkg) ----------
+// eXtensible ARchive: 28-byte big-endian header followed by a zlib-compressed
+// XML table of contents. Apple's flat .pkg / .mpkg installers are XAR archives.
+// The TOC lists every member (path, type, sizes, checksums, timestamps).
+async function parseXar(file, ext) {
+  const head = await readBytes(file, 28);
+  // Magic: 'xar!' (0x78 0x61 0x72 0x21).
+  if (ascii(head, 0, 4) !== 'xar!') return null;
+  const r = new Reader(head); // big-endian
+  r.seek(4);
+  const headerSize = r.u16();
+  const version = r.u16();
+  const tocComp = Number(r.u64());   // compressed TOC length
+  const tocUncomp = Number(r.u64()); // uncompressed TOC length
+  const cksumAlg = r.u32();
+  const CKSUM = { 0: 'none', 1: 'SHA-1', 2: 'MD5', 3: 'SHA-256', 4: 'SHA-512' };
+  const isPkg = ext === 'pkg' || ext === 'mpkg';
+  const out = {
+    'Format': isPkg ? 'macOS Installer package (.' + ext + ', XAR)' : 'XAR archive (eXtensible ARchive)',
+    'XAR version': version,
+    'TOC checksum': CKSUM[cksumAlg] != null ? CKSUM[cksumAlg] : 'alg ' + cksumAlg,
+    'TOC (compressed)': fmtBytes(tocComp),
+  };
+  // The TOC is a zlib stream starting right after the header.
+  try {
+    if (tocComp > 0 && tocComp <= 32 * 1024 * 1024) {
+      const tocBytes = await readRange(file, headerSize, headerSize + tocComp);
+      const xmlBytes = await inflate(tocBytes, 'deflate');
+      if (xmlBytes && xmlBytes.length) {
+        const xml = utf8(xmlBytes);
+        // Member count: each <file> with a <name> child.
+        const names = Array.from(xml.matchAll(/<name>([^<]*)<\/name>/g)).map((m) => m[1]);
+        const fileEls = (xml.match(/<file\b/g) || []).length;
+        if (fileEls) out['Members'] = fileEls.toLocaleString();
+        // Installer-specific metadata from a bundled Distribution / PackageInfo.
+        const ver = (xml.match(/<bundle-version>[\s\S]*?CFBundleShortVersionString="([^"]+)"/) || [])[1];
+        if (ver) out['Bundle version'] = ver;
+        // Walk <file> blocks to build a member list with sizes/types.
+        const items = [];
+        let total = 0;
+        const fileRe = /<file\b[^>]*>([\s\S]*?)<\/file>/g;
+        let fm;
+        while ((fm = fileRe.exec(xml)) && items.length < 1000) {
+          const body = fm[1];
+          const name = (body.match(/<name>([^<]*)<\/name>/) || [])[1];
+          if (!name) continue;
+          const type = (body.match(/<type>([^<]*)<\/type>/) || [])[1] || 'file';
+          const size = parseInt((body.match(/<size>(\d+)<\/size>/) || [])[1] || '0', 10);
+          total += size;
+          items.push({ name: name + (type === 'directory' ? '/' : ''), size: type === 'directory' ? null : size, extra: type });
+        }
+        if (total) out['Total uncompressed'] = fmtBytes(total);
+        if (items.length) out._sections = [fileListSection('Files (' + items.length + (fileEls > items.length ? '+' : '') + ')', items, true)];
+        else if (names.length) out._sections = [{ title: 'TOC', node: preBlock(names.slice(0, 500).join('\n')) }];
+      } else {
+        out['Note'] = 'TOC is zlib-compressed; could not be inflated in this browser.';
+      }
+    }
+  } catch (_) { /* keep header-only summary */ }
+  return out;
+}
+
+// ---------- lzop (.lzo) ----------
+// lzop file: 9-byte magic, then a big-endian header (version, method, level,
+// flags, optional mtime/mode/name). One of the few LZO-framed formats with a
+// real header worth decoding (the LZO body itself is not decompressed natively).
+const LZOP_METHOD = { 1: 'LZO1X-1', 2: 'LZO1X-1(15)', 3: 'LZO1X-999' };
+async function parseLzo(file) {
+  const b = await readBytes(file, 4096);
+  // Magic: 89 4C 5A 4F 00 0D 0A 1A 0A
+  if (!matchMagic(b, [0x89, 0x4c, 0x5a, 0x4f, 0x00, 0x0d, 0x0a, 0x1a, 0x0a])) return null;
+  const r = new Reader(b); // big-endian
+  r.seek(9);
+  const version = r.u16();
+  const libVersion = r.u16();
+  let verNeeded = 0;
+  if (version >= 0x0940) verNeeded = r.u16();
+  const method = r.u8();
+  const level = r.u8();
+  const flags = r.u32();
+  const out = {
+    'Format': 'lzop compressed (LZO)',
+    'lzop version': (version >> 12 & 0xf) + '.' + (version >> 8 & 0xf).toString(16) + (version >> 4 & 0xf).toString(16) + (version & 0xf).toString(16),
+    'LZO library': '0x' + libVersion.toString(16),
+    'Method': LZOP_METHOD[method] || ('method ' + method),
+  };
+  if (level) out['Level'] = level;
+  // Filter field (only present when the F_H_FILTER flag is set).
+  if (flags & 0x00000800) r.u32();
+  const mode = r.u32();
+  const mtimeLow = r.u32();
+  const mtimeHigh = (version >= 0x0940) ? r.u32() : 0;
+  if (mtimeLow) out['Modified'] = fmtDate(new Date(mtimeLow * 1000));
+  // Original filename (length-prefixed).
+  try {
+    const nameLen = r.u8();
+    if (nameLen > 0 && nameLen < 255) {
+      let nm = ''; const at = r.tell();
+      for (let i = 0; i < nameLen && at + i < b.length; i++) nm += String.fromCharCode(b[at + i]);
+      if (nm) out['Original filename'] = nm;
+    }
+  } catch (_) {}
+  if (flags & 0x00000001) out['Adler32'] = 'header checksum present';
+  if (flags & 0x00001000) out['CRC32'] = 'header checksum present';
+  out['Compressed size'] = fmtBytes(file.size);
+  out['Note'] = 'LZO body is not decompressed in-browser (header-only).';
+  return out;
+}
+
+// ---------- SquashFS (.snap, .squashfs) ----------
+// Snap packages (Canonical) are SquashFS images. The 'hsqs'/'sqsh' superblock
+// carries enough to summarise the image; the file tree needs the (lazy) LZO/XZ
+// metadata decode we don't do here, so this is a rich header read.
+const SQFS_COMP = { 1: 'gzip', 2: 'lzma', 3: 'lzo', 4: 'xz', 5: 'lz4', 6: 'zstd' };
+async function parseSnap(file, ext) {
+  const b = await readBytes(file, 96);
+  let little;
+  if (b[0] === 0x68 && b[1] === 0x73 && b[2] === 0x71 && b[3] === 0x73) little = true;       // 'hsqs' LE
+  else if (b[0] === 0x73 && b[1] === 0x71 && b[2] === 0x73 && b[3] === 0x68) little = false;  // 'sqsh' BE
+  else return null;
+  const r = new Reader(b, little);
+  r.seek(4);
+  const inodeCount = r.u32();
+  const modTime = r.u32();
+  const blockSize = r.u32();
+  const fragCount = r.u32();
+  const compId = r.u16();
+  r.skip(2); // block log
+  r.skip(2); // flags
+  r.skip(2); // id count
+  const verMajor = r.u16();
+  const verMinor = r.u16();
+  r.skip(8); // root inode
+  const bytesUsed = Number(r.u64());
+  const out = {
+    'Format': ext === 'snap' ? 'Snap package (SquashFS image)' : 'SquashFS image',
+    'SquashFS version': verMajor + '.' + verMinor,
+    'Compression': SQFS_COMP[compId] || ('id ' + compId),
+    'Block size': fmtBytes(blockSize),
+    'Inodes': inodeCount.toLocaleString(),
+    'Fragments': fragCount.toLocaleString(),
+  };
+  if (bytesUsed) out['Bytes used'] = fmtBytes(bytesUsed);
+  if (modTime) out['Modified'] = fmtDate(new Date(modTime * 1000));
+  if (ext === 'snap') out['Note'] = 'meta/snap.yaml (name/version/confinement) lives inside the compressed image; not extracted in-browser.';
+  return out;
+}
+
+// ---------- StuffIt (.sit, .sitx) ----------
+// Classic StuffIt (SIT!/SITD/rLau) and StuffIt X (StuffIt!) magics. The bodies
+// use proprietary codecs with no in-browser decoder, so this is identification.
+function parseSit(head) {
+  const tag4 = ascii(head, 0, 4);
+  const tag7 = ascii(head, 0, 7);
+  if (tag7 === 'StuffIt') {
+    return { 'Format': 'StuffIt X archive (.sitx)', 'Signature': 'StuffIt', 'Note': 'Smith Micro StuffIt X; proprietary codecs - identification only.' };
+  }
+  if (tag4 === 'SIT!' || tag4 === 'SITD' || ascii(head, 0, 5) === 'rLau!' || tag4 === 'rLau') {
+    return { 'Format': 'StuffIt archive (.sit)', 'Signature': tag4 === 'rLau' ? 'rLau' : tag4, 'Note': 'Aladdin/Smith Micro StuffIt; proprietary codecs - identification only.' };
+  }
+  return null;
+}
+
+// ---------- Flatpak bundle (.flatpak) ----------
+// A single-file Flatpak bundle is an OSTree "static delta" wrapped in a GVariant
+// container (magic 'flatpak' appears in the metadata). No native decoder, so we
+// confirm the ref/metadata strings where visible and otherwise identify.
+async function parseFlatpak(file) {
+  const b = await readBytes(file, 65536);
+  // Bundles embed plain-text metadata; surface the app/runtime ref if present.
+  const text = latin1(b);
+  const out = { 'Format': 'Flatpak bundle (OSTree static delta)' };
+  const ref = (text.match(/\b((?:app|runtime)\/[A-Za-z0-9._-]+\/[A-Za-z0-9_-]+\/[A-Za-z0-9._-]+)/) || [])[1];
+  if (ref) {
+    out['Ref'] = ref;
+    out['Kind'] = ref.startsWith('app/') ? 'application' : 'runtime';
+  }
+  const rt = (text.match(/\bRuntime=([A-Za-z0-9._\/-]+)/) || [])[1];
+  if (rt) out['Runtime'] = rt;
+  out['Note'] = 'Sandbox permissions live in a GVariant metadata blob; not decoded in-browser.';
+  return out;
+}
+
+// ---------- Brotli (.br) ----------
+// Raw Brotli has no magic. DecompressionStream support for 'br' is not universal,
+// so we identify by extension and report sizes; we attempt a native decode for
+// the original size + ratio only where the platform supports it.
+async function parseBr(file) {
+  const out = {
+    'Format': 'Brotli compressed stream',
+    'Compressed size': fmtBytes(file.size),
+  };
+  try {
+    if (typeof DecompressionStream !== 'undefined' && file.size <= 64 * 1024 * 1024) {
+      const comp = await readBytes(file, file.size);
+      const decoded = await inflate(comp, 'br'); // null where 'br' is unsupported
+      if (decoded && decoded.length) {
+        out['Decompressed size'] = fmtBytes(decoded.length);
+        if (file.size > 0) out['Ratio'] = (decoded.length / file.size).toFixed(2) + '×';
+      }
+    }
+  } catch (_) {}
+  if (!out['Decompressed size']) out['Note'] = 'Raw Brotli has no header; decode unavailable in this browser (size-only).';
+  return out;
+}
+
 // ---------- identification-only (rare AND hard) ----------
 function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
 
@@ -1032,11 +1238,15 @@ export const PARSERS = {
   bz2: (c) => parseBzip2(c.head),
   xz: (c) => parseXz(c.head, c.file, c.ext),
   txz: (c) => parseXz(c.head, c.file, c.ext),
+  tlz: (c) => parseXz(c.head, c.file, c.ext),    // .tar.xz / .tar.lzma shorthand
   zst: (c) => parseZstd(c.head, c.file, c.ext),
   tzst: (c) => parseZstd(c.head, c.file, c.ext),
   lz4: (c) => parseLz4(c.head),
   lzma: (c) => parseLzma(c.head),
   z: (c) => parseCompress(c.head),
+  tbz: (c) => parseBzip2(c.head),                // .tar.bz2 shorthand
+  tz: (c) => parseCompress(c.head),              // .tar.Z shorthand
+  lzo: (c) => parseLzo(c.file),
   cpio: (c) => parseCpio(c.file),
   a: (c) => parseAr(c.file),
   whl: (c) => parseWhl(c.file),
@@ -1053,6 +1263,15 @@ export const PARSERS = {
   rpm: (c) => parseRpm(c.file),
   gem: (c) => parseGem(c.file),
   cab: (c) => parseCab(c.file),
+  msu: (c) => parseCab(c.file),                  // MS Update Standalone is a CAB
+  xar: (c) => parseXar(c.file, c.ext),
+  pkg: (c) => parseXar(c.file, c.ext),           // macOS flat installer (XAR)
+  mpkg: (c) => parseXar(c.file, c.ext),          // macOS meta-installer (XAR)
+  snap: (c) => parseSnap(c.file, c.ext),
+  sit: (c) => parseSit(c.head),
+  sitx: (c) => parseSit(c.head),
+  flatpak: (c) => parseFlatpak(c.file),
+  br: (c) => parseBr(c.file),
   // identification-only: rare AND hard formats with no native decoder
   ace: ident('ACE archive', 'WinAce proprietary; header-only identification (no in-browser decoder).'),
   arj: ident('ARJ archive', 'Robert K. Jung ARJ; identification only.'),

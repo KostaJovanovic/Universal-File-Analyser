@@ -4,14 +4,15 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 58;
+const COMMIT_COUNT = 60;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
-// two digits - 0.09, 0.10, 0.11). A commit listed in RELEASE_COMMITS bumps the
-// major version and resets the counter, so it shows as "1.0" and the commit right
-// after it is "1.01". To crown a future 2.0, append its commit number here (keep
-// the list sorted ascending, and mirror the RELEASE constant in save.bat).
-const RELEASE_COMMITS = [29];
+// two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
+// major version and resets the counter within its era: commit 29 reads "1.0" (and
+// 30 → "1.01"), commit 60 reads "2.0" (and 61 → "2.01"). To crown a future 3.0,
+// append its commit number here (keep the list sorted ascending, and mirror the
+// RELEASES constant in save.bat).
+const RELEASE_COMMITS = [29, 60];
 
 function analyserVersion(n, releases) {
   let major = 0, base = 0;
@@ -393,7 +394,9 @@ function splitText(container, baseWeight) {
 // each entry's full bullet list for the matching line here. When you add a new
 // patch entry to patch.html, add its one-liner here too (newest at the top).
 const PATCH_TLDR = {
-  '1.28': 'The Changelog gains a tl;dr button that condenses every release into a sentence or two apiece, so you can skim the whole history at once. Tap again for the full notes.',
+  '2.0': 'The second milestone. Over 120 new file types are identified across developer, archive, 3D/CAD, disk, gaming, document, email, security, science and GIS formats. Video-editing projects (After Effects, Premiere, Vegas, Resolve, Filmora, CapCut) read in more detail, 10-bit video reports its bit depth and chroma (so XAVC HS 4:2:2 is flagged correctly), undisplayable photos and videos get a clear banner that recommends VLC, offline tiers show a persistent Cached tag, large videos load faster, and the spectrogram defaults to a logarithmic axis.',
+  '1.29': 'The supported-formats popup is rebuilt - grouped by category with filter chips, a FULL/ID badge on each row, highlighted search, a running match count and an expand-all toggle. The photo histogram goes full-width and clickable, reading text from images and PDFs shares one language picker, and failed offline downloads can now be retried.',
+  '1.28': 'Professional video the browser cannot play (ProRes, DNxHD, CineForm) is now named and its first frame pulled out with FFmpeg for a preview. The location map works fully offline, result cards fold away at a click, dozens more readouts gain a help note, and the Changelog gains a tl;dr button.',
   '1.27': 'Internal cleanup - duplicated helper code across the format parsers was merged into shared utilities. Nothing changes in how the app works.',
   '1.26': 'Images pulled from other files (album art, e-book covers, rendered PDF pages) now open in the Photo section with the full readout. PDF-page OCR asks which language and can remember it, and the supported-formats list is grouped into Full, Core and Extended. Opening a PDF in the browser now opens a new tab instead of downloading it.',
   '1.25': 'Internal reorganisation of the site’s files and folders, with every reference updated to match. Purely tidier under the hood; nothing changes for you.',
@@ -1436,74 +1439,168 @@ function boot() {
     status.hidden = false;
   }
 
-  document.querySelectorAll('.offline-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      if (btn.classList.contains('is-active') || btn.classList.contains('is-done')) return;
-      const tier = btn.dataset.tier;
-      let urls = [...TIERS.essentials];
-      if (tier === 'everything' || tier === 'complete') urls.push(...TIERS.everything);
-      if (tier === 'complete') urls.push(...TIERS.complete);
+  // Persisted record of which tiers are fully cached and at what app version, so
+  // the "Cached" tag can be restored on load and a tier refreshed when the app
+  // updates. localStorage 'anr-offline' = { <tier>: <COMMIT_COUNT cached at>, ... }.
+  function readOfflineState() {
+    try { return JSON.parse(localStorage.getItem('anr-offline') || '{}') || {}; }
+    catch (_) { return {}; }
+  }
+  function writeOfflineState(state) {
+    try { localStorage.setItem('anr-offline', JSON.stringify(state)); } catch (_) {}
+  }
 
-      btn.classList.add('is-active');
-      const bar = btn.querySelector('.offline-bar');
-      const fill = btn.querySelector('.offline-bar-fill');
-      const sizeEl = btn.querySelector('.offline-size');
-      bar.hidden = false;
-
-      function setBar(frac) {
-        const ch = parseFloat(getComputedStyle(bar).fontSize) * 0.6 || 8;
-        // Fit to the bar's own content width - it already excludes the button's
-        // padding, so this adapts to the resized (narrower) mobile buttons
-        // instead of assuming desktop padding. Reserve 2 chars for the [ ].
-        const barW = bar.clientWidth || btn.clientWidth;
-        const total = Math.max(4, Math.floor(barW / ch) - 2);
-        const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
-        bar.innerHTML = '[<span class="offline-bar-fill">' +
-          '/'.repeat(filled) + '</span>' +
-          ' '.repeat(total - filled) + ']';
-      }
-      setBar(0);
-
+  // Probe the offline cache for the highest tier actually present, by checking a
+  // sentinel file each tier adds last (downloads run in order, so the last file
+  // being cached means the tier finished). Lets the "Cached" tag self-heal when
+  // a tier was cached before this record existed, or localStorage was wiped.
+  async function detectCachedTier() {
+    try {
       const cache = await caches.open('analyser-offline');
-      setOfflineStatus('');   // a fresh attempt clears any previous failure note
-      let done = 0, failed = 0;
-      for (const url of urls) {
-        let ok = false;
-        try {
-          const exists = await cache.match(new Request(url));
-          if (exists) {
-            ok = true;
-          } else {
-            const resp = await fetch(url, { mode: url.startsWith('http') ? 'cors' : 'same-origin' })
-              .catch(() => fetch(url, { mode: 'no-cors' }));
-            // Opaque (cross-origin no-cors) responses report ok=false but are
-            // still cacheable; only a same-origin non-ok counts as a real failure.
-            if (resp && (resp.type === 'opaque' || resp.ok)) {
-              await cache.put(url, resp);
-              ok = true;
-            }
-          }
-        } catch (_) {}
-        if (!ok) failed++;
-        done++;
-        setBar(done / urls.length);
-        sizeEl.textContent = done + ' / ' + urls.length;
-      }
+      const has = async (url) => !!(url && await cache.match(new Request(url)));
+      if (await has(TIERS.complete[TIERS.complete.length - 1])) return 'complete';
+      if (await has(TIERS.everything[TIERS.everything.length - 1])) return 'everything';
+      if (await has(TIERS.essentials[TIERS.essentials.length - 1])) return 'essentials';
+    } catch (_) {}
+    return null;
+  }
 
-      btn.classList.remove('is-active');
-      setBar(1);
-      if (failed > 0) {
-        // Leave the button enabled (no is-done) so the user can retry the rest.
-        sizeEl.textContent = 'Try again';
-        setOfflineStatus(failed + ' of ' + urls.length + ' file' + (urls.length === 1 ? '' : 's') +
-          ' failed to download. You may be offline or a server was unreachable - try again to finish.');
-      } else {
-        btn.classList.add('is-done');
-        sizeEl.textContent = 'Cached';
-        setTimeout(() => btn.classList.add('is-fading'), 5000);
-      }
+  // The "✓ Cached" badge pinned to the bottom of a button (created lazily so the
+  // HTML stays untouched across all three pages that share this markup).
+  function cachedBadge(btn) {
+    let badge = btn.querySelector('.offline-cached');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'offline-cached';
+      badge.hidden = true;
+      btn.appendChild(badge);
+    }
+    return badge;
+  }
+  function markCached(btn, version) {
+    const badge = cachedBadge(btn);
+    badge.textContent = '✓ Cached · v' + analyserVersion(version, RELEASE_COMMITS);
+    badge.hidden = false;
+    btn.classList.add('is-done', 'is-fading');
+  }
+
+  function tierUrls(tier) {
+    const urls = [...TIERS.essentials];
+    if (tier === 'everything' || tier === 'complete') urls.push(...TIERS.everything);
+    if (tier === 'complete') urls.push(...TIERS.complete);
+    return urls;
+  }
+
+  // Download (or, with force, re-download) every file in a tier into the
+  // 'analyser-offline' cache, driving the button's progress bar. Records the
+  // current app version on full success; clears the record on partial failure.
+  async function downloadTier(btn, { force = false } = {}) {
+    if (btn.classList.contains('is-active')) return false;
+    const tier = btn.dataset.tier;
+    const urls = tierUrls(tier);
+
+    btn.classList.add('is-active');
+    btn.classList.remove('is-done', 'is-fading');
+    const bar = btn.querySelector('.offline-bar');
+    const sizeEl = btn.querySelector('.offline-size');
+    cachedBadge(btn).hidden = true;
+    bar.hidden = false;
+
+    function setBar(frac) {
+      const ch = parseFloat(getComputedStyle(bar).fontSize) * 0.6 || 8;
+      // Fit to the bar's own content width - it already excludes the button's
+      // padding, so this adapts to the resized (narrower) mobile buttons
+      // instead of assuming desktop padding. Reserve 2 chars for the [ ].
+      const barW = bar.clientWidth || btn.clientWidth;
+      const total = Math.max(4, Math.floor(barW / ch) - 2);
+      const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
+      bar.innerHTML = '[<span class="offline-bar-fill">' +
+        '/'.repeat(filled) + '</span>' +
+        ' '.repeat(total - filled) + ']';
+    }
+    setBar(0);
+
+    const cache = await caches.open('analyser-offline');
+    setOfflineStatus('');   // a fresh attempt clears any previous failure note
+    let done = 0, failed = 0;
+    for (const url of urls) {
+      let ok = false;
+      try {
+        // force re-fetches even cached entries (used by the daily version
+        // refresh); unchanged files come cheaply from the HTTP cache / 304.
+        const exists = force ? null : await cache.match(new Request(url));
+        if (exists) {
+          ok = true;
+        } else {
+          const resp = await fetch(url, { mode: url.startsWith('http') ? 'cors' : 'same-origin' })
+            .catch(() => fetch(url, { mode: 'no-cors' }));
+          // Opaque (cross-origin no-cors) responses report ok=false but are
+          // still cacheable; only a same-origin non-ok counts as a real failure.
+          if (resp && (resp.type === 'opaque' || resp.ok)) {
+            await cache.put(url, resp);
+            ok = true;
+          }
+        }
+      } catch (_) {}
+      if (!ok) failed++;
+      done++;
+      setBar(done / urls.length);
+      sizeEl.textContent = done + ' / ' + urls.length;
+    }
+
+    btn.classList.remove('is-active');
+    setBar(1);
+    const state = readOfflineState();
+    if (failed > 0) {
+      // Leave the button enabled (no is-done) so the user can retry the rest,
+      // and drop any stale "cached" record for this tier.
+      sizeEl.textContent = 'Try again';
+      setOfflineStatus(failed + ' of ' + urls.length + ' file' + (urls.length === 1 ? '' : 's') +
+        ' failed to download. You may be offline or a server was unreachable - try again to finish.');
+      delete state[tier];
+      writeOfflineState(state);
+      return false;
+    }
+    sizeEl.textContent = 'Cached';
+    state[tier] = COMMIT_COUNT;
+    writeOfflineState(state);
+    markCached(btn, COMMIT_COUNT);
+    return true;
+  }
+
+  document.querySelectorAll('.offline-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.classList.contains('is-active') || btn.classList.contains('is-done')) return;
+      downloadTier(btn, { force: false });
     });
   });
+
+  // On every load: restore the persisted "Cached" badges, then re-check the app
+  // version - refreshing in place any cached tier whose files were stored under
+  // an older version (i.e. the app updated since they were downloaded). Files
+  // that did not change come cheaply from the HTTP cache, so the refresh is light.
+  (async () => {
+    let state = readOfflineState();
+    const buttons = {};
+    document.querySelectorAll('.offline-btn').forEach(b => { buttons[b.dataset.tier] = b; });
+
+    // Self-heal: if nothing is recorded (a tier cached before this record
+    // existed, or localStorage was wiped) but files are actually in the offline
+    // cache, backfill the record for the highest tier present so the tag shows.
+    if (!Object.keys(state).length) {
+      const detected = await detectCachedTier();
+      if (detected) { state[detected] = COMMIT_COUNT; writeOfflineState(state); }
+    }
+
+    for (const tier of Object.keys(state)) {
+      if (buttons[tier]) markCached(buttons[tier], state[tier]);
+    }
+    for (const tier of Object.keys(state)) {
+      if (state[tier] !== COMMIT_COUNT && buttons[tier]) {
+        await downloadTier(buttons[tier], { force: true });
+      }
+    }
+  })();
 
   // ----- PWA install prompt -----
   const installBtn = document.getElementById('offlineInstall');
@@ -1578,11 +1675,14 @@ function boot() {
           await Promise.all(regs.map(r => r.unregister()));
         }
       } catch (_) {}
-      // Reset the offline-tier buttons to their default state.
+      // Reset the offline-tier buttons to their default state (localStorage.clear
+      // above already dropped the 'anr-offline' record).
       document.querySelectorAll('.offline-btn').forEach(b => {
-        b.classList.remove('is-done', 'is-active');
+        b.classList.remove('is-done', 'is-active', 'is-fading');
         const bar = b.querySelector('.offline-bar');
         if (bar) bar.hidden = true;
+        const badge = b.querySelector('.offline-cached');
+        if (badge) badge.hidden = true;
         const tier = b.dataset.tier;
         const sizes = { essentials: '~46 MB', everything: '~72 MB', complete: '~290 MB' };
         b.querySelector('.offline-size').textContent = sizes[tier];

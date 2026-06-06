@@ -13,6 +13,7 @@
 import { el, row, fmtBytes, preBlock, fmtDate } from '../core/util.js';
 import { Reader, ascii, findBytes, latin1, utf8, fmtGuid, filetimeToDate } from '../core/binutil.js';
 import { parsePlist } from '../lib/plist.js';
+import { openZip, inflateToText } from '../renderers/zip.js';
 
 // ---------- small helpers ----------
 
@@ -653,6 +654,511 @@ function p12Fallback() {
   };
 }
 
+// ---------- legacy Windows Event Log: .evt ----------
+// Pre-Vista binary log. File header: 0x30 size, "LfLe" magic at offset 4, then
+// version words, first/last record numbers, file size and a flags field.
+function parseEvt(head) {
+  if (head.length < 48) return null;
+  const r = new Reader(head, true);          // little-endian
+  const hdrLen = r.u32();
+  if (hdrLen !== 0x30) return null;
+  if (ascii(head.subarray(4, 8)) !== 'LfLe') return null;
+  r.seek(8);
+  const major = r.u32();
+  const minor = r.u32();
+  const firstOff = r.u32();
+  const nextOff = r.u32();
+  const oldest = r.u32();
+  const current = r.u32();
+  const maxSize = r.u32();
+  const flags = r.u32();
+  const out = {
+    'Format': 'Windows Event Log (legacy .evt)',
+    'Signature': 'LfLe',
+    'Format version': major + '.' + minor,
+    'Oldest record number': oldest,
+    'Current record number': current,
+  };
+  const count = current - oldest;
+  if (count >= 0) out['Records (approx)'] = count;
+  if (maxSize) out['Configured max size'] = fmtBytes(maxSize);
+  out['First record offset'] = '0x' + firstOff.toString(16);
+  out['Next record offset'] = '0x' + nextOff.toString(16);
+  const fl = [];
+  if (flags & 0x01) fl.push('dirty');
+  if (flags & 0x02) fl.push('wrapped');
+  if (flags & 0x04) fl.push('logfull-written');
+  if (flags & 0x08) fl.push('archive-set');
+  if (fl.length) out['Flags'] = fl.join(', ');
+  out['Note'] = 'Pre-Vista (XP / 2003) binary event log; per-record event IDs, sources and timestamps need the full ELF_LOGFILE record walker - identification only.';
+  return out;
+}
+
+// ---------- YARA rules: .yar / .yara ----------
+async function parseYara(file) {
+  const text = await readText(file, 2_000_000);
+  // Must look like YARA: a `rule Name {` block (optionally global/private).
+  const ruleRe = /^\s*(?:global\s+|private\s+)*rule\s+([A-Za-z_][A-Za-z0-9_]*)/gm;
+  const rules = Array.from(text.matchAll(ruleRe));
+  if (!rules.length) return null;
+  const names = rules.map((m) => m[1]);
+  const imports = Array.from(new Set(Array.from(text.matchAll(/^\s*import\s+"([^"]+)"/gm)).map((m) => m[1])));
+  const includes = (text.match(/^\s*include\s+"/gm) || []).length;
+  const strings = (text.match(/^\s*\$[A-Za-z0-9_]*\s*=/gm) || []).length;
+  const conditions = (text.match(/^\s*condition\s*:/gm) || []).length;
+  const metaAuthors = Array.from(new Set(Array.from(text.matchAll(/^\s*author\s*=\s*"([^"]*)"/gm)).map((m) => m[1]).filter(Boolean)));
+  const out = {
+    'Format': 'YARA rules',
+    'Rules': names.length,
+    'String definitions': strings,
+    'Condition blocks': conditions,
+  };
+  if (imports.length) out['Imports'] = imports.join(', ');
+  if (includes) out['Includes'] = includes;
+  if (metaAuthors.length) out['Authors'] = metaAuthors.slice(0, 10).join(', ');
+  out._sections = [{ title: 'Rule names (' + names.length + ')', node: preBlock(names.slice(0, 500).join('\n')) }];
+  return out;
+}
+
+// ---------- Snort / Suricata IDS rules: .rules ----------
+async function parseRules(file) {
+  const text = await readText(file, 4_000_000);
+  const lines = text.split(/\r?\n/);
+  const actionRe = /^\s*(alert|drop|reject|pass|log|sdrop|rejectsrc|rejectdst|rejectboth)\s+(\w+)\b/;
+  const rules = [];
+  let disabled = 0;
+  for (let line of lines) {
+    let l = line.trim();
+    if (!l) continue;
+    let off = false;
+    if (l.startsWith('#')) { l = l.replace(/^#+\s*/, ''); off = true; }
+    const m = l.match(actionRe);
+    if (!m) continue;
+    if (!/\bsid\s*:/.test(l)) continue;       // a real IDS rule carries a sid
+    if (off) disabled++;
+    rules.push({ action: m[1], proto: m[2], line: l });
+  }
+  if (!rules.length) return null;
+  const actions = {};
+  const protos = {};
+  const classtypes = {};
+  for (const r of rules) {
+    actions[r.action] = (actions[r.action] || 0) + 1;
+    protos[r.proto] = (protos[r.proto] || 0) + 1;
+    const ct = (r.line.match(/classtype\s*:\s*([^;]+);/) || [])[1];
+    if (ct) classtypes[ct.trim()] = (classtypes[ct.trim()] || 0) + 1;
+  }
+  const fmtTally = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
+  const out = {
+    'Format': 'Snort / Suricata IDS rules',
+    'Rules': rules.length,
+    'By action': fmtTally(actions),
+    'By protocol': fmtTally(protos),
+  };
+  if (disabled) out['Disabled (commented)'] = disabled;
+  if (Object.keys(classtypes).length) out['Top classtypes'] = fmtTally(classtypes).split(', ').slice(0, 8).join(', ');
+  const msgs = rules.map((r) => {
+    const msg = (r.line.match(/msg\s*:\s*"([^"]*)"/) || [])[1] || '(no msg)';
+    const sid = (r.line.match(/sid\s*:\s*(\d+)/) || [])[1] || '?';
+    return 'sid:' + sid + '  ' + r.action + '  ' + msg;
+  });
+  out._sections = [{ title: 'Rule messages (' + msgs.length + ')', node: preBlock(msgs.slice(0, 500).join('\n')) }];
+  return out;
+}
+
+// ---------- STIX threat intel: .stix (JSON) ----------
+async function parseStix(file) {
+  const text = await readText(file, 8_000_000);
+  let j;
+  try { j = JSON.parse(text); } catch (_) { return null; }
+  // STIX 2.x: a bundle { type:"bundle", objects:[...] } or a single SDO/SCO.
+  let objects;
+  if (j && j.type === 'bundle' && Array.isArray(j.objects)) objects = j.objects;
+  else if (Array.isArray(j)) objects = j;
+  else if (j && typeof j.type === 'string') objects = [j];
+  else return null;
+  // Confirm it smells like STIX (objects carry a `type` and most a stix id).
+  const looksStix = objects.some((o) => o && typeof o.type === 'string' && (/^[a-z0-9-]+--/.test(o.id || '') || j.spec_version));
+  if (!looksStix && !(j && j.spec_version)) return null;
+  const out = { 'Format': 'STIX threat intelligence' };
+  if (j.spec_version) out['Spec version'] = String(j.spec_version);
+  else out['Spec version'] = '2.0 (inferred)';
+  out['Objects'] = objects.length;
+  const byType = {};
+  for (const o of objects) { const t = (o && o.type) || '?'; byType[t] = (byType[t] || 0) + 1; }
+  out['Object types'] = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
+  const indicators = objects.filter((o) => o && o.type === 'indicator');
+  if (indicators.length) out['Indicators'] = indicators.length;
+  const actors = objects.filter((o) => o && o.type === 'threat-actor').map((o) => o.name).filter(Boolean);
+  if (actors.length) out['Threat actors'] = Array.from(new Set(actors)).slice(0, 10).join(', ');
+  const labels = Array.from(new Set(objects.flatMap((o) => (o && Array.isArray(o.labels)) ? o.labels : []))).slice(0, 15);
+  if (labels.length) out['Labels'] = labels.join(', ');
+  const patterns = indicators.map((o) => o.pattern).filter(Boolean);
+  if (patterns.length) out._sections = [{ title: 'Indicator patterns (' + patterns.length + ')', node: preBlock(patterns.slice(0, 200).join('\n')) }];
+  return out;
+}
+
+// ---------- OpenIOC: .ioc (XML) ----------
+async function parseIoc(file) {
+  const text = await readText(file, 4_000_000);
+  if (!/<ioc\b/i.test(text)) return null;
+  const out = { 'Format': 'OpenIOC indicator (Mandiant)' };
+  const id = (text.match(/<ioc\b[^>]*\bid\s*=\s*"([^"]+)"/i) || [])[1];
+  if (id) out['IOC id'] = id;
+  const grab = (tag) => (text.match(new RegExp('<' + tag + '\\b[^>]*>([\\s\\S]*?)<\\/' + tag + '>', 'i')) || [])[1];
+  const name = grab('short_description') || grab('description');
+  if (name) out['Description'] = name.trim().replace(/\s+/g, ' ').slice(0, 200);
+  const author = grab('authored_by');
+  if (author) out['Author'] = author.trim();
+  const authored = grab('authored_date');
+  if (authored) out['Authored'] = authored.trim();
+  // Indicator leaf terms: <IndicatorItem ...><Context document="FileItem" search="..."/>
+  const contexts = {};
+  for (const m of text.matchAll(/<Context\b[^>]*\bdocument\s*=\s*"([^"]+)"/gi)) {
+    contexts[m[1]] = (contexts[m[1]] || 0) + 1;
+  }
+  const items = (text.match(/<IndicatorItem\b/gi) || []).length;
+  if (items) out['Indicator items'] = items;
+  const logic = (text.match(/<Indicator\b[^>]*\boperator\s*=\s*"([^"]+)"/i) || [])[1];
+  if (logic) out['Top operator'] = logic.toUpperCase();
+  if (Object.keys(contexts).length) {
+    out['Indicator contexts'] = Object.entries(contexts).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
+  }
+  const searches = Array.from(new Set(Array.from(text.matchAll(/<Context\b[^>]*\bsearch\s*=\s*"([^"]+)"/gi)).map((m) => m[1])));
+  if (searches.length) out._sections = [{ title: 'Searched terms (' + searches.length + ')', node: preBlock(searches.slice(0, 300).join('\n')) }];
+  return out;
+}
+
+// ---------- Fiddler session archive: .saz (ZIP) ----------
+async function parseSaz(file) {
+  let z;
+  try { z = await openZip(file, 64 * 1024 * 1024); } catch (_) { return null; }
+  const names = z.names();
+  if (!names.length) return null;
+  // Sessions live under raw/<n>_c.txt (client request) and _s.txt (server reply).
+  const requests = z.match(/raw\/\d+_c\.txt$/i);
+  if (!requests.length && !z.has('_index.htm')) return null;
+  const out = { 'Format': 'Fiddler session archive (.saz)' };
+  out['Sessions'] = requests.length || z.match(/raw\/\d+_/i).length;
+  const methods = {};
+  const statuses = {};
+  const hosts = new Set();
+  // Sample up to 400 request files to tally method + host.
+  for (const e of requests.slice(0, 400)) {
+    const t = await inflateToText(z.buf, e);
+    if (!t) continue;
+    const m = t.match(/^([A-Z]+)\s+(\S+)/);
+    if (m) {
+      methods[m[1]] = (methods[m[1]] || 0) + 1;
+      try { hosts.add(new URL(m[2], 'http://x/').host || (t.match(/^Host:\s*(\S+)/im) || [])[1]); } catch (_) {}
+    }
+    const h = (t.match(/^Host:\s*(\S+)/im) || [])[1];
+    if (h) hosts.add(h);
+  }
+  for (const e of z.match(/raw\/\d+_s\.txt$/i).slice(0, 400)) {
+    const t = await inflateToText(z.buf, e);
+    if (!t) continue;
+    const m = t.match(/^HTTP\/[\d.]+\s+(\d{3})/);
+    if (m) statuses[m[1]] = (statuses[m[1]] || 0) + 1;
+  }
+  const fmtTally = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
+  if (Object.keys(methods).length) out['Methods'] = fmtTally(methods);
+  if (Object.keys(statuses).length) out['Status codes'] = fmtTally(statuses);
+  const hostList = Array.from(hosts).filter(Boolean).sort();
+  if (hostList.length) {
+    out['Hosts'] = hostList.length;
+    out._sections = [{ title: 'Hosts (' + hostList.length + ')', node: preBlock(hostList.slice(0, 300).join('\n')) }];
+  }
+  out['Note'] = 'Captured HTTP(S) sessions; bodies are stored in the archive but not decrypted here.';
+  return out;
+}
+
+// ---------- 1Password export: .1pux (ZIP) ----------
+async function parse1pux(file) {
+  let z;
+  try { z = await openZip(file, 64 * 1024 * 1024); } catch (_) { return null; }
+  if (!z.has('export.data') && !z.has('export.attributes')) return null;
+  const out = { 'Format': '1Password 8 export (.1pux)' };
+  const attrText = await z.text('export.attributes');
+  if (attrText) {
+    try {
+      const a = JSON.parse(attrText);
+      if (a.version != null) out['Export version'] = String(a.version);
+      if (a.description) out['Description'] = String(a.description);
+      if (a.createdAt != null) {
+        const d = new Date(Number(a.createdAt) * (Number(a.createdAt) > 1e12 ? 1 : 1000));
+        if (!isNaN(d)) out['Created'] = fmtDate(d);
+      }
+    } catch (_) {}
+  }
+  const dataText = await z.text('export.data');
+  if (dataText) {
+    try {
+      const d = JSON.parse(dataText);
+      const accounts = Array.isArray(d.accounts) ? d.accounts : [];
+      out['Accounts'] = accounts.length;
+      let vaults = 0, items = 0;
+      const acctNames = [];
+      for (const acc of accounts) {
+        if (acc.attrs && acc.attrs.name) acctNames.push(acc.attrs.name);
+        const vs = Array.isArray(acc.vaults) ? acc.vaults : [];
+        vaults += vs.length;
+        for (const v of vs) items += Array.isArray(v.items) ? v.items.length : 0;
+      }
+      out['Vaults'] = vaults;
+      out['Items'] = items;
+      if (acctNames.length) out['Account names'] = acctNames.slice(0, 10).join(', ');
+    } catch (_) {}
+  }
+  const attachments = z.match(/^files\//i).length;
+  if (attachments) out['Attachment files'] = attachments;
+  out['⚠ Warning'] = 'Plaintext export - contains decrypted passwords and secrets; handle with extreme care';
+  return out;
+}
+
+// ---------- 1Password OPVault: .opvault (bundle / folder upload) ----------
+async function parseOpvault(file, ext, name) {
+  // .opvault is normally a directory bundle; if one inner file is opened we can
+  // still recognise its profile.js / band JSON, but most often this is the
+  // package itself which a browser delivers as an opaque blob - identify only.
+  const fname = (name || file.name || '').toLowerCase();
+  const out = {
+    'Format': '1Password OPVault',
+    'Note': 'AgileBits OPVault is a directory bundle (default/profile.js + band_*.js + AES-GCM-encrypted item bands). Item contents are encrypted with a key derived from the master password (PBKDF2) and cannot be read here - identification only.',
+  };
+  if (/profile\.js$/.test(fname)) out['Component'] = 'profile.js (vault profile / KDF parameters)';
+  else if (/band_.*\.js$/.test(fname)) out['Component'] = 'band file (encrypted item batch)';
+  else if (/\.opvault$/.test(fname)) out['Component'] = 'vault bundle';
+  out['⚠ Warning'] = 'Encrypted password vault - keep confidential';
+  return out;
+}
+
+// ---------- Apple Keychain: .keychain (binary "kych") ----------
+function parseKeychain(head) {
+  if (head.length < 4) return null;
+  // SQLite keychain (keychain-db) starts "SQLite format 3"; classic keychain
+  // begins with the Apple CSSM DL "kych" magic.
+  if (ascii(head.subarray(0, 4)) === 'kych') {
+    const r = new Reader(head);            // big-endian
+    r.seek(4);
+    const version = head.length >= 8 ? r.u32() : null;
+    const out = {
+      'Format': 'Apple Keychain (classic)',
+      'Signature': 'kych',
+    };
+    if (version != null) out['Version'] = version;
+    out['Note'] = 'Encrypted Apple CSSM credential store (passwords, keys, certificates). Records are protected by the keychain password - identification only.';
+    out['⚠ Warning'] = 'Encrypted credential store - keep confidential';
+    return out;
+  }
+  if (ascii(head.subarray(0, 15)) === 'SQLite format 3') {
+    return {
+      'Format': 'Apple Keychain (SQLite keychain-db)',
+      'Container': 'SQLite 3 database',
+      'Note': 'Modern macOS/iOS keychain database; credential blobs are encrypted (keybag/Secure Enclave protected) - identification only.',
+      '⚠ Warning': 'Encrypted credential store - keep confidential',
+    };
+  }
+  return null;
+}
+
+// ---------- AFF forensic image: .aff (legacy AFFLIB) ----------
+function parseAff(head) {
+  if (head.length < 4) return null;
+  // Legacy AFF (AFFLIB) segmented format begins with the "AFF" / "AFF10" banner.
+  const sig = ascii(head.subarray(0, 5));
+  if (!sig.startsWith('AFF')) return null;
+  return {
+    'Format': 'AFF forensic image (legacy AFFLIB)',
+    'Signature': sig.replace(/[^\x20-\x7e].*$/, '').trim() || 'AFF',
+    'Note': 'Advanced Forensic Format acquisition image (segmented: pages + metadata + hashes). Segment directory walking is not implemented - identification only.',
+  };
+}
+
+// ---------- AFF4 forensic image: .aff4 (ZIP + RDF-Turtle) ----------
+async function parseAff4(file) {
+  let z;
+  try { z = await openZip(file, 64 * 1024 * 1024); } catch (_) { return null; }
+  // AFF4 is a ZIP carrying an RDF "information.turtle" graph and a container.description.
+  const hasTurtle = z.match(/information\.turtle$/i).length > 0;
+  const hasDesc = z.has('container.description');
+  if (!hasTurtle && !hasDesc) return null;
+  const out = { 'Format': 'AFF4 forensic image' };
+  if (hasDesc) {
+    const desc = await z.text('container.description');
+    if (desc) out['Container URN'] = desc.trim().split(/\r?\n/)[0].slice(0, 120);
+  }
+  const turtleEntry = z.match(/information\.turtle$/i)[0];
+  if (turtleEntry) {
+    const ttl = await inflateToText(z.buf, turtleEntry);
+    if (ttl) {
+      const tool = (ttl.match(/aff4:Tool>?\s*"([^"]+)"/i) || ttl.match(/tool[^"]*"([^"]+)"/i) || [])[1];
+      if (tool) out['Acquisition tool'] = tool;
+      const size = (ttl.match(/aff4:size\b[^>]*>?\s*"?(\d+)/i) || [])[1];
+      if (size) out['Image size'] = fmtBytes(Number(size));
+      const imageStreams = (ttl.match(/aff4:ImageStream|aff4:Image\b/gi) || []).length;
+      if (imageStreams) out['Image streams'] = imageStreams;
+      const hashes = Array.from(new Set(Array.from(ttl.matchAll(/aff4:(SHA1|SHA256|SHA512|MD5|Blake2b)\b/gi)).map((m) => m[1].toUpperCase())));
+      if (hashes.length) out['Hash algorithms'] = hashes.join(', ');
+    }
+  }
+  out['Container'] = 'ZIP64 (AFF4 standard)';
+  out['Note'] = 'Disk image bytes are stored as compressed/encrypted streams; raw acquisition data is not extracted here.';
+  return out;
+}
+
+// ---------- OpenPGP: .pgp / .gpg / .sig / .asc ----------
+const PGP_PUBKEY_ALGOS = { 1: 'RSA', 2: 'RSA (encrypt-only)', 3: 'RSA (sign-only)', 16: 'Elgamal', 17: 'DSA', 18: 'ECDH', 19: 'ECDSA', 22: 'EdDSA', 23: 'X25519', 25: 'X448', 27: 'Ed25519', 28: 'Ed448' };
+const PGP_TAGS = {
+  1: 'Public-Key Encrypted Session Key', 2: 'Signature', 3: 'Symmetric-Key Encrypted Session Key',
+  4: 'One-Pass Signature', 5: 'Secret Key', 6: 'Public Key', 7: 'Secret Subkey',
+  8: 'Compressed Data', 9: 'Symmetrically Encrypted Data', 10: 'Marker', 11: 'Literal Data',
+  12: 'Trust', 13: 'User ID', 14: 'Public Subkey', 17: 'User Attribute',
+  18: 'Sym. Encrypted Integrity Protected Data', 19: 'Modification Detection Code', 20: 'AEAD Encrypted Data',
+};
+
+// Walk OpenPGP packets (RFC 4880 old + new format headers) over a byte range.
+// Returns { tags:{tag:count}, info:{} } or null if the stream is not OpenPGP.
+function pgpWalk(b, limit) {
+  const tags = {};
+  const info = {};
+  let p = 0;
+  let packets = 0;
+  const end = Math.min(b.length, limit);
+  while (p < end) {
+    const c = b[p];
+    if (!(c & 0x80)) break;                  // not a valid packet tag octet
+    let tag, len, headerLen;
+    if (c & 0x40) {                          // new-format packet
+      tag = c & 0x3f;
+      const l0 = b[p + 1];
+      if (l0 == null) break;
+      if (l0 < 192) { len = l0; headerLen = 2; }
+      else if (l0 < 224) { len = ((l0 - 192) << 8) + b[p + 2] + 192; headerLen = 3; }
+      else if (l0 === 255) { len = (b[p + 2] << 24) | (b[p + 3] << 16) | (b[p + 4] << 8) | b[p + 5]; headerLen = 6; }
+      else { break; }                        // partial body lengths - stop
+    } else {                                 // old-format packet
+      tag = (c >> 2) & 0x0f;
+      const lt = c & 0x03;
+      if (lt === 0) { len = b[p + 1]; headerLen = 2; }
+      else if (lt === 1) { len = (b[p + 1] << 8) | b[p + 2]; headerLen = 3; }
+      else if (lt === 2) { len = (b[p + 1] << 24) | (b[p + 2] << 16) | (b[p + 3] << 8) | b[p + 4]; headerLen = 5; }
+      else { break; }                        // indeterminate length - stop
+    }
+    if (len < 0 || headerLen == null) break;
+    const body = p + headerLen;
+    tags[tag] = (tags[tag] || 0) + 1;
+    packets++;
+    // Pull a few useful fields out of common packet bodies.
+    if ((tag === 6 || tag === 14 || tag === 5 || tag === 7) && !info.keyAlgo && b[body] === 4) {
+      // v4 key packet: 1 version + 4 creation time + 1 algo
+      const created = (b[body + 1] << 24) | (b[body + 2] << 16) | (b[body + 3] << 8) | b[body + 4];
+      const algo = b[body + 5];
+      if (PGP_PUBKEY_ALGOS[algo]) info.keyAlgo = PGP_PUBKEY_ALGOS[algo];
+      if (created > 0) { const d = new Date(created * 1000); if (!isNaN(d)) info.created = d; }
+    }
+    if (tag === 13 && !info.userId) {         // User ID packet body is UTF-8 text
+      try { info.userId = utf8(b.subarray(body, body + Math.min(len, 200))); } catch (_) {}
+    }
+    p = body + len;
+    if (packets > 5000) break;
+  }
+  return packets ? { tags, info } : null;
+}
+
+async function parsePgp(file, ext) {
+  const head = new Uint8Array(await file.slice(0, Math.min(file.size, 1_000_000)).arrayBuffer());
+  const txt = latin1(head);
+  const out = {};
+  let walked = null;
+  let armored = false;
+
+  const armorMatch = txt.match(/-----BEGIN PGP ([A-Z ]+)-----/);
+  if (armorMatch) {
+    armored = true;
+    out['Armor type'] = 'PGP ' + armorMatch[1].trim();
+    // Dearmor: strip headers, blank lines and the CRC24 (the "=XXXX" line).
+    const body = txt.slice(txt.indexOf(armorMatch[0]) + armorMatch[0].length);
+    const b64 = body.split(/-----END/)[0]
+      .replace(/^[A-Za-z][\w-]*:.*$/gm, '')   // armor headers (Version:, Comment:)
+      .replace(/^=.{4}\s*$/gm, '')            // CRC line
+      .replace(/\s+/g, '');
+    try { walked = pgpWalk(b64ToBytes(b64), 1_000_000); } catch (_) {}
+  } else if (head[0] & 0x80) {
+    walked = pgpWalk(head, head.length);
+  }
+  if (!armored && !walked) return null;       // not OpenPGP
+
+  out['Format'] = 'OpenPGP ' + (
+    ext === 'sig' ? 'signature' :
+    armorMatch && /PUBLIC KEY/.test(armorMatch[1]) ? 'public key' :
+    armorMatch && /PRIVATE KEY/.test(armorMatch[1]) ? 'private key' :
+    armorMatch && /SIGNATURE/.test(armorMatch[1]) ? 'signature' :
+    armorMatch && /MESSAGE/.test(armorMatch[1]) ? 'message' :
+    'data');
+  out['Encoding'] = armored ? 'ASCII-armored' : 'binary';
+
+  if (walked) {
+    const names = Object.entries(walked.tags)
+      .map(([t, n]) => (PGP_TAGS[t] || ('tag ' + t)) + ' (' + n + ')');
+    out['Packets'] = names.join(', ');
+    if (walked.info.keyAlgo) out['Key algorithm'] = walked.info.keyAlgo;
+    if (walked.info.created) out['Key created'] = fmtDate(walked.info.created);
+    if (walked.info.userId) out['User ID'] = walked.info.userId.replace(/[^\x20-\x7e].*$/, '').trim();
+    if (walked.tags[5] || walked.tags[7]) {
+      out['⚠ Warning'] = 'Contains a SECRET key - keep confidential';
+    }
+  } else {
+    out['Note'] = 'OpenPGP container recognised from the armor header; packet body not decoded.';
+  }
+  return out;
+}
+
+// ---------- partial: KeePass 1.x: .kdb (mirror of kdbx) ----------
+function parseKdb(head) {
+  if (head.length < 12) return null;
+  const r = new Reader(head, true);          // little-endian
+  const sig1 = r.u32();
+  const sig2 = r.u32();
+  if (sig1 !== 0x9AA2D903) return null;
+  const out = { 'Format': 'KeePass 1.x database (.kdb)' };
+  // KDB (KeePass 1) second signature is 0xB54BFB65; KDBX share the first sig.
+  if (sig2 === 0xB54BFB65) out['Variant'] = 'KeePass 1.x (KDB)';
+  else out['Variant'] = 'KeePass (signature 2 = 0x' + sig2.toString(16).toUpperCase() + ')';
+  const flags = r.u32();
+  const enc = [];
+  if (flags & 0x02) enc.push('AES (Rijndael)');
+  if (flags & 0x08) enc.push('Twofish');
+  if (enc.length) out['Cipher'] = enc.join(' / ');
+  out['Note'] = 'Encrypted password database (AES-256 / Twofish, SHA-256 key transform). Entries are not decryptable without the master key - identification only.';
+  out['⚠ Warning'] = 'Encrypted credential store - keep confidential';
+  return out;
+}
+
+// ---------- partial: Microsoft private key: .pvk ----------
+function parsePvk(head) {
+  if (head.length < 24) return null;
+  const r = new Reader(head, true);          // little-endian
+  const magic = r.u32();
+  if (magic !== 0x1EF1B5B0) return null;
+  const reserved = r.u32();
+  const keyType = r.u32();
+  const encrypted = r.u32();
+  const saltLen = r.u32();
+  const keyLen = r.u32();
+  const out = {
+    'Format': 'Microsoft private key (.pvk)',
+    'Signature': '0x1EF1B5B0',
+    'Key type': keyType === 1 ? 'AT_KEYEXCHANGE' : keyType === 2 ? 'AT_SIGNATURE' : 'type ' + keyType,
+    'Encrypted': encrypted ? 'yes (RC2/RC4 password-derived)' : 'no',
+  };
+  if (saltLen) out['Salt length'] = saltLen + ' bytes';
+  if (keyLen) out['Key blob length'] = fmtBytes(keyLen);
+  out['Note'] = 'Authenticode / IIS private key (PUBLICKEYSTRUC blob). Used with .spc to build a .pfx. RSA parameters need the MS PRIVATEKEYBLOB walker - partial parse.';
+  out['⚠ Warning'] = 'Contains a PRIVATE key - keep secret';
+  return out;
+}
+
 // ---------- identification-only (rare AND hard) ----------
 function idOnly(format, note) {
   return () => ({ 'Format': format, 'Note': note });
@@ -704,6 +1210,37 @@ export const PARSERS = {
   // PKCS#12 / PFX — inline ASN.1 DER walker reads the (plaintext) envelope.
   p12: (c) => parseP12(c.file),
   pfx: (c) => parseP12(c.file),
+
+  // OpenPGP (binary packets or ASCII armor)
+  pgp: (c) => parsePgp(c.file, c.ext),
+  gpg: (c) => parsePgp(c.file, c.ext),
+  sig: (c) => parsePgp(c.file, c.ext),
+
+  // Legacy Windows Event Log
+  evt: (c) => parseEvt(c.head),
+
+  // Detection / threat-intel rule sets
+  yar:   (c) => parseYara(c.file),
+  yara:  (c) => parseYara(c.file),
+  rules: (c) => parseRules(c.file),
+  stix:  (c) => parseStix(c.file),
+  ioc:   (c) => parseIoc(c.file),
+
+  // HTTP debug + password manager exports
+  saz:     (c) => parseSaz(c.file),
+  '1pux':  (c) => parse1pux(c.file),
+  opvault: (c) => parseOpvault(c.file, c.ext, c.file && c.file.name),
+
+  // Apple Keychain
+  keychain: (c) => parseKeychain(c.head),
+
+  // Forensic disk images
+  aff:  (c) => parseAff(c.head),
+  aff4: (c) => parseAff4(c.file),
+
+  // Partial parses
+  kdb: (c) => parseKdb(c.head),
+  pvk: (c) => parsePvk(c.head),
 
   // Identification-only: rare AND hard (need ASN.1 / proprietary binary walkers)
   kdbx: idOnly('KeePass database (KDBX)', 'Encrypted password database (AES/ChaCha20, AES-KDF or Argon2). Contents are not decryptable without the master key - identification only.'),

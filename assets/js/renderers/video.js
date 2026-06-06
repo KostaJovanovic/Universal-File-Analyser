@@ -159,17 +159,14 @@ async function meanLuma(blob) {
   }
 }
 
-// Grab the first non-black frame from a video the browser itself can't decode
-// (ProRes, DNxHD, uncompressed, ...) using the FFmpeg WASM fallback. Seeks a
-// small ladder of timestamps and returns the first frame whose mean luma clears
-// a "not black" threshold (or the brightest one sampled), as { blob, time, luma }.
-// Prefers a WORKERFS mount so multi-GB masters are read by seeking rather than
-// copied whole into WASM memory; falls back to an in-memory copy for smaller
-// files. Returns null if nothing usable could be extracted. Fully guarded.
-const FRAME_BLACK_THRESHOLD = 12;       // mean luma above this = "has picture"
-const FRAME_GRAB_TIMES = [0, 0.2, 0.5, 1, 2, 4, 7, 12];
-
-async function ffmpegFirstNonBlackFrame(file, signal) {
+// Grab the very first frame of a video the browser itself can't decode (ProRes,
+// DNxHD, HEVC-in-MKV, ...) using the FFmpeg WASM fallback, as { blob, time }.
+// Decodes a SINGLE frame only - it no longer scans a ladder of timestamps for a
+// non-black frame - so even a large or slow-to-decode master pays for just one
+// decode. Prefers a WORKERFS mount so multi-GB files are read by seeking rather
+// than copied whole into WASM memory; falls back to an in-memory copy for
+// smaller files. Returns null if nothing usable could be extracted. Fully guarded.
+async function ffmpegFirstFrame(file, signal) {
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return null;
 
@@ -199,24 +196,18 @@ async function ffmpegFirstNonBlackFrame(file, signal) {
       cleanup = async () => { try { await ff.deleteFile('anr_input'); } catch (_) {} };
     }
 
-    let best = null;
-    for (const t of FRAME_GRAB_TIMES) {
-      if (signal && signal.aborted) break;
-      try {
-        // -ss before -i = fast input seek (exact for all-intra codecs like ProRes).
-        await ff.exec(['-ss', String(t), '-i', input, '-frames:v', '1', '-q:v', '3', '-y', 'anr_frame.jpg'], 45000);
-      } catch (_) { continue; }
-      let data = null;
-      try { data = await ff.readFile('anr_frame.jpg'); } catch (_) {}
-      try { await ff.deleteFile('anr_frame.jpg'); } catch (_) {}
-      if (!data || !data.length) continue;
-      const blob = new Blob([data.buffer || data], { type: 'image/jpeg' });
-      const luma = await meanLuma(blob);
-      if (luma == null) continue;
-      if (luma > FRAME_BLACK_THRESHOLD) return { blob, time: t, luma };
-      if (!best || luma > best.luma) best = { blob, time: t, luma };
-    }
-    return best; // all sampled frames were ~black: return the brightest (or null)
+    if (signal && signal.aborted) return null;
+    // Decode exactly one frame - the first - and stop. No -ss ladder, so a large
+    // or hard-to-decode video isn't paying for repeated seeks and decodes.
+    try {
+      await ff.exec(['-i', input, '-frames:v', '1', '-q:v', '3', '-y', 'anr_frame.jpg'], 45000);
+    } catch (_) { return null; }
+    let data = null;
+    try { data = await ff.readFile('anr_frame.jpg'); } catch (_) {}
+    try { await ff.deleteFile('anr_frame.jpg'); } catch (_) {}
+    if (!data || !data.length) return null;
+    const blob = new Blob([data.buffer || data], { type: 'image/jpeg' });
+    return { blob, time: 0 };
   } catch (_) {
     return null;
   } finally {
@@ -523,6 +514,8 @@ const H264_PROFILES = {
   66: 'Baseline', 77: 'Main', 88: 'Extended', 100: 'High',
   110: 'High 10', 122: 'High 4:2:2', 244: 'High 4:4:4'
 };
+// chroma_format_idc (HEVC hvcC / H.264 avcC extension): 0 mono, 1 4:2:0, 2 4:2:2, 3 4:4:4.
+const CHROMA_FORMATS = { 0: 'monochrome', 1: '4:2:0', 2: '4:2:2', 3: '4:4:4' };
 // ISO/IEC 23001-8 colour primaries / transfer characteristics codes we care about.
 const COLOUR_PRIMARIES = { 1: 'BT.709', 5: 'BT.601 (PAL)', 6: 'BT.601 (NTSC)', 9: 'BT.2020' };
 const TRANSFER_CHARS = { 1: 'BT.709', 6: 'BT.601', 16: 'PQ', 18: 'HLG' };
@@ -628,15 +621,35 @@ async function detectIsobmffTracks(file) {
           const avcc = findAllBoxes(view, trakStart, trakEnd, 'avcC')[0];
           if (avcc) {
             const d = avcc.offset + avcc.headerSize; // configVer(1) profile(1) compat(1) level(1)
+            const avccEnd = Math.min(avcc.offset + avcc.size, moovSize);
             const profileIdc = view.getUint8(d + 1);
             const levelIdc = view.getUint8(d + 3);
             if (H264_PROFILES[profileIdc]) v.profile = H264_PROFILES[profileIdc];
             if (levelIdc) v.level = (levelIdc / 10).toFixed(1).replace(/\.0$/, '');
+            // Bit depth / chroma live in the avcC extension that High-10, High
+            // 4:2:2 and High 4:4:4 profiles append after the SPS/PPS NAL arrays.
+            // Walk past those arrays (bounded by the box) to reach it.
+            if ([100, 110, 122, 144, 244].includes(profileIdc)) {
+              let p = d + 5;
+              const numSps = view.getUint8(p) & 0x1f; p += 1;
+              for (let i = 0; i < numSps && p + 2 <= avccEnd; i++) p += 2 + view.getUint16(p);
+              if (p < avccEnd) { const numPps = view.getUint8(p); p += 1;
+                for (let i = 0; i < numPps && p + 2 <= avccEnd; i++) p += 2 + view.getUint16(p);
+              }
+              if (p + 3 <= avccEnd) {
+                const chromaIdc = view.getUint8(p) & 0x03;
+                const depthLuma = (view.getUint8(p + 1) & 0x07) + 8;
+                const depthChroma = (view.getUint8(p + 2) & 0x07) + 8;
+                if (CHROMA_FORMATS[chromaIdc] !== undefined) v.chroma = CHROMA_FORMATS[chromaIdc];
+                if (depthLuma >= 8 && depthLuma <= 16) v.bitDepth = Math.max(depthLuma, depthChroma);
+              }
+            }
           }
         } else if (codecFcc === 'hvc1' || codecFcc === 'hev1' || codecFcc === 'dvh1' || codecFcc === 'dvhe') {
           const hvcc = findAllBoxes(view, trakStart, trakEnd, 'hvcC')[0];
           if (hvcc) {
             const d = hvcc.offset + hvcc.headerSize; // configVer(1) then profile space/tier/idc byte
+            const hvccEnd = Math.min(hvcc.offset + hvcc.size, moovSize);
             const b1 = view.getUint8(d + 1);
             const tier = (b1 & 0x20) ? 'High' : 'Main';
             const profileIdc = b1 & 0x1f;
@@ -645,6 +658,15 @@ async function detectIsobmffTracks(file) {
             // general_level_idc is at offset d+12 in hvcC.
             const levelIdc = view.getUint8(d + 12);
             if (levelIdc) v.level = (levelIdc / 30).toFixed(1);
+            // chroma_format_idc (d+16, low 2 bits) and bit_depth_luma/chroma_minus8
+            // (d+17 / d+18, low 3 bits each) are at fixed offsets in the hvcC record.
+            if (d + 19 <= hvccEnd) {
+              const chromaIdc = view.getUint8(d + 16) & 0x03;
+              const depthLuma = (view.getUint8(d + 17) & 0x07) + 8;
+              const depthChroma = (view.getUint8(d + 18) & 0x07) + 8;
+              if (CHROMA_FORMATS[chromaIdc] !== undefined) v.chroma = CHROMA_FORMATS[chromaIdc];
+              if (depthLuma >= 8 && depthLuma <= 16) v.bitDepth = Math.max(depthLuma, depthChroma);
+            }
           }
         }
       } catch (_) {}
@@ -730,6 +752,12 @@ function appendTrackRows(tbl, tracks) {
       tbl.appendChild(rowHelp('Video codec', label,
         'The video compression format and (where available) its profile/level, read from the MP4/MOV sample-description and codec-config boxes. The profile/level indicate which encoding features and bitrate ceiling were used.'));
     }
+    if (v.bitDepth) {
+      let depthText = v.bitDepth + '-bit';
+      if (v.chroma) depthText += '  ·  ' + v.chroma + ' chroma';
+      tbl.appendChild(rowHelp('Bit depth', depthText,
+        'Bits per colour sample and the chroma subsampling, read from the codec configuration. 8-bit is standard; 10-bit (e.g. Sony XAVC HS, HLG/HDR) stores finer gradients. 4:2:0 is normal delivery, 4:2:2 keeps more colour detail for grading. Browsers ship no decoder for 10-bit 4:2:2, so those files can be identified here but not played.'));
+    }
     if (v.rotation) {
       const orient = (v.rotation === 90 || v.rotation === 270) ? 'portrait' : 'landscape';
       tbl.appendChild(rowHelp('Rotation', v.rotation + '°  (' + orient + ')',
@@ -766,24 +794,25 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
   const isPro = !!(v && PRO_VIDEO_CODECS.has(v.codec));
   const named = !!(v && v.codecName && v.codecName !== v.codec);
 
+  const hiDepth = !!(v && v.bitDepth && v.bitDepth >= 10);
   let msg;
   if (isPro) {
     msg = (v.codecName || 'This codec') + ' is a professional editing / master format that no web browser can decode, so it can’t be played here. The file is fine - convert it to H.264 (MP4) to view it in a browser.';
+  } else if (hiDepth) {
+    const cf = (v.chroma && v.chroma !== '4:2:0') ? ' ' + v.chroma : '';
+    msg = 'This is a ' + v.bitDepth + '-bit' + cf + ' ' + (v.codecName || 'video') + ' file - the kind Sony XAVC HS / FX-series, Canon and other cameras record. No web browser ships a decoder for high-bit-depth' + (cf ? ' 4:2:2' : '') + ' video, so it can’t be played here. The file is fine - convert it to 8-bit H.264 (MP4) to view it in a browser, or use the first-frame preview below.';
   } else if (named) {
     msg = 'Your browser has no decoder for this video’s codec (' + v.codecName + '), so it can’t be played here. The file itself is fine - converting it to H.264 (MP4) will make it playable.';
   } else {
     msg = 'Your browser can’t decode this video’s codec, so it can’t be played here. The file itself may be fine - converting it to H.264 (MP4) usually makes it playable.';
   }
+  // Every codec that lands here is unplayable in any browser, but desktop players
+  // are not so limited - point the user at VLC, which decodes virtually anything.
+  msg += ' To play it now without converting, open it in a free desktop player like VLC (videolan.org), which handles virtually every codec.';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, msg));
 
-  // Preview placeholder - filled in (or removed) after the FFmpeg frame grab at
-  // the end of this function. Sits above the metadata so the picture leads.
-  const prevCard = el('div', { class: 'anr-card' });
-  prevCard.appendChild(el('h3', {}, 'Preview'));
-  const prevStatus = el('p', { class: 'anr-hint' }, 'Extracting the first visible frame with FFmpeg…');
-  prevCard.appendChild(prevStatus);
-  resultsEl.appendChild(prevCard);
-
+  // File info first - it's available instantly from the header walk, with no
+  // decode needed, so the page is useful immediately even for a huge file.
   const infoCard = el('div', { class: 'anr-card' });
   infoCard.appendChild(el('h3', {}, 'File info'));
   const tbl = el('table', { class: 'anr-readout' });
@@ -809,33 +838,58 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
 
-  // SHA-256 (skipped for very large files, matching the other video paths).
-  if (file.size <= 500 * 1024 * 1024) resultsEl.appendChild(integrityCard(file));
+  // Preview on demand. Decoding even a single frame from a codec the browser
+  // can't play needs the ~31 MB FFmpeg WASM core and a single-threaded decode -
+  // slow for big masters - so put it behind a button instead of auto-running.
+  const prevCard = el('div', { class: 'anr-card' });
+  prevCard.appendChild(el('h3', {}, 'Preview'));
+  const prevHint = el('p', { class: 'anr-hint' }, 'No preview by default - the browser can’t decode this video. Extracting the first frame uses FFmpeg (~31 MB, downloaded once then cached).');
+  prevCard.appendChild(prevHint);
+  const grabBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Extract first frame');
+  const grabRow = el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [grabBtn]);
+  prevCard.appendChild(grabRow);
+  grabBtn.addEventListener('click', async () => {
+    grabBtn.disabled = true;
+    const status = el('p', { class: 'anr-hint' }, 'Extracting the first frame with FFmpeg…');
+    grabRow.replaceWith(status);
+    try {
+      const frame = await ffmpegFirstFrame(file, signal);
+      if (signal && signal.aborted) return;
+      if (!frame) { status.textContent = 'Could not extract a frame from this file.'; return; }
+      status.remove();
+      prevHint.remove();
+      prevCard.appendChild(el('img', {
+        src: URL.createObjectURL(frame.blob),
+        alt: 'First frame of ' + file.name,
+        style: 'max-width:100%; max-height:480px; display:block; border:1px solid var(--hairline); background:#0a0a0a;',
+      }));
+      prevCard.appendChild(el('p', { class: 'anr-hint' }, 'First frame of the video, decoded with FFmpeg since the browser can’t play this codec.'));
+      const basename = (file.name || 'video').replace(/\.[^/.]+$/, '');
+      const frameFile = new File([frame.blob], basename + '_frame.jpg', { type: 'image/jpeg' });
+      const analyseBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
+        const pr = revealPhotoSection();
+        renderPhoto(frameFile, pr, { sourceNote: 'First frame extracted from ' + file.name + ' (the video itself can’t be decoded in the browser).' });
+      } }, 'Analyse in Photo section');
+      prevCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [analyseBtn]));
+    } catch (_) {
+      status.textContent = 'Could not extract a frame from this file.';
+    }
+  });
+  resultsEl.appendChild(prevCard);
 
-  // Pull the first non-black frame out via FFmpeg (decodes ProRes/DNxHD/etc. that
-  // the browser can't). Best-effort: on failure the placeholder is just removed.
-  try {
-    const frame = await ffmpegFirstNonBlackFrame(file, signal);
-    if (signal && signal.aborted) return;
-    if (!frame) { prevCard.remove(); return; }
-    prevStatus.remove();
-    prevCard.appendChild(el('img', {
-      src: URL.createObjectURL(frame.blob),
-      alt: 'First frame of ' + file.name,
-      style: 'max-width:100%; max-height:480px; display:block; border:1px solid var(--hairline); background:#0a0a0a;',
-    }));
-    prevCard.appendChild(el('p', { class: 'anr-hint' }, frame.luma > FRAME_BLACK_THRESHOLD
-      ? 'First non-black frame, at ' + frame.time.toFixed(1) + 's. Decoded with FFmpeg since the browser can’t play this codec.'
-      : 'This video appears to open on black; showing the brightest of the first frames (' + frame.time.toFixed(1) + 's).'));
-    const basename = (file.name || 'video').replace(/\.[^/.]+$/, '');
-    const frameFile = new File([frame.blob], basename + '_frame_' + frame.time.toFixed(1) + 's.jpg', { type: 'image/jpeg' });
-    const analyseBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
-      const pr = revealPhotoSection();
-      renderPhoto(frameFile, pr, { sourceNote: 'Frame extracted from ' + file.name + ' at ' + frame.time.toFixed(1) + 's (the video itself can’t be decoded in the browser).' });
-    } }, 'Analyse in Photo section');
-    prevCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [analyseBtn]));
-  } catch (_) {
-    prevCard.remove();
+  // SHA-256 reads the whole file, so compute it automatically only for small
+  // videos; for big ones put it behind a button so the page isn't held up.
+  const SHA_AUTO_MAX = 200 * 1024 * 1024;
+  if (file.size <= SHA_AUTO_MAX) {
+    resultsEl.appendChild(integrityCard(file));
+  } else if (file.size <= 2 * 1024 * 1024 * 1024) {
+    const hashCard = el('div', { class: 'anr-card' });
+    hashCard.appendChild(el('h3', {}, 'Integrity'));
+    hashCard.appendChild(el('p', { class: 'anr-hint' }, 'SHA-256 reads the whole file (' + fmtBytes(file.size) + '), so it isn’t computed automatically for large videos.'));
+    const hashBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Compute SHA-256');
+    hashBtn.addEventListener('click', () => { hashCard.replaceWith(integrityCard(file)); });
+    hashCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [hashBtn]));
+    resultsEl.appendChild(hashCard);
   }
 }
 
@@ -1355,6 +1409,27 @@ export async function renderVideo(file, resultsEl) {
   let header = {};
   try { header = await peekVideoContainer(file); } catch (_) {}
 
+  // Up-front gate for codecs that load their metadata cleanly but can never
+  // actually decode in a browser: 4:2:2 / 4:4:4 chroma (e.g. Sony XAVC HS /
+  // FX-series 10-bit 4:2:2) and 12-bit+ video. For these the <video> element
+  // fires loadeddata / loadedmetadata - so the probe and the visible fallback
+  // both "succeed" - yet only ever paint a black, empty player with no error
+  // event, so the code would otherwise never reach the unplayable path that
+  // explains the limitation and recommends VLC. Route them there directly.
+  // (10-bit 4:2:0 and pro/intermediate codecs still go through the probe, since
+  // some browsers/devices can decode them.)
+  try {
+    if (/MP4|MOV|M4V|3GP|3G2|QuickTime/i.test(header.container || '')) {
+      const earlyTracks = await detectIsobmffTracks(file);
+      const ev = earlyTracks && earlyTracks.video;
+      if (ev && (ev.chroma === '4:2:2' || ev.chroma === '4:4:4' || (ev.bitDepth && ev.bitDepth >= 12))) {
+        resultsEl.innerHTML = '';
+        await renderUnplayableVideoInfo(file, header, resultsEl, renderSignal);
+        return;
+      }
+    }
+  } catch (_) {}
+
   const url = URL.createObjectURL(file);
 
   // The probe is kept IN THE DOM (not display:none) so the browser gives it a
@@ -1404,7 +1479,8 @@ export async function renderVideo(file, resultsEl) {
 
     if (avi) {
       resultsEl.appendChild(el('div', { class: 'anr-info' },
-        'Your browser cannot play this codec. Analysis extracted from file data.'));
+        'Your browser cannot play this codec. Analysis extracted from file data. ' +
+        'To play it now, open it in a free desktop player like VLC (videolan.org), which handles virtually every codec.'));
 
       const infoCard = el('div', { class: 'anr-card' });
       infoCard.appendChild(el('h3', {}, 'File info'));
