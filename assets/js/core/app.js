@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 57;
+const COMMIT_COUNT = 58;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). A commit listed in RELEASE_COMMITS bumps the
@@ -48,7 +48,8 @@ import { fileExt, el, probeReadable, isUnreadableError, cloudFileWarning } from 
 import { walkItems, renderFolder } from '../renderers/folder.js';
 import {
   PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, CSV_EXTS, SVG_EXTS,
-  renderFmtOverlay, renderAboutFormats, formatCount
+  renderFmtOverlay, renderAboutFormats, formatCount,
+  CATEGORIES, categoryCounts
 } from './formats.js';
 
 function $(id) { return document.getElementById(id); }
@@ -568,8 +569,8 @@ function setupHeaderFx() {
           // Ease the letters into their hover weight on entry, then drop the
           // transition so subsequent cursor tracking stays instant (no lag).
           clearTimeout(fxT);
-          for (const l of letters) l.el.style.transition = 'font-weight 0.4s ease';
-          fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 420);
+          for (const l of letters) l.el.style.transition = 'font-weight 0.18s ease';
+          fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 200);
         }
         ensureRunning();
       };
@@ -607,18 +608,28 @@ function setupSectionFx() {
       letters.push(...splitText(el, base));
     });
 
-    // Freeze text wrapping during hover. The per-letter weight change alters word
-    // widths, which would otherwise reflow the heading onto different lines as the
-    // cursor moves. Lock each word's box to its base-weight width (measured once on
-    // first hover - the widest state, since the effect only lightens letters) and
-    // release it on settle so the heading stays freely responsive when idle.
-    const words = [...new Set(letters.map((l) => l.el.parentElement).filter(Boolean))];
-    let baseWidths = null;
+    // Freeze layout during hover. Changing a letter's weight changes its glyph
+    // advance, which would otherwise reflow the heading as the cursor moves. Lock
+    // each LETTER (not each word) to its base-weight width - measured once on first
+    // hover via the sub-pixel rect (offsetWidth's integer rounding was enough to let
+    // a word slip onto another line), the widest state since the effect only
+    // lightens. The glyph then thins inside its own fixed box, so neither letters,
+    // words, nor lines ever move, and no slack piles up at a word's end as a stray
+    // gap. Released on settle so the heading stays freely responsive when idle.
+    // Re-measure whenever the window width changed since the last measurement -
+    // the heading font-size is responsive, so widths baked at one window size would
+    // be stale (and, locked per-letter, make glyph boxes overlap) after a resize.
+    // A hover after a resize finds the letters at rest at base weight, so measuring
+    // then is safe.
+    let measuredW = -1;
     const lockWidths = () => {
-      if (!baseWidths) baseWidths = words.map((w) => w.offsetWidth);
-      words.forEach((w, i) => { w.style.width = baseWidths[i] + 'px'; });
+      if (measuredW !== window.innerWidth) {
+        for (const l of letters) l.w = l.el.getBoundingClientRect().width;
+        measuredW = window.innerWidth;
+      }
+      for (const l of letters) l.el.style.width = l.w + 'px';
     };
-    const unlockWidths = () => { for (const w of words) w.style.width = ''; };
+    const unlockWidths = () => { for (const l of letters) l.el.style.width = ''; };
 
     let mx = -9999, my = -9999, inside = false, raf = 0, running = false, fxT = 0;
     const weight = (l) => {
@@ -650,8 +661,8 @@ function setupSectionFx() {
       inside = true;
       // Ease the letters in on entry, then drop the transition so tracking is instant.
       clearTimeout(fxT);
-      for (const l of letters) l.el.style.transition = 'font-weight 0.4s ease';
-      fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 420);
+      for (const l of letters) l.el.style.transition = 'font-weight 0.18s ease';
+      fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 200);
       if (!running) { running = true; raf = requestAnimationFrame(frame); }
     });
     section.addEventListener('mousemove', (e) => { mx = e.clientX; my = e.clientY; });
@@ -707,14 +718,30 @@ function boot() {
   function showAnalyseNext() {
     const grid = document.querySelector('.quickdrop');
     const btn = $('analyseNext');
+    const jump = $('scrollToData');
     if (grid) grid.hidden = true;
     if (btn) btn.hidden = false;
+    if (jump) jump.hidden = false;
   }
   function restoreQuickdrop() {
     const grid = document.querySelector('.quickdrop');
     const btn = $('analyseNext');
+    const jump = $('scrollToData');
     if (grid) grid.hidden = false;
     if (btn) btn.hidden = true;
+    if (jump) jump.hidden = true;
+  }
+
+  // Jump to the first analysed section. Results elements are hidden+emptied until
+  // a renderer populates them, so the first visible .anr-results with children is
+  // the first section with data (document order: unknown, photo, audio, video).
+  function scrollToFirstData() {
+    for (const res of document.querySelectorAll('.anr-results')) {
+      if (!res.hidden && res.childElementCount > 0) {
+        (res.closest('.section') || res).scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+    }
   }
 
   // Stop the in-flight load: drop its results and restore the empty page state
@@ -901,6 +928,11 @@ function boot() {
   if (analyseNextBtn && !analyseNextBtn._wired) {
     analyseNextBtn._wired = true;
     analyseNextBtn.addEventListener('click', () => location.reload());
+  }
+  const scrollToDataBtn = $('scrollToData');
+  if (scrollToDataBtn && !scrollToDataBtn._wired) {
+    scrollToDataBtn._wired = true;
+    scrollToDataBtn.addEventListener('click', scrollToFirstData);
   }
 
   if ($('photoDrop')) initPhoto({
@@ -1386,6 +1418,24 @@ function boot() {
       ])
   };
 
+  // Shared note under the download buttons (created on first use), used to report
+  // any files that failed to download. Pass '' to clear it.
+  function setOfflineStatus(msg) {
+    const options = document.querySelector('.offline-options');
+    if (!options) return;
+    let status = document.getElementById('offlineStatus');
+    if (!msg) { if (status) { status.hidden = true; status.textContent = ''; } return; }
+    if (!status) {
+      status = document.createElement('p');
+      status.id = 'offlineStatus';
+      status.className = 'offline-status';
+      status.setAttribute('role', 'status');
+      options.insertAdjacentElement('afterend', status);
+    }
+    status.textContent = msg;
+    status.hidden = false;
+  }
+
   document.querySelectorAll('.offline-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (btn.classList.contains('is-active') || btn.classList.contains('is-done')) return;
@@ -1415,26 +1465,43 @@ function boot() {
       setBar(0);
 
       const cache = await caches.open('analyser-offline');
-      let done = 0;
+      setOfflineStatus('');   // a fresh attempt clears any previous failure note
+      let done = 0, failed = 0;
       for (const url of urls) {
+        let ok = false;
         try {
           const exists = await cache.match(new Request(url));
-          if (!exists) {
+          if (exists) {
+            ok = true;
+          } else {
             const resp = await fetch(url, { mode: url.startsWith('http') ? 'cors' : 'same-origin' })
               .catch(() => fetch(url, { mode: 'no-cors' }));
-            if (resp) await cache.put(url, resp);
+            // Opaque (cross-origin no-cors) responses report ok=false but are
+            // still cacheable; only a same-origin non-ok counts as a real failure.
+            if (resp && (resp.type === 'opaque' || resp.ok)) {
+              await cache.put(url, resp);
+              ok = true;
+            }
           }
         } catch (_) {}
+        if (!ok) failed++;
         done++;
         setBar(done / urls.length);
         sizeEl.textContent = done + ' / ' + urls.length;
       }
 
       btn.classList.remove('is-active');
-      btn.classList.add('is-done');
-      sizeEl.textContent = 'Cached';
       setBar(1);
-      setTimeout(() => btn.classList.add('is-fading'), 5000);
+      if (failed > 0) {
+        // Leave the button enabled (no is-done) so the user can retry the rest.
+        sizeEl.textContent = 'Try again';
+        setOfflineStatus(failed + ' of ' + urls.length + ' file' + (urls.length === 1 ? '' : 's') +
+          ' failed to download. You may be offline or a server was unreachable - try again to finish.');
+      } else {
+        btn.classList.add('is-done');
+        sizeEl.textContent = 'Cached';
+        setTimeout(() => btn.classList.add('is-fading'), 5000);
+      }
     });
   });
 
@@ -1578,32 +1645,124 @@ function boot() {
   if (fmtOverlay) {
     const items = fmtOverlay.querySelectorAll('.fmt-item');
     const labels = fmtOverlay.querySelectorAll('.fmt-section-label');
+    const fmtChips = $('fmtChips');
+    const fmtResultCount = $('fmtResultCount');
+    const fmtToggleAll = $('fmtToggleAll');
+    const fmtBody = $('fmtBody');
+    let activeCat = 'all';
+
+    // Empty-state node lives inside the scroll body but is created here (rather
+    // than in the HTML) so renderFmtOverlay's innerHTML reset doesn't wipe it.
+    let fmtEmpty = $('fmtEmpty');
+    if (fmtBody && !fmtEmpty) {
+      fmtEmpty = el('p', { class: 'fmt-empty', id: 'fmtEmpty', hidden: 'hidden' });
+      fmtBody.appendChild(fmtEmpty);
+    }
+
+    const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    // Wrap every case-insensitive occurrence of `q` in <mark>; restore the plain
+    // text when `q` is empty. The original text is cached on the element so the
+    // highlight is non-destructive and idempotent across keystrokes.
+    function highlightEl(elm, q) {
+      if (elm._orig == null) elm._orig = elm.textContent;
+      const text = elm._orig;
+      if (!q) { if (elm.innerHTML !== text) elm.textContent = text; return; }
+      const lower = text.toLowerCase();
+      let i = lower.indexOf(q), last = 0, html = '';
+      if (i === -1) { elm.textContent = text; return; }
+      while (i !== -1) {
+        html += escapeHtml(text.slice(last, i)) +
+          '<mark class="fmt-mark">' + escapeHtml(text.slice(i, i + q.length)) + '</mark>';
+        last = i + q.length;
+        i = lower.indexOf(q, last);
+      }
+      html += escapeHtml(text.slice(last));
+      elm.innerHTML = html;
+    }
+
+    function buildChips() {
+      if (!fmtChips) return;
+      const chipDefs = [{ key: 'all', label: 'All' }, ...CATEGORIES];
+      fmtChips.innerHTML = '';
+      for (const c of chipDefs) {
+        const on = c.key === activeCat;
+        const btn = el('button', {
+          type: 'button', class: 'fmt-chip' + (on ? ' is-active' : ''),
+          'data-cat': c.key, role: 'tab', 'aria-selected': on ? 'true' : 'false',
+        }, c.label);
+        btn.addEventListener('click', () => {
+          activeCat = c.key;
+          fmtChips.querySelectorAll('.fmt-chip').forEach((b) => {
+            const sel = b.dataset.cat === activeCat;
+            b.classList.toggle('is-active', sel);
+            b.setAttribute('aria-selected', sel ? 'true' : 'false');
+          });
+          applyFilter();
+        });
+        fmtChips.appendChild(btn);
+      }
+    }
+
+    const visibleItems = () => [...items].filter((it) => !it.classList.contains('is-hidden'));
+    function syncToggleAll() {
+      if (!fmtToggleAll) return;
+      const vis = visibleItems();
+      fmtToggleAll.disabled = vis.length === 0;
+      fmtToggleAll.textContent = vis.some((it) => !it.open) ? 'Expand all' : 'Collapse all';
+    }
 
     function applyFilter() {
-      const q = fmtSearch ? fmtSearch.value.trim().toLowerCase() : '';
-      items.forEach(it => {
+      const raw = fmtSearch ? fmtSearch.value.trim() : '';
+      const q = raw.toLowerCase();
+      let visCount = 0;
+      const extSet = new Set();
+      items.forEach((it) => {
+        const labelEl = it.querySelector('.fmt-item-label');
+        const extsEl = it.querySelector('.fmt-item-exts');
+        const descEl = it.querySelector('.fmt-item-desc');
+        const catOk = activeCat === 'all' || it.dataset.cat === activeCat;
         const text = (
-          it.querySelector('.fmt-item-label').textContent + ' ' +
-          it.querySelector('.fmt-item-exts').textContent + ' ' +
-          (it.dataset.tags || '') + ' ' +
-          it.querySelector('.fmt-item-desc').textContent
+          labelEl.textContent + ' ' + extsEl.textContent + ' ' +
+          (it.dataset.tags || '') + ' ' + descEl.textContent
         ).toLowerCase();
-        const match = !q || text.includes(q);
+        const match = catOk && (!q || text.includes(q));
         it.classList.toggle('is-hidden', !match);
         // Auto-open matches so the matched text shows; collapse when cleared.
         it.open = q ? match : false;
+        const hq = (q && match) ? q : '';
+        highlightEl(labelEl, hq);
+        it.querySelectorAll('.fmt-item-ext').forEach((s) => highlightEl(s, hq));
+        highlightEl(descEl, hq);
+        if (match) {
+          visCount++;
+          extsEl.textContent.split(/\s+/).forEach((t) => { if (t) extSet.add(t.toLowerCase()); });
+        }
       });
-      labels.forEach(label => {
+      let firstVisibleLabel = null;
+      labels.forEach((label) => {
         const list = label.nextElementSibling;
-        if (!list) return;
-        const visible = list.querySelectorAll('.fmt-item:not(.is-hidden)').length;
+        const visible = list ? list.querySelectorAll('.fmt-item:not(.is-hidden)').length : 0;
         label.style.display = visible ? '' : 'none';
+        label.classList.remove('is-first-visible');
+        if (visible && !firstVisibleLabel) firstVisibleLabel = label;
       });
+      if (firstVisibleLabel) firstVisibleLabel.classList.add('is-first-visible');
+      if (fmtResultCount) {
+        fmtResultCount.textContent =
+          visCount + (visCount === 1 ? ' format' : ' formats') + ' · ' + extSet.size + ' extensions';
+      }
+      if (fmtEmpty) {
+        fmtEmpty.hidden = visCount !== 0;
+        if (visCount === 0) fmtEmpty.textContent = raw ? `No formats match “${raw}”.` : 'No formats in this category.';
+      }
+      syncToggleAll();
     }
 
     function openFmt() {
       fmtOverlay.hidden = false;
       document.body.style.overflow = 'hidden';
+      activeCat = 'all';
+      buildChips();
       if (fmtSearch) {
         fmtSearch.value = '';
         if (matchMedia('(pointer:fine)').matches) fmtSearch.focus();
@@ -1612,7 +1771,9 @@ function boot() {
     }
     function closeFmt() { fmtOverlay.hidden = true; document.body.style.overflow = ''; }
 
-    document.querySelectorAll('[data-fmt-open]').forEach(trigger => {
+    buildChips();
+
+    document.querySelectorAll('[data-fmt-open]').forEach((trigger) => {
       if (trigger._fmtWired) return;
       trigger._fmtWired = true;
       trigger.addEventListener('click', (e) => {
@@ -1622,10 +1783,30 @@ function boot() {
       });
     });
 
-    if (fmtClose) fmtClose.addEventListener('click', closeFmt);
-    fmtOverlay.addEventListener('click', (e) => { if (e.target === fmtOverlay) closeFmt(); });
-    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !fmtOverlay.hidden) closeFmt(); });
-    if (fmtSearch) fmtSearch.addEventListener('input', applyFilter);
+    if (fmtClose && !fmtClose._wired) { fmtClose._wired = true; fmtClose.addEventListener('click', closeFmt); }
+    if (fmtToggleAll && !fmtToggleAll._wired) {
+      fmtToggleAll._wired = true;
+      fmtToggleAll.addEventListener('click', () => {
+        const vis = visibleItems();
+        const expand = vis.some((it) => !it.open);
+        vis.forEach((it) => { it.open = expand; });
+        syncToggleAll();
+      });
+    }
+    if (!fmtOverlay._wired) {
+      fmtOverlay._wired = true;
+      fmtOverlay.addEventListener('click', (e) => { if (e.target === fmtOverlay) closeFmt(); });
+    }
+    if (!boot._fmtKeyWired) {
+      // Persists across navigations, so close self-contained off a fresh lookup
+      // rather than this boot's (possibly stale) closeFmt/fmtOverlay.
+      boot._fmtKeyWired = true;
+      window.addEventListener('keydown', (e) => {
+        const ov = $('fmtOverlay');
+        if (e.key === 'Escape' && ov && !ov.hidden) { ov.hidden = true; document.body.style.overflow = ''; }
+      });
+    }
+    if (fmtSearch && !fmtSearch._wired) { fmtSearch._wired = true; fmtSearch.addEventListener('input', applyFilter); }
   }
 
   // ----- Search -----

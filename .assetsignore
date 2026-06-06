@@ -1,0 +1,23 @@
+# Files in the repo root that must NOT be served as public Cloudflare assets.
+# The assets directory is "." (see wrangler.jsonc), so without this every repo
+# file - including .git - gets uploaded. Two reasons this matters:
+#   1. Size: Workers rejects any single asset over 25 MiB; the .git pack is ~32 MiB,
+#      which is exactly what failed the deploy.
+#   2. Privacy: serving .git would expose the full source history publicly.
+# Syntax is .gitignore-style.
+
+.git/
+.gitignore
+.assetsignore
+
+# Local AI / tooling config and notes
+.claude/
+research/
+CLAUDE.md
+
+# Dev-only scripts and deploy config (not needed at runtime)
+*.bat
+wrangler.jsonc
+
+# Repo docs (not part of the app)
+README.md
