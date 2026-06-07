@@ -1,0 +1,26 @@
+# Analyser
+
+> Free, in-browser file analysis and metadata forensics for 1,000+ file types. View EXIF, audio spectrograms, video frames, document internals and more - everything runs locally in your browser. No ads, no telemetry, nothing is ever uploaded.
+
+Analyser is a static, offline-capable web app (PWA) hosted at https://lab.valjdakosta.com/. You drop or pick a file and it identifies the format from its bytes, decodes the metadata, and renders type-specific views entirely client-side. No file ever leaves the device - there is no server, no account, no upload, and no tracking.
+
+## Pages
+
+- [Analyser (app)](https://lab.valjdakosta.com/): The main tool. Drop or pick a file to analyse photos, audio, video, documents, archives and more, fully in-browser.
+- [About](https://lab.valjdakosta.com/about.html): Why Analyser exists, how the local-only processing works, and the full table of supported file types.
+- [Changelog](https://lab.valjdakosta.com/patch.html): Every release, newest first - new formats, viewers, and fixes.
+
+## What it analyses
+
+- Photos: EXIF, GPS, color histogram, OCR, HEIC and camera-RAW conversion
+- Audio: waveform, spectrogram, loudness/peak/RMS stats, codec details, embedded art
+- Video: in-browser player, frame-by-frame stepping with editable timecode, frame capture to the photo analyser, scene-change detection, contact sheet, audio-track extraction, and in-browser remux of raw H.264/H.265 elementary streams to MP4
+- Documents: PDF, DOCX, XLSX, PPTX, EPUB previews and metadata
+- 3D and CAD: STL and STEP model viewers
+- Other: ZIP and other archives, folders, SVG, CSV/TSV, subtitles, MIDI, LRC, comics (CBZ/CBR), geo data, fonts, and 200+ proprietary formats identified by magic bytes
+
+## Notes
+
+- Everything runs locally in the browser using WebAssembly and Web APIs; no uploads, no telemetry, no ads.
+- Installable and works fully offline as a Progressive Web App.
+- Extension casing does not matter (.JPG and .jpg are treated the same), and files are routed by their actual bytes, not just the extension.

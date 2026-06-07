@@ -181,6 +181,28 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">2.10</p>
+          <p class="patch-name">Round Trip</p>
+          <p class="patch-date">7 June 2026, 17:15</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>Reloading or sharing an inner page works again.</strong> Opening the <a href="about.html#what">About</a> or Changelog page from inside the app and then <strong>refreshing</strong> it - or opening that link directly, or sharing it with someone - could land on a broken page. Those addresses now load correctly on a direct hit or a reload.</li>
+            <li><span class="patch-tag">New</span>The site now ships a <strong>machine-readable summary</strong> (<code>llms.txt</code>) and a complete sitemap, so search engines and AI assistants can describe Analyser accurately.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">2.09</p>
+          <p class="patch-name">Long Play</p>
+          <p class="patch-date">7 June 2026, 16:15</p>
+          <ul class="patch-list">
+            <li><strong>Raw camera and dash-cam video opens properly now</strong> - even multi-gigabyte files.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Raw H.264 / H.265 clips actually play.</strong> The in-browser step that wraps a bare <a href="about.html#ext-h264">.h264</a> / .265 stream into a playable MP4 was failing to start, so these clips wouldn&rsquo;t open at all. It now loads reliably and they play in the normal player - which also restored the audio extraction and frame capture that rely on it.</li>
+            <li><span class="patch-tag">New</span><strong>Very large raw streams play in parts.</strong> A stream too big to convert in one piece - the multi-GB recordings dash-cams and capture cards write - is now <strong>split at its keyframes into parts</strong> you step through one at a time, with a loading bar while each part prepares.</li>
+            <li><span class="patch-tag">New</span><strong>Each part gets the full treatment</strong> - frame-by-frame navigation with editable timecode, send a frame to <strong>photo analysis</strong>, grab it as a PNG, the codec and profile readout, resolution and aspect ratio, on-demand <strong>SHA-256</strong>, and opt-in <strong>scene detection</strong> for the part you&rsquo;re watching.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">2.08</p>
           <p class="patch-name">Sound Check</p>
           <p class="patch-date">7 June 2026, 00:15</p>
@@ -188,6 +210,9 @@
             <li><span class="patch-tag">New</span><strong>Mute the sound on AVI playback.</strong> The frame player for <a href="about.html#ext-avi">.avi</a> clips (and similar) now carries a <strong>SOUND / MUTED</strong> toggle, so you can run the frames with or without the clip&rsquo;s audio. Either way the picture stays perfectly in sync.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.07</p>
@@ -212,9 +237,6 @@
             <li><span class="patch-tag">New</span><strong>Windows programs show their icon.</strong> Drop an <a href="about.html#ext-exe">.exe</a> or <a href="about.html#ext-dll">.dll</a> and Analyser now digs the <strong>application icon</strong> out of the file&rsquo;s resources and runs it through the full <strong>photo analysis</strong> - preview, colours, dimensions and the rest - alongside the usual version and publisher details.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.05</p>

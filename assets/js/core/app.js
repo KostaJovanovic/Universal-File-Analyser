@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 69;
+const COMMIT_COUNT = 70;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -413,6 +413,8 @@ function splitText(container, baseWeight) {
 // each entry's full bullet list for the matching line here. When you add a new
 // patch entry to patch.html, add its one-liner here too (newest at the top).
 const PATCH_TLDR = {
+  '2.10': 'Reloading or directly opening an inner page such as About or Changelog works again, instead of occasionally landing on a broken page. The site also ships an llms.txt summary and a complete sitemap so search engines and AI assistants describe it accurately.',
+  '2.09': 'Raw H.264/H.265 camera and dash-cam clips now open reliably - the in-browser remux that wraps them into a playable MP4 was failing to start and now works, which also restored their audio and frame capture. Streams too large to convert in one piece are split at their keyframes into parts you step through one at a time, and each part gets the full toolset: frame-by-frame navigation, frame-to-photo, codec readout, SHA-256 and opt-in scene detection.',
   '2.0': 'The second milestone. Over 120 new file types are identified across developer, archive, 3D/CAD, disk, gaming, document, email, security, science and GIS formats. Video-editing projects (After Effects, Premiere, Vegas, Resolve, Filmora, CapCut) read in more detail, 10-bit video reports its bit depth and chroma (so XAVC HS 4:2:2 is flagged correctly), undisplayable photos and videos get a clear banner that recommends VLC, offline tiers show a persistent Cached tag, large videos load faster, and the spectrogram defaults to a logarithmic axis.',
   '1.29': 'The supported-formats popup is rebuilt - grouped by category with filter chips, a FULL/ID badge on each row, highlighted search, a running match count and an expand-all toggle. The photo histogram goes full-width and clickable, reading text from images and PDFs shares one language picker, and failed offline downloads can now be retried.',
   '1.28': 'Professional video the browser cannot play (ProRes, DNxHD, CineForm) is now named and its first frame pulled out with FFmpeg for a preview. The location map works fully offline, result cards fold away at a click, dozens more readouts gain a help note, and the Changelog gains a tl;dr button.',
