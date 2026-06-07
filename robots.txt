@@ -1,4 +1,8 @@
 User-agent: *
 Allow: /
 
+# Analyser is a static, client-side tool - nothing here is private and
+# everything is safe to crawl, including AI/LLM crawlers.
+# Structured summary for LLMs: https://lab.valjdakosta.com/llms.txt
+
 Sitemap: https://lab.valjdakosta.com/sitemap.xml

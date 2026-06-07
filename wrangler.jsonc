@@ -2,7 +2,7 @@
   // Explicit config so the deploy is reproducible (otherwise wrangler
   // auto-generates this on every build). Mirrors the auto-detected settings,
   // plus not_found_handling so unknown URLs fall back to the home page instead
-  // of a 404 — this is a single-purpose tool, so any mistyped/old path just
+  // of a 404 - this is a single-purpose tool, so any mistyped/old path just
   // lands on the drop page.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "lab",
@@ -10,6 +10,17 @@
   "observability": { "enabled": true },
   "assets": {
     "directory": ".",
+    // Serve .html files literally. The default ("auto-trailing-slash") 307-
+    // redirects /about.html -> /about, but every link, canonical URL, the
+    // sitemap, the service-worker precache (sw.js SHELL) and navigate.js's
+    // pushState all use the .html form. That mismatch meant a page reached by
+    // in-app navigation (e.g. /about.html) 307-redirected on reload, and the
+    // SW's cache.addAll() choked on precaching redirecting URLs. "none" makes
+    // /about.html, /patch.html and /index.html all serve 200 directly. "/" and
+    // any clean/unknown path fall through to not_found_handling below, which
+    // returns index.html (200) - so the root and SPA fallback still work, and
+    // local `python -m http.server` (which also serves .html literally) matches.
+    "html_handling": "none",
     "not_found_handling": "single-page-application"
   },
   "compatibility_flags": ["nodejs_compat"]
