@@ -3026,8 +3026,10 @@ details[open] summary::after { content: "\2212"; }
   align-items: baseline;
   gap: 12px;
 }
-/* About page: stack the extension list under the group name instead of beside it. */
-#aboutFormats .fmt-item-head {
+/* About page and the supported-formats overlay: stack the extension list under
+   the group name instead of beside it. */
+#aboutFormats .fmt-item-head,
+#fmtBody .fmt-item-head {
   flex-direction: column;
   gap: 3px;
 }
