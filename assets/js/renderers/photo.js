@@ -7,7 +7,7 @@
    - On-device OCR via lazy-loaded Tesseract.js with language picker
    - SHA-256 file hash */
 
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, isUnreadableError, cloudFileWarning, errorCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, cloudFileWarning, errorCard } from '../core/util.js';
 import { HEIC_EXTS, RAW_EXTS } from '../core/formats.js';
 import { convertHeic, extractRawPreview, convertWithImageMagick } from './photo-convert.js';
 import { ascii, latin1, utf8, inflate } from '../core/binutil.js';
@@ -1774,10 +1774,13 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
       resultsEl.innerHTML = '';
       // The <img> load failed. A 1-byte probe can pass for a cloud-only file
       // (OneDrive serves a cached header) while the full image body is missing,
-      // so do a real full read here: if the bytes can't be read, it's an
-      // unavailable/cloud file, not an unsupported format.
+      // so do a real full read here: if the bytes can't be read AT ALL, it's an
+      // unavailable/cloud file, not an unsupported format. Any throw counts -
+      // renderUndisplayableImage below needs readable bytes anyway, so a failed
+      // full read can only mean the file is unavailable (sync app off, online-only,
+      // permission lost), regardless of the exact DOMException name/message.
       let unreadable = false;
-      try { await file.arrayBuffer(); } catch (re) { unreadable = isUnreadableError(re); }
+      try { await file.arrayBuffer(); } catch (re) { unreadable = true; }
       if (unreadable) {
         resultsEl.appendChild(cloudFileWarning(file));
       } else {

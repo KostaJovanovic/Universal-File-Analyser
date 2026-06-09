@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 76;
+const COMMIT_COUNT = 77;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -47,7 +47,7 @@ import { renderGeo } from '../renderers/geo.js';
 import { renderMarkdown } from '../renderers/markdown.js';
 import { renderComic } from '../renderers/comic.js';
 import { initSearch } from './search.js';
-import { fileExt, el, probeReadable, isUnreadableError, cloudFileWarning } from './util.js';
+import { fileExt, el, probeReadable, cloudFileWarning } from './util.js';
 import { walkItems, renderFolder } from '../renderers/folder.js';
 import {
   PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, CSV_EXTS, SVG_EXTS,
@@ -993,6 +993,7 @@ function splitText(container, baseWeight) {
 // each entry's full bullet list for the matching line here. When you add a new
 // patch entry to patch.html, add its one-liner here too (newest at the top).
 const PATCH_TLDR = {
+  '2.17': 'Folders and ZIPs stuffed with tiny files are finally navigable: in the treemap a folder of thousands of small files collapses to one labelled block you click to open a searchable, size-sorted file list. The audio waveform for a video’s sound track is back to full strength - region select, zoom, WAV export and a smooth grabbable playhead, in its own card - and clicking Analyse audio now scrolls to the top of the Sound section. The share prompt reliably stays away from cloud-only files that can’t be read, the offline download sizes drop the “~”, and the footer now credits every bundled library.',
   '2.16': 'Folders and ZIPs get a smarter treemap: a row of chips filters it to one file type, and a folder packed with thousands of tiny files collapses into a single labelled block instead of an unreadable wall of slivers. Opening a file from inside a folder or archive now scrolls to its analysis and shows the loading bar, the file tree opens the exact folder you click, and the folder drop zones tuck away after a drop. The share nudge stays away from cloud-only files that can’t be read, the scrubber replay icon reverts to play as soon as you scrub, search understands many more terms (folders, 3D models, Office, e-books, subtitles, maps and more), and the menu buttons gain a subtle fill and a proper hand cursor.',
   '2.15': 'A new Share button and popup make it easy to pass Analyser on - copy the link, e-mail it, or post to Twitter, Bluesky, LinkedIn, Telegram or Reddit, and on phones it opens your device’s own share sheet. A small card may also invite you to share just after a file is analysed. Saving a spectrogram now asks for height and zoom, the AVI frame player reports dropped frames, the drop zones filter by type on mobile, and the menu, search and footer get a round of polish.',
   '2.14': 'The “suggest this format” prompt and a new footer “Email me!” link now run a quick human-check before they reveal the address and open your mail app, so it stays away from spam bots. The header Status line shows live Online/Offline state, the suggest-format prompt now appears for every unrecognised file (and slides in just after the results settle), and long dashes across the readouts are replaced with plain hyphens.',
@@ -1407,10 +1408,13 @@ function boot() {
     // Probe that the bytes are actually readable before any renderer tries. A
     // cloud-only file (OneDrive/iCloud/etc.) whose sync app can't hydrate it has
     // a valid name+size but throws on read - show a clear warning instead of a
-    // generic "could not read" from deep inside a renderer.
+    // generic "could not read" from deep inside a renderer. Any throw from the
+    // probe means the bytes aren't available (sync app off, online-only, or
+    // permission lost), whatever the exact DOMException name/message - a renderer
+    // would only fail the same way, so treat every probe error as unavailable.
     const readErr = await probeReadable(file);
     if (token.cancelled) return;   // cancelled while probing - don't render
-    if (readErr && isUnreadableError(readErr)) {
+    if (readErr) {
       hideDropLoader();
       unknownResults.hidden = false;
       unknownResults.innerHTML = '';

@@ -3,7 +3,7 @@
    frame capture (routed to photo analysis), audio track extraction
    (waveform + spectrogram via audio module). */
 
-import { makeSpectrogramPanel, makePlayer, buildHistogramCard } from './audio.js';
+import { makeSpectrogramPanel, makePlayer, buildHistogramCard, buildWaveformCard } from './audio.js';
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
 import { el, row, rowHelp, fmtBytes, h3help, sha256Row, integrityCard, roundFps, asciiBar } from '../core/util.js';
 import { parseAviHeader, extractAviData, encodeWav } from './video-avi.js';
@@ -188,7 +188,11 @@ function mountAudioAnalyseButton(audioResultsEl, run) {
   audioResultsEl.appendChild(card);
   btn.addEventListener('click', () => {
     card.remove();
-    audioResultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Scroll to the top of the whole Sound section (heading + lede), not the
+    // results container, which sits below them - landing on the container alone
+    // scrolls past the heading and looks like it jumped to the section's middle.
+    (audioResultsEl.closest('.section') || audioResultsEl)
+      .scrollIntoView({ behavior: 'smooth', block: 'start' });
     // Show the bottom loading popup while the (heavy) decode + spectrogram runs.
     const loader = window._anrLoader;
     if (loader) loader.show('Analysing audio…');
@@ -1660,31 +1664,6 @@ function computeStats(samples) {
   };
 }
 
-function renderWaveform(canvas, samples) {
-  const c = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  c.fillStyle = '#1a1a1a';
-  c.fillRect(0, 0, w, h);
-  c.strokeStyle = '#445f74';
-  c.lineWidth = 1;
-  c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w, h / 2); c.stroke();
-  if (!samples.length) return;
-  const spp = samples.length / w;
-  c.fillStyle = '#80a4ba';
-  for (let x = 0; x < w; x++) {
-    const s = Math.floor(x * spp), e = Math.floor((x + 1) * spp);
-    let mn = 1, mx = -1;
-    for (let i = s; i < e && i < samples.length; i++) {
-      if (samples[i] < mn) mn = samples[i];
-      if (samples[i] > mx) mx = samples[i];
-    }
-    const y1 = ((1 - mx) / 2) * h, y2 = ((1 - mn) / 2) * h;
-    c.fillRect(x, y1, 1, Math.max(1, y2 - y1));
-  }
-  c.strokeStyle = '#C8DCE8';
-  c.strokeRect(0, 0, w, h);
-}
-
 // ---------- iOS-safe frame capture ----------
 // On iOS Safari, `loadeddata`/`seeked` can fire before a frame is actually
 // composited, so drawImage() returns a black canvas. requestVideoFrameCallback
@@ -1948,29 +1927,10 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
       at.appendChild(rowHelp('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)', 'Root Mean Square - average signal power.'));
       at.appendChild(rowHelp('Samples', mono.length.toLocaleString(), 'Total number of individual amplitude values in the (channel-merged mono) signal - roughly sample rate × duration.'));
       audioCard.appendChild(at);
-      const waveWrap = el('div', { style: 'position:relative; width:100%;' });
-      const waveCanvas = el('canvas', { class: 'anr-waveform' }); waveCanvas.width = 1024; waveCanvas.height = 80;
-      renderWaveform(waveCanvas, mono);
-      const waveLine = el('div', { class: 'anr-playhead is-grabbable' });
-      waveWrap.appendChild(waveCanvas); waveWrap.appendChild(waveLine);
-      audioCard.appendChild(waveWrap);
+      audioResultsEl.appendChild(buildWaveformCard(file, mono, audioBuf, audioPlayer));
       audioResultsEl.appendChild(buildHistogramCard(mono));
       const basename = (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio';
       audioResultsEl.appendChild(makeSpectrogramPanel(mono, audioBuf.sampleRate, { basename, audioEl: audioPlayer, signal }));
-      const audioDuration = audioBuf.duration;
-      function tickPh() {
-        waveLine.style.left = (audioDuration > 0 ? (audioPlayer.currentTime / audioDuration) * 100 : 0) + '%';
-        if (!audioPlayer.paused) requestAnimationFrame(tickPh);
-      }
-      audioPlayer.addEventListener('play', () => requestAnimationFrame(tickPh));
-      audioPlayer.addEventListener('pause', tickPh);
-      audioPlayer.addEventListener('seeked', tickPh);
-      waveCanvas.style.cursor = 'pointer';
-      waveCanvas.addEventListener('click', (e) => {
-        const rect = waveCanvas.getBoundingClientRect();
-        audioPlayer.currentTime = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * audioDuration;
-        tickPh();
-      });
     } catch (e) {
       audioStatus.remove();
       audioCard.appendChild(el('p', { class: 'anr-hint' }, 'Audio decode failed: ' + (e && e.message || 'unknown error')));
@@ -2499,37 +2459,12 @@ export async function renderVideo(file, resultsEl, opts = {}) {
         at.appendChild(rowHelp('Samples', mono.length.toLocaleString(),
           'Total number of individual amplitude values in the (channel-merged mono) signal - roughly sample rate × duration.'));
         audioCard.appendChild(at);
-
-        const waveWrap = el('div', { style: 'position:relative; width:100%;' });
-        const waveCanvas = el('canvas', { class: 'anr-waveform' });
-        waveCanvas.width = 1024; waveCanvas.height = 80;
-        renderWaveform(waveCanvas, mono);
-        const waveLine = el('div', { class: 'anr-playhead is-grabbable' });
-        waveWrap.appendChild(waveCanvas);
-        waveWrap.appendChild(waveLine);
-        audioCard.appendChild(waveWrap);
         audioResultsEl.appendChild(audioCard);
 
+        audioResultsEl.appendChild(buildWaveformCard(file, mono, audioBuf, audioPlayer));
         audioResultsEl.appendChild(buildHistogramCard(mono));
         const basename = (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio';
         audioResultsEl.appendChild(makeSpectrogramPanel(mono, audioBuf.sampleRate, { basename, audioEl: audioPlayer, signal: renderSignal }));
-
-        const audioDuration = audioBuf.duration;
-        function tickPlayhead() {
-          const pct = audioDuration > 0 ? (audioPlayer.currentTime / audioDuration) * 100 : 0;
-          waveLine.style.left = pct + '%';
-          if (!audioPlayer.paused) requestAnimationFrame(tickPlayhead);
-        }
-        audioPlayer.addEventListener('play', () => requestAnimationFrame(tickPlayhead));
-        audioPlayer.addEventListener('pause', tickPlayhead);
-        audioPlayer.addEventListener('seeked', tickPlayhead);
-        waveCanvas.style.cursor = 'pointer';
-        waveCanvas.addEventListener('click', (e) => {
-          const rect = waveCanvas.getBoundingClientRect();
-          const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-          audioPlayer.currentTime = frac * audioDuration;
-          tickPlayhead();
-        });
       });
 
       // SHA-256
@@ -2907,17 +2842,10 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   if (audioResultsEl && !opts.noAudio) mountAudioAnalyseButton(audioResultsEl, async () => {
     audioResultsEl.hidden = false;
 
-    // Scroll compensation: when audio section expands above the video section,
-    // adjust scroll so the video section stays in place
-    let lastAudioHeight = audioResultsEl.offsetHeight;
-    const scrollCompensator = new ResizeObserver(() => {
-      const newHeight = audioResultsEl.offsetHeight;
-      const delta = newHeight - lastAudioHeight;
-      if (delta > 0) window.scrollBy(0, delta);
-      lastAudioHeight = newHeight;
-    });
-    scrollCompensator.observe(audioResultsEl);
-    renderSignal.addEventListener('abort', () => scrollCompensator.disconnect());
+    // (No scroll compensation here: clicking "Analyse audio" deliberately scrolls
+    // to the top of the Sound section, so keeping the video section pinned in view
+    // - the old behaviour - would fight that and leave the view drifting down past
+    // the audio heading as the heavy spectrogram content loads in.)
 
     const audioCard = el('div', { class: 'anr-card' });
     audioCard.appendChild(el('h3', {}, 'Audio track'));
@@ -3003,15 +2931,10 @@ export async function renderVideo(file, resultsEl, opts = {}) {
         'Total number of individual amplitude values in the (channel-merged mono) signal - roughly sample rate × duration.'));
       audioCard.appendChild(at);
 
-      // Waveform with draggable playhead
-      const waveWrap = el('div', { style: 'position:relative; width:100%;' });
-      const waveCanvas = el('canvas', { class: 'anr-waveform' });
-      waveCanvas.width = 1024; waveCanvas.height = 80;
-      renderWaveform(waveCanvas, mono);
-      const waveLine = el('div', { class: 'anr-playhead is-grabbable' });
-      waveWrap.appendChild(waveCanvas);
-      waveWrap.appendChild(waveLine);
-      audioCard.appendChild(waveWrap);
+      // Waveform - its own card with region selection, zoom, WAV export and the
+      // smooth grabbable playhead, shared with the standalone audio renderer
+      // (buildWaveformCard in audio.js) rather than a stripped-down local copy.
+      audioResultsEl.appendChild(buildWaveformCard(file, mono, audioBuf, audioPlayer));
 
       // Amplitude histogram (same labeled card the audio module uses)
       audioResultsEl.appendChild(buildHistogramCard(mono));
@@ -3019,51 +2942,6 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       // Spectrogram (with playhead + click-to-seek)
       const basename = (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio';
       audioResultsEl.appendChild(makeSpectrogramPanel(mono, audioBuf.sampleRate, { basename, audioEl: audioPlayer, signal: renderSignal }));
-
-      // Sync waveform playhead at 60fps
-      function tickPlayhead() {
-        const pct = audioDuration > 0 ? (audioPlayer.currentTime / audioDuration) * 100 : 0;
-        waveLine.style.left = pct + '%';
-        if (!audioPlayer.paused) requestAnimationFrame(tickPlayhead);
-      }
-      audioPlayer.addEventListener('play', () => requestAnimationFrame(tickPlayhead));
-      audioPlayer.addEventListener('pause', tickPlayhead);
-      audioPlayer.addEventListener('seeked', tickPlayhead);
-
-      // Click waveform to seek
-      waveCanvas.style.cursor = 'pointer';
-      function seekFromX(clientX) {
-        const rect = waveCanvas.getBoundingClientRect();
-        const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-        audioPlayer.currentTime = frac * audioDuration;
-        tickPlayhead();
-      }
-      waveCanvas.addEventListener('click', (e) => seekFromX(e.clientX));
-
-      // Drag playhead on waveform - window listeners live only during a drag.
-      let waveDragging = false;
-      function onWaveMouseMove(e) { if (waveDragging) seekFromX(e.clientX); }
-      function onWaveMouseUp() {
-        waveDragging = false;
-        window.removeEventListener('mousemove', onWaveMouseMove);
-        window.removeEventListener('mouseup', onWaveMouseUp);
-      }
-      waveLine.addEventListener('mousedown', (e) => {
-        waveDragging = true; e.preventDefault();
-        window.addEventListener('mousemove', onWaveMouseMove);
-        window.addEventListener('mouseup', onWaveMouseUp);
-      });
-      function onWaveTouchMove(e) { if (waveDragging && e.touches[0]) seekFromX(e.touches[0].clientX); }
-      function onWaveTouchEnd() {
-        waveDragging = false;
-        window.removeEventListener('touchmove', onWaveTouchMove);
-        window.removeEventListener('touchend', onWaveTouchEnd);
-      }
-      waveLine.addEventListener('touchstart', (e) => {
-        waveDragging = true; e.preventDefault();
-        window.addEventListener('touchmove', onWaveTouchMove, { passive: false });
-        window.addEventListener('touchend', onWaveTouchEnd);
-      }, { passive: false });
     } catch (e) {
       console.warn('Audio extraction failed:', e);
       audioStatus.remove();

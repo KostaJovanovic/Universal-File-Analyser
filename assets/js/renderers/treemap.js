@@ -141,6 +141,12 @@ const MAX_DEPTH = 14;
 // gets the full canvas and its own children are re-evaluated at lower density.
 const MIN_AREA_PER_FILE = 150;
 const COLLAPSE_MIN_FILES = 4;   // never collapse trivially small folders
+// A single file whose tile would project to less than this many pixels is too
+// small to label or reliably click. When enough of them pile up in one folder we
+// pool the whole tail into one "N files" block (click to open a searchable list)
+// rather than draw thousands of 1px slivers.
+const MIN_FILE_AREA = 160;
+const AGG_MIN_FILES = 8;        // only pool when the tail is actually a wall
 
 function layoutNode(node, rect, depth, out) {
   if (depth > MAX_DEPTH || rect.w < 2 || rect.h < 2) return;
@@ -153,15 +159,41 @@ function layoutNode(node, rect, depth, out) {
     if (f.size > 0) entries.push({ size: f.size, file: f });
   }
   if (!entries.length) return;
+
+  // Pool the long tail of tiny files into one aggregate tile, so a folder holding
+  // thousands of small files draws as its few real tiles plus a single "N files"
+  // block (click to open a searchable list) instead of an unclickable wall of 1px
+  // slivers. A file is "tiny" when its projected area in this rect is sub-legible;
+  // only pool once enough of them stack up to actually be a problem.
+  const rectArea = rect.w * rect.h;
+  const totalEntrySize = entries.reduce((s, e) => s + e.size, 0) || 1;
+  const dirEntries = [], keptFiles = [], tiny = [];
+  for (const e of entries) {
+    if (e.dir) { dirEntries.push(e); continue; }
+    const projArea = (e.size / totalEntrySize) * rectArea;
+    (projArea < MIN_FILE_AREA ? tiny : keptFiles).push(e);
+  }
+  let layoutEntries = entries;
+  if (tiny.length >= AGG_MIN_FILES) {
+    let bytes = 0; const catB = {};
+    for (const e of tiny) { bytes += e.size; const c = e.file.category || 'other'; catB[c] = (catB[c] || 0) + e.size; }
+    let cat = 'other', cv = -1;
+    for (const k in catB) if (catB[k] > cv) { cv = catB[k]; cat = k; }
+    const agg = { files: tiny.map((e) => e.file), count: tiny.length, bytes, cat };
+    layoutEntries = [...dirEntries, ...keptFiles, { size: bytes, aggregate: agg }];
+  }
+
   // Only collapse a child when it has siblings: a sole child (a wrapper folder)
   // would just fill the same rect, so descend through it instead - this also
   // auto-skips single-folder wrappers like a dropped top-level export folder.
-  const canCollapse = entries.length > 1;
+  const canCollapse = layoutEntries.length > 1;
 
-  const placed = squarify(entries, rect);
+  const placed = squarify(layoutEntries, rect);
   for (const p of placed) {
     if (p.w <= 0 || p.h <= 0) continue;
-    if (p.item.file) {
+    if (p.item.aggregate) {
+      out.aggregates.push({ x: p.x, y: p.y, w: p.w, h: p.h, agg: p.item.aggregate });
+    } else if (p.item.file) {
       out.files.push({ x: p.x, y: p.y, w: p.w, h: p.h, item: p.item.file });
     } else {
       const child = p.item.dir;
@@ -205,10 +237,10 @@ export function renderTreemap(canvas, items, opts) {
   if (!canvas._hierarchy) canvas._hierarchy = buildHierarchy(items);
   const view = canvas._viewNode || canvas._hierarchy;
 
-  const out = { dirs: [], files: [], collapsed: [] };
+  const out = { dirs: [], files: [], collapsed: [], aggregates: [] };
   layoutNode(view, { x: 0, y: 0, w, h }, 0, out);
 
-  if (!out.files.length && !out.collapsed.length) {
+  if (!out.files.length && !out.collapsed.length && !out.aggregates.length) {
     ctx.fillStyle = isDark() ? '#888' : '#888';
     ctx.font = '12px "Geist Mono", ui-monospace, monospace';
     ctx.textAlign = 'center';
@@ -216,6 +248,7 @@ export function renderTreemap(canvas, items, opts) {
     ctx.textAlign = 'start';
     canvas._fileRects = [];
     canvas._collapsedRects = [];
+    canvas._aggregateRects = [];
     return;
   }
 
@@ -315,6 +348,56 @@ export function renderTreemap(canvas, items, opts) {
     }
   }
 
+  // 2.6) Aggregated tiny-file blocks: the pooled long tail of a dense folder,
+  // drawn with a diagonal hatch + dashed frame so it reads as a group of many
+  // files rather than one big file (click opens a searchable list).
+  for (const a of out.aggregates) {
+    const x = a.x + PAD / 2, y = a.y + PAD / 2;
+    const aw = Math.max(a.w - PAD, 0.5), ah = Math.max(a.h - PAD, 0.5);
+    const color = opts.categoryColor(a.agg.cat || 'other');
+
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, aw, ah);
+    if (aw > 4 && ah > 4) {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x, y, aw, ah); ctx.clip();
+      ctx.strokeStyle = dark ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.40)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = -ah; i < aw; i += 6) { ctx.moveTo(x + i, y); ctx.lineTo(x + i + ah, y + ah); }
+      ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = 'rgba(255,255,255,0.20)';
+      ctx.fillRect(x, y, aw, 1); ctx.fillRect(x, y, 1, ah);
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.fillRect(x, y + ah - 1, aw, 1); ctx.fillRect(x + aw - 1, y, 1, ah);
+      ctx.strokeStyle = dark ? 'rgba(255,255,255,0.50)' : 'rgba(0,0,0,0.50)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 2]);
+      ctx.strokeRect(x + 0.5, y + 0.5, aw - 1, ah - 1);
+      ctx.setLineDash([]);
+    }
+
+    if (aw >= LABEL_MIN_W && ah >= LABEL_MIN_H) {
+      const tcol = contrastText(color);
+      ctx.fillStyle = tcol;
+      ctx.font = '700 11px "Geist Mono", ui-monospace, monospace';
+      let lab = a.agg.count.toLocaleString() + ' files';
+      const maxW = aw - 8;
+      if (ctx.measureText(lab).width > maxW) {
+        while (lab.length > 2 && ctx.measureText(lab + '…').width > maxW) lab = lab.slice(0, -1);
+        lab += '…';
+      }
+      ctx.fillText(lab, x + 4, y + 3);
+      if (ah >= LABEL_MIN_H + 14) {
+        ctx.globalAlpha = 0.8;
+        ctx.font = '10px "Geist Mono", ui-monospace, monospace';
+        ctx.fillText(fmtBytes(a.agg.bytes), x + 4, y + 17);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
   // 3) Folder frames + headers on top
   for (const d of dirs) {
     ctx.strokeStyle = frameColor;
@@ -337,6 +420,7 @@ export function renderTreemap(canvas, items, opts) {
 
   canvas._fileRects = out.files;
   canvas._collapsedRects = out.collapsed.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h, node: c.node }));
+  canvas._aggregateRects = out.aggregates.map((a) => ({ x: a.x, y: a.y, w: a.w, h: a.h, agg: a.agg }));
   canvas._headerRects = out.dirs
     .filter((d) => d.headerH > 0)
     .map((d) => ({ x: d.x, y: d.y, w: d.w, h: d.headerH, node: d.node }));
@@ -420,6 +504,89 @@ function showFileMenu(clientX, clientY, item, onConfirm) {
   }, 0);
 }
 
+// ---------- aggregated-files list popup ----------
+// Clicking an aggregate ("N files") block opens this: a searchable, size-sorted
+// list of the pooled tiny files, each row analysing the file on click. This is
+// what makes a dense folder navigable - thousands of slivers become a list you
+// can filter by name instead of a wall you can't click.
+
+let _tmList = null;
+function closeFileList() {
+  if (!_tmList) return;
+  _tmList.remove();
+  _tmList = null;
+  document.removeEventListener('mousedown', onListOutside, true);
+  document.removeEventListener('keydown', onListEsc, true);
+  window.removeEventListener('scroll', closeFileList, true);
+}
+function onListOutside(e) { if (_tmList && !_tmList.contains(e.target)) closeFileList(); }
+function onListEsc(e) { if (e.key === 'Escape') closeFileList(); }
+
+const LIST_CAP = 300;   // rows rendered at once; refine via the filter box
+
+function showFileListMenu(clientX, clientY, files, opts) {
+  closeFileList();
+  const sorted = [...files].sort((a, b) => b.size - a.size);
+  const total = sorted.reduce((s, f) => s + f.size, 0);
+
+  const closeBtn = el('button', { class: 'anr-tml-close', title: 'Close' }, '✕');
+  const title = el('div', { class: 'anr-tml-title' },
+    sorted.length.toLocaleString() + ' files · ' + fmtBytes(total));
+  const search = el('input', { type: 'text', class: 'anr-tml-search', placeholder: 'Filter by name…' });
+  const listEl = el('div', { class: 'anr-tml-list' });
+
+  function render(filter) {
+    listEl.innerHTML = '';
+    const q = (filter || '').trim().toLowerCase();
+    let shown = 0, matched = 0;
+    for (const f of sorted) {
+      const name = f.path.split('/').pop() || f.path;
+      if (q && !name.toLowerCase().includes(q)) continue;
+      matched++;
+      if (shown >= LIST_CAP) continue;
+      shown++;
+      const rowEl = el('button', { class: 'anr-tml-row', title: f.path.replace(/\\/g, '/') }, [
+        el('span', { class: 'anr-tml-row-name' }, name),
+        el('span', { class: 'anr-tml-row-size' }, fmtBytes(f.size)),
+      ]);
+      rowEl.addEventListener('click', () => { closeFileList(); if (opts.onFileClick) opts.onFileClick(f); });
+      listEl.appendChild(rowEl);
+    }
+    if (!matched) {
+      listEl.appendChild(el('div', { class: 'anr-tml-note' }, 'No files match.'));
+    } else if (matched > shown) {
+      listEl.appendChild(el('div', { class: 'anr-tml-note' },
+        (matched - shown).toLocaleString() + ' more — keep typing to narrow it down'));
+    }
+  }
+
+  search.addEventListener('input', () => render(search.value));
+  render('');
+
+  const panel = el('div', { class: 'anr-treemap-list' }, [
+    el('div', { class: 'anr-tml-header' }, [title, closeBtn]),
+    search,
+    listEl,
+  ]);
+  document.body.appendChild(panel);
+  _tmList = panel;
+  closeBtn.addEventListener('click', closeFileList);
+
+  const mw = panel.offsetWidth, mh = panel.offsetHeight;
+  let px = clientX + 8, py = clientY + 8;
+  if (px + mw > window.innerWidth) px = clientX - mw - 8;
+  if (py + mh > window.innerHeight) py = window.innerHeight - mh - 8;
+  panel.style.left = Math.max(4, px) + 'px';
+  panel.style.top = Math.max(4, py) + 'px';
+
+  setTimeout(() => {
+    search.focus();
+    document.addEventListener('mousedown', onListOutside, true);
+    document.addEventListener('keydown', onListEsc, true);
+    window.addEventListener('scroll', closeFileList, true);
+  }, 0);
+}
+
 export function attachTreemapEvents(canvas, wrap, items, opts) {
   const tooltip = el('div', { class: 'anr-treemap-tooltip' });
   wrap.appendChild(tooltip);
@@ -485,7 +652,8 @@ export function attachTreemapEvents(canvas, wrap, items, opts) {
     const { x, y } = canvasXY(canvas, e.clientX, e.clientY);
     const header = hitRects(canvas._headerRects, x, y);
     const collapsed = header ? null : hitRects(canvas._collapsedRects, x, y);
-    const file = (header || collapsed) ? null : hitRects(canvas._fileRects, x, y);
+    const aggregate = (header || collapsed) ? null : hitRects(canvas._aggregateRects, x, y);
+    const file = (header || collapsed || aggregate) ? null : hitRects(canvas._fileRects, x, y);
 
     if (header || collapsed) {
       const dir = header || collapsed;
@@ -496,6 +664,14 @@ export function attachTreemapEvents(canvas, wrap, items, opts) {
         dir.node.fileCount + (dir.node.fileCount === 1 ? ' file · ' : ' files · ') + fmtBytes(dir.node.totalSize) + '  ·  zoom in'));
       positionTooltip(e);
       canvas.style.cursor = 'zoom-in';
+    } else if (aggregate) {
+      tooltip.classList.add('is-visible');
+      tooltip.innerHTML = '';
+      tooltip.appendChild(el('div', { class: 'anr-tt-name' }, aggregate.agg.count.toLocaleString() + ' small files'));
+      tooltip.appendChild(el('div', { class: 'anr-tt-meta' },
+        fmtBytes(aggregate.agg.bytes) + '  ·  click to list'));
+      positionTooltip(e);
+      canvas.style.cursor = 'pointer';
     } else if (file) {
       tooltip.classList.add('is-visible');
       const it = file.item;
@@ -528,6 +704,8 @@ export function attachTreemapEvents(canvas, wrap, items, opts) {
     if (header) { zoomTo(header.node); return; }
     const collapsed = hitRects(canvas._collapsedRects, x, y);
     if (collapsed) { zoomTo(collapsed.node); return; }
+    const aggregate = hitRects(canvas._aggregateRects, x, y);
+    if (aggregate) { showFileListMenu(e.clientX, e.clientY, aggregate.agg.files, opts); return; }
     const file = hitRects(canvas._fileRects, x, y);
     if (file) {
       showFileMenu(e.clientX, e.clientY, file.item, () => {

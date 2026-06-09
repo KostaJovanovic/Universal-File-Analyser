@@ -182,6 +182,21 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">2.17</p>
+          <p class="patch-name">Fine Print</p>
+          <p class="patch-date">9 June 2026, 21:40</p>
+          <ul class="patch-list">
+            <li><strong>Folders and ZIPs packed with tiny files are finally easy to explore, and a video&rsquo;s sound gets its full waveform tools back.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Crowded folders become one tidy block.</strong> In the <strong>Treemap</strong>, a folder holding thousands of tiny files now draws as a single hatched block labelled with its file count, instead of an unreadable wall of one-pixel slivers.</li>
+            <li><span class="patch-tag">New</span><strong>Browse those files in a list.</strong> Clicking that block opens a <strong>searchable, size-sorted list</strong> of the files inside - filter by name and click any one to analyse it - so a folder of thousands of small files is genuinely navigable.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Full waveform for a video&rsquo;s sound track.</strong> The <strong>Audio track</strong> section you get when analysing a video&rsquo;s sound has its proper waveform back: <strong>click-drag to select a region</strong>, zoom in, <strong>export the selection as a WAV</strong>, and a smoother white playhead you can grab to scrub - now in its own card, separate from the histogram.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>&ldquo;Analyse audio&rdquo; lands at the top of the section.</strong> Clicking <strong>Analyse audio</strong> on a video now scrolls to the top of the Sound section, heading and all, rather than dropping you partway down it.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>No share prompt on files that won&rsquo;t open.</strong> The &ldquo;share Analyser&rdquo; card reliably stays away when a file can&rsquo;t be read because it&rsquo;s only stored in the cloud (OneDrive and the like), whatever the exact error.</li>
+            <li><strong>Housekeeping.</strong> The offline download sizes drop the <code>~</code>, and the footer&rsquo;s <strong>Dependencies</strong> list now credits every library Analyser bundles - 3D/CAD via OpenCASCADE, SQLite, RAR/7z, JPEG&nbsp;2000, PostScript, Lottie and more.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">2.16</p>
           <p class="patch-name">Drill Down</p>
           <p class="patch-date">9 June 2026, 20:56</p>
@@ -214,6 +229,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">2.14</p>
           <p class="patch-name">Postmark</p>
@@ -225,9 +243,6 @@
             <li><strong>Typography tidy-up.</strong> Long dashes throughout the readouts are replaced with plain hyphens for a more consistent look.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.13</p>
