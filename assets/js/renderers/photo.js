@@ -1340,7 +1340,7 @@ function closeLightbox() {
 // ---------- container structure (additive) ----------
 // Read the raw bytes the photo pipeline (img decode + exifr) ignores and surface
 // the file's *container* layout: chunk/marker structure, bit depth, chroma, and
-// — most useful of all — AI-generation prompts embedded in PNG text chunks
+// - most useful of all - AI-generation prompts embedded in PNG text chunks
 // (AUTOMATIC1111 'parameters', ComfyUI 'prompt'/'workflow', NovelAI 'Comment'/
 // 'Dream', etc). Returns { rows: [[label,value],…], ai: [{key,value}] } or null
 // when the format isn't one we structurally parse / has nothing extra to add.
@@ -1676,7 +1676,7 @@ function formatAiPrompt(value) {
       walk(obj);
       if (texts.length) out.pretty = texts.join('\n---\n');
       else out.pretty = JSON.stringify(obj, null, 2);
-    } catch (_) { /* not valid JSON — fall through to raw */ }
+    } catch (_) { /* not valid JSON - fall through to raw */ }
   }
   return out;
 }
@@ -1922,7 +1922,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // .THM has no MIME type, so fill the slot with what it actually is: the small
   // JPEG preview a camera writes beside each movie clip.
   const isThm = /\.thm$/i.test(file.name || '');
-  tbl.appendChild(rowHelp('Type', file.type || (isThm ? 'image/jpeg — movie thumbnail (.THM)' : '-'),
+  tbl.appendChild(rowHelp('Type', file.type || (isThm ? 'image/jpeg - movie thumbnail (.THM)' : '-'),
     isThm
       ? 'A .THM file is the thumbnail a camera saves next to a video clip - a small JPEG (here ' + w + '×' + h + ') previewing the movie. Canon, and others, write one per clip. It is a normal JPEG, just with a .THM extension.'
       : "The MIME type is the standard label for the file's format. The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));

@@ -535,7 +535,7 @@ async function parseVoc(file) {
   return out;
 }
 
-// ---------- Broadcast Wave (.bwf) — RIFF/WAVE with bext chunk ----------
+// ---------- Broadcast Wave (.bwf) - RIFF/WAVE with bext chunk ----------
 async function parseBwf(file) {
   const head = await readSlice(file, 0, 4096);
   if (ascii(head, 0, 4) !== 'RIFF' || ascii(head, 8, 4) !== 'WAVE') return null;

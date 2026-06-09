@@ -25,7 +25,7 @@ const GM = [
 ];
 
 function fmtDur(sec) {
-  if (!isFinite(sec) || sec <= 0) return '—';
+  if (!isFinite(sec) || sec <= 0) return '-';
   const m = Math.floor(sec / 60), s = sec % 60;
   return m + ':' + s.toFixed(1).padStart(4, '0');
 }

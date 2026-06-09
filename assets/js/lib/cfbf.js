@@ -9,7 +9,7 @@
      - a 512-byte header (magic D0 CF 11 E0 A1 B1 1A E1) names the sector size,
        mini-sector size, and the first sectors of the FAT, the directory and the
        mini-FAT, plus the DIFAT (the table that lists the FAT sectors);
-     - the FAT is a singly-linked sector-allocation table — follow next-sector
+     - the FAT is a singly-linked sector-allocation table - follow next-sector
        pointers from a stream's start sector to assemble it;
      - the directory is a stream of 128-byte entries arranged as a red-black tree
        (storages = directories, streams = files); the Root Entry also owns the

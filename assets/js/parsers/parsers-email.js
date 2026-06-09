@@ -166,7 +166,7 @@ function analyseMime(raw) {
       );
       const isAttach = /attachment/i.test(disp) || fname;
       const sizeApprox = pbRaw.length;
-      const label = (pct.type || 'application/octet-stream') + (fname ? ' — ' + fname : '');
+      const label = (pct.type || 'application/octet-stream') + (fname ? ' - ' + fname : '');
       parts.push(label + '  (~' + fmtBytes(sizeApprox) + ')');
       if (isAttach) attachments.push((fname || '(unnamed)') + ' [' + (pct.type || '?') + ', ~' + fmtBytes(sizeApprox) + ']');
       // First text/plain part -> preview.
@@ -217,7 +217,7 @@ async function parseEmlx(file) {
   const firstLine = raw.slice(0, nl).trim();
   const byteCount = parseInt(firstLine, 10);
   if (!Number.isFinite(byteCount) || byteCount <= 0 || !/^\d+$/.test(firstLine)) {
-    // Not an emlx wrapper — try as plain eml.
+    // Not an emlx wrapper - try as plain eml.
     return parseEml(file);
   }
   const rest = raw.slice(nl + 1);
@@ -639,7 +639,7 @@ async function parseMsg(file) {
   try { cfbf = await openCfbf(file); } catch (_) { return null; }
   if (!cfbf || !cfbf.rawEntries) return null;
   // Must look like a real MAPI message: at least one __substg / __properties /
-  // __recip / __attach entry — otherwise it's some other OLE file (doc/xls/msi).
+  // __recip / __attach entry - otherwise it's some other OLE file (doc/xls/msi).
   const looksLikeMsg = cfbf.rawEntries.some((e) =>
     e.name && /^__(substg1\.0_|properties_version1\.0|recip_version1\.0_|attach_version1\.0_)/i.test(e.name));
   if (!looksLikeMsg) return null;
@@ -1172,7 +1172,7 @@ export const PARSERS = {
   ldif: (c) => parseLdif(c.file),
   ldi: (c) => parseLdif(c.file),           // LDIF alias
   contact: (c) => parseContact(c.file),
-  // Outlook .msg — full CFBF/OLE extraction (falls back to ident card if invalid).
+  // Outlook .msg - full CFBF/OLE extraction (falls back to ident card if invalid).
   msg: (c) => parseMsg(c.file),
   oft: (c) => parseOft(c.file),            // Outlook template (CFBF, like .msg)
   // Outlook for Mac archive (ZIP).

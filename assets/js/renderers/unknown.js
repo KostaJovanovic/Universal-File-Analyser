@@ -351,12 +351,9 @@ export async function renderUnknown(file, resultsEl) {
 
   resultsEl.appendChild(card);
 
-  // "Limited readout": an unrecognised binary that yielded only the hex dump (no
-  // text / JSON / XML preview). Nudge the visitor to email the format in so it can
-  // be supported. A readable text/JSON/XML file is a fine result - no nudge then.
-  if (window._anrSuggest) {
-    const limited = !showJson && !showXml && !showPlainText;
-    if (limited) window._anrSuggest.show(fileExt(file.name));
-    else window._anrSuggest.hide();
-  }
+  // Any file that lands in this best-effort renderer is, by definition, an
+  // unrecognised type - Analyser has no dedicated parser for it. Always nudge the
+  // visitor to email the format in so it can be supported, whether the bytes read
+  // as a hex dump or as plain text / JSON / XML.
+  if (window._anrSuggest) window._anrSuggest.show(fileExt(file.name));
 }

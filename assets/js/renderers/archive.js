@@ -232,7 +232,7 @@ export async function renderArchive(file, resultsEl) {
       if (encrypted.length > 0) {
         const allEnc = encrypted.length === fileEntries.length;
         const note = allEnc
-          ? ' — every file is encrypted, so contents cannot be previewed or extracted here.'
+          ? ' - every file is encrypted, so contents cannot be previewed or extracted here.'
           : '';
         stbl.appendChild(rowHelp(
           'Encrypted entries',
@@ -246,7 +246,7 @@ export async function renderArchive(file, resultsEl) {
         const more = unsafe.length > 5 ? `, …(+${unsafe.length - 5} more)` : '';
         stbl.appendChild(rowHelp(
           '⚠ Unsafe paths',
-          `${unsafe.length} (path traversal) — ${sample}${more}`,
+          `${unsafe.length} (path traversal) - ${sample}${more}`,
           'Entry names that contain "../", start with "/", or use a drive letter/UNC path. A naïve extractor could be tricked into writing these files outside the intended folder (a "Zip Slip" attack). Analyser never writes them to disk.'
         ));
       }
@@ -258,7 +258,7 @@ export async function renderArchive(file, resultsEl) {
         stbl.appendChild(rowHelp(
           '⚠ Suspicious compression ratio',
           detail,
-          'A very high uncompressed-to-compressed ratio can indicate a "zip bomb" — a small archive that expands to an enormous size to exhaust memory or disk. Treat unfamiliar archives like this with caution.'
+          'A very high uncompressed-to-compressed ratio can indicate a "zip bomb" - a small archive that expands to an enormous size to exhaust memory or disk. Treat unfamiliar archives like this with caution.'
         ));
       }
 

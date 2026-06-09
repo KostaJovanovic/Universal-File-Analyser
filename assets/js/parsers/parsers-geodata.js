@@ -7,7 +7,7 @@
    optionally carrying `_sections: [{title, node, open?}]` for collapsible blocks.
    Return null to fall back to the generic identification card.
 
-   HEADER / METADATA ONLY — there is a separate map renderer (geo.js) for
+   HEADER / METADATA ONLY - there is a separate map renderer (geo.js) for
    gpx/kml/geojson; this chunk covers the *other* geospatial formats with no map. */
 
 import { el, row, fmtBytes, preBlock } from '../core/util.js';
@@ -233,7 +233,7 @@ async function parsePrj(file) {
   if (spheroid) out['Spheroid'] = spheroid;
   const unit = (text.match(/UNIT\s*\[\s*"([^"]+)"/i) || [])[1];
   if (unit) out['Units'] = unit;
-  // EPSG / authority code — last AUTHORITY or ID is usually the CRS code.
+  // EPSG / authority code - last AUTHORITY or ID is usually the CRS code.
   const auth = Array.from(text.matchAll(/(?:AUTHORITY|ID)\s*\[\s*"([^"]+)"\s*,\s*"?(\d+)"?/gi));
   if (auth.length) { const a = auth[auth.length - 1]; out['EPSG / authority'] = a[1] + ':' + a[2]; }
   out._sections = [{ title: 'WKT', node: preBlock(text.length > 8000 ? text.slice(0, 8000) + '\n…' : text) }];
@@ -548,7 +548,7 @@ async function parsePmtiles(file) {
     const COMP = { 0: 'unknown', 1: 'none', 2: 'gzip', 3: 'brotli', 4: 'zstd' };
     out['Compression'] = 'tiles ' + (COMP[tileComp] || tileComp) + ', dirs ' + (COMP[internalComp] || internalComp);
   } else {
-    out['Note'] = 'Older PMTiles spec (v' + spec + ') — header layout not decoded';
+    out['Note'] = 'Older PMTiles spec (v' + spec + ') - header layout not decoded';
   }
   return out;
 }
@@ -678,7 +678,7 @@ async function parseHgt(file, fileObj) {
 }
 
 // =====================================================================
-//  GeoPackage / MBTiles (SQLite-backed) — real parse via sql.js
+//  GeoPackage / MBTiles (SQLite-backed) - real parse via sql.js
 // =====================================================================
 
 // Run a query and return its first result set's {columns, values} or null.
@@ -731,7 +731,7 @@ async function parseGpkg(file, ext) {
           } catch (_) {}
           let line = (tableName || '?') + '  [' + (dataType || '?') + ']';
           if (count != null) line += '  ' + count.toLocaleString() + (dataType === 'tiles' ? ' tiles' : ' rows');
-          if (identifier && identifier !== tableName) line += '  — ' + identifier;
+          if (identifier && identifier !== tableName) line += '  - ' + identifier;
           if ([minX, minY, maxX, maxY].every((n) => typeof n === 'number' && isFinite(n))) {
             line += '\n    bbox ' + fmtBBox(minX, minY, maxX, maxY) + (srsId != null ? '  SRS ' + srsId : '');
           }
@@ -1061,18 +1061,18 @@ async function parseBandRaster(file, ext) {
 // =====================================================================
 function idOnly(file, ext) {
   const NOTES = {
-    grib: 'WMO gridded binary (GRIB1). Edition/centre/message decode needs a GRIB section walker — not yet implemented.',
-    grb: 'WMO gridded binary (GRIB1). Edition/centre/message decode needs a GRIB section walker — not yet implemented.',
-    grib2: 'WMO GRIB2 gridded binary. Discipline/parameter/grid decode needs a GRIB2 section walker — not yet implemented.',
-    nc: 'NetCDF (classic CDF magic or HDF5). Dimensions/variables/attributes need a CDF/HDF5 reader — not yet implemented.',
-    cdf: 'NetCDF classic. Dimensions/variables/attributes need a CDF reader — not yet implemented.',
-    nc4: 'NetCDF-4 (HDF5-based). Needs an HDF5 reader — not yet implemented.',
-    pbf: 'OSM PBF: gzip/zlib-compressed protobuf blocks. Needs a protobuf + zlib decoder — not yet implemented.',
+    grib: 'WMO gridded binary (GRIB1). Edition/centre/message decode needs a GRIB section walker - not yet implemented.',
+    grb: 'WMO gridded binary (GRIB1). Edition/centre/message decode needs a GRIB section walker - not yet implemented.',
+    grib2: 'WMO GRIB2 gridded binary. Discipline/parameter/grid decode needs a GRIB2 section walker - not yet implemented.',
+    nc: 'NetCDF (classic CDF magic or HDF5). Dimensions/variables/attributes need a CDF/HDF5 reader - not yet implemented.',
+    cdf: 'NetCDF classic. Dimensions/variables/attributes need a CDF reader - not yet implemented.',
+    nc4: 'NetCDF-4 (HDF5-based). Needs an HDF5 reader - not yet implemented.',
+    pbf: 'OSM PBF: gzip/zlib-compressed protobuf blocks. Needs a protobuf + zlib decoder - not yet implemented.',
     gpkg: 'GeoPackage = SQLite database (gpkg_contents lists layers/SRS). Requires a SQLite reader (dependency).',
     mbtiles: 'MBTiles = SQLite database (metadata + tiles tables). Requires a SQLite reader (dependency).',
-    sid: 'MrSID wavelet raster (LizardTech/Extensis). Decode is proprietary/impractical — identification only.',
-    ecw: 'Enhanced Compression Wavelet raster (Hexagon/ERDAS). Decode is proprietary — identification only.',
-    gdb: 'Esri File Geodatabase is a folder of .gdbtable members — drop the folder, not a single file.',
+    sid: 'MrSID wavelet raster (LizardTech/Extensis). Decode is proprietary/impractical - identification only.',
+    ecw: 'Enhanced Compression Wavelet raster (Hexagon/ERDAS). Decode is proprietary - identification only.',
+    gdb: 'Esri File Geodatabase is a folder of .gdbtable members - drop the folder, not a single file.',
   };
   const NAMES = {
     grib: 'GRIB (WMO gridded binary)', grb: 'GRIB (WMO gridded binary)', grib2: 'GRIB2 (WMO gridded binary)',

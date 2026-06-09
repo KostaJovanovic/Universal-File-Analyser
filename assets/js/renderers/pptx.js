@@ -97,7 +97,7 @@ export async function renderPptx(file, resultsEl) {
   metaCard.appendChild(metaTbl);
   resultsEl.appendChild(metaCard);
 
-  // ---- Structure card (outline / tables / hyperlinks) — populated after the
+  // ---- Structure card (outline / tables / hyperlinks) - populated after the
   //      slide loop below, inserted here so it appears above the slides. ----
   const structCard = el('div', { class: 'anr-card' });
   resultsEl.appendChild(structCard);

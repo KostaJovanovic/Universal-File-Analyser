@@ -662,11 +662,11 @@ async function renderSegmentedRawVideo(file, header, resultsEl, kind, signal) {
   tbl.appendChild(row('Size', fmtBytes(file.size) + '   (' + file.size.toLocaleString() + ' bytes)'));
   if (header && header.container) tbl.appendChild(row('Container', header.container));
   tbl.appendChild(row('Codec', describeRawCodec(paramSets, h265)));
-  const resRow = row('Resolution', '—');
+  const resRow = row('Resolution', '-');
   tbl.appendChild(resRow);
-  const arRow = row('Aspect ratio', '—');
+  const arRow = row('Aspect ratio', '-');
   tbl.appendChild(arRow);
-  tbl.appendChild(row('Frame rate', '25 fps (assumed — a raw stream carries no timing)'));
+  tbl.appendChild(row('Frame rate', '25 fps (assumed - a raw stream carries no timing)'));
   tbl.appendChild(row('Parts', N + ' × ~' + fmtBytes(Math.round(file.size / N)) + ', split at keyframes'));
   infoCard.appendChild(tbl);
   infoCard.appendChild(el('p', { class: 'anr-hint' },

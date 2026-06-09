@@ -308,7 +308,7 @@ function specStats(spec) {
 
 // m:ss.d clock for a time in seconds.
 function fmtClock(s) {
-  if (s == null || !isFinite(s)) return '—';
+  if (s == null || !isFinite(s)) return '-';
   const m = Math.floor(s / 60);
   const sec = s - m * 60;
   return m + ':' + (sec < 10 ? '0' : '') + sec.toFixed(1);
@@ -347,14 +347,14 @@ function buildSpecStats(statsEl, st, fftSize, sampleRate, loud) {
   ]);
   statsEl.innerHTML = '';
   statsEl.append(
-    cell('Peak',       loud ? fmtClock(loud.time) : '—',
+    cell('Peak',       loud ? fmtClock(loud.time) : '-',
                        loud && isFinite(loud.db) ? loud.db.toFixed(1) + ' dBFS' : ''),
-    cell('Detected',   st.lowHz == null ? '—' : formatHz(st.lowHz) + '–' + formatHz(st.highHz) + ' Hz'),
+    cell('Detected',   st.lowHz == null ? '-' : formatHz(st.lowHz) + '–' + formatHz(st.highHz) + ' Hz'),
     // Exact high-frequency cutoff (the lossy-encode lowpass edge for compressed
     // audio). Resolution is one FFT bin (hzBin), so ±hzBin/2 - raise FFT to refine.
-    cell('Cutoff',     st.highHz == null ? '—' : Math.round(st.highHz).toLocaleString() + ' Hz',
+    cell('Cutoff',     st.highHz == null ? '-' : Math.round(st.highHz).toLocaleString() + ' Hz',
                        st.highHz == null ? '' : '±' + Math.round(hzBin / 2)),
-    cell('Dyn. range', st.dynRange == null ? '—' : st.dynRange.toFixed(0) + ' dB'),
+    cell('Dyn. range', st.dynRange == null ? '-' : st.dynRange.toFixed(0) + ' dB'),
     cell('Resolution', formatHz(hzBin) + ' Hz/bin', msHop.toFixed(0) + ' ms/frame'),
   );
 }

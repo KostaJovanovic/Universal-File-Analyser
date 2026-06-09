@@ -613,7 +613,7 @@ async function parseMbr(file) {
   const sig = (b[440] | (b[441] << 8) | (b[442] << 16) | (b[443] << 24)) >>> 0;
   if (sig) out['Disk signature'] = hex(sig);
   const parts = parseMbrEntries(b, out);
-  if (parts.some((p) => p.type === 0xee)) out['Note'] = 'Protective MBR — disk is GPT-partitioned (see .gpt).';
+  if (parts.some((p) => p.type === 0xee)) out['Note'] = 'Protective MBR - disk is GPT-partitioned (see .gpt).';
   return out;
 }
 async function parseGpt(file) {
