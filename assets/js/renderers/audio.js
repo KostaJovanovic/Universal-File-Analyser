@@ -991,7 +991,7 @@ function buildCoverArtCard(art, file) {
   return labelCard;
 }
 
-function buildWaveformCard(file, mono, audioBuffer, audioEl) {
+export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
   const waveCard = el('div', { class: 'anr-card' });
   const [waveH, waveHelp] = h3help('Waveform', 'Amplitude over time. Click and drag to select a region, then zoom in or export the selection as a WAV file. The white playhead line shows the current playback position.');
   waveCard.appendChild(waveH); waveCard.appendChild(waveHelp);

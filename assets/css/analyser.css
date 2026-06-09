@@ -4364,6 +4364,48 @@ details[open] summary::after { content: "\2212"; }
 .anr-tm-btn:hover { background: var(--fg); color: var(--bg); }
 .anr-tm-btn-ok { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 .anr-tm-btn-ok:hover { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+
+/* Searchable list of a treemap "N files" aggregate block. A fixed-position
+   panel with a sticky header + filter box over a scrollable list of size-sorted
+   rows; each row analyses its file on click. */
+.anr-treemap-list {
+  position: fixed; z-index: 1000;
+  display: flex; flex-direction: column;
+  width: 320px; max-width: calc(100vw - 16px); max-height: 60vh;
+  background: var(--bg); border: 1px solid var(--hairline);
+  font-family: var(--font-mono); font-size: var(--t-tiny);
+}
+.anr-tml-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-bottom: 1px solid var(--hairline);
+}
+.anr-tml-title { color: var(--fg); font-weight: 500; flex: 1 1 auto; min-width: 0; }
+.anr-tml-close {
+  flex: 0 0 auto; padding: 2px 7px; font-size: 11px;
+  border: 1px solid var(--hairline); background: var(--bg); color: var(--muted);
+}
+.anr-tml-close:hover { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.anr-tml-search {
+  margin: 8px 10px 6px; padding: 6px 8px;
+  font-family: var(--font-mono); font-size: var(--t-tiny);
+  border: 1px solid var(--hairline); background: var(--surface); color: var(--fg);
+}
+.anr-tml-search:focus { outline: none; border-color: var(--accent); }
+.anr-tml-list { overflow-y: auto; padding: 0 6px 8px; }
+.anr-tml-row {
+  display: flex; align-items: baseline; gap: 10px; width: 100%;
+  padding: 5px 6px; border: 0; background: transparent;
+  font-family: var(--font-mono); font-size: var(--t-tiny);
+  color: var(--fg); text-align: left;
+}
+.anr-tml-row:hover { background: var(--accent); color: var(--accent-fg); }
+.anr-tml-row-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anr-tml-row-size { flex: 0 0 auto; color: var(--muted); }
+.anr-tml-row:hover .anr-tml-row-size { color: var(--accent-fg); }
+.anr-tml-note {
+  padding: 8px 6px 4px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.05em; font-size: 9px;
+}
 .anr-treemap-legend {
   display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center;
   margin-left: auto;
