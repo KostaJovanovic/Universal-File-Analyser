@@ -118,6 +118,13 @@ a {
 a:hover { color: var(--accent); }
 
 button { font-family: inherit; }
+/* Every enabled <button> gets the hand cursor. Native buttons default to the
+   arrow, and most of ours never set cursor explicitly, so this covers them all
+   in one place (including JS-built buttons). Disabled buttons keep the default
+   via :not(:disabled); the few buttons with an intentional non-pointer cursor
+   (e.g. .offline-btn.is-included, .anr-dropdown-trigger.is-disabled) use two
+   classes, so they outrank this rule and still win. */
+button:not(:disabled) { cursor: pointer; }
 
 ::selection { background: var(--accent); color: var(--accent-fg); }
 
@@ -341,8 +348,8 @@ body:has(.patch-page) .site-header::after { margin-top: clamp(28px, 4vw, 48px); 
   gap: 8px;
   margin: 24px 0 0;
 }
-/* Same look as the old top-right chips (.dark-toggle): small outlined mono
-   pill that inverts on hover. */
+/* Same look as the top-right chips (.dark-toggle): small mono pill on the subtle
+   surface fill that inverts on hover. */
 .header-btn {
   font-family: var(--font-mono);
   font-size: var(--t-tiny);
@@ -350,7 +357,7 @@ body:has(.patch-page) .site-header::after { margin-top: clamp(28px, 4vw, 48px); 
   text-transform: uppercase;
   white-space: nowrap;
   padding: 3px 8px;
-  background: transparent;
+  background: var(--surface);
   border: 1px solid var(--hairline);
   color: var(--fg);
   text-decoration: none;
@@ -3857,7 +3864,7 @@ details[open] summary::after { content: "\2212"; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 3px 8px;
-  background: transparent;
+  background: var(--surface);
   border: 1px solid var(--hairline);
   color: var(--fg);
   cursor: pointer;
@@ -4404,6 +4411,37 @@ details[open] summary::after { content: "\2212"; }
   border-bottom: 1px solid var(--hairline);
   margin-bottom: 14px;
 }
+/* When the extension filter follows the legend, it owns the single separator. */
+.anr-view-controls:has(+ .anr-treemap-extfilter) {
+  border-bottom: none; padding-bottom: 6px; margin-bottom: 8px;
+}
+
+/* Treemap extension filter chips */
+.anr-treemap-extfilter {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 0 0 14px; margin-bottom: 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.anr-extfilter-label {
+  font-family: var(--font-mono); font-size: var(--t-tiny);
+  text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
+  margin-right: 4px;
+}
+.anr-extchip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: var(--t-tiny);
+  letter-spacing: 0.04em;
+  padding: 4px 9px;
+  background: var(--surface); color: var(--fg);
+  border: 1px solid var(--hairline); cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.anr-extchip:hover { border-color: var(--accent); color: var(--accent); }
+.anr-extchip.is-active {
+  background: var(--accent); color: var(--accent-fg); border-color: var(--accent);
+}
+.anr-extchip-n { font-size: 0.85em; opacity: 0.65; }
+.anr-extchip.is-active .anr-extchip-n { opacity: 0.85; }
 
 /* SVG inspector */
 .anr-svg-preview {

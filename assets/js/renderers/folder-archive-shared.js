@@ -173,34 +173,78 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
   controls.appendChild(legend);
   card.appendChild(controls);
 
+  // Extension filter: a chip for every extension found (most common first), plus
+  // an "All" chip. Clicking a chip redraws the treemap with only that extension's
+  // files; clicking it again - or "All" - clears the filter. `bk.sorted` is
+  // [ext, {count, size}] ordered by count, with '(no ext)' for extensionless files.
+  let activeExt = null;
+  const chips = new Map();
+  const extFilter = el('div', { class: 'anr-treemap-extfilter' });
+  extFilter.appendChild(el('span', { class: 'anr-extfilter-label' }, 'Show'));
+  const allChip = el('button', { type: 'button', class: 'anr-extchip is-active' }, 'All');
+  allChip.addEventListener('click', () => setFilter(null));
+  chips.set(null, allChip);
+  extFilter.appendChild(allChip);
+  for (const [ext, data] of bk.sorted) {
+    const label = ext === '(no ext)' ? ext : '.' + ext;
+    const chip = el('button', {
+      type: 'button', class: 'anr-extchip',
+      title: data.count + (data.count === 1 ? ' file' : ' files') + ' · ' + fmtBytes(data.size),
+    }, [label, el('span', { class: 'anr-extchip-n' }, String(data.count))]);
+    chip.addEventListener('click', () => setFilter(activeExt === ext ? null : ext));
+    chips.set(ext, chip);
+    extFilter.appendChild(chip);
+  }
+  card.appendChild(extFilter);
+
   const contentArea = el('div', { class: 'anr-treemap-content' });
   card.appendChild(contentArea);
 
-  const wrap = el('div', { class: 'anr-treemap-wrap' });
-  const canvas = document.createElement('canvas');
-  wrap.appendChild(canvas);
-  contentArea.appendChild(wrap);
+  // (Re)build the treemap on a fresh canvas/wrap for the active filter. A new
+  // canvas lets renderTreemap rebuild its cached hierarchy from the filtered set,
+  // and clearing contentArea drops the previous canvas with its listeners,
+  // tooltip and breadcrumb. The old ResizeObserver is disconnected first.
+  let currentRO = null;
+  function mount() {
+    if (currentRO) { currentRO.disconnect(); currentRO = null; }
+    contentArea.innerHTML = '';
+    const shown = activeExt
+      ? items.filter((i) => (i.ext || '(no ext)') === activeExt)
+      : items;
 
-  function draw() {
-    const rect = wrap.getBoundingClientRect();
-    const w = Math.floor(rect.width);
-    const h = Math.max(380, Math.min(560, Math.round(w * 0.6)));
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    canvas.style.width = w + 'px';
-    canvas.style.height = h + 'px';
-    renderTreemap(canvas, items, { categoryColor, onFileClick });
+    const wrap = el('div', { class: 'anr-treemap-wrap' });
+    const canvas = document.createElement('canvas');
+    wrap.appendChild(canvas);
+    contentArea.appendChild(wrap);
+
+    function draw() {
+      const rect = wrap.getBoundingClientRect();
+      const w = Math.floor(rect.width);
+      const h = Math.max(380, Math.min(560, Math.round(w * 0.6)));
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      renderTreemap(canvas, shown, { categoryColor, onFileClick });
+    }
+
+    draw();
+    attachTreemapEvents(canvas, wrap, shown, { categoryColor, onFileClick });
+    const ro = new ResizeObserver(() => {
+      clearTimeout(canvas._roTimer);
+      canvas._roTimer = setTimeout(draw, 150);
+    });
+    ro.observe(wrap);
+    currentRO = ro;
   }
 
-  draw();
-  attachTreemapEvents(canvas, wrap, items, { categoryColor, onFileClick });
-  const ro = new ResizeObserver(() => {
-    clearTimeout(canvas._roTimer);
-    canvas._roTimer = setTimeout(draw, 150);
-  });
-  ro.observe(wrap);
-  canvas._ro = ro;
+  function setFilter(ext) {
+    activeExt = ext;
+    for (const [key, chip] of chips) chip.classList.toggle('is-active', key === activeExt);
+    mount();
+  }
 
+  mount();
   container.appendChild(card);
 }

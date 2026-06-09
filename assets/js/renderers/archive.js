@@ -316,7 +316,7 @@ export async function renderArchive(file, resultsEl) {
       });
     } else {
       extractFile(item.entry.name).then(f => {
-        if (f && window._anrHandleFile) window._anrHandleFile(f);
+        if (f && window._anrHandleFile) window._anrHandleFile(f, { nested: true });
       });
     }
   }
@@ -336,7 +336,7 @@ export async function renderArchive(file, resultsEl) {
       });
     } else {
       extractFile(entry.name).then(f => {
-        if (f && window._anrHandleFile) window._anrHandleFile(f);
+        if (f && window._anrHandleFile) window._anrHandleFile(f, { nested: true });
       });
     }
   }

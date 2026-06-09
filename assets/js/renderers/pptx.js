@@ -189,7 +189,7 @@ export async function renderPptx(file, resultsEl) {
               const mime = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
               const blob = new Blob([bytes], { type: mime });
               const img = el('img', { src: URL.createObjectURL(blob), class: 'anr-pptx-img', title: 'Click to analyse as photo', style: 'cursor: pointer;' });
-              img.addEventListener('click', () => { if (window._anrHandleFile) window._anrHandleFile(new File([bytes], 'slide-image.' + ext, { type: mime })); });
+              img.addEventListener('click', () => { if (window._anrHandleFile) window._anrHandleFile(new File([bytes], 'slide-image.' + ext, { type: mime }), { nested: true }); });
               slideBox.appendChild(img);
             }
           }

@@ -51,7 +51,7 @@ function runImage(run, imageMap) {
     try {
       const blob = await (await fetch(url)).blob();
       const ext = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
-      if (window._anrHandleFile) window._anrHandleFile(new File([blob], 'docx-image.' + ext, { type: blob.type }));
+      if (window._anrHandleFile) window._anrHandleFile(new File([blob], 'docx-image.' + ext, { type: blob.type }), { nested: true });
     } catch (_) {}
   });
   // Size from the drawing extent (EMU → px at 96dpi) when present.

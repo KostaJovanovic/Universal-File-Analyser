@@ -103,7 +103,7 @@ export function renderFolder(files, resultsEl) {
         m.renderArchive(file, resultsEl);
       });
     } else if (window._anrHandleFile) {
-      window._anrHandleFile(file);
+      window._anrHandleFile(file, { nested: true });
     }
   }
 

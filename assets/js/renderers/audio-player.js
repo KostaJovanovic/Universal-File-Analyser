@@ -59,6 +59,13 @@ export function makePlayer(mediaEl, knownDuration) {
     // an explicit seeking-gate could get stuck (a no-op seek never fires 'seeked',
     // especially with two players sharing one element) and then block all scrubs.
     if (d > 0) mediaEl.currentTime = frac * d;
+    // Scrubbing away from the very end clears the 'ended' state, so the button is
+    // no longer a replay control - revert the glyph to play while paused (the
+    // 'play' handler clears it on its own once playback resumes).
+    if (mediaEl.paused && !mediaEl.ended && playBtn.classList.contains('is-replay')) {
+      playBtn.textContent = '▶'; playBtn.classList.remove('is-replay');
+      playBtn.setAttribute('aria-label', 'Play');
+    }
   }
   // Window listeners are added on press and removed on release so they don't
   // pile up across files.

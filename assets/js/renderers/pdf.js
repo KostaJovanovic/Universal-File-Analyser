@@ -678,7 +678,7 @@ export async function renderPdf(file, resultsEl) {
           });
           const wrap = el('div', { style: 'text-align:center;' }, [link]);
           const aBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', style: 'margin-top:4px;' }, 'Analyse');
-          aBtn.addEventListener('click', () => cv.toBlob((b) => { if (b && window._anrHandleFile) window._anrHandleFile(new File([b], 'pdf-image.png', { type: 'image/png' })); }, 'image/png'));
+          aBtn.addEventListener('click', () => cv.toBlob((b) => { if (b && window._anrHandleFile) window._anrHandleFile(new File([b], 'pdf-image.png', { type: 'image/png' }), { nested: true }); }, 'image/png'));
           wrap.appendChild(aBtn);
           imgGrid.appendChild(wrap);
           if (found >= 300) break;
