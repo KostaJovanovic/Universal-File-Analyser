@@ -182,6 +182,25 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">2.16</p>
+          <p class="patch-name">Drill Down</p>
+          <p class="patch-date">9 June 2026, 20:56</p>
+          <ul class="patch-list">
+            <li><strong>A smarter treemap for folders and ZIPs, and a string of fixes for opening the files inside them.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Filter the treemap by file type.</strong> The <strong>Treemap</strong> for a folder or <a href="/about#ext-zip">ZIP</a> now lists every file type it found as a row of chips. Tap one - say <code>.jpg</code> - and the map redraws with only those files; tap it again, or <strong>All</strong>, to bring everything back.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Crowded folders stay readable.</strong> A folder holding thousands of tiny files used to fill the treemap with an unreadable wall of slivers. It now <strong>collapses into a single labelled block</strong> with its file count, which you click to drill in.</li>
+            <li><span class="patch-tag">New</span><strong>Jump straight to a file&rsquo;s analysis.</strong> Opening a file from inside a folder or ZIP now <strong>scrolls to the section</strong> where it&rsquo;s analysed, so the result is in front of you.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Loading bar for files inside a folder or ZIP.</strong> Starting analysis on a file listed within a folder or archive now shows the <strong>loading bar</strong> like every other open.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Folder drop zones step aside.</strong> After you drop a <strong>folder</strong>, the drop zones now tuck away just as they do for a single file, instead of lingering over the results.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The file tree opens the folder you clicked.</strong> Clicking into a deeply nested subfolder from the <strong>File tree</strong> now lands in that exact folder, rather than skipping the one that contains it.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>No share nudge on files that won&rsquo;t open.</strong> The &ldquo;share Analyser&rdquo; card no longer slides in when a file can&rsquo;t be read because it&rsquo;s only stored in the cloud (OneDrive and the like).</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Scrubber replay icon.</strong> On the audio and video scrubber, the replay icon now reverts to <strong>play</strong> the moment you scrub elsewhere, instead of staying a replay control until you press it.</li>
+            <li><span class="patch-tag">New</span><strong>Search reaches every corner.</strong> The search box understands far more terms now - <strong>folders, 3D models, Office documents, e-books, subtitles, lyrics, MIDI, maps and editing timelines</strong> - so typing a format or the software behind it finds the right readout.</li>
+            <li><span class="patch-tag">New</span><strong>Tidier menu buttons.</strong> The <strong>About</strong>, <strong>Changelog</strong>, <strong>Share</strong>, <strong>Links</strong> and day/night buttons now sit on a soft background that matches the menu bar, and every button shows the <strong>hand cursor</strong> on hover.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">2.15</p>
           <p class="patch-name">Word of Mouth</p>
           <p class="patch-date">9 June 2026, 19:39</p>
@@ -207,6 +226,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">2.13</p>
           <p class="patch-name">Negative</p>
@@ -229,9 +251,6 @@
             <li><strong>Tidier supported-formats popup.</strong> Each group&rsquo;s file extensions now sit <strong>under</strong> the group name instead of crammed beside it, matching the <a href="/about#what">About page</a>, so long extension lists are easier to scan.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.11</p>

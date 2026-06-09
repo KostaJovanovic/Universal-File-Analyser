@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 75;
+const COMMIT_COUNT = 76;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -96,13 +96,24 @@ function anrConfirm(title, okLabel) {
 // from flashing it.
 let _dropLoaderEl = null;
 let _dropLoaderTimer = null;
+let _dropLoaderHideTimer = null;
 let _dropLoaderOnCancel = null;
+let _dropLoaderShownAt = 0;
+// Once the bar is actually on screen, keep it up at least this long so a near-
+// instant render (e.g. a small file opened straight from a folder/zip view,
+// already in memory) doesn't make it flash-and-vanish.
+const DROP_LOADER_MIN_MS = 420;
 
-function showDropLoader(file, onCancel, labelText) {
+// `immediate` skips the 160ms anti-flash debounce. Use it when the source bytes
+// are already in memory (a nested file from a folder/zip/document), where the
+// render finishes before the debounce fires - so without this the bar would
+// never show. Disk-backed drops keep the debounce (they cross 160ms on their own).
+function showDropLoader(file, onCancel, labelText, immediate) {
   clearTimeout(_dropLoaderTimer);
+  clearTimeout(_dropLoaderHideTimer);
   _dropLoaderOnCancel = onCancel || null;
   const name = (file && file.name) ? file.name : 'file';
-  _dropLoaderTimer = setTimeout(() => {
+  const reveal = () => {
     if (!_dropLoaderEl || !_dropLoaderEl.isConnected) {
       // A window of accent slashes ('////') bouncing left↔right inside brackets
       // ([   ////   ]), stepped in discrete jumps via a CSS steps() timing so it
@@ -128,17 +139,30 @@ function showDropLoader(file, onCancel, labelText) {
       document.body.appendChild(_dropLoaderEl);
     }
     _dropLoaderEl._label.textContent = labelText || ('Reading ' + name + '…');
+    _dropLoaderShownAt = performance.now();
     requestAnimationFrame(() => _dropLoaderEl.classList.add('is-open'));
-  }, 160);
+  };
+  if (immediate) reveal();
+  else _dropLoaderTimer = setTimeout(reveal, 160);
 }
 
 function hideDropLoader() {
   clearTimeout(_dropLoaderTimer);
+  clearTimeout(_dropLoaderHideTimer);
   _dropLoaderOnCancel = null;
-  if (_dropLoaderEl) {
-    // The bar's CSS animation pauses itself via `:not(.is-open)` (see CSS), so
-    // there's nothing to tear down here.
+  if (!_dropLoaderEl) return;
+  // Still in the debounce window (never shown) - just cancel; nothing to fade.
+  if (!_dropLoaderEl.classList.contains('is-open')) return;
+  // Already visible: honour the minimum on-screen time so it doesn't flash.
+  // The bar's CSS animation pauses itself via `:not(.is-open)` (see CSS), so
+  // there's nothing else to tear down.
+  const shownFor = performance.now() - _dropLoaderShownAt;
+  if (shownFor >= DROP_LOADER_MIN_MS) {
     _dropLoaderEl.classList.remove('is-open');
+  } else {
+    _dropLoaderHideTimer = setTimeout(() => {
+      if (_dropLoaderEl) _dropLoaderEl.classList.remove('is-open');
+    }, DROP_LOADER_MIN_MS - shownFor);
   }
 }
 
@@ -969,6 +993,7 @@ function splitText(container, baseWeight) {
 // each entry's full bullet list for the matching line here. When you add a new
 // patch entry to patch.html, add its one-liner here too (newest at the top).
 const PATCH_TLDR = {
+  '2.16': 'Folders and ZIPs get a smarter treemap: a row of chips filters it to one file type, and a folder packed with thousands of tiny files collapses into a single labelled block instead of an unreadable wall of slivers. Opening a file from inside a folder or archive now scrolls to its analysis and shows the loading bar, the file tree opens the exact folder you click, and the folder drop zones tuck away after a drop. The share nudge stays away from cloud-only files that can’t be read, the scrubber replay icon reverts to play as soon as you scrub, search understands many more terms (folders, 3D models, Office, e-books, subtitles, maps and more), and the menu buttons gain a subtle fill and a proper hand cursor.',
   '2.15': 'A new Share button and popup make it easy to pass Analyser on - copy the link, e-mail it, or post to Twitter, Bluesky, LinkedIn, Telegram or Reddit, and on phones it opens your device’s own share sheet. A small card may also invite you to share just after a file is analysed. Saving a spectrogram now asks for height and zoom, the AVI frame player reports dropped frames, the drop zones filter by type on mobile, and the menu, search and footer get a round of polish.',
   '2.14': 'The “suggest this format” prompt and a new footer “Email me!” link now run a quick human-check before they reveal the address and open your mail app, so it stays away from spam bots. The header Status line shows live Online/Offline state, the suggest-format prompt now appears for every unrecognised file (and slides in just after the results settle), and long dashes across the readouts are replaced with plain hyphens.',
   '2.13': 'The pinned menu bar flips to an animated inverted colour scheme once you open a photo, sound or video and scroll. Files that can’t be opened or only show a basic readout now offer a one-tap email to suggest the format, the spectrogram’s playback line is accurate at every zoom and you can drag to pan, full-screen gains a Fill height, and the offline-download tiers show what’s already Included and the extra space to upgrade.',
@@ -1318,6 +1343,18 @@ function boot() {
     document.body.classList.remove('anr-has-file');   // un-invert the nav back to normal
   }
 
+  // Folder/zip overviews are rendered directly (not via handleFile), so they must
+  // run the same "a file is loaded" UI transition handleFile does: hide the three
+  // dropzones (swap in "Analyse next file?"), invert the nav, and drop the
+  // full-page drop overlay. Without this the dropzones stay on screen behind the
+  // overview.
+  function enterLoadedUI() {
+    firstFileLoaded = true;
+    document.body.classList.add('anr-has-file');
+    if (pageDropEl) pageDropEl.hidden = true;
+    showAnalyseNext();
+  }
+
   // Jump to the first analysed section. Results elements are hidden+emptied until
   // a renderer populates them, so the first visible .anr-results with children is
   // the first section with data (document order: unknown, photo, audio, video).
@@ -1347,6 +1384,9 @@ function boot() {
     // paired RAW develop-settings sidecar ({sidecarXmp}, from a RAW+XMP drop).
     const force = (opts && opts.kind) ? opts : null;
     const sidecarXmp = (opts && opts.sidecarXmp) || null;
+    // Opened from a folder/zip/document view: bytes are already in memory and the
+    // render beats the loader's 160ms debounce, so show the bar immediately.
+    const nested = !!(opts && opts.nested);
     hideTypeSuggestion();
     hideSuggestPopup();   // clear any "suggest this format" nudge from a prior file
     hideShareNudge();     // and any pending/visible "share this" nudge
@@ -1355,7 +1395,7 @@ function boot() {
     if (fmtOv && !fmtOv.hidden) { fmtOv.hidden = true; document.body.style.overflow = ''; }
     const token = { cancelled: false };
     _currentToken = token;
-    showDropLoader(file, () => cancelLoad(token));
+    showDropLoader(file, () => cancelLoad(token), undefined, nested);
 
     clearResultsUI();
 
@@ -1509,7 +1549,15 @@ function boot() {
     // "misses" by whatever appears above afterwards). So we scroll now for
     // responsiveness and re-assert once the renderer settles (below) - unless the
     // user has grabbed the scroll themselves in the meantime.
-    const autoScrollSec = kind === 'video' ? sectionVideo : kind === 'audio' ? sectionAudio : null;
+    // Audio/video always autoscroll (their sections sit low on the page). When a
+    // file is opened FROM a folder/zip view (nested), the user is scrolled down at
+    // the treemap, so scroll to wherever the result lands - its section, or the
+    // generic results block - regardless of kind, so the analysis comes into view.
+    const resultEl = resultsByName[route.results];
+    const autoScrollSec = kind === 'video' ? sectionVideo
+      : kind === 'audio' ? sectionAudio
+      : nested && resultEl ? (resultEl.closest('.section') || resultEl)
+      : null;
     let userTookScroll = false;
     let stopScrollWatch = () => {};
     if (autoScrollSec) {
@@ -1573,10 +1621,14 @@ function boot() {
         showTypeSuggestion(suggestion, () => handleFile(file, { kind: suggestion.kind, ext: suggestion.ext }));
       }
       // Record what was just analysed and, unless a format-suggestion popup is
-      // taking the spotlight, line up the post-analysis "share this" nudge.
+      // taking the spotlight, line up the post-analysis "share this" nudge. Skip
+      // the nudge when the file couldn't actually be read (a OneDrive/iCloud
+      // cloud-only placeholder that failed inside the renderer, showing the
+      // cloud-file warning) - there's nothing worth sharing.
       const analysed = { ext: fileExt(file.name), category: kind, name: file.name };
       window._anrLastAnalysis = analysed;
-      if (!suggestion) scheduleShareNudge(analysed);
+      const unreadable = document.querySelector('.anr-results:not([hidden]) .anr-cloud-warning');
+      if (!suggestion && !unreadable) scheduleShareNudge(analysed);
     });
   }
   _handleFile = handleFile;
@@ -1710,7 +1762,7 @@ function boot() {
           return;
         }
         const ur = $('unknownResults');
-        if (ur) renderFolder(folderFiles, ur);
+        if (ur) { renderFolder(folderFiles, ur); enterLoadedUI(); }
         hideDropLoader();
         return;
       }
@@ -1757,14 +1809,6 @@ function boot() {
   if (verEl) {
     verEl.textContent = analyserVersion(COMMIT_COUNT, RELEASE_COMMITS);
   }
-
-  // ----- Contact email -----
-  // Display-only: the footer shows the address obfuscated ("[at]"/"[dot]")
-  // with no clickable mailto: so bots can't scrape a live link.
-  document.querySelectorAll('.footer-contact').forEach((a) => {
-    a.removeAttribute('href');
-    a.style.cursor = 'default';
-  });
 
   // ----- Storage with 7-day expiry -----
   const ANR_TTL = 7 * 24 * 60 * 60 * 1000;
@@ -1901,6 +1945,7 @@ function boot() {
   }
   if (window._anrPendingFolder && unknownResults) {
     renderFolder(window._anrPendingFolder, unknownResults);
+    enterLoadedUI();
     delete window._anrPendingFolder;
   }
 

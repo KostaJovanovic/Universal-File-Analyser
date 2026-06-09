@@ -95,22 +95,36 @@ function squarify(children, rect) {
 // ---------- hierarchy ----------
 
 function buildHierarchy(items) {
-  const root = { name: '', children: {}, files: [], totalSize: 0, fileCount: 0 };
+  const root = { name: '', children: {}, files: [], totalSize: 0, fileCount: 0, catBytes: {} };
   for (const item of items) {
     const parts = item.path.replace(/\\/g, '/').split('/').filter(Boolean);
     let node = root;
     const chain = [root];
     for (let i = 0; i < parts.length - 1; i++) {
       if (!node.children[parts[i]]) {
-        node.children[parts[i]] = { name: parts[i], children: {}, files: [], totalSize: 0, fileCount: 0 };
+        node.children[parts[i]] = { name: parts[i], parent: node, children: {}, files: [], totalSize: 0, fileCount: 0, catBytes: {} };
       }
       node = node.children[parts[i]];
       chain.push(node);
     }
     node.files.push(item);
-    for (const n of chain) { n.totalSize += item.size; n.fileCount += 1; }
+    const cat = item.category || 'other';
+    for (const n of chain) {
+      n.totalSize += item.size;
+      n.fileCount += 1;
+      n.catBytes[cat] = (n.catBytes[cat] || 0) + item.size;
+    }
   }
   return root;
+}
+
+// Category whose files take up the most bytes in this folder - used to colour a
+// collapsed (too-dense-to-draw) folder block.
+function dominantCategory(node) {
+  let best = 'other', bestV = -1;
+  const cb = node.catBytes || {};
+  for (const k in cb) { if (cb[k] > bestV) { bestV = cb[k]; best = k; } }
+  return best;
 }
 
 // ---------- nested layout ----------
@@ -120,6 +134,13 @@ const HEADER_MIN_W = 46;
 const HEADER_MIN_H = 24;
 const HEADER_H = 13;
 const MAX_DEPTH = 14;
+// A folder whose files would each get less than this many square pixels can't be
+// drawn legibly (they degrade into 1px slivers - the "tunnel to black" look on a
+// huge export folder). Past this density we stop recursing and draw the whole
+// folder as one labelled block instead; the user clicks it to zoom in, where it
+// gets the full canvas and its own children are re-evaluated at lower density.
+const MIN_AREA_PER_FILE = 150;
+const COLLAPSE_MIN_FILES = 4;   // never collapse trivially small folders
 
 function layoutNode(node, rect, depth, out) {
   if (depth > MAX_DEPTH || rect.w < 2 || rect.h < 2) return;
@@ -132,6 +153,10 @@ function layoutNode(node, rect, depth, out) {
     if (f.size > 0) entries.push({ size: f.size, file: f });
   }
   if (!entries.length) return;
+  // Only collapse a child when it has siblings: a sole child (a wrapper folder)
+  // would just fill the same rect, so descend through it instead - this also
+  // auto-skips single-folder wrappers like a dropped top-level export folder.
+  const canCollapse = entries.length > 1;
 
   const placed = squarify(entries, rect);
   for (const p of placed) {
@@ -141,13 +166,16 @@ function layoutNode(node, rect, depth, out) {
     } else {
       const child = p.item.dir;
       const headerH = (p.w > HEADER_MIN_W && p.h > HEADER_MIN_H && depth < 3) ? HEADER_H : 0;
+      const innerW = p.w - 2 * PAD;
+      const innerH = p.h - 2 * PAD - headerH;
+      const innerArea = Math.max(0, innerW) * Math.max(0, innerH);
+      if (canCollapse && child.fileCount >= COLLAPSE_MIN_FILES &&
+          innerArea / child.fileCount < MIN_AREA_PER_FILE) {
+        out.collapsed.push({ x: p.x, y: p.y, w: p.w, h: p.h, node: child });
+        continue;
+      }
       out.dirs.push({ x: p.x, y: p.y, w: p.w, h: p.h, node: child, depth, headerH });
-      const inner = {
-        x: p.x + PAD,
-        y: p.y + PAD + headerH,
-        w: p.w - 2 * PAD,
-        h: p.h - 2 * PAD - headerH,
-      };
+      const inner = { x: p.x + PAD, y: p.y + PAD + headerH, w: innerW, h: innerH };
       if (inner.w > 3 && inner.h > 3) layoutNode(child, inner, depth + 1, out);
     }
   }
@@ -177,16 +205,17 @@ export function renderTreemap(canvas, items, opts) {
   if (!canvas._hierarchy) canvas._hierarchy = buildHierarchy(items);
   const view = canvas._viewNode || canvas._hierarchy;
 
-  const out = { dirs: [], files: [] };
+  const out = { dirs: [], files: [], collapsed: [] };
   layoutNode(view, { x: 0, y: 0, w, h }, 0, out);
 
-  if (!out.files.length) {
+  if (!out.files.length && !out.collapsed.length) {
     ctx.fillStyle = isDark() ? '#888' : '#888';
     ctx.font = '12px "Geist Mono", ui-monospace, monospace';
     ctx.textAlign = 'center';
     ctx.fillText('No files to display', w / 2, h / 2);
     ctx.textAlign = 'start';
     canvas._fileRects = [];
+    canvas._collapsedRects = [];
     return;
   }
 
@@ -245,6 +274,47 @@ export function renderTreemap(canvas, items, opts) {
     }
   }
 
+  // 2.5) Collapsed dense folders: one block per folder, coloured by the category
+  // that dominates it, with a name + file count. Drawn like a leaf tile but with
+  // a stronger frame so it reads as a container you can open.
+  ctx.textBaseline = 'top';
+  for (const c of out.collapsed) {
+    const x = c.x + PAD / 2, y = c.y + PAD / 2;
+    const cw = Math.max(c.w - PAD, 0.5), ch = Math.max(c.h - PAD, 0.5);
+    const color = opts.categoryColor(dominantCategory(c.node));
+
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, cw, ch);
+    if (cw > 3 && ch > 3) {
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.fillRect(x, y, cw, 1); ctx.fillRect(x, y, 1, ch);
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.fillRect(x, y + ch - 1, cw, 1); ctx.fillRect(x + cw - 1, y, 1, ch);
+      ctx.strokeStyle = dark ? 'rgba(255,255,255,0.40)' : 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1);
+    }
+
+    if (cw >= LABEL_MIN_W && ch >= LABEL_MIN_H) {
+      const tcol = contrastText(color);
+      const maxW = cw - 8;
+      let name = (c.node.name || 'folder') + '/';
+      ctx.fillStyle = tcol;
+      ctx.font = '700 11px "Geist Mono", ui-monospace, monospace';
+      if (ctx.measureText(name).width > maxW) {
+        while (name.length > 2 && ctx.measureText(name + '…').width > maxW) name = name.slice(0, -1);
+        name += '…';
+      }
+      ctx.fillText(name, x + 4, y + 3);
+      if (ch >= LABEL_MIN_H + 14) {
+        ctx.globalAlpha = 0.8;
+        ctx.font = '10px "Geist Mono", ui-monospace, monospace';
+        ctx.fillText(c.node.fileCount.toLocaleString() + ' files', x + 4, y + 17);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
   // 3) Folder frames + headers on top
   for (const d of dirs) {
     ctx.strokeStyle = frameColor;
@@ -266,6 +336,7 @@ export function renderTreemap(canvas, items, opts) {
   }
 
   canvas._fileRects = out.files;
+  canvas._collapsedRects = out.collapsed.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h, node: c.node }));
   canvas._headerRects = out.dirs
     .filter((d) => d.headerH > 0)
     .map((d) => ({ x: d.x, y: d.y, w: d.w, h: d.headerH, node: d.node }));
@@ -375,7 +446,14 @@ export function attachTreemapEvents(canvas, wrap, items, opts) {
   }
 
   function zoomTo(node) {
-    zoomStack.push(node);
+    // A nested folder header can be clicked directly from a higher view (headers
+    // render down to depth 2), so rebuild the whole ancestor chain from root to
+    // the clicked node - pushing only `node` would skip the folders in between
+    // and show a wrong path in the breadcrumb.
+    const chain = [];
+    for (let n = node; n && n !== canvas._hierarchy; n = n.parent) chain.unshift(n);
+    zoomStack.length = 0;
+    zoomStack.push(...chain);
     status.textContent = '';
     redraw();
   }
@@ -406,14 +484,16 @@ export function attachTreemapEvents(canvas, wrap, items, opts) {
   canvas.addEventListener('mousemove', (e) => {
     const { x, y } = canvasXY(canvas, e.clientX, e.clientY);
     const header = hitRects(canvas._headerRects, x, y);
-    const file = header ? null : hitRects(canvas._fileRects, x, y);
+    const collapsed = header ? null : hitRects(canvas._collapsedRects, x, y);
+    const file = (header || collapsed) ? null : hitRects(canvas._fileRects, x, y);
 
-    if (header) {
+    if (header || collapsed) {
+      const dir = header || collapsed;
       tooltip.classList.add('is-visible');
       tooltip.innerHTML = '';
-      tooltip.appendChild(el('div', { class: 'anr-tt-name' }, (header.node.name || 'root') + '/'));
+      tooltip.appendChild(el('div', { class: 'anr-tt-name' }, (dir.node.name || 'root') + '/'));
       tooltip.appendChild(el('div', { class: 'anr-tt-meta' },
-        header.node.fileCount + (header.node.fileCount === 1 ? ' file · ' : ' files · ') + fmtBytes(header.node.totalSize) + '  ·  zoom in'));
+        dir.node.fileCount + (dir.node.fileCount === 1 ? ' file · ' : ' files · ') + fmtBytes(dir.node.totalSize) + '  ·  zoom in'));
       positionTooltip(e);
       canvas.style.cursor = 'zoom-in';
     } else if (file) {
@@ -446,6 +526,8 @@ export function attachTreemapEvents(canvas, wrap, items, opts) {
     const { x, y } = canvasXY(canvas, e.clientX, e.clientY);
     const header = hitRects(canvas._headerRects, x, y);
     if (header) { zoomTo(header.node); return; }
+    const collapsed = hitRects(canvas._collapsedRects, x, y);
+    if (collapsed) { zoomTo(collapsed.node); return; }
     const file = hitRects(canvas._fileRects, x, y);
     if (file) {
       showFileMenu(e.clientX, e.clientY, file.item, () => {
