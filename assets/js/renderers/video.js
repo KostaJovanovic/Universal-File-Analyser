@@ -2327,9 +2327,24 @@ export async function renderVideo(file, resultsEl, opts = {}) {
           let playing = false;
           let rafId = 0;
           let lastTs = 0;
+          // Runtime frame drops: when decoding/painting a JPEG can't keep up with the
+          // target rate, playback has to skip ahead to stay in sync. We count those
+          // skipped frames and surface them on the counter line (hidden at zero).
+          let droppedFrames = 0;
+          const dropOut = el('span', { class: 'anr-frame-drops', hidden: 'hidden' }, '');
+          const bumpDrops = (n) => {
+            if (!playing || n <= 0) return;
+            if (n > fps * 2) return;   // a multi-second leap is a tab-switch/seek, not a decode hiccup
+            droppedFrames += n;
+            dropOut.hidden = false;
+            dropOut.textContent = ` · ${droppedFrames} dropped`;
+          };
           const setFrameFromTime = (t) => {
             const idx = Math.max(0, Math.min(lastIdx, frameAtTime(t)));
-            if (idx !== currentFrame) showFrame(idx);
+            if (idx !== currentFrame) {
+              bumpDrops(idx - currentFrame - 1);   // a forward jump past +1 means frames were skipped
+              showFrame(idx);
+            }
           };
           const stop = () => {
             playing = false;
@@ -2344,8 +2359,14 @@ export async function renderVideo(file, resultsEl, opts = {}) {
             if (hasAudio) {
               setFrameFromTime(frameAudioEl.currentTime);   // audio drives the frame
             } else if (ts - lastTs >= frameMs) {
-              lastTs = ts;
-              showFrame(currentFrame >= lastIdx ? 0 : currentFrame + 1);
+              // Catch up to wall-clock: advance as many frames as actually elapsed
+              // (carrying the sub-frame remainder) so a slow tick skips ahead and
+              // stays in real time rather than drifting. Each extra step is a drop.
+              const steps = Math.floor((ts - lastTs) / frameMs);
+              lastTs += steps * frameMs;
+              bumpDrops(steps - 1);
+              const next = currentFrame + steps;
+              showFrame(next > lastIdx ? next % (lastIdx + 1) : next);
             }
             rafId = requestAnimationFrame(loop);
           };
@@ -2353,6 +2374,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
             if (playing) { stop(); return; }
             playing = true;
             lastTs = 0;
+            droppedFrames = 0; dropOut.hidden = true; dropOut.textContent = '';
             playBtn.textContent = '❚❚';
             playBtn.setAttribute('aria-label', 'Pause');
             if (hasAudio) {
@@ -2416,7 +2438,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
 
           // Frame counter + rate (and whether sound is along for the ride), centered.
           frameCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:4px; text-align:center;' },
-            [frameLabel, document.createTextNode(` · ${fps} fps${hasAudio ? '' : ' · loop'}`)]));
+            [frameLabel, document.createTextNode(` · ${fps} fps${hasAudio ? '' : ' · loop'}`), dropOut]));
           // Symmetric frame stepping: Prev | Next.
           frameCard.appendChild(el('div', { class: 'anr-frame-grid', style: 'margin-top:10px;' }, [prevBtn, nextBtn]));
           if (heavy) {

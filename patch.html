@@ -61,6 +61,7 @@
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
         <a href="/about" class="header-btn">About</a>
+        <button type="button" class="header-btn header-btn-share"><svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>Share</button>
       </nav>
     </div>
     <div class="site-meta">
@@ -179,6 +180,20 @@
                - leave a commit undocumented;
                - let the newest version here disagree with app.js.
              ===================================================================== -->
+
+        <div class="patch-entry">
+          <p class="patch-version">2.15</p>
+          <p class="patch-name">Word of Mouth</p>
+          <p class="patch-date">9 June 2026, 19:39</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Share Analyser in a tap.</strong> A new <strong>Share</strong> button in the menu bar opens a tidy popup to copy the link or send it by e-mail, with a <strong>More platforms</strong> list (Twitter, Bluesky, LinkedIn, Telegram and Reddit) tucked behind a tap. On phones it hands straight off to your device&rsquo;s own share sheet.</li>
+            <li><span class="patch-tag">New</span><strong>A gentle nudge to spread the word.</strong> A short while after a file is analysed, a small card may slide in at the bottom-left inviting you to share - worded around what was just found. It shows at most once a day, holds off for a few days after you actually share, and tucks itself away on its own after half a minute.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Drop zones offer the right files.</strong> The file picker now filters by type on phones as well as desktop - the photo/video zone offers photos and videos, the sound zone offers audio, and the third still takes anything at all.</li>
+            <li><span class="patch-tag">New</span><strong>Choose your spectrogram export size.</strong> Saving a spectrogram as an image now asks for the <strong>height and zoom</strong> first, so you can save a bigger or more detailed picture than the one on screen.</li>
+            <li><span class="patch-tag">New</span><strong>Dropped-frame readout for AVI.</strong> The frame-by-frame <strong>AVI</strong> player now shows a dropped-frame count when playback can&rsquo;t keep up, so it&rsquo;s clear when a clip is simply too heavy to play smoothly.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Menu, search and footer polish.</strong> The menu bar gains its missing edge dividers, the search box now appears only once you&rsquo;ve opened a file, the footer links spread evenly across one row on phones, and in dark mode the pinned white menu bar keeps a visible bottom edge.</li>
+          </ul>
+        </div>
 
         <div class="patch-entry">
           <p class="patch-version">2.14</p>
@@ -1020,7 +1035,7 @@
     <p class="footer-meta"><a href="https://github.com/KostaJovanovic/lab" target="_blank" rel="noopener">Source on GitHub ↗</a></p>
     <!-- No address in the source: the mailto is assembled in JS only after a
          Cloudflare Turnstile challenge passes (see wireFooterContact in app.js). -->
-    <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button><span class="footer-contact-gate" hidden></span></p>
+    <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button></p>
   </div>
 </footer>
 

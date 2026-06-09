@@ -75,6 +75,7 @@
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/about" class="header-btn">About</a>
         <a href="/patch" class="header-btn">Changelog</a>
+        <button type="button" class="header-btn header-btn-share"><svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>Share</button>
       </nav>
     </div>
     <div class="site-meta">
@@ -106,7 +107,7 @@
         <label class="anr-dropzone-inner" for="photoInput">
           <span class="anr-drop-icon" aria-hidden="true">+</span>
           <strong><span class="drop-word">Drop</span><span class="tap-word">Pick</span> a photo or video</strong>
-          <input type="file" accept=".jpg,.jpeg,.jpe,.jfif,.png,.gif,.webp,.heic,.heif,.bmp,.tif,.tiff,.avif,.jxl,.ico,.raw,.arw,.cr2,.cr3,.nef,.dng,.raf,.rw2,.orf,.pef,.sr2,.srw,.x3f,.thm,.mp4,.m4v,.mov,.avi,.mkv,.webm,.wmv,.flv,.3gp,.mpg,.mpeg,.mts" id="photoInput" hidden>
+          <input type="file" accept="image/*,video/*,.jpg,.jpeg,.jpe,.jfif,.png,.gif,.webp,.heic,.heif,.bmp,.tif,.tiff,.avif,.jxl,.ico,.raw,.arw,.cr2,.cr3,.nef,.dng,.raf,.rw2,.orf,.pef,.sr2,.srw,.x3f,.thm,.mp4,.m4v,.mov,.avi,.mkv,.webm,.wmv,.flv,.3gp,.mpg,.mpeg,.mts" id="photoInput" hidden>
           <p class="anr-hint">JPEG &middot; HEIC &middot; PNG &middot; RAW &middot; MP4 &middot; MOV &middot; MKV &middot; WEBM &middot; AVI &middot; Folders</p>
         </label>
       </div>
@@ -115,7 +116,7 @@
         <label class="anr-dropzone-inner" for="audioInput">
           <span class="anr-drop-icon" aria-hidden="true">+</span>
           <strong><span class="drop-word">Drop</span><span class="tap-word">Pick</span> a sound</strong>
-          <input type="file" accept=".mp3,.wav,.m4a,.flac,.ogg,.opus,.aac,.wma,.aiff,.amr,.mp2,.mid,.midi" id="audioInput" hidden>
+          <input type="file" accept="audio/*,.mp3,.wav,.m4a,.flac,.ogg,.opus,.aac,.wma,.aiff,.amr,.mp2,.mid,.midi" id="audioInput" hidden>
           <p class="anr-hint">MP3 &middot; WAV &middot; M4A &middot; FLAC &middot; OGG &middot; OPUS &middot; Folders</p>
         </label>
         <div class="anr-audio-modes">
@@ -279,7 +280,7 @@
     <p class="footer-meta"><a href="https://github.com/KostaJovanovic/lab" target="_blank" rel="noopener">Source on GitHub ↗</a></p>
     <!-- No address in the source: the mailto is assembled in JS only after a
          Cloudflare Turnstile challenge passes (see wireFooterContact in app.js). -->
-    <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button><span class="footer-contact-gate" hidden></span></p>
+    <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button></p>
   </div>
 </footer>
 
