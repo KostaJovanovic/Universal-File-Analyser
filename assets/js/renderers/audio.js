@@ -458,6 +458,47 @@ function specSavePng(canvas, basename) {
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
   }, 'image/png');
 }
+
+// Modal: before saving the PNG, prompt for the export Height + Zoom rather than
+// locking the download to whatever the panel currently shows. Pre-filled from the
+// live values; calls onConfirm(heightStr, zoomStr) with the chosen options.
+function openSpecSaveModal(heightOpts, zoomOpts, curHeight, curZoom, onConfirm) {
+  const hSel = el('select', { class: 'anr-spec-save-select' }, heightOpts.map((v) => el('option', { value: v }, v + 'px')));
+  hSel.value = heightOpts.indexOf(curHeight) >= 0 ? curHeight : '720';
+  const zSel = el('select', { class: 'anr-spec-save-select' }, zoomOpts.map((v) => el('option', { value: v }, v + 'x')));
+  zSel.value = zoomOpts.indexOf(curZoom) >= 0 ? curZoom : '1';
+
+  const fields = el('div', { class: 'anr-spec-save-fields' }, [
+    el('label', { class: 'anr-spec-save-field' }, [el('span', {}, 'Height'), hSel]),
+    el('label', { class: 'anr-spec-save-field' }, [el('span', {}, 'Zoom'), zSel]),
+  ]);
+  const cancelBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, 'Cancel');
+  const okBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-ok' }, 'Download');
+  const card = el('div', { class: 'anr-modal-card' }, [
+    el('p', { class: 'anr-modal-kicker' }, 'Save PNG'),
+    el('p', { class: 'anr-modal-title' }, 'Export size for the spectrogram image.'),
+    fields,
+    el('div', { class: 'anr-modal-actions' }, [cancelBtn, okBtn]),
+  ]);
+  const overlay = el('div', { class: 'anr-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Save spectrogram' }, card);
+  document.body.appendChild(overlay);
+
+  let settled = false;
+  const close = () => {
+    if (settled) return;
+    settled = true;
+    overlay.classList.remove('is-open');
+    setTimeout(() => overlay.remove(), 200);
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  cancelBtn.addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onKey);
+  okBtn.addEventListener('click', () => { const h = hSel.value, z = zSel.value; close(); onConfirm(h, z); });
+
+  requestAnimationFrame(() => overlay.classList.add('is-open'));
+}
 // Wire fullscreen for a spectrogram card: the toggle button, a floating ✕ exit
 // button (shown only in fullscreen via CSS), and the fullscreenchange handlers.
 // `onChange(isFullscreen)` lets each panel do its own resize. Shared by both panels.
@@ -848,7 +889,23 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     sensIn.dispatchEvent(new Event('input'));  // reuse the input handler to reset state + repaint
   });
 
-  saveBtn.addEventListener('click', () => specSavePng(canvas, opts.basename));
+  saveBtn.addEventListener('click', () => {
+    const heightOpts = ['240', '320', '420', '560', '720', '900'];
+    const zoomOpts = ['1', '1.5', '2', '3', '4', '6', '8', '12', '16', '24', '32', '48'];
+    const curH = (state.height === 'fill' || !state.height) ? '720' : String(state.height);
+    const curZ = String(state.zoom);
+    openSpecSaveModal(heightOpts, zoomOpts, curH, curZ, (hVal, zVal) => {
+      // Render the chosen size off-screen from the cached spectrum so the export
+      // honours the picked Height/Zoom without disturbing the on-screen panel.
+      if (!cached || !cached.spec) { specSavePng(canvas, opts.basename); return; }
+      const w = Math.min(30000, Math.max(200, Math.round(availableWidth() * parseFloat(zVal))));
+      const h = parseInt(hVal, 10) || 320;
+      const out = el('canvas');
+      out.width = w; out.height = h;
+      renderSpectrogram(out, cached.spec, { scale: state.scale, colormap: state.cmap, dbFloor: state.dbFloor });
+      specSavePng(out, opts.basename);
+    });
+  });
 
   // opts.signal (an AbortSignal) lets the caller tear these document/window
   // listeners down when a new file is analysed, instead of leaking the cached

@@ -357,6 +357,23 @@ body:has(.patch-page) .site-header::after { margin-top: clamp(28px, 4vw, 48px); 
 }
 .header-btn:hover { background: var(--fg); color: var(--bg); }
 
+/* Share button carries an icon - lay it out inline next to the label. It's a
+   <button>, so reset the native chrome to match the <a> chips exactly. */
+.header-btn-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+.header-btn-ico {
+  width: 1em;
+  height: 1em;
+  display: block;
+  flex: none;
+}
+
 /* Canonical responsive breakpoints (CSS @media can't read custom properties, so
    these literals ARE the contract): 420px = small phone, 700px = phone, 900px =
    tablet / single-column. Header and sections both collapse at 900px. */
@@ -433,7 +450,9 @@ body.anr-has-file.anr-nav-stuck.anr-nav-live .site-nav {
   --nav-bg:   #e8e8e8;
   --nav-fg:   #0a0a0a;
   --nav-line: #c2c2c2;
-  --nav-seam: #c2c2c2;
+  /* Bottom seam stays the dark-mode hairline grey (#333, as when not stuck) so
+     the white pinned bar reads against the dark page instead of blending out. */
+  --nav-seam: #333;
   --nav-soft: #d2d2d2;
   --nav-dim:  #5a5a5a;
 }
@@ -455,6 +474,13 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   /* transition handled by the shared `.site-nav *` rule above */
 }
 .nav-link:last-of-type { border-right: none; }
+/* The search chrome carries a divider on the bar's right edge; mirror it on the
+   left so Photo gets the matching vertical rule it was missing. (Main page only -
+   the About nav has no outer dividers.) */
+body:not(:has(.about-page)) .nav-link:first-of-type { border-left: 1px solid var(--nav-line); }
+/* The right-edge divider normally comes from the search chrome's left border; when
+   the search is hidden (no file yet) Video would lose it, so close the edge here. */
+body:not(.anr-has-file):not(:has(.about-page)) .nav-link:last-of-type { border-right: 1px solid var(--nav-line); }
 .nav-link:hover { background-color: var(--nav-soft); color: var(--nav-fg); }
 .nav-link.is-active { background-color: var(--nav-fg); color: var(--nav-bg); }
 .nav-link.is-active .nav-num { color: var(--nav-bg); opacity: 0.5; }
@@ -478,11 +504,13 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   background: var(--nav-bg);
 }
 .nav-search {
-  display: flex;
+  /* Hidden until a file is analysed - revealed by body.anr-has-file below. */
+  display: none;
   align-items: stretch;
   border-left: 1px solid var(--nav-line);
   border-right: 1px solid var(--nav-line);
 }
+body.anr-has-file .nav-search { display: flex; }
 .nav-search-btn {
   background: none;
   border: none;
@@ -1904,6 +1932,71 @@ audio { width: 100%; }
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 .anr-suggest-pop.is-open { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+
+/* Post-analysis "share this" nudge - same popover language as the suggest popup,
+   but anchored bottom-LEFT so the two never collide (and they're mutually exclusive
+   anyway; see scheduleShareNudge in app.js). */
+.anr-share-nudge {
+  position: fixed;
+  left: 22px;
+  bottom: 22px;
+  transform: translateY(14px);
+  z-index: 1200;
+  width: min(320px, calc(100vw - 32px));
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  box-shadow: var(--shadow-popover);
+  padding: 12px 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.anr-share-nudge.is-open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.anr-share-nudge-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.anr-share-nudge-kicker {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.anr-share-nudge-close {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  padding: 0;
+  line-height: 1;
+  font-size: 18px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.anr-share-nudge-close:hover { color: var(--fg); }
+.anr-share-nudge-text {
+  margin: 0 0 10px;
+  font-size: var(--t-small);
+  line-height: 1.45;
+  color: var(--fg);
+}
+.anr-share-nudge-cta {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: var(--fg);
+  color: var(--bg);
+  border: none;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.anr-share-nudge-cta:hover { opacity: 0.85; }
 .anr-suggest-head {
   display: flex;
   align-items: center;
@@ -2519,8 +2612,6 @@ details[open] summary::after { content: "\2212"; }
 }
 .footer-contact:hover { color: #fff; }
 .footer-contact:disabled { cursor: default; text-decoration: none; opacity: 0.7; }
-.footer-contact-gate { display: block; margin-top: 8px; }
-.footer-contact-gate .anr-suggest-gate-status { color: rgba(255,255,255,0.55); }
 /* Cross-page nav button in the footer bottom row (About ↔ Main page). Outlined
    to match the offline buttons; text colour comes from .site-footer--about a. */
 .footer-nav-btn {
@@ -2552,6 +2643,7 @@ details[open] summary::after { content: "\2212"; }
    cross-page button (full-width on top). On the homepage the button is absent,
    so the two meta lines just stack on their own. */
 @media (max-width: 700px) {
+  /* About/Changelog (with the full-width cross-page button) still stack. */
   .footer-bottom {
     flex-direction: column;
     align-items: stretch;
@@ -2559,6 +2651,16 @@ details[open] summary::after { content: "\2212"; }
   }
   .footer-bottom .footer-nav-btn { align-self: stretch; text-align: center; }
   .footer-bottom .footer-meta:has(a[href*="github"]) { text-align: right; }
+  /* Homepage bottom row (no nav button): spread the three links edge to edge
+     instead of bunching them on one side. */
+  .footer-bottom:not(:has(.footer-nav-btn)) {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px 12px;
+  }
+  .footer-bottom:not(:has(.footer-nav-btn)) .footer-meta:has(a[href*="github"]) { text-align: center; }
 }
 
 /* ---------- ABOUT PAGE ---------- */
@@ -3929,6 +4031,111 @@ details[open] summary::after { content: "\2212"; }
 .anr-modal-cancel:hover { background: var(--surface); }
 .anr-modal-ok { background: var(--fg); color: var(--bg); }
 .anr-modal-ok:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+/* Spectrogram "Save PNG" size prompt: two labelled selects above the actions. */
+.anr-spec-save-fields { display: flex; gap: 12px; margin: 0 0 22px; }
+.anr-spec-save-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.anr-spec-save-select {
+  width: 100%;
+  padding: 9px 10px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--fg);
+}
+.anr-spec-save-select:focus { outline: none; border-color: var(--accent); }
+/* AVI frame player: runtime dropped-frame count, called out in the accent colour. */
+.anr-frame-drops { color: var(--accent); }
+/* Contact modal: the Turnstile widget sits centred between the title and the
+   status line / Close action (see openContactModal). */
+.anr-contact-card .anr-suggest-turnstile {
+  display: flex;
+  justify-content: center;
+  min-height: 65px;
+  margin-bottom: 14px;
+}
+.anr-contact-card .anr-suggest-gate-status {
+  margin: 0 0 18px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* Share modal (see openShareModal): a friendly lead line, an optional native
+   Share button, then a row of quick share targets (Copy link sits in that row as
+   a chip) above the Close action. The title carries the heading, so pull the lead
+   up under it. */
+.anr-share-lead {
+  margin: -14px 0 18px;
+  font-size: var(--t-small);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.anr-share-url {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 11px 12px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.02em;
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--fg);
+}
+.anr-share-url:focus { outline: none; border-color: var(--accent); }
+.anr-share-nativewrap { margin-bottom: 8px; }
+.anr-share-native { width: 100%; }
+/* Copy + Email sit side by side as the two primary, always-visible targets. */
+.anr-share-primary { display: flex; gap: 8px; margin-bottom: 8px; }
+.anr-share-copy { flex: 1 1 0; margin: 0; }
+.anr-share-copy:hover { background: var(--fg); color: var(--bg); }
+.anr-share-copy.is-done { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.anr-share-email { flex: 1 1 0; display: flex; align-items: center; justify-content: center; }
+/* "More platforms" toggle: full-width chip that expands the secondary targets. */
+.anr-share-more-toggle { width: 100%; margin-bottom: 8px; }
+.anr-share-more-toggle:hover { background: var(--fg); color: var(--bg); }
+.anr-share-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+/* Secondary targets stay collapsed until the toggle opens them. */
+.anr-share-more { display: none; margin-bottom: 18px; }
+.anr-share-more.is-open { display: flex; }
+.anr-share-target {
+  flex: 1 1 auto;
+  text-align: center;
+  padding: 9px 10px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  border: 1px solid var(--hairline);
+  color: var(--fg);
+  cursor: pointer;
+  background: var(--bg);
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.anr-share-target:hover { background: var(--fg); color: var(--bg); }
+/* Cancel is set apart from the share buttons by a hairline divider. */
+.anr-share-card .anr-modal-actions {
+  border-top: 1px solid var(--hairline);
+  padding-top: 18px;
+}
 
 /* ---------- Scene change detection (video) ---------- */
 .anr-scene-timeline {
