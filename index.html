@@ -80,7 +80,7 @@
     <div class="site-meta">
       <dl>
         <dt>Version</dt><dd id="versionNum">1.0</dd>
-        <dt>Status</dt><dd><span class="dot"></span> Local-only</dd>
+        <dt>Status</dt><dd class="net-status"><span class="dot"></span> <span class="net-label">Local-only</span></dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
         <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle">&#9728;&#65038; DAY</button></dd>
       </dl>
@@ -277,8 +277,9 @@
   <div class="footer-row footer-bottom">
     <p class="footer-meta">2026 &middot; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
     <p class="footer-meta"><a href="https://github.com/KostaJovanovic/lab" target="_blank" rel="noopener">Source on GitHub ↗</a></p>
-    <!-- Email shown obfuscated to deter scrapers; display-only, no mailto link. -->
-    <p class="footer-meta">Contact: <a class="footer-contact">valjdakosta[at]gmail[dot]com</a></p>
+    <!-- No address in the source: the mailto is assembled in JS only after a
+         Cloudflare Turnstile challenge passes (see wireFooterContact in app.js). -->
+    <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button><span class="footer-contact-gate" hidden></span></p>
   </div>
 </footer>
 

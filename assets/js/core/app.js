@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 73;
+const COMMIT_COUNT = 74;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -157,8 +157,70 @@ window._anrLoader = {
 // the extension - or a sample file - so the format can be supported. The address
 // is assembled at click time and never lives in static HTML, so scrapers don't
 // get a live target. Renderers reach this via window._anrSuggest.
+
+// Cloudflare Turnstile site key for lab.valjdakosta.com. This is PUBLIC by design
+// (it ships in the page source); the matching SECRET key is never used here - we
+// gate the mailto reveal client-side rather than verifying the token on a server.
+const TURNSTILE_SITEKEY = '0x4AAAAAADhXFizpfxR6y0hL';
+
+// Lazily inject the Turnstile script the first time the visitor asks to email -
+// nothing loads otherwise, so the offline PWA stays self-contained. Resolves with
+// window.turnstile, or rejects if it can't load (offline / blocked) so callers can
+// fall back to opening the mail client directly.
+let _turnstileLoad = null;
+function loadTurnstile() {
+  if (window.turnstile) return Promise.resolve(window.turnstile);
+  if (_turnstileLoad) return _turnstileLoad;
+  _turnstileLoad = new Promise((resolve, reject) => {
+    const started = performance.now();
+    const ready = () => {
+      if (window.turnstile) { resolve(window.turnstile); return true; }
+      return false;
+    };
+    const s = document.createElement('script');
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    s.async = true; s.defer = true;
+    s.onload = () => {
+      (function wait() {
+        if (ready()) return;
+        if (performance.now() - started > 5000) { reject(new Error('turnstile timeout')); return; }
+        setTimeout(wait, 50);
+      })();
+    };
+    s.onerror = () => reject(new Error('turnstile failed to load'));
+    document.head.appendChild(s);
+  });
+  // Don't cache a rejection - let a later click retry the load.
+  _turnstileLoad.catch(() => { _turnstileLoad = null; });
+  return _turnstileLoad;
+}
+
+// Run a Turnstile challenge inside `box`. Resolves once it passes; rejects with a
+// reason of 'offline' (no network / script blocked - the challenge can't run) or
+// 'failed' (rendered but errored/expired). Callers reveal the address ONLY in the
+// resolve path, so it stays hidden until a real challenge is solved. Mail needs
+// the network regardless, so offline is a hard stop, not a fallback.
+async function turnstileChallenge(box, setStatus) {
+  if (!navigator.onLine) throw 'offline';
+  let ts;
+  try { ts = await loadTurnstile(); } catch (_) { throw 'offline'; }
+  return new Promise((resolve, reject) => {
+    let wid = null;
+    const drop = () => { if (wid != null) { try { ts.remove(wid); } catch (_) {} wid = null; } };
+    wid = ts.render(box, {
+      sitekey: TURNSTILE_SITEKEY,
+      theme: 'auto',
+      callback: () => resolve(),
+      'error-callback': () => { drop(); reject('failed'); },
+      'expired-callback': () => { drop(); reject('failed'); },
+    });
+  });
+}
+
 let _suggestPopEl = null;
+let _suggestTimer = null;
 function hideSuggestPopup() {
+  if (_suggestTimer) { clearTimeout(_suggestTimer); _suggestTimer = null; }
   if (_suggestPopEl) _suggestPopEl.classList.remove('is-open');
 }
 function showSuggestPopup(ext) {
@@ -171,9 +233,13 @@ function showSuggestPopup(ext) {
     const head = el('div', { class: 'anr-suggest-head' }, [kicker, closeBtn]);
     const text = el('p', { class: 'anr-suggest-text' }, '');
     const cta = el('button', { type: 'button', class: 'anr-suggest-cta' }, 'Email a suggestion →');
-    cta.addEventListener('click', () => {
-      // Build the mailto here (not in the DOM) so the address stays out of the
-      // page source. ['valjdakosta','gmail.com'].join('@') === the real address.
+    // Turnstile widget + status line live here; hidden until the CTA is clicked.
+    const gate = el('div', { class: 'anr-suggest-gate', hidden: '' });
+
+    // The address is built ONLY here, and openMailto() is reached only from
+    // Turnstile's success callback (or the offline fallback) - so it never exists
+    // in the DOM or in scraper-reachable state until a challenge has passed.
+    const openMailto = () => {
       const addr = ['valjdakosta', 'gmail.com'].join('@');
       const subject = 'Format suggestion: ' + (_suggestPopEl._label || 'a file type');
       const body = 'Hi! Analyser couldn’t get much out of ' + (_suggestPopEl._label || 'this file type') + '.\n'
@@ -182,19 +248,126 @@ function showSuggestPopup(ext) {
       window.location.href = 'mailto:' + addr
         + '?subject=' + encodeURIComponent(subject)
         + '&body=' + encodeURIComponent(body);
+    };
+
+    const resetCta = () => {
+      cta._busy = false;
+      cta.disabled = false;
+      cta.textContent = 'Email a suggestion →';
+    };
+    cta.addEventListener('click', async () => {
+      if (cta._busy) return;
+      cta._busy = true;
+      cta.disabled = true;
+      cta.textContent = 'Verifying…';
+      gate.hidden = false;
+      gate.textContent = '';
+      const status = el('p', { class: 'anr-suggest-gate-status' }, 'Confirming you’re human…');
+      const box = el('div', { class: 'anr-suggest-turnstile' });
+      gate.appendChild(status);
+      gate.appendChild(box);
+      try {
+        await turnstileChallenge(box, (t) => { status.textContent = t; });
+        status.textContent = 'Verified - opening your mail app…';
+        cta._busy = false;
+        openMailto();
+      } catch (reason) {
+        if (reason === 'offline') {
+          status.textContent = 'You need an internet connection to send mail. Please connect to a network and try again.';
+        } else {
+          status.textContent = 'Couldn’t verify. Tap “Email a suggestion” to retry.';
+        }
+        resetCta();
+      }
     });
-    _suggestPopEl = el('div', { class: 'anr-suggest-pop', role: 'status', 'aria-live': 'polite' }, [head, text, cta]);
+
+    _suggestPopEl = el('div', { class: 'anr-suggest-pop', role: 'status', 'aria-live': 'polite' }, [head, text, cta, gate]);
     _suggestPopEl._text = text;
+    _suggestPopEl._cta = cta;
+    _suggestPopEl._gate = gate;
     document.body.appendChild(_suggestPopEl);
   }
+  // Reset the CTA/gate so a reused popup starts fresh for the new file.
+  if (_suggestPopEl._cta) {
+    _suggestPopEl._cta._busy = false;
+    _suggestPopEl._cta.disabled = false;
+    _suggestPopEl._cta.textContent = 'Email a suggestion →';
+  }
+  if (_suggestPopEl._gate) { _suggestPopEl._gate.hidden = true; _suggestPopEl._gate.textContent = ''; }
   _suggestPopEl._label = label;
   _suggestPopEl._text.textContent = (clean
     ? ('Analyser couldn’t read much from ' + label + ' files.')
     : 'Analyser couldn’t read much from this file.')
-    + ' If you’d like it supported, email me — just the extension, or attach a sample.';
-  requestAnimationFrame(() => _suggestPopEl.classList.add('is-open'));
+    + ' If you’d like it supported, email me - just the extension, or attach a sample.';
+  // Hold the nudge back ~1s so it slides in just after the analysis settles,
+  // rather than competing with the result render. A pending timer is cancelled by
+  // hideSuggestPopup() (e.g. when the next file is dropped) so it can't pop up
+  // after being dismissed.
+  if (_suggestTimer) clearTimeout(_suggestTimer);
+  _suggestTimer = setTimeout(() => {
+    _suggestTimer = null;
+    _suggestPopEl.classList.add('is-open');
+  }, 1000);
 }
 window._anrSuggest = { show: showSuggestPopup, hide: hideSuggestPopup };
+
+// Footer "Email me!" - the same Turnstile-gated reveal as the suggest popup, for
+// general contact. The address is assembled only after the challenge passes, so
+// the footer carries no scrapeable address. Re-runs each navigation (the footer
+// is swapped on SPA page change); the per-element flag guards double-wiring.
+function wireFooterContact() {
+  const btn = document.querySelector('.footer-contact');
+  if (!btn || btn._wired) return;
+  btn._wired = true;
+  const gate = btn.parentElement && btn.parentElement.querySelector('.footer-contact-gate');
+  const reset = () => { btn._busy = false; btn.disabled = false; btn.textContent = 'Email me!'; };
+  btn.addEventListener('click', async () => {
+    if (btn._busy) return;
+    btn._busy = true;
+    btn.disabled = true;
+    btn.textContent = 'Verifying…';
+    let status = null;
+    let box = el('div', { class: 'anr-suggest-turnstile' });
+    if (gate) {
+      gate.hidden = false;
+      gate.textContent = '';
+      status = el('p', { class: 'anr-suggest-gate-status' }, 'Confirming you’re human…');
+      gate.appendChild(status);
+      gate.appendChild(box);
+    } else {
+      btn.insertAdjacentElement('afterend', box);
+    }
+    const say = (t) => { if (status) status.textContent = t; };
+    try {
+      await turnstileChallenge(box, say);
+      say('Verified - opening your mail app…');
+      const addr = ['valjdakosta', 'gmail.com'].join('@');
+      window.location.href = 'mailto:' + addr + '?subject=' + encodeURIComponent('Hello from the Analyser site');
+      reset();   // mailto doesn't reload the page - re-enable for a second send
+    } catch (reason) {
+      say(reason === 'offline'
+        ? 'You need an internet connection to send mail. Please connect to a network and try again.'
+        : 'Couldn’t verify. Tap “Email me!” to retry.');
+      reset();
+    }
+  });
+}
+
+// Reflect live connectivity in the header "Status" line. The app is always
+// local-only (nothing is uploaded), but mail / Turnstile need the network, so the
+// status surfaces online vs offline. Updated on boot and on the browser's
+// online/offline events (wired once in boot).
+function updateNetStatus() {
+  const online = navigator.onLine;
+  document.querySelectorAll('.net-status').forEach((dd) => {
+    dd.classList.toggle('is-offline', !online);
+    const label = dd.querySelector('.net-label');
+    if (label) label.textContent = online ? 'Online' : 'Offline';
+    dd.title = online
+      ? 'Connected - everything still runs locally in your browser; nothing is uploaded.'
+      : 'No internet connection. Analysis still works offline; sending mail won’t.';
+  });
+}
 
 // ---------- true file-type sniffing ----------
 // Detect what a file ACTUALLY is from its leading bytes, independent of its name,
@@ -390,7 +563,6 @@ function hasFiles(e) {
 
 let _handleFile = null;
 let _scrollHandler = null;
-let _stuckObserver = null;
 
 // Splits an element's text into per-letter inline-block <span>s, each carrying a
 // base font-weight, so a proximity effect can vary letters independently. Bakes
@@ -459,6 +631,7 @@ function splitText(container, baseWeight) {
 // each entry's full bullet list for the matching line here. When you add a new
 // patch entry to patch.html, add its one-liner here too (newest at the top).
 const PATCH_TLDR = {
+  '2.14': 'The “suggest this format” prompt and a new footer “Email me!” link now run a quick human-check before they reveal the address and open your mail app, so it stays away from spam bots. The header Status line shows live Online/Offline state, the suggest-format prompt now appears for every unrecognised file (and slides in just after the results settle), and long dashes across the readouts are replaced with plain hyphens.',
   '2.13': 'The pinned menu bar flips to an animated inverted colour scheme once you open a photo, sound or video and scroll. Files that can’t be opened or only show a basic readout now offer a one-tap email to suggest the format, the spectrogram’s playback line is accurate at every zoom and you can drag to pan, full-screen gains a Fill height, and the offline-download tiers show what’s already Included and the extra space to upgrade.',
   '2.12': 'In the supported-formats popup, each group’s file extensions now sit under the group name instead of beside it, matching the About page, so long lists are easier to scan.',
   '2.11': 'Pages now have clean web addresses - /about and /patch instead of /about.html - and the old .html links redirect to them, so bookmarked and shared links always resolve.',
@@ -1329,6 +1502,10 @@ function boot() {
 
     setInterval(anrSweep, ANR_REFRESH);
 
+    // Live connectivity → header "Status" line (Online / Offline).
+    window.addEventListener('online', updateNetStatus);
+    window.addEventListener('offline', updateNetStatus);
+
     // Deep-links in the patch notes (and anywhere else) jump to an #anchor, then
     // quietly clean the hash out of the address bar a few seconds later so the URL
     // stays tidy and shareable. replaceState doesn't re-scroll, so the user stays
@@ -1376,6 +1553,10 @@ function boot() {
   setupHeaderFx();
   // Hover effect on each section's number / kicker / heading (no sweep).
   setupSectionFx();
+  // Footer "Email me!" Turnstile gate (footer is swapped on every navigation).
+  wireFooterContact();
+  // Header "Status" line reflects live connectivity (header is swapped too).
+  updateNetStatus();
 
   // link.valjdakosta.com links open in this tab - except the "Other stuff" one,
   // which keeps its confirm popup -> new tab (bound below). Runs every navigation
@@ -1415,6 +1596,15 @@ function boot() {
   const sections = links
     .map((a) => ({ a, el: document.querySelector(a.getAttribute('href')) }))
     .filter((s) => s.el);
+  // The bar is position:sticky/top:0, so its bounding top reaches 0 exactly when
+  // it pins to the viewport top. That drives the inverted palette (together with
+  // the anr-has-file / anr-nav-live body gates handled in handleFile + CSS). A
+  // direct geometry read on every scroll is 100% reliable; the previous
+  // zero-height IntersectionObserver sentinel had a zero-area target, whose
+  // intersection readings were flaky - so the bar (and its dividers) sometimes
+  // failed to flip or un-flip. Folded into the scroll-spy handler so it's one
+  // passive listener.
+  const stickyNav = document.querySelector('.site-nav');
   if (_scrollHandler) window.removeEventListener('scroll', _scrollHandler);
   _scrollHandler = () => {
     let active = null;
@@ -1425,31 +1615,17 @@ function boot() {
     // A greyed-out (disabled) nav link is never highlighted - its section isn't
     // really on the page for a non-media file.
     for (const s of sections) s.a.classList.toggle('is-active', s === active && !s.a.classList.contains('is-disabled'));
+    if (stickyNav) {
+      document.body.classList.toggle('anr-nav-stuck', stickyNav.getBoundingClientRect().top <= 0);
+    }
   };
   window.addEventListener('scroll', _scrollHandler, { passive: true });
   _scrollHandler();
-
-  // ----- Stuck-nav detection (drives the inverted-nav colours) -----
-  // The primary nav is position:sticky; it flips to its inverted palette only
-  // once a file is loaded AND it's actually pinned to the top of the viewport
-  // (CSS: body.anr-has-file.anr-nav-stuck). A zero-height sentinel sits in the
-  // nav's natural flow position right above it: while the sentinel is on screen
-  // the nav sits in place; when the sentinel scrolls off the top the nav is
-  // stuck. An IntersectionObserver is cheaper and jank-free vs. a scroll handler.
-  const stickyNav = document.querySelector('.site-nav');
-  if (stickyNav && 'IntersectionObserver' in window) {
-    let sentinel = document.querySelector('.site-nav-sentinel');
-    if (!sentinel) {
-      sentinel = document.createElement('div');
-      sentinel.className = 'site-nav-sentinel';
-      sentinel.setAttribute('aria-hidden', 'true');
-      stickyNav.parentNode.insertBefore(sentinel, stickyNav);
-    }
-    if (_stuckObserver) _stuckObserver.disconnect();
-    _stuckObserver = new IntersectionObserver(([entry]) => {
-      document.body.classList.toggle('anr-nav-stuck', !entry.isIntersecting);
-    }, { threshold: [0] });
-    _stuckObserver.observe(sentinel);
+  // Re-evaluate the stuck state on resize too (the header above the bar can change
+  // height, moving where it pins). Bound once; calls whatever the latest handler is.
+  if (!boot._stuckResizeWired) {
+    boot._stuckResizeWired = true;
+    window.addEventListener('resize', () => { if (_scrollHandler) _scrollHandler(); }, { passive: true });
   }
 
   // ----- Collapsible analysis cards -----

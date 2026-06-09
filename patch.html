@@ -66,7 +66,7 @@
     <div class="site-meta">
       <dl>
         <dt>Version</dt><dd id="versionNum">1.0</dd>
-        <dt>Status</dt><dd><span class="dot"></span> Local-only</dd>
+        <dt>Status</dt><dd class="net-status"><span class="dot"></span> <span class="net-label">Local-only</span></dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
         <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle">&#9728;&#65038; DAY</button></dd>
       </dl>
@@ -181,6 +181,18 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">2.14</p>
+          <p class="patch-name">Postmark</p>
+          <p class="patch-date">9 June 2026, 14:59</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Verified contact email.</strong> The &ldquo;suggest this format&rdquo; prompt and a new <strong>&ldquo;Email me!&rdquo;</strong> link in the footer now run a quick human-check before they reveal the address and open your mail app - so it stays away from spam bots. The address never appears in the page until you pass the check.</li>
+            <li><span class="patch-tag">New</span><strong>Live connection status.</strong> The <code>Status</code> line in the header now updates in real time - a green dot and <strong>Online</strong> when you&rsquo;re connected, a hollow dot and <strong>Offline</strong> when you&rsquo;re not. Everything still runs locally either way; only sending mail needs the internet, and the prompts now say so when you&rsquo;re offline.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Suggest-a-format prompt for every unknown file.</strong> The prompt now appears for <strong>any</strong> file Analyser doesn&rsquo;t recognise, not only ones that show a bare hex dump, and it slides in a moment after the results settle rather than competing with them.</li>
+            <li><strong>Typography tidy-up.</strong> Long dashes throughout the readouts are replaced with plain hyphens for a more consistent look.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">2.13</p>
           <p class="patch-name">Negative</p>
           <p class="patch-date">9 June 2026, 06:38</p>
@@ -203,6 +215,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">2.11</p>
           <p class="patch-name">Short Hand</p>
@@ -211,9 +226,6 @@
             <li><span class="patch-tag is-fix">Fix</span><strong>Clean web addresses.</strong> Pages now live at tidy addresses - <code>/about</code> and <code>/patch</code> rather than <code>/about.html</code> - and the old <code>.html</code> links redirect to them, so a bookmarked or shared link always lands on the right page. This refines the reload fix from the previous update.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.10</p>
@@ -1006,8 +1018,9 @@
     <a href="/" class="footer-nav-btn">&larr; Main page</a>
     <p class="footer-meta">2026 &middot; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
     <p class="footer-meta"><a href="https://github.com/KostaJovanovic/lab" target="_blank" rel="noopener">Source on GitHub ↗</a></p>
-    <!-- Email shown obfuscated to deter scrapers; display-only, no mailto link. -->
-    <p class="footer-meta">Contact: <a class="footer-contact">valjdakosta[at]gmail[dot]com</a></p>
+    <!-- No address in the source: the mailto is assembled in JS only after a
+         Cloudflare Turnstile challenge passes (see wireFooterContact in app.js). -->
+    <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button><span class="footer-contact-gate" hidden></span></p>
   </div>
 </footer>
 

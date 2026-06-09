@@ -7,7 +7,7 @@
    called (i.e. only when an EPS/PS file is actually opened), then cached for
    subsequent calls.
 
-   Vendored files (offline tier — COMPLETE only):
+   Vendored files (offline tier - COMPLETE only):
      assets/vendor/ghostscript/gs.mjs     (ESM factory; pulls browser.js + gs.js)
      assets/vendor/ghostscript/browser.js
      assets/vendor/ghostscript/gs.js

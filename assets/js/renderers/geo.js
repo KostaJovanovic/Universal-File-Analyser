@@ -16,11 +16,11 @@ function haversine(a, b) {                 // a,b = [lat, lon]
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 function fmtDist(m) {
-  if (!m) return '—';
+  if (!m) return '-';
   return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : Math.round(m) + ' m';
 }
 function fmtDuration(sec) {
-  if (!isFinite(sec) || sec <= 0) return '—';
+  if (!isFinite(sec) || sec <= 0) return '-';
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.round(sec % 60);
   return h > 0 ? h + 'h ' + m + 'm' : (m > 0 ? m + 'm ' + s + 's' : s + 's');
 }
@@ -356,7 +356,7 @@ export async function renderGeo(file, resultsEl) {
         g.features.forEach((f, i) => {
           const keys = Object.keys(f.props || {});
           const preview = keys.slice(0, 4).map((k) => k + '=' + String(f.props[k])).join(', ');
-          ptbl.appendChild(row(f.name || ('Feature ' + (i + 1)), keys.length ? preview + (keys.length > 4 ? ' …' : '') : '—'));
+          ptbl.appendChild(row(f.name || ('Feature ' + (i + 1)), keys.length ? preview + (keys.length > 4 ? ' …' : '') : '-'));
         });
       } else {
         // Union of keys + count of features carrying each.

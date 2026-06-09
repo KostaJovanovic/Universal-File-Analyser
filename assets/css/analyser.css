@@ -37,7 +37,7 @@
   --t-tiny:  11px;
   --t-micro: 10px;
 
-  /* On-dark chrome — theme-independent: these live on always-dark media
+  /* On-dark chrome - theme-independent: these live on always-dark media
      surfaces (spectrogram / waveform / fullscreen) so they do NOT get a dark
      override. */
   --media-bg:              #0a0a0a;
@@ -50,7 +50,7 @@
   --border-on-dark:        rgba(255, 255, 255, 0.15);
   --border-on-dark-strong: rgba(255, 255, 255, 0.5);
 
-  /* Token triples for alpha tints — use rgb(var(--accent-rgb) / a). */
+  /* Token triples for alpha tints - use rgb(var(--accent-rgb) / a). */
   --accent-rgb: 230, 0, 35;
   --bg-rgb:     255, 255, 255;
 
@@ -121,7 +121,7 @@ button { font-family: inherit; }
 
 ::selection { background: var(--accent); color: var(--accent-fg); }
 
-/* Keyboard focus — one accent ring on every interactive control. :focus-visible
+/* Keyboard focus - one accent ring on every interactive control. :focus-visible
    fires for keyboard / assistive-tech focus but not mouse clicks, so pointer
    users never see it. Range sliders opt out here and ring their thumb instead. */
 a:focus-visible,
@@ -238,6 +238,14 @@ body:has(.patch-page) .site-header::after { margin-top: clamp(28px, 4vw, 48px); 
   border-radius: 50%;
   vertical-align: middle;
   margin-right: 4px;
+  transition: background-color 0.25s ease;
+}
+/* Online: the connectivity dot is green (label set by updateNetStatus in app.js). */
+.site-meta dd.net-status .dot { background: #22c55e; }
+/* Offline: the dot dims to a hollow grey ring. */
+.site-meta dd.net-status.is-offline .dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--muted);
 }
 
 .site-kicker {
@@ -360,59 +368,74 @@ body:has(.patch-page) .site-header::after { margin-top: clamp(28px, 4vw, 48px); 
 }
 
 /* ---------- NAV ---------- */
-/* Zero-height marker in the nav's natural flow position; the IntersectionObserver
-   watches it to tell when the sticky nav has pinned to the top (see app.js). */
-.site-nav-sentinel { height: 0; margin: 0; padding: 0; pointer-events: none; }
+/* The primary nav owns a small, self-contained colour palette (--nav-*). Every
+   surface inside the bar - background, text, dividers, the hover wash, the active
+   pill, the search box - draws ONLY from these, never from the page-wide --bg /
+   --fg / --rule. That keeps the bar's colours in one place and lets it flip to an
+   inverted scheme by re-pointing the palette in a single rule, rather than
+   re-skinning a dozen elements.
+
+   Normal state: the palette mirrors the page (paper bar, ink text), so the bar
+   looks identical to before. The inverted state (further down) repoints the same
+   six variables, and because each variable's VALUE changes, every dependent
+   property - including each divider's border colour - re-resolves and transitions
+   together. The previous version swapped the global tokens instead, which made
+   dividers update unevenly. */
 .site-nav {
+  --nav-bg:   var(--bg);        /* bar background (paper) */
+  --nav-fg:   var(--fg);        /* text (ink) */
+  --nav-line: var(--rule);      /* the vertical dividers between cells */
+  --nav-seam: var(--hairline);  /* the 1px bottom border under the whole bar */
+  --nav-soft: var(--surface);   /* hover / pressed wash */
+  --nav-dim:  var(--muted);     /* the 01-03 numbers + search placeholder */
+
   position: -webkit-sticky;   /* older iOS Safari needs the prefix to pin */
   position: sticky;
   top: 0;
   z-index: 20;
-  background: var(--bg);
-  border-bottom: 1px solid var(--hairline);
+  background-color: var(--nav-bg);
+  border-bottom: 1px solid var(--nav-seam);
   display: grid;
   grid-template-columns: 1fr 1fr 1fr auto;
   max-width: 1440px;
   margin: 0 auto;
   padding: 0 var(--pad-x);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
-/* Inverted primary nav - ONLY once a file is loaded (body.anr-has-file), the bar
-   is stuck to the top of the viewport (body.anr-nav-stuck, toggled by an
-   IntersectionObserver sentinel), AND at least one section link is still live
-   rather than greyed out (body.anr-nav-live - a non-media file disables all three
-   links, and a bar of dimmed text shouldn't invert). Swapping the tokens flips the
-   whole bar - text, dividers, hover, the active pill, the search box - to the
-   opposite of the page. It tracks the theme (a near-black bar in light mode, a
-   near-white bar in dark mode). Custom props can't cross-reference --fg/--bg on
-   the same element (that's a resolution cycle), so the inverted values are spelled
-   out per theme; they mirror the opposite theme's surface palette. --hairline is
-   left alone so the bottom seam stays crisp. */
-/* Animate the invert <-> normal swap: every nav surface that reads a swapped
-   token (background, text, dividers) eases between the two states over 0.3s, so
-   the whole bar flips together instead of the background sliding while the text
-   snaps. Applied to the bar and its descendants. */
-.site-nav,
-.site-nav .nav-link,
-.site-nav .nav-num,
-.site-nav .nav-search,
-.site-nav .nav-search-btn,
-.site-nav .nav-search-input,
-.site-nav .nav-search-arrow {
-  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+/* The same easing on EVERY descendant (background, text, dividers, search chrome)
+   so the whole bar flips between the two palettes in lockstep over 0.3s instead of
+   the background sliding while a divider snaps. opacity stays fast (0.15s) so the
+   search-button/arrow hover fade isn't slowed. The per-element transitions these
+   elements used to carry were removed so this single rule governs them uniformly -
+   that uneven mix of durations/properties was part of why dividers lagged. */
+.site-nav * {
+  transition: background-color 0.3s ease, color 0.3s ease,
+              border-color 0.3s ease, opacity 0.15s ease;
 }
+/* Inverted palette - applied ONLY when all three hold:
+     body.anr-has-file   a file has been loaded,
+     body.anr-nav-stuck  the bar is pinned to the top of the viewport,
+     body.anr-nav-live   at least one section link is still live (a non-media file
+                         greys every link, and a bar of dimmed text shouldn't flip).
+   Re-pointing the six --nav-* variables flips the entire bar at once. The values
+   are spelled out per theme (a near-black bar in light mode, near-white in dark)
+   - including --nav-seam, so the bottom divider inverts with everything else
+   instead of being left behind as a stray line. */
 body.anr-has-file.anr-nav-stuck.anr-nav-live .site-nav {
-  --bg:      #0a0a0a;
-  --fg:      #f4f4f4;
-  --surface: #1f1f1f;
-  --rule:    #383838;
-  --muted:   #9a9a9a;
+  --nav-bg:   #0a0a0a;
+  --nav-fg:   #f4f4f4;
+  --nav-line: #383838;
+  --nav-seam: #383838;
+  --nav-soft: #1f1f1f;
+  --nav-dim:  #9a9a9a;
 }
 :root[data-theme="dark"] body.anr-has-file.anr-nav-stuck.anr-nav-live .site-nav {
-  --bg:      #e8e8e8;
-  --fg:      #0a0a0a;
-  --surface: #d2d2d2;
-  --rule:    #c2c2c2;
-  --muted:   #5a5a5a;
+  --nav-bg:   #e8e8e8;
+  --nav-fg:   #0a0a0a;
+  --nav-line: #c2c2c2;
+  --nav-seam: #c2c2c2;
+  --nav-soft: #d2d2d2;
+  --nav-dim:  #5a5a5a;
 }
 /* About page nav is just the 3 section links (Why / Where / What) - no home or
    search chrome - so size it to 3 equal columns instead of the home+links+search
@@ -422,19 +445,19 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   min-width: 0;
   padding: 16px 4px;
   text-decoration: none;
-  color: var(--fg);
+  color: var(--nav-fg);
   font-size: var(--t-small);
   font-weight: 500;
-  border-right: 1px solid var(--rule);
+  border-right: 1px solid var(--nav-line);
   display: flex;
   align-items: baseline;
   gap: 10px;
-  transition: background 0.12s ease, color 0.12s ease;
+  /* transition handled by the shared `.site-nav *` rule above */
 }
 .nav-link:last-of-type { border-right: none; }
-.nav-link:hover { background: var(--surface); color: var(--fg); }
-.nav-link.is-active { background: var(--fg); color: var(--bg); }
-.nav-link.is-active .nav-num { color: var(--bg); opacity: 0.5; }
+.nav-link:hover { background-color: var(--nav-soft); color: var(--nav-fg); }
+.nav-link.is-active { background-color: var(--nav-fg); color: var(--nav-bg); }
+.nav-link.is-active .nav-num { color: var(--nav-bg); opacity: 0.5; }
 /* Greyed-out + unresponsive when the link's section isn't on the page (e.g. the
    analysed file isn't photo/audio/video). Home and Search are separate controls. */
 .nav-link.is-disabled {
@@ -452,22 +475,22 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   margin-left: auto;
 }
 .nav-link.is-active.has-data::after {
-  background: var(--bg);
+  background: var(--nav-bg);
 }
 .nav-search {
   display: flex;
   align-items: stretch;
-  border-left: 1px solid var(--rule);
-  border-right: 1px solid var(--rule);
+  border-left: 1px solid var(--nav-line);
+  border-right: 1px solid var(--nav-line);
 }
 .nav-search-btn {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--fg);
+  color: var(--nav-fg);
   opacity: 0.5;
   height: 46px;
-  transition: opacity 0.15s ease;
+  /* colour + opacity transitions handled by the shared `.site-nav *` rule */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -482,8 +505,8 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   background: transparent;
-  color: var(--fg);
-  border: 1px solid var(--hairline);
+  color: var(--nav-fg);
+  border: 1px solid var(--nav-seam);   /* matches the original --hairline framing */
   border-radius: 0;
   outline: none;
   display: none;
@@ -496,7 +519,7 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
 }
 .nav-search-input:focus { border-color: var(--accent); }
 .nav-search-input::placeholder {
-  color: var(--muted);
+  color: var(--nav-dim);
   opacity: 0.4;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -508,7 +531,7 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--fg);
+  color: var(--nav-fg);
   font-size: 18px;
   line-height: 1;
   padding: 0;
@@ -516,10 +539,10 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
   align-items: center;
   justify-content: center;
   opacity: 0.5;
-  transition: opacity 0.15s ease, background 0.15s ease;
+  /* colour + opacity transitions handled by the shared `.site-nav *` rule */
 }
-.nav-search.is-open .nav-search-arrow:hover { opacity: 1; background: var(--surface); }
-.nav-search.is-open .nav-search-arrow:active { opacity: 1; background: var(--fg); color: var(--bg); }
+.nav-search.is-open .nav-search-arrow:hover { opacity: 1; background-color: var(--nav-soft); }
+.nav-search.is-open .nav-search-arrow:active { opacity: 1; background-color: var(--nav-fg); color: var(--nav-bg); }
 .nav-search-arrow:hover { opacity: 1; }
 .search-overlay { display: none; }
 @media (max-width: 700px) {
@@ -604,7 +627,7 @@ body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
 .nav-num {
   font-family: var(--font-mono);
   font-size: var(--t-tiny);
-  color: var(--muted);
+  color: var(--nav-dim);
   letter-spacing: 0.08em;
 }
 
@@ -1926,6 +1949,18 @@ audio { width: 100%; }
   transition: opacity 0.15s ease;
 }
 .anr-suggest-cta:hover { opacity: 0.85; }
+.anr-suggest-cta:disabled { cursor: default; opacity: 0.6; }
+/* Turnstile gate: revealed under the CTA on click; the mailto is only assembled
+   once the challenge passes (see showSuggestPopup in app.js). */
+.anr-suggest-gate { margin-top: 10px; }
+.anr-suggest-gate-status {
+  margin: 0 0 8px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.anr-suggest-turnstile { min-height: 65px; }
 /* The drop loader's bar: a continuously scrolling strip of accent slashes
    inside brackets ([////////]). The motion is a pure CSS `transform`, NOT a
    requestAnimationFrame loop - rAF runs on the main thread, so it froze
@@ -2470,6 +2505,22 @@ details[open] summary::after { content: "\2212"; }
 }
 .footer-bottom .footer-meta { color: rgba(255,255,255,0.4); }
 .footer-bottom .footer-meta a { color: rgba(255,255,255,0.5); }
+/* "Email me!" - a plain text button (no scrapeable address) that reveals the
+   mailto only after a Turnstile challenge passes (see wireFooterContact). */
+.footer-contact {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  color: rgba(255,255,255,0.7);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.footer-contact:hover { color: #fff; }
+.footer-contact:disabled { cursor: default; text-decoration: none; opacity: 0.7; }
+.footer-contact-gate { display: block; margin-top: 8px; }
+.footer-contact-gate .anr-suggest-gate-status { color: rgba(255,255,255,0.55); }
 /* Cross-page nav button in the footer bottom row (About ↔ Main page). Outlined
    to match the offline buttons; text colour comes from .site-footer--about a. */
 .footer-nav-btn {
@@ -3671,7 +3722,7 @@ details[open] summary::after { content: "\2212"; }
 /* ---------- NAV FLASH (E6) ---------- */
 @keyframes anr-nav-flash {
   0%   { background: var(--accent); color: var(--accent-fg); }
-  100% { background: transparent;   color: var(--fg); }
+  100% { background: transparent;   color: var(--nav-fg); }
 }
 .nav-link.is-flash {
   animation: anr-nav-flash 0.6s ease-out;

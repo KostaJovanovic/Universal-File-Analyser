@@ -5,7 +5,7 @@
 import { el, row, rowHelp, h3help, errorCard, fmtBytes } from '../core/util.js';
 
 function fmtTime(sec) {
-  if (sec == null || !isFinite(sec)) return '—';
+  if (sec == null || !isFinite(sec)) return '-';
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;

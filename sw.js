@@ -1,7 +1,7 @@
 ﻿/* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v73';
+const VERSION = 'analyser-v74';
 const SHELL = [
   './',
   './about',
@@ -77,9 +77,22 @@ const SHELL = [
   './assets/vendor/exifr.umd.js'
 ];
 
+// Cloudflare Turnstile script - cross-origin and CORS-less, so it can't go in the
+// addAll() SHELL (that would fail the whole install). Precache it best-effort with
+// a no-cors fetch + cache.put (which accepts opaque responses); any failure is
+// swallowed so install still succeeds. The challenge itself still needs the
+// network at run time - this just makes the script itself available.
+const TURNSTILE_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+function precacheTurnstile(cache) {
+  return fetch(new Request(TURNSTILE_URL, { mode: 'no-cors' }))
+    .then((res) => cache.put(TURNSTILE_URL, res))
+    .catch(() => {});
+}
+
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(VERSION).then((c) => c.addAll(SHELL))
+    caches.open(VERSION)
+      .then((c) => c.addAll(SHELL).then(() => precacheTurnstile(c)))
       .then(() => self.skipWaiting())
   );
 });

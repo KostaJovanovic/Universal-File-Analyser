@@ -206,7 +206,7 @@ async function parseDicom(file) {
           found[want] = raw;
         }
       }
-      // Stop once we hit pixel data (7FE0,0010) — record where it lives and stop.
+      // Stop once we hit pixel data (7FE0,0010) - record where it lives and stop.
       if (group === 0x7fe0 && elem === 0x0010) {
         // `pos` is the byte offset of the pixel data value within the file
         // (buf starts at file offset 0). len may be the full frame size, or
@@ -247,7 +247,7 @@ async function parseDicom(file) {
   const uncompressed = tsClean === '' || tsClean === '1.2.840.10008.1.2' ||
     tsClean === '1.2.840.10008.1.2.1' || tsClean === '1.2.840.10008.1.2.2';
   if (!uncompressed) {
-    out['Pixel data'] = 'compressed (' + (TRANSFER_SYNTAX[tsClean] || tsClean) + ') — not rendered';
+    out['Pixel data'] = 'compressed (' + (TRANSFER_SYNTAX[tsClean] || tsClean) + ') - not rendered';
   } else {
     out['Pixel data'] = 'uncompressed';
     try {
@@ -331,7 +331,7 @@ async function renderDicomPreview(file, found, px) {
 }
 
 // ============================================================================
-// FIT (.fit) — Garmin / ANT. Disambiguated from FITS via SIMPLE sniff.
+// FIT (.fit) - Garmin / ANT. Disambiguated from FITS via SIMPLE sniff.
 // ============================================================================
 function parseFit(head, file) {
   // FITS astronomy files reuse .fit; their header begins "SIMPLE  =".
@@ -362,7 +362,7 @@ function parseFit(head, file) {
 }
 
 // ============================================================================
-// FITS (.fits / .fts / .fit-as-FITS) — 2880-byte header cards.
+// FITS (.fits / .fts / .fit-as-FITS) - 2880-byte header cards.
 // ============================================================================
 function fitsCards(buf) {
   // Cards are 80-byte fixed records of "KEYWORD = value / comment".
@@ -476,7 +476,7 @@ async function renderFitsImage(file, h) {
 }
 
 // ============================================================================
-// TCX (.tcx) — Training Center XML
+// TCX (.tcx) - Training Center XML
 // ============================================================================
 async function parseTcx(file) {
   const text = await readText(file, 8_000_000);
@@ -955,7 +955,7 @@ async function parseSav(file) {
       if (nMissing > 3 || nMissing < -3) nMissing = 0;
       pos += Math.abs(nMissing) * 8;
     } else if (rt === 3 || rt === 6 || rt === 7) {
-      break; // value labels / docs / extension — stop name harvest
+      break; // value labels / docs / extension - stop name harvest
     } else { break; }
   }
   if (names.length) {
@@ -1174,7 +1174,7 @@ async function renderNiftiSlice(file, h) {
   let dv;
   const sig = await readSlice(file, 0, 2);
   if (sig.length >= 2 && sig[0] === 0x1f && sig[1] === 0x8b) {
-    // .nii.gz — gunzip up to where the slice ends (cap to keep memory sane).
+    // .nii.gz - gunzip up to where the slice ends (cap to keep memory sane).
     const need = Math.ceil(sliceStart + sliceBytes);
     const cap = Math.min(file.size, 256 * 1024 * 1024);
     const inflated = await gunzip(await readSlice(file, 0, cap));
@@ -1197,7 +1197,7 @@ async function renderNiftiSlice(file, h) {
 }
 
 // ============================================================================
-// Identification-only (rare AND hard) — {Format, Note}
+// Identification-only (rare AND hard) - {Format, Note}
 // ============================================================================
 function idOnly(format, note) { return () => ({ 'Format': format, 'Note': note }); }
 

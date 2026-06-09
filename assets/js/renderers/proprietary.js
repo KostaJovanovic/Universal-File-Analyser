@@ -1367,26 +1367,26 @@ async function parseXmp(file) {
 // e.g. a STEP file's own "Description" field isn't given the PE meaning).
 const PE_HELP = {
   'Format': 'The Portable Executable format and bitness of this file: PE32 = 32-bit, PE32+ = 64-bit. This describes the executable itself.',
-  'Architecture': 'The CPU the executable’s own machine code targets (x86 = 32-bit, x64 = 64-bit, ARM64). Note: software installers (NSIS, Inno Setup, …) are usually 32-bit stubs even when the program they install is 64-bit — so a file named "win64" can correctly read as 32-bit here.',
-  'Sections': 'Number of PE sections — contiguous regions such as code (.text), data (.data) and resources (.rsrc) the loader maps into memory.',
+  'Architecture': 'The CPU the executable’s own machine code targets (x86 = 32-bit, x64 = 64-bit, ARM64). Note: software installers (NSIS, Inno Setup, …) are usually 32-bit stubs even when the program they install is 64-bit - so a file named "win64" can correctly read as 32-bit here.',
+  'Sections': 'Number of PE sections - contiguous regions such as code (.text), data (.data) and resources (.rsrc) the loader maps into memory.',
   'Compile date': 'The timestamp the linker wrote into the PE header at build time. It can be zeroed or forged, so treat it as a hint.',
   'Characteristics': 'COFF header flags describing the image: whether it’s an EXE or DLL, large-address-aware, relocations stripped, and so on.',
   'Section names': 'The names of the PE sections. Unusual names hint at the toolchain or a packer (e.g. UPX0/UPX1 = UPX-packed; .ndata = NSIS installer).',
-  'Linker version': 'Version of the linker that produced the file — often maps to the Visual Studio / toolchain version used.',
+  'Linker version': 'Version of the linker that produced the file - often maps to the Visual Studio / toolchain version used.',
   'Subsystem': 'The environment the executable expects: Windows GUI, Console, native driver, EFI application, etc.',
   'Subsystem version': 'Minimum OS subsystem version required to load and run the image.',
-  'Image size': 'Total size the image occupies in memory once loaded — not the file size on disk.',
+  'Image size': 'Total size the image occupies in memory once loaded - not the file size on disk.',
   'Security mitigations': 'Exploit-mitigation flags compiled into the binary: ASLR, DEP/NX, Control Flow Guard, Force-Integrity, No-SEH, and similar.',
   'Entry point': 'The relative virtual address where execution begins after the loader maps the image.',
-  '.NET': 'The file carries a .NET CLR header — it’s a managed (.NET) assembly rather than pure native code.',
+  '.NET': 'The file carries a .NET CLR header - it’s a managed (.NET) assembly rather than pure native code.',
   'Imported DLLs': 'How many external DLLs the executable links against, counted from its import table.',
   'File version': 'The file’s version number from its VS_VERSIONINFO resource (FILEVERSION).',
   'Product version': 'The version of the product this file belongs to, from VS_VERSIONINFO (PRODUCTVERSION).',
   'Product name': 'The product name declared in the file’s version resource.',
-  'Description': 'The file description from the version resource — what the vendor calls this binary.',
+  'Description': 'The file description from the version resource - what the vendor calls this binary.',
   'Company': 'The publisher / company name from the version resource.',
   'Copyright': 'The legal copyright string from the version resource.',
-  'Original filename': 'The name the file was built as, from the version resource — useful when a file has since been renamed.',
+  'Original filename': 'The name the file was built as, from the version resource - useful when a file has since been renamed.',
   'Internal name': 'The internal module name from the version resource.',
   'Installer': 'The installer framework that produced this executable. Installer stubs are typically 32-bit even when they deploy 64-bit software.'
 };
@@ -1981,7 +1981,7 @@ async function parseSqlite(buf, file) {
           const cols = el('div', {});
           for (const tb of a.tables) {
             cols.appendChild(el('div', { class: 'anr-readout-section' },
-              tb.name + (tb.rows != null ? ' — ' + Number(tb.rows).toLocaleString() + ' rows' : '')));
+              tb.name + (tb.rows != null ? ' - ' + Number(tb.rows).toLocaleString() + ' rows' : '')));
             const ct = el('table', { class: 'anr-readout' });
             for (const c of tb.cols) ct.appendChild(row(c.name + (c.pk ? ' (PK)' : ''), c.type));
             cols.appendChild(ct);
@@ -2005,7 +2005,7 @@ async function parseSqlite(buf, file) {
             st.appendChild(tr);
           }
           wrap.appendChild(st);
-          sections.push({ title: 'Sample data — ' + a.sample.table + ' (first 5 rows)', node: wrap });
+          sections.push({ title: 'Sample data - ' + a.sample.table + ' (first 5 rows)', node: wrap });
         }
         if (sections.length) out._sections = sections;
       }
@@ -3588,7 +3588,7 @@ async function parseCtg(file) {
     }
   }
 
-  fields['Contains'] = 'Index only — no image data';
+  fields['Contains'] = 'Index only - no image data';
   return fields;
 }
 
@@ -3805,7 +3805,7 @@ async function parseDiskImage(file) {
             const first = Number(edv.getBigUint64(0x20, true)), last = Number(edv.getBigUint64(0x28, true));
             let nm = '';
             for (let c = 0; c < 36; c++) { const ch = arr[i + 0x38 + c * 2] | (arr[i + 0x38 + c * 2 + 1] << 8); if (!ch) break; nm += String.fromCharCode(ch); }
-            list.push((nm || 'Partition') + ' — ' + fmtBytes((last - first + 1) * 512));
+            list.push((nm || 'Partition') + ' - ' + fmtBytes((last - first + 1) * 512));
           }
           fields['Partitions'] = String(list.length);
           list.slice(0, 8).forEach((p, i) => { fields['Partition ' + (i + 1)] = p; });
@@ -3817,7 +3817,7 @@ async function parseDiskImage(file) {
         fields['Partitions'] = String(parts.length);
         parts.forEach((pt, i) => {
           fields['Partition ' + (i + 1)] = (MBR_PART_TYPES[pt.type] || ('type 0x' + pt.type.toString(16))) +
-            ' — ' + fmtBytes(pt.count * 512) + (pt.active ? ' (active)' : '');
+            ' - ' + fmtBytes(pt.count * 512) + (pt.active ? ' (active)' : '');
         });
         // Decode the first partition's filesystem from its boot sector.
         const first = parts[0];
@@ -3830,7 +3830,7 @@ async function parseDiskImage(file) {
         fields['Partitioning'] = 'None (boot signature only)';
       }
     } else {
-      fields['Note'] = 'No MBR/VBR signature — raw or unrecognised image';
+      fields['Note'] = 'No MBR/VBR signature - raw or unrecognised image';
     }
   } catch (_) { /* best-effort; show whatever we gathered */ }
   fields['Image size'] = fmtBytes(file.size);
@@ -3856,7 +3856,7 @@ async function parseRec(file) {
       if (tool) fields['Tool'] = tool + (ver ? ' ' + ver : '');
       const t = g(/<recfiletime>([^<]+)/i); if (t) fields['Saved'] = t;
       const name = g(/<name>([^<]+)/i), kind = g(/<kind>([^<]+)/i);
-      if (name || kind) fields['Source'] = [name, kind].filter(Boolean).join(' — ');
+      if (name || kind) fields['Source'] = [name, kind].filter(Boolean).join(' - ');
       const from = g(/<fromsector>(\d+)/i), to = g(/<tosector>(\d+)/i);
       if (to) { const sec = (+to) - (+(from || 0)) + 1; fields['Imaged range'] = (+(from || 0)) + '–' + to + ' sectors (' + fmtBytes(sec * 512) + ')'; }
       const id = g(/<recoveryid>([^<]+)/i); if (id) fields['Recovery ID'] = id;

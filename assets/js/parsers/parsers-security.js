@@ -417,12 +417,12 @@ function parsePcapng(head) {
   };
 }
 
-// ---------- PKCS#12 / PFX (.p12 / .pfx) — inline ASN.1 DER walker ----------
+// ---------- PKCS#12 / PFX (.p12 / .pfx) - inline ASN.1 DER walker ----------
 //
 // PKCS#12 PFX is DER-encoded. We can't decrypt the contents (they're PBE/MAC
 // protected), but the ASN.1 *envelope* is plaintext: version, the authSafe
-// ContentInfo, macData (algorithm + iterations), and — by scanning OIDs across
-// the whole DER blob — the SafeBag types (certBag / keyBag / shrouded keyBag)
+// ContentInfo, macData (algorithm + iterations), and - by scanning OIDs across
+// the whole DER blob - the SafeBag types (certBag / keyBag / shrouded keyBag)
 // and the PBE/encryption algorithm. That's enough to surface useful facts.
 
 // Minimal DER reader. Parses tag/length/value (definite length only). Returns a
@@ -604,10 +604,10 @@ async function parseP12(file) {
     // If we found no recognisable bags or encryption (e.g. an unusual layout we
     // couldn't see into), still report the structure we did parse.
     if (!certs && !hasKey && !encAlgos.length) {
-      out['Note'] = 'PBE/MAC-protected — bag contents are encrypted and could not be enumerated.';
+      out['Note'] = 'PBE/MAC-protected - bag contents are encrypted and could not be enumerated.';
     }
     if (shrouded || authType === PKCS7_ENCRYPTED_DATA || hasKey) {
-      out['⚠ Warning'] = 'Password-protected — holds a private key; keep secret';
+      out['⚠ Warning'] = 'Password-protected - holds a private key; keep secret';
     }
     return out;
   } catch (_) {
@@ -618,7 +618,7 @@ async function parseP12(file) {
 // Walk the DER tree under [start,end) and invoke cb(oidString) for every OID
 // (tag 0x06) found, recursing into constructed nodes. PKCS#12 wraps each
 // SafeContents inside a primitive OCTET STRING (PKCS#7 `data`), so we also try
-// to descend into OCTET STRINGs whose bytes themselves start a DER SEQUENCE —
+// to descend into OCTET STRINGs whose bytes themselves start a DER SEQUENCE -
 // that's where the certBag / keyBag OIDs live. Bounded & try/catch-safe.
 function walkOids(b, start, end, cb, depth) {
   if (depth > 40) return;              // recursion guard
@@ -649,8 +649,8 @@ function walkOids(b, start, end, cb, depth) {
 function p12Fallback() {
   return {
     'Format': 'PKCS#12 / PFX bundle',
-    'Note': 'Encrypted key + certificate bundle (PBE/MAC protected). ASN.1 envelope could not be decoded — identification only. Holds a PRIVATE key; password-protected.',
-    '⚠ Warning': 'Password-protected — holds a private key; keep secret',
+    'Note': 'Encrypted key + certificate bundle (PBE/MAC protected). ASN.1 envelope could not be decoded - identification only. Holds a PRIVATE key; password-protected.',
+    '⚠ Warning': 'Password-protected - holds a private key; keep secret',
   };
 }
 
@@ -1207,7 +1207,7 @@ export const PARSERS = {
   pcapng: (c) => parsePcapng(c.head),
   ntar:   (c) => parsePcapng(c.head),
 
-  // PKCS#12 / PFX — inline ASN.1 DER walker reads the (plaintext) envelope.
+  // PKCS#12 / PFX - inline ASN.1 DER walker reads the (plaintext) envelope.
   p12: (c) => parseP12(c.file),
   pfx: (c) => parseP12(c.file),
 

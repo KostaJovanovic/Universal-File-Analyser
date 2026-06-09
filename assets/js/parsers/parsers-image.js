@@ -523,7 +523,7 @@ function decodePcx(b, h) {
         rgba[d + 3] = 255;
       }
     }
-  } else if (bpp === 1) {                     // 1-bit, up to 4 planes (EGA/16-colour) — handle 1 plane mono + header palette
+  } else if (bpp === 1) {                     // 1-bit, up to 4 planes (EGA/16-colour) - handle 1 plane mono + header palette
     const hdrPal = b.subarray(16, 64);        // 16-colour EGA palette
     for (let y = 0; y < height; y++) {
       const base = y * totalPerRow;
@@ -541,7 +541,7 @@ function decodePcx(b, h) {
       }
     }
   } else {
-    return null;   // unusual bit layout — metadata only
+    return null;   // unusual bit layout - metadata only
   }
   return canvasFromRGBA(rgba, width, height);
 }

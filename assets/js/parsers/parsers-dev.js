@@ -338,7 +338,7 @@ async function parseSql(file) {
       node.appendChild(el('div', { class: 'anr-readout-section' }, t.name + ' (' + t.cols.length + ' columns)'));
       node.appendChild(preBlock(t.cols.join('\n') || '(no columns parsed)'));
     }
-    out._sections = [{ title: 'Schema — ' + tables.length + ' table' + (tables.length > 1 ? 's' : ''), node, open: true }];
+    out._sections = [{ title: 'Schema - ' + tables.length + ' table' + (tables.length > 1 ? 's' : ''), node, open: true }];
   }
   return out;
 }

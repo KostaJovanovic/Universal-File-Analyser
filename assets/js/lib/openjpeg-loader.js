@@ -23,7 +23,7 @@
 import { loadScript } from '../core/util.js';
 
 // Paths to the vendored assets, relative to the document (works from / and
-// /about.html — both live at the site root).
+// /about.html - both live at the site root).
 const WASM_URL = 'assets/vendor/openjpeg/openjpegwasm.wasm';
 const JS_URL = 'assets/vendor/openjpeg/openjpegwasm.js';
 
@@ -44,7 +44,7 @@ async function getModule() {
       locateFile: (path) => (path && path.endsWith('.wasm')) ? WASM_URL : path,
     });
   })();
-  // Don't cache a rejected promise — allow a later retry.
+  // Don't cache a rejected promise - allow a later retry.
   _modulePromise.catch(() => { _modulePromise = null; });
   return _modulePromise;
 }
