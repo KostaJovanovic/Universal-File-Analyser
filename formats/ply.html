@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>.PLY file - what it is and how to open it | Analyser</title>
-  <meta name="description" content="PLY (Polygon File Format) stores 3D meshes and point clouds, often with per-vertex colour. Open and inspect a .PLY file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="description" content="PLY (Polygon File Format) stores 3D meshes and point clouds, often with per-vertex colour. Common in 3D scanning. Open and inspect a .PLY file free in your browser with Analyser - nothing is uploaded.">
   <link rel="canonical" href="https://lab.valjdakosta.com/formats/ply">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
@@ -12,7 +12,7 @@
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
   <meta property="og:title" content=".PLY file - what it is and how to open it | Analyser">
-  <meta property="og:description" content="PLY (Polygon File Format) stores 3D meshes and point clouds, often with per-vertex colour. Open and inspect a .PLY file free in your browser with Analyser - nothing is uploaded.">
+  <meta property="og:description" content="PLY (Polygon File Format) stores 3D meshes and point clouds, often with per-vertex colour. Common in 3D scanning. Open and inspect a .PLY file free in your browser with Analyser - nothing is uploaded.">
   <meta property="og:url" content="https://lab.valjdakosta.com/formats/ply">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta property="og:image:width" content="1200">
@@ -20,14 +20,14 @@
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content=".PLY file - what it is and how to open it | Analyser">
-  <meta name="twitter:description" content="PLY (Polygon File Format) stores 3D meshes and point clouds, often with per-vertex colour. Open and inspect a .PLY file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="twitter:description" content="PLY (Polygon File Format) stores 3D meshes and point clouds, often with per-vertex colour. Common in 3D scanning. Open and inspect a .PLY file free in your browser with Analyser - nothing is uploaded.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <link rel="icon" href="/assets/img/favicon.png" type="image/png">
   <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .PLY file?","acceptedAnswer":{"@type":"Answer","text":"PLY (Polygon File Format) stores 3D meshes and point clouds, often with per-vertex colour."}},{"@type":"Question","name":"How do I open a .PLY file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .PLY file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. View STL, OBJ, PLY, OFF, STEP, IGES, BREP, 3MF and AMF models in an interactive WebGL viewer with triangle count, bounding box, surface area and volume. STEP/IGES/BREP are tessellated with OpenCASCADE and STEP shows its originating CAD system, version and AP203/214/242 protocol; 3MF and AMF let you inspect each model and assembly on the build plate individually."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .PLY file?","acceptedAnswer":{"@type":"Answer","text":"PLY (Polygon File Format) stores 3D meshes and point clouds, often with per-vertex colour. Common in 3D scanning. PLY was created at Stanford in the 1990s and is famous for storing the Stanford Bunny scan. PLY was devised at Stanford in the mid-1990s by Greg Turk to store the scanned 3D models the university’s graphics lab was producing. A PLY file can be saved as human-readable ASCII or as compact little-endian or big-endian binary, with the choice declared on the header’s format line. PLY’s flexible element-and-property header lets it carry extra per-vertex data such as colour, surface normals, transparency and texture coordinates. Beyond solid meshes, PLY is widely used to hold raw point clouds from laser scanners and photogrammetry, where there are vertices but no faces."}},{"@type":"Question","name":"How do I open a .PLY file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .PLY file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. View STL, OBJ, PLY, OFF, STEP, IGES, BREP, 3MF and AMF models in an interactive WebGL viewer with triangle count, bounding box, surface area and volume. STEP/IGES/BREP are tessellated with OpenCASCADE and STEP shows its originating CAD system, version and AP203/214/242 protocol; 3MF and AMF let you inspect each model and assembly on the build plate individually."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".PLY","item":"https://lab.valjdakosta.com/formats/ply"}]}
@@ -71,16 +71,23 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/obj" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/off" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
       <div class="section-content">
         <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.PLY</span></p>
         <h2 class="section-head">What is a .PLY file?</h2>
-        <p class="section-lede">PLY (Polygon File Format) stores 3D meshes and point clouds, often with per-vertex colour.</p>
+        <p class="section-lede">PLY (Polygon File Format) stores 3D meshes and point clouds, often with per-vertex colour. Common in 3D scanning.</p>
 
         <div class="about-block">
           <dl class="about-caps">
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>PLY was created at Stanford in the 1990s and is famous for storing the Stanford Bunny scan.</li><li>PLY was devised at Stanford in the mid-1990s by Greg Turk to store the scanned 3D models the university’s graphics lab was producing.</li><li>A PLY file can be saved as human-readable ASCII or as compact little-endian or big-endian binary, with the choice declared on the header’s format line.</li><li>PLY’s flexible element-and-property header lets it carry extra per-vertex data such as colour, surface normals, transparency and texture coordinates.</li><li>Beyond solid meshes, PLY is widely used to hold raw point clouds from laser scanners and photogrammetry, where there are vertices but no faces.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>View STL, OBJ, PLY, OFF, STEP, IGES, BREP, 3MF and AMF models in an interactive WebGL viewer with triangle count, bounding box, surface area and volume. STEP/IGES/BREP are tessellated with OpenCASCADE and STEP shows its originating CAD system, version and AP203/214/242 protocol; 3MF and AMF let you inspect each model and assembly on the build plate individually.</dd></div>
             <div><dt>Open a .PLY file</dt><dd>Drag a .PLY file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd><a href="/formats/stl">.STL</a> &middot; <a href="/formats/obj">.OBJ</a> &middot; <a href="/formats/off">.OFF</a> &middot; <a href="/formats/step">.STEP</a> &middot; <a href="/formats/stp">.STP</a> &middot; <a href="/formats/iges">.IGES</a> &middot; <a href="/formats/igs">.IGS</a> &middot; <a href="/formats/brep">.BREP</a> &middot; <a href="/formats/3mf">.3MF</a> &middot; <a href="/formats/amf">.AMF</a>. See <a href="/formats">all supported file types</a>.</dd></div>

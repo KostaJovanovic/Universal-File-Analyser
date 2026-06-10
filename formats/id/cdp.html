@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>.CDP file - what it is and how to identify it | Analyser</title>
-  <meta name="description" content=".CDP files belong to the &quot;Engineering&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .CDP file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="description" content="CDP is shared by two unrelated tools: a CDP4 concurrent-design model from the COMET systems-engineering platform used by the European Space Agency, or a decision-analysis model from Criterium DecisionPlus. Identify and inspect a .CDP file free in your browser with Analyser - nothing is uploaded.">
   <link rel="canonical" href="https://lab.valjdakosta.com/formats/id/cdp">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
@@ -12,7 +12,7 @@
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
   <meta property="og:title" content=".CDP file - what it is and how to identify it | Analyser">
-  <meta property="og:description" content=".CDP files belong to the &quot;Engineering&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .CDP file free in your browser with Analyser - nothing is uploaded.">
+  <meta property="og:description" content="CDP is shared by two unrelated tools: a CDP4 concurrent-design model from the COMET systems-engineering platform used by the European Space Agency, or a decision-analysis model from Criterium DecisionPlus. Identify and inspect a .CDP file free in your browser with Analyser - nothing is uploaded.">
   <meta property="og:url" content="https://lab.valjdakosta.com/formats/id/cdp">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta property="og:image:width" content="1200">
@@ -20,14 +20,14 @@
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content=".CDP file - what it is and how to identify it | Analyser">
-  <meta name="twitter:description" content=".CDP files belong to the &quot;Engineering&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .CDP file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="twitter:description" content="CDP is shared by two unrelated tools: a CDP4 concurrent-design model from the COMET systems-engineering platform used by the European Space Agency, or a decision-analysis model from Criterium DecisionPlus. Identify and inspect a .CDP file free in your browser with Analyser - nothing is uploaded.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <link rel="icon" href="/assets/img/favicon.png" type="image/png">
   <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .CDP file?","acceptedAnswer":{"@type":"Answer","text":".CDP files belong to the \"Engineering\" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser."}},{"@type":"Question","name":"How do I open a .CDP file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .CDP file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Identify CDP4 (COMET) concurrent-design engineering files from the ESA systems-engineering toolset."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .CDP file?","acceptedAnswer":{"@type":"Answer","text":"CDP is shared by two unrelated tools: a CDP4 concurrent-design model from the COMET systems-engineering platform used by the European Space Agency, or a decision-analysis model from Criterium DecisionPlus. Criterium DecisionPlus, by InfoHarvest, saves its decision models as .cdp and ranks options using methods such as the Analytic Hierarchy Process (AHP) and SMART. In its other life a .cdp file is a CDP4 model from the COMET tool, following the ECSS-E-TM-10-25 European space-engineering data-exchange standard the ESA helped define. Criterium DecisionPlus presents its results with rankings, trade-off views and sensitivity analysis, so a recommendation can be tested under different assumptions."}},{"@type":"Question","name":"How do I open a .CDP file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .CDP file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Identify CDP files - either CDP4 (COMET) concurrent-design models from the ESA systems-engineering toolset, or Criterium DecisionPlus decision-analysis models."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".CDP","item":"https://lab.valjdakosta.com/formats/id/cdp"}]}
@@ -52,7 +52,7 @@
       <span class="site-kicker">3D / CAD / engineering</span>
       <h1 class="site-title">.CDP</h1>
       <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
-      <p class="site-sub">.CDP file (Engineering)</p>
+      <p class="site-sub">CDP model file</p>
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
         <a href="/formats" class="header-btn">Formats</a>
@@ -71,17 +71,24 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/id/cnc" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/id/dcm" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
       <div class="section-content">
         <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.CDP</span></p>
         <h2 class="section-head">What is a .CDP file?</h2>
-        <p class="section-lede">.CDP files belong to the "Engineering" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser.</p>
+        <p class="section-lede">CDP is shared by two unrelated tools: a CDP4 concurrent-design model from the COMET systems-engineering platform used by the European Space Agency, or a decision-analysis model from Criterium DecisionPlus.</p>
 
         <div class="about-block">
           <dl class="about-caps">
-            <div><dt>What Analyser reads</dt><dd>Identify CDP4 (COMET) concurrent-design engineering files from the ESA systems-engineering toolset.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Criterium DecisionPlus, by InfoHarvest, saves its decision models as .cdp and ranks options using methods such as the Analytic Hierarchy Process (AHP) and SMART.</li><li>In its other life a .cdp file is a CDP4 model from the COMET tool, following the ECSS-E-TM-10-25 European space-engineering data-exchange standard the ESA helped define.</li><li>Criterium DecisionPlus presents its results with rankings, trade-off views and sensitivity analysis, so a recommendation can be tested under different assumptions.</li></ul></dd></div>
+            <div><dt>What Analyser reads</dt><dd>Identify CDP files - either CDP4 (COMET) concurrent-design models from the ESA systems-engineering toolset, or Criterium DecisionPlus decision-analysis models.</dd></div>
             <div><dt>Depth of analysis</dt><dd>.CDP is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .CDP file</dt><dd>Drag a .CDP file onto <a href="/">the Analyser home page</a> (or tap to pick one). It is identified entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd>Browse the <a href="/formats">full list of supported file types</a>.</dd></div>

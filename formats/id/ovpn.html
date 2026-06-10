@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>.OVPN file - what it is and how to identify it | Analyser</title>
-  <meta name="description" content=".OVPN files belong to the &quot;Security / keys / certs&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .OVPN file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="description" content="OVPN is an OpenVPN configuration file for a VPN connection. Identify and inspect a .OVPN file free in your browser with Analyser - nothing is uploaded.">
   <link rel="canonical" href="https://lab.valjdakosta.com/formats/id/ovpn">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
@@ -12,7 +12,7 @@
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
   <meta property="og:title" content=".OVPN file - what it is and how to identify it | Analyser">
-  <meta property="og:description" content=".OVPN files belong to the &quot;Security / keys / certs&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .OVPN file free in your browser with Analyser - nothing is uploaded.">
+  <meta property="og:description" content="OVPN is an OpenVPN configuration file for a VPN connection. Identify and inspect a .OVPN file free in your browser with Analyser - nothing is uploaded.">
   <meta property="og:url" content="https://lab.valjdakosta.com/formats/id/ovpn">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta property="og:image:width" content="1200">
@@ -20,14 +20,14 @@
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content=".OVPN file - what it is and how to identify it | Analyser">
-  <meta name="twitter:description" content=".OVPN files belong to the &quot;Security / keys / certs&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .OVPN file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="twitter:description" content="OVPN is an OpenVPN configuration file for a VPN connection. Identify and inspect a .OVPN file free in your browser with Analyser - nothing is uploaded.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <link rel="icon" href="/assets/img/favicon.png" type="image/png">
   <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .OVPN file?","acceptedAnswer":{"@type":"Answer","text":".OVPN files belong to the \"Security / keys / certs\" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser."}},{"@type":"Question","name":"How do I open a .OVPN file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .OVPN file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Inspect security and crypto files: PEM private/public keys (RSA/EC/Ed25519, PKCS#1 vs PKCS#8, encryption), OpenSSH .pub with SHA-256 fingerprint, PuTTY .ppk, PKCS#10 CSR, X.509 CRL, PKCS#7 bundles, OpenVPN/WireGuard configs, Java KeyStores, Apple .mobileconfig/.mobileprovision, Windows .reg (with autorun flagging), and pcap/pcapng captures - warning when a private key or secret is present."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .OVPN file?","acceptedAnswer":{"@type":"Answer","text":"OVPN is an OpenVPN configuration file for a VPN connection. OpenVPN has been a leading open-source VPN since 2001. An OVPN file can embed the CA, client certificate and private key inline, wrapped in tags so one file is enough to connect. OpenVPN secures its tunnels with the OpenSSL library, giving the config its certificate-and-key based authentication."}},{"@type":"Question","name":"How do I open a .OVPN file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .OVPN file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Inspect security and crypto files: PEM private/public keys (RSA/EC/Ed25519, PKCS#1 vs PKCS#8, encryption), OpenSSH .pub with SHA-256 fingerprint, PuTTY .ppk, PKCS#10 CSR, X.509 CRL, PKCS#7 bundles, OpenVPN/WireGuard configs, Java KeyStores, Apple .mobileconfig/.mobileprovision, Windows .reg (with autorun flagging), and pcap/pcapng captures - warning when a private key or secret is present."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".OVPN","item":"https://lab.valjdakosta.com/formats/id/ovpn"}]}
@@ -52,7 +52,7 @@
       <span class="site-kicker">Email &amp; security</span>
       <h1 class="site-title">.OVPN</h1>
       <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
-      <p class="site-sub">.OVPN file (Security / keys / certs)</p>
+      <p class="site-sub">OpenVPN config</p>
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
         <a href="/formats" class="header-btn">Formats</a>
@@ -71,16 +71,23 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/id/ppk" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/id/wg" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
       <div class="section-content">
         <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.OVPN</span></p>
         <h2 class="section-head">What is a .OVPN file?</h2>
-        <p class="section-lede">.OVPN files belong to the "Security / keys / certs" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser.</p>
+        <p class="section-lede">OVPN is an OpenVPN configuration file for a VPN connection.</p>
 
         <div class="about-block">
           <dl class="about-caps">
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>OpenVPN has been a leading open-source VPN since 2001.</li><li>An OVPN file can embed the CA, client certificate and private key inline, wrapped in tags so one file is enough to connect.</li><li>OpenVPN secures its tunnels with the OpenSSL library, giving the config its certificate-and-key based authentication.</li></ul></dd></div>
             <div><dt>What Analyser reads</dt><dd>Inspect security and crypto files: PEM private/public keys (RSA/EC/Ed25519, PKCS#1 vs PKCS#8, encryption), OpenSSH .pub with SHA-256 fingerprint, PuTTY .ppk, PKCS#10 CSR, X.509 CRL, PKCS#7 bundles, OpenVPN/WireGuard configs, Java KeyStores, Apple .mobileconfig/.mobileprovision, Windows .reg (with autorun flagging), and pcap/pcapng captures - warning when a private key or secret is present.</dd></div>
             <div><dt>Depth of analysis</dt><dd>.OVPN is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .OVPN file</dt><dd>Drag a .OVPN file onto <a href="/">the Analyser home page</a> (or tap to pick one). It is identified entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>

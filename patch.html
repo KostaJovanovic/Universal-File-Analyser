@@ -184,6 +184,33 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">2.27</p>
+          <p class="patch-name">Trivia</p>
+          <p class="patch-date">11 June 2026, 01:25</p>
+          <ul class="patch-list">
+            <li><strong>Every format guide page gains a richer &ldquo;Did you know&rdquo; section, plus a navbar to flip between guides or jump to a random one.</strong></li>
+            <li><span class="patch-tag">New</span><strong>&ldquo;Did you know&rdquo; on every guide.</strong> Each per-format guide page now carries a handful of researched facts - where the format came from, who made it, the year it appeared and what replaced it. The <strong>121 main file types</strong> get four or five, and every other format gets two or three.</li>
+            <li><span class="patch-tag">New</span><strong>Browse between guides.</strong> Each guide page now has its own navbar with <strong>Previous</strong>, <strong>I&rsquo;m feeling lucky</strong> and <strong>Next</strong> - Previous and Next step through the formats in the same order as the <strong>Formats</strong> page, and on phones the bar scrolls sideways in a single row.</li>
+            <li><span class="patch-tag">New</span><strong>&ldquo;I&rsquo;m feeling lucky&rdquo;.</strong> The <strong>Formats</strong> page gains its own <strong>I&rsquo;m feeling lucky</strong> button that opens a random format guide.</li>
+            <li><span class="patch-tag">New</span><strong>Links in the formats popup.</strong> In the supported-formats popup, every extension is now a link straight to its guide page.</li>
+            <li><span class="patch-tag">New</span><strong>Multi-body 3D models split into parts.</strong> When a 3D model - an <a href="/about#ext-stl">.stl</a>, or a CAD file like <a href="/about#ext-step">.step</a> or <a href="/about#ext-3mf">.3mf</a> - holds several separate bodies, the viewer now offers a <strong>Bodies</strong> picker: view each body on its own (named where the file says so) or see them all together.</li>
+            <li><span class="patch-tag">New</span><strong>Pause the 3D spin.</strong> The 3D viewer&rsquo;s auto-rotate now has a <strong>Pause spin</strong> / <strong>Resume spin</strong> button, and simply dragging the model stops it spinning so you can inspect it from any angle.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Criterium DecisionPlus files read correctly.</strong> A <a href="/about#ext-cdp">.cdp</a> decision-analysis model from <strong>Criterium DecisionPlus</strong> is now recognised and its goal, criteria and notes read out - kept separate from the unrelated <strong>CDP4 / COMET</strong> space-engineering format that shares the extension, so whichever you drop names the right application.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">2.26</p>
+          <p class="patch-name">Side Load</p>
+          <p class="patch-date">10 June 2026, 18:18</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Android apps, taken apart.</strong> Drop an <a href="/about#ext-apk">.apk</a> and Analyser now reads its <strong>AndroidManifest</strong> to show the package name, app label, version, and the Android versions it needs - minimum, target and maximum, each with its marketing name (Android 14 and the like).</li>
+            <li><span class="patch-tag">New</span><strong>Permissions and features at a glance.</strong> The full list of <strong>permissions</strong> an app requests and the device <strong>features</strong> it relies on are shown in expandable lists, so you can see what it can reach before installing.</li>
+            <li><span class="patch-tag">New</span><strong>How it&rsquo;s built and signed.</strong> Analyser reports the <strong>signing scheme</strong> (v1 through v3.1), how many <strong>code</strong> files it holds, any bundled <strong>native libraries</strong> and their processor types, and telltale flags like a <strong>debuggable</strong> build or a cleartext-traffic setting - plus the full package contents.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">2.25</p>
           <p class="patch-name">Close Up</p>
           <p class="patch-date">10 June 2026, 17:15</p>
@@ -197,6 +224,9 @@
             <li><span class="patch-tag is-fix">Fix</span><strong>Clearer Close button.</strong> The close button in the image, PDF and comic viewers is now high-contrast, so it stays easy to see over any picture.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.24</p>
@@ -218,9 +248,6 @@
             <li><strong>Maintenance</strong> - a small correction to the project readme on GitHub; nothing on the site itself changed.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.22</p>

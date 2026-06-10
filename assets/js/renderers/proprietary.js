@@ -921,7 +921,7 @@ const FORMATS = {
   atmos:   { app: 'Dolby Atmos Master', icon: 'ATM' },
 
   // Engineering
-  cdp:     { app: 'CDP4 (COMET Data Platform)', icon: 'CDP' },
+  cdp:     { app: 'CDP4 (COMET) / Criterium DecisionPlus', icon: 'CDP' },
 
   // Game saves
   bepis:   { app: 'ULTRAKILL Save', icon: 'UK' },
@@ -3744,8 +3744,17 @@ function parseTrueHd(head) {
 }
 
 // ---------- CDP4 (COMET Data Platform) ----------
+// .cdp is shared by two unrelated tools. Criterium DecisionPlus (InfoHarvest's
+// decision-analysis app) writes a binary file starting 0x80 0x00 then the ASCII
+// string "Hierarchy <version>" padded to 128 bytes; CDP4 / COMET (the ESA
+// concurrent-design platform) writes a SQLite / ZIP / JSON / XML container.
+// Detect the Criterium signature first, otherwise fall back to the COMET sniff.
 async function parseCdp(file, head) {
-  const fields = { 'Application': 'CDP4 (COMET Data Platform)' };
+  const hierarchy = head[0] === 0x80 && head[1] === 0x00 &&
+    String.fromCharCode(...head.subarray(2, 11)) === 'Hierarchy';
+  if (hierarchy) return parseCriterium(file, head);
+
+  const fields = { _app: 'CDP4 (COMET Data Platform)' };
   const a = (s, l) => Array.from(head.subarray(s, s + l)).map(c => String.fromCharCode(c)).join('');
   if (a(0, 15) === 'SQLite format 3') {
     fields['Container'] = 'SQLite database';
@@ -3758,6 +3767,63 @@ async function parseCdp(file, head) {
     if (txt[0] === '{' || txt[0] === '[') fields['Container'] = 'JSON';
     else if (txt.startsWith('<?xml') || txt[0] === '<') fields['Container'] = 'XML';
     else fields['Container'] = 'Binary';
+  }
+  return fields;
+}
+
+// Criterium DecisionPlus model. The 128-byte header gives the format version;
+// the body is binary but stores the decision model's node names and <Note> text
+// as readable strings, so we surface the goal, the named elements (criteria /
+// alternatives) and any description. The interleaved pairwise-comparison cells
+// (runs of '!'/'0') and the built-in rating scales (padded, double-spaced) are
+// filtered out so only model-specific labels remain.
+async function parseCriterium(file, head) {
+  const fields = { _app: 'Criterium DecisionPlus' };
+  const ver = String.fromCharCode(...head.subarray(2, 17)).replace(/[^\x20-\x7e]/g, '').trim();
+  const m = ver.match(/^(\w+)\s+([\d.]+)$/);
+  if (m) { fields['Model type'] = m[1]; fields['Format version'] = m[2]; }
+  else if (ver) fields['Format'] = ver;
+
+  const cap = Math.min(file.size, 512 * 1024);
+  const body = new TextDecoder('latin1').decode(new Uint8Array(await file.slice(128, cap).arrayBuffer()));
+  const runs = body.match(/[\x20-\x7e]{4,}/g) || [];
+
+  const STRUCT = new Set(['goal', 'goal level', 'alternatives', 'criteria', 'subcriteria',
+    'design alternatives', 'main criteria', 'sub criteria']);
+  const isStruct = (s) => STRUCT.has(s.toLowerCase()) || /^level\s*\d+$/i.test(s);
+
+  const labels = [];
+  const seen = new Set();
+  for (let s of runs) {
+    s = s.replace(/<[^>]*>/g, '').trim();        // drop <Note>/<Question>/<XID> tags
+    if (!/[A-Za-z]{3}/.test(s)) continue;        // needs real words
+    if (s.length > 48) continue;                 // skip prose and the padded rating scales
+    if (/\s{2,}/.test(s)) continue;              // double spaces = padded scale block
+    if (/^hierarchy\b/i.test(s)) continue;       // the header version string
+    if (s.includes('?')) continue;               // binary artefacts (e.g. "fff?")
+    if (/^default alternative/i.test(s)) continue; // system-added placeholder
+    const key = s.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    labels.push(s);
+  }
+
+  const goal = labels.find((s) => !isStruct(s));
+  if (goal) fields['Goal'] = goal;
+  const elements = labels.filter((s) => !isStruct(s) && s !== goal);
+  if (elements.length) {
+    const sample = elements.slice(0, 12).join(', ');
+    fields['Model elements'] = elements.length +
+      (elements.length > 12 ? ' (e.g. ' + sample + ' ...)' : ' (' + sample + ')');
+  }
+
+  const notes = [...body.matchAll(/<Note>([\s\S]*?)<\/Note>/g)]
+    .map((x) => x[1].trim())
+    .filter((n) => n && !/^Default Alternative/i.test(n));
+  if (notes.length) {
+    let n = notes[0].replace(/\s+/g, ' ').trim();
+    if (n.length > 240) n = n.slice(0, 237) + '...';
+    fields['Description'] = n;
   }
   return fields;
 }
@@ -4466,10 +4532,15 @@ export async function renderProprietary(file, container, extOverride) {
 
   container.hidden = false;
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, fmt.app));
+  // Title + Application default to the catalog name, but a parser may resolve a
+  // more specific one via extra._app (e.g. a .cdp is either Criterium
+  // DecisionPlus or CDP4/COMET - we show whichever the bytes prove, not both).
+  const h3El = el('h3', {}, fmt.app);
+  card.appendChild(h3El);
 
   const tbl = el('table', { class: 'anr-readout' });
-  tbl.appendChild(row('Application', fmt.app));
+  const appRow = row('Application', fmt.app);
+  tbl.appendChild(appRow);
   tbl.appendChild(row('File', file.name));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
 
@@ -4520,6 +4591,8 @@ export async function renderProprietary(file, container, extOverride) {
 
   let extraFileList = null;
   if (extra) {
+    // A parser can pin down the exact application once the bytes identify it.
+    if (extra._app) { h3El.textContent = extra._app; appRow.lastChild.textContent = extra._app; }
     // Optional per-field tooltips (e.g. the PE/EXE readout sets extra._help).
     const help = extra._help || null;
     for (const [k, v] of Object.entries(extra)) {

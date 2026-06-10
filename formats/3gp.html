@@ -27,7 +27,7 @@
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .3GP file?","acceptedAnswer":{"@type":"Answer","text":"3GP is a mobile video container used by older phones."}},{"@type":"Question","name":"How do I open a .3GP file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .3GP file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. Read the container, codec, resolution, and frame rate of MP4, MOV, MKV, AVI, and WebM video, step through frames, and extract the audio track. Raw H.264/H.265 elementary streams (.h264/.265) are remuxed to MP4 in-browser so they play too."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .3GP file?","acceptedAnswer":{"@type":"Answer","text":"3GP is a mobile video container used by older phones. 3GP was created for the first 3G mobile phones in the early 2000s. 3GP is the 3GPP container for GSM-network phones, and it shares the ISO base media file format with MP4, so the two are close cousins internally. It was deliberately kept lean on storage and bandwidth so the first camera phones could capture and multimedia-message short clips. 3GP commonly pairs H.263 or MPEG-4 video with AMR speech audio, a combination chosen for low-power mobile hardware. Its CDMA-network counterpart is 3G2, which swaps in CDMA-specific audio codecs but keeps the same overall structure."}},{"@type":"Question","name":"How do I open a .3GP file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .3GP file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. Read the container, codec, resolution, and frame rate of MP4, MOV, MKV, AVI, and WebM video, step through frames, and extract the audio track. Raw H.264/H.265 elementary streams (.h264/.265) are remuxed to MP4 in-browser so they play too."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".3GP","item":"https://lab.valjdakosta.com/formats/3gp"}]}
@@ -71,6 +71,12 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/flv" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/3g2" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
@@ -81,6 +87,7 @@
 
         <div class="about-block">
           <dl class="about-caps">
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>3GP was created for the first 3G mobile phones in the early 2000s.</li><li>3GP is the 3GPP container for GSM-network phones, and it shares the ISO base media file format with MP4, so the two are close cousins internally.</li><li>It was deliberately kept lean on storage and bandwidth so the first camera phones could capture and multimedia-message short clips.</li><li>3GP commonly pairs H.263 or MPEG-4 video with AMR speech audio, a combination chosen for low-power mobile hardware.</li><li>Its CDMA-network counterpart is 3G2, which swaps in CDMA-specific audio codecs but keeps the same overall structure.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>Read the container, codec, resolution, and frame rate of MP4, MOV, MKV, AVI, and WebM video, step through frames, and extract the audio track. Raw H.264/H.265 elementary streams (.h264/.265) are remuxed to MP4 in-browser so they play too.</dd></div>
             <div><dt>Open a .3GP file</dt><dd>Drag a .3GP file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd><a href="/formats/mp4">.MP4</a> &middot; <a href="/formats/mov">.MOV</a> &middot; <a href="/formats/avi">.AVI</a> &middot; <a href="/formats/mkv">.MKV</a> &middot; <a href="/formats/webm">.WebM</a> &middot; <a href="/formats/wmv">.WMV</a> &middot; <a href="/formats/flv">.FLV</a> &middot; <a href="/formats/3g2">.3G2</a> &middot; <a href="/formats/mpg">.MPG</a> &middot; <a href="/formats/mpeg">.MPEG</a> &middot; <a href="/formats/mts">.MTS</a> &middot; <a href="/formats/m2ts">.M2TS</a> &middot; <a href="/formats/ts">.TS</a> &middot; <a href="/formats/vob">.VOB</a> &middot; <a href="/formats/ogv">.OGV</a> &middot; <a href="/formats/h264">.H264</a> &middot; <a href="/formats/264">.264</a> &middot; <a href="/formats/avc">.AVC</a> and <a href="/formats">more</a>. See <a href="/formats">all supported file types</a>.</dd></div>

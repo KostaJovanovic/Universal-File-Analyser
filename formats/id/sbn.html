@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>.SBN file - what it is and how to identify it | Analyser</title>
-  <meta name="description" content=".SBN files belong to the &quot;GIS / mapping (more)&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .SBN file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="description" content="SBN is an Esri spatial index that speeds up queries on a shapefile. Identify and inspect a .SBN file free in your browser with Analyser - nothing is uploaded.">
   <link rel="canonical" href="https://lab.valjdakosta.com/formats/id/sbn">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
@@ -12,7 +12,7 @@
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
   <meta property="og:title" content=".SBN file - what it is and how to identify it | Analyser">
-  <meta property="og:description" content=".SBN files belong to the &quot;GIS / mapping (more)&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .SBN file free in your browser with Analyser - nothing is uploaded.">
+  <meta property="og:description" content="SBN is an Esri spatial index that speeds up queries on a shapefile. Identify and inspect a .SBN file free in your browser with Analyser - nothing is uploaded.">
   <meta property="og:url" content="https://lab.valjdakosta.com/formats/id/sbn">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta property="og:image:width" content="1200">
@@ -20,14 +20,14 @@
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content=".SBN file - what it is and how to identify it | Analyser">
-  <meta name="twitter:description" content=".SBN files belong to the &quot;GIS / mapping (more)&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .SBN file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="twitter:description" content="SBN is an Esri spatial index that speeds up queries on a shapefile. Identify and inspect a .SBN file free in your browser with Analyser - nothing is uploaded.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <link rel="icon" href="/assets/img/favicon.png" type="image/png">
   <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .SBN file?","acceptedAnswer":{"@type":"Answer","text":".SBN files belong to the \"GIS / mapping (more)\" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser."}},{"@type":"Question","name":"How do I open a .SBN file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .SBN file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Identify and read more GIS and mapping files: OpenStreetMap o5m/o5c binaries, Esri layer files (.lyrx ArcGIS Pro CIM JSON, .lyr ArcMap), QGIS projects (.qgs/.qgz - version, CRS, layer list), shapefile spatial indexes (.sbn/.sbx), GMT/GDAL colour palettes (.cpt) and ENVI band-interleaved rasters (.bil/.bip/.bsq)."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .SBN file?","acceptedAnswer":{"@type":"Answer","text":"SBN is an Esri spatial index that speeds up queries on a shapefile. The SBN index helps GIS software find shapes by location quickly. Esri never documented the SBN layout, so its binary structure had to be reverse-engineered by the open-source community. The SBN index is optional - a shapefile parses fine without it, but spatial queries run faster when it is present."}},{"@type":"Question","name":"How do I open a .SBN file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .SBN file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Identify and read more GIS and mapping files: OpenStreetMap o5m/o5c binaries, Esri layer files (.lyrx ArcGIS Pro CIM JSON, .lyr ArcMap), QGIS projects (.qgs/.qgz - version, CRS, layer list), shapefile spatial indexes (.sbn/.sbx), GMT/GDAL colour palettes (.cpt) and ENVI band-interleaved rasters (.bil/.bip/.bsq)."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".SBN","item":"https://lab.valjdakosta.com/formats/id/sbn"}]}
@@ -52,7 +52,7 @@
       <span class="site-kicker">System &amp; disk</span>
       <h1 class="site-title">.SBN</h1>
       <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
-      <p class="site-sub">.SBN file (GIS / mapping (more))</p>
+      <p class="site-sub">Shapefile spatial index</p>
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
         <a href="/formats" class="header-btn">Formats</a>
@@ -71,16 +71,23 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/id/qgz" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/id/sbx" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
       <div class="section-content">
         <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.SBN</span></p>
         <h2 class="section-head">What is a .SBN file?</h2>
-        <p class="section-lede">.SBN files belong to the "GIS / mapping (more)" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser.</p>
+        <p class="section-lede">SBN is an Esri spatial index that speeds up queries on a shapefile.</p>
 
         <div class="about-block">
           <dl class="about-caps">
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>The SBN index helps GIS software find shapes by location quickly.</li><li>Esri never documented the SBN layout, so its binary structure had to be reverse-engineered by the open-source community.</li><li>The SBN index is optional - a shapefile parses fine without it, but spatial queries run faster when it is present.</li></ul></dd></div>
             <div><dt>What Analyser reads</dt><dd>Identify and read more GIS and mapping files: OpenStreetMap o5m/o5c binaries, Esri layer files (.lyrx ArcGIS Pro CIM JSON, .lyr ArcMap), QGIS projects (.qgs/.qgz - version, CRS, layer list), shapefile spatial indexes (.sbn/.sbx), GMT/GDAL colour palettes (.cpt) and ENVI band-interleaved rasters (.bil/.bip/.bsq).</dd></div>
             <div><dt>Depth of analysis</dt><dd>.SBN is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .SBN file</dt><dd>Drag a .SBN file onto <a href="/">the Analyser home page</a> (or tap to pick one). It is identified entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>.CER file - what it is and how to identify it | Analyser</title>
-  <meta name="description" content=".CER files belong to the &quot;Certificates&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .CER file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="description" content="CER holds an X.509 security certificate, used to prove identity and secure connections. Identify and inspect a .CER file free in your browser with Analyser - nothing is uploaded.">
   <link rel="canonical" href="https://lab.valjdakosta.com/formats/id/cer">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
@@ -12,7 +12,7 @@
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
   <meta property="og:title" content=".CER file - what it is and how to identify it | Analyser">
-  <meta property="og:description" content=".CER files belong to the &quot;Certificates&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .CER file free in your browser with Analyser - nothing is uploaded.">
+  <meta property="og:description" content="CER holds an X.509 security certificate, used to prove identity and secure connections. Identify and inspect a .CER file free in your browser with Analyser - nothing is uploaded.">
   <meta property="og:url" content="https://lab.valjdakosta.com/formats/id/cer">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta property="og:image:width" content="1200">
@@ -20,14 +20,14 @@
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content=".CER file - what it is and how to identify it | Analyser">
-  <meta name="twitter:description" content=".CER files belong to the &quot;Certificates&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .CER file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="twitter:description" content="CER holds an X.509 security certificate, used to prove identity and secure connections. Identify and inspect a .CER file free in your browser with Analyser - nothing is uploaded.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <link rel="icon" href="/assets/img/favicon.png" type="image/png">
   <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .CER file?","acceptedAnswer":{"@type":"Answer","text":".CER files belong to the \"Certificates\" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser."}},{"@type":"Question","name":"How do I open a .CER file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .CER file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Identify and decode X.509 security certificates (CRT, CER, PEM, DER) - subject, issuer, validity dates, and key details."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .CER file?","acceptedAnswer":{"@type":"Answer","text":"CER holds an X.509 security certificate, used to prove identity and secure connections. X.509, the certificate standard behind HTTPS, was first published in 1988. The X.509 certificate standard grew out of the ITU’s X.500 directory work, which aimed to provide a global electronic “white pages”. A .cer file may hold the certificate as raw binary DER or as Base64-wrapped PEM text, despite sharing the same extension."}},{"@type":"Question","name":"How do I open a .CER file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .CER file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Identify and decode X.509 security certificates (CRT, CER, PEM, DER) - subject, issuer, validity dates, and key details."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".CER","item":"https://lab.valjdakosta.com/formats/id/cer"}]}
@@ -52,7 +52,7 @@
       <span class="site-kicker">Email &amp; security</span>
       <h1 class="site-title">.CER</h1>
       <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
-      <p class="site-sub">.CER file (Certificates)</p>
+      <p class="site-sub">X.509 certificate</p>
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
         <a href="/formats" class="header-btn">Formats</a>
@@ -71,16 +71,23 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/id/crt" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/id/pem" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
       <div class="section-content">
         <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.CER</span></p>
         <h2 class="section-head">What is a .CER file?</h2>
-        <p class="section-lede">.CER files belong to the "Certificates" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser.</p>
+        <p class="section-lede">CER holds an X.509 security certificate, used to prove identity and secure connections.</p>
 
         <div class="about-block">
           <dl class="about-caps">
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>X.509, the certificate standard behind HTTPS, was first published in 1988.</li><li>The X.509 certificate standard grew out of the ITU’s X.500 directory work, which aimed to provide a global electronic “white pages”.</li><li>A .cer file may hold the certificate as raw binary DER or as Base64-wrapped PEM text, despite sharing the same extension.</li></ul></dd></div>
             <div><dt>What Analyser reads</dt><dd>Identify and decode X.509 security certificates (CRT, CER, PEM, DER) - subject, issuer, validity dates, and key details.</dd></div>
             <div><dt>Depth of analysis</dt><dd>.CER is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .CER file</dt><dd>Drag a .CER file onto <a href="/">the Analyser home page</a> (or tap to pick one). It is identified entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>

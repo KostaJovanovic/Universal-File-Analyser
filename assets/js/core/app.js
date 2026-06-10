@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 86;
+const COMMIT_COUNT = 87;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -52,7 +52,7 @@ import { walkItems, renderFolder } from '../renderers/folder.js';
 import {
   PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, CSV_EXTS, SVG_EXTS,
   renderFmtOverlay, renderAboutFormats, formatCount,
-  CATEGORIES, categoryCounts
+  CATEGORIES, categoryCounts, catalogGrouped
 } from './formats.js';
 
 function $(id) { return document.getElementById(id); }
@@ -1017,6 +1017,8 @@ function splitText(container, baseWeight) {
 // each entry's full bullet list for the matching line here. When you add a new
 // patch entry to patch.html, add its one-liner here too (newest at the top).
 const PATCH_TLDR = {
+  '2.27': 'Every per-format guide page gains a richer “Did you know” section of researched facts - four or five on the 121 main file types, two or three on the rest - plus a navbar to step Previous and Next through the formats or jump to a random one with “I’m feeling lucky” (also added to the Formats page). Every extension in the supported-formats popup is now a link to its guide. The 3D viewer splits multi-body models (STL, STEP, 3MF and the like) into a Bodies picker and gains a pause-spin button, and Criterium DecisionPlus .cdp files are read correctly, kept separate from the unrelated CDP4/COMET space-engineering format that shares the extension.',
+  '2.26': 'Drop an Android .apk and Analyser now reads its manifest - package name, app label, version, and the minimum, target and maximum Android versions it needs, each with its marketing name - lists every permission and device feature it requests, and reports how it was signed, its code and native libraries, and telltale flags like a debuggable build.',
   '2.25': 'Every photo, PDF and comic viewer now zooms and pans - pinch, scroll or click to zoom, drag to move - and the Back button closes the open viewer or pop-up instead of leaving the page (installed as an app, it asks before you exit). PDF pages render sharper with a new High-res button, and the PDF reader now lists fonts, flags and shows embedded JavaScript, keeps text line breaks and adds a per-page Copy. Links to other pages now open at the top, and the viewer Close button is clearer.',
   '2.24': 'Every supported format now has its own guide page - the nine hundred identification-only ones included - each explaining what the file is and what Analyser reads from it. The Formats page links every extension to its guide, and search engines are told about all the new pages.',
   '2.23': 'Maintenance: a small correction to the GitHub readme. Nothing on the site changed.',
@@ -2810,6 +2812,21 @@ function boot() {
       fmtOverlay._wired = true;
       fmtOverlay.addEventListener('click', (e) => { if (e.target === fmtOverlay) closeFmt(); });
     }
+    // Each extension token is a link to its /formats page. The overlay lives
+    // outside the SPA-swapped regions, so letting navigate.js do an in-place hop
+    // would leave the (now orphaned) overlay open with the body scroll locked.
+    // Intercept here: stop the click reaching navigate.js, suppress the parent
+    // <details> toggle, and do a full navigation that tears the overlay down.
+    if (!fmtOverlay._extNavWired) {
+      fmtOverlay._extNavWired = true;
+      fmtOverlay.addEventListener('click', (e) => {
+        const a = e.target.closest('a.fmt-item-ext');
+        if (!a || !fmtOverlay.contains(a)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        location.assign(a.getAttribute('href'));
+      });
+    }
     if (!boot._fmtKeyWired) {
       // Persists across navigations, so close self-contained off a fresh lookup
       // rather than this boot's (possibly stale) closeFmt/fmtOverlay.
@@ -2836,6 +2853,41 @@ function boot() {
       }
     }
   }
+
+  // ----- "I'm feeling lucky" -> a random per-format landing page -----
+  // Any [data-fmt-random] button jumps to a random /formats/<ext> page. The
+  // ext list comes from the same catalog that drives the overlay, and the
+  // full-wins routing mirrors tools/prerender-format-pages.mjs (a full row gets
+  // /formats/<ext>, an id-only one /formats/id/<ext>), so it never points at a
+  // page that does not exist. A throwaway <a> click lets navigate.js do the SPA
+  // View Transition (and falls back to a plain navigation if it is absent).
+  document.querySelectorAll('[data-fmt-random]').forEach((trigger) => {
+    if (trigger._fmtRandWired) return;
+    trigger._fmtRandWired = true;
+    trigger.addEventListener('click', (e) => {
+      e.preventDefault();
+      const full = new Set();
+      const all = new Set();
+      for (const g of catalogGrouped()) {
+        for (const r of g.rows) {
+          for (const tok of r.exts) {
+            const k = tok.toLowerCase();
+            all.add(k);
+            if (r.depth === 'full') full.add(k);
+          }
+        }
+      }
+      const keys = [...all];
+      if (!keys.length) return;
+      const k = keys[Math.floor(Math.random() * keys.length)];
+      const path = full.has(k) ? `/formats/${k}` : `/formats/id/${k}`;
+      const a = document.createElement('a');
+      a.href = path;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+  });
 
   // ----- Search -----
   initSearch();
