@@ -1,11 +1,12 @@
 ﻿/* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v79';
+const VERSION = 'analyser-v80';
 const SHELL = [
   './',
   './about',
   './patch',
+  './formats',
   './manifest.json',
   './assets/css/analyser.css',
   './assets/css/fonts.css',
@@ -90,9 +91,21 @@ function precacheTurnstile(cache) {
 }
 
 self.addEventListener('install', (e) => {
+  // Cache each shell entry independently (allSettled) instead of cache.addAll's
+  // all-or-nothing: a single transient miss (a file mid-regeneration, a OneDrive
+  // sync lock, a stale dev server) used to reject the WHOLE install, leaving the
+  // SW dead and nothing cached. Now the install always completes; any entry that
+  // failed is logged and picked up later by the stale-while-revalidate fetch
+  // handler. The fetch fast-path (cached || network) tolerates a missing entry.
   e.waitUntil(
     caches.open(VERSION)
-      .then((c) => c.addAll(SHELL).then(() => precacheTurnstile(c)))
+      .then((c) =>
+        Promise.allSettled(SHELL.map((u) => c.add(u).catch((err) => {
+          console.warn('SW precache skipped:', u, err && err.message);
+          throw err;
+        })))
+          .then(() => precacheTurnstile(c))
+      )
       .then(() => self.skipWaiting())
   );
 });

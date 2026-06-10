@@ -21,6 +21,7 @@ CLAUDE.md
 serve.py
 wrangler.jsonc
 .wrangler/
+tools/
 
 # Repo docs (not part of the app)
 README.md

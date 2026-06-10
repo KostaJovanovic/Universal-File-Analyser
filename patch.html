@@ -10,7 +10,7 @@
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Analyser">
-  <meta property="og:locale" content="en_US">
+  <meta property="og:locale" content="en_GB">
   <meta property="og:title" content="Changelog - Analyser">
   <meta property="og:description" content="Every update to Analyser, newest first - new file formats, viewers, bug fixes and offline improvements. Free, in-browser, nothing uploaded.">
   <meta property="og:url" content="https://lab.valjdakosta.com/patch">
@@ -61,6 +61,7 @@
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
         <a href="/about" class="header-btn">About</a>
+        <a href="/formats" class="header-btn">Formats</a>
         <button type="button" class="header-btn header-btn-share"><svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>Share</button>
       </nav>
     </div>
@@ -80,6 +81,7 @@
   <section id="when" class="section">
     <div class="grid">
       <div class="section-content">
+        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <span>Changelog</span></p>
         <div class="patch-head-row">
           <h2 class="section-head">Update notes.</h2>
           <button type="button" id="tldrToggle" class="patch-tldr-toggle" aria-pressed="false" title="Show every patch condensed to a few sentences">tl;dr</button>
@@ -182,6 +184,31 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">2.20</p>
+          <p class="patch-name">Field Guide</p>
+          <p class="patch-date">10 June 2026, 02:24</p>
+          <ul class="patch-list">
+            <li><strong>A browsable Formats page, a dedicated guide for every format Analyser reads in depth, and lighter, faster pages.</strong></li>
+            <li><span class="patch-tag">New</span><strong>A page for every supported format.</strong> A new <strong>Formats</strong> page - linked from the menu - lists all <strong>1,000-plus file types</strong> Analyser supports, grouped by category and searchable, each marked <strong>Full</strong> or <strong>ID</strong>, so you can see at a glance what it opens before dropping a file.</li>
+            <li><span class="patch-tag">New</span><strong>A guide for each format you can really dig into.</strong> Every format with a full viewer now has its own page - a plain-language &ldquo;what is a <code>.X</code> file, and how do I open it&rdquo; guide - reachable from the Formats page and from a web search.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Pages that don&rsquo;t open a file load lighter.</strong> The <strong>About</strong>, <strong>Changelog</strong>, <strong>Formats</strong> and per-format guide pages no longer pull in a 74&nbsp;KB photo-metadata library they never use - it is fetched only when you actually analyse a photo or video.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Tidier format lists on phones.</strong> On the <strong>Formats</strong> page, each format&rsquo;s file extensions now sit under its name - matching the popup and the About page - so the long lists are easier to read on a narrow screen.</li>
+            <li><strong>Behind the scenes.</strong> The supported-format count, the page descriptions and the sitemap dates now all update themselves from a single source, so they can no longer drift apart, and the site describes itself more accurately to search engines and link previews.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">2.19</p>
+          <p class="patch-name">Even Keel</p>
+          <p class="patch-date">9 June 2026, 23:07</p>
+          <ul class="patch-list">
+            <li><strong>Two small layout fixes - to the menu buttons and the connection indicator.</strong></li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Even-width menu buttons on narrow screens.</strong> The <strong>About</strong>, <strong>Changelog</strong>, <strong>Formats</strong> and <strong>Share</strong> buttons under the title now share the row evenly on small phones, instead of some stretching wider than others.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Offline status turns red.</strong> The header <code>Status</code> dot now glows red the moment you lose connection, so the <strong>Offline</strong> state is easy to spot at a glance.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">2.18</p>
           <p class="patch-name">Errata</p>
           <p class="patch-date">9 June 2026, 22:07</p>
@@ -189,6 +216,9 @@
             <li><strong>Small fix.</strong></li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.17</p>
@@ -223,9 +253,6 @@
             <li><span class="patch-tag">New</span><strong>Tidier menu buttons.</strong> The <strong>About</strong>, <strong>Changelog</strong>, <strong>Share</strong>, <strong>Links</strong> and day/night buttons now sit on a soft background that matches the menu bar, and every button shows the <strong>hand cursor</strong> on hover.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.15</p>
@@ -1066,7 +1093,7 @@
       <div><dt>FFmpeg</dt><dd><a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener">ffmpeg.wasm</a>. Audio extraction and frame rate detection for formats the browser can't decode natively. The ~31 MB core is fetched from a CDN the first time it's needed (then cached for offline use).</dd></div>
       <div><dt>PDF</dt><dd><a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a> by Mozilla. Renders PDF pages, extracts text, and supports OCR scanning of image-only pages via Tesseract. Loaded only for PDF files.</dd></div>
       <div><dt>Archives</dt><dd><a href="https://github.com/101arrowz/fflate" target="_blank" rel="noopener">fflate</a>. Fast ZIP decompression in the browser.</dd></div>
-      <div><dt>File ID</dt><dd>Built-in identification for 200+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 1017+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Install</dt><dd>Add to home screen for an offline PWA. Service worker caches the app shell. Use the buttons above to pre-cache heavy dependencies.</dd></div>
         </dl>
       </details>
@@ -1075,6 +1102,7 @@
   <div class="footer-row footer-bottom">
     <a href="/" class="footer-nav-btn">&larr; Main page</a>
     <p class="footer-meta">2026 &middot; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
+    <p class="footer-meta"><a href="/formats">Supported file types</a></p>
     <p class="footer-meta"><a href="https://github.com/KostaJovanovic/lab" target="_blank" rel="noopener">Source on GitHub ↗</a></p>
     <!-- No address in the source: the mailto is assembled in JS only after a
          Cloudflare Turnstile challenge passes (see wireFooterContact in app.js). -->
@@ -1083,7 +1111,6 @@
 </footer>
 
 <script src="assets/js/core/navigate.js"></script>
-<script src="assets/vendor/exifr.umd.js"></script>
 <script type="module" src="assets/js/core/app.js"></script>
 <script>
   if ('serviceWorker' in navigator) {
