@@ -22,7 +22,7 @@ Most "file inspector" sites work by uploading your file to a server, which is ex
 
 Analyser recognises **~1,000 file types**. The depth varies by format: photos, audio, video, documents, 3D models, archives, maps and databases get full viewers and deep analysis, while hundreds of proprietary formats are identified by magic bytes with their header metadata decoded. Anything still unknown gets a hex dump and best-effort identification.
 
-The full, searchable list is at [lab.valjdakosta.com/formats](https://lab.valjdakosta.com/formats), with a guide page for every format that gets deep analysis.
+The full, searchable list is at [lab.valjdakosta.com/formats](https://lab.valjdakosta.com/formats), with a guide page for every supported extension.
 
 ## Privacy
 
@@ -79,4 +79,4 @@ Every commit is its own version (currently in the 2.x era), stamped automaticall
 
 ## Credits
 
-The idea for this website was mine, originally made as a simple tool for generating spectrograms and reading a photo aspect ratio, that spiraled out of control pretty quickly. Many thanks to my parents, who encouraged me to continue by finding this cool, and to friends who tested this for me on platforms i do not possess or use frequently (linux arch and debian, MacOS). This project was made possible with Claude.
+The idea and need for this website was mine, originally made as a simple tool for generating spectrograms and reading a photo aspect ratio, that spiraled out of control pretty quickly. Many thanks to my parents, who encouraged me to continue by finding this cool, and to friends who tested this for me on platforms i do not possess or use frequently (linux arch and debian, MacOS). Since this project was made possible with Claude, and having in mind the moral and ethical dilemmas regarding AI usage, I decided to make this completely open source and available to the public.
