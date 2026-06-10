@@ -31,6 +31,22 @@ const { catalogGrouped, formatCount } = await import(
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const escAttr = (s) => esc(s).replace(/"/g, '&quot;');
 
+// Which extensions live in at least one full-analysis row. Their landing pages
+// sit at /formats/<ext>; identification-only extensions sit at
+// /formats/id/<ext> (same routing as tools/prerender-format-pages.mjs, which
+// generates the pages - an ext in both a full and an id row gets the full page).
+const fullKeys = new Set();
+for (const g of catalogGrouped()) {
+  for (const r of g.rows) {
+    if (r.depth !== 'full') continue;
+    for (const tok of r.exts) fullKeys.add(tok.toLowerCase());
+  }
+}
+const guideHref = (tok) => {
+  const k = tok.toLowerCase();
+  return fullKeys.has(k) ? `/formats/${k}` : `/formats/id/${k}`;
+};
+
 // One <details class="fmt-item"> - byte-for-byte the shape fmtItem() builds in
 // formats.js, so the shared CSS renders it identically to the in-app overlay.
 function item(r, catKey) {
@@ -42,12 +58,10 @@ function item(r, catKey) {
   const exts = r.exts
     .map((t) => `<span class="fmt-item-ext" id="ext-${escAttr(t.toLowerCase())}">${esc(t)}</span>`)
     .join(' ');
-  // Full-analysis rows have a per-extension landing page (/format/<ext>); link them
-  // from inside the description so the hub feeds the pages internal links. (Links
-  // go in the body, not the <summary>, to avoid interactive content in a toggle.)
-  const guides = isFull
-    ? `\n          <p class="fmt-item-guides">Per-format guides: ${r.exts.map((t) => `<a href="/formats/${escAttr(t.toLowerCase())}">.${esc(t)}</a>`).join(' &middot; ')}</p>`
-    : '';
+  // Every extension has a landing page; link them from inside the description so
+  // the hub feeds the pages internal links. (Links go in the body, not the
+  // <summary>, to avoid interactive content in a toggle.)
+  const guides = `\n          <p class="fmt-item-guides">Per-format guides: ${r.exts.map((t) => `<a href="${escAttr(guideHref(t))}">.${esc(t)}</a>`).join(' &middot; ')}</p>`;
   return `        <details class="fmt-item" id="fmt-${escAttr(r.slug)}" data-tags="${escAttr(r.tags)}" data-cat="${escAttr(catKey)}">
           <summary class="fmt-item-summary">
             <div class="fmt-item-head">

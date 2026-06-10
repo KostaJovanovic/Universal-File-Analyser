@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 83;
+const COMMIT_COUNT = 84;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1016,6 +1016,10 @@ function splitText(container, baseWeight) {
 // each entry's full bullet list for the matching line here. When you add a new
 // patch entry to patch.html, add its one-liner here too (newest at the top).
 const PATCH_TLDR = {
+  '2.24': 'Every supported format now has its own guide page - the nine hundred identification-only ones included - each explaining what the file is and what Analyser reads from it. The Formats page links every extension to its guide, and search engines are told about all the new pages.',
+  '2.23': 'Maintenance: a small correction to the GitHub readme. Nothing on the site changed.',
+  '2.22': 'Maintenance: the GitHub readme gained a title card and a fuller overview. Nothing on the site changed.',
+  '2.21': 'Maintenance: the internal project guide and the GitHub readme were rewritten. Nothing on the site changed.',
   '2.20': 'A new Formats page, linked from the menu, lists every one of the 1,000-plus file types Analyser supports - grouped, searchable, each marked Full or ID - and every format with a full viewer gets its own plain-language “what is a .X file and how to open it” guide page, reachable from a web search. Pages that don’t open a file (About, Changelog, Formats and the guides) now load lighter, leaving out a 74 KB photo-metadata library until you actually analyse a photo or video, and on phones the Formats list stacks each format’s extensions under its name. Behind the scenes the supported-format count, page descriptions and sitemap update themselves from a single source so they can’t drift.',
   '2.19': 'Two small layout fixes: the About, Changelog, Formats and Share buttons under the title share a narrow-screen row evenly, and the header Status dot turns red the moment you go offline.',
   '2.18': 'A small fix.',

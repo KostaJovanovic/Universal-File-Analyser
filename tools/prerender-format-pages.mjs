@@ -1,32 +1,37 @@
-/* Prerender one static /formats/<ext> landing page per "rich" extension.
+/* Prerender one static landing page per supported extension.
    ============================================================================
    WHAT / WHY
    The long-tail SEO intent here is per-extension ("how to open a .stl file",
    "view .arw exif"). On a static, backend-free site every rankable URL must be a
    real file (Cloudflare's SPA fallback would otherwise serve index.html for an
    ungenerated path - a soft-404). So this emits one real HTML file per extension
-   into formats/, served at the clean URL /formats/<ext> (nested under the
-   /formats hub; formats.html the file and formats/ the directory coexist).
+   into formats/, served at clean URLs nested under the /formats hub
+   (formats.html the file and formats/ the directory coexist).
 
-   SCOPE - "more than basic identification"
-   Pages are generated ONLY for extensions whose catalog row has depth 'full'
-   (a real viewer / deep analysis: photos, audio, video, PDF, Office, 3D models,
-   subtitles, maps, code...), NOT the identification-only formats. That predicate
-   lives in the catalog (assets/js/core/formats.js) and is the single source of
-   truth - add an extension there and it flows here automatically.
+   SCOPE - every extension in the catalog
+   Extensions whose catalog row has depth 'full' (a real viewer / deep analysis)
+   get a page at /formats/<ext>; identification-only extensions get a page at
+   /formats/id/<ext>. An extension that appears in BOTH a full and an id row
+   (e.g. .h264, listed under Video and under streaming) gets only the full page.
+   That predicate lives in the catalog (assets/js/core/formats.js) and is the
+   single source of truth - add an extension there and it flows here.
 
    CONTENT
    Per-extension copy (the unique "what is a .X file" line) comes from
    tools/format-page-content.mjs; the "what Analyser does" part is the catalog
-   row `desc`. A full-analysis extension missing from format-page-content.mjs is
+   row `desc`. A FULL-analysis extension missing from format-page-content.mjs is
    WARNED about and gets a generic fallback line, so save.bat surfaces the gap.
+   Identification-only extensions fall back to a line built from their catalog
+   row WITHOUT a warning - there are hundreds of them, so EXT_PAGES copy is
+   welcome but optional there.
 
    OUTPUTS
-   - formats/<ext>.html       one page per rich extension
-   - sitemap-formats.xml      lists every /formats/<ext> URL (+ /formats)
+   - formats/<ext>.html       one page per full-analysis extension
+   - formats/id/<ext>.html    one page per identification-only extension
+   - sitemap-formats.xml      lists every page URL (+ /formats)
 
    RUN: `node tools/prerender-format-pages.mjs` (save.bat runs it each commit).
-   See CLAUDE.md -> "Per-format landing pages" for the upkeep checklist.
+   See CLAUDE.md -> "Generated SEO pages" for the upkeep checklist.
    ============================================================================ */
 import { writeFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -41,33 +46,56 @@ const { EXT_PAGES } = await import(pathToFileURL(join(ROOT, 'tools/format-page-c
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const escAttr = (s) => esc(s).replace(/"/g, '&quot;');
-const j = (s) => JSON.stringify(String(s)); // JSON-LD string literal
 
-// ---- assemble per-extension data from the catalog (full-analysis rows only) ----
+// ---- assemble per-extension data from the catalog ----
 const groups = catalogGrouped();
-const ext = new Map(); // lowercase ext -> { display, rows:[{label,catKey,catLabel,desc}], sibs:Set }
+
+// Which extensions live in at least one full-analysis row. Full pages win
+// cross-depth collisions, and links route on this set everywhere.
+const fullKeys = new Set();
 for (const g of groups) {
   for (const r of g.rows) {
     if (r.depth !== 'full') continue;
-    for (const tok of r.exts) {
-      const key = tok.toLowerCase();
-      let e = ext.get(key);
-      if (!e) { e = { display: tok, rows: [], sibs: new Set() }; ext.set(key, e); }
-      e.rows.push({ label: r.label, catKey: g.key, catLabel: g.label, desc: r.desc });
-      for (const sib of r.exts) if (sib.toLowerCase() !== key) e.sibs.add(sib);
-    }
+    for (const tok of r.exts) fullKeys.add(tok.toLowerCase());
   }
 }
 
-const HEAD_TAGLINE = 'Photos, sound, video - and almost any other file. Fully local; nothing you drop ever leaves your browser.';
+// The canonical URL path for an extension token, whichever depth it lives at.
+const hrefOf = (tok) => {
+  const k = tok.toLowerCase();
+  return fullKeys.has(k) ? `/formats/${k}` : `/formats/id/${k}`;
+};
+
+// lowercase ext -> { display, rows:[{label,catKey,catLabel,desc}], sibs:Set }
+function collect(depth) {
+  const ext = new Map();
+  for (const g of groups) {
+    for (const r of g.rows) {
+      if (r.depth !== depth) continue;
+      for (const tok of r.exts) {
+        const key = tok.toLowerCase();
+        if (depth === 'id' && fullKeys.has(key)) continue; // the full page covers it
+        let e = ext.get(key);
+        if (!e) { e = { display: tok, rows: [], sibs: new Set() }; ext.set(key, e); }
+        e.rows.push({ label: r.label, catKey: g.key, catLabel: g.label, desc: r.desc });
+        for (const sib of r.exts) if (sib.toLowerCase() !== key) e.sibs.add(sib);
+      }
+    }
+  }
+  return ext;
+}
+const fullExt = collect('full');
+const idExt = collect('id');
+
 const SHARE_SVG = '<svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>';
 
-function capabilityBlocks(e) {
+function capabilityBlocks(e, isFull) {
   // One "what Analyser does" entry per row the ext belongs to (collisions like
   // .ts -> video + code get both), then how-to-open and related-formats.
   const single = e.rows.length === 1;
+  const singleDt = isFull ? 'What Analyser shows you' : 'What Analyser reads';
   const caps = e.rows.map((r) =>
-    `<div><dt>${single ? 'What Analyser shows you' : 'As ' + esc(r.label.toLowerCase())}</dt><dd>${esc(r.desc)}</dd></div>`
+    `<div><dt>${single ? singleDt : 'As ' + esc(r.label.toLowerCase())}</dt><dd>${esc(r.desc)}</dd></div>`
   );
   return caps.join('\n            ');
 }
@@ -76,18 +104,26 @@ function relatedLinks(e) {
   const sibs = [...e.sibs].slice(0, 18);
   if (!sibs.length) return `Browse the <a href="/formats">full list of supported file types</a>.`;
   const links = sibs
-    .map((s) => `<a href="/formats/${escAttr(s.toLowerCase())}">.${esc(s)}</a>`)
+    .map((s) => `<a href="${escAttr(hrefOf(s))}">.${esc(s)}</a>`)
     .join(' &middot; ');
   const more = e.sibs.size > sibs.length ? ` and <a href="/formats">more</a>` : '';
   return `${links}${more}. See <a href="/formats">all supported file types</a>.`;
 }
 
-function page(key, e) {
+function page(key, e, depth) {
+  const isFull = depth === 'full';
   const d = e.display;            // curated casing for display, e.g. WebP
-  const meta = EXT_PAGES[key] || { name: '.' + d + ' file', blurb: `.${d} is a file format that Analyser can open and analyse in your browser.` };
-  const url = `${SITE}/formats/${key}`;
-  const title = `.${d} file - what it is and how to open it | Analyser`;
-  const desc = `${meta.blurb} Open and inspect a .${d} file free in your browser with Analyser - nothing is uploaded.`;
+  const fallback = isFull
+    ? { name: '.' + d + ' file', blurb: `.${d} is a file format that Analyser can open and analyse in your browser.` }
+    : { name: '.' + d + ' file (' + e.rows[0].label + ')', blurb: `.${d} files belong to the "${e.rows[0].label}" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser.` };
+  const meta = EXT_PAGES[key] || fallback;
+  const url = `${SITE}${isFull ? '/formats/' : '/formats/id/'}${key}`;
+  const title = isFull
+    ? `.${d} file - what it is and how to open it | Analyser`
+    : `.${d} file - what it is and how to identify it | Analyser`;
+  const desc = isFull
+    ? `${meta.blurb} Open and inspect a .${d} file free in your browser with Analyser - nothing is uploaded.`
+    : `${meta.blurb} Identify and inspect a .${d} file free in your browser with Analyser - nothing is uploaded.`;
   const kicker = [...new Set(e.rows.map((r) => r.catLabel))].join(' / ');
 
   const faq = {
@@ -96,7 +132,7 @@ function page(key, e) {
       { '@type': 'Question', name: `What is a .${d} file?`,
         acceptedAnswer: { '@type': 'Answer', text: meta.blurb } },
       { '@type': 'Question', name: `How do I open a .${d} file?`,
-        acceptedAnswer: { '@type': 'Answer', text: `Drop a .${d} file onto Analyser at ${SITE}/ and it opens directly in your browser - no upload, no account and no software to install. ${e.rows[0].desc}` } },
+        acceptedAnswer: { '@type': 'Answer', text: `Drop a .${d} file onto Analyser at ${SITE}/ and it ${isFull ? 'opens' : 'is identified'} directly in your browser - no upload, no account and no software to install. ${e.rows[0].desc}` } },
     ],
   };
   const crumbs = {
@@ -107,6 +143,11 @@ function page(key, e) {
       { '@type': 'ListItem', position: 3, name: `.${d}`, item: url },
     ],
   };
+
+  // Identification-only pages say so up front, instead of implying a viewer.
+  const depthNote = isFull ? '' : `
+            <div><dt>Depth of analysis</dt><dd>.${esc(d)} is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>`;
+  const openVerb = isFull ? 'It opens' : 'It is identified';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -191,8 +232,8 @@ function page(key, e) {
 
         <div class="about-block">
           <dl class="about-caps">
-            ${capabilityBlocks(e)}
-            <div><dt>Open a .${esc(d)} file</dt><dd>Drag a .${esc(d)} file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
+            ${capabilityBlocks(e, isFull)}${depthNote}
+            <div><dt>Open a .${esc(d)} file</dt><dd>Drag a .${esc(d)} file onto <a href="/">the Analyser home page</a> (or tap to pick one). ${openVerb} entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd>${relatedLinks(e)}</dd></div>
           </dl>
         </div>
@@ -239,29 +280,42 @@ function page(key, e) {
 `;
 }
 
-// ---- write pages (regenerate the format/ dir from scratch so removed exts go) ----
+// ---- write pages (regenerate formats/ from scratch so removed exts go) ----
 mkdirSync(OUTDIR, { recursive: true });
 for (const f of readdirSync(OUTDIR)) {
   if (f.endsWith('.html')) rmSync(join(OUTDIR, f));
 }
+rmSync(join(OUTDIR, 'id'), { recursive: true, force: true });
+mkdirSync(join(OUTDIR, 'id'), { recursive: true });
 
-const keys = [...ext.keys()].sort();
+const fullKeysSorted = [...fullExt.keys()].sort();
 const missing = [];
-for (const key of keys) {
+for (const key of fullKeysSorted) {
   if (!EXT_PAGES[key]) missing.push(key);
-  writeFileSync(join(OUTDIR, key + '.html'), page(key, ext.get(key)));
+  writeFileSync(join(OUTDIR, key + '.html'), page(key, fullExt.get(key), 'full'));
+}
+
+const idKeysSorted = [...idExt.keys()].sort();
+for (const key of idKeysSorted) {
+  writeFileSync(join(OUTDIR, 'id', key + '.html'), page(key, idExt.get(key), 'id'));
 }
 
 // ---- sitemap for the per-format pages (+ the hub) ----
-const urls = [`${SITE}/formats`, ...keys.map((k) => `${SITE}/formats/${k}`)];
+const entry = (loc, priority) =>
+  `  <url><loc>${loc}</loc><changefreq>monthly</changefreq><priority>${priority}</priority></url>`;
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.map((u) => `  <url><loc>${u}</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>`).join('\n')}
+${[
+  entry(`${SITE}/formats`, '0.7'),
+  ...fullKeysSorted.map((k) => entry(`${SITE}/formats/${k}`, '0.7')),
+  ...idKeysSorted.map((k) => entry(`${SITE}/formats/id/${k}`, '0.5')),
+].join('\n')}
 </urlset>
 `;
 writeFileSync(join(ROOT, 'sitemap-formats.xml'), sitemap);
 
-console.log(`prerender-format-pages: ${keys.length} pages -> formats/, ${urls.length} urls -> sitemap-formats.xml`);
+const total = 1 + fullKeysSorted.length + idKeysSorted.length;
+console.log(`prerender-format-pages: ${fullKeysSorted.length} full pages -> formats/, ${idKeysSorted.length} id pages -> formats/id/, ${total} urls -> sitemap-formats.xml`);
 if (missing.length) {
   console.log(`  WARNING: ${missing.length} full-analysis ext(s) missing from format-page-content.mjs (generic fallback used): ${missing.join(', ')}`);
 }

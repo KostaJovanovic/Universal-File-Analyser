@@ -16,7 +16,14 @@
       "Bash(serve.py)",
       "Bash(server.bat)",
       "Bash(wrangler.jsonc)",
-      "Bash(README.md\")"
+      "Bash(README.md\")",
+      "Bash(python serve.py 3199)",
+      "Bash(curl -s -o /dev/null -w \"/formats/id/als -> %{http_code}\\\\n\" http://localhost:3199/formats/id/als)",
+      "Bash(curl -s -o /dev/null -w \"/formats/stl -> %{http_code}\\\\n\" http://localhost:3199/formats/stl)",
+      "Bash(curl -s -o /dev/null -w \"/formats/id/als.html -> %{http_code} \\(redirect\\)\\\\n\" http://localhost:3199/formats/id/als.html)",
+      "Bash(curl -s http://localhost:3199/formats/id/als)",
+      "Bash(rtk read *)",
+      "Bash(rtk git *)"
     ]
   },
   "spinnerTipsEnabled": false
