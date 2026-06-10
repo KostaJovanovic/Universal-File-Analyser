@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 79;
+const COMMIT_COUNT = 80;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -470,7 +470,12 @@ function showShareModal(ctx) {
     value: SHARE_URL, 'aria-label': 'Link to share',
   });
 
-  const copyBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-share-copy' }, 'Copy link');
+  // Small copy button sitting next to the link field - copies the URL itself.
+  const urlCopyBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-share-urlcopy' }, 'Copy');
+  const urlRow = el('div', { class: 'anr-share-urlrow' }, [urlField, urlCopyBtn]);
+
+  // The primary button copies the whole share MESSAGE (the blurb), not just the link.
+  const copyBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-share-copy' }, 'Copy message');
 
   // Email gets a proper subject and a "Hello,"/"Best regards" letter body; it stays
   // visible next to Copy. The remaining platforms hide behind a "More" toggle.
@@ -510,7 +515,7 @@ function showShareModal(ctx) {
     el('p', { class: 'anr-modal-kicker' }, 'Share'),
     el('p', { class: 'anr-modal-title' }, 'Enjoying Analyser? Pass it on.'),
     el('p', { class: 'anr-share-lead' }, 'Here’s the link - send it off with one tap, or grab a copy below. Thanks for spreading the word.'),
-    urlField,
+    urlRow,
   ];
   // Native share sheet, when available - put it up top as the primary action.
   if (navigator.share) {
@@ -543,22 +548,40 @@ function showShareModal(ctx) {
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);
 
-  copyBtn.addEventListener('click', async () => {
-    let ok = false;
+  // Clipboard API with an execCommand fallback via a throwaway textarea, so it
+  // still works in insecure/older contexts where navigator.clipboard is absent.
+  async function copyText(text) {
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(SHARE_URL);
-        ok = true;
+        await navigator.clipboard.writeText(text);
+        return true;
       }
-    } catch (_) { ok = false; }
-    if (!ok) {
-      // Fallback for older / insecure contexts: select the field and execCommand.
-      try { urlField.focus(); urlField.select(); ok = document.execCommand('copy'); } catch (_) { ok = false; }
-    }
-    copyBtn.textContent = ok ? 'Got it!' : 'Hit Ctrl+C';
-    copyBtn.classList.toggle('is-done', ok);
+    } catch (_) { /* fall through */ }
+    try {
+      const ta = el('textarea', { style: 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;' });
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch (_) { return false; }
+  }
+  function flashCopy(btn, ok, idle) {
+    btn.textContent = ok ? 'Copied!' : 'Hit Ctrl+C';
+    btn.classList.toggle('is-done', ok);
+    setTimeout(() => { btn.textContent = idle; btn.classList.remove('is-done'); }, 1600);
+  }
+
+  // Next-to-the-field button copies the link; the primary button copies the message.
+  urlCopyBtn.addEventListener('click', async () => {
+    const ok = await copyText(SHARE_URL);
     if (!ok) { urlField.focus(); urlField.select(); }
-    setTimeout(() => { copyBtn.textContent = 'Copy link'; copyBtn.classList.remove('is-done'); }, 1600);
+    flashCopy(urlCopyBtn, ok, 'Copy');
+  });
+  copyBtn.addEventListener('click', async () => {
+    const ok = await copyText(msg);
+    flashCopy(copyBtn, ok, 'Copy message');
   });
 
   requestAnimationFrame(() => overlay.classList.add('is-open'));
@@ -993,6 +1016,8 @@ function splitText(container, baseWeight) {
 // each entry's full bullet list for the matching line here. When you add a new
 // patch entry to patch.html, add its one-liner here too (newest at the top).
 const PATCH_TLDR = {
+  '2.20': 'A new Formats page, linked from the menu, lists every one of the 1,000-plus file types Analyser supports - grouped, searchable, each marked Full or ID - and every format with a full viewer gets its own plain-language “what is a .X file and how to open it” guide page, reachable from a web search. Pages that don’t open a file (About, Changelog, Formats and the guides) now load lighter, leaving out a 74 KB photo-metadata library until you actually analyse a photo or video, and on phones the Formats list stacks each format’s extensions under its name. Behind the scenes the supported-format count, page descriptions and sitemap update themselves from a single source so they can’t drift.',
+  '2.19': 'Two small layout fixes: the About, Changelog, Formats and Share buttons under the title share a narrow-screen row evenly, and the header Status dot turns red the moment you go offline.',
   '2.18': 'A small fix.',
   '2.17': 'Folders and ZIPs stuffed with tiny files are finally navigable: in the treemap a folder of thousands of small files collapses to one labelled block you click to open a searchable, size-sorted file list. The audio waveform for a video’s sound track is back to full strength - region select, zoom, WAV export and a smooth grabbable playhead, in its own card - and clicking Analyse audio now scrolls to the top of the Sound section. The share prompt reliably stays away from cloud-only files that can’t be read, the offline download sizes drop the “~”, and the footer now credits every bundled library.',
   '2.16': 'Folders and ZIPs get a smarter treemap: a row of chips filters it to one file type, and a folder packed with thousands of tiny files collapses into a single labelled block instead of an unreadable wall of slivers. Opening a file from inside a folder or archive now scrolls to its analysis and shows the loading bar, the file tree opens the exact folder you click, and the folder drop zones tuck away after a drop. The share nudge stays away from cloud-only files that can’t be read, the scrubber replay icon reverts to play as soon as you scrub, search understands many more terms (folders, 3D models, Office, e-books, subtitles, maps and more), and the menu buttons gain a subtle fill and a proper hand cursor.',
@@ -1281,10 +1306,31 @@ function setupSectionFx() {
     section.addEventListener('mouseleave', () => { inside = false; });
   });
 }
+// exifr (74 KB) is only needed when a photo or video is actually analysed, which
+// only ever happens on the home page. Rather than ship a static <script> tag on
+// every page (about/patch/formats and the 100+ per-format landing pages never
+// touch it), inject it on demand the first time the analysis pipeline needs it.
+// Idempotent and cached; resolves instantly once loaded. The script is precached
+// by the service worker, so the first lazy load is offline-safe and near-instant.
+let _exifrPromise = null;
+function ensureExifr() {
+  if (window.exifr) return Promise.resolve(window.exifr);
+  if (_exifrPromise) return _exifrPromise;
+  _exifrPromise = new Promise((resolve) => {
+    const s = document.createElement('script');
+    s.src = '/assets/vendor/exifr.umd.js';
+    s.onload = () => resolve(window.exifr);
+    s.onerror = () => {
+      _exifrPromise = null;
+      console.warn('exifr failed to load; photo/video metadata will be missing.');
+      resolve(null);
+    };
+    document.head.appendChild(s);
+  });
+  return _exifrPromise;
+}
+
 function boot() {
-  if (!window.exifr) {
-    console.warn('exifr not loaded yet; photo metadata will be missing until it loads.');
-  }
 
   const photoResults   = $('photoResults');
   const audioResults   = $('audioResults');
@@ -1538,6 +1584,9 @@ function boot() {
     (route.nav || []).forEach(markNav);
     (route.analysed || []).forEach(markAnalysed);
     const extOverride = force && force.ext;
+    // Photo and video metadata both come from exifr; pull it in (once) before the
+    // renderer runs so the global is ready by the time photo.js/video.js read it.
+    if (kind === 'photo' || kind === 'video') await ensureExifr();
     let renderPromise;
     if ((kind === 'proprietary' || kind === 'comic') && extOverride) {
       renderPromise = route.render(file, resultsByName[route.results], extOverride);
@@ -1586,8 +1635,10 @@ function boot() {
     // Pull it out and analyse it as a photo (the Photo section is kept visible
     // above for exe/dll). Best-effort and fully async - never blocks the render.
     if (kind === 'proprietary' && /\.(exe|dll)$/i.test(file.name) && photoResults) {
-      extractPeIcon(file).then((iconFile) => {
+      extractPeIcon(file).then(async (iconFile) => {
         if (!iconFile || token.cancelled || _currentToken !== token) return;
+        await ensureExifr();
+        if (token.cancelled || _currentToken !== token) return;
         photoResults.hidden = false;
         markAnalysed('photo');
         renderPhoto(iconFile, photoResults,
@@ -1778,10 +1829,14 @@ function boot() {
 
       if (!$('photoResults')) {
         window._anrPendingFile = files[0];
-        const home = new URL('index.html', location.href).href;
+        // Navigate to the site root with an ABSOLUTE path. A relative 'index.html'
+        // resolves against the current directory, which breaks on the nested
+        // /formats/<ext> landing pages (it would aim at /formats/index.html). The
+        // folder branch above already uses '/'; keep them consistent.
+        const home = new URL('/', location.href).href;
         if (location.href !== home) {
           const link = document.createElement('a');
-          link.href = 'index.html';
+          link.href = '/';
           document.body.appendChild(link);
           link.click();
           link.remove();
@@ -2732,6 +2787,18 @@ function boot() {
       });
     }
     if (fmtSearch && !fmtSearch._wired) { fmtSearch._wired = true; fmtSearch.addEventListener('input', applyFilter); }
+
+    // Sitelinks searchbox / deep-link: /?q=foo (the WebSite schema's SearchAction
+    // target) and /formats?q=foo open the formats overlay pre-filtered, so a query
+    // from search results lands directly on matching formats.
+    if (fmtSearch) {
+      const q = new URLSearchParams(location.search).get('q');
+      if (q) {
+        openFmt();
+        fmtSearch.value = q;
+        applyFilter();
+      }
+    }
   }
 
   // ----- Search -----

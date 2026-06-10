@@ -10,7 +10,7 @@
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Analyser">
-  <meta property="og:locale" content="en_US">
+  <meta property="og:locale" content="en_GB">
   <meta property="og:title" content="About Analyser - Local File Forensics, No Ads or Tracking">
   <meta property="og:description" content="Why Analyser exists and how it works: a free, in-browser forensic tool for photos, sound, video &amp; 1,000+ formats. No ads, no telemetry, nothing uploaded.">
   <meta property="og:url" content="https://lab.valjdakosta.com/about">
@@ -93,6 +93,7 @@
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
         <a href="/patch" class="header-btn">Changelog</a>
+        <a href="/formats" class="header-btn">Formats</a>
         <button type="button" class="header-btn header-btn-share"><svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>Share</button>
       </nav>
     </div>
@@ -187,7 +188,7 @@
         </div>
 
         <p class="about-formats-actions">
-          <button type="button" class="fmt-count-link" data-fmt-open data-fmt-count data-fmt-count-tpl="Browse all {n} supported formats">Browse all 1017 supported formats</button>
+          <a href="/formats" class="fmt-count-link" data-fmt-count data-fmt-count-tpl="Browse all {n} supported formats">Browse all 1017 supported formats</a>
         </p>
 
         <details class="about-formats">
@@ -286,6 +287,7 @@
   <div class="footer-row footer-bottom">
     <a href="/" class="footer-nav-btn">&larr; Main page</a>
     <p class="footer-meta">2026 &middot; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
+    <p class="footer-meta"><a href="/formats">Supported file types</a></p>
     <p class="footer-meta"><a href="https://github.com/KostaJovanovic/lab" target="_blank" rel="noopener">Source on GitHub ↗</a></p>
     <!-- No address in the source: the mailto is assembled in JS only after a
          Cloudflare Turnstile challenge passes (see wireFooterContact in app.js). -->
@@ -294,7 +296,6 @@
 </footer>
 
 <script src="assets/js/core/navigate.js"></script>
-<script src="assets/vendor/exifr.umd.js"></script>
 <script type="module" src="assets/js/core/app.js"></script>
 <script>
   if ('serviceWorker' in navigator) {

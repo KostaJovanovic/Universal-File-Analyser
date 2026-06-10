@@ -61,6 +61,27 @@ rem instead of leaving cached clients on a stale shell (stale-while-revalidate
 rem otherwise keeps serving the old code until VERSION changes).
 powershell -Command "(Get-Content 'sw.js') -replace 'const VERSION = ''analyser-v\d+'';', 'const VERSION = ''analyser-v%NEXT_COUNT%'';' | Set-Content 'sw.js' -Encoding utf8"
 
+rem Prerender the static /formats page from the catalog (single source of truth
+rem in assets/js/core/formats.js), so the supported-formats list and its #fmt- /
+rem #ext- deep-link anchors exist in plain HTML for crawlers. Non-fatal: a missing
+rem Node or a generator error just commits the existing formats.html.
+echo Prerendering /formats from the catalog...
+node --no-warnings tools/prerender-formats.mjs
+if errorlevel 1 echo WARNING: formats.html prerender failed - committing the existing copy.
+
+rem Prerender the per-extension /format/<ext> landing pages (only for formats with
+rem a real viewer/deep analysis - depth 'full' in the catalog) plus sitemap-formats.xml.
+echo Prerendering per-format landing pages...
+node --no-warnings tools/prerender-format-pages.mjs
+if errorlevel 1 echo WARNING: per-format page prerender failed - committing the existing copies.
+
+rem Stamp the live format count into the static crawler-only copy (meta/OG/JSON-LD
+rem descriptions, manifest, feature text) and refresh the main sitemap lastmod, so
+rem the hand-maintained numbers can't drift from the catalog. Non-fatal.
+echo Stamping format count and sitemap dates...
+node --no-warnings tools/stamp-counts.mjs
+if errorlevel 1 echo WARNING: count/sitemap stamp failed - committing the existing copies.
+
 git add .
 git status
 

@@ -2003,6 +2003,16 @@ audio { width: 100%; }
   transition: opacity 0.15s ease;
 }
 .anr-share-nudge-cta:hover { opacity: 0.85; }
+@media (max-width: 700px) {
+  /* On phones, match the 16px gutter the width already assumes (left was 22px, so
+     the right margin came out narrower) and lift clear of the iOS home indicator;
+     the CTA spans the card for an easy thumb tap. */
+  .anr-share-nudge {
+    left: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+  .anr-share-nudge-cta { display: block; width: 100%; text-align: center; }
+}
 .anr-suggest-head {
   display: flex;
   align-items: center;
@@ -3316,10 +3326,11 @@ details[open] summary::after { content: "\2212"; }
   align-items: baseline;
   gap: 12px;
 }
-/* About page and the supported-formats overlay: stack the extension list under
-   the group name instead of beside it. */
+/* About page, the supported-formats overlay, and the /formats hub: stack the
+   extension list under the group name instead of beside it. */
 #aboutFormats .fmt-item-head,
-#fmtBody .fmt-item-head {
+#fmtBody .fmt-item-head,
+.formats-page .fmt-item-head {
   flex-direction: column;
   gap: 3px;
 }
@@ -3354,6 +3365,27 @@ details[open] summary::after { content: "\2212"; }
   scroll-margin-top: 84px;
 }
 .fmt-item { scroll-margin-top: 84px; }
+/* Per-format guide links inside a full row's description (link to /format/<ext>). */
+.fmt-item-guides {
+  margin: 0;
+  padding: 0 0 12px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  line-height: 1.7;
+  color: var(--muted);
+  max-width: 60ch;
+}
+
+/* Breadcrumb on the per-format landing pages (/format/<ext>). */
+.format-crumbs {
+  margin: 0 0 18px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.format-crumbs a { color: inherit; }
+.format-crumbs span { color: var(--fg); }
 
 /* ---- Category chips (modal filter) ---- */
 .fmt-chips {
@@ -4104,6 +4136,12 @@ details[open] summary::after { content: "\2212"; }
   color: var(--fg);
 }
 .anr-share-url:focus { outline: none; border-color: var(--accent); }
+/* Link field + its own small Copy button on one row. */
+.anr-share-urlrow { display: flex; gap: 8px; margin-bottom: 8px; }
+.anr-share-urlrow .anr-share-url { flex: 1 1 auto; min-width: 0; margin-bottom: 0; }
+.anr-share-urlcopy { flex: 0 0 auto; margin: 0; white-space: nowrap; }
+.anr-share-urlcopy:hover { background: var(--fg); color: var(--bg); }
+.anr-share-urlcopy.is-done { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .anr-share-nativewrap { margin-bottom: 8px; }
 .anr-share-native { width: 100%; }
 /* Copy + Email sit side by side as the two primary, always-visible targets. */
@@ -4112,9 +4150,28 @@ details[open] summary::after { content: "\2212"; }
 .anr-share-copy:hover { background: var(--fg); color: var(--bg); }
 .anr-share-copy.is-done { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .anr-share-email { flex: 1 1 0; display: flex; align-items: center; justify-content: center; }
-/* "More platforms" toggle: full-width chip that expands the secondary targets. */
-.anr-share-more-toggle { width: 100%; margin-bottom: 8px; }
-.anr-share-more-toggle:hover { background: var(--fg); color: var(--bg); }
+/* "More platforms" toggle: borderless centred label with a hairline running out
+   to each side (a labelled divider), not a boxed chip. Keeps the mono/uppercase
+   type it inherits from .anr-modal-btn. */
+.anr-share-more-toggle {
+  width: 100%;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: none;
+  background: none;
+  padding: 4px 0;
+  color: var(--muted);
+}
+.anr-share-more-toggle::before,
+.anr-share-more-toggle::after {
+  content: '';
+  flex: 1 1 0;
+  height: 1px;
+  background: var(--hairline);
+}
+.anr-share-more-toggle:hover { background: none; color: var(--fg); }
 .anr-share-targets {
   display: flex;
   flex-wrap: wrap;
@@ -4140,10 +4197,10 @@ details[open] summary::after { content: "\2212"; }
   transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 .anr-share-target:hover { background: var(--fg); color: var(--bg); }
-/* Cancel is set apart from the share buttons by a hairline divider. */
+/* Cancel just gets a little breathing room above it - the "More platforms"
+   labelled divider already supplies the visual break, so no extra hairline. */
 .anr-share-card .anr-modal-actions {
-  border-top: 1px solid var(--hairline);
-  padding-top: 18px;
+  padding-top: 10px;
 }
 
 /* ---------- Scene change detection (video) ---------- */

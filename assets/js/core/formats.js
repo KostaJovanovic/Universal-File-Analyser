@@ -373,3 +373,32 @@ export function renderAboutFormats(container) {
   if (!container) return;
   renderFmtItems(container, { anchors: true });
 }
+
+// Pure (DOM-free) view of the catalog, grouped exactly like renderFmtItems():
+// the standalone /formats page is prerendered to static HTML from this by
+// tools/prerender-formats.mjs (run in save.bat). Keeping it here means the
+// static page, the overlay and the about list all derive from one source, so
+// they can never drift. Each row mirrors the data fmtItem() consumes.
+export function catalogGrouped() {
+  const rows = allRows();
+  const counts = categoryCounts();
+  const out = [];
+  for (const c of CATEGORIES) {
+    const catRows = rows.filter((r) => r.cat === c.key);
+    if (!catRows.length) continue;
+    out.push({
+      key: c.key,
+      label: c.label,
+      count: counts[c.key] || 0,
+      rows: catRows.map((r) => ({
+        label: r.label,
+        slug: slugify(r.label),
+        exts: r.exts.split(/\s+/).filter(Boolean),
+        desc: r.desc || '',
+        tags: r.tags || '',
+        depth: r.depth, // 'full' = viewer + deep metadata, 'id' = identified
+      })),
+    });
+  }
+  return out;
+}

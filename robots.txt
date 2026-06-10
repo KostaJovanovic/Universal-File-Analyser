@@ -6,3 +6,4 @@ Allow: /
 # Structured summary for LLMs: https://lab.valjdakosta.com/llms.txt
 
 Sitemap: https://lab.valjdakosta.com/sitemap.xml
+Sitemap: https://lab.valjdakosta.com/sitemap-formats.xml
