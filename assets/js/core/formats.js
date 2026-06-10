@@ -184,7 +184,7 @@ export const IDENTIFICATION_CORE = [
   { label: 'CNC / 3D print',  exts: 'GCODE GCO NC NGC TAP CNC', tags: 'gcode cnc 3d printing slicer prusa cura bambu orca simplify3d slic3r mill router lathe laser plasma fusion 360 mastercam grbl fanuc haas vectric carbide lightburn spindle tool', desc: 'Analyse G-code for 3D printers and CNC machines - detect the slicer or CAM tool, machine and controller, toolpath, and print or cut dimensions (Prusa, Bambu, Cura, Fusion 360, Mastercam, GRBL, Fanuc, Haas).' },
   { label: 'Surround audio',  exts: 'EC3 EAC3 TrueHD THD MLP Atmos', tags: 'dolby digital plus eac3 truehd atmos surround 5.1 7.1 meridian lossless object audio home theatre', desc: 'Identify Dolby surround codecs - Digital Plus (E-AC-3), TrueHD, MLP, and Atmos - with channel-layout detection (5.1, 7.1).' },
   { label: 'Certificates',    exts: 'CRT CER PEM DER', tags: 'x509 certificate ssl tls https security openssl public key private rsa ec', desc: 'Identify and decode X.509 security certificates (CRT, CER, PEM, DER) - subject, issuer, validity dates, and key details.' },
-  { label: 'Engineering',     exts: 'CDP', tags: 'cdp4 comet data platform esa engineering systems concurrent design', desc: 'Identify CDP4 (COMET) concurrent-design engineering files from the ESA systems-engineering toolset.' },
+  { label: 'Engineering',     exts: 'CDP', tags: 'cdp4 comet data platform esa engineering systems concurrent design criterium decisionplus infoharvest decision analysis ahp smart', desc: 'Identify CDP files - either CDP4 (COMET) concurrent-design models from the ESA systems-engineering toolset, or Criterium DecisionPlus decision-analysis models.' },
   { label: 'Logs',            exts: 'LOG', tags: 'log file server apache nginx syslog error debug', desc: 'Identify log files and their origin - Apache, Nginx, syslog, Python, Java/Log4j, and Android logcat.' },
   { label: 'Camera catalog',  exts: 'CTG', tags: 'canon dcim catalog index database camera memory card ixus powershot thumbnail eos digital ic', desc: 'Identify and decode Canon camera catalog files (CTG) - the DCIM index a Canon camera keeps to track each folder: the catalogued folder path, folder number, recorded-shot count, and photo / movie / voice-memo entry counts. Holds no image data.' },
   { label: 'Shortcuts',       exts: 'LNK URL WEBLOC', tags: 'windows shortcut link lnk target arguments working directory internet shortcut url web macos webloc alias launcher pointer desktop', desc: 'Decode shortcut files: Windows shortcuts (LNK) - target path, arguments, working directory, icon, hotkey, window state, and target timestamp - plus internet shortcuts (URL) and macOS web shortcuts (WEBLOC), surfacing the URL or path they point to.' },
@@ -298,6 +298,23 @@ export function formatCount() {
 
 const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+// Lowercased exts that appear in at least one full-analysis row. Full pages win
+// cross-depth collisions, so this decides whether an extension links to its
+// viewer page /formats/<ext> or its identification page /formats/id/<ext> - the
+// same full-wins rule tools/prerender-format-pages.mjs uses, so the popup/about
+// links can never point at a page that was not generated.
+let _fullExtSet = null;
+function fullExtSet() {
+  if (_fullExtSet) return _fullExtSet;
+  _fullExtSet = new Set();
+  for (const r of FULL_ANALYSIS) for (const t of r.exts.split(/\s+/)) if (t) _fullExtSet.add(t.toLowerCase());
+  return _fullExtSet;
+}
+export function formatPageHref(ext) {
+  const k = ext.toLowerCase();
+  return fullExtSet().has(k) ? `/formats/${k}` : `/formats/id/${k}`;
+}
+
 // Shared collapsible row used by BOTH the overlay (#fmtBody) and the about page
 // (#aboutFormats). Each format is a native <details class="fmt-item"> whose
 // <summary> shows the label + extension list and whose body reveals the
@@ -312,9 +329,12 @@ function fmtItem(r, opts = {}) {
   r.exts.split(/\s+/).forEach((t) => {
     if (!t) return;
     if (extNodes.length) extNodes.push(' ');
-    const attrs = { class: 'fmt-item-ext' };
+    // Each extension links to its own /formats/<ext> landing page. navigate.js
+    // intercepts the click for an SPA hop (and suppresses the parent <details>
+    // toggle); the id="ext-<ext>" deep-link anchor is preserved on the about page.
+    const attrs = { class: 'fmt-item-ext', href: formatPageHref(t) };
     if (opts.anchors) attrs.id = 'ext-' + t.toLowerCase();
-    extNodes.push(el('span', attrs, t));
+    extNodes.push(el('a', attrs, t));
   });
   // Depth badge: FULL = opens in a viewer with deep metadata; ID = identified +
   // header metadata only. Sits at the right of the summary, before the +/- glyph.

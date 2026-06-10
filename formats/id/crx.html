@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>.CRX file - what it is and how to identify it | Analyser</title>
-  <meta name="description" content=".CRX files belong to the &quot;Archives (packages)&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .CRX file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="description" content="CRX is a packaged Google Chrome extension. Installed in Chrome. Identify and inspect a .CRX file free in your browser with Analyser - nothing is uploaded.">
   <link rel="canonical" href="https://lab.valjdakosta.com/formats/id/crx">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
@@ -12,7 +12,7 @@
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
   <meta property="og:title" content=".CRX file - what it is and how to identify it | Analyser">
-  <meta property="og:description" content=".CRX files belong to the &quot;Archives (packages)&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .CRX file free in your browser with Analyser - nothing is uploaded.">
+  <meta property="og:description" content="CRX is a packaged Google Chrome extension. Installed in Chrome. Identify and inspect a .CRX file free in your browser with Analyser - nothing is uploaded.">
   <meta property="og:url" content="https://lab.valjdakosta.com/formats/id/crx">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta property="og:image:width" content="1200">
@@ -20,14 +20,14 @@
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content=".CRX file - what it is and how to identify it | Analyser">
-  <meta name="twitter:description" content=".CRX files belong to the &quot;Archives (packages)&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .CRX file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="twitter:description" content="CRX is a packaged Google Chrome extension. Installed in Chrome. Identify and inspect a .CRX file free in your browser with Analyser - nothing is uploaded.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <link rel="icon" href="/assets/img/favicon.png" type="image/png">
   <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .CRX file?","acceptedAnswer":{"@type":"Answer","text":".CRX files belong to the \"Archives (packages)\" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser."}},{"@type":"Question","name":"How do I open a .CRX file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .CRX file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Read software packages and Unix archive streams: Python wheels, NuGet, Chrome/Firefox/VS Code extensions, Electron ASAR, Windows APPX/MSIX, Debian (DEB), RPM, RubyGems, conda, Anki, Microsoft CAB, cpio and ar - showing name, version, dependencies and the file tree - plus lz4/lzma/compress stream headers."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .CRX file?","acceptedAnswer":{"@type":"Answer","text":"CRX is a packaged Google Chrome extension. Installed in Chrome. CRX is how Chrome extensions are bundled and signed for the Web Store. The remaining payload sits behind a header carrying the author’s public key and a signature Chrome checks before installing. Under the hood a .CRX file is really a ZIP archive - rename it to .zip and you can browse the files inside."}},{"@type":"Question","name":"How do I open a .CRX file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .CRX file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Read software packages and Unix archive streams: Python wheels, NuGet, Chrome/Firefox/VS Code extensions, Electron ASAR, Windows APPX/MSIX, Debian (DEB), RPM, RubyGems, conda, Anki, Microsoft CAB, cpio and ar - showing name, version, dependencies and the file tree - plus lz4/lzma/compress stream headers."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".CRX","item":"https://lab.valjdakosta.com/formats/id/crx"}]}
@@ -52,7 +52,7 @@
       <span class="site-kicker">Archives</span>
       <h1 class="site-title">.CRX</h1>
       <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
-      <p class="site-sub">.CRX file (Archives (packages))</p>
+      <p class="site-sub">Chrome extension</p>
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
         <a href="/formats" class="header-btn">Formats</a>
@@ -71,16 +71,23 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/id/nupkg" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/id/xpi" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
       <div class="section-content">
         <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.CRX</span></p>
         <h2 class="section-head">What is a .CRX file?</h2>
-        <p class="section-lede">.CRX files belong to the "Archives (packages)" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser.</p>
+        <p class="section-lede">CRX is a packaged Google Chrome extension. Installed in Chrome.</p>
 
         <div class="about-block">
           <dl class="about-caps">
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>CRX is how Chrome extensions are bundled and signed for the Web Store.</li><li>The remaining payload sits behind a header carrying the author’s public key and a signature Chrome checks before installing.</li><li>Under the hood a .CRX file is really a ZIP archive - rename it to .zip and you can browse the files inside.</li></ul></dd></div>
             <div><dt>What Analyser reads</dt><dd>Read software packages and Unix archive streams: Python wheels, NuGet, Chrome/Firefox/VS Code extensions, Electron ASAR, Windows APPX/MSIX, Debian (DEB), RPM, RubyGems, conda, Anki, Microsoft CAB, cpio and ar - showing name, version, dependencies and the file tree - plus lz4/lzma/compress stream headers.</dd></div>
             <div><dt>Depth of analysis</dt><dd>.CRX is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .CRX file</dt><dd>Drag a .CRX file onto <a href="/">the Analyser home page</a> (or tap to pick one). It is identified entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>

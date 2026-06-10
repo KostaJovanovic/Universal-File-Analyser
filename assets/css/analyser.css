@@ -190,7 +190,7 @@ input:not([type="range"]):focus-visible,
    drawn as an ::after where the old border-bottom sat. */
 .section::after,
 .quickdrop::after,
-body:has(.patch-page) .site-header::after {
+body:has(.patch-page):not(:has(.format-page)) .site-header::after {
   content: '';
   display: block;
   height: var(--rule-band-h);
@@ -202,8 +202,8 @@ body:has(.patch-page) .site-header::after {
 /* The changelog page has no navbar beneath the header, so that header divider is
    free-floating - give it the band. Other pages keep the plain hairline (the
    navbar sits flush against it). */
-body:has(.patch-page) .site-header { border-bottom: none; padding-bottom: 0; }
-body:has(.patch-page) .site-header::after { margin-top: clamp(28px, 4vw, 48px); }
+body:has(.patch-page):not(:has(.format-page)) .site-header { border-bottom: none; padding-bottom: 0; }
+body:has(.patch-page):not(:has(.format-page)) .site-header::after { margin-top: clamp(28px, 4vw, 48px); }
 /* The dropzone strip carries its own horizontal padding, so pull the band back
    out to the full-bleed width the old border-bottom spanned. */
 .quickdrop::after {
@@ -362,6 +362,24 @@ body:has(.patch-page) .site-header::after { margin-top: clamp(28px, 4vw, 48px); 
   text-decoration: none;
 }
 .header-btn:hover { background: var(--fg); color: var(--bg); }
+button.header-btn { cursor: pointer; line-height: 1; }
+
+/* The "I'm feeling lucky" cell in the per-format .site-nav bar is a <button>;
+   strip the native chrome so it sits in the grid exactly like the <a> nav-links
+   (font, colour and dividers still come from .nav-link / .format-nav below). */
+button.nav-link {
+  background: none;
+  border-top: 0;
+  border-bottom: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+/* The per-format pager mixes <a> and a <button>, which throws off the about
+   nav's :first/last-of-type dividers (the lone <button> counts as both). Pin the
+   vertical dividers by child position instead, scoped so the other navs are
+   untouched. */
+.format-nav .nav-link:first-child { border-left: 1px solid var(--nav-line); }
+.format-nav .nav-link:not(:first-child) { border-left: 0; }
 
 /* Share button carries an icon - lay it out inline next to the label. It's a
    <button>, so reset the native chrome to match the <a> chips exactly. */
@@ -2710,6 +2728,22 @@ details[open] summary::after { content: "\2212"; }
   max-width: 60ch;
   line-height: 1.5;
 }
+.about-caps > div.didyouknow {
+  border: 1px solid var(--fg);
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.dyk-list { margin: 0; padding-left: 1.1em; }
+.dyk-list li { margin: 0 0 4px; }
+.dyk-list li:last-child { margin-bottom: 0; }
+.about-caps > div.didyouknow code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--rule);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.fact-approx { color: var(--muted); font-size: 0.85em; white-space: nowrap; }
 .about-readout { margin-bottom: 0; }
 .about-readout th { width: 120px; white-space: nowrap; }
 .about-exts {
@@ -3355,6 +3389,10 @@ details[open] summary::after { content: "\2212"; }
   overflow-wrap: break-word;
 }
 .fmt-item-ext { scroll-margin-top: 84px; }
+/* Each extension is now a link to its own /formats page; keep it looking like
+   the surrounding mono token until hovered. */
+a.fmt-item-ext { color: inherit; text-decoration: none; }
+a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .fmt-item[open] > .fmt-item-summary { color: var(--accent); }
 .fmt-item-desc {
   padding: 0 0 12px;

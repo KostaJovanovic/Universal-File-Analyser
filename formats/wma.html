@@ -27,7 +27,7 @@
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .WMA file?","acceptedAnswer":{"@type":"Answer","text":"WMA is Microsoft’s Windows Media Audio format."}},{"@type":"Question","name":"How do I open a .WMA file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .WMA file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. Inspect the waveform, spectrogram, codec, bitrate, channels, and tags of MP3, WAV, FLAC, M4A, AAC, OGG, and Opus audio."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .WMA file?","acceptedAnswer":{"@type":"Answer","text":"WMA is Microsoft’s Windows Media Audio format. Microsoft launched WMA in 1999 to compete with MP3. A WMA file is really an Advanced Systems Format (ASF) container, the same wrapper Microsoft used for Windows Media Video. The codec was numbered to match Windows Media Player, so the first widely shipped version was “Windows Media Audio 7”. Microsoft later added a WMA Lossless variant that rebuilds the original audio bit-for-bit, aimed at archiving master recordings. The WMA, WMA Pro, WMA Lossless and WMA Voice codecs share an extension but are technically distinct and mutually incompatible."}},{"@type":"Question","name":"How do I open a .WMA file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .WMA file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. Inspect the waveform, spectrogram, codec, bitrate, channels, and tags of MP3, WAV, FLAC, M4A, AAC, OGG, and Opus audio."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".WMA","item":"https://lab.valjdakosta.com/formats/wma"}]}
@@ -71,6 +71,12 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/aiff" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/amr" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
@@ -81,6 +87,7 @@
 
         <div class="about-block">
           <dl class="about-caps">
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Microsoft launched WMA in 1999 to compete with MP3.</li><li>A WMA file is really an Advanced Systems Format (ASF) container, the same wrapper Microsoft used for Windows Media Video.</li><li>The codec was numbered to match Windows Media Player, so the first widely shipped version was “Windows Media Audio 7”.</li><li>Microsoft later added a WMA Lossless variant that rebuilds the original audio bit-for-bit, aimed at archiving master recordings.</li><li>The WMA, WMA Pro, WMA Lossless and WMA Voice codecs share an extension but are technically distinct and mutually incompatible.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>Inspect the waveform, spectrogram, codec, bitrate, channels, and tags of MP3, WAV, FLAC, M4A, AAC, OGG, and Opus audio.</dd></div>
             <div><dt>Open a .WMA file</dt><dd>Drag a .WMA file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd><a href="/formats/mp3">.MP3</a> &middot; <a href="/formats/wav">.WAV</a> &middot; <a href="/formats/m4a">.M4A</a> &middot; <a href="/formats/m4b">.M4B</a> &middot; <a href="/formats/aac">.AAC</a> &middot; <a href="/formats/flac">.FLAC</a> &middot; <a href="/formats/ogg">.OGG</a> &middot; <a href="/formats/opus">.OPUS</a> &middot; <a href="/formats/aiff">.AIFF</a> &middot; <a href="/formats/amr">.AMR</a> &middot; <a href="/formats/ac3">.AC3</a> &middot; <a href="/formats/dts">.DTS</a> &middot; <a href="/formats/mka">.MKA</a>. See <a href="/formats">all supported file types</a>.</dd></div>

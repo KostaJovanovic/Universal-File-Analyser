@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>.PST file - what it is and how to identify it | Analyser</title>
-  <meta name="description" content=".PST files belong to the &quot;Email / calendar / contacts&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .PST file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="description" content="PST is a Microsoft Outlook data file storing a whole mailbox. Created by Outlook. Identify and inspect a .PST file free in your browser with Analyser - nothing is uploaded.">
   <link rel="canonical" href="https://lab.valjdakosta.com/formats/id/pst">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
@@ -12,7 +12,7 @@
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
   <meta property="og:title" content=".PST file - what it is and how to identify it | Analyser">
-  <meta property="og:description" content=".PST files belong to the &quot;Email / calendar / contacts&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .PST file free in your browser with Analyser - nothing is uploaded.">
+  <meta property="og:description" content="PST is a Microsoft Outlook data file storing a whole mailbox. Created by Outlook. Identify and inspect a .PST file free in your browser with Analyser - nothing is uploaded.">
   <meta property="og:url" content="https://lab.valjdakosta.com/formats/id/pst">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta property="og:image:width" content="1200">
@@ -20,14 +20,14 @@
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content=".PST file - what it is and how to identify it | Analyser">
-  <meta name="twitter:description" content=".PST files belong to the &quot;Email / calendar / contacts&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .PST file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="twitter:description" content="PST is a Microsoft Outlook data file storing a whole mailbox. Created by Outlook. Identify and inspect a .PST file free in your browser with Analyser - nothing is uploaded.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <link rel="icon" href="/assets/img/favicon.png" type="image/png">
   <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .PST file?","acceptedAnswer":{"@type":"Answer","text":".PST files belong to the \"Email / calendar / contacts\" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser."}},{"@type":"Question","name":"How do I open a .PST file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .PST file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Open email and personal-information files: .eml/.emlx/.mbox messages (From/To/Subject/Date, Received hops, SPF/DKIM/DMARC, attachments, body preview), iCalendar .ics/.ical and .vcs (events, times, recurrence, organiser/attendees), vCard .vcf contacts (fields + inline base64 photo), LDIF directory exports and Windows .contact - with Outlook .msg/.pst, IBM Notes .nsf, Exchange .edb and Outlook Express .dbx identified."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .PST file?","acceptedAnswer":{"@type":"Answer","text":"PST is a Microsoft Outlook data file storing a whole mailbox. Created by Outlook. An Outlook PST can hold years of mail, contacts and calendar in a single file. PST stands for Personal Storage Table, the on-disc file Outlook uses to hold mail, contacts and calendar items. The old ANSI variant was capped at 2 GB, whereas the modern Unicode format supports far larger mailboxes."}},{"@type":"Question","name":"How do I open a .PST file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .PST file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Open email and personal-information files: .eml/.emlx/.mbox messages (From/To/Subject/Date, Received hops, SPF/DKIM/DMARC, attachments, body preview), iCalendar .ics/.ical and .vcs (events, times, recurrence, organiser/attendees), vCard .vcf contacts (fields + inline base64 photo), LDIF directory exports and Windows .contact - with Outlook .msg/.pst, IBM Notes .nsf, Exchange .edb and Outlook Express .dbx identified."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".PST","item":"https://lab.valjdakosta.com/formats/id/pst"}]}
@@ -52,7 +52,7 @@
       <span class="site-kicker">Email &amp; security</span>
       <h1 class="site-title">.PST</h1>
       <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
-      <p class="site-sub">.PST file (Email / calendar / contacts)</p>
+      <p class="site-sub">Outlook data file</p>
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
         <a href="/formats" class="header-btn">Formats</a>
@@ -71,16 +71,23 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/id/msg" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/id/ost" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
       <div class="section-content">
         <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.PST</span></p>
         <h2 class="section-head">What is a .PST file?</h2>
-        <p class="section-lede">.PST files belong to the "Email / calendar / contacts" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser.</p>
+        <p class="section-lede">PST is a Microsoft Outlook data file storing a whole mailbox. Created by Outlook.</p>
 
         <div class="about-block">
           <dl class="about-caps">
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>An Outlook PST can hold years of mail, contacts and calendar in a single file.</li><li>PST stands for Personal Storage Table, the on-disc file Outlook uses to hold mail, contacts and calendar items.</li><li>The old ANSI variant was capped at 2 GB, whereas the modern Unicode format supports far larger mailboxes.</li></ul></dd></div>
             <div><dt>What Analyser reads</dt><dd>Open email and personal-information files: .eml/.emlx/.mbox messages (From/To/Subject/Date, Received hops, SPF/DKIM/DMARC, attachments, body preview), iCalendar .ics/.ical and .vcs (events, times, recurrence, organiser/attendees), vCard .vcf contacts (fields + inline base64 photo), LDIF directory exports and Windows .contact - with Outlook .msg/.pst, IBM Notes .nsf, Exchange .edb and Outlook Express .dbx identified.</dd></div>
             <div><dt>Depth of analysis</dt><dd>.PST is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .PST file</dt><dd>Drag a .PST file onto <a href="/">the Analyser home page</a> (or tap to pick one). It is identified entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>

@@ -27,7 +27,7 @@
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .STP file?","acceptedAnswer":{"@type":"Answer","text":"STP is the same standard CAD exchange format as STEP, for precise 3D solid models."}},{"@type":"Question","name":"How do I open a .STP file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .STP file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. View STL, OBJ, PLY, OFF, STEP, IGES, BREP, 3MF and AMF models in an interactive WebGL viewer with triangle count, bounding box, surface area and volume. STEP/IGES/BREP are tessellated with OpenCASCADE and STEP shows its originating CAD system, version and AP203/214/242 protocol; 3MF and AMF let you inspect each model and assembly on the build plate individually."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .STP file?","acceptedAnswer":{"@type":"Answer","text":"STP is the same standard CAD exchange format as STEP, for precise 3D solid models. STP is just STEP under its short extension - the ISO 10303 CAD exchange standard, published in 1994. STP and STEP are the same format under different extensions, both encoding the ISO 10303-21 “STEP Physical File” in clear, readable text. The data is structured against an EXPRESS schema named in the file header, which tells software exactly how to interpret each entity. Because STP stores precise solid geometry rather than a triangle mesh, it is the go-to neutral format for moving parts between rival CAD systems. STP files routinely carry full assemblies, including part hierarchies and, under the richer application protocols, colours and manufacturing tolerances."}},{"@type":"Question","name":"How do I open a .STP file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .STP file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. View STL, OBJ, PLY, OFF, STEP, IGES, BREP, 3MF and AMF models in an interactive WebGL viewer with triangle count, bounding box, surface area and volume. STEP/IGES/BREP are tessellated with OpenCASCADE and STEP shows its originating CAD system, version and AP203/214/242 protocol; 3MF and AMF let you inspect each model and assembly on the build plate individually."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".STP","item":"https://lab.valjdakosta.com/formats/stp"}]}
@@ -71,6 +71,12 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/step" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/iges" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
@@ -81,6 +87,7 @@
 
         <div class="about-block">
           <dl class="about-caps">
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>STP is just STEP under its short extension - the ISO 10303 CAD exchange standard, published in 1994.</li><li>STP and STEP are the same format under different extensions, both encoding the ISO 10303-21 “STEP Physical File” in clear, readable text.</li><li>The data is structured against an EXPRESS schema named in the file header, which tells software exactly how to interpret each entity.</li><li>Because STP stores precise solid geometry rather than a triangle mesh, it is the go-to neutral format for moving parts between rival CAD systems.</li><li>STP files routinely carry full assemblies, including part hierarchies and, under the richer application protocols, colours and manufacturing tolerances.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>View STL, OBJ, PLY, OFF, STEP, IGES, BREP, 3MF and AMF models in an interactive WebGL viewer with triangle count, bounding box, surface area and volume. STEP/IGES/BREP are tessellated with OpenCASCADE and STEP shows its originating CAD system, version and AP203/214/242 protocol; 3MF and AMF let you inspect each model and assembly on the build plate individually.</dd></div>
             <div><dt>Open a .STP file</dt><dd>Drag a .STP file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd><a href="/formats/stl">.STL</a> &middot; <a href="/formats/obj">.OBJ</a> &middot; <a href="/formats/ply">.PLY</a> &middot; <a href="/formats/off">.OFF</a> &middot; <a href="/formats/step">.STEP</a> &middot; <a href="/formats/iges">.IGES</a> &middot; <a href="/formats/igs">.IGS</a> &middot; <a href="/formats/brep">.BREP</a> &middot; <a href="/formats/3mf">.3MF</a> &middot; <a href="/formats/amf">.AMF</a>. See <a href="/formats">all supported file types</a>.</dd></div>

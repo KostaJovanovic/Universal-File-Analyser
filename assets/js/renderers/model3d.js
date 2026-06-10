@@ -6,8 +6,12 @@
      (lazy-loaded), with the ISO-10303 header metadata shown alongside.
    All three feed the shared WebGL viewer from stl.js. */
 
-import { el, row, rowHelp, fmtBytes, sha256Row, errorCard } from '../core/util.js';
-import { buildViewerCard, startViewer, makeResult } from './stl.js';
+import { el, row, fmtBytes, sha256Row, errorCard } from '../core/util.js';
+import {
+  buildViewerCard, startViewer, makeResult,
+  buildGeoFromIndexed, geoStatsCard, renderPartsViewer,
+  splitBodiesIndexed, subTris, geoSpan, bodyParts, BODY_SPLIT_CAP,
+} from './stl.js';
 import { parseStepHeader } from './proprietary.js';
 import { loadOcct } from '../lib/occt-loader.js';
 
@@ -21,54 +25,6 @@ export async function renderModel3d(file, resultsEl) {
   if (ext === 'amf') return renderAmf(file, resultsEl);
   if (ext === 'obj' || ext === 'ply' || ext === 'off') return renderMeshFile(file, resultsEl, ext);
   return renderStepIges(file, resultsEl, ext);   // step / stp / iges / igs / brep
-}
-
-/* ============================ shared mesh helpers ============================ */
-
-// Expand an indexed mesh (flat vertex xyz + triangle index triples) into the
-// non-indexed positions + per-triangle face normals the WebGL viewer wants.
-function buildGeoFromIndexed(verts, tris, format) {
-  const triCount = tris.length / 3;
-  const positions = new Float32Array(triCount * 9);
-  const normals = new Float32Array(triCount * 9);
-  let o = 0;
-  for (let i = 0; i < tris.length; i += 3) {
-    const i0 = tris[i] * 3, i1 = tris[i + 1] * 3, i2 = tris[i + 2] * 3;
-    const ax = verts[i0], ay = verts[i0 + 1], az = verts[i0 + 2];
-    const bx = verts[i1], by = verts[i1 + 1], bz = verts[i1 + 2];
-    const cx = verts[i2], cy = verts[i2 + 1], cz = verts[i2 + 2];
-    const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
-    const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
-    let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
-    const len = Math.hypot(nx, ny, nz) || 1; nx /= len; ny /= len; nz /= len;
-    positions[o] = ax; positions[o + 1] = ay; positions[o + 2] = az;
-    positions[o + 3] = bx; positions[o + 4] = by; positions[o + 5] = bz;
-    positions[o + 6] = cx; positions[o + 7] = cy; positions[o + 8] = cz;
-    for (let k = 0; k < 9; k += 3) { normals[o + k] = nx; normals[o + k + 1] = ny; normals[o + k + 2] = nz; }
-    o += 9;
-  }
-  return makeResult(format || '3D', positions, normals);
-}
-
-// A geometry-stats card (triangles, bounding box, area, volume, hash).
-function geoStatsCard(geo, file, format, unit) {
-  const u = unit || 'units';
-  const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Geometry'));
-  const tbl = el('table', { class: 'anr-readout' });
-  tbl.appendChild(row('Format', format));
-  tbl.appendChild(row('File', file.name));
-  tbl.appendChild(row('Size', fmtBytes(file.size)));
-  tbl.appendChild(rowHelp('Triangles', geo.count.toLocaleString(), 'The number of triangular facets in the tessellated mesh.'));
-  const dx = geo.bbox.max[0] - geo.bbox.min[0];
-  const dy = geo.bbox.max[1] - geo.bbox.min[1];
-  const dz = geo.bbox.max[2] - geo.bbox.min[2];
-  tbl.appendChild(rowHelp('Bounding box', `${dx.toFixed(2)} × ${dy.toFixed(2)} × ${dz.toFixed(2)} ${u}`, 'The smallest axis-aligned box that encloses the model, as width × depth × height.'));
-  tbl.appendChild(rowHelp('Surface area', geo.area.toFixed(2) + ' ' + u + '²', 'Combined area of every triangle in the mesh.'));
-  tbl.appendChild(rowHelp('Volume', geo.volume.toFixed(2) + ' ' + u + '³ (if watertight)', 'Enclosed volume - only meaningful for a watertight (fully closed) mesh.'));
-  tbl.appendChild(sha256Row(file));
-  card.appendChild(tbl);
-  return card;
 }
 
 /* ================================== 3MF ===================================== */
@@ -279,63 +235,6 @@ async function render3mf(file, resultsEl) {
   });
 }
 
-// Shared UI for container formats that hold several models (3MF, AMF): a metadata
-// card, a chip per part, and a viewer + stats pair that rebuild as parts are
-// picked. Each part is { key, name, build() -> geo } and built lazily + cached.
-function renderPartsViewer(file, resultsEl, { metaCard, parts, format, unitLabel }) {
-  resultsEl.innerHTML = '';
-  if (metaCard) resultsEl.appendChild(metaCard);
-  if (!parts.length) { resultsEl.appendChild(errorCard('No models found in this file.')); return; }
-
-  const partsCard = el('div', { class: 'anr-card' });
-  partsCard.appendChild(el('h3', {}, 'Models & assemblies'));
-  partsCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:10px;' }, 'Pick a part to view it on its own, or see everything together.'));
-  const chipRow = el('div', { class: 'anr-btn-row', style: 'flex-wrap:wrap;gap:6px;' });
-  partsCard.appendChild(chipRow);
-  resultsEl.appendChild(partsCard);
-
-  // Viewer + stats are rebuilt in place each time a part is chosen.
-  let viewCardEl = el('div');
-  let statsCardEl = el('div');
-  resultsEl.appendChild(viewCardEl);
-  resultsEl.appendChild(statsCardEl);
-  const geoCache = new Map();
-
-  async function showPart(part, chip) {
-    chipRow.querySelectorAll('.anr-part-chip').forEach((b) => b.classList.remove('is-active'));
-    if (chip) chip.classList.add('is-active');
-    const loading = el('div', { class: 'anr-card' }, [el('div', { class: 'anr-info' }, 'Building mesh…')]);
-    const blankStats = el('div');
-    viewCardEl.replaceWith(loading); viewCardEl = loading;
-    statsCardEl.replaceWith(blankStats); statsCardEl = blankStats;
-    // Yield so the "Building…" text paints before a heavy parse blocks the thread.
-    await new Promise((r) => setTimeout(r, 0));
-    let geo = geoCache.get(part.key);
-    if (!geo) { try { geo = part.build(); } catch (_) { geo = null; } geoCache.set(part.key, geo); }
-
-    if (!geo || !geo.count) {
-      const errCard = el('div', { class: 'anr-card' }, [el('p', { class: 'anr-error' }, 'No mesh found for this part.')]);
-      viewCardEl.replaceWith(errCard); viewCardEl = errCard;
-      return;
-    }
-    const { viewCard, viewer } = buildViewerCard(geo, part.name);
-    viewCardEl.replaceWith(viewCard); viewCardEl = viewCard;
-    startViewer(viewer);
-    const stats = geoStatsCard(geo, file, format, unitLabel);
-    statsCardEl.replaceWith(stats); statsCardEl = stats;
-  }
-
-  parts.forEach((part) => {
-    const chip = el('button', { type: 'button', class: 'anr-btn anr-part-chip' }, part.name);
-    chip.addEventListener('click', () => showPart(part, chip));
-    chipRow.appendChild(chip);
-  });
-
-  // Default view: the combined/whole build when several parts, else the only one.
-  const first = chipRow.querySelector('.anr-part-chip');
-  if (first) showPart(parts[0], first);
-}
-
 /* ================================== AMF ===================================== */
 
 const AMF_UNIT = { millimeter: 'mm', meter: 'm', inch: 'in', feet: 'ft', micron: 'µm' };
@@ -531,9 +430,8 @@ async function renderMeshFile(file, resultsEl, ext) {
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));
 
-  let geo;
+  let geo, mesh;
   try {
-    let mesh;
     if (ext === 'ply') mesh = parsePlyMesh(await file.arrayBuffer());
     else if (ext === 'off') mesh = parseOffMesh(await file.text());
     else mesh = parseObjMesh(await file.text());   // obj
@@ -545,6 +443,18 @@ async function renderMeshFile(file, resultsEl, ext) {
   }
   resultsEl.innerHTML = '';
   if (!geo || !geo.count) { resultsEl.appendChild(errorCard('No triangles found in this ' + ext.toUpperCase() + '.')); return; }
+
+  // Multi-body: split into connected components and, when there's more than one,
+  // offer a per-body viewer (like 3MF parts) instead of one merged mesh.
+  const bodies = geo.count <= BODY_SPLIT_CAP ? splitBodiesIndexed(mesh.verts, mesh.tris, geoSpan(geo) * 1e-6) : [];
+  if (bodies.length > 1) {
+    const parts = bodyParts(geo, bodies, (g) => buildGeoFromIndexed(mesh.verts, subTris(mesh.tris, g), ext.toUpperCase()));
+    renderPartsViewer(file, resultsEl, {
+      parts, format: ext.toUpperCase(), unitLabel: 'units', partsTitle: 'Bodies',
+      partsHint: `This model contains ${bodies.length} separate bodies. Pick one to view on its own, or see them all together.`,
+    });
+    return;
+  }
 
   const { viewCard, viewer } = buildViewerCard(geo, '3D model');
   resultsEl.appendChild(viewCard);
@@ -613,8 +523,9 @@ async function renderStepIges(file, resultsEl, ext) {
   mt.appendChild(sha256Row(file));
   metaCard.appendChild(mt);
 
+  // The viewer leads; the header metadata card is held back and placed below it
+  // (or shown on its own if tessellation fails).
   const status = el('div', { class: 'anr-info' }, 'Loading 3D engine (OpenCASCADE)…');
-  resultsEl.appendChild(metaCard);
   resultsEl.appendChild(status);
 
   let occt;
@@ -622,6 +533,7 @@ async function renderStepIges(file, resultsEl, ext) {
     occt = await loadOcct();
   } catch (e) {
     status.remove();
+    resultsEl.appendChild(metaCard);
     resultsEl.appendChild(el('p', { class: 'anr-hint' }, 'Could not load the 3D engine (it’s fetched from the network the first time). Showing header metadata only.'));
     return;
   }
@@ -636,17 +548,40 @@ async function renderStepIges(file, resultsEl, ext) {
 
   status.remove();
   if (!result || !result.success || !result.meshes || !result.meshes.length) {
-    resultsEl.appendChild(el('p', { class: 'anr-hint' }, 'The geometry could not be tessellated for display, but the metadata above was read from the file.'));
+    resultsEl.appendChild(metaCard);
+    resultsEl.appendChild(el('p', { class: 'anr-hint' }, 'The geometry could not be tessellated for display, but the header metadata was read from the file.'));
     return;
   }
 
   const geo = occtMeshesToGeo(result.meshes);
   if (!geo || !geo.count) {
+    resultsEl.appendChild(metaCard);
     resultsEl.appendChild(el('p', { class: 'anr-hint' }, 'No displayable geometry was produced.'));
     return;
   }
+
+  // OpenCASCADE already returns one mesh per solid/shape, so when there's more
+  // than one, offer a per-body viewer (using the shape name where the kernel
+  // provides it). occtMeshesToGeo([m]) rebuilds a single body on demand.
+  const meshes = result.meshes;
+  if (meshes.length > 1) {
+    const parts = [{ key: 'all', name: `Whole model (${meshes.length} bodies)`, build: () => geo }];
+    meshes.forEach((m, i) => parts.push({
+      key: 'b' + i,
+      name: (m && m.name) ? String(m.name) : ('Body ' + (i + 1)),
+      build: () => occtMeshesToGeo([m]),
+    }));
+    renderPartsViewer(file, resultsEl, {
+      metaCard, parts, format: fmtLabel + ' (tessellated)', unitLabel: 'mm', partsTitle: 'Bodies',
+      partsHint: `This model contains ${meshes.length} separate bodies. Pick one to view on its own, or see them all together.`,
+    });
+    return;
+  }
+
+  resultsEl.innerHTML = '';
   const { viewCard, viewer } = buildViewerCard(geo, '3D model');
   resultsEl.appendChild(viewCard);
   startViewer(viewer);
   resultsEl.appendChild(geoStatsCard(geo, file, fmtLabel + ' (tessellated)', 'mm'));
+  resultsEl.appendChild(metaCard);
 }

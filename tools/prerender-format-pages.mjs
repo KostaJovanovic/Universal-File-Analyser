@@ -43,6 +43,14 @@ const SITE = 'https://lab.valjdakosta.com';
 
 const { catalogGrouped } = await import(pathToFileURL(join(ROOT, 'assets/js/core/formats.js')).href);
 const { EXT_PAGES } = await import(pathToFileURL(join(ROOT, 'tools/format-page-content.mjs')).href);
+// Extra "Did you know" bullets, keyed by lowercase ext -> [fact, ...]. A
+// generated-input sidecar (built in batches) so the 1000+ primary entries in
+// format-page-content.mjs stay hand-curated and untouched. Absent = no extras.
+let EXTRA_FACTS = {};
+try {
+  const { readFileSync } = await import('node:fs');
+  EXTRA_FACTS = JSON.parse(readFileSync(join(ROOT, 'tools/dyk-extra.json'), 'utf8'));
+} catch { /* no sidecar yet */ }
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const escAttr = (s) => esc(s).replace(/"/g, '&quot;');
@@ -87,6 +95,42 @@ function collect(depth) {
 const fullExt = collect('full');
 const idExt = collect('id');
 
+// Ordered, de-duplicated sequence of every page in catalog order - the exact
+// order /formats lists the formats - so the per-page pager can step prev/next
+// through them. First occurrence wins; full-wins routing means each ext is one
+// page, so the sequence visits every generated page exactly once.
+const orderedKeys = [];
+const seenOrder = new Set();
+for (const g of groups) {
+  for (const r of g.rows) {
+    for (const tok of r.exts) {
+      const k = tok.toLowerCase();
+      if (seenOrder.has(k)) continue;
+      seenOrder.add(k);
+      orderedKeys.push(k);
+    }
+  }
+}
+const orderIndex = new Map(orderedKeys.map((k, i) => [k, i]));
+
+// Prev / "I'm feeling lucky" / next bar. Reuses the site-wide .site-nav strip
+// (the same sticky navbar Home/About use, three equal cells via the existing
+// `body:has(.about-page) .site-nav` rule) so it matches the rest of the site and
+// the SPA router swaps it on navigation. Prev/next are baked links that wrap
+// around the ends; lucky is a <button> reusing app.js's [data-fmt-random] (kept
+// a button, not an a[href="#"], so the section scroll-spy never touches it).
+function siteNav(key) {
+  const n = orderedKeys.length;
+  const i = orderIndex.get(key);
+  const prev = orderedKeys[(i - 1 + n) % n];
+  const next = orderedKeys[(i + 1) % n];
+  return `<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="${escAttr(hrefOf(prev))}" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="${escAttr(hrefOf(next))}" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>`;
+}
+
 const SHARE_SVG = '<svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>';
 
 function capabilityBlocks(e, isFull) {
@@ -110,13 +154,109 @@ function relatedLinks(e) {
   return `${links}${more}. See <a href="/formats">all supported file types</a>.`;
 }
 
+// ---- "Did you know" facts: hand-authored (EXT_PAGES) + auto-derived ----
+// Auto-derived tables let one rule enrich many formats at once. assembleFacts()
+// appends them AFTER the hand-authored facts and skips any whose gist a hand
+// fact already states, so we never repeat ourselves. Each auto-fact carries an
+// html form (may contain <code>) and a plain form (for the FAQ JSON-LD).
+
+const ZIP_CONTAINERS = new Set('docx docm dotx dotm xlsx xlsm xltx xltm pptx pptm ppsx ppsm potx potm odt ott ods ots odp otp odg otg odb jar war ear apk aar aab epub xpi crx 3mf usdz kmz idml nupkg vsix appx msix whl ipa cbz love sketch mscz'.split(' '));
+const CFBF_CONTAINERS = new Set('doc dot xls xlt ppt pps msi msg vsd pub'.split(' '));
+const TEXT_FORMATS = new Set('json xml yaml yml csv tsv md markdown txt ini toml log srt vtt ass ssa lrc m3u m3u8 gpx kml gcode cue reg ps1 svg geojson'.split(' '));
+const MIME_TYPES = {
+  png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif',
+  webp:'image/webp', svg:'image/svg+xml', bmp:'image/bmp', tiff:'image/tiff',
+  avif:'image/avif', heic:'image/heic',
+  pdf:'application/pdf', json:'application/json', zip:'application/zip',
+  gz:'application/gzip', tar:'application/x-tar', wasm:'application/wasm',
+  mp3:'audio/mpeg', wav:'audio/wav', flac:'audio/flac', ogg:'audio/ogg',
+  opus:'audio/opus', aac:'audio/aac', mid:'audio/midi',
+  mp4:'video/mp4', webm:'video/webm', avi:'video/x-msvideo', mov:'video/quicktime',
+  mkv:'video/x-matroska',
+  html:'text/html', css:'text/css', csv:'text/csv',
+  ttf:'font/ttf', otf:'font/otf', woff:'font/woff', woff2:'font/woff2',
+  epub:'application/epub+zip',
+};
+const MAGIC_BYTES = {
+  png:['89 50 4E 47','the next three bytes spell "PNG"'],
+  pdf:['25 50 44 46','ASCII for "%PDF"'],
+  gif:['47 49 46 38','ASCII for "GIF8"'],
+  jpg:['FF D8 FF',''], jpeg:['FF D8 FF',''],
+  bmp:['42 4D','ASCII for "BM"'],
+  rar:['52 61 72 21','ASCII for "Rar!"'],
+  '7z':['37 7A BC AF',''],
+  gz:['1F 8B',''],
+  psd:['38 42 50 53','ASCII for "8BPS"'],
+  flac:['66 4C 61 43','ASCII for "fLaC"'],
+  exe:['4D 5A','ASCII for "MZ", the initials of MS-DOS architect Mark Zbikowski'],
+  dll:['4D 5A','ASCII for "MZ"'],
+  class:['CA FE BA BE','the playful hex word "CAFEBABE"'],
+  wasm:['00 61 73 6D','a NUL then "asm"'],
+  mid:['4D 54 68 64','ASCII for "MThd"'],
+  sqlite:['53 51 4C 69','the start of "SQLite format 3"'],
+  ico:['00 00 01 00',''],
+  ttf:['00 01 00 00',''],
+  otf:['4F 54 54 4F','ASCII for "OTTO"'],
+  wav:['52 49 46 46','the "RIFF" container tag'],
+  avi:['52 49 46 46','the "RIFF" container tag'],
+};
+
+function assembleFacts(key, meta, d) {
+  const items = []; // { html, plain }
+  if (meta.fact) {
+    items.push({
+      html: esc(meta.fact) + (meta.factApprox ? ' <span class="fact-approx">(approximate)</span>' : ''),
+      plain: meta.fact,
+    });
+  }
+  if (Array.isArray(meta.facts)) {
+    for (const f of meta.facts) if (f) items.push({ html: esc(f), plain: f });
+  }
+  const extra = EXTRA_FACTS[key];
+  if (Array.isArray(extra)) {
+    for (const f of extra) if (f) items.push({ html: esc(f), plain: f });
+  }
+  const lower = items.map((i) => i.plain.toLowerCase());
+  const has = (...needles) => needles.some((n) => lower.some((f) => f.includes(n)));
+  const push = (plain, html) => { items.push({ plain, html: html || esc(plain) }); lower.push(plain.toLowerCase()); };
+
+  if (ZIP_CONTAINERS.has(key) && !has('zip archive', 'a zip', 'is a zip', 'really a zip')) {
+    push(`Under the hood a .${d} file is really a ZIP archive - rename it to .zip and you can browse the files inside.`);
+  } else if (CFBF_CONTAINERS.has(key) && !has('compound file', 'ole compound', 'ole container')) {
+    push(`A .${d} file uses Microsoft's OLE Compound File container - the same wrapper as the legacy .doc and .xls binaries.`);
+  }
+  if (TEXT_FORMATS.has(key) && !has('plain text', 'text-based', 'human-readable', 'human readable', 'text file')) {
+    push(`A .${d} file is plain text, so you can open and edit it in any text editor.`);
+  }
+  const mime = MIME_TYPES[key];
+  if (mime && !has('mime', mime)) {
+    push(`On the web a .${d} file is served with the MIME type ${mime}.`,
+      `On the web a .${esc(d)} file is served with the MIME type <code>${esc(mime)}</code>.`);
+  }
+  const mg = MAGIC_BYTES[key];
+  if (mg && !has('signature', 'magic byte', mg[0].toLowerCase())) {
+    const tail = mg[1] ? ' - ' + mg[1] : '';
+    push(`Analyser spots a .${d} file by its signature bytes ${mg[0]}${tail}.`,
+      `Analyser spots a .${esc(d)} file by its signature bytes <code>${esc(mg[0])}</code>${esc(tail)}.`);
+  }
+  return items;
+}
+
 function page(key, e, depth) {
   const isFull = depth === 'full';
   const d = e.display;            // curated casing for display, e.g. WebP
   const fallback = isFull
     ? { name: '.' + d + ' file', blurb: `.${d} is a file format that Analyser can open and analyse in your browser.` }
-    : { name: '.' + d + ' file (' + e.rows[0].label + ')', blurb: `.${d} files belong to the "${e.rows[0].label}" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser.` };
+    : { name: '.' + d + ' file (' + e.rows[0].label + ')', blurb: `.${d} files belong to the "${e.rows[0].label}" family of formats.` };
   const meta = EXT_PAGES[key] || fallback;
+  const facts = assembleFacts(key, meta, d);
+  const factBody = facts.length === 1
+    ? facts[0].html
+    : `<ul class="dyk-list">${facts.map((f) => `<li>${f.html}</li>`).join('')}</ul>`;
+  const factBlock = facts.length
+    ? `<div class="didyouknow"><dt>Did you know</dt><dd>${factBody}</dd></div>\n            `
+    : '';
+  const factPlain = facts.map((f) => f.plain).join(' ');
   const url = `${SITE}${isFull ? '/formats/' : '/formats/id/'}${key}`;
   const title = isFull
     ? `.${d} file - what it is and how to open it | Analyser`
@@ -130,7 +270,7 @@ function page(key, e, depth) {
     '@context': 'https://schema.org', '@type': 'FAQPage',
     mainEntity: [
       { '@type': 'Question', name: `What is a .${d} file?`,
-        acceptedAnswer: { '@type': 'Answer', text: meta.blurb } },
+        acceptedAnswer: { '@type': 'Answer', text: meta.blurb + (factPlain ? ' ' + factPlain : '') } },
       { '@type': 'Question', name: `How do I open a .${d} file?`,
         acceptedAnswer: { '@type': 'Answer', text: `Drop a .${d} file onto Analyser at ${SITE}/ and it ${isFull ? 'opens' : 'is identified'} directly in your browser - no upload, no account and no software to install. ${e.rows[0].desc}` } },
     ],
@@ -222,6 +362,8 @@ function page(key, e, depth) {
   </div>
 </header>
 
+${siteNav(key)}
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
@@ -232,7 +374,7 @@ function page(key, e, depth) {
 
         <div class="about-block">
           <dl class="about-caps">
-            ${capabilityBlocks(e, isFull)}${depthNote}
+            ${factBlock}${capabilityBlocks(e, isFull)}${depthNote}
             <div><dt>Open a .${esc(d)} file</dt><dd>Drag a .${esc(d)} file onto <a href="/">the Analyser home page</a> (or tap to pick one). ${openVerb} entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd>${relatedLinks(e)}</dd></div>
           </dl>

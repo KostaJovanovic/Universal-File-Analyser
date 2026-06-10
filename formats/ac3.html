@@ -27,7 +27,7 @@
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .AC3 file?","acceptedAnswer":{"@type":"Answer","text":"AC-3 (Dolby Digital) is a surround-sound audio format used on DVDs and in broadcast."}},{"@type":"Question","name":"How do I open a .AC3 file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .AC3 file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. Inspect the waveform, spectrogram, codec, bitrate, channels, and tags of MP3, WAV, FLAC, M4A, AAC, OGG, and Opus audio."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .AC3 file?","acceptedAnswer":{"@type":"Answer","text":"AC-3 (Dolby Digital) is a surround-sound audio format used on DVDs and in broadcast. Dolby Digital debuted in cinemas in 1992 and became the standard sound format for DVDs. On a 35mm film print, the Dolby Digital data is optically printed in the tiny gaps between the sprocket holes along the film edge. AC-3 carries up to 5.1 channels, where the “.1” is a dedicated low-frequency effects channel for the subwoofer. Dolby Digital is mandatory audio on the DVD-Video standard, which is a large part of why it became so ubiquitous. Batman Returns is generally cited as the first film to receive a wide theatrical release in Dolby Digital."}},{"@type":"Question","name":"How do I open a .AC3 file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .AC3 file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. Inspect the waveform, spectrogram, codec, bitrate, channels, and tags of MP3, WAV, FLAC, M4A, AAC, OGG, and Opus audio."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".AC3","item":"https://lab.valjdakosta.com/formats/ac3"}]}
@@ -71,6 +71,12 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/amr" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/dts" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
@@ -81,6 +87,7 @@
 
         <div class="about-block">
           <dl class="about-caps">
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Dolby Digital debuted in cinemas in 1992 and became the standard sound format for DVDs.</li><li>On a 35mm film print, the Dolby Digital data is optically printed in the tiny gaps between the sprocket holes along the film edge.</li><li>AC-3 carries up to 5.1 channels, where the “.1” is a dedicated low-frequency effects channel for the subwoofer.</li><li>Dolby Digital is mandatory audio on the DVD-Video standard, which is a large part of why it became so ubiquitous.</li><li>Batman Returns is generally cited as the first film to receive a wide theatrical release in Dolby Digital.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>Inspect the waveform, spectrogram, codec, bitrate, channels, and tags of MP3, WAV, FLAC, M4A, AAC, OGG, and Opus audio.</dd></div>
             <div><dt>Open a .AC3 file</dt><dd>Drag a .AC3 file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd><a href="/formats/mp3">.MP3</a> &middot; <a href="/formats/wav">.WAV</a> &middot; <a href="/formats/m4a">.M4A</a> &middot; <a href="/formats/m4b">.M4B</a> &middot; <a href="/formats/aac">.AAC</a> &middot; <a href="/formats/flac">.FLAC</a> &middot; <a href="/formats/ogg">.OGG</a> &middot; <a href="/formats/opus">.OPUS</a> &middot; <a href="/formats/aiff">.AIFF</a> &middot; <a href="/formats/wma">.WMA</a> &middot; <a href="/formats/amr">.AMR</a> &middot; <a href="/formats/dts">.DTS</a> &middot; <a href="/formats/mka">.MKA</a>. See <a href="/formats">all supported file types</a>.</dd></div>

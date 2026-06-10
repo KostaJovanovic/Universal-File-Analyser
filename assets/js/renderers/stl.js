@@ -193,6 +193,16 @@ function buildViewer(geo) {
 
   const state = { yaw: 0.6, pitch: -0.5, dist: 2.6, color: [0.55, 0.62, 0.95], spin: true, bg: [0.06, 0.06, 0.06] };
   let dirty = true;
+  // Spin can be turned off two ways - the button, or simply interacting with the
+  // canvas (clicking/dragging stops it). Route every change through setSpin so any
+  // listener (e.g. the button label) stays in sync no matter what triggered it.
+  const spinListeners = [];
+  function setSpin(v) {
+    if (state.spin === v) return;
+    state.spin = v;
+    dirty = true;
+    for (const cb of spinListeners) cb(v);
+  }
 
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -224,7 +234,7 @@ function buildViewer(geo) {
 
   // Orbit + zoom controls.
   let dragging = false, lx = 0, ly = 0;
-  const down = (x, y) => { dragging = true; lx = x; ly = y; state.spin = false; };
+  const down = (x, y) => { dragging = true; lx = x; ly = y; setSpin(false); };
   const move = (x, y) => {
     if (!dragging) return;
     state.yaw += (x - lx) * 0.01; state.pitch += (y - ly) * 0.01;
@@ -244,7 +254,12 @@ function buildViewer(geo) {
     dirty = true;
   }, { passive: false });
 
-  return { wrap, ok: true, state, resize, start: () => { resize(); requestAnimationFrame(loop); }, markDirty: () => { dirty = true; } };
+  return {
+    wrap, ok: true, state, resize, setSpin,
+    onSpinChange: (cb) => spinListeners.push(cb),
+    start: () => { resize(); requestAnimationFrame(loop); },
+    markDirty: () => { dirty = true; },
+  };
 }
 
 // Build a "3D model" card around a geometry: the WebGL viewer plus the spin /
@@ -260,12 +275,11 @@ export function buildViewerCard(geo, title = '3D model') {
 
   if (viewer.ok) {
     const controls = el('div', { class: 'anr-btn-row', style: 'margin-top:10px;align-items:center;flex-wrap:wrap;' });
-    const spinBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Pause spin');
-    spinBtn.addEventListener('click', () => {
-      viewer.state.spin = !viewer.state.spin;
-      spinBtn.textContent = viewer.state.spin ? 'Pause spin' : 'Resume spin';
-      viewer.markDirty();
-    });
+    const spinBtn = el('button', { type: 'button', class: 'anr-btn' }, viewer.state.spin ? 'Pause spin' : 'Resume spin');
+    // Toggle via the button, but also reflect spin stopping when the user clicks
+    // into the canvas - onSpinChange fires for either trigger.
+    spinBtn.addEventListener('click', () => viewer.setSpin(!viewer.state.spin));
+    viewer.onSpinChange((spinning) => { spinBtn.textContent = spinning ? 'Pause spin' : 'Resume spin'; });
     const resetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Reset view');
     resetBtn.addEventListener('click', () => {
       Object.assign(viewer.state, { yaw: 0.6, pitch: -0.5, dist: 2.6 });
@@ -300,6 +314,207 @@ export function startViewer(viewer) {
   window.addEventListener('resize', viewer.resize);
 }
 
+// ---------- shared mesh helpers (used here and by model3d.js) ----------
+
+// Expand an indexed mesh (flat vertex xyz + triangle index triples) into the
+// non-indexed positions + per-triangle face normals the WebGL viewer wants.
+export function buildGeoFromIndexed(verts, tris, format) {
+  const triCount = tris.length / 3;
+  const positions = new Float32Array(triCount * 9);
+  const normals = new Float32Array(triCount * 9);
+  let o = 0;
+  for (let i = 0; i < tris.length; i += 3) {
+    const i0 = tris[i] * 3, i1 = tris[i + 1] * 3, i2 = tris[i + 2] * 3;
+    const ax = verts[i0], ay = verts[i0 + 1], az = verts[i0 + 2];
+    const bx = verts[i1], by = verts[i1 + 1], bz = verts[i1 + 2];
+    const cx = verts[i2], cy = verts[i2 + 1], cz = verts[i2 + 2];
+    const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+    const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+    let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+    const len = Math.hypot(nx, ny, nz) || 1; nx /= len; ny /= len; nz /= len;
+    positions[o] = ax; positions[o + 1] = ay; positions[o + 2] = az;
+    positions[o + 3] = bx; positions[o + 4] = by; positions[o + 5] = bz;
+    positions[o + 6] = cx; positions[o + 7] = cy; positions[o + 8] = cz;
+    for (let k = 0; k < 9; k += 3) { normals[o + k] = nx; normals[o + k + 1] = ny; normals[o + k + 2] = nz; }
+    o += 9;
+  }
+  return makeResult(format || '3D', positions, normals);
+}
+
+// A geometry-stats card (triangles, bounding box, area, volume, hash).
+export function geoStatsCard(geo, file, format, unit) {
+  const u = unit || 'units';
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Geometry'));
+  const tbl = el('table', { class: 'anr-readout' });
+  tbl.appendChild(row('Format', format));
+  tbl.appendChild(row('File', file.name));
+  tbl.appendChild(row('Size', fmtBytes(file.size)));
+  tbl.appendChild(rowHelp('Triangles', geo.count.toLocaleString(), 'The number of triangular facets in the tessellated mesh.'));
+  const dx = geo.bbox.max[0] - geo.bbox.min[0];
+  const dy = geo.bbox.max[1] - geo.bbox.min[1];
+  const dz = geo.bbox.max[2] - geo.bbox.min[2];
+  tbl.appendChild(rowHelp('Bounding box', `${dx.toFixed(2)} × ${dy.toFixed(2)} × ${dz.toFixed(2)} ${u}`, 'The smallest axis-aligned box that encloses the model, as width × depth × height.'));
+  tbl.appendChild(rowHelp('Surface area', geo.area.toFixed(2) + ' ' + u + '²', 'Combined area of every triangle in the mesh.'));
+  tbl.appendChild(rowHelp('Volume', geo.volume.toFixed(2) + ' ' + u + '³ (if watertight)', 'Enclosed volume - only meaningful for a watertight (fully closed) mesh.'));
+  tbl.appendChild(sha256Row(file));
+  card.appendChild(tbl);
+  return card;
+}
+
+// ---------- multi-body detection (connected components) ----------
+
+// Above this triangle count we skip body-splitting - the union-find weld pass is
+// O(n) but the per-vertex hashing gets heavy, and merged display is fine for very
+// large meshes. (Single combined viewer is still shown.)
+export const BODY_SPLIT_CAP = 800000;
+
+// Split an indexed mesh into connected components ("bodies"). Vertices are welded
+// by quantized position (so meshes that duplicate coincident corners still join),
+// then triangles sharing a welded vertex are union-found together. Returns an
+// array of triangle-index arrays, largest body first. `step` is the weld
+// tolerance (typically bbox span * 1e-6).
+export function splitBodiesIndexed(verts, tris, step) {
+  const nV = verts.length / 3;
+  const triN = tris.length / 3;
+  if (!triN) return [];
+  const s = step || 1;
+  const map = new Map();
+  const wid = new Int32Array(nV);
+  for (let v = 0; v < nV; v++) {
+    const k = Math.round(verts[v * 3] / s) + '|' + Math.round(verts[v * 3 + 1] / s) + '|' + Math.round(verts[v * 3 + 2] / s);
+    let id = map.get(k);
+    if (id === undefined) { id = map.size; map.set(k, id); }
+    wid[v] = id;
+  }
+  const parent = new Int32Array(map.size);
+  for (let i = 0; i < parent.length; i++) parent[i] = i;
+  const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+  const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[a] = b; };
+  for (let t = 0; t < triN; t++) {
+    const a = wid[tris[t * 3]], b = wid[tris[t * 3 + 1]], c = wid[tris[t * 3 + 2]];
+    union(a, b); union(b, c);
+  }
+  const groups = new Map();
+  for (let t = 0; t < triN; t++) {
+    const r = find(wid[tris[t * 3]]);
+    let g = groups.get(r);
+    if (!g) { g = []; groups.set(r, g); }
+    g.push(t);
+  }
+  return [...groups.values()].sort((a, b) => b.length - a.length);
+}
+
+// Same, for a non-indexed position buffer (count*9 floats, as STL produces):
+// treat each triangle's three corners as consecutive vertices.
+export function splitBodiesFromPositions(positions, step) {
+  const nV = positions.length / 3;
+  const tris = new Int32Array(nV);
+  for (let i = 0; i < nV; i++) tris[i] = i;
+  return splitBodiesIndexed(positions, tris, step);
+}
+
+// Pull a subset of triangle index-triples out of a flat index array.
+export function subTris(tris, triIndices) {
+  const out = new Array(triIndices.length * 3);
+  let o = 0;
+  for (const t of triIndices) { out[o++] = tris[t * 3]; out[o++] = tris[t * 3 + 1]; out[o++] = tris[t * 3 + 2]; }
+  return out;
+}
+
+// Build a geometry from a subset of triangles of a non-indexed positions/normals
+// pair (keeps the original facet normals).
+export function geoFromTriSubset(positions, normals, triIndices, format) {
+  const pos = new Float32Array(triIndices.length * 9);
+  const nrm = new Float32Array(triIndices.length * 9);
+  let o = 0;
+  for (const t of triIndices) {
+    const s = t * 9;
+    for (let k = 0; k < 9; k++) { pos[o + k] = positions[s + k]; nrm[o + k] = normals[s + k]; }
+    o += 9;
+  }
+  return makeResult(format, pos, nrm);
+}
+
+// The bbox span of a geometry, used to scale the weld tolerance to the model.
+export function geoSpan(geo) {
+  return Math.max(
+    geo.bbox.max[0] - geo.bbox.min[0],
+    geo.bbox.max[1] - geo.bbox.min[1],
+    geo.bbox.max[2] - geo.bbox.min[2]
+  ) || 1;
+}
+
+// ---------- multi-part viewer (3MF/AMF parts, or detected bodies) ----------
+
+// Shared UI for models that hold several pieces: a parts picker, then the viewer,
+// then the stats, then (optionally) a document-metadata card below. Each part is
+// { key, name, build() -> geo } and is built lazily + cached. The viewer sits
+// above the textual readouts. Reused by STL/OBJ/PLY/OFF/STEP body-splitting and
+// by the 3MF/AMF container renderers.
+export function renderPartsViewer(file, resultsEl, { metaCard, parts, format, unitLabel, partsTitle, partsHint }) {
+  resultsEl.innerHTML = '';
+  if (!parts.length) { resultsEl.appendChild(errorCard('No models found in this file.')); return; }
+
+  const partsCard = el('div', { class: 'anr-card' });
+  partsCard.appendChild(el('h3', {}, partsTitle || 'Models & assemblies'));
+  partsCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:10px;' }, partsHint || 'Pick a part to view it on its own, or see everything together.'));
+  const chipRow = el('div', { class: 'anr-btn-row', style: 'flex-wrap:wrap;gap:6px;' });
+  partsCard.appendChild(chipRow);
+  resultsEl.appendChild(partsCard);
+
+  // Viewer + stats are rebuilt in place each time a part is chosen; the document
+  // metadata card (if any) sits below them so the viewer leads.
+  let viewCardEl = el('div');
+  let statsCardEl = el('div');
+  resultsEl.appendChild(viewCardEl);
+  resultsEl.appendChild(statsCardEl);
+  if (metaCard) resultsEl.appendChild(metaCard);
+  const geoCache = new Map();
+
+  async function showPart(part, chip) {
+    chipRow.querySelectorAll('.anr-part-chip').forEach((b) => b.classList.remove('is-active'));
+    if (chip) chip.classList.add('is-active');
+    const loading = el('div', { class: 'anr-card' }, [el('div', { class: 'anr-info' }, 'Building mesh…')]);
+    const blankStats = el('div');
+    viewCardEl.replaceWith(loading); viewCardEl = loading;
+    statsCardEl.replaceWith(blankStats); statsCardEl = blankStats;
+    // Yield so the "Building…" text paints before a heavy parse blocks the thread.
+    await new Promise((r) => setTimeout(r, 0));
+    let geo = geoCache.get(part.key);
+    if (!geo) { try { geo = part.build(); } catch (_) { geo = null; } geoCache.set(part.key, geo); }
+
+    if (!geo || !geo.count) {
+      const errCard = el('div', { class: 'anr-card' }, [el('p', { class: 'anr-error' }, 'No mesh found for this part.')]);
+      viewCardEl.replaceWith(errCard); viewCardEl = errCard;
+      return;
+    }
+    const { viewCard, viewer } = buildViewerCard(geo, part.name);
+    viewCardEl.replaceWith(viewCard); viewCardEl = viewCard;
+    startViewer(viewer);
+    const stats = geoStatsCard(geo, file, format, unitLabel);
+    statsCardEl.replaceWith(stats); statsCardEl = stats;
+  }
+
+  parts.forEach((part) => {
+    const chip = el('button', { type: 'button', class: 'anr-btn anr-part-chip' }, part.name);
+    chip.addEventListener('click', () => showPart(part, chip));
+    chipRow.appendChild(chip);
+  });
+
+  // Default view: the combined/whole model when several parts, else the only one.
+  const first = chipRow.querySelector('.anr-part-chip');
+  if (first) showPart(parts[0], first);
+}
+
+// Helper: from a whole-model geometry plus a list of detected body triangle-groups
+// (largest first), build the parts array a renderPartsViewer expects.
+export function bodyParts(whole, bodies, makeBodyGeo) {
+  const parts = [{ key: 'all', name: `Whole model (${bodies.length} bodies)`, build: () => whole }];
+  bodies.forEach((g, i) => parts.push({ key: 'b' + i, name: 'Body ' + (i + 1), build: () => makeBodyGeo(g, i) }));
+  return parts;
+}
+
 // ---------- entry point ----------
 export async function renderStl(file, resultsEl) {
   resultsEl.hidden = false;
@@ -318,6 +533,19 @@ export async function renderStl(file, resultsEl) {
   resultsEl.innerHTML = '';
   if (!geo || !geo.count) {
     resultsEl.appendChild(errorCard('No triangles found in this STL.'));
+    return;
+  }
+
+  // ---- Multi-body: a single STL often holds several disconnected solids. Split
+  // into connected components and, when there's more than one, offer a per-body
+  // viewer (like 3MF parts) instead of only the merged mesh.
+  const bodies = geo.count <= BODY_SPLIT_CAP ? splitBodiesFromPositions(geo.positions, geoSpan(geo) * 1e-6) : [];
+  if (bodies.length > 1) {
+    const parts = bodyParts(geo, bodies, (g) => geoFromTriSubset(geo.positions, geo.normals, g, geo.format));
+    renderPartsViewer(file, resultsEl, {
+      parts, format: geo.format, unitLabel: 'units', partsTitle: 'Bodies',
+      partsHint: `This STL contains ${bodies.length} separate bodies. Pick one to view on its own, or see them all together.`,
+    });
     return;
   }
 

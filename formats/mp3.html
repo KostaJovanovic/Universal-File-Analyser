@@ -27,7 +27,7 @@
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .MP3 file?","acceptedAnswer":{"@type":"Answer","text":"MP3 is the most common lossy audio format, compressing music to small files with near-universal device support."}},{"@type":"Question","name":"How do I open a .MP3 file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .MP3 file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. Inspect the waveform, spectrogram, codec, bitrate, channels, and tags of MP3, WAV, FLAC, M4A, AAC, OGG, and Opus audio."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .MP3 file?","acceptedAnswer":{"@type":"Answer","text":"MP3 is the most common lossy audio format, compressing music to small files with near-universal device support. MP3 was finalised by Germany’s Fraunhofer Institute in 1993 and went on to ignite the digital-music revolution. Engineer Karlheinz Brandenburg famously tuned MP3 encoding using Suzanne Vega’s a cappella “Tom’s Diner”, earning her the nickname “the mother of the MP3”. MP3 is properly MPEG-1 Audio Layer III, the most advanced of the three audio layers defined in the MPEG-1 standard. The very first files to be distributed as MP3s appeared in July 1995, the year the “.mp3” extension was chosen. On the web a .MP3 file is served with the MIME type audio/mpeg."}},{"@type":"Question","name":"How do I open a .MP3 file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .MP3 file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. Inspect the waveform, spectrogram, codec, bitrate, channels, and tags of MP3, WAV, FLAC, M4A, AAC, OGG, and Opus audio."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".MP3","item":"https://lab.valjdakosta.com/formats/mp3"}]}
@@ -71,6 +71,12 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/id/lottie" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/wav" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
@@ -81,6 +87,7 @@
 
         <div class="about-block">
           <dl class="about-caps">
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>MP3 was finalised by Germany’s Fraunhofer Institute in 1993 and went on to ignite the digital-music revolution.</li><li>Engineer Karlheinz Brandenburg famously tuned MP3 encoding using Suzanne Vega’s a cappella “Tom’s Diner”, earning her the nickname “the mother of the MP3”.</li><li>MP3 is properly MPEG-1 Audio Layer III, the most advanced of the three audio layers defined in the MPEG-1 standard.</li><li>The very first files to be distributed as MP3s appeared in July 1995, the year the “.mp3” extension was chosen.</li><li>On the web a .MP3 file is served with the MIME type <code>audio/mpeg</code>.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>Inspect the waveform, spectrogram, codec, bitrate, channels, and tags of MP3, WAV, FLAC, M4A, AAC, OGG, and Opus audio.</dd></div>
             <div><dt>Open a .MP3 file</dt><dd>Drag a .MP3 file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd><a href="/formats/wav">.WAV</a> &middot; <a href="/formats/m4a">.M4A</a> &middot; <a href="/formats/m4b">.M4B</a> &middot; <a href="/formats/aac">.AAC</a> &middot; <a href="/formats/flac">.FLAC</a> &middot; <a href="/formats/ogg">.OGG</a> &middot; <a href="/formats/opus">.OPUS</a> &middot; <a href="/formats/aiff">.AIFF</a> &middot; <a href="/formats/wma">.WMA</a> &middot; <a href="/formats/amr">.AMR</a> &middot; <a href="/formats/ac3">.AC3</a> &middot; <a href="/formats/dts">.DTS</a> &middot; <a href="/formats/mka">.MKA</a>. See <a href="/formats">all supported file types</a>.</dd></div>

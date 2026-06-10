@@ -27,7 +27,7 @@
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .TS file?","acceptedAnswer":{"@type":"Answer","text":"TS has two unrelated uses: an MPEG-2 transport-stream video file (broadcast and recordings), and TypeScript source code. Analyser tells them apart by their contents."}},{"@type":"Question","name":"How do I open a .TS file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .TS file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. Read the container, codec, resolution, and frame rate of MP4, MOV, MKV, AVI, and WebM video, step through frames, and extract the audio track. Raw H.264/H.265 elementary streams (.h264/.265) are remuxed to MP4 in-browser so they play too."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .TS file?","acceptedAnswer":{"@type":"Answer","text":"TS has two unrelated uses: an MPEG-2 transport-stream video file (broadcast and recordings), and TypeScript source code. Analyser tells them apart by their contents. Confusingly, .ts is both an MPEG transport stream (from 1995) and TypeScript code (from 2012). As a video file it is an MPEG transport stream, defined in MPEG-2 Part 1 and built for broadcast over noisy satellite and terrestrial links. A transport stream is sliced into tiny fixed packets of 188 bytes each, a size originally chosen to fit neatly inside ATM telecoms cells. Because each packet carries its own timing and identification, a transport stream can be tapped into mid-broadcast, which is how live TV tuning works. As source code, TypeScript was led by Anders Hejlsberg, the same Microsoft engineer behind C#, Delphi and Turbo Pascal."}},{"@type":"Question","name":"How do I open a .TS file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .TS file onto Analyser at https://lab.valjdakosta.com/ and it opens directly in your browser - no upload, no account and no software to install. Read the container, codec, resolution, and frame rate of MP4, MOV, MKV, AVI, and WebM video, step through frames, and extract the audio track. Raw H.264/H.265 elementary streams (.h264/.265) are remuxed to MP4 in-browser so they play too."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".TS","item":"https://lab.valjdakosta.com/formats/ts"}]}
@@ -71,6 +71,12 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/m2ts" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/vob" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
@@ -81,6 +87,7 @@
 
         <div class="about-block">
           <dl class="about-caps">
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Confusingly, .ts is both an MPEG transport stream (from 1995) and TypeScript code (from 2012).</li><li>As a video file it is an MPEG transport stream, defined in MPEG-2 Part 1 and built for broadcast over noisy satellite and terrestrial links.</li><li>A transport stream is sliced into tiny fixed packets of 188 bytes each, a size originally chosen to fit neatly inside ATM telecoms cells.</li><li>Because each packet carries its own timing and identification, a transport stream can be tapped into mid-broadcast, which is how live TV tuning works.</li><li>As source code, TypeScript was led by Anders Hejlsberg, the same Microsoft engineer behind C#, Delphi and Turbo Pascal.</li></ul></dd></div>
             <div><dt>As video</dt><dd>Read the container, codec, resolution, and frame rate of MP4, MOV, MKV, AVI, and WebM video, step through frames, and extract the audio track. Raw H.264/H.265 elementary streams (.h264/.265) are remuxed to MP4 in-browser so they play too.</dd></div>
             <div><dt>As web / code</dt><dd>Preview and inspect HTML, CSS, JavaScript, TypeScript, JSON, YAML, XML, and Markdown source files.</dd></div>
             <div><dt>Open a .TS file</dt><dd>Drag a .TS file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>

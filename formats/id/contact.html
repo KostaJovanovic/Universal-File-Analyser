@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>.CONTACT file - what it is and how to identify it | Analyser</title>
-  <meta name="description" content=".CONTACT files belong to the &quot;Email / calendar / contacts&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .CONTACT file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="description" content="A .contact file is a Windows Contacts card. Identify and inspect a .CONTACT file free in your browser with Analyser - nothing is uploaded.">
   <link rel="canonical" href="https://lab.valjdakosta.com/formats/id/contact">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
@@ -12,7 +12,7 @@
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
   <meta property="og:title" content=".CONTACT file - what it is and how to identify it | Analyser">
-  <meta property="og:description" content=".CONTACT files belong to the &quot;Email / calendar / contacts&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .CONTACT file free in your browser with Analyser - nothing is uploaded.">
+  <meta property="og:description" content="A .contact file is a Windows Contacts card. Identify and inspect a .CONTACT file free in your browser with Analyser - nothing is uploaded.">
   <meta property="og:url" content="https://lab.valjdakosta.com/formats/id/contact">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta property="og:image:width" content="1200">
@@ -20,14 +20,14 @@
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content=".CONTACT file - what it is and how to identify it | Analyser">
-  <meta name="twitter:description" content=".CONTACT files belong to the &quot;Email / calendar / contacts&quot; family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser. Identify and inspect a .CONTACT file free in your browser with Analyser - nothing is uploaded.">
+  <meta name="twitter:description" content="A .contact file is a Windows Contacts card. Identify and inspect a .CONTACT file free in your browser with Analyser - nothing is uploaded.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <link rel="icon" href="/assets/img/favicon.png" type="image/png">
   <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .CONTACT file?","acceptedAnswer":{"@type":"Answer","text":".CONTACT files belong to the \"Email / calendar / contacts\" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser."}},{"@type":"Question","name":"How do I open a .CONTACT file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .CONTACT file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Open email and personal-information files: .eml/.emlx/.mbox messages (From/To/Subject/Date, Received hops, SPF/DKIM/DMARC, attachments, body preview), iCalendar .ics/.ical and .vcs (events, times, recurrence, organiser/attendees), vCard .vcf contacts (fields + inline base64 photo), LDIF directory exports and Windows .contact - with Outlook .msg/.pst, IBM Notes .nsf, Exchange .edb and Outlook Express .dbx identified."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .CONTACT file?","acceptedAnswer":{"@type":"Answer","text":"A .contact file is a Windows Contacts card. Windows Contacts stored each person as an XML .contact file in Windows Vista and 7. Microsoft introduced the .contact format in Windows Vista as a replacement for the older Windows Address Book. Each card is a self-contained XML file, so the Contacts folder needs no central database to organise people."}},{"@type":"Question","name":"How do I open a .CONTACT file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .CONTACT file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Open email and personal-information files: .eml/.emlx/.mbox messages (From/To/Subject/Date, Received hops, SPF/DKIM/DMARC, attachments, body preview), iCalendar .ics/.ical and .vcs (events, times, recurrence, organiser/attendees), vCard .vcf contacts (fields + inline base64 photo), LDIF directory exports and Windows .contact - with Outlook .msg/.pst, IBM Notes .nsf, Exchange .edb and Outlook Express .dbx identified."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".CONTACT","item":"https://lab.valjdakosta.com/formats/id/contact"}]}
@@ -52,7 +52,7 @@
       <span class="site-kicker">Email &amp; security</span>
       <h1 class="site-title">.CONTACT</h1>
       <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
-      <p class="site-sub">.CONTACT file (Email / calendar / contacts)</p>
+      <p class="site-sub">Windows contact</p>
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
         <a href="/formats" class="header-btn">Formats</a>
@@ -71,16 +71,23 @@
   </div>
 </header>
 
+<nav class="site-nav format-nav" aria-label="Browse file types">
+  <a href="/formats/id/ldif" class="nav-link" rel="prev"><span class="nav-num" aria-hidden="true">&larr;</span><span>Previous</span></a>
+  <button type="button" class="nav-link nav-link-lucky" data-fmt-random><span class="nav-num" aria-hidden="true">&#9733;</span><span>I&rsquo;m feeling lucky</span></button>
+  <a href="/formats/id/msg" class="nav-link" rel="next"><span class="nav-num" aria-hidden="true">&rarr;</span><span>Next</span></a>
+</nav>
+
 <main class="site-main about-page patch-page format-page">
   <section class="section">
     <div class="grid">
       <div class="section-content">
         <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.CONTACT</span></p>
         <h2 class="section-head">What is a .CONTACT file?</h2>
-        <p class="section-lede">.CONTACT files belong to the "Email / calendar / contacts" family of formats. Analyser identifies them from their bytes and reads any header metadata they carry, entirely in your browser.</p>
+        <p class="section-lede">A .contact file is a Windows Contacts card.</p>
 
         <div class="about-block">
           <dl class="about-caps">
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Windows Contacts stored each person as an XML .contact file in Windows Vista and 7.</li><li>Microsoft introduced the .contact format in Windows Vista as a replacement for the older Windows Address Book.</li><li>Each card is a self-contained XML file, so the Contacts folder needs no central database to organise people.</li></ul></dd></div>
             <div><dt>What Analyser reads</dt><dd>Open email and personal-information files: .eml/.emlx/.mbox messages (From/To/Subject/Date, Received hops, SPF/DKIM/DMARC, attachments, body preview), iCalendar .ics/.ical and .vcs (events, times, recurrence, organiser/attendees), vCard .vcf contacts (fields + inline base64 photo), LDIF directory exports and Windows .contact - with Outlook .msg/.pst, IBM Notes .nsf, Exchange .edb and Outlook Express .dbx identified.</dd></div>
             <div><dt>Depth of analysis</dt><dd>.CONTACT is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .CONTACT file</dt><dd>Drag a .CONTACT file onto <a href="/">the Analyser home page</a> (or tap to pick one). It is identified entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
