@@ -9,21 +9,10 @@
    only the shared toolkit. */
 
 import { el, row, fmtBytes, preBlock, readSlice } from '../core/util.js';
-import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, utf8, gunzip } from '../core/binutil.js';
+import { Reader, ascii, cleanAscii, findBytes, matchMagic, startsWithAscii, latin1, utf8, gunzip } from '../core/binutil.js';
 import { sqliteSummary } from '../lib/sqlite.js';
 
 // ---------- small helpers ----------
-
-// Clean a fixed-width ASCII field (drop NULs/control, trim).
-function cleanAscii(bytes, start, len) {
-  let s = '';
-  const end = Math.min(start + len, bytes.length);
-  for (let i = start; i < end; i++) {
-    const c = bytes[i];
-    if (c >= 32 && c < 127) s += String.fromCharCode(c);
-  }
-  return s.replace(/\s+$/, '').trim();
-}
 
 // Format seconds as M:SS or H:MM:SS.
 function fmtDuration(sec) {

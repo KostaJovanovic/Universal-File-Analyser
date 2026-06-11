@@ -3,7 +3,7 @@
    like [00:12.34]text (including multiple timestamps per line and enhanced
    word-level <00:12.34> tags). Renders the metadata and the timed lines. */
 
-import { el, row, errorCard } from '../core/util.js';
+import { el, buildReadout, errorCard } from '../core/util.js';
 
 const META_NAMES = {
   ti: 'Title', ar: 'Artist', al: 'Album', au: 'Author', by: 'Created by',
@@ -58,13 +58,13 @@ export async function renderLrc(file, resultsEl) {
   // ---- Metadata card ----
   const infoCard = el('div', { class: 'anr-card' });
   infoCard.appendChild(el('h3', {}, 'LRC lyrics'));
-  const tbl = el('table', { class: 'anr-readout' });
-  tbl.appendChild(row('File', file.name));
-  tbl.appendChild(row('Lines', String(lines.length)));
   const timed = lines.filter((l) => l.time != null).length;
-  tbl.appendChild(row('Timestamped', timed + ' / ' + lines.length + (timed ? '' : ' (plain text)')));
-  for (const [name, value] of meta) tbl.appendChild(row(name, value));
-  infoCard.appendChild(tbl);
+  infoCard.appendChild(buildReadout([
+    ['File', file.name],
+    ['Lines', String(lines.length)],
+    ['Timestamped', timed + ' / ' + lines.length + (timed ? '' : ' (plain text)')],
+    ...meta,
+  ]));
   resultsEl.appendChild(infoCard);
 
   // ---- Lyrics card ----

@@ -112,6 +112,12 @@ export function ascii(buf, start = 0, len = buf.length - start) {
   return s;
 }
 
+// Like ascii() but trims surrounding whitespace - for fixed-width ASCII fields
+// padded with spaces or NULs (the padding NULs are already dropped by ascii()).
+export function cleanAscii(buf, start = 0, len = buf.length - start) {
+  return ascii(buf, start, len).trim();
+}
+
 // ---------- text decoders ----------
 
 export function latin1(bytes) {

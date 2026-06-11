@@ -308,6 +308,20 @@ export function rowHelp(label, value, helpText) {
   ]);
 }
 
+// Build a standard .anr-readout table from a list of rows. Each row is either a
+// [label, value] pair (rendered via row(), so LABEL_HELP tooltips and the '-'
+// empty placeholder apply) or an already-built <tr> node (e.g. rowHelp(),
+// sha256Row()). Falsy entries are skipped, so conditional rows can be written
+// inline as `cond && ['Label', value]`.
+export function buildReadout(rows) {
+  const tbl = el('table', { class: 'anr-readout' });
+  for (const r of rows) {
+    if (!r) continue;
+    tbl.appendChild(Array.isArray(r) ? row(r[0], r[1]) : r);
+  }
+  return tbl;
+}
+
 export function fmtBytes(n) {
   if (n == null) return '-';
   if (n < 1024) return n + ' B';
@@ -418,10 +432,7 @@ export function sha256Row(file) {
 export function integrityCard(file, extraRows = []) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Integrity'));
-  const tbl = el('table', { class: 'anr-readout' });
-  for (const [label, value] of extraRows) tbl.appendChild(row(label, value));
-  tbl.appendChild(sha256Row(file));
-  card.appendChild(tbl);
+  card.appendChild(buildReadout([...extraRows, sha256Row(file)]));
   return card;
 }
 

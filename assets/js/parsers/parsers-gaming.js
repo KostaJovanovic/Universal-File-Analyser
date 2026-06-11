@@ -8,7 +8,7 @@
    card. Dependency-free: only the shared toolkit + zip reader. */
 
 import { el, row, fmtBytes, preBlock, readSlice } from '../core/util.js';
-import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, gunzip, fmtGuid } from '../core/binutil.js';
+import { Reader, ascii, cleanAscii, findBytes, matchMagic, startsWithAscii, latin1, gunzip, fmtGuid } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 
 // ---------- small helpers ----------
@@ -29,17 +29,6 @@ function crc32(bytes, start = 0, end = bytes.length) {
   return (c ^ 0xFFFFFFFF) >>> 0;
 }
 const hex8 = (n) => (n >>> 0).toString(16).toUpperCase().padStart(8, '0');
-
-// Clean a fixed-width ASCII field (drop NULs/control, trim).
-function cleanAscii(bytes, start, len) {
-  let s = '';
-  const end = Math.min(start + len, bytes.length);
-  for (let i = start; i < end; i++) {
-    const c = bytes[i];
-    if (c >= 32 && c < 127) s += String.fromCharCode(c);
-  }
-  return s.replace(/\s+$/, '').trim();
-}
 
 // ---------- iNES / NES 2.0 ----------
 const NES_MIRROR = ['Horizontal', 'Vertical'];
