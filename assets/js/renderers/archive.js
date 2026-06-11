@@ -384,7 +384,10 @@ export async function renderArchive(file, resultsEl, opts = {}) {
   });
 
   if (previewable.length > 0) {
-    const prevCard = el('div', { class: 'anr-card' });
+    // Collapsed by default (.is-collapsed): the previews are a secondary detail
+    // behind the file tree, so they start closed; the shared card-toggle in
+    // app.js opens them when the "Text file previews" title is clicked.
+    const prevCard = el('div', { class: 'anr-card is-collapsed' });
     prevCard.appendChild(el('h3', {}, 'Text file previews'));
     prevCard.appendChild(el('p', {
       class: 'anr-hint',
@@ -403,7 +406,10 @@ export async function renderArchive(file, resultsEl, opts = {}) {
         if (mt) summaryMeta += ' · ' + mt;
       } catch { /* metadata is optional */ }
       const summary = el('summary', {
-        style: 'cursor: pointer; font-weight: bold; margin: 4px 0; font-size: 13px;'
+        // overflow-wrap/word-break so long entry paths and the metadata tail wrap
+        // instead of overflowing the card on narrow (mobile) viewports.
+        style: 'cursor: pointer; font-weight: bold; margin: 4px 0; font-size: 13px;' +
+               ' overflow-wrap: anywhere; word-break: break-word;'
       }, entry.name + '  (' + fmtBytes(entry.uncompSize) + ' · CRC ' + (entry.crc >>> 0).toString(16).padStart(8, '0') + summaryMeta + ')');
       details.appendChild(summary);
 

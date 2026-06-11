@@ -23,7 +23,8 @@
       "Bash(curl -s -o /dev/null -w \"/formats/id/als.html -> %{http_code} \\(redirect\\)\\\\n\" http://localhost:3199/formats/id/als.html)",
       "Bash(curl -s http://localhost:3199/formats/id/als)",
       "Bash(rtk read *)",
-      "Bash(rtk git *)"
+      "Bash(rtk git *)",
+      "PowerShell(rtk grep *)"
     ]
   },
   "spinnerTipsEnabled": false

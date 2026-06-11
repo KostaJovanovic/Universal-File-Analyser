@@ -2,10 +2,47 @@
    Reads .pptx (Office Open XML presentation) and renders each slide as a card
    with its text (title + body) and any embedded images, in presentation order. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, openOverlayBack } from '../core/util.js';
 import { openZip } from './zip.js';
 
 const EMU_PER_PX = 9525; // 914400 EMU/inch ÷ 96 px/inch
+
+// Open a slide full-size in a lightbox. The real slide element is MOVED into the
+// overlay (not cloned) so its embedded-image click handlers keep working, and a
+// comment node marks its place in the grid so it can be returned on close. The
+// slide sizes its text from container-query units (see .anr-pptx-slide), so at
+// the overlay's width the text renders large instead of thumbnail-sized.
+function openSlideLightbox(box, label) {
+  const placeholder = document.createComment('pptx-slide');
+  box.replaceWith(placeholder);
+  box.classList.add('anr-pptx-lightboxed');
+
+  const closeBtn = el('button', { type: 'button', class: 'fmt-overlay-close' }, '×');
+  const header = el('div', { class: 'fmt-overlay-header' }, [el('h3', {}, label), closeBtn]);
+  const bodyEl = el('div', { class: 'fmt-overlay-body' }, [box]);
+  const inner = el('div', { class: 'fmt-overlay-inner' }, [header, bodyEl]);
+  const overlay = el('div', { class: 'fmt-overlay anr-pptx-lightbox' }, [inner]);
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+
+  function hide() {
+    box.classList.remove('anr-pptx-lightboxed');
+    box._anrLightboxClose = null;
+    if (placeholder.parentNode) placeholder.replaceWith(box);   // return it to the grid
+    else box.remove();
+    overlay.remove();
+    document.body.style.overflow = '';
+    document.removeEventListener('keydown', onKey);
+  }
+  const close = openOverlayBack(hide);   // Back button / Esc / outside-click all close
+  // Let in-slide actions (e.g. analysing an embedded image) dismiss the lightbox
+  // so their result isn't hidden behind the overlay.
+  box._anrLightboxClose = close;
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onKey);
+}
 
 function parseXml(text) {
   return new DOMParser().parseFromString(text, 'application/xml');
@@ -108,6 +145,10 @@ export async function renderPptx(file, resultsEl) {
   // ---- Slides ----
   const slidesCard = el('div', { class: 'anr-card' });
   slidesCard.appendChild(el('h3', {}, 'Slides'));
+  // Slides tile into a responsive grid (2 per row, 3 when the width allows) - see
+  // .anr-pptx-grid. Kept in its own wrapper so the card's <h3> stays full-width.
+  const slidesGrid = el('div', { class: 'anr-pptx-grid' });
+  slidesCard.appendChild(slidesGrid);
   resultsEl.appendChild(slidesCard);
 
   const aspect = slideH / slideW;
@@ -118,6 +159,11 @@ export async function renderPptx(file, resultsEl) {
     const slideBox = el('div', { class: 'anr-pptx-slide', style: 'aspect-ratio:' + (slideW / slideH).toFixed(3) + ';' });
     const num = el('div', { class: 'anr-pptx-num' }, String(i + 1));
     slideBox.appendChild(num);
+    // Click a grid thumbnail to open it large in the lightbox; once it IS the
+    // lightboxed slide, clicks fall through to its contents (image analyse, notes).
+    slideBox.addEventListener('click', () => {
+      if (!slideBox.classList.contains('anr-pptx-lightboxed')) openSlideLightbox(slideBox, 'Slide ' + (i + 1));
+    });
 
     if (xml) {
       const doc = parseXml(xml);
@@ -188,8 +234,15 @@ export async function renderPptx(file, resultsEl) {
               const ext = (imgPath.match(/\.(\w+)$/) || [, 'png'])[1];
               const mime = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
               const blob = new Blob([bytes], { type: mime });
-              const img = el('img', { src: URL.createObjectURL(blob), class: 'anr-pptx-img', title: 'Click to analyse as photo', style: 'cursor: pointer;' });
-              img.addEventListener('click', () => { if (window._anrHandleFile) window._anrHandleFile(new File([bytes], 'slide-image.' + ext, { type: mime }), { nested: true }); });
+              const img = el('img', { src: URL.createObjectURL(blob), class: 'anr-pptx-img', title: 'Open the slide, then click to analyse as a photo', style: 'cursor: pointer;' });
+              img.addEventListener('click', (e) => {
+                // In a thumbnail, let the click bubble up to open the lightbox;
+                // only analyse the image once the slide is open in the lightbox.
+                if (!slideBox.classList.contains('anr-pptx-lightboxed')) return;
+                e.stopPropagation();
+                if (slideBox._anrLightboxClose) slideBox._anrLightboxClose();   // close the lightbox first
+                if (window._anrHandleFile) window._anrHandleFile(new File([bytes], 'slide-image.' + ext, { type: mime }), { nested: true });
+              });
               slideBox.appendChild(img);
             }
           }
@@ -213,7 +266,7 @@ export async function renderPptx(file, resultsEl) {
       }
     }
 
-    slidesCard.appendChild(slideBox);
+    slidesGrid.appendChild(slideBox);
   }
 
   if (!slideOrder.length) slidesCard.appendChild(el('p', { class: 'anr-hint' }, 'No slides found.'));

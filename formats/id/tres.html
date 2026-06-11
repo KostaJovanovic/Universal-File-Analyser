@@ -27,7 +27,7 @@
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .TRES file?","acceptedAnswer":{"@type":"Answer","text":"TRES is a Godot resource file, such as a material or animation. Created and opened by Godot. Godot is a free, open-source game engine first released publicly in 2014. Godot was created by Juan Linietsky and Ariel Manzur in Buenos Aires and named after Beckett’s play “Waiting for Godot”. The text-based TRES format is easy to read and diff, making Godot resources friendly to version control."}},{"@type":"Question","name":"How do I open a .TRES file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .TRES file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Identify game-engine assets: Unity (UNITYPACKAGE), Unreal Engine (UASSET, UMAP), and Godot (TSCN, TRES)."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .TRES file?","acceptedAnswer":{"@type":"Answer","text":"TRES is a Godot resource file, such as a material or animation. Created and opened by Godot. Nearly everything in Godot - materials, animations, shaders, even scripts - is a Resource, saveable as readable text in a .tres or as compact binary in a .res. Before going open source in 2014, Godot spent years as a closed in-house engine powering work-for-hire games at studios in Argentina. The text-based TRES format is easy to read and diff, making Godot resources friendly to version control."}},{"@type":"Question","name":"How do I open a .TRES file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .TRES file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Identify game-engine assets: Unity (UNITYPACKAGE), Unreal Engine (UASSET, UMAP), and Godot (TSCN, TRES)."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".TRES","item":"https://lab.valjdakosta.com/formats/id/tres"}]}
@@ -87,7 +87,7 @@
 
         <div class="about-block">
           <dl class="about-caps">
-            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Godot is a free, open-source game engine first released publicly in 2014.</li><li>Godot was created by Juan Linietsky and Ariel Manzur in Buenos Aires and named after Beckett’s play “Waiting for Godot”.</li><li>The text-based TRES format is easy to read and diff, making Godot resources friendly to version control.</li></ul></dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Nearly everything in Godot - materials, animations, shaders, even scripts - is a Resource, saveable as readable text in a .tres or as compact binary in a .res.</li><li>Before going open source in 2014, Godot spent years as a closed in-house engine powering work-for-hire games at studios in Argentina.</li><li>The text-based TRES format is easy to read and diff, making Godot resources friendly to version control.</li></ul></dd></div>
             <div><dt>What Analyser reads</dt><dd>Identify game-engine assets: Unity (UNITYPACKAGE), Unreal Engine (UASSET, UMAP), and Godot (TSCN, TRES).</dd></div>
             <div><dt>Depth of analysis</dt><dd>.TRES is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .TRES file</dt><dd>Drag a .TRES file onto <a href="/">the Analyser home page</a> (or tap to pick one). It is identified entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
@@ -107,7 +107,6 @@
   <div class="footer-row footer-bottom">
     <a href="/formats" class="footer-nav-btn">&larr; All formats</a>
     <p class="footer-meta">2026 &middot; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
-    <p class="footer-meta"><a href="https://github.com/KostaJovanovic/lab" target="_blank" rel="noopener">Source on GitHub ↗</a></p>
     <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button></p>
   </div>
 </footer>
