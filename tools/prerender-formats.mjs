@@ -19,6 +19,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
+import { esc, escAttr, buildFullKeys, makeHrefOf } from './prerender-common.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PAGE = join(ROOT, 'formats.html');
@@ -28,24 +29,12 @@ const { catalogGrouped, formatCount } = await import(
   pathToFileURL(join(ROOT, 'assets/js/core/formats.js')).href
 );
 
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const escAttr = (s) => esc(s).replace(/"/g, '&quot;');
-
 // Which extensions live in at least one full-analysis row. Their landing pages
 // sit at /formats/<ext>; identification-only extensions sit at
 // /formats/id/<ext> (same routing as tools/prerender-format-pages.mjs, which
 // generates the pages - an ext in both a full and an id row gets the full page).
-const fullKeys = new Set();
-for (const g of catalogGrouped()) {
-  for (const r of g.rows) {
-    if (r.depth !== 'full') continue;
-    for (const tok of r.exts) fullKeys.add(tok.toLowerCase());
-  }
-}
-const guideHref = (tok) => {
-  const k = tok.toLowerCase();
-  return fullKeys.has(k) ? `/formats/${k}` : `/formats/id/${k}`;
-};
+const fullKeys = buildFullKeys(catalogGrouped());
+const guideHref = makeHrefOf(fullKeys);
 
 // One <details class="fmt-item"> - byte-for-byte the shape fmtItem() builds in
 // formats.js, so the shared CSS renders it identically to the in-app overlay.

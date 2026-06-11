@@ -36,6 +36,7 @@
 import { writeFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
+import { esc, escAttr, buildFullKeys, makeHrefOf } from './prerender-common.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUTDIR = join(ROOT, 'formats');
@@ -52,27 +53,15 @@ try {
   EXTRA_FACTS = JSON.parse(readFileSync(join(ROOT, 'tools/dyk-extra.json'), 'utf8'));
 } catch { /* no sidecar yet */ }
 
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const escAttr = (s) => esc(s).replace(/"/g, '&quot;');
-
 // ---- assemble per-extension data from the catalog ----
 const groups = catalogGrouped();
 
 // Which extensions live in at least one full-analysis row. Full pages win
 // cross-depth collisions, and links route on this set everywhere.
-const fullKeys = new Set();
-for (const g of groups) {
-  for (const r of g.rows) {
-    if (r.depth !== 'full') continue;
-    for (const tok of r.exts) fullKeys.add(tok.toLowerCase());
-  }
-}
+const fullKeys = buildFullKeys(groups);
 
 // The canonical URL path for an extension token, whichever depth it lives at.
-const hrefOf = (tok) => {
-  const k = tok.toLowerCase();
-  return fullKeys.has(k) ? `/formats/${k}` : `/formats/id/${k}`;
-};
+const hrefOf = makeHrefOf(fullKeys);
 
 // lowercase ext -> { display, rows:[{label,catKey,catLabel,desc}], sibs:Set }
 function collect(depth) {
