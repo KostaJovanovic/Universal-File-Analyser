@@ -2838,6 +2838,35 @@ function splitStepArgs(s) {
   return args;
 }
 
+// Strip ISO 10303-21 comments (/* ... */) that sit outside string literals.
+// STEP permits them anywhere, including between an entity's arguments, e.g.
+// FILE_NAME(/* name */ 'part.step', /* originating_system */ 'Fusion', ...).
+// Left in place they get captured as part of each argument value, so remove
+// them up front - taking care to honour string literals (with the doubled-''
+// escape) so a /* sequence inside a quoted string is preserved.
+function stripStepComments(text) {
+  let out = '', i = 0, inStr = false;
+  while (i < text.length) {
+    const c = text[i];
+    if (inStr) {
+      out += c; i++;
+      if (c === "'") {
+        if (text[i] === "'") { out += "'"; i++; } // escaped doubled quote
+        else inStr = false;
+      }
+    } else if (c === "'") {
+      inStr = true; out += c; i++;
+    } else if (c === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i += 2; // skip the closing */
+    } else {
+      out += c; i++;
+    }
+  }
+  return out;
+}
+
 // Pull the (...) body of a STEP header entity by name, e.g. FILE_NAME(...).
 function stepEntityBody(text, name) {
   const m = new RegExp(name + '\\s*\\(', 'i').exec(text);
@@ -2922,6 +2951,7 @@ function stepProtocol(schema) {
 // surfacing the originating CAD system + version, preprocessor, author, schema
 // and application protocol.
 export function parseStepHeader(text) {
+  text = stripStepComments(text);
   const fdBody = stepEntityBody(text, 'FILE_DESCRIPTION');
   const fnBody = stepEntityBody(text, 'FILE_NAME');
   const fsBody = stepEntityBody(text, 'FILE_SCHEMA');

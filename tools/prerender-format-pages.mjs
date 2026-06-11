@@ -346,8 +346,8 @@ function page(key, e, depth) {
       <p class="site-sub">${esc(meta.name)}</p>
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
-        <a href="/formats" class="header-btn">Formats</a>
         <a href="/about" class="header-btn">About</a>
+        <a href="/formats" class="header-btn">Formats</a>
         <button type="button" class="header-btn header-btn-share">${SHARE_SVG}Share</button>
       </nav>
     </div>

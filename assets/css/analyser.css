@@ -380,6 +380,16 @@ button.nav-link {
    untouched. */
 .format-nav .nav-link:first-child { border-left: 1px solid var(--nav-line); }
 .format-nav .nav-link:not(:first-child) { border-left: 0; }
+/* The /formats hub bar carries a single "I'm feeling lucky" cell. Drop it into
+   the middle of the three equal columns (from `body:has(.about-page) .site-nav`)
+   so it's exactly as wide as if Previous/Next sat beside it, centred, with a
+   divider on each side. */
+.formats-hub-nav .nav-link-lucky {
+  grid-column: 2;
+  justify-content: center;
+  border-left: 1px solid var(--nav-line);
+  border-right: 1px solid var(--nav-line);
+}
 
 /* Share button carries an icon - lay it out inline next to the label. It's a
    <button>, so reset the native chrome to match the <a> chips exactly. */
