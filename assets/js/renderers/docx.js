@@ -2,7 +2,7 @@
    Reads .docx (Office Open XML) and renders a simplified document view
    with metadata, formatted text, tables, and text extraction. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard } from '../core/util.js';
+import { el, row, rowHelp, buildReadout, fmtBytes, integrityCard } from '../core/util.js';
 import { openZip } from './zip.js';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -458,14 +458,13 @@ export async function renderDocx(file, container) {
 
     const infoCard = el('div', { class: 'anr-card' });
     infoCard.appendChild(el('h3', {}, 'Document info'));
-    const tbl = el('table', { class: 'anr-readout' });
-    tbl.appendChild(row('File', file.name));
-    tbl.appendChild(row('Size', fmtBytes(file.size)));
-    if (file.type) tbl.appendChild(rowHelp('MIME', file.type, "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
-    for (const [k, v] of Object.entries(meta)) tbl.appendChild(row(k, v));
-    if (file.lastModified)
-      tbl.appendChild(row('Last modified', new Date(file.lastModified).toLocaleString()));
-    infoCard.appendChild(tbl);
+    infoCard.appendChild(buildReadout([
+      ['File', file.name],
+      ['Size', fmtBytes(file.size)],
+      file.type && rowHelp('MIME', file.type, "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."),
+      ...Object.entries(meta),
+      file.lastModified && ['Last modified', new Date(file.lastModified).toLocaleString()],
+    ]));
     container.appendChild(infoCard);
 
     try {
