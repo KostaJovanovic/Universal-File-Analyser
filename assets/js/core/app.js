@@ -100,6 +100,10 @@ let _dropLoaderTimer = null;
 let _dropLoaderHideTimer = null;
 let _dropLoaderOnCancel = null;
 let _dropLoaderShownAt = 0;
+// Intent flag: true once reveal() commits to showing the bar - set BEFORE the
+// rAF that actually applies the is-open class, so hideDropLoader() can tell
+// "about to show" apart from "never shown" and never lose the race.
+let _dropLoaderOpen = false;
 // Once the bar is actually on screen, keep it up at least this long so a near-
 // instant render (e.g. a small file opened straight from a folder/zip view,
 // already in memory) doesn't make it flash-and-vanish.
@@ -141,7 +145,12 @@ function showDropLoader(file, onCancel, labelText, immediate) {
     }
     _dropLoaderEl._label.textContent = labelText || ('Reading ' + name + '…');
     _dropLoaderShownAt = performance.now();
-    requestAnimationFrame(() => _dropLoaderEl.classList.add('is-open'));
+    _dropLoaderOpen = true;
+    // Guard the class-add on the intent flag: if hideDropLoader() runs in the
+    // sub-frame gap before this fires (a render that settled in ~1 frame), it
+    // clears _dropLoaderOpen, so the bar is never shown - otherwise it would
+    // latch on here with nothing left to remove it (the stuck-loader bug).
+    requestAnimationFrame(() => { if (_dropLoaderOpen && _dropLoaderEl) _dropLoaderEl.classList.add('is-open'); });
   };
   if (immediate) reveal();
   else _dropLoaderTimer = setTimeout(reveal, 160);
@@ -152,19 +161,19 @@ function hideDropLoader() {
   clearTimeout(_dropLoaderHideTimer);
   _dropLoaderOnCancel = null;
   if (!_dropLoaderEl) return;
-  // Still in the debounce window (never shown) - just cancel; nothing to fade.
-  if (!_dropLoaderEl.classList.contains('is-open')) return;
+  // Never committed to showing (cancelled within the 160ms debounce). Check the
+  // intent flag, NOT the is-open class - the class lags a frame behind reveal(),
+  // so a class check here would bail during that gap and let the pending rAF
+  // latch the bar on permanently.
+  if (!_dropLoaderOpen) return;
+  // doHide drops the intent first (so a still-pending reveal rAF won't re-add
+  // is-open) then removes the class. The bar's CSS animation pauses itself via
+  // `:not(.is-open)` (see CSS), so there's nothing else to tear down.
+  const doHide = () => { _dropLoaderOpen = false; if (_dropLoaderEl) _dropLoaderEl.classList.remove('is-open'); };
   // Already visible: honour the minimum on-screen time so it doesn't flash.
-  // The bar's CSS animation pauses itself via `:not(.is-open)` (see CSS), so
-  // there's nothing else to tear down.
   const shownFor = performance.now() - _dropLoaderShownAt;
-  if (shownFor >= DROP_LOADER_MIN_MS) {
-    _dropLoaderEl.classList.remove('is-open');
-  } else {
-    _dropLoaderHideTimer = setTimeout(() => {
-      if (_dropLoaderEl) _dropLoaderEl.classList.remove('is-open');
-    }, DROP_LOADER_MIN_MS - shownFor);
-  }
+  if (shownFor >= DROP_LOADER_MIN_MS) doHide();
+  else _dropLoaderHideTimer = setTimeout(doHide, DROP_LOADER_MIN_MS - shownFor);
 }
 
 // Let renderers outside the main drop flow (e.g. the video module's "Analyse
