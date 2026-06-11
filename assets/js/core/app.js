@@ -49,6 +49,7 @@ import { renderComic } from '../renderers/comic.js';
 import { initSearch } from './search.js';
 import { fileExt, el, probeReadable, cloudFileWarning, openOverlayBack } from './util.js';
 import { walkItems, renderFolder } from '../renderers/folder.js';
+import { setupHeaderFx, setupSectionFx } from './effects.js';
 import {
   PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, CSV_EXTS, SVG_EXTS,
   renderFmtOverlay, renderAboutFormats, formatCount,
@@ -950,67 +951,6 @@ function hasFiles(e) {
 let _handleFile = null;
 let _scrollHandler = null;
 
-// Splits an element's text into per-letter inline-block <span>s, each carrying a
-// base font-weight, so a proximity effect can vary letters independently. Bakes
-// letter-spacing as an em ratio (survives browser zoom on vw-sized type). Each
-// word's letters are grouped in a nowrap wrapper so the inline-block letters can
-// only break at the spaces between words, never mid-word; the spaces themselves
-// are real break opportunities. Returns an array of { el, base } for every letter
-// span. Shared by the header sweep/hover effect and the per-section hover effect.
-function splitText(container, baseWeight) {
-  // Bake letter-spacing as an em ratio of the font size, not the computed px.
-  // The title font-size is vw-based, so browser zoom rescales it; a fixed px
-  // spacing would not follow, leaving the gaps between the inline-block letters
-  // drifting on zoom. em tracks each span's font-size, so the spacing scales
-  // together with the letters.
-  const cs = getComputedStyle(container);
-  const lsPx = parseFloat(cs.letterSpacing);
-  const fsPx = parseFloat(cs.fontSize);
-  const spacing = (isNaN(lsPx) || !fsPx) ? 'normal' : (lsPx / fsPx) + 'em';
-  const spans = [];
-  let word = null;  // current per-word wrapper; null between words
-  function makeSpan(ch, parent) {
-    if (ch === ' ') {
-      // Space ends the word and is the sole wrap point. A plain text space (not a
-      // fixed-width inline-block) is used so it collapses at line ends like normal
-      // whitespace - an inline-block space stays as a visible box when the heading
-      // wraps, throwing a stray gap onto the wrapped line. The per-word nowrap
-      // wrappers still keep words from splitting mid-letter, and a single space is
-      // a consistent enough width for the header sweep to glide across.
-      word = null;
-      parent.appendChild(document.createTextNode(' '));
-      return;
-    }
-    if (!word) {
-      word = document.createElement('span');
-      word.style.display = 'inline-block';
-      word.style.whiteSpace = 'nowrap';
-      parent.appendChild(word);
-    }
-    const s = document.createElement('span');
-    s.textContent = ch;
-    s.style.display = 'inline-block';
-    s.style.fontWeight = baseWeight;
-    s.style.letterSpacing = spacing;
-    word.appendChild(s);
-    spans.push({ el: s, base: baseWeight });
-  }
-  const nodes = [...container.childNodes];
-  container.textContent = '';
-  for (const node of nodes) {
-    word = null;  // never carry a word across a child-element boundary (e.g. the byline <a>)
-    if (node.nodeType === 3) {
-      for (const ch of node.textContent) makeSpan(ch, container);
-    } else {
-      const text = node.textContent;
-      node.textContent = '';
-      container.appendChild(node);
-      for (const ch of text) makeSpan(ch, node);
-    }
-    word = null;
-  }
-  return spans;
-}
 
 // Changelog "tl;dr" summaries - one short (<=3 sentence) recap per patch, keyed by
 // the version number shown on patch.html. The tl;dr button (setupPatchTldr) swaps
@@ -1129,191 +1069,7 @@ function setupPatchTldr() {
   });
 }
 
-// Header letter-proximity / sweep effect. Re-runs per navigation because
-// navigate.js swaps .site-mark (so the title text changes between pages); the
-// guard on the element keeps it from binding twice to the same header.
-function setupHeaderFx() {
-  const mark = document.querySelector('.site-mark');
-  const title = document.querySelector('.site-title');
-  const byline = document.querySelector('.site-byline');
-  if (!mark || !title || !byline || mark._anrFx) return;
-  mark._anrFx = true;
-  if (setupHeaderFx._iv) clearInterval(setupHeaderFx._iv);
 
-    // letters are split via the shared module-level splitText() defined above.
-    function initLetters() {
-      title.style.width = title.offsetWidth + 'px';
-      title.style.height = title.offsetHeight + 'px';
-      byline.style.width = byline.offsetWidth + 'px';
-      byline.style.height = byline.offsetHeight + 'px';
-      const letters = [
-        ...splitText(title, 600),
-        ...splitText(byline, 700)
-      ];
-      title.style.width = '';
-      title.style.height = '';
-      byline.style.width = '';
-      byline.style.height = '';
-      return letters;
-    }
-
-    // Unified proximity controller. A single RAF loop drives both the intro
-    // "sweep" (a virtual cursor gliding across the header) and the real mouse
-    // hover. They run together: per letter we take whichever pulls it lighter
-    // (the smaller t), so hovering during the sweep no longer cancels it.
-    const RADIUS_HOVER = 120, RADIUS_TOUCH = 80;
-    const letters = initLetters();
-    let mx = -9999, my = -9999, inside = false;
-    let sweep = null;                 // { t0, duration, sx, ex, cy, vx, radius } | null
-    let raf = 0, running = false, fxT = 0;
-
-    function letterWeight(l) {
-      const r = l.el.getBoundingClientRect();
-      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      let t = 1;
-      if (inside) t = Math.min(t, Math.hypot(mx - cx, my - cy) / RADIUS_HOVER);
-      if (sweep)  t = Math.min(t, Math.hypot(sweep.vx - cx, sweep.cy - cy) / sweep.radius);
-      t = Math.min(1, t);
-      return Math.round(l.base * t + 300 * (1 - t));
-    }
-    function frame(ts) {
-      if (sweep) {
-        if (sweep.t0 == null) sweep.t0 = ts;
-        const p = Math.min(1, (ts - sweep.t0) / sweep.duration);
-        const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-        sweep.vx = sweep.sx + e * (sweep.ex - sweep.sx);
-        if (p >= 1) sweep = null;
-      }
-      if (inside || sweep) {
-        for (const l of letters) l.el.style.fontWeight = letterWeight(l);
-        raf = requestAnimationFrame(frame);
-      } else {
-        // Don't overwrite to base here - leave the letters at their last hover
-        // weight so settle() can ease them back over 0.4s instead of snapping.
-        running = false;
-        settle();
-      }
-    }
-    function ensureRunning() { if (!running) { running = true; raf = requestAnimationFrame(frame); } }
-    function settle() {
-      clearTimeout(fxT);
-      for (const l of letters) { l.el.style.transition = 'font-weight 0.4s ease'; l.el.style.fontWeight = l.base; }
-      fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 500);
-    }
-    function startSweep(radius) {
-      const rect = mark.getBoundingClientRect();
-      sweep = { t0: null, duration: 3500, sx: rect.left - radius, ex: rect.right + radius,
-                cy: rect.top + rect.height / 2, vx: rect.left - radius, radius };
-      ensureRunning();
-    }
-
-    if (window.matchMedia('(hover:hover) and (pointer:fine)').matches) {
-      const activateHover = () => {
-        if (!inside) {
-          inside = true;
-          // Ease the letters into their hover weight on entry, then drop the
-          // transition so subsequent cursor tracking stays instant (no lag).
-          clearTimeout(fxT);
-          for (const l of letters) l.el.style.transition = 'font-weight 0.18s ease';
-          fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 200);
-        }
-        ensureRunning();
-      };
-      mark.addEventListener('mouseenter', activateHover);
-      // Also activate on mousemove: mousemove only fires while the pointer is over
-      // the header, so this catches the case where the cursor was already inside
-      // when the page loaded (or during the intro sweep), when mouseenter never
-      // fires and hover would otherwise stay dead until you leave and re-enter.
-      mark.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; activateHover(); });
-      mark.addEventListener('mouseleave', () => { inside = false; });  // settles once the sweep also ends
-      setTimeout(() => startSweep(RADIUS_HOVER), 800);
-    } else if (window.matchMedia('(pointer: coarse)').matches) {
-      setTimeout(() => startSweep(RADIUS_TOUCH), 800);
-      setupHeaderFx._iv = setInterval(() => startSweep(RADIUS_TOUCH), 8000);
-    }
-}
-
-// Section-heading hover effect. Reuses the header's "letters thin toward the
-// cursor" feel on each section's number / kicker / heading - but hover-only,
-// with NO intro sweep (no "wave"). Desktop fine-pointer only. Re-runs per
-// navigation; the per-section guard keeps it from binding twice. Each section is
-// independent, so hovering section 01 never disturbs section 02.
-function setupSectionFx() {
-  if (!window.matchMedia('(hover:hover) and (pointer:fine)').matches) return;
-  const RADIUS = 120;
-  document.querySelectorAll('.section').forEach(section => {
-    if (section._anrSectionFx) return;
-    const heads = section.querySelectorAll('.section-num, .section-kicker, .section-head');
-    if (!heads.length) return;
-    section._anrSectionFx = true;
-
-    const letters = [];
-    heads.forEach(el => {
-      const base = parseInt(getComputedStyle(el).fontWeight, 10) || 400;
-      letters.push(...splitText(el, base));
-    });
-
-    // Freeze layout during hover. Changing a letter's weight changes its glyph
-    // advance, which would otherwise reflow the heading as the cursor moves. Lock
-    // each LETTER (not each word) to its base-weight width - measured once on first
-    // hover via the sub-pixel rect (offsetWidth's integer rounding was enough to let
-    // a word slip onto another line), the widest state since the effect only
-    // lightens. The glyph then thins inside its own fixed box, so neither letters,
-    // words, nor lines ever move, and no slack piles up at a word's end as a stray
-    // gap. Released on settle so the heading stays freely responsive when idle.
-    // Re-measure whenever the window width changed since the last measurement -
-    // the heading font-size is responsive, so widths baked at one window size would
-    // be stale (and, locked per-letter, make glyph boxes overlap) after a resize.
-    // A hover after a resize finds the letters at rest at base weight, so measuring
-    // then is safe.
-    let measuredW = -1;
-    const lockWidths = () => {
-      if (measuredW !== window.innerWidth) {
-        for (const l of letters) l.w = l.el.getBoundingClientRect().width;
-        measuredW = window.innerWidth;
-      }
-      for (const l of letters) l.el.style.width = l.w + 'px';
-    };
-    const unlockWidths = () => { for (const l of letters) l.el.style.width = ''; };
-
-    let mx = -9999, my = -9999, inside = false, raf = 0, running = false, fxT = 0;
-    const weight = (l) => {
-      const r = l.el.getBoundingClientRect();
-      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      const t = inside ? Math.min(1, Math.hypot(mx - cx, my - cy) / RADIUS) : 1;
-      return Math.round(l.base * t + 300 * (1 - t));
-    };
-    const settle = () => {
-      clearTimeout(fxT);
-      for (const l of letters) { l.el.style.transition = 'font-weight 0.4s ease'; l.el.style.fontWeight = l.base; }
-      // Release the width locks only after letters have eased back to base weight,
-      // so removing them can't itself cause a reflow.
-      fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; unlockWidths(); }, 500);
-    };
-    const frame = () => {
-      if (inside) {
-        for (const l of letters) l.el.style.fontWeight = weight(l);
-        raf = requestAnimationFrame(frame);
-      } else {
-        // Leave letters at their last hover weight so settle() can ease them
-        // back over 0.4s rather than snapping straight to base.
-        running = false;
-        settle();
-      }
-    };
-    section.addEventListener('mouseenter', () => {
-      lockWidths();                 // measure/apply base widths before any weight change
-      inside = true;
-      // Ease the letters in on entry, then drop the transition so tracking is instant.
-      clearTimeout(fxT);
-      for (const l of letters) l.el.style.transition = 'font-weight 0.18s ease';
-      fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 200);
-      if (!running) { running = true; raf = requestAnimationFrame(frame); }
-    });
-    section.addEventListener('mousemove', (e) => { mx = e.clientX; my = e.clientY; });
-    section.addEventListener('mouseleave', () => { inside = false; });
-  });
-}
 // exifr (74 KB) is only needed when a photo or video is actually analysed, which
 // only ever happens on the home page. Rather than ship a static <script> tag on
 // every page (about/patch/formats and the 100+ per-format landing pages never
@@ -1979,7 +1735,7 @@ function boot() {
       }
     });
 
-    // Header letter FX is initialised per-navigation by setupHeaderFx() (defined above).
+    // Header letter FX is initialised per-navigation by setupHeaderFx() (imported from effects.js).
 
     setInterval(anrSweep, ANR_REFRESH);
 

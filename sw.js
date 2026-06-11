@@ -11,6 +11,7 @@ const SHELL = [
   './assets/css/analyser.css',
   './assets/css/fonts.css',
   './assets/js/core/app.js',
+  './assets/js/core/effects.js',
   './assets/js/core/util.js',
   './assets/js/core/formats.js',
   './assets/js/core/search.js',
