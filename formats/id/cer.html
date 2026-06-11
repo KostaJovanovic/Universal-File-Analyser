@@ -27,7 +27,7 @@
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .CER file?","acceptedAnswer":{"@type":"Answer","text":"CER holds an X.509 security certificate, used to prove identity and secure connections. X.509, the certificate standard behind HTTPS, was first published in 1988. The X.509 certificate standard grew out of the ITU’s X.500 directory work, which aimed to provide a global electronic “white pages”. A .cer file may hold the certificate as raw binary DER or as Base64-wrapped PEM text, despite sharing the same extension."}},{"@type":"Question","name":"How do I open a .CER file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .CER file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Identify and decode X.509 security certificates (CRT, CER, PEM, DER) - subject, issuer, validity dates, and key details."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .CER file?","acceptedAnswer":{"@type":"Answer","text":"CER holds an X.509 security certificate, used to prove identity and secure connections. Windows treats .cer as its house extension for certificates - double-clicking one opens the built-in certificate viewer with its Install Certificate button, and the Certificate Export Wizard saves to .cer by default. The X.509 certificate standard grew out of the ITU’s X.500 directory work, which aimed to provide a global electronic “white pages”. A .cer file may hold the certificate as raw binary DER or as Base64-wrapped PEM text, despite sharing the same extension."}},{"@type":"Question","name":"How do I open a .CER file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .CER file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Identify and decode X.509 security certificates (CRT, CER, PEM, DER) - subject, issuer, validity dates, and key details."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".CER","item":"https://lab.valjdakosta.com/formats/id/cer"}]}
@@ -87,7 +87,7 @@
 
         <div class="about-block">
           <dl class="about-caps">
-            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>X.509, the certificate standard behind HTTPS, was first published in 1988.</li><li>The X.509 certificate standard grew out of the ITU’s X.500 directory work, which aimed to provide a global electronic “white pages”.</li><li>A .cer file may hold the certificate as raw binary DER or as Base64-wrapped PEM text, despite sharing the same extension.</li></ul></dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Windows treats .cer as its house extension for certificates - double-clicking one opens the built-in certificate viewer with its Install Certificate button, and the Certificate Export Wizard saves to .cer by default.</li><li>The X.509 certificate standard grew out of the ITU’s X.500 directory work, which aimed to provide a global electronic “white pages”.</li><li>A .cer file may hold the certificate as raw binary DER or as Base64-wrapped PEM text, despite sharing the same extension.</li></ul></dd></div>
             <div><dt>What Analyser reads</dt><dd>Identify and decode X.509 security certificates (CRT, CER, PEM, DER) - subject, issuer, validity dates, and key details.</dd></div>
             <div><dt>Depth of analysis</dt><dd>.CER is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .CER file</dt><dd>Drag a .CER file onto <a href="/">the Analyser home page</a> (or tap to pick one). It is identified entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
@@ -107,7 +107,6 @@
   <div class="footer-row footer-bottom">
     <a href="/formats" class="footer-nav-btn">&larr; All formats</a>
     <p class="footer-meta">2026 &middot; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
-    <p class="footer-meta"><a href="https://github.com/KostaJovanovic/lab" target="_blank" rel="noopener">Source on GitHub ↗</a></p>
     <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button></p>
   </div>
 </footer>

@@ -27,7 +27,7 @@
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .NC file?","acceptedAnswer":{"@type":"Answer","text":"NC files hold G-code for CNC machines - the name stands for Numerical Control. Produced by CAM software. \"NC\" means Numerical Control, the 1950s technology that G-code grew out of. Numerical control traces back to the MIT Servomechanisms Laboratory in the 1950s, where the first such programming was developed. The G-code inside is standardised as RS-274 and, internationally, as ISO 6983."}},{"@type":"Question","name":"How do I open a .NC file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .NC file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Analyse G-code for 3D printers and CNC machines - detect the slicer or CAM tool, machine and controller, toolpath, and print or cut dimensions (Prusa, Bambu, Cura, Fusion 360, Mastercam, GRBL, Fanuc, Haas)."}}]}
+  {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a .NC file?","acceptedAnswer":{"@type":"Answer","text":"NC files hold G-code for CNC machines - the name stands for Numerical Control. Produced by CAM software. \"NC\" means Numerical Control, the 1950s technology that G-code grew out of. Numerical control traces back to the MIT Servomechanisms Laboratory in the 1950s, where the first such programming was developed. APT, the Automatically Programmed Tool language developed at MIT in the late 1950s, became the first widely used way of writing programs for NC machines."}},{"@type":"Question","name":"How do I open a .NC file?","acceptedAnswer":{"@type":"Answer","text":"Drop a .NC file onto Analyser at https://lab.valjdakosta.com/ and it is identified directly in your browser - no upload, no account and no software to install. Analyse G-code for 3D printers and CNC machines - detect the slicer or CAM tool, machine and controller, toolpath, and print or cut dimensions (Prusa, Bambu, Cura, Fusion 360, Mastercam, GRBL, Fanuc, Haas)."}}]}
   </script>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Analyser","item":"https://lab.valjdakosta.com/"},{"@type":"ListItem","position":2,"name":"Supported file types","item":"https://lab.valjdakosta.com/formats"},{"@type":"ListItem","position":3,"name":".NC","item":"https://lab.valjdakosta.com/formats/id/nc"}]}
@@ -87,7 +87,7 @@
 
         <div class="about-block">
           <dl class="about-caps">
-            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>"NC" means Numerical Control, the 1950s technology that G-code grew out of.</li><li>Numerical control traces back to the MIT Servomechanisms Laboratory in the 1950s, where the first such programming was developed.</li><li>The G-code inside is standardised as RS-274 and, internationally, as ISO 6983.</li></ul></dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>"NC" means Numerical Control, the 1950s technology that G-code grew out of.</li><li>Numerical control traces back to the MIT Servomechanisms Laboratory in the 1950s, where the first such programming was developed.</li><li>APT, the Automatically Programmed Tool language developed at MIT in the late 1950s, became the first widely used way of writing programs for NC machines.</li></ul></dd></div>
             <div><dt>What Analyser reads</dt><dd>Analyse G-code for 3D printers and CNC machines - detect the slicer or CAM tool, machine and controller, toolpath, and print or cut dimensions (Prusa, Bambu, Cura, Fusion 360, Mastercam, GRBL, Fanuc, Haas).</dd></div>
             <div><dt>Depth of analysis</dt><dd>.NC is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .NC file</dt><dd>Drag a .NC file onto <a href="/">the Analyser home page</a> (or tap to pick one). It is identified entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
@@ -107,7 +107,6 @@
   <div class="footer-row footer-bottom">
     <a href="/formats" class="footer-nav-btn">&larr; All formats</a>
     <p class="footer-meta">2026 &middot; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
-    <p class="footer-meta"><a href="https://github.com/KostaJovanovic/lab" target="_blank" rel="noopener">Source on GitHub ↗</a></p>
     <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button></p>
   </div>
 </footer>

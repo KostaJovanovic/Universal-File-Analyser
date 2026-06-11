@@ -315,6 +315,21 @@ export function formatPageHref(ext) {
   return fullExtSet().has(k) ? `/formats/${k}` : `/formats/id/${k}`;
 }
 
+// Whether the extension is in the catalog at all - i.e. whether a /formats
+// landing page exists for it (the generator writes one per catalog extension).
+// Guards callers from linking formatPageHref() of an uncatalogued extension,
+// which would 404.
+let _allExtSet = null;
+export function hasFormatPage(ext) {
+  if (!_allExtSet) {
+    _allExtSet = new Set();
+    for (const r of [...FULL_ANALYSIS, ...IDENTIFICATION]) {
+      for (const t of r.exts.split(/\s+/)) if (t) _allExtSet.add(t.toLowerCase());
+    }
+  }
+  return _allExtSet.has((ext || '').toLowerCase());
+}
+
 // Shared collapsible row used by BOTH the overlay (#fmtBody) and the about page
 // (#aboutFormats). Each format is a native <details class="fmt-item"> whose
 // <summary> shows the label + extension list and whose body reveals the

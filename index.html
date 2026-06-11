@@ -227,6 +227,10 @@
     </div>
   </section>
 
+  <!-- Post-analysis link to the analysed extension's own /formats guide page.
+       Filled + revealed by handleFile() in app.js; hidden while no file is
+       loaded or the extension has no catalog page. -->
+  <a id="formatGuideCta" class="analyse-next format-guide-cta" href="/formats" hidden>About this file type</a>
 
 </main>
 
@@ -301,7 +305,6 @@
   <div class="footer-row footer-bottom">
     <p class="footer-meta">2026 &middot; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
     <p class="footer-meta"><a href="/formats">Supported file types</a></p>
-    <p class="footer-meta"><a href="https://github.com/KostaJovanovic/lab" target="_blank" rel="noopener">Source on GitHub ↗</a></p>
     <!-- No address in the source: the mailto is assembled in JS only after a
          Cloudflare Turnstile challenge passes (see wireFooterContact in app.js). -->
     <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button></p>

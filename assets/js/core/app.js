@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 97;
+const COMMIT_COUNT = 98;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -54,7 +54,8 @@ import { showSuggestPopup, hideSuggestPopup, scheduleShareNudge, hideShareNudge,
 import {
   PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, CSV_EXTS, SVG_EXTS,
   renderFmtOverlay, renderAboutFormats, formatCount,
-  CATEGORIES, categoryCounts, catalogGrouped
+  CATEGORIES, categoryCounts, catalogGrouped,
+  formatPageHref, hasFormatPage
 } from './formats.js';
 
 function $(id) { return document.getElementById(id); }
@@ -563,6 +564,10 @@ function boot() {
     // re-disables them if the new file isn't photo/audio/video - see handleFile).
     document.querySelectorAll('.nav-link.has-data').forEach(link => link.classList.remove('has-data'));
     document.querySelectorAll('.nav-link.is-disabled').forEach(link => link.classList.remove('is-disabled'));
+
+    // Hide the "About .EXT files" footer link until the next analysis fills it.
+    const guideCta = $('formatGuideCta');
+    if (guideCta) guideCta.hidden = true;
   }
 
   // Once a file is loaded the three pick-a-file dropzones are redundant, so swap
@@ -901,6 +906,21 @@ function boot() {
       // cloud-file warning) - there's nothing worth sharing.
       const analysed = { ext: fileExt(file.name), category: kind, name: file.name };
       window._anrLastAnalysis = analysed;
+      // Reveal the "About .EXT files" link above the footer, deep-linking to the
+      // analysed extension's own /formats guide page. A forced re-analyse (sniff
+      // popup) passes the true extension; otherwise use the file's own. Stays
+      // hidden when the extension has no catalog page (or there's no extension).
+      const guideCta = $('formatGuideCta');
+      if (guideCta) {
+        const guideExt = ((extOverride || analysed.ext) || '').toLowerCase();
+        if (guideExt && hasFormatPage(guideExt)) {
+          guideCta.href = formatPageHref(guideExt);
+          guideCta.textContent = 'About .' + guideExt.toUpperCase() + ' files';
+          guideCta.hidden = false;
+        } else {
+          guideCta.hidden = true;
+        }
+      }
       const unreadable = document.querySelector('.anr-results:not([hidden]) .anr-cloud-warning');
       if (!suggestion && !unreadable) scheduleShareNudge(analysed);
     });

@@ -203,7 +203,7 @@ input:not([type="range"]):focus-visible,
    drawn as an ::after where the old border-bottom sat. */
 .section::after,
 .quickdrop::after,
-body:has(.patch-page):not(:has(.format-page)) .site-header::after {
+body:has(.patch-page):not(:has(.site-nav)) .site-header::after {
   content: '';
   display: block;
   height: var(--rule-band-h);
@@ -213,10 +213,11 @@ body:has(.patch-page):not(:has(.format-page)) .site-header::after {
 }
 .section::after { margin-top: var(--pad-y); }
 /* The changelog page has no navbar beneath the header, so that header divider is
-   free-floating - give it the band. Other pages keep the plain hairline (the
-   navbar sits flush against it). */
-body:has(.patch-page):not(:has(.format-page)) .site-header { border-bottom: none; padding-bottom: 0; }
-body:has(.patch-page):not(:has(.format-page)) .site-header::after { margin-top: clamp(28px, 4vw, 48px); }
+   free-floating - give it the band. Any page WITH a navbar (per-format pages,
+   the /formats hub) keeps the plain hairline (the navbar sits flush against it),
+   so key the exclusion on the navbar itself rather than a page class. */
+body:has(.patch-page):not(:has(.site-nav)) .site-header { border-bottom: none; padding-bottom: 0; }
+body:has(.patch-page):not(:has(.site-nav)) .site-header::after { margin-top: clamp(28px, 4vw, 48px); }
 /* The dropzone strip carries its own horizontal padding, so pull the band back
    out to the full-bleed width the old border-bottom spanned. */
 .quickdrop::after {
@@ -3030,6 +3031,15 @@ details[open] summary::after { content: "\2212"; }
 .analyse-next:hover::after { transform: translateX(5px); }
 .analyse-next:active { transform: translateY(1px); }
 .analyse-next[hidden] { display: none; }
+/* Post-analysis "About .EXT files" link, sitting alone above the footer. Same
+   Swiss chip as .analyse-next; it's an <a>, so strip the underline. It carries
+   its own top padding so it never sits flush against the line above it - the
+   photo section's divider band (media files) or the results card (everything
+   else, where the section that would have supplied top spacing is hidden). */
+.format-guide-cta {
+  text-decoration: none;
+  margin: calc(var(--pad-y) / 2) auto;
+}
 /* Square down-arrow under "Analyse next file?" - jumps to the first analysed
    section. Same Swiss idiom as .analyse-next (square, hairline, invert hover). */
 .scroll-to-data {
@@ -4692,14 +4702,37 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-epub-content p { margin: 0 0 0.8em; }
 
 /* PPTX slide viewer */
+/* Slides tile 2-per-row by default and 3-per-row once the viewport is wide
+   enough (900px, the tablet breakpoint), never the old single column. The grid
+   gap replaces each slide's former bottom margin. */
+.anr-pptx-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+}
+@media (min-width: 900px) {
+  .anr-pptx-grid { grid-template-columns: repeat(3, 1fr); }
+}
+/* container-type: each slide is a query container, so the text/padding inside
+   scale from its OWN rendered width (cqw) - a slide ~960px wide in PowerPoint, so
+   30px ≈ 3.1cqw. That keeps a thumbnail looking like a shrunk slide instead of
+   full-size "zoomed in" text, and the same slide reads at full size in the wide
+   lightbox. clamp() floors keep tiny thumbnails legible and ceilings stop the
+   lightbox over-scaling. */
 .anr-pptx-slide {
+  container-type: inline-size;
   position: relative;
   border: 1px solid var(--hairline);
   background: var(--bg);
-  margin: 0 0 18px;
-  padding: 32px 36px;
+  margin: 0;
+  /* % padding resolves against the parent width (≈ the slide's own width in both
+     the grid cell and the lightbox), so it stays proportional. The slide's own
+     box can't use cqw - those resolve against an ANCESTOR container, not itself. */
+  padding: 3.3% 3.75%;
   overflow: hidden;
+  cursor: pointer;
 }
+.anr-pptx-grid .anr-pptx-slide:hover { border-color: var(--accent); }
 .anr-pptx-num {
   position: absolute;
   top: 8px;
@@ -4708,13 +4741,25 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   font-size: 11px;
   color: var(--muted);
 }
-.anr-pptx-title { font-size: clamp(20px, 3vw, 30px); font-weight: 600; margin-bottom: 14px; }
-.anr-pptx-title p { margin: 0 0 4px; }
-.anr-pptx-body { font-size: 15px; line-height: 1.5; }
-.anr-pptx-body p { margin: 0 0 6px; }
-.anr-pptx-img { max-width: 60%; height: auto; margin: 10px 0; border: 1px solid var(--rule); }
+.anr-pptx-title { font-size: clamp(11px, 3.1cqw, 30px); font-weight: 600; margin-bottom: 1.5cqw; }
+.anr-pptx-title p { margin: 0 0 0.4cqw; }
+.anr-pptx-body { font-size: clamp(8px, 1.6cqw, 15px); line-height: 1.5; }
+.anr-pptx-body p { margin: 0 0 0.6cqw; }
+.anr-pptx-img { max-width: 60%; height: auto; margin: 1cqw 0; border: 1px solid var(--rule); }
 .anr-pptx-notes { margin-top: 14px; font-size: 13px; color: var(--muted); }
 .anr-pptx-notes summary { cursor: pointer; }
+/* Speaker notes are noise in a thumbnail - only show them in the open lightbox. */
+.anr-pptx-grid .anr-pptx-notes { display: none; }
+
+/* ----- Slide lightbox (a slide moved into the shared .fmt-overlay) ----- */
+.anr-pptx-lightbox .fmt-overlay-inner { max-width: min(95vw, 1080px); }
+.anr-pptx-slide.anr-pptx-lightboxed {
+  width: 100%;
+  margin: 0;
+  overflow: auto;            /* long content scrolls within the slide-shaped box */
+  cursor: default;
+}
+.anr-pptx-slide.anr-pptx-lightboxed:hover { border-color: var(--hairline); }
 
 /* CSV / TSV data table */
 .anr-table-wrap {
