@@ -337,6 +337,7 @@ function page(key, e, depth) {
         <a href="/" class="header-btn">Home</a>
         <a href="/about" class="header-btn">About</a>
         <a href="/formats" class="header-btn">Formats</a>
+        <a href="/stats" class="header-btn">Stats</a>
         <button type="button" class="header-btn header-btn-share">${SHARE_SVG}Share</button>
       </nav>
     </div>
