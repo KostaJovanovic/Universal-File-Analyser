@@ -24,7 +24,9 @@
       "Bash(curl -s http://localhost:3199/formats/id/als)",
       "Bash(rtk read *)",
       "Bash(rtk git *)",
-      "PowerShell(rtk grep *)"
+      "PowerShell(rtk grep *)",
+      "Bash(exiftool -a -G1 -s -ThumbnailImage -PreviewImage -JpgFromRaw -OtherImage -PreviewTIFF 'F:/phone bacc/kamera slike/10160525/DSG08753.ARW')",
+      "Bash(cmd /d /c save.bat save)"
     ]
   },
   "spinnerTipsEnabled": false

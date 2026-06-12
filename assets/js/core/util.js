@@ -660,6 +660,10 @@ export function attachZoomPan(wrap, opts = {}) {
   }
   wrap.addEventListener('pointerup', endPointer);
   wrap.addEventListener('pointercancel', endPointer);
+  // The native image drag ("ghost" grab) fires dragstart, which cancels our
+  // pointer capture mid-pan - so panning a large zoomed image fails. Suppress it
+  // so the pointer gesture stays ours.
+  wrap.addEventListener('dragstart', (e) => e.preventDefault());
 
   // A plain click / tap toggles a modest zoom at the point; the next one restores
   // the original size. A drag or pinch flags suppressClick so its trailing click

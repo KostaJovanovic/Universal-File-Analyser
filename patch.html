@@ -186,6 +186,20 @@
                - let the newest version here disagree with app.js.
              ===================================================================== -->
 
+        <div class="patch-entry patch-milestone">
+          <p class="patch-version" data-badge="Complete, for real this time.">3.0</p>
+          <p class="patch-name">Raw Power</p>
+          <p class="patch-date">12 June 2026, 05:35</p>
+          <ul class="patch-list">
+            <li><strong>The third milestone - camera RAW files get a proper darkroom. See every image baked inside a RAW, develop the real sensor data, read the photo&rsquo;s true resolution, and pull out the shutter count.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Every image hidden inside a RAW.</strong> A new <strong>Embedded images</strong> section reveals the ready-made JPEGs a camera tucks into a RAW file - the small thumbnail it shows on its screen plus the larger preview(s) - each at its real size, ready to enlarge or save. Works across <a href="/about#ext-arw">.arw</a>, <a href="/about#ext-nef">.nef</a>, <a href="/about#ext-dng">.dng</a>, <a href="/about#ext-cr2">.cr2</a> and the rest of the RAW family.</li>
+            <li><span class="patch-tag">New</span><strong>Develop the RAW for real.</strong> A <code>Demosaic RAW</code> button decodes the actual sensor data into a full-resolution image - reconstructing the photo the way a RAW developer would - instead of leaning on the smaller preview the camera embedded. Every measurement below then reflects the true photo.</li>
+            <li><span class="patch-tag">New</span><strong>The real resolution, not the preview&rsquo;s.</strong> A RAW&rsquo;s <strong>dimensions</strong>, <strong>megapixels</strong> and <strong>aspect ratio</strong> now come from the photo itself, read from the file&rsquo;s own metadata, rather than the smaller preview shown on screen.</li>
+            <li><span class="patch-tag">New</span><strong>Shutter actuations for Sony and Nikon.</strong> Analyser now recovers the lifetime <strong>shutter count</strong> - how many times the shutter has fired - from <strong>Sony</strong> and <strong>Nikon</strong> photos, even though each camera hides it in its own private metadata (Sony&rsquo;s is scrambled). Genuinely useful when buying or selling a used body.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Drag big photos freely.</strong> Panning a zoomed-in photo no longer gets snatched away by the browser trying to drag the picture itself.</li>
+          </ul>
+        </div>
+
         <div class="patch-entry">
           <p class="patch-version">2.39</p>
           <p class="patch-name">Head Count</p>
@@ -212,6 +226,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">2.29 - 2.37</p>
           <p class="patch-name">Do a little Spring Cleanin&rsquo;</p>
@@ -221,9 +238,6 @@
             <li><strong>Maintenance</strong> - thorough internal refactoring and quality of life changes.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.28</p>
@@ -514,7 +528,7 @@
         </div>
 
         <div class="patch-entry patch-milestone">
-          <p class="patch-version">2.0</p>
+          <p class="patch-version" data-badge="Finally complete.">2.0</p>
           <p class="patch-name">Wide Angle</p>
           <p class="patch-date">6 June 2026, 05:10</p>
           <ul class="patch-list">
@@ -858,7 +872,7 @@
           </div>
 
           <div class="patch-entry patch-milestone">
-            <p class="patch-version">1.0</p>
+            <p class="patch-version" data-badge="RELEASE WOOOOOO">1.0</p>
             <p class="patch-name">Big Bang</p>
             <p class="patch-date">3 June 2026, 00:51</p>
             <ul class="patch-list">

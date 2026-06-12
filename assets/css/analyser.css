@@ -1307,6 +1307,45 @@ body.anr-has-file .nav-search { display: flex; }
   .anr-palette { grid-template-columns: repeat(4, 1fr); }
 }
 
+/* ---------- EMBEDDED IMAGES (RAW thumbnails/previews) ---------- */
+.anr-embedded-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 10px;
+}
+.anr-embedded-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.anr-embedded-thumb {
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Cap to a normal preview size - the embedded JPEGs are often full-resolution,
+   which would otherwise render 1:1 and dwarf the page. */
+.anr-embedded-thumb img {
+  max-height: 220px;
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  cursor: zoom-in;
+  display: block;
+}
+.anr-embedded-cap {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+}
+
 /* ---------- MAP ---------- */
 .anr-map {
   width: 100%;
@@ -2999,7 +3038,7 @@ details[open] summary::after { content: "\2212"; }
   font-size: var(--t-small);
 }
 .patch-milestone .patch-version::after {
-  content: 'Finally complete.';
+  content: attr(data-badge);
   margin-left: 8px;
   font-size: 9px;
   letter-spacing: 0.1em;

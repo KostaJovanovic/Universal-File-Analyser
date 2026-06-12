@@ -9,7 +9,7 @@
 
 import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, cloudFileWarning, errorCard, attachZoomPan, openOverlayBack } from '../core/util.js';
 import { HEIC_EXTS, RAW_EXTS } from '../core/formats.js';
-import { convertHeic, extractRawPreview, convertWithImageMagick } from './photo-convert.js';
+import { convertHeic, extractRawPreview, convertWithImageMagick, demosaicRaw, extractRawJpegs } from './photo-convert.js';
 import { ascii, latin1, utf8, inflate } from '../core/binutil.js';
 
 // ---------- Browser-undecodable images ----------
@@ -320,6 +320,169 @@ function fmtDate(d) {
   if (!d) return null;
   if (d instanceof Date) return d.toISOString().replace('T', ' ').replace(/\..*$/, '');
   return String(d);
+}
+
+// Locate the TIFF header `sonyShutterCount` should treat as its base: 0 for a
+// RAW/TIFF file (starts with the byte-order mark), or - for a JPEG - the offset
+// just past the "Exif\0\0" tag in the APP1 segment, since a JPEG's maker-note
+// offsets are relative to that embedded TIFF header rather than the file start.
+// Returns -1 if neither is found.
+function tiffBaseOf(buf) {
+  const dv = new DataView(buf), len = buf.byteLength;
+  if (len < 4) return -1;
+  const b0 = dv.getUint16(0, false);
+  if (b0 === 0x4949 || b0 === 0x4D4D) return 0;        // TIFF / RAW
+  if (b0 !== 0xFFD8) return -1;                        // not a JPEG either
+  let p = 2;
+  while (p + 4 <= len) {
+    if (dv.getUint8(p) !== 0xFF) break;
+    const marker = dv.getUint8(p + 1);
+    if (marker === 0xDA || marker === 0xD9) break;      // SOS / EOI - no more metadata
+    const segLen = dv.getUint16(p + 2, false);
+    if (segLen < 2) break;
+    if (marker === 0xE1 && p + 10 <= len &&             // APP1, check for "Exif\0\0"
+        dv.getUint32(p + 4, false) === 0x45786966 && dv.getUint16(p + 8, false) === 0x0000) {
+      return p + 10;
+    }
+    p += 2 + segLen;
+  }
+  return -1;
+}
+
+// Sony hides the lifetime shutter-actuation count in an *encrypted* maker-note
+// block (Tag 0x9050) that exifr doesn't decode - so on Sony photos we dig it out
+// ourselves. The block is obfuscated with Sony's substitution cipher
+// (decipher[(i*i*i) % 249] = i for i < 249, identity above); once decrypted the
+// count is a 32-bit int whose offset depends on the body: 0x3a on newer models
+// (ExifTool's "Tag9050b") and 0x32 on older NEX / first-gen ones ("Tag9050a"), so
+// we read both and take the first plausible value. Verified against an ILCE-6400A
+// (0x3a) and a NEX-6 (0x32); other modern Alpha bodies (A7/A7R/A7S, A6000-A6600,
+// A9, ...) share the Tag9050b layout per ExifTool and should resolve the same way,
+// but aren't individually tested - the range check below keeps an unexpected
+// layout from yielding a bogus number rather than nothing. Works on both RAW
+// (ARW/SR2) and JPEG; `buf` is the file's ArrayBuffer. Returns the count, or null
+// if the file isn't laid out as expected, so we never show a guessed number.
+function sonyShutterCount(buf) {
+  try {
+    const base = tiffBaseOf(buf);
+    if (base < 0) return null;
+    const dv = new DataView(buf);
+    const len = buf.byteLength;
+    if (base + 16 > len) return null;
+    const bo = dv.getUint16(base, false);
+    const le = bo === 0x4949;                 // 'II' little-endian; 'MM' big-endian
+    if (!le && bo !== 0x4D4D) return null;
+    const u16 = (o) => (o >= 0 && o + 2 <= len ? dv.getUint16(o, le) : -1);
+    const u32 = (o) => (o >= 0 && o + 4 <= len ? dv.getUint32(o, le) : -1);
+    if (u16(base + 2) !== 42) return null;    // TIFF magic
+    const TS = { 1:1, 2:1, 3:2, 4:4, 5:8, 6:1, 7:1, 8:2, 9:4, 10:8, 11:4, 12:8 };
+    // `ifd` is an absolute file position; stored offsets are relative to `base`.
+    const findEntry = (ifd, tag) => {
+      if (ifd <= 0 || ifd + 2 > len) return null;
+      const n = u16(ifd);
+      if (n < 0 || n > 4096) return null;
+      for (let i = 0; i < n; i++) {
+        const e = ifd + 2 + i * 12;
+        if (e + 12 > len) break;
+        if (u16(e) === tag) {
+          const type = u16(e + 2), count = u32(e + 4);
+          const size = (TS[type] || 1) * count;
+          return { type, count, size, off: size <= 4 ? e + 8 : base + u32(e + 8) };
+        }
+      }
+      return null;
+    };
+    const exifP = findEntry(base + u32(base + 4), 0x8769);   // IFD0 -> Exif IFD pointer
+    if (!exifP) return null;
+    const maker = findEntry(base + u32(exifP.off), 0x927C);  // Exif IFD -> MakerNote
+    if (!maker || maker.size < 64) return null;
+    // Newer Sony bodies store the maker-note IFD directly; some prefix a header.
+    let t9050 = null;
+    for (const mb of [maker.off, maker.off + 12]) { t9050 = findEntry(mb, 0x9050); if (t9050) break; }
+    if (!t9050 || t9050.size < 0x3e || t9050.off < 0 || t9050.off + t9050.size > len) return null;
+    const dec = new Uint8Array(256);
+    for (let i = 0; i < 249; i++) dec[(i * i * i) % 249] = i;
+    for (let i = 249; i < 256; i++) dec[i] = i;
+    const src = new Uint8Array(buf, t9050.off, t9050.size);
+    const out = new Uint8Array(t9050.size);
+    for (let i = 0; i < t9050.size; i++) out[i] = dec[src[i]];
+    const odv = new DataView(out.buffer);
+    for (const off of [0x3a, 0x32]) {        // Tag9050b (modern), then Tag9050a (older)
+      if (off + 4 > t9050.size) continue;
+      const count = odv.getUint32(off, le);
+      if (count >= 1 && count <= 9_999_999) return count;
+    }
+    return null;
+  } catch (_) { return null; }
+}
+
+// Nikon writes a *plaintext* shutter-actuation count in its maker note at tag
+// 0x00A7 (int32u) - no decryption needed (unlike Sony). The modern "type 3"
+// Nikon maker note begins with a "Nikon\0" signature + 2-byte version + 2 pad
+// bytes (10 bytes), then its OWN embedded TIFF header whose internal offsets are
+// relative to that embedded header - so we parse the inner TIFF and read 0x00A7.
+// Built to Nikon's documented (ExifTool) layout and range-validated, so an
+// unexpected file yields null rather than a wrong number. Works on RAW (NEF) and
+// JPEG; `buf` is the file's ArrayBuffer. NOTE: validated structurally (synthetic
+// file + the outer/inner offset maths) but not yet against a real Nikon sample.
+function nikonShutterCount(buf) {
+  try {
+    const base = tiffBaseOf(buf);
+    if (base < 0) return null;
+    const dv = new DataView(buf), len = buf.byteLength;
+    if (base + 16 > len) return null;
+    const oLE = dv.getUint16(base, false) === 0x4949;
+    const ou16 = (o) => (o >= 0 && o + 2 <= len ? dv.getUint16(o, oLE) : -1);
+    const ou32 = (o) => (o >= 0 && o + 4 <= len ? dv.getUint32(o, oLE) : -1);
+    if (ou16(base + 2) !== 42) return null;
+    const TS = { 1:1, 2:1, 3:2, 4:4, 5:8, 6:1, 7:1, 8:2, 9:4, 10:8, 11:4, 12:8 };
+    // Find `tag` in the IFD at absolute position `ifd`; `b` is the TIFF base its
+    // stored data offsets are relative to. `valPos` is where the inline value sits.
+    const findEntry = (ifd, tag, u16, u32, b) => {
+      if (ifd <= 0 || ifd + 2 > len) return null;
+      const n = u16(ifd);
+      if (n < 0 || n > 4096) return null;
+      for (let i = 0; i < n; i++) {
+        const e = ifd + 2 + i * 12;
+        if (e + 12 > len) break;
+        if (u16(e) === tag) {
+          const type = u16(e + 2), count = u32(e + 4);
+          const size = (TS[type] || 1) * count;
+          return { type, count, size, valPos: e + 8, off: size <= 4 ? e + 8 : b + u32(e + 8) };
+        }
+      }
+      return null;
+    };
+    // Outer TIFF: IFD0 -> Exif IFD -> MakerNote.
+    const exifP = findEntry(base + ou32(base + 4), 0x8769, ou16, ou32, base);
+    if (!exifP) return null;
+    const maker = findEntry(base + ou32(exifP.off), 0x927C, ou16, ou32, base);
+    if (!maker || maker.off < 0 || maker.off + 12 > len) return null;
+    const mo = maker.off;
+    // "Nikon\0" signature (type 3 maker note).
+    const sig = [0x4E, 0x69, 0x6B, 0x6F, 0x6E, 0x00];
+    for (let i = 0; i < 6; i++) if (dv.getUint8(mo + i) !== sig[i]) return null;
+    // Embedded TIFF header at mo+10; inner offsets are relative to it.
+    const tb = mo + 10;
+    if (tb + 8 > len) return null;
+    const iBO = dv.getUint16(tb, false);
+    const iLE = iBO === 0x4949;
+    if (!iLE && iBO !== 0x4D4D) return null;
+    const iu16 = (o) => (o >= 0 && o + 2 <= len ? dv.getUint16(o, iLE) : -1);
+    const iu32 = (o) => (o >= 0 && o + 4 <= len ? dv.getUint32(o, iLE) : -1);
+    if (iu16(tb + 2) !== 42) return null;
+    const sc = findEntry(tb + iu32(tb + 4), 0x00A7, iu16, iu32, tb);
+    if (!sc) return null;
+    const v = iu32(sc.valPos);     // ShutterCount is int32u, stored inline
+    return (v >= 1 && v <= 9_999_999) ? v : null;
+  } catch (_) { return null; }
+}
+
+// Brand dispatch for the maker-note shutter-count readers above.
+function readShutterCount(buf, make) {
+  if (/sony/i.test(make))  return sonyShutterCount(buf);
+  if (/nikon/i.test(make)) return nikonShutterCount(buf);
+  return null;
 }
 
 function buildExifSections(exif) {
@@ -1776,19 +1939,34 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
       }
     } else if (RAW_EXTS.has(ext)) {
       resultsEl.innerHTML = '';
-      try {
-        convertedFile = await convertWithImageMagick(file, resultsEl);
-        imgInfo = await loadImageFromFile(convertedFile);
-      } catch (_) {
-        resultsEl.innerHTML = '';
-        resultsEl.appendChild(el('div', { class: 'anr-info' }, 'Full decode failed - using embedded preview…'));
+      if (opts.rawMode === 'demosaic') {
+        // Full sensor decode on demand (libraw WASM): demosaics the Bayer data
+        // into a real RGB image, so every downstream metric runs on the actual
+        // photo rather than the embedded preview. Triggered by the button under
+        // the preview, never automatically (the decoder is a heavyweight download).
         try {
-          convertedFile = await extractRawPreview(file);
+          convertedFile = await demosaicRaw(file, resultsEl);
           imgInfo = await loadImageFromFile(convertedFile);
-        } catch (e3) {
+        } catch (eD) {
           resultsEl.innerHTML = '';
-          resultsEl.appendChild(errorCard('Could not decode RAW file: ' + (e3 && e3.message ? e3.message : e3)));
+          resultsEl.appendChild(errorCard('RAW demosaic failed: ' + (eD && eD.message ? eD.message : eD)));
           return;
+        }
+      } else {
+        try {
+          convertedFile = await convertWithImageMagick(file, resultsEl);
+          imgInfo = await loadImageFromFile(convertedFile);
+        } catch (_) {
+          resultsEl.innerHTML = '';
+          resultsEl.appendChild(el('div', { class: 'anr-info' }, 'Full decode failed - using embedded preview…'));
+          try {
+            convertedFile = await extractRawPreview(file);
+            imgInfo = await loadImageFromFile(convertedFile);
+          } catch (e3) {
+            resultsEl.innerHTML = '';
+            resultsEl.appendChild(errorCard('Could not decode RAW file: ' + (e3 && e3.message ? e3.message : e3)));
+            return;
+          }
         }
       }
     } else {
@@ -1831,6 +2009,29 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     console.warn('exifr error:', e);
   }
 
+  // For RAW files the on-screen picture is the JPEG preview embedded in the RAW,
+  // which is usually smaller than the sensor's real output. So the *reported*
+  // resolution (Dimensions, Megapixels, Aspect ratio, captions) should come from
+  // the RAW's own recorded full-image size - EXIF PixelXDimension/PixelYDimension
+  // (translated by exifr to ExifImageWidth/Height), falling back to the TIFF
+  // ImageWidth/Length - not from the preview's pixel count. Per-pixel analysis
+  // (sharpness, histogram, focus, colours) still runs on the preview pixels.
+  let dimW = img.naturalWidth, dimH = img.naturalHeight, dimsFromMeta = false;
+  if (RAW_EXTS.has(fileExt(file.name)) && exif && opts.rawMode !== 'demosaic') {
+    const ew = exif.ExifImageWidth || exif.ImageWidth || 0;
+    const eh = exif.ExifImageHeight || exif.ImageHeight || 0;
+    if (ew > 0 && eh > 0 && ew * eh >= img.naturalWidth * img.naturalHeight) {
+      // Match the preview's orientation: a browser auto-rotates the preview by its
+      // EXIF Orientation, but the sensor dimensions are stored pre-rotation, so a
+      // portrait shot would otherwise report landscape figures.
+      dimW = ew; dimH = eh;
+      if ((dimW > dimH) !== (img.naturalWidth > img.naturalHeight) && img.naturalWidth !== img.naturalHeight) {
+        const t = dimW; dimW = dimH; dimH = t;
+      }
+      dimsFromMeta = true;
+    }
+  }
+
   const pixData = getPixelData(img);
   const hist = computeHistogram(pixData);
   const palette = dominantColors(pixData, 8);
@@ -1869,7 +2070,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     previewSlot.innerHTML = '';
     const thumb = el('div', { class: 'section-meta-preview' });
     const thumbImg = el('img', { src: url, alt: file.name, title: 'Click to enlarge' });
-    const lightboxCaption = `${img.naturalWidth} × ${img.naturalHeight}  ·  ${fmtBytes(file.size)}  ·  ${file.name}`;
+    const lightboxCaption = `${dimW} × ${dimH}  ·  ${fmtBytes(file.size)}  ·  ${file.name}`;
     thumbImg.addEventListener('click', () => {
       const fpPctX = (focus.focusX / pixData.width * 100).toFixed(2);
       const fpPctY = (focus.focusY / pixData.height * 100).toFixed(2);
@@ -1880,7 +2081,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     imgWrap.appendChild(thumbImg);
     thumb.appendChild(imgWrap);
     thumb.appendChild(el('p', { class: 'section-meta-preview-caption' },
-      `${img.naturalWidth} × ${img.naturalHeight} · ${fmtBytes(file.size)}`));
+      `${dimW} × ${dimH} · ${fmtBytes(file.size)}`));
 
 
     const focusCv = document.createElement('canvas');
@@ -1897,8 +2098,21 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     fCtx.putImageData(fImg, 0, 0);
 
     if (convertedFile && RAW_EXTS.has(fileExt(file.name))) {
-      thumb.appendChild(el('p', { class: 'anr-raw-warning' },
-        'Full sensor resolution may not be available for all camera models.'));
+      if (opts.rawMode === 'demosaic') {
+        // (no note - the demosaiced image speaks for itself)
+      } else {
+        thumb.appendChild(el('p', { class: 'anr-raw-warning' },
+          'Full sensor resolution may not be available for all camera models.'));
+        // Optional full sensor decode (libraw WASM). Heavyweight, so it loads only
+        // when asked: re-render the same file in demosaic mode.
+        const demoBtn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:8px;font-size:11px;width:100%;' },
+          'Demosaic RAW (full decode)');
+        demoBtn.addEventListener('click', () => {
+          demoBtn.disabled = true;
+          renderPhoto(file, resultsEl, { ...opts, rawMode: 'demosaic' });
+        });
+        thumb.appendChild(demoBtn);
+      }
     }
     previewSlot.appendChild(thumb);
 
@@ -1937,7 +2151,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // ---- Basic info ----
   const infoCard = el('div', { class: 'anr-card' });
   infoCard.appendChild(el('h3', {}, 'File & image'));
-  const w = img.naturalWidth, h = img.naturalHeight;
+  const w = dimW, h = dimH;
   const mp = ((w * h) / 1_000_000).toFixed(2);
 
   const tbl = el('table', { class: 'anr-readout' });
@@ -2014,6 +2228,15 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   resultsEl.appendChild(infoCard);
 
   // ---- EXIF sections ----
+  // Sony/Nikon RAW/JPEG: recover the shutter-actuation count from the maker-note
+  // block exifr can't read (Sony's is encrypted, Nikon's is a plain tag), so the
+  // "Shutter count" row can appear.
+  const sExt = fileExt(file.name);
+  const sMake = (exif && exif.Make) || '';
+  if (exif && /sony|nikon/i.test(sMake) && !(Number(exif.ShutterCount) > 0)
+      && (RAW_EXTS.has(sExt) || /^jpe?g$/.test(sExt) || file.type === 'image/jpeg')) {
+    try { const sc = readShutterCount(await file.arrayBuffer(), sMake); if (sc) exif.ShutterCount = sc; } catch (_) {}
+  }
   const sections = buildExifSections(exif);
   if (sections.length) {
     const exifCard = el('div', { class: 'anr-card' });
@@ -2147,6 +2370,44 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   }
   palCard.appendChild(palDiv);
   resultsEl.appendChild(palCard);
+
+  // ---- Embedded images (RAW only) ----
+  // A RAW file carries one or more ready-made JPEGs - the small thumbnail the
+  // camera shows on its screen plus larger preview(s). Pull each one straight from
+  // the file bytes and lay them out so every stored image is visible at its size.
+  if (RAW_EXTS.has(fileExt(file.name))) {
+    const embCard = el('div', { class: 'anr-card' });
+    const [embH, embHelp] = h3help('Embedded images',
+      'RAW files store one or more complete JPEGs alongside the sensor data - a small thumbnail for camera playback, plus larger preview(s) a viewer can show without decoding the RAW. These are extracted straight from the file bytes; the main image above is handled separately.');
+    embCard.appendChild(embH); embCard.appendChild(embHelp);
+    const embStatus = el('p', { class: 'anr-hint', style: 'margin:0;' }, 'Scanning for embedded images...');
+    embCard.appendChild(embStatus);
+    const embGrid = el('div', { class: 'anr-embedded-grid' });
+    embCard.appendChild(embGrid);
+    resultsEl.appendChild(embCard);
+    extractRawJpegs(file).then((jpegs) => {
+      let shown = 0;
+      for (const j of jpegs) {
+        const url = URL.createObjectURL(j.blob);
+        const cell = el('div', { class: 'anr-embedded-cell' });
+        const im = el('img', { src: url, alt: 'embedded image', loading: 'lazy', title: 'Click to enlarge' });
+        const cap = el('p', { class: 'anr-embedded-cap' }, fmtBytes(j.length));
+        im.addEventListener('load', () => {
+          cap.textContent = `${im.naturalWidth} × ${im.naturalHeight} · ${fmtBytes(j.length)}`;
+        });
+        // A stray match that isn't a real JPEG won't decode - drop its cell.
+        im.addEventListener('error', () => { cell.remove(); URL.revokeObjectURL(url); if (!embGrid.children.length) embCard.remove(); });
+        im.addEventListener('click', () => openLightbox(url, file.name,
+          `${im.naturalWidth} × ${im.naturalHeight} · ${fmtBytes(j.length)} · embedded in ${file.name}`, null, false, false));
+        cell.appendChild(el('div', { class: 'anr-embedded-thumb' }, im));
+        cell.appendChild(cap);
+        embGrid.appendChild(cell);
+        shown++;
+      }
+      if (!shown) { embCard.remove(); return; }
+      embStatus.textContent = shown === 1 ? '1 embedded JPEG found.' : `${shown} embedded JPEGs found, largest first.`;
+    }).catch(() => embCard.remove());
+  }
 
   // ---- QR code detection (async) ----
   const qrPlaceholder = el('div');
