@@ -14,9 +14,33 @@
 
 Run: python serve.py [port]   (defaults to 3000, binds 0.0.0.0 for phone access)
 """
+import json
 import os
 import sys
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+
+# Canned response for the stats Worker (worker/index.js), which only exists on
+# the Cloudflare deploy. server.bat has no Worker/D1, so without this /api/* would
+# fall through to the SPA handler and hand back index.html - breaking the visitor
+# badge and the /stats page locally. Numbers here are fake, just enough to render.
+MOCK_STATS = {
+    'files': 12345,
+    'visitors': 678,
+    'extensions': [
+        {'ext': 'jpg', 'supported': True, 'count': 4210},
+        {'ext': 'png', 'supported': True, 'count': 3180},
+        {'ext': 'mp3', 'supported': True, 'count': 1990},
+        {'ext': 'pdf', 'supported': True, 'count': 1450},
+        {'ext': 'mp4', 'supported': True, 'count': 1220},
+        {'ext': 'wav', 'supported': True, 'count': 870},
+        {'ext': 'heic', 'supported': True, 'count': 540},
+        {'ext': 'zip', 'supported': True, 'count': 410},
+        {'ext': 'sldprt', 'supported': True, 'count': 300},
+        {'ext': 'dwg', 'supported': True, 'count': 240},
+        {'ext': 'xyz', 'supported': False, 'count': 130},
+        {'ext': 'qwerty', 'supported': False, 'count': 70},
+    ],
+}
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -50,12 +74,47 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
             return '/' + rel + '.html'        # clean page route: /about -> about.html
         return '/index.html'                  # SPA fallback
 
+    def _serve_api(self, path):
+        """Mock /api/* locally; return True if handled."""
+        if not path.startswith('/api/'):
+            return False
+        if path == '/api/stats':
+            payload = MOCK_STATS
+        elif path == '/api/visit':
+            payload = {'files': MOCK_STATS['files'], 'visitors': MOCK_STATS['visitors'], 'counted': False}
+        else:
+            payload = {'ok': True}
+        body = json.dumps(payload).encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(body)
+        return True
+
     def do_GET(self):
+        path = self.path.split('?', 1)[0].split('#', 1)[0]
+        if self._serve_api(path):
+            return
         target = self._route()
         if target is None:
             return  # already sent the redirect
         self.path = target
         return super().do_GET()
+
+    def do_POST(self):
+        path = self.path.split('?', 1)[0].split('#', 1)[0]
+        # Drain any request body so keep-alive connections stay clean.
+        length = int(self.headers.get('Content-Length') or 0)
+        if length:
+            try:
+                self.rfile.read(length)
+            except Exception:
+                pass
+        if self._serve_api(path):
+            return
+        self.send_error(404)
 
     def do_HEAD(self):
         target = self._route()
@@ -67,7 +126,12 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     os.chdir(ROOT)
-    httpd = HTTPServer(('0.0.0.0', PORT), CleanURLHandler)
+    # ThreadingHTTPServer (not HTTPServer): the service worker fires background
+    # revalidation fetches (stale-while-revalidate) concurrently with the page's
+    # own requests. A single-threaded server serialises those and can deadlock -
+    # the SW's navigation fetch never resolves, so the page "loads" forever with
+    # nothing in the console. One thread per request avoids it.
+    httpd = ThreadingHTTPServer(('0.0.0.0', PORT), CleanURLHandler)
     print('Serving %s on http://0.0.0.0:%d  (clean URLs, mirrors Cloudflare)' % (ROOT, PORT))
     try:
         httpd.serve_forever()

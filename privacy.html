@@ -3,26 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>About Analyser - Local File Forensics, No Ads or Tracking</title>
-  <meta name="description" content="Why Analyser exists and how it works: a free, in-browser forensic tool for photos, sound, video &amp; 1,000+ formats. No ads, no telemetry, nothing uploaded.">
-  <link rel="canonical" href="https://lab.valjdakosta.com/about">
+  <title>Privacy - What Analyser Counts (and Never Sees)</title>
+  <meta name="description" content="Analyser's privacy page: your files never leave your browser. We count only anonymous aggregates - a file's extension and an anonymous visit count. No accounts, no tracking, no file data.">
+  <link rel="canonical" href="https://lab.valjdakosta.com/privacy">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
-  <meta property="og:title" content="About Analyser - Local File Forensics, No Ads or Tracking">
-  <meta property="og:description" content="Why Analyser exists and how it works: a free, in-browser forensic tool for photos, sound, video &amp; 1,000+ formats. No ads, no telemetry, nothing uploaded.">
-  <meta property="og:url" content="https://lab.valjdakosta.com/about">
+  <meta property="og:title" content="Privacy - What Analyser Counts (and Never Sees)">
+  <meta property="og:description" content="Your files never leave your browser. We count only anonymous aggregates - a file's extension and an anonymous visit count. No accounts, no tracking, no file data.">
+  <meta property="og:url" content="https://lab.valjdakosta.com/privacy">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="About Analyser - Local File Forensics, No Ads or Tracking">
-  <meta name="twitter:description" content="Why Analyser exists and how it works: a free, in-browser forensic tool for photos, sound, video &amp; 1,000+ formats. No ads, no telemetry, nothing uploaded.">
+  <meta name="twitter:title" content="Privacy - What Analyser Counts (and Never Sees)">
+  <meta name="twitter:description" content="Your files never leave your browser. We count only anonymous aggregates. No accounts, no tracking, no file data.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
-  <meta name="twitter:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <link rel="icon" href="assets/img/favicon.png" type="image/png">
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/img/icon.png">
@@ -30,42 +28,10 @@
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "FAQPage",
-    "mainEntity": [
-      {
-        "@type": "Question",
-        "name": "Aren't there many similar tools already?",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "Most tools I found are full of ads, require uploading your files, or are unresponsive and unintuitive. Analyser started as a tool for my own needs and grew from there, including a spectrogram viewer that doesn't require a multi-gigabyte installation or uploads."
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "What does Analyser do?",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "Analyser reads photos, sound, video, PDFs, archives, and over 1,000 file formats. It extracts every byte of metadata, visualises spectra, decodes frames, and identifies files, all without uploading a single bit."
-        }
-      },
-      {
-        "@type": "Question",
-        "name": "Does Analyser work without internet?",
-        "acceptedAnswer": {
-          "@type": "Answer",
-          "text": "Yes. Analyser is a Progressive Web App. Install it to your home screen or desktop and it works offline. The service worker caches the app shell on first visit, and heavy tools like FFmpeg, ImageMagick, and Tesseract are cached separately when you choose to download them."
-        }
-      }
-    ]
-  }
-  </script>
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     "itemListElement": [
       { "@type": "ListItem", "position": 1, "name": "Analyser", "item": "https://lab.valjdakosta.com/" },
-      { "@type": "ListItem", "position": 2, "name": "About", "item": "https://lab.valjdakosta.com/about" }
+      { "@type": "ListItem", "position": 2, "name": "Privacy", "item": "https://lab.valjdakosta.com/privacy" }
     ]
   }
   </script>
@@ -85,15 +51,15 @@
 
 <header class="site-header">
   <div class="grid">
-    <div class="site-mark">
-      <span class="site-kicker">A 02 - 05</span>
-      <h1 class="site-title">About</h1>
+    <div class="site-mark site-mark--privacy">
+      <span class="site-kicker">A 05 - 07</span>
+      <h1 class="site-title">Privacy</h1>
       <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
-      <p class="site-sub">Photos, sound, video - and almost any other file. Fully local; nothing you drop ever leaves your browser.</p>
+      <p class="site-sub">Your files never leave your browser. The short version, in plain language - and exactly what the two counters do.</p>
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
-        <a href="/patch" class="header-btn">Changelog</a>
-        <a href="/formats" class="header-btn">Formats</a>
+        <a href="/about" class="header-btn">About</a>
+        <a href="/stats" class="header-btn">Stats</a>
         <button type="button" class="header-btn header-btn-share"><svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>Share</button>
       </nav>
     </div>
@@ -109,116 +75,39 @@
   </div>
 </header>
 
-<nav class="site-nav" aria-label="Primary">
-  <a href="#why" class="nav-link"><span class="nav-num">i</span><span>Why</span></a>
-  <a href="#where" class="nav-link"><span class="nav-num">ii</span><span>Where</span></a>
-  <a href="#what" class="nav-link"><span class="nav-num">iii</span><span>What</span></a>
-</nav>
+<main class="site-main about-page privacy-page">
 
-<main class="site-main about-page">
-
-  <section id="why" class="section">
+  <section class="section">
     <div class="grid">
-      <aside class="section-meta">
-        <span class="section-num">i</span>
-        <span class="section-kicker">Why</span>
-      </aside>
       <div class="section-content">
-        <h2 class="section-head">Why even waste time on this, aren't there many similar tools?</h2>
+        <h2 class="section-head">Your files never leave your device.</h2>
         <div class="about-block">
-          <p>No. All the tools I have found are either full of ads, require uploading, or even worse: Ugly, unresponsive and unintuitive.<br>I have made this tool primarily for my needs, but it spiraled out of control and became whatever you are seeing right now.<br>I was unable to find a satisfactory spectrogram app / website / program, since all of them are either far too complex for my liking and needs, don't work as they should, or require a multiple gigabyte installation. No more.</p>
-          <p>This tool has a bunch of functions that I needed, or anticipate that I will need in the future, and equal number of ones that I don't or never will.</p>
+          <p>Analyser reads and analyses every file entirely in your browser. There is no upload and no server that receives it - the name, contents and bytes of anything you drop stay with you, and are gone the moment you close the tab.</p>
         </div>
-      </div>
-    </div>
-  </section>
 
-  <section id="where" class="section">
-    <div class="grid">
-      <aside class="section-meta">
-        <span class="section-num">ii</span>
-        <span class="section-kicker">Where</span>
-      </aside>
-      <div class="section-content">
-        <h2 class="section-head">Works without internet.</h2>
-        <div class="about-block">
-          <p>Analyser is a Progressive Web App. Install it to your home screen or desktop and it works offline. Use the download buttons on the main page to pre-cache dependencies, from the essentials (~48 MB) up to all OCR languages (~310 MB; the larger packs stream from a CDN).</p>
-          <p>The service worker caches the entire app shell on first visit. Heavy tools like FFmpeg, ImageMagick, and Tesseract are cached separately when you download them, so the initial load stays light.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="what" class="section">
-    <div class="grid">
-      <aside class="section-meta">
-        <span class="section-num">iii</span>
-        <span class="section-kicker">What</span>
-      </aside>
-      <div class="section-content">
-        <h2 class="section-head">A forensic tool that runs entirely in your browser.</h2>
-        <p class="section-lede">Analyser reads photos, sound, video, PDFs, archives, and over 1,000 file formats. It extracts every byte of metadata, visualises spectra, decodes frames, and identifies files, all without uploading a single bit.</p>
-
+        <h2 class="section-head">What the two counters do.</h2>
+        <p class="section-lede">Two anonymous, aggregate counters, shown on the <a href="/stats">stats page</a>. Neither can identify you or your files.</p>
         <div class="about-block">
           <dl class="about-caps">
             <div>
-              <dt>Photo</dt>
-              <dd>EXIF, IPTC, XMP, ICC. Dimensions, aspect ratio, RGB histogram, dominant palette, GPS map, QR code detection, OCR. Supports JPEG, PNG, WebP, HEIC, and RAW formats (ARW, CR2, CR3, NEF, etc.).</dd>
+              <dt>Files analysed</dt>
+              <dd>Analysing a file sends only its lowercased extension - say <code>jpg</code> or <code>sldprt</code> - to a tally. Never the name, size or contents. Unrecognised types are counted too, as an honest wish-list of what to add next.</dd>
             </div>
             <div>
-              <dt>Sound</dt>
-              <dd>Waveform, spectrogram (linear or logarithmic), adjustable FFT size and window function, colourmap selection, fullscreen mode. Open a file, record from the mic, or visualise live input. MP3, WAV, M4A, FLAC, OGG, OPUS.</dd>
-            </div>
-            <div>
-              <dt>Video</dt>
-              <dd>Container and codec detection, resolution, frame rate (parsed from MP4 container with FFmpeg fallback), bitrate, duration. Frame-by-frame navigation with editable timecode and an in-app AVI player with synced audio you can mute. Capture any frame for full photo analysis. Extract the audio track for waveform and spectrogram, and map editing timelines (EDL, FCPXML, OTIO).</dd>
-            </div>
-            <div>
-              <dt>PDF</dt>
-              <dd>Metadata, page count, dimensions. Full text extraction with pagination. Page previews. OCR scanning of image-only pages via Tesseract.</dd>
-            </div>
-            <div>
-              <dt>Archives</dt>
-              <dd>ZIP file listing with sizes, dates, and compression ratios.</dd>
-            </div>
-            <div>
-              <dt><span data-fmt-count="bare">1017</span>+ formats</dt>
-              <dd>Adobe (PSD, AI, INDD), AutoCAD (DWG, DXF), SolidWorks, Fusion 360, Blender, 3D meshes (FBX, GLB, STL, OBJ, 3MF, STEP, IGES), Office documents (DOCX, XLSX, PPTX), executables (EXE, DLL), fonts, game assets, and web files (HTML, CSS, JS), and more. Header parsing extracts metadata where possible.</dd>
+              <dt>Visitors</dt>
+              <dd>A simple, anonymous count of visits - no accounts, no cookies, and nothing that identifies you.</dd>
             </div>
           </dl>
         </div>
 
-        <p class="about-formats-actions">
-          <a href="/formats" class="fmt-count-link" data-fmt-count data-fmt-count-tpl="Browse all {n} supported formats">Browse all 1017 supported formats</a>
-        </p>
-
-        <details class="about-formats">
-          <summary>All supported file types</summary>
-          <!-- Inline list kept for SEO + #fmt-… / #ext-… deep-links. Generated
-               from assets/js/core/formats.js by app.js (renderAboutFormats). -->
-          <div id="aboutFormats"></div>
-        </details>
+        <h2 class="section-head">The small print, kept small.</h2>
+        <div class="about-block">
+          <p>No third-party analytics, ads or trackers - the counters run on the site&rsquo;s own Cloudflare domain. They are best-effort and approximate: a count is skipped if a request fails or you are offline, and nothing is sent at all when you use Analyser offline or as an installed app. Like any website, the host sees basic request data such as IP addresses to serve pages; Analyser keeps only the anonymous counts above, nothing that identifies you.</p>
+        </div>
+        <p class="section-lede">Questions? Use the <strong>Email me!</strong> link in the footer.</p>
       </div>
     </div>
   </section>
-
-  <!-- Same supported-formats popup as index.html, so the "Browse all" button
-       opens the identical experience. Generated by app.js (renderFmtOverlay). -->
-  <div id="fmtOverlay" class="fmt-overlay" hidden>
-    <div class="fmt-overlay-inner">
-      <div class="fmt-overlay-header">
-        <h3>Supported formats <span class="fmt-overlay-count" data-fmt-count="bare">1017</span></h3>
-        <button type="button" class="fmt-overlay-close" id="fmtOverlayClose">&times;</button>
-      </div>
-      <input type="text" class="fmt-overlay-search" id="fmtSearch" placeholder="Search formats..." autocomplete="off" spellcheck="false">
-      <div class="fmt-chips" id="fmtChips" role="tablist" aria-label="Filter formats by category"></div>
-      <div class="fmt-status">
-        <span class="fmt-result-count" id="fmtResultCount"></span>
-        <button type="button" class="fmt-toggle-all" id="fmtToggleAll">Expand all</button>
-      </div>
-      <div class="fmt-overlay-body" id="fmtBody"></div>
-    </div>
-  </div>
 
 </main>
 
@@ -295,8 +184,7 @@
   <div class="footer-row footer-bottom">
     <a href="/" class="footer-nav-btn">&larr; Main page</a>
     <p class="footer-meta"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
-    <p class="footer-meta"><a href="/formats">Supported file types</a></p>
-    <p class="footer-meta"><a href="https://github.com/KostaJovanovic/lab" target="_blank" rel="noopener">Source on GitHub ↗</a></p>
+    <p class="footer-meta"><a href="/stats">Stats</a> &middot; <a href="/formats">Supported file types</a></p>
     <!-- No address in the source: the mailto is assembled in JS only after a
          Cloudflare Turnstile challenge passes (see wireFooterContact in app.js). -->
     <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button></p>
@@ -307,9 +195,6 @@
 <script type="module" src="assets/js/core/app.js"></script>
 <script>
   if ('serviceWorker' in navigator) {
-    // Auto-reload once when an updated service worker takes control, so a new
-    // deploy's HTML/CSS/JS appear without a manual hard-refresh. Guarded on an
-    // existing controller so the very first install doesn't trigger a reload.
     if (navigator.serviceWorker.controller) {
       var anrRefreshing = false;
       navigator.serviceWorker.addEventListener('controllerchange', function () {
@@ -319,9 +204,6 @@
       });
     }
     window.addEventListener('load', function () {
-      // updateViaCache:'none' stops the browser serving sw.js from its own HTTP
-      // cache, so a newly-deployed service worker is always detected; update()
-      // forces an immediate check instead of waiting for the next navigation.
       navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
         .then(function (reg) { reg.update(); })
         .catch(function (e) { console.warn('SW failed:', e); });

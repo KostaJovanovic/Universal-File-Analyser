@@ -178,16 +178,27 @@ export function setupSectionFx() {
   if (!window.matchMedia('(hover:hover) and (pointer:fine)').matches) return;
   const RADIUS = 120;
   document.querySelectorAll('.section').forEach(section => {
-    if (section._anrSectionFx) return;
-    const heads = section.querySelectorAll('.section-num, .section-kicker, .section-head');
-    if (!heads.length) return;
-    section._anrSectionFx = true;
+    // Heads not yet split. The .stats-total-num figures start as a "-" placeholder
+    // and are filled after a fetch, so skip them until the real number lands - the
+    // /stats render calls this again then, and the fresh letters join this same
+    // (persistent) array, so the proximity closures below animate them with no
+    // re-binding.
+    const fresh = [...section.querySelectorAll('.section-num, .section-kicker, .section-head, .stats-total-num')]
+      .filter(el => !el._anrFxSplit &&
+        !(el.classList.contains('stats-total-num') && el.textContent.trim() === '-'));
+    if (!fresh.length) return;
 
-    const letters = [];
-    heads.forEach(el => {
+    const letters = section._anrFxLetters || (section._anrFxLetters = []);
+    fresh.forEach(el => {
+      el._anrFxSplit = true;
       const base = parseInt(getComputedStyle(el).fontWeight, 10) || 400;
       letters.push(...splitText(el, base));
     });
+    // New letters joined the effect - force a width re-measure on the next hover.
+    section._anrFxMeasuredW = -1;
+
+    if (section._anrSectionFx) return;   // listeners already bound on a prior call
+    section._anrSectionFx = true;
 
     // Freeze layout during hover. Changing a letter's weight changes its glyph
     // advance, which would otherwise reflow the heading as the cursor moves. Lock
@@ -202,11 +213,10 @@ export function setupSectionFx() {
     // be stale (and, locked per-letter, make glyph boxes overlap) after a resize.
     // A hover after a resize finds the letters at rest at base weight, so measuring
     // then is safe.
-    let measuredW = -1;
     const lockWidths = () => {
-      if (measuredW !== window.innerWidth) {
+      if (section._anrFxMeasuredW !== window.innerWidth) {
         for (const l of letters) l.w = l.el.getBoundingClientRect().width;
-        measuredW = window.innerWidth;
+        section._anrFxMeasuredW = window.innerWidth;
       }
       for (const l of letters) l.el.style.width = l.w + 'px';
     };
@@ -249,4 +259,63 @@ export function setupSectionFx() {
     section.addEventListener('mousemove', (e) => { mx = e.clientX; my = e.clientY; });
     section.addEventListener('mouseleave', () => { inside = false; });
   });
+}
+
+// Footer heading hover effect. The same per-letter "thin toward the cursor" feel
+// as the section headings, applied to the footer's "Everything runs in your
+// browser." mark. Desktop fine-pointer only; re-runs per navigation (the footer
+// is swapped each time) and guards on the mark so it binds once per element.
+export function setupFooterFx() {
+  if (!window.matchMedia('(hover:hover) and (pointer:fine)').matches) return;
+  const mark = document.querySelector('.footer-mark');
+  if (!mark || mark._anrFooterFx) return;
+  mark._anrFooterFx = true;
+
+  const RADIUS = 120;
+  const base = parseInt(getComputedStyle(mark).fontWeight, 10) || 400;
+  const letters = splitText(mark, base);
+  let measuredW = -1;
+
+  // Same reflow guard as the section effect: lock each letter to its base-weight
+  // width (re-measured on a resize) so thinning a glyph never reflows the line.
+  const lockWidths = () => {
+    if (measuredW !== window.innerWidth) {
+      for (const l of letters) l.w = l.el.getBoundingClientRect().width;
+      measuredW = window.innerWidth;
+    }
+    for (const l of letters) l.el.style.width = l.w + 'px';
+  };
+  const unlockWidths = () => { for (const l of letters) l.el.style.width = ''; };
+
+  let mx = -9999, my = -9999, inside = false, raf = 0, running = false, fxT = 0;
+  const weight = (l) => {
+    const r = l.el.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const t = inside ? Math.min(1, Math.hypot(mx - cx, my - cy) / RADIUS) : 1;
+    return Math.round(l.base * t + 300 * (1 - t));
+  };
+  const settle = () => {
+    clearTimeout(fxT);
+    for (const l of letters) { l.el.style.transition = 'font-weight 0.4s ease'; l.el.style.fontWeight = l.base; }
+    fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; unlockWidths(); }, 500);
+  };
+  const frame = () => {
+    if (inside) {
+      for (const l of letters) l.el.style.fontWeight = weight(l);
+      raf = requestAnimationFrame(frame);
+    } else {
+      running = false;
+      settle();
+    }
+  };
+  mark.addEventListener('mouseenter', () => {
+    lockWidths();
+    inside = true;
+    clearTimeout(fxT);
+    for (const l of letters) l.el.style.transition = 'font-weight 0.18s ease';
+    fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 200);
+    if (!running) { running = true; raf = requestAnimationFrame(frame); }
+  });
+  mark.addEventListener('mousemove', (e) => { mx = e.clientX; my = e.clientY; });
+  mark.addEventListener('mouseleave', () => { inside = false; });
 }

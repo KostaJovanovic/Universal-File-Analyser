@@ -1,12 +1,14 @@
 ﻿/* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v98';
+const VERSION = 'analyser-v99';
 const SHELL = [
   './',
   './about',
   './patch',
   './formats',
+  './stats',
+  './privacy',
   './manifest.json',
   './assets/css/analyser.css',
   './assets/css/fonts.css',
@@ -127,6 +129,11 @@ self.addEventListener('fetch', (e) => {
 
   const url = new URL(req.url);
   if (url.protocol === 'chrome-extension:' || url.protocol === 'about:') return;
+
+  // Stats endpoints are always live, never cached. POST is already skipped above;
+  // this also lets GET /api/stats hit the network (and fail cleanly when offline,
+  // which the /stats page handles) instead of being served a stale cached copy.
+  if (url.pathname.startsWith('/api/')) return;
 
   e.respondWith(
     caches.match(req).then((cached) => {

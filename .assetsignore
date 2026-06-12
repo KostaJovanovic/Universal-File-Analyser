@@ -22,6 +22,8 @@ serve.py
 wrangler.jsonc
 .wrangler/
 tools/
+# Worker source is bundled separately via wrangler "main"; never serve it raw.
+worker/
 
 # Repo docs (not part of the app)
 README.md
