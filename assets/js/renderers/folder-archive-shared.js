@@ -116,6 +116,11 @@ export function renderBreakdownCards(items, resultsEl, extraSummaryRows) {
   card.appendChild(tbl);
   resultsEl.appendChild(card);
 
+  // Anchor slot sitting between Overview and File types. The Contents cards
+  // (file tree + treemap) are inserted here by renderViewToggle, so the heavy
+  // visualisation lands between the two summary cards rather than after them.
+  resultsEl.appendChild(el('div', { class: 'anr-contents-slot', hidden: '' }));
+
   // File types card - first 5 visible, rest behind "show more"
   if (breakdown.sorted.length) {
     const extCard = el('div', { class: 'anr-card' });
@@ -146,6 +151,11 @@ export function renderBreakdownCards(items, resultsEl, extraSummaryRows) {
 // ---------- view toggle (treemap / tree) ----------
 
 export function renderViewToggle(container, items, treeObj, treeOpts, onFileClick) {
+  // The Contents cards land at the anchor slot (between Overview and File types)
+  // when renderBreakdownCards left one; otherwise they append to the end.
+  const slot = container.querySelector('.anr-contents-slot');
+  const place = (node) => { if (slot && slot.parentNode === container) container.insertBefore(node, slot); else container.appendChild(node); };
+
   // Tree section, shown above the treemap as its own (collapsible) card.
   const treeCard = el('div', { class: 'anr-card' });
   treeCard.appendChild(el('h3', {}, 'File tree'));
@@ -154,7 +164,7 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
     fileAccent: (key) => categoryColor(categorizeExt(extOf(key))),
   };
   treeCard.appendChild(buildFileTree(treeObj, treeFullOpts));
-  container.appendChild(treeCard);
+  place(treeCard);
 
   // Treemap section below.
   const card = el('div', { class: 'anr-card' });
@@ -246,5 +256,5 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
   }
 
   mount();
-  container.appendChild(card);
+  place(card);
 }

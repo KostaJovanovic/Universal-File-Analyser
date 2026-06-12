@@ -368,6 +368,41 @@ async function parseReg(file) {
   return out;
 }
 
+// ---------- .sldreg (SolidWorks Settings Wizard export - a REGEDIT4 file) ----------
+async function parseSldreg(file) {
+  const text = await readText(file, 4_000_000);
+  if (!/^\s*REGEDIT4/.test(text)) return null;
+  const keys = Array.from(text.matchAll(/^\s*\[(-?)(HKEY[^\]]+)\]/gm));
+  const values = (text.match(/^\s*(?:"[^"]*"|@)\s*=/gm) || []).length;
+  // Product release years from keys like ...\SolidWorks\SOLIDWORKS 2024.
+  const versions = Array.from(new Set(
+    Array.from(text.matchAll(/SOLIDWORKS\s+(\d{4})/g)).map((m) => m[1]),
+  )).sort();
+  // Settings groups: the key segment right after Software\SolidWorks\ (or after a
+  // SOLIDWORKS 20xx release node) - a readable list of which feature areas were saved.
+  const groups = new Set();
+  for (const m of keys) {
+    const mm = m[2].match(/\\SolidWorks(?:\\SOLIDWORKS \d{4})?\\([^\\]+)/i);
+    if (mm) groups.add(mm[1]);
+  }
+  const out = {
+    'Format': 'SolidWorks settings backup (.sldreg)',
+    'Exported by': /;\s*SolidWorks Settings Wizard/i.test(text) ? 'SolidWorks Settings Wizard' : 'Registry export (REGEDIT4)',
+    'SOLIDWORKS version': versions.length ? versions.join(', ') : '-',
+    'Registry keys': keys.length,
+    'Settings values': values,
+  };
+  if (groups.size) out['Settings groups'] = groups.size;
+  const sections = [];
+  if (groups.size) {
+    sections.push({ title: 'Settings groups (' + groups.size + ')', node: preBlock(Array.from(groups).sort().join('\n')) });
+  }
+  const keyList = keys.map((m) => (m[1] === '-' ? '[DEL] ' : '') + m[2]);
+  if (keyList.length) sections.push({ title: 'Registry keys (' + keyList.length + ')', node: preBlock(keyList.slice(0, 500).join('\n')) });
+  if (sections.length) out._sections = sections;
+  return out;
+}
+
 // ---------- pcap / pcapng (basic header) ----------
 const PCAP_LINKTYPES = { 0: 'NULL', 1: 'Ethernet', 6: 'Token Ring', 105: '802.11', 113: 'Linux SLL', 127: '802.11 radiotap', 228: 'IPv4', 229: 'IPv6', 276: 'Linux SLL2' };
 function parsePcap(head) {
@@ -1200,6 +1235,9 @@ export const PARSERS = {
 
   // Windows registry export
   reg: (c) => parseReg(c.file),
+
+  // SolidWorks Settings Wizard export (a REGEDIT4 file)
+  sldreg: (c) => parseSldreg(c.file),
 
   // Network captures (basic header parse)
   pcap:   (c) => parsePcap(c.head),

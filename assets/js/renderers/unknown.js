@@ -52,10 +52,41 @@ export function guessFormat(b) {
   if (b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3) return 'Matroska / WebM';
   if (b[0] === 0xCA && b[1] === 0xFE && b[2] === 0xBA && b[3] === 0xBE) return 'Java class / Mach-O fat binary';
 
+  // UTF-16 text (e.g. Windows .rdp, some config exports): a BOM, or - failing
+  // that - a strong even/odd NUL split with printable ASCII in the other byte.
+  const u16 = utf16Kind(b);
+  if (u16) return u16 === 'le' ? 'UTF-16 LE text' : 'UTF-16 BE text';
+
   let printable = 0;
   for (const c of b) if (c === 9 || c === 10 || c === 13 || (c >= 0x20 && c <= 0x7E)) printable++;
   if (printable / b.length > 0.85) return 'plain text';
   return 'unrecognised (binary)';
+}
+
+// Distinguish UTF-16 LE/BE text from binary. Returns 'le', 'be', or null.
+function utf16Kind(b) {
+  if (b.length >= 2) {
+    if (b[0] === 0xFF && b[1] === 0xFE) return 'le';   // BOM
+    if (b[0] === 0xFE && b[1] === 0xFF) return 'be';   // BOM
+  }
+  // BOM-less: in ASCII-range UTF-16 text one byte of every pair is NUL. Sample up
+  // to 512 bytes and require a lopsided NUL split plus printable low bytes.
+  if (b.length >= 16) {
+    const n = Math.min(b.length, 512) & ~1;
+    let evenNul = 0, oddNul = 0, lowPrintable = 0;
+    for (let i = 0; i < n; i += 2) {
+      if (b[i] === 0) evenNul++;
+      if (b[i + 1] === 0) oddNul++;
+      const lo = b[i] || b[i + 1];                     // the non-NUL byte
+      if (lo === 9 || lo === 10 || lo === 13 || (lo >= 0x20 && lo <= 0x7E)) lowPrintable++;
+    }
+    const pairs = n / 2;
+    if (lowPrintable / pairs > 0.85) {
+      if (oddNul / pairs > 0.6 && evenNul / pairs < 0.1) return 'le';
+      if (evenNul / pairs > 0.6 && oddNul / pairs < 0.1) return 'be';
+    }
+  }
+  return null;
 }
 
 function jsonStats(val, depth) {
@@ -226,20 +257,29 @@ export async function renderUnknown(file, resultsEl) {
     }
   }
 
+  // UTF-16 text decodes via TextDecoder (Blob.text() is always UTF-8, which would
+  // mangle it). readSlice() returns the correctly-decoded text for either case.
+  const u16enc = guess === 'UTF-16 LE text' ? 'utf-16le' : guess === 'UTF-16 BE text' ? 'utf-16be' : null;
+  const readSlice = async (start, end) => {
+    if (!u16enc) return file.slice(start, end).text();
+    const buf = await file.slice(start, end & ~1).arrayBuffer();
+    return new TextDecoder(u16enc).decode(buf);
+  };
+
   const showJson = isJsonExt || isJsonContent;
   const showXml = guess === 'XML document' || (isXmlExt && guess === 'plain text');
-  const showPlainText = (guess === 'plain text' && !showJson && !showXml) || guess === 'XML document';
+  const showPlainText = ((guess === 'plain text' || u16enc) && !showJson && !showXml) || guess === 'XML document';
 
   if (showPlainText && !showXml) {
     // --- Plain text preview + stats ---
     card.appendChild(el('div', { class: 'anr-readout-section' }, 'Text preview (first 2 kB)'));
     const previewOut = el('pre', { class: 'anr-ocr-text' }, '');
     card.appendChild(previewOut);
-    file.slice(0, 2048).text().then((txt) => { previewOut.textContent = txt; }).catch(() => {});
+    readSlice(0, 2048).then((txt) => { previewOut.textContent = txt; }).catch(() => {});
 
     // Text statistics
     try {
-      const fullText = await file.slice(0, 1024 * 1024).text();
+      const fullText = await readSlice(0, 1024 * 1024);
       const charCount = fullText.length;
       const words = fullText.trim().length === 0 ? [] : fullText.trim().split(/\s+/);
       const wordCount = words.length;
@@ -248,7 +288,7 @@ export async function renderUnknown(file, resultsEl) {
       const paragraphs = fullText.split(/\n\s*\n/).filter(p => p.trim().length > 0);
       const paragraphCount = paragraphs.length;
       const readingTime = Math.ceil(wordCount / 200);
-      const detectedFormat = isMarkdown ? 'Markdown' : 'Plain text';
+      const detectedFormat = isMarkdown ? 'Markdown' : u16enc ? 'Plain text (UTF-16 ' + (u16enc === 'utf-16le' ? 'LE' : 'BE') + ')' : 'Plain text';
 
       card.appendChild(el('div', { class: 'anr-readout-section' }, 'Text statistics'));
       const statsTbl = el('table', { class: 'anr-readout' });

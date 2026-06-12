@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 103;
+const COMMIT_COUNT = 104;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -46,10 +46,11 @@ import { renderSubtitles } from '../renderers/subtitles.js';
 import { renderGeo } from '../renderers/geo.js';
 import { renderMarkdown } from '../renderers/markdown.js';
 import { renderComic } from '../renderers/comic.js';
+import { renderGitObject, sniffGitObject } from '../renderers/gitobject.js';
 import { initSearch } from './search.js';
 import { fileExt, el, probeReadable, cloudFileWarning, openOverlayBack } from './util.js';
 import { walkItems, renderFolder } from '../renderers/folder.js';
-import { setupHeaderFx, setupSectionFx, setupFooterFx } from './effects.js';
+import { setupHeaderFx, setupSectionFx, setupFooterFx, setupFmtHeaderFx } from './effects.js';
 import { showSuggestPopup, hideSuggestPopup, scheduleShareNudge, hideShareNudge, wireShareButtons, wireFooterContact, updateNetStatus } from './popups.js';
 import { wireExportButton } from './export-data.js';
 import {
@@ -369,6 +370,7 @@ const ROUTES = {
   svg:         { render: renderSvg,         results: 'unknown', scroll: '#unknownResults' },
   csv:         { render: renderCsv,         results: 'unknown', scroll: '#unknownResults' },
   proprietary: { render: renderProprietary, results: 'unknown', scroll: '#unknownResults' },
+  'git-object':{ render: renderGitObject,   results: 'unknown', scroll: '#unknownResults' },
   unknown:     { render: renderUnknown,     results: 'unknown', scroll: '#unknownResults' },
 };
 
@@ -537,9 +539,11 @@ async function setupStatsPage() {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
-  { range: '3.01', notes: [
+  { range: '3.01 - 3.04', notes: [
     'Export any analysis as a self-contained report, a JSON data file, or a CSV.',
-    'The Stats page is now one tap from every page.',
+    'SQLite write-ahead logs, git repository internals and Sigma Foveon RAW now open.',
+    'A folder scan flags every file that will not open - unrecognised types included - and checks HEIC photos far faster.',
+    'The Stats page is one tap from every page, and exported reports now capture the whole analysis.',
   ] },
   { range: '3.0', milestone: true, notes: [
     'Third milestone: camera RAW files get a full darkroom.',
@@ -747,6 +751,41 @@ function boot() {
     if (guideCta) guideCta.hidden = true;
   }
 
+  // --- Drill-down breadcrumb (folder / zip / archive -> nested file) ---------
+  // Opening a file from a container view replaces the results, so we keep a stack
+  // of restore closures - one per level - and show a Back bar that re-renders the
+  // parent container one level at a time. Container renderers (folder.js,
+  // archive.js) call window._anrPushNav right before they open a child; a fresh
+  // top-level load calls resetNav so the breadcrumb never leaks across drops.
+  const navStack = [];
+  function refreshBackBar() {
+    const bar = $('anrBackBar');
+    if (!bar) return;
+    const top = navStack[navStack.length - 1];
+    if (top) {
+      const lbl = bar.querySelector('.anr-back-label');
+      if (lbl) lbl.textContent = top.label;
+      bar.hidden = false;
+    } else {
+      bar.hidden = true;
+    }
+  }
+  function resetNav() { navStack.length = 0; refreshBackBar(); }
+  function popNav() {
+    const frame = navStack.pop();
+    refreshBackBar();
+    if (!frame) return;
+    clearResultsUI();
+    try { frame.restore(); } catch (_) {}
+    const sec = unknownResults.closest('.section') || unknownResults;
+    requestAnimationFrame(() => sec.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
+  // Exposed for the container renderers, which run in their own modules.
+  window._anrPushNav = (label, restore) => { navStack.push({ label, restore }); refreshBackBar(); };
+  window._anrResetNav = resetNav;
+  const backBarEl = $('anrBackBar');
+  if (backBarEl && !backBarEl._wired) { backBarEl._wired = true; backBarEl.addEventListener('click', popNav); }
+
   // Once a file is loaded the three pick-a-file dropzones are redundant, so swap
   // them for a single "Analyse next file?" button that reloads to a fresh page.
   function showAnalyseNext() {
@@ -781,6 +820,16 @@ function boot() {
     document.body.classList.add('anr-has-file');
     if (pageDropEl) pageDropEl.hidden = true;
     showAnalyseNext();
+    // A folder/ZIP overview is not itself photo/audio/video, so collapse the three
+    // numbered media explainer sections (01/02/03) and grey out their nav links -
+    // exactly what handleFile does for any non-media file. They reappear when a
+    // file picked FROM the overview is analysed and turns out to be media.
+    ['photo', 'audio', 'video'].forEach((id) => { const sec = $(id); if (sec) sec.hidden = true; });
+    ['#photo', '#audio', '#video'].forEach((href) => {
+      const link = document.querySelector('.site-nav a[href="' + href + '"]');
+      if (link) link.classList.add('is-disabled');
+    });
+    document.body.classList.remove('anr-nav-live');
   }
 
   // Jump to the first analysed section. Results elements are hidden+emptied until
@@ -802,6 +851,7 @@ function boot() {
     token.cancelled = true;
     if (_currentToken === token) _currentToken = null;
     clearResultsUI();
+    resetNav();
     restoreQuickdrop();
     ['photo', 'audio', 'video'].forEach((id) => { const sec = $(id); if (sec) sec.hidden = false; });
   }
@@ -815,6 +865,7 @@ function boot() {
     // Opened from a folder/zip/document view: bytes are already in memory and the
     // render beats the loader's 160ms debounce, so show the bar immediately.
     const nested = !!(opts && opts.nested);
+    if (!nested) resetNav();   // a fresh top-level drop ends any drill-down breadcrumb
     hideTypeSuggestion();
     hideSuggestPopup();   // clear any "suggest this format" nudge from a prior file
     hideShareNudge();     // and any pending/visible "share this" nudge
@@ -871,6 +922,13 @@ function boot() {
           if (headStr.trimStart().startsWith('<svg') || (headStr.includes('<svg') && headStr.includes('xmlns'))) {
             kind = 'svg';
           }
+        }
+        // Git objects: loose objects (zlib "<type> <size>\0…"), packfiles (PACK)
+        // and pack indexes (\377tOc). Loose objects are extensionless, so this
+        // content sniff is the only way to route them.
+        if (kind === 'unknown') {
+          const git = await sniffGitObject(file);
+          if (git) kind = 'git-object';
         }
         // CSV heuristic: check if lines have consistent comma/tab counts
         if (kind === 'unknown') {
@@ -1247,7 +1305,7 @@ function boot() {
           return;
         }
         const ur = $('unknownResults');
-        if (ur) { renderFolder(folderFiles, ur); enterLoadedUI(); }
+        if (ur) { resetNav(); renderFolder(folderFiles, ur); enterLoadedUI(); }
         hideDropLoader();
         return;
       }
@@ -1441,6 +1499,7 @@ function boot() {
     delete window._anrPendingFile;
   }
   if (window._anrPendingFolder && unknownResults) {
+    resetNav();
     renderFolder(window._anrPendingFolder, unknownResults);
     enterLoadedUI();
     delete window._anrPendingFolder;
@@ -2036,6 +2095,9 @@ function boot() {
   // own copy of #fmtBody (the same overlay markup).
   renderFmtOverlay($('fmtBody'));
   renderAboutFormats($('aboutFormats'));
+  // Per-letter cursor-hover effect on the group headers in the popup, the about
+  // list and the /formats hub (same feel as the site header / footer mark).
+  setupFmtHeaderFx(document);
 
   // Drop the live format count into every element that asks for it (popup
   // header, feature bullets, and the clickable "N supported formats"
@@ -2315,6 +2377,50 @@ function boot() {
       a.remove();
     });
   });
+
+  // ----- Inline search on the /formats hub page -----
+  // Filters the on-page catalog list (the same .fmt-item markup the overlay uses)
+  // live, so visitors can narrow the whole catalog without opening the popup. An
+  // AND match across the label, extension list, search tags and description.
+  const fmtPageSearch = $('fmtPageSearch');
+  if (fmtPageSearch && !fmtPageSearch._wired) {
+    fmtPageSearch._wired = true;
+    const pItems = Array.from(document.querySelectorAll('.formats-page .fmt-item'));
+    const pLabels = Array.from(document.querySelectorAll('.formats-page .fmt-section-label'));
+    const pStatus = $('fmtPageSearchStatus');
+    const applyPageFilter = () => {
+      const raw = fmtPageSearch.value.trim();
+      const tokens = raw.toLowerCase().split(/\s+/).filter(Boolean);
+      let vis = 0;
+      pItems.forEach((it) => {
+        const labelEl = it.querySelector('.fmt-item-label');
+        const extsEl = it.querySelector('.fmt-item-exts');
+        const descEl = it.querySelector('.fmt-item-desc');
+        const hay = (
+          (labelEl ? labelEl.textContent : '') + ' ' +
+          (extsEl ? extsEl.textContent : '') + ' ' +
+          (it.dataset.tags || '') + ' ' +
+          (descEl ? descEl.textContent : '')
+        ).toLowerCase();
+        const match = !tokens.length || tokens.every((t) => hay.includes(t));
+        it.classList.toggle('is-hidden', !match);
+        it.open = tokens.length ? match : false;   // open matches so the desc shows
+        if (match) vis++;
+      });
+      pLabels.forEach((label) => {
+        const list = label.nextElementSibling;
+        const n = list ? list.querySelectorAll('.fmt-item:not(.is-hidden)').length : 0;
+        label.style.display = n ? '' : 'none';
+      });
+      if (pStatus) {
+        pStatus.hidden = !raw;
+        if (raw) pStatus.textContent = vis
+          ? vis + (vis === 1 ? ' format matches' : ' formats match')
+          : 'No formats match “' + raw + '”.';
+      }
+    };
+    fmtPageSearch.addEventListener('input', applyPageFilter);
+  }
 
   // ----- Search -----
   initSearch();

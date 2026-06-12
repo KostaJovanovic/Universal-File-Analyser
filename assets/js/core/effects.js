@@ -268,8 +268,32 @@ export function setupSectionFx() {
 export function setupFooterFx() {
   if (!window.matchMedia('(hover:hover) and (pointer:fine)').matches) return;
   const mark = document.querySelector('.footer-mark');
-  if (!mark || mark._anrFooterFx) return;
-  mark._anrFooterFx = true;
+  if (mark) bindLetterFx(mark);
+}
+
+// Per-letter "thin toward the cursor" hover on the catalog group headers
+// (.fmt-section-label) - the supported-formats popup, the about page list and the
+// /formats hub all share this class - so they answer the cursor exactly like the
+// site title and the footer mark. Each label is bound independently (like the
+// footer mark) and guarded per element, so repeated boots / overlay opens never
+// double-bind. The "N formats" note is lifted out before the split so it keeps its
+// own lighter weight and muted colour, then put back after the letters.
+export function setupFmtHeaderFx(root = document) {
+  if (!window.matchMedia('(hover:hover) and (pointer:fine)').matches) return;
+  root.querySelectorAll('.fmt-section-label').forEach((label) => {
+    if (label._anrLetterFx) return;
+    const note = label.querySelector('.fmt-section-note');
+    if (note) note.remove();
+    bindLetterFx(label);
+    if (note) label.appendChild(note);
+  });
+}
+
+// Bind the per-letter proximity hover to a single element. Splits its text into
+// letters and tracks the cursor, thinning glyphs toward it. Guarded per element.
+function bindLetterFx(mark) {
+  if (!mark || mark._anrLetterFx) return;
+  mark._anrLetterFx = true;
 
   const RADIUS = 120;
   const base = parseInt(getComputedStyle(mark).fontWeight, 10) || 400;

@@ -9,7 +9,7 @@
 
 import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, cloudFileWarning, errorCard, attachZoomPan, openOverlayBack } from '../core/util.js';
 import { HEIC_EXTS, RAW_EXTS } from '../core/formats.js';
-import { convertHeic, extractRawPreview, convertWithImageMagick, demosaicRaw, extractRawJpegs } from './photo-convert.js';
+import { convertHeic, extractRawPreview, convertWithImageMagick, demosaicRaw, extractRawJpegs, extractX3fPreview } from './photo-convert.js';
 import { ascii, latin1, utf8, inflate } from '../core/binutil.js';
 
 // ---------- Browser-undecodable images ----------
@@ -37,10 +37,20 @@ function undecodableImageBanner(ext) {
   return el('div', { class: 'anr-info' }, msg);
 }
 
-// Shown when the browser can't display the image: the banner above, basic file
-// info, and any EXIF/IPTC/XMP metadata exifr can still read from the raw bytes.
-async function renderUndisplayableImage(file, ext, resultsEl) {
-  resultsEl.appendChild(undecodableImageBanner(ext));
+// Banner for a camera RAW that none of the decoders (embedded preview, our IFD
+// extractor, ImageMagick, libraw demosaic) could turn into pixels. The bytes are
+// fine - the sensor format just isn't reconstructable here - so we still show the
+// metadata below rather than a bare error.
+function rawUndecodableBanner() {
+  return el('div', { class: 'anr-info' },
+    'This camera RAW couldn’t be turned into a picture here - there’s no usable embedded preview and the bundled decoders don’t support this sensor format. The file itself is fine; any metadata below was read straight from the bytes.');
+}
+
+// Shown when the browser can't display the image: the banner above (or a caller-
+// supplied one), basic file info, and any EXIF/IPTC/XMP metadata exifr can still
+// read from the raw bytes.
+async function renderUndisplayableImage(file, ext, resultsEl, bannerNode) {
+  resultsEl.appendChild(bannerNode || undecodableImageBanner(ext));
   const info = el('div', { class: 'anr-card' });
   info.appendChild(el('h3', {}, 'File info'));
   const t = el('table', { class: 'anr-readout' });
@@ -1922,6 +1932,12 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
 
   let imgInfo;
   let convertedFile = null;
+  // True once a full libraw demosaic has produced the displayed image (manual
+  // "Demosaic RAW" button, or the automatic last-resort fallback below). It tells
+  // the downstream code the picture is the real sensor image, not an embedded
+  // preview, so it skips the "report the RAW's recorded size" and "offer full
+  // decode" steps that only make sense for a preview.
+  let fullDecode = opts.rawMode === 'demosaic';
   try {
     imgInfo = await loadImageFromFile(file);
   } catch (e) {
@@ -1943,17 +1959,29 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
         // Full sensor decode on demand (libraw WASM): demosaics the Bayer data
         // into a real RGB image, so every downstream metric runs on the actual
         // photo rather than the embedded preview. Triggered by the button under
-        // the preview, never automatically (the decoder is a heavyweight download).
+        // the preview.
         try {
           convertedFile = await demosaicRaw(file, resultsEl);
           imgInfo = await loadImageFromFile(convertedFile);
         } catch (eD) {
+          // Even a full decode failed - show metadata + a banner, not an error.
           resultsEl.innerHTML = '';
-          resultsEl.appendChild(errorCard('RAW demosaic failed: ' + (eD && eD.message ? eD.message : eD)));
+          await renderUndisplayableImage(file, ext, resultsEl, rawUndecodableBanner());
           return;
         }
       } else {
-        try {
+        // Sigma Foveon X3F: pull the full-res JPEG straight from the X3F
+        // container first. It's not TIFF and its sensor block spoofs the
+        // JPEG-marker scan, so the generic extractors miss the preview - but the
+        // container always embeds one, and this is far more reliable (and lighter)
+        // than trying to develop the Foveon sensor without the demosaic pack.
+        if (ext === 'x3f') {
+          try {
+            convertedFile = await extractX3fPreview(file);
+            imgInfo = await loadImageFromFile(convertedFile);
+          } catch (_) { /* fall through to the generic RAW chain */ }
+        }
+        if (!imgInfo) try {
           convertedFile = await convertWithImageMagick(file, resultsEl);
           imgInfo = await loadImageFromFile(convertedFile);
         } catch (_) {
@@ -1963,9 +1991,22 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
             convertedFile = await extractRawPreview(file);
             imgInfo = await loadImageFromFile(convertedFile);
           } catch (e3) {
+            // No embedded preview either. Reconstruct from the sensor data with
+            // libraw - the same full decode the manual button uses. Heavyweight,
+            // but it's the only way older/compact RAWs (CRW, MRW, ORF, DCR, MOS,
+            // X3F…) open at all.
             resultsEl.innerHTML = '';
-            resultsEl.appendChild(errorCard('Could not decode RAW file: ' + (e3 && e3.message ? e3.message : e3)));
-            return;
+            resultsEl.appendChild(el('div', { class: 'anr-info' }, 'No preview found - decoding sensor data…'));
+            try {
+              convertedFile = await demosaicRaw(file, resultsEl);
+              imgInfo = await loadImageFromFile(convertedFile);
+              fullDecode = true;
+            } catch (eD) {
+              // Nothing could produce pixels - metadata + banner, never an error.
+              resultsEl.innerHTML = '';
+              await renderUndisplayableImage(file, ext, resultsEl, rawUndecodableBanner());
+              return;
+            }
           }
         }
       }
@@ -2017,7 +2058,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // ImageWidth/Length - not from the preview's pixel count. Per-pixel analysis
   // (sharpness, histogram, focus, colours) still runs on the preview pixels.
   let dimW = img.naturalWidth, dimH = img.naturalHeight, dimsFromMeta = false;
-  if (RAW_EXTS.has(fileExt(file.name)) && exif && opts.rawMode !== 'demosaic') {
+  if (RAW_EXTS.has(fileExt(file.name)) && exif && !fullDecode) {
     const ew = exif.ExifImageWidth || exif.ImageWidth || 0;
     const eh = exif.ExifImageHeight || exif.ImageHeight || 0;
     if (ew > 0 && eh > 0 && ew * eh >= img.naturalWidth * img.naturalHeight) {
@@ -2098,7 +2139,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     fCtx.putImageData(fImg, 0, 0);
 
     if (convertedFile && RAW_EXTS.has(fileExt(file.name))) {
-      if (opts.rawMode === 'demosaic') {
+      if (fullDecode) {
         // (no note - the demosaiced image speaks for itself)
       } else {
         thumb.appendChild(el('p', { class: 'anr-raw-warning' },

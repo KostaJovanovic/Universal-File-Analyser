@@ -312,19 +312,27 @@ export async function renderArchive(file, resultsEl, opts = {}) {
     return new File([content], fileName, { type: guessMime(ext) });
   }
 
+  // Register a Back-bar restore that re-renders THIS archive before opening a
+  // child, so the breadcrumb can step back to it one level at a time. Skipped in
+  // embedded mode (the browse-as-archive view under a primary analysis), whose
+  // sub-container is wiped by clearResultsUI - there's no standalone view to
+  // restore there.
+  const containerLabel = (file && file.name) || 'archive';
+  function pushBack() {
+    if ((opts && opts.embedded) || !window._anrPushNav) return;
+    window._anrPushNav(containerLabel, () => { resultsEl.hidden = false; renderArchive(file, resultsEl); });
+  }
+
   // --- Click-to-analyse handler (treemap) ---
   function onFileClick(item) {
     if (!item || !item.entry) return;
     const ext = extOf(item.entry.name);
-    if (ARCHIVE_EXTS.has(ext)) {
-      extractFile(item.entry.name).then(f => {
-        if (f) renderArchive(f, resultsEl);
-      });
-    } else {
-      extractFile(item.entry.name).then(f => {
-        if (f && window._anrHandleFile) window._anrHandleFile(f, { nested: true });
-      });
-    }
+    extractFile(item.entry.name).then(f => {
+      if (!f) return;
+      pushBack();
+      if (ARCHIVE_EXTS.has(ext)) renderArchive(f, resultsEl);
+      else if (window._anrHandleFile) window._anrHandleFile(f, { nested: true });
+    });
   }
 
   // --- Click handler for tree view (receives key, value from buildFileTree) ---
@@ -336,15 +344,12 @@ export async function renderArchive(file, resultsEl, opts = {}) {
     const entry = val && val.name ? val : null;
     if (!entry) return;
     const ext = extOf(entry.name);
-    if (ARCHIVE_EXTS.has(ext)) {
-      extractFile(entry.name).then(f => {
-        if (f) renderArchive(f, resultsEl);
-      });
-    } else {
-      extractFile(entry.name).then(f => {
-        if (f && window._anrHandleFile) window._anrHandleFile(f, { nested: true });
-      });
-    }
+    extractFile(entry.name).then(f => {
+      if (!f) return;
+      pushBack();
+      if (ARCHIVE_EXTS.has(ext)) renderArchive(f, resultsEl);
+      else if (window._anrHandleFile) window._anrHandleFile(f, { nested: true });
+    });
   }
 
   // --- Build tree object ---
@@ -511,6 +516,10 @@ async function renderLibarchive(file, resultsEl, opts) {
     try {
       const bytes = await entry.getBytes();
       const f = new File([bytes], entry.name.split('/').pop() || entry.name, { type: 'application/octet-stream' });
+      // Register a Back-bar restore that re-renders this archive (one level up).
+      if (window._anrPushNav) {
+        window._anrPushNav(file.name || 'archive', () => { resultsEl.hidden = false; renderLibarchive(file, resultsEl, opts); });
+      }
       if (window._anrHandleFile) window._anrHandleFile(f, { nested: true });
     } catch (_) { /* extraction failed - ignore */ }
   }

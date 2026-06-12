@@ -358,7 +358,7 @@ ${siteNav(key)}
   <section class="section">
     <div class="grid">
       <div class="section-content">
-        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.${esc(d)}</span></p>
+        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.${esc(d)}</span><span class="fmt-item-badge format-crumb-badge ${isFull ? 'is-full' : 'is-id'}" title="${isFull ? 'Opens in a viewer with deep metadata' : 'Identified + header metadata'}">${isFull ? 'Full' : 'ID'}</span></p>
         <h2 class="section-head">What is a .${esc(d)} file?</h2>
         <p class="section-lede">${esc(meta.blurb)}</p>
 

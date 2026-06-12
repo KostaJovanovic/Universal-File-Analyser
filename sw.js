@@ -1,7 +1,7 @@
 ﻿/* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v103';
+const VERSION = 'analyser-v104';
 const SHELL = [
   './',
   './about',
@@ -38,6 +38,7 @@ const SHELL = [
   './assets/js/renderers/geo.js',
   './assets/js/renderers/markdown.js',
   './assets/js/renderers/comic.js',
+  './assets/js/renderers/gitobject.js',
   './assets/js/renderers/unknown.js',
   './assets/js/renderers/proprietary.js',
   './assets/js/renderers/proprietary-formats.js',

@@ -188,6 +188,23 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">3.04</p>
+          <p class="patch-name">I Shoot Raw</p>
+          <p class="patch-date">12 June 2026, 21:32</p>
+          <ul class="patch-list">
+            <li><strong>More of the awkward stuff opens - database write-ahead logs, git repository internals and Sigma RAW - a folder scan now tells you exactly what won&rsquo;t open, and exported reports capture the whole page.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Camera RAW gets its own shelf.</strong> RAW photos are now their own group in the <a href="/formats">formats</a> list, separate from everyday JPEGs and PNGs, with X-Trans and Foveon cameras called out by name.</li>
+            <li><span class="patch-tag">New</span><strong>Sigma Foveon photos open.</strong> A Sigma <a href="/about#ext-x3f">.x3f</a> RAW now shows the full-resolution image baked inside it, joining the rest of the RAW family.</li>
+            <li><span class="patch-tag">New</span><strong>The files a database leaves beside itself.</strong> Analyser now reads SQLite&rsquo;s write-ahead log and shared-memory companions - the <a href="/about#ext-sqlite-wal">-wal</a> and <a href="/about#ext-sqlite-shm">-shm</a> sidecars - showing pending changes, how many pages a transaction touched, and checkpoint progress.</li>
+            <li><span class="patch-tag">New</span><strong>Look inside a git repository.</strong> The compressed objects git keeps under <code>.git</code> - loose blobs, trees, commits and tags, plus <a href="/about#ext-pack">pack</a> files and their indexes - now open with no git installed, revealing each object&rsquo;s type, size and identifier and reading commit and tag messages.</li>
+            <li><span class="patch-tag">New</span><strong>The folder scan flags the unknowns too.</strong> The <strong>openability check</strong> for a folder or ZIP now also calls out file types Analyser doesn&rsquo;t recognise, not just ones it can&rsquo;t decode - an honest list of what it can and can&rsquo;t handle.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Folder scans breeze past HEIC.</strong> Checking whether iPhone and Samsung <a href="/about#ext-heic">HEIC</a> photos open no longer decodes each one in full, so sweeping a folder full of them is far quicker.</li>
+            <li><span class="patch-tag">New</span><strong>Exports leave nothing behind.</strong> Exporting a report now opens every collapsed section first, generates the video contact sheet if you hadn&rsquo;t, and adds a <strong>SHA-256</strong> fingerprint for video files - so the saved copy is complete.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Your results stay put.</strong> The &ldquo;email me&rdquo; and &ldquo;suggest a format&rdquo; links now open in a new tab, so reaching for your mail app no longer navigates away from the analysis on screen.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">3.01</p>
           <p class="patch-name">Hard Copy</p>
           <p class="patch-date">12 June 2026, 05:43</p>
@@ -214,6 +231,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">2.39</p>
           <p class="patch-name">Head Count</p>
@@ -228,9 +248,6 @@
             <li><strong>A small touch.</strong> The footer&rsquo;s &ldquo;Everything runs in your browser&rdquo; heading now answers the cursor with the same letter effect as the page headings.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.38</p>

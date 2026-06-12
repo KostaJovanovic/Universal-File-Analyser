@@ -834,6 +834,119 @@ async function parseSqlite(buf, file) {
   return out;
 }
 
+// ---------- SQLite WAL / SHM sidecars ----------
+// Write-Ahead Log (-wal): a 32-byte big-endian header followed by frames, each a
+// 24-byte frame header + one database page. Shared-memory index (-shm): two
+// copies of a 48-byte WalIndexHdr plus a checkpoint-info block, in machine byte
+// order. Both are the rollback/recovery sidecars beside a WAL-mode SQLite DB.
+async function parseSqliteWal(head, file) {
+  if (!head || head.length < 32) return null;
+  const dv = new DataView(head.buffer, head.byteOffset, head.byteLength);
+  const magic = dv.getUint32(0);
+  if (magic !== 0x377f0682 && magic !== 0x377f0683) return null;
+  const fmt = dv.getUint32(4);
+  let pageSize = dv.getUint32(8);
+  if (pageSize === 1) pageSize = 65536;
+  const ckptSeq = dv.getUint32(12);
+  const salt1 = dv.getUint32(16), salt2 = dv.getUint32(20);
+  const cksum1 = dv.getUint32(24), cksum2 = dv.getUint32(28);
+  const frameSize = 24 + pageSize;
+  const size = file ? file.size : head.length;
+  const maxFrames = pageSize > 0 ? Math.max(0, Math.floor((size - 32) / frameSize)) : 0;
+  const hex = (n) => '0x' + (n >>> 0).toString(16).padStart(8, '0');
+
+  const out = {
+    'Format': 'SQLite Write-Ahead Log (-wal)',
+    'Header magic': hex(magic) + (magic === 0x377f0683 ? ' (big-endian checksums)' : ' (little-endian checksums)'),
+    'WAL format': fmt === 3007000 ? '3007000 (SQLite 3.7.0+)' : String(fmt),
+    'Page size': pageSize.toLocaleString() + ' bytes',
+    'Checkpoint sequence': ckptSeq.toLocaleString(),
+    'Salt': hex(salt1) + ' ' + hex(salt2),
+    'Header checksum': hex(cksum1) + ' ' + hex(cksum2),
+    'Frames (by file size)': maxFrames.toLocaleString(),
+  };
+
+  // Walk the frame headers (24 bytes each, skipping the page bodies) to find the
+  // committed transactions and the pages they changed. A frame belongs to this
+  // log run only while its salts still match the header - the first mismatch is
+  // where stale/overwritten frames from a previous run begin, so we stop there.
+  if (file && maxFrames > 0) {
+    try {
+      const n = Math.min(maxFrames, 200000);
+      const pages = new Set();
+      let commits = 0, lastDbSize = 0, valid = 0;
+      for (let i = 0; i < n; i++) {
+        const off = 32 + i * frameSize;
+        const fh = new Uint8Array(await file.slice(off, off + 24).arrayBuffer());
+        if (fh.length < 24) break;
+        const fv = new DataView(fh.buffer, fh.byteOffset, fh.byteLength);
+        const pageNo = fv.getUint32(0), dbSize = fv.getUint32(4);
+        if (fv.getUint32(8) !== salt1 || fv.getUint32(12) !== salt2) break;
+        valid++;
+        if (pageNo) pages.add(pageNo);
+        if (dbSize !== 0) { commits++; lastDbSize = dbSize; }
+      }
+      out['Valid frames'] = valid.toLocaleString() + (valid < maxFrames ? '  (of ' + maxFrames.toLocaleString() + '; the rest are stale)' : '');
+      out['Committed transactions'] = commits.toLocaleString();
+      out['Distinct pages changed'] = pages.size.toLocaleString();
+      if (lastDbSize) out['DB size after last commit'] = lastDbSize.toLocaleString() + ' pages  (' + fmtBytes(lastDbSize * pageSize) + ')';
+      out['Pending checkpoint'] = commits > 0
+        ? 'Yes - ' + commits + ' un-checkpointed transaction' + (commits === 1 ? '' : 's') + ' not yet merged into the database'
+        : 'No complete transaction in the log';
+      if (pages.size) {
+        const list = Array.from(pages).sort((a, b) => a - b);
+        const shown = list.slice(0, 500).join(', ') + (list.length > 500 ? ', …' : '');
+        out._sections = [{ title: 'Changed page numbers (' + list.length + ')', node: preBlock(shown) }];
+      }
+    } catch (_) { /* header facts still returned */ }
+  }
+  return out;
+}
+
+function parseSqliteShm(head) {
+  if (!head || head.length < 48) return null;
+  // WalIndexHdr is written in machine byte order; detect it from iVersion, which
+  // is 3007000 on every real file. Try little-endian first (the universal case).
+  const dvv = new DataView(head.buffer, head.byteOffset, head.byteLength);
+  let le = true, iVersion = dvv.getUint32(0, true);
+  if (iVersion !== 3007000 && dvv.getUint32(0, false) === 3007000) { le = false; iVersion = 3007000; }
+  const u32 = (o) => dvv.getUint32(o, le);
+  const u16 = (o) => dvv.getUint16(o, le);
+  const readHdr = (b) => ({
+    iChange: u32(b + 8), isInit: head[b + 12], bigEndCksum: head[b + 13],
+    szPage: u16(b + 14), mxFrame: u32(b + 16), nPage: u32(b + 20),
+    salt1: u32(b + 32), salt2: u32(b + 36),
+  });
+  const h0 = readHdr(0);
+  const h1 = head.length >= 96 ? readHdr(48) : null;
+  let ps = h0.szPage & 0xffff; if (ps === 0 || ps === 1) ps = 65536;
+  const hex = (n) => '0x' + (n >>> 0).toString(16).padStart(8, '0');
+
+  const out = {
+    'Format': 'SQLite shared-memory WAL-index (-shm)',
+    'Byte order': le ? 'little-endian' : 'big-endian',
+    'Index version': iVersion === 3007000 ? '3007000 (SQLite 3.7.0+)' : String(iVersion),
+    'Initialised': h0.isInit ? 'Yes' : 'No',
+    'Page size': ps.toLocaleString() + ' bytes',
+    'Valid WAL frames (mxFrame)': h0.mxFrame.toLocaleString(),
+    'DB size (nPage)': h0.nPage.toLocaleString() + ' pages  (' + fmtBytes(h0.nPage * ps) + ')',
+    'WAL salt': hex(h0.salt1) + ' ' + hex(h0.salt2),
+    'Transaction counter': h0.iChange.toLocaleString(),
+    'WAL checksums': h0.bigEndCksum ? 'big-endian' : 'little-endian',
+  };
+  if (h1) {
+    out['Header copies'] = (h0.iChange === h1.iChange && h0.mxFrame === h1.mxFrame && h0.salt1 === h1.salt1 && h0.salt2 === h1.salt2)
+      ? 'Both copies agree (consistent)'
+      : 'Copies differ - index is mid-update or stale';
+  }
+  if (head.length >= 136) {
+    const nBackfill = u32(96);
+    out['Frames checkpointed (nBackfill)'] = nBackfill.toLocaleString();
+    if (h0.mxFrame) out['Frames awaiting checkpoint'] = Math.max(0, h0.mxFrame - nBackfill).toLocaleString();
+  }
+  return out;
+}
+
 // ---------- GIMP XCF ----------
 function parseXcf(buf) {
   const sig = ascii(buf, 0, 9);
@@ -3328,6 +3441,14 @@ const PARSERS = {
   db3:   c => parseSqlite(c.head, c.file),
   db:    c => parseSqlite(c.head, c.file),
   lrcat: c => parseSqlite(c.head, c.file),   // Lightroom catalog is a SQLite database
+  'sqlite-wal':  c => parseSqliteWal(c.head, c.file),
+  'sqlite3-wal': c => parseSqliteWal(c.head, c.file),
+  'db-wal':      c => parseSqliteWal(c.head, c.file),
+  'db3-wal':     c => parseSqliteWal(c.head, c.file),
+  'sqlite-shm':  c => parseSqliteShm(c.head),
+  'sqlite3-shm': c => parseSqliteShm(c.head),
+  'db-shm':      c => parseSqliteShm(c.head),
+  'db3-shm':     c => parseSqliteShm(c.head),
   xcf:   c => parseXcf(c.head),
   torrent: c => parseTorrent(c.file),
   als:   c => parseGzipXmlProject(c.file, c.ext),

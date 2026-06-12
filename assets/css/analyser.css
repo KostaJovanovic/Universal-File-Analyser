@@ -413,7 +413,10 @@ button.nav-link {
    the middle of the three equal columns (from `body:has(.about-page) .site-nav`)
    so it's exactly as wide as if Previous/Next sat beside it, centred, with a
    divider on each side. */
-.formats-hub-nav .nav-link-lucky {
+/* `.site-nav` qualifier bumps specificity to (0,3,0) so both dividers beat the
+   main-nav `.nav-link:last-of-type { border-right: none }` (0,2,0) - otherwise the
+   lone lucky button (which is also :last-of-type) loses its right separator. */
+.site-nav.formats-hub-nav .nav-link-lucky {
   grid-column: 2;
   justify-content: center;
   border-left: 1px solid var(--nav-line);
@@ -984,6 +987,37 @@ body.anr-has-file .nav-search { display: flex; }
 .anr-btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .anr-frame-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
 .anr-frame-grid > .anr-btn { width: 100%; }
+
+/* Folder "which files can't be opened" check (folder.js) */
+.anr-folder-scan-intro { margin: 0 0 12px; max-width: 62ch; font-size: var(--t-small); color: var(--muted); }
+.anr-folder-scan-progress { margin-top: 12px; }
+.anr-folder-scan-progress[hidden] { display: none; }
+.anr-folder-scan-status {
+  margin-top: 12px; font-family: var(--font-mono); font-size: var(--t-small); color: var(--muted);
+  white-space: normal; overflow-wrap: anywhere; word-break: break-word;
+  /* Reserve 3 lines so the height stays put as filenames wrap across 1-3 rows. */
+  line-height: 1.4; min-height: 4.2em; overflow: hidden;
+}
+.anr-folder-scan-status[hidden] { display: none; }
+.anr-folder-scan-report { margin-top: 14px; }
+.anr-scan-ok { margin: 0; font-weight: 500; color: var(--fg); }
+.anr-scan-bad { margin: 0 0 10px; font-weight: 600; color: var(--accent); }
+.anr-scan-list { list-style: none; margin: 0; padding: 0; }
+.anr-scan-list li {
+  display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: space-between;
+  padding: 8px 0; border-top: 1px solid var(--hairline);
+}
+.anr-scan-list li:last-child { border-bottom: 1px solid var(--hairline); }
+.anr-scan-path { font-family: var(--font-mono); font-size: var(--t-small); word-break: break-all; }
+.anr-scan-reason { font-size: var(--t-small); color: var(--muted); white-space: nowrap; }
+
+/* Git object viewer (gitobject.js) - commit/tag message + textual blob preview */
+.anr-git-block {
+  margin: 0; padding: 12px 14px; max-height: 460px; overflow: auto;
+  font-family: var(--font-mono); font-size: var(--t-small); line-height: 1.5;
+  color: var(--fg); background: var(--surface); border: 1px solid var(--hairline);
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+}
 
 .anr-timecode {
   display: flex;
@@ -3180,6 +3214,33 @@ details[open] summary::after { content: "\2212"; }
 .scroll-to-data:hover::after { transform: translateY(3px); }
 .scroll-to-data:active { transform: translateY(1px); }
 .scroll-to-data[hidden] { display: none; }
+
+/* Drill-down Back bar: shown when a nested file (from a folder/zip/archive tree)
+   is being analysed, it steps back one container level. Sticky so it stays in
+   view as the user scrolls through whichever section the nested file landed in. */
+.anr-back-bar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: block;
+  width: 100%;
+  margin: 0 0 16px;
+  padding: 11px 16px;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  letter-spacing: 0.04em;
+  text-align: left;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.anr-back-bar:hover { background: rgba(var(--accent-rgb), 0.06); }
+.anr-back-bar:active { transform: translateY(1px); }
+.anr-back-arrow { color: var(--accent); margin-right: 6px; font-weight: 600; }
+.anr-back-label { font-weight: 500; }
+.anr-back-bar[hidden] { display: none; }
 .quickdrop-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -3445,6 +3506,12 @@ details[open] summary::after { content: "\2212"; }
   outline: none;
 }
 .fmt-overlay-search:focus { border-color: var(--accent); }
+/* Inline search on the /formats hub page - filters the on-page catalog list live.
+   Reuses .fmt-overlay-search for the look, but spans the column (no side margin). */
+.fmt-page-search { margin: 0 0 24px; }
+.fmt-page-search-input { display: block; width: 100%; margin: 0; }
+.fmt-page-search-status { margin: 8px 0 0; font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.04em; color: var(--muted); }
+.fmt-page-search-status[hidden] { display: none; }
 .fmt-overlay-body {
   padding: 0 20px 20px;
   overflow-y: auto;
@@ -3452,21 +3519,25 @@ details[open] summary::after { content: "\2212"; }
   min-height: 0;          /* let the body scroll instead of growing the modal */
 }
 .fmt-section-label {
-  font-family: var(--font-mono);
-  font-size: var(--t-tiny);
-  letter-spacing: 0.1em;
+  /* Sans (Geist) spans weight 300-700, so the per-letter cursor-hover effect
+     thins dramatically; the mono face only covers 400-600 and barely moved. */
+  font-family: var(--font-sans);
+  font-size: var(--t-h2);
+  letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--fg);
-  font-weight: 500;
-  margin: 26px 0 10px;
+  font-weight: 700;
+  margin: 30px 0 12px;
   padding-top: 18px;
   border-top: 1px solid var(--hairline);
 }
 .fmt-section-note {
-  text-transform: none;
-  letter-spacing: 0.02em;
-  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
   font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--muted);
 }
 .fmt-section-note::before { content: ' · '; }
 /* First section ("Full analysis") needs no divider above it. */
@@ -3503,7 +3574,11 @@ details[open] summary::after { content: "\2212"; }
 }
 .fmt-item[open] > .fmt-item-summary::after { content: '\2212'; }
 .fmt-item-summary:hover { color: var(--accent); }
-.fmt-item-summary:hover .fmt-item-ext { color: var(--accent); }
+/* Collapsed row: the extension tokens are not links yet - hovering the summary
+   tints them all as one block (the "click to open" affordance), and a click
+   falls through to the summary and just opens the row. */
+.fmt-item:not([open]) > .fmt-item-summary:hover .fmt-item-ext { color: var(--accent); }
+.fmt-item:not([open]) .fmt-item-ext { pointer-events: none; }
 .fmt-item-head {
   flex: 1 1 auto;
   min-width: 0;
@@ -3567,14 +3642,24 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 
 /* Breadcrumb on the per-format landing pages (/format/<ext>). */
 .format-crumbs {
+  position: relative;
   margin: 0 0 18px;
+  padding-right: 56px;          /* room for the depth flag pinned top-right */
   font-family: var(--font-mono);
   font-size: var(--t-tiny);
   letter-spacing: 0.04em;
   color: var(--muted);
 }
 .format-crumbs a { color: inherit; }
-.format-crumbs span { color: var(--fg); }
+.format-crumbs span:not(.format-crumb-badge) { color: var(--fg); }
+/* Depth flag (FULL = viewer, ID = identification) pinned to the right of the
+   crumb row. Reuses the .fmt-item-badge look. */
+.format-crumb-badge {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  margin-left: 0;
+}
 
 /* ---- Category chips (modal filter) ---- */
 .fmt-chips {
