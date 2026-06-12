@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 104;
+const COMMIT_COUNT = 105;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -539,7 +539,7 @@ async function setupStatsPage() {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
-  { range: '3.01 - 3.04', notes: [
+  { range: '3.01 - 3.05', notes: [
     'Export any analysis as a self-contained report, a JSON data file, or a CSV.',
     'SQLite write-ahead logs, git repository internals and Sigma Foveon RAW now open.',
     'A folder scan flags every file that will not open - unrecognised types included - and checks HEIC photos far faster.',
@@ -908,8 +908,12 @@ function boot() {
     }
 
     let kind = force ? force.kind : classifyFile(file);
+    // An extension sniffed from the file's bytes (not its name) when it has none -
+    // e.g. a git blob holding an HTML page. Threaded into extOverride below so the
+    // proprietary renderer knows the real type.
+    let sniffedExt = null;
 
-    // For files classified as 'unknown', check magic bytes for PDF / ZIP / SVG / CSV
+    // For files classified as 'unknown', check magic bytes for PDF / ZIP / SVG / HTML / CSV
     if (!force && kind === 'unknown') {
       try {
         const head = new Uint8Array(await file.slice(0, 128).arrayBuffer());
@@ -921,6 +925,11 @@ function boot() {
           const headStr = a(0, Math.min(head.length, 128));
           if (headStr.trimStart().startsWith('<svg') || (headStr.includes('<svg') && headStr.includes('xmlns'))) {
             kind = 'svg';
+          } else if (/^\s*(<!doctype html|<html[\s>])/i.test(headStr)) {
+            // Extensionless HTML (e.g. a git blob holding a web page): open it in the
+            // HTML view rather than dropping to a raw hex dump.
+            kind = 'proprietary';
+            sniffedExt = 'html';
           }
         }
         // Git objects: loose objects (zlib "<type> <size>\0…"), packfiles (PACK)
@@ -1046,7 +1055,7 @@ function boot() {
     };
     (route.nav || []).forEach(markNav);
     (route.analysed || []).forEach(markAnalysed);
-    const extOverride = force && force.ext;
+    const extOverride = (force && force.ext) || sniffedExt;
     // Photo and video metadata both come from exifr; pull it in (once) before the
     // renderer runs so the global is ready by the time photo.js/video.js read it.
     if (kind === 'photo' || kind === 'video') await ensureExifr();
