@@ -47,6 +47,7 @@
   <url><loc>https://lab.valjdakosta.com/formats/hevc</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/ico</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://lab.valjdakosta.com/formats/idx</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/iges</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/igs</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/iiq</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
@@ -87,6 +88,7 @@
   <url><loc>https://lab.valjdakosta.com/formats/opus</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/orf</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/otio</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://lab.valjdakosta.com/formats/pack</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/pdf</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/pef</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/ply</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
@@ -274,6 +276,8 @@
   <url><loc>https://lab.valjdakosta.com/formats/id/dae</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/dav</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/db</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://lab.valjdakosta.com/formats/id/db-shm</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://lab.valjdakosta.com/formats/id/db-wal</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/db3</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/dbf</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/dbx</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
@@ -816,6 +820,7 @@
   <url><loc>https://lab.valjdakosta.com/formats/id/sldasm</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/slddrw</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/sldprt</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://lab.valjdakosta.com/formats/id/sldreg</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/sln</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/smc</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/smd</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
@@ -835,6 +840,8 @@
   <url><loc>https://lab.valjdakosta.com/formats/id/spz</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/sql</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/sqlite</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://lab.valjdakosta.com/formats/id/sqlite-shm</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://lab.valjdakosta.com/formats/id/sqlite-wal</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/sqlite3</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/squashfs</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/srec</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
@@ -843,6 +850,8 @@
   <url><loc>https://lab.valjdakosta.com/formats/id/stix</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/stm</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/sub</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://lab.valjdakosta.com/formats/id/svap</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://lab.valjdakosta.com/formats/id/svpj</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/swf</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/swm</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/sxc</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>

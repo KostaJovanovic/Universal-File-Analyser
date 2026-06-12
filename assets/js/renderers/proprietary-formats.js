@@ -38,6 +38,9 @@ export const FORMATS = {
   sldprt:  { app: 'SolidWorks Part', icon: 'SW' },
   sldasm:  { app: 'SolidWorks Assembly', icon: 'SW' },
   slddrw:  { app: 'SolidWorks Drawing', icon: 'SW' },
+  sldreg:  { app: 'SolidWorks Settings', icon: 'SW', parse: 'text', chunk: 'security' },
+  svap:    { app: 'SolidWorks Visualize Appearance', icon: 'SW', zip: true },
+  svpj:    { app: 'SolidWorks Visualize Project', icon: 'SW', zip: true },
 
   // CAD - Fusion 360
   f3d:     { app: 'Autodesk Fusion 360', icon: 'F360' },
@@ -227,6 +230,14 @@ export const FORMATS = {
   sqlite3: { app: 'SQLite Database', icon: 'SQL', magic: [0x53, 0x51, 0x4C, 0x69, 0x74, 0x65] },
   db3:     { app: 'SQLite Database', icon: 'SQL' },
   db:      { app: 'Database File', icon: 'DB' },
+  'sqlite-wal':  { app: 'SQLite Write-Ahead Log', icon: 'WAL', magic: [0x37, 0x7f, 0x06] },
+  'sqlite3-wal': { app: 'SQLite Write-Ahead Log', icon: 'WAL', magic: [0x37, 0x7f, 0x06] },
+  'db-wal':      { app: 'SQLite Write-Ahead Log', icon: 'WAL', magic: [0x37, 0x7f, 0x06] },
+  'db3-wal':     { app: 'SQLite Write-Ahead Log', icon: 'WAL', magic: [0x37, 0x7f, 0x06] },
+  'sqlite-shm':  { app: 'SQLite Shared-Memory Index', icon: 'SHM' },
+  'sqlite3-shm': { app: 'SQLite Shared-Memory Index', icon: 'SHM' },
+  'db-shm':      { app: 'SQLite Shared-Memory Index', icon: 'SHM' },
+  'db3-shm':     { app: 'SQLite Shared-Memory Index', icon: 'SHM' },
   mdb:     { app: 'Microsoft Access Database', icon: 'MDB' },
   accdb:   { app: 'Microsoft Access Database', icon: 'MDB' },
 

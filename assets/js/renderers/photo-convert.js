@@ -42,6 +42,44 @@ export async function convertHeic(file) {
   return new File([out], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
 }
 
+// Sigma/Polaroid Foveon X3F preview extractor. X3F isn't TIFF (so the IFD walk
+// finds nothing) and its raw sensor block is riddled with stray FFD8/FFD9 pairs
+// that defeat the byte-scan preview - yet the container embeds a real, full-size
+// JPEG preview. We read it straight from the X3F directory instead of decoding
+// the Foveon sensor (which needs the GPL2 demosaic pack this build omits): parse
+// the SECd directory at EOF, find the image (IMA2) sections whose format is 18
+// (JPEG), and return the highest-resolution one. The preview carries EXIF too, so
+// exifr still works. Throws if the file isn't X3F or has no JPEG preview.
+export async function extractX3fPreview(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const dv = new DataView(buf.buffer);
+  const len = buf.length;
+  const tag = (o) => (o + 4 <= len ? String.fromCharCode(buf[o], buf[o + 1], buf[o + 2], buf[o + 3]) : '');
+  if (tag(0) !== 'FOVb') throw new Error('Not an X3F file');
+  if (len < 12) throw new Error('X3F too small');
+  const dirOff = dv.getUint32(len - 4, true);   // last 4 bytes point at the SECd directory
+  if (dirOff + 12 > len || tag(dirOff) !== 'SECd') throw new Error('X3F directory not found');
+  const count = dv.getUint32(dirOff + 8, true);
+  const cands = [];
+  let p = dirOff + 12;
+  for (let i = 0; i < count && p + 12 <= len; i++, p += 12) {
+    const off = dv.getUint32(p, true);
+    const elen = dv.getUint32(p + 4, true);
+    const etype = tag(p + 8);
+    if ((etype !== 'IMA2' && etype !== 'IMAG') || off + 28 > len || tag(off) !== 'SECi') continue;
+    const fmt = dv.getUint32(off + 12, true);
+    if (fmt !== 18) continue;                    // 18 = embedded JPEG (3/11 = non-JPEG, skipped)
+    const cols = dv.getUint32(off + 16, true), rows = dv.getUint32(off + 20, true);
+    const start = off + 28, end = Math.min(off + elen, len);
+    if (start >= end || buf[start] !== 0xFF || buf[start + 1] !== 0xD8) continue;   // must be a real SOI
+    cands.push({ start, end, px: cols * rows });
+  }
+  if (!cands.length) throw new Error('No embedded JPEG preview in X3F');
+  cands.sort((a, b) => b.px - a.px);             // largest resolution wins
+  const best = cands[0];
+  return new File([buf.slice(best.start, best.end)], file.name.replace(/\.[^.]+$/, '_preview.jpg'), { type: 'image/jpeg' });
+}
+
 // Pull the largest embedded JPEG preview out of a RAW file by scanning for
 // SOI/EOI (FFD8..FFD9) markers - most RAWs ship a full-size JPEG preview, so
 // this avoids a full RAW decode. Throws if none is found.
