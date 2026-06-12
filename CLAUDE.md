@@ -10,6 +10,16 @@ uploading nothing. It's vanilla HTML/CSS/ES-module JS — **no framework, no bui
 step, no `node_modules`, no tests**. Deployed as static assets to Cloudflare
 (`lab.valjdakosta.com`) and installable as an offline PWA.
 
+## Hard rule: never write patch notes, commit, or push unprompted
+
+**Never, ever** write or edit patch notes (`patch.html` entries, `PATCH_DIGEST`),
+commit, run `save.bat`, or `git push` unless the user has **explicitly asked you
+to in that message**. Do not even *propose* or *offer* to do any of these - no
+"want me to commit this?", no "should I add a patch note?", no staging it up "so
+it's ready". Make the code change the user asked for and stop. The user runs
+`save.bat` themselves; patch notes are written only on direct request. This
+overrides any default tendency to wrap up a task by committing or changelogging.
+
 ## Commands
 
 There is no build, lint, or test pipeline — editing a file *is* the dev loop.
@@ -106,8 +116,10 @@ If the format isn't photo/audio/video/csv/svg and needs its own renderer:
   at the top (version, 1-3 word Title-Case codename, date/time from
   `git log -1 --format=%ai`, then `<ul class="patch-list">` of concrete changes),
   move what is now the 4th-from-top entry into the `<details class="about-formats">`
-  "Older updates" block (exactly the latest 3 stay visible), and add a matching
-  `<=3`-sentence one-liner to `PATCH_TLDR` in `app.js` keyed by the version number.
+  "Older updates" block (exactly the latest 3 stay visible), and fold the release
+  into `PATCH_DIGEST` in `app.js` (the "tl;dr" button data) — a short note in the
+  newest group, starting a fresh group every 5 versions and keeping the `1.0`/`2.0`
+  milestones standalone.
   An in-file HTML comment at the top of that section is the authoritative style
   guide (tags, naming, tone, hyperlink rules). The newest entry's version **must**
   equal the version computed by `analyserVersion()` in `app.js` — never let them
@@ -189,6 +201,29 @@ so the pages can never drift from the overlay / about list.
    `.assetsignore` (dev-only, never served); `formats/` and `sitemap-formats.xml`
    **are** served. Don't add the per-format pages to `sw.js` `SHELL` (too many;
    they cache on visit).
+
+## Single-sourced footer
+
+The footer's **shared block** - the "Everything runs in your browser" heading plus
+the whole "Download for offline use" section and its dependency list - is identical
+on every main page, so it is single-sourced, not copy-pasted.
+
+- **Source of truth:** `tools/partials/footer-shared.html` (the block exactly as it
+  sits inside `<footer>`, 2-space indented). Edit it here, nowhere else.
+- **Generator:** `tools/stamp-footer.mjs` (run by `save.bat` on every commit, before
+  `git add`) stamps it into every page between `<!-- FOOTER:START -->` /
+  `<!-- FOOTER:END -->` markers. **Never hand-edit between those markers** - the next
+  `save.bat` overwrites it. Re-runnable and idempotent.
+- **Scope:** `index`, `about`, `patch`, `stats`, `privacy`, `formats` (the `PAGES`
+  array in the generator). The per-format `/formats/<ext>` pages are deliberately
+  excluded (they keep their own minimal footer).
+- **What stays per-page:** everything *outside* the markers - crucially each page's
+  own `<div class="footer-row footer-bottom">` (its `&larr; Main page` return button
+  and page-specific links). The generator never touches it. So the offline block is
+  universal while the bottom row is not.
+- Adding a new main page: give its `<footer>` `class="site-footer site-footer--about"`,
+  drop `<!-- FOOTER:START -->` / `<!-- FOOTER:END -->` inside it above the
+  `.footer-bottom`, add its filename to `PAGES`, and run the generator.
 
 ## Version numbering
 

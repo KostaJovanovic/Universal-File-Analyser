@@ -4,12 +4,30 @@
   // plus not_found_handling so unknown URLs fall back to the home page instead
   // of a 404 - this is a single-purpose tool, so any mistyped/old path just
   // lands on the drop page.
+  //
+  // ── SETUP (one-time, for the stats Worker in worker/index.js) ───────────────
+  // The site is otherwise a pure static-asset deploy; the Worker only powers the
+  // visitor / file-analysis counters (/api/*). Before the first deploy that
+  // includes it, run these once (then push as usual - Cloudflare builds the rest):
+  //   1. wrangler d1 create analyser-stats
+  //        → paste the printed database_id into "d1_databases[0].database_id" below.
+  //   2. wrangler d1 execute analyser-stats --remote --file=worker/schema.sql
+  //        → creates the tables.
+  //   3. wrangler secret put IP_SALT
+  //        → any long random string; salts the IP hash used for visit dedup.
+  // Local testing: `wrangler dev` (uses a local D1). `server.bat` has no Worker,
+  // so /api/* is mocked by serve.py for local page previews.
+  // ────────────────────────────────────────────────────────────────────────────
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "lab",
+  "main": "worker/index.js",
   "compatibility_date": "2026-06-03",
   "observability": { "enabled": true },
   "assets": {
     "directory": ".",
+    // Named binding so the Worker can hand non-/api requests back to the assets
+    // system (env.ASSETS.fetch), preserving clean URLs + the SPA fallback.
+    "binding": "ASSETS",
     // Default html_handling ("auto-trailing-slash"): clean URLs are canonical.
     // /about serves about.html, and /about.html 307-redirects to /about (same
     // for /patch and /index.html -> /). Every link, canonical URL, the sitemap
@@ -18,5 +36,25 @@
     // any unknown path to index.html (200) so deep links and the SPA still work.
     "not_found_handling": "single-page-application"
   },
-  "compatibility_flags": ["nodejs_compat"]
+  "compatibility_flags": ["nodejs_compat"],
+  // D1 database backing the counters. database_id is filled in during SETUP above.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "analyser-stats",
+      "database_id": "a891d19c-83cf-49cd-a251-9e457413bcc7"
+    }
+  ],
+  // Rate-limit binding: at most 15 /api/analysed writes per 60s per (hashed) IP,
+  // so a scripted loop can't inflate the file counter. period must be 10 or 60.
+  "unsafe": {
+    "bindings": [
+      {
+        "name": "ANALYSED_LIMIT",
+        "type": "ratelimit",
+        "namespace_id": "1001",
+        "simple": { "limit": 15, "period": 60 }
+      }
+    ]
+  }
 }

@@ -203,7 +203,7 @@ input:not([type="range"]):focus-visible,
    drawn as an ::after where the old border-bottom sat. */
 .section::after,
 .quickdrop::after,
-body:has(.patch-page):not(:has(.site-nav)) .site-header::after {
+body:not(:has(.site-nav)) .site-header::after {
   content: '';
   display: block;
   height: var(--rule-band-h);
@@ -212,12 +212,12 @@ body:has(.patch-page):not(:has(.site-nav)) .site-header::after {
   border-bottom: 1px solid var(--hairline);
 }
 .section::after { margin-top: var(--pad-y); }
-/* The changelog page has no navbar beneath the header, so that header divider is
-   free-floating - give it the band. Any page WITH a navbar (per-format pages,
-   the /formats hub) keeps the plain hairline (the navbar sits flush against it),
-   so key the exclusion on the navbar itself rather than a page class. */
-body:has(.patch-page):not(:has(.site-nav)) .site-header { border-bottom: none; padding-bottom: 0; }
-body:has(.patch-page):not(:has(.site-nav)) .site-header::after { margin-top: clamp(28px, 4vw, 48px); }
+/* The changelog, stats and privacy pages have no navbar beneath the header, so
+   that header divider is free-floating - give it the band. Any page WITH a navbar
+   (index, about, per-format pages, the /formats hub) keeps the plain hairline (the
+   navbar sits flush against it), so key the exclusion on the navbar itself. */
+body:not(:has(.site-nav)) .site-header { border-bottom: none; padding-bottom: 0; }
+body:not(:has(.site-nav)) .site-header::after { margin-top: clamp(28px, 4vw, 48px); }
 /* The dropzone strip carries its own horizontal padding, so pull the band back
    out to the full-bleed width the old border-bottom spanned. */
 .quickdrop::after {
@@ -285,14 +285,22 @@ body:has(.patch-page):not(:has(.site-nav)) .site-header::after { margin-top: cla
   letter-spacing: -0.045em;
   margin: 0;
 }
-/* PATCH NOTES PAGE: no left meta rail and no navbar, so the notes column is
-   centred. The title uses the normal --t-mega size, like the other pages. */
-.patch-page .section .grid { display: block; }
-.patch-page .section-content {
+/* PATCH NOTES PAGE - and the stats / privacy pages, which borrow the same shape:
+   no left meta rail, so the single content column is centred. The title uses the
+   normal --t-mega size, like the other pages. */
+.patch-page .section .grid,
+.stats-page .section .grid,
+.privacy-page .section .grid { display: block; }
+.patch-page .section-content,
+.stats-page .section-content,
+.privacy-page .section-content {
   grid-column: auto;
   max-width: 760px;
   margin: 0 auto;
 }
+/* Privacy folds three formerly-numbered sections into one box; give the stacked
+   topic headings room to breathe between them. */
+.privacy-page .section-content .section-head:not(:first-child) { margin-top: 40px; }
 
 /* Byline directly under the title. Its size is a fixed fraction of the title
    size (--t-mega), so the two scale together and the byline's right edge stays
@@ -309,6 +317,9 @@ body:has(.patch-page):not(:has(.site-nav)) .site-header::after { margin-top: cla
   text-decoration: none;
   cursor: pointer;
   position: relative;
+  /* Smooth but fast white<->red on hover (the colour itself comes from the
+     global a:hover accent rule, which has no transition of its own). */
+  transition: color var(--dur-snappy) ease;
 }
 .site-byline-link::after {
   content: '';
@@ -339,11 +350,15 @@ body:has(.patch-page):not(:has(.site-nav)) .site-header::after { margin-top: cla
    Both offsets are em of the byline - which scales with --t-mega - so the nudge and
    its clearance track the title as it grows with viewport width. */
 .site-mark--changelog .site-title { letter-spacing: -0.09em; white-space: nowrap; }
-.site-mark--changelog .site-byline-link {
+/* The same byline nudge (without the title tweaks) clears the "y" descender of
+   "Privacy", so "valjdakosta" sits indented to match the changelog header. */
+.site-mark--changelog .site-byline-link,
+.site-mark--privacy .site-byline-link {
   position: relative;
   top: 0.37em;
 }
-.site-mark--changelog .site-byline { padding-bottom: 0.37em; }
+.site-mark--changelog .site-byline,
+.site-mark--privacy .site-byline { padding-bottom: 0.37em; }
 
 .site-sub {
   font-size: clamp(15px, 1.6vw, 18px);
@@ -764,8 +779,8 @@ body.anr-has-file .nav-search { display: flex; }
    per-letter <span>s the hover effect injects (so the I-beam never shows over the
    glyphs). user-select:none also keeps a stray drag from selecting the text. The
    .is-tappable pointer rule below is more specific, so mobile tap still wins. */
-.section-num, .section-kicker, .section-head,
-.section-num span, .section-kicker span, .section-head span {
+.section-num, .section-kicker, .section-head, .stats-total-num,
+.section-num span, .section-kicker span, .section-head span, .stats-total-num span {
   cursor: default;
   -webkit-user-select: none;
   user-select: none;
@@ -2336,6 +2351,11 @@ details[open] summary::after { content: "\2212"; }
   font-size: var(--t-h2);
   font-weight: 500;
   letter-spacing: -0.01em;
+  /* Carries the per-letter hover effect (setupFooterFx), like the headings - so
+     suppress the text caret and selection on its split letters. */
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .footer-about-heading .footer-meta {
   color: rgba(255,255,255,0.5);
@@ -2489,8 +2509,11 @@ details[open] summary::after { content: "\2212"; }
   .offline-btn { padding: 10px 8px; }
   .offline-tier { font-size: var(--t-tiny); }
   .offline-desc { display: none; }
-  /* Descriptions are hidden here, so reveal the [?] that lists them instead. */
-  .offline-help { display: block; }
+  /* Descriptions are hidden here, so reveal the [?] that lists them instead.
+     display:contents (not block) so the <details> generates no box of its own -
+     a block flex item here rendered as a stray hairline above the heading; its
+     [?] summary still sits inline in the row and the toggle still works. */
+  .offline-help { display: contents; }
   .offline-size { font-size: 10px; }
   /* Match the tiers' tighter mobile gap and let labels wrap inside their cell. */
   .offline-bottom-row { gap: 6px; }
@@ -2698,28 +2721,39 @@ details[open] summary::after { content: "\2212"; }
 :root[data-theme="dark"] .footer-bottom .footer-mark { color: #e8e8e8; }
 :root[data-theme="dark"] .about-defs > div { border-top-color: #333; }
 :root[data-theme="dark"] .footer-bottom { border-top-color: #333; }
-/* On phones, stack the footer bottom row so the link + email sit under the
-   cross-page button (full-width on top). On the homepage the button is absent,
-   so the two meta lines just stack on their own. */
+/* On phones, regroup the footer bottom row: the copyright and the "Email me!"
+   contact share one line (copyright left, contact pushed right), and the link
+   list drops to its own full-width line beneath them. On subpages the
+   cross-page button sits full-width on top of all that. */
 @media (max-width: 700px) {
-  /* About/Changelog (with the full-width cross-page button) still stack. */
   .footer-bottom {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-  }
-  .footer-bottom .footer-nav-btn { align-self: stretch; text-align: center; }
-  .footer-bottom .footer-meta:has(a[href*="github"]) { text-align: right; }
-  /* Homepage bottom row (no nav button): spread the three links edge to edge
-     instead of bunching them on one side. */
-  .footer-bottom:not(:has(.footer-nav-btn)) {
-    flex-direction: row;
     flex-wrap: wrap;
     align-items: baseline;
-    justify-content: space-between;
-    gap: 10px 12px;
+    column-gap: 12px;
+    row-gap: 12px;
   }
-  .footer-bottom:not(:has(.footer-nav-btn)) .footer-meta:has(a[href*="github"]) { text-align: center; }
+  /* Cross-page button (subpages only): full-width, on top. */
+  .footer-bottom .footer-nav-btn {
+    order: 0;
+    flex-basis: 100%;
+    text-align: center;
+  }
+  /* Copyright (first <p>) stays left; contact gets pushed to the right edge of
+     the same line via auto margin. */
+  .footer-bottom .footer-meta:first-of-type { order: 1; }
+  .footer-bottom .footer-contact-line {
+    order: 2;
+    margin-left: auto;
+  }
+  /* The middle meta line (the links) wraps to its own full-width line below,
+     its links spread edge-to-edge so they fill the width. */
+  .footer-bottom .footer-meta:not(:first-of-type):not(.footer-contact-line) {
+    order: 3;
+    flex-basis: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
 }
 
 /* ---------- ABOUT PAGE ---------- */
@@ -2904,20 +2938,35 @@ details[open] summary::after { content: "\2212"; }
   border-color: var(--accent);
   color: var(--bg);
 }
-/* The condensed summary sits where the bullet list would be; shown only in tl;dr mode. */
-.patch-tldr {
-  display: none;
+/* The condensed digest replaces the full entry list in tl;dr mode: releases
+   grouped in fives (1.0 and 2.0 kept on their own), each with a few short notes. */
+.patch-digest { display: none; }
+.tldr-mode .patch-entry,
+.tldr-mode .about-formats { display: none; }
+.tldr-mode .patch-digest { display: block; }
+.patch-digest-group {
+  border-top: 1px solid var(--hairline);
+  padding: 14px 0;
+}
+.patch-digest-group:first-child { border-top: none; }
+.patch-digest-range {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg);
+  margin: 0 0 6px;
+}
+.patch-digest-group.is-milestone .patch-digest-range { color: var(--accent); }
+.patch-digest-list {
   margin: 0;
+  padding-left: 18px;
   font-size: var(--t-small);
   color: var(--muted);
   line-height: 1.6;
   max-width: 70ch;
 }
-.tldr-mode .patch-list { display: none; }
-.tldr-mode .patch-tldr { display: block; }
-/* In tl;dr mode the older entries are force-revealed, so drop the fold's chrome. */
-.tldr-mode .about-formats { border-top: none; margin-top: 0; }
-.tldr-mode .about-formats > summary { display: none; }
+.patch-digest-list li { padding: 1px 0; }
 
 /* Little category tags: New / Fix / Faster */
 .patch-tag {
@@ -4077,6 +4126,11 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
     max-width: none;
   }
   .nav-link { padding: 14px 4px; gap: 6px; min-width: 0; }
+  /* "I'm feeling lucky" is three words - in a cramped 1/3 grid cell it wraps.
+     On the formats hub, let the middle column hug the label (auto) so the cell
+     is exactly as wide as it needs to be, kept centred by the 1fr sides. */
+  body:has(.about-page) .formats-hub-nav { grid-template-columns: 1fr auto 1fr; }
+  .formats-hub-nav .nav-link-lucky { white-space: nowrap; }
   .site-about-link { min-height: 36px; display: inline-flex; align-items: center; }
   .nav-search {}
   .nav-search.is-open .nav-search-btn { display: block; }
@@ -5055,3 +5109,117 @@ li.anr-md-task input { margin-right: 0.5em; vertical-align: middle; }
 .anr-md-table th, .anr-md-table td { border: 1px solid var(--rule); padding: 6px 12px; text-align: left; }
 .anr-md-table th { background: var(--surface); font-weight: 600; }
 .anr-md-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface) 55%, transparent); }
+
+/* ---------- Visitor badge (header) + /stats page ---------- */
+
+/* Live visitor count above the header Status line. Inherits the .site-meta dl
+   grid; ships a "..." placeholder that app.js swaps for the real total. */
+.visit-link { color: inherit; text-decoration: none; font-variant-numeric: tabular-nums; }
+.visit-link:hover { color: var(--accent); }
+
+/* The header version number links to the changelog: keep the meta-value look,
+   accent on hover (matches .visit-link). */
+.version-link { color: inherit; text-decoration: none; }
+.version-link:hover { color: var(--accent); }
+
+.stats-page .section-content { max-width: 760px; }
+
+.stats-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--gap);
+  margin: 28px 0 40px;
+}
+.stats-total-card {
+  border: 1px solid var(--rule);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stats-total-num {
+  font-family: var(--font-mono);
+  font-size: clamp(34px, 6vw, 56px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.stats-total-label {
+  font-size: var(--t-small);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.stats-status {
+  font-size: var(--t-small);
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  padding: 12px 16px;
+  margin: 20px 0;
+}
+
+.stats-table-head { font-size: var(--t-h3); margin: 8px 0 6px; }
+.stats-table-note { font-size: var(--t-small); color: var(--muted); margin: 0 0 16px; }
+
+.stats-table { width: 100%; border-collapse: collapse; font-size: var(--t-body); }
+.stats-table th {
+  text-align: left;
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 0 12px 8px;
+}
+.stats-table td { padding: 9px 12px; vertical-align: middle; }
+/* Row dividers are drawn as a 1px background line on the ROW, not a border on
+   each cell. A per-cell border-bottom rounds to a device pixel independently per
+   column, so with the count column's fractional width the line stepped up ~1px
+   across the right of the table; a single row-wide background line can't split at
+   a column boundary. */
+.stats-table thead tr { background: linear-gradient(var(--hairline), var(--hairline)) no-repeat bottom / 100% 1px; }
+.stats-table tbody tr { background: linear-gradient(var(--rule), var(--rule)) no-repeat bottom / 100% 1px; }
+.stats-table .stats-rank { width: 2.5em; color: var(--muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.stats-table .stats-count { width: 7em; text-align: right; }
+.stats-table .stats-share { width: 6em; text-align: right; color: var(--muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.stats-table th.stats-count, .stats-table th.stats-share { text-align: right; }
+.stats-empty { color: var(--muted); text-align: center; padding: 24px 12px; }
+
+.stats-ext-name { font-family: var(--font-mono); font-weight: 600; }
+/* Supported extensions link to their format guide: keep the text colour at rest,
+   turn the website accent (red) on hover - no underline. */
+a.stats-ext-link { color: inherit; text-decoration: none; transition: color var(--dur-snappy) ease; }
+a.stats-ext-link:hover { color: var(--accent); text-decoration: none; }
+/* The pooled "Unsupported types" row is a category label, not an extension, so it
+   drops the monospace and sits muted. */
+.stats-ext-name--group { font-family: inherit; color: var(--muted); }
+.stats-ext-tag {
+  display: inline-block;
+  margin-left: 10px;
+  font-size: var(--t-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border: 1px solid var(--rule);
+  color: var(--muted);
+  vertical-align: middle;
+}
+/* Only unsupported types carry a tag now, and it stays grey (the muted base
+   above) instead of the old accent - a quiet wish-list marker. */
+
+/* Count and share are right-aligned numeric columns. */
+.stats-count-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.stats-toggle {
+  margin-top: 18px;
+  font: inherit;
+  font-size: var(--t-small);
+  background: none;
+  border: 1px solid var(--hairline);
+  color: inherit;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+.stats-toggle:hover { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }

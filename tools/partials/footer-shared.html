@@ -1,0 +1,67 @@
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="offline-section" id="offlineSection">
+    <div class="offline-heading-row">
+      <p class="offline-heading">Download for offline use</p>
+      <!-- Mobile-only: the per-tier feature text is hidden on small screens, so
+           this [?] drops down what each download includes. -->
+      <details class="offline-help">
+        <summary class="offline-help-btn" aria-label="What each download includes">[?]</summary>
+      </details>
+    </div>
+    <div class="offline-help-panel">
+      <div><strong>Essentials</strong> <span>48 MB</span><br>The whole app - open and inspect any file, fully offline</div>
+      <div><strong>Everything</strong> <span>72 MB</span><br>Adds reading text in images, PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos and archives</div>
+      <div><strong>Complete</strong> <span>310 MB</span><br>Adds reading text in 30+ languages, plus EPS/PostScript graphics</div>
+    </div>
+    <div class="offline-options">
+      <button type="button" class="offline-btn" data-tier="essentials">
+        <span class="offline-tier">Essentials</span>
+        <span class="offline-desc">The whole app - open and inspect any file, fully offline</span>
+        <span class="offline-size">48 MB</span>
+        <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
+      </button>
+      <button type="button" class="offline-btn" data-tier="everything">
+        <span class="offline-rec"><svg class="offline-rec-crown" viewBox="0 0 24 18" fill="currentColor" aria-hidden="true"><path d="M2 16V6l6 4 4-6 4 6 6-4v10z"/></svg><span class="offline-rec-text">recommended</span></span>
+        <span class="offline-tier">Everything</span>
+        <span class="offline-desc">Adds reading text in images, PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos and archives</span>
+        <span class="offline-size">72 MB</span>
+        <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
+      </button>
+      <button type="button" class="offline-btn" data-tier="complete">
+        <span class="offline-tier">Complete</span>
+        <span class="offline-desc">Adds reading text in 30+ languages, plus EPS/PostScript graphics</span>
+        <span class="offline-size">310 MB</span>
+        <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
+      </button>
+    </div>
+    <div class="offline-bottom-row">
+      <button type="button" class="offline-install" id="offlineInstall">Install as app</button>
+      <button type="button" class="offline-clear" id="offlineClear">Clear storage</button>
+      <details class="about-details">
+        <summary>Dependencies</summary>
+    <dl class="about-defs">
+      <div><dt>Metadata</dt><dd><a href="https://github.com/MikeKovarik/exifr" target="_blank" rel="noopener">exifr</a>. EXIF &middot; IPTC &middot; XMP &middot; ICC.</dd></div>
+      <div><dt>OCR</dt><dd><a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">tesseract.js</a>. On-device text recognition with language picker.</dd></div>
+      <div><dt>QR codes</dt><dd><a href="https://github.com/cozmo/jsQR" target="_blank" rel="noopener">jsQR</a>. Scans for QR codes in photos. Loaded only when needed.</dd></div>
+      <div><dt>Map</dt><dd><a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a> with <a href="https://www.openstreetmap.org" target="_blank" rel="noopener">OpenStreetMap</a> tiles. Loaded only if the photo has GPS.</dd></div>
+      <div><dt>HEIC</dt><dd><a href="https://github.com/alexcorvi/heic2any" target="_blank" rel="noopener">heic2any</a>. Converts HEIC/HEIF to JPEG in the browser.</dd></div>
+      <div><dt>RAW</dt><dd><a href="https://github.com/dlemstra/magick-wasm" target="_blank" rel="noopener">magick-wasm</a>. ImageMagick compiled to WASM. Converts ARW, CR2, CR3, NEF, and other RAW formats. ~15 MB, loaded only when needed.</dd></div>
+      <div><dt>Audio</dt><dd>Native Web Audio API plus a hand-written radix-2 FFT for spectrogram and analysis. BPM read from ID3/MP4 tags when available, estimated via onset detection otherwise.</dd></div>
+      <div><dt>Video</dt><dd>HTML5 video for playback. Frame rate parsed from MP4 container metadata with FFmpeg fallback. Automatic scene detection with confidence scoring. iOS visible-player fallback.</dd></div>
+      <div><dt>FFmpeg</dt><dd><a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener">ffmpeg.wasm</a>. Audio extraction and frame rate detection for formats the browser can't decode natively. The ~31 MB core is fetched from a CDN the first time it's needed (then cached for offline use).</dd></div>
+      <div><dt>PDF</dt><dd><a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a> by Mozilla. Renders PDF pages, extracts text, and supports OCR scanning of image-only pages via Tesseract. Loaded only for PDF files.</dd></div>
+      <div><dt>3D / CAD</dt><dd><a href="https://github.com/kovacsv/occt-import-js" target="_blank" rel="noopener">occt-import-js</a> (OpenCASCADE). Tessellates STEP, IGES and BREP CAD solids to meshes for the in-browser 3D viewer. ~9 MB, loaded only when needed.</dd></div>
+      <div><dt>Archives</dt><dd><a href="https://github.com/101arrowz/fflate" target="_blank" rel="noopener">fflate</a> for ZIP, <a href="https://github.com/nika-begiashvili/libarchivejs" target="_blank" rel="noopener">libarchive.js</a> for RAR / 7-Zip (CBR / CB7 comics), plus <a href="https://github.com/101arrowz/fzstd" target="_blank" rel="noopener">fzstd</a> (Zstandard) and <a href="https://github.com/httptoolkit/xzwasm" target="_blank" rel="noopener">xzwasm</a> (XZ / LZMA2) decompressors. Loaded on demand.</dd></div>
+      <div><dt>Databases</dt><dd><a href="https://github.com/sql-js/sql.js" target="_blank" rel="noopener">sql.js</a>. SQLite compiled to WASM - lists tables, schema and row counts from <code>.sqlite</code> / <code>.db</code> files.</dd></div>
+      <div><dt>JPEG 2000</dt><dd><a href="https://github.com/GoogleChromeLabs/jpeg2000" target="_blank" rel="noopener">OpenJPEG</a> compiled to WASM. Decodes JP2 / J2K images the browser can&rsquo;t. Loaded only when needed.</dd></div>
+      <div><dt>PostScript</dt><dd><a href="https://www.ghostscript.com/" target="_blank" rel="noopener">Ghostscript</a> compiled to WASM. Renders EPS / PostScript graphics. ~16 MB, in the Complete download only.</dd></div>
+      <div><dt>Animation</dt><dd><a href="https://github.com/airbnb/lottie-web" target="_blank" rel="noopener">lottie-web</a>. Plays Lottie / Bodymovin JSON animations. Loaded only when needed.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 1017+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>Install</dt><dd>Add to home screen for an offline PWA. Service worker caches the app shell. Use the buttons above to pre-cache heavy dependencies.</dd></div>
+        </dl>
+      </details>
+    </div>
+  </div>

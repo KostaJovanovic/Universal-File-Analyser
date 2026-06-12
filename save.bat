@@ -82,6 +82,14 @@ echo Stamping format count and sitemap dates...
 node --no-warnings tools/stamp-counts.mjs
 if errorlevel 1 echo WARNING: count/sitemap stamp failed - committing the existing copies.
 
+rem Stamp the shared footer block (the "Everything runs in your browser" heading +
+rem the whole Download-for-offline-use section) into every main page from
+rem tools/partials/footer-shared.html, so the footer can't drift across pages. Each
+rem page's own .footer-bottom row (return button + page links) is left alone. Non-fatal.
+echo Stamping shared footer...
+node --no-warnings tools/stamp-footer.mjs
+if errorlevel 1 echo WARNING: footer stamp failed - committing the existing copies.
+
 git add .
 git status
 

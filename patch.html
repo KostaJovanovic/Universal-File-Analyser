@@ -67,7 +67,8 @@
     </div>
     <div class="site-meta">
       <dl>
-        <dt>Version</dt><dd id="versionNum">0.00</dd>
+        <dt>Version</dt><dd><a href="/patch" id="versionNum" class="version-link" title="See the changelog">0.00</a></dd>
+        <dt class="visit-stat">Visitors</dt><dd class="visit-stat"><a href="/stats" class="visit-link" title="See full usage stats"><span id="visitCount">...</span></a></dd>
         <dt>Status</dt><dd class="net-status"><span class="dot"></span> <span class="net-label">Local-only</span></dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
         <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle">&#9728;&#65038; DAY</button></dd>
@@ -84,7 +85,7 @@
         <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <span>Changelog</span></p>
         <div class="patch-head-row">
           <h2 class="section-head">Update notes.</h2>
-          <button type="button" id="tldrToggle" class="patch-tldr-toggle" aria-pressed="false" title="Show every patch condensed to a few sentences">tl;dr</button>
+          <button type="button" id="tldrToggle" class="patch-tldr-toggle" aria-pressed="false" title="Show the whole history condensed into release groups">tl;dr</button>
         </div>
 
         <!-- =====================================================================
@@ -111,9 +112,11 @@
                2. Move what is now the 4th-from-top entry down into the
                   <details class="about-formats"> "Older updates" block, so that
                   EXACTLY the latest 3 entries stay visible above the fold.
-               3. Add a matching one-liner to PATCH_TLDR in app.js, keyed by this
-                  version number (<=3 sentences). That map drives the "tl;dr"
-                  button - an entry with no key simply shows nothing in tl;dr mode.
+               3. Fold this release into the PATCH_DIGEST in app.js (which drives
+                  the "tl;dr" button): add a short note to the newest group, or -
+                  once that group spans five versions - start a new group above it.
+                  Keep the 1.0 and 2.0 milestones on their own; no specifics unless
+                  they really matter.
 
              ENTRY STRUCTURE (keep this element order; notation only, no nested
              HTML comments here - a stray close-comment would break the page):
@@ -184,6 +187,54 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">2.39</p>
+          <p class="patch-name">Head Count</p>
+          <p class="patch-date">12 June 2026, 04:31</p>
+          <ul class="patch-list">
+            <li><strong>Two anonymous counters - how many files Analyser has analysed and how many people have visited - arrive with a new <a href="/stats">Stats</a> page and a plain-language <a href="/privacy">Privacy</a> page.</strong></li>
+            <li><span class="patch-tag">New</span><strong>A live visitor count.</strong> The header <code>Status</code> area now shows a running <strong>Visitors</strong> tally, linked through to the full stats.</li>
+            <li><span class="patch-tag">New</span><strong>A Stats page.</strong> The new <a href="/stats">Stats</a> page shows the total number of files analysed, the total visitors, and a breakdown of the most-dropped file types - each with its <strong>share</strong> of all drops - revealed ten at a time. Every supported type links straight to its format guide.</li>
+            <li><span class="patch-tag">New</span><strong>Unsupported types, pooled.</strong> File types Analyser doesn&rsquo;t yet recognise are counted together as a single <strong>Unsupported types</strong> row - an honest tally of what to add next - and their raw names are never shown.</li>
+            <li><span class="patch-tag">New</span><strong>A Privacy page.</strong> A new <a href="/privacy">Privacy</a> page sets out exactly what is and isn&rsquo;t recorded: your files never leave your device, only a file&rsquo;s extension is ever sent (never its name or contents), and visits are counted anonymously.</li>
+            <li><span class="patch-tag">New</span><strong>The version number opens the changelog.</strong> The <strong>Version</strong> in every page&rsquo;s header is now a link straight to this page.</li>
+            <li><strong>A small touch.</strong> The footer&rsquo;s &ldquo;Everything runs in your browser&rdquo; heading now answers the cursor with the same letter effect as the page headings.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">2.38</p>
+          <p class="patch-name">Big Picture</p>
+          <p class="patch-date">11 June 2026, 16:16</p>
+          <ul class="patch-list">
+            <li><strong>PowerPoint slides open full-size, and links to a format&rsquo;s guide never lead to a dead end.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Open a slide full-size.</strong> When you analyse a <a href="/about#ext-pptx">.pptx</a> presentation, the slides now tile in a grid and click to open full-size in a lightbox - with the text rendered large rather than thumbnail-sized - and analysing an image embedded in a slide still works from there.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>No more dead format links.</strong> A link to a format&rsquo;s guide page is now checked against the catalogue first, so an extension without its own page no longer leads to a missing page.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">2.29 - 2.37</p>
+          <p class="patch-name">Do a little Spring Cleanin&rsquo;</p>
+          <p class="patch-date">11 June 2026, 04:39</p>
+          <ul class="patch-list">
+            <li>I&rsquo;m always too busy dreamin&rsquo;.</li>
+            <li><strong>Maintenance</strong> - thorough internal refactoring and quality of life changes.</li>
+          </ul>
+        </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
+        <div class="patch-entry">
+          <p class="patch-version">2.28</p>
+          <p class="patch-name">Blueprint</p>
+          <p class="patch-date">11 June 2026, 03:29</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>CAD files read more reliably.</strong> Reading the header of a <a href="/about#ext-step">.step</a> CAD model now copes with comments placed between its data fields, so the originating system, author and schema are picked out correctly instead of being garbled.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">2.27</p>
           <p class="patch-name">Trivia</p>
           <p class="patch-date">11 June 2026, 01:25</p>
@@ -225,9 +276,6 @@
           </ul>
         </div>
 
-        <details class="about-formats">
-          <summary>Older updates</summary>
-
         <div class="patch-entry">
           <p class="patch-version">2.24</p>
           <p class="patch-name">Long Tail</p>
@@ -241,29 +289,11 @@
         </div>
 
         <div class="patch-entry">
-          <p class="patch-version">2.23</p>
-          <p class="patch-name">Proofread</p>
+          <p class="patch-version">2.21 - 2.23</p>
+          <p class="patch-name">Read Me</p>
           <p class="patch-date">10 June 2026, 04:22</p>
           <ul class="patch-list">
-            <li><strong>Maintenance</strong> - a small correction to the project readme on GitHub; nothing on the site itself changed.</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
-          <p class="patch-version">2.22</p>
-          <p class="patch-name">Cover Letter</p>
-          <p class="patch-date">10 June 2026, 04:20</p>
-          <ul class="patch-list">
-            <li><strong>Maintenance</strong> - the project readme on GitHub gained a title card and a fuller overview; nothing on the site itself changed.</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
-          <p class="patch-version">2.21</p>
-          <p class="patch-name">Paper Trail</p>
-          <p class="patch-date">10 June 2026, 04:07</p>
-          <ul class="patch-list">
-            <li><strong>Maintenance</strong> - the project&rsquo;s internal guide and public readme were rewritten and brought up to date; nothing on the site itself changed.</li>
+            <li><strong>Maintenance</strong> - the project&rsquo;s internal guide and the public GitHub readme were rewritten and brought up to date, including a title card and a fuller overview; nothing on the site itself changed.</li>
           </ul>
         </div>
 
@@ -1118,6 +1148,7 @@
 </main>
 
 <footer id="about" class="site-footer site-footer--about">
+  <!-- FOOTER:START - generated by tools/stamp-footer.mjs from tools/partials/footer-shared.html; do not hand-edit between the markers -->
   <div class="footer-about-heading">
     <p class="footer-mark">Everything runs in your browser.</p>
     <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
@@ -1132,28 +1163,28 @@
       </details>
     </div>
     <div class="offline-help-panel">
-      <div><strong>Essentials</strong> <span>~48 MB</span><br>The whole app - open and inspect any file, fully offline</div>
-      <div><strong>Everything</strong> <span>~72 MB</span><br>Adds reading text in images, PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos and archives</div>
-      <div><strong>Complete</strong> <span>~310 MB</span><br>Adds reading text in 30+ languages, plus EPS/PostScript graphics</div>
+      <div><strong>Essentials</strong> <span>48 MB</span><br>The whole app - open and inspect any file, fully offline</div>
+      <div><strong>Everything</strong> <span>72 MB</span><br>Adds reading text in images, PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos and archives</div>
+      <div><strong>Complete</strong> <span>310 MB</span><br>Adds reading text in 30+ languages, plus EPS/PostScript graphics</div>
     </div>
     <div class="offline-options">
       <button type="button" class="offline-btn" data-tier="essentials">
         <span class="offline-tier">Essentials</span>
         <span class="offline-desc">The whole app - open and inspect any file, fully offline</span>
-        <span class="offline-size">~48 MB</span>
+        <span class="offline-size">48 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
       <button type="button" class="offline-btn" data-tier="everything">
         <span class="offline-rec"><svg class="offline-rec-crown" viewBox="0 0 24 18" fill="currentColor" aria-hidden="true"><path d="M2 16V6l6 4 4-6 4 6 6-4v10z"/></svg><span class="offline-rec-text">recommended</span></span>
         <span class="offline-tier">Everything</span>
         <span class="offline-desc">Adds reading text in images, PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos and archives</span>
-        <span class="offline-size">~72 MB</span>
+        <span class="offline-size">72 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
       <button type="button" class="offline-btn" data-tier="complete">
         <span class="offline-tier">Complete</span>
         <span class="offline-desc">Adds reading text in 30+ languages, plus EPS/PostScript graphics</span>
-        <span class="offline-size">~310 MB</span>
+        <span class="offline-size">310 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
     </div>
@@ -1173,16 +1204,22 @@
       <div><dt>Video</dt><dd>HTML5 video for playback. Frame rate parsed from MP4 container metadata with FFmpeg fallback. Automatic scene detection with confidence scoring. iOS visible-player fallback.</dd></div>
       <div><dt>FFmpeg</dt><dd><a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener">ffmpeg.wasm</a>. Audio extraction and frame rate detection for formats the browser can't decode natively. The ~31 MB core is fetched from a CDN the first time it's needed (then cached for offline use).</dd></div>
       <div><dt>PDF</dt><dd><a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a> by Mozilla. Renders PDF pages, extracts text, and supports OCR scanning of image-only pages via Tesseract. Loaded only for PDF files.</dd></div>
-      <div><dt>Archives</dt><dd><a href="https://github.com/101arrowz/fflate" target="_blank" rel="noopener">fflate</a>. Fast ZIP decompression in the browser.</dd></div>
+      <div><dt>3D / CAD</dt><dd><a href="https://github.com/kovacsv/occt-import-js" target="_blank" rel="noopener">occt-import-js</a> (OpenCASCADE). Tessellates STEP, IGES and BREP CAD solids to meshes for the in-browser 3D viewer. ~9 MB, loaded only when needed.</dd></div>
+      <div><dt>Archives</dt><dd><a href="https://github.com/101arrowz/fflate" target="_blank" rel="noopener">fflate</a> for ZIP, <a href="https://github.com/nika-begiashvili/libarchivejs" target="_blank" rel="noopener">libarchive.js</a> for RAR / 7-Zip (CBR / CB7 comics), plus <a href="https://github.com/101arrowz/fzstd" target="_blank" rel="noopener">fzstd</a> (Zstandard) and <a href="https://github.com/httptoolkit/xzwasm" target="_blank" rel="noopener">xzwasm</a> (XZ / LZMA2) decompressors. Loaded on demand.</dd></div>
+      <div><dt>Databases</dt><dd><a href="https://github.com/sql-js/sql.js" target="_blank" rel="noopener">sql.js</a>. SQLite compiled to WASM - lists tables, schema and row counts from <code>.sqlite</code> / <code>.db</code> files.</dd></div>
+      <div><dt>JPEG 2000</dt><dd><a href="https://github.com/GoogleChromeLabs/jpeg2000" target="_blank" rel="noopener">OpenJPEG</a> compiled to WASM. Decodes JP2 / J2K images the browser can&rsquo;t. Loaded only when needed.</dd></div>
+      <div><dt>PostScript</dt><dd><a href="https://www.ghostscript.com/" target="_blank" rel="noopener">Ghostscript</a> compiled to WASM. Renders EPS / PostScript graphics. ~16 MB, in the Complete download only.</dd></div>
+      <div><dt>Animation</dt><dd><a href="https://github.com/airbnb/lottie-web" target="_blank" rel="noopener">lottie-web</a>. Plays Lottie / Bodymovin JSON animations. Loaded only when needed.</dd></div>
       <div><dt>File ID</dt><dd>Built-in identification for 1017+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Install</dt><dd>Add to home screen for an offline PWA. Service worker caches the app shell. Use the buttons above to pre-cache heavy dependencies.</dd></div>
         </dl>
       </details>
     </div>
   </div>
+  <!-- FOOTER:END -->
   <div class="footer-row footer-bottom">
     <a href="/" class="footer-nav-btn">&larr; Main page</a>
-    <p class="footer-meta">2026 &middot; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
+    <p class="footer-meta"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
     <p class="footer-meta"><a href="/formats">Supported file types</a></p>
     <!-- No address in the source: the mailto is assembled in JS only after a
          Cloudflare Turnstile challenge passes (see wireFooterContact in app.js). -->
