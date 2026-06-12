@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 100;
+const COMMIT_COUNT = 101;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 â€¦ (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -51,6 +51,7 @@ import { fileExt, el, probeReadable, cloudFileWarning, openOverlayBack } from '.
 import { walkItems, renderFolder } from '../renderers/folder.js';
 import { setupHeaderFx, setupSectionFx, setupFooterFx } from './effects.js';
 import { showSuggestPopup, hideSuggestPopup, scheduleShareNudge, hideShareNudge, wireShareButtons, wireFooterContact, updateNetStatus } from './popups.js';
+import { wireExportButton } from './export-data.js';
 import {
   PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, CSV_EXTS, SVG_EXTS,
   renderFmtOverlay, renderAboutFormats, formatCount,
@@ -536,6 +537,10 @@ async function setupStatsPage() {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
+  { range: '3.01', notes: [
+    'Export any analysis as a self-contained report, a JSON data file, or a CSV.',
+    'The Stats page is now one tap from every page.',
+  ] },
   { range: '3.0', milestone: true, notes: [
     'Third milestone: camera RAW files get a full darkroom.',
     'See every JPEG baked inside a RAW, decode the real sensor data, read the true resolution, and pull the shutter count out of Sony and Nikon files.',
@@ -748,17 +753,21 @@ function boot() {
     const grid = document.querySelector('.quickdrop');
     const btn = $('analyseNext');
     const jump = $('scrollToData');
+    const exp = $('exportData');
     if (grid) grid.hidden = true;
     if (btn) btn.hidden = false;
     if (jump) jump.hidden = false;
+    if (exp) exp.hidden = false;
   }
   function restoreQuickdrop() {
     const grid = document.querySelector('.quickdrop');
     const btn = $('analyseNext');
     const jump = $('scrollToData');
+    const exp = $('exportData');
     if (grid) grid.hidden = false;
     if (btn) btn.hidden = true;
     if (jump) jump.hidden = true;
+    if (exp) exp.hidden = true;
     document.body.classList.remove('anr-has-file');   // un-invert the nav back to normal
   }
 
@@ -1117,6 +1126,7 @@ function boot() {
     scrollToDataBtn._wired = true;
     scrollToDataBtn.addEventListener('click', scrollToFirstData);
   }
+  wireExportButton();
 
   if ($('photoDrop')) initPhoto({
     dropEl:    $('photoDrop'),

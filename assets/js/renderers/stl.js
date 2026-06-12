@@ -137,7 +137,11 @@ function buildViewer(geo) {
   const wrap = el('div', { class: 'anr-stl-viewport' });
   const canvas = el('canvas', { class: 'anr-stl-canvas' });
   wrap.appendChild(canvas);
-  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  // preserveDrawingBuffer keeps the last rendered frame readable after compositing,
+  // so the export (toDataURL) can snapshot the live preview - without it a WebGL
+  // canvas reads back blank once the frame has been presented.
+  const glOpts = { preserveDrawingBuffer: true };
+  const gl = canvas.getContext('webgl', glOpts) || canvas.getContext('experimental-webgl', glOpts);
   if (!gl) {
     wrap.appendChild(el('p', { class: 'anr-error' }, 'WebGL is not available in this browser.'));
     return { wrap, ok: false };
@@ -148,11 +152,17 @@ function buildViewer(geo) {
   const cx = (min[0] + max[0]) / 2, cy = (min[1] + max[1]) / 2, cz = (min[2] + max[2]) / 2;
   const span = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) || 1;
   const np = new Float32Array(geo.positions.length);
+  let boundR2 = 0;
   for (let i = 0; i < geo.positions.length; i += 3) {
     np[i] = (geo.positions[i] - cx) / span;
     np[i + 1] = (geo.positions[i + 1] - cy) / span;
     np[i + 2] = (geo.positions[i + 2] - cz) / span;
+    const r2 = np[i] * np[i] + np[i + 1] * np[i + 1] + np[i + 2] * np[i + 2];
+    if (r2 > boundR2) boundR2 = r2;
   }
+  // Radius of the bounding sphere (centred on the origin) - used to frame the
+  // isometric export snapshot so the model fills the preview with even margins.
+  const boundR = Math.sqrt(boundR2) || 0.5;
 
   const vsrc = `attribute vec3 aPos; attribute vec3 aNormal;
     uniform mat4 uProj, uView, uModel;
@@ -254,8 +264,34 @@ function buildViewer(geo) {
     dirty = true;
   }, { passive: false });
 
+  // Render one off-axis isometric frame, framed so the model's bounding sphere
+  // fills ~80% of the canvas (10% margins all round), and read it back as a PNG
+  // data URL. Used by the data export (the canvas exposes it as _anrSnapshot).
+  // Saves and restores the live view state, so the interactive preview is
+  // unaffected beyond a single redraw.
+  function snapshot() {
+    const saved = { yaw: state.yaw, pitch: state.pitch, dist: state.dist, spin: state.spin };
+    state.spin = false;
+    state.yaw = Math.PI / 4;                    // 45° azimuth
+    state.pitch = -Math.atan(1 / Math.SQRT2);   // ~-35.26° - the classic isometric tilt
+    // Fit the bounding sphere to 96% of the narrower field of view (so both the
+    // width and height keep a 2% margin), then back the camera off to suit.
+    const aspect = (canvas.width / canvas.height) || 1;
+    const halfFovV = (45 * Math.PI / 180) / 2;
+    const halfFov = Math.min(halfFovV, Math.atan(Math.tan(halfFovV) * aspect));
+    const theta = Math.atan(0.96 * Math.tan(halfFov));
+    state.dist = boundR / Math.sin(theta);
+    draw();
+    let url = null;
+    try { url = canvas.toDataURL('image/png'); } catch (_) { url = null; }
+    Object.assign(state, saved);
+    dirty = true;
+    return url;
+  }
+  canvas._anrSnapshot = snapshot;
+
   return {
-    wrap, ok: true, state, resize, setSpin,
+    wrap, ok: true, state, resize, setSpin, snapshot,
     onSpinChange: (cb) => spinListeners.push(cb),
     start: () => { resize(); requestAnimationFrame(loop); },
     markDirty: () => { dirty = true; },

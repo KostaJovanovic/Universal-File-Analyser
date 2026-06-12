@@ -792,6 +792,14 @@ body.anr-has-file .nav-search { display: flex; }
   margin: 0 0 32px;
 }
 
+/* Small grey footnote under the stats lede - when file counting began. Pulled up
+   tight beneath the lede (which carries a 32px bottom margin of its own). */
+.stats-since {
+  font-size: var(--t-small);
+  color: var(--muted);
+  margin: -24px 0 32px;
+}
+
 /* Heading mirrored into the numbered meta card (clone created in app.js). Hidden
    by default; on mobile, once the section has analysed a file (.is-analysed), it
    replaces the original head + lede so the results lead. Desktop keeps the full
@@ -3089,7 +3097,8 @@ details[open] summary::after { content: "\2212"; }
 /* Replaces the three dropzones once a file is loaded; reloads to a clean page.
    Swiss treatment: a mono, tracked, uppercase label in a sharp-cornered box that
    inverts on hover, with an arrow that nudges forward. */
-.analyse-next {
+.analyse-next,
+.export-data {
   display: flex;
   align-items: center;
   gap: 14px;
@@ -3109,16 +3118,28 @@ details[open] summary::after { content: "\2212"; }
   cursor: pointer;
   transition: background 0.18s ease, color 0.18s ease;
 }
-.analyse-next::after {
-  content: '→';
-  font-size: 1.1em;
-  letter-spacing: 0;
-  transition: transform 0.18s ease;
-}
 .analyse-next:hover { background: var(--fg); color: var(--bg); }
-.analyse-next:hover::after { transform: translateX(5px); }
 .analyse-next:active { transform: translateY(1px); }
 .analyse-next[hidden] { display: none; }
+
+/* "Export data" chip - same Swiss treatment as .analyse-next. Sits left of
+   "Analyse next file?". */
+.export-data:hover { background: var(--fg); color: var(--bg); }
+.export-data:active { transform: translateY(1px); }
+.export-data[hidden] { display: none; }
+
+/* The two action chips share one centred row; their own auto side-margins are
+   neutralised here so the gap (not the page) sets the spacing. When both are
+   hidden the row collapses to nothing. */
+.analyse-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+.analyse-actions .analyse-next,
+.analyse-actions .export-data { margin: 22px 0; }
 /* Post-analysis "About .EXT files" link, sitting alone above the footer. Same
    Swiss chip as .analyse-next; it's an <a>, so strip the underline. It carries
    its own top padding so it never sits flush against the line above it - the
@@ -4242,6 +4263,55 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-modal-cancel:hover { background: var(--surface); }
 .anr-modal-ok { background: var(--fg); color: var(--bg); }
 .anr-modal-ok:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
+/* Export chooser (see export-data.js showChooser): two stacked, left-aligned
+   options - a strong title over a small grey description - above the Cancel
+   action. Same hairline-box-inverts-on-hover idiom as the rest of the modal. */
+.anr-export-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+.anr-export-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 14px 16px;
+  text-align: left;
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+.anr-export-opt strong {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.anr-export-opt span {
+  font-size: var(--t-small);
+  line-height: 1.45;
+  color: var(--muted);
+}
+.anr-export-opt:hover { border-color: var(--accent); }
+.anr-export-opt:hover span { color: inherit; }
+
+/* Featured option (the "Complete report"): styled like a major-version entry in
+   the changelog (.patch-milestone) - a solid accent border over a faint accent
+   wash, with the title in the accent colour - marking it as the richest export. */
+.anr-export-opt--featured {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.06);
+}
+.anr-export-opt--featured strong { color: var(--accent); }
+.anr-export-opt--featured:hover {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
+}
 /* Spectrogram "Save PNG" size prompt: two labelled selects above the actions. */
 .anr-spec-save-fields { display: flex; gap: 12px; margin: 0 0 22px; }
 .anr-spec-save-field {

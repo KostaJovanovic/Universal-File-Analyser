@@ -57,11 +57,12 @@
       <span class="site-kicker">Z 21 - 47</span>
       <h1 class="site-title">Changelog</h1>
       <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
-      <p class="site-sub">Photos, sound, video - and almost any other file. Fully local; nothing you drop ever leaves your browser.</p>
+      <p class="site-sub">Photos, sound, video, PDFs, documents, archives - and almost any other file. Fully local; nothing you drop ever leaves your browser.</p>
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
         <a href="/about" class="header-btn">About</a>
         <a href="/formats" class="header-btn">Formats</a>
+        <a href="/stats" class="header-btn">Stats</a>
         <button type="button" class="header-btn header-btn-share"><svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>Share</button>
       </nav>
     </div>
@@ -186,6 +187,19 @@
                - let the newest version here disagree with app.js.
              ===================================================================== -->
 
+        <div class="patch-entry">
+          <p class="patch-version">3.01</p>
+          <p class="patch-name">Hard Copy</p>
+          <p class="patch-date">12 June 2026, 05:43</p>
+          <ul class="patch-list">
+            <li><strong>Take your analysis with you - export any result as a self-contained report, a data file, or a plain spreadsheet - and the <a href="/stats">Stats</a> page is now one tap from every page.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Export the analysis.</strong> Once a file is open, an <strong>Export data</strong> button sits beside <strong>Analyse next file</strong>. It offers three formats: a <strong>Complete report</strong> - a single web page you can open anywhere, with every reading laid out and the pictures (spectrograms, histograms, previews) baked in - a <strong>machine-readable</strong> JSON file for scripts and tooling, and a <strong>plain text</strong> CSV for spreadsheets. Everything is built on your device; nothing is uploaded.</li>
+            <li><span class="patch-tag">New</span><strong>3D models export as a clean isometric still.</strong> When you export a report for a 3D model - an <a href="/about#ext-stl">.stl</a>, <a href="/about#ext-step">.step</a> or the like - Analyser captures it from a tidy isometric angle, framed to nearly fill the picture.</li>
+            <li><span class="patch-tag">New</span><strong>Stats from anywhere.</strong> Every page&rsquo;s header now carries a <a href="/stats">Stats</a> button, and the Stats page notes the date the counting began.</li>
+            <li><strong>A small touch.</strong> The line under the title now calls out PDFs, documents and archives alongside photos, sound and video - a truer picture of what you can drop.</li>
+          </ul>
+        </div>
+
         <div class="patch-entry patch-milestone">
           <p class="patch-version" data-badge="Complete, for real this time.">3.0</p>
           <p class="patch-name">Raw Power</p>
@@ -215,6 +229,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">2.38</p>
           <p class="patch-name">Big Picture</p>
@@ -225,9 +242,6 @@
             <li><span class="patch-tag is-fix">Fix</span><strong>No more dead format links.</strong> A link to a format&rsquo;s guide page is now checked against the catalogue first, so an extension without its own page no longer leads to a missing page.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">2.29 - 2.37</p>
