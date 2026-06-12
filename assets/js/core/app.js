@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 99;
+const COMMIT_COUNT = 100;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 â€¦ (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -12,7 +12,7 @@ const COMMIT_COUNT = 99;
 // 30 â†’ "1.01"), commit 60 reads "2.0" (and 61 â†’ "2.01"). To crown a future 3.0,
 // append its commit number here (keep the list sorted ascending, and mirror the
 // RELEASES constant in save.bat).
-const RELEASE_COMMITS = [29, 60];
+const RELEASE_COMMITS = [29, 60, 100];
 
 function analyserVersion(n, releases) {
   let major = 0, base = 0;
@@ -536,6 +536,10 @@ async function setupStatsPage() {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
+  { range: '3.0', milestone: true, notes: [
+    'Third milestone: camera RAW files get a full darkroom.',
+    'See every JPEG baked inside a RAW, decode the real sensor data, read the true resolution, and pull the shutter count out of Sony and Nikon files.',
+  ] },
   { range: '2.35 - 2.39', notes: [
     'Anonymous visitor and file-analysis counters, with new Stats and Privacy pages.',
     'PowerPoint slides now open full-size in a lightbox.',
@@ -1330,14 +1334,22 @@ function boot() {
   if (effective) document.documentElement.setAttribute('data-theme', effective);
   const darkBtn = $('darkToggle');
   if (darkBtn) {
-    // Label shows the CURRENT mode: NIGHT while dark, DAY while light.
-    darkBtn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? 'â˜¾ï¸Ž NIGHT' : 'â˜€ï¸Ž DAY';
+    // Label shows the CURRENT mode: NIGHT while dark, DAY while light. The sun/moon
+    // glyphs are built from code points (sun U+2600, moon U+263E, each + the U+FE0E
+    // text-presentation variation selector) so the source stays pure ASCII - a raw
+    // glyph here was previously mojibaked by an encoding round-trip and rendered as
+    // garbage.
+    const SUN = String.fromCodePoint(0x2600, 0xFE0E);
+    const MOON = String.fromCodePoint(0x263E, 0xFE0E);
+    const themeLabel = () => document.documentElement.getAttribute('data-theme') === 'dark'
+      ? MOON + ' NIGHT' : SUN + ' DAY';
+    darkBtn.textContent = themeLabel();
     darkBtn.addEventListener('click', () => {
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
       const next = isDark ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
       anrSet('anr-theme', next);
-      darkBtn.textContent = next === 'dark' ? 'â˜¾ï¸Ž NIGHT' : 'â˜€ï¸Ž DAY';
+      darkBtn.textContent = themeLabel();
     });
   }
 
@@ -1564,7 +1576,7 @@ function boot() {
   // and used by the post-clear reset) derive from it, and the "+N MB more" upgrade
   // deltas in refreshTierButtons() use the numbers directly. One place to edit.
   const TIER_ORDER = ['essentials', 'everything', 'complete'];
-  const TIER_MB = { essentials: 48, everything: 72, complete: 310 };
+  const TIER_MB = { essentials: 50, everything: 74, complete: 312 };
   const TIER_SIZES = {};
   TIER_ORDER.forEach((t) => { TIER_SIZES[t] = '~' + TIER_MB[t] + ' MB'; });
 
@@ -1600,6 +1612,10 @@ function boot() {
       './assets/fonts/geist-mono-symbols.woff2', './assets/fonts/geist-mono-vietnamese.woff2',
       './assets/vendor/imagemagick/index.mjs',
       './assets/vendor/imagemagick/magick.wasm',
+      './assets/vendor/libraw/index.js',
+      './assets/vendor/libraw/worker.js',
+      './assets/vendor/libraw/libraw.js',
+      './assets/vendor/libraw/libraw.wasm',
       './assets/vendor/ffmpeg/ffmpeg.js',
       './assets/vendor/ffmpeg/index.js',
       './assets/vendor/ffmpeg/classes.js',
