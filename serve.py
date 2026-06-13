@@ -40,6 +40,20 @@ MOCK_STATS = {
         {'ext': 'xyz', 'supported': False, 'count': 130},
         {'ext': 'qwerty', 'supported': False, 'count': 70},
     ],
+    'scores': [
+        {'name': 'ACEXX', 'score': 13370},
+        {'name': 'NOVA9', 'score': 9800},
+        {'name': 'ZAPPY', 'score': 7220},
+        {'name': 'KOSTA', 'score': 5040},
+        {'name': 'PILOT', 'score': 3110},
+        {'name': 'COMET', 'score': 2890},
+        {'name': 'ORBIT', 'score': 2450},
+        {'name': 'LASER', 'score': 1980},
+        {'name': 'DRIFT', 'score': 1540},
+        {'name': 'ROCKS', 'score': 1200},
+        {'name': 'BLAST', 'score': 940},
+        {'name': 'WARP7', 'score': 610},
+    ],
 }
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
@@ -82,6 +96,10 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
             payload = MOCK_STATS
         elif path == '/api/visit':
             payload = {'files': MOCK_STATS['files'], 'visitors': MOCK_STATS['visitors'], 'counted': False}
+        elif path == '/api/leaderboard':
+            payload = {'top': MOCK_STATS['scores'][:5]}
+        elif path == '/api/score':
+            payload = {'ok': True, 'top': MOCK_STATS['scores'][:5]}
         else:
             payload = {'ok': True}
         body = json.dumps(payload).encode('utf-8')

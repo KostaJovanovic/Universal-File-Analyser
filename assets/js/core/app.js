@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 107;
+const COMMIT_COUNT = 108;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -461,6 +461,47 @@ async function setupStatsPage() {
   // The totals are now real numbers (not the "-" placeholder), so let them join
   // the section's per-letter hover effect, like the header.
   setupSectionFx();
+
+  // Asteroids easter-egg leaderboard card (top 5). Shown only when there are
+  // scores; rendered before the ext early-returns so it appears even with no exts.
+  const scoreCard = $('statsScores');
+  const scoreList = $('statsScoresList');
+  const scoreToggle = $('statsScoresToggle');
+  if (scoreCard && scoreList) {
+    const scores = Array.isArray(data.scores) ? data.scores : [];
+    // The card stays hidden entirely until at least one score exists.
+    if (!scores.length) {
+      scoreCard.hidden = true;
+    } else {
+      scoreCard.hidden = false;
+      // Same toggle behaviour as the extensions table: open at the top 5, reveal
+      // ten more per click, "Show last N" at the tail, then the button hides.
+      const SCORES_TOP = 5;
+      const SCORES_STEP = 10;
+      const scoreRow = (s) => el('li', { class: 'stats-score-row' }, [
+        el('span', { class: 'stats-score-name' }, String(s.name)),
+        el('span', { class: 'stats-score-num' }, Number(s.score).toLocaleString()),
+      ]);
+      let scoresShown = SCORES_TOP;
+      const renderScores = () => {
+        scoreList.innerHTML = '';
+        scores.slice(0, scoresShown).forEach((s) => scoreList.appendChild(scoreRow(s)));
+        if (!scoreToggle) return;
+        const remaining = scores.length - scoresShown;
+        if (remaining <= 0) { scoreToggle.hidden = true; return; }
+        scoreToggle.hidden = false;
+        scoreToggle.textContent = remaining >= SCORES_STEP ? 'Show next ten' : ('Show last ' + remaining);
+      };
+      renderScores();
+      if (scoreToggle && !scoreToggle._wired) {
+        scoreToggle._wired = true;
+        scoreToggle.addEventListener('click', () => {
+          scoresShown = Math.min(scoresShown + SCORES_STEP, scores.length);
+          renderScores();
+        });
+      }
+    }
+  }
 
   const rawExts = Array.isArray(data.extensions) ? data.extensions : [];
   if (!body) return;
@@ -1542,6 +1583,25 @@ function boot() {
   wireFooterContact();
   // Nav "Share" button (header is swapped on every navigation).
   wireShareButtons();
+  // Mobile access to the Asteroids easter egg: the Konami code needs a keyboard, so
+  // on touch you reach the game by quickly tapping the header description 5 times.
+  // Bound to whichever .site-sub is on the current page (the header is swapped on
+  // navigation), guarded so it only binds once per element.
+  (function wireTapEgg() {
+    const sub = document.querySelector('.site-sub');
+    if (!sub || sub.dataset.eggBound) return;
+    sub.dataset.eggBound = '1';
+    let taps = 0, tapTimer = 0;
+    sub.addEventListener('click', () => {
+      taps++;
+      clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => { taps = 0; }, 600);
+      if (taps >= 5) {
+        taps = 0;
+        import('../games/asteroids.js').then((m) => m.launchAsteroids()).catch(() => {});
+      }
+    });
+  })();
   // Header "Status" line reflects live connectivity (header is swapped too).
   updateNetStatus();
 
