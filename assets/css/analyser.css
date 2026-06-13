@@ -5425,3 +5425,45 @@ a.stats-ext-link:hover { color: var(--accent); text-decoration: none; }
   cursor: pointer;
 }
 .stats-toggle:hover { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
+/* Asteroids easter-egg leaderboard card under the stats body. */
+.stats-scores-card {
+  margin-top: 36px;
+  border: 1px solid var(--rule);
+  padding: 22px 24px;
+}
+.stats-scores-head { font-size: var(--t-h3); margin: 0 0 14px; }
+.stats-scores-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: anr-rank;
+}
+.stats-score-row {
+  counter-increment: anr-rank;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.stats-score-row:last-child { border-bottom: 0; }
+.stats-score-name {
+  font-family: var(--font-mono);
+  letter-spacing: 0.22em;
+  font-size: var(--t-body);
+}
+.stats-score-name::before {
+  content: counter(anr-rank) ".";
+  color: var(--muted);
+  letter-spacing: 0;
+  margin-right: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.stats-score-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  font-weight: 600;
+}

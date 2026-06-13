@@ -24,3 +24,14 @@ CREATE TABLE IF NOT EXISTS visitor_seen (
   ip_hash TEXT PRIMARY KEY,
   last    INTEGER NOT NULL
 );
+
+-- Asteroids easter-egg leaderboard: one row per submitted run. `name` is 5 chars
+-- of [A-Z0-9], validated + profanity-checked server-side before insert. The /stats
+-- page and the game's end screen show the top 5 by score.
+CREATE TABLE IF NOT EXISTS scores (
+  id    INTEGER PRIMARY KEY AUTOINCREMENT,
+  name  TEXT NOT NULL,
+  score INTEGER NOT NULL,
+  ts    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scores_score ON scores(score DESC);

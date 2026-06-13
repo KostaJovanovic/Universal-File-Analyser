@@ -54,6 +54,43 @@ function cleanExt(raw) {
   return e.length <= 16 ? e : '(other)';
 }
 
+// --- Asteroids leaderboard ---
+const SCORE_MAX = 100000000;   // sanity cap so a tampered client can't post nonsense
+
+// Leet-fold digits/symbols to letters so "5h1t" still reads as "shit" for the
+// profanity check. Names are A-Z0-9 only, so this just maps the digit lookalikes.
+const LEET = { 0: 'o', 1: 'i', 3: 'e', 4: 'a', 5: 's', 7: 't', 8: 'b' };
+// Clearly offensive terms / slurs. Kept to ones unlikely to be a substring of an
+// innocent 5-letter name (so "ass"/"hell"/"damn" are deliberately NOT here).
+const BLOCKLIST = [
+  'fuck', 'shit', 'cunt', 'cock', 'dick', 'pussy', 'slut', 'whore', 'bitch',
+  'nigg', 'niga', 'nigr', 'fagg', 'spic', 'kike', 'gook', 'chink', 'coon',
+  'dyke', 'twat', 'wank', 'rape', 'retar',
+];
+
+// Normalise to exactly five [A-Z0-9] (uppercased), or null if it can't be. Only
+// English Latin letters and digits survive; anything else is stripped, then the
+// result must be exactly 5 characters.
+function cleanName(raw) {
+  const up = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return up.length === 5 ? up : null;
+}
+function isProfane(name) {
+  const norm = name.toLowerCase().replace(/[0-9]/g, (c) => LEET[c] || c);
+  return BLOCKLIST.some((w) => norm.includes(w));
+}
+
+async function topScores(env, limit = 5) {
+  try {
+    const rows = await env.DB.prepare(
+      'SELECT name, score FROM scores ORDER BY score DESC, ts ASC LIMIT ?',
+    ).bind(limit).all();
+    return (rows.results || []).map((r) => ({ name: r.name, score: r.score }));
+  } catch (_) {
+    return [];   // table may not exist yet (pre-migration) - don't break /api/stats
+  }
+}
+
 async function readTotals(env) {
   const rows = await env.DB.prepare('SELECT key, val FROM totals').all();
   const out = { files: 0, visitors: 0 };
@@ -152,7 +189,36 @@ async function handleStats(env) {
   const unsupported = (un && un.total) || 0;
   if (unsupported > 0) extensions.push({ ext: '(unsupported)', supported: false, count: unsupported });
   extensions.sort((a, b) => (b.count - a.count) || (a.ext < b.ext ? -1 : 1));
-  return json({ ...(await readTotals(env)), extensions });
+  return json({ ...(await readTotals(env)), extensions, scores: await topScores(env, 100) });
+}
+
+// POST /api/score {name, score} - submit one Asteroids run to the leaderboard.
+// Validates the name (5x [A-Z0-9], not profane) and the score (positive, capped),
+// inserts it, and returns the new top 5. Rate-limited like /api/analysed so a
+// script can't flood the board.
+async function handleScore(request, env) {
+  if (env.ANALYSED_LIMIT) {
+    const ipHash = await clientIpHash(request, env);
+    const { success } = await env.ANALYSED_LIMIT.limit({ key: ipHash });
+    if (!success) return json({ ok: false, error: 'Too many submissions, try again shortly.' }, 429);
+  }
+  let body = {};
+  try { body = await request.json(); } catch (_) {}
+  const name = cleanName(body.name);
+  const score = Math.floor(Number(body.score));
+  if (!name) return json({ ok: false, error: 'Name must be 5 letters or numbers.' }, 400);
+  if (isProfane(name)) return json({ ok: false, error: 'Please choose a different name.' }, 400);
+  if (!Number.isFinite(score) || score <= 0 || score > SCORE_MAX) {
+    return json({ ok: false, error: 'Invalid score.' }, 400);
+  }
+  await env.DB.prepare('INSERT INTO scores (name, score, ts) VALUES (?, ?, ?)')
+    .bind(name, score, Math.floor(Date.now() / 1000)).run();
+  return json({ ok: true, top: await topScores(env) });
+}
+
+// GET /api/leaderboard - the current top 5 Asteroids scores.
+async function handleLeaderboard(env) {
+  return json({ top: await topScores(env) });
 }
 
 export default {
@@ -169,6 +235,8 @@ export default {
       if (path === '/api/visit' && request.method === 'POST') return await handleVisit(request, env);
       if (path === '/api/analysed' && request.method === 'POST') return await handleAnalysed(request, env);
       if (path === '/api/stats' && request.method === 'GET') return await handleStats(env);
+      if (path === '/api/score' && request.method === 'POST') return await handleScore(request, env);
+      if (path === '/api/leaderboard' && request.method === 'GET') return await handleLeaderboard(env);
     } catch (_) {
       // Never leak internals; the client treats any non-OK as "stats unavailable".
       return json({ error: 'stats unavailable' }, 500);

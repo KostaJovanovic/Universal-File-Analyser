@@ -73,7 +73,29 @@ export function launchAsteroids() {
     ';color:' + ON_DARK + ';border:1px solid ' + BORDER + ';border-radius:0;cursor:pointer;' +
     'transition:background .12s ease,color .12s ease,border-color .12s ease;}' +
     '.anr-game-btn:hover{background:' + ON_DARK + ';color:' + MEDIA_BG + ';}' +
-    '.anr-game-btn:active{background:' + ACCENT + ';color:' + ACCENT_FG + ';border-color:' + ACCENT + ';}';
+    '.anr-game-btn:active{background:' + ACCENT + ';color:' + ACCENT_FG + ';border-color:' + ACCENT + ';}' +
+    // End-of-game leaderboard panel: name entry, then the top 5 + play again.
+    '.anr-score-panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;' +
+    'display:flex;flex-direction:column;align-items:center;gap:9px;width:min(320px,86vw);' +
+    'padding:20px 22px;background:' + MEDIA_BG + ';border:1px solid ' + BORDER + ';' +
+    'font-family:' + MONO + ';color:' + ON_DARK + ';text-align:center;}' +
+    '.anr-score-title{font-size:13px;letter-spacing:.18em;color:' + MUTED + ';}' +
+    '.anr-score-go{font-size:24px;color:' + ACCENT + ';letter-spacing:.04em;}' +
+    '.anr-score-sub{font-size:13px;color:' + ON_DARK + ';}' +
+    '.anr-score-msg{font-size:12px;color:' + MUTED + ';min-height:14px;}' +
+    '.anr-score-msg.err{color:' + ACCENT + ';}' +
+    '.anr-score-input{font-family:' + MONO + ';font-size:24px;letter-spacing:.45em;text-align:center;' +
+    'text-transform:uppercase;width:170px;padding:9px 4px 9px 16px;background:' + SURFACE + ';color:' + ON_DARK +
+    ';border:1px solid ' + BORDER + ';border-radius:0;outline:none;caret-color:' + ACCENT + ';}' +
+    '.anr-score-input:focus{border-color:' + ON_DARK + ';}' +
+    '.anr-score-row{display:flex;gap:8px;}' +
+    '.anr-score-list{list-style:none;margin:2px 0 4px;padding:0;width:100%;font-size:13px;}' +
+    '.anr-score-list li{display:flex;align-items:center;padding:4px 2px;border-bottom:1px solid ' + BORDER + ';}' +
+    '.anr-score-list li:last-child{border-bottom:0;}' +
+    '.anr-score-list li .r{color:' + MUTED + ';width:1.6em;text-align:right;}' +
+    '.anr-score-list li .n{flex:1;text-align:left;padding-left:12px;letter-spacing:.18em;}' +
+    '.anr-score-list li .s{color:' + ACCENT + ';font-weight:600;}' +
+    '.anr-score-list li.me .n{color:' + ACCENT + ';}';
   overlay.appendChild(style);
 
   const canvas = document.createElement('canvas');
@@ -92,14 +114,22 @@ export function launchAsteroids() {
   document.body.appendChild(overlay);
 
   const ctx = canvas.getContext('2d');
-  let W = 0, H = 0, cx = 0, cy = 0, R = 0, dpr = 1, stars = [];
+  let W = 0, H = 0, cx = 0, cy = 0, R = 0, dpr = 1, stars = [], S = 1;
+  let mobileControls = [];   // joystick / arrows / fire - hidden on the game-over screen
 
   function layout() {
     dpr = Math.min(2, window.devicePixelRatio || 1);
     W = window.innerWidth; H = window.innerHeight;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-    cx = W / 2; cy = H / 2;
-    R = Math.max(150, Math.min(W, H) * 0.42);
+    const coarse = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+    // On mobile the scope nearly fills the width and sits higher up (leaving the
+    // lower third for the controls); on desktop it's centred.
+    cx = W / 2; cy = coarse ? H * 0.40 : H / 2;
+    R = Math.max(120, Math.min(W, H) * (coarse ? 0.47 : 0.42));
+    // Element scale: shrink the contents (ships, asteroids, speeds...) in step with
+    // the scope so they stay proportional - smaller on a smaller scope, capped at 1
+    // so desktop is unchanged.
+    S = Math.min(1, R / 330);
     // Starfield in normalised disc coords, so it survives a resize.
     if (!stars.length) {
       for (let i = 0; i < 70; i++) {
@@ -116,12 +146,12 @@ export function launchAsteroids() {
   const MAX_LIVES = 3;
   const MAX_BULLETS = 20;
   const POWERUP_LIFE = 14;    // seconds a dropped power-up lingers before expiring
-  const WAVE_POWERUPS = 2;    // power-ups scattered in at the start of each wave
+  const MAX_POWERUPS = 3;     // never spawn a new power-up while this many are on screen
   const LIGHTNING_HALF = 17.5 * Math.PI / 180;   // half of the 35° auto-aim cone
-  const LIGHTNING_RANGE = 0.7 * 540 * 0.9;       // 70% of a normal bullet's reach
+  const LIGHTNING_RANGE = 0.7 * 540 * 0.9 * S;   // 70% of a normal bullet's reach
   const SHIELD_DUR = 7;       // health pickup at full HP grants a 7s shield instead
-  const LASER_WIDTH = 34;     // full beam width; the hitbox is drawn to match it
-  const ULTRASOUND_RADIUS = 0.25 * 540 * 0.9;   // a quarter of a normal bullet's reach
+  const LASER_WIDTH = 34 * S; // full beam width; the hitbox is drawn to match it
+  const ULTRASOUND_RADIUS = 0.25 * 540 * 0.9 * S;   // a quarter of a normal bullet's reach
   const ULTRASOUND_TICK = 0.7;                  // AoE damage cadence
   const RIPPLE_DUR = 1.4;                        // seconds a ripple takes to reach the rim
   // Nuclear bomb cinematic phases: instant full-white, hold, fade, then a beat of
@@ -176,6 +206,17 @@ export function launchAsteroids() {
   const ship = { x: cx, y: cy, vx: 0, vy: 0, angle: -Math.PI / 2, invuln: 0, dead: false };
   let fireCd = 0, deathTimer = 0, clock = 0;
   const input = { left: false, right: false, thrust: false, fire: false };
+  // Mobile analogue joystick: while active, the ship's heading is taken straight
+  // from the stick angle (it points where you point), and pushing past a small
+  // deadzone thrusts. Desktop keeps the arrow-key rotate/thrust.
+  const joy = { active: false, angle: 0, mag: 0 };
+
+  // End-of-game leaderboard panel: scoreDone once this run was submitted or skipped,
+  // endPanel is the DOM node (name entry -> top 5), nameEntry true while the name
+  // input owns the keyboard (so the game's global keys don't steal the typing).
+  let scoreDone = false, endPanel = null, nameEntry = false;
+  // Top 5 from the server, drawn in the left margin (and refreshed after a submit).
+  let leaderboard = [];
 
   // Background flyers: decorative squadrons of player-shaped ships that drift
   // across the scope in a straight line, behind everything else. Pure eye-candy -
@@ -193,12 +234,12 @@ export function launchAsteroids() {
   };
 
   function makeAsteroid(x, y, size, label) {
-    const radius = size === 3 ? 46 : size === 2 ? 30 : 19;
+    const radius = (size === 3 ? 46 : size === 2 ? 30 : 19) * S;
     const n = 7 + size * 2 + ((Math.random() * 3) | 0);
     const verts = [];
     for (let i = 0; i < n; i++) verts.push({ a: (i / n) * TAU, r: rand(0.72, 1.12) });
     const base = size === 3 ? [26, 70] : size === 2 ? [48, 104] : [72, 150];
-    const spd = rand(base[0], base[1]);
+    const spd = rand(base[0], base[1]) * S;
     const dir = rand(0, TAU);
     return {
       x, y, size, label, radius, verts,
@@ -213,7 +254,7 @@ export function launchAsteroids() {
     const count = Math.min(8, 2 + wave);
     // Keep a clear ring around the ship so a new big asteroid can never spawn on
     // top of the player; retry the random position until it's outside that ring.
-    const safe = 150;
+    const safe = 150 * S;
     for (let i = 0; i < count; i++) {
       let x, y, tries = 0;
       do {
@@ -224,23 +265,24 @@ export function launchAsteroids() {
       ast.grace = WAVE_GRACE;   // no hitbox (stripey border) so a fresh wave can't ambush you
       asteroids.push(ast);
     }
-    // Scatter a power-up or two into the new wave, away from the ship.
-    for (let i = 0; i < WAVE_POWERUPS; i++) {
+    // One power-up per new wave, away from the ship - but none on the opening wave
+    // (wave 1), and never while the screen is already at the cap.
+    if (wave > 1 && powerups.length < MAX_POWERUPS) {
       let x, y, tries = 0;
       do {
         const a = rand(0, TAU), dist = rand(R * 0.3, R * 0.85);
         x = cx + Math.cos(a) * dist; y = cy + Math.sin(a) * dist;
-      } while (Math.hypot(x - ship.x, y - ship.y) < 120 && ++tries < 20);
+      } while (Math.hypot(x - ship.x, y - ship.y) < 120 * S && ++tries < 20);
       powerups.push(makePowerup(x, y));
     }
   }
 
   function makePowerup(x, y) {
     const type = pick(POWERUP_PICK);
-    const dir = rand(0, TAU), spd = rand(8, 22);
+    const dir = rand(0, TAU), spd = rand(8, 22) * S;
     return {
       x, y, type, color: POWERUP_DEF[type].color, letter: POWERUP_DEF[type].letter,
-      radius: 12, life: POWERUP_LIFE, vx: Math.cos(dir) * spd, vy: Math.sin(dir) * spd
+      radius: 12 * S, life: POWERUP_LIFE, vx: Math.cos(dir) * spd, vy: Math.sin(dir) * spd
     };
   }
 
@@ -270,7 +312,7 @@ export function launchAsteroids() {
     overlay.style.cursor = 'none';   // hidden for the cinematic, restored on respawn
     // Spawn a wreck where the ship was, on a slow constant drift (no drag) in a
     // random direction with a lazy tumble. It lives on its own past the cinematic.
-    const a = rand(0, TAU), s = rand(22, 40);
+    const a = rand(0, TAU), s = rand(22, 40) * S;
     wreck = {
       x: ship.x, y: ship.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
       angle: ship.angle, spin: (Math.random() < 0.5 ? -1 : 1) * rand(0.35, 0.7), fade: 0
@@ -287,23 +329,26 @@ export function launchAsteroids() {
     weapon = 'normal'; weaponTimer = 0; lightningTarget = null; shield = 0;
     lightningMid = null; lightningMidTimer = 0; ripples = []; rippleTimer = 0;
     nuke = 0; wreck = null; overlay.style.cursor = '';
+    clearEndPanel(); scoreDone = false;
+    mobileControls.forEach((elm) => { elm.style.display = ''; });   // controls back for play
     wave = 0; score = 0; lives = 3; gameOver = false; newHigh = false;
     resetShip(SPAWN_INVULN);
     spawnWave();
   }
   restart();
+  loadLeaderboard();   // fetch the top 5 for the left-margin board (fire and forget)
 
   // A short-lived burst of debris - line shards (lines:true) or dot sparks - used
   // for both asteroid and ship explosions.
   function burst(x, y, color, opts) {
     const o = opts || {};
-    const count = o.count || 12, speed = o.speed || 140, life = o.life || 0.45, lines = !!o.lines;
+    const count = o.count || 12, speed = (o.speed || 140) * S, life = o.life || 0.45, lines = !!o.lines;
     for (let i = 0; i < count; i++) {
       const ang = rand(0, TAU), sp = rand(speed * 0.25, speed);
       particles.push({
         x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
         life: rand(life * 0.6, life), max: life, color,
-        ang: rand(0, TAU), spin: rand(-9, 9), len: lines ? rand(5, 13) : 0
+        ang: rand(0, TAU), spin: rand(-9, 9), len: lines ? rand(5, 13) * S : 0
       });
     }
   }
@@ -329,7 +374,7 @@ export function launchAsteroids() {
     if (bullets.length >= MAX_BULLETS) return;
     const c = Math.cos(angle), s = Math.sin(angle);
     bullets.push({
-      x: ship.x + c * 14, y: ship.y + s * 14,
+      x: ship.x + c * 14 * S, y: ship.y + s * 14 * S,
       vx: c * speed + ship.vx, vy: s * speed + ship.vy, life, sniper: !!sniper
     });
   }
@@ -386,18 +431,18 @@ export function launchAsteroids() {
     if (weapon === 'laser') { fireLaser(); fireCd = 0.18 / 0.25; return; }      // 25% of normal rate
     if (weapon === 'machine') {
       // Spray: each round is jittered by up to ±3° for worse accuracy.
-      spawnBullet(ship.angle + rand(-3, 3) * Math.PI / 180, 1080, 0.9, false);
+      spawnBullet(ship.angle + rand(-3, 3) * Math.PI / 180, 1080 * S, 0.9, false);
       fireCd = 0.08; return;
     }
     if (weapon === 'triple') {
       const spread = 20 * Math.PI / 180;
-      spawnBullet(ship.angle - spread, 540, 0.9, false);
-      spawnBullet(ship.angle, 540, 0.9, false);
-      spawnBullet(ship.angle + spread, 540, 0.9, false);
+      spawnBullet(ship.angle - spread, 540 * S, 0.9, false);
+      spawnBullet(ship.angle, 540 * S, 0.9, false);
+      spawnBullet(ship.angle + spread, 540 * S, 0.9, false);
       fireCd = 0.18; return;
     }
-    if (weapon === 'sniper') { spawnBullet(ship.angle, 1080, Infinity, true); fireCd = 0.2; return; }
-    spawnBullet(ship.angle, 540, 0.9, false); fireCd = 0.18;                    // normal
+    if (weapon === 'sniper') { spawnBullet(ship.angle, 1080 * S, Infinity, true); fireCd = 0.2; return; }
+    spawnBullet(ship.angle, 540 * S, 0.9, false); fireCd = 0.18;                 // normal
   }
 
   function destroyAsteroid(ai) {
@@ -406,8 +451,9 @@ export function launchAsteroids() {
     if (score > highScore) { highScore = score; newHigh = true; saveHi(); }
     burst(a.x, a.y, a.size === 3 ? ACCENT : LINE,
       { count: 5 + a.size * 3, speed: 60 + a.size * 38, life: 0.4 + a.size * 0.06 });
-    // Power-up drop: 5% from a red (archive) asteroid, 1% from a white one.
-    if (Math.random() < (a.size === 3 ? 0.05 : 0.01)) powerups.push(makePowerup(a.x, a.y));
+    // Power-up drop: 5% from a red (archive) asteroid, 1% from a white one - but
+    // never past the on-screen cap.
+    if (powerups.length < MAX_POWERUPS && Math.random() < (a.size === 3 ? 0.05 : 0.01)) powerups.push(makePowerup(a.x, a.y));
     asteroids.splice(ai, 1);
     if (a.size > 1) {
       for (let k = 0; k < 2; k++) asteroids.push(makeAsteroid(a.x, a.y, a.size - 1, pick(FILE_POOL)));
@@ -431,8 +477,8 @@ export function launchAsteroids() {
     const c = Math.cos(dir), s = Math.sin(dir);
     const nx = -s, ny = c;                       // unit perpendicular to travel
     const n = 1 + ((Math.random() * 5) | 0);     // 1..5 ships
-    const speed = rand(240, 430);
-    const gap = rand(22, 34);
+    const speed = rand(240, 430) * S;
+    const gap = rand(22, 34) * S;
     const off = rand(-R * 0.55, R * 0.55);       // lateral offset of the flight path
     const startDist = R + 70;
     const baseX = cx - c * startDist + nx * off;
@@ -497,7 +543,7 @@ export function launchAsteroids() {
       if (nuke <= 0) {
         nuke = 0;
         overlay.style.cursor = '';   // cursor back once the cinematic ends
-        if (lives <= 0) gameOver = true;
+        if (lives <= 0) endGame();
         else { resetShip(SPAWN_INVULN); spawnWave(); }
       }
       return;
@@ -529,7 +575,7 @@ export function launchAsteroids() {
       p.x += p.vx * dt; p.y += p.vy * dt; wrap(p); p.life -= dt;
       if (p.life <= 0) { powerups.splice(i, 1); continue; }
       if (!ship.dead && !gameOver) {
-        const dx = p.x - ship.x, dy = p.y - ship.y, rr = p.radius + 11;
+        const dx = p.x - ship.x, dy = p.y - ship.y, rr = p.radius + 11 * S;
         if (dx * dx + dy * dy < rr * rr) {
           applyPowerup(p.type);
           burst(p.x, p.y, p.color, { count: 10, speed: 95, life: 0.4 });
@@ -542,14 +588,22 @@ export function launchAsteroids() {
       // Hold on the wreck, then respawn (with immunity) or end the game.
       lightningTarget = null;
       deathTimer -= dt;
-      if (deathTimer <= 0) { if (lives <= 0) gameOver = true; else resetShip(SPAWN_INVULN); }
+      if (deathTimer <= 0) { if (lives <= 0) endGame(); else resetShip(SPAWN_INVULN); }
     } else {
-      if (input.left) ship.angle -= 4.6 * dt;
-      if (input.right) ship.angle += 4.6 * dt;
-      if (input.thrust) { ship.vx += Math.cos(ship.angle) * 270 * dt; ship.vy += Math.sin(ship.angle) * 270 * dt; }
+      if (joy.active) {
+        // Turn toward the stick, but no faster than the keyboard's rotate rate.
+        let d = joy.angle - ship.angle;
+        d = Math.atan2(Math.sin(d), Math.cos(d));   // shortest signed delta
+        const max = 4.6 * dt;
+        ship.angle += Math.max(-max, Math.min(max, d));
+      } else {
+        if (input.left) ship.angle -= 4.6 * dt;
+        if (input.right) ship.angle += 4.6 * dt;
+      }
+      if (input.thrust) { ship.vx += Math.cos(ship.angle) * 270 * S * dt; ship.vy += Math.sin(ship.angle) * 270 * S * dt; }
       const drag = Math.exp(-0.55 * dt);
       ship.vx *= drag; ship.vy *= drag;
-      const sp = Math.hypot(ship.vx, ship.vy), MAX = 430;
+      const sp = Math.hypot(ship.vx, ship.vy), MAX = 430 * S;
       if (sp > MAX) { ship.vx = ship.vx / sp * MAX; ship.vy = ship.vy / sp * MAX; }
       ship.x += ship.vx * dt; ship.y += ship.vy * dt; wrap(ship);
       if (ship.invuln > 0) ship.invuln -= dt;
@@ -621,7 +675,7 @@ export function launchAsteroids() {
     if (!ship.dead && ship.invuln <= 0 && shield <= 0 && !gameOver) {
       for (const a of asteroids) {
         if (a.grace > 0) continue;
-        const dx = a.x - ship.x, dy = a.y - ship.y, rr = a.radius + 11;
+        const dx = a.x - ship.x, dy = a.y - ship.y, rr = a.radius + 11 * S;
         if (dx * dx + dy * dy < rr * rr) { loseLife(); break; }
       }
     }
@@ -657,7 +711,7 @@ export function launchAsteroids() {
     ctx.globalAlpha = f.alpha;
     ctx.translate(f.x, f.y);
     ctx.rotate(f.angle);
-    ctx.scale(0.85, 0.85);
+    ctx.scale(0.85 * S, 0.85 * S);
     ctx.strokeStyle = LINE; ctx.lineWidth = 1.3; ctx.lineJoin = 'round';
     ctx.beginPath();
     ctx.moveTo(14, 0); ctx.lineTo(-10, -9); ctx.lineTo(-6, 0); ctx.lineTo(-10, 9);
@@ -677,6 +731,7 @@ export function launchAsteroids() {
     const fade = Math.min(1, (SPAWN_INVULN - ship.invuln) / 0.6);
     ctx.save();
     ctx.translate(x, y);
+    ctx.scale(S, S);   // scale the whole ship (hull, rings, glow) with the scope
     // Blue charge glow under the ship while firing with lightning equipped.
     if (weapon === 'lightning' && input.fire) {
       ctx.save();
@@ -720,10 +775,11 @@ export function launchAsteroids() {
     if (!wreck) return;
     const fade = nuke > 0 ? 1 : Math.max(0, 1 - wreck.fade / WRECK_FADE);
     if (fade <= 0) return;
-    withWrap(wreck.x, wreck.y, 21, (x, y) => {
+    withWrap(wreck.x, wreck.y, 21 * S, (x, y) => {
       ctx.save();
       ctx.globalAlpha = 0.7 * fade;
       ctx.translate(x, y);
+      ctx.scale(S, S);
       ctx.rotate(wreck.angle);
       ctx.strokeStyle = MUTED; ctx.lineWidth = 1.6; ctx.lineJoin = 'round';
       ctx.beginPath();
@@ -734,7 +790,7 @@ export function launchAsteroids() {
   }
   function drawShip() {
     if (ship.dead || nuke > 0) return;
-    withWrap(ship.x, ship.y, 21, drawShipAt);
+    withWrap(ship.x, ship.y, 21 * S, drawShipAt);
   }
 
   function drawAsteroidAt(a, x, y) {
@@ -841,7 +897,7 @@ export function launchAsteroids() {
     for (const rp of ripples) {
       ctx.globalAlpha = (1 - rp.p) * 0.6;
       ctx.strokeStyle = POWERUP_DEF.ultrasound.color; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(0, 0, 6 + (ULTRASOUND_RADIUS - 6) * rp.p, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, 6 * S + (ULTRASOUND_RADIUS - 6 * S) * rp.p, 0, TAU); ctx.stroke();
     }
     ctx.globalAlpha = 0.8;
     ctx.strokeStyle = LINE; ctx.lineWidth = 1.5;
@@ -956,6 +1012,161 @@ export function launchAsteroids() {
     ctx.restore();
   }
 
+  // ---- End-of-game leaderboard panel (DOM, overlaid on the canvas) ----
+  function clearEndPanel() {
+    if (endPanel) { endPanel.remove(); endPanel = null; }
+    nameEntry = false;
+  }
+
+  // Game-over headline shown at the top of the end card: GAME OVER + score + high.
+  function endHeaderNodes() {
+    const go = document.createElement('div');
+    go.className = 'anr-score-go'; go.textContent = 'GAME OVER';
+    const sub = document.createElement('div');
+    sub.className = 'anr-score-sub'; sub.textContent = 'score ' + score + ' · wave ' + wave;
+    const hi = document.createElement('div');
+    hi.className = 'anr-score-sub';
+    if (newHigh) { hi.textContent = '★ NEW HIGH SCORE'; hi.style.color = POWERUP_DEF.health.color; }
+    else { hi.textContent = 'high ' + highScore; hi.style.color = MUTED; }
+    return [go, sub, hi];
+  }
+
+  // Build a <ol> of the top 5, highlighting the player's own freshly-posted row.
+  function leaderboardList(top, mineIdx) {
+    const ol = document.createElement('ol');
+    ol.className = 'anr-score-list';
+    if (!top || !top.length) {
+      const li = document.createElement('li');
+      li.textContent = 'No scores yet'; li.style.justifyContent = 'center'; li.style.color = MUTED;
+      ol.appendChild(li); return ol;
+    }
+    top.forEach((s, i) => {
+      const li = document.createElement('li');
+      if (i === mineIdx) li.className = 'me';
+      const r = document.createElement('span'); r.className = 'r'; r.textContent = (i + 1) + '.';
+      const n = document.createElement('span'); n.className = 'n'; n.textContent = s.name;
+      const sc = document.createElement('span'); sc.className = 's'; sc.textContent = Number(s.score).toLocaleString();
+      li.append(r, n, sc); ol.appendChild(li);
+    });
+    return ol;
+  }
+
+  // After submit or skip: show the board plus play-again / exit.
+  function showLeaderboardView(top, mineName) {
+    if (!endPanel) return;
+    nameEntry = false;
+    endPanel.innerHTML = '';
+    const title = document.createElement('div');
+    title.className = 'anr-score-title'; title.textContent = 'HIGH SCORES';
+    const mineIdx = mineName && top ? top.findIndex((s) => s.name === mineName) : -1;
+    const row = document.createElement('div'); row.className = 'anr-score-row';
+    const again = document.createElement('button');
+    again.type = 'button'; again.className = 'anr-game-btn'; again.textContent = 'Play again';
+    again.style.cssText = 'padding:7px 12px;font-size:13px;';
+    again.addEventListener('click', restart);
+    const exit = document.createElement('button');
+    exit.type = 'button'; exit.className = 'anr-game-btn'; exit.textContent = 'Exit';
+    exit.style.cssText = 'padding:7px 12px;font-size:13px;';
+    exit.addEventListener('click', teardown);
+    row.append(again, exit);
+    endPanel.append(...endHeaderNodes(), title, leaderboardList(top, mineIdx), row);
+  }
+
+  // Fetch the current top 5 into `leaderboard` (drawn in the left margin).
+  async function loadLeaderboard() {
+    try {
+      const resp = await fetch('/api/leaderboard', { headers: { accept: 'application/json' } });
+      const data = await resp.json().catch(() => ({}));
+      if (data && Array.isArray(data.top)) leaderboard = data.top;
+    } catch (_) {}
+  }
+
+  // Skip submitting: just fetch and show the current board.
+  async function skipToLeaderboard() {
+    await loadLeaderboard();
+    if (endPanel) showLeaderboardView(leaderboard, null);
+  }
+
+  // POST this run's score under `name`, then show the returned board.
+  async function submitScore(name, msgEl, submitBtn) {
+    if (submitBtn) submitBtn.disabled = true;
+    if (msgEl) { msgEl.className = 'anr-score-msg'; msgEl.textContent = 'Sending...'; }
+    try {
+      const resp = await fetch('/api/score', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, score })
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.ok) {
+        if (msgEl) { msgEl.className = 'anr-score-msg err'; msgEl.textContent = data.error || 'Could not send score.'; }
+        if (submitBtn) submitBtn.disabled = false;
+        return;
+      }
+      scoreDone = true;
+      leaderboard = data.top || leaderboard;
+      showLeaderboardView(data.top, name);
+    } catch (_) {
+      if (msgEl) { msgEl.className = 'anr-score-msg err'; msgEl.textContent = 'Offline - score not sent.'; }
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  }
+
+  // Name-entry view: a 5-char [A-Z0-9] field, Submit and Skip.
+  function showSubmitView() {
+    clearEndPanel();
+    nameEntry = true;
+    endPanel = document.createElement('div');
+    endPanel.className = 'anr-score-panel';
+    const title = document.createElement('div');
+    title.className = 'anr-score-title'; title.textContent = 'ENTER NAME';
+    const hint = document.createElement('div');
+    hint.className = 'anr-score-msg'; hint.textContent = '5 letters or numbers';
+    const input = document.createElement('input');
+    input.type = 'text'; input.className = 'anr-score-input';
+    input.maxLength = 5; input.autocomplete = 'off'; input.spellcheck = false;
+    input.setAttribute('aria-label', 'Leaderboard name, 5 letters or numbers');
+    input.addEventListener('input', () => {
+      input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+    });
+    const msg = document.createElement('div');
+    msg.className = 'anr-score-msg';
+    const row = document.createElement('div'); row.className = 'anr-score-row';
+    const submit = document.createElement('button');
+    submit.type = 'button'; submit.className = 'anr-game-btn'; submit.textContent = 'Submit';
+    submit.style.cssText = 'padding:7px 12px;font-size:13px;';
+    const skip = document.createElement('button');
+    skip.type = 'button'; skip.className = 'anr-game-btn'; skip.textContent = 'Skip';
+    skip.style.cssText = 'padding:7px 12px;font-size:13px;';
+    const doSubmit = () => {
+      const name = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (name.length !== 5) { msg.className = 'anr-score-msg err'; msg.textContent = 'Need 5 letters or numbers.'; input.focus(); return; }
+      submitScore(name, msg, submit);
+    };
+    submit.addEventListener('click', doSubmit);
+    skip.addEventListener('click', () => { scoreDone = true; skipToLeaderboard(); });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doSubmit(); } });
+    row.append(submit, skip);
+    endPanel.append(...endHeaderNodes(), title, hint, input, msg, row);
+    overlay.appendChild(endPanel);
+    setTimeout(() => input.focus(), 30);   // focus once it's in the DOM (helps on mobile)
+  }
+
+  // End the run. Only prompt to post a score if the player got far enough to be
+  // worth recording - at least wave SUBMIT_MIN_WAVE. A quick early death just shows
+  // the board (and play again), no name entry.
+  const SUBMIT_MIN_WAVE = 7;
+  function endGame() {
+    if (gameOver) return;
+    gameOver = true;
+    // Hide the touch controls (the DOM end panel handles play again / name entry)
+    // and drop any held input so nothing sticks across the game-over screen.
+    mobileControls.forEach((elm) => { elm.style.display = 'none'; });
+    input.left = input.right = input.thrust = input.fire = false;
+    joy.active = false; joy.mag = 0;
+    if (score > 0 && !scoreDone && wave >= SUBMIT_MIN_WAVE) showSubmitView();
+    else { endPanel = document.createElement('div'); endPanel.className = 'anr-score-panel'; overlay.appendChild(endPanel); skipToLeaderboard(); }
+  }
+
   function gameOverScreen() {
     ctx.textAlign = 'center';
     ctx.fillStyle = ACCENT; ctx.font = '34px ' + MONO; ctx.fillText('GAME OVER', cx, cy - 16);
@@ -963,8 +1174,34 @@ export function launchAsteroids() {
     ctx.fillText('score ' + score + ' · wave ' + wave, cx, cy + 14);
     if (newHigh) { ctx.fillStyle = POWERUP_DEF.health.color; ctx.font = '14px ' + MONO; ctx.fillText('★ NEW HIGH SCORE', cx, cy + 36); }
     else { ctx.fillStyle = MUTED; ctx.font = '13px ' + MONO; ctx.fillText('high ' + highScore, cx, cy + 36); }
-    ctx.fillStyle = MUTED; ctx.font = '13px ' + MONO;
-    ctx.fillText('space / tap to play again · esc to exit', cx, cy + 60);
+    // The play-again / exit controls live in the DOM end panel below (buttons + the
+    // optional name entry), so the canvas no longer draws a "tap to play again" line.
+  }
+
+  // The global top 5, drawn down the left margin in the game's vector style. Only
+  // shown when there's clear space beside the scope (hidden on narrow / mobile
+  // layouts where the circle fills the width).
+  function drawLeaderboard() {
+    if (!leaderboard.length) return;
+    const margin = 24, colW = 150;
+    if (cx - R < colW + margin + 20) return;
+    const x = margin;
+    let y = cy - 58;
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    ctx.font = '12px ' + MONO; ctx.fillStyle = MUTED; ctx.fillText('HIGH SCORES', x, y);
+    y += 22;
+    ctx.font = '13px ' + MONO;
+    for (let i = 0; i < leaderboard.length; i++) {
+      const s = leaderboard[i];
+      ctx.textAlign = 'left';
+      ctx.fillStyle = MUTED; ctx.fillText((i + 1) + '.', x, y);
+      ctx.fillStyle = LINE; ctx.fillText(String(s.name), x + 22, y);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = ACCENT; ctx.fillText(Number(s.score).toLocaleString(), x + colW, y);
+      y += 20;
+    }
+    ctx.textAlign = 'left';
   }
 
   function render() {
@@ -987,7 +1224,7 @@ export function launchAsteroids() {
     // Bullets: sniper rounds are a touch larger and accent-tinted; others are dots.
     for (const b of bullets) {
       ctx.fillStyle = b.sniper ? ACCENT : LINE;
-      const r = b.sniper ? 2.8 : 2.2;
+      const r = (b.sniper ? 2.8 : 2.2) * S;
       withWrap(b.x, b.y, r, (x, y) => { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); });
     }
     drawUltrasound();
@@ -1013,8 +1250,11 @@ export function launchAsteroids() {
     }
     drawWeaponTimer();
     hud();
+    drawLeaderboard();
     nukeFlash();
-    if (gameOver) gameOverScreen();
+    // The end-of-game DOM card carries the headline + board now; the canvas version
+    // is only a fallback if the card somehow isn't up.
+    if (gameOver && !endPanel) gameOverScreen();
   }
 
   // ---- Loop ----
@@ -1042,6 +1282,9 @@ export function launchAsteroids() {
   function onKeyDown(e) {
     const k = e.key;
     if (k === 'Escape') { teardown(); return; }
+    // While the name input owns the keyboard, let every other key reach it (so the
+    // global controls - r to reset, space, arrows - don't hijack the typing).
+    if (nameEntry) return;
     if (k === 'r' || k === 'R') { e.preventDefault(); restart(); return; }   // restart the run anytime
     if (gameOver && (k === ' ' || k === 'Enter')) { e.preventDefault(); restart(); return; }
     const m = KEY[k];
@@ -1068,27 +1311,77 @@ export function launchAsteroids() {
   function onVis() { paused = document.hidden; if (!paused) last = performance.now(); }
   document.addEventListener('visibilitychange', onVis);
 
-  // ---- Touch controls (shown on touch devices) ----
-  let touchEls = [];
-  if (window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) {
-    const mkPad = (side) => {
-      const p = document.createElement('div');
-      p.style.cssText = 'position:absolute; bottom:22px; ' + side + ':18px; display:flex; gap:12px; z-index:2;';
-      overlay.appendChild(p); touchEls.push(p); return p;
+  // ---- Controls ----
+  // The analogue joystick works everywhere (mouse on desktop, touch on mobile): the
+  // ship turns toward where the stick points (capped to the keyboard rotate rate)
+  // and pushing past a deadzone thrusts. The fire button and rotate arrows are
+  // touch-only - desktop already has the keyboard for those.
+  const coarseInput = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+  {
+    const JOY_R = 46;        // base radius (px); thumb travel is clamped to this
+    const DEADZONE = 0.28;   // fraction of full travel before thrust kicks in
+
+    const base = document.createElement('div');
+    // On touch the joystick rides higher so the arrows can sit beneath it; on
+    // desktop (no arrows) it sits at the bottom.
+    base.style.cssText = 'position:absolute; bottom:' + (coarseInput ? 100 : 26) + 'px; left:24px; width:' + (JOY_R * 2) +
+      'px; height:' + (JOY_R * 2) + 'px; border-radius:50%; border:1px solid ' + BORDER +
+      '; background:rgba(26,26,26,0.55); z-index:2; touch-action:none;';
+    const thumb = document.createElement('div');
+    thumb.style.cssText = 'position:absolute; left:50%; top:50%; width:42px; height:42px; margin:-21px 0 0 -21px;' +
+      'border-radius:50%; background:' + SURFACE + '; border:1px solid ' + BORDER + '; pointer-events:none;' +
+      'transition:transform .05s linear;';
+    base.appendChild(thumb);
+    overlay.appendChild(base);
+    mobileControls.push(base);
+
+    let joyId = null;
+    const setThumb = (dx, dy) => { thumb.style.transform = 'translate(' + dx + 'px,' + dy + 'px)'; };
+    const onMove = (e) => {
+      const r = base.getBoundingClientRect();
+      const dx = e.clientX - (r.left + JOY_R), dy = e.clientY - (r.top + JOY_R);
+      const ang = Math.atan2(dy, dx), cl = Math.min(Math.hypot(dx, dy), JOY_R);
+      setThumb(Math.cos(ang) * cl, Math.sin(ang) * cl);
+      joy.active = true; joy.angle = ang; joy.mag = cl / JOY_R;
+      input.thrust = joy.mag > DEADZONE;
     };
-    const mkBtn = (parent, label, prop) => {
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'anr-game-btn'; b.textContent = label;
-      b.style.cssText = 'width:60px; height:60px; font-size:21px; touch-action:none;';
-      const set = (v) => (e) => { e.preventDefault(); if (gameOver && v && prop === 'fire') { restart(); return; } input[prop] = v; };
-      b.addEventListener('pointerdown', set(true));
-      b.addEventListener('pointerup', set(false));
-      b.addEventListener('pointercancel', set(false));
-      b.addEventListener('pointerleave', set(false));
-      parent.appendChild(b);
-    };
-    const L = mkPad('left'); mkBtn(L, '◀', 'left'); mkBtn(L, '▶', 'right');
-    const Rp = mkPad('right'); mkBtn(Rp, '▲', 'thrust'); mkBtn(Rp, '●', 'fire');
+    const onUp = () => { joyId = null; joy.active = false; joy.mag = 0; input.thrust = false; setThumb(0, 0); };
+    base.addEventListener('pointerdown', (e) => { e.preventDefault(); joyId = e.pointerId; try { base.setPointerCapture(e.pointerId); } catch (_) {} onMove(e); });
+    base.addEventListener('pointermove', (e) => { if (e.pointerId === joyId) { e.preventDefault(); onMove(e); } });
+    base.addEventListener('pointerup', (e) => { if (e.pointerId === joyId) { e.preventDefault(); onUp(); } });
+    base.addEventListener('pointercancel', onUp);
+
+    if (coarseInput) {
+      const fire = document.createElement('button');
+      fire.type = 'button'; fire.className = 'anr-game-btn'; fire.textContent = '●';
+      fire.style.cssText = 'position:absolute; bottom:26px; right:24px; width:64px; height:64px; font-size:21px; z-index:2; touch-action:none;';
+      const setFire = (v) => (e) => { e.preventDefault(); if (gameOver && !nameEntry && v) { restart(); return; } input.fire = v; };
+      fire.addEventListener('pointerdown', setFire(true));
+      fire.addEventListener('pointerup', setFire(false));
+      fire.addEventListener('pointercancel', setFire(false));
+      fire.addEventListener('pointerleave', setFire(false));
+      overlay.appendChild(fire);
+      mobileControls.push(fire);
+
+      // Left/right rotate arrows in a row under the joystick - fine aiming when the
+      // stick is idle (the joystick's heading overrides them whenever it's held).
+      const arrows = document.createElement('div');
+      arrows.style.cssText = 'position:absolute; bottom:26px; left:24px; width:' + (JOY_R * 2) + 'px; display:flex; gap:6px; z-index:2;';
+      const mkArrow = (label, prop) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'anr-game-btn'; b.textContent = label;
+        b.style.cssText = 'flex:1; height:42px; font-size:18px; touch-action:none;';
+        const set = (v) => (e) => { e.preventDefault(); input[prop] = v; };
+        b.addEventListener('pointerdown', set(true));
+        b.addEventListener('pointerup', set(false));
+        b.addEventListener('pointercancel', set(false));
+        b.addEventListener('pointerleave', set(false));
+        arrows.appendChild(b);
+      };
+      mkArrow('◀', 'left'); mkArrow('▶', 'right');
+      overlay.appendChild(arrows);
+      mobileControls.push(arrows);
+    }
   }
 
   // ---- Teardown ----
@@ -1100,6 +1393,7 @@ export function launchAsteroids() {
     window.removeEventListener('keyup', onKeyUp, true);
     window.removeEventListener('resize', onResize);
     document.removeEventListener('visibilitychange', onVis);
+    clearEndPanel();
     overlay.remove();
     document.body.style.overflow = prevOverflow;
   }
