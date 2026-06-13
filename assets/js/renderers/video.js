@@ -332,6 +332,98 @@ async function ffmpegExtractAudio(file, container) {
   return await ac.decodeAudioData(buf);
 }
 
+// Re-encode a video playing backwards (picture + sound) with FFmpeg WASM. The
+// `reverse`/`areverse` filters buffer every frame/sample in memory, so this is an
+// on-demand action and can fail (out of memory) on long clips. Output is H.264 +
+// AAC in MP4 (yuv420p) so the result plays in any browser. `onLoad` reports 0..1
+// core-download progress; `onEnc` reports 0..1 encode progress. Returns a
+// video/mp4 Blob, or null if nothing could be produced.
+async function ffmpegReverseVideo(file, onLoad, onEnc, signal) {
+  const ff = await loadFFmpeg(onLoad);
+  if (signal && signal.aborted) return null;
+  const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
+  const inName = 'rev_in', outName = 'rev_out.mp4';
+  await ff.writeFile(inName, await fetchFile(file));
+  const onProg = ({ progress }) => { if (onEnc && isFinite(progress)) onEnc(Math.max(0, Math.min(1, progress))); };
+  ff.on('progress', onProg);
+  const run = async (args) => {
+    try { await ff.exec(args); } catch (_) {}
+    try { return await ff.readFile(outName); } catch (_) { return null; }
+  };
+  // First reverse video + audio; if there's no audio track areverse yields no
+  // output, so retry video-only.
+  let data = await run(['-i', inName, '-vf', 'reverse', '-af', 'areverse',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-y', outName]);
+  if (!data || !data.length) {
+    try { await ff.deleteFile(outName); } catch (_) {}
+    data = await run(['-i', inName, '-vf', 'reverse', '-an',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-y', outName]);
+  }
+  ff.off('progress', onProg);
+  try { await ff.deleteFile(inName); } catch (_) {}
+  try { await ff.deleteFile(outName); } catch (_) {}
+  if (!data || !data.length) return null;
+  return new Blob([data.buffer || data], { type: 'video/mp4' });
+}
+
+// Card with a button that reverses the playable video on demand, then shows a
+// reversed player + MP4 download. `file` is the browser-playable file (original or
+// the remuxed MP4). `signal` revokes the result URL on teardown.
+function buildReverseVideoCard(file, signal) {
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Reverse'));
+  card.appendChild(el('p', { class: 'anr-hint' },
+    'Re-encode this video playing backwards - picture and sound - in your browser with FFmpeg (~30 MB, downloaded once then cached). The reverse filter holds every frame in memory, so a long clip can be slow or run out of memory.'));
+  const btn = el('button', { type: 'button', class: 'anr-btn' }, '↺ Reverse video');
+  const out = el('div');
+  const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
+  const labelEl = el('div', { class: 'anr-progress-label' }, 'loading ffmpeg (~30 mb)');
+  const wrap = el('div', { class: 'anr-progress', style: 'display:none;' }, [barEl, labelEl]);
+  const setBar = (frac) => {
+    const ch = parseFloat(getComputedStyle(barEl).fontSize) * 0.6 || 8;
+    const total = Math.max(10, Math.floor((barEl.parentElement.clientWidth - ch * 2) / ch));
+    const filled = Math.round(Math.max(0, Math.min(1, frac)) * total);
+    barEl.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' + ' '.repeat(total - filled) + ']';
+  };
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'Reversing…';
+    wrap.style.display = '';
+    let blob = null;
+    try {
+      blob = await ffmpegReverseVideo(file,
+        (p) => { labelEl.textContent = 'loading ffmpeg (~30 mb)'; setBar(p); },
+        (p) => { labelEl.textContent = 'reversing'; setBar(p); },
+        signal);
+    } catch (_) { blob = null; }
+    wrap.style.display = 'none';
+    if (signal && signal.aborted) return;
+    if (!blob) {
+      btn.disabled = false; btn.textContent = '↺ Reverse video';
+      out.appendChild(el('p', { class: 'anr-hint', style: 'color:var(--accent);' },
+        'Could not reverse this video - it may be too long to hold in memory, or the codec could not be re-encoded.'));
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    if (signal) signal.addEventListener('abort', () => { try { URL.revokeObjectURL(url); } catch (_) {} });
+    const v = el('video', { src: url, playsinline: '' });
+    v.setAttribute('webkit-playsinline', '');
+    v.style.cssText = 'width:100%; max-height:480px; background:#0a0a0a; display:block; border:1px solid var(--hairline);';
+    applyVideoControls(v);
+    out.appendChild(v);
+    out.appendChild(makePlayer(v));
+    const base = (file.name || 'video').replace(/\.[^.]+$/, '');
+    out.appendChild(el('div', { style: 'margin-top:10px;' }, [
+      el('a', { href: url, download: base + '_reversed.mp4', class: 'anr-btn',
+        style: 'display:inline-block;text-decoration:none;' }, 'Download reversed (MP4)')
+    ]));
+    btn.remove();
+  });
+  card.appendChild(btn);
+  card.appendChild(wrap);
+  card.appendChild(out);
+  return card;
+}
+
 // Remux a raw H.264/H.265 elementary stream (Annex B, no container) into an MP4
 // using FFmpeg WASM. Stream copy only (-c copy) - the bitstream is unchanged, so
 // it's fast and lossless; it just gains an MP4 container the browser can play.
@@ -1716,6 +1808,9 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
   playerCard.appendChild(sceneBadge);
   resultsEl.appendChild(playerCard);
 
+  // ---- Reverse playback (re-encode the video backwards, on demand) ----
+  resultsEl.appendChild(buildReverseVideoCard(file, signal));
+
   const loaded = await new Promise((resolve) => {
     let done = false;
     const finish = (ok) => { if (!done) { done = true; resolve(ok); } };
@@ -2413,6 +2508,12 @@ export async function renderVideo(file, resultsEl, opts = {}) {
         frameCard.appendChild(sheetOut);
         resultsEl.appendChild(frameCard);
 
+        // ---- Reverse playback (re-encode the AVI backwards, on demand) ----
+        // The MJPEG frames + PCM are in memory, but a downloadable reversed video
+        // needs a real file, so re-encode the original AVI to a reversed H.264 MP4
+        // (picture + sound) with FFmpeg - same path as the normal player.
+        if (frames.length > 1) resultsEl.appendChild(buildReverseVideoCard(file, renderSignal));
+
         // First frame - gated behind an "Analyse photo" button.
         const photoResultsEl = document.getElementById('photoResults');
         if (photoResultsEl) {
@@ -2571,6 +2672,9 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   playerCard.appendChild(frameControls.wrap);
 
   resultsEl.appendChild(playerCard);
+
+  // ---- Reverse playback (re-encode the video backwards, on demand) ----
+  resultsEl.appendChild(buildReverseVideoCard(file, renderSignal));
 
   // ---- File info ----
   // For a remuxed raw stream, show the ORIGINAL file's name/size/MIME (and base

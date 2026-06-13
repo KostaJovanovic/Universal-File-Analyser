@@ -14,6 +14,7 @@ import {
 import { peekContainer, adtsToM4a, readTagBPM, extractCoverArt, readAudioTags } from './audio-codec.js';
 import { makePlayer } from './audio-player.js';
 import { encodeWav } from './video-avi.js';
+import { buildReverseAudioCard } from './media-reverse.js';
 
 // Re-exported so existing importers (e.g. video.js) can keep importing the
 // transport from this module.
@@ -1434,6 +1435,9 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     'Total number of individual amplitude values in the (channel-merged mono) signal - roughly sample rate × duration.'));
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
+
+  // ---- Reverse playback (play / download the audio backwards) ----
+  resultsEl.appendChild(buildReverseAudioCard(audioBuffer, (file.name || 'audio').replace(/\.[^/.]+$/, ''), renderSignal));
 
   // ---- Spectrogram (sits directly under the file info) ----
   const basename = (file.name || 'spectrogram').replace(/\.[^/.]+$/, '');
