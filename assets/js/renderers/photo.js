@@ -12,6 +12,7 @@ import { HEIC_EXTS, RAW_EXTS } from '../core/formats.js';
 import { convertHeic, extractRawPreview, convertWithImageMagick, demosaicRaw, extractRawJpegs, extractX3fPreview } from './photo-convert.js';
 import { ascii, latin1, utf8, inflate } from '../core/binutil.js';
 import { decodeGifFrames } from './gif-frames.js';
+import { decodeWebpFrames } from './webp-frames.js';
 
 // ---------- Browser-undecodable images ----------
 // Some image formats a web browser has no decoder for, so an <img> can't paint
@@ -1920,20 +1921,24 @@ export function revealPhotoSection() {
   return photoResults;
 }
 
-// Build the animated-GIF frame viewer: a still-canvas stage plus the site's
+// Build an animated-image frame viewer: a still-canvas stage plus the site's
 // stylised transport (play / draggable scrub / time), Prev/Next stepping, and
 // Analyse frame / Frame grab / contact-sheet actions - the photo-side counterpart
-// of the AVI MJPEG viewer. `decoded` comes from decodeGifFrames(); `signal` aborts
-// the playback loop on teardown.
-function buildGifFrameCard(file, decoded, resultsEl, signal) {
+// of the AVI MJPEG viewer. Shared by animated GIF (decodeGifFrames) and animated
+// WebP (decodeWebpFrames); `signal` aborts the playback loop on teardown. `opts`:
+// { kindLabel?: 'animated GIF', delaysMs?: number[] } - WebP passes its own
+// per-frame millisecond delays so the GIF centisecond clamp isn't applied to it.
+function buildFrameViewerCard(file, decoded, resultsEl, signal, opts = {}) {
+  const kindLabel = opts.kindLabel || 'animated GIF';
   const { width, height, frames, loop, anyTransparency, truncated } = decoded;
   const n = frames.length;
   const lastIdx = n - 1;
 
-  // Per-frame delay in ms, with the browser-style clamp: a 0 or very small delay
-  // is rendered as 100ms (how browsers treat under-spec'd GIFs). Then the start
-  // time of each frame and the total loop duration.
-  const delaysMs = frames.map((f) => { const ms = f.delay * 10; return ms < 20 ? 100 : ms; });
+  // Per-frame delay in ms. GIF stores centiseconds and gets the browser-style
+  // clamp (a 0 / very small delay renders as 100ms); other sources (WebP) pass a
+  // ready-made millisecond array in opts.delaysMs. Then the start time of each
+  // frame and the total loop duration.
+  const delaysMs = opts.delaysMs || frames.map((f) => { const ms = f.delay * 10; return ms < 20 ? 100 : ms; });
   const startTimes = new Float64Array(n);
   let acc = 0;
   for (let i = 0; i < n; i++) { startTimes[i] = acc / 1000; acc += delaysMs[i]; }
@@ -2052,7 +2057,7 @@ function buildGifFrameCard(file, decoded, resultsEl, signal) {
     analyseBtn.disabled = false; analyseBtn.textContent = 'Analyse frame';
     if (!blob) return;
     const frameFile = new File([blob], `${base}_frame_${currentFrame + 1}.png`, { type: 'image/png' });
-    renderPhoto(frameFile, resultsEl, { sourceNote: `Frame ${currentFrame + 1} of ${n} extracted from ${file.name} (animated GIF).` });
+    renderPhoto(frameFile, resultsEl, { sourceNote: `Frame ${currentFrame + 1} of ${n} extracted from ${file.name} (${kindLabel}).` });
   } }, 'Analyse frame');
   const grabBtn = el('button', { type: 'button', class: 'anr-btn', onclick: async () => {
     const blob = await frameToBlob(currentFrame);
@@ -2472,18 +2477,26 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
 
   resultsEl.appendChild(infoCard);
 
-  // ---- Animated GIF: frame-by-frame viewer ----
-  // A browser plays a GIF in the <img> preview above but won't let you step
-  // through it. Decode the frames ourselves and offer the same transport the AVI
-  // viewer does (play / scrub / Prev / Next / grab / analyse). Only for true GIFs
-  // in the main photo section - skipped for inline cover-art renders.
+  // ---- Animated GIF / WebP: frame-by-frame viewer ----
+  // A browser plays a GIF or animated WebP in the <img> preview above but won't
+  // let you step through it. Decode the frames ourselves and offer the same
+  // transport the AVI viewer does (play / scrub / Prev / Next / grab / analyse).
+  // Only in the main photo section - skipped for inline cover-art renders.
   if (!inline && (fileExt(file.name) === 'gif' || file.type === 'image/gif') && file.size <= 200 * 1024 * 1024) {
     try {
       const decoded = decodeGifFrames(await file.arrayBuffer());
       if (decoded && decoded.frames.length > 1) {
-        resultsEl.appendChild(buildGifFrameCard(file, decoded, resultsEl, renderSignal));
+        resultsEl.appendChild(buildFrameViewerCard(file, decoded, resultsEl, renderSignal));
       }
     } catch (_) { /* malformed GIF - leave the normal photo view untouched */ }
+  } else if (!inline && (fileExt(file.name) === 'webp' || file.type === 'image/webp')) {
+    try {
+      const decoded = await decodeWebpFrames(file);
+      if (decoded && decoded.frames.length > 1) {
+        resultsEl.appendChild(buildFrameViewerCard(file, decoded, resultsEl, renderSignal,
+          { kindLabel: 'animated WebP', delaysMs: decoded.delaysMs }));
+      }
+    } catch (_) { /* not animated / no ImageDecoder - leave the normal photo view */ }
   }
 
   // ---- EXIF sections ----

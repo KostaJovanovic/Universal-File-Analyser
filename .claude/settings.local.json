@@ -26,7 +26,8 @@
       "Bash(rtk git *)",
       "PowerShell(rtk grep *)",
       "Bash(exiftool -a -G1 -s -ThumbnailImage -PreviewImage -JpgFromRaw -OtherImage -PreviewTIFF 'F:/phone bacc/kamera slike/10160525/DSG08753.ARW')",
-      "Bash(cmd /d /c save.bat save)"
+      "Bash(cmd /d /c save.bat save)",
+      "PowerShell(git push *)"
     ]
   },
   "spinnerTipsEnabled": false
