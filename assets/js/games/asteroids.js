@@ -54,6 +54,7 @@ export function launchAsteroids() {
   const LINE = '#f2f2f2';   // vector stroke - a touch softer than pure white
   const UFO_REWARD_COLOR = '#ff4dd2';    // magenta - the destructible reward saucer
   const UFO_AMBIENT_COLOR = '#56d4dd';   // teal - the indestructible roaming escort
+  const BOSS_COLOR = '#a64dff';          // corrupted violet - boss vectors, distinct from all else
   const MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
 
   // ---- DOM scaffold ----
@@ -276,14 +277,27 @@ export function launchAsteroids() {
     laser: { color: '#58a6ff', letter: 'L', label: 'LASER', dur: 10 },
     lightning: { color: '#3b5bdb', letter: 'Z', label: 'LIGHTNING', dur: 10 },
     ultrasound: { color: '#7fd3ff', letter: 'U', label: 'SHOCKWAVE', dur: 8 },
+    // Battering ram: no projectile - lifts the speed cap, draws an arrow tip, and turns
+    // head-on collisions into damage against asteroids/UFOs while the ship rides through
+    // unharmed.
+    ram: { color: '#ff7a1a', letter: 'R', label: 'BATTERING RAM', dur: 10 },
+    // Homing missiles: a timed weapon firing bursts of slow rockets that radiate out
+    // all around the ship, then curve into the nearest asteroid / reward UFO.
+    homing: { color: '#2ee6a6', letter: 'H', label: 'HOMING MISSILES', dur: 12 },
+    // Drone wingman: an additive companion (does NOT take the weapon slot) that trails in
+    // formation, mirrors your gun at the nearest threat, smashes what it touches, and can
+    // be destroyed.
+    drone: { color: '#ffd166', letter: 'D', label: 'DRONE WINGMAN', dur: 20 },
     // Nuclear bomb: instant, double-edged. Wipes the board and advances a wave but
     // costs a life. No `dur` - it fires once on pickup (see applyPowerup/triggerNuke).
     nuke: { color: '#ffd60a', letter: '☢', label: 'NUCLEAR' }
   };
   const POWERUP_TYPES = Object.keys(POWERUP_DEF);
-  // Weighted draw pool: the nuclear bomb is a double-edged jackpot, so it shows up
-  // a third as often as every other power-up (weight 1 vs 3).
-  const POWERUP_PICK = POWERUP_TYPES.flatMap((t) => Array(t === 'nuke' ? 1 : 3).fill(t));
+  // Dynamic rarity: every drop "heats up" its type, making it much less likely to recur;
+  // that heat decays over time (see update), so variety recovers within ~20-30s and you
+  // don't get the same power-up twice in quick succession. Base weights: the nuclear bomb
+  // is a double-edged jackpot, so 1 vs 3 for everything else.
+  let dropHeat = {};
 
   // Persistent high score (survives the footer "Clear storage", which preserves
   // this key - see the clear handler in app.js).
@@ -293,17 +307,37 @@ export function launchAsteroids() {
   let newHigh = false;
   const saveHi = () => { try { localStorage.setItem(HI_KEY, String(highScore)); } catch (_) {} };
 
+  // Persistent boss-beaten unlock + remembered start-wave preference (1 or 5).
+  const BOSS_UNLOCK_KEY = 'anr-asteroids-bossbeat';
+  const STARTWAVE_KEY = 'anr-asteroids-startwave';
+  let bossEverBeaten = false, startWavePref = 1;
+  try { bossEverBeaten = localStorage.getItem(BOSS_UNLOCK_KEY) === '1'; } catch (_) {}
+  try { startWavePref = localStorage.getItem(STARTWAVE_KEY) === '10' ? 10 : 1; } catch (_) {}
+
   let asteroids = [], bullets = [], particles = [], powerups = [], lasers = [];
   // Roaming UFOs (from wave 3): a teal reward saucer (destructible, drops a power-up)
   // and a magenta ambient escort (indestructible, leaves once the wave is cleared).
   // Both fly predictable closed paths and are lethal on contact.
   let ufos = [];
+  // Homing missiles: slow seekers that curve into the nearest asteroid / reward UFO.
+  let missiles = [];
+  // Drone wingman: an additive companion (separate from the weapon slot) that trails the
+  // ship, mirrors its gun at the nearest threat, smashes what it touches, and can be killed.
+  let drone = null, droneTimer = 0, droneFireCd = 0;
+  // Boss waves: a single large passive boss on wave 5 then every 7; three types cycle via a
+  // shuffle bag. startToggleBtn is the (unlock-gated) Wave 1 / Wave 10 start toggle button.
+  let boss = null, bossBag = [], startToggleBtn = null;
   let wave = 0, score = 0, lives = 3, gameOver = false;
   // What dealt the final blow, for the leaderboard: an asteroid's file label
   // (e.g. '.pdf') or 'nuke'. Overwritten on each life lost, so at game over it
   // holds the last (fatal) one.
   let cause = null;
   let weapon = 'normal', weaponTimer = 0, lightningTarget = null, shield = 0;
+  // After a battering-ram hit the ram briefly can't hit again and the ship is invulnerable.
+  let ramHitCd = 0;
+  // Homing burst: releases its 8-missile ring one at a time in quick succession, then
+  // waits out the 3s cooldown (held in fireCd).
+  let homingLeft = 0, homingIdx = 0, homingBase = 0, homingGap = 0, homingTrickle = 0;
   // Lightning's mid kink is stored in the ship's rotating frame (so it tracks the
   // player's heading and survives a target redirect) and re-rolled ~10x a second.
   let lightningMid = null, lightningMidTimer = 0;
@@ -337,6 +371,9 @@ export function launchAsteroids() {
   // Sandbox power-up modifiers: infinite freezes the active weapon/shield countdown;
   // instant applies a power-up straight to the player instead of dropping a pickup.
   let sbInfinite = false, sbInstant = false;
+  // Assigned when the sandbox UI is built; the in-game Konami code calls it to reveal
+  // the (otherwise hidden) SB button and switch sandbox on.
+  let revealSandbox = null;
   const immortal = () => sandbox && cheatInvuln;
   // Top 5 from the server, drawn in the left margin (and refreshed after a submit).
   let leaderboard = [];
@@ -375,6 +412,7 @@ export function launchAsteroids() {
   function spawnWave() {
     dismissAmbientUfos();   // last wave's ambient escort flies off now the board is clear
     wave++;
+    if (isBossWave(wave)) { spawnBoss(); return; }   // boss wave: just the boss; advances when it dies
     const count = Math.min(8, 2 + wave);
     // Keep a clear ring around the ship so a new big asteroid can never spawn on
     // top of the player; retry the random position until it's outside that ring.
@@ -415,8 +453,23 @@ export function launchAsteroids() {
     }
   }
 
+  // Pick a drop type, weighting each by its base rarity divided by its current heat, then
+  // heat the chosen type so it's unlikely to come up again soon.
+  function choosePowerupType() {
+    const weights = POWERUP_TYPES.map((t) => {
+      const base = t === 'nuke' ? 1 : 3;
+      return Math.max(0.05, base / (1 + (dropHeat[t] || 0)));
+    });
+    let total = 0; for (const w of weights) total += w;
+    let r = Math.random() * total, i = 0;
+    while (i < weights.length - 1 && r > weights[i]) { r -= weights[i]; i++; }
+    const type = POWERUP_TYPES[i];
+    dropHeat[type] = (dropHeat[type] || 0) + 4;   // strong recency penalty on the chosen type
+    return type;
+  }
+
   function makePowerup(x, y, forcedType) {
-    const type = forcedType || pick(POWERUP_PICK);
+    const type = forcedType || choosePowerupType();
     const dir = rand(0, TAU), spd = rand(8, 22) * S;
     return {
       x, y, type, color: POWERUP_DEF[type].color, letter: POWERUP_DEF[type].letter,
@@ -431,7 +484,9 @@ export function launchAsteroids() {
       else shield = SHIELD_DUR;
     } else if (type === 'nuke') {
       triggerNuke();
-    } else { weapon = type; weaponTimer = POWERUP_DEF[type].dur; }
+    } else if (type === 'drone') {
+      drone = makeDrone(); droneTimer = POWERUP_DEF.drone.dur;
+    } else { weapon = type; weaponTimer = POWERUP_DEF[type].dur; homingLeft = 0; }
   }
 
   // Detonate: wipe every asteroid (and any combat residue), advance a wave at a
@@ -442,11 +497,13 @@ export function launchAsteroids() {
   function triggerNuke() {
     if (!immortal()) lives--;   // sandbox invulnerability spares the bomb's life cost
     cause = 'nuke';   // if this was the last life, the bomb is the final blow
-    asteroids = []; bullets = []; lasers = []; ufos = [];
+    asteroids = []; bullets = []; lasers = []; ufos = []; missiles = [];
     // End any power-up the player was carrying - they come out of the blast clean.
-    weapon = 'normal'; weaponTimer = 0; shield = 0;
+    weapon = 'normal'; weaponTimer = 0; shield = 0; homingLeft = 0; drone = null; droneTimer = 0;
     lightningTarget = null; lightningEnd = null; lightningMid = null; lightningMidTimer = 0;
     ripples = []; rippleTimer = 0;
+    // A nuke chips the boss too, but can't finish it off mid-cinematic (each node floored at 1 hp).
+    if (boss) for (const n of boss.nodes) { if (!n.dead && bossNodeVulnerable(boss, n)) n.hp = Math.max(1, n.hp - 4); }
     nuke = NUKE_TOTAL;
     overlay.style.cursor = 'none';   // hidden for the cinematic, restored on respawn
     // Spawn a wreck where the ship was, on a slow constant drift (no drag) in a
@@ -464,13 +521,15 @@ export function launchAsteroids() {
   }
 
   function restart() {
-    asteroids = []; bullets = []; particles = []; powerups = []; lasers = []; ufos = [];
-    weapon = 'normal'; weaponTimer = 0; lightningTarget = null; shield = 0;
+    asteroids = []; bullets = []; particles = []; powerups = []; lasers = []; ufos = []; missiles = [];
+    drone = null; droneTimer = 0; dropHeat = {}; boss = null;
+    weapon = 'normal'; weaponTimer = 0; lightningTarget = null; shield = 0; homingLeft = 0;
     lightningMid = null; lightningMidTimer = 0; ripples = []; rippleTimer = 0;
     nuke = 0; wreck = null; overlay.style.cursor = '';
     clearEndPanel(); scoreDone = false;
     mobileControls.forEach((elm) => { elm.style.display = ''; });   // controls back for play
-    wave = 0; score = 0; lives = 3; gameOver = false; newHigh = false; cause = null;
+    wave = (bossEverBeaten && startWavePref === 10) ? 9 : 0;   // unlocked Wave 10 start (spawnWave bumps it)
+    score = 0; lives = 3; gameOver = false; newHigh = false; cause = null;
     sandboxUsed = sandbox;   // a fresh run is leaderboard-ineligible only if still in sandbox
     resetShip(SPAWN_INVULN);
     spawnWave();
@@ -512,6 +571,12 @@ export function launchAsteroids() {
       pierce: pierce | 0   // extra asteroids this round punches through before dying
     });
   }
+  // Like spawnBullet but from an arbitrary origin (the drone), with no inherited ship velocity.
+  function spawnBulletAt(x, y, angle, speed, life, sniper, pierce) {
+    if (bullets.length >= MAX_BULLETS) return;
+    const c = Math.cos(angle), s = Math.sin(angle);
+    bullets.push({ x, y, vx: c * speed, vy: s * speed, life, sniper: !!sniper, pierce: pierce | 0 });
+  }
 
   // Distance from the field rectangle's border along a ray from (px,py) in unit dir
   // (dx,dy); the ship is always inside, so the first edge the ray reaches (the
@@ -550,6 +615,11 @@ export function launchAsteroids() {
       if (u.kind !== 'reward' || u.appear < 1) continue;
       if (distToSeg(u.x, u.y, ship.x, ship.y, ex, ey) < u.radius + LASER_WIDTH / 2) damageUfo(ui, 2);
     }
+    if (boss) for (const n of boss.nodes) {
+      if (!bossNodeVulnerable(boss, n)) continue;
+      const [nx, ny] = bossNodePos(boss, n);
+      if (distToSeg(nx, ny, ship.x, ship.y, ex, ey) < n.r + LASER_WIDTH / 2) damageBossNode(boss, n, 2, nx, ny);
+    }
   }
 
   // Lightning auto-aim: the nearest solid asteroid within the 35° front cone and
@@ -567,11 +637,17 @@ export function launchAsteroids() {
     };
     for (const a of asteroids) { if (a.grace > 0) continue; consider(a); }
     for (const u of ufos) { if (u.kind === 'reward' && u.appear >= 1) consider(u); }
+    if (boss) for (const n of boss.nodes) {
+      if (!bossNodeVulnerable(boss, n)) continue;
+      const [nx, ny] = bossNodePos(boss, n);
+      consider({ x: nx, y: ny, _bossNode: n });
+    }
     return best;
   }
 
   // Fire the current weapon and set the cooldown to its cadence.
   function fireWeapon() {
+    if (weapon === 'ram') return;                                               // contact weapon - no shot
     if (weapon === 'laser') { fireLaser(); fireCd = 0.18 / 0.25; return; }      // 25% of normal rate
     if (weapon === 'machine') {
       // Spray: each round is jittered by up to ±3° for worse accuracy.
@@ -587,6 +663,427 @@ export function launchAsteroids() {
     }
     if (weapon === 'sniper') { spawnBullet(ship.angle, 1080 * S, Infinity, true, 1); fireCd = 0.4; return; }   // half rate, but each round punches through one asteroid into a second
     spawnBullet(ship.angle, 540 * S, 0.9, false); fireCd = 0.18;                 // normal
+  }
+
+  function spawnMissile(angle) {
+    if (missiles.length >= 40) return;
+    const c = Math.cos(angle), s = Math.sin(angle);
+    missiles.push({ x: ship.x + c * 14 * S, y: ship.y + s * 14 * S, angle, life: 3.5 });
+  }
+  // Nearest solid asteroid or reward UFO to a point (ambient escorts are skipped - a
+  // missile can't hurt them).
+  function nearestSeekTarget(x, y) {
+    let best = null, bestD = Infinity;
+    for (const a of asteroids) {
+      if (a.grace > 0) continue;
+      const d = (a.x - x) * (a.x - x) + (a.y - y) * (a.y - y);
+      if (d < bestD) { bestD = d; best = a; }
+    }
+    for (const u of ufos) {
+      if (u.kind !== 'reward' || u.appear < 1) continue;
+      const d = (u.x - x) * (u.x - x) + (u.y - y) * (u.y - y);
+      if (d < bestD) { bestD = d; best = u; }
+    }
+    if (boss) for (const n of boss.nodes) {
+      if (!bossNodeVulnerable(boss, n)) continue;
+      const [nx, ny] = bossNodePos(boss, n);
+      const d = (nx - x) * (nx - x) + (ny - y) * (ny - y);
+      if (d < bestD) { bestD = d; best = { x: nx, y: ny }; }
+    }
+    return best;
+  }
+  // Missiles travel slowly but turn toward their (re-acquired) nearest target each
+  // frame, so they curve in; they detonate on the first thing they touch.
+  function updateMissiles(dt) {
+    const spd = 300 * S, turn = 8 * dt;
+    for (let i = missiles.length - 1; i >= 0; i--) {
+      const m = missiles[i];
+      m.life -= dt;
+      if (m.life <= 0) { burst(m.x, m.y, POWERUP_DEF.homing.color, { count: 6, speed: 80, life: 0.3 }); missiles.splice(i, 1); continue; }
+      const tgt = nearestSeekTarget(m.x, m.y);
+      if (tgt) {
+        let d = Math.atan2(tgt.y - m.y, tgt.x - m.x) - m.angle;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        m.angle += Math.max(-turn, Math.min(turn, d));
+      }
+      m.x += Math.cos(m.angle) * spd * dt; m.y += Math.sin(m.angle) * spd * dt; wrap(m);
+      let hit = false;
+      for (let ai = asteroids.length - 1; ai >= 0; ai--) {
+        const a = asteroids[ai];
+        if (a.grace > 0) continue;
+        const dx = a.x - m.x, dy = a.y - m.y, rr = a.radius + 4 * S;
+        if (dx * dx + dy * dy < rr * rr) { destroyAsteroid(ai); hit = true; break; }
+      }
+      if (!hit) {
+        for (let ui = ufos.length - 1; ui >= 0; ui--) {
+          const u = ufos[ui];
+          if (u.kind !== 'reward' || u.appear < 1) continue;
+          const dx = u.x - m.x, dy = u.y - m.y, rr = u.radius + 4 * S;
+          if (dx * dx + dy * dy < rr * rr) { damageUfo(ui, 1); hit = true; break; }
+        }
+      }
+      if (!hit && boss) {
+        for (const n of boss.nodes) {
+          if (!bossNodeVulnerable(boss, n)) continue;
+          const [nx, ny] = bossNodePos(boss, n);
+          const dx = nx - m.x, dy = ny - m.y, rr = n.r + 4 * S;
+          if (dx * dx + dy * dy < rr * rr) { damageBossNode(boss, n, 1, nx, ny); hit = true; break; }
+        }
+      }
+      if (hit) { burst(m.x, m.y, POWERUP_DEF.homing.color, { count: 8, speed: 110, life: 0.35 }); missiles.splice(i, 1); }
+    }
+  }
+
+  // Drone wingman ---------------------------------------------------------------------
+  function makeDrone() { return { x: ship.x, y: ship.y, angle: ship.angle, hp: 3 }; }
+
+  function droneHurt() {
+    if (!drone) return;
+    drone.hp--;
+    burst(drone.x, drone.y, POWERUP_DEF.drone.color, { count: 5, speed: 90, life: 0.3 });
+    if (drone.hp <= 0) {
+      burst(drone.x, drone.y, POWERUP_DEF.drone.color, { count: 12, speed: 130, life: 0.5, lines: true });
+      drone = null;
+    }
+  }
+
+  // The drone mirrors the player's current bullet weapon, aimed at a target. Exotic
+  // weapons (laser/lightning/ultrasound/ram/homing/nuke) fall back to the basic cannon.
+  function droneFireAt(tx, ty) {
+    const ang = Math.atan2(ty - drone.y, tx - drone.x);
+    drone.angle = ang;
+    if (weapon === 'triple') {
+      const sp = 20 * Math.PI / 180;
+      spawnBulletAt(drone.x, drone.y, ang - sp, 540 * S, 0.9);
+      spawnBulletAt(drone.x, drone.y, ang, 540 * S, 0.9);
+      spawnBulletAt(drone.x, drone.y, ang + sp, 540 * S, 0.9);
+      droneFireCd = 0.22;
+    } else if (weapon === 'machine') {
+      spawnBulletAt(drone.x, drone.y, ang + rand(-3, 3) * Math.PI / 180, 1080 * S, 0.9);
+      droneFireCd = 0.1;
+    } else if (weapon === 'sniper') {
+      spawnBulletAt(drone.x, drone.y, ang, 1080 * S, Infinity, true, 1);
+      droneFireCd = 0.5;
+    } else {
+      spawnBulletAt(drone.x, drone.y, ang, 540 * S, 0.9);
+      droneFireCd = 0.22;
+    }
+  }
+
+  // Trail toward the formation slot, mirror-fire at the nearest threat in range, and
+  // smash what it touches (losing 1 hp each contact; the indestructible escort just
+  // costs hp). Destroyed at 0 hp or when its timer runs out.
+  function updateDrone(dt) {
+    if (!drone) return;
+    if (!sbInfinite) { droneTimer -= dt; if (droneTimer <= 0) { drone = null; return; } }
+    const ca = Math.cos(ship.angle), sa = Math.sin(ship.angle);
+    const ox = -26 * S, oy = 16 * S;   // behind + to one side, in the ship frame
+    const slotX = ship.x + ox * ca - oy * sa, slotY = ship.y + ox * sa + oy * ca;
+    const k = Math.min(1, dt * 6);
+    drone.x += (slotX - drone.x) * k; drone.y += (slotY - drone.y) * k;
+    droneFireCd -= dt;
+    if (droneFireCd <= 0) {
+      let fired = false;
+      if (!ship.dead && !gameOver) {
+        const tgt = nearestSeekTarget(drone.x, drone.y);
+        if (tgt && Math.hypot(tgt.x - drone.x, tgt.y - drone.y) < 460 * S) { droneFireAt(tgt.x, tgt.y); fired = true; }
+      }
+      if (!fired) { drone.angle = ship.angle; droneFireCd = 0.15; }
+    }
+    const dr = 12 * S;
+    for (let ai = asteroids.length - 1; ai >= 0; ai--) {
+      const a = asteroids[ai];
+      if (a.grace > 0) continue;
+      const dx = a.x - drone.x, dy = a.y - drone.y, rr = a.radius + dr;
+      if (dx * dx + dy * dy < rr * rr) { destroyAsteroid(ai); droneHurt(); break; }
+    }
+    if (drone) {
+      for (let ui = ufos.length - 1; ui >= 0; ui--) {
+        const u = ufos[ui];
+        if (u.appear < 1) continue;
+        const dx = u.x - drone.x, dy = u.y - drone.y, rr = u.radius + dr;
+        if (dx * dx + dy * dy < rr * rr) { if (u.kind === 'reward') damageUfo(ui, 1); droneHurt(); break; }
+      }
+    }
+  }
+
+  // Boss waves ------------------------------------------------------------------------
+  // A single large passive boss (lethal on contact, never shoots) on wave 5, then every 7.
+  // Three types cycle via a shuffle bag: a single tough mothership core, a corrupted
+  // megastructure with weak points guarding a core, and a segmented snake. Every weapon can
+  // hurt it; killing it pays out score + power-ups + a heal, and the first boss ever beaten
+  // unlocks the optional Wave 5 start. Each boss is a set of hittable "nodes".
+  // Function declaration (not a const arrow) so it is hoisted: restart() -> spawnWave()
+  // runs during init, above this point, and must be able to call it.
+  function isBossWave(w) { return w === 10 || (w > 10 && (w - 10) % 7 === 0); }
+
+  function nextBossType() {
+    if (!bossBag.length) {
+      bossBag = ['mothership', 'megastructure', 'segmented'];
+      for (let i = bossBag.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; const t = bossBag[i]; bossBag[i] = bossBag[j]; bossBag[j] = t; }
+    }
+    return bossBag.pop();
+  }
+
+  function spawnBoss(forcedType) {
+    const type = forcedType || nextBossType();
+    const u = 100 * S;                       // "large" size unit
+    // grace: like a fresh wave's asteroids, the boss arrives as a hitless dashed outline
+    // (under the big wave number) for WAVE_GRACE seconds before it goes solid and active.
+    const b = { type, x: cx, y: cy - HH * 0.45, angle: 0, vx: 0, vy: 0, spin: 0, t: 0, r: u, nodes: [], grace: WAVE_GRACE };
+    if (type === 'mothership') {
+      // Single hit-anywhere core. A passive carrier: it holds up in the top area and
+      // launches small UFOs (mostly reward, some ambient) on a timer.
+      // Hitbox radius is half the visual half-width so the circle hugs the saucer's body
+      // rather than the wide, mostly-empty silhouette (b.r stays u for drawing/movement).
+      b.nodes.push({ ox: 0, oy: 0, r: u * 0.5, hp: 120, maxhp: 120, kind: 'core', dead: false });
+      b.y = cy - HH * 0.5;                              // hover in the upper portion of the field
+      b.vx = (Math.random() < 0.5 ? -1 : 1) * 26 * S;   // side-to-side drift only (no spin)
+      b.spawnCd = 2;                                    // first UFO launch shortly after it arrives
+    } else if (type === 'megastructure') {
+      b.r = u * 1.05; b.spin = 0.5;
+      b.nodes.push({ ox: 0, oy: 0, r: u * 0.5, hp: 24, maxhp: 24, kind: 'core', dead: false });
+      const arms = 6;
+      for (let i = 0; i < arms; i++) {
+        const a = (i / arms) * TAU, rr = u * 0.92;
+        b.nodes.push({ ox: Math.cos(a) * rr, oy: Math.sin(a) * rr, r: u * 0.26, hp: 6, maxhp: 6, kind: 'weak', dead: false });
+      }
+    } else {
+      b.r = u * 0.5; b.spacing = u * 0.44; b.headAngle = rand(0, TAU); b.steerT = 0;
+      const M = 9, hx = cx, hy = cy - HH * 0.4;
+      for (let i = 0; i < M; i++) b.nodes.push({ ax: hx - i * b.spacing, ay: hy, r: u * 0.34, hp: 6, maxhp: 6, kind: 'segment', dead: false });
+    }
+    boss = b;
+  }
+
+  // World position of a node (offsets rotate with the boss; segments carry absolute coords).
+  function bossNodePos(b, n) {
+    if (b.type === 'segmented') return [n.ax, n.ay];
+    const c = Math.cos(b.angle), s = Math.sin(b.angle);
+    return [b.x + n.ox * c - n.oy * s, b.y + n.ox * s + n.oy * c];
+  }
+  // A node can be damaged unless dead - except the megastructure core, sealed until every
+  // weak point is destroyed.
+  function bossNodeVulnerable(b, n) {
+    if (n.dead || b.grace > 0) return false;   // no hitbox while it's still the arrival outline
+    if (b.type === 'megastructure' && n.kind === 'core') return b.nodes.every((x) => x.kind !== 'weak' || x.dead);
+    return true;
+  }
+  function bossDead(b) {
+    if (b.type === 'mothership') return b.nodes[0].dead;
+    if (b.type === 'megastructure') return b.nodes.some((n) => n.kind === 'core' && n.dead);
+    return b.nodes.every((n) => n.dead);   // segmented
+  }
+  function damageBossNode(b, n, dmg, hx, hy) {
+    if (n.dead) return;
+    n.hp -= dmg;
+    burst(hx, hy, BOSS_COLOR, { count: 3, speed: 70, life: 0.25 });
+    if (n.hp <= 0) { n.dead = true; burst(hx, hy, BOSS_COLOR, { count: 10, speed: 120, life: 0.5, lines: true }); }
+  }
+  // Damage the first vulnerable node containing (x,y) within padR; true if it hit.
+  function hitBossAt(x, y, padR, dmg) {
+    if (!boss) return false;
+    for (const n of boss.nodes) {
+      if (!bossNodeVulnerable(boss, n)) continue;
+      const [nx, ny] = bossNodePos(boss, n);
+      const rr = n.r + padR;
+      if ((x - nx) * (x - nx) + (y - ny) * (y - ny) < rr * rr) { damageBossNode(boss, n, dmg, nx, ny); return true; }
+    }
+    return false;
+  }
+
+  // Segmented boss: the head wanders and bounces off the field edges; each segment trails
+  // the one ahead at fixed spacing (a classic chain follow). Dead segments keep their place
+  // in the chain so the tail still tracks.
+  function updateSnake(b, dt) {
+    const head = b.nodes[0];
+    b.steerT -= dt;
+    if (b.steerT <= 0) { b.headAngle += rand(-0.9, 0.9); b.steerT = rand(0.4, 1.1); }
+    const spd = 120 * S, m = b.r + 6 * S;
+    let hx = head.ax + Math.cos(b.headAngle) * spd * dt, hy = head.ay + Math.sin(b.headAngle) * spd * dt;
+    if (hx < cx - HW + m) { hx = cx - HW + m; b.headAngle = Math.PI - b.headAngle; }
+    else if (hx > cx + HW - m) { hx = cx + HW - m; b.headAngle = Math.PI - b.headAngle; }
+    if (hy < cy - HH + m) { hy = cy - HH + m; b.headAngle = -b.headAngle; }
+    else if (hy > cy + HH - m) { hy = cy + HH - m; b.headAngle = -b.headAngle; }
+    head.ax = hx; head.ay = hy;
+    for (let i = 1; i < b.nodes.length; i++) {
+      const p = b.nodes[i - 1], n = b.nodes[i];
+      const dx = n.ax - p.ax, dy = n.ay - p.ay, d = Math.hypot(dx, dy) || 1;
+      n.ax = p.ax + (dx / d) * b.spacing; n.ay = p.ay + (dy / d) * b.spacing;
+    }
+  }
+
+  function updateBoss(dt) {
+    if (!boss) return;
+    if (bossDead(boss)) { bossDefeated(); return; }
+    const b = boss; b.t += dt;
+    if (b.grace > 0) b.grace = Math.max(0, b.grace - dt);   // arrival outline: inert until it expires
+    const active = b.grace <= 0;
+    if (b.type === 'mothership') {
+      // Upper-area hover: drift side to side, bounce off the side walls, gentle vertical bob.
+      b.x += b.vx * dt;
+      if (b.x < cx - HW + b.r) { b.x = cx - HW + b.r; b.vx = Math.abs(b.vx); }
+      else if (b.x > cx + HW - b.r) { b.x = cx + HW - b.r; b.vx = -Math.abs(b.vx); }
+      b.y = (cy - HH * 0.5) + Math.sin(b.t * 0.8) * HH * 0.05;
+      // Carrier: launch small UFOs on a timer, capped at 4 of its own alive at once.
+      if (active) b.spawnCd -= dt;
+      if (active && b.spawnCd <= 0) {
+        b.spawnCd = 3.5;
+        if (ufos.filter((u) => u.fromBoss && !u.leaving).length < 4) {
+          const u = makeUfo(Math.random() < 0.7 ? 'reward' : 'ambient');
+          u.fromBoss = true; u.x = b.x; u.y = b.y;   // emerge from the carrier, then ease onto its path
+          ufos.push(u);
+        }
+      }
+    } else if (b.type === 'megastructure') {
+      b.angle += b.spin * dt;
+      b.x = cx + Math.sin(b.t * 0.4) * HW * 0.12;
+      b.y = (cy - HH * 0.1) + Math.cos(b.t * 0.5) * HH * 0.12;
+    } else {
+      updateSnake(b, dt);
+    }
+    // Lethal-on-contact body; the battering ram smashes nodes head-on instead of dying.
+    if (active && !ship.dead && !gameOver) {
+      const ramming = weapon === 'ram';
+      for (const n of b.nodes) {
+        if (n.dead) continue;
+        const [nx, ny] = bossNodePos(b, n);
+        const dx = nx - ship.x, dy = ny - ship.y, rr = n.r + 11 * S;
+        if (dx * dx + dy * dy >= rr * rr) continue;
+        if (ramming) {
+          if (ramHitCd <= 0 && bossNodeVulnerable(b, n) && ship.vx * dx + ship.vy * dy > 0) {
+            damageBossNode(b, n, 2, nx, ny); ramHitCd = 0.5; ship.invuln = Math.max(ship.invuln, 0.5);
+          }
+          continue;
+        }
+        if (ship.invuln <= 0 && shield <= 0 && !immortal()) { cause = 'boss'; loseLife(); }
+        break;
+      }
+    }
+  }
+
+  function bossDefeated() {
+    const b = boss; boss = null;
+    if (!sandbox) { score += 1000; if (score > highScore) { highScore = score; newHigh = true; saveHi(); } }
+    for (const n of b.nodes) { const [nx, ny] = bossNodePos(b, n); burst(nx, ny, BOSS_COLOR, { count: 8, speed: 130, life: 0.6, lines: true }); }
+    for (let k = 0; k < 3; k++) powerups.push(makePowerup(cx + rand(-HW, HW) * 0.5, cy + rand(-HH, HH) * 0.5));
+    if (lives < MAX_LIVES) lives++; else shield = Math.max(shield, SHIELD_DUR);
+    if (!bossEverBeaten) {
+      bossEverBeaten = true;
+      try { localStorage.setItem(BOSS_UNLOCK_KEY, '1'); } catch (_) {}
+      if (startToggleBtn) startToggleBtn.style.display = '';
+    }
+    spawnWave();   // advance to the next (normal) wave
+  }
+
+  // Arrival preview: the boss's silhouette as a dimmed, marching-dashed outline (no fills,
+  // glow or detail) - the same "not solid yet" language as a fresh wave's asteroids.
+  function drawBossOutline(b) {
+    ctx.save();
+    ctx.strokeStyle = BOSS_COLOR; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+    ctx.setLineDash([7, 6]); ctx.lineDashOffset = -clock * 36; ctx.globalAlpha = 0.5;
+    if (b.type === 'segmented') {
+      for (const n of b.nodes) { ctx.beginPath(); ctx.arc(n.ax, n.ay, n.r, 0, TAU); ctx.stroke(); }
+    } else if (b.type === 'megastructure') {
+      ctx.translate(b.x, b.y); ctx.rotate(b.angle);
+      const core = b.nodes.find((n) => n.kind === 'core');
+      ctx.beginPath(); ctx.arc(0, 0, core.r, 0, TAU); ctx.stroke();
+      for (const n of b.nodes) { if (n.kind !== 'weak') continue; ctx.strokeRect(n.ox - n.r * 0.75, n.oy - n.r * 0.75, n.r * 1.5, n.r * 1.5); }
+    } else {   // mothership hull
+      ctx.translate(b.x, b.y);
+      const r = b.r;
+      ctx.beginPath();
+      ctx.moveTo(-r, 0); ctx.lineTo(-r * 0.55, -r * 0.32); ctx.lineTo(r * 0.55, -r * 0.32);
+      ctx.lineTo(r, 0); ctx.lineTo(r * 0.55, r * 0.3); ctx.lineTo(-r * 0.55, r * 0.3); ctx.closePath(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawBoss() {
+    if (!boss) return;
+    const b = boss;
+    if (b.grace > 0) { drawBossOutline(b); return; }
+    ctx.save();
+    ctx.strokeStyle = BOSS_COLOR; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+    ctx.shadowColor = BOSS_COLOR; ctx.shadowBlur = 10;
+    if (b.type === 'segmented') {
+      ctx.globalAlpha = 0.4; ctx.beginPath();
+      for (let i = 0; i < b.nodes.length; i++) { const n = b.nodes[i]; if (i === 0) ctx.moveTo(n.ax, n.ay); else ctx.lineTo(n.ax, n.ay); }
+      ctx.stroke(); ctx.globalAlpha = 1;
+      for (let i = 0; i < b.nodes.length; i++) {
+        const n = b.nodes[i]; if (n.dead) continue;
+        ctx.beginPath(); ctx.arc(n.ax, n.ay, n.r, 0, TAU); ctx.stroke();
+        if (i === 0) { ctx.globalAlpha = 0.25; ctx.fillStyle = BOSS_COLOR; ctx.fill(); ctx.globalAlpha = 1; }
+      }
+    } else if (b.type === 'megastructure') {
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.angle);
+      for (const n of b.nodes) {
+        if (n.kind !== 'weak') continue;
+        ctx.globalAlpha = n.dead ? 0.12 : 1;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(n.ox, n.oy); ctx.stroke();
+        if (!n.dead) ctx.strokeRect(n.ox - n.r * 0.75, n.oy - n.r * 0.75, n.r * 1.5, n.r * 1.5);
+      }
+      ctx.globalAlpha = 1;
+      const core = b.nodes.find((n) => n.kind === 'core'), exposed = bossNodeVulnerable(b, core);
+      ctx.strokeStyle = exposed ? BOSS_COLOR : MUTED;
+      ctx.beginPath();
+      for (let i = 0; i <= 6; i++) { const a = (i / 6) * TAU, px = Math.cos(a) * core.r, py = Math.sin(a) * core.r; if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py); }
+      ctx.stroke();
+      ctx.restore();
+    } else {   // mothership - detailed carrier saucer (passive; the whole hull is the core)
+      const core = b.nodes[0], frac = Math.max(0, core.hp / core.maxhp);
+      ctx.save(); ctx.translate(b.x, b.y);   // no rotation - it hovers level
+      const r = b.r;
+      // Hull
+      ctx.beginPath();
+      ctx.moveTo(-r, 0); ctx.lineTo(-r * 0.55, -r * 0.32); ctx.lineTo(r * 0.55, -r * 0.32);
+      ctx.lineTo(r, 0); ctx.lineTo(r * 0.55, r * 0.3); ctx.lineTo(-r * 0.55, r * 0.3); ctx.closePath(); ctx.stroke();
+      // Equator line + hull plating ticks (greebles)
+      ctx.beginPath(); ctx.moveTo(-r, 0); ctx.lineTo(r, 0); ctx.stroke();
+      ctx.globalAlpha = 0.45;
+      for (let i = -4; i <= 4; i++) { const x = i * r * 0.2; ctx.beginPath(); ctx.moveTo(x, -r * 0.06); ctx.lineTo(x, r * 0.06); ctx.stroke(); }
+      ctx.globalAlpha = 1;
+      // Dome
+      ctx.beginPath(); ctx.moveTo(-r * 0.45, -r * 0.32); ctx.quadraticCurveTo(0, -r * 0.85, r * 0.45, -r * 0.32); ctx.stroke();
+      // Hangar bay lights along the lower rim, where the UFOs launch from
+      ctx.save(); ctx.fillStyle = UFO_REWARD_COLOR; ctx.shadowColor = UFO_REWARD_COLOR; ctx.shadowBlur = 8;
+      const bay = 0.6 + 0.4 * Math.sin(b.t * 4);
+      for (let i = -2; i <= 2; i++) { ctx.globalAlpha = bay; ctx.beginPath(); ctx.arc(i * r * 0.32, r * 0.18, 2.6 * S, 0, TAU); ctx.fill(); }
+      ctx.restore();
+      // Pulsing core glow at the centre (the weak point - hit anywhere on the hull)
+      const pulse = 0.5 + 0.5 * Math.sin(b.t * 3);
+      ctx.save();
+      ctx.shadowColor = BOSS_COLOR; ctx.shadowBlur = 16 + pulse * 14;
+      ctx.fillStyle = BOSS_COLOR; ctx.globalAlpha = 0.3 + pulse * 0.4;
+      ctx.beginPath(); ctx.arc(0, -r * 0.05, r * 0.15 + pulse * r * 0.05, 0, TAU); ctx.fill();
+      ctx.restore();
+      // Damage cracks - more appear as the hull is whittled down
+      const cracks = Math.round((1 - frac) * 5);
+      if (cracks > 0) {
+        ctx.globalAlpha = 0.65;
+        for (let i = 0; i < cracks; i++) {
+          const a = (i / 5) * TAU + 0.6;
+          const x0 = Math.cos(a) * r * 0.22, y0 = Math.sin(a) * r * 0.1;
+          const x1 = Math.cos(a) * r * 0.72, y1 = Math.sin(a) * r * 0.26;
+          ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo((x0 + x1) / 2 + r * 0.05, (y0 + y1) / 2); ctx.lineTo(x1, y1); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function drawBossBar() {
+    if (!boss || boss.grace > 0) return;   // hidden during the arrival outline
+    let hp = 0, max = 0;
+    for (const n of boss.nodes) { hp += Math.max(0, n.hp); max += n.maxhp; }
+    const frac = max > 0 ? Math.max(0, Math.min(1, hp / max)) : 0;
+    const w = 2 * HW * 0.55, x = cx - w / 2, y = cy - HH + 14;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(x, y, w, 5);
+    ctx.fillStyle = BOSS_COLOR; ctx.fillRect(x, y, w * frac, 5);
+    ctx.font = '10px ' + MONO; ctx.fillStyle = BOSS_COLOR; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('BOSS', cx, y - 4);
   }
 
   function destroyAsteroid(ai) {
@@ -757,10 +1254,21 @@ export function launchAsteroids() {
         u.t += dt / u.period; if (u.t > 1) u.t -= 1;
         const [px, py] = ufoPathPos(u); u.x = px; u.y = py;
       }
-      // Solid hazard: ramming a UFO (either kind) costs a life.
-      if (!ship.dead && ship.invuln <= 0 && shield <= 0 && !gameOver && !immortal() && u.appear >= 1) {
+      // Contact. With the battering ram up the ship is unharmed and instead damages a
+      // reward saucer it charges head-on into (the ambient escort is indestructible);
+      // otherwise contact with either kind costs a life.
+      if (!ship.dead && !gameOver && u.appear >= 1) {
         const dx = u.x - ship.x, dy = u.y - ship.y, rr = u.radius + 11 * S;
-        if (dx * dx + dy * dy < rr * rr) { cause = 'ufo'; loseLife(); }
+        if (dx * dx + dy * dy < rr * rr) {
+          if (weapon === 'ram') {
+            if (ramHitCd <= 0 && u.kind === 'reward' && ship.vx * dx + ship.vy * dy > 0) {
+              damageUfo(i, 1);
+              ramHitCd = 0.5; ship.invuln = Math.max(ship.invuln, 0.5);
+            }
+          } else if (ship.invuln <= 0 && shield <= 0 && !immortal()) {
+            cause = 'ufo'; loseLife();
+          }
+        }
       }
     }
   }
@@ -781,13 +1289,13 @@ export function launchAsteroids() {
     // respawn the player into a fresh wave or - if the bomb cost the last life - end.
     if (nuke > 0) {
       nuke -= dt;
-      asteroids = []; bullets = []; lasers = []; powerups = []; particles = []; ufos = [];
+      asteroids = []; bullets = []; lasers = []; powerups = []; particles = []; ufos = []; missiles = [];
       lightningTarget = null;
       if (nuke <= 0) {
         nuke = 0;
         overlay.style.cursor = '';   // cursor back once the cinematic ends
         if (lives <= 0) endGame();
-        else { resetShip(SPAWN_INVULN); spawnWave(); }
+        else { resetShip(SPAWN_INVULN); if (!boss) spawnWave(); }   // a surviving boss keeps the wave going
       }
       return;
     }
@@ -809,8 +1317,11 @@ export function launchAsteroids() {
     for (let i = ripples.length - 1; i >= 0; i--) { ripples[i].p += dt / RIPPLE_DUR; if (ripples[i].p >= 1) ripples.splice(i, 1); }
 
     // Timed weapon power-ups revert to the normal cannon when they run out.
-    if (weaponTimer > 0 && !sbInfinite) { weaponTimer -= dt; if (weaponTimer <= 0) { weapon = 'normal'; weaponTimer = 0; } }
+    if (weaponTimer > 0 && !sbInfinite) { weaponTimer -= dt; if (weaponTimer <= 0) { weapon = 'normal'; weaponTimer = 0; homingLeft = 0; } }
     if (shield > 0 && !sbInfinite) shield -= dt;
+    if (ramHitCd > 0) ramHitCd -= dt;
+    // Decay power-up drop heat so recently-dropped types gradually become likely again.
+    for (const t in dropHeat) dropHeat[t] *= Math.exp(-0.06 * dt);
 
     // Power-ups drift, wrap, expire, and are collected by flying over them.
     for (let i = powerups.length - 1; i >= 0; i--) {
@@ -843,11 +1354,16 @@ export function launchAsteroids() {
         if (input.left) ship.angle -= 4.6 * dt;
         if (input.right) ship.angle += 4.6 * dt;
       }
-      if (input.thrust) { ship.vx += Math.cos(ship.angle) * 270 * S * dt; ship.vy += Math.sin(ship.angle) * 270 * S * dt; }
-      const drag = Math.exp(-0.55 * dt);
+      const ramming = weapon === 'ram';
+      // The battering ram accelerates much harder and has its speed cap lifted, so a
+      // charge builds fast; it also runs higher drag (less inertia) so it stays
+      // maneuverable at speed instead of drifting.
+      const accel = ramming ? 900 : 270;
+      if (input.thrust) { ship.vx += Math.cos(ship.angle) * accel * S * dt; ship.vy += Math.sin(ship.angle) * accel * S * dt; }
+      const drag = Math.exp(-(ramming ? 1.2 : 0.55) * dt);
       ship.vx *= drag; ship.vy *= drag;
       const sp = Math.hypot(ship.vx, ship.vy), MAX = 430 * S;
-      if (sp > MAX) { ship.vx = ship.vx / sp * MAX; ship.vy = ship.vy / sp * MAX; }
+      if (sp > MAX && !ramming) { ship.vx = ship.vx / sp * MAX; ship.vy = ship.vy / sp * MAX; }
       ship.x += ship.vx * dt; ship.y += ship.vy * dt; wrap(ship);
       if (ship.invuln > 0) ship.invuln -= dt;
       fireCd -= dt;
@@ -889,6 +1405,7 @@ export function launchAsteroids() {
         if (lightningTarget && fireCd <= 0) {
           const ai = asteroids.indexOf(lightningTarget);
           if (ai >= 0) destroyAsteroid(ai);
+          else if (lightningTarget._bossNode) { if (boss) damageBossNode(boss, lightningTarget._bossNode, 1, lightningTarget.x, lightningTarget.y); }
           else { const ui = ufos.indexOf(lightningTarget); if (ui >= 0) damageUfo(ui, 1); }
           fireCd = 0.18;
         }
@@ -911,7 +1428,30 @@ export function launchAsteroids() {
             const dx = u.x - ship.x, dy = u.y - ship.y, rr = ULTRASOUND_RADIUS + u.radius;
             if (dx * dx + dy * dy < rr * rr) damageUfo(ui, 1);
           }
+          if (boss) for (const n of boss.nodes) {
+            if (!bossNodeVulnerable(boss, n)) continue;
+            const [nx, ny] = bossNodePos(boss, n);
+            const dx = nx - ship.x, dy = ny - ship.y, rr = ULTRASOUND_RADIUS + n.r;
+            if (dx * dx + dy * dy < rr * rr) damageBossNode(boss, n, 1, nx, ny);
+          }
           fireCd = ULTRASOUND_TICK;
+        }
+      } else if (weapon === 'homing') {
+        lightningTarget = null;
+        if (homingLeft > 0) {
+          // Mid-burst: release the ring one missile at a time in quick succession.
+          homingGap -= dt;
+          while (homingLeft > 0 && homingGap <= 0) {
+            spawnMissile(homingBase + (homingIdx / 8) * TAU);
+            homingIdx++; homingLeft--; homingGap += 0.07;
+          }
+          if (homingLeft === 0) { fireCd = 3; homingTrickle = 1; }   // start the 3s cooldown
+        } else if (fireCd > 0) {
+          // During the cooldown, trickle a single forward missile once a second.
+          homingTrickle -= dt;
+          if (homingTrickle <= 0) { if (input.fire) spawnMissile(ship.angle); homingTrickle += 1; }
+        } else if (input.fire) {
+          homingBase = ship.angle; homingIdx = 0; homingLeft = 8; homingGap = 0;   // begin a burst
         }
       } else {
         lightningTarget = null;
@@ -960,14 +1500,43 @@ export function launchAsteroids() {
       }
     }
 
-    updateUfos(dt);   // move/fade the roaming UFOs and check their lethal contact
+    // Bullet -> boss node (covers the drone's shots too, since they're normal bullets).
+    if (boss) for (let bi = bullets.length - 1; bi >= 0; bi--) {
+      const b = bullets[bi];
+      if (hitBossAt(b.x, b.y, 2 * S, 1)) {
+        if (b.pierce > 0) { b.pierce--; continue; }
+        bullets.splice(bi, 1);
+      }
+    }
 
-    // Asteroid -> ship (skipped while dead, immune, shielded, or asteroid in grace).
-    if (!ship.dead && ship.invuln <= 0 && shield <= 0 && !gameOver) {
-      for (const a of asteroids) {
+    updateUfos(dt);   // move/fade the roaming UFOs and check their lethal contact
+    updateMissiles(dt);   // home + detonate any homing missiles in flight
+    updateDrone(dt);      // move/fire the drone wingman and check its contacts
+    updateBoss(dt);       // move the boss, check its lethal contact, handle its death
+
+    // Asteroid -> ship. With the battering ram up the ship is unharmed and instead
+    // smashes any asteroid it charges head-on into; otherwise a hit costs a life
+    // (skipped while dead, immune, shielded, or the asteroid is still in grace).
+    if (!ship.dead && !gameOver) {
+      const ramming = weapon === 'ram';
+      for (let ai = asteroids.length - 1; ai >= 0; ai--) {
+        const a = asteroids[ai];
         if (a.grace > 0) continue;
         const dx = a.x - ship.x, dy = a.y - ship.y, rr = a.radius + 11 * S;
-        if (dx * dx + dy * dy < rr * rr) { if (!immortal()) { cause = a.label; loseLife(); } break; }
+        if (dx * dx + dy * dy >= rr * rr) continue;
+        if (ramming) {
+          // Each ram hit punches one target, then briefly can't hit again (and the ship
+          // is invulnerable) for 0.5s, so a charge pulses through rather than wiping a
+          // whole cluster in a single frame.
+          if (ramHitCd <= 0 && ship.vx * dx + ship.vy * dy > 0) {
+            destroyAsteroid(ai);
+            ramHitCd = 0.5; ship.invuln = Math.max(ship.invuln, 0.5);
+            break;
+          }
+          continue;   // ram never harms the ship; can't hit while on cooldown
+        }
+        if (ship.invuln <= 0 && shield <= 0 && !immortal()) { cause = a.label; loseLife(); }
+        break;
       }
     }
   }
@@ -1086,6 +1655,18 @@ export function launchAsteroids() {
     ctx.beginPath();
     ctx.moveTo(14, 0); ctx.lineTo(-10, -9); ctx.lineTo(-6, 0); ctx.lineTo(-10, 9);
     ctx.closePath(); ctx.stroke();
+    if (weapon === 'ram') {
+      // Two lines forming an arrow ahead of the nose - the battering-ram charge tip.
+      const c = POWERUP_DEF.ram.color;
+      ctx.save();
+      ctx.globalAlpha = fade * (0.7 + 0.3 * Math.abs(Math.sin(clock * 9)));
+      ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+      ctx.shadowColor = c; ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(19, -8); ctx.lineTo(30, 0); ctx.lineTo(19, 8);
+      ctx.stroke();
+      ctx.restore();
+    }
     if (input.thrust && (Math.random() > 0.35)) {
       ctx.strokeStyle = ACCENT;
       ctx.beginPath(); ctx.moveTo(-6, -4); ctx.lineTo(-16, 0); ctx.lineTo(-6, 4); ctx.stroke();
@@ -1268,6 +1849,39 @@ export function launchAsteroids() {
     ctx.setLineDash([]);
     ctx.globalAlpha = 0.8;
     ctx.beginPath(); ctx.arc(ex, ey, 3 * S, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+
+  // Homing missiles: a small dart pointing along its heading with a flickering exhaust.
+  function drawMissiles() {
+    for (const m of missiles) {
+      withWrap(m.x, m.y, 6 * S, (x, y) => {
+        ctx.save();
+        ctx.translate(x, y); ctx.rotate(m.angle); ctx.scale(S, S);
+        if (Math.random() > 0.3) {   // exhaust flicker
+          ctx.strokeStyle = ACCENT; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(-9, 0); ctx.stroke();
+        }
+        ctx.fillStyle = POWERUP_DEF.homing.color;
+        ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-4, -3); ctx.lineTo(-4, 3); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      });
+    }
+  }
+
+  // The drone wingman: a small gold dart trailing the ship, pointing where it shoots.
+  function drawDrone() {
+    if (!drone) return;
+    const c = POWERUP_DEF.drone.color;
+    ctx.save();
+    ctx.translate(drone.x, drone.y);
+    ctx.rotate(drone.angle);
+    ctx.scale(S, S);
+    ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+    ctx.shadowColor = c; ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(9, 0); ctx.lineTo(-6, -6); ctx.lineTo(-3, 0); ctx.lineTo(-6, 6);
+    ctx.closePath(); ctx.stroke();
     ctx.restore();
   }
 
@@ -1607,6 +2221,7 @@ export function launchAsteroids() {
     ctx.globalAlpha = 1;
     for (const f of flyers) drawFlyer(f);   // background squadrons, behind the action
     for (const u of ufos) drawUfo(u);
+    drawBoss();
     for (const a of asteroids) drawAsteroid(a);
     for (const p of powerups) drawPowerup(p);
     // Bullets: sniper rounds are a touch larger and accent-tinted; others are dots.
@@ -1615,12 +2230,14 @@ export function launchAsteroids() {
       const r = (b.sniper ? 2.8 : 2.2) * S;
       withWrap(b.x, b.y, r, (x, y) => { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); });
     }
+    drawMissiles();
     drawUltrasound();
     drawLaserSight();
     drawLasers();
     drawLightning();
     drawParticles();
     drawWreck();
+    drawDrone();
     if (!gameOver) drawShip();
     ctx.restore();
 
@@ -1634,11 +2251,13 @@ export function launchAsteroids() {
     ctx.strokeRect(cx - HW + 5, cy - HH + 5, 2 * HW - 10, 2 * HH - 10);
 
     if (!gameOver) {
-      const graceLeft = asteroids.reduce((m, a) => Math.max(m, a.grace), 0);
+      let graceLeft = asteroids.reduce((m, a) => Math.max(m, a.grace), 0);
+      if (boss && boss.grace > 0) graceLeft = Math.max(graceLeft, boss.grace);   // boss waves get the banner too
       if (graceLeft > 0) waveBanner(graceLeft);
     }
     drawWeaponTimer();
     hud();
+    drawBossBar();
     drawLeaderboard();
     nukeFlash();
     // The end-of-game DOM card carries the headline + board now; the canvas version
@@ -1668,8 +2287,18 @@ export function launchAsteroids() {
     ArrowRight: 'right', d: 'right', D: 'right',
     ArrowUp: 'up', w: 'up', W: 'up'
   };
+  // Konami code entered while playing reveals + activates the sandbox (the movement keys
+  // still respond; this just watches the key history for the sequence).
+  const KONAMI = ['arrowup', 'arrowup', 'arrowdown', 'arrowdown', 'arrowleft', 'arrowright', 'arrowleft', 'arrowright', 'b', 'a'];
+  let konamiPos = 0;
+  function trackKonami(key) {
+    const k = (key || '').toLowerCase();
+    konamiPos = (k === KONAMI[konamiPos]) ? konamiPos + 1 : (k === KONAMI[0] ? 1 : 0);
+    if (konamiPos === KONAMI.length) { konamiPos = 0; if (revealSandbox) revealSandbox(); }
+  }
   function onKeyDown(e) {
     const k = e.key;
+    if (!e.repeat) trackKonami(k);
     if (k === 'Escape') { teardown(); return; }
     // While the name input owns the keyboard, let every other key reach it (so the
     // global controls - r to reset, space, arrows - don't hijack the typing).
@@ -1773,11 +2402,12 @@ export function launchAsteroids() {
     }
   }
 
-  // ---- Sandbox (dev test mode) ----
-  // A dev-gated panel to spawn anything in the game and toggle invulnerability, with
-  // scoring frozen while it's on. Built here (not with the top buttons) so the catalog
-  // and the spawners it calls already exist.
-  if (isDev) {
+  // ---- Sandbox (test mode) ----
+  // A panel to spawn anything in the game and toggle invulnerability, with scoring frozen
+  // while it's on. Built here (not with the top buttons) so the catalog and the spawners it
+  // calls already exist. The SB button shows automatically on dev hosts; everywhere else it
+  // stays hidden until the in-game Konami code reveals it (revealSandbox).
+  {
     const sbSpawnPowerup = (type) => {
       let x, y, tries = 0;
       do { x = cx + rand(-HW, HW) * 0.8; y = cy + rand(-HH, HH) * 0.8; }
@@ -1849,10 +2479,16 @@ export function launchAsteroids() {
       mkBtn('Reward UFO', () => ufos.push(makeUfo('reward'))),
       mkBtn('Ambient UFO', () => ufos.push(makeUfo('ambient')))
     ]));
+    panel.appendChild(head('BOSSES'));
+    panel.appendChild(gridOf([
+      mkBtn('Mothership', () => { boss = null; spawnBoss('mothership'); }),
+      mkBtn('Mega', () => { boss = null; spawnBoss('megastructure'); }),
+      mkBtn('Segmented', () => { boss = null; spawnBoss('segmented'); })
+    ]));
     panel.appendChild(head('FIELD'));
     panel.appendChild(gridOf([
       mkBtn('Asteroid', () => sbSpawnAsteroid()),
-      mkBtn('Clear', () => { asteroids = []; bullets = []; ufos = []; powerups = []; particles = []; lasers = []; })
+      mkBtn('Clear', () => { asteroids = []; bullets = []; ufos = []; powerups = []; particles = []; lasers = []; missiles = []; boss = null; })
     ]));
 
     panel.appendChild(head('WAVE'));
@@ -1864,24 +2500,48 @@ export function launchAsteroids() {
     panel.appendChild(waveInput);
     panel.appendChild(mkBtn('Go to wave', () => {
       const n = Math.max(1, parseInt(waveInput.value, 10) || 1);
-      asteroids = []; bullets = []; ufos = []; powerups = []; particles = []; lasers = [];
+      asteroids = []; bullets = []; ufos = []; powerups = []; particles = []; lasers = []; missiles = []; boss = null;
       wave = n - 1; spawnWave();   // spawnWave bumps to n and spawns that wave's content
     }));
     overlay.appendChild(panel);
 
     const sbToggle = document.createElement('button');
     sbToggle.type = 'button'; sbToggle.className = 'anr-game-btn';
-    sbToggle.textContent = 'SB'; sbToggle.title = 'Sandbox mode (dev)';
+    sbToggle.textContent = 'SB'; sbToggle.title = 'Sandbox mode';
     sbToggle.setAttribute('aria-label', 'Toggle sandbox mode');
-    sbToggle.style.cssText = 'position:absolute; top:14px; right:104px; z-index:2; height:36px; padding:0 11px; font-size:13px;';
+    sbToggle.style.cssText = 'position:absolute; top:14px; right:104px; z-index:2; height:36px; padding:0 11px; font-size:13px;' +
+      (isDev ? '' : ' display:none;');   // hidden off-dev until the Konami code reveals it
     sbToggle.addEventListener('click', () => {
       sandbox = !sandbox;
       if (sandbox) sandboxUsed = true;
       sbToggle.classList.toggle('on', sandbox);
       panel.style.display = sandbox ? 'flex' : 'none';
+      if (!sandbox) restart();   // leaving sandbox starts a clean, scored game
     });
     overlay.appendChild(sbToggle);
+
+    // The in-game Konami code unlocks the sandbox: reveal the SB button and switch it on.
+    revealSandbox = () => {
+      sbToggle.style.display = '';
+      if (!sandbox) sbToggle.click();
+    };
   }
+
+  // Start-wave toggle (unlock-gated): once any boss has been beaten, a small remembered
+  // toggle to begin runs at wave 5 instead of 1. Hidden until unlocked; applies next run.
+  startToggleBtn = document.createElement('button');
+  startToggleBtn.type = 'button'; startToggleBtn.className = 'anr-game-btn';
+  startToggleBtn.title = 'Start wave (applies on your next run)';
+  startToggleBtn.style.cssText = 'position:absolute; top:14px; left:14px; z-index:2; height:30px; padding:0 10px; font-size:11px;' +
+    (bossEverBeaten ? '' : ' display:none;');
+  const syncStartBtn = () => { startToggleBtn.textContent = 'START W' + startWavePref; startToggleBtn.classList.toggle('on', startWavePref === 10); };
+  syncStartBtn();
+  startToggleBtn.addEventListener('click', () => {
+    startWavePref = startWavePref === 10 ? 1 : 10;
+    try { localStorage.setItem(STARTWAVE_KEY, String(startWavePref)); } catch (_) {}
+    syncStartBtn();
+  });
+  overlay.appendChild(startToggleBtn);
 
   // ---- Teardown ----
   function teardown() {
