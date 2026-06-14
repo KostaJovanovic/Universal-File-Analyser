@@ -158,6 +158,25 @@ export function launchAsteroids() {
 
   document.body.appendChild(overlay);
 
+  // Go fullscreen straight away so the game owns the whole screen - this is what makes the
+  // mobile layout correct (no browser chrome eating the viewport) and the desktop overlay
+  // fully immersive. The launch path (async dynamic import) may have spent the user
+  // gesture, so the request can be rejected; we then retry on the first tap / key press.
+  let fsDone = false;
+  function tryFullscreen() {
+    if (fsDone) return;
+    if (document.fullscreenElement) { fsDone = true; return; }
+    const req = overlay.requestFullscreen || overlay.webkitRequestFullscreen;
+    if (!req) { fsDone = true; return; }   // unsupported (e.g. iOS Safari) - drop it quietly
+    try {
+      const p = req.call(overlay);
+      if (p && p.then) p.then(() => { fsDone = true; }).catch(() => {});
+      else fsDone = true;
+    } catch (_) {}
+  }
+  tryFullscreen();
+  overlay.addEventListener('pointerdown', tryFullscreen);   // first touch retries if needed
+
   const ctx = canvas.getContext('2d');
   // The play field is a rectangle centred on (cx, cy) with half-extents HW (half
   // width) and HH (half height). Its aspect ratio follows the viewport but is
@@ -166,15 +185,20 @@ export function launchAsteroids() {
   // spawn distances.
   let W = 0, H = 0, cx = 0, cy = 0, R = 0, HW = 0, HH = 0, dpr = 1, stars = [], S = 1;
   let mobileControls = [];   // joystick / arrows / fire - hidden on the game-over screen
+  // Touch device: drives the on-screen controls and hides the keyboard-only HUD hints.
+  const isTouch = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 
   function layout() {
     // Remember the previous geometry so a zoom/resize can rescale the live scene to
     // the new scope (radii/speeds with S, positions into the resized rectangle).
     const oldS = S, oldCx = cx, oldCy = cy, oldHW = HW, oldHH = HH;
     dpr = Math.min(2, window.devicePixelRatio || 1);
-    W = window.innerWidth; H = window.innerHeight;
+    // Size to the canvas's own rendered box (it fills the overlay). This stays correct
+    // whether we're fullscreen or not and dodges the mobile address-bar viewport mess
+    // that window.innerHeight gets wrong.
+    W = canvas.clientWidth || window.innerWidth; H = canvas.clientHeight || window.innerHeight;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-    const coarse = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+    const coarse = isTouch;
     // On mobile the scope nearly fills the width and sits higher up (leaving the
     // lower third for the controls); on desktop it's centred.
     cx = W / 2; cy = coarse ? H * 0.40 : H / 2;
@@ -321,9 +345,10 @@ export function launchAsteroids() {
   let ufos = [];
   // Homing missiles: slow seekers that curve into the nearest asteroid / reward UFO.
   let missiles = [];
-  // Drone wingman: an additive companion (separate from the weapon slot) that trails the
-  // ship, mirrors its gun at the nearest threat, smashes what it touches, and can be killed.
-  let drone = null, droneTimer = 0, droneFireCd = 0;
+  // Drone wingmen: additive companions (separate from the weapon slot), stackable up to
+  // DRONE_MAX, that trail the ship in formation, fire homing missiles at a flat 2/sec,
+  // smash what they touch, and can be killed (but share the player's sandbox invuln).
+  let drones = [];
   // Boss waves: a single large passive boss on wave 5 then every 7; three types cycle via a
   // shuffle bag. startToggleBtn is the (unlock-gated) Wave 1 / Wave 10 start toggle button.
   let boss = null, bossBag = [], startToggleBtn = null;
@@ -485,7 +510,7 @@ export function launchAsteroids() {
     } else if (type === 'nuke') {
       triggerNuke();
     } else if (type === 'drone') {
-      drone = makeDrone(); droneTimer = POWERUP_DEF.drone.dur;
+      addDrone();   // random weapon; tops up the squad timer and adds one (up to DRONE_MAX)
     } else { weapon = type; weaponTimer = POWERUP_DEF[type].dur; homingLeft = 0; }
   }
 
@@ -499,7 +524,7 @@ export function launchAsteroids() {
     cause = 'nuke';   // if this was the last life, the bomb is the final blow
     asteroids = []; bullets = []; lasers = []; ufos = []; missiles = [];
     // End any power-up the player was carrying - they come out of the blast clean.
-    weapon = 'normal'; weaponTimer = 0; shield = 0; homingLeft = 0; drone = null; droneTimer = 0;
+    weapon = 'normal'; weaponTimer = 0; shield = 0; homingLeft = 0; drones = [];
     lightningTarget = null; lightningEnd = null; lightningMid = null; lightningMidTimer = 0;
     ripples = []; rippleTimer = 0;
     // A nuke chips the boss too, but can't finish it off mid-cinematic (each node floored at 1 hp).
@@ -522,7 +547,7 @@ export function launchAsteroids() {
 
   function restart() {
     asteroids = []; bullets = []; particles = []; powerups = []; lasers = []; ufos = []; missiles = [];
-    drone = null; droneTimer = 0; dropHeat = {}; boss = null;
+    drones = []; dropHeat = {}; boss = null;
     weapon = 'normal'; weaponTimer = 0; lightningTarget = null; shield = 0; homingLeft = 0;
     lightningMid = null; lightningMidTimer = 0; ripples = []; rippleTimer = 0;
     nuke = 0; wreck = null; overlay.style.cursor = '';
@@ -665,11 +690,12 @@ export function launchAsteroids() {
     spawnBullet(ship.angle, 540 * S, 0.9, false); fireCd = 0.18;                 // normal
   }
 
-  function spawnMissile(angle) {
-    if (missiles.length >= 40) return;
+  function spawnMissileFrom(x, y, angle) {
+    if (missiles.length >= 64) return;
     const c = Math.cos(angle), s = Math.sin(angle);
-    missiles.push({ x: ship.x + c * 14 * S, y: ship.y + s * 14 * S, angle, life: 3.5 });
+    missiles.push({ x: x + c * 14 * S, y: y + s * 14 * S, angle, life: 3.5 });
   }
+  function spawnMissile(angle) { spawnMissileFrom(ship.x, ship.y, angle); }
   // Nearest solid asteroid or reward UFO to a point (ambient escorts are skipped - a
   // missile can't hurt them).
   function nearestSeekTarget(x, y) {
@@ -734,76 +760,88 @@ export function launchAsteroids() {
     }
   }
 
-  // Drone wingman ---------------------------------------------------------------------
-  function makeDrone() { return { x: ship.x, y: ship.y, angle: ship.angle, hp: 3 }; }
-
-  function droneHurt() {
-    if (!drone) return;
-    drone.hp--;
-    burst(drone.x, drone.y, POWERUP_DEF.drone.color, { count: 5, speed: 90, life: 0.3 });
-    if (drone.hp <= 0) {
-      burst(drone.x, drone.y, POWERUP_DEF.drone.color, { count: 12, speed: 130, life: 0.5, lines: true });
-      drone = null;
-    }
+  // Drone wingmen ---------------------------------------------------------------------
+  const DRONE_MAX = 4;
+  // Formation slots in the ship frame (raw units, scaled by S at use): two close behind,
+  // two further out, so a full stack of four fans out around the tail.
+  const DRONE_SLOTS = [[-26, 16], [-26, -16], [-46, 30], [-46, -30]];
+  // Each wingman rolls one of these on pickup and keeps it for its lifetime.
+  const DRONE_WEAPONS = ['normal', 'machine', 'sniper', 'triple', 'homing'];
+  function makeDrone(forcedWeapon) {
+    return { x: ship.x, y: ship.y, angle: ship.angle, hp: 3, timer: POWERUP_DEF.drone.dur, fireCd: rand(0, 0.5), weapon: forcedWeapon || pick(DRONE_WEAPONS) };
   }
-
-  // The drone mirrors the player's current bullet weapon, aimed at a target. Exotic
-  // weapons (laser/lightning/ultrasound/ram/homing/nuke) fall back to the basic cannon.
-  function droneFireAt(tx, ty) {
-    const ang = Math.atan2(ty - drone.y, tx - drone.x);
-    drone.angle = ang;
-    if (weapon === 'triple') {
+  // Add a wingman with a specific weapon (sandbox), mirroring a pickup: tops up the squad
+  // timer and adds one if there's room.
+  function addDrone(weapon) {
+    drones.forEach((d) => { d.timer = POWERUP_DEF.drone.dur; });
+    if (drones.length < DRONE_MAX) drones.push(makeDrone(weapon));
+  }
+  // Fire a wingman's own weapon toward ang; returns the cooldown until its next shot.
+  function droneFire(d, ang) {
+    if (d.weapon === 'triple') {
       const sp = 20 * Math.PI / 180;
-      spawnBulletAt(drone.x, drone.y, ang - sp, 540 * S, 0.9);
-      spawnBulletAt(drone.x, drone.y, ang, 540 * S, 0.9);
-      spawnBulletAt(drone.x, drone.y, ang + sp, 540 * S, 0.9);
-      droneFireCd = 0.22;
-    } else if (weapon === 'machine') {
-      spawnBulletAt(drone.x, drone.y, ang + rand(-3, 3) * Math.PI / 180, 1080 * S, 0.9);
-      droneFireCd = 0.1;
-    } else if (weapon === 'sniper') {
-      spawnBulletAt(drone.x, drone.y, ang, 1080 * S, Infinity, true, 1);
-      droneFireCd = 0.5;
-    } else {
-      spawnBulletAt(drone.x, drone.y, ang, 540 * S, 0.9);
-      droneFireCd = 0.22;
+      spawnBulletAt(d.x, d.y, ang - sp, 540 * S, 0.9);
+      spawnBulletAt(d.x, d.y, ang, 540 * S, 0.9);
+      spawnBulletAt(d.x, d.y, ang + sp, 540 * S, 0.9);
+      return 0.22;
+    }
+    if (d.weapon === 'machine') { spawnBulletAt(d.x, d.y, ang + rand(-3, 3) * Math.PI / 180, 1080 * S, 0.9); return 0.1; }
+    if (d.weapon === 'sniper') { spawnBulletAt(d.x, d.y, ang, 1080 * S, Infinity, true, 1); return 0.5; }
+    if (d.weapon === 'homing') { spawnMissileFrom(d.x, d.y, ang); return 0.5; }   // flat 2/sec
+    spawnBulletAt(d.x, d.y, ang, 540 * S, 0.9); return 0.22;   // normal
+  }
+
+  function droneHurt(d) {
+    if (immortal()) return;   // sandbox invuln shields the drones along with the player
+    d.hp--;
+    burst(d.x, d.y, POWERUP_DEF.drone.color, { count: 5, speed: 90, life: 0.3 });
+    if (d.hp <= 0) {
+      burst(d.x, d.y, POWERUP_DEF.drone.color, { count: 12, speed: 130, life: 0.5, lines: true });
+      d.dead = true;
     }
   }
 
-  // Trail toward the formation slot, mirror-fire at the nearest threat in range, and
-  // smash what it touches (losing 1 hp each contact; the indestructible escort just
-  // costs hp). Destroyed at 0 hp or when its timer runs out.
-  function updateDrone(dt) {
-    if (!drone) return;
-    if (!sbInfinite) { droneTimer -= dt; if (droneTimer <= 0) { drone = null; return; } }
+  // Each drone trails its formation slot, fires its own randomly-rolled weapon at the
+  // nearest threat, and smashes what it touches (1 hp per contact; the indestructible
+  // escort just costs hp). Removed at 0 hp or when its own timer runs out.
+  function updateDrones(dt) {
     const ca = Math.cos(ship.angle), sa = Math.sin(ship.angle);
-    const ox = -26 * S, oy = 16 * S;   // behind + to one side, in the ship frame
-    const slotX = ship.x + ox * ca - oy * sa, slotY = ship.y + ox * sa + oy * ca;
-    const k = Math.min(1, dt * 6);
-    drone.x += (slotX - drone.x) * k; drone.y += (slotY - drone.y) * k;
-    droneFireCd -= dt;
-    if (droneFireCd <= 0) {
-      let fired = false;
-      if (!ship.dead && !gameOver) {
-        const tgt = nearestSeekTarget(drone.x, drone.y);
-        if (tgt && Math.hypot(tgt.x - drone.x, tgt.y - drone.y) < 460 * S) { droneFireAt(tgt.x, tgt.y); fired = true; }
+    const k = Math.min(1, dt * 6), dr = 12 * S;
+    for (let di = drones.length - 1; di >= 0; di--) {
+      const d = drones[di];
+      if (!sbInfinite) { d.timer -= dt; if (d.timer <= 0) { drones.splice(di, 1); continue; } }
+      const [ox, oy] = DRONE_SLOTS[di % DRONE_SLOTS.length];
+      const slotX = ship.x + (ox * ca - oy * sa) * S, slotY = ship.y + (ox * sa + oy * ca) * S;
+      d.x += (slotX - d.x) * k; d.y += (slotY - d.y) * k;
+      // Fire the wingman's own weapon at the nearest threat. Homing reaches across the
+      // field; the bullet weapons only engage inside ~the scope radius.
+      d.fireCd -= dt;
+      if (d.fireCd <= 0) {
+        let fired = false;
+        if (!ship.dead && !gameOver) {
+          const tgt = nearestSeekTarget(d.x, d.y);
+          if (tgt && (d.weapon === 'homing' || Math.hypot(tgt.x - d.x, tgt.y - d.y) < 520 * S)) {
+            const ang = Math.atan2(tgt.y - d.y, tgt.x - d.x);
+            d.angle = ang; d.fireCd = droneFire(d, ang); fired = true;
+          }
+        }
+        if (!fired) { d.angle = ship.angle; d.fireCd = 0.15; }
       }
-      if (!fired) { drone.angle = ship.angle; droneFireCd = 0.15; }
-    }
-    const dr = 12 * S;
-    for (let ai = asteroids.length - 1; ai >= 0; ai--) {
-      const a = asteroids[ai];
-      if (a.grace > 0) continue;
-      const dx = a.x - drone.x, dy = a.y - drone.y, rr = a.radius + dr;
-      if (dx * dx + dy * dy < rr * rr) { destroyAsteroid(ai); droneHurt(); break; }
-    }
-    if (drone) {
-      for (let ui = ufos.length - 1; ui >= 0; ui--) {
-        const u = ufos[ui];
-        if (u.appear < 1) continue;
-        const dx = u.x - drone.x, dy = u.y - drone.y, rr = u.radius + dr;
-        if (dx * dx + dy * dy < rr * rr) { if (u.kind === 'reward') damageUfo(ui, 1); droneHurt(); break; }
+      for (let ai = asteroids.length - 1; ai >= 0; ai--) {
+        const a = asteroids[ai];
+        if (a.grace > 0) continue;
+        const dx = a.x - d.x, dy = a.y - d.y, rr = a.radius + dr;
+        if (dx * dx + dy * dy < rr * rr) { destroyAsteroid(ai); droneHurt(d); break; }
       }
+      if (!d.dead) {
+        for (let ui = ufos.length - 1; ui >= 0; ui--) {
+          const u = ufos[ui];
+          if (u.appear < 1) continue;
+          const dx = u.x - d.x, dy = u.y - d.y, rr = u.radius + dr;
+          if (dx * dx + dy * dy < rr * rr) { if (u.kind === 'reward') damageUfo(ui, 1); droneHurt(d); break; }
+        }
+      }
+      if (d.dead) drones.splice(di, 1);
     }
   }
 
@@ -1442,7 +1480,7 @@ export function launchAsteroids() {
           // Mid-burst: release the ring one missile at a time in quick succession.
           homingGap -= dt;
           while (homingLeft > 0 && homingGap <= 0) {
-            spawnMissile(homingBase + (homingIdx / 8) * TAU);
+            spawnMissile(homingBase + (homingIdx / 12) * TAU);
             homingIdx++; homingLeft--; homingGap += 0.07;
           }
           if (homingLeft === 0) { fireCd = 3; homingTrickle = 1; }   // start the 3s cooldown
@@ -1451,7 +1489,7 @@ export function launchAsteroids() {
           homingTrickle -= dt;
           if (homingTrickle <= 0) { if (input.fire) spawnMissile(ship.angle); homingTrickle += 1; }
         } else if (input.fire) {
-          homingBase = ship.angle; homingIdx = 0; homingLeft = 8; homingGap = 0;   // begin a burst
+          homingBase = ship.angle; homingIdx = 0; homingLeft = 12; homingGap = 0;   // begin a burst
         }
       } else {
         lightningTarget = null;
@@ -1511,7 +1549,7 @@ export function launchAsteroids() {
 
     updateUfos(dt);   // move/fade the roaming UFOs and check their lethal contact
     updateMissiles(dt);   // home + detonate any homing missiles in flight
-    updateDrone(dt);      // move/fire the drone wingman and check its contacts
+    updateDrones(dt);     // move/fire the drone wingmen and check their contacts
     updateBoss(dt);       // move the boss, check its lethal contact, handle its death
 
     // Asteroid -> ship. With the battering ram up the ship is unharmed and instead
@@ -1869,20 +1907,22 @@ export function launchAsteroids() {
     }
   }
 
-  // The drone wingman: a small gold dart trailing the ship, pointing where it shoots.
-  function drawDrone() {
-    if (!drone) return;
+  // The drone wingmen: small gold darts trailing the ship, each pointing where it shoots.
+  function drawDrones() {
+    if (!drones.length) return;
     const c = POWERUP_DEF.drone.color;
-    ctx.save();
-    ctx.translate(drone.x, drone.y);
-    ctx.rotate(drone.angle);
-    ctx.scale(S, S);
-    ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
-    ctx.shadowColor = c; ctx.shadowBlur = 6;
-    ctx.beginPath();
-    ctx.moveTo(9, 0); ctx.lineTo(-6, -6); ctx.lineTo(-3, 0); ctx.lineTo(-6, 6);
-    ctx.closePath(); ctx.stroke();
-    ctx.restore();
+    for (const d of drones) {
+      ctx.save();
+      ctx.translate(d.x, d.y);
+      ctx.rotate(d.angle);
+      ctx.scale(S, S);
+      ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+      ctx.shadowColor = c; ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.moveTo(9, 0); ctx.lineTo(-6, -6); ctx.lineTo(-3, 0); ctx.lineTo(-6, 6);
+      ctx.closePath(); ctx.stroke();
+      ctx.restore();
+    }
   }
 
   function drawParticles() {
@@ -1917,11 +1957,14 @@ export function launchAsteroids() {
     ctx.textAlign = 'center';
     ctx.font = '15px ' + MONO; ctx.fillStyle = LINE;
     ctx.fillText(lives > 0 ? '▲ '.repeat(lives).trim() : '—', cx, cy + HH + 24);
-    ctx.font = '12px ' + MONO; ctx.fillStyle = MUTED;
-    ctx.fillText('← → rotate · ↑ thrust · space fire · r reset · esc exit', cx, cy + HH + 44);
-    // Title centred at the top of the screen.
-    ctx.font = '11px ' + MONO; ctx.fillStyle = MUTED;
-    ctx.fillText('ASTEROIDS · SUPPORTED FORMATS', cx, 24);
+    // Keyboard controls + top title are desktop-only: on touch they have no keyboard and
+    // the line overflows / the title collides with the corner buttons.
+    if (!isTouch) {
+      ctx.font = '12px ' + MONO; ctx.fillStyle = MUTED;
+      ctx.fillText('← → rotate · ↑ thrust · space fire · r reset · esc exit', cx, cy + HH + 44);
+      ctx.font = '11px ' + MONO; ctx.fillStyle = MUTED;
+      ctx.fillText('ASTEROIDS · SUPPORTED FORMATS', cx, 24);
+    }
     if (sandbox) {
       ctx.fillStyle = ACCENT; ctx.font = '10px ' + MONO;
       ctx.fillText('SANDBOX' + (cheatInvuln ? ' · INVULN' : '') + ' · SCORE OFF', cx, 38);
@@ -2237,7 +2280,7 @@ export function launchAsteroids() {
     drawLightning();
     drawParticles();
     drawWreck();
-    drawDrone();
+    drawDrones();
     if (!gameOver) drawShip();
     ctx.restore();
 
@@ -2288,7 +2331,9 @@ export function launchAsteroids() {
     ArrowUp: 'up', w: 'up', W: 'up'
   };
   // Konami code entered while playing reveals + activates the sandbox (the movement keys
-  // still respond; this just watches the key history for the sequence).
+  // still respond; this just watches the key history for the sequence). The touch combo
+  // (left,left,right,right,left,right,left,right,fire,fire on the on-screen buttons) is the
+  // mobile equivalent, tracked from the control handlers below.
   const KONAMI = ['arrowup', 'arrowup', 'arrowdown', 'arrowdown', 'arrowleft', 'arrowright', 'arrowleft', 'arrowright', 'b', 'a'];
   let konamiPos = 0;
   function trackKonami(key) {
@@ -2296,8 +2341,15 @@ export function launchAsteroids() {
     konamiPos = (k === KONAMI[konamiPos]) ? konamiPos + 1 : (k === KONAMI[0] ? 1 : 0);
     if (konamiPos === KONAMI.length) { konamiPos = 0; if (revealSandbox) revealSandbox(); }
   }
+  const TOUCH_COMBO = ['left', 'left', 'right', 'right', 'left', 'right', 'left', 'right', 'fire', 'fire'];
+  let comboPos = 0;
+  function trackTouchCombo(tok) {
+    comboPos = (tok === TOUCH_COMBO[comboPos]) ? comboPos + 1 : (tok === TOUCH_COMBO[0] ? 1 : 0);
+    if (comboPos === TOUCH_COMBO.length) { comboPos = 0; if (revealSandbox) revealSandbox(); }
+  }
   function onKeyDown(e) {
     const k = e.key;
+    tryFullscreen();
     if (!e.repeat) trackKonami(k);
     if (k === 'Escape') { teardown(); return; }
     // While the name input owns the keyboard, let every other key reach it (so the
@@ -2325,6 +2377,11 @@ export function launchAsteroids() {
 
   function onResize() { layout(); }
   window.addEventListener('resize', onResize);
+  // Entering/leaving fullscreen and the mobile address bar showing/hiding both change the
+  // usable size without a window 'resize'; re-layout on those too.
+  document.addEventListener('fullscreenchange', onResize);
+  document.addEventListener('webkitfullscreenchange', onResize);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
 
   function onVis() { paused = document.hidden; if (!paused) last = performance.now(); }
   document.addEventListener('visibilitychange', onVis);
@@ -2373,7 +2430,7 @@ export function launchAsteroids() {
       const fire = document.createElement('button');
       fire.type = 'button'; fire.className = 'anr-game-btn'; fire.textContent = '●';
       fire.style.cssText = 'position:absolute; bottom:26px; right:24px; width:64px; height:64px; font-size:21px; z-index:2; touch-action:none;';
-      const setFire = (v) => (e) => { e.preventDefault(); if (gameOver && !nameEntry && v) { restart(); return; } input.fire = v; };
+      const setFire = (v) => (e) => { e.preventDefault(); if (v) trackTouchCombo('fire'); if (gameOver && !nameEntry && v) { restart(); return; } input.fire = v; };
       fire.addEventListener('pointerdown', setFire(true));
       fire.addEventListener('pointerup', setFire(false));
       fire.addEventListener('pointercancel', setFire(false));
@@ -2389,7 +2446,7 @@ export function launchAsteroids() {
         const b = document.createElement('button');
         b.type = 'button'; b.className = 'anr-game-btn'; b.textContent = label;
         b.style.cssText = 'flex:1; height:42px; font-size:18px; touch-action:none;';
-        const set = (v) => (e) => { e.preventDefault(); input[prop] = v; };
+        const set = (v) => (e) => { e.preventDefault(); if (v) trackTouchCombo(prop); input[prop] = v; };
         b.addEventListener('pointerdown', set(true));
         b.addEventListener('pointerup', set(false));
         b.addEventListener('pointercancel', set(false));
@@ -2468,12 +2525,37 @@ export function launchAsteroids() {
       instBtn.classList.toggle('on', sbInstant);
     });
 
-    panel.appendChild(head('SANDBOX'));
+    // Header row: title + a close button that just hides the panel (sandbox stays ON), so
+    // you can get the menu out of the way - especially on mobile, where it covers the field -
+    // without leaving sandbox mode. Re-open it by tapping SB again.
+    const panelHead = document.createElement('div');
+    panelHead.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px;';
+    const panelTitle = document.createElement('div');
+    panelTitle.textContent = 'SANDBOX';
+    panelTitle.style.cssText = 'font-size:10px; letter-spacing:.18em; color:' + MUTED + ';';
+    const panelClose = document.createElement('button');
+    panelClose.type = 'button'; panelClose.className = 'anr-game-btn'; panelClose.textContent = '✕';
+    panelClose.setAttribute('aria-label', 'Close sandbox menu (stay in sandbox)');
+    panelClose.style.cssText = 'width:26px; height:26px; font-size:12px; flex:none;';
+    panelClose.addEventListener('click', (e) => { e.preventDefault(); panel.style.display = 'none'; });
+    panelHead.appendChild(panelTitle); panelHead.appendChild(panelClose);
+    panel.appendChild(panelHead);
     panel.appendChild(invBtn);
     panel.appendChild(head('POWER-UPS'));
     panel.appendChild(gridOf([infBtn, instBtn]));
     panel.appendChild(gridOf(POWERUP_TYPES.map((t) =>
       mkBtn(POWERUP_DEF[t].label, () => { if (sbInstant) applyPowerup(t); else sbSpawnPowerup(t); }))));
+    // Wingmen: one button per weapon, spawning a drone with exactly that loadout (separate
+    // from the random DRONE WINGMAN pickup above).
+    panel.appendChild(head('WINGMEN'));
+    panel.appendChild(gridOf([
+      mkBtn('Normal', () => addDrone('normal')),
+      mkBtn('Machine', () => addDrone('machine')),
+      mkBtn('Sniper', () => addDrone('sniper')),
+      mkBtn('Triple', () => addDrone('triple')),
+      mkBtn('Homing', () => addDrone('homing')),
+      mkBtn('Kill all', () => { drones = []; })
+    ]));
     panel.appendChild(head('ENEMIES'));
     panel.appendChild(gridOf([
       mkBtn('Reward UFO', () => ufos.push(makeUfo('reward'))),
@@ -2511,12 +2593,20 @@ export function launchAsteroids() {
     sbToggle.setAttribute('aria-label', 'Toggle sandbox mode');
     sbToggle.style.cssText = 'position:absolute; top:14px; right:104px; z-index:2; height:36px; padding:0 11px; font-size:13px;' +
       (isDev ? '' : ' display:none;');   // hidden off-dev until the Konami code reveals it
+    // SB opens the menu (turning sandbox on the first time) and reopens it after the panel's
+    // own close button hid it. Only when the panel is already open does SB exit sandbox - so
+    // closing the menu and leaving sandbox are now distinct actions.
     sbToggle.addEventListener('click', () => {
-      sandbox = !sandbox;
-      if (sandbox) sandboxUsed = true;
-      sbToggle.classList.toggle('on', sandbox);
-      panel.style.display = sandbox ? 'flex' : 'none';
-      if (!sandbox) restart();   // leaving sandbox starts a clean, scored game
+      const open = panel.style.display !== 'none';
+      if (!sandbox) {
+        sandbox = true; sandboxUsed = true;
+        sbToggle.classList.add('on'); panel.style.display = 'flex';
+      } else if (!open) {
+        panel.style.display = 'flex';   // reopen without changing sandbox state
+      } else {
+        sandbox = false; sbToggle.classList.remove('on'); panel.style.display = 'none';
+        restart();   // leaving sandbox starts a clean, scored game
+      }
     });
     overlay.appendChild(sbToggle);
 
@@ -2551,7 +2641,14 @@ export function launchAsteroids() {
     window.removeEventListener('keydown', onKeyDown, true);
     window.removeEventListener('keyup', onKeyUp, true);
     window.removeEventListener('resize', onResize);
+    document.removeEventListener('fullscreenchange', onResize);
+    document.removeEventListener('webkitfullscreenchange', onResize);
+    if (window.visualViewport) window.visualViewport.removeEventListener('resize', onResize);
     document.removeEventListener('visibilitychange', onVis);
+    // Drop out of fullscreen if we put ourselves there.
+    try {
+      if (document.fullscreenElement) { const r = (document.exitFullscreen || document.webkitExitFullscreen).call(document); if (r && r.catch) r.catch(() => {}); }
+    } catch (_) {}
     clearEndPanel();
     overlay.remove();
     document.body.style.overflow = prevOverflow;
