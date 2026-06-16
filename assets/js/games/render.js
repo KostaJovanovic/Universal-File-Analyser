@@ -6,18 +6,18 @@
 
 import {
   LINE, MONO, POWERUP_DEF, TAU, SPAWN_INVULN, WAVE_GRACE, WRECK_FADE,
-  NUKE_TOTAL, NUKE_WHITE, NUKE_FADE
+  NUKE_TOTAL, NUKE_WHITE, NUKE_FADE, BOSS_COLOR
 } from './config.js';
 import { g, ultrasoundRadius, laserWidth } from './state.js';
 import { withWrap, hardEdges, rayToRim } from './geometry.js';
-import { drawBoss, drawBossBar, drawMegaMessage } from './boss.js';
+import { drawBoss, drawBossBar, drawMegaMessage, BOSS_NAMES } from './boss.js';
 
 // Fixed HUD font strings, built once. Setting ctx.font from these avoids the per-frame
 // string concatenation (and its garbage) that the HUD/leaderboard otherwise do ~15x a
 // frame. Variable-size fonts (the wave banner, asteroid labels) are cached at their source.
 const F10 = '10px ' + MONO, F11 = '11px ' + MONO, F12 = '12px ' + MONO,
   F13 = '13px ' + MONO, F14 = '14px ' + MONO, F15 = '15px ' + MONO,
-  F18 = '18px ' + MONO, F34 = '34px ' + MONO, F_PU = '600 14px ' + MONO;
+  F18 = '18px ' + MONO, F34 = '34px ' + MONO;
 
 // The glowing scope frame (outer accent border + glow + inner hairline) is static
 // between layouts, yet a per-frame shadowBlur over a full-field rectangle is one of
@@ -231,6 +231,19 @@ function drawTrefoil(s) {
   ctx.beginPath(); ctx.arc(0, 0, dot, 0, TAU); ctx.fill();
 }
 
+// Little drone dart (the same arrowhead the wingmen draw), pointing up and centred in the box.
+function drawDroneIcon(s) {
+  const ctx = g.ctx;
+  const f = s * 0.11;   // wingman units -> box scale
+  // The wingman outline rotated to point up and recentred on the origin.
+  const pts = [[0, -7.5], [-6, 7.5], [0, 4.5], [6, 7.5]];
+  ctx.lineWidth = 1.6; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0] * f, pts[0][1] * f);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] * f, pts[i][1] * f);
+  ctx.closePath(); ctx.stroke();
+}
+
 function drawPowerupAt(p, x, y) {
   if (p.life < 3 && (Math.floor(p.life * 8) & 1)) return;   // blink as it nears expiry
   const ctx = g.ctx, clock = g.clock;
@@ -243,8 +256,12 @@ function drawPowerupAt(p, x, y) {
   ctx.fillStyle = p.color;
   if (p.type === 'nuke') {
     drawTrefoil(s);
+  } else if (p.type === 'drone') {
+    drawDroneIcon(s);
   } else {
-    ctx.font = F_PU;
+    // Scale the glyph to the box (which tracks S) - a fixed px size overflows tiny boxes on
+    // small screens and the letters end up overlapping their borders.
+    ctx.font = '600 ' + Math.max(8, Math.round(s * 1.15)) + 'px ' + MONO;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(p.letter, 0, 1);
   }
@@ -252,54 +269,76 @@ function drawPowerupAt(p, x, y) {
 }
 function drawPowerup(p) { withWrap(p.x, p.y, p.radius, (x, y) => drawPowerupAt(p, x, y)); }
 
-// A jagged electric polyline from (ax,ay) to (bx,by), re-jittered each frame.
-function jaggedSeg(ax, ay, bx, by) {
-  const ctx = g.ctx;
+// Append a jagged electric polyline from (ax,ay) to (bx,by) to `out` as flat x,y pairs,
+// re-jittered each frame. Building points (rather than path ops) lets the same bolt be
+// re-stroked at wrap offsets so its toroidal ghosts match instead of jittering apart.
+function jaggedPts(ax, ay, bx, by, out) {
   const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
   const nx = -dy / len, ny = dx / len;
   const segs = Math.max(2, Math.round(len / 22));
-  ctx.moveTo(ax, ay);
+  out.push(ax, ay);
   for (let i = 1; i < segs; i++) {
     const t = i / segs, j = (Math.random() - 0.5) * 12;
-    ctx.lineTo(ax + dx * t + nx * j, ay + dy * t + ny * j);
+    out.push(ax + dx * t + nx * j, ay + dy * t + ny * j);
   }
-  ctx.lineTo(bx, by);
+  out.push(bx, by);
 }
 
-// Three anchors: the ship, a player-relative mid kink, and the bolt's end.
+// Three anchors: the ship, a player-relative mid kink, and the bolt's end. When the end sits
+// past a wrapping edge (a target across the seam) the bolt is re-stroked at the wrap offset so
+// it continues in from the opposite edge; the field clip hides the off-field halves.
 function drawLightning() {
   if (g.weapon !== 'lightning' || !g.lightningEnd || !g.lightningMid || g.ship.dead || g.gameOver || g.nuke > 0) return;
   const ctx = g.ctx, ship = g.ship, lightningMid = g.lightningMid, lightningEnd = g.lightningEnd;
+  const { cx, cy, HW, HH } = g;
   const sx = ship.x + Math.cos(ship.angle) * 14, sy = ship.y + Math.sin(ship.angle) * 14;
   const ca = Math.cos(ship.angle), sa = Math.sin(ship.angle);
   const mx = ship.x + lightningMid.lx * ca - lightningMid.ly * sa;
   const my = ship.y + lightningMid.lx * sa + lightningMid.ly * ca;
+  const pts = [];
+  jaggedPts(sx, sy, mx, my, pts);
+  jaggedPts(mx, my, lightningEnd.x, lightningEnd.y, pts);   // appends; the shared mid is harmlessly duplicated
   ctx.save();
   ctx.strokeStyle = POWERUP_DEF.lightning.color;
   ctx.shadowColor = POWERUP_DEF.lightning.color; ctx.shadowBlur = 10;
   ctx.lineWidth = 2; ctx.lineJoin = 'round';
-  ctx.beginPath();
-  jaggedSeg(sx, sy, mx, my);
-  jaggedSeg(mx, my, lightningEnd.x, lightningEnd.y);
-  ctx.stroke();
+  const strokeAt = (ox, oy) => {
+    ctx.beginPath();
+    ctx.moveTo(pts[0] + ox, pts[1] + oy);
+    for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i] + ox, pts[i + 1] + oy);
+    ctx.stroke();
+  };
+  strokeAt(0, 0);
+  // If the end ran off an edge, draw the bolt shifted so the tail re-enters from the far side.
+  if (!hardEdges()) {
+    let ox = 0, oy = 0;
+    if (lightningEnd.x > cx + HW) ox = -2 * HW; else if (lightningEnd.x < cx - HW) ox = 2 * HW;
+    if (lightningEnd.y > cy + HH) oy = -2 * HH; else if (lightningEnd.y < cy - HH) oy = 2 * HH;
+    if (ox || oy) {
+      strokeAt(ox, oy);
+      if (ox && oy) { strokeAt(ox, 0); strokeAt(0, oy); }   // corner wrap: cover both single-axis images too
+    }
+  }
   ctx.restore();
 }
 
 // Ultrasound aura: a white border circle at the kill radius, plus light-blue ripples.
+// The pulse reaches the same distance the kill check does, so it ghosts across the
+// toroidal seam (withWrap) - except during the mega fight, where the walls are solid.
 function drawUltrasound() {
   if (g.weapon !== 'ultrasound' || g.ship.dead || g.gameOver || g.nuke > 0) return;
-  const ctx = g.ctx, ship = g.ship, S = g.S;
-  ctx.save();
-  ctx.translate(ship.x, ship.y);
-  for (const rp of g.ripples) {
-    ctx.globalAlpha = (1 - rp.p) * 0.6;
-    ctx.strokeStyle = POWERUP_DEF.ultrasound.color; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(0, 0, 6 * S + (ultrasoundRadius() - 6 * S) * rp.p, 0, TAU); ctx.stroke();
-  }
-  ctx.globalAlpha = 0.8;
-  ctx.strokeStyle = LINE; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(0, 0, ultrasoundRadius(), 0, TAU); ctx.stroke();
-  ctx.restore();
+  const ctx = g.ctx, ship = g.ship, S = g.S, R = ultrasoundRadius();
+  const paint = (x, y) => {
+    for (const rp of g.ripples) {
+      ctx.globalAlpha = (1 - rp.p) * 0.6;
+      ctx.strokeStyle = POWERUP_DEF.ultrasound.color; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, 6 * S + (R - 6 * S) * rp.p, 0, TAU); ctx.stroke();
+    }
+    ctx.globalAlpha = 0.8;
+    ctx.strokeStyle = LINE; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, R, 0, TAU); ctx.stroke();
+  };
+  if (hardEdges()) paint(ship.x, ship.y); else withWrap(ship.x, ship.y, R, paint);
 }
 
 function drawLasers() {
@@ -423,7 +462,7 @@ function hud() {
   ctx.font = F12; ctx.fillStyle = MUTED; ctx.fillText('SCORE', cx - HW, top - 17);
   ctx.font = F18; ctx.fillStyle = ACCENT; ctx.fillText(String(g.score).padStart(5, '0'), cx - HW, top);
   ctx.font = F11; ctx.fillStyle = MUTED; ctx.fillText('HIGH ' + String(g.highScore).padStart(5, '0'), cx - HW, top + 15);
-  // Wave - top-right.
+  // Wave - top-right (always the plain wave number; the boss's name shows in the centre banner).
   ctx.textAlign = 'right';
   ctx.font = F12; ctx.fillStyle = MUTED; ctx.fillText('WAVE', cx + HW, top - 17);
   ctx.font = F18; ctx.fillStyle = ON_DARK; ctx.fillText(String(g.wave), cx + HW, top);
@@ -444,20 +483,28 @@ function hud() {
   }
 }
 
-// Massive wave numeral centred on screen while the new wave's asteroids are in grace.
+// Massive banner centred on screen while the new wave spawns in: the wave numeral, or - on a
+// boss wave - the boss's name (in the boss colour) instead of the number.
 function waveBanner(graceLeft) {
-  const ctx = g.ctx, { W, H, cx, cy } = g, clock = g.clock;
+  const ctx = g.ctx, { W, H, cx, cy, HW } = g, clock = g.clock;
   const FADE = 0.6;
   const elapsed = WAVE_GRACE - graceLeft;
   const env = Math.max(0, Math.min(1, elapsed / FADE, graceLeft / FADE));
   const alpha = env * (0.5 + 0.1 * Math.sin(clock * 4));
   if (alpha <= 0) return;
+  const isBoss = !!(g.boss && g.boss.grace > 0);
+  const label = isBoss ? (BOSS_NAMES[g.boss.type] || 'BOSS') : String(g.wave);
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.fillStyle = LINE;
-  ctx.font = '700 ' + Math.round(Math.min(W, H) * 0.5) + 'px ' + MONO;
+  ctx.fillStyle = isBoss ? BOSS_COLOR : LINE;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(String(g.wave), cx, cy);
+  // Heavy and tall (~80% of the field), then shrunk to fit ~80% of the width so long boss names
+  // (and double-digit waves) never run off the sides.
+  let size = Math.round(Math.min(W, H) * 0.8);
+  ctx.font = '900 ' + size + 'px ' + MONO;
+  const maxW = Math.min(W, 2 * HW) * 0.8, tw = ctx.measureText(label).width;
+  if (tw > maxW) { size = Math.max(18, Math.round(size * maxW / tw)); ctx.font = '900 ' + size + 'px ' + MONO; }
+  ctx.fillText(label, cx, cy);
   ctx.restore();
 }
 
@@ -475,7 +522,7 @@ function drawWeaponTimer() {
   ctx.restore();
 }
 
-// Nuclear flash: drives the top-most DOM layer's opacity. "Reduce flashing" tints grey.
+// Nuclear flash: drives the top-most DOM layer's opacity. "Reduce flashing" flips it black.
 function nukeFlash() {
   let a = 0;
   if (g.nuke > 0) {
@@ -483,7 +530,7 @@ function nukeFlash() {
     if (elapsed < NUKE_WHITE) a = 1;
     else if (elapsed < NUKE_WHITE + NUKE_FADE) a = 1 - (elapsed - NUKE_WHITE) / NUKE_FADE;
   }
-  const bg = g.settings.reduceFlash ? '#888' : '#fff';
+  const bg = g.settings.reduceFlash ? '#000' : '#fff';
   if (bg !== g.nukeTint) { g.nukeEl.style.background = bg; g.nukeTint = bg; }
   const v = String(Math.max(0, a));
   if (g.nukeEl.style.opacity !== v) g.nukeEl.style.opacity = v;
@@ -544,8 +591,8 @@ export function render() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
 
-  // Screen shake during the mega's cinematic send-off.
-  if (boss && boss.dying) {
+  // Screen shake during the mega's cinematic send-off (the serpent shakes its own corpse instead).
+  if (boss && boss.dying && boss.type === 'megastructure') {
     const t = boss.outroT, amp = (t < 4 ? 1.5 + t * 1.5 : Math.max(0, 7.5 - (t - 4) * 1.3)) * g.S;
     if (amp > 0) ctx.translate((Math.random() * 2 - 1) * amp, (Math.random() * 2 - 1) * amp);
   }

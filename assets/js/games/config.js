@@ -39,7 +39,7 @@ export const WAVE_GRACE = 3;       // seconds a fresh wave's asteroids have no h
 export const MAX_LIVES = 3;
 export const MAX_BULLETS = 20;
 export const POWERUP_LIFE = 14;    // seconds a dropped power-up lingers before expiring
-export const MAX_POWERUPS = 3;     // never spawn a new power-up while this many are on screen
+export const MAX_POWERUPS = 5;     // never spawn a new power-up while this many are on screen
 export const LIGHTNING_HALF = 17.5 * Math.PI / 180;   // half of the 35° auto-aim cone
 export const SHIELD_DUR = 7;       // health pickup at full HP grants a 7s shield instead
 export const ULTRASOUND_TICK = 0.35;                 // AoE damage / ripple cadence
@@ -105,6 +105,7 @@ export const SETTINGS_KEY = 'anr-asteroids-settings';
 export const HI_KEY = 'anr-asteroids-hi';
 export const BOSS_UNLOCK_KEY = 'anr-asteroids-bossbeat';
 export const STARTWAVE_KEY = 'anr-asteroids-startwave';
+export const BESTWAVE_KEY = 'anr-asteroids-bestwave';   // highest wave ever reached; caps the start-wave picker
 // Leaderboard local memory is kept under non-anr keys so app.js's anrSweep
 // (which refreshes anr-* timestamps and would defeat a TTL) doesn't touch them.
 export const NAME_KEY = 'asteroids-name';

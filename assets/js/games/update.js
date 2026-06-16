@@ -5,9 +5,9 @@
    within-a-frame refs via a destructure; written scalars (and the boss, which a sub-call
    can clear mid-frame) go through `g.`. */
 
-import { RIPPLE_DUR, ULTRASOUND_TICK, SPAWN_INVULN, LIGHTNING_HALF, TAU, rand } from './config.js';
+import { RIPPLE_DUR, ULTRASOUND_TICK, SPAWN_INVULN, LIGHTNING_HALF, TAU, POWERUP_DEF, rand } from './config.js';
 import { g, immortal, ultrasoundRadius, lightningRange } from './state.js';
-import { hardEdges, wrap, edgeBounceShip, edgeReflect, rayToRim } from './geometry.js';
+import { hardEdges, wrap, edgeBounceShip, edgeReflect, rayToRim, wrapDelta } from './geometry.js';
 import { resetShip, spawnWave, destroyAsteroid, loseLife, applyPowerup, burst } from './world.js';
 import { fireWeapon, findLightningTarget, spawnMissile, updateMissiles } from './weapons.js';
 import { updateUfos, damageUfo } from './ufos.js';
@@ -114,7 +114,10 @@ export function update(dt) {
         if (reroll || g.lightningAirAngle === null) g.lightningAirAngle = rand(-LIGHTNING_HALF, LIGHTNING_HALF);
         // The bolt's far end: a locked target, or a random point on the range arc.
         if (g.lightningTarget) {
-          g.lightningEnd = { x: g.lightningTarget.x, y: g.lightningTarget.y };
+          // Aim at the target's nearest image across the seam; the end may sit just outside the
+          // field, and drawLightning ghosts the bolt so the tail re-enters from the far edge.
+          const [vdx, vdy] = wrapDelta(ship.x, ship.y, g.lightningTarget.x, g.lightningTarget.y);
+          g.lightningEnd = { x: ship.x + vdx, y: ship.y + vdy };
         } else {
           const ang = ship.angle + g.lightningAirAngle;
           const c = Math.cos(ang), s = Math.sin(ang);
@@ -150,19 +153,19 @@ export function update(dt) {
         for (let ai = asteroids.length - 1; ai >= 0; ai--) {
           const a = asteroids[ai];
           if (a.grace > 0) continue;
-          const dx = a.x - ship.x, dy = a.y - ship.y, rr = ultrasoundRadius() + a.radius;
+          const [dx, dy] = wrapDelta(ship.x, ship.y, a.x, a.y), rr = ultrasoundRadius() + a.radius;
           if (dx * dx + dy * dy < rr * rr) destroyAsteroid(ai);
         }
         for (let ui = ufos.length - 1; ui >= 0; ui--) {
           const u = ufos[ui];
           if (u.kind !== 'reward' || u.appear < 1) continue;
-          const dx = u.x - ship.x, dy = u.y - ship.y, rr = ultrasoundRadius() + u.radius;
+          const [dx, dy] = wrapDelta(ship.x, ship.y, u.x, u.y), rr = ultrasoundRadius() + u.radius;
           if (dx * dx + dy * dy < rr * rr) damageUfo(ui, 1);
         }
         if (g.boss) for (const n of g.boss.nodes) {
           if (!bossNodeVulnerable(g.boss, n)) continue;
           const [nx, ny] = bossNodePos(g.boss, n);
-          const dx = nx - ship.x, dy = ny - ship.y, rr = ultrasoundRadius() + n.r;
+          const [dx, dy] = wrapDelta(ship.x, ship.y, nx, ny), rr = ultrasoundRadius() + n.r;
           if (dx * dx + dy * dy < rr * rr) damageBossNode(g.boss, n, 1, nx, ny);
         }
         g.fireCd = ULTRASOUND_TICK;
@@ -184,10 +187,23 @@ export function update(dt) {
       } else if (input.fire) {
         g.homingBase = ship.angle; g.homingIdx = 0; g.homingLeft = 12; g.homingGap = 0;   // begin a burst
       }
+    } else if (g.weapon === 'ram') {
+      // No projectile - tapping fire lunges the ship hard along its heading and grants 0.7s
+      // of invulnerability, on a 1s cooldown. Edge-triggered so holding fire doesn't auto-dash.
+      g.lightningTarget = null;
+      if (g.ramDashCd > 0) g.ramDashCd -= dt;
+      if (input.fire && !g.firePrev && g.ramDashCd <= 0) {
+        ship.vx += Math.cos(ship.angle) * 620 * S;
+        ship.vy += Math.sin(ship.angle) * 620 * S;
+        ship.invuln = Math.max(ship.invuln, 0.7);
+        g.ramDashCd = 1;
+        burst(ship.x, ship.y, POWERUP_DEF.ram.color, { count: 12, speed: 200, life: 0.4, lines: true });
+      }
     } else {
       g.lightningTarget = null;
       if (input.fire && g.fireCd <= 0) fireWeapon();
     }
+    g.firePrev = input.fire;
   }
 
   const hard = hardEdges();

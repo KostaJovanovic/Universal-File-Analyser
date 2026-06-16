@@ -12,7 +12,7 @@
    the hot loops can destructure them. Scalars that a function reassigns are always
    read/written through `g.`. */
 
-import { SETTINGS_KEY, HI_KEY, BOSS_UNLOCK_KEY, STARTWAVE_KEY } from './config.js';
+import { SETTINGS_KEY, HI_KEY, BOSS_UNLOCK_KEY, STARTWAVE_KEY, BESTWAVE_KEY } from './config.js';
 
 export const g = {};
 
@@ -26,6 +26,12 @@ export function saveSettings() {
 export function saveHi() {
   try { localStorage.setItem(HI_KEY, String(g.highScore)); } catch (_) {}
 }
+export function saveBestWave() {
+  try { localStorage.setItem(BESTWAVE_KEY, String(g.bestWave)); } catch (_) {}
+}
+
+// Highest wave you may start a run on: half your best-ever wave (floored), at least 1.
+export const maxStartWave = () => Math.max(1, (g.bestWave || 0) - 2);
 
 // Populate every per-run field with its launch default and load persisted values.
 // DOM refs, theme tokens and geometry (g.cx/HW/S/ctx/...) are assigned by the
@@ -40,10 +46,11 @@ export function initState() {
   try { g.highScore = parseInt(localStorage.getItem(HI_KEY) || '0', 10) || 0; } catch (_) {}
   g.newHigh = false;
 
-  // Persistent boss-beaten unlock + remembered start-wave preference (1 or 10).
-  g.bossEverBeaten = false; g.startWavePref = 1;
+  // Persistent boss-beaten unlock + remembered start-wave preference (1..maxStartWave).
+  g.bossEverBeaten = false; g.startWavePref = 1; g.bestWave = 0;
   try { g.bossEverBeaten = localStorage.getItem(BOSS_UNLOCK_KEY) === '1'; } catch (_) {}
-  try { g.startWavePref = localStorage.getItem(STARTWAVE_KEY) === '10' ? 10 : 1; } catch (_) {}
+  try { g.bestWave = parseInt(localStorage.getItem(BESTWAVE_KEY) || '0', 10) || 0; } catch (_) {}
+  try { g.startWavePref = Math.max(1, parseInt(localStorage.getItem(STARTWAVE_KEY) || '1', 10) || 1); } catch (_) {}
 
   // Entity collections (never reassigned - cleared with .length = 0).
   g.asteroids = []; g.bullets = []; g.particles = []; g.powerups = []; g.lasers = [];
@@ -61,6 +68,8 @@ export function initState() {
   // Mega core endgame flags.
   g.gunsOff = false; g.megaMsgT = 0; g.puSpawnOff = false; g.hideShip = false;
   g.ramHitCd = 0;
+  // Battering-ram dash: tapping fire lunges the ship forward + brief invuln, on a 1s cooldown.
+  g.ramDashCd = 0; g.firePrev = false;
 
   // Homing burst bookkeeping.
   g.homingLeft = 0; g.homingIdx = 0; g.homingBase = 0; g.homingGap = 0; g.homingTrickle = 0;

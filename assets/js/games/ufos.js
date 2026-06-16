@@ -95,7 +95,7 @@ export function updateUfos(dt) {
       if (dx * dx + dy * dy < rr * rr) {
         if (g.weapon === 'ram') {
           if (g.ramHitCd <= 0 && u.kind === 'reward' && ship.vx * dx + ship.vy * dy > 0) {
-            damageUfo(i, 1);
+            damageUfo(i, u.hp);   // a single head-on ram charge destroys the saucer outright
             g.ramHitCd = 0.2; ship.invuln = Math.max(ship.invuln, 0.2);
           }
         } else if (ship.invuln <= 0 && g.shield <= 0 && !immortal()) {

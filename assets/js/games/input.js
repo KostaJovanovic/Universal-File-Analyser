@@ -66,15 +66,17 @@ function buildControls() {
   const { overlay, input, joy, mobileControls } = g;
   const BORDER = g.BORDER, SURFACE = g.SURFACE;
   const coarseInput = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
-  const JOY_R = 46;        // base radius (px); thumb travel clamped to this
-  const DEADZONE = 0.28;   // fraction of full travel before thrust kicks in
+  const JOY_R = coarseInput ? 64 : 46;   // base radius (px); thumb travel clamped to this - bigger on touch
+  const THUMB = Math.round(JOY_R * 0.92); // thumb diameter tracks the base size
+  const DEADZONE = 0.28;                  // fraction of full travel before thrust kicks in
 
   const base = document.createElement('div');
-  base.style.cssText = 'position:absolute; bottom:' + (coarseInput ? 100 : 26) + 'px; left:24px; width:' + (JOY_R * 2) +
+  base.style.cssText = 'position:absolute; bottom:26px; left:24px; width:' + (JOY_R * 2) +
     'px; height:' + (JOY_R * 2) + 'px; border-radius:50%; border:1px solid ' + BORDER +
     '; background:rgba(26,26,26,0.55); z-index:2; touch-action:none;';
   const thumb = document.createElement('div');
-  thumb.style.cssText = 'position:absolute; left:50%; top:50%; width:42px; height:42px; margin:-21px 0 0 -21px;' +
+  thumb.style.cssText = 'position:absolute; left:50%; top:50%; width:' + THUMB + 'px; height:' + THUMB +
+    'px; margin:' + (-THUMB / 2) + 'px 0 0 ' + (-THUMB / 2) + 'px;' +
     'border-radius:50%; background:' + SURFACE + '; border:1px solid ' + BORDER + '; pointer-events:none;' +
     'transition:transform .05s linear;';
   base.appendChild(thumb);
@@ -98,9 +100,12 @@ function buildControls() {
   base.addEventListener('pointercancel', onUp);
 
   if (coarseInput) {
+    const SQ = 58;                              // square button side (fire + both arrows)
+    const ctrlBottom = 26 + JOY_R - SQ / 2;     // vertically centred on the joystick
+
     const fire = document.createElement('button');
     fire.type = 'button'; fire.className = 'anr-game-btn'; fire.textContent = '●';
-    fire.style.cssText = 'position:absolute; bottom:26px; right:24px; width:64px; height:64px; font-size:21px; z-index:2; touch-action:none;';
+    fire.style.cssText = 'position:absolute; bottom:' + ctrlBottom + 'px; right:24px; width:' + SQ + 'px; height:' + SQ + 'px; font-size:21px; z-index:2; touch-action:none;';
     const setFire = (v) => (e) => { e.preventDefault(); if (v) trackTouchCombo('fire'); if (g.gameOver && !g.nameEntry && v) { restart(); return; } input.fire = v; };
     fire.addEventListener('pointerdown', setFire(true));
     fire.addEventListener('pointerup', setFire(false));
@@ -109,13 +114,13 @@ function buildControls() {
     overlay.appendChild(fire);
     mobileControls.push(fire);
 
-    // Left/right rotate arrows under the joystick - fine aiming when the stick is idle.
+    // Left/right rotate arrows beside the joystick - fine aiming when the stick is idle.
     const arrows = document.createElement('div');
-    arrows.style.cssText = 'position:absolute; bottom:26px; left:24px; width:' + (JOY_R * 2) + 'px; display:flex; gap:6px; z-index:2;';
+    arrows.style.cssText = 'position:absolute; bottom:' + ctrlBottom + 'px; left:' + (24 + JOY_R * 2 + 14) + 'px; display:flex; gap:8px; z-index:2;';
     const mkArrow = (label, prop) => {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'anr-game-btn'; b.textContent = label;
-      b.style.cssText = 'flex:1; height:42px; font-size:18px; touch-action:none;';
+      b.style.cssText = 'width:' + SQ + 'px; height:' + SQ + 'px; font-size:20px; touch-action:none;';
       const set = (v) => (e) => { e.preventDefault(); if (v) trackTouchCombo(prop); input[prop] = v; };
       b.addEventListener('pointerdown', set(true));
       b.addEventListener('pointerup', set(false));
