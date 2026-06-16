@@ -1,7 +1,7 @@
 ﻿/* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v122';
+const VERSION = 'analyser-v123';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -38,6 +38,20 @@ const SHELL = [
   './assets/js/renderers/tiff.js',
   './assets/js/renderers/media-reverse.js',
   './assets/js/games/asteroids.js',
+  './assets/js/games/config.js',
+  './assets/js/games/style.js',
+  './assets/js/games/state.js',
+  './assets/js/games/geometry.js',
+  './assets/js/games/world.js',
+  './assets/js/games/ufos.js',
+  './assets/js/games/drones.js',
+  './assets/js/games/weapons.js',
+  './assets/js/games/boss.js',
+  './assets/js/games/leaderboard.js',
+  './assets/js/games/menus.js',
+  './assets/js/games/render.js',
+  './assets/js/games/update.js',
+  './assets/js/games/input.js',
   './assets/js/renderers/audio.js',
   './assets/js/renderers/audio-player.js',
   './assets/js/renderers/audio-analysis.js',
