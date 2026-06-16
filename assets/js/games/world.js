@@ -9,7 +9,7 @@ import {
   WAVE_GRACE, MAX_POWERUPS, MAX_LIVES, SHIELD_DUR, POWERUP_LIFE, NUKE_TOTAL,
   SPAWN_INVULN, WRECK_FADE
 } from './config.js';
-import { g, immortal, saveHi } from './state.js';
+import { g, immortal, saveHi, saveBestWave, maxStartWave } from './state.js';
 import { fitFont, wrap } from './geometry.js';
 import { isBossWave, spawnBoss, bossNodeVulnerable } from './boss.js';
 import { makeUfo, dismissAmbientUfos, updateUfos } from './ufos.js';
@@ -38,6 +38,7 @@ export function makeAsteroid(x, y, size, label) {
 export function spawnWave() {
   dismissAmbientUfos();   // last wave's ambient escort flies off now the board is clear
   g.wave++;
+  if (!g.sandbox && g.wave > g.bestWave) { g.bestWave = g.wave; saveBestWave(); }   // remember the deepest scored run
   if (isBossWave(g.wave)) { spawnBoss(); return; }   // boss wave: just the boss; advances when it dies
   const { cx, cy, HW, HH, S, ship, asteroids, powerups, ufos } = g;
   // Per-wave roster grows by one "unit" each wave (a big asteroid is worth 2 units, a
@@ -157,7 +158,9 @@ export function restart() {
   g.splash = false; g.menuOpen = false; clearMenus();   // leave the splash / pause overlays
   if (g.pauseBtn) { g.pauseBtn.style.display = ''; g.pauseBtn.textContent = '❚❚'; }
   g.mobileControls.forEach((elm) => { elm.style.display = ''; });   // controls back for play
-  g.wave = (g.bossEverBeaten && g.startWavePref === 10) ? 9 : 0;   // unlocked Wave 10 start (spawnWave bumps it)
+  // Unlocked head-start: begin on the chosen wave (clamped to half your best ever). spawnWave bumps it.
+  const startWave = g.bossEverBeaten ? Math.max(1, Math.min(g.startWavePref || 1, maxStartWave())) : 1;
+  g.wave = startWave - 1;
   g.score = 0; g.lives = 3; g.gameOver = false; g.newHigh = false; g.cause = null;
   g.sandboxUsed = g.sandbox;   // a fresh run is leaderboard-ineligible only if still in sandbox
   resetShip(SPAWN_INVULN);

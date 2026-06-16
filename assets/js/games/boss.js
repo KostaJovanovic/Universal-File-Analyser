@@ -17,8 +17,8 @@ import { burst, makeAsteroid, makePowerup, spawnWave, resetShip, destroyAsteroid
 import { makeUfo } from './ufos.js';
 
 // Hoisted (restart() -> spawnWave() runs during init and must be able to call this).
-// Scripted opener bosses on 5 / 7 / 10, then one every 7 waves (17, 24, ...).
-export function isBossWave(w) { return w === 5 || w === 7 || w === 10 || (w > 10 && (w - 10) % 7 === 0); }
+// Scripted opener bosses on 5 / 8 / 11, then one every 7 waves (18, 25, ...).
+export function isBossWave(w) { return w === 5 || w === 8 || w === 11 || (w > 11 && (w - 11) % 7 === 0); }
 
 export function nextBossType() {
   if (!g.bossBag.length) {
@@ -32,14 +32,17 @@ export function nextBossType() {
 // every boss wave past 10 is a random pick from the shuffle bag.
 export function bossTypeForWave(w) {
   if (w === 5) return 'mothership';
-  if (w === 7) return 'segmented';
-  if (w === 10) return 'megastructure';
+  if (w === 8) return 'segmented';
+  if (w === 11) return 'megastructure';
   return nextBossType();
 }
 
-// Encounters past wave 10 ramp up a little each cycle (every 7 waves): tougher nodes.
-// 1.0 through the scripted gauntlet, then +18% per cycle (wave 17 = 1.18x), capped at 2x.
-export function bossBuff(w) { return w > 10 ? Math.min(2, 1 + 0.18 * Math.floor((w - 10) / 7)) : 1; }
+// Encounters past wave 11 ramp up a little each cycle (every 7 waves): tougher nodes.
+// 1.0 through the scripted gauntlet, then +18% per cycle (wave 18 = 1.18x), capped at 2x.
+export function bossBuff(w) { return w > 11 ? Math.min(2, 1 + 0.18 * Math.floor((w - 11) / 7)) : 1; }
+
+// Human-readable names for the HUD / health bar.
+export const BOSS_NAMES = { mothership: 'MOTHERSHIP', segmented: 'SERPENT', megastructure: 'MEGA' };
 
 // Re-pin the megastructure to the centre of its shorter edge, hanging just outside so
 // only the inner arc peeks in. Called every frame so the boss stays glued through a resize.
@@ -74,20 +77,32 @@ export function updateMegaRadar(b, dt) {
     const ab = Math.atan2(a.y - b.y, a.x - b.x);
     if (Math.abs(Math.atan2(Math.sin(ab - b.sweepAng), Math.cos(ab - b.sweepAng))) < 0.16) destroyAsteroid(ai);
   }
+  // ...and any power-up it crosses, except the battering ram it offers up (and never the player).
+  for (let pi = g.powerups.length - 1; pi >= 0; pi--) {
+    const pu = g.powerups[pi];
+    if (pu.type === 'ram') continue;
+    const pb = Math.atan2(pu.y - b.y, pu.x - b.x);
+    if (Math.abs(Math.atan2(Math.sin(pb - b.sweepAng), Math.cos(pb - b.sweepAng))) < 0.16) {
+      burst(pu.x, pu.y, pu.color, { count: 8, speed: 110, life: 0.4, lines: true });
+      g.powerups.splice(pi, 1);
+    }
+  }
   b.sweepHitCd -= dt;
   if (!ship.dead && !g.gameOver && b.sweepHitCd <= 0) {
     const bearing = Math.atan2(ship.y - b.y, ship.x - b.x);
     const d = Math.atan2(Math.sin(bearing - b.sweepAng), Math.cos(bearing - b.sweepAng));
     if (Math.abs(d) < 0.20) {   // beam is over the ship
       b.sweepHitCd = 1.2;
-      if (!b.gunsKilled) {
+      const first = !b.gunsKilled;
+      if (first) {
         // The first sweep to catch the ship knocks out its systems.
         b.gunsKilled = true; g.gunsOff = true; g.megaMsgT = 30; g.puSpawnOff = true;
         for (const dr of g.drones) burst(dr.x, dr.y, POWERUP_DEF.drone.color, { count: 12, speed: 130, life: 0.5, lines: true });
         g.drones.length = 0; g.bullets.length = 0;
         for (let pi = g.powerups.length - 1; pi >= 0; pi--) if (g.powerups[pi].type !== 'ram') g.powerups.splice(pi, 1);   // wipe everything but the ram
       }
-      ship.vx += dirx * 780 * S; ship.vy += diry * 780 * S;   // shove toward the far wall
+      const power = first ? 2 : 1;   // the first sweep hits twice as hard as the rest
+      ship.vx += dirx * 780 * S * power; ship.vy += diry * 780 * S * power;   // shove toward the far wall
     }
   }
 }
@@ -195,7 +210,7 @@ export function drawMegaOutro(b) {
     if (el < NUKE_WHITE) fa = 1;
     else if (el < NUKE_WHITE + NUKE_FADE) fa = 1 - (el - NUKE_WHITE) / NUKE_FADE;
   }
-  if (fa > 0) { ctx.globalAlpha = Math.min(1, fa); ctx.fillStyle = '#fff'; ctx.fillRect(cx - HW - 30, cy - HH - 30, 2 * HW + 60, 2 * HH + 60); ctx.globalAlpha = 1; }
+  if (fa > 0) { ctx.globalAlpha = Math.min(1, fa); ctx.fillStyle = g.settings.reduceFlash ? '#000' : '#fff'; ctx.fillRect(cx - HW - 30, cy - HH - 30, 2 * HW + 60, 2 * HH + 60); ctx.globalAlpha = 1; }
   ctx.restore();
 }
 // Narrator text box pinned to the bottom of the field while the core is exposed.
@@ -254,9 +269,9 @@ export function spawnBoss(forcedType) {
   const buff = forcedType ? 1 : bossBuff(g.wave);   // scripted/debug spawns stay at base toughness
   const u = 100 * S;                       // "large" size unit
   const b = { type, x: cx, y: cy - HH * 0.45, angle: 0, vx: 0, vy: 0, spin: 0, t: 0, r: u, nodes: [], grace: WAVE_GRACE };
-  // The megastructure traps you in a walled arena, so it pelts the field with asteroids
-  // far faster than the open-field fights.
-  b.astCd = type === 'megastructure' ? rand(4, 7) : rand(12, 17);
+  // The megastructure traps you in a walled arena, so it pelts the field with asteroids far
+  // faster; the serpent spawns them briskly too (it feeds on them - see serpentEat).
+  b.astCd = type === 'megastructure' ? rand(4, 7) : type === 'segmented' ? rand(7, 13) : rand(12, 17);
   b.puCd = rand(7, 12);     // ...and the occasional power-up around the arena
   if (type === 'mothership') {
     // Single hit-anywhere core. A passive carrier launching small UFOs on a timer.
@@ -269,7 +284,7 @@ export function spawnBoss(forcedType) {
     // A colossus as wide as the field's shorter dimension, hanging just outside the shorter
     // edge so only its inner arc dips into play. Weak points stud its rim; clear them all.
     b.side = HW <= HH ? 'top' : 'right';
-    b.r = R; b.spin = 0.22; b.advance = 0;
+    b.r = R * 1.56; b.spin = 0.22; b.advance = 0;   // 1.2 x 1.3: the original +20%, then +30% more
     b.rimState = 'fighting'; b.finaleT = 0; b.rimGone = false;   // satellite-destruction finale, then the slide-in
     b.sweepAng = 0; b.pings = []; b.pingCd = 0.5; b.sweepHitCd = 0;   // radar attack once the core is exposed
     b.coreReady = false; b.gunsKilled = false; b.dying = false;   // ram-the-core endgame, then the cinematic outro
@@ -283,8 +298,8 @@ export function spawnBoss(forcedType) {
   } else {
     // Serpent: 30% larger than the base unit, tripled segment HP, length grows with the wave.
     const su = u * 1.3;
-    b.r = su * 0.5; b.spacing = su * 0.44; b.headAngle = rand(0, TAU); b.steerT = 0; b.turn = 0;
-    const M = Math.min(21, 9 + Math.max(0, Math.floor((g.wave - 10) / 7)) * 2);
+    b.r = su * 0.5; b.spacing = su * 0.44; b.headAngle = rand(0, TAU); b.steerT = 1; b.turn = 0; b.eatCd = 0;   // drive straight for 1s before the first turn
+    const M = Math.min(25, 13 + Math.max(0, Math.floor((g.wave - 11) / 7)) * 2);
     const shp = Math.round(18 * buff);
     const hx = cx, hy = cy - HH * 0.4;
     for (let i = 0; i < M; i++) b.nodes.push({ ax: hx - i * b.spacing, ay: hy, r: su * 0.34, hp: i === 0 ? Infinity : shp, maxhp: i === 0 ? Infinity : shp, kind: i === 0 ? 'head' : 'segment', dead: false });
@@ -337,24 +352,15 @@ export function hitBossAt(x, y, padR, dmg) {
   return false;
 }
 
-// Serpent boss: head drives forward at constant speed and can only pivot; the body chain
-// follows via shortest-wrapped-delta so it feeds cleanly through the toroidal seam.
-export function updateSnake(b, dt) {
-  const { cx, cy, HW, HH, S } = g;
-  const head = b.nodes[0];
+// Body chain follow: each segment trails the one ahead at fixed spacing via the shortest wrapped
+// delta, so it feeds cleanly through the toroidal seam. Shared by the live serpent and its death curl.
+function snakeFollow(b) {
+  const { cx, cy, HW, HH } = g;
   const W = HW * 2, H2 = HH * 2;
-  b.steerT -= dt;
-  if (b.steerT <= 0) { b.turn = rand(-1, 1) * 2.0; b.steerT = rand(0.3, 0.9); }
-  b.headAngle += (b.turn || 0) * dt;
-  const spd = 210 * S;
-  let hx = head.ax + Math.cos(b.headAngle) * spd * dt, hy = head.ay + Math.sin(b.headAngle) * spd * dt;
-  if (hx < cx - HW) hx += W; else if (hx > cx + HW) hx -= W;
-  if (hy < cy - HH) hy += H2; else if (hy > cy + HH) hy -= H2;
-  head.ax = hx; head.ay = hy;
   for (let i = 1; i < b.nodes.length; i++) {
     const p = b.nodes[i - 1], n = b.nodes[i];
     let dx = n.ax - p.ax, dy = n.ay - p.ay;
-    if (dx > HW) dx -= W; else if (dx < -HW) dx += W;   // follow across the seam, not the long way
+    if (dx > HW) dx -= W; else if (dx < -HW) dx += W;
     if (dy > HH) dy -= H2; else if (dy < -HH) dy += H2;
     const d = Math.hypot(dx, dy) || 1;
     let nx = p.ax + (dx / d) * b.spacing, ny = p.ay + (dy / d) * b.spacing;
@@ -364,12 +370,146 @@ export function updateSnake(b, dt) {
   }
 }
 
+// Serpent boss: head drives forward at constant speed and can only pivot; the body chain
+// follows via shortest-wrapped-delta so it feeds cleanly through the toroidal seam.
+export function updateSnake(b, dt) {
+  const { cx, cy, HW, HH, S } = g;
+  const head = b.nodes[0];
+  const W = HW * 2, H2 = HH * 2;
+  // Once it drops to 50% HP the serpent turns hunter: it steers straight, at the usual turn-rate
+  // cap, at the nearest asteroid (red = a segment + power-up, white = 3% heal). Otherwise it wanders.
+  let hp = 0, max = 0;
+  for (let i = 1; i < b.nodes.length; i++) { const n = b.nodes[i]; max += n.maxhp; if (!n.dead) hp += Math.max(0, n.hp); }
+  let prey = null;
+  if (max > 0 && hp <= max * 0.5) {
+    let bd = Infinity;
+    for (const a of g.asteroids) {
+      if (a.grace > 0) continue;
+      const dx = a.x - head.ax, dy = a.y - head.ay, d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; prey = a; }
+    }
+  }
+  if (prey) {
+    const want = Math.atan2(prey.y - head.ay, prey.x - head.ax);
+    const d = Math.atan2(Math.sin(want - b.headAngle), Math.cos(want - b.headAngle));
+    const max = 2.0 * dt;
+    b.headAngle += Math.max(-max, Math.min(max, d));
+  } else {
+    b.steerT -= dt;
+    if (b.steerT <= 0) { b.turn = rand(-1, 1) * 2.0; b.steerT = rand(0.3, 0.9); }
+    b.headAngle += (b.turn || 0) * dt;
+  }
+  b.prey = prey;   // null unless hunting; the render layer traces the path to it
+  b.hpFrac = max > 0 ? hp / max : 1;   // read by the drip timer (more food when it's low)
+  const spd = 210 * S * (max > 0 && hp <= max * 0.1 ? 1.5 : 1);   // frenzied 1.5x dash below 10% HP
+  b.spd = spd;     // shared with the hunt-path overlay so its predicted curve matches
+  let hx = head.ax + Math.cos(b.headAngle) * spd * dt, hy = head.ay + Math.sin(b.headAngle) * spd * dt;
+  if (hx < cx - HW) hx += W; else if (hx > cx + HW) hx -= W;
+  if (hy < cy - HH) hy += H2; else if (hy > cy + HH) hy -= H2;
+  head.ax = hx; head.ay = hy;
+  snakeFollow(b);
+}
+
+// The serpent feeds on what its head sweeps over: any asteroid is swallowed whole (removed, no
+// split, no score). A RED (archive, size-3) rock regrows one lost segment and coughs up a power-up
+// where it was eaten; a WHITE rock heals 3% of the serpent's full HP. Only the head feeds, and only
+// once every SNAKE_EAT_CD seconds - after a meal it has to digest before it can swallow again.
+const SNAKE_EAT_CD = 15;
+export function serpentEat(b, dt) {
+  if (b.eatCd > 0) { b.eatCd -= dt; return; }   // still digesting the last meal
+  const head = b.nodes[0];
+  for (let ai = g.asteroids.length - 1; ai >= 0; ai--) {
+    const a = g.asteroids[ai];
+    if (a.grace > 0) continue;   // no hitbox while it's still the arrival outline
+    const dx = a.x - head.ax, dy = a.y - head.ay, rr = head.r + a.radius;
+    if (dx * dx + dy * dy > rr * rr) continue;
+    burst(a.x, a.y, BOSS_COLOR, { count: 8, speed: 110, life: 0.4, lines: true });
+    g.asteroids.splice(ai, 1);
+    if (a.size === 3) {
+      const seg = b.nodes.find((n) => n.kind === 'segment' && n.dead);   // restore the first lost segment
+      if (seg) { seg.dead = false; seg.hp = seg.maxhp; }
+      if (g.powerups.length < MAX_POWERUPS) g.powerups.push(makePowerup(a.x, a.y));   // drop loot where it fed
+    } else {
+      let max = 0;
+      for (const n of b.nodes) if (n.kind === 'segment') max += n.maxhp;
+      let heal = max * 0.03;   // 3% of full HP, poured into its damaged living segments
+      for (const n of b.nodes) {
+        if (heal <= 0) break;
+        if (n.kind !== 'segment' || n.dead || n.hp >= n.maxhp) continue;
+        const add = Math.min(heal, n.maxhp - n.hp); n.hp += add; heal -= add;
+      }
+    }
+    b.eatCd = SNAKE_EAT_CD;   // one bite, then a 15s digest before it can feed again
+    break;
+  }
+}
+
+// Serpent defeated: a ~7.5s send-off. It coils into a ball at the centre while slowing to a stop
+// (CURL secs), shakes in place ever more violently (SHAKE secs), then detonates - a scaled-up
+// version of the player-death blast - before the next wave begins.
+const SNAKE_CURL = 3, SNAKE_SHAKE = 3, SNAKE_TAIL = 1.4;
+export function startSnakeOutro() {
+  const { cx, cy, ship } = g;
+  const b = g.boss;
+  b.dying = true; b.dieT = 0; b.exploded = false;
+  g.asteroids.length = 0; g.bullets.length = 0; g.lasers.length = 0; g.ufos.length = 0; g.missiles.length = 0;
+  ship.invuln = Math.max(ship.invuln, 9);                   // safe through the whole cinematic
+  if (!g.sandbox) { g.score += 1000; if (g.score > g.highScore) { g.highScore = g.score; g.newHigh = true; saveHi(); } }
+  if (!g.bossEverBeaten) {
+    g.bossEverBeaten = true;
+    try { localStorage.setItem(BOSS_UNLOCK_KEY, '1'); } catch (_) {}
+    if (g.startToggleBtn) g.startToggleBtn.style.display = '';
+  }
+}
+export function updateSnakeOutro(dt) {
+  const { cx, cy } = g;
+  const b = g.boss; b.dieT += dt; const t = b.dieT;
+  if (t < SNAKE_CURL) {
+    // Curl into the centre at full slither speed (no deceleration): steer the head at the centre,
+    // ramping the turn rate up so it spirals into an ever-tighter coil; the body trails into a ball.
+    const head = b.nodes[0];
+    const spd = b.spd || 210 * g.S;
+    const want = Math.atan2(cy - head.ay, cx - head.ax);
+    const d = Math.atan2(Math.sin(want - b.headAngle), Math.cos(want - b.headAngle));
+    const cap = (3 + 9 * (t / SNAKE_CURL)) * dt;   // 3 -> 12 rad/s: tightens as it curls in
+    b.headAngle += Math.max(-cap, Math.min(cap, d));
+    head.ax += Math.cos(b.headAngle) * spd * dt; head.ay += Math.sin(b.headAngle) * spd * dt;
+    snakeFollow(b);
+  } else if (t >= SNAKE_CURL + SNAKE_SHAKE && !b.exploded) {
+    snakeOutroExplode(b);
+  } else if (b.exploded && t >= SNAKE_CURL + SNAKE_SHAKE + SNAKE_TAIL) {
+    finishSnakeOutro();
+  }
+}
+function snakeOutroExplode(b) {
+  b.exploded = true;
+  const { cx, cy, S } = g;
+  // The player's death burst, vastly scaled up: a ring of white hull shards plus violet + accent.
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * TAU;
+    burst(cx + Math.cos(a) * 44 * S, cy + Math.sin(a) * 44 * S, '#fff', { count: 22, speed: 330, life: 1.2, lines: true });
+  }
+  burst(cx, cy, BOSS_COLOR, { count: 54, speed: 350, life: 1.4, lines: true });
+  burst(cx, cy, g.ACCENT, { count: 40, speed: 260, life: 1.0 });
+}
+export function finishSnakeOutro() {
+  const { cx, cy, HW, HH } = g;
+  g.boss = null;
+  for (let k = 0; k < 3; k++) g.powerups.push(makePowerup(cx + rand(-HW, HW) * 0.5, cy + rand(-HH, HH) * 0.5));
+  if (g.lives < MAX_LIVES) g.lives++; else g.shield = Math.max(g.shield, SHIELD_DUR);
+  spawnWave();
+}
+
 export function updateBoss(dt) {
   const boss = g.boss;
   if (!boss) return;
-  if (boss.dying) { updateMegaOutro(dt); return; }   // cinematic playing out - hold here
+  if (boss.dying) {   // cinematic playing out - hold here
+    if (boss.type === 'megastructure') updateMegaOutro(dt); else updateSnakeOutro(dt);
+    return;
+  }
   if (bossDead(boss)) {
-    if (boss.type === 'megastructure') startMegaOutro();   // epic 10s+ send-off before the next wave
+    if (boss.type === 'megastructure') startMegaOutro();        // epic 10s+ send-off before the next wave
+    else if (boss.type === 'segmented') startSnakeOutro();      // coil-up, violent shake, then a big blast
     else bossDefeated();
     return;
   }
@@ -396,7 +536,9 @@ export function updateBoss(dt) {
     b.angle += b.spin * dt;   // slow rotation in place
     const rimCleared = b.nodes.every((n) => n.kind !== 'weak' || n.dead);
     if (b.rimState === 'fighting') {
-      if (rimCleared) { b.rimState = 'finale'; b.finaleT = 0; }
+      // First phase done (rim satellites cleared): offer the one and only ram. This branch
+      // runs exactly once, so it's a single scripted spawn - no perpetual top-up.
+      if (rimCleared) { b.rimState = 'finale'; b.finaleT = 0; ensureRamPickup(); }
     } else if (b.rimState === 'finale') {
       b.finaleT += dt;   // rings shake (drawn in drawBoss) for 0.85s, then blow apart
       if (b.finaleT >= 0.85) {
@@ -413,17 +555,23 @@ export function updateBoss(dt) {
       if (b.advance >= 1) {
         b.coreReady = true;
         updateMegaRadar(b, dt);   // core fully exposed: the radar is live (its first sweep cuts the guns)
-        if (b.gunsKilled) ensureRamPickup();   // ram pickup only appears once the guns are knocked out
       }
     }
     megaAnchor(b);            // re-pin to the shorter edge (resize-proof), advancing inward when sliding
   } else {
     updateSnake(b, dt);
+    if (active) serpentEat(b, dt);   // head swallows asteroids it passes over, regrowing a lost segment
   }
   // Every boss fight keeps the arena busy: a stray asteroid on a timer + occasional power-ups.
   if (active) {
     b.astCd -= dt;
-    if (b.astCd <= 0) { b.astCd = b.type === 'megastructure' ? rand(4, 7) : rand(12, 17); spawnBossAsteroid(); }
+    if (b.astCd <= 0) {
+      // Serpent feeds faster the more wounded it is: 7-13s normally, 5-8s once under 20% HP.
+      b.astCd = b.type === 'megastructure' ? rand(4, 7)
+        : b.type === 'segmented' ? (b.hpFrac <= 0.2 ? rand(5, 8) : rand(7, 13))
+        : rand(12, 17);
+      spawnBossAsteroid();
+    }
     b.puCd -= dt;
     if (b.puCd <= 0) { b.puCd = rand(9, 14); spawnBossPowerup(); }
   }
@@ -536,18 +684,74 @@ function megaShellSprite(b) {
   return b._shellCv;
 }
 
+// Hunter overlay: while the serpent is chasing a red asteroid, trace the curved path its head will
+// actually take (constant speed, turning toward the target at its cap - the same maths as
+// updateSnake) as a marching dotted line, with a ring on the target. Pure intent telegraph.
+function drawSerpentHunt(b) {
+  const prey = b.prey;
+  if (!prey || !g.asteroids.includes(prey)) return;   // nothing to hunt, or it was just eaten
+  const ctx = g.ctx, S = g.S;
+  const head = b.nodes[0];
+  const spd = b.spd || 210 * S, step = 0.045, hit = head.r + prey.radius;
+  let x = head.ax, y = head.ay, ang = b.headAngle;
+  ctx.save();
+  ctx.shadowBlur = 0; ctx.strokeStyle = BOSS_COLOR; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.5;
+  ctx.setLineDash([5, 7]); ctx.lineDashOffset = -g.clock * 40;
+  ctx.beginPath(); ctx.moveTo(x, y);
+  for (let i = 0; i < 100; i++) {
+    const want = Math.atan2(prey.y - y, prey.x - x);
+    const d = Math.atan2(Math.sin(want - ang), Math.cos(want - ang));
+    const m = 2.0 * step;
+    ang += Math.max(-m, Math.min(m, d));
+    x += Math.cos(ang) * spd * step; y += Math.sin(ang) * spd * step;
+    ctx.lineTo(x, y);
+    const dx = prey.x - x, dy = prey.y - y;
+    if (dx * dx + dy * dy < hit * hit) break;   // reached the target
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath(); ctx.arc(prey.x, prey.y, prey.radius + 5 * S, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+
+// The serpent's death cinematic: the coiled corpse shaking in place (mild while it curls, violent
+// during the hold) until it detonates, after which only the particle blast remains.
+function drawSnakeOutro(b) {
+  if (b.exploded) return;   // nothing left but the burst (drawn as particles)
+  const ctx = g.ctx, { S, MUTED } = g;
+  const t = b.dieT;
+  const amp = (t < SNAKE_CURL ? 0.5 + 2 * (t / SNAKE_CURL)             // mild, building as it slows
+    : 3 + 7 * Math.min(1, (t - SNAKE_CURL) / SNAKE_SHAKE)) * S;        // violent, ramping to a peak
+  ctx.save();
+  if (amp > 0) ctx.translate((Math.random() * 2 - 1) * amp, (Math.random() * 2 - 1) * amp);
+  ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  ctx.strokeStyle = BOSS_COLOR; ctx.shadowColor = BOSS_COLOR; ctx.shadowBlur = 10;
+  for (let i = 1; i < b.nodes.length; i++) {   // links (the whole corpse, dead segments included)
+    const a = b.nodes[i - 1], n = b.nodes[i];
+    ctx.beginPath(); ctx.moveTo(a.ax, a.ay); ctx.lineTo(n.ax, n.ay); ctx.stroke();
+  }
+  for (const n of b.nodes) {
+    ctx.strokeStyle = n.kind === 'head' ? MUTED : BOSS_COLOR;
+    ctx.beginPath(); ctx.arc(n.ax, n.ay, n.r, 0, TAU); ctx.stroke();
+    if (n.kind === 'head') { ctx.globalAlpha = 0.25; ctx.fillStyle = MUTED; ctx.fill(); ctx.globalAlpha = 1; }
+  }
+  ctx.restore();
+}
+
 export function drawBoss() {
   const boss = g.boss;
   if (!boss) return;
   const ctx = g.ctx, { cx, cy, HW, HH, S, MUTED } = g;
   const b = boss;
-  if (b.dying) { drawMegaOutro(b); return; }   // structure is gone - only the cinematic
+  if (b.dying) { if (b.type === 'megastructure') drawMegaOutro(b); else drawSnakeOutro(b); return; }   // only the cinematic
   if (b.grace > 0) { drawBossOutline(b); return; }
   ctx.save();
   ctx.strokeStyle = BOSS_COLOR; ctx.lineWidth = 2; ctx.lineJoin = 'round';
   ctx.shadowColor = BOSS_COLOR; ctx.shadowBlur = 10;
   if (b.type === 'segmented') {
     const W = HW * 2, H2 = HH * 2, mg = b.r + 4 * S;
+    drawSerpentHunt(b);   // dotted intent path to the asteroid it's chasing (under the body)
     let lx = false, rx = false, ty = false, by = false;
     for (const n of b.nodes) {
       if (n.ax < cx - HW + mg) lx = true; else if (n.ax > cx + HW - mg) rx = true;
@@ -648,9 +852,30 @@ export function drawBossBar() {
   let hp = 0, max = 0;
   for (const n of boss.nodes) { if (!isFinite(n.maxhp)) continue; hp += Math.max(0, n.hp); max += n.maxhp; }   // skip the invulnerable serpent head
   const frac = max > 0 ? Math.max(0, Math.min(1, hp / max)) : 0;
-  const w = 2 * HW * 0.55, x = cx - w / 2, y = cy - HH + 14;
-  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(x, y, w, 5);
-  ctx.fillStyle = BOSS_COLOR; ctx.fillRect(x, y, w * frac, 5);
-  ctx.font = '10px ' + MONO; ctx.fillStyle = BOSS_COLOR; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.fillText('BOSS', cx, y - 4);
+  // Sits a little below the top edge (clear of the scope frame). Sharp corners + a thin white
+  // hairline echo the scope frame and the rest of the HUD - the site's look, not a glossy capsule.
+  const w = 2 * HW * 0.5, h = 6, x = cx - w / 2, y = cy - HH + 40;
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  // Boss name above the bar: mono caps in the boss colour with a soft glow (small text, cheap blur).
+  ctx.font = '600 12px ' + MONO;
+  ctx.shadowColor = BOSS_COLOR; ctx.shadowBlur = 8;
+  ctx.fillStyle = BOSS_COLOR; ctx.fillText(BOSS_NAMES[boss.type] || 'BOSS', cx, y - 8);
+  ctx.shadowBlur = 0;
+  // Track: a flat, faint dark fill.
+  ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(x, y, w, h);
+  // Fill: boss violet with a subtle top-down sheen. No bar-wide shadowBlur (it would be a per-frame
+  // software blur across a near-field-width box).
+  if (frac > 0) {
+    const fw = w * frac;
+    const grd = ctx.createLinearGradient(0, y, 0, y + h);
+    grd.addColorStop(0, '#c78cff'); grd.addColorStop(1, BOSS_COLOR);
+    ctx.fillStyle = grd; ctx.fillRect(x, y, fw, h);
+  }
+  // Faint segment notches every 10%, then a thin hairline frame (white, like the scope's inner line).
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1; ctx.beginPath();
+  for (let i = 1; i < 10; i++) { const tx = x + (w * i) / 10; ctx.moveTo(tx, y); ctx.lineTo(tx, y + h); }
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 1; ctx.strokeRect(x, y, w, h);
+  ctx.restore();
 }

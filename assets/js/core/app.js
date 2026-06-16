@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 123;
+const COMMIT_COUNT = 124;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1551,9 +1551,9 @@ function boot() {
       var now = Date.now();
       for (var i = localStorage.length - 1; i >= 0; i--) {
         var k = localStorage.key(i);
-        // anr-asteroids-hi is a permanent high score with no :ts companion - skip it,
-        // or the sweep's "no timestamp" branch would delete it on every page load.
-        if (!k || !k.startsWith('anr-') || k.endsWith(':ts') || k === 'anr-asteroids-hi') continue;
+        // anr-asteroids-hi / -bestwave are permanent records with no :ts companion - skip them,
+        // or the sweep's "no timestamp" branch would delete them on every page load.
+        if (!k || !k.startsWith('anr-') || k.endsWith(':ts') || k === 'anr-asteroids-hi' || k === 'anr-asteroids-bestwave') continue;
         var ts = parseInt(localStorage.getItem(k + ':ts'), 10);
         if (!ts || now - ts > ANR_TTL) {
           localStorage.removeItem(k);
@@ -2278,9 +2278,9 @@ function boot() {
   if (clearBtn) {
     clearBtn.addEventListener('click', async () => {
       clearBtn.textContent = 'Clearing…';
-      // 1. Preserve the dark-mode state and the Asteroids high score, then wipe
+      // 1. Preserve the dark-mode state and the Asteroids high score + best wave, then wipe
       //    localStorage + sessionStorage and restore the kept keys.
-      const KEEP = ['anr-theme', 'anr-theme:ts', 'anr-asteroids-hi'];
+      const KEEP = ['anr-theme', 'anr-theme:ts', 'anr-asteroids-hi', 'anr-asteroids-bestwave'];
       const kept = {};
       for (const k of KEEP) { const v = localStorage.getItem(k); if (v !== null) kept[k] = v; }
       try { localStorage.clear(); } catch (_) {}

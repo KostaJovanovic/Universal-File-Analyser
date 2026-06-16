@@ -8,6 +8,7 @@ import { DRONE_MAX, DRONE_SLOTS, DRONE_WEAPONS, POWERUP_DEF, rand, pick } from '
 import { g, immortal } from './state.js';
 import { burst, destroyAsteroid } from './world.js';
 import { damageUfo } from './ufos.js';
+import { wrapDelta } from './geometry.js';
 import { spawnBulletAt, spawnMissileFrom, nearestSeekTarget } from './weapons.js';
 
 export function makeDrone(forcedWeapon) {
@@ -66,9 +67,12 @@ export function updateDrones(dt) {
       let fired = false;
       if (!ship.dead && !g.gameOver) {
         const tgt = nearestSeekTarget(d.x, d.y);
-        if (tgt && (d.weapon === 'homing' || Math.hypot(tgt.x - d.x, tgt.y - d.y) < 520 * S)) {
-          const ang = Math.atan2(tgt.y - d.y, tgt.x - d.x);
-          d.angle = ang; d.fireCd = droneFire(d, ang); fired = true;
+        if (tgt) {
+          const [tdx, tdy] = wrapDelta(d.x, d.y, tgt.x, tgt.y);   // aim/range the short way round the seam
+          if (d.weapon === 'homing' || Math.hypot(tdx, tdy) < 520 * S) {
+            const ang = Math.atan2(tdy, tdx);
+            d.angle = ang; d.fireCd = droneFire(d, ang); fired = true;
+          }
         }
       }
       if (!fired) { d.angle = ship.angle; d.fireCd = 0.15; }

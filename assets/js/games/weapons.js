@@ -6,7 +6,7 @@
 
 import { MAX_BULLETS, LIGHTNING_HALF, POWERUP_DEF, rand } from './config.js';
 import { g, lightningRange, laserWidth } from './state.js';
-import { rayToRim, distToSeg, hardEdges, wrap } from './geometry.js';
+import { rayToRim, distToSeg, hardEdges, wrap, wrapDelta } from './geometry.js';
 import { burst, destroyAsteroid } from './world.js';
 import { damageUfo } from './ufos.js';
 import { bossNodeVulnerable, bossNodePos, damageBossNode } from './boss.js';
@@ -54,11 +54,13 @@ export function fireLaser() {
 }
 
 // Lightning auto-aim: the nearest solid asteroid within the 35° front cone and range, or null.
+// Distance + bearing are measured across the toroidal seam, so a target just over a wrapping
+// edge is fair game (the bolt is drawn wrapping round to it).
 export function findLightningTarget() {
   const { ship, boss } = g;
   let best = null, bestD = Infinity;
   const consider = (o) => {
-    const dx = o.x - ship.x, dy = o.y - ship.y;
+    const [dx, dy] = wrapDelta(ship.x, ship.y, o.x, o.y);
     const dist = Math.hypot(dx, dy);
     if (dist > lightningRange() || dist >= bestD) return;
     let d = Math.atan2(dy, dx) - ship.angle;
@@ -103,26 +105,29 @@ export function spawnMissileFrom(x, y, angle) {
 }
 export function spawnMissile(angle) { spawnMissileFrom(g.ship.x, g.ship.y, angle); }
 
-// Nearest solid asteroid or reward UFO to a point (ambient escorts skipped - a missile
-// can't hurt them).
+// Nearest solid asteroid or reward UFO to a point, measured across the toroidal seam (ambient
+// escorts skipped - a missile can't hurt them).
 export function nearestSeekTarget(x, y) {
   const { boss } = g;
   let best = null, bestD = Infinity;
   for (const a of g.asteroids) {
     if (a.grace > 0) continue;
-    const d = (a.x - x) * (a.x - x) + (a.y - y) * (a.y - y);
+    const [dx, dy] = wrapDelta(x, y, a.x, a.y);
+    const d = dx * dx + dy * dy;
     if (d < bestD) { bestD = d; best = a; }
   }
   for (const u of g.ufos) {
     if (u.kind !== 'reward' || u.appear < 1) continue;
-    const d = (u.x - x) * (u.x - x) + (u.y - y) * (u.y - y);
+    const [dx, dy] = wrapDelta(x, y, u.x, u.y);
+    const d = dx * dx + dy * dy;
     if (d < bestD) { bestD = d; best = u; }
   }
   if (boss) for (const n of boss.nodes) {
     if (!bossNodeVulnerable(boss, n)) continue;
     if (boss.type === 'megastructure' && n.kind === 'core') continue;   // core is ram-only
     const [nx, ny] = bossNodePos(boss, n);
-    const d = (nx - x) * (nx - x) + (ny - y) * (ny - y);
+    const [dx, dy] = wrapDelta(x, y, nx, ny);
+    const d = dx * dx + dy * dy;
     if (d < bestD) { bestD = d; best = { x: nx, y: ny }; }
   }
   return best;
@@ -140,7 +145,8 @@ export function updateMissiles(dt) {
     if (m.life <= 0) { burst(m.x, m.y, homingColor, { count: 6, speed: 80, life: 0.3 }); missiles.splice(i, 1); continue; }
     const tgt = nearestSeekTarget(m.x, m.y);
     if (tgt) {
-      let d = Math.atan2(tgt.y - m.y, tgt.x - m.x) - m.angle;
+      const [tdx, tdy] = wrapDelta(m.x, m.y, tgt.x, tgt.y);   // steer the short way round the seam
+      let d = Math.atan2(tdy, tdx) - m.angle;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       m.angle += Math.max(-turn, Math.min(turn, d));
     }

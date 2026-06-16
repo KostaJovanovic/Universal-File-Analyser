@@ -15,7 +15,7 @@ import {
   rand, pick, ARCHIVE_POOL, FILE_POOL, WAVE_GRACE, POWERUP_TYPES, POWERUP_DEF, MONO, STARTWAVE_KEY
 } from './config.js';
 import { gameCss } from './style.js';
-import { g, initState } from './state.js';
+import { g, initState, maxStartWave } from './state.js';
 import { layout } from './geometry.js';
 import { restart, spawnWave, makeAsteroid, makePowerup, applyPowerup, driftAsteroids, updateFlyers, updateWreck } from './world.js';
 import { addDrone } from './drones.js';
@@ -362,24 +362,89 @@ export function launchAsteroids() {
     };
   }
 
-  // ---- Start-wave toggle (unlock-gated) ----
-  // Once any boss has been beaten, a small remembered toggle to begin runs at wave 10
-  // instead of 1. Hidden until unlocked; applies next run.
+  // ---- Start-wave picker (unlock-gated) ----
+  // Once any boss has been beaten, a small remembered picker to begin runs deeper in than
+  // wave 1. The button opens a stepper popup; the ceiling is half your best-ever wave
+  // (maxStartWave). Hidden until unlocked; the choice applies on your next run.
   function buildStartToggle() {
-    const startToggleBtn = document.createElement('button');
-    g.startToggleBtn = startToggleBtn;
-    startToggleBtn.type = 'button'; startToggleBtn.className = 'anr-game-btn';
-    startToggleBtn.title = 'Start wave (applies on your next run)';
-    startToggleBtn.style.cssText = 'position:absolute; top:56px; left:14px; z-index:2; height:30px; padding:0 10px; font-size:11px;' +
-      (g.bossEverBeaten ? '' : ' display:none;');   // below the pause button (top-left)
-    const syncStartBtn = () => { startToggleBtn.textContent = 'START W' + g.startWavePref; startToggleBtn.classList.toggle('on', g.startWavePref === 10); };
-    syncStartBtn();
-    startToggleBtn.addEventListener('click', () => {
-      g.startWavePref = g.startWavePref === 10 ? 1 : 10;
+    const { BORDER, ON_DARK, MUTED, SURFACE } = g;
+    const btn = document.createElement('button');
+    g.startToggleBtn = btn;
+    btn.type = 'button'; btn.className = 'anr-game-btn';
+    btn.title = 'Choose your starting wave (applies on your next run)';
+    // On mobile it sits next to the pause button (top-left row); on desktop it stacks below it.
+    const btnPos = g.isTouch ? 'top:14px; left:58px;' : 'top:56px; left:14px;';
+    btn.style.cssText = 'position:absolute; ' + btnPos + ' z-index:4; height:30px; padding:0 10px; font-size:11px;' +
+      (g.bossEverBeaten ? '' : ' display:none;');
+
+    // The popup: a labelled - / value / + stepper plus a max/best hint, site-styled like the sandbox.
+    const popTop = g.isTouch ? 'top:52px' : 'top:90px';
+    const pop = document.createElement('div');
+    pop.style.cssText = 'position:absolute; ' + popTop + '; left:14px; z-index:6; width:188px; display:none; ' +
+      'flex-direction:column; gap:9px; padding:12px; background:rgba(10,10,10,0.92); border:1px solid ' + BORDER +
+      '; font-family:' + MONO + '; color:' + ON_DARK + ';';
+    const hd = document.createElement('div');
+    hd.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px;';
+    const ttl = document.createElement('div'); ttl.textContent = 'START WAVE';
+    ttl.style.cssText = 'font-size:10px; letter-spacing:.18em; color:' + MUTED + ';';
+    const close = document.createElement('button');
+    close.type = 'button'; close.className = 'anr-game-btn'; close.textContent = '✕';
+    close.setAttribute('aria-label', 'Close start-wave menu');
+    close.style.cssText = 'width:24px; height:24px; font-size:11px; flex:none;';
+    close.addEventListener('click', (e) => { e.preventDefault(); pop.style.display = 'none'; });
+    hd.append(ttl, close);
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; align-items:stretch; gap:6px;';
+    const dec = document.createElement('button'); dec.type = 'button'; dec.className = 'anr-game-btn'; dec.textContent = '−';
+    dec.style.cssText = 'width:36px; font-size:17px; flex:none;'; dec.setAttribute('aria-label', 'Lower start wave');
+    const val = document.createElement('div');
+    val.style.cssText = 'flex:1; display:flex; align-items:center; justify-content:center; font-size:16px; ' +
+      'border:1px solid ' + BORDER + '; background:' + SURFACE + ';';
+    const inc = document.createElement('button'); inc.type = 'button'; inc.className = 'anr-game-btn'; inc.textContent = '+';
+    inc.style.cssText = 'width:36px; font-size:17px; flex:none;'; inc.setAttribute('aria-label', 'Raise start wave');
+    row.append(dec, val, inc);
+
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size:10px; color:' + MUTED + '; text-align:center;';
+
+    const clamp = (n) => Math.max(1, Math.min(maxStartWave(), n | 0));
+    const syncBtn = () => { btn.textContent = 'START W' + g.startWavePref; btn.classList.toggle('on', g.startWavePref > 1); };
+    const syncPop = () => {
+      g.startWavePref = clamp(g.startWavePref);
+      const max = maxStartWave();
+      val.textContent = 'W' + g.startWavePref;
+      hint.textContent = 'max W' + max + ' · best W' + (g.bestWave || 0);
+      dec.disabled = g.startWavePref <= 1; inc.disabled = g.startWavePref >= max;
+      dec.style.opacity = dec.disabled ? '0.4' : ''; inc.style.opacity = inc.disabled ? '0.4' : '';
+    };
+    const setPref = (n) => {
+      g.startWavePref = clamp(n);
       try { localStorage.setItem(STARTWAVE_KEY, String(g.startWavePref)); } catch (_) {}
-      syncStartBtn();
+      syncBtn(); syncPop();
+    };
+    dec.addEventListener('click', (e) => { e.preventDefault(); setPref(g.startWavePref - 1); });
+    inc.addEventListener('click', (e) => { e.preventDefault(); setPref(g.startWavePref + 1); });
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (pop.style.display !== 'none') { pop.style.display = 'none'; return; }
+      syncPop();   // refresh the ceiling from the current best wave before showing
+      pop.style.display = 'flex';
     });
-    overlay.appendChild(startToggleBtn);
+
+    // START: end the current run and begin a fresh one at the chosen wave (restart reads startWavePref).
+    const go = document.createElement('button');
+    go.type = 'button'; go.className = 'anr-game-btn';
+    go.textContent = 'START';
+    go.style.cssText = 'padding:9px 4px; font-size:12px; letter-spacing:.12em; margin-top:2px; ' +
+      'background:' + g.ACCENT + '; color:' + g.ACCENT_FG + '; border-color:' + g.ACCENT + ';';
+    go.addEventListener('click', (e) => { e.preventDefault(); pop.style.display = 'none'; restart(); });
+
+    pop.append(hd, row, hint, go);
+    syncBtn();
+    overlay.appendChild(btn);
+    overlay.appendChild(pop);
   }
 
   // ---- Teardown ----

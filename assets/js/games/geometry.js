@@ -42,7 +42,9 @@ export function layout() {
   const cx = W / 2, cy = coarse ? H * 0.40 : H / 2;
   g.cx = cx; g.cy = cy;
   const padX = coarse ? 14 : 220;
-  const padTop = 64;
+  // On touch the top button row (pause / SB / close) occupies the first ~50px, so the field
+  // needs a taller top margin or the canvas score/wave HUD drawn above its edge lands on the buttons.
+  const padTop = coarse ? 100 : 64;
   const padBottom = coarse ? 120 : 70;
   const maxHW = Math.max(60, W / 2 - padX);
   const maxHH = Math.max(60, Math.min(cy - padTop, H - padBottom - cy));
@@ -54,8 +56,9 @@ export function layout() {
   g.HW = fw / 2; g.HH = fh / 2;
   g.R = Math.min(g.HW, g.HH);
   // Element scale: the contents scale strictly linearly with the scope, so their size
-  // relative to the field is constant at any zoom / window size.
-  g.S = g.R / 470;
+  // relative to the field is constant at any zoom / window size. Touch screens zoom in a
+  // notch (smaller divisor) so the ship, asteroids and pickups stay legible on a small field.
+  g.S = g.R / (coarse ? 380 : 470);
   if (oldHW > 0 && oldHH > 0 && (oldHW !== g.HW || oldHH !== g.HH || oldS !== g.S)) {
     rescaleScene(oldS, oldCx, oldCy, oldHW, oldHH);
   }
@@ -93,6 +96,22 @@ export function rescaleScene(oldS, oldCx, oldCy, oldHW, oldHH) {
 // During the megastructure fight the toroidal wrap is switched off: the field edges
 // become solid walls. The ship bounces off them and bullets are eaten on contact.
 export function hardEdges() { return !!(g.boss && g.boss.type === 'megastructure'); }
+
+// Shortest vector from (ax,ay) to (bx,by) on the toroidal field - i.e. aiming/seeking across
+// the seam when that's the short way round. During the mega fight the edges are solid walls, so
+// it returns the plain delta there. Written into a reused scratch pair; callers destructure it
+// immediately (like bossNodePos) so the single buffer is safe.
+const _wd = [0, 0];
+export function wrapDelta(ax, ay, bx, by) {
+  let dx = bx - ax, dy = by - ay;
+  if (!hardEdges()) {
+    const { HW, HH } = g;
+    if (dx > HW) dx -= 2 * HW; else if (dx < -HW) dx += 2 * HW;
+    if (dy > HH) dy -= 2 * HH; else if (dy < -HH) dy += 2 * HH;
+  }
+  _wd[0] = dx; _wd[1] = dy;
+  return _wd;
+}
 
 // Toroidal wrap: each axis wraps independently (classic Asteroids "the screen is a torus").
 export function wrap(o) {
