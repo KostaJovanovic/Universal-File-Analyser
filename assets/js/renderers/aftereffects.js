@@ -5,13 +5,15 @@
    is a folder, a composition (an "Item" carrying a "cdta" block plus one "Layr"
    list per layer) or footage. There is no public spec, so the layouts below were
    reverse-engineered:
-     - cdta (composition): framerate = u32@8 / u32@4; width = u16@140,
-       height = u16@142; framerate (whole) = u16@152.
+     - cdta (composition): the per-comp time scale (ticks-per-second) is u32@8
+       and the frame rate is u32@8 / u32@4; the composition duration is the
+       rational u32@44 / scale (seconds); width = u16@140, height = u16@142.
      - idta (item):        type = u16@0 (1 folder, 4 comp, 7 footage), id = u32@16.
-     - ldta (layer):       quality = u16@4; three (value, 30720) rationals at
-       offsets 12 / 20 / 28 give startTime / inPoint / outPoint in seconds
-       (they come out frame-aligned, which confirms the decode); attribute bits
-       at 37..39; source item id = u32@40; the layer name follows as a "Utf8".
+     - ldta (layer):       quality = u16@4; three (value, scale) rationals at
+       offsets 12 / 20 / 28 give startTime / inPoint / outPoint in seconds, where
+       the scale is the comp's u32@8 (it comes out frame-aligned, which confirms
+       the decode); attribute bits at 37..39; source item id = u32@40; the layer
+       name follows as a "Utf8".
    The authoring app + version live in an XMP packet near the end of the file
    (xmp:CreatorTool, the xmpMM history's softwareAgent entries, and the
    create/modify dates), which is where the "made in After Effects 20XX" comes
@@ -19,8 +21,7 @@
 
 import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 
-const SCALE = 30720;                       // ticks-per-second denominator for ldta times
-const SENT = 0x9ab000 / SCALE;             // "extends to comp end" sentinel out-point (~330s)
+const SCALE = 30720;                       // default ticks-per-second; the real value is per-comp (cdta u32@8)
 const MAX_READ = 256 * 1024 * 1024;        // guard: don't buffer absurdly large projects whole
 // AE's fixed 3D-view pseudo-layers, stored in every comp - not real timeline layers.
 const VIEW_NAMES = new Set(['Default', 'Front', 'Left', 'Top', 'Back', 'Right',
@@ -65,14 +66,17 @@ function parseAep(buf) {
           if (base) { if (!idName[c.lastId]) idName[c.lastId] = base; footage.push(base); }
         }
       } else if (t === 'cdta') {
+        const scale = u32(ds + 8) || SCALE;     // ticks-per-second (= the fps numerator)
         const divisor = u32(ds + 4) || 1;
-        const comp = { name: c.pn, fps: u32(ds + 8) / divisor, w: u16(ds + 140), h: u16(ds + 142), layers: [] };
+        const comp = { name: c.pn, fps: scale / divisor, scale, durTicks: u32(ds + 44),
+          w: u16(ds + 140), h: u16(ds + 142), layers: [] };
         if (c.lastType === 0x04 && c.lastId != null) compIds.add(c.lastId);
         comps.push(comp); c.cur = comp;
       } else if (t === 'ldta') {
         const a = [buf[ds + 37], buf[ds + 38], buf[ds + 39]];
+        const sc = (c.cur && c.cur.scale) || SCALE;
         const L = {
-          start: i32(ds + 12) / SCALE, in: i32(ds + 20) / SCALE, out: i32(ds + 28) / SCALE,
+          start: i32(ds + 12) / sc, in: i32(ds + 20) / sc, out: i32(ds + 28) / sc,
           threeD: !!(a[1] & 4), audio: !!(a[2] & 2), src: u32(ds + 40),
           name: null, fld: cstr(ds + 64, 31),    // legacy fixed-field layer name
         };
@@ -87,8 +91,13 @@ function parseAep(buf) {
 
   for (const comp of comps) {
     comp.real = comp.layers.filter((l) => !VIEW_NAMES.has(l.name) && !VIEW_NAMES.has(l.fld));
-    const finite = comp.real.map((l) => l.out).filter((x) => Math.abs(x - SENT) > 0.5 && x > 0.01);
-    comp.dur = Math.max(0.01, ...finite, ...comp.real.map((l) => (Math.abs(l.out - SENT) < 0.5 ? 0 : l.out)));
+    // Duration is authoritative from the comp header (cdta u32@44): individual
+    // layer out-points are unreliable - an unset layer carries a huge sentinel
+    // and a time-remapped layer can run far past the comp end. Only if the header
+    // value is missing do we fall back to the longest sane layer.
+    const headerDur = comp.durTicks > 0 ? comp.durTicks / comp.scale : 0;
+    comp.dur = headerDur > 0.01 ? headerDur
+      : Math.max(0.01, ...comp.real.map((l) => l.out).filter((x) => x > 0.01 && x < 1e5));
     // Name priority: renamed layer (Utf8) -> legacy ldta name -> source file /
     // comp name -> numbered fallback. The source resolves footage to its filename
     // and pre-comps to the composition name.
@@ -153,8 +162,8 @@ function aepTrackSvg(real, dur, H, trackW, pps) {
   }
   real.forEach((l, i) => {
     const y = TOP + i * LH;
-    const oo = Math.abs(l.out - SENT) < 0.5 ? dur : l.out;
-    const ii = Math.max(0, l.in);
+    const oo = Math.min(Math.max(l.out, 0), dur);   // clamp runaway / unset out-points to the comp end
+    const ii = Math.min(Math.max(l.in, 0), dur);
     const col = l.audio ? '#3ba776' : l.isComp ? '#8a6fd6' : l.src === 0 ? '#7f8896' : '#3b82c4';
     const bx = x(ii), bw = Math.max(2, x(oo) - x(ii));
     bars += `<rect x="${bx}" y="${y + 4}" width="${bw}" height="${LH - 8}" rx="3" fill="${col}"${l.threeD ? ' stroke="#e0a23a" stroke-width="1.3"' : ''}><title>${esc(l.label || 'Layer')} · ${fmtTime(ii)}–${fmtTime(oo)}</title></rect>`;
