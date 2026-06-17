@@ -231,13 +231,18 @@
   </div>
   <div class="offline-section" id="offlineSection">
     <div class="offline-heading-row">
-      <p class="offline-heading">Download for offline use</p>
+      <!-- The heading is a toggle: the body below collapses. app.js sets the
+           default open state on load - expanded when nothing is cached yet,
+           collapsed once any tier is downloaded - so return visitors get a tidy
+           footer while first-timers see the options straight away. -->
+      <button type="button" class="offline-heading offline-toggle" id="offlineToggle" aria-expanded="true" aria-controls="offlineBody">Download for offline use<span class="offline-toggle-ico" aria-hidden="true">&#9662;</span></button>
       <!-- Mobile-only: the per-tier feature text is hidden on small screens, so
            this [?] drops down what each download includes. -->
       <details class="offline-help">
         <summary class="offline-help-btn" aria-label="What each download includes">[?]</summary>
       </details>
     </div>
+    <div class="offline-body" id="offlineBody">
     <div class="offline-help-panel">
       <div><strong>Essentials</strong> <span>48 MB</span><br>The whole app - open and inspect any file, fully offline</div>
       <div><strong>Everything</strong> <span>72 MB</span><br>Adds reading text in images, PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos and archives</div>
@@ -290,6 +295,7 @@
       <div><dt>Install</dt><dd>Add to home screen for an offline PWA. Service worker caches the app shell. Use the buttons above to pre-cache heavy dependencies.</dd></div>
         </dl>
       </details>
+    </div>
     </div>
   </div>
   <!-- FOOTER:END -->
