@@ -86,6 +86,22 @@ export async function renderEpub(file, resultsEl) {
   const pkg = opf.getElementsByTagName('package')[0];
   if (pkg && pkg.getAttribute('version')) metaTbl.appendChild(rowHelp('EPUB version', pkg.getAttribute('version'),
     'The EPUB specification version the book conforms to (e.g. 2.0 vs 3.0), which determines the layout and interactivity features it can use.'));
+  // Producing software: <meta name="generator">, or the book-producer
+  // contributor (opf:role="bkp") that tools like calibre and Sigil stamp.
+  try {
+    let producer = '';
+    for (const m of opf.getElementsByTagName('meta')) {
+      if ((m.getAttribute('name') || '').toLowerCase() === 'generator') { producer = m.getAttribute('content') || ''; break; }
+    }
+    if (!producer) {
+      for (const c of opf.getElementsByTagName('dc:contributor')) {
+        if ((c.getAttribute('opf:role') || c.getAttribute('role') || '') === 'bkp') { producer = c.textContent || ''; break; }
+      }
+    }
+    producer = producer.trim();
+    if (producer) metaTbl.appendChild(rowHelp('Generated with', producer.length > 120 ? producer.slice(0, 120) + '…' : producer,
+      'The software that produced this EPUB - often stamped by the conversion or authoring tool (for example calibre, Sigil or InDesign).'));
+  } catch (_) { /* ignore */ }
 
   // --- Extra metadata (additive): description, series, reading direction ---
   try {
