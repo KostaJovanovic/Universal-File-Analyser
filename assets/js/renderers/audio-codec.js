@@ -538,7 +538,13 @@ const VORBIS_NAMES = {
 // Parse a Vorbis-comment block (vendor + count + KEY=VALUE entries) into tags.
 function parseVorbisComments(buf, start, dv) {
   const tags = []; let lyrics = null; let p = start;
-  const vlen = dv.getUint32(p, true); p += 4 + vlen;
+  // The block opens with a vendor string: the library + version that encoded
+  // the stream (e.g. "reference libFLAC 1.4.3", "libopus 1.3.1", "Lavf60.16").
+  // It is the most reliable "what wrote this" marker, so surface it.
+  const vlen = dv.getUint32(p, true); p += 4;
+  let vendor = '';
+  try { vendor = clean(new TextDecoder('utf-8').decode(buf.slice(p, p + vlen))); } catch (_) { /* ignore */ }
+  p += vlen;
   let count = dv.getUint32(p, true); p += 4;
   for (let i = 0; i < count && p + 4 <= buf.length; i++) {
     const len = dv.getUint32(p, true); p += 4;
@@ -551,6 +557,12 @@ function parseVorbisComments(buf, start, dv) {
     if (!val) continue;
     if (key === 'LYRICS' || key === 'UNSYNCEDLYRICS' || key === 'LYRICS-XXX') lyrics = val;
     else if (VORBIS_NAMES[key]) tags.push([VORBIS_NAMES[key], val]);
+  }
+  if (vendor) {
+    // A file may carry both: keep the explicit ENCODER tag as "Encoder" and
+    // label the bitstream vendor distinctly so neither is lost.
+    const hasEnc = tags.some(([k]) => k === 'Encoder');
+    tags.push([hasEnc ? 'Encoder library' : 'Encoder', vendor]);
   }
   return { tags, lyrics };
 }

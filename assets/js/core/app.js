@@ -53,6 +53,7 @@ import { renderDjvu } from '../renderers/djvu.js';
 import { renderMdb } from '../renderers/mdb.js';
 import { renderMobi } from '../renderers/mobi.js';
 import { renderDwg } from '../renderers/dwg.js';
+import { renderAep } from '../renderers/aftereffects.js';
 import { renderAi } from '../renderers/illustrator.js';
 import { renderStl } from '../renderers/stl.js';
 import { renderModel3d } from '../renderers/model3d.js';
@@ -392,6 +393,8 @@ function classifyFile(file) {
   if (ext === 'dxf') return 'dxf';
   // AutoCAD DWG / template: parse + render to a 2D drawing via libredwg-web.
   if (ext === 'dwg' || ext === 'dwt') return 'dwg';
+  // Adobe After Effects project: walk the RIFX tree to rebuild the comp timelines.
+  if (ext === 'aep' || ext === 'aet') return 'aep';
   // Apple iWork packages: render the embedded QuickLook preview (PDF or image).
   if (ext === 'pages' || ext === 'numbers' || ext === 'key' || ext === 'keynote') return 'iwork';
   if (ext === 'stl') return 'stl';
@@ -468,6 +471,7 @@ const ROUTES = {
   drawio:      { render: renderDrawio,      results: 'unknown', scroll: '#unknownResults' },
   dxf:         { render: renderDxf,         results: 'unknown', scroll: '#unknownResults' },
   dwg:         { render: renderDwg,         results: 'unknown', scroll: '#unknownResults' },
+  aep:         { render: renderAep,         results: 'unknown', scroll: '#unknownResults' },
   iwork:       { render: renderIwork,       results: 'unknown', scroll: '#unknownResults' },
   stl:         { render: renderStl,         results: 'unknown', scroll: '#unknownResults' },
   model3d:     { render: renderModel3d,     results: 'unknown', scroll: '#unknownResults' },

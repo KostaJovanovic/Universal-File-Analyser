@@ -47,6 +47,23 @@ function sanitizeSvg(doc) {
   return { findings, safe };
 }
 
+// Which program exported this SVG - read from the generator comment or version
+// attribute the exporter writes. Illustrator stamps "<!-- Generator: Adobe
+// Illustrator ... -->", Inkscape sets inkscape:version, Sketch/Figma leave their
+// own markers. Pure text matching so it works even when the XML won't parse.
+function detectSvgCreator(text) {
+  let m = text.match(/<!--\s*Generator:\s*([^]*?)\s*-->/i);
+  if (m) return m[1].replace(/\s+/g, ' ').trim().slice(0, 120);
+  m = text.match(/inkscape:version="([^"\s(]+)/i);
+  if (m) return 'Inkscape ' + m[1];
+  if (/>\s*Created with Sketch[.\s]*</i.test(text)) return 'Sketch';
+  if (/xmlns:figma=|figma\.com/i.test(text)) return 'Figma';
+  if (/\bvectornator\b|linearity\s+curve/i.test(text)) return 'Vectornator / Linearity Curve';
+  m = text.match(/<dc:creator>\s*(?:<[^>]*>\s*)*([^<]+)/i);
+  if (m && m[1].trim()) return m[1].trim().slice(0, 120);
+  return '';
+}
+
 export async function renderSvg(file, resultsEl) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
@@ -103,6 +120,9 @@ export async function renderSvg(file, resultsEl) {
   }
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Application', 'SVG Vector Image'));
+  const svgCreator = detectSvgCreator(svgText);
+  if (svgCreator) tbl.appendChild(rowHelp('Created with', svgCreator,
+    'The program that produced this SVG, read from the generator comment or version attribute the exporter wrote (for example Adobe Illustrator, Inkscape, Sketch or Figma).'));
   tbl.appendChild(row('Name', file.name));
   tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
 

@@ -13,6 +13,8 @@
   <url><loc>https://lab.valjdakosta.com/formats/ac3</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/accdb</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/adoc</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://lab.valjdakosta.com/formats/aep</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://lab.valjdakosta.com/formats/aet</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/ai</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/aiff</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/amf</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
@@ -247,9 +249,7 @@
   <url><loc>https://lab.valjdakosta.com/formats/id/aco</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/acv</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/adf</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://lab.valjdakosta.com/formats/id/aep</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/aepx</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://lab.valjdakosta.com/formats/id/aet</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/afdesign</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/aff</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/aff4</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>

@@ -1308,6 +1308,109 @@ async function peekVideoContainer(file) {
   return { container: 'unknown' };
 }
 
+// ---------- authoring software (container metadata) ----------
+
+// Matroska / WebM store the writing app + muxing library as UTF-8 in the Segment
+// Info element (WritingApp = element id 0x5741, MuxingApp = 0x4D80). Rather than
+// fully parse EBML, scan the head for those two-byte ids, read the following data
+// size (an EBML vint) and pull the string. The ids are distinctive and the Info
+// element sits near the file start, so this is cheap and reliable.
+async function readMatroskaApps(file) {
+  const n = Math.min(file.size, 4 * 1024 * 1024);
+  const b = new Uint8Array(await file.slice(0, n).arrayBuffer());
+  const readVint = (p) => {
+    let first = b[p], mask = 0x80, len = 1;
+    while (len <= 8 && !(first & mask)) { mask >>= 1; len++; }
+    if (len > 8 || first === undefined) return null;
+    let val = first & (mask - 1);
+    for (let i = 1; i < len; i++) val = val * 256 + b[p + i];
+    return { len, val };
+  };
+  const grab = (id0, id1) => {
+    for (let i = 0; i + 3 < b.length; i++) {
+      if (b[i] !== id0 || b[i + 1] !== id1) continue;
+      const v = readVint(i + 2);
+      if (!v || v.val <= 0 || v.val > 256) continue;
+      const s = i + 2 + v.len;
+      if (s + v.val > b.length) continue;
+      const str = new TextDecoder('utf-8').decode(b.slice(s, s + v.val)).replace(/\0+$/, '').trim();
+      if (str && /^[ -~].*$/.test(str)) return str;
+    }
+    return '';
+  };
+  const out = {};
+  const w = grab(0x57, 0x41), m = grab(0x4D, 0x80);
+  if (w) out.writingApp = w;
+  if (m) out.muxingApp = m;
+  return out;
+}
+
+// AVI stores the authoring software as an ISFT entry inside a LIST INFO chunk -
+// usually in the header LIST near the start, occasionally in a trailing INFO list.
+async function readAviSoftware(file) {
+  const scan = (b) => {
+    for (let i = 0; i + 8 < b.length; i++) {
+      if (b[i] === 0x49 && b[i + 1] === 0x53 && b[i + 2] === 0x46 && b[i + 3] === 0x54) { // 'ISFT'
+        const len = b[i + 4] | (b[i + 5] << 8) | (b[i + 6] << 16) | (b[i + 7] << 24);
+        if (len > 0 && len < 512 && i + 8 + len <= b.length) {
+          const s = new TextDecoder('latin1').decode(b.slice(i + 8, i + 8 + len)).replace(/\0+$/, '').trim();
+          if (s) return s;
+        }
+      }
+    }
+    return '';
+  };
+  const headN = Math.min(file.size, 2 * 1024 * 1024);
+  let s = scan(new Uint8Array(await file.slice(0, headN).arrayBuffer()));
+  if (!s && file.size > headN) {
+    const tailN = Math.min(file.size, 512 * 1024);
+    s = scan(new Uint8Array(await file.slice(file.size - tailN).arrayBuffer()));
+  }
+  return s ? { software: s } : {};
+}
+
+// MP4 / MOV record the encoding tool in the iTunes-style "©too" atom, inside
+// moov/udta/meta/ilst. moov can sit at the head or the tail, so scan both. The
+// atom is "©too" then a "data" child: [size][data][flags][reserved][UTF-8 value].
+async function readMp4Encoder(file) {
+  const find = (b) => {
+    for (let i = 0; i + 24 < b.length; i++) {
+      if (b[i] !== 0xA9 || b[i + 1] !== 0x74 || b[i + 2] !== 0x6F || b[i + 3] !== 0x6F) continue; // '©too'
+      if (!(b[i + 8] === 0x64 && b[i + 9] === 0x61 && b[i + 10] === 0x74 && b[i + 11] === 0x61)) continue; // 'data'
+      const dataSize = ((b[i + 4] << 24) | (b[i + 5] << 16) | (b[i + 6] << 8) | b[i + 7]) >>> 0;
+      const vs = i + 20, vlen = dataSize - 16;
+      if (vlen > 0 && vlen < 256 && vs + vlen <= b.length) {
+        const s = new TextDecoder('utf-8').decode(b.slice(vs, vs + vlen)).replace(/\0+$/, '').trim();
+        if (s && /[ -~]/.test(s)) return s;
+      }
+    }
+    return '';
+  };
+  const headN = Math.min(file.size, 2 * 1024 * 1024);
+  let s = find(new Uint8Array(await file.slice(0, headN).arrayBuffer()));
+  if (!s && file.size > headN) s = find(new Uint8Array(await file.slice(Math.max(0, file.size - 4 * 1024 * 1024)).arrayBuffer()));
+  return s ? { software: s } : {};
+}
+
+async function readContainerSoftware(file, container) {
+  try {
+    if (/Matroska|WebM/i.test(container || '')) return await readMatroskaApps(file);
+    if (container === 'AVI') return await readAviSoftware(file);
+    if (/MP4|MOV|M4V|QuickTime|3GP|3G2/i.test(container || '')) return await readMp4Encoder(file);
+  } catch (_) { /* best-effort */ }
+  return {};
+}
+
+// Append the "Created with" / "Muxer" rows from whatever the container recorded.
+function appendCreatorRows(tbl, header) {
+  if (!header) return;
+  const created = header.writingApp || header.software;
+  if (created) tbl.appendChild(rowHelp('Created with', created,
+    'The application or library that wrote this file, recorded in the container metadata (Matroska WritingApp or AVI ISFT).'));
+  if (header.muxingApp && header.muxingApp !== header.writingApp)
+    tbl.appendChild(row('Muxer', header.muxingApp));
+}
+
 // ---------- frame rate detection ----------
 
 async function detectFpsFromContainer(file) {
@@ -1730,6 +1833,7 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
   tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
   tbl.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
   if (header && header.container) tbl.appendChild(row('Container', header.container + (header.brand ? '  (' + header.brand + ')' : '')));
+  appendCreatorRows(tbl, header);
   if (v && v.width && v.height) {
     tbl.appendChild(row('Resolution', `${v.width} × ${v.height} px`));
     tbl.appendChild(row('Aspect ratio', aspectRatio(v.width, v.height)));
@@ -2063,6 +2167,7 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
   tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
   tbl.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
   if (header && header.container) tbl.appendChild(row('Container', header.container + (header.brand ? '  (' + header.brand + ')' : '')));
+  appendCreatorRows(tbl, header);
   if (vw && vh) {
     tbl.appendChild(row('Resolution', `${vw} × ${vh} px`));
     tbl.appendChild(row('Aspect ratio', aspectRatio(vw, vh)));
@@ -2291,6 +2396,9 @@ export async function renderVideo(file, resultsEl, opts = {}) {
 
   let header = {};
   try { header = await peekVideoContainer(file); } catch (_) {}
+  // Enrich with the authoring software recorded in the container (Matroska
+  // WritingApp/MuxingApp, AVI ISFT). header is reused by every render path below.
+  try { Object.assign(header, await readContainerSoftware(file, header.container)); } catch (_) { /* ignore */ }
 
   // Raw H.264 / H.265 elementary stream: no container, so the browser can't open
   // it. FFmpeg stream-copies it into an MP4 (no re-encode, a second or two), and
@@ -2440,6 +2548,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
       tbl.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
       tbl.appendChild(row('Container', header.container || 'AVI'));
+      appendCreatorRows(tbl, header);
       if (avi.codec) tbl.appendChild(row('Video codec', avi.codec.toUpperCase()));
       if (avi.audioCodec) tbl.appendChild(row('Audio codec', avi.audioCodec.toUpperCase()));
       tbl.appendChild(row('Resolution', `${avi.width} × ${avi.height} px`));
@@ -2931,6 +3040,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       opts.sourceFile && opts.converted ? (opts.sourceCodec || 'Original') + ' → H.264 / MP4 (converted)'
         : opts.sourceFile ? 'Raw ' + (opts.sourceKind || 'H.264') + ' → MP4 (remuxed)'
           : header.container + (header.brand ? '  (' + header.brand + ')' : ''))));
+  appendCreatorRows(tbl, header);
   tbl.appendChild(row('Resolution', vw && vh ? `${vw} × ${vh} px` : '-'));
   tbl.appendChild(row('Aspect ratio', aspectRatio(vw, vh)));
   tbl.appendChild(row('Duration', isFinite(dur) ? formatDuration(dur) + (opts.sourceFile && !opts.converted ? ' (assumed 25 fps)' : '') : '-'));
