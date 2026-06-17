@@ -188,6 +188,30 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">3.26 - 3.29</p>
+          <p class="patch-name">Origin Story</p>
+          <p class="patch-date">17 June 2026, 20:37</p>
+          <ul class="patch-list">
+            <li><strong>A big wave of creative and document formats now open in full, After Effects projects can be explored layer by layer, and almost any file now tells you which program and version made it.</strong></li>
+            <li><span class="patch-tag">New</span><strong>After Effects projects open.</strong> An <a href="/about#ext-aep">.aep</a> project, and its <strong>.aet</strong> templates, rebuilds every composition&rsquo;s timeline - each layer drawn as a bar by its in and out point and named by its source - which you can zoom into and pan across. It also reads the After Effects version that created and last saved the project.</li>
+            <li><span class="patch-tag">New</span><strong>Photoshop opens fully.</strong> A <a href="/about#ext-psd">.psd</a> or <strong>.psb</strong> shows the flattened picture plus the whole layer tree, with each layer&rsquo;s blend mode, opacity, visibility and a thumbnail.</li>
+            <li><span class="patch-tag">New</span><strong>Illustrator artwork opens.</strong> A modern <a href="/about#ext-ai">.ai</a> file renders page by page, just like a PDF.</li>
+            <li><span class="patch-tag">New</span><strong>Paintings open.</strong> <a href="/about#ext-pdn">.pdn</a> from Paint.NET, along with Krita and Procreate, shows the artwork preview baked into the file, the canvas size, layer count and the app version.</li>
+            <li><span class="patch-tag">New</span><strong>Fonts you can try on.</strong> A <a href="/about#ext-ttf">.ttf</a>, <strong>.otf</strong>, <strong>.woff</strong>, <strong>.woff2</strong> or collection now shows a live specimen and a grid of every glyph outline.</li>
+            <li><span class="patch-tag">New</span><strong>E-books and scans open.</strong> Kindle books (<a href="/about#ext-mobi">.mobi</a>, .azw, .azw3) and DjVu scans (<a href="/about#ext-djvu">.djvu</a>) open and turn page by page.</li>
+            <li><span class="patch-tag">New</span><strong>Databases open.</strong> A Microsoft Access file (<a href="/about#ext-mdb">.mdb</a>, .accdb) lists every table with its columns and row count, and shows a sample of the data.</li>
+            <li><span class="patch-tag">New</span><strong>AutoCAD drawings open.</strong> A <a href="/about#ext-dwg">.dwg</a> or .dwt is rendered to a 2D drawing with a layer and entity breakdown.</li>
+            <li><span class="patch-tag">New</span><strong>More 3D and spreadsheets.</strong> glTF and GLB 3D scenes (<a href="/about#ext-gltf">.gltf</a>, .glb) open in the model viewer, and the binary Excel workbook (<a href="/about#ext-xlsb">.xlsb</a>) reads out its sheets.</li>
+            <li><span class="patch-tag">New</span><strong>Scripts are analysed.</strong> PowerShell (<a href="/about#ext-ps1">.ps1</a>, .psm1, .psd1) and Windows batch (<a href="/about#ext-bat">.bat</a>, .cmd) files now show what they do, what they call and whether they are signed.</li>
+            <li><span class="patch-tag">New</span><strong>JPEG XL images display.</strong> A <a href="/about#ext-jxl">.jxl</a> now shows the picture itself, not only its details.</li>
+            <li><span class="patch-tag">New</span><strong>Files tell you what made them.</strong> Across many formats - After Effects, audio (FLAC, OGG, Opus), video (MKV, WebM, AVI, MP4), SVG and EPUB - the readout now names the program and version that created the file.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A Go module is not a song.</strong> A <code>go.mod</code> file - a Go project&rsquo;s manifest - is no longer mistaken for an Amiga music module and opened as sound; it opens as text.</li>
+            <li><strong>Offline downloads tidied.</strong> The &ldquo;Download for offline use&rdquo; panel in the footer is now a drop-down: open when you have nothing saved, folded away once you do.</li>
+            <li><strong>A small touch.</strong> More format guide pages gained a &ldquo;did you know&rdquo; fact.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">3.14 - 3.25</p>
           <p class="patch-name">Rewind</p>
           <p class="patch-date">17 June 2026, 04:41</p>
@@ -220,6 +244,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">3.12</p>
           <p class="patch-name">Paper Trail</p>
@@ -232,9 +259,6 @@
             <li><strong>A small touch.</strong> Each of these document types now has its own format guide page.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">3.06 - 3.11</p>
@@ -1270,28 +1294,28 @@
     </div>
     <div class="offline-body" id="offlineBody">
     <div class="offline-help-panel">
-      <div><strong>Essentials</strong> <span>48 MB</span><br>The whole app - open and inspect any file, fully offline</div>
-      <div><strong>Everything</strong> <span>72 MB</span><br>Adds reading text in images, PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos and archives</div>
-      <div><strong>Complete</strong> <span>310 MB</span><br>Adds reading text in 30+ languages, plus EPS/PostScript graphics</div>
+      <div><strong>Essentials</strong> <span>50 MB</span><br>The whole app - open and inspect any file, fully offline</div>
+      <div><strong>Everything</strong> <span>78 MB</span><br>Adds reading text in images, PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos and archives</div>
+      <div><strong>Complete</strong> <span>325 MB</span><br>Adds reading text in 30+ languages, plus EPS/PostScript graphics</div>
     </div>
     <div class="offline-options">
       <button type="button" class="offline-btn" data-tier="essentials">
         <span class="offline-tier">Essentials</span>
         <span class="offline-desc">The whole app - open and inspect any file, fully offline</span>
-        <span class="offline-size">48 MB</span>
+        <span class="offline-size">50 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
       <button type="button" class="offline-btn" data-tier="everything">
         <span class="offline-rec"><svg class="offline-rec-crown" viewBox="0 0 24 18" fill="currentColor" aria-hidden="true"><path d="M2 16V6l6 4 4-6 4 6 6-4v10z"/></svg><span class="offline-rec-text">recommended</span></span>
         <span class="offline-tier">Everything</span>
         <span class="offline-desc">Adds reading text in images, PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos and archives</span>
-        <span class="offline-size">72 MB</span>
+        <span class="offline-size">78 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
       <button type="button" class="offline-btn" data-tier="complete">
         <span class="offline-tier">Complete</span>
         <span class="offline-desc">Adds reading text in 30+ languages, plus EPS/PostScript graphics</span>
-        <span class="offline-size">310 MB</span>
+        <span class="offline-size">325 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
     </div>
@@ -1313,11 +1337,16 @@
       <div><dt>PDF</dt><dd><a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a> by Mozilla. Renders PDF pages, extracts text, and supports OCR scanning of image-only pages via Tesseract. Loaded only for PDF files.</dd></div>
       <div><dt>3D / CAD</dt><dd><a href="https://github.com/kovacsv/occt-import-js" target="_blank" rel="noopener">occt-import-js</a> (OpenCASCADE). Tessellates STEP, IGES and BREP CAD solids to meshes for the in-browser 3D viewer. ~9 MB, in the Everything download (or loaded on demand).</dd></div>
       <div><dt>Archives</dt><dd><a href="https://github.com/101arrowz/fflate" target="_blank" rel="noopener">fflate</a> for ZIP, <a href="https://github.com/nika-begiashvili/libarchivejs" target="_blank" rel="noopener">libarchive.js</a> for RAR / 7-Zip (CBR / CB7 comics), plus <a href="https://github.com/101arrowz/fzstd" target="_blank" rel="noopener">fzstd</a> (Zstandard) and <a href="https://github.com/httptoolkit/xzwasm" target="_blank" rel="noopener">xzwasm</a> (XZ / LZMA2) decompressors. Loaded on demand.</dd></div>
-      <div><dt>Databases</dt><dd><a href="https://github.com/sql-js/sql.js" target="_blank" rel="noopener">sql.js</a>. SQLite compiled to WASM - lists tables, schema and row counts from <code>.sqlite</code> / <code>.db</code> files.</dd></div>
+      <div><dt>Databases</dt><dd><a href="https://github.com/sql-js/sql.js" target="_blank" rel="noopener">sql.js</a>. SQLite compiled to WASM - lists tables, schema and row counts from <code>.sqlite</code> / <code>.db</code> files. <a href="https://github.com/andipaetzold/mdb-reader" target="_blank" rel="noopener">mdb-reader</a> reads Microsoft Access <code>.mdb</code> / <code>.accdb</code> tables and rows.</dd></div>
+      <div><dt>Photoshop</dt><dd><a href="https://github.com/Agamnentzar/ag-psd" target="_blank" rel="noopener">ag-psd</a>. Decodes <code>.psd</code> / <code>.psb</code> documents - the composite image plus the full layer tree - in the browser. Loaded only when needed.</dd></div>
+      <div><dt>Fonts</dt><dd><a href="https://github.com/opentypejs/opentype.js" target="_blank" rel="noopener">opentype.js</a>. Reads the font tables and draws every glyph outline for <code>.ttf</code> / <code>.otf</code> / <code>.woff</code> / <code>.woff2</code> / <code>.ttc</code>. Loaded only when needed.</dd></div>
+      <div><dt>E-books</dt><dd><a href="https://github.com/johnfactotum/foliate-js" target="_blank" rel="noopener">foliate-js</a> reads Kindle / Mobipocket (<code>.mobi</code>, <code>.azw</code>, <code>.azw3</code> / KF8) e-books; <a href="https://github.com/RussCoder/djvujs" target="_blank" rel="noopener">DjVu.js</a> decodes <code>.djvu</code> scanned-document pages. Loaded only when needed.</dd></div>
+      <div><dt>Spreadsheets</dt><dd><a href="https://github.com/SheetJS/sheetjs" target="_blank" rel="noopener">SheetJS</a>. Reads the binary Excel workbook (<code>.xlsb</code>) into sheets. Loaded only when needed.</dd></div>
+      <div><dt>DWG</dt><dd><a href="https://github.com/LibreDWG/libredwg" target="_blank" rel="noopener">LibreDWG</a> compiled to WASM. Parses AutoCAD <code>.dwg</code> / <code>.dwt</code> drawings and renders them to SVG. ~7 MB, in the Complete download.</dd></div>
       <div><dt>JPEG 2000</dt><dd><a href="https://github.com/GoogleChromeLabs/jpeg2000" target="_blank" rel="noopener">OpenJPEG</a> compiled to WASM. Decodes JP2 / J2K images the browser can&rsquo;t. Loaded only when needed.</dd></div>
       <div><dt>PostScript</dt><dd><a href="https://www.ghostscript.com/" target="_blank" rel="noopener">Ghostscript</a> compiled to WASM. Renders EPS / PostScript graphics. ~16 MB, in the Complete download only.</dd></div>
       <div><dt>Animation</dt><dd><a href="https://github.com/airbnb/lottie-web" target="_blank" rel="noopener">lottie-web</a>. Plays Lottie / Bodymovin JSON animations. Loaded only when needed.</dd></div>
-      <div><dt>File ID</dt><dd>Built-in identification for 1047+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 1040+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Install</dt><dd>Add to home screen for an offline PWA. Service worker caches the app shell. Use the buttons above to pre-cache heavy dependencies.</dd></div>
         </dl>
       </details>
