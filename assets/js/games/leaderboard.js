@@ -4,8 +4,8 @@
    Best-effort client-side only. The canvas-drawn left-margin board + GAME OVER fallback
    live in render.js. */
 
-import { NAME_KEY, SUBMIT_KEY, DAY_MS, MIN_MS, MAX_PER_DAY, POWERUP_DEF } from './config.js';
-import { g } from './state.js';
+import { NAME_KEY, SUBMIT_KEY, DAY_MS, MIN_MS, MAX_PER_DAY, POWERUP_DEF, STARTWAVE_KEY } from './config.js';
+import { g, maxStartWave } from './state.js';
 import { restart } from './world.js';
 
 export function clearEndPanel() {
@@ -87,11 +87,26 @@ function showLeaderboardView(top, mineName) {
   again.type = 'button'; again.className = 'anr-game-btn'; again.textContent = 'Play again';
   again.style.cssText = 'padding:7px 12px;font-size:13px;';
   again.addEventListener('click', restart);
-  const exit = document.createElement('button');
-  exit.type = 'button'; exit.className = 'anr-game-btn'; exit.textContent = 'Exit';
-  exit.style.cssText = 'padding:7px 12px;font-size:13px;';
-  exit.addEventListener('click', () => g.teardown());
-  row.append(again, exit);
+  // Once the start-wave picker is unlocked, offer a one-tap jump to the deepest
+  // wave you've earned, in place of Exit; otherwise keep the Exit button.
+  const second = document.createElement('button');
+  second.type = 'button'; second.className = 'anr-game-btn';
+  second.style.cssText = 'padding:7px 12px;font-size:13px;';
+  const maxWave = maxStartWave();
+  if (g.bossEverBeaten && maxWave > 1) {
+    second.textContent = 'Start W' + maxWave;
+    second.title = 'Jump straight to your deepest unlocked wave';
+    second.addEventListener('click', () => {
+      g.startWavePref = maxWave;
+      try { localStorage.setItem(STARTWAVE_KEY, String(maxWave)); } catch (_) {}
+      if (g.startToggleBtn) { g.startToggleBtn.textContent = 'START W' + maxWave; g.startToggleBtn.classList.add('on'); }
+      restart();
+    });
+  } else {
+    second.textContent = 'Exit';
+    second.addEventListener('click', () => g.teardown());
+  }
+  row.append(again, second);
   g.endPanel.append(...endHeaderNodes(), title, leaderboardList(top, mineIdx), row);
 }
 
