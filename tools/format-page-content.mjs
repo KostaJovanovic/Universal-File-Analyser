@@ -78,6 +78,7 @@ export const EXT_PAGES = {
   erf:  { name: 'Epson RAW', blurb: 'ERF is Epson’s camera RAW format. Opened in Adobe Lightroom.', fact: 'ERF was used by the Epson R-D1, one of the first digital rangefinder cameras.' },
   srf:  { name: 'Sony RAW (SRF)', blurb: 'SRF is an older Sony camera RAW format. Opened in Adobe Lightroom.', fact: 'SRF came from Sony’s fixed-lens Cyber-shot prosumer cameras such as the DSC-F828, predating the later SR2 and ARW formats.' },
   thm:  { name: 'Camera thumbnail', blurb: 'THM is a small JPEG thumbnail that cameras save alongside videos or RAW photos.', fact: 'A THM file is really just a JPEG preview the camera writes next to the main file.' },
+  mpo:  { name: 'MPO 3D photo', blurb: 'MPO (Multi Picture Object) packs two or more JPEG images into a single file, most often the left and right frames of a stereoscopic 3D photo.', fact: 'MPO was standardised in 2009 and used by 3D cameras such as the Fujifilm FinePix Real 3D and the Nintendo 3DS.' },
 
   // ---- Sound ----
   mp3:  { name: 'MP3 audio', blurb: 'MP3 is the most common lossy audio format, compressing music to small files with near-universal device support.', fact: 'MP3 was finalised by Germany’s Fraunhofer Institute in 1993 and went on to ignite the digital-music revolution.' },
@@ -327,6 +328,7 @@ export const EXT_PAGES = {
   woff:  { name: 'Web font (WOFF)', blurb: 'WOFF is a compressed font format made for fast loading on web pages.', fact: 'WOFF became a W3C web-font standard in 2012.' },
   woff2: { name: 'Web font (WOFF2)', blurb: 'WOFF2 is the newer web-font format, even smaller thanks to Brotli compression.', fact: 'WOFF2 became a W3C standard in 2018 and is now the default web-font format.' },
   ttc:   { name: 'TrueType collection', blurb: 'TTC bundles several related fonts into a single file, sharing common data.', fact: 'TTC collections let font families that share glyphs save space by storing them once.' },
+  glif:  { name: 'UFO glyph (GLIF)', blurb: 'GLIF is the per-glyph XML file inside a UFO (Unified Font Object) typeface source, describing the outline of a single character.', fact: 'A UFO font source is a folder of hundreds of small GLIF files - one plain-text XML file per character in the typeface.' },
 
   // ---- eBooks ----
   mobi: { name: 'Mobipocket ebook', blurb: 'MOBI is an e-book format once used by Amazon Kindle. Opened by calibre and older Kindles.', fact: 'MOBI came from Mobipocket in 2000; Amazon adopted it for the Kindle, then retired it in 2022.' },
@@ -973,8 +975,8 @@ export const EXT_PAGES = {
   sxc:    { name: 'OpenOffice.org Calc', blurb: 'SXC was the OpenOffice.org 1 spreadsheet format before ODF.', fact: 'SXC was OpenOffice’s early spreadsheet format, replaced by ODS.' },
   fodt:   { name: 'Flat ODF Text', blurb: 'FODT is an OpenDocument text file stored as a single flat XML file.', fact: 'FODT keeps a whole word-processor document in one readable XML file.' },
   fods:   { name: 'Flat ODF Spreadsheet', blurb: 'FODS is an OpenDocument spreadsheet stored as flat XML.', fact: 'FODS is a spreadsheet saved as one plain XML file rather than a zipped package.' },
-  fodp:   { name: 'Flat ODF Presentation', blurb: 'FODP is an OpenDocument presentation stored as a single flat XML file rather than a zipped package.' },
-  fodg:   { name: 'Flat ODF Graphics', blurb: 'FODG is an OpenDocument graphics/drawing stored as a single flat XML file rather than a zipped package.' },
+  fodp:   { name: 'Flat ODF Presentation', blurb: 'FODP is an OpenDocument presentation stored as a single flat XML file rather than a zipped package.', fact: 'FODP keeps an entire slideshow in one readable XML file, so you can open it in any text editor.' },
+  fodg:   { name: 'Flat ODF Graphics', blurb: 'FODG is an OpenDocument graphics/drawing stored as a single flat XML file rather than a zipped package.', fact: 'FODG keeps a whole drawing in one readable XML file rather than a zipped package.' },
   ott:    { name: 'ODF text template', blurb: 'OTT is the OpenDocument template for word-processor documents.', fact: 'OTT is the OpenDocument equivalent of a Word .dotx template.' },
   dotx:   { name: 'Word template', blurb: 'DOTX is the modern Microsoft Word template format.', fact: 'A DOTX provides the starting layout and styles for new Word documents.' },
   dotm:   { name: 'Word macro template', blurb: 'DOTM is a Microsoft Word template that can carry macros.', fact: 'DOTM is a Word template allowed to contain automation macros.' },

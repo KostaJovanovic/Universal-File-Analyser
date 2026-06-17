@@ -287,7 +287,7 @@ export function spawnBoss(forcedType) {
     b.r = R * 1.56; b.spin = 0.22; b.advance = 0;   // 1.2 x 1.3: the original +20%, then +30% more
     b.rimState = 'fighting'; b.finaleT = 0; b.rimGone = false;   // satellite-destruction finale, then the slide-in
     b.sweepAng = 0; b.pings = []; b.pingCd = 0.5; b.sweepHitCd = 0;   // radar attack once the core is exposed
-    b.coreReady = false; b.gunsKilled = false; b.dying = false;   // ram-the-core endgame, then the cinematic outro
+    b.coreReady = false; b.gunsKilled = false; b.dying = false; b.stage2T = 0;   // ram-the-core endgame, then the cinematic outro
     megaAnchor(b);
     const ring = 10, rr = b.r * 0.82, whp = Math.round(12 * buff);
     for (let i = 0; i < ring; i++) {
@@ -414,7 +414,7 @@ export function updateSnake(b, dt) {
 // split, no score). A RED (archive, size-3) rock regrows one lost segment and coughs up a power-up
 // where it was eaten; a WHITE rock heals 3% of the serpent's full HP. Only the head feeds, and only
 // once every SNAKE_EAT_CD seconds - after a meal it has to digest before it can swallow again.
-const SNAKE_EAT_CD = 15;
+const SNAKE_EAT_CD = 5;
 export function serpentEat(b, dt) {
   if (b.eatCd > 0) { b.eatCd -= dt; return; }   // still digesting the last meal
   const head = b.nodes[0];
@@ -439,21 +439,26 @@ export function serpentEat(b, dt) {
         const add = Math.min(heal, n.maxhp - n.hp); n.hp += add; heal -= add;
       }
     }
-    b.eatCd = SNAKE_EAT_CD;   // one bite, then a 15s digest before it can feed again
+    b.eatCd = SNAKE_EAT_CD;   // one bite, then a 5s digest before it can feed again
     break;
   }
 }
 
-// Serpent defeated: a ~7.5s send-off. It coils into a ball at the centre while slowing to a stop
-// (CURL secs), shakes in place ever more violently (SHAKE secs), then detonates - a scaled-up
-// version of the player-death blast - before the next wave begins.
-const SNAKE_CURL = 3, SNAKE_SHAKE = 3, SNAKE_TAIL = 1.4;
+// Serpent defeated: rather than vanishing on the spot, the head keeps cruising at its normal speed
+// but holds its steering hard over at the usual max turn rate, carving a clean circle. The body
+// chain follows, feeding the spine onto that ring - destroyed segments stay destroyed, never redrawn.
+// Once the head has travelled the spine's full length (at least one full loop) the whole body lies
+// on the circle, and it detonates - a scaled-up version of the player-death blast.
+const SNAKE_TAIL = 1.4;
 export function startSnakeOutro() {
-  const { cx, cy, ship } = g;
+  const { ship, S } = g;
   const b = g.boss;
-  b.dying = true; b.dieT = 0; b.exploded = false;
+  b.dying = true; b.dieT = 0; b.exploded = false; b.explodeT = 0; b.dieDist = 0; b.dieSpark = 0;
+  b.turn = (b.turn < 0 ? -1 : 1) * 2.0;   // lock the steer hard over at the normal max turn rate
+  const circ = TAU * (210 * S) / 2.0;     // circumference of one full revolution at that turn rate
+  b.dieLen = Math.max(b.spacing * (b.nodes.length - 1), circ);   // circle until the whole spine is on the ring
   g.asteroids.length = 0; g.bullets.length = 0; g.lasers.length = 0; g.ufos.length = 0; g.missiles.length = 0;
-  ship.invuln = Math.max(ship.invuln, 9);                   // safe through the whole cinematic
+  ship.invuln = Math.max(ship.invuln, 12);                  // safe through the whole cinematic
   if (!g.sandbox) { g.score += 1000; if (g.score > g.highScore) { g.highScore = g.score; g.newHigh = true; saveHi(); } }
   if (!g.bossEverBeaten) {
     g.bossEverBeaten = true;
@@ -462,35 +467,40 @@ export function startSnakeOutro() {
   }
 }
 export function updateSnakeOutro(dt) {
-  const { cx, cy } = g;
-  const b = g.boss; b.dieT += dt; const t = b.dieT;
-  if (t < SNAKE_CURL) {
-    // Curl into the centre at full slither speed (no deceleration): steer the head at the centre,
-    // ramping the turn rate up so it spirals into an ever-tighter coil; the body trails into a ball.
+  const b = g.boss; b.dieT += dt;
+  if (!b.exploded) {
+    // Carve a circle at the normal cruising speed and turn rate; the spine (every node position)
+    // trails onto that ring. No hunting, no segment regrowth, no shake.
+    const { cx, cy, HW, HH, S } = g;
+    const W = HW * 2, H2 = HH * 2;
     const head = b.nodes[0];
-    const spd = b.spd || 210 * g.S;
-    const want = Math.atan2(cy - head.ay, cx - head.ax);
-    const d = Math.atan2(Math.sin(want - b.headAngle), Math.cos(want - b.headAngle));
-    const cap = (3 + 9 * (t / SNAKE_CURL)) * dt;   // 3 -> 12 rad/s: tightens as it curls in
-    b.headAngle += Math.max(-cap, Math.min(cap, d));
-    head.ax += Math.cos(b.headAngle) * spd * dt; head.ay += Math.sin(b.headAngle) * spd * dt;
+    const px = head.ax, py = head.ay;
+    const spd = 210 * S;
+    b.headAngle += b.turn * dt;
+    let hx = head.ax + Math.cos(b.headAngle) * spd * dt, hy = head.ay + Math.sin(b.headAngle) * spd * dt;
+    if (hx < cx - HW) hx += W; else if (hx > cx + HW) hx -= W;
+    if (hy < cy - HH) hy += H2; else if (hy > cy + HH) hy -= H2;
+    head.ax = hx; head.ay = hy;
     snakeFollow(b);
-  } else if (t >= SNAKE_CURL + SNAKE_SHAKE && !b.exploded) {
-    snakeOutroExplode(b);
-  } else if (b.exploded && t >= SNAKE_CURL + SNAKE_SHAKE + SNAKE_TAIL) {
+    let dx = head.ax - px, dy = head.ay - py;   // head travel this frame (unwrap the seam)
+    if (dx > HW) dx -= W; else if (dx < -HW) dx += W;
+    if (dy > HH) dy -= H2; else if (dy < -HH) dy += H2;
+    b.dieDist += Math.hypot(dx, dy);
+    b.dieSpark -= dt;
+    if (b.dieSpark <= 0) { b.dieSpark = 0.07; burst(head.ax, head.ay, BOSS_COLOR, { count: 2, speed: 55, life: 0.4 }); }   // glowing trail as it coils
+    if (b.dieDist >= b.dieLen) { snakeOutroExplode(b); b.explodeT = b.dieT; }   // whole spine now on the ring - detonate
+  } else if (b.dieT >= b.explodeT + SNAKE_TAIL) {
     finishSnakeOutro();
   }
 }
 function snakeOutroExplode(b) {
   b.exploded = true;
-  const { cx, cy, S } = g;
-  // The player's death burst, vastly scaled up: a ring of white hull shards plus violet + accent.
-  for (let k = 0; k < 6; k++) {
-    const a = (k / 6) * TAU;
-    burst(cx + Math.cos(a) * 44 * S, cy + Math.sin(a) * 44 * S, '#fff', { count: 22, speed: 330, life: 1.2, lines: true });
-  }
-  burst(cx, cy, BOSS_COLOR, { count: 54, speed: 350, life: 1.4, lines: true });
-  burst(cx, cy, g.ACCENT, { count: 40, speed: 260, life: 1.0 });
+  // Blow the whole coil apart along the ring: a white hull-shard burst at every node position,
+  // then violet + accent at the head.
+  for (const n of b.nodes) burst(n.ax, n.ay, '#fff', { count: 10, speed: 320, life: 1.2, lines: true });
+  const head = b.nodes[0];
+  burst(head.ax, head.ay, BOSS_COLOR, { count: 54, speed: 350, life: 1.4, lines: true });
+  burst(head.ax, head.ay, g.ACCENT, { count: 40, speed: 260, life: 1.0 });
 }
 export function finishSnakeOutro() {
   const { cx, cy, HW, HH } = g;
@@ -535,10 +545,11 @@ export function updateBoss(dt) {
   } else if (b.type === 'megastructure') {
     b.angle += b.spin * dt;   // slow rotation in place
     const rimCleared = b.nodes.every((n) => n.kind !== 'weak' || n.dead);
+    if (b.rimState !== 'fighting') b.stage2T += dt;   // second-stage clock: the ram appears 5s after the rim falls
     if (b.rimState === 'fighting') {
-      // First phase done (rim satellites cleared): offer the one and only ram. This branch
-      // runs exactly once, so it's a single scripted spawn - no perpetual top-up.
-      if (rimCleared) { b.rimState = 'finale'; b.finaleT = 0; ensureRamPickup(); }
+      // First phase done (rim satellites cleared): the second stage begins. The ram itself
+      // doesn't appear yet - it's parked 5s later (below), then kept topped up permanently.
+      if (rimCleared) { b.rimState = 'finale'; b.finaleT = 0; }
     } else if (b.rimState === 'finale') {
       b.finaleT += dt;   // rings shake (drawn in drawBoss) for 0.85s, then blow apart
       if (b.finaleT >= 0.85) {
@@ -557,6 +568,7 @@ export function updateBoss(dt) {
         updateMegaRadar(b, dt);   // core fully exposed: the radar is live (its first sweep cuts the guns)
       }
     }
+    if (b.stage2T >= 5) ensureRamPickup();   // 5s into the second stage the ram appears and is kept parked permanently
     megaAnchor(b);            // re-pin to the shorter edge (resize-proof), advancing inward when sliding
   } else {
     updateSnake(b, dt);
@@ -715,26 +727,40 @@ function drawSerpentHunt(b) {
   ctx.restore();
 }
 
-// The serpent's death cinematic: the coiled corpse shaking in place (mild while it curls, violent
-// during the hold) until it detonates, after which only the particle blast remains.
+// The serpent's death cinematic: the coil tracing its circle until it detonates, after which only
+// the particle blast remains. Drawn like the live serpent (seam-aware, across toroidal offsets so
+// a circle straddling an edge never streaks), but destroyed segments are NOT redrawn as circles -
+// only the surviving segments and the head show. The spine line still runs through every position.
 function drawSnakeOutro(b) {
   if (b.exploded) return;   // nothing left but the burst (drawn as particles)
-  const ctx = g.ctx, { S, MUTED } = g;
-  const t = b.dieT;
-  const amp = (t < SNAKE_CURL ? 0.5 + 2 * (t / SNAKE_CURL)             // mild, building as it slows
-    : 3 + 7 * Math.min(1, (t - SNAKE_CURL) / SNAKE_SHAKE)) * S;        // violent, ramping to a peak
+  const ctx = g.ctx, { cx, cy, HW, HH, S, MUTED } = g;
+  const W = HW * 2, H2 = HH * 2, mg = b.r + 4 * S;
+  let lx = false, rx = false, ty = false, by = false;
+  for (const n of b.nodes) {
+    if (n.ax < cx - HW + mg) lx = true; else if (n.ax > cx + HW - mg) rx = true;
+    if (n.ay < cy - HH + mg) ty = true; else if (n.ay > cy + HH - mg) by = true;
+  }
+  const xs = [0]; if (lx) xs.push(W); if (rx) xs.push(-W);
+  const ys = [0]; if (ty) ys.push(H2); if (by) ys.push(-H2);
   ctx.save();
-  if (amp > 0) ctx.translate((Math.random() * 2 - 1) * amp, (Math.random() * 2 - 1) * amp);
   ctx.lineWidth = 2; ctx.lineJoin = 'round';
   ctx.strokeStyle = BOSS_COLOR; ctx.shadowColor = BOSS_COLOR; ctx.shadowBlur = 10;
-  for (let i = 1; i < b.nodes.length; i++) {   // links (the whole corpse, dead segments included)
-    const a = b.nodes[i - 1], n = b.nodes[i];
-    ctx.beginPath(); ctx.moveTo(a.ax, a.ay); ctx.lineTo(n.ax, n.ay); ctx.stroke();
-  }
-  for (const n of b.nodes) {
-    ctx.strokeStyle = n.kind === 'head' ? MUTED : BOSS_COLOR;
-    ctx.beginPath(); ctx.arc(n.ax, n.ay, n.r, 0, TAU); ctx.stroke();
-    if (n.kind === 'head') { ctx.globalAlpha = 0.25; ctx.fillStyle = MUTED; ctx.fill(); ctx.globalAlpha = 1; }
+  for (const ox of xs) for (const oy of ys) {
+    ctx.save(); ctx.translate(ox, oy);
+    for (let i = 1; i < b.nodes.length; i++) {   // spine line through every node position (shortest-wrapped, no streaks)
+      const a = b.nodes[i - 1], n = b.nodes[i];
+      let dx = n.ax - a.ax, dy = n.ay - a.ay;
+      if (dx > HW) dx -= W; else if (dx < -HW) dx += W;
+      if (dy > HH) dy -= H2; else if (dy < -HH) dy += H2;
+      ctx.beginPath(); ctx.moveTo(a.ax, a.ay); ctx.lineTo(a.ax + dx, a.ay + dy); ctx.stroke();
+    }
+    for (const n of b.nodes) {
+      if (n.dead) continue;   // destroyed segments stay gone - never recovered for the death animation
+      ctx.strokeStyle = n.kind === 'head' ? MUTED : BOSS_COLOR;
+      ctx.beginPath(); ctx.arc(n.ax, n.ay, n.r, 0, TAU); ctx.stroke();
+      if (n.kind === 'head') { ctx.globalAlpha = 0.25; ctx.fillStyle = MUTED; ctx.fill(); ctx.globalAlpha = 1; }
+    }
+    ctx.restore();
   }
   ctx.restore();
 }

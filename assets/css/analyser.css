@@ -2578,6 +2578,17 @@ details[open] summary::after { content: "\2212"; }
 }
 .offline-heading-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
 .offline-heading-row .offline-heading { margin-bottom: 0; }
+/* The heading doubles as the collapse toggle. It carries .offline-heading for
+   its mono/uppercase look; reset the button chrome and add a rotating chevron. */
+.offline-toggle {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  background: none; border: 0; padding: 0;
+  cursor: pointer; text-align: left;
+}
+.offline-toggle:hover { color: var(--accent); }
+.offline-toggle-ico { font-size: 0.8em; transition: transform 0.15s ease; transform: rotate(-90deg); }
+.offline-section.is-open .offline-toggle-ico { transform: rotate(0deg); }
+.offline-section:not(.is-open) .offline-body { display: none; }
 /* [?] dropdown listing each download tier - only shown on mobile, where the
    per-tier descriptions are hidden. Same plain "[?]" style as the rest of the
    site (.anr-info-btn), tinted for the dark footer. */

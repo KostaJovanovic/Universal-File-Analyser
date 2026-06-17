@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 125;
+const COMMIT_COUNT = 126;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1651,10 +1651,9 @@ function boot() {
       );
     } catch (_) {}
 
-    // Konami code (↑↑↓↓←→←→ B A) anywhere on the site launches the Asteroids
-    // easter egg - a vector Asteroids clone played in a circular scope where the
-    // asteroids are supported file types. Lazy-imported so it costs nothing until
-    // the sequence is entered.
+    // Konami code (↑↑↓↓←→←→ B A) anywhere on the site jumps to the hidden /atari
+    // page (the Asteroids easter egg lives there now). A throwaway <a> click lets
+    // navigate.js do the SPA View Transition, falling back to a plain navigation.
     const KONAMI = ['arrowup', 'arrowup', 'arrowdown', 'arrowdown', 'arrowleft', 'arrowright', 'arrowleft', 'arrowright', 'b', 'a'];
     let konamiPos = 0;
     window.addEventListener('keydown', (e) => {
@@ -1663,7 +1662,8 @@ function boot() {
       konamiPos = (k === KONAMI[konamiPos]) ? konamiPos + 1 : (k === KONAMI[0] ? 1 : 0);
       if (konamiPos === KONAMI.length) {
         konamiPos = 0;
-        import('../games/asteroids.js').then((m) => m.launchAsteroids()).catch(() => {});
+        const a = document.createElement('a'); a.href = '/atari';
+        document.body.appendChild(a); a.click(); a.remove();
       }
     });
 
@@ -1696,9 +1696,10 @@ function boot() {
   // Nav "Share" button (header is swapped on every navigation).
   wireShareButtons();
   // Mobile access to the Asteroids easter egg: the Konami code needs a keyboard, so
-  // on touch you reach the game by quickly tapping the header description 5 times.
-  // Bound to whichever .site-sub is on the current page (the header is swapped on
-  // navigation), guarded so it only binds once per element.
+  // on touch you reach it by quickly tapping the header description 5 times - which
+  // now jumps to the hidden /atari page (via a throwaway <a> so navigate.js does the
+  // SPA hop). Bound to whichever .site-sub is on the current page (the header is
+  // swapped on navigation), guarded so it only binds once per element.
   (function wireTapEgg() {
     const sub = document.querySelector('.site-sub');
     if (!sub || sub.dataset.eggBound) return;
@@ -1710,7 +1711,8 @@ function boot() {
       tapTimer = setTimeout(() => { taps = 0; }, 600);
       if (taps >= 5) {
         taps = 0;
-        import('../games/asteroids.js').then((m) => m.launchAsteroids()).catch(() => {});
+        const a = document.createElement('a'); a.href = '/atari';
+        document.body.appendChild(a); a.click(); a.remove();
       }
     });
   })();
@@ -2217,6 +2219,32 @@ function boot() {
     });
   });
 
+  // ----- Collapsible "Download for offline use" -----
+  // The section's heading is a toggle. Default state on load: expanded when
+  // nothing is cached yet (first-time visitors get the options in front of them),
+  // collapsed once any tier is downloaded (return visits stay tidy). A manual
+  // toggle wins for the rest of the session and isn't overridden by the async
+  // self-heal below; clearing storage resets that so it re-opens.
+  const offlineSection = document.getElementById('offlineSection');
+  const offlineToggle = document.getElementById('offlineToggle');
+  let offlineUserToggled = false;
+  function setOfflineOpen(open) {
+    if (!offlineSection || !offlineToggle) return;
+    offlineSection.classList.toggle('is-open', open);
+    offlineToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  function applyDefaultOfflineCollapse() {
+    if (offlineUserToggled) return;
+    setOfflineOpen(Object.keys(readOfflineState()).length === 0);
+  }
+  if (offlineToggle) {
+    offlineToggle.addEventListener('click', () => {
+      offlineUserToggled = true;
+      setOfflineOpen(offlineToggle.getAttribute('aria-expanded') !== 'true');
+    });
+  }
+  applyDefaultOfflineCollapse();
+
   // On every load: restore the persisted "Cached" badges, then re-check the app
   // version - refreshing in place any cached tier whose files were stored under
   // an older version (i.e. the app updated since they were downloaded). Files
@@ -2233,6 +2261,10 @@ function boot() {
       const detected = await detectCachedTier();
       if (detected) { state[detected] = COMMIT_COUNT; writeOfflineState(state); }
     }
+
+    // A self-healed tier means something IS cached after all - re-apply the
+    // default collapse so the section starts closed (unless the user toggled it).
+    applyDefaultOfflineCollapse();
 
     // Paint the restored / self-healed state (badges, greying, upgrade deltas).
     refreshTierButtons();
@@ -2326,6 +2358,9 @@ function boot() {
       // With the record gone, this repaints every button to its un-cached state:
       // no greying, full per-tier sizes.
       refreshTierButtons();
+      // Nothing is cached now, so re-open the section by default (a fresh start).
+      offlineUserToggled = false;
+      applyDefaultOfflineCollapse();
       clearBtn.textContent = 'All data cleared ✓';
       setTimeout(() => { clearBtn.textContent = 'Clear storage'; }, 3000);
     });
