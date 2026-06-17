@@ -28,7 +28,8 @@ export function makePlayer(mediaEl, knownDuration) {
   const fillEl = el('div', { class: 'anr-player-fill' });
   const trackEl = el('div', { class: 'anr-player-track' }, [fillEl]);
   const timeEl = el('span', { class: 'anr-player-time' }, '0:00 / 0:00');
-  const container = el('div', { class: 'anr-player' }, [playBtn, trackEl, timeEl]);
+  const vol = makeVolume(mediaEl);
+  const container = el('div', { class: 'anr-player' }, [playBtn, trackEl, timeEl, vol]);
 
   playBtn.addEventListener('click', () => {
     // Once playback has ended the button is a replay control: restart from 0.
@@ -105,4 +106,104 @@ export function makePlayer(mediaEl, knownDuration) {
   tick();
 
   return container;
+}
+
+// iOS Safari makes mediaEl.volume read-only (only the hardware buttons change
+// volume), so a drag slider there is a dead control - we hide it and keep just the
+// mute toggle (mediaEl.muted IS honoured). A CSS media query also hides the slider
+// on narrow screens; the mute button stays everywhere.
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+// Monochrome speaker glyphs (inherit currentColor, so they invert on hover like
+// the play button): two waves (loud), one wave (quiet), and a cross (muted).
+const SPK = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 4V5L7 9H3z"/>';
+const ICON_HI = SPK + '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 6a9 9 0 0 1 0 12"/></svg>';
+const ICON_LO = SPK + '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>';
+const ICON_MUTE = SPK + '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>';
+
+// All players share ONE volume/mute level, so changing it on any clip changes it
+// everywhere at once - and it persists across files and sessions via localStorage.
+// Every live player registers below; a change is applied to every registered media
+// element and each player's UI follows. Disconnected players are pruned so the
+// registry can't grow unbounded as files are analysed.
+const VOL_KEY = 'anr-volume';
+let sharedVol = 1, sharedMuted = false, lastNonZero = 1;
+try {
+  const raw = localStorage.getItem(VOL_KEY);
+  const o = raw ? JSON.parse(raw) : null;
+  if (o && typeof o.v === 'number') { sharedVol = Math.max(0, Math.min(1, o.v)); lastNonZero = sharedVol > 0 ? sharedVol : 1; }
+  if (o) sharedMuted = !!o.m;
+} catch (_) {}
+const volPlayers = new Set();   // { mediaEl, wrap, sync }
+// Pruning keys on isConnected, which is only reliable once the DOM has settled -
+// so it happens HERE (applyShared runs on user interaction, well after render),
+// never at registration time (a just-built player isn't appended yet and would be
+// dropped before it could sync).
+function applyShared() {
+  for (const p of volPlayers) {
+    if (!p.wrap.isConnected) { volPlayers.delete(p); continue; }
+    try { p.mediaEl.muted = sharedMuted; p.mediaEl.volume = sharedVol; } catch (_) {}
+    p.sync();
+  }
+}
+function setShared(v, m) {
+  sharedVol = Math.max(0, Math.min(1, v));
+  if (sharedVol > 0) lastNonZero = sharedVol;
+  sharedMuted = !!m;
+  try { localStorage.setItem(VOL_KEY, JSON.stringify({ v: sharedVol, m: sharedMuted })); } catch (_) {}
+  applyShared();
+}
+
+// A mute button + draggable volume bar. All instances drive/reflect the shared
+// state above. Mirrors the seek track's press/drag pattern (listeners attached on
+// press, removed on release).
+function makeVolume(mediaEl) {
+  const muteBtn = el('button', { type: 'button', class: 'anr-player-mute', 'aria-label': 'Mute', html: ICON_HI });
+  const volFill = el('div', { class: 'anr-player-volfill' });
+  const volTrack = el('div', { class: 'anr-player-voltrack', role: 'slider', 'aria-label': 'Volume' }, [volFill]);
+  const wrap = el('div', { class: 'anr-player-vol' }, IS_IOS ? [muteBtn] : [muteBtn, volTrack]);
+
+  function sync() {
+    const v = sharedMuted ? 0 : sharedVol;
+    volFill.style.width = (v * 100) + '%';
+    muteBtn.innerHTML = v === 0 ? ICON_MUTE : (v < 0.5 ? ICON_LO : ICON_HI);
+    muteBtn.setAttribute('aria-label', (sharedMuted || sharedVol === 0) ? 'Unmute' : 'Mute');
+  }
+  muteBtn.addEventListener('click', () => {
+    if (!sharedMuted && sharedVol > 0) setShared(sharedVol, true);   // mute
+    else if (sharedMuted) setShared(sharedVol, false);              // unmute, keep level
+    else setShared(lastNonZero, false);                            // was 0 -> restore
+  });
+
+  let dragging = false;
+  function setVol(clientX) {
+    const rect = volTrack.getBoundingClientRect();
+    setShared(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)), false);
+  }
+  function onMove(e) { if (dragging) setVol(e.clientX); }
+  function onUp() { dragging = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); }
+  volTrack.addEventListener('mousedown', (e) => {
+    dragging = true; setVol(e.clientX); e.preventDefault();
+    window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
+  });
+  function onTMove(e) { if (dragging && e.touches[0]) { setVol(e.touches[0].clientX); e.preventDefault(); } }
+  function onTEnd() { dragging = false; window.removeEventListener('touchmove', onTMove); window.removeEventListener('touchend', onTEnd); }
+  volTrack.addEventListener('touchstart', (e) => {
+    dragging = true; setVol(e.touches[0].clientX); e.preventDefault();
+    window.addEventListener('touchmove', onTMove, { passive: false }); window.addEventListener('touchend', onTEnd);
+  }, { passive: false });
+
+  // Reflect a change made outside our UI (e.g. native iOS/desktop controls) back
+  // into the shared state. The epsilon guard stops a feedback loop with applyShared.
+  mediaEl.addEventListener('volumechange', () => {
+    if (Math.abs(mediaEl.volume - sharedVol) > 0.001 || mediaEl.muted !== sharedMuted) setShared(mediaEl.volume, mediaEl.muted);
+    else sync();
+  });
+
+  volPlayers.add({ mediaEl, wrap, sync });
+  // Adopt the shared level immediately.
+  try { mediaEl.muted = sharedMuted; mediaEl.volume = sharedVol; } catch (_) {}
+  sync();
+  return wrap;
 }

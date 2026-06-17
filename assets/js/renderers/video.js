@@ -286,8 +286,19 @@ function hideFfmpegLoader() {
   }
 }
 
+// A hard ffmpeg.wasm failure (an out-of-memory abort, or an explicit terminate)
+// leaves the worker's wasm runtime unusable - every later exec on it just rejects.
+// Drop the cached instance so the next loadFFmpeg() builds a fresh one instead of
+// handing back a corpse. Without this, the first reverse that ran out of memory
+// poisoned the shared instance and every later reverse (and other ffmpeg feature)
+// failed for the rest of the session.
+function killFFmpeg() {
+  if (ffmpegInstance) { try { ffmpegInstance.terminate(); } catch (_) {} ffmpegInstance = null; }
+}
+
 async function loadFFmpeg(onProgress) {
-  if (ffmpegInstance) return ffmpegInstance;
+  if (ffmpegInstance && ffmpegInstance.loaded) return ffmpegInstance;
+  if (ffmpegInstance) killFFmpeg();   // half-loaded / terminated leftover
   showFfmpegLoader();
   try {
     const { FFmpeg } = await import(new URL('../../vendor/ffmpeg/ffmpeg.js', import.meta.url).href);
@@ -357,11 +368,23 @@ async function ffmpegReverseVideo(file, onLoad, onEnc, signal) {
 
   let log = '';
   const onLog = ({ message }) => { log += message + '\n'; };
-  const onProg = ({ progress }) => { if (onEnc && isFinite(progress)) onEnc(Math.max(0, Math.min(1, progress))); };
+  // Smooth, monotonic progress. The job runs ~N+2 ffmpeg commands and each emits
+  // its OWN 0..1 - wiring that straight to the bar made it sweep 0..1 a dozen times
+  // ("all over the place"). Instead map each command's progress into the slice of
+  // the whole job it represents (set via phase()), and never let the bar go
+  // backwards: normalise 0-30%, the per-segment reverses 30-92%, concat 92-100%.
+  let pBase = 0, pSpan = 0.3, lastP = 0;
+  const report = (frac) => { const v = Math.max(lastP, Math.max(0, Math.min(1, frac))); lastP = v; if (onEnc) onEnc(v); };
+  const phase = (base, span) => { pBase = base; pSpan = span; };
+  const onProg = ({ progress }) => { if (isFinite(progress)) report(pBase + Math.max(0, Math.min(1, progress)) * pSpan); };
   ff.on('log', onLog);
   ff.on('progress', onProg);
   const detachAll = () => { try { ff.off('log', onLog); } catch (_) {} try { ff.off('progress', onProg); } catch (_) {} };
-  const exec = async (args) => { log = ''; try { await ff.exec(args); return true; } catch (_) { return false; } };
+  // `crashed` distinguishes a hard wasm abort (ff.exec rejects - instance is now
+  // dead) from a clean non-zero exit (ff.exec resolves, output just isn't there).
+  // On a crash we tear the instance down so the next attempt reloads fresh.
+  let crashed = false;
+  const exec = async (args) => { log = ''; try { await ff.exec(args); return true; } catch (_) { crashed = true; return false; } };
   const read = async (name) => { try { const d = await ff.readFile(name); return d && d.length ? d : null; } catch (_) { return null; } };
   const rm = async (name) => { try { await ff.deleteFile(name); } catch (_) {} };
 
@@ -387,21 +410,28 @@ async function ffmpegReverseVideo(file, onLoad, onEnc, signal) {
 
   try {
     // Probe resolution/fps from the demux log (a bare `-i` errors out fast without
-    // decoding) to size the chunk so one segment's raw frames stay under ~280 MB.
+    // decoding) to size the chunk so one segment's raw frames stay within a heap a
+    // phone can spare. The `reverse` filter holds EVERY decoded frame of a segment
+    // in memory at once, so the segment length is what bounds peak memory. The old
+    // ~280 MB budget was fine on desktop but blew the wasm heap on mobile (where
+    // imported videos usually come from) and on 4K, so every reverse there failed.
+    // 96 MB leaves comfortable headroom; sub-second segments are allowed (no longer
+    // floored at 1 s) so even 4K stays bounded.
     await exec(['-i', src]);
     const res = log.match(/, (\d{2,5})x(\d{2,5})[ ,]/);
     const fpsM = log.match(/(\d+(?:\.\d+)?) fps/);
     const w = res ? +res[1] : 1920, h = res ? +res[2] : 1080;
     const fps = fpsM ? Math.min(120, Math.max(1, parseFloat(fpsM[1]))) : 30;
     const perSec = w * h * 1.5 * fps;
-    const SEG = Math.max(1, Math.min(5, Math.round(280e6 / Math.max(1, perSec)))) || 2;
+    const SEG = Math.max(0.5, Math.min(5, 96e6 / Math.max(1, perSec))) || 2;
     const hadAudio = /Audio:/.test(log);
     if (aborted()) { await rm(src); detachAll(); return null; }
 
-    // 1) Normalise to H.264 with a keyframe exactly every SEG seconds.
+    // 1) Normalise to H.264 with a keyframe exactly every SEG seconds. (0-30%)
     const norm = 'rev_norm.mp4';
     const kf = 'expr:gte(t,n_forced*' + SEG + ')';
     let audio = hadAudio;
+    phase(0, 0.30);
     await exec(['-i', src, '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
       '-force_key_frames', kf, '-c:a', 'aac', '-y', norm]);
     if (!await read(norm)) {           // no audio / unsupported audio -> video only
@@ -410,9 +440,10 @@ async function ffmpegReverseVideo(file, onLoad, onEnc, signal) {
         '-force_key_frames', kf, '-an', '-y', norm]);
     }
     await rm(src);
-    if (aborted() || !await read(norm)) { await rm(norm); detachAll(); return null; }
+    if (aborted() || !await read(norm)) { await rm(norm); detachAll(); if (crashed) killFFmpeg(); return null; }
 
-    // 2) Split losslessly at those keyframes.
+    // 2) Split losslessly at those keyframes (near-instant; hold the bar at 30%).
+    phase(0.30, 0);
     await exec(['-i', norm, '-c', 'copy', '-map', '0', '-f', 'segment',
       '-segment_time', String(SEG), '-reset_timestamps', '1', 'rev_seg_%03d.mp4']);
     let segs = [];
@@ -423,23 +454,27 @@ async function ffmpegReverseVideo(file, onLoad, onEnc, signal) {
     if (segs.length <= 1) {
       for (const s of segs) await rm(s);
       const out = 'rev_out.mp4';
+      phase(0.30, 0.70);
       const ok = await reverseWhole(norm, out, audio);
       const data = ok ? await read(out) : null;
       await rm(norm); await rm(out); detachAll();
+      if (!data && crashed) killFFmpeg();
       return data ? new Blob([data.buffer || data], { type: 'video/mp4' }) : null;
     }
     await rm(norm);
 
-    // 3) Reverse each segment (bounded memory).
+    // 3) Reverse each segment (bounded memory). Each segment is an equal slice of
+    //    the 30-92% band, so the bar advances steadily across the whole clip.
     const revs = [];
     for (let i = 0; i < segs.length; i++) {
       if (aborted()) { for (const n of [...segs.slice(i), ...revs]) await rm(n); detachAll(); return null; }
       const rev = 'rev_out_' + String(i).padStart(3, '0') + '.mp4';
+      phase(0.30 + 0.62 * (i / segs.length), 0.62 / segs.length);
       const ok = await reverseWhole(segs[i], rev, audio);
       await rm(segs[i]);
-      if (!ok) { for (const n of [...segs.slice(i + 1), ...revs, rev]) await rm(n); detachAll(); return null; }
+      if (!ok) { for (const n of [...segs.slice(i + 1), ...revs, rev]) await rm(n); detachAll(); if (crashed) killFFmpeg(); return null; }
       revs.push(rev);
-      if (onEnc) onEnc((i + 1) / segs.length);
+      report(0.30 + 0.62 * ((i + 1) / segs.length));
     }
 
     // 4) Concat the reversed segments in reverse order. Stream-copy first; if the
@@ -448,6 +483,7 @@ async function ffmpegReverseVideo(file, onLoad, onEnc, signal) {
     const ordered = revs.slice().reverse();
     await ff.writeFile(listName, new TextEncoder().encode(ordered.map((n) => "file '" + n + "'").join('\n') + '\n'));
     const out = 'rev_out.mp4';
+    phase(0.92, 0.08);
     await exec(['-f', 'concat', '-safe', '0', '-i', listName, '-c', 'copy', '-y', out]);
     if (!await read(out)) {
       await rm(out);
@@ -457,10 +493,12 @@ async function ffmpegReverseVideo(file, onLoad, onEnc, signal) {
     }
     const data = await read(out);
     for (const n of [...revs, listName, out]) await rm(n);
+    if (data) report(1);
     detachAll();
     return data ? new Blob([data.buffer || data], { type: 'video/mp4' }) : null;
   } catch (_) {
     detachAll();
+    if (crashed) killFFmpeg();
     return null;
   }
 }
@@ -503,7 +541,7 @@ function buildReverseVideoCard(file, signal) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Reverse'));
   card.appendChild(el('p', { class: 'anr-hint' },
-    'Re-encode this video playing backwards - picture and sound - in your browser with FFmpeg. A long or high-resolution clip can take a while, but it is processed in chunks so it will not run out of memory.'));
+    'Re-encode this video playing backwards - picture and sound - in your browser with FFmpeg. Fair warning, this isn\'t as straightforward as it seems. It\'s going to take a while.'));
   const btn = el('button', { type: 'button', class: 'anr-btn' }, '↺ Reverse video');
   const out = el('div');
   const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
@@ -529,8 +567,9 @@ function buildReverseVideoCard(file, signal) {
     if (signal && signal.aborted) return;
     if (!blob) {
       btn.disabled = false; btn.textContent = '↺ Reverse video';
+      out.innerHTML = '';
       out.appendChild(el('p', { class: 'anr-hint', style: 'color:var(--accent);' },
-        'Could not reverse this video - it may be too long to hold in memory, or the codec could not be re-encoded.'));
+        'Could not reverse this video this time - a very high resolution (4K) or a low-memory device can run the browser out of memory mid-encode. The engine has been reset, so pressing Reverse again will retry from scratch; a shorter or lower-resolution clip is the most reliable.'));
       return;
     }
     const url = URL.createObjectURL(blob);
@@ -542,9 +581,20 @@ function buildReverseVideoCard(file, signal) {
     out.appendChild(v);
     out.appendChild(makePlayer(v));
     const base = (file.name || 'video').replace(/\.[^.]+$/, '');
-    out.appendChild(el('div', { style: 'margin-top:10px;' }, [
-      el('a', { href: url, download: base + '_reversed.mp4', class: 'anr-btn',
-        style: 'display:inline-block;text-decoration:none;' }, 'Download reversed (MP4)')
+    const revName = base + '_reversed.mp4';
+    const analyseBtn = el('button', { type: 'button', class: 'anr-btn',
+      style: 'display:inline-block;' }, 'Analyse reversed');
+    // Feed the reversed clip back through the analyser as a fresh file, with a
+    // breadcrumb back to the original (same pattern as drilling into an archive).
+    analyseBtn.addEventListener('click', () => {
+      const revFile = new File([blob], revName, { type: 'video/mp4' });
+      if (window._anrPushNav) window._anrPushNav(file.name || 'video', () => { if (window._anrHandleFile) window._anrHandleFile(file, {}); });
+      if (window._anrHandleFile) window._anrHandleFile(revFile, { nested: true });
+    });
+    out.appendChild(el('div', { style: 'margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;' }, [
+      el('a', { href: url, download: revName, class: 'anr-btn',
+        style: 'display:inline-block;text-decoration:none;' }, 'Download reversed (MP4)'),
+      analyseBtn
     ]));
     btn.remove();
   });
