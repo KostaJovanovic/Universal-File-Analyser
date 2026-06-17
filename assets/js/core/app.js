@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 124;
+const COMMIT_COUNT = 125;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -683,6 +683,12 @@ async function setupStatsPage() {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
+  { range: '3.14 - 3.25', notes: [
+    'Play video, sound, and animated GIFs and WebP backwards - and download the reversed result.',
+    'Three more image formats open: icons (ICO), 3D stereo photos (MPO) and multi-page TIFFs, each showing every image inside.',
+    'Volume controls on every player, kept in sync across the site.',
+    'Livelier font previews, with a slider and play button for every variable-font axis, plus support for UFO .glif glyph sources.',
+  ] },
   { range: '3.06 - 3.13', notes: [
     'Old Office files (Word, Excel, PowerPoint 97-2003) and OpenDocument files now open as page-by-page previews.',
     'Step through an animated GIF one frame at a time.',

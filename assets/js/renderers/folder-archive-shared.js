@@ -117,7 +117,7 @@ export function renderBreakdownCards(items, resultsEl, extraSummaryRows) {
   resultsEl.appendChild(card);
 
   // Anchor slot sitting between Overview and File types. The Contents cards
-  // (file tree + treemap) are inserted here by renderViewToggle, so the heavy
+  // (treemap + file tree) are inserted here by renderViewToggle, so the heavy
   // visualisation lands between the two summary cards rather than after them.
   resultsEl.appendChild(el('div', { class: 'anr-contents-slot', hidden: '' }));
 
@@ -156,7 +156,7 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
   const slot = container.querySelector('.anr-contents-slot');
   const place = (node) => { if (slot && slot.parentNode === container) container.insertBefore(node, slot); else container.appendChild(node); };
 
-  // Tree section, shown above the treemap as its own (collapsible) card.
+  // File-tree card - built here but placed AFTER (under) the treemap below.
   const treeCard = el('div', { class: 'anr-card' });
   treeCard.appendChild(el('h3', {}, 'File tree'));
   const treeFullOpts = {
@@ -164,16 +164,28 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
     fileAccent: (key) => categoryColor(categorizeExt(extOf(key))),
   };
   treeCard.appendChild(buildFileTree(treeObj, treeFullOpts));
-  place(treeCard);
 
-  // Treemap section below.
+  // Treemap section, placed first so it sits above the file tree.
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Treemap'));
 
-  // Category legend.
-  const controls = el('div', { class: 'anr-view-controls' });
-  const legend = el('div', { class: 'anr-treemap-legend' });
   const bk = buildCategoryBreakdown(items);
+
+  // Controls row: a "Filter by type" button (opens the extension filter in a
+  // popup, rather than a long always-there chip row) on the left, category legend
+  // on the right.
+  const controls = el('div', { class: 'anr-view-controls' });
+  let activeExt = null;
+  const fmtExtLabel = (ext) => ext === '(no ext)' ? ext : '.' + ext;
+  const filterBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm anr-treemap-filterbtn' }, 'Filter by type');
+  function updateFilterBtn() {
+    filterBtn.textContent = activeExt ? ('Filter: ' + fmtExtLabel(activeExt)) : 'Filter by type';
+    filterBtn.classList.toggle('is-active', !!activeExt);
+  }
+  filterBtn.addEventListener('click', openExtFilterModal);
+  controls.appendChild(filterBtn);
+
+  const legend = el('div', { class: 'anr-treemap-legend' });
   for (const cat of CATEGORIES) {
     const d = bk.byCategory[cat];
     if (!d.count) continue;
@@ -183,29 +195,47 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
   controls.appendChild(legend);
   card.appendChild(controls);
 
-  // Extension filter: a chip for every extension found (most common first), plus
-  // an "All" chip. Clicking a chip redraws the treemap with only that extension's
-  // files; clicking it again - or "All" - clears the filter. `bk.sorted` is
-  // [ext, {count, size}] ordered by count, with '(no ext)' for extensionless files.
-  let activeExt = null;
-  const chips = new Map();
-  const extFilter = el('div', { class: 'anr-treemap-extfilter' });
-  extFilter.appendChild(el('span', { class: 'anr-extfilter-label' }, 'Show'));
-  const allChip = el('button', { type: 'button', class: 'anr-extchip is-active' }, 'All');
-  allChip.addEventListener('click', () => setFilter(null));
-  chips.set(null, allChip);
-  extFilter.appendChild(allChip);
-  for (const [ext, data] of bk.sorted) {
-    const label = ext === '(no ext)' ? ext : '.' + ext;
-    const chip = el('button', {
-      type: 'button', class: 'anr-extchip',
-      title: data.count + (data.count === 1 ? ' file' : ' files') + ' · ' + fmtBytes(data.size),
-    }, [label, el('span', { class: 'anr-extchip-n' }, String(data.count))]);
-    chip.addEventListener('click', () => setFilter(activeExt === ext ? null : ext));
-    chips.set(ext, chip);
-    extFilter.appendChild(chip);
+  // The extension filter as a popup: a chip for every extension (most common
+  // first) plus an "All" chip. Picking one redraws the treemap with just that
+  // extension's files and closes the popup; "All" (or re-picking the active one)
+  // clears the filter. `bk.sorted` is [ext, {count, size}] ordered by count, with
+  // '(no ext)' for extensionless files.
+  function openExtFilterModal() {
+    const chipRow = el('div', { class: 'anr-extfilter-chips' });
+    const mkChip = (key, content, title) => {
+      const chip = el('button', { type: 'button', class: 'anr-extchip' + (key === activeExt ? ' is-active' : ''), title: title || '' }, content);
+      chip.addEventListener('click', () => { setFilter(key === activeExt ? null : key); close(); });
+      return chip;
+    };
+    chipRow.appendChild(mkChip(null, 'All'));
+    for (const [ext, data] of bk.sorted) {
+      chipRow.appendChild(mkChip(ext,
+        [fmtExtLabel(ext), el('span', { class: 'anr-extchip-n' }, String(data.count))],
+        data.count + (data.count === 1 ? ' file' : ' files') + ' · ' + fmtBytes(data.size)));
+    }
+    const closeBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, 'Close');
+    const cardEl = el('div', { class: 'anr-modal-card' }, [
+      el('p', { class: 'anr-modal-kicker' }, 'Treemap'),
+      el('p', { class: 'anr-modal-title' }, 'Filter by file type'),
+      el('div', { class: 'anr-modal-scroll' }, [chipRow]),
+      el('div', { class: 'anr-modal-actions' }, [closeBtn]),
+    ]);
+    const overlay = el('div', { class: 'anr-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Filter by file type' }, cardEl);
+    document.body.appendChild(overlay);
+    let settled = false;
+    function close() {
+      if (settled) return;
+      settled = true;
+      overlay.classList.remove('is-open');
+      setTimeout(() => overlay.remove(), 200);
+      document.removeEventListener('keydown', onKey);
+    }
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    closeBtn.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    document.addEventListener('keydown', onKey);
+    requestAnimationFrame(() => overlay.classList.add('is-open'));
   }
-  card.appendChild(extFilter);
 
   const contentArea = el('div', { class: 'anr-treemap-content' });
   card.appendChild(contentArea);
@@ -251,10 +281,11 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
 
   function setFilter(ext) {
     activeExt = ext;
-    for (const [key, chip] of chips) chip.classList.toggle('is-active', key === activeExt);
+    updateFilterBtn();
     mount();
   }
 
   mount();
-  place(card);
+  place(card);       // treemap first
+  place(treeCard);   // file tree under it
 }

@@ -209,6 +209,7 @@ export const FORMATS = {
   woff:    { app: 'Web Open Font Format', icon: 'WF', magic: [0x77, 0x4F, 0x46, 0x46] },
   woff2:   { app: 'Web Open Font Format 2', icon: 'WF2', magic: [0x77, 0x4F, 0x46, 0x32] },
   ttc:     { app: 'TrueType Font Collection', icon: 'TTC' },
+  glif:    { app: 'UFO Glyph (GLIF)', icon: 'GLIF', parse: 'text' },
 
   // eBooks
   epub:    { app: 'EPUB eBook', icon: 'EPB', zip: true },

@@ -1760,6 +1760,24 @@ body.anr-has-file .nav-search { display: flex; }
   font-size: var(--t-small);
 }
 
+/* Font preview card (nested in the identification card): give it clear breathing
+   room above so it doesn't butt against the metadata table. */
+.anr-font-preview { margin-top: 48px; }
+/* Variable-font axis sliders (reusing .anr-control's styled range). */
+.anr-font-var { margin: 2px 0 4px; }
+.anr-font-axis { margin: 9px 0; }
+.anr-font-axislabel {
+  flex: 0 0 156px;
+  font-family: var(--font-mono); font-size: var(--t-tiny);
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+}
+.anr-font-axis input[type="range"] { flex: 1 1 auto; width: auto; }
+.anr-font-axis .anr-player-play { flex: 0 0 auto; width: 28px; height: 28px; font-size: 11px; }
+@media (max-width: 560px) {
+  .anr-font-axis { flex-wrap: wrap; }
+  .anr-font-axislabel { flex-basis: 100%; }
+}
+
 /* At-a-glance spectrogram stats strip (under the canvas) */
 /* Stats block under the spectrogram: a captioned header with a [?] toggle, then
    a tidy grid of labelled value cells. */
@@ -1923,7 +1941,8 @@ body.anr-has-file .nav-search { display: flex; }
   background: var(--surface);
   margin-bottom: 14px;
 }
-.anr-player-play {
+.anr-player-play,
+.anr-player-mute {
   flex: 0 0 auto;
   width: 32px;
   height: 32px;
@@ -1940,7 +1959,8 @@ body.anr-has-file .nav-search { display: flex; }
   line-height: 1;
   transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
-.anr-player-play:hover {
+.anr-player-play:hover,
+.anr-player-mute:hover {
   background: var(--fg);
   color: var(--bg);
 }
@@ -1978,6 +1998,40 @@ body.anr-has-file .nav-search { display: flex; }
   font-variant-numeric: tabular-nums;
   min-width: 80px;
   text-align: right;
+}
+/* Volume: a mute toggle + a thin draggable bar styled like the seek track. */
+.anr-player-vol {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.anr-player-voltrack {
+  width: 64px;
+  height: 32px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.anr-player-voltrack::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 3px;
+  background: var(--rule);
+}
+.anr-player-volfill {
+  height: 3px;
+  background: var(--accent);
+  width: 100%;
+  pointer-events: none;
+  position: relative;
+  z-index: 1;
+}
+/* Tight screens: keep the mute toggle, drop the slider (use hardware volume). */
+@media (max-width: 480px) {
+  .anr-player-voltrack { display: none; }
 }
 
 /* ---------- TRANSPORT ---------- */
@@ -3223,23 +3277,27 @@ details[open] summary::after { content: "\2212"; }
   top: 0;
   z-index: 6;
   display: block;
-  width: 100%;
-  margin: 0 0 16px;
-  padding: 11px 16px;
-  font-family: var(--font-mono);
+  /* Match the centred content column (1440px max, inset by --pad-x) so the bar
+     lines up with the result cards instead of spanning the whole window. */
+  width: calc(100% - 2 * var(--pad-x));
+  max-width: calc(1440px - 2 * var(--pad-x));
+  margin: 0 auto 16px;
+  padding: 10px 14px;
+  font-family: var(--font-sans);
   font-size: var(--t-small);
-  letter-spacing: 0.04em;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   text-align: left;
   color: var(--fg);
   background: var(--surface);
-  border: 1px solid var(--accent);
+  border: 1px solid var(--hairline);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease, border-color var(--dur-fast) ease;
 }
-.anr-back-bar:hover { background: rgba(var(--accent-rgb), 0.06); }
+.anr-back-bar:hover { background: var(--bg); border-color: var(--fg); }
 .anr-back-bar:active { transform: translateY(1px); }
-.anr-back-arrow { color: var(--accent); margin-right: 6px; font-weight: 600; }
-.anr-back-label { font-weight: 500; }
+.anr-back-arrow { color: var(--accent); margin-right: 8px; font-weight: 600; }
+.anr-back-label { font-weight: 600; }
 .anr-back-bar[hidden] { display: none; }
 .quickdrop-grid {
   display: grid;
@@ -4325,6 +4383,9 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   transition: transform 0.18s ease;
 }
 .anr-modal.is-open .anr-modal-card { transform: none; }
+/* Scrollable modal body + chip grid for the treemap file-type filter popup. */
+.anr-modal-scroll { max-height: 52vh; overflow-y: auto; margin: 2px 0; }
+.anr-extfilter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .anr-modal-kicker {
   margin: 0 0 12px;
   font-family: var(--font-mono);

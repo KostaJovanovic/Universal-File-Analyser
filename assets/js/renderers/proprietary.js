@@ -575,6 +575,170 @@ export async function extractPeIcon(file) {
   }
 }
 
+// ---------- UFO glyph source (.glif) ----------
+// GLIF is the XML one-glyph format inside a UFO (Unified Font Object), as used by
+// RoboFont, Glyphs, FontForge and fontTools. Read the glyph's name/unicode/advance
+// and outline structure, and draw the contours as a preview.
+async function parseGlif(file) {
+  let text;
+  try { text = await file.slice(0, 4 * 1024 * 1024).text(); }
+  catch (_) { return null; }
+  if (!/<\s*glyph[\s>]/.test(text)) return null;
+  let doc;
+  try { doc = new DOMParser().parseFromString(text, 'application/xml'); }
+  catch (_) { return null; }
+  const glyph = doc && doc.querySelector('glyph');
+  if (!glyph || doc.querySelector('parsererror')) return null;
+
+  const fields = {};
+  const name = glyph.getAttribute('name');
+  if (name) fields['Glyph name'] = name;
+  fields['GLIF format'] = (glyph.getAttribute('format') || '1') + '.' + (glyph.getAttribute('formatMinor') || '0');
+
+  const adv = glyph.querySelector('advance');
+  if (adv) {
+    const w = adv.getAttribute('width'), h = adv.getAttribute('height');
+    if (w != null) fields['Advance width'] = w + ' units';
+    if (h != null) fields['Advance height'] = h + ' units';
+  }
+
+  const unis = [...glyph.querySelectorAll('unicode')].map((u) => u.getAttribute('hex')).filter(Boolean);
+  if (unis.length) {
+    fields['Unicode'] = unis.map((h) => {
+      const cp = parseInt(h, 16);
+      let s = 'U+' + h.toUpperCase().padStart(4, '0');
+      if (isFinite(cp) && cp >= 0x20 && !(cp >= 0xD800 && cp <= 0xDFFF)) { try { s += ' (' + String.fromCodePoint(cp) + ')'; } catch (_) {} }
+      return s;
+    }).join(', ');
+  }
+
+  const contours = [...glyph.querySelectorAll('outline > contour')];
+  const components = [...glyph.querySelectorAll('outline > component')];
+  const anchors = [...glyph.querySelectorAll('anchor')];
+  const guides = [...glyph.querySelectorAll('guideline')];
+  const points = [...glyph.querySelectorAll('outline > contour > point')];
+  const onCurve = points.filter((p) => p.getAttribute('type')).length;
+  if (contours.length) fields['Contours'] = contours.length;
+  if (points.length) fields['Points'] = points.length + ' (' + onCurve + ' on-curve, ' + (points.length - onCurve) + ' off-curve)';
+  if (components.length) {
+    const bases = [...new Set(components.map((c) => c.getAttribute('base')).filter(Boolean))];
+    fields['Components'] = components.length + (bases.length ? ' (' + bases.slice(0, 8).join(', ') + (bases.length > 8 ? '…' : '') + ')' : '');
+  }
+  if (anchors.length) {
+    const names = anchors.map((a) => a.getAttribute('name')).filter(Boolean);
+    fields['Anchors'] = anchors.length + (names.length ? ' (' + names.slice(0, 8).join(', ') + ')' : '');
+  }
+  if (guides.length) fields['Guidelines'] = guides.length;
+  const imageEl = glyph.querySelector('image');
+  if (imageEl) fields['Image'] = imageEl.getAttribute('fileName') || 'yes';
+  if (glyph.querySelector('note')) fields['Note'] = 'present';
+  if (glyph.querySelector('lib')) fields['Lib data'] = 'present';
+
+  const outline = renderGlifOutline(contours);
+  if (outline) fields._previewNode = outline;
+  else if (components.length) fields._previewNode = el('p', { class: 'anr-hint', style: 'margin-top:12px;' }, 'Composed of ' + components.length + ' component' + (components.length > 1 ? 's' : '') + ' - the outline needs the rest of the UFO to draw.');
+  else fields._previewNode = el('p', { class: 'anr-hint', style: 'margin-top:12px;' }, 'No outline (e.g. a space or an empty glyph).');
+
+  return Object.keys(fields).length ? fields : null;
+}
+
+// Turn one .glif <contour>'s points into draw ops. GLIF point types: a point with
+// no `type` is an off-curve control; 'line'/'move' end a straight segment;
+// 'curve' a cubic (1-2 preceding off-curve controls); 'qcurve' a quadratic chain
+// (TrueType-style, with implied on-curve midpoints). Closed contours (no 'move')
+// are rotated to start on an on-curve point and wrap back to it.
+function glifContourSegments(pts) {
+  if (!pts.length) return null;
+  const isOpen = pts[0].type === 'move';
+  let ordered = pts;
+  if (!isOpen) {
+    const startIdx = pts.findIndex((p) => p.type);
+    if (startIdx < 0) return null;                 // all off-curve - skip
+    ordered = pts.slice(startIdx).concat(pts.slice(0, startIdx));
+  }
+  const start = ordered[0];
+  const ops = [];
+  let pending = [];
+  const seq = isOpen ? ordered.slice(1) : ordered.slice(1).concat([ordered[0]]);
+  for (const p of seq) {
+    if (!p.type) { pending.push([p.x, p.y]); continue; }
+    if (p.type === 'line' || p.type === 'move') {
+      ops.push({ t: 'L', p: [[p.x, p.y]] });
+    } else if (p.type === 'curve') {
+      if (pending.length >= 2) ops.push({ t: 'C', p: [pending[pending.length - 2], pending[pending.length - 1], [p.x, p.y]] });
+      else if (pending.length === 1) ops.push({ t: 'Q', p: [pending[0], [p.x, p.y]] });
+      else ops.push({ t: 'L', p: [[p.x, p.y]] });
+    } else if (p.type === 'qcurve') {
+      if (!pending.length) ops.push({ t: 'L', p: [[p.x, p.y]] });
+      else {
+        for (let i = 0; i < pending.length - 1; i++) {
+          const c = pending[i], n = pending[i + 1];
+          ops.push({ t: 'Q', p: [c, [(c[0] + n[0]) / 2, (c[1] + n[1]) / 2]] });
+        }
+        ops.push({ t: 'Q', p: [pending[pending.length - 1], [p.x, p.y]] });
+      }
+    }
+    pending = [];
+  }
+  return { start: [start.x, start.y], ops, closed: !isOpen };
+}
+
+function renderGlifOutline(contours) {
+  const parsed = [], all = [];
+  for (const c of contours) {
+    const pts = [...c.querySelectorAll('point')].map((p) => ({
+      x: parseFloat(p.getAttribute('x')), y: parseFloat(p.getAttribute('y')), type: p.getAttribute('type') || null,
+    })).filter((p) => isFinite(p.x) && isFinite(p.y));
+    if (!pts.length) continue;
+    const segs = glifContourSegments(pts);
+    if (segs) { parsed.push(segs); for (const p of pts) all.push(p); }
+  }
+  if (!parsed.length) return null;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of all) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+  const gw = Math.max(1, maxX - minX), gh = Math.max(1, maxY - minY);
+
+  const W = 260, H = 260, pad = 26;
+  const scale = Math.min((W - 2 * pad) / gw, (H - 2 * pad) / gh);
+  const ox = (W - gw * scale) / 2, oy = (H - gh * scale) / 2;
+  const tx = (x) => ox + (x - minX) * scale;
+  const ty = (y) => H - (oy + (y - minY) * scale);   // font y-up -> canvas y-down
+
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const canvas = document.createElement('canvas');
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  canvas.style.cssText = 'width:' + W + 'px;height:' + H + 'px;display:block;';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const css = getComputedStyle(document.documentElement);
+  const fg = (css.getPropertyValue('--fg') || '#111').trim();
+  const accent = (css.getPropertyValue('--accent') || '#e00').trim();
+  const rule = (css.getPropertyValue('--rule') || '#ccc').trim();
+
+  if (0 >= minY && 0 <= maxY) {                       // baseline
+    const by = ty(0);
+    ctx.strokeStyle = rule; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, by); ctx.lineTo(W, by); ctx.stroke();
+  }
+
+  ctx.beginPath();
+  for (const segs of parsed) {
+    ctx.moveTo(tx(segs.start[0]), ty(segs.start[1]));
+    for (const op of segs.ops) {
+      if (op.t === 'L') ctx.lineTo(tx(op.p[0][0]), ty(op.p[0][1]));
+      else if (op.t === 'Q') ctx.quadraticCurveTo(tx(op.p[0][0]), ty(op.p[0][1]), tx(op.p[1][0]), ty(op.p[1][1]));
+      else if (op.t === 'C') ctx.bezierCurveTo(tx(op.p[0][0]), ty(op.p[0][1]), tx(op.p[1][0]), ty(op.p[1][1]), tx(op.p[2][0]), ty(op.p[2][1]));
+    }
+    if (segs.closed) ctx.closePath();
+  }
+  ctx.globalAlpha = 0.12; ctx.fillStyle = accent; ctx.fill('nonzero');
+  ctx.globalAlpha = 1; ctx.strokeStyle = fg; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.stroke();
+
+  return el('div', { style: 'margin-top:14px;border:1px solid var(--hairline);background:var(--surface);padding:12px;display:inline-block;' }, [canvas]);
+}
+
 // ---------- OLE compound doc (SolidWorks, old Office) ----------
 function parseOle(buf) {
   if (buf.length < 512) return null;
@@ -586,25 +750,24 @@ function parseOle(buf) {
 }
 
 // ---------- Font (TTF / OTF) ----------
-async function parseFont(file) {
-  const size = Math.min(file.size, 65536);
-  const buf = new Uint8Array(await file.slice(0, size).arrayBuffer());
-  if (buf.length < 12) return null;
+// Friendly names for the common OpenType variation axes (registered + popular
+// custom ones); unknown tags fall back to the raw 4-char tag.
+const AXIS_NAMES = {
+  wght: 'Weight', wdth: 'Width', slnt: 'Slant', ital: 'Italic', opsz: 'Optical size',
+  GRAD: 'Grade', XOPQ: 'Thick stroke', YOPQ: 'Thin stroke', XTRA: 'Counter width',
+  YTAS: 'Ascender height', YTDE: 'Descender depth', YTLC: 'Lowercase height',
+  YTUC: 'Uppercase height', CASL: 'Casual', MONO: 'Monospace', CRSV: 'Cursive',
+  SOFT: 'Softness', WONK: 'Wonky', FILL: 'Fill', ROND: 'Roundness',
+};
+
+// Read the OpenType `name` table at `nameOff` within `buf` into our label map.
+function readNameTable(buf, nameOff) {
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  const magic = view.getUint32(0);
-  if (magic !== 0x00010000 && magic !== 0x4F54544F) return null;
-  const numTables = view.getUint16(4);
-  let nameOff = 0, fvarOff = 0;
-  for (let i = 0; i < numTables && 12 + i * 16 + 16 <= buf.length; i++) {
-    const tag = ascii(buf, 12 + i * 16, 4);
-    if (tag === 'name') nameOff = view.getUint32(12 + i * 16 + 8);
-    else if (tag === 'fvar') fvarOff = view.getUint32(12 + i * 16 + 8);
-  }
-  if (!nameOff || nameOff + 6 > buf.length) return null;
+  const names = {};
+  if (nameOff + 6 > buf.length) return names;
   const count = view.getUint16(nameOff + 2);
   const strOff = nameOff + view.getUint16(nameOff + 4);
   const wanted = { 1: 'Family', 2: 'Style', 4: 'Full name', 5: 'Version', 8: 'Manufacturer', 9: 'Designer' };
-  const names = {};
   for (let i = 0; i < count && nameOff + 6 + i * 12 + 12 <= buf.length; i++) {
     const base = nameOff + 6 + i * 12;
     const pid = view.getUint16(base);
@@ -625,27 +788,106 @@ async function parseFont(file) {
     }
     if (text.trim()) names[label] = text.trim();
   }
-  // fvar: variable-font axes. Header: major(2) minor(2) axesArrayOffset(2)
-  // reserved(2) axisCount(2) axisSize(2), then axisCount records of
-  // {tag(4) min(16.16) default(16.16) max(16.16) flags(2) nameID(2)}.
-  if (fvarOff && fvarOff + 16 <= buf.length) {
-    const axesOff = fvarOff + view.getUint16(fvarOff + 4);
-    const axisCount = view.getUint16(fvarOff + 8);
-    const axisSize = view.getUint16(fvarOff + 10);
-    const axes = [];
-    let wght = null;
-    for (let i = 0; i < axisCount; i++) {
-      const a = axesOff + i * axisSize;
-      if (a + 20 > buf.length) break;
-      const tag = ascii(buf, a, 4);
-      const min = view.getInt32(a + 4) / 65536;
-      const def = view.getInt32(a + 8) / 65536;
-      const max = view.getInt32(a + 12) / 65536;
-      axes.push(tag);
-      if (tag === 'wght') wght = { min, def, max };
-    }
-    names['Variable font'] = 'Yes - ' + axisCount + ' axis' + (axisCount === 1 ? '' : 'es') + ' (' + axes.join(', ') + ')';
-    names._font = { variable: true, wght: wght || { min: 100, def: 400, max: 900 } };
+  return names;
+}
+
+// Read the `fvar` table at `fvarOff` into a list of variation axes. Each record:
+// {tag(4) min(16.16) default(16.16) max(16.16) flags(2) nameID(2)}.
+function readFvarTable(buf, fvarOff) {
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const axes = [];
+  if (fvarOff + 16 > buf.length) return axes;
+  const axesOff = fvarOff + view.getUint16(fvarOff + 4);
+  const axisCount = view.getUint16(fvarOff + 8);
+  const axisSize = view.getUint16(fvarOff + 10);
+  for (let i = 0; i < axisCount; i++) {
+    const a = axesOff + i * axisSize;
+    if (a + 20 > buf.length) break;
+    const tag = ascii(buf, a, 4);
+    const min = view.getInt32(a + 4) / 65536;
+    const def = view.getInt32(a + 8) / 65536;
+    const max = view.getInt32(a + 12) / 65536;
+    if (max > min) axes.push({ tag, name: AXIS_NAMES[tag] || tag, min, def, max });
+  }
+  return axes;
+}
+
+// Map sfnt table tags -> absolute file offset, scanning the table directory at
+// `base` (0 for a plain font, or a member offset inside a TTC).
+function sfntTableOffsets(buf, base) {
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const offs = {};
+  if (base + 6 > buf.length) return offs;
+  const numTables = view.getUint16(base + 4);
+  for (let i = 0; i < numTables && base + 12 + i * 16 + 16 <= buf.length; i++) {
+    offs[ascii(buf, base + 12 + i * 16, 4)] = view.getUint32(base + 12 + i * 16 + 8);
+  }
+  return offs;
+}
+
+// zlib-inflate (WOFF stores each table zlib-compressed).
+async function inflateZlib(bytes) {
+  if (typeof DecompressionStream === 'undefined') throw new Error('no DecompressionStream');
+  const ds = new DecompressionStream('deflate');
+  const ab = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer();
+  return new Uint8Array(ab);
+}
+
+// Pull (and decompress) the requested tables from a WOFF 1.0 file. Header is 44
+// bytes; each 20-byte dir entry is tag(4) offset(4) compLength(4) origLength(4)
+// origChecksum(4). A table is zlib-compressed when compLength < origLength.
+async function woffTables(buf, want) {
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const numTables = view.getUint16(12);
+  const out = {};
+  for (let i = 0; i < numTables; i++) {
+    const e = 44 + i * 20;
+    if (e + 20 > buf.length) break;
+    const tag = ascii(buf, e, 4);
+    if (!want.includes(tag)) continue;
+    const off = view.getUint32(e + 4), compLen = view.getUint32(e + 8), origLen = view.getUint32(e + 12);
+    if (off + compLen > buf.length) continue;
+    const comp = buf.subarray(off, off + compLen);
+    try { out[tag] = compLen < origLen ? await inflateZlib(comp) : comp.slice(); } catch (_) {}
+  }
+  return out;
+}
+
+// Read a font's name + variation-axis metadata. Handles sfnt (TTF/OTF), TrueType
+// collections (TTC - first member), and WOFF 1.0 (zlib tables). WOFF2 (brotli +
+// table transforms) isn't decoded here, so it falls through to the generic card.
+async function parseFont(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  if (buf.length < 12) return null;
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const magic = view.getUint32(0);
+  const tag4 = ascii(buf, 0, 4);
+  let names = null, axes = [];
+
+  if (magic === 0x00010000 || magic === 0x4F54544F || tag4 === 'true' || tag4 === 'typ1') {
+    const offs = sfntTableOffsets(buf, 0);
+    if (offs.name) names = readNameTable(buf, offs.name);
+    if (offs.fvar) axes = readFvarTable(buf, offs.fvar);
+  } else if (tag4 === 'ttcf') {
+    const base = view.getUint32(12);                 // first font's sfnt offset
+    const offs = sfntTableOffsets(buf, base);
+    if (offs.name) names = readNameTable(buf, offs.name);
+    if (offs.fvar) axes = readFvarTable(buf, offs.fvar);
+  } else if (tag4 === 'wOFF') {
+    const t = await woffTables(buf, ['name', 'fvar']);
+    if (t.name) names = readNameTable(t.name, 0);
+    if (t.fvar) axes = readFvarTable(t.fvar, 0);
+  } else {
+    return null;                                     // WOFF2 / unknown flavour
+  }
+
+  names = names || {};
+  if (axes.length) {
+    names['Variable'] = 'Yes - ' + axes.length + (axes.length === 1 ? ' axis' : ' axes') + ' (' + axes.map((a) => a.tag).join(', ') + ')';
+    names._font = { variable: true, axes };
+  } else {
+    names['Variable'] = 'No';
+    names._font = { variable: false };
   }
   return Object.keys(names).length ? names : null;
 }
@@ -3347,9 +3589,78 @@ async function renderFontPreview(file, card, fontInfo) {
     return; // browser couldn't load the font (e.g. unsupported flavour)
   }
 
-  const previewCard = el('div', { class: 'anr-card' });
+  const previewCard = el('div', { class: 'anr-card anr-font-preview' });
   previewCard.appendChild(el('h3', {}, 'Font preview'));
   const pangram = 'The quick brown fox jumps over the lazy dog';
+
+  // Variable axes (shown first): the animated sample plus a slider per axis. EVERY
+  // axis has its own play/pause button and animates independently (a triangle
+  // sweep min->max); dragging an axis's slider pauses just that axis. The primary
+  // axis (weight, else the first) auto-plays so the preview moves on load.
+  if (fontInfo && fontInfo.variable && Array.isArray(fontInfo.axes) && fontInfo.axes.length) {
+    const axes = fontInfo.axes;
+    const state = {};
+    const period = 3000;   // ms for a full min->max sweep
+
+    const varRow = el('div', { class: 'anr-font-var' });
+    varRow.appendChild(el('div', { class: 'anr-readout-section', style: 'border-top:none;margin-top:0;padding-top:0;' }, 'Variable axes'));
+    const sample = el('div', {
+      style: `font-family:'${family}';font-size:104px;line-height:1.12;margin:8px 0 18px;word-break:break-word;`
+    }, 'Ag');
+    varRow.appendChild(sample);
+
+    const apply = () => { sample.style.fontVariationSettings = axes.map((a) => `"${a.tag}" ${state[a.tag]}`).join(', '); };
+
+    // Build one self-contained, independently-animatable control per axis.
+    const makeAxis = (a) => {
+      state[a.tag] = a.def;
+      const fmt = (a.max - a.min) >= 10 ? (v) => String(Math.round(v)) : (v) => (Math.round(v * 100) / 100).toFixed(2);
+      const readout = el('span', { class: 'anr-range-readout' }, fmt(a.def));
+      const slider = el('input', { type: 'range', min: String(a.min), max: String(a.max), value: String(a.def), step: 'any', 'aria-label': a.name });
+      const playBtn = el('button', { type: 'button', class: 'anr-player-play' }, '▶');
+      let playing = false, loopId = 0;
+      const startLoop = () => {
+        const id = ++loopId;
+        let t0 = null;
+        const step = (ts) => {
+          if (id !== loopId || !playing || !sample.isConnected) return;
+          if (t0 === null) t0 = ts;
+          const phase = ((ts - t0) % (period * 2)) / period;   // triangle 0->1->0
+          const tri = phase <= 1 ? phase : 2 - phase;
+          const eased = tri < 0.5 ? 2 * tri * tri : 1 - Math.pow(-2 * tri + 2, 2) / 2;
+          const v = a.min + (a.max - a.min) * eased;
+          state[a.tag] = v; slider.value = String(v); readout.textContent = fmt(v); apply();
+          requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      };
+      const setPlaying = (p) => {
+        playing = p;
+        playBtn.textContent = p ? '❚❚' : '▶';
+        playBtn.setAttribute('aria-label', (p ? 'Pause ' : 'Play ') + a.name + ' animation');
+        if (p) startLoop();
+      };
+      playBtn.addEventListener('click', () => setPlaying(!playing));
+      slider.addEventListener('input', () => {
+        if (playing) setPlaying(false);              // a manual drag stops this axis
+        state[a.tag] = parseFloat(slider.value);
+        readout.textContent = fmt(state[a.tag]);
+        apply();
+      });
+      setPlaying(false);                             // initial glyph/label
+      varRow.appendChild(el('div', { class: 'anr-control anr-font-axis' }, [
+        el('span', { class: 'anr-font-axislabel' }, a.name + ' (' + a.tag + ')'), slider, readout, playBtn,
+      ]));
+      return { setPlaying };
+    };
+
+    const apis = axes.map(makeAxis);
+    apply();
+    // Auto-play the primary axis (weight if present, else the first).
+    const primaryIdx = Math.max(0, axes.findIndex((a) => a.tag === 'wght'));
+    apis[primaryIdx].setPlaying(true);
+    previewCard.appendChild(varRow);
+  }
 
   // Sizes
   const sizes = [48, 36, 28, 22, 18, 14];
@@ -3377,34 +3688,10 @@ async function renderFontPreview(file, card, fontInfo) {
   }
   previewCard.appendChild(wRow);
 
-  // Variable font: animate a big "A" pulsing weight from lightest to boldest,
-  // ease-in-out, looping. Driven by requestAnimationFrame so it works everywhere.
-  if (fontInfo && fontInfo.variable && fontInfo.wght) {
-    const { min, max } = fontInfo.wght;
-    const varRow = el('div', { style: 'margin-top:14px;border-top:1px solid var(--rule);padding-top:12px;text-align:center;' });
-    varRow.appendChild(el('div', { class: 'anr-readout-section', style: 'text-align:left;' },
-      'Variable axis - weight ' + Math.round(min) + ' to ' + Math.round(max)));
-    const bigA = el('div', {
-      style: `font-family:'${family}';font-size:140px;line-height:1.1;font-variation-settings:"wght" ${min};`
-    }, 'A');
-    varRow.appendChild(bigA);
-    previewCard.appendChild(varRow);
-    const period = 3000; // ms for a full lightest→boldest sweep
-    let t0 = null;
-    const tick = (ts) => {
-      if (!bigA.isConnected) return; // stop when removed (new file analysed)
-      if (t0 === null) t0 = ts;
-      // Triangle wave 0→1→0 with ease-in-out shaping.
-      const phase = ((ts - t0) % (period * 2)) / period;
-      const tri = phase <= 1 ? phase : 2 - phase;
-      const eased = tri < 0.5 ? 2 * tri * tri : 1 - Math.pow(-2 * tri + 2, 2) / 2;
-      bigA.style.fontVariationSettings = '"wght" ' + Math.round(min + (max - min) * eased);
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }
-
-  card.appendChild(previewCard);
+  // Place the preview above the metadata table (the readout) rather than after it.
+  const tbl = card.querySelector('table.anr-readout');
+  if (tbl) card.insertBefore(previewCard, tbl);
+  else card.appendChild(previewCard);
 }
 
 // ---------- Valve KeyValues (.vdf / .acf) ----------
@@ -3519,6 +3806,10 @@ const PARSERS = {
   dll:   c => parseExe(c),
   ttf:   c => parseFont(c.file),
   otf:   c => parseFont(c.file),
+  ttc:   c => parseFont(c.file),
+  woff:  c => parseFont(c.file),
+  woff2: c => parseFont(c.file),
+  glif:  c => parseGlif(c.file),
   flp:   c => parseFlp(c.file),
   rar:   c => parseRar(c.head),
   '7z':  c => parse7z(c.head),

@@ -27,7 +27,8 @@
       "PowerShell(rtk grep *)",
       "Bash(exiftool -a -G1 -s -ThumbnailImage -PreviewImage -JpgFromRaw -OtherImage -PreviewTIFF 'F:/phone bacc/kamera slike/10160525/DSG08753.ARW')",
       "Bash(cmd /d /c save.bat save)",
-      "PowerShell(git push *)"
+      "PowerShell(git push *)",
+      "PowerShell(git show --stat 308fa6a | Select-Object -First 30; Write-Output \"==== 5e149e5 ====\"; git show --stat 5e149e5 | Select-Object -First 15; Write-Output \"==== 117c54e ====\"; git show --stat 117c54e | Select-Object -First 15; Write-Output \"==== ffmpeg? ====\"; \\(Get-Command ffmpeg -ErrorAction SilentlyContinue\\).Source)"
     ]
   },
   "spinnerTipsEnabled": false

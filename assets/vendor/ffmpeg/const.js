@@ -1,3 +1,7 @@
+// Used by ffmpeg-util.js (downloadWithProgress) - it ships from @ffmpeg/util and
+// expects this export, which @ffmpeg/ffmpeg's const.js didn't provide. Missing it
+// broke the whole ffmpeg-util.js module load (see errors.js note).
+export const HeaderContentLength = "Content-Length";
 export const MIME_TYPE_JAVASCRIPT = "text/javascript";
 export const MIME_TYPE_WASM = "application/wasm";
 export const CORE_VERSION = "0.12.6";
