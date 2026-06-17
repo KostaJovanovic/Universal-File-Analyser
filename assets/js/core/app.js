@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 127;
+const COMMIT_COUNT = 129;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -727,6 +727,12 @@ async function setupStatsPage() {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
+  { range: '3.26 - 3.29', notes: [
+    'A wave of creative apps open: After Effects projects with a zoomable layer timeline, plus Photoshop, Illustrator, Paint.NET and fonts.',
+    'E-books (Kindle, DjVu), Access databases, AutoCAD drawings, glTF/GLB 3D, binary Excel and PowerShell/batch scripts now open too.',
+    'Most files now show which program and version created them - After Effects, audio and video encoders, SVG and EPUB.',
+    'A go.mod manifest is no longer mistaken for a music module, and the offline-download panel folds away once it is saved.',
+  ] },
   { range: '3.14 - 3.25', notes: [
     'Play video, sound, and animated GIFs and WebP backwards - and download the reversed result.',
     'Three more image formats open: icons (ICO), 3D stereo photos (MPO) and multi-page TIFFs, each showing every image inside.',
@@ -1960,6 +1966,21 @@ function boot() {
       './assets/js/parsers/parsers-image.js', './assets/js/parsers/parsers-threed.js', './assets/js/parsers/parsers-geodata.js',
       './assets/js/parsers/parsers-audio.js', './assets/js/parsers/parsers-video.js', './assets/js/parsers/parsers-docs.js',
       './assets/js/parsers/parsers-raw.js',
+      // Format viewers + helpers kept in step with the service-worker SHELL so the
+      // "Essentials" download really is the whole app (each is small JS; the heavy
+      // viewer libraries they may pull in live in the Everything/Complete tiers).
+      './assets/js/renderers/aftereffects.js', './assets/js/renderers/psd.js', './assets/js/renderers/paint.js',
+      './assets/js/renderers/illustrator.js', './assets/js/renderers/font.js', './assets/js/renderers/djvu.js',
+      './assets/js/renderers/mdb.js', './assets/js/renderers/mobi.js', './assets/js/renderers/dwg.js',
+      './assets/js/renderers/xlsb.js', './assets/js/renderers/model3d.js', './assets/js/renderers/odf.js',
+      './assets/js/renderers/legacy-office.js', './assets/js/renderers/textdoc.js', './assets/js/renderers/notebook.js',
+      './assets/js/renderers/email.js', './assets/js/renderers/dataview.js', './assets/js/renderers/diagram.js',
+      './assets/js/renderers/iwork.js', './assets/js/renderers/timeline.js', './assets/js/renderers/gitobject.js',
+      './assets/js/renderers/paged.js', './assets/js/renderers/proprietary-formats.js', './assets/js/renderers/tiff.js',
+      './assets/js/renderers/mpo.js', './assets/js/renderers/ico.js', './assets/js/renderers/embedded-images.js',
+      './assets/js/renderers/gif-encode.js', './assets/js/renderers/webp-frames.js', './assets/js/renderers/media-reverse.js',
+      './assets/js/lib/legacy-decompress.js', './assets/js/lib/lzma-loader.js', './assets/js/lib/nrbf.js', './assets/js/lib/occt-loader.js',
+      './assets/js/core/effects.js', './assets/js/core/popups.js', './assets/js/core/export-data.js',
       './assets/img/favicon.svg', './assets/img/icon.png', './assets/img/icon-192.png', './assets/img/icon-512.png',
       './assets/vendor/exifr.umd.js',
       './assets/fonts/geist-latin.woff2', './assets/fonts/geist-latin-ext.woff2',
