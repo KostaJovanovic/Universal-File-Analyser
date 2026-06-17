@@ -154,6 +154,7 @@ export const EXT_PAGES = {
   dotx: { name: 'Word template', blurb: 'DOTX is a Microsoft Word template - the same zipped XML package as DOCX, used as the starting point for new documents.' },
   dotm: { name: 'Word macro-enabled template', blurb: 'DOTM is a macro-enabled Microsoft Word template - a DOTX template that may also contain VBA macros.' },
   xlsm: { name: 'Excel macro-enabled workbook', blurb: 'XLSM is a macro-enabled Microsoft Excel workbook - the same zipped XML package as XLSX, but allowed to carry VBA macros.' },
+  xlsb: { name: 'Excel binary workbook', blurb: 'XLSB is the binary version of a Microsoft Excel workbook, storing cells in the compact BIFF12 record format instead of XLSX’s XML. It opens and recalculates faster and makes smaller files, so it is popular for very large spreadsheets.', fact: 'XLSB arrived with Excel 2007 alongside XLSX; the two hold the same data, but the binary XLSB opens noticeably faster on big workbooks.' },
   xltx: { name: 'Excel template', blurb: 'XLTX is a Microsoft Excel template - the same zipped XML package as XLSX, used as the starting point for new workbooks.' },
   xltm: { name: 'Excel macro-enabled template', blurb: 'XLTM is a macro-enabled Microsoft Excel template - an XLTX template that may also contain VBA macros.' },
   pptm: { name: 'PowerPoint macro-enabled presentation', blurb: 'PPTM is a macro-enabled Microsoft PowerPoint presentation - the same zipped XML package as PPTX, but allowed to carry VBA macros.' },
@@ -182,6 +183,11 @@ export const EXT_PAGES = {
   yaml: { name: 'YAML data', blurb: 'YAML is a human-readable data format often used for configuration files.', fact: 'YAML was first released in 2001 as a friendlier alternative to XML for configuration.' },
   xml:  { name: 'XML data', blurb: 'XML is a flexible markup language for structured data.', fact: 'XML became a W3C standard in 1998 and underpins countless file formats, including DOCX and SVG.' },
   md:   { name: 'Markdown', blurb: 'Markdown (MD) is a lightweight plain-text formatting syntax that renders to HTML.', fact: 'Markdown was created by John Gruber, with Aaron Swartz, in 2004.' },
+  ps1:  { name: 'PowerShell script', blurb: 'PS1 is a Microsoft PowerShell script - a plain-text file of PowerShell commands used to automate administration on Windows, macOS and Linux.', fact: 'PowerShell launched in 2006 and went cross-platform and open-source as PowerShell Core in 2016.' },
+  psm1: { name: 'PowerShell module', blurb: 'PSM1 is a PowerShell script module - a file that groups reusable functions and cmdlets so they can be imported with Import-Module.', fact: 'A PSM1 module is usually paired with a PSD1 manifest that declares its version, author and exported commands.' },
+  psd1: { name: 'PowerShell data file', blurb: 'PSD1 is a PowerShell data file, most often a module manifest - a hashtable of metadata such as ModuleVersion, Author and the functions a module exports.', fact: 'PSD1 files hold only data (a restricted PowerShell hashtable), so they are safe to read without executing code.' },
+  bat:  { name: 'Batch script', blurb: 'BAT is a Windows batch script - a plain-text file of MS-DOS / Command Prompt commands run in sequence to automate tasks on Windows.', fact: 'The .bat extension dates back to MS-DOS in 1981; .cmd was added with Windows NT and behaves almost identically.' },
+  cmd:  { name: 'Windows command script', blurb: 'CMD is a Windows command script - the same idea as a .bat file but interpreted by the newer Windows NT command processor (cmd.exe), with a few extra features.', fact: 'Windows NT introduced .cmd in 1993 to distinguish its scripts from legacy MS-DOS .bat files that ran under COMMAND.COM.' },
 
   // ---- 3D models ----
   stl:  { name: 'STL 3D model', blurb: 'STL is the most common 3D-printing mesh format, storing a model’s surface as triangles. Exported by most CAD tools and read by every slicer.', fact: 'STL was created by 3D Systems in 1987 for the first stereolithography 3D printers - hence the name.' },
@@ -336,6 +342,7 @@ export const EXT_PAGES = {
   azw3: { name: 'Kindle ebook (AZW3)', blurb: 'AZW3 (KF8) is the richer Kindle e-book format. Opened by Amazon Kindle.', fact: 'AZW3, also called KF8, arrived with the Kindle Fire in 2011 to allow richer formatting.' },
   fb2:  { name: 'FictionBook ebook', blurb: 'FB2 (FictionBook) is an XML-based e-book format. Opened by calibre and many readers.', fact: 'FictionBook is an open XML e-book format that became especially popular in Russia.' },
   djvu: { name: 'DjVu document', blurb: 'DjVu is a format for scanned documents and books, smaller than PDF for the same scan. Opened by DjView and others.', fact: 'DjVu, created at AT&T Labs in 1998, is read with DjView and other free viewers.' },
+  djv: { name: 'DjVu document', blurb: 'DjV is the short-extension form of a DjVu scanned-document file - the same format as .djvu, just named with the older three-letter extension.', fact: 'The .djv and .djvu extensions are interchangeable; .djv exists for systems that historically capped extensions at three characters.' },
 
   // ---- Subtitles (other) ----
   sub: { name: 'SUB subtitles', blurb: 'SUB files hold subtitles, either as text (MicroDVD, SubViewer) or as bitmap images ripped from a DVD.', fact: 'The text-based MicroDVD .sub format dates from the early 2000s.' },

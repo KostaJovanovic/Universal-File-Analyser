@@ -2302,6 +2302,19 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
         } else {
           await renderUndisplayableImage(file, ext, resultsEl);
         }
+      } else if (!inline && ext === 'jxl') {
+        // Browsers dropped JPEG XL support, but the bundled ImageMagick has the
+        // JXL coder - decode it to a viewable image, then run the normal photo
+        // analysis on it. On failure, fall back to the metadata-only banner.
+        resultsEl.innerHTML = '';
+        try {
+          convertedFile = await convertWithImageMagick(file, resultsEl, 'decoding JPEG XL');
+          imgInfo = await loadImageFromFile(convertedFile);
+        } catch (_) {
+          resultsEl.innerHTML = '';
+          await renderUndisplayableImage(file, ext, resultsEl);
+          return;
+        }
       } else {
         // Readable, but the browser has no decoder for this image format. Show a
         // clear browser-limitation banner (like the ProRes video path) plus any
