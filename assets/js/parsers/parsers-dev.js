@@ -1125,7 +1125,93 @@ async function parseOrc(file) {
 }
 
 // ---------- dispatch ----------
+// PowerShell scripts (.ps1), modules (.psm1) and data files (.psd1). Pulls the
+// comment-based help synopsis, #Requires directives, function/parameter counts,
+// CmdletBinding and the Authenticode signature marker; .psd1 manifests surface a
+// few well-known keys. The generic text path still shows the source below this.
+async function parsePowerShell(file, ext) {
+  const text = await file.text();
+  const out = {};
+  out['Format'] = ext === 'psm1' ? 'PowerShell module' : ext === 'psd1' ? 'PowerShell data file (manifest)' : 'PowerShell script';
+
+  // #Requires directives.
+  const requires = (text.match(/^\s*#Requires\b.*$/gim) || []).map((s) => s.replace(/^\s*#Requires\s+/i, '').trim());
+  const psVer = (text.match(/#Requires\s+-Version\s+([\d.]+)/i) || [])[1];
+  if (psVer) out['Min PowerShell'] = psVer;
+  if (/#Requires\s+-RunAsAdministrator/i.test(text)) out['Elevation'] = 'Requires administrator';
+  const reqModules = [...text.matchAll(/#Requires\s+-Modules\s+([^\r\n]+)/gi)].map((m) => m[1].trim());
+  if (reqModules.length) out['Required modules'] = reqModules.join('; ');
+
+  // Comment-based help synopsis (the first .SYNOPSIS block).
+  const synMatch = text.match(/\.SYNOPSIS\s*\r?\n([\s\S]*?)(?:\r?\n\s*\.[A-Z]|#>|$)/i);
+  if (synMatch) {
+    const syn = synMatch[1].split(/\r?\n/).map((l) => l.replace(/^\s*#?\s?/, '').trim()).filter(Boolean).join(' ').trim();
+    if (syn) out['Synopsis'] = syn.length > 200 ? syn.slice(0, 200) + '…' : syn;
+  }
+
+  // Functions, parameters, advanced-function marker.
+  const funcs = [...text.matchAll(/^\s*function\s+([A-Za-z_][\w-]*)/gim)].map((m) => m[1]);
+  if (funcs.length) out['Functions'] = String(funcs.length);
+  const paramAttrs = (text.match(/\[Parameter[^\]]*\]/gi) || []).length;
+  if (paramAttrs) out['Parameters'] = String(paramAttrs);
+  if (/\[CmdletBinding\s*\(/i.test(text)) out['Advanced function'] = 'Yes (CmdletBinding)';
+  if (/#\s*SIG\s*#\s*Begin signature block/i.test(text)) out['Digitally signed'] = 'Yes (Authenticode)';
+
+  // .psd1 manifest well-known keys.
+  if (ext === 'psd1') {
+    const key = (k) => (text.match(new RegExp(k + "\\s*=\\s*'([^']+)'", 'i')) || [])[1];
+    const mv = key('ModuleVersion'); if (mv) out['Module version'] = mv;
+    const au = key('Author'); if (au) out['Author'] = au;
+    const rm = key('RootModule') || key('ModuleToProcess'); if (rm) out['Root module'] = rm;
+    const gd = key('GUID'); if (gd) out['GUID'] = gd;
+  }
+
+  if (funcs.length) {
+    out._sections = [{ title: `Functions (${funcs.length})`, node: preBlock(funcs.join('\n')) }];
+  }
+  return out;
+}
+
+// Windows batch / command scripts (.bat / .cmd). Surfaces the leading comment,
+// echo state, label (subroutine / goto target) count, variables set, the
+// external tools it shells out to, and a few common constructs. The generic text
+// path still shows the source below this.
+async function parseBatch(file, ext) {
+  const text = await file.text();
+  const out = {};
+  out['Format'] = ext === 'cmd' ? 'Windows command script' : 'Windows batch script';
+
+  // First REM / :: comment line as a description.
+  for (const l of text.replace(/\r/g, '').split('\n')) {
+    const m = l.match(/^\s*(?:@?REM|::)\s+(\S.*)/i);
+    if (m) { const d = m[1].trim(); out['Description'] = d.length > 160 ? d.slice(0, 160) + '…' : d; break; }
+  }
+
+  out['Echo'] = /^\s*@?echo\s+off\b/im.test(text) ? 'Off' : 'On';
+  if (/^\s*setlocal\b/im.test(text)) out['Setlocal'] = 'Yes';
+
+  const labels = [...text.matchAll(/^\s*:([A-Za-z0-9_.-]+)/gm)].map((m) => m[1]).filter((l) => l.toLowerCase() !== 'eof');
+  if (labels.length) out['Labels'] = String(labels.length);
+  const sets = (text.match(/^\s*set\s+["/]?\w/gim) || []).length;
+  if (sets) out['Variables set'] = String(sets);
+  if (/%ERRORLEVEL%|\berrorlevel\b/i.test(text)) out['Checks errorlevel'] = 'Yes';
+
+  // External programs / interpreters it shells out to.
+  const tools = [];
+  for (const t of ['powershell', 'pwsh', 'cscript', 'wscript', 'python', 'node', 'npm', 'git', 'curl', 'robocopy', 'xcopy', 'reg', 'schtasks', 'wmic', 'msiexec', 'taskkill', 'tasklist', 'ssh', 'docker']) {
+    if (new RegExp('\\b' + t + '\\b', 'i').test(text)) tools.push(t);
+  }
+  if (tools.length) out['Invokes'] = tools.join(', ');
+
+  return out;
+}
+
 export const PARSERS = {
+  ps1: (c) => parsePowerShell(c.file, c.ext),
+  psm1: (c) => parsePowerShell(c.file, c.ext),
+  psd1: (c) => parsePowerShell(c.file, c.ext),
+  bat: (c) => parseBatch(c.file, c.ext),
+  cmd: (c) => parseBatch(c.file, c.ext),
   jwt: (c) => parseJwt(c.file),
   har: (c) => parseHar(c.file),
   ipynb: (c) => parseIpynb(c.file),

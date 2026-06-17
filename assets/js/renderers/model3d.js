@@ -6,7 +6,7 @@
      (lazy-loaded), with the ISO-10303 header metadata shown alongside.
    All three feed the shared WebGL viewer from stl.js. */
 
-import { el, row, fmtBytes, sha256Row, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard } from '../core/util.js';
 import {
   buildViewerCard, startViewer, makeResult,
   buildGeoFromIndexed, geoStatsCard, renderPartsViewer,
@@ -24,6 +24,7 @@ export async function renderModel3d(file, resultsEl) {
   if (ext === '3mf') return render3mf(file, resultsEl);
   if (ext === 'amf') return renderAmf(file, resultsEl);
   if (ext === 'obj' || ext === 'ply' || ext === 'off') return renderMeshFile(file, resultsEl, ext);
+  if (ext === 'gltf' || ext === 'glb') return renderGltf(file, resultsEl, ext);
   return renderStepIges(file, resultsEl, ext);   // step / stp / iges / igs / brep
 }
 
@@ -460,6 +461,202 @@ async function renderMeshFile(file, resultsEl, ext) {
   resultsEl.appendChild(viewCard);
   startViewer(viewer);
   resultsEl.appendChild(geoStatsCard(geo, file, ext.toUpperCase(), 'units'));
+}
+
+/* ============================== glTF / GLB ================================= */
+// Parse glTF 2.0 (.gltf JSON, possibly with embedded data: buffers) and GLB
+// (binary container) into one indexed triangle mesh for the shared WebGL viewer,
+// applying the node-graph transforms. External .bin / image references can't be
+// resolved (a lone drop has no sibling files), so only embedded or GLB buffer
+// data is read; a .gltf that points at an external .bin shows metadata only.
+
+const GLTF_COMP = { 5120: 'Int8', 5121: 'Uint8', 5122: 'Int16', 5123: 'Uint16', 5125: 'Uint32', 5126: 'Float32' };
+const GLTF_COMP_SIZE = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
+const GLTF_NUMC = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT2: 4, MAT3: 9, MAT4: 16 };
+
+function parseGlb(buf) {
+  const dv = new DataView(buf);
+  if (dv.getUint32(0, true) !== 0x46546c67) throw new Error('not a GLB (bad magic)');   // 'glTF'
+  const total = dv.getUint32(8, true);
+  let off = 12, json = null, bin = null;
+  while (off + 8 <= total) {
+    const len = dv.getUint32(off, true), type = dv.getUint32(off + 4, true); off += 8;
+    if (type === 0x4e4f534a) json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, off, len)));   // 'JSON'
+    else if (type === 0x004e4942) bin = new Uint8Array(buf, off, len);                                     // 'BIN\0'
+    off += len + ((4 - (len % 4)) % 4);   // chunks are 4-byte aligned
+  }
+  if (!json) throw new Error('GLB has no JSON chunk');
+  return { json, bin };
+}
+
+function dataUriToBytes(uri) {
+  const comma = uri.indexOf(',');
+  const meta = uri.slice(5, comma), data = uri.slice(comma + 1);
+  if (/;base64/i.test(meta)) {
+    const bin = atob(data), out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  return new TextEncoder().encode(decodeURIComponent(data));
+}
+
+function gltfBuffers(json, glbBin) {
+  return (json.buffers || []).map((b) => {
+    if (!b.uri) return glbBin || null;                 // GLB binary chunk
+    if (b.uri.startsWith('data:')) return dataUriToBytes(b.uri);
+    return null;                                        // external file - unresolved
+  });
+}
+
+// Read an accessor into a flat Float32Array (numeric component values). Handles
+// interleaved bufferViews via byteStride and the standard component types.
+function readAccessor(json, buffers, idx) {
+  const acc = json.accessors && json.accessors[idx];
+  if (!acc || acc.bufferView == null) return null;
+  const numC = GLTF_NUMC[acc.type] || 1;
+  const compSize = GLTF_COMP_SIZE[acc.componentType];
+  const getName = GLTF_COMP[acc.componentType];
+  if (!compSize || !getName) return null;
+  const bv = json.bufferViews[acc.bufferView];
+  const u8 = buffers[bv.buffer];
+  if (!u8) return null;
+  const start = u8.byteOffset + (bv.byteOffset || 0) + (acc.byteOffset || 0);
+  const stride = bv.byteStride || numC * compSize;
+  const dv = new DataView(u8.buffer);
+  const get = (o) => dv['get' + getName](o, true);
+  const out = new Float32Array(acc.count * numC);
+  for (let i = 0; i < acc.count; i++) {
+    const eo = start + i * stride;
+    for (let c = 0; c < numC; c++) out[i * numC + c] = get(eo + c * compSize);
+  }
+  return out;
+}
+
+// Node local transform -> column-major 4x4 (matrix wins, else TRS).
+function gltfNodeMatrix(node) {
+  if (node.matrix) return node.matrix.slice();
+  const t = node.translation || [0, 0, 0], q = node.rotation || [0, 0, 0, 1], s = node.scale || [1, 1, 1];
+  const [x, y, z, w] = q, x2 = x + x, y2 = y + y, z2 = z + z;
+  const xx = x * x2, xy = x * y2, xz = x * z2, yy = y * y2, yz = y * z2, zz = z * z2, wx = w * x2, wy = w * y2, wz = w * z2;
+  return [
+    (1 - (yy + zz)) * s[0], (xy + wz) * s[0], (xz - wy) * s[0], 0,
+    (xy - wz) * s[1], (1 - (xx + zz)) * s[1], (yz + wx) * s[1], 0,
+    (xz + wy) * s[2], (yz - wx) * s[2], (1 - (xx + yy)) * s[2], 0,
+    t[0], t[1], t[2], 1,
+  ];
+}
+function gltfMul(a, b) {   // column-major a*b
+  const o = new Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++)
+    o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+  return o;
+}
+
+function gltfToMesh(json, glbBin) {
+  const buffers = gltfBuffers(json, glbBin);
+  const meshes = json.meshes || [], nodes = json.nodes || [];
+  const verts = [], tris = [];
+  let unresolved = false, nonTri = false;
+  const addPrim = (prim, m) => {
+    if (!prim.attributes || prim.attributes.POSITION == null) return;
+    if (prim.mode != null && prim.mode !== 4) { nonTri = true; return; }   // triangles only
+    const pos = readAccessor(json, buffers, prim.attributes.POSITION);
+    if (!pos) { unresolved = true; return; }
+    const base = verts.length / 3;
+    if (m) {
+      for (let i = 0; i < pos.length; i += 3) {
+        const x = pos[i], y = pos[i + 1], z = pos[i + 2];
+        verts.push(m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]);
+      }
+    } else for (let i = 0; i < pos.length; i++) verts.push(pos[i]);
+    if (prim.indices != null) {
+      const ix = readAccessor(json, buffers, prim.indices);
+      if (ix) for (let i = 0; i < ix.length; i++) tris.push(base + ix[i]);
+    } else {
+      const n = pos.length / 3;
+      for (let i = 0; i < n; i++) tris.push(base + i);
+    }
+  };
+  const visit = (ni, parent) => {
+    const node = nodes[ni]; if (!node) return;
+    const m = gltfMul(parent, gltfNodeMatrix(node));
+    if (node.mesh != null && meshes[node.mesh]) for (const p of meshes[node.mesh].primitives || []) addPrim(p, m);
+    for (const ch of node.children || []) visit(ch, m);
+  };
+  const scene = json.scenes && json.scenes[json.scene || 0];
+  const roots = scene ? scene.nodes : nodes.map((_, i) => i);
+  const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  for (const r of roots || []) visit(r, I);
+  // Some exporters define meshes but never instance them via a scene node - fall
+  // back to drawing every mesh untransformed so geometry still appears.
+  if (!tris.length) for (const mesh of meshes) for (const p of mesh.primitives || []) addPrim(p, null);
+  return { verts: new Float32Array(verts), tris: new Uint32Array(tris), unresolved, nonTri };
+}
+
+function gltfInfoCard(json, file, ext, mesh) {
+  const a = json.asset || {};
+  const [h, help] = h3help(ext === 'glb' ? 'glTF (binary)' : 'glTF', 'glTF ("GL Transmission Format") is the runtime 3D scene format used by the web, AR and game engines. Analyser reads the embedded geometry and scene metadata.');
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(h); card.appendChild(help);
+  const tbl = el('table', { class: 'anr-readout' });
+  tbl.appendChild(row('Format', ext === 'glb' ? 'GLB (binary glTF)' : 'glTF (JSON)'));
+  tbl.appendChild(row('File', file.name));
+  tbl.appendChild(row('Size', fmtBytes(file.size)));
+  if (a.version) tbl.appendChild(row('glTF version', String(a.version)));
+  if (a.generator) tbl.appendChild(rowHelp('Authoring tool', String(a.generator), 'The exporter or program that wrote this file (the asset.generator string).'));
+  if (a.copyright) tbl.appendChild(row('Copyright', String(a.copyright)));
+  const cnt = (k) => Array.isArray(json[k]) ? json[k].length : 0;
+  tbl.appendChild(row('Meshes', String(cnt('meshes'))));
+  tbl.appendChild(row('Nodes', String(cnt('nodes'))));
+  if (cnt('materials')) tbl.appendChild(row('Materials', String(cnt('materials'))));
+  if (cnt('textures')) tbl.appendChild(row('Textures', String(cnt('textures'))));
+  if (cnt('animations')) tbl.appendChild(rowHelp('Animations', String(cnt('animations')), 'Keyframe animation clips. Analyser shows the static mesh, not the animation.'));
+  if (cnt('skins')) tbl.appendChild(row('Skins (rigged)', String(cnt('skins'))));
+  if (cnt('cameras')) tbl.appendChild(row('Cameras', String(cnt('cameras'))));
+  card.appendChild(tbl);
+  return card;
+}
+
+async function renderGltf(file, resultsEl, ext) {
+  resultsEl.hidden = false;
+  resultsEl.innerHTML = '';
+  resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));
+
+  let json, glbBin, mesh, geo;
+  try {
+    const buf = await file.arrayBuffer();
+    if (ext === 'glb') ({ json, bin: glbBin } = parseGlb(buf));
+    else json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf)));
+    mesh = gltfToMesh(json, glbBin);
+    geo = mesh.verts.length ? buildGeoFromIndexed(mesh.verts, mesh.tris, ext.toUpperCase()) : null;
+  } catch (e) {
+    resultsEl.innerHTML = '';
+    resultsEl.appendChild(errorCard('Could not read ' + ext.toUpperCase() + ': ' + (e && e.message)));
+    return;
+  }
+
+  resultsEl.innerHTML = '';
+  resultsEl.appendChild(gltfInfoCard(json, file, ext, mesh));
+
+  if (geo && geo.count) {
+    const bodies = geo.count <= BODY_SPLIT_CAP ? splitBodiesIndexed(mesh.verts, mesh.tris, geoSpan(geo) * 1e-6) : [];
+    if (bodies.length > 1) {
+      const parts = bodyParts(geo, bodies, (g) => buildGeoFromIndexed(mesh.verts, subTris(mesh.tris, g), ext.toUpperCase()));
+      renderPartsViewer(file, resultsEl, {
+        parts, format: ext.toUpperCase(), unitLabel: 'units', partsTitle: 'Objects',
+        partsHint: `This model contains ${bodies.length} separate objects. Pick one to view on its own, or see them all together.`,
+      });
+    } else {
+      const { viewCard, viewer } = buildViewerCard(geo, '3D model');
+      resultsEl.appendChild(viewCard);
+      startViewer(viewer);
+      resultsEl.appendChild(geoStatsCard(geo, file, ext.toUpperCase(), 'units'));
+    }
+  } else {
+    resultsEl.appendChild(el('div', { class: 'anr-info' }, mesh && mesh.unresolved
+      ? 'This glTF references external geometry (.bin) files that are not part of the drop, so the mesh itself cannot be shown. A self-contained .glb previews fully.'
+      : 'No triangle geometry was found to display in this file.'));
+  }
 }
 
 /* =============================== STEP / IGES ================================ */

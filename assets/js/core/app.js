@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 126;
+const COMMIT_COUNT = 127;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -35,6 +35,7 @@ import { renderUnknown } from '../renderers/unknown.js';
 import { renderProprietary, isProprietaryExt, extractPeIcon } from '../renderers/proprietary.js';
 import { renderDocx } from '../renderers/docx.js';
 import { renderXlsx } from '../renderers/xlsx.js';
+import { renderXlsb } from '../renderers/xlsb.js';
 import { renderEpub } from '../renderers/epub.js';
 import { renderPptx } from '../renderers/pptx.js';
 import { renderOdt, renderOds, renderOdp, renderOdg } from '../renderers/odf.js';
@@ -45,6 +46,14 @@ import { renderEml, renderMbox } from '../renderers/email.js';
 import { renderHar, renderJsonData, renderNfo } from '../renderers/dataview.js';
 import { renderDrawio, renderDxf } from '../renderers/diagram.js';
 import { renderIwork } from '../renderers/iwork.js';
+import { renderPaint } from '../renderers/paint.js';
+import { renderPsd } from '../renderers/psd.js';
+import { renderFont } from '../renderers/font.js';
+import { renderDjvu } from '../renderers/djvu.js';
+import { renderMdb } from '../renderers/mdb.js';
+import { renderMobi } from '../renderers/mobi.js';
+import { renderDwg } from '../renderers/dwg.js';
+import { renderAi } from '../renderers/illustrator.js';
 import { renderStl } from '../renderers/stl.js';
 import { renderModel3d } from '../renderers/model3d.js';
 import { renderTimeline } from '../renderers/timeline.js';
@@ -347,6 +356,7 @@ function classifyFile(file) {
   // siblings share the same package, so they reuse the same renderers.
   if (ext === 'docx' || ext === 'docm' || ext === 'dotx' || ext === 'dotm') return 'docx';
   if (ext === 'xlsx' || ext === 'xlsm' || ext === 'xltx' || ext === 'xltm') return 'xlsx';
+  if (ext === 'xlsb') return 'xlsb';   // binary BIFF12 - needs the SheetJS path, not the OOXML reader
   if (ext === 'pptx' || ext === 'pptm' || ext === 'ppsx' || ext === 'ppsm' || ext === 'potx' || ext === 'potm') return 'pptx';
   if (ext === 'epub') return 'epub';
   // OpenDocument, its template siblings (.ott/.ots/.otp/.otg), the flat
@@ -366,6 +376,10 @@ function classifyFile(file) {
   if (ext === 'hwpx') return 'hwpx';
   if (ext === 'mht' || ext === 'mhtml') return 'mhtml';
   if (MARKUP_EXTS.has(ext)) return 'markup';
+  // `.mod` collides: it is both a tracker/Amiga music module (handled as audio
+  // by proprietary.js) and a Go module manifest, which is always named exactly
+  // "go.mod". Route the Go file to the text viewer so it is not opened as sound.
+  if (ext === 'mod' && file.name.toLowerCase() === 'go.mod') return 'markup';
   // Structured data / notebooks / email / diagrams - real viewers for what
   // were identification-only formats.
   if (ext === 'ipynb') return 'notebook';
@@ -376,12 +390,15 @@ function classifyFile(file) {
   if (ext === 'mbox') return 'mbox';
   if (ext === 'drawio') return 'drawio';
   if (ext === 'dxf') return 'dxf';
+  // AutoCAD DWG / template: parse + render to a 2D drawing via libredwg-web.
+  if (ext === 'dwg' || ext === 'dwt') return 'dwg';
   // Apple iWork packages: render the embedded QuickLook preview (PDF or image).
   if (ext === 'pages' || ext === 'numbers' || ext === 'key' || ext === 'keynote') return 'iwork';
   if (ext === 'stl') return 'stl';
   // 3D models with an interactive WebGL viewer. Native meshes: STL (above), OBJ,
   // PLY, OFF, 3MF, AMF. B-rep CAD via OpenCASCADE: STEP, IGES, BREP.
   if (ext === '3mf' || ext === 'amf' || ext === 'obj' || ext === 'ply' || ext === 'off') return 'model3d';
+  if (ext === 'gltf' || ext === 'glb') return 'model3d';
   if (ext === 'step' || ext === 'stp' || ext === 'iges' || ext === 'igs' || ext === 'brep') return 'model3d';
   // Editing timelines (interchange formats): visual track/clip timeline view.
   if (ext === 'edl' || ext === 'fcpxml' || ext === 'otio') return 'timeline';
@@ -389,12 +406,26 @@ function classifyFile(file) {
   // MIDI is a score, not decodable audio - route it before the AUDIO_EXTS check.
   if (ext === 'mid' || ext === 'midi') return 'midi';
   // Subtitles + geo files are otherwise identification-only (proprietary.js).
-  if (ext === 'srt' || ext === 'vtt' || ext === 'ass' || ext === 'ssa') return 'subtitles';
+  if (ext === 'srt' || ext === 'vtt' || ext === 'ass' || ext === 'ssa' || ext === 'sub') return 'subtitles';
   if (ext === 'gpx' || ext === 'kml' || ext === 'geojson') return 'geo';
   // Markdown gets a real rendered view - route it before the proprietary `md`
   // (plain-text) entry would otherwise catch it.
   if (ext === 'md' || ext === 'markdown') return 'markdown';
   if (ext === 'cbz' || ext === 'cbr' || ext === 'cbt' || ext === 'cb7') return 'comic';
+  // Raster painting documents: show the embedded merged-image / preview.
+  if (ext === 'kra' || ext === 'procreate' || ext === 'pdn') return 'paint';
+  // Photoshop: full composite render + layer tree via ag-psd.
+  if (ext === 'psd' || ext === 'psb') return 'psd';
+  // Illustrator: modern .ai is PDF-based, rendered with pdf.js.
+  if (ext === 'ai') return 'ai';
+  // Fonts: live FontFace specimen + opentype.js glyph grid.
+  if (ext === 'ttf' || ext === 'otf' || ext === 'woff' || ext === 'woff2' || ext === 'ttc' || ext === 'otc') return 'font';
+  // DjVu scanned documents: decode + render pages via DjVu.js.
+  if (ext === 'djvu' || ext === 'djv') return 'djvu';
+  // Microsoft Access databases: read tables + rows via mdb-reader.
+  if (ext === 'mdb' || ext === 'accdb') return 'mdb';
+  // Kindle / Mobipocket e-books: decode + read via foliate-js.
+  if (ext === 'mobi' || ext === 'azw' || ext === 'azw3') return 'mobi';
   if (PHOTO_EXTS.has(ext)) return 'photo';
   if (AUDIO_EXTS.has(ext)) return 'audio';
   if (VIDEO_EXTS.has(ext)) return 'video';
@@ -412,6 +443,7 @@ const ROUTES = {
   video:       { render: renderVideo,       results: 'video',   scroll: '#video',           nav: ['#video', '#audio', '#photo'], analysed: ['video', 'photo'] },
   docx:        { render: renderDocx,        results: 'unknown', scroll: '#unknownResults' },
   xlsx:        { render: renderXlsx,        results: 'unknown', scroll: '#unknownResults' },
+  xlsb:        { render: renderXlsb,        results: 'unknown', scroll: '#unknownResults' },
   epub:        { render: renderEpub,        results: 'unknown', scroll: '#unknownResults' },
   pptx:        { render: renderPptx,        results: 'unknown', scroll: '#unknownResults' },
   odt:         { render: renderOdt,         results: 'unknown', scroll: '#unknownResults' },
@@ -435,6 +467,7 @@ const ROUTES = {
   mbox:        { render: renderMbox,        results: 'unknown', scroll: '#unknownResults' },
   drawio:      { render: renderDrawio,      results: 'unknown', scroll: '#unknownResults' },
   dxf:         { render: renderDxf,         results: 'unknown', scroll: '#unknownResults' },
+  dwg:         { render: renderDwg,         results: 'unknown', scroll: '#unknownResults' },
   iwork:       { render: renderIwork,       results: 'unknown', scroll: '#unknownResults' },
   stl:         { render: renderStl,         results: 'unknown', scroll: '#unknownResults' },
   model3d:     { render: renderModel3d,     results: 'unknown', scroll: '#unknownResults' },
@@ -445,6 +478,13 @@ const ROUTES = {
   geo:         { render: renderGeo,         results: 'unknown', scroll: '#unknownResults' },
   markdown:    { render: renderMarkdown,    results: 'unknown', scroll: '#unknownResults' },
   comic:       { render: renderComic,       results: 'unknown', scroll: '#unknownResults' },
+  paint:       { render: renderPaint,       results: 'unknown', scroll: '#unknownResults' },
+  psd:         { render: renderPsd,         results: 'unknown', scroll: '#unknownResults' },
+  ai:          { render: renderAi,          results: 'unknown', scroll: '#unknownResults' },
+  font:        { render: renderFont,        results: 'unknown', scroll: '#unknownResults' },
+  djvu:        { render: renderDjvu,        results: 'unknown', scroll: '#unknownResults' },
+  mdb:         { render: renderMdb,         results: 'unknown', scroll: '#unknownResults' },
+  mobi:        { render: renderMobi,        results: 'unknown', scroll: '#unknownResults' },
   pdf:         { render: renderPdf,         results: 'unknown', scroll: '#unknownResults' },
   zip:         { render: renderArchive,     results: 'unknown', scroll: '#unknownResults' },
   svg:         { render: renderSvg,         results: 'unknown', scroll: '#unknownResults' },
@@ -1889,7 +1929,7 @@ function boot() {
   // and used by the post-clear reset) derive from it, and the "+N MB more" upgrade
   // deltas in refreshTierButtons() use the numbers directly. One place to edit.
   const TIER_ORDER = ['essentials', 'everything', 'complete'];
-  const TIER_MB = { essentials: 50, everything: 74, complete: 312 };
+  const TIER_MB = { essentials: 50, everything: 78, complete: 325 };
   const TIER_SIZES = {};
   TIER_ORDER.forEach((t) => { TIER_SIZES[t] = '~' + TIER_MB[t] + ' MB'; });
 
@@ -1972,6 +2012,15 @@ function boot() {
       './assets/vendor/openjpeg/openjpegwasm.js',
       './assets/vendor/openjpeg/openjpegwasm.wasm',
       './assets/vendor/xzwasm/xzwasm.min.js',
+      // Format-specific viewer libraries (lazy-loaded on demand when their file
+      // type is opened): Photoshop (ag-psd), Excel binary (SheetJS), fonts
+      // (opentype.js), DjVu, Kindle/MOBI (foliate-js) and Access (mdb-reader).
+      './assets/vendor/ag-psd/bundle.js',
+      './assets/vendor/sheetjs/xlsx.full.min.js',
+      './assets/vendor/opentype/opentype.min.js',
+      './assets/vendor/djvu/djvu.js',
+      './assets/vendor/foliate/mobi.js',
+      './assets/vendor/mdb/mdb.js',
       // OpenCASCADE (occt-import-js) for STEP/IGES/BREP CAD - CDN-hosted, like the
       // ffmpeg core; keep the version in sync with OCCT_VERSION in occt-loader.js.
       'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js',
@@ -1991,7 +2040,11 @@ function boot() {
         './assets/vendor/ghostscript/gs.mjs',
         './assets/vendor/ghostscript/browser.js',
         './assets/vendor/ghostscript/gs.js',
-        './assets/vendor/ghostscript/gs.wasm'
+        './assets/vendor/ghostscript/gs.wasm',
+        // LibreDWG (WebAssembly) for AutoCAD DWG/DWT drawings - ~6 MB, heaviest tier.
+        './assets/vendor/libredwg/dist/libredwg-web.js',
+        './assets/vendor/libredwg/wasm/libredwg-web.js',
+        './assets/vendor/libredwg/wasm/libredwg-web.wasm'
       ])
   };
 

@@ -26,6 +26,7 @@ const LABELS = {
   org: 'Org-mode document', textile: 'Textile markup', tex: 'TeX / LaTeX source',
   latex: 'LaTeX source', ltx: 'LaTeX source', sty: 'LaTeX style', cls: 'LaTeX class',
   bib: 'BibTeX bibliography',
+  mod: 'Go module file',
 };
 
 const MONO_KINDS = new Set(['dita', 'ditamap', 'tei', 'jats', 'nxml', 'rst', 'adoc', 'asciidoc', 'org', 'textile', 'tex', 'latex', 'ltx', 'sty', 'cls', 'bib']);

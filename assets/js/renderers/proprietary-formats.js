@@ -304,6 +304,13 @@ export const FORMATS = {
   md:      { app: 'Markdown', icon: 'MD', parse: 'text' },
   txt:     { app: 'Plain Text', icon: 'TXT', parse: 'text' },
 
+  // Shell / scripts
+  ps1:     { app: 'PowerShell Script', icon: 'PS1', parse: 'text', chunk: 'dev' },
+  psm1:    { app: 'PowerShell Module', icon: 'PSM', parse: 'text', chunk: 'dev' },
+  psd1:    { app: 'PowerShell Data File', icon: 'PSD', parse: 'text', chunk: 'dev' },
+  bat:     { app: 'Windows Batch Script', icon: 'BAT', parse: 'text', chunk: 'dev' },
+  cmd:     { app: 'Windows Command Script', icon: 'CMD', parse: 'text', chunk: 'dev' },
+
   // Developer / data / serialization (lazy parser chunk: parsers-dev.js)
   jwt:     { app: 'JSON Web Token', icon: 'JWT', chunk: 'dev' },
   har:     { app: 'HTTP Archive', icon: 'HAR', chunk: 'dev' },

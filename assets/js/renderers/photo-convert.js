@@ -181,7 +181,7 @@ let magickReady = null;
 
 // Full RAW -> JPEG decode via ImageMagick-WASM (~15 MB, loaded once). Renders an
 // ASCII progress bar into `container` while the wasm downloads/initialises.
-export async function convertWithImageMagick(file, container) {
+export async function convertWithImageMagick(file, container, label) {
   const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const labelEl = el('div', { class: 'anr-progress-label' }, 'loading imagemagick (~15 mb)');
   const wrap = el('div', { class: 'anr-progress' }, [barEl, labelEl]);
@@ -204,7 +204,7 @@ export async function convertWithImageMagick(file, container) {
     magickReady = mod;
   }
   setBar(1);
-  labelEl.textContent = 'converting raw';
+  labelEl.textContent = label || 'converting raw';
 
   const { ImageMagick, MagickFormat } = magickReady;
   const data = new Uint8Array(await file.arrayBuffer());
