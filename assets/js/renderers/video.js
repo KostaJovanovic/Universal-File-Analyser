@@ -680,6 +680,67 @@ async function ffmpegRemuxToMp4(file, signal, rawKind) {
   }
 }
 
+// Remux an MPEG-TS / AVCHD camcorder file (.mts / .m2ts / .ts) into an MP4 the
+// browser can play. The video (normally H.264) is stream-copied - fast and
+// lossless - while the audio is transcoded to AAC, because AVCHD audio is usually
+// AC-3 or LPCM, which an MP4 can't carry for in-browser playback. +genpts repairs
+// the timestamps some camcorder TS files omit; faststart moves the moov atom to
+// the front. Returns { blob, log } like ffmpegRemuxToMp4 (blob null on failure).
+async function ffmpegRemuxTsToMp4(file, signal) {
+  const ff = await loadFFmpeg();
+  if (signal && signal.aborted) return { blob: null, log: '' };
+  const outName = 'out.mp4';
+
+  let log = '';
+  const onLog = ({ message }) => { log += message + '\n'; };
+  ff.on('log', onLog);
+
+  const MOUNT = '/anrts';
+  let inName = null;
+  let cleanup = async () => {};
+  try {
+    // WORKERFS mount where available so a big camcorder file is read by seeking
+    // rather than copied whole into the WASM heap (mirrors ffmpegRemuxToMp4).
+    let mounted = false;
+    try { await ff.createDir(MOUNT); mounted = await ff.mount('WORKERFS', { files: [file] }, MOUNT); } catch (_) { mounted = false; }
+    if (mounted) {
+      inName = MOUNT + '/' + file.name;
+      cleanup = async () => { try { await ff.unmount(MOUNT); } catch (_) {} try { await ff.deleteDir(MOUNT); } catch (_) {} };
+    } else {
+      try { await ff.deleteDir(MOUNT); } catch (_) {}
+      const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
+      inName = 'in.ts';
+      await ff.writeFile(inName, await fetchFile(file));
+      cleanup = async () => { try { await ff.deleteFile(inName); } catch (_) {} };
+    }
+
+    // Copy the (H.264) video, transcode the audio to AAC.
+    try {
+      await ff.exec(['-fflags', '+genpts', '-i', inName, '-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', outName]);
+    } catch (_) { /* exec may resolve with a non-zero code instead of throwing */ }
+    let data = null;
+    try { data = await ff.readFile(outName); } catch (_) { data = null; }
+    if (!data || !data.length) {
+      // Video copy fails when the TS video isn't H.264 (e.g. MPEG-2 from an older
+      // camcorder) or carries SPS/PPS FFmpeg won't lift as-is. Re-encode the video
+      // too as a last resort - lossy, but it makes the clip play.
+      try { await ff.deleteFile(outName); } catch (_) {}
+      try {
+        await ff.exec(['-fflags', '+genpts', '-i', inName,
+          '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+          '-c:a', 'aac', '-movflags', '+faststart', outName]);
+      } catch (_) {}
+      try { data = await ff.readFile(outName); } catch (_) { data = null; }
+    }
+    try { await ff.deleteFile(outName); } catch (_) {}
+    if (!data || !data.length) return { blob: null, log };
+    return { blob: new Blob([data.buffer || data], { type: 'video/mp4' }), log };
+  } finally {
+    try { if (ff.off) ff.off('log', onLog); } catch (_) {}
+    await cleanup();
+  }
+}
+
 // ---------- segmented playback for very large raw H.264/H.265 streams ----------
 // A multi-GB elementary stream can't be remuxed in one piece (FFmpeg keeps the
 // whole input AND output MP4 in WASM memory). Instead we split it at keyframes
@@ -2571,6 +2632,54 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     await renderUnplayableVideoInfo(file, header, resultsEl, renderSignal);
     // Surface WHY the remux produced nothing instead of failing silently - the
     // FFmpeg log (or load error) makes a genuine failure diagnosable.
+    if (!renderSignal.aborted) {
+      const tail = remuxLog.split('\n').map((s) => s.trim()).filter(Boolean).slice(-14).join('\n');
+      const diag = el('details', { class: 'anr-card' });
+      diag.appendChild(el('summary', { style: 'cursor:pointer;' }, 'In-browser remux to MP4 didn’t produce a file - details'));
+      diag.appendChild(el('pre', { style: 'white-space:pre-wrap; word-break:break-word; font-size:12px; margin:8px 0 0; overflow:auto;' },
+        tail || 'FFmpeg produced no output and emitted no log (it may be offline or blocked).'));
+      resultsEl.appendChild(diag);
+    }
+    return;
+  }
+
+  // MPEG-TS / AVCHD camcorder files (.mts / .m2ts / .ts). The transport-stream
+  // container plays in no browser, but the video inside is normally H.264, so
+  // FFmpeg stream-copies the video and transcodes the audio (commonly AC-3 / PCM)
+  // to AAC - far quicker than the full re-encode the "Convert" button does - then
+  // we render the resulting MP4 through the normal playable path. Gated on the TS
+  // sync-byte (header.container), not the extension, so a TypeScript .ts is never
+  // mistaken for a transport stream.
+  if (!opts.remuxed && header.container === 'MPEG-TS') {
+    // The remux holds the input and the output MP4 in WASM memory together, so a
+    // very large file can't fit the 32-bit core. Above the cap, go straight to the
+    // unplayable card (with its "Convert" button and VLC tip).
+    const TS_REMUX_MAX = 1_400 * 1024 * 1024;
+    if (file.size > TS_REMUX_MAX) {
+      resultsEl.innerHTML = '';
+      await renderUnplayableVideoInfo(file, header, resultsEl, renderSignal);
+      return;
+    }
+    resultsEl.innerHTML = '';
+    resultsEl.appendChild(el('div', { class: 'anr-info' },
+      'AVCHD / MPEG-TS video - remuxing to MP4 with FFmpeg so it plays in the browser…'));
+    let mp4Blob = null, remuxLog = '';
+    try {
+      const r = await ffmpegRemuxTsToMp4(file, renderSignal);
+      mp4Blob = r && r.blob;
+      remuxLog = (r && r.log) || '';
+    } catch (e) {
+      remuxLog = (e && e.message) ? ('FFmpeg could not load: ' + e.message) : String(e);
+    }
+    if (renderSignal.aborted) return;
+    if (mp4Blob) {
+      const base = (file.name || 'video').replace(/\.[^/.]+$/, '');
+      const mp4File = new File([mp4Blob], base + '.mp4', { type: 'video/mp4' });
+      return renderVideo(mp4File, resultsEl, { remuxed: true, converted: true, sourceFile: file, sourceCodec: 'AVCHD / MPEG-TS' });
+    }
+    // Remux produced nothing - fall back to the unplayable card and surface why.
+    resultsEl.innerHTML = '';
+    await renderUnplayableVideoInfo(file, header, resultsEl, renderSignal);
     if (!renderSignal.aborted) {
       const tail = remuxLog.split('\n').map((s) => s.trim()).filter(Boolean).slice(-14).join('\n');
       const diag = el('details', { class: 'anr-card' });
