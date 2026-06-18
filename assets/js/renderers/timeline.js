@@ -261,6 +261,3 @@ export async function renderTimeline(file, resultsEl) {
   resultsEl.appendChild(infoCard(file, model));
   resultsEl.appendChild(buildTimelineCard(model));
 }
-
-// Exposed for unit testing in Node.
-export const _internals = { parseEdl, parseOtio, parseFcpxml, tcToSeconds, secToTc, rationalSeconds };
