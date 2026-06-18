@@ -1,7 +1,7 @@
 ﻿/* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v131';
+const VERSION = 'analyser-v132';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -127,6 +127,9 @@ const SHELL = [
   './assets/js/renderers/aftereffects.js',
   './assets/js/renderers/premiere.js',
   './assets/js/renderers/davinci.js',
+  './assets/js/renderers/vegas.js',
+  './assets/js/renderers/unity.js',
+  './assets/js/renderers/vssolution.js',
   './assets/js/renderers/stl.js',
   './assets/js/renderers/model3d.js',
   './assets/js/renderers/timeline.js',

@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 131;
+const COMMIT_COUNT = 132;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -56,6 +56,9 @@ import { renderDwg } from '../renderers/dwg.js';
 import { renderAep } from '../renderers/aftereffects.js';
 import { renderPremiere } from '../renderers/premiere.js';
 import { renderDavinci } from '../renderers/davinci.js';
+import { renderVegas } from '../renderers/vegas.js';
+import { renderUnity } from '../renderers/unity.js';
+import { renderVsSolution } from '../renderers/vssolution.js';
 import { renderGcsv } from '../renderers/gcsv.js';
 import { renderAi } from '../renderers/illustrator.js';
 import { renderStl } from '../renderers/stl.js';
@@ -347,6 +350,16 @@ const MARKUP_EXTS = new Set([
   'org', 'textile', 'tex', 'latex', 'ltx', 'sty', 'cls', 'bib',
 ]);
 
+// Unity serialises its assets as a YAML object stream; these extensions all route
+// to the Unity viewer (which falls back to identification if the bytes aren't
+// actually Unity YAML - protecting collisions like MATLAB .mat).
+const UNITY_EXTS = new Set([
+  'unity', 'prefab', 'asset', 'controller', 'overridecontroller', 'anim', 'mat',
+  'physicsmaterial2d', 'physicmaterial', 'spriteatlas', 'cubemap', 'rendertexture',
+  'mixer', 'guiskin', 'fontsettings', 'flare', 'brush', 'terrainlayer', 'signal',
+  'preset', 'mask', 'playable', 'lighting', 'giparams', 'meta',
+]);
+
 function classifyFile(file) {
   const t = (file.type || '').toLowerCase();
   const ext = fileExt(file.name);
@@ -404,6 +417,16 @@ function classifyFile(file) {
   // DaVinci Resolve project / timeline: unzip the SeqContainer XML and rebuild
   // each timeline's track / clip layout.
   if (ext === 'drp' || ext === 'drt') return 'davinci';
+  // Sony / MAGIX VEGAS Pro project: read the RIFF-GUID container's embedded
+  // metadata, plugin ids and title text.
+  if (ext === 'veg' || ext === 'vf') return 'vegas';
+  // Unity assets - the engine's YAML object stream (scenes, prefabs, animator
+  // controllers, animations, materials, .meta importer records, …).
+  if (UNITY_EXTS.has(ext)) return 'unity';
+  // Visual Studio solution manifest (projects + build configs).
+  if (ext === 'sln') return 'vssolution';
+  // MonoDevelop / Unity user prefs are XML - show them in the markup viewer.
+  if (ext === 'userprefs') return 'markup';
   // Gyroflow IMU log: plot the gyroscope / accelerometer traces.
   if (ext === 'gcsv') return 'gcsv';
   // Apple iWork packages: render the embedded QuickLook preview (PDF or image).
@@ -485,6 +508,9 @@ const ROUTES = {
   aep:         { render: renderAep,         results: 'unknown', scroll: '#unknownResults' },
   premiere:    { render: renderPremiere,    results: 'unknown', scroll: '#unknownResults' },
   davinci:     { render: renderDavinci,     results: 'unknown', scroll: '#unknownResults' },
+  vegas:       { render: renderVegas,       results: 'unknown', scroll: '#unknownResults' },
+  unity:       { render: renderUnity,       results: 'unknown', scroll: '#unknownResults' },
+  vssolution:  { render: renderVsSolution,  results: 'unknown', scroll: '#unknownResults' },
   gcsv:        { render: renderGcsv,         results: 'unknown', scroll: '#unknownResults' },
   iwork:       { render: renderIwork,       results: 'unknown', scroll: '#unknownResults' },
   stl:         { render: renderStl,         results: 'unknown', scroll: '#unknownResults' },

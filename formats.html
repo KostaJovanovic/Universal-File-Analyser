@@ -89,7 +89,7 @@
       <div class="section-content">
         <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <span>Formats</span></p>
         <h2 class="section-head">Every file type Analyser can open.</h2>
-        <p class="section-lede">Analyser reads and identifies <!--FMTCOUNT-->1048<!--/FMTCOUNT--> file formats, grouped by category below. Each is read straight from its bytes in your browser - drop a file on the <a href="/">home page</a> to analyse it; nothing is uploaded. A <strong>Full</strong> badge means the format opens in a dedicated viewer with deep metadata; an <strong>ID</strong> badge means it is identified and its header metadata is read.</p>
+        <p class="section-lede">Analyser reads and identifies <!--FMTCOUNT-->1061<!--/FMTCOUNT--> file formats, grouped by category below. Each is read straight from its bytes in your browser - drop a file on the <a href="/">home page</a> to analyse it; nothing is uploaded. A <strong>Full</strong> badge means the format opens in a dedicated viewer with deep metadata; an <strong>ID</strong> badge means it is identified and its header metadata is read.</p>
 
         <div class="fmt-page-search">
           <input type="search" id="fmtPageSearch" class="fmt-overlay-search fmt-page-search-input" placeholder="Search formats by name, extension or software - e.g. solidworks, .heic, raw" autocomplete="off" spellcheck="false" aria-label="Search file formats">
@@ -289,6 +289,17 @@
           <div class="fmt-item-desc">Open Blackmagic DaVinci Resolve project (.drp) and timeline (.drt) exports in the browser. A .drp is a ZIP of database XML; Analyser unzips it and walks the SeqContainer track and clip objects to rebuild every timeline - each clip drawn as a bar positioned by its Start and Duration across stacked video and audio tracks, just like the Resolve edit page - showing source filenames, paths, frame rates and timecode, plus the project name, Resolve version, the media pool bins and the source media the timelines reference. Titles, generators and transitions are colour-coded.</div>
           <p class="fmt-item-guides">Per-format guides: <a href="/formats/drp">.DRP</a> &middot; <a href="/formats/drt">.DRT</a></p>
         </details>
+        <details class="fmt-item" id="fmt-vegas-pro" data-tags="sony vegas pro magix vegas movie studio veg vf video editing nle non-linear editor sonic foundry riff guid project media generator titles and text solid color cookie cutter svfx plugin effect rtf title text author copyright" data-cat="video">
+          <summary class="fmt-item-summary">
+            <div class="fmt-item-head">
+              <span class="fmt-item-label">VEGAS Pro</span>
+              <span class="fmt-item-exts"><span class="fmt-item-ext" id="ext-veg">VEG</span> <span class="fmt-item-ext" id="ext-vf">VF</span></span>
+            </div>
+            <span class="fmt-item-badge is-full" title="Opens in a viewer with deep metadata">Full</span>
+          </summary>
+          <div class="fmt-item-desc">Open Sony / MAGIX VEGAS Pro (.veg) and VEGAS Movie Studio (.vf) projects in the browser. A .veg is a Sonic Foundry "RIFF GUID" container; Analyser reads the VEGAS version, the project summary (author, copyright, contact), every media generator and video FX used by its plugin id and friendly name (Titles &amp; Text, Solid Color, Cookie Cutter and more), the actual title and text content decoded from the embedded RTF, and the source media and template file paths the project references.</div>
+          <p class="fmt-item-guides">Per-format guides: <a href="/formats/veg">.VEG</a> &middot; <a href="/formats/vf">.VF</a></p>
+        </details>
         <details class="fmt-item" id="fmt-subtitles" data-tags="subtitle caption closed captions srt webvtt substation alpha timed text cues microdvd subviewer frame based vobsub" data-cat="video">
           <summary class="fmt-item-summary">
             <div class="fmt-item-head">
@@ -300,16 +311,16 @@
           <div class="fmt-item-desc">Parse subtitle cues and timing from SubRip (SRT), WebVTT, ASS/SSA, MicroDVD and SubViewer (.sub): cue count, on-screen time, and a full timed cue list. MicroDVD frame timings are converted to time using the declared or assumed frame rate; binary VobSub .sub image subtitles are identified.</div>
           <p class="fmt-item-guides">Per-format guides: <a href="/formats/srt">.SRT</a> &middot; <a href="/formats/vtt">.VTT</a> &middot; <a href="/formats/ass">.ASS</a> &middot; <a href="/formats/ssa">.SSA</a> &middot; <a href="/formats/sub">.SUB</a></p>
         </details>
-        <details class="fmt-item" id="fmt-video-editing" data-tags="adobe after effects motion graphics sony vegas magix wondershare filmora capcut bytedance video editing timeline sequence compositing vfx ndi draft_content.json" data-cat="video">
+        <details class="fmt-item" id="fmt-video-editing" data-tags="adobe after effects motion graphics wondershare filmora capcut bytedance video editing timeline sequence compositing vfx ndi draft_content.json" data-cat="video">
           <summary class="fmt-item-summary">
             <div class="fmt-item-head">
               <span class="fmt-item-label">Video editing</span>
-              <span class="fmt-item-exts"><span class="fmt-item-ext" id="ext-aepx">AEPX</span> <span class="fmt-item-ext" id="ext-veg">VEG</span> <span class="fmt-item-ext" id="ext-vf">VF</span> <span class="fmt-item-ext" id="ext-wfp">WFP</span> <span class="fmt-item-ext" id="ext-wsp">WSP</span></span>
+              <span class="fmt-item-exts"><span class="fmt-item-ext" id="ext-aepx">AEPX</span> <span class="fmt-item-ext" id="ext-wfp">WFP</span> <span class="fmt-item-ext" id="ext-wsp">WSP</span></span>
             </div>
             <span class="fmt-item-badge is-id" title="Identified + header metadata">ID</span>
           </summary>
-          <div class="fmt-item-desc">Identify and read video-editing project files: the After Effects XML project (AEPX); Sony / MAGIX VEGAS Pro (VEG, VF); Wondershare Filmora (WFP, WSP); and CapCut drafts (draft_content.json) - canvas resolution, duration, tracks and material counts. After Effects (AEP, AET), Premiere Pro (PRPROJ, PREL) and DaVinci Resolve (DRP, DRT) projects now open in full timeline viewers - see those entries.</div>
-          <p class="fmt-item-guides">Per-format guides: <a href="/formats/id/aepx">.AEPX</a> &middot; <a href="/formats/id/veg">.VEG</a> &middot; <a href="/formats/id/vf">.VF</a> &middot; <a href="/formats/id/wfp">.WFP</a> &middot; <a href="/formats/id/wsp">.WSP</a></p>
+          <div class="fmt-item-desc">Identify and read video-editing project files: the After Effects XML project (AEPX); Wondershare Filmora (WFP, WSP); and CapCut drafts (draft_content.json) - canvas resolution, duration, tracks and material counts. After Effects (AEP, AET), Premiere Pro (PRPROJ, PREL), DaVinci Resolve (DRP, DRT) and VEGAS Pro (VEG, VF) projects now open in full viewers - see those entries.</div>
+          <p class="fmt-item-guides">Per-format guides: <a href="/formats/id/aepx">.AEPX</a> &middot; <a href="/formats/id/wfp">.WFP</a> &middot; <a href="/formats/id/wsp">.WSP</a></p>
         </details>
         <details class="fmt-item" id="fmt-video-streaming-more" data-tags="hls m3u8 apple playlist mpeg-dash mpd manifest adaptive bitrate smooth streaming ism microsoft adobe hds f4m asx wpl xspf pls winamp playlist mxf material exchange smpte avid sony xdcam gxf lxf dv dvcam ntsc pal asf advanced systems wmv realmedia rm rmvb realvideo divx f4v flash insta360 insv insp 360 lrv gopro dji proxy gifv imgur ivf vp8 vp9 av1 y4m yuv4mpeg raw h264 avc h265 hevc x264 x265 obu aom mpeg-2 program transport stream pat pmt wtv windows media center dvr-ms ogm ogg nut ffmpeg dpx cineon cin dahua dav cctv pvr dvb" data-cat="video">
           <summary class="fmt-item-summary">
@@ -486,8 +497,19 @@
         </details>
       </div>
 
-      <p class="fmt-section-label" data-cat-head="data">Data &amp; code<span class="fmt-section-note">69 formats</span></p>
+      <p class="fmt-section-label" data-cat-head="data">Data &amp; code<span class="fmt-section-note">70 formats</span></p>
       <div class="fmt-list" data-cat-list="data">
+        <details class="fmt-item" id="fmt-visual-studio-solution" data-tags="visual studio solution sln msbuild project csproj dotnet c# vb monodevelop rider unity assembly-csharp build configuration platform debug release userprefs ide" data-cat="data">
+          <summary class="fmt-item-summary">
+            <div class="fmt-item-head">
+              <span class="fmt-item-label">Visual Studio solution</span>
+              <span class="fmt-item-exts"><span class="fmt-item-ext" id="ext-sln">SLN</span> <span class="fmt-item-ext" id="ext-userprefs">USERPREFS</span></span>
+            </div>
+            <span class="fmt-item-badge is-full" title="Opens in a viewer with deep metadata">Full</span>
+          </summary>
+          <div class="fmt-item-desc">Open Visual Studio solution files (.sln) in the browser: the solution format version and Visual Studio release, every project it groups (name, path, language and GUID) and the build configurations (Debug/Release platforms). MonoDevelop / Unity .userprefs files - the IDE's open documents and editor state - are shown as readable XML.</div>
+          <p class="fmt-item-guides">Per-format guides: <a href="/formats/sln">.SLN</a> &middot; <a href="/formats/userprefs">.USERPREFS</a></p>
+        </details>
         <details class="fmt-item" id="fmt-notebooks-data" data-tags="jupyter notebook ipynb colab python r julia cells code markdown output http archive har devtools network waterfall requests json5 jsonc json with comments hjson relaxed json config structured data viewer tree" data-cat="data">
           <summary class="fmt-item-summary">
             <div class="fmt-item-head">
@@ -585,7 +607,7 @@
             <span class="fmt-item-badge is-id" title="Identified + header metadata">ID</span>
           </summary>
           <div class="fmt-item-desc">Identify and read metadata from developer and data files: JWT tokens (header + claims + expiry), WebAssembly, Java class files, NumPy/Safetensors/GGUF model files, source maps, SQL dumps, Visual Studio/.NET projects, Terraform, Protobuf, GraphQL, SARIF, Python bytecode, and Apple property lists (XML + binary). Jupyter notebooks (IPYNB) and HAR captures now open in a full viewer - see Notebooks &amp; data above.</div>
-          <p class="fmt-item-guides">Per-format guides: <a href="/formats/id/jwt">.JWT</a> &middot; <a href="/formats/id/jsonl">.JSONL</a> &middot; <a href="/formats/id/ndjson">.NDJSON</a> &middot; <a href="/formats/id/diff">.DIFF</a> &middot; <a href="/formats/id/patch">.PATCH</a> &middot; <a href="/formats/id/wasm">.WASM</a> &middot; <a href="/formats/id/class">.CLASS</a> &middot; <a href="/formats/id/npy">.NPY</a> &middot; <a href="/formats/id/safetensors">.Safetensors</a> &middot; <a href="/formats/id/gguf">.GGUF</a> &middot; <a href="/formats/id/map">.MAP</a> &middot; <a href="/formats/id/sql">.SQL</a> &middot; <a href="/formats/id/sln">.SLN</a> &middot; <a href="/formats/id/csproj">.CSPROJ</a> &middot; <a href="/formats/id/vbproj">.VBPROJ</a> &middot; <a href="/formats/id/fsproj">.FSPROJ</a> &middot; <a href="/formats/id/vcxproj">.VCXPROJ</a> &middot; <a href="/formats/id/gradle">.Gradle</a> &middot; <a href="/formats/id/tf">.TF</a> &middot; <a href="/formats/id/tfstate">.TFState</a> &middot; <a href="/formats/id/editorconfig">.EditorConfig</a> &middot; <a href="/formats/id/proto">.PROTO</a> &middot; <a href="/formats/id/graphql">.GraphQL</a> &middot; <a href="/formats/id/gql">.GQL</a> &middot; <a href="/formats/id/sarif">.SARIF</a> &middot; <a href="/formats/id/pyc">.PYC</a> &middot; <a href="/formats/id/plist">.PLIST</a></p>
+          <p class="fmt-item-guides">Per-format guides: <a href="/formats/id/jwt">.JWT</a> &middot; <a href="/formats/id/jsonl">.JSONL</a> &middot; <a href="/formats/id/ndjson">.NDJSON</a> &middot; <a href="/formats/id/diff">.DIFF</a> &middot; <a href="/formats/id/patch">.PATCH</a> &middot; <a href="/formats/id/wasm">.WASM</a> &middot; <a href="/formats/id/class">.CLASS</a> &middot; <a href="/formats/id/npy">.NPY</a> &middot; <a href="/formats/id/safetensors">.Safetensors</a> &middot; <a href="/formats/id/gguf">.GGUF</a> &middot; <a href="/formats/id/map">.MAP</a> &middot; <a href="/formats/id/sql">.SQL</a> &middot; <a href="/formats/sln">.SLN</a> &middot; <a href="/formats/id/csproj">.CSPROJ</a> &middot; <a href="/formats/id/vbproj">.VBPROJ</a> &middot; <a href="/formats/id/fsproj">.FSPROJ</a> &middot; <a href="/formats/id/vcxproj">.VCXPROJ</a> &middot; <a href="/formats/id/gradle">.Gradle</a> &middot; <a href="/formats/id/tf">.TF</a> &middot; <a href="/formats/id/tfstate">.TFState</a> &middot; <a href="/formats/id/editorconfig">.EditorConfig</a> &middot; <a href="/formats/id/proto">.PROTO</a> &middot; <a href="/formats/id/graphql">.GraphQL</a> &middot; <a href="/formats/id/gql">.GQL</a> &middot; <a href="/formats/id/sarif">.SARIF</a> &middot; <a href="/formats/id/pyc">.PYC</a> &middot; <a href="/formats/id/plist">.PLIST</a></p>
         </details>
       </div>
 
@@ -755,8 +777,19 @@
         </details>
       </div>
 
-      <p class="fmt-section-label" data-cat-head="games">Games<span class="fmt-section-note">47 formats</span></p>
+      <p class="fmt-section-label" data-cat-head="games">Games<span class="fmt-section-note">60 formats</span></p>
       <div class="fmt-list" data-cat-list="games">
+        <details class="fmt-item" id="fmt-unity" data-tags="unity game engine yaml scene prefab gameobject component transform animator controller animation clip material physics2d physics material meta importer guid monobehaviour script asset serialization gamedev game development" data-cat="games">
+          <summary class="fmt-item-summary">
+            <div class="fmt-item-head">
+              <span class="fmt-item-label">Unity</span>
+              <span class="fmt-item-exts"><span class="fmt-item-ext" id="ext-unity">UNITY</span> <span class="fmt-item-ext" id="ext-prefab">PREFAB</span> <span class="fmt-item-ext" id="ext-asset">ASSET</span> <span class="fmt-item-ext" id="ext-controller">CONTROLLER</span> <span class="fmt-item-ext" id="ext-anim">ANIM</span> <span class="fmt-item-ext" id="ext-mat">MAT</span> <span class="fmt-item-ext" id="ext-meta">META</span> <span class="fmt-item-ext" id="ext-physicsmaterial2d">physicsMaterial2D</span> <span class="fmt-item-ext" id="ext-physicmaterial">physicMaterial</span> <span class="fmt-item-ext" id="ext-cubemap">CUBEMAP</span> <span class="fmt-item-ext" id="ext-spriteatlas">SPRITEATLAS</span> <span class="fmt-item-ext" id="ext-mixer">MIXER</span> <span class="fmt-item-ext" id="ext-overridecontroller">overrideController</span></span>
+            </div>
+            <span class="fmt-item-badge is-full" title="Opens in a viewer with deep metadata">Full</span>
+          </summary>
+          <div class="fmt-item-desc">Open Unity game-engine assets in the browser. Unity serialises scenes (.unity), prefabs, Animator Controllers (.controller), animation clips (.anim), materials (.mat), physics materials (.physicsMaterial2D) and other assets (.asset) as a YAML object stream, with a .meta importer record (carrying the asset GUID) beside every file. Analyser splits the object documents and reads each - a scene's GameObjects and component-type breakdown (Transform, SpriteRenderer, colliders, scripts), an animation's sample rate and curves, a controller's layers and states, a material's friction and bounciness, and a .meta's GUID and importer.</div>
+          <p class="fmt-item-guides">Per-format guides: <a href="/formats/unity">.UNITY</a> &middot; <a href="/formats/prefab">.PREFAB</a> &middot; <a href="/formats/asset">.ASSET</a> &middot; <a href="/formats/controller">.CONTROLLER</a> &middot; <a href="/formats/anim">.ANIM</a> &middot; <a href="/formats/mat">.MAT</a> &middot; <a href="/formats/meta">.META</a> &middot; <a href="/formats/physicsmaterial2d">.physicsMaterial2D</a> &middot; <a href="/formats/physicmaterial">.physicMaterial</a> &middot; <a href="/formats/cubemap">.CUBEMAP</a> &middot; <a href="/formats/spriteatlas">.SPRITEATLAS</a> &middot; <a href="/formats/mixer">.MIXER</a> &middot; <a href="/formats/overridecontroller">.overrideController</a></p>
+        </details>
         <details class="fmt-item" id="fmt-game-engines" data-tags="unity unreal godot game development asset" data-cat="games">
           <summary class="fmt-item-summary">
             <div class="fmt-item-head">
@@ -961,7 +994,7 @@
             <span class="fmt-item-badge is-id" title="Identified + header metadata">ID</span>
           </summary>
           <div class="fmt-item-desc">Identify and read developer and data-serialisation files: dependency lockfiles (npm/Yarn/pnpm/Cargo/Poetry/Bundler/Composer - locked-package count), binary serialisations (MessagePack, CBOR, BSON, raw Protobuf messages and descriptor sets), Python pickles with a security note, NumPy .npz and Java jar/war/ear archives, IDL schemas (FlatBuffers/Thrift/Cap n Proto/HCL), MATLAB MAT-files, Redis RDB dumps and columnar big-data containers (Apache Arrow/Feather, Parquet, ORC). The JSON supersets JSON5/JSONC/Hjson now open in a full viewer - see Notebooks &amp; data above.</div>
-          <p class="fmt-item-guides">Per-format guides: <a href="/formats/id/lock">.LOCK</a> &middot; <a href="/formats/id/pb">.PB</a> &middot; <a href="/formats/id/msgpack">.MsgPack</a> &middot; <a href="/formats/id/mpk">.MPK</a> &middot; <a href="/formats/id/bson">.BSON</a> &middot; <a href="/formats/id/cbor">.CBOR</a> &middot; <a href="/formats/id/pkl">.PKL</a> &middot; <a href="/formats/id/pickle">.Pickle</a> &middot; <a href="/formats/id/npz">.NPZ</a> &middot; <a href="/formats/id/jar">.JAR</a> &middot; <a href="/formats/id/war">.WAR</a> &middot; <a href="/formats/id/ear">.EAR</a> &middot; <a href="/formats/id/fbs">.FBS</a> &middot; <a href="/formats/id/thrift">.Thrift</a> &middot; <a href="/formats/id/capnproto">.CapnProto</a> &middot; <a href="/formats/id/hcl">.HCL</a> &middot; <a href="/formats/id/mat">.MAT</a> &middot; <a href="/formats/id/rdb">.RDB</a> &middot; <a href="/formats/id/arrow">.Arrow</a> &middot; <a href="/formats/id/feather">.Feather</a> &middot; <a href="/formats/id/parquet">.Parquet</a> &middot; <a href="/formats/id/orc">.ORC</a> &middot; <a href="/formats/id/desc">.DESC</a> &middot; <a href="/formats/id/dump">.DUMP</a></p>
+          <p class="fmt-item-guides">Per-format guides: <a href="/formats/id/lock">.LOCK</a> &middot; <a href="/formats/id/pb">.PB</a> &middot; <a href="/formats/id/msgpack">.MsgPack</a> &middot; <a href="/formats/id/mpk">.MPK</a> &middot; <a href="/formats/id/bson">.BSON</a> &middot; <a href="/formats/id/cbor">.CBOR</a> &middot; <a href="/formats/id/pkl">.PKL</a> &middot; <a href="/formats/id/pickle">.Pickle</a> &middot; <a href="/formats/id/npz">.NPZ</a> &middot; <a href="/formats/id/jar">.JAR</a> &middot; <a href="/formats/id/war">.WAR</a> &middot; <a href="/formats/id/ear">.EAR</a> &middot; <a href="/formats/id/fbs">.FBS</a> &middot; <a href="/formats/id/thrift">.Thrift</a> &middot; <a href="/formats/id/capnproto">.CapnProto</a> &middot; <a href="/formats/id/hcl">.HCL</a> &middot; <a href="/formats/mat">.MAT</a> &middot; <a href="/formats/id/rdb">.RDB</a> &middot; <a href="/formats/id/arrow">.Arrow</a> &middot; <a href="/formats/id/feather">.Feather</a> &middot; <a href="/formats/id/parquet">.Parquet</a> &middot; <a href="/formats/id/orc">.ORC</a> &middot; <a href="/formats/id/desc">.DESC</a> &middot; <a href="/formats/id/dump">.DUMP</a></p>
         </details>
         <details class="fmt-item" id="fmt-archives-more" data-tags="xar apple installer macos pkg mpkg windows update standalone wusa msu cab snap canonical squashfs flatpak flathub ostree stuffit sit sitx aladdin lzop lzo brotli google java web start jnlp tarball tlz tbz tz" data-cat="system">
           <summary class="fmt-item-summary">
