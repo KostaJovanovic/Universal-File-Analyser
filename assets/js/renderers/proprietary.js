@@ -8,6 +8,7 @@ import { findBytes, utf16, utf8, ascii } from '../core/binutil.js';
 import { openZip } from './zip.js';
 import { FORMATS } from './proprietary-formats.js';
 import { parseNrbf } from '../lib/nrbf.js';
+import { safe } from '../parsers/parser-util.js';
 
 // ---------- helpers ----------
 function extFromName(name) {
@@ -3891,7 +3892,7 @@ export async function renderProprietary(file, container, extOverride) {
   // Per-extension metadata parsers. Each receives { head, file, ext } and may be
   // sync or async; the result is awaited. Aliases (e.g. psd/psb) share an entry.
   const fn = PARSERS[ext];
-  if (fn) extra = await fn({ head, file, ext });
+  if (fn) extra = await safe(fn)({ head, file, ext });
 
   // Lazily-loaded parser chunks. New formats register a `chunk` in FORMATS and
   // ship their parser in parsers-<chunk>.js, so the boot bundle stays flat as the
