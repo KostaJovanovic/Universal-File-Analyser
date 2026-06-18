@@ -190,7 +190,7 @@ const MAGIC_BYTES = {
   avi:['52 49 46 46','the "RIFF" container tag'],
 };
 
-function assembleFacts(key, meta, d) {
+function assembleFacts(key, meta, d, e, isFull) {
   const items = []; // { html, plain }
   if (meta.fact) {
     items.push({
@@ -228,6 +228,39 @@ function assembleFacts(key, meta, d) {
     push(`Analyser spots a .${d} file by its signature bytes ${mg[0]}${tail}.`,
       `Analyser spots a .${esc(d)} file by its signature bytes <code>${esc(mg[0])}</code>${esc(tail)}.`);
   }
+
+  // Backfill so every page carries at least three facts. These are derived from
+  // the catalog row (family, sibling extensions, category, and whether Analyser
+  // gives it a full viewer) - true by construction, not padding about the format's
+  // internals. Specific ones (siblings, family) come before the generic on-device
+  // line, and anything overlapping an existing fact's gist is skipped.
+  if (e && items.length < 3) {
+    const row = (e.rows && e.rows[0]) || {};
+    const label = row.label || '';
+    const catLabel = row.catLabel || '';
+    const sibs = e.sibs ? [...e.sibs] : [];
+    const candidates = [];
+    if (sibs.length) {
+      const shown = sibs.slice(0, 3).map((s) => '.' + s);
+      const list = shown.join(', ') + (sibs.length > shown.length ? ' and more' : '');
+      const fam = label ? `Analyser's "${label}" group` : 'the same family';
+      candidates.push({
+        gist: 'related',
+        plain: `Analyser handles .${d} alongside related formats in ${label ? '"' + label + '"' : 'the same family'}, such as ${shown.join(', ')}${sibs.length > shown.length ? ' and more' : ''}.`,
+        html: `Analyser handles .${esc(d)} alongside related formats in ${label ? '&ldquo;' + esc(label) + '&rdquo;' : 'the same family'}, such as ${shown.map((s) => `<a href="${escAttr(hrefOf(s.slice(1).toLowerCase()))}">${esc(s)}</a>`).join(', ')}${sibs.length > shown.length ? ' and more' : ''}.`,
+      });
+    }
+    if (catLabel) candidates.push({ gist: 'category', plain: `In Analyser's format library, .${d} sits in the ${catLabel} category.` });
+    candidates.push(isFull
+      ? { gist: 'on-device', plain: `Analyser opens .${d} files right in your browser - they are parsed and rendered on your device, never uploaded to a server.` }
+      : { gist: 'on-device', plain: `Analyser recognises .${d} files from their contents and reads what metadata it can - entirely on your device, with nothing uploaded.` });
+    for (const c of candidates) {
+      if (items.length >= 3) break;
+      if (has(c.gist)) continue;
+      items.push({ plain: c.plain, html: c.html || esc(c.plain) });
+      lower.push(c.plain.toLowerCase());
+    }
+  }
   return items;
 }
 
@@ -238,7 +271,7 @@ function page(key, e, depth) {
     ? { name: '.' + d + ' file', blurb: `.${d} is a file format that Analyser can open and analyse in your browser.` }
     : { name: '.' + d + ' file (' + e.rows[0].label + ')', blurb: `.${d} files belong to the "${e.rows[0].label}" family of formats.` };
   const meta = EXT_PAGES[key] || fallback;
-  const facts = assembleFacts(key, meta, d);
+  const facts = assembleFacts(key, meta, d, e, isFull);
   const factBody = facts.length === 1
     ? facts[0].html
     : `<ul class="dyk-list">${facts.map((f) => `<li>${f.html}</li>`).join('')}</ul>`;
