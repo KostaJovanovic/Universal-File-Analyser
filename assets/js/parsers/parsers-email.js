@@ -760,12 +760,6 @@ const CMS_OID_LABEL = {
   'authenticated-enveloped-data': 'Authenticated enveloped data',
 };
 
-function hexOf(bytes, start, len) {
-  let s = '';
-  for (let i = start; i < start + len && i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, '0');
-  return s;
-}
-
 async function parseP7(file, ext) {
   const head = new Uint8Array(await file.slice(0, Math.min(file.size, 256 * 1024)).arrayBuffer());
   if (!head.length) return null;

@@ -108,6 +108,17 @@ export function ascii(buf, start = 0, len = buf.length - start) {
   return s;
 }
 
+// Lowercase hex. hexByte: a single byte; hexBytes: a (sub)range joined by `sep`
+// (default no separator, e.g. a continuous SHA-style hex string - pass ' ' for a
+// spaced hex dump). Replaces the ad-hoc `b.toString(16).padStart(2,'0')` idiom.
+export function hexByte(b) { return b.toString(16).padStart(2, '0'); }
+export function hexBytes(bytes, sep = '', start = 0, len = bytes.length - start) {
+  const end = Math.min(start + len, bytes.length);
+  const out = [];
+  for (let i = start; i < end; i++) out.push(bytes[i].toString(16).padStart(2, '0'));
+  return out.join(sep);
+}
+
 // Like ascii() but trims surrounding whitespace - for fixed-width ASCII fields
 // padded with spaces or NULs (the padding NULs are already dropped by ascii()).
 export function cleanAscii(buf, start = 0, len = buf.length - start) {
