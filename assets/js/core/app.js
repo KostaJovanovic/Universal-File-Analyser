@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 130;
+const COMMIT_COUNT = 131;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -54,6 +54,9 @@ import { renderMdb } from '../renderers/mdb.js';
 import { renderMobi } from '../renderers/mobi.js';
 import { renderDwg } from '../renderers/dwg.js';
 import { renderAep } from '../renderers/aftereffects.js';
+import { renderPremiere } from '../renderers/premiere.js';
+import { renderDavinci } from '../renderers/davinci.js';
+import { renderGcsv } from '../renderers/gcsv.js';
 import { renderAi } from '../renderers/illustrator.js';
 import { renderStl } from '../renderers/stl.js';
 import { renderModel3d } from '../renderers/model3d.js';
@@ -395,6 +398,14 @@ function classifyFile(file) {
   if (ext === 'dwg' || ext === 'dwt') return 'dwg';
   // Adobe After Effects project: walk the RIFX tree to rebuild the comp timelines.
   if (ext === 'aep' || ext === 'aet') return 'aep';
+  // Adobe Premiere Pro / Elements project: inflate the PremiereData XML and
+  // rebuild each sequence's track / clip timeline.
+  if (ext === 'prproj' || ext === 'prel') return 'premiere';
+  // DaVinci Resolve project / timeline: unzip the SeqContainer XML and rebuild
+  // each timeline's track / clip layout.
+  if (ext === 'drp' || ext === 'drt') return 'davinci';
+  // Gyroflow IMU log: plot the gyroscope / accelerometer traces.
+  if (ext === 'gcsv') return 'gcsv';
   // Apple iWork packages: render the embedded QuickLook preview (PDF or image).
   if (ext === 'pages' || ext === 'numbers' || ext === 'key' || ext === 'keynote') return 'iwork';
   if (ext === 'stl') return 'stl';
@@ -472,6 +483,9 @@ const ROUTES = {
   dxf:         { render: renderDxf,         results: 'unknown', scroll: '#unknownResults' },
   dwg:         { render: renderDwg,         results: 'unknown', scroll: '#unknownResults' },
   aep:         { render: renderAep,         results: 'unknown', scroll: '#unknownResults' },
+  premiere:    { render: renderPremiere,    results: 'unknown', scroll: '#unknownResults' },
+  davinci:     { render: renderDavinci,     results: 'unknown', scroll: '#unknownResults' },
+  gcsv:        { render: renderGcsv,         results: 'unknown', scroll: '#unknownResults' },
   iwork:       { render: renderIwork,       results: 'unknown', scroll: '#unknownResults' },
   stl:         { render: renderStl,         results: 'unknown', scroll: '#unknownResults' },
   model3d:     { render: renderModel3d,     results: 'unknown', scroll: '#unknownResults' },
@@ -2389,25 +2403,21 @@ function boot() {
     deferredPrompt = null;
   });
 
-  // ----- Clear all site data (keeps only the dark-mode preference) -----
+  // ----- Clear storage (localStorage / sessionStorage / IndexedDB; keeps the
+  //        dark-mode preference and the Asteroids high score). Leaves the cached
+  //        scripts/assets alone - that's the "Clear scripts" button's job. -----
   const clearBtn = document.getElementById('offlineClear');
   if (clearBtn) {
     clearBtn.addEventListener('click', async () => {
       clearBtn.textContent = 'Clearing…';
-      // 1. Preserve the dark-mode state and the Asteroids high score + best wave, then wipe
-      //    localStorage + sessionStorage and restore the kept keys.
+      // Preserve the kept keys, wipe localStorage + sessionStorage, restore them.
       const KEEP = ['anr-theme', 'anr-theme:ts', 'anr-asteroids-hi', 'anr-asteroids-bestwave'];
       const kept = {};
       for (const k of KEEP) { const v = localStorage.getItem(k); if (v !== null) kept[k] = v; }
       try { localStorage.clear(); } catch (_) {}
       try { sessionStorage.clear(); } catch (_) {}
       for (const k in kept) { try { localStorage.setItem(k, kept[k]); } catch (_) {} }
-      // 2. Delete every Cache Storage bucket (offline tiers + the SW app shell).
-      try {
-        const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
-      } catch (_) {}
-      // 3. Drop any IndexedDB databases.
+      // Drop any IndexedDB databases.
       try {
         if (indexedDB.databases) {
           const dbs = await indexedDB.databases();
@@ -2417,15 +2427,8 @@ function boot() {
           })));
         }
       } catch (_) {}
-      // 4. Unregister the service worker (it re-registers on the next load).
-      try {
-        if (navigator.serviceWorker) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map(r => r.unregister()));
-        }
-      } catch (_) {}
-      // Reset the offline-tier buttons to their default state (localStorage.clear
-      // above already dropped the 'anr-offline' record).
+      // The 'anr-offline' record is gone, so repaint the tier buttons to un-cached
+      // (the files themselves may still be in Cache Storage until "Clear scripts").
       document.querySelectorAll('.offline-btn').forEach(b => {
         b.classList.remove('is-done', 'is-active', 'is-fading', 'is-included');
         const bar = b.querySelector('.offline-bar');
@@ -2433,14 +2436,32 @@ function boot() {
         const badge = b.querySelector('.offline-cached');
         if (badge) badge.hidden = true;
       });
-      // With the record gone, this repaints every button to its un-cached state:
-      // no greying, full per-tier sizes.
       refreshTierButtons();
-      // Nothing is cached now, so re-open the section by default (a fresh start).
       offlineUserToggled = false;
       applyDefaultOfflineCollapse();
-      clearBtn.textContent = 'All data cleared ✓';
+      clearBtn.textContent = 'Storage cleared ✓';
       setTimeout(() => { clearBtn.textContent = 'Clear storage'; }, 3000);
+    });
+  }
+
+  // ----- Clear scripts (delete every Cache Storage bucket - offline tiers + the
+  //        SW app shell - unregister the service worker, then reload so the
+  //        freshest scripts/assets load without a manual browser cache clear). -----
+  const clearScriptsBtn = document.getElementById('offlineClearScripts');
+  if (clearScriptsBtn) {
+    clearScriptsBtn.addEventListener('click', async () => {
+      clearScriptsBtn.textContent = 'Clearing…';
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      } catch (_) {}
+      try {
+        if (navigator.serviceWorker) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister()));
+        }
+      } catch (_) {}
+      location.reload();
     });
   }
 

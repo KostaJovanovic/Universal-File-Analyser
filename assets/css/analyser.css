@@ -2655,6 +2655,9 @@ details[open] summary::after { content: "\2212"; }
   margin-top: 10px;
 }
 .offline-bottom-row > * { min-width: 0; }   /* let labels wrap instead of widening the track */
+/* "Clear storage" / "Clear scripts" share one grid cell, split evenly. */
+.offline-clear-pair { display: flex; gap: 6px; min-width: 0; }
+.offline-clear-pair > .offline-clear { flex: 1 1 0; min-width: 0; }
 
 /* Keep the three tiers on one row even on mobile; drop the long descriptions
    there so the compact name + size cards fit across a narrow screen. */
@@ -4006,7 +4009,8 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 :root[data-theme="dark"] .anr-checkerboard {
   background: repeating-conic-gradient(#2a2a2a 0% 25%, #141414 0% 50%) 0 0 / 16px 16px;
 }
-.section-meta-preview img {
+.section-meta-preview img,
+.section-meta-preview video {
   display: block;
   width: 100%;
   max-height: clamp(160px, 28vh, 260px);
@@ -4014,6 +4018,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   background: var(--media-bg);
   cursor: zoom-in;
 }
+.section-meta-preview video { cursor: pointer; }
 .section-meta-preview-caption {
   margin: 8px 4px 2px;
   font-family: var(--font-mono);
@@ -4040,7 +4045,8 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
    the preview thumb stays compact and the OCR/histogram sit clearly below it */
 @media (max-width: 900px) {
   .section-meta-slot { margin-top: 16px; }
-  .section-meta-preview img { max-height: 280px; }
+  .section-meta-preview img,
+  .section-meta-preview video { max-height: 280px; }
   #videoPreview { display: none; }
 }
 @media (max-width: 700px) {
@@ -5932,3 +5938,93 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
 .format-cta-btn:hover { background: var(--fg); color: var(--bg); }
 .format-cta-btn span { transition: transform var(--dur-snappy) ease; display: inline-block; }
 .format-cta-btn:hover span { transform: translateX(4px); }
+
+/* ---- Gyro / IMU timeline (sony-rtmd.js, gcsv.js) --------------------------
+   Mirrors the spectrogram aesthetic: a dark, horizontally-zoomable canvas in a
+   hairline frame, mono labels, square corners, and a white playhead. */
+.anr-imu { margin-top: 14px; }
+.anr-imu-video {
+  width: 100%;
+  max-height: 240px;
+  display: block;
+  background: var(--media-bg);
+  border: 1px solid var(--hairline);
+}
+.anr-imu-ctl {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 12px 0 6px;
+}
+.anr-imu-ctl-label {
+  font-family: var(--font-mono);
+  font-size: var(--t-small, 12px);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.anr-imu-ctl-hint { margin: 0; }
+.anr-imu-zoom {
+  font-family: var(--font-mono);
+  font-size: var(--t-small, 12px);
+  padding: 4px 8px;
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 0;
+}
+.anr-imu-scroller {
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--hairline);
+  background: var(--media-bg);
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+.anr-imu-track { position: relative; }
+.anr-imu-canvas { display: block; }
+.anr-imu-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #fff;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  left: 0;
+  z-index: 2;
+}
+.anr-imu-legend {
+  margin: 6px 0 2px;
+  font-size: var(--t-small, 12px);
+}
+
+/* Mini video players (section-03, gyro): the site transport overlays the video
+   and only appears on hover / keyboard focus, like a normal video player. */
+.anr-video-hoverui { position: relative; display: block; }
+.anr-video-hoverui > video { display: block; width: 100%; }
+.anr-video-hoverui > .anr-player {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 8px;
+  gap: 8px;
+  border: none;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0));
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+.anr-video-hoverui:hover > .anr-player,
+.anr-video-hoverui:focus-within > .anr-player {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* On touch (no hover), keep the transport visible so it stays usable. */
+@media (hover: none) {
+  .anr-video-hoverui > .anr-player { opacity: 1; pointer-events: auto; }
+}

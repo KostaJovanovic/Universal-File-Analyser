@@ -6,8 +6,9 @@
    up as new files are analysed. Used by audio.js and (via re-export) video.js. */
 
 import { el } from '../core/util.js';
+import { isSynced, getAudioOwner, onAudioOwner, getAudioCompanion } from '../core/video-sync.js';
 
-export function makePlayer(mediaEl, knownDuration) {
+export function makePlayer(mediaEl, knownDuration, opts = {}) {
   // MediaRecorder blobs (recorded audio) are written without a duration header, so
   // mediaEl.duration is Infinity until the clip is played/seeked to the end. When the
   // caller knows the real length (e.g. from decodeAudioData), use it as a fallback so
@@ -28,8 +29,14 @@ export function makePlayer(mediaEl, knownDuration) {
   const fillEl = el('div', { class: 'anr-player-fill' });
   const trackEl = el('div', { class: 'anr-player-track' }, [fillEl]);
   const timeEl = el('span', { class: 'anr-player-time' }, '0:00 / 0:00');
-  const vol = makeVolume(mediaEl);
+  // The section-03 mini player passes noVolume: its narrow transport has no room
+  // for a slider. It still joins the shared registry below (so the shared level
+  // applies when it becomes the audio owner) - it just has no volume UI.
+  const vol = opts.noVolume ? null : makeVolume(mediaEl);
   const container = el('div', { class: 'anr-player' }, [playBtn, trackEl, timeEl, vol]);
+  // A volume-less synced player still needs to track the shared level/mute, so
+  // register it directly (makeVolume already registers the ones that have a UI).
+  if (opts.noVolume) registerVolPlayer(mediaEl, container, () => {});
 
   playBtn.addEventListener('click', () => {
     // Once playback has ended the button is a replay control: restart from 0.
@@ -128,30 +135,61 @@ const ICON_MUTE = SPK + '<path fill="none" stroke="currentColor" stroke-width="2
 // element and each player's UI follows. Disconnected players are pruned so the
 // registry can't grow unbounded as files are analysed.
 const VOL_KEY = 'anr-volume';
+// Only the volume LEVEL is remembered across sessions - never the mute flag. A
+// persisted mute (or a persisted volume of 0) is a silent footgun: it survives
+// cache/script clears and silences every video on every future file with no
+// obvious cause, which is exactly the "no sound anywhere" trap. So we always boot
+// UN-muted, and a stored 0 is treated as unset (restored to full) rather than
+// loading the page permanently silent.
 let sharedVol = 1, sharedMuted = false, lastNonZero = 1;
 try {
   const raw = localStorage.getItem(VOL_KEY);
   const o = raw ? JSON.parse(raw) : null;
-  if (o && typeof o.v === 'number') { sharedVol = Math.max(0, Math.min(1, o.v)); lastNonZero = sharedVol > 0 ? sharedVol : 1; }
-  if (o) sharedMuted = !!o.m;
+  if (o && typeof o.v === 'number' && o.v > 0) { sharedVol = Math.min(1, o.v); lastNonZero = sharedVol; }
 } catch (_) {}
 const volPlayers = new Set();   // { mediaEl, wrap, sync }
+// Register a media element with the shared-volume system. Both makeVolume (UI
+// players) and the noVolume path (section-03 mini) funnel through here.
+function registerVolPlayer(mediaEl, wrap, sync) {
+  volPlayers.add({ mediaEl, wrap, sync });
+}
 // Pruning keys on isConnected, which is only reliable once the DOM has settled -
 // so it happens HERE (applyShared runs on user interaction, well after render),
 // never at registration time (a just-built player isn't appended yet and would be
 // dropped before it could sync).
 function applyShared() {
+  const owner = getAudioOwner();
+  // The audio companion (extracted PCM playing under a muted video) is the real
+  // loudspeaker for clips with an undecodable audio codec - it always follows the
+  // shared level/mute.
+  const comp = getAudioCompanion();
+  if (comp) { try { comp.volume = sharedVol; comp.muted = sharedMuted; } catch (_) {} }
   for (const p of volPlayers) {
     if (!p.wrap.isConnected) { volPlayers.delete(p); continue; }
-    try { p.mediaEl.muted = sharedMuted; p.mediaEl.volume = sharedVol; } catch (_) {}
+    try {
+      p.mediaEl.volume = sharedVol;
+      if (isSynced(p.mediaEl)) {
+        // Exclusive audio: only the audio owner may sound; every other synced
+        // player stays muted so the page never plays the same clip twice over
+        // itself. Until the user starts something (owner null) we leave the muted
+        // state as each player was built with (main unmuted, minis muted).
+        if (owner) p.mediaEl.muted = sharedMuted || (p.mediaEl !== owner);
+      } else {
+        p.mediaEl.muted = sharedMuted;   // plain audio players (not synced video)
+      }
+    } catch (_) {}
     p.sync();
   }
 }
+// When the audio owner changes (user pressed a different player), re-apply the
+// shared level/mute so the new owner adopts it and the rest go quiet.
+onAudioOwner(() => applyShared());
 function setShared(v, m) {
   sharedVol = Math.max(0, Math.min(1, v));
   if (sharedVol > 0) lastNonZero = sharedVol;
   sharedMuted = !!m;
-  try { localStorage.setItem(VOL_KEY, JSON.stringify({ v: sharedVol, m: sharedMuted })); } catch (_) {}
+  // Persist only the level - never the mute flag (see the load block above).
+  try { localStorage.setItem(VOL_KEY, JSON.stringify({ v: sharedVol })); } catch (_) {}
   applyShared();
 }
 
@@ -196,14 +234,19 @@ function makeVolume(mediaEl) {
 
   // Reflect a change made outside our UI (e.g. native iOS/desktop controls) back
   // into the shared state. The epsilon guard stops a feedback loop with applyShared.
+  // For a synced video we ignore the muted flag: muting there is owned by the
+  // exclusive-audio layer (a muted follower must NOT drag the shared mute down).
   mediaEl.addEventListener('volumechange', () => {
-    if (Math.abs(mediaEl.volume - sharedVol) > 0.001 || mediaEl.muted !== sharedMuted) setShared(mediaEl.volume, mediaEl.muted);
+    const muteChanged = !isSynced(mediaEl) && mediaEl.muted !== sharedMuted;
+    if (Math.abs(mediaEl.volume - sharedVol) > 0.001 || muteChanged) setShared(mediaEl.volume, isSynced(mediaEl) ? sharedMuted : mediaEl.muted);
     else sync();
   });
 
-  volPlayers.add({ mediaEl, wrap, sync });
-  // Adopt the shared level immediately.
-  try { mediaEl.muted = sharedMuted; mediaEl.volume = sharedVol; } catch (_) {}
+  registerVolPlayer(mediaEl, wrap, sync);
+  // Adopt the shared level now. Synced videos keep the muted state they were built
+  // with (main unmuted, gyro/mini muted) until the user picks an audio owner; a
+  // plain audio player just takes the shared mute directly.
+  try { mediaEl.volume = sharedVol; if (!isSynced(mediaEl)) mediaEl.muted = sharedMuted; } catch (_) {}
   sync();
   return wrap;
 }

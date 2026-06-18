@@ -1321,7 +1321,10 @@
     </div>
     <div class="offline-bottom-row">
       <button type="button" class="offline-install" id="offlineInstall">Install as app</button>
-      <button type="button" class="offline-clear" id="offlineClear">Clear storage</button>
+      <div class="offline-clear-pair">
+        <button type="button" class="offline-clear" id="offlineClear">Clear storage</button>
+        <button type="button" class="offline-clear" id="offlineClearScripts" title="Unregister the service worker and clear cached scripts and assets, then reload to fetch the latest code.">Clear scripts</button>
+      </div>
       <details class="about-details">
         <summary>Dependencies</summary>
     <dl class="about-defs">
