@@ -37,6 +37,9 @@
     ]
   }
   </script>
+  <script type="application/ld+json">
+  <!--ITEMLIST:START-->{"@context":"https://schema.org","@type":"CollectionPage","name":"Supported file types - Analyser","url":"https://lab.valjdakosta.com/formats","description":"Every file type Analyser can open and inspect online in your browser - 1061 formats across 12 categories, free and with nothing uploaded.","mainEntity":{"@type":"ItemList","numberOfItems":12,"itemListElement":[{"@type":"ListItem","position":1,"name":"Images (98 formats)"},{"@type":"ListItem","position":2,"name":"Audio (87 formats)"},{"@type":"ListItem","position":3,"name":"Video (83 formats)"},{"@type":"ListItem","position":4,"name":"Design (33 formats)"},{"@type":"ListItem","position":5,"name":"Documents & ebooks (90 formats)"},{"@type":"ListItem","position":6,"name":"Data & code (70 formats)"},{"@type":"ListItem","position":7,"name":"3D / CAD / engineering (130 formats)"},{"@type":"ListItem","position":8,"name":"Archives (34 formats)"},{"@type":"ListItem","position":9,"name":"Maps & GIS (39 formats)"},{"@type":"ListItem","position":10,"name":"Games (60 formats)"},{"@type":"ListItem","position":11,"name":"Email & security (43 formats)"},{"@type":"ListItem","position":12,"name":"System & disk (298 formats)"}]}}<!--/ITEMLIST-->
+  </script>
   <link rel="stylesheet" href="assets/css/fonts.css">
   <link rel="stylesheet" href="assets/css/analyser.css">
   <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
@@ -1107,7 +1110,7 @@
   <div id="fmtOverlay" class="fmt-overlay" hidden>
     <div class="fmt-overlay-inner">
       <div class="fmt-overlay-header">
-        <h3>Supported formats <span class="fmt-overlay-count" data-fmt-count="bare">1017</span></h3>
+        <h3>Supported formats <span class="fmt-overlay-count" data-fmt-count="bare">1061</span></h3>
         <button type="button" class="fmt-overlay-close" id="fmtOverlayClose">&times;</button>
       </div>
       <input type="text" class="fmt-overlay-search" id="fmtSearch" placeholder="Search formats..." autocomplete="off" spellcheck="false">
@@ -1198,7 +1201,7 @@
       <div><dt>JPEG 2000</dt><dd><a href="https://github.com/GoogleChromeLabs/jpeg2000" target="_blank" rel="noopener">OpenJPEG</a> compiled to WASM. Decodes JP2 / J2K images the browser can&rsquo;t. Loaded only when needed.</dd></div>
       <div><dt>PostScript</dt><dd><a href="https://www.ghostscript.com/" target="_blank" rel="noopener">Ghostscript</a> compiled to WASM. Renders EPS / PostScript graphics. ~16 MB, in the Complete download only.</dd></div>
       <div><dt>Animation</dt><dd><a href="https://github.com/airbnb/lottie-web" target="_blank" rel="noopener">lottie-web</a>. Plays Lottie / Bodymovin JSON animations. Loaded only when needed.</dd></div>
-      <div><dt>File ID</dt><dd>Built-in identification for 1040+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 1061+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Install</dt><dd>Add to home screen for an offline PWA. Service worker caches the app shell. Use the buttons above to pre-cache heavy dependencies.</dd></div>
         </dl>
       </details>

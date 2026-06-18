@@ -23,6 +23,7 @@ import { esc, escAttr, buildFullKeys, makeHrefOf } from './prerender-common.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PAGE = join(ROOT, 'formats.html');
+const SITE = 'https://lab.valjdakosta.com';
 
 // pathToFileURL: a bare Windows path (C:\…) is not a valid ESM specifier.
 const { catalogGrouped, formatCount } = await import(
@@ -90,6 +91,28 @@ html = html.replace(region, `${START}\n${block}\n      ${END}`);
 html = html.replace(
   /<!--FMTCOUNT-->[\s\S]*?<!--\/FMTCOUNT-->/g,
   `<!--FMTCOUNT-->${count}<!--/FMTCOUNT-->`
+);
+
+// CollectionPage + ItemList structured data: marks /formats as a catalogue of
+// file-type guides and enumerates the categories. Kept to one ListItem per
+// category (not per format) so the JSON-LD stays light. Stamped between the
+// ITEMLIST markers in the hand-authored <head>.
+const itemList = {
+  '@context': 'https://schema.org', '@type': 'CollectionPage',
+  name: 'Supported file types - Analyser',
+  url: `${SITE}/formats`,
+  description: `Every file type Analyser can open and inspect online in your browser - ${count} formats across ${groups.length} categories, free and with nothing uploaded.`,
+  mainEntity: {
+    '@type': 'ItemList',
+    numberOfItems: groups.length,
+    itemListElement: groups.map((g, i) => ({
+      '@type': 'ListItem', position: i + 1, name: `${g.label} (${g.count} formats)`,
+    })),
+  },
+};
+html = html.replace(
+  /<!--ITEMLIST:START-->[\s\S]*?<!--\/ITEMLIST-->/,
+  `<!--ITEMLIST:START-->${JSON.stringify(itemList)}<!--/ITEMLIST-->`
 );
 
 writeFileSync(PAGE, html);

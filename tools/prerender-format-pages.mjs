@@ -42,6 +42,12 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUTDIR = join(ROOT, 'formats');
 const SITE = 'https://lab.valjdakosta.com';
 
+// Build date, YYYY-MM-DD (local) - stamped as <lastmod> on every per-format URL so
+// the formats sitemap advertises freshness like the main sitemap does. Plain node
+// script, so new Date() is fine here.
+const _d = new Date();
+const TODAY = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`;
+
 const { catalogGrouped } = await import(pathToFileURL(join(ROOT, 'assets/js/core/formats.js')).href);
 const { EXT_PAGES } = await import(pathToFileURL(join(ROOT, 'tools/format-page-content.mjs')).href);
 // Extra "Did you know" bullets, keyed by lowercase ext -> [fact, ...]. A
@@ -269,7 +275,7 @@ function page(key, e, depth) {
   const d = e.display;            // curated casing for display, e.g. WebP
   const fallback = isFull
     ? { name: '.' + d + ' file', blurb: `.${d} is a file format that Analyser can open and analyse in your browser.` }
-    : { name: '.' + d + ' file (' + e.rows[0].label + ')', blurb: `.${d} files belong to the "${e.rows[0].label}" family of formats.` };
+    : { name: '.' + d + ' file (' + e.rows[0].label + ')', blurb: `.${d} is a ${e.rows[0].label} file (${e.rows[0].catLabel}). Analyser identifies a .${d} file and reads the metadata in its header, right in your browser.` };
   const meta = EXT_PAGES[key] || fallback;
   const facts = assembleFacts(key, meta, d, e, isFull);
   const factBody = facts.length === 1
@@ -281,11 +287,11 @@ function page(key, e, depth) {
   const factPlain = facts.map((f) => f.plain).join(' ');
   const url = `${SITE}${isFull ? '/formats/' : '/formats/id/'}${key}`;
   const title = isFull
-    ? `.${d} file - what it is and how to open it | Analyser`
-    : `.${d} file - what it is and how to identify it | Analyser`;
+    ? `.${d} file - what it is and how to open it online | Analyser`
+    : `.${d} file - what it is and how to identify it online | Analyser`;
   const desc = isFull
-    ? `${meta.blurb} Open and inspect a .${d} file free in your browser with Analyser - nothing is uploaded.`
-    : `${meta.blurb} Identify and inspect a .${d} file free in your browser with Analyser - nothing is uploaded.`;
+    ? `${meta.blurb} Open a .${d} file online in your browser with Analyser - free, private, no upload, no install. A .${d} file opener and viewer.`
+    : `${meta.blurb} Identify a .${d} file online in your browser with Analyser - free, private, nothing uploaded.`;
   const kicker = [...new Set(e.rows.map((r) => r.catLabel))].join(' / ');
 
   const faq = {
@@ -295,6 +301,20 @@ function page(key, e, depth) {
         acceptedAnswer: { '@type': 'Answer', text: meta.blurb + (factPlain ? ' ' + factPlain : '') } },
       { '@type': 'Question', name: `How do I open a .${d} file?`,
         acceptedAnswer: { '@type': 'Answer', text: `Drop a .${d} file onto Analyser at ${SITE}/ and it ${isFull ? 'opens' : 'is identified'} directly in your browser - no upload, no account and no software to install. ${e.rows[0].desc}` } },
+      { '@type': 'Question', name: `Can I open a .${d} file online for free?`,
+        acceptedAnswer: { '@type': 'Answer', text: `Yes. Analyser is a free online .${d} ${isFull ? 'opener and viewer' : 'identifier'} that runs entirely in your browser - your .${d} file never leaves your device, so there is nothing to upload and no software to install. It even works offline once installed.` } },
+    ],
+  };
+  const howto = {
+    '@context': 'https://schema.org', '@type': 'HowTo',
+    name: `How to open a .${d} file`,
+    description: `Open a .${d} file online in your browser with Analyser - no upload and no install.`,
+    totalTime: 'PT1M',
+    tool: [{ '@type': 'HowToTool', name: 'Analyser (any modern web browser)' }],
+    step: [
+      { '@type': 'HowToStep', position: 1, name: 'Open Analyser', text: `Go to ${SITE}/ in any web browser. There is nothing to install.`, url: `${SITE}/` },
+      { '@type': 'HowToStep', position: 2, name: 'Add your file', text: `Drag your .${d} file onto the page, or tap to choose one. The file stays on your device - nothing is uploaded.` },
+      { '@type': 'HowToStep', position: 3, name: `${isFull ? 'View it' : 'Identify it'}`, text: `Analyser ${isFull ? 'opens the .' + d + ' file and shows its contents and metadata' : 'identifies the .' + d + ' file and reads the metadata in its header'} instantly, on your device.` },
     ],
   };
   const crumbs = {
@@ -341,6 +361,9 @@ function page(key, e, depth) {
   <link rel="manifest" href="/manifest.json">
   <script type="application/ld+json">
   ${JSON.stringify(faq)}
+  </script>
+  <script type="application/ld+json">
+  ${JSON.stringify(howto)}
   </script>
   <script type="application/ld+json">
   ${JSON.stringify(crumbs)}
@@ -463,13 +486,15 @@ for (const key of fullKeysSorted) {
 }
 
 const idKeysSorted = [...idExt.keys()].sort();
+const missingId = [];
 for (const key of idKeysSorted) {
+  if (!EXT_PAGES[key]) missingId.push(key);
   writeFileSync(join(OUTDIR, 'id', key + '.html'), page(key, idExt.get(key), 'id'));
 }
 
 // ---- sitemap for the per-format pages (+ the hub) ----
 const entry = (loc, priority) =>
-  `  <url><loc>${loc}</loc><changefreq>monthly</changefreq><priority>${priority}</priority></url>`;
+  `  <url><loc>${loc}</loc><lastmod>${TODAY}</lastmod><changefreq>monthly</changefreq><priority>${priority}</priority></url>`;
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${[
@@ -485,4 +510,8 @@ const total = 1 + fullKeysSorted.length + idKeysSorted.length;
 console.log(`prerender-format-pages: ${fullKeysSorted.length} full pages -> formats/, ${idKeysSorted.length} id pages -> formats/id/, ${total} urls -> sitemap-formats.xml`);
 if (missing.length) {
   console.log(`  WARNING: ${missing.length} full-analysis ext(s) missing from format-page-content.mjs (generic fallback used): ${missing.join(', ')}`);
+}
+if (missingId.length) {
+  console.log(`  NOTE: ${missingId.length} identification-only ext(s) have no format-page-content.mjs copy (catalog fallback used). Authoring blurbs for high-value brands de-thins these pages:`);
+  console.log(`    ${missingId.join(', ')}`);
 }

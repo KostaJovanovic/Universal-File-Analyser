@@ -3,24 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Analyser - Open and Inspect Any File in Your Browser</title>
-  <meta name="description" content="View EXIF, spectrograms, video frames &amp; metadata for 1061+ file types in your browser. No ads, no telemetry, no upload - everything stays on your device.">
+  <title>Analyser - Online File Viewer to Open and Inspect Any File</title>
+  <meta name="description" content="Analyser is a free online file analyser: view EXIF, spectrograms, video frames and metadata for 1061+ file types in your browser. No upload, no install - open any file privately on your device.">
   <link rel="canonical" href="https://lab.valjdakosta.com/">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
-  <meta property="og:title" content="Analyser - Open and Inspect Any File in Your Browser">
-  <meta property="og:description" content="View EXIF, spectrograms, video frames &amp; metadata for 1061+ file types in your browser. No ads, no telemetry, no upload - everything stays on your device.">
+  <meta property="og:title" content="Analyser - Online File Viewer to Open and Inspect Any File">
+  <meta property="og:description" content="Analyser is a free online file analyser: view EXIF, spectrograms, video frames and metadata for 1061+ file types in your browser. No upload, no install - open any file privately on your device.">
   <meta property="og:url" content="https://lab.valjdakosta.com/">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Analyser - Open and Inspect Any File in Your Browser">
-  <meta name="twitter:description" content="View EXIF, spectrograms, video frames &amp; metadata for 1061+ file types in your browser. No ads, no telemetry, no upload - everything stays on your device.">
+  <meta name="twitter:title" content="Analyser - Online File Viewer to Open and Inspect Any File">
+  <meta name="twitter:description" content="Analyser is a free online file analyser: view EXIF, spectrograms, video frames and metadata for 1061+ file types in your browser. No upload, no install - open any file privately on your device.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta name="twitter:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <link rel="icon" href="assets/img/favicon.png" type="image/png">
@@ -32,15 +32,18 @@
     "@context": "https://schema.org",
     "@type": "WebApplication",
     "name": "Analyser",
+    "alternateName": "Online File Analyser",
     "url": "https://lab.valjdakosta.com/",
-    "description": "View EXIF, spectrograms, video frames and metadata for 1061+ file types, entirely in your browser. No ads, no telemetry, no upload - everything stays on your device.",
+    "description": "A free online file analyser and viewer: view EXIF, spectrograms, video frames and metadata for 1061+ file types, entirely in your browser. No ads, no telemetry, no upload - everything stays on your device.",
     "applicationCategory": "MultimediaApplication",
     "operatingSystem": "Any (web browser)",
     "browserRequirements": "Requires JavaScript.",
     "image": "https://lab.valjdakosta.com/assets/img/banner.jpg",
+    "screenshot": "https://lab.valjdakosta.com/assets/img/banner.jpg",
     "isAccessibleForFree": true,
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
     "author": { "@type": "Person", "name": "valjdakosta", "url": "https://valjdakosta.com/" },
+    "publisher": { "@type": "Organization", "name": "valjdakosta", "url": "https://valjdakosta.com/" },
     "featureList": [
       "EXIF and metadata extraction",
       "Audio spectrogram and waveform visualisation",
@@ -167,7 +170,7 @@
   <div id="fmtOverlay" class="fmt-overlay" hidden>
     <div class="fmt-overlay-inner">
       <div class="fmt-overlay-header">
-        <h3>Supported formats <span class="fmt-overlay-count" data-fmt-count="bare">740</span></h3>
+        <h3>Supported formats <span class="fmt-overlay-count" data-fmt-count="bare">1061</span></h3>
         <button type="button" class="fmt-overlay-close" id="fmtOverlayClose">&times;</button>
       </div>
       <input type="text" class="fmt-overlay-search" id="fmtSearch" placeholder="Search formats..." autocomplete="off" spellcheck="false">
@@ -317,7 +320,7 @@
       <div><dt>JPEG 2000</dt><dd><a href="https://github.com/GoogleChromeLabs/jpeg2000" target="_blank" rel="noopener">OpenJPEG</a> compiled to WASM. Decodes JP2 / J2K images the browser can&rsquo;t. Loaded only when needed.</dd></div>
       <div><dt>PostScript</dt><dd><a href="https://www.ghostscript.com/" target="_blank" rel="noopener">Ghostscript</a> compiled to WASM. Renders EPS / PostScript graphics. ~16 MB, in the Complete download only.</dd></div>
       <div><dt>Animation</dt><dd><a href="https://github.com/airbnb/lottie-web" target="_blank" rel="noopener">lottie-web</a>. Plays Lottie / Bodymovin JSON animations. Loaded only when needed.</dd></div>
-      <div><dt>File ID</dt><dd>Built-in identification for 1040+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 1061+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Install</dt><dd>Add to home screen for an offline PWA. Service worker caches the app shell. Use the buttons above to pre-cache heavy dependencies.</dd></div>
         </dl>
       </details>

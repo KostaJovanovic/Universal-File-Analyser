@@ -33,21 +33,29 @@ const n = formatCount();
 const d = new Date();
 const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-// One file, a list of [regex, replacement] passes. Each replacement uses the live
-// count. Patterns are written so re-running is idempotent (they match whatever
-// number is currently there).
+// Reusable [regex, replacement] passes. Each uses the live count and is written so
+// re-running is idempotent (it matches whatever number is currently there).
+const fmtTypes = [/\d+\+ file types/g, `${n}+ file types`];
+const fmtFormats = [/\d+\+ file formats/g, `${n}+ file formats`];
+const fmtFormatsAngle = [/(>)\d+\+ formats(<)/g, `$1${n}+ formats$2`];
+// Static fallbacks app.js overwrites at runtime (data-fmt-count); bake them so a
+// no-JS crawler / social card never sees a stale number.
+const bareCount = [/(data-fmt-count="bare">)\d+/g, `$1${n}`];
+const browseAll = [/Browse all \d+ supported formats/g, `Browse all ${n} supported formats`];
+
+// One file, a list of passes. The shared footer's "File ID ... NNN+ file formats"
+// line lives in tools/partials/footer-shared.html; this runs BEFORE stamp-footer
+// (see save.bat), so correcting the partial here propagates to every footer page.
 const JOBS = [
-  ['index.html', [
-    [/\d+\+ file types/g, `${n}+ file types`],
-    [/\d+\+ file formats/g, `${n}+ file formats`],
-    [/(>)\d+\+ formats(<)/g, `$1${n}+ formats$2`],
-  ]],
-  ['patch.html', [
-    [/\d+\+ file formats/g, `${n}+ file formats`],
-  ]],
-  ['manifest.json', [
-    [/\d+\+ file types/g, `${n}+ file types`],
-  ]],
+  ['index.html', [fmtTypes, fmtFormats, fmtFormatsAngle, bareCount]],
+  ['about.html', [fmtTypes, fmtFormats, fmtFormatsAngle, bareCount, browseAll]],
+  ['formats.html', [fmtTypes, fmtFormats, fmtFormatsAngle, bareCount]],
+  ['patch.html', [fmtFormats, bareCount]],
+  ['stats.html', [fmtFormats]],
+  ['privacy.html', [fmtFormats]],
+  ['atari.html', [fmtFormats]],
+  ['tools/partials/footer-shared.html', [fmtFormats]],
+  ['manifest.json', [fmtTypes]],
   ['sitemap.xml', [
     [/<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/g, `<lastmod>${today}</lastmod>`],
   ]],
