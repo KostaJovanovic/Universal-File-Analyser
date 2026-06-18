@@ -178,10 +178,6 @@ function ocrLangSizeSpan(code, size) {
 // user cancels (Esc / backdrop / Cancel).
 let _sessionOcrLang = null;
 
-// The session language chosen via the popup's "Remember" checkbox (or null).
-// Used by the image OCR picker to default to the same language.
-export function sessionOcrLang() { return _sessionOcrLang; }
-
 // What OCR is and its caveats - shown via the "?" button in the language picker.
 const OCR_HELP_HTML = '<strong>Optical Character Recognition</strong> scans the image for text using <a href="https://github.com/naptha/tesseract.js" target="_blank" rel="noopener">Tesseract.js</a>, an open-source OCR engine running entirely in your browser.<br><br><strong>How it works:</strong> the image is upscaled if needed, then Tesseract looks for letter-shaped patterns, groups them into words and lines, and assigns a confidence score to each word. Words below 60% confidence are filtered out to reduce noise.<br><br><strong>Limitations:</strong> Tesseract was designed for scanned documents - clean text on plain backgrounds. On photos it will often hallucinate text from textures, foliage, buildings, or noise. Handwriting, stylised fonts, low contrast, small text, and rotated or curved text all reduce accuracy significantly. Results are best on screenshots, signs, printed labels, and document photos.';
 

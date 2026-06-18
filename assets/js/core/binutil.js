@@ -35,10 +35,6 @@ export class Reader {
   i8()  { return this.view.getInt8(this.pos++); }
   u16() { const v = this.view.getUint16(this.pos, this.little); this.pos += 2; return v; }
   i16() { const v = this.view.getInt16(this.pos, this.little); this.pos += 2; return v; }
-  u24() {
-    const a = this.u8(), b = this.u8(), c = this.u8();
-    return this.little ? (a | (b << 8) | (c << 16)) : ((a << 16) | (b << 8) | c);
-  }
   u32() { const v = this.view.getUint32(this.pos, this.little); this.pos += 4; return v >>> 0; }
   i32() { const v = this.view.getInt32(this.pos, this.little); this.pos += 4; return v; }
   u64() { const v = this.view.getBigUint64(this.pos, this.little); this.pos += 8; return v; }

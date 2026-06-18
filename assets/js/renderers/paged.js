@@ -25,7 +25,6 @@ import { el, row, openOverlayBack } from '../core/util.js';
 // well inside a card and still keeps the 1:1.414 proportion.
 export const PAGE_W = 760;
 export const PAGE_H = 1075;
-export const PAGE_PAD = 56;
 
 // Build an empty A4 page sheet. `variant` tweaks the look ('slide' = landscape
 // presentation page, 'sheet' = spreadsheet page that may grow tall).
