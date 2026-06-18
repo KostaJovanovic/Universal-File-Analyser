@@ -37,6 +37,19 @@
     ]
   }
   </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Analyser changelog",
+    "description": "Every update to Analyser, newest first - new file formats, viewers, bug fixes and offline improvements.",
+    "url": "https://lab.valjdakosta.com/patch",
+    "mainEntityOfPage": "https://lab.valjdakosta.com/patch",
+    "image": "https://lab.valjdakosta.com/assets/img/banner.jpg",
+    "author": { "@type": "Person", "name": "valjdakosta", "url": "https://valjdakosta.com/" },
+    "publisher": { "@type": "Organization", "name": "valjdakosta", "url": "https://valjdakosta.com/" }
+  }
+  </script>
   <link rel="stylesheet" href="assets/css/fonts.css">
   <link rel="stylesheet" href="assets/css/analyser.css">
   <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
@@ -1350,7 +1363,7 @@
       <div><dt>JPEG 2000</dt><dd><a href="https://github.com/GoogleChromeLabs/jpeg2000" target="_blank" rel="noopener">OpenJPEG</a> compiled to WASM. Decodes JP2 / J2K images the browser can&rsquo;t. Loaded only when needed.</dd></div>
       <div><dt>PostScript</dt><dd><a href="https://www.ghostscript.com/" target="_blank" rel="noopener">Ghostscript</a> compiled to WASM. Renders EPS / PostScript graphics. ~16 MB, in the Complete download only.</dd></div>
       <div><dt>Animation</dt><dd><a href="https://github.com/airbnb/lottie-web" target="_blank" rel="noopener">lottie-web</a>. Plays Lottie / Bodymovin JSON animations. Loaded only when needed.</dd></div>
-      <div><dt>File ID</dt><dd>Built-in identification for 1040+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 1061+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Install</dt><dd>Add to home screen for an offline PWA. Service worker caches the app shell. Use the buttons above to pre-cache heavy dependencies.</dd></div>
         </dl>
       </details>
