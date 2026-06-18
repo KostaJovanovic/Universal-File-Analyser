@@ -135,7 +135,7 @@ button { font-family: inherit; }
    arrow, and most of ours never set cursor explicitly, so this covers them all
    in one place (including JS-built buttons). Disabled buttons keep the default
    via :not(:disabled); the few buttons with an intentional non-pointer cursor
-   (e.g. .offline-btn.is-included, .anr-dropdown-trigger.is-disabled) use two
+   (e.g. .offline-btn.is-included) use two
    classes, so they outrank this rule and still win. */
 button:not(:disabled) { cursor: pointer; }
 
@@ -911,13 +911,6 @@ body.anr-has-file .nav-search { display: flex; }
   margin: 6px 0;
   color: var(--muted);
 }
-.anr-pick-link {
-  color: var(--accent);
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
-  font-weight: 500;
-}
 .anr-hint {
   font-family: var(--font-mono);
   font-size: var(--t-tiny);
@@ -951,8 +944,7 @@ body.anr-has-file .nav-search { display: flex; }
 }
 
 /* ---------- BUTTONS ---------- */
-.anr-btn,
-.anr-fs-btn {
+.anr-btn {
   font-family: var(--font-sans);
   font-size: var(--t-small);
   font-weight: 500;
@@ -965,13 +957,11 @@ body.anr-has-file .nav-search { display: flex; }
   border-radius: 0;
   transition: background var(--dur-fast) ease, color var(--dur-fast) ease, border-color var(--dur-fast) ease;
 }
-.anr-btn:hover,
-.anr-fs-btn:hover {
+.anr-btn:hover {
   background: var(--fg);
   color: var(--bg);
 }
-.anr-btn:disabled,
-.anr-fs-btn:disabled {
+.anr-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
   background: var(--bg);
@@ -1048,21 +1038,6 @@ body.anr-has-file .nav-search { display: flex; }
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
-}
-.anr-timecode-input {
-  font-family: var(--font-mono);
-  font-size: var(--t-small);
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-  text-align: center;
-  width: 100%;
-  border: none;
-  background: transparent;
-  color: inherit;
-  outline: none;
-  padding: 0;
 }
 .anr-frame-wrap { margin: 8px 0; }
 .anr-frame-wrap .anr-frame-grid { margin: 0; }
@@ -1218,7 +1193,6 @@ body.anr-has-file .nav-search { display: flex; }
    inline display:block, which would otherwise keep it visible when collapsed -
    hiding the controls around it but not the player itself). */
 .anr-card.is-collapsed > :not(h3) { display: none !important; }
-.anr-card-empty { color: var(--muted); font-style: italic; }
 
 /* ---------- PREVIEW ---------- */
 .anr-preview {
@@ -1232,16 +1206,6 @@ body.anr-has-file .nav-search { display: flex; }
   max-height: 480px;
   display: inline-block;
 }
-.anr-preview-meta {
-  margin-top: 12px;
-  font-family: var(--font-mono);
-  font-size: var(--t-tiny);
-  color: var(--muted);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  text-align: left;
-}
-
 /* ---------- READOUT TABLE ---------- */
 .anr-readout {
   width: 100%;
@@ -1584,12 +1548,6 @@ body.anr-has-file .nav-search { display: flex; }
 }
 .anr-spec-card:fullscreen .anr-spec-hint,
 .anr-spec-card:-webkit-full-screen .anr-spec-hint { color: var(--muted-on-dark); }
-.anr-spec-card:fullscreen .anr-fs-btn,
-.anr-spec-card:-webkit-full-screen .anr-fs-btn {
-  background: var(--surface-on-dark); color: var(--on-dark); border-color: var(--border-on-dark-ctl);
-}
-.anr-spec-card:fullscreen .anr-fs-btn:hover,
-.anr-spec-card:-webkit-full-screen .anr-fs-btn:hover { background: var(--on-dark); color: var(--media-bg); }
 .anr-spec-card:fullscreen .anr-toggle,
 .anr-spec-card:-webkit-full-screen .anr-toggle { border-color: var(--border-on-dark-ctl); }
 .anr-spec-card:fullscreen .anr-toggle button,
@@ -2038,8 +1996,6 @@ body.anr-has-file .nav-search { display: flex; }
 }
 
 /* ---------- TRANSPORT ---------- */
-.anr-transport { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
-.anr-transport audio { flex: 1; min-width: 0; }
 audio { width: 100%; }
 
 /* ---------- PROGRESS ---------- */
@@ -2342,15 +2298,6 @@ audio { width: 100%; }
 /* Keep the ASCII bar at its full character width - flex shrink would otherwise
    clip its trailing "]" since .anr-progress-bar is overflow:hidden. */
 .anr-inline-loader .anr-progress-bar { flex: 0 0 auto; }
-/* Embedded cover art (audio) */
-.anr-coverart {
-  display: block;
-  max-width: 240px;
-  max-height: 240px;
-  border: 1px solid var(--hairline);
-  margin-bottom: 14px;
-}
-
 /* MIDI instrument / track lists */
 .anr-midi-list { margin: 0; padding-left: 20px; font-size: var(--t-small); line-height: 1.7; color: var(--fg); }
 .anr-midi-list li { word-break: break-word; }
@@ -2418,35 +2365,6 @@ audio { width: 100%; }
   margin: 16px 0;
   font-family: var(--font-mono);
   font-size: var(--t-small);
-}
-
-/* ---------- DEFINITION LIST (About) ---------- */
-.anr-defs {
-  margin: 28px 0 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: 200px 1fr;
-  gap: 0 32px;
-}
-.anr-defs dt {
-  border-top: 1px solid var(--hairline);
-  padding: 18px 0 8px;
-  font-family: var(--font-mono);
-  font-size: var(--t-tiny);
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  color: var(--muted);
-}
-.anr-defs dd {
-  border-top: 1px solid var(--hairline);
-  padding: 18px 0 8px;
-  margin: 0;
-  font-size: var(--t-body);
-}
-@media (max-width: 700px) {
-  .anr-defs { grid-template-columns: 1fr; gap: 0; }
-  .anr-defs dt { padding-bottom: 0; }
-  .anr-defs dd { border-top: none; padding-top: 4px; padding-bottom: 18px; }
 }
 
 /* ---------- DETAILS (raw dump) ---------- */
@@ -2962,32 +2880,6 @@ details[open] summary::after { content: "\2212"; }
   border-radius: 3px;
 }
 .fact-approx { color: var(--muted); font-size: 0.85em; white-space: nowrap; }
-.about-readout { margin-bottom: 0; }
-.about-readout th { width: 120px; white-space: nowrap; }
-.about-exts {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  word-spacing: 6px;
-  text-transform: uppercase;
-  color: var(--fg);
-  line-height: 2;
-}
-/* Per-format SEO description under the extension list. Offset anchor targets
-   so #fmt-… / #ext-… deep-links don't hide behind the sticky nav. */
-.about-fmt-desc {
-  display: block;
-  margin-top: 5px;
-  font-family: var(--font-sans);
-  font-size: var(--t-small);
-  line-height: 1.5;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--muted);
-}
-.about-readout tr { scroll-margin-top: 84px; }
-.about-ext { scroll-margin-top: 84px; }
 .about-formats {
   border-top: 1px solid var(--hairline);
   margin-top: 24px;
@@ -3522,9 +3414,6 @@ details[open] summary::after { content: "\2212"; }
 }
 .anr-ocr-lang-remember input:checked::before { transform: rotate(45deg) scale(1); }
 .anr-ocr-lang-remember:hover { color: var(--fg); }
-/* "downloaded"/"offline" trained-data languages get an accent tint in the menu. */
-.anr-dropdown-item-size.is-downloaded { color: var(--accent); }
-.anr-dropdown-item.is-selected .anr-dropdown-item-size.is-downloaded { color: inherit; }
 
 /* Format overlay */
 .fmt-overlay {
@@ -4269,48 +4158,6 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   font-size: var(--t-small);
   user-select: none;
 }
-.anr-dropdown-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 5px 8px;
-  background: var(--bg);
-  color: var(--fg);
-  border: 1px solid var(--hairline);
-  cursor: pointer;
-  white-space: nowrap;
-  min-width: 160px;
-  transition: border-color var(--dur-fast) ease;
-}
-.anr-dropdown-trigger:hover:not(.is-disabled) { border-color: var(--fg); }
-.anr-dropdown-trigger::after {
-  content: '\25BE';
-  font-size: 0.75em;
-  opacity: 0.5;
-}
-.anr-dropdown-trigger.is-disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-.anr-dropdown-list {
-  display: none;
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  max-height: 260px;
-  overflow-y: auto;
-  background: var(--bg);
-  border: 1px solid var(--hairline);
-  border-top: none;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.anr-dropdown.is-open .anr-dropdown-list { display: block; }
 .anr-dropdown-item {
   display: flex;
   align-items: center;
@@ -4333,7 +4180,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 
 /* ---------- MOBILE TOUCH-TARGET POLISH ---------- */
 @media (max-width: 700px) {
-  .anr-btn, .anr-fs-btn { min-height: 40px; padding: 10px 14px; }
+  .anr-btn { min-height: 40px; padding: 10px 14px; }
   .anr-toggle button { min-height: 36px; padding: 8px 12px; }
   .anr-control select { min-height: 36px; padding: 6px 8px; }
   /* Stay on the desktop grid (1fr 1fr 1fr auto) on phones too - just full-bleed
@@ -4361,7 +4208,6 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
      is exactly as wide as it needs to be, kept centred by the 1fr sides. */
   body:has(.about-page) .formats-hub-nav { grid-template-columns: 1fr auto 1fr; }
   .formats-hub-nav .nav-link-lucky { white-space: nowrap; }
-  .site-about-link { min-height: 36px; display: inline-flex; align-items: center; }
   .nav-search {}
   .nav-search.is-open .nav-search-btn { display: block; }
   .nav-search.is-open .nav-search-input,
@@ -4808,7 +4654,6 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   border-top: 1px solid var(--rule);
   word-break: break-all;
 }
-.anr-treemap-status .anr-status-name { color: var(--fg); }
 .anr-treemap-content { margin-top: 14px; }
 /* Cursor confirm popup (treemap file click) */
 .anr-treemap-menu {
@@ -4935,11 +4780,6 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
   padding: 0 0 14px; margin-bottom: 14px;
   border-bottom: 1px solid var(--hairline);
-}
-.anr-extfilter-label {
-  font-family: var(--font-mono); font-size: var(--t-tiny);
-  text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
-  margin-right: 4px;
 }
 .anr-extchip {
   display: inline-flex; align-items: center; gap: 6px;
@@ -5158,7 +4998,6 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-syn-attr    { color: #e89a2e; }
 .anr-syn-error   { color: var(--accent); margin: 4px 0; }
 .anr-fmt-summary { cursor: pointer; font-weight: 700; margin: 8px 0; }
-.anr-hash-out    { word-break: break-all; font-size: 12px; margin: 4px 0 0; }
 
 /* Waveform selection overlay */
 .anr-wave-wrap { position: relative; display: inline-block; width: 100%; }
@@ -5277,9 +5116,6 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
     flex: 1 1 auto;
     width: 100%;
   }
-  /* Play/pause spans the full width on mobile so it reads as part of the
-     control block instead of a lone floating button. */
-  .anr-spec-card .anr-spec-play { width: 100%; }
 }
 
 /* ---------- GRABBABLE PLAYHEAD + SPECTROGRAM TRANSPORT ---------- */
@@ -5313,7 +5149,6 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-spec-transport {
   margin-top: 10px;
 }
-.anr-spec-play { min-width: 120px; }
 
 /* ---------- HISTOGRAM AXIS MARKINGS ---------- */
 .anr-hist-axis {
@@ -5508,17 +5343,6 @@ a.stats-ext-link:hover { color: var(--accent); text-decoration: none; }
 /* The pooled "Unsupported types" row is a category label, not an extension, so it
    drops the monospace and sits muted. */
 .stats-ext-name--group { font-family: inherit; color: var(--muted); }
-.stats-ext-tag {
-  display: inline-block;
-  margin-left: 10px;
-  font-size: var(--t-micro);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 2px 6px;
-  border: 1px solid var(--rule);
-  color: var(--muted);
-  vertical-align: middle;
-}
 /* Only unsupported types carry a tag now, and it stays grey (the muted base
    above) instead of the old accent - a quiet wish-list marker. */
 

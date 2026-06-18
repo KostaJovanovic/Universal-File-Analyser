@@ -4,7 +4,7 @@
    full format parsers. */
 
 import { el, row, rowHelp, fmtBytes, sha256Row, preBlock } from '../core/util.js';
-import { findBytes, utf16, utf8 } from '../core/binutil.js';
+import { findBytes, utf16, utf8, ascii } from '../core/binutil.js';
 import { openZip } from './zip.js';
 import { FORMATS } from './proprietary-formats.js';
 import { parseNrbf } from '../lib/nrbf.js';
@@ -13,15 +13,6 @@ import { parseNrbf } from '../lib/nrbf.js';
 function extFromName(name) {
   const dot = name.lastIndexOf('.');
   return dot > 0 ? name.slice(dot + 1).toLowerCase().replace(/^\./, '') : '';
-}
-
-function ascii(buf, start, len) {
-  let s = '';
-  for (let i = start; i < start + len && i < buf.length; i++) {
-    const c = buf[i];
-    if (c >= 32 && c < 127) s += String.fromCharCode(c);
-  }
-  return s;
 }
 
 // ---------- PSD header ----------
@@ -4005,8 +3996,8 @@ export async function renderProprietary(file, container, extOverride) {
     card.appendChild(det);
   }
 
-  // Text / code preview for web files
-  if (fmt.parse === 'text' || fmt.parse === 'html') {
+  // Text / code preview for web files (and XML, which is plain text under the hood)
+  if (fmt.parse === 'text' || fmt.parse === 'html' || fmt.parse === 'xml') {
     try {
       const fullText = await file.text();
       const lines = fullText.split('\n');
