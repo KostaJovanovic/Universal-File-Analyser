@@ -1378,9 +1378,7 @@ async function idOnly(file, ext) {
 }
 
 // ---------- dispatch ----------
-function wrap(fn) {
-  return async (c) => { try { const r = await fn(c); return r || null; } catch (_) { return null; } };
-}
+import { safe as wrap } from './parser-util.js';
 
 export const PARSERS = {
   // Lossless / hi-res

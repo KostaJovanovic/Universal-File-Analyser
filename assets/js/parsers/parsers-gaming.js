@@ -935,9 +935,7 @@ async function idOnly(file, ext) {
 }
 
 // ---------- dispatch ----------
-function wrap(fn) {
-  return async (c) => { try { return await fn(c); } catch (_) { return null; } };
-}
+import { safe as wrap } from './parser-util.js';
 
 // The Sims / Maxis DBPF package (.package): Sims 2/3/4, SimCity 4, Spore all use
 // the Database Packed File container. The fixed little-endian header gives the

@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 139;
+const COMMIT_COUNT = 140;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -2011,7 +2011,7 @@ function boot() {
       './assets/js/parsers/parsers-disk.js', './assets/js/parsers/parsers-sci.js', './assets/js/parsers/parsers-osmisc.js',
       './assets/js/parsers/parsers-image.js', './assets/js/parsers/parsers-threed.js', './assets/js/parsers/parsers-geodata.js',
       './assets/js/parsers/parsers-audio.js', './assets/js/parsers/parsers-video.js', './assets/js/parsers/parsers-docs.js',
-      './assets/js/parsers/parsers-raw.js',
+      './assets/js/parsers/parsers-raw.js', './assets/js/parsers/parser-util.js',
       // Format viewers + helpers kept in step with the service-worker SHELL so the
       // "Essentials" download really is the whole app (each is small JS; the heavy
       // viewer libraries they may pull in live in the Everything/Complete tiers).
