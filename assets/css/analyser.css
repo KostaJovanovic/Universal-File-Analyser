@@ -530,10 +530,13 @@ body.anr-has-file.anr-nav-stuck.anr-nav-live .site-nav {
   --nav-soft: #d2d2d2;
   --nav-dim:  #5a5a5a;
 }
-/* About page nav is just the 3 section links (Why / Where / What) - no home or
-   search chrome - so size it to 3 equal columns instead of the home+links+search
-   grid the main page uses. */
-body:has(.about-page) .site-nav { grid-template-columns: repeat(3, 1fr); }
+/* Format landing + hub navs (prev / lucky / next) keep 3 equal columns. */
+body:has(.about-page) .site-nav.format-nav { grid-template-columns: repeat(3, 1fr); }
+/* About page primary nav has 5 section links (Why / Where / What / How / FAQ) and
+   no home/search chrome - 5 equal columns in a single row. The grid keeps it to one
+   row; the links use the default left-aligned .nav-link styling like the rest of
+   the site. */
+body:has(.about-page) .site-nav:not(.format-nav) { grid-template-columns: repeat(5, 1fr); }
 .nav-link {
   min-width: 0;
   padding: 16px 4px;
