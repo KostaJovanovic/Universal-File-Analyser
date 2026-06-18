@@ -1291,8 +1291,10 @@ function audioBufferToWavUrl(audioBuf) {
   return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
 }
 
-// Audio sample-entry fourCCs that are uncompressed PCM - browsers can decode the
-// VIDEO of such a clip but silently drop this audio (Sony cameras use 'twos').
+// Audio sample-entry fourCCs the browser can't play in <video> - uncompressed PCM
+// (twos/sowt/lpcm/in16/in24/in32/raw /NONE/fl32/fl64) plus companded mu-law/A-law.
+// Browsers decode the VIDEO of such a clip but silently drop this audio (Sony
+// cameras use 'twos').
 const BROWSER_UNPLAYABLE_AUDIO = new Set(['twos','sowt','lpcm','in16','in24','in32','raw ','NONE','ulaw','alaw','fl32','fl64']);
 
 // Cheaply find the audio track's codec fourCC by walking only box HEADERS over the

@@ -30,7 +30,7 @@ export function saveBestWave() {
   try { localStorage.setItem(BESTWAVE_KEY, String(g.bestWave)); } catch (_) {}
 }
 
-// Highest wave you may start a run on: half your best-ever wave (floored), at least 1.
+// Highest wave you may start a run on: your best-ever wave minus 2, at least 1.
 export const maxStartWave = () => Math.max(1, (g.bestWave || 0) - 2);
 
 // Populate every per-run field with its launch default and load persisted values.

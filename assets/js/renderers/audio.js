@@ -244,8 +244,9 @@ function buildTimeAxis(axisEl, durationSec) {
 }
 
 // Find the loudest moment in the waveform: scan ~50 ms blocks, return the
-// loudest block's centre time (s) and its RMS level (dBFS). This is the "when is
-// it loudest, and how loud" figure shown as the Peak stat - independent of FFT
+// loudest block's centre time (s, using the nominal block length, so the final
+// short block's reported centre is approximate) and its RMS level (dBFS). This is
+// the "when is it loudest, and how loud" figure shown as the Peak stat - independent of FFT
 // settings, so it's computed once per clip. Block RMS (not a single sample peak)
 // so a lone click doesn't outrank a sustained loud passage.
 function loudestMoment(samples, sampleRate) {
@@ -266,7 +267,7 @@ function loudestMoment(samples, sampleRate) {
   };
 }
 
-// Scan a computed spectrogram for at-a-glance stats. `dbFloor` (the sensitivity
+// Scan a computed spectrogram for at-a-glance stats.
 // All levels are signal-relative so the numbers stay meaningful:
 //   Peak     - the single loudest bin overall.
 //   Detected - the occupied band: bins (excluding DC) within SIGNAL_DB of the peak,
