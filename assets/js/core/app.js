@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 135;
+const COMMIT_COUNT = 136;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -767,6 +767,12 @@ async function setupStatsPage() {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
+  { range: '3.30 - 3.36', notes: [
+    'Professional editing projects open with their full timeline: Adobe Premiere Pro and Elements, DaVinci Resolve and VEGAS Pro.',
+    'Sony camera gyroscope and accelerometer metadata is decoded and plotted, and Gyroflow .gcsv motion logs open.',
+    'Unity game-engine assets and Visual Studio solutions are read.',
+    'A rebuilt About page with a how-it-works walkthrough and FAQ, plus a sweep of internal tidy-ups.',
+  ] },
   { range: '3.26 - 3.29', notes: [
     'A wave of creative apps open: After Effects projects with a zoomable layer timeline, plus Photoshop, Illustrator, Paint.NET and fonts.',
     'E-books (Kindle, DjVu), Access databases, AutoCAD drawings, glTF/GLB 3D, binary Excel and PowerShell/batch scripts now open too.',

@@ -202,6 +202,34 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">3.33 - 3.36</p>
+          <p class="patch-name">Fine Tuning</p>
+          <p class="patch-date">18 June 2026, 05:45</p>
+          <ul class="patch-list">
+            <li><strong>A rebuilt About page that explains Analyser at a glance and gives Office documents their own place - plus a sweep of small fixes and tidying under the hood.</strong></li>
+            <li><span class="patch-tag">New</span><strong>A clearer About page.</strong> The <a href="/about#what">About</a> page now opens with a short walkthrough of how Analyser works and an expanded set of common questions, and gives <strong>Office documents and presentations</strong> - Word, Excel, PowerPoint and PDF - a prominent place in the list of what opens.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A few formats are recognised correctly now.</strong> An <a href="/about#ext-nsf">.nsf</a> is identified as <strong>NES game music</strong> rather than confused with a Lotus Notes database, and a couple of header reads were corrected so more files name the right application and version.</li>
+            <li><strong>Maintenance</strong> - a thorough pass over the code&rsquo;s internal comments, every format guide page brought in line with the rest of the site&rsquo;s link previews, and groundwork notes for future tidying.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">3.30 - 3.32</p>
+          <p class="patch-name">Cutting Room</p>
+          <p class="patch-date">18 June 2026, 04:37</p>
+          <ul class="patch-list">
+            <li><strong>Open the projects your editors and game engines save - Premiere Pro, DaVinci Resolve and VEGAS timelines, Unity scenes and Visual Studio solutions - and read the motion data Sony cameras and Gyroflow record.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Premiere Pro projects open.</strong> A <a href="/about#ext-prproj">.prproj</a> project, and Premiere Elements <strong>.prel</strong>, rebuilds every sequence&rsquo;s timeline - each clip drawn as a bar by its in and out point across stacked video and audio tracks, just like the editor - and reads the resolution, frame rate, clip names and project version.</li>
+            <li><span class="patch-tag">New</span><strong>DaVinci Resolve projects open.</strong> A <a href="/about#ext-drp">.drp</a> project or <strong>.drt</strong> timeline from Blackmagic DaVinci Resolve rebuilds each timeline the same way, showing source filenames, frame rates and timecode, the media pool bins, and colour-coded titles, generators and transitions.</li>
+            <li><span class="patch-tag">New</span><strong>VEGAS Pro projects open.</strong> A Sony / MAGIX VEGAS <a href="/about#ext-veg">.veg</a> or Movie Studio <strong>.vf</strong> reads the version, the project summary, every title and effect it uses - with the actual title text decoded - and the media it references.</li>
+            <li><span class="patch-tag">New</span><strong>Sony camera motion data, decoded.</strong> Footage from Sony Alpha, FX and RX cameras that carries a gyroscope and accelerometer track now has that inertial data plotted over time - the very samples <strong>Gyroflow</strong> and Catalyst Browse use to stabilise footage - alongside the ISO, white balance and capture time.</li>
+            <li><span class="patch-tag">New</span><strong>Gyroflow motion logs open.</strong> A <a href="/about#ext-gcsv">.gcsv</a> gyro log - the gyroscope and accelerometer telemetry used to steady footage - opens with its three axes plotted on a zoomable timeline you can hover to read off values.</li>
+            <li><span class="patch-tag">New</span><strong>Unity game assets open.</strong> Unity scenes (<a href="/about#ext-unity">.unity</a>), prefabs, Animator Controllers (<strong>.controller</strong>), animation clips (<strong>.anim</strong>), materials and other assets are read from their YAML - a scene&rsquo;s objects and components, an animation&rsquo;s curves, a controller&rsquo;s states and more.</li>
+            <li><span class="patch-tag">New</span><strong>Visual Studio solutions open.</strong> A <a href="/about#ext-sln">.sln</a> lists the Visual Studio release, every project it groups - name, path and language - and the Debug and Release build configurations.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">3.26 - 3.29</p>
           <p class="patch-name">Origin Story</p>
           <p class="patch-date">17 June 2026, 20:37</p>
@@ -224,6 +252,9 @@
             <li><strong>A small touch.</strong> More format guide pages gained a &ldquo;did you know&rdquo; fact.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">3.14 - 3.25</p>
@@ -257,9 +288,6 @@
             <li><span class="patch-tag">New</span><strong>CAD solids open fully offline.</strong> The engine that turns a <a href="/about#ext-step">.step</a> model - and its <strong>IGES</strong> and <strong>BREP</strong> cousins - into something you can view is now part of the <strong>Everything</strong> offline download, so these heavy engineering files open even with no internet, the same way the rest of the app already does.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">3.12</p>
