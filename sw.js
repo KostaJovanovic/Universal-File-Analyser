@@ -1,7 +1,7 @@
 ﻿/* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v139';
+const VERSION = 'analyser-v140';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -102,6 +102,7 @@ const SHELL = [
   './assets/js/parsers/parsers-video.js',
   './assets/js/parsers/parsers-docs.js',
   './assets/js/parsers/parsers-raw.js',
+  './assets/js/parsers/parser-util.js',
   './assets/js/renderers/docx.js',
   './assets/js/renderers/xlsx.js',
   './assets/js/renderers/epub.js',

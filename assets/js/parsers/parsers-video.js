@@ -1308,9 +1308,7 @@ async function parseYuv(file) {
 //  DISPATCH
 // ============================================================================
 
-function wrap(fn) {
-  return async (c) => { try { return await fn(c); } catch (_) { return null; } };
-}
+import { safe as wrap } from './parser-util.js';
 
 // Text-manifest dispatch reads the file once and routes by extension.
 function textParser(fn) {
