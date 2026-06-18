@@ -48,8 +48,8 @@ export class Reader {
   u16At(p) { return this.view.getUint16(p, this.little); }
   u32At(p) { return this.view.getUint32(p, this.little) >>> 0; }
 
-  // Number from a 64-bit unsigned, clamped to a safe JS integer (good enough for
-  // file sizes / sample counts where exactness beyond 2^53 doesn't matter).
+  // Number from a 64-bit unsigned. Converted to a JS Number, which loses exactness
+  // above 2^53 - fine for file sizes / sample counts where that doesn't matter.
   u64num() { const v = this.u64(); return v <= 9007199254740991n ? Number(v) : Number(v); }
 
   bytes_(n) { const b = this.bytes.subarray(this.pos, this.pos + n); this.pos += n; return b; }

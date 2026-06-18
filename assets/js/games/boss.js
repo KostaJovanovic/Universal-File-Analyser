@@ -1,11 +1,11 @@
 /* Analyser - Asteroids easter egg: boss waves.
    A single large passive boss (lethal on contact, never shoots). The first three are a
-   fixed gauntlet - mothership on wave 5, serpent on wave 7, megastructure on wave 10 -
+   fixed gauntlet - mothership on wave 5, serpent on wave 8, megastructure on wave 11 -
    then one every 7 waves after that, picked at random from a shuffle bag and slightly
    buffed each cycle. The three types: a mothership carrier, a corrupted megastructure
    with weak points guarding a ram-only core, and a segmented serpent. Every weapon can
    hurt it; killing it pays out score + power-ups + a heal, and the first boss beaten
-   unlocks the optional Wave 10 start. Each boss is a set of hittable "nodes". */
+   unlocks the optional start-wave picker. Each boss is a set of hittable "nodes". */
 
 import {
   TAU, rand, pick, ARCHIVE_POOL, FILE_POOL, WAVE_GRACE, MAX_POWERUPS, MAX_LIVES,
@@ -532,7 +532,7 @@ export function updateBoss(dt) {
     if (b.x < cx - HW + b.r) { b.x = cx - HW + b.r; b.vx = Math.abs(b.vx); }
     else if (b.x > cx + HW - b.r) { b.x = cx + HW - b.r; b.vx = -Math.abs(b.vx); }
     b.y = (cy - HH * 0.5) + Math.sin(b.t * 0.8) * HH * 0.05;
-    // Carrier: launch small UFOs on a timer, capped at 4 of its own alive at once.
+    // Carrier: launch small UFOs on a timer, capped at 6 of its own alive at once.
     if (active) b.spawnCd -= dt;
     if (active && b.spawnCd <= 0) {
       b.spawnCd = 2.2;

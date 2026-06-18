@@ -252,10 +252,11 @@ function parseN64(head) {
 
 // ---------- Sega Genesis / Mega Drive ----------
 async function parseGenesis(file) {
-  // SMD interleaved format has a 512-byte header; "SEGA" sits at 0x100 in the
-  // de-interleaved ROM. Read enough to inspect both raw and +512 offsets.
+  // "SEGA" sits at 0x100 in a plain de-interleaved ROM. Read 0x300 bytes to cover
+  // the header region.
   const buf = await readSlice(file, 0, 0x300);
-  // "SEGA" sits at 0x100 in a plain ROM; with a 512-byte copier header at 0x300.
+  // Only the 0x100 (headerless) offset is checked here; copier-headered ROMs
+  // (SEGA at 0x300) are not detected.
   let base = -1;
   if (startsWithAscii(buf, 'SEGA', 0x100)) base = 0x100;
   if (base < 0) return null;
@@ -1021,7 +1022,7 @@ async function parseChd(file) {
     out['Compression'] = comps.length ? comps.join(', ') : 'none';
     const logical = r.u64num();
     out['Logical size'] = fmtBytes(logical);
-    r.seek(0x54); // hunkbytes (v5)
+    r.seek(0x38); // hunkbytes (v5, u32 at offset 0x38)
     out['Hunk size'] = fmtBytes(r.u32());
   } else {
     const flags = r.u32();
@@ -1569,7 +1570,7 @@ async function parseTic(file) {
 // ---------- xdelta3 patch (.xdelta) ----------
 async function parseXdelta(file) {
   const head = await readSlice(file, 0, 8);
-  // VCDIFF magic: 0xD6 0xC3 0xC4 'C' (xdelta3) then a version byte.
+  // VCDIFF magic: 0xD6 0xC3 0xC4 (V|80 C|80 D|80) then a version byte (0x00).
   if (!(head[0] === 0xD6 && head[1] === 0xC3 && head[2] === 0xC4)) return null;
   return {
     'Format': 'xdelta3 patch (VCDIFF)',

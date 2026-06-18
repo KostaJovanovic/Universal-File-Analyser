@@ -364,7 +364,7 @@ export function launchAsteroids() {
 
   // ---- Start-wave picker (unlock-gated) ----
   // Once any boss has been beaten, a small remembered picker to begin runs deeper in than
-  // wave 1. The button opens a stepper popup; the ceiling is half your best-ever wave
+  // wave 1. The button opens a stepper popup; the ceiling is your best-ever wave minus 2
   // (maxStartWave). Hidden until unlocked; the choice applies on your next run.
   function buildStartToggle() {
     const { BORDER, ON_DARK, MUTED, SURFACE } = g;

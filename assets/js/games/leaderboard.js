@@ -165,7 +165,7 @@ function showSubmitView() {
   input.type = 'text'; input.className = 'anr-score-input';
   input.maxLength = 5; input.autocomplete = 'off'; input.spellcheck = false;
   input.setAttribute('aria-label', 'Leaderboard name, 5 letters or numbers');
-  input.value = rememberedName();   // prefill with the name used in the last day
+  input.value = rememberedName();   // prefill with the remembered name (kept forever)
   input.addEventListener('input', () => {
     input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
   });
