@@ -1451,7 +1451,10 @@ async function peekVideoContainer(file) {
     return { container: 'AVI' };
   if (ascii(0, 3) === 'FLV')
     return { container: 'FLV' };
-  if (head[0] === 0x47)
+  // MPEG-TS sync byte 0x47 at the packet start (188-byte TS), or at offset 4 of a
+  // 192-byte M2TS/AVCHD packet whose 4-byte TP_extra_header (camcorder timecode)
+  // precedes it - the .mts/.m2ts files Sony/Panasonic camcorders write.
+  if (head[0] === 0x47 || head[4] === 0x47)
     return { container: 'MPEG-TS' };
   if (head[0] === 0x00 && head[1] === 0x00 && head[2] === 0x01 && head[3] === 0xBA)
     return { container: 'MPEG-PS' };
