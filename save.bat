@@ -94,6 +94,13 @@ echo Stamping shared footer...
 node --no-warnings tools/stamp-footer.mjs
 if errorlevel 1 echo WARNING: footer stamp failed - committing the existing copies.
 
+rem Stamp the shared <head> tail (stylesheet links + the before-first-paint theme
+rem script) into every main page from the single THEME_SCRIPT in prerender-common,
+rem so the UX-sensitive theme snippet can't drift across pages. Non-fatal.
+echo Stamping shared head...
+node --no-warnings tools/stamp-head.mjs
+if errorlevel 1 echo WARNING: head stamp failed - committing the existing copies.
+
 git add .
 git status
 

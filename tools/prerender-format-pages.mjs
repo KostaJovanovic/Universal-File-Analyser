@@ -36,7 +36,7 @@
 import { writeFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
-import { esc, escAttr, buildFullKeys, makeHrefOf } from './prerender-common.mjs';
+import { esc, escAttr, buildFullKeys, makeHrefOf, THEME_SCRIPT } from './prerender-common.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUTDIR = join(ROOT, 'formats');
@@ -370,7 +370,7 @@ function page(key, e, depth) {
   </script>
   <link rel="stylesheet" href="/assets/css/fonts.css">
   <link rel="stylesheet" href="/assets/css/analyser.css">
-  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+  ${THEME_SCRIPT}
 </head>
 <body>
 
