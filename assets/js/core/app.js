@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 137;
+const COMMIT_COUNT = 138;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -2025,6 +2025,11 @@ function boot() {
       './assets/js/renderers/paged.js', './assets/js/renderers/proprietary-formats.js', './assets/js/renderers/tiff.js',
       './assets/js/renderers/mpo.js', './assets/js/renderers/ico.js', './assets/js/renderers/embedded-images.js',
       './assets/js/renderers/gif-encode.js', './assets/js/renderers/webp-frames.js', './assets/js/renderers/media-reverse.js',
+      // Editing-project / engine viewers + the video gyro-metadata helper, kept in
+      // step with the service-worker SHELL so Essentials remains the whole app.
+      './assets/js/core/video-sync.js', './assets/js/renderers/premiere.js', './assets/js/renderers/davinci.js',
+      './assets/js/renderers/vegas.js', './assets/js/renderers/sony-rtmd.js', './assets/js/renderers/gcsv.js',
+      './assets/js/renderers/unity.js', './assets/js/renderers/vssolution.js',
       './assets/js/lib/legacy-decompress.js', './assets/js/lib/lzma-loader.js', './assets/js/lib/nrbf.js', './assets/js/lib/occt-loader.js',
       './assets/js/core/effects.js', './assets/js/core/popups.js', './assets/js/core/export-data.js',
       './assets/img/favicon.svg', './assets/img/icon.png', './assets/img/icon-192.png', './assets/img/icon-512.png',
