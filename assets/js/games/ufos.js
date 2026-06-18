@@ -1,7 +1,7 @@
 /* Analyser - Asteroids easter egg: roaming UFOs.
    Two kinds fly predictable closed paths mapped into the field rectangle (so the shape
-   adapts to the arena / a resize): a teal reward saucer (destructible, drops a power-up)
-   and a magenta ambient escort (indestructible, leaves once the wave is cleared). Both
+   adapts to the arena / a resize): a magenta reward saucer (destructible, drops a power-up)
+   and a teal ambient escort (indestructible, leaves once the wave is cleared). Both
    are lethal on contact and never shoot. */
 
 import { TAU, rand, pick, UFO_PATTERNS, UFO_REWARD_COLOR, UFO_AMBIENT_COLOR } from './config.js';

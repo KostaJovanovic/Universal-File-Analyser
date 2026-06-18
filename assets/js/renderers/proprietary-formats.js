@@ -386,7 +386,6 @@ export const FORMATS = {
   msg:     { app: 'Outlook Message', icon: 'MSG', chunk: 'email' },
   pst:     { app: 'Outlook Personal Store', icon: 'PST', chunk: 'email' },
   ost:     { app: 'Outlook Offline Store', icon: 'OST', chunk: 'email' },
-  nsf:     { app: 'NES Sound Format', icon: 'NSF', chunk: 'audio' },
   edb:     { app: 'Exchange / ESE Database', icon: 'EDB', chunk: 'email' },
   dbx:     { app: 'Outlook Express Database', icon: 'DBX', chunk: 'email' },
 
@@ -764,6 +763,7 @@ export const FORMATS = {
   '669':   { app: 'Composer 669', icon: '669', chunk: 'audio' },
   far:     { app: 'Farandole Composer', icon: 'FAR', chunk: 'audio' },
   okt:     { app: 'Oktalyzer', icon: 'OKT', chunk: 'audio' },
+  nsf:     { app: 'NES Sound Format', icon: 'NSF', chunk: 'audio' },
   nsfe:    { app: 'NES Sound Format (Extended)', icon: 'NSFE', chunk: 'audio' },
   spc:     { app: 'SNES SPC700', icon: 'SPC', chunk: 'audio' },
   vgm:     { app: 'Video Game Music', icon: 'VGM', chunk: 'audio' },

@@ -958,7 +958,7 @@ async function parseUefiFv(file) {
   r.seek(32);
   const fvLength = Number(r.u64());
   r.seek(44);
-  r.u32(); // header checksum + ext offset packed; skip
+  r.u32(); // skip Attributes (u32 at offset 44); header length/checksum/ext-offset follow
   const revision = b[55];
   const KNOWN = {
     '8C8CE578-8A3D-4F1C-9935-896185C32DD3': 'FFS v2',

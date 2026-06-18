@@ -1055,8 +1055,8 @@ async function parse669(file) {
 // ---------- FAR (Farandole Composer) ----------
 async function parseFar(file) {
   const head = await readSlice(file, 0, 128);
-  // Magic: 0xFE 'FAR' followed by ... actually "FAR\xFE"
-  if (!(head[0] === 0xFE && ascii(head, 1, 3) === 'FAR')) return null;
+  // Magic: "FAR" + 0xFE (bytes 46 41 52 FE), then a 40-byte song name at offset 4.
+  if (!(ascii(head, 0, 3) === 'FAR' && head[3] === 0xFE)) return null;
   const out = { 'Format': 'Farandole Composer module (.far)' };
   out['Title'] = cleanAscii(head, 4, 40) || '(none)';
   return out;

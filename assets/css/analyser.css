@@ -3976,7 +3976,6 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   width: 100%;
 }
 .section-meta-slot .anr-ocr-text { font-size: 12px; max-height: 220px; margin-top: 14px; }
-/* Keep the 2:1 ratio in the sidebar too - width drives the height there. */
 
 .section-meta-preview {
   border: 1px solid var(--hairline);

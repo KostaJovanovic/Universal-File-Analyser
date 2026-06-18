@@ -4,14 +4,14 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 132;
+const COMMIT_COUNT = 133;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
 // major version and resets the counter within its era: commit 29 reads "1.0" (and
-// 30 → "1.01"), commit 60 reads "2.0" (and 61 → "2.01"). To crown a future 3.0,
-// append its commit number here (keep the list sorted ascending, and mirror the
-// RELEASES constant in save.bat).
+// 30 → "1.01"), commit 60 reads "2.0", commit 100 reads "3.0" (and 101 → "3.01").
+// To crown a future 4.0, append its commit number here (keep the list sorted
+// ascending, and mirror the RELEASES constant in save.bat).
 const RELEASE_COMMITS = [29, 60, 100];
 
 function analyserVersion(n, releases) {
