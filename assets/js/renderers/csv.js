@@ -3,6 +3,7 @@
    reports numeric statistics, and previews the first 100 rows. */
 
 import { el, row, rowHelp, fmtBytes, fileExt, errorCard, integrityCard } from '../core/util.js';
+import { looksLikeGyroCsv, renderGyroCsv } from './gcsv.js';
 
 // Quote-aware CSV/TSV parser. Walks the whole text in a single pass so a
 // quoted field may contain the delimiter, CR/LF newlines, or escaped ""
@@ -241,6 +242,10 @@ export async function renderCsv(file, resultsEl) {
   // A UTF-8 BOM survives File.text() as U+FEFF at index 0.
   const hasBom = text.charCodeAt(0) === 0xfeff;
   if (hasBom) text = text.slice(1);
+
+  // A gyro / accelerometer CSV (e.g. exported from a video's gyro track) - draw
+  // the traces on a timeline instead of a generic column table.
+  if (looksLikeGyroCsv(text)) { await renderGyroCsv(file, resultsEl, text); return; }
   const crlfCount = (text.match(/\r\n/g) || []).length;
   const lfOnly = (text.match(/[^\r]\n/g) || []).length + (text[0] === '\n' ? 1 : 0);
   let lineEnding;

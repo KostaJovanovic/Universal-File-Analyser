@@ -7,6 +7,8 @@ import { makeSpectrogramPanel, makePlayer, buildHistogramCard, buildWaveformCard
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
 import { el, row, rowHelp, fmtBytes, h3help, sha256Row, integrityCard, roundFps, asciiBar } from '../core/util.js';
 import { parseAviHeader, extractAviData, encodeWav } from './video-avi.js';
+import { appendSonyGyroCard } from './sony-rtmd.js';
+import { registerSyncedVideo, setAudioCompanion } from '../core/video-sync.js';
 import { buildReverseAudioCard } from './media-reverse.js';
 
 // iOS (iPhone/iPad) detection. On iOS the custom scrubber's touch handling is
@@ -27,6 +29,8 @@ function applyVideoControls(playerEl) {
     playerEl.style.cursor = 'pointer';
     playerEl.addEventListener('click', () => { if (playerEl.paused) playerEl.play(); else playerEl.pause(); });
   }
+  // Keep every player of this clip (main player, gyro mini-player, ...) in sync.
+  registerSyncedVideo(playerEl);
 }
 
 // A generated contact-sheet image. Click opens it full-size in the shared
@@ -1256,6 +1260,112 @@ function extractPcmFromMp4(arrayBuffer) {
   return null;
 }
 
+// Encode a decoded AudioBuffer to a 16-bit PCM WAV blob URL for <audio> playback.
+function audioBufferToWavUrl(audioBuf) {
+  const channels = audioBuf.numberOfChannels;
+  const sr = audioBuf.sampleRate;
+  const samples = audioBuf.length;
+  const block = channels * 2;
+  const dataSize = samples * block;
+  const buf = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buf);
+  let o = 0;
+  const ws = (s) => { for (let i = 0; i < s.length; i++) view.setUint8(o++, s.charCodeAt(i)); };
+  ws('RIFF'); view.setUint32(o, 36 + dataSize, true); o += 4; ws('WAVEfmt ');
+  view.setUint32(o, 16, true); o += 4;
+  view.setUint16(o, 1, true); o += 2;
+  view.setUint16(o, channels, true); o += 2;
+  view.setUint32(o, sr, true); o += 4;
+  view.setUint32(o, sr * block, true); o += 4;
+  view.setUint16(o, block, true); o += 2;
+  view.setUint16(o, 16, true); o += 2;
+  ws('data'); view.setUint32(o, dataSize, true); o += 4;
+  const ch = [];
+  for (let c = 0; c < channels; c++) ch.push(audioBuf.getChannelData(c));
+  for (let i = 0; i < samples; i++) {
+    for (let c = 0; c < channels; c++) {
+      let s = Math.max(-1, Math.min(1, ch[c][i]));
+      view.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7FFF, true); o += 2;
+    }
+  }
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+
+// Audio sample-entry fourCCs that are uncompressed PCM - browsers can decode the
+// VIDEO of such a clip but silently drop this audio (Sony cameras use 'twos').
+const BROWSER_UNPLAYABLE_AUDIO = new Set(['twos','sowt','lpcm','in16','in24','in32','raw ','NONE','ulaw','alaw','fl32','fl64']);
+
+// Cheaply find the audio track's codec fourCC by walking only box HEADERS over the
+// File (seeking past mdat by size, never reading its bytes), so it's fast even on a
+// multi-GB clip whose moov sits at the tail. Returns the lowercase-ish fourCC or ''.
+async function sniffMp4AudioCodec(file) {
+  const u32 = (b, p) => (b[p] << 24 | b[p+1] << 16 | b[p+2] << 8 | b[p+3]) >>> 0;
+  const fourcc = (b, p) => String.fromCharCode(b[p], b[p+1], b[p+2], b[p+3]);
+  // Locate the top-level moov box by reading 8-16 byte headers and jumping.
+  async function findMoov() {
+    let off = 0;
+    for (let guard = 0; guard < 4096 && off + 8 <= file.size; guard++) {
+      const h = new Uint8Array(await file.slice(off, off + 16).arrayBuffer());
+      if (h.length < 8) return null;
+      let size = u32(h, 0); let hdr = 8;
+      const type = fourcc(h, 4);
+      if (size === 1) { // 64-bit size
+        size = Number((BigInt(u32(h, 8)) << 32n) | BigInt(u32(h, 12))); hdr = 16;
+      }
+      if (size < hdr) return null;
+      if (type === 'moov') return { off, size };
+      off += size;
+    }
+    return null;
+  }
+  try {
+    const moov = await findMoov();
+    if (!moov) return '';
+    const moovBuf = await file.slice(moov.off, moov.off + moov.size).arrayBuffer();
+    const view = new DataView(moovBuf);
+    // Reuse the box walker (offsets relative to the moov slice).
+    for (const trak of findAllBoxes(view, 0, moovBuf.byteLength, 'trak')) {
+      const ts = trak.offset + trak.headerSize, te = trak.offset + trak.size;
+      const hdlr = findAllBoxes(view, ts, te, 'hdlr')[0];
+      if (!hdlr) continue;
+      const handler = String.fromCharCode(
+        view.getUint8(hdlr.offset + hdlr.headerSize + 8), view.getUint8(hdlr.offset + hdlr.headerSize + 9),
+        view.getUint8(hdlr.offset + hdlr.headerSize + 10), view.getUint8(hdlr.offset + hdlr.headerSize + 11));
+      if (handler !== 'soun') continue;
+      const stsd = findAllBoxes(view, ts, te, 'stsd')[0];
+      if (!stsd) continue;
+      const d = stsd.offset + stsd.headerSize + 8;
+      return String.fromCharCode(view.getUint8(d + 4), view.getUint8(d + 5), view.getUint8(d + 6), view.getUint8(d + 7));
+    }
+  } catch (_) {}
+  return '';
+}
+
+// When a clip's audio codec is one browsers can't play, extract it to a WAV and
+// register it as the synced audio companion so the muted <video> still has sound.
+// Best-effort and fully in the background: silent on any failure. Skipped above a
+// size cap (the whole file must be read into memory to extract PCM).
+async function attachPcmAudioCompanion(file, playerCard, signal) {
+  const COMPANION_MAX_BYTES = 2 * 1024 * 1024 * 1024;   // 2 GB: cap the in-memory decode
+  try {
+    if (!file || file.size > COMPANION_MAX_BYTES) return;
+    const codec = await sniffMp4AudioCodec(file);
+    if (!BROWSER_UNPLAYABLE_AUDIO.has(codec)) return;     // browser plays it natively
+    if (signal && signal.aborted) return;
+    const buf = await file.arrayBuffer();
+    if (signal && signal.aborted) return;
+    let audioBuf = extractPcmFromMp4(buf);
+    if (!audioBuf) { try { audioBuf = await ffmpegExtractAudio(file, playerCard); } catch (_) {} }
+    if (!audioBuf || (signal && signal.aborted)) return;
+    const wavUrl = audioBufferToWavUrl(audioBuf);
+    const companion = el('audio', { src: wavUrl, preload: 'auto' });
+    companion.style.display = 'none';
+    playerCard.appendChild(companion);
+    setAudioCompanion(companion);
+    if (signal) signal.addEventListener('abort', () => { try { setAudioCompanion(null); URL.revokeObjectURL(wavUrl); } catch (_) {} });
+  } catch (_) { /* best-effort: no companion, video just stays mute */ }
+}
+
 // ---------- container detection from magic bytes ----------
 
 async function peekVideoContainer(file) {
@@ -1852,6 +1962,9 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
 
+  // Sony gyro / IMU metadata (rtmd track) - shown even when the codec can't play.
+  await appendSonyGyroCard(file, resultsEl);
+
   // Convert to H.264 in-browser. The browser can't decode this codec, but FFmpeg
   // can, so re-encoding to H.264 / AAC MP4 makes the file playable AND unlocks the
   // full analysis (player, frame tools, scene detection, reverse, audio). On
@@ -2133,6 +2246,8 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
   applyVideoControls(playerEl);
   playerCard.appendChild(playerEl);
   playerCard.appendChild(makePlayer(playerEl));
+  // PCM-audio clips (Sony etc.) play mute natively - extract + sync the sound.
+  attachPcmAudioCompanion(file, playerCard, signal);
   // This path has no off-screen probe (it's the iOS / decode-failed fallback), so
   // scene detection must seek the visible player. The badge flags that the brief
   // auto-scrub is analysis, not playback.
@@ -2223,6 +2338,9 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
       resultsEl.appendChild(mc);
     }
   }
+
+  // Sony gyro / IMU metadata (rtmd track) - best-effort, only appears for Sony MP4/MOV.
+  await appendSonyGyroCard(file, resultsEl);
 
   // Contact sheet
   if (vw && vh && isFinite(dur) && dur > 0) {
@@ -2950,12 +3068,22 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     posterUrl = pcv.toDataURL('image/jpeg', 0.85);
   }
 
-  // ---- Thumbnail in section-meta (desktop only, hidden by CSS on mobile) ----
+  // ---- Mini player in section-meta (desktop only, hidden by CSS on mobile) ----
+  // A small synced player of the same clip: click to play, and it stays locked to
+  // the main Player and the gyro mini-player via registerSyncedVideo (in
+  // applyVideoControls). The poster shows frame 0 before it plays.
   const previewSlot = document.getElementById('videoPreview');
-  if (previewSlot && posterUrl) {
+  if (previewSlot && (posterUrl || vw)) {
     previewSlot.innerHTML = '';
     const thumb = el('div', { class: 'section-meta-preview' });
-    thumb.appendChild(el('img', { src: posterUrl, alt: file.name }));
+    const mini = el('video', { src: url, poster: posterUrl, playsinline: '', preload: 'metadata' });
+    mini.setAttribute('webkit-playsinline', '');
+    mini.muted = true;                   // muted: only the main Player makes sound (avoids echo)
+    applyVideoControls(mini);            // click-to-play + registers it for cross-player sync
+    // Site-styled transport (no volume control), overlaid on the video and shown on hover.
+    const miniPlayer = el('div', { class: 'section-meta-player anr-video-hoverui' },
+      [mini, makePlayer(mini, undefined, { noVolume: true })]);
+    thumb.appendChild(miniPlayer);
     thumb.appendChild(el('p', { class: 'section-meta-preview-caption' },
       `${vw} × ${vh} · ${formatDuration(dur)} · ${fmtBytes(file.size)}`));
     previewSlot.appendChild(thumb);
@@ -3003,6 +3131,9 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   applyVideoControls(playerEl);
   playerCard.appendChild(playerEl);
   playerCard.appendChild(makePlayer(playerEl));
+  // Sony (and other) clips carry PCM audio browsers can't decode, so the video
+  // plays mute - extract that audio and play it in sync underneath. Background.
+  attachPcmAudioCompanion(file, playerCard, renderSignal);
   // Non-blocking status badge shown while background scene detection runs on the
   // off-screen probe. It doesn't capture pointer events, so the player stays
   // fully interactive (scrub/play) underneath it.
@@ -3129,6 +3260,9 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       resultsEl.appendChild(gpsCard);
     }
   }
+
+  // Sony gyro / IMU metadata (rtmd track) - best-effort, only appears for Sony MP4/MOV.
+  await appendSonyGyroCard(file, resultsEl);
 
   // ---- Contact sheet / thumbnail grid ----
   if (vw && vh) {

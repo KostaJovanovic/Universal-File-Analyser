@@ -1,7 +1,7 @@
 ﻿/* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v130';
+const VERSION = 'analyser-v131';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -58,6 +58,9 @@ const SHELL = [
   './assets/js/renderers/audio-codec.js',
   './assets/js/renderers/video.js',
   './assets/js/renderers/video-avi.js',
+  './assets/js/renderers/sony-rtmd.js',
+  './assets/js/renderers/gcsv.js',
+  './assets/js/core/video-sync.js',
   './assets/js/renderers/spectrogram.js',
   './assets/js/renderers/pdf.js',
   './assets/js/renderers/archive.js',
@@ -122,6 +125,8 @@ const SHELL = [
   './assets/js/renderers/mobi.js',
   './assets/js/renderers/dwg.js',
   './assets/js/renderers/aftereffects.js',
+  './assets/js/renderers/premiere.js',
+  './assets/js/renderers/davinci.js',
   './assets/js/renderers/stl.js',
   './assets/js/renderers/model3d.js',
   './assets/js/renderers/timeline.js',

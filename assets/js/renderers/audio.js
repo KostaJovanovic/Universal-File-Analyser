@@ -869,6 +869,22 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   winSel.addEventListener('change',    () => { state.winName = winSel.value; recompute(); });
   cmapSel.addEventListener('change',   () => { state.cmap    = cmapSel.value; renderOnly(); });
   zoomSel.addEventListener('change',   () => { state.zoom    = parseFloat(zoomSel.value); recompute(); });
+  // Ctrl/⌘ + wheel zooms horizontally, anchored on the pointer (keeps the time
+  // under the cursor fixed) - matching the gyro timeline.
+  scrollEl.addEventListener('wheel', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    const next = Math.min(48, Math.max(1, state.zoom * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
+    if (next === state.zoom) return;
+    const off = e.clientX - scrollEl.getBoundingClientRect().left;
+    const oldW = canvasWrap.clientWidth || canvas.width;
+    const frac = (scrollEl.scrollLeft + off) / Math.max(1, oldW);
+    state.zoom = next;
+    const ZOOMS = ['1', '1.5', '2', '3', '4', '6', '8', '12', '16', '24', '32', '48'];
+    zoomSel.value = ZOOMS.reduce((p, c) => Math.abs(+c - next) < Math.abs(+p - next) ? c : p, '1');
+    recompute();
+    scrollEl.scrollLeft = frac * (canvasWrap.clientWidth || canvas.width) - off;
+  }, { passive: false });
   heightSel.addEventListener('change', () => {
     state.height = heightSel.value === 'fill' ? 'fill' : parseInt(heightSel.value, 10);
     recompute();
