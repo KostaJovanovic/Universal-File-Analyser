@@ -34,18 +34,42 @@
     "mainEntity": [
       {
         "@type": "Question",
-        "name": "Aren't there many similar tools already?",
+        "name": "Is Analyser free?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Most tools I found are full of ads, require uploading your files, or are unresponsive and unintuitive. Analyser started as a tool for my own needs and grew from there, including a spectrogram viewer that doesn't require a multi-gigabyte installation or uploads."
+          "text": "Yes. Analyser is completely free, with no ads, no account and no sign-up. Open any file in your browser and inspect it at no cost."
         }
       },
       {
         "@type": "Question",
-        "name": "What does Analyser do?",
+        "name": "Does Analyser upload my files?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Analyser reads photos, sound, video, PDFs, archives, and over 1,000 file formats. It extracts every byte of metadata, visualises spectra, decodes frames, and identifies files, all without uploading a single bit."
+          "text": "No. Every file is read and analysed entirely in your browser. Nothing is uploaded to a server - the name, contents and bytes of anything you open stay on your device and are gone when you close the tab."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Can I view a file's EXIF and metadata without uploading it?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Drop a photo or any file onto Analyser and it reads EXIF, GPS, camera settings and other metadata locally, on your device, with nothing sent anywhere."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How do I open a file online without installing software?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Open Analyser in any web browser and drag your file onto the page, or tap to pick one. It opens directly in the browser - no install, no account and no plugins."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What file types can Analyser open?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Over 1,000 file types - photos, RAW camera files, audio, video, PDFs, Office documents, e-books, archives, 3D models and CAD, fonts, executables and many proprietary formats. See the full list on the formats page."
         }
       },
       {
@@ -53,9 +77,40 @@
         "name": "Does Analyser work without internet?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. Analyser is a Progressive Web App. Install it to your home screen or desktop and it works offline. The service worker caches the app shell on first visit, and heavy tools like FFmpeg, ImageMagick, and Tesseract are cached separately when you choose to download them."
+          "text": "Yes. Analyser is a Progressive Web App. Install it to your home screen or desktop and it works offline; the service worker caches the app on first visit, and heavy tools like FFmpeg, ImageMagick and Tesseract are cached separately when you download them."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is it safe to open files here?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Because your files never leave your browser, there is no upload to intercept and no server that stores them. Analyser also sanitises risky content such as scripts in SVG and HTML before showing it."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Can I open a .HEIC, .ARW, .PSD or .DWG file?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Analyser opens iPhone HEIC photos, Sony ARW and other camera RAW files, Photoshop PSD documents, AutoCAD DWG drawings and many more - each with its own guide. Drop the file in and it opens in your browser."
         }
       }
+    ]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    "name": "How to open a file with Analyser",
+    "description": "Open and inspect any file online in your browser with Analyser - no upload, no install and no account.",
+    "totalTime": "PT1M",
+    "tool": [{ "@type": "HowToTool", "name": "Analyser (any modern web browser)" }],
+    "step": [
+      { "@type": "HowToStep", "position": 1, "name": "Open Analyser", "text": "Go to the Analyser home page in any web browser. There is nothing to install and no account to create.", "url": "https://lab.valjdakosta.com/" },
+      { "@type": "HowToStep", "position": 2, "name": "Add your file", "text": "Drag your file anywhere onto the page, or tap to pick one. Photos, audio, video, documents, archives, 3D models - over 1,000 types. The file stays on your device." },
+      { "@type": "HowToStep", "position": 3, "name": "Read the results", "text": "Analyser identifies the file and shows its metadata, previews and visualisations instantly, entirely on your device." }
     ]
   }
   </script>
@@ -86,7 +141,7 @@
 <header class="site-header">
   <div class="grid">
     <div class="site-mark">
-      <span class="site-kicker">A 02 - 05</span>
+      <span class="site-kicker">A 02 - 07</span>
       <h1 class="site-title">About</h1>
       <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
       <p class="site-sub">Photos, sound, video, PDFs, documents, archives - and almost any other file. Fully local; nothing you drop ever leaves your browser.</p>
@@ -114,6 +169,8 @@
   <a href="#why" class="nav-link"><span class="nav-num">i</span><span>Why</span></a>
   <a href="#where" class="nav-link"><span class="nav-num">ii</span><span>Where</span></a>
   <a href="#what" class="nav-link"><span class="nav-num">iii</span><span>What</span></a>
+  <a href="#how" class="nav-link"><span class="nav-num">iv</span><span>How</span></a>
+  <a href="#faq" class="nav-link"><span class="nav-num">v</span><span>FAQ</span></a>
 </nav>
 
 <main class="site-main about-page">
@@ -158,7 +215,7 @@
       </aside>
       <div class="section-content">
         <h2 class="section-head">A forensic tool that runs entirely in your browser.</h2>
-        <p class="section-lede">Analyser reads photos, sound, video, PDFs, archives, and over 1,000 file formats. It extracts every byte of metadata, visualises spectra, decodes frames, and identifies files, all without uploading a single bit.</p>
+        <p class="section-lede">Analyser reads photos, sound, video, PDFs, Office documents and presentations, archives, and over 1,000 file formats. It extracts every byte of metadata, visualises spectra, decodes frames, and identifies files, all without uploading a single bit.</p>
 
         <div class="about-block">
           <dl class="about-caps">
@@ -183,6 +240,34 @@
               <dd>ZIP file listing with sizes, dates, and compression ratios.</dd>
             </div>
             <div>
+              <dt>Office documents &amp; presentations</dt>
+              <dd>Open Microsoft Office files right in your browser: Word <a href="/formats/docx">DOCX</a> with formatted text, tables and images laid out on pages and tracked changes; Excel <a href="/formats/xlsx">XLSX</a> / XLSB spreadsheets with every sheet, formulas, named ranges and hidden-sheet detection; and PowerPoint <a href="/formats/pptx">PPTX</a> presentations as a slide-thumbnail grid with speaker notes and a fullscreen viewer. Legacy DOC / XLS / PPT (97-2003), OpenDocument ODT / ODS / ODP and Apple iWork Pages, Numbers and Keynote are covered too - alongside full <a href="/formats/pdf">PDF</a> viewing with text extraction, page previews and OCR.</dd>
+            </div>
+            <div>
+              <dt>E-books &amp; comics</dt>
+              <dd>Read Kindle <a href="/formats/mobi">MOBI</a> / AZW3, <a href="/formats/epub">EPUB</a> and DjVu e-books with a chapter reader, table of contents and reading-time estimate, plus CBZ / CBR / CB7 comic books with a thumbnail grid and metadata.</dd>
+            </div>
+            <div>
+              <dt>3D models &amp; CAD</dt>
+              <dd>An interactive WebGL viewer for <a href="/formats/stl">STL</a>, <a href="/formats/obj">OBJ</a>, <a href="/formats/glb">glTF / GLB</a>, <a href="/formats/step">STEP</a>, IGES and 3MF, with triangle counts, bounding box, surface area and volume. Open AutoCAD <a href="/formats/dwg">DWG</a> and <a href="/formats/dxf">DXF</a> drawings, and identify SolidWorks, Fusion 360, Rhino and SketchUp project files.</dd>
+            </div>
+            <div>
+              <dt>Design &amp; raster art</dt>
+              <dd>Open Photoshop <a href="/formats/psd">PSD</a>/PSB with the full layer tree, Illustrator <a href="/formats/ai">AI</a>, and <a href="/formats/svg">SVG</a> vectors (safely sanitised), plus Krita, Procreate and Paint.NET. Detects the authoring app and lets you rasterise to PNG.</dd>
+            </div>
+            <div>
+              <dt>Maps, GIS &amp; email</dt>
+              <dd>Plot <a href="/formats/gpx">GPX</a>, KML and GeoJSON tracks on a map with distance and elevation profiles, and inspect Shapefiles, NMEA and flight logs. Open <a href="/formats/eml">EML</a> and MBOX email with SPF/DKIM/DMARC checks and a sanitised HTML body.</dd>
+            </div>
+            <div>
+              <dt>Developer, data &amp; forensics</dt>
+              <dd>Jupyter notebooks, HAR captures, JSON/JSON5, CSV with column stats, SQLite and Access databases, Git objects, and Unity assets. Identify and read <a href="/formats/id/pcap">PCAP</a> captures, Windows Event Logs, <a href="/formats/id/kdbx">KeePass KDBX</a>, keys and certificates - flagging secrets.</dd>
+            </div>
+            <div>
+              <dt>Science &amp; medical</dt>
+              <dd>Open <a href="/formats/id/dcm">DICOM</a> scans and <a href="/formats/id/nii">NIfTI</a> brain volumes, <a href="/formats/id/fits">FITS</a> astronomy frames, FIT/TCX activity files, FASTA/FASTQ sequences, Gerber PCBs and many more lab and engineering formats.</dd>
+            </div>
+            <div>
               <dt><span data-fmt-count="bare">1061</span>+ formats</dt>
               <dd>Adobe (PSD, AI, INDD), AutoCAD (DWG, DXF), SolidWorks, Fusion 360, Blender, 3D meshes (FBX, GLB, STL, OBJ, 3MF, STEP, IGES), Office documents (DOCX, XLSX, PPTX), executables (EXE, DLL), fonts, game assets, and web files (HTML, CSS, JS), and more. Header parsing extracts metadata where possible.</dd>
             </div>
@@ -199,6 +284,83 @@
                from assets/js/core/formats.js by app.js (renderAboutFormats). -->
           <div id="aboutFormats"></div>
         </details>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" class="section">
+    <div class="grid">
+      <aside class="section-meta">
+        <span class="section-num">iv</span>
+        <span class="section-kicker">How</span>
+      </aside>
+      <div class="section-content">
+        <h2 class="section-head">How to open a file.</h2>
+        <p class="section-lede">Opening a file takes three steps, and nothing ever leaves your device.</p>
+        <div class="about-block">
+          <dl class="about-caps">
+            <div>
+              <dt>1. Open Analyser</dt>
+              <dd>Go to <a href="/">the home page</a> in any web browser. There is nothing to install and no account to create.</dd>
+            </div>
+            <div>
+              <dt>2. Drop your file</dt>
+              <dd>Drag a file anywhere onto the page, or tap to pick one. Photos, audio, video, documents, archives, 3D models - <a href="/formats">over 1,000 types</a>. The file stays on your device.</dd>
+            </div>
+            <div>
+              <dt>3. Read the results</dt>
+              <dd>Analyser identifies the file and shows its metadata, previews and visualisations instantly, entirely in your browser.</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq" class="section">
+    <div class="grid">
+      <aside class="section-meta">
+        <span class="section-num">v</span>
+        <span class="section-kicker">FAQ</span>
+      </aside>
+      <div class="section-content">
+        <h2 class="section-head">Common questions.</h2>
+        <div class="about-block">
+          <dl class="about-caps">
+            <div>
+              <dt>Is Analyser free?</dt>
+              <dd>Yes. Analyser is completely free, with no ads, no account and no sign-up. Open any file in your browser and inspect it at no cost.</dd>
+            </div>
+            <div>
+              <dt>Does Analyser upload my files?</dt>
+              <dd>No. Every file is read and analysed entirely in your browser. Nothing is uploaded to a server - the name, contents and bytes of anything you open stay on your device and are gone when you close the tab.</dd>
+            </div>
+            <div>
+              <dt>Can I view a file's EXIF and metadata without uploading it?</dt>
+              <dd>Yes. Drop a photo or any file onto Analyser and it reads EXIF, GPS, camera settings and other metadata locally, on your device, with nothing sent anywhere.</dd>
+            </div>
+            <div>
+              <dt>How do I open a file online without installing software?</dt>
+              <dd>Open Analyser in any web browser and drag your file onto the page, or tap to pick one. It opens directly in the browser - no install, no account and no plugins.</dd>
+            </div>
+            <div>
+              <dt>What file types can Analyser open?</dt>
+              <dd>Over 1,000 file types - photos, RAW camera files, audio, video, PDFs, Office documents, e-books, archives, 3D models and CAD, fonts, executables and many proprietary formats. See the full list on the <a href="/formats">formats page</a>.</dd>
+            </div>
+            <div>
+              <dt>Does Analyser work without internet?</dt>
+              <dd>Yes. Analyser is a Progressive Web App. Install it to your home screen or desktop and it works offline; the service worker caches the app on first visit, and heavy tools like FFmpeg, ImageMagick and Tesseract are cached separately when you download them.</dd>
+            </div>
+            <div>
+              <dt>Is it safe to open files here?</dt>
+              <dd>Yes. Because your files never leave your browser, there is no upload to intercept and no server that stores them. Analyser also sanitises risky content such as scripts in SVG and HTML before showing it.</dd>
+            </div>
+            <div>
+              <dt>Can I open a .HEIC, .ARW, .PSD or .DWG file?</dt>
+              <dd>Yes. Analyser opens iPhone <a href="/formats/heic">HEIC</a> photos, Sony <a href="/formats/arw">ARW</a> and other camera RAW files, Photoshop <a href="/formats/psd">PSD</a> documents, AutoCAD <a href="/formats/dwg">DWG</a> drawings and many more - each with its own guide. Drop the file in and it opens in your browser.</dd>
+            </div>
+          </dl>
+        </div>
       </div>
     </div>
   </section>
