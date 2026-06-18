@@ -327,6 +327,7 @@ export const FORMATS = {
   map:     { app: 'Source Map', icon: 'MAP', chunk: 'dev' },
   sql:     { app: 'SQL Dump', icon: 'SQL', chunk: 'dev' },
   sln:     { app: 'Visual Studio Solution', icon: 'SLN', chunk: 'dev' },
+  slnx:    { app: 'Visual Studio Solution (XML)', icon: 'SLNX', chunk: 'dev', parse: 'xml' },
   csproj:  { app: '.NET Project (C#)', icon: 'NET', chunk: 'dev' },
   vbproj:  { app: '.NET Project (VB)', icon: 'NET', chunk: 'dev' },
   fsproj:  { app: '.NET Project (F#)', icon: 'NET', chunk: 'dev' },

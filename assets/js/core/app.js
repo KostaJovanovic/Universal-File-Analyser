@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 144;
+const COMMIT_COUNT = 145;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -423,8 +423,9 @@ function classifyFile(file) {
   // Unity assets - the engine's YAML object stream (scenes, prefabs, animator
   // controllers, animations, materials, .meta importer records, …).
   if (UNITY_EXTS.has(ext)) return 'unity';
-  // Visual Studio solution manifest (projects + build configs).
-  if (ext === 'sln') return 'vssolution';
+  // Visual Studio solution manifest (projects + build configs) - classic text
+  // .sln and the newer XML .slnx.
+  if (ext === 'sln' || ext === 'slnx') return 'vssolution';
   // MonoDevelop / Unity user prefs are XML - show them in the markup viewer.
   if (ext === 'userprefs') return 'markup';
   // Gyroflow IMU log: plot the gyroscope / accelerometer traces.
