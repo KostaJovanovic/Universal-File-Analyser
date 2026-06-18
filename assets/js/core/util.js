@@ -342,6 +342,36 @@ export function preBlock(text, cls) {
 // Format a Date for display, tolerating non-Date / invalid values.
 export const fmtDate = (d) => (d instanceof Date && !isNaN(d)) ? d.toLocaleString() : String(d);
 
+// Copy text to the clipboard, with an execCommand fallback for insecure/old
+// contexts where navigator.clipboard is absent. Resolves true on success.
+export async function copyText(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (_) { /* fall through to the legacy path */ }
+  try {
+    const ta = el('textarea', { style: 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;' });
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch (_) { return false; }
+}
+
+// Trigger a browser download of `blob` as `filename` via a throwaway <a>, then
+// revoke the object URL. One revoke policy for the many ad-hoc copies of this.
+export function downloadBlob(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = el('a', { href: url, download: filename });
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+}
+
 // Read up to `n` bytes from a File starting at `off`. Returns a Uint8Array
 // (empty when the offset is past EOF). Shared by the binary parser chunks.
 export async function readSlice(file, off, n) {

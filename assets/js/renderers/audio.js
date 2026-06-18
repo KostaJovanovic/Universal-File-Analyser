@@ -6,7 +6,7 @@ import {
   computeSpectrogram, computeReassignedSpectrogram, renderSpectrogram, colormaps,
   frequencyTicks, timeTicks, formatHz, formatTime
 } from './spectrogram.js';
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, errorCard, integrityCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, errorCard, integrityCard, downloadBlob } from '../core/util.js';
 import {
   computeStats, computeCentroid, computeLufs,
   detectPitch, detectBPM, computeStereoStats
@@ -454,10 +454,7 @@ function makeSpecScrollbar(scrollEl) {
 function specSavePng(canvas, basename) {
   canvas.toBlob((blob) => {
     if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = el('a', { href: url, download: (basename || 'spectrogram') + '.png' });
-    document.body.appendChild(a); a.click();
-    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
+    downloadBlob((basename || 'spectrogram') + '.png', blob);
   }, 'image/png');
 }
 
@@ -1221,11 +1218,7 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
     }
 
     const blob = new Blob([buffer], { type: 'audio/wav' });
-    const url = URL.createObjectURL(blob);
-    const a = el('a', { href: url, download: (file.name || 'selection').replace(/\.[^.]+$/, '') + '_selection.wav' });
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
+    downloadBlob((file.name || 'selection').replace(/\.[^.]+$/, '') + '_selection.wav', blob);
   });
   return waveCard;
 }
