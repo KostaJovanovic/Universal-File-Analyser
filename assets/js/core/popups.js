@@ -5,7 +5,7 @@
    -> suggest/contact; suggest <-> share), so they live together. app.js calls
    the exported entry points from boot()/handleFile(); the rest stays internal. */
 
-import { el } from './util.js';
+import { el, copyText } from './util.js';
 
 // The "suggest this format" popup and the contact modal gate a mailto reveal
 // behind a Cloudflare Turnstile human-check. This site key is PUBLIC by design
@@ -376,25 +376,6 @@ function showShareModal(ctx) {
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);
 
-  // Clipboard API with an execCommand fallback via a throwaway textarea, so it
-  // still works in insecure/older contexts where navigator.clipboard is absent.
-  async function copyText(text) {
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(text);
-        return true;
-      }
-    } catch (_) { /* fall through */ }
-    try {
-      const ta = el('textarea', { style: 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;' });
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.focus(); ta.select();
-      const ok = document.execCommand('copy');
-      ta.remove();
-      return ok;
-    } catch (_) { return false; }
-  }
   function flashCopy(btn, ok, idle) {
     btn.textContent = ok ? 'Copied!' : 'Hit Ctrl+C';
     btn.classList.toggle('is-done', ok);

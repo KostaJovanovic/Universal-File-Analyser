@@ -9,14 +9,10 @@
    sniffGitObject, called from handleFile()'s magic-byte sniff. */
 
 import { el, row, fmtBytes } from '../core/util.js';
+import { hexBytes } from '../core/binutil.js';
 
 const TYPES = new Set(['blob', 'tree', 'commit', 'tag']);
 
-function toHex(bytes) {
-  let s = '';
-  for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, '0');
-  return s;
-}
 
 function hasInflate() { return typeof DecompressionStream !== 'undefined'; }
 
@@ -68,7 +64,7 @@ export async function sniffGitObject(file) {
 async function sha1Hex(bytes) {
   try {
     if (!self.crypto || !crypto.subtle) return null;
-    return toHex(new Uint8Array(await crypto.subtle.digest('SHA-1', bytes)));
+    return hexBytes(new Uint8Array(await crypto.subtle.digest('SHA-1', bytes)));
   } catch (_) { return null; }
 }
 
@@ -104,7 +100,7 @@ function parseTree(content) {
     if (nul + 21 > content.length) break;
     const mode = String.fromCharCode.apply(null, content.subarray(i, sp));
     const name = new TextDecoder().decode(content.subarray(sp + 1, nul));
-    const sha = toHex(content.subarray(nul + 1, nul + 21));
+    const sha = hexBytes(content.subarray(nul + 1, nul + 21));
     const type = mode === '40000' ? 'tree' : mode === '160000' ? 'submodule' : mode === '120000' ? 'symlink' : 'blob';
     entries.push({ mode, name, sha, type });
     i = nul + 21;
