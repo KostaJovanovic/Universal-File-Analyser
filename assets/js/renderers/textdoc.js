@@ -19,7 +19,7 @@ import { openZip } from './zip.js';
 import { paginateText, paginateFlow, pagedPreviewCard, pagedTextCard } from './paged.js';
 
 const LABELS = {
-  rtf: 'Rich Text Format', abw: 'AbiWord document', fb2: 'FictionBook ebook',
+  rtf: 'Rich Text Format', abw: 'AbiWord document', fb2: 'FictionBook e-book',
   hwpx: 'Hangul (HWPX) document', mht: 'MHTML web archive', mhtml: 'MHTML web archive',
   dita: 'DITA topic', ditamap: 'DITA map', tei: 'TEI document', jats: 'JATS article',
   nxml: 'JATS / NLM article', rst: 'reStructuredText', adoc: 'AsciiDoc', asciidoc: 'AsciiDoc',

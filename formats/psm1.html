@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>.PSM1 file - what it is and how to open it online | Analyser</title>
+  <title>.PSM1 file - what it is and how to open it online - Analyser</title>
   <meta name="description" content="PSM1 is a PowerShell script module - a file that groups reusable functions and cmdlets so they can be imported with Import-Module. Open a .PSM1 file online in your browser with Analyser - free, private, no upload, no install. A .PSM1 file opener and viewer.">
   <link rel="canonical" href="https://lab.valjdakosta.com/formats/psm1">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
@@ -11,7 +11,7 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
-  <meta property="og:title" content=".PSM1 file - what it is and how to open it online | Analyser">
+  <meta property="og:title" content=".PSM1 file - what it is and how to open it online - Analyser">
   <meta property="og:description" content="PSM1 is a PowerShell script module - a file that groups reusable functions and cmdlets so they can be imported with Import-Module. Open a .PSM1 file online in your browser with Analyser - free, private, no upload, no install. A .PSM1 file opener and viewer.">
   <meta property="og:url" content="https://lab.valjdakosta.com/formats/psm1">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
@@ -19,9 +19,10 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content=".PSM1 file - what it is and how to open it online | Analyser">
+  <meta name="twitter:title" content=".PSM1 file - what it is and how to open it online - Analyser">
   <meta name="twitter:description" content="PSM1 is a PowerShell script module - a file that groups reusable functions and cmdlets so they can be imported with Import-Module. Open a .PSM1 file online in your browser with Analyser - free, private, no upload, no install. A .PSM1 file opener and viewer.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
+  <meta name="twitter:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <link rel="icon" href="/assets/img/favicon.png" type="image/png">
   <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
@@ -66,10 +67,11 @@
     </div>
     <div class="site-meta">
       <dl>
-        <dt>Version</dt><dd id="versionNum">0.00</dd>
+        <dt>Version</dt><dd><a href="/patch" id="versionNum" class="version-link" title="See the changelog">0.00</a></dd>
+        <dt class="visit-stat">Visitors</dt><dd class="visit-stat"><a href="/stats" class="visit-link" title="See full usage stats"><span id="visitCount">...</span></a></dd>
         <dt>Status</dt><dd class="net-status"><span class="dot"></span> <span class="net-label">Local-only</span></dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
-        <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle">&#9728;&#65038; DAY</button></dd>
+        <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button></dd>
       </dl>
     </div>
   </div>
@@ -97,7 +99,7 @@
             <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>A PSM1 module is usually paired with a PSD1 manifest that declares its version, author and exported commands.</li><li>Analyser handles .PSM1 alongside related formats in &ldquo;Web / code&rdquo;, such as <a href="/formats/html">.HTML</a>, <a href="/formats/css">.CSS</a>, <a href="/formats/js">.JS</a> and more.</li><li>In Analyser's format library, .PSM1 sits in the Data &amp; code category.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>Preview and inspect HTML, CSS, JavaScript, TypeScript, JSON, YAML, XML and Markdown source files, plus Windows scripts - PowerShell (PS1, PSM1, PSD1), reading their comment-based help synopsis, #Requires directives, function and parameter counts, CmdletBinding and Authenticode signing; and batch/command scripts (BAT, CMD), reading the echo state, labels, variables set and the external tools they invoke - all alongside the source.</dd></div>
             <div><dt>Open a .PSM1 file</dt><dd>Drag a .PSM1 file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
-            <div><dt>Related formats</dt><dd><a href="/formats/html">.HTML</a> &middot; <a href="/formats/css">.CSS</a> &middot; <a href="/formats/js">.JS</a> &middot; <a href="/formats/ts">.TS</a> &middot; <a href="/formats/tsx">.TSX</a> &middot; <a href="/formats/jsx">.JSX</a> &middot; <a href="/formats/json">.JSON</a> &middot; <a href="/formats/yaml">.YAML</a> &middot; <a href="/formats/xml">.XML</a> &middot; <a href="/formats/md">.MD</a> &middot; <a href="/formats/ps1">.PS1</a> &middot; <a href="/formats/psd1">.PSD1</a> &middot; <a href="/formats/bat">.BAT</a> &middot; <a href="/formats/cmd">.CMD</a>. See <a href="/formats">all supported file types</a>.</dd></div>
+            <div><dt>Related formats</dt><dd><a href="/formats/html">.HTML</a> &middot; <a href="/formats/css">.CSS</a> &middot; <a href="/formats/js">.JS</a> &middot; <a href="/formats/ts">.TS</a> &middot; <a href="/formats/tsx">.TSX</a> &middot; <a href="/formats/jsx">.JSX</a> &middot; <a href="/formats/json">.JSON</a> &middot; <a href="/formats/yaml">.YAML</a> &middot; <a href="/formats/xml">.XML</a> &middot; <a href="/formats/md">.MD</a> &middot; <a href="/formats/htm">.HTM</a> &middot; <a href="/formats/mjs">.MJS</a> &middot; <a href="/formats/yml">.YML</a> &middot; <a href="/formats/txt">.TXT</a> &middot; <a href="/formats/ps1">.PS1</a> &middot; <a href="/formats/psd1">.PSD1</a> &middot; <a href="/formats/bat">.BAT</a> &middot; <a href="/formats/cmd">.CMD</a>. See <a href="/formats">all supported file types</a>.</dd></div>
           </dl>
         </div>
       </div>
@@ -112,7 +114,7 @@
   </div>
   <div class="footer-row footer-bottom">
     <a href="/formats" class="footer-nav-btn">&larr; All formats</a>
-    <p class="footer-meta">2026 &middot; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
+    <p class="footer-meta"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
     <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button></p>
   </div>
 </footer>

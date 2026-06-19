@@ -211,12 +211,12 @@ export const FORMATS = {
   ttc:     { app: 'TrueType Font Collection', icon: 'TTC' },
   glif:    { app: 'UFO Glyph (GLIF)', icon: 'GLIF', parse: 'text' },
 
-  // eBooks
-  epub:    { app: 'EPUB eBook', icon: 'EPB', zip: true },
-  mobi:    { app: 'Kindle / Mobipocket eBook', icon: 'MOB' },
-  azw3:    { app: 'Kindle Format 8 eBook', icon: 'AZW' },
-  azw:     { app: 'Kindle eBook', icon: 'AZW' },
-  fb2:     { app: 'FictionBook eBook', icon: 'FB2', parse: 'xml' },
+  // e-books
+  epub:    { app: 'EPUB e-book', icon: 'EPB', zip: true },
+  mobi:    { app: 'Kindle / Mobipocket e-book', icon: 'MOB' },
+  azw3:    { app: 'Kindle Format 8 e-book', icon: 'AZW' },
+  azw:     { app: 'Kindle e-book', icon: 'AZW' },
+  fb2:     { app: 'FictionBook e-book', icon: 'FB2', parse: 'xml' },
   djvu:    { app: 'DjVu Document', icon: 'DJV' },
 
   // Subtitles
@@ -887,7 +887,7 @@ export const FORMATS = {
   qxd:     { app: 'QuarkXPress', icon: 'QXD', chunk: 'docs' },
   qxp:     { app: 'QuarkXPress', icon: 'QXP', chunk: 'docs' },
   pmd:     { app: 'PageMaker', icon: 'PMD', chunk: 'docs' },
-  lit:     { app: 'MS Reader eBook', icon: 'LIT', chunk: 'docs' },
+  lit:     { app: 'MS Reader e-book', icon: 'LIT', chunk: 'docs' },
   kfx:     { app: 'Amazon KFX', icon: 'KFX', chunk: 'docs' },
 
   // Camera RAW edit sidecars (lazy chunk: parsers-raw.js)
@@ -1110,7 +1110,7 @@ export const FORMATS = {
   sdw:     { app: 'StarOffice Writer 5', icon: 'SDW', chunk: 'docs' },
   sdc:     { app: 'StarOffice Calc 5', icon: 'SDC', chunk: 'docs' },
   sdd:     { app: 'StarOffice Impress 5', icon: 'SDD', chunk: 'docs' },
-  snb:     { app: 'Shanda Bambook eBook', icon: 'SNB', chunk: 'docs' },
+  snb:     { app: 'Shanda Bambook e-book', icon: 'SNB', chunk: 'docs' },
   lrf:     { app: 'Sony BBeB Book', icon: 'LRF', magic: [0x4C, 0x00, 0x52, 0x00, 0x46, 0x00], chunk: 'docs' },
   lrx:     { app: 'Sony BBeB (DRM)', icon: 'LRX', chunk: 'docs' },
   tcr:     { app: 'Psion / EBookwise TCR', icon: 'TCR', magic: [0x42, 0x4F, 0x4F, 0x4B, 0x44, 0x4F, 0x55, 0x47], chunk: 'docs' },

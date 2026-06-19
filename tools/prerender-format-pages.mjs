@@ -287,8 +287,8 @@ function page(key, e, depth) {
   const factPlain = facts.map((f) => f.plain).join(' ');
   const url = `${SITE}${isFull ? '/formats/' : '/formats/id/'}${key}`;
   const title = isFull
-    ? `.${d} file - what it is and how to open it online | Analyser`
-    : `.${d} file - what it is and how to identify it online | Analyser`;
+    ? `.${d} file - what it is and how to open it online - Analyser`
+    : `.${d} file - what it is and how to identify it online - Analyser`;
   const desc = isFull
     ? `${meta.blurb} Open a .${d} file online in your browser with Analyser - free, private, no upload, no install. A .${d} file opener and viewer.`
     : `${meta.blurb} Identify a .${d} file online in your browser with Analyser - free, private, nothing uploaded.`;
@@ -355,6 +355,7 @@ function page(key, e, depth) {
   <meta name="twitter:title" content="${escAttr(title)}">
   <meta name="twitter:description" content="${escAttr(desc)}">
   <meta name="twitter:image" content="${SITE}/assets/img/banner.jpg">
+  <meta name="twitter:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <link rel="icon" href="/assets/img/favicon.png" type="image/png">
   <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
@@ -399,10 +400,11 @@ function page(key, e, depth) {
     </div>
     <div class="site-meta">
       <dl>
-        <dt>Version</dt><dd id="versionNum">0.00</dd>
+        <dt>Version</dt><dd><a href="/patch" id="versionNum" class="version-link" title="See the changelog">0.00</a></dd>
+        <dt class="visit-stat">Visitors</dt><dd class="visit-stat"><a href="/stats" class="visit-link" title="See full usage stats"><span id="visitCount">...</span></a></dd>
         <dt>Status</dt><dd class="net-status"><span class="dot"></span> <span class="net-label">Local-only</span></dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
-        <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle">&#9728;&#65038; DAY</button></dd>
+        <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button></dd>
       </dl>
     </div>
   </div>
@@ -440,7 +442,7 @@ ${siteNav(key)}
   </div>
   <div class="footer-row footer-bottom">
     <a href="/formats" class="footer-nav-btn">&larr; All formats</a>
-    <p class="footer-meta">2026 &middot; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
+    <p class="footer-meta"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
     <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button></p>
   </div>
 </footer>

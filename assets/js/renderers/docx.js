@@ -2,7 +2,7 @@
    Reads .docx (Office Open XML) and renders a simplified document view
    with metadata, formatted text, tables, and text extraction. */
 
-import { el, row, rowHelp, buildReadout, fmtBytes, integrityCard } from '../core/util.js';
+import { el, row, rowHelp, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 import { openZip } from './zip.js';
 import { paginateFlow, pagedPreviewCard, pagedTextCard } from './paged.js';
 
@@ -443,15 +443,13 @@ export async function renderDocx(file, container) {
 
     if (!zip.has('word/document.xml')) {
       container.innerHTML = '';
-      container.appendChild(el('div', { class: 'anr-error' },
-        'Could not find document content in this DOCX file.'));
+      container.appendChild(errorCard('Could not find document content in this DOCX file.'));
       return;
     }
     const docXml = await zip.text('word/document.xml');
     if (!docXml) {
       container.innerHTML = '';
-      container.appendChild(el('div', { class: 'anr-error' },
-        'Could not decompress document content. DecompressionStream may not be supported.'));
+      container.appendChild(errorCard('Could not decompress document content. DecompressionStream may not be supported.'));
       return;
     }
 
@@ -492,7 +490,6 @@ export async function renderDocx(file, container) {
     }
   } catch (e) {
     container.innerHTML = '';
-    container.appendChild(el('div', { class: 'anr-error' },
-      'Could not read document: ' + (e.message || 'unknown error')));
+    container.appendChild(errorCard('Could not read document: ' + (e.message || 'unknown error')));
   }
 }
