@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>.NPZ file - what it is and how to identify it online | Analyser</title>
+  <title>.NPZ file - what it is and how to identify it online - Analyser</title>
   <meta name="description" content="NPZ is a ZIP holding several NumPy arrays in one file. Identify a .NPZ file online in your browser with Analyser - free, private, nothing uploaded.">
   <link rel="canonical" href="https://lab.valjdakosta.com/formats/id/npz">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
@@ -11,7 +11,7 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
-  <meta property="og:title" content=".NPZ file - what it is and how to identify it online | Analyser">
+  <meta property="og:title" content=".NPZ file - what it is and how to identify it online - Analyser">
   <meta property="og:description" content="NPZ is a ZIP holding several NumPy arrays in one file. Identify a .NPZ file online in your browser with Analyser - free, private, nothing uploaded.">
   <meta property="og:url" content="https://lab.valjdakosta.com/formats/id/npz">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
@@ -19,9 +19,10 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content=".NPZ file - what it is and how to identify it online | Analyser">
+  <meta name="twitter:title" content=".NPZ file - what it is and how to identify it online - Analyser">
   <meta name="twitter:description" content="NPZ is a ZIP holding several NumPy arrays in one file. Identify a .NPZ file online in your browser with Analyser - free, private, nothing uploaded.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
+  <meta name="twitter:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <link rel="icon" href="/assets/img/favicon.png" type="image/png">
   <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
@@ -52,7 +53,7 @@
 <header class="site-header">
   <div class="grid">
     <div class="site-mark">
-      <span class="site-kicker">System &amp; disk</span>
+      <span class="site-kicker">Data &amp; code</span>
       <h1 class="site-title">.NPZ</h1>
       <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
       <p class="site-sub">Zipped NumPy arrays</p>
@@ -66,10 +67,11 @@
     </div>
     <div class="site-meta">
       <dl>
-        <dt>Version</dt><dd id="versionNum">0.00</dd>
+        <dt>Version</dt><dd><a href="/patch" id="versionNum" class="version-link" title="See the changelog">0.00</a></dd>
+        <dt class="visit-stat">Visitors</dt><dd class="visit-stat"><a href="/stats" class="visit-link" title="See full usage stats"><span id="visitCount">...</span></a></dd>
         <dt>Status</dt><dd class="net-status"><span class="dot"></span> <span class="net-label">Local-only</span></dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
-        <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle">&#9728;&#65038; DAY</button></dd>
+        <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button></dd>
       </dl>
     </div>
   </div>
@@ -98,7 +100,7 @@
             <div><dt>What Analyser reads</dt><dd>Identify and read developer and data-serialisation files: dependency lockfiles (npm/Yarn/pnpm/Cargo/Poetry/Bundler/Composer - locked-package count), binary serialisations (MessagePack, CBOR, BSON, raw Protobuf messages and descriptor sets), Python pickles with a security note, NumPy .npz and Java jar/war/ear archives, IDL schemas (FlatBuffers/Thrift/Cap n Proto/HCL), MATLAB MAT-files, Redis RDB dumps and columnar big-data containers (Apache Arrow/Feather, Parquet, ORC). The JSON supersets JSON5/JSONC/Hjson now open in a full viewer - see Notebooks &amp; data above.</dd></div>
             <div><dt>Depth of analysis</dt><dd>.NPZ is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .NPZ file</dt><dd>Drag a .NPZ file onto <a href="/">the Analyser home page</a> (or tap to pick one). It is identified entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
-            <div><dt>Related formats</dt><dd><a href="/formats/id/lock">.LOCK</a> &middot; <a href="/formats/id/pb">.PB</a> &middot; <a href="/formats/id/msgpack">.MsgPack</a> &middot; <a href="/formats/id/mpk">.MPK</a> &middot; <a href="/formats/id/bson">.BSON</a> &middot; <a href="/formats/id/cbor">.CBOR</a> &middot; <a href="/formats/id/pkl">.PKL</a> &middot; <a href="/formats/id/pickle">.Pickle</a> &middot; <a href="/formats/id/jar">.JAR</a> &middot; <a href="/formats/id/war">.WAR</a> &middot; <a href="/formats/id/ear">.EAR</a> &middot; <a href="/formats/id/fbs">.FBS</a> &middot; <a href="/formats/id/thrift">.Thrift</a> &middot; <a href="/formats/id/capnproto">.CapnProto</a> &middot; <a href="/formats/id/hcl">.HCL</a> &middot; <a href="/formats/mat">.MAT</a> &middot; <a href="/formats/id/rdb">.RDB</a> &middot; <a href="/formats/id/arrow">.Arrow</a> and <a href="/formats">more</a>. See <a href="/formats">all supported file types</a>.</dd></div>
+            <div><dt>Related formats</dt><dd><a href="/formats/id/lock">.LOCK</a> &middot; <a href="/formats/id/pb">.PB</a> &middot; <a href="/formats/id/msgpack">.MsgPack</a> &middot; <a href="/formats/id/mpk">.MPK</a> &middot; <a href="/formats/id/bson">.BSON</a> &middot; <a href="/formats/id/cbor">.CBOR</a> &middot; <a href="/formats/id/pkl">.PKL</a> &middot; <a href="/formats/id/pickle">.Pickle</a> &middot; <a href="/formats/id/jar">.JAR</a> &middot; <a href="/formats/id/war">.WAR</a> &middot; <a href="/formats/id/ear">.EAR</a> &middot; <a href="/formats/id/fbs">.FBS</a> &middot; <a href="/formats/id/thrift">.Thrift</a> &middot; <a href="/formats/id/capnp">.Capnp</a> &middot; <a href="/formats/id/hcl">.HCL</a> &middot; <a href="/formats/mat">.MAT</a> &middot; <a href="/formats/id/rdb">.RDB</a> &middot; <a href="/formats/id/arrow">.Arrow</a> and <a href="/formats">more</a>. See <a href="/formats">all supported file types</a>.</dd></div>
           </dl>
         </div>
       </div>
@@ -113,7 +115,7 @@
   </div>
   <div class="footer-row footer-bottom">
     <a href="/formats" class="footer-nav-btn">&larr; All formats</a>
-    <p class="footer-meta">2026 &middot; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
+    <p class="footer-meta"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
     <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button></p>
   </div>
 </footer>

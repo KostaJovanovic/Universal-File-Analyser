@@ -87,7 +87,7 @@
         <dt class="visit-stat">Visitors</dt><dd class="visit-stat"><a href="/stats" class="visit-link" title="See full usage stats"><span id="visitCount">...</span></a></dd>
         <dt>Status</dt><dd class="net-status"><span class="dot"></span> <span class="net-label">Local-only</span></dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
-        <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle">&#9728;&#65038; DAY</button></dd>
+        <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button></dd>
       </dl>
     </div>
   </div>
@@ -204,6 +204,18 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">3.45 - 3.46</p>
+          <p class="patch-name">Long Tail</p>
+          <p class="patch-date">19 June 2026, 02:29</p>
+          <ul class="patch-list">
+            <li><strong>Analyser now recognises over eighty more file types - more than 1,140 in all - and the newest Visual Studio solution format opens, alongside a sweep of polish across the format guides.</strong></li>
+            <li><span class="patch-tag">New</span><strong>The newest Visual Studio solutions open.</strong> A <a href="/about#ext-slnx">.slnx</a> - the tidy XML solution file recent Visual Studio releases save in place of the old text one - now opens and lists every project it groups, each one&rsquo;s language and the Debug and Release build configurations, just like the classic <a href="/about#ext-sln">.sln</a>.</li>
+            <li><span class="patch-tag">New</span><strong>Over eighty more formats recognised.</strong> A wide sweep of new file types across documents, developer and data files, archives, mapping, game assets, email, 3D and CAD, science and disk images are now named on sight - and the truly obscure ones get a place of their own in a new <strong>Niche and rare formats</strong> group. Every one has its own format guide page.</li>
+            <li><strong>Maintenance</strong> - the format guide pages now carry the live visitor count and link to the changelog, the light and dark switch announces itself to screen readers, the formats list is grouped more accurately, and a pass of small consistency fixes went across page titles, descriptions and tidy-up under the hood.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">3.37 - 3.44</p>
           <p class="patch-name">Home Movies</p>
           <p class="patch-date">18 June 2026, 14:12</p>
@@ -226,6 +238,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">3.30 - 3.32</p>
           <p class="patch-name">Cutting Room</p>
@@ -241,9 +256,6 @@
             <li><span class="patch-tag">New</span><strong>Visual Studio solutions open.</strong> A <a href="/about#ext-sln">.sln</a> lists the Visual Studio release, every project it groups - name, path and language - and the Debug and Release build configurations.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">3.26 - 3.29</p>
@@ -1404,7 +1416,7 @@
       <div><dt>JPEG 2000</dt><dd><a href="https://github.com/GoogleChromeLabs/jpeg2000" target="_blank" rel="noopener">OpenJPEG</a> compiled to WASM. Decodes JP2 / J2K images the browser can&rsquo;t. Loaded only when needed.</dd></div>
       <div><dt>PostScript</dt><dd><a href="https://www.ghostscript.com/" target="_blank" rel="noopener">Ghostscript</a> compiled to WASM. Renders EPS / PostScript graphics. ~16 MB, in the Complete download only.</dd></div>
       <div><dt>Animation</dt><dd><a href="https://github.com/airbnb/lottie-web" target="_blank" rel="noopener">lottie-web</a>. Plays Lottie / Bodymovin JSON animations. Loaded only when needed.</dd></div>
-      <div><dt>File ID</dt><dd>Built-in identification for 1062+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 1144+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Install</dt><dd>Add to home screen for an offline PWA. Service worker caches the app shell. Use the buttons above to pre-cache heavy dependencies.</dd></div>
         </dl>
       </details>

@@ -1,3 +1,7 @@
+/* Analyser - SPA router
+   View Transitions API navigation: swaps page content in place and fires the
+   anr:navigate event so boot() re-runs, with no full reload. */
+
 (function () {
   if (!document.startViewTransition) return;
 
