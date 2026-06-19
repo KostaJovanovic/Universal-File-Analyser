@@ -51,6 +51,8 @@ export function guessFormat(b) {
   if ((a(0, 2) === 'II' && b[2] === 0x2A) || (a(0, 2) === 'MM' && b[3] === 0x2A)) return 'TIFF image';
   if (b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3) return 'Matroska / WebM';
   if (b[0] === 0xCA && b[1] === 0xFE && b[2] === 0xBA && b[3] === 0xBE) return 'Java class / Mach-O fat binary';
+  if (a(0, 12) === 'IDEA - MAKER')   return 'Raise3D ideaMaker project';
+  if (a(0, 14) === 'IEDA - PROFILE') return 'Raise3D ideaMaker profile';
 
   // UTF-16 text (e.g. Windows .rdp, some config exports): a BOM, or - failing
   // that - a strong even/odd NUL split with printable ASCII in the other byte.

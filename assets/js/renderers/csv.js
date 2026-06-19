@@ -2,7 +2,7 @@
    Detects the delimiter, parses quoted fields, infers per-column types,
    reports numeric statistics, and previews the first 100 rows. */
 
-import { el, row, rowHelp, fmtBytes, fileExt, errorCard, integrityCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, fileExt, errorCard, integrityCard, showCellPopup } from '../core/util.js';
 import { looksLikeGyroCsv, renderGyroCsv } from './gcsv.js';
 
 // Quote-aware CSV/TSV parser. Walks the whole text in a single pass so a
@@ -277,8 +277,6 @@ export async function renderCsv(file, resultsEl) {
   const totalRows = allRows.length;
   const colCount = allRows.length > 0 ? Math.max(...allRows.map((r) => r.length)) : 0;
 
-  // Limit display to 100 rows
-  const displayRows = allRows.slice(0, 100);
   const hasHeader = totalRows > 1; // assume first row is a header
 
   // --- Stats card ---
@@ -376,36 +374,68 @@ export async function renderCsv(file, resultsEl) {
 
   // --- Data table card ---
   const tableCard = el('div', { class: 'anr-card' });
-  tableCard.appendChild(el('h3', {},
-    totalRows > 100 ? `Data preview (first 100 of ${totalRows} rows)` : 'Data'));
+  tableCard.appendChild(el('h3', {}, 'Data'));
 
   const tableWrap = el('div', { class: 'anr-table-wrap' });
   const table = el('table', { class: 'anr-readout anr-table-data' });
 
+  // A clipped cell whose full value pops up centred when clicked (so long text
+  // that the table truncates is still readable). Built for both <td> and <th>.
+  const headerNames = hasHeader && allRows.length > 0 ? allRows[0] : [];
+  const cellLabel = (c) => headerNames[c] || `Column ${c + 1}`;
+  const makeCell = (tag, value, attrs, label) => {
+    const cell = el(tag, { ...attrs, class: (attrs.class ? attrs.class + ' ' : '') + 'anr-cell-click', title: 'Click to view the full value' }, value);
+    cell.addEventListener('click', () => showCellPopup(value, label));
+    return cell;
+  };
+
   // Header row
-  if (hasHeader && displayRows.length > 0) {
+  if (hasHeader && allRows.length > 0) {
     const thead = el('thead', {});
     const headerRow = el('tr', {});
-    for (const h of displayRows[0]) {
-      headerRow.appendChild(el('th', { class: 'anr-table-sticky' }, h));
-    }
+    allRows[0].forEach((h, c) => {
+      headerRow.appendChild(makeCell('th', h, { class: 'anr-table-sticky' }, cellLabel(c)));
+    });
     thead.appendChild(headerRow);
     table.appendChild(thead);
   }
 
-  // Data rows
   const tbody = el('tbody', {});
-  const start = hasHeader ? 1 : 0;
-  for (let i = start; i < displayRows.length; i++) {
-    const tr = el('tr', {});
-    for (const cell of displayRows[i]) {
-      tr.appendChild(el('td', {}, cell));
-    }
-    tbody.appendChild(tr);
-  }
   table.appendChild(tbody);
   tableWrap.appendChild(table);
   tableCard.appendChild(tableWrap);
+
+  // Reveal data rows in batches - a big file can hold far more than fits on screen,
+  // so start with 100 and let the user pull in more (or all) on demand.
+  const dataStart = hasHeader ? 1 : 0;
+  const dataTotal = totalRows - dataStart;
+  const btnRow = el('div', { class: 'anr-btn-row' });
+  const moreBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show more rows');
+  const allBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show all rows');
+  btnRow.appendChild(moreBtn);
+  btnRow.appendChild(allBtn);
+  tableCard.appendChild(btnRow);
+
+  const ROW_BATCH = 100;
+  let shownRows = 0;
+  function revealRows(upTo) {
+    for (; shownRows < upTo && shownRows < dataTotal; shownRows++) {
+      const src = allRows[dataStart + shownRows];
+      const tr = el('tr', {});
+      src.forEach((cell, c) => tr.appendChild(makeCell('td', cell, {}, cellLabel(c))));
+      tbody.appendChild(tr);
+    }
+    if (shownRows >= dataTotal) {
+      btnRow.hidden = true;
+    } else {
+      btnRow.hidden = false;
+      moreBtn.textContent = `Show more rows (${shownRows.toLocaleString()} / ${dataTotal.toLocaleString()})`;
+    }
+  }
+  moreBtn.addEventListener('click', () => revealRows(shownRows + ROW_BATCH));
+  allBtn.addEventListener('click', () => revealRows(dataTotal));
+  revealRows(Math.min(dataTotal, ROW_BATCH));
+
   resultsEl.appendChild(tableCard);
 
   resultsEl.appendChild(integrityCard(file));

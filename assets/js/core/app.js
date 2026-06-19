@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 146;
+const COMMIT_COUNT = 147;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -63,6 +63,7 @@ import { renderGcsv } from '../renderers/gcsv.js';
 import { renderAi } from '../renderers/illustrator.js';
 import { renderStl } from '../renderers/stl.js';
 import { renderModel3d } from '../renderers/model3d.js';
+import { renderGcode } from '../renderers/gcode.js';
 import { renderTimeline } from '../renderers/timeline.js';
 import { renderLrc } from '../renderers/lrc.js';
 import { renderMidi } from '../renderers/midi.js';
@@ -360,6 +361,10 @@ const UNITY_EXTS = new Set([
   'preset', 'mask', 'playable', 'lighting', 'giparams', 'meta',
 ]);
 
+// G-code from 3D-print slicers and CNC/CAM toolpaths - reconstructed in the
+// gcode viewer (extruded moves drawn as the printed shape, or cut moves for CNC).
+const GCODE_EXTS = new Set(['gcode', 'gco', 'g', 'ngc', 'nc', 'tap', 'cnc']);
+
 function classifyFile(file) {
   const t = (file.type || '').toLowerCase();
   const ext = fileExt(file.name);
@@ -436,8 +441,12 @@ function classifyFile(file) {
   // 3D models with an interactive WebGL viewer. Native meshes: STL (above), OBJ,
   // PLY, OFF, 3MF, AMF. B-rep CAD via OpenCASCADE: STEP, IGES, BREP.
   if (ext === '3mf' || ext === 'amf' || ext === 'obj' || ext === 'ply' || ext === 'off') return 'model3d';
+  if (ext === 'mtl') return 'model3d';
   if (ext === 'gltf' || ext === 'glb') return 'model3d';
   if (ext === 'step' || ext === 'stp' || ext === 'iges' || ext === 'igs' || ext === 'brep') return 'model3d';
+  // G-code: reconstruct the printed object from the extruded toolpath (3D-print
+  // slicers) - or render the cutting path (CNC) when there's no extrusion.
+  if (GCODE_EXTS.has(ext)) return 'gcode';
   // Editing timelines (interchange formats): visual track/clip timeline view.
   if (ext === 'edl' || ext === 'fcpxml' || ext === 'otio') return 'timeline';
   if (ext === 'lrc') return 'lrc';
@@ -516,6 +525,7 @@ const ROUTES = {
   iwork:       { render: renderIwork,       results: 'unknown', scroll: '#unknownResults' },
   stl:         { render: renderStl,         results: 'unknown', scroll: '#unknownResults' },
   model3d:     { render: renderModel3d,     results: 'unknown', scroll: '#unknownResults' },
+  gcode:       { render: renderGcode,       results: 'unknown', scroll: '#unknownResults' },
   timeline:    { render: renderTimeline,    results: 'unknown', scroll: '#unknownResults' },
   lrc:         { render: renderLrc,         results: 'unknown', scroll: '#unknownResults' },
   midi:        { render: renderMidi,        results: 'unknown', scroll: '#unknownResults' },
@@ -1182,7 +1192,12 @@ function boot() {
         const a = (s, l) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
         if (a(0, 4) === '%PDF') kind = 'pdf';
         else if (head[0] === 0x50 && head[1] === 0x4B) kind = 'zip';
-        else {
+        // Raise3D ideaMaker writes a distinctive ASCII signature; profile exports
+        // are often saved with a generic .bin extension, so route them by magic.
+        else if (a(0, 12) === 'IDEA - MAKER' || a(0, 14) === 'IEDA - PROFILE') {
+          kind = 'proprietary';
+          sniffedExt = 'idea';
+        } else {
           // Check for SVG: may start with <svg or <?xml ... <svg
           const headStr = a(0, Math.min(head.length, 128));
           if (headStr.trimStart().startsWith('<svg') || (headStr.includes('<svg') && headStr.includes('xmlns'))) {
