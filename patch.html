@@ -121,8 +121,9 @@
                dot is the commit's position, zero-padded to two digits). Commit #29
                was crowned 1.0 (see RELEASE_COMMITS in app.js + RELEASES in save.bat,
                and CLAUDE.md "Version numbering"). After it: 1.01, 1.02, 1.03 ...
-               Commit #60 was crowned 2.0 and #100 was crowned 3.0.
-               To crown a future 4.0, add that commit number to RELEASE_COMMITS.
+               Commit #60 was crowned 2.0, #100 was crowned 3.0 and #151 was
+               crowned 4.0. To crown a future 5.0, add that commit number to
+               RELEASE_COMMITS.
 
              ADDING AN ENTRY (do this on every commit)
                1. Insert the new entry at the TOP, directly under this comment.
@@ -206,7 +207,7 @@
         <div class="patch-entry patch-milestone">
           <p class="patch-version">4.0</p>
           <p class="patch-name">Third Dimension</p>
-          <p class="patch-date">19 June 2026, 06:45</p>
+          <p class="patch-date">19 June 2026, 14:32</p>
           <ul class="patch-list">
             <li><strong>Analyser steps into 3D: a full G-code visualiser for 3D printing and CNC milling, and a proper interactive viewer for 3D models - the biggest leap the workbench has taken.</strong></li>
             <li><span class="patch-tag">New</span><strong>See the object hidden inside a G-code file.</strong> Drop a <a href="/about#ext-gcode">.gcode</a> (or <strong>.gco</strong>, <strong>.nc</strong>, <strong>.tap</strong>, <strong>.cnc</strong>) and Analyser rebuilds the real printed or machined shape - every extruded move drawn as solid filament at its true width and height, the bare cutting path for CNC - in a viewer you can orbit, zoom and spin. Colour it by height, speed or the slicer&rsquo;s own feature types - outer wall, infill, support and the rest - and peel it back layer by layer with the build-height slider. It works across every slicer (PrusaSlicer, SuperSlicer, OrcaSlicer, Cura, Bambu Studio, ideaMaker, Simplify3D) and reads back the object size, layer count and height, filament used, and the nozzle and bed temperatures.</li>
@@ -216,6 +217,8 @@
             <li><span class="patch-tag">New</span><strong>Read any table cell in full.</strong> Click a cell in a <a href="/about#ext-csv">.csv</a> or a spreadsheet and its complete value pops up, labelled with its column or cell reference - handy when a long entry is clipped by the table.</li>
             <li><span class="patch-tag">New</span><strong>A guide for every format, and a clearer front door.</strong> G-code and each 3D format gained its own plain-language guide page, so a search for &ldquo;how to open a .tap file&rdquo; lands somewhere useful, and the home page now says plainly what Analyser is: a G-code visualiser and 3D model viewer.</li>
             <li><span class="patch-tag is-faster">Faster</span><strong>A more useful offline download.</strong> The <strong>Everything</strong> download now bundles EPS/PostScript graphics and AutoCAD drawings as well, leaving the heaviest <strong>Complete</strong> download as purely the extra OCR languages - so you only reach for it to recognise text in another language.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Smoother build playback.</strong> Pressing play now moves at a steady, true pace: a long, slow move draws on gradually with the toolhead gliding along it, instead of pausing in place and then snapping to the end.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A clearer, steadier 3D view.</strong> Prints and models now open framed to fill the viewer and centred on the part - no longer shrunk into a speck by a stray slicer purge line - and the flicker where stacked layers and walls overlapped is gone.</li>
             <li><strong>Polish</strong> - optional anti-aliasing controls keep dense toolpaths crisp without the shimmer, a gentler default spin across every 3D view, and a sweep of viewer-control and layout tidying.</li>
           </ul>
         </div>

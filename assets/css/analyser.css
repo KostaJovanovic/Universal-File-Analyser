@@ -985,25 +985,16 @@ body.anr-has-file .nav-search { display: flex; }
    row would otherwise stay as an empty gap - collapse it explicitly. */
 .anr-btn-row[hidden] { display: none; }
 
-/* G-code viewer "colour by line type" legend - one show/hide toggle per feature,
-   each with its colour swatch (matching the WebGL palette). */
+/* G-code viewer "colour by line type" legend - a row of toggle chips, one per
+   feature, each carrying its colour swatch (matching the WebGL palette). Same chip
+   look and gap as the CNC tool picker below, so the two rows read as a set. */
 .anr-gcode-legend {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
+  gap: 8px;
   margin: 8px 0 0;
 }
-.anr-gcode-legitem {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  color: var(--muted);
-  cursor: pointer;
-  user-select: none;
-}
-.anr-gcode-legitem input { cursor: pointer; margin: 0; }
 .anr-gcode-swatch {
   width: 12px;
   height: 12px;
@@ -1011,7 +1002,6 @@ body.anr-has-file .nav-search { display: flex; }
   border-radius: 2px;
   flex: none;
 }
-.anr-gcode-legitem input { accent-color: var(--accent); }
 
 /* CNC tool table - a true multi-column grid, so override the 2-column readout's
    wide first-column header rule and tighten the cells. */
@@ -1027,6 +1017,57 @@ body.anr-has-file .nav-search { display: flex; }
   text-transform: uppercase;
 }
 .anr-gcode-tooltable td:first-child { color: var(--accent); font-weight: 600; }
+/* The Type column carries a free-text tool description that can run long; let it
+   wrap at word boundaries instead of forcing the whole table wide. Override the
+   readout's break-all so it never splits a word mid-character. */
+.anr-gcode-tooltable th:nth-child(2),
+.anr-gcode-tooltable td:nth-child(2) { white-space: normal; word-break: normal; overflow-wrap: anywhere; }
+
+/* On a phone all six columns can't fit, so the wrappable Type column collapsed to
+   one character per line. Below 640px, drop the table grid and render each tool as
+   a self-labelled card (the header row is hidden; each cell shows its data-label). */
+@media (max-width: 640px) {
+  .anr-gcode-tooltable,
+  .anr-gcode-tooltable tbody { display: block; width: 100%; }
+  .anr-gcode-tooltable tr:first-child { display: none; }   /* the <th> header row */
+  .anr-gcode-tooltable tr {
+    display: block;
+    border: var(--bd-hairline);
+    padding: 4px 12px 8px;
+    margin-bottom: 10px;
+  }
+  .anr-gcode-tooltable tr:hover td { background: transparent; }
+  .anr-gcode-tooltable td {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 18px;
+    padding: 5px 0;
+    border: 0;
+    border-bottom: 1px solid var(--rule);
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+  .anr-gcode-tooltable td:last-child { border-bottom: 0; }
+  .anr-gcode-tooltable td::before {
+    content: attr(data-label);
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: var(--t-tiny);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    text-align: left;
+    white-space: nowrap;
+  }
+  /* The tool id (T2) reads as the card title. */
+  .anr-gcode-tooltable td:first-child {
+    font-size: var(--t-small);
+    padding-top: 8px;
+  }
+}
 
 /* CNC tool picker - neutral buttons like the 3MF parts chips, each carrying its
    tool's colour swatch. Shown by default; toggled off (.is-off) dims the chip. */
@@ -1034,6 +1075,64 @@ body.anr-has-file .nav-search { display: flex; }
 .anr-gcode-toolchip .anr-gcode-swatch { width: 11px; height: 11px; flex: none; }
 .anr-gcode-toolchip.is-off { color: var(--muted); opacity: 0.45; }
 .anr-gcode-toolchip.is-off .anr-gcode-swatch { opacity: 0.4; }
+
+/* ---- G-code / 3D viewer toolbar -------------------------------------------
+   Every control under the canvas lives in one panel, divided from the viewport by
+   a hairline and stacked into clearly-labelled rows (display buttons, what is
+   shown, then the two sliders) - so the section reads as a single control panel
+   rather than a loose pile of rows. */
+.anr-gcode-orbithint {
+  margin: 8px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  text-align: center;
+}
+.anr-gcode-toolbar {
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: var(--bd-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* Button/toggle rows drop the stock .anr-btn-row / .anr-gcode-legend margins so the
+   toolbar's own gap is the only vertical rhythm. */
+.anr-gcode-toolbar .anr-gcode-toolrow,
+.anr-gcode-toolbar .anr-gcode-legend { margin: 0; align-items: center; }
+.anr-gcode-toolbar .anr-spd-warn { margin: 0; }
+/* The label that fronts every toggle/slider row. A shared min-width lines the row
+   contents up down the left edge so the panel scans cleanly. */
+.anr-gcode-rowlabel {
+  flex: none;
+  min-width: 92px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.anr-gcode-slider {
+  display: flex;
+  align-items: center;
+  gap: 10px 12px;
+  flex-wrap: wrap;
+}
+.anr-gcode-slider .anr-range { flex: 1; min-width: 150px; }
+.anr-gcode-slider-val {
+  flex: none;
+  margin-left: auto;
+  min-width: 56px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+  font-feature-settings: "tnum";
+}
+.anr-gcode-slider-val--wide { min-width: 104px; }
 
 /* Sliders in the 3D / G-code viewers - the same hairline track + thin square
    accent thumb the spectrogram controls use, so they match the site aesthetic. */
@@ -1153,6 +1252,26 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 /* Caveat shown under the speed control when "Real time" is selected. */
 .anr-spd-warn { margin: 6px 0 0; font-size: 12px; line-height: 1.35; color: #e5484d; }
 .anr-spd-warn[hidden] { display: none; }
+
+/* On mobile these toolbar popups are absolutely positioned off a button that can
+   wrap anywhere along the controls row, so a fixed width anchored to the button
+   ran off the screen edge. Pin them to the viewport as a bottom sheet instead -
+   always fully on-screen, whatever column the button ended up in. */
+@media (max-width: 700px) {
+  .anr-aa-panel,
+  .anr-spd-panel {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    top: auto;
+    width: auto;
+    min-width: 0;
+    max-height: 70vh;
+    overflow-y: auto;
+    z-index: 60;
+  }
+}
 
 /* View cube - OrcaSlicer-style orientation gizmo in the lower-left of a 3D
    viewport. A CSS-3D cube that rotates with the camera; faces, edges and corners
@@ -5350,6 +5469,13 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
     padding-right: 14px;
   }
   .anr-unknown-results:not([hidden]) { padding-left: 14px; padding-right: 14px; }
+
+  /* The per-format CTA defaults to the wider --pad-x gutter, which left its box
+     inset a few px versus the 14px-gutter content card below it. Match the body
+     gutter and let the button fill the width so its border lines up exactly with
+     the .section-content frame. */
+  .format-cta { padding-left: 14px; padding-right: 14px; }
+  .format-cta-btn { width: 100%; text-align: center; }
 
   /* Spectrogram settings (segmented groups): stack the groups vertically, each
      separated by a top hairline, and pack each group's controls into a tidy
