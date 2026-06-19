@@ -3446,7 +3446,7 @@ details[open] summary::after { content: "\2212"; }
   justify-content: space-between;
   padding: 16px 20px 0;
 }
-.fmt-overlay-header h3 {
+.fmt-overlay-header h2 {
   margin: 0;
   font-size: var(--t-h3);
 }

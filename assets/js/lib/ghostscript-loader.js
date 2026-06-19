@@ -112,5 +112,3 @@ export async function renderPostScript(bytes, ext) {
     return null;
   }
 }
-
-export default renderPostScript;

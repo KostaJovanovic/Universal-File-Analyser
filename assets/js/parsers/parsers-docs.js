@@ -1045,7 +1045,7 @@ async function parseSnb(file) {
     // Some SNB are not plain ZIP; bail to identification.
     return null;
   }
-  const out = { 'Format': 'Shanda Bambook ebook (.snb)' };
+  const out = { 'Format': 'Shanda Bambook e-book (.snb)' };
   const bookName = names.find((n) => /book\.snbf$/i.test(n)) || names.find((n) => /snbf\/book/i.test(n));
   if (bookName) {
     const xml = await zip.text(bookName);
@@ -1083,7 +1083,7 @@ async function parseTcr(file) {
   const b = new Uint8Array(await file.slice(0, 16).arrayBuffer());
   const sig = ascii(b, 0, 8);
   if (sig !== 'BOOKDOUG' && sig !== '!!8-Bit!') return null;
-  const out = { 'Format': 'Psion / EBookwise TCR ebook (.tcr)' };
+  const out = { 'Format': 'Psion / EBookwise TCR e-book (.tcr)' };
   out['Signature'] = sig === 'BOOKDOUG' ? 'BOOKDOUG' : '!!8-Bit!!';
   out['Compression'] = 'PalmDoc-style dictionary (256 entries)';
   out['Note'] = 'Compressed text book; body needs the embedded code dictionary to expand.';
@@ -1221,6 +1221,6 @@ export const PARSERS = {
   p65: ident('Adobe PageMaker 6.5 (.p65)', 'PageMaker 6.5 proprietary binary; identification only.'),
   pt6: ident('Adobe PageMaker 6.5 template (.pt6)', 'PageMaker 6.5 template; proprietary binary, identification only.'),
   cba: ident('Comic Book ACE (.cba)', 'ACE-compressed comic; no in-browser ACE decoder exists - identification only.'),
-  lit: ident('Microsoft Reader eBook (.lit)', 'ITOLITLS DRM container; identification only.'),
+  lit: ident('Microsoft Reader e-book (.lit)', 'ITOLITLS DRM container; identification only.'),
   kfx: ident('Amazon Kindle KFX (.kfx)', 'Amazon KFX/KDF container; identification only.'),
 };

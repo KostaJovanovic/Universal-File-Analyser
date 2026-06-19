@@ -42,7 +42,7 @@ function sanitizeBody(doc) {
 export async function renderEpub(file, resultsEl) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
-  resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading eBook "${file.name}"…`));
+  resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading e-book "${file.name}"…`));
 
   let zip;
   try {
@@ -75,7 +75,7 @@ export async function renderEpub(file, resultsEl) {
   // ---- Metadata ----
   const metaGet = (tag) => { const e = opf.getElementsByTagName(tag)[0]; return e ? e.textContent : ''; };
   const metaCard = el('div', { class: 'anr-card' });
-  metaCard.appendChild(el('h3', {}, 'eBook'));
+  metaCard.appendChild(el('h3', {}, 'e-book'));
   const metaTbl = el('table', { class: 'anr-readout' });
   const title = metaGet('dc:title');
   metaTbl.appendChild(row('Title', title || file.name));

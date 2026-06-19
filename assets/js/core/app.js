@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 145;
+const COMMIT_COUNT = 146;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -768,6 +768,11 @@ async function setupStatsPage() {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
+  { range: '3.45 - 3.46', notes: [
+    'The newest Visual Studio solution format (.slnx) opens, listing every project, language and build configuration.',
+    'Over eighty more file types are recognised - more than 1,140 in all - with a new group for the niche and rare ones.',
+    'A sweep of polish across the format guide pages and small consistency fixes throughout.',
+  ] },
   { range: '3.37 - 3.44', notes: [
     'AVCHD camcorder video opens and plays: .mts and .m2ts clips are repackaged into a browser-friendly MP4 on the fly, picture untouched.',
     'A round of internal refactoring - dead code removed, shared helpers consolidated, a parser-crash safeguard, and CSS and theme set-up tidied.',
@@ -2005,7 +2010,13 @@ function boot() {
       './assets/js/renderers/folder.js', './assets/js/renderers/folder-archive-shared.js',
       './assets/js/renderers/treemap.js', './assets/js/core/navigate.js',
       './assets/js/renderers/photo-convert.js', './assets/js/renderers/gif-frames.js', './assets/js/renderers/audio-player.js', './assets/js/renderers/video-avi.js',
-      './assets/js/games/asteroids.js',
+      // The asteroids easter-egg game and its modules - the whole set the
+      // service-worker SHELL precaches, so Essentials really is the whole app.
+      './assets/js/games/asteroids.js', './assets/js/games/config.js', './assets/js/games/style.js',
+      './assets/js/games/state.js', './assets/js/games/geometry.js', './assets/js/games/world.js',
+      './assets/js/games/ufos.js', './assets/js/games/drones.js', './assets/js/games/weapons.js',
+      './assets/js/games/boss.js', './assets/js/games/leaderboard.js', './assets/js/games/menus.js',
+      './assets/js/games/render.js', './assets/js/games/update.js', './assets/js/games/input.js',
       './assets/js/renderers/docx.js', './assets/js/renderers/xlsx.js', './assets/js/renderers/epub.js',
       './assets/js/renderers/pptx.js', './assets/js/renderers/stl.js', './assets/js/renderers/zip.js',
       './assets/js/renderers/lrc.js', './assets/js/renderers/midi.js', './assets/js/renderers/subtitles.js',

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>.CDF file - what it is and how to identify it online | Analyser</title>
+  <title>.CDF file - what it is and how to identify it online - Analyser</title>
   <meta name="description" content="CDF is a NetCDF file storing array-based scientific data like climate and ocean models. Identify a .CDF file online in your browser with Analyser - free, private, nothing uploaded.">
   <link rel="canonical" href="https://lab.valjdakosta.com/formats/id/cdf">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
@@ -11,7 +11,7 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
-  <meta property="og:title" content=".CDF file - what it is and how to identify it online | Analyser">
+  <meta property="og:title" content=".CDF file - what it is and how to identify it online - Analyser">
   <meta property="og:description" content="CDF is a NetCDF file storing array-based scientific data like climate and ocean models. Identify a .CDF file online in your browser with Analyser - free, private, nothing uploaded.">
   <meta property="og:url" content="https://lab.valjdakosta.com/formats/id/cdf">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
@@ -19,9 +19,10 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content=".CDF file - what it is and how to identify it online | Analyser">
+  <meta name="twitter:title" content=".CDF file - what it is and how to identify it online - Analyser">
   <meta name="twitter:description" content="CDF is a NetCDF file storing array-based scientific data like climate and ocean models. Identify a .CDF file online in your browser with Analyser - free, private, nothing uploaded.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
+  <meta name="twitter:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <link rel="icon" href="/assets/img/favicon.png" type="image/png">
   <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/img/icon.png">
@@ -66,10 +67,11 @@
     </div>
     <div class="site-meta">
       <dl>
-        <dt>Version</dt><dd id="versionNum">0.00</dd>
+        <dt>Version</dt><dd><a href="/patch" id="versionNum" class="version-link" title="See the changelog">0.00</a></dd>
+        <dt class="visit-stat">Visitors</dt><dd class="visit-stat"><a href="/stats" class="visit-link" title="See full usage stats"><span id="visitCount">...</span></a></dd>
         <dt>Status</dt><dd class="net-status"><span class="dot"></span> <span class="net-label">Local-only</span></dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
-        <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle">&#9728;&#65038; DAY</button></dd>
+        <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button></dd>
       </dl>
     </div>
   </div>
@@ -98,7 +100,7 @@
             <div><dt>What Analyser reads</dt><dd>Inspect geospatial and GIS files without a map: TopoJSON, OpenStreetMap XML, Esri Shapefile siblings (SHP/SHX/DBF/PRJ/CPG), world files, GML, NMEA GPS logs, IGC flight logs, MapInfo TAB/MIF, GDAL VRT, PMTiles, DTED terrain, Esri ASCII grids and SRTM .hgt - surfacing CRS/EPSG, feature/record counts, bounding boxes and elevation ranges. GRIB/NetCDF/GeoPackage/MBTiles/MrSID/ECW identified.</dd></div>
             <div><dt>Depth of analysis</dt><dd>.CDF is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .CDF file</dt><dd>Drag a .CDF file onto <a href="/">the Analyser home page</a> (or tap to pick one). It is identified entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
-            <div><dt>Related formats</dt><dd><a href="/formats/id/topojson">.TopoJSON</a> &middot; <a href="/formats/id/osm">.OSM</a> &middot; <a href="/formats/id/shp">.SHP</a> &middot; <a href="/formats/id/shx">.SHX</a> &middot; <a href="/formats/id/dbf">.DBF</a> &middot; <a href="/formats/id/prj">.PRJ</a> &middot; <a href="/formats/id/cpg">.CPG</a> &middot; <a href="/formats/id/pgw">.PGW</a> &middot; <a href="/formats/id/tfw">.TFW</a> &middot; <a href="/formats/id/jgw">.JGW</a> &middot; <a href="/formats/id/wld">.WLD</a> &middot; <a href="/formats/id/gml">.GML</a> &middot; <a href="/formats/id/nmea">.NMEA</a> &middot; <a href="/formats/id/igc">.IGC</a> &middot; <a href="/formats/id/tab">.TAB</a> &middot; <a href="/formats/id/mif">.MIF</a> &middot; <a href="/formats/id/vrt">.VRT</a> &middot; <a href="/formats/id/pmtiles">.PMTiles</a> and <a href="/formats">more</a>. See <a href="/formats">all supported file types</a>.</dd></div>
+            <div><dt>Related formats</dt><dd><a href="/formats/id/topojson">.TopoJSON</a> &middot; <a href="/formats/id/osm">.OSM</a> &middot; <a href="/formats/id/shp">.SHP</a> &middot; <a href="/formats/id/shx">.SHX</a> &middot; <a href="/formats/id/dbf">.DBF</a> &middot; <a href="/formats/id/prj">.PRJ</a> &middot; <a href="/formats/id/cpg">.CPG</a> &middot; <a href="/formats/id/pgw">.PGW</a> &middot; <a href="/formats/id/tfw">.TFW</a> &middot; <a href="/formats/id/jgw">.JGW</a> &middot; <a href="/formats/id/wld">.WLD</a> &middot; <a href="/formats/id/gml">.GML</a> &middot; <a href="/formats/id/nmea">.NMEA</a> &middot; <a href="/formats/id/nmea0183">.NMEA0183</a> &middot; <a href="/formats/id/igc">.IGC</a> &middot; <a href="/formats/id/tab">.TAB</a> &middot; <a href="/formats/id/mif">.MIF</a> &middot; <a href="/formats/id/vrt">.VRT</a> and <a href="/formats">more</a>. See <a href="/formats">all supported file types</a>.</dd></div>
           </dl>
         </div>
       </div>
@@ -113,7 +115,7 @@
   </div>
   <div class="footer-row footer-bottom">
     <a href="/formats" class="footer-nav-btn">&larr; All formats</a>
-    <p class="footer-meta">2026 &middot; <a href="https://valjdakosta.com/">valjdakosta.com</a></p>
+    <p class="footer-meta"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
     <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button></p>
   </div>
 </footer>
