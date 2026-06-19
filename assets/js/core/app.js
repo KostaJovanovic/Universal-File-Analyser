@@ -1,18 +1,18 @@
-﻿/* Analyser - entry point
+/* Analyser - entry point
    - Boots photo + audio + video modules
    - Acts as the page-wide drop target (until the first file lands)
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 148;
+const COMMIT_COUNT = 149;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
 // major version and resets the counter within its era: commit 29 reads "1.0" (and
-// 30 → "1.01"), commit 60 reads "2.0", commit 100 reads "3.0" (and 101 → "3.01").
-// To crown a future 4.0, append its commit number here (keep the list sorted
-// ascending, and mirror the RELEASES constant in save.bat).
-const RELEASE_COMMITS = [29, 60, 100];
+// 30 → "1.01"), commit 60 reads "2.0", commit 100 reads "3.0" (and 101 → "3.01"),
+// commit 149 reads "4.0". To crown a future 5.0, append its commit number here
+// (keep the list sorted ascending, and mirror the RELEASES constant in save.bat).
+const RELEASE_COMMITS = [29, 60, 100, 149];
 
 function analyserVersion(n, releases) {
   let major = 0, base = 0;
@@ -778,6 +778,13 @@ async function setupStatsPage() {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
+  { range: '4.0', milestone: true, notes: [
+    'Fourth milestone: Analyser steps into 3D.',
+    'A full G-code visualiser rebuilds the real printed or machined object from any .gcode or CNC program - orbit it, colour by height, speed, feature or tool, peel it back by layer, and play it building move by move, in real time if you like.',
+    'CNC milling files list their whole tool table, spindle, coolant and work offsets, draw each tool in its own colour, and reconstruct the full toolpath faithfully.',
+    'A real 3D model viewer for STL, OBJ, PLY, STEP, 3MF, glTF and more, with a grabbable orientation cube, perspective or orthographic views, wireframe mode and .mtl material libraries.',
+    'Spreadsheet and CSV cells open their full value on click, every G-code and 3D format gained a guide page, and the home page now says plainly what Analyser is.',
+  ] },
   { range: '3.45 - 3.46', notes: [
     'The newest Visual Studio solution format (.slnx) opens, listing every project, language and build configuration.',
     'Over eighty more file types are recognised - more than 1,140 in all - with a new group for the niche and rare ones.',

@@ -203,6 +203,22 @@
                - let the newest version here disagree with app.js.
              ===================================================================== -->
 
+        <div class="patch-entry patch-milestone">
+          <p class="patch-version">4.0</p>
+          <p class="patch-name">Third Dimension</p>
+          <p class="patch-date">19 June 2026, 06:45</p>
+          <ul class="patch-list">
+            <li><strong>Analyser steps into 3D: a full G-code visualiser for 3D printing and CNC milling, and a proper interactive viewer for 3D models - the biggest leap the workbench has taken.</strong></li>
+            <li><span class="patch-tag">New</span><strong>See the object hidden inside a G-code file.</strong> Drop a <a href="/about#ext-gcode">.gcode</a> (or <strong>.gco</strong>, <strong>.nc</strong>, <strong>.tap</strong>, <strong>.cnc</strong>) and Analyser rebuilds the real printed or machined shape - every extruded move drawn as solid filament at its true width and height, the bare cutting path for CNC - in a viewer you can orbit, zoom and spin. Colour it by height, speed or the slicer&rsquo;s own feature types - outer wall, infill, support and the rest - and peel it back layer by layer with the build-height slider. It works across every slicer (PrusaSlicer, SuperSlicer, OrcaSlicer, Cura, Bambu Studio, ideaMaker, Simplify3D) and reads back the object size, layer count and height, filament used, and the nozzle and bed temperatures.</li>
+            <li><span class="patch-tag">New</span><strong>Watch it build.</strong> Press play and the toolpath draws on from the first move to the last, a little toolhead tracing the way. Choose the pace from a pop-up - a fixed lines-per-second, the whole job inside a set number of seconds, or <strong>real time</strong>, where every move takes as long as it actually would on the machine and the total run time is shown up front.</li>
+            <li><span class="patch-tag">New</span><strong>CNC milling programs, read properly.</strong> A milling <strong>.tap</strong> or <strong>.nc</strong> now lists its whole tool table - every cutter with its diameter, type (flat, ball, chamfer and so on), spindle speed and the operations it runs - alongside the spindle direction, coolant and work-offset settings. Each tool&rsquo;s cuts are drawn in their own colour, with buttons above the view to show or hide one tool at a time. Just as importantly, the full toolpath is reconstructed faithfully now, including the shorthand continuation moves CNC programs lean on, so what you see matches the finished part.</li>
+            <li><span class="patch-tag">New</span><strong>A real 3D model viewer.</strong> <a href="/about#ext-stl">.stl</a>, <strong>.obj</strong>, <strong>.ply</strong>, <strong>.step</strong>, <strong>.3mf</strong>, <strong>.glb</strong> and more open in an interactive viewer with an orientation cube in the corner you can grab to spin the model - or click a face, edge or corner to snap straight to that view. Switch between lifelike perspective and straight-on orthographic, flip on a wireframe to see how the mesh is built, and start every model the right way up, viewed from above. Wavefront material libraries (<strong>.mtl</strong>) are read too, listing each material and its colours.</li>
+            <li><span class="patch-tag">New</span><strong>Read any table cell in full.</strong> Click a cell in a <a href="/about#ext-csv">.csv</a> or a spreadsheet and its complete value pops up, labelled with its column or cell reference - handy when a long entry is clipped by the table.</li>
+            <li><span class="patch-tag">New</span><strong>A guide for every format, and a clearer front door.</strong> G-code and each 3D format gained its own plain-language guide page, so a search for &ldquo;how to open a .tap file&rdquo; lands somewhere useful, and the home page now says plainly what Analyser is: a G-code visualiser and 3D model viewer.</li>
+            <li><strong>Polish</strong> - optional anti-aliasing controls keep dense toolpaths crisp without the shimmer, a gentler default spin across every 3D view, and a sweep of viewer-control and layout tidying.</li>
+          </ul>
+        </div>
+
         <div class="patch-entry">
           <p class="patch-version">3.45 - 3.46</p>
           <p class="patch-name">Long Tail</p>
@@ -226,6 +242,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">3.33 - 3.36</p>
           <p class="patch-name">Fine Tuning</p>
@@ -237,9 +256,6 @@
             <li><strong>Maintenance</strong> - a thorough pass over the code&rsquo;s internal comments, every format guide page brought in line with the rest of the site&rsquo;s link previews, and groundwork notes for future tidying.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">3.30 - 3.32</p>
