@@ -82,6 +82,7 @@ function parseGcode(text) {
   const ext = GrowBuf(10), trav = GrowBuf(6);
 
   let absXYZ = true, absE = true, unit = 1, plane = 17;
+  let motionMode = null;            // last G0-G3 motion, for modal (G-word-less) lines
   let x = 0, y = 0, z = 0, e = 0, feed = 0;
   let curH = 0.2, lastExtrudeZ = 0;
   let curType = 7, sawTypes = false, printTime = '';
@@ -100,6 +101,20 @@ function parseGcode(text) {
   let inHeader = true, footRun = [];
   const temps = {};
   let filDia = 0, sawG = false, sawExtrude = false;
+
+  // CNC / milling specifics (Fanuc / Fusion / HSM style, written in () comments).
+  // Tool table from "(T2 D=6. CR=0. - ZMIN=-29.5 - FLAT END MILL)" lines, tool
+  // changes (T<n> M6), spindle speed/direction (S.. M3/M4), coolant (M7/M8/M9),
+  // work-coordinate systems (G54-G59) and per-operation names (the () comment that
+  // immediately precedes a tool change). Only scanned while no extrusion has been
+  // seen, so 3D-print parsing stays fast.
+  const toolDefs = new Map();        // tool# -> { n, dia, cr, taper, zmin, desc, rpm }
+  const toolChanges = [];            // ordered [{ n, op }]
+  const toolSlot = new Map();        // tool# -> colour slot (0-based, encounter order, cap 7)
+  const coolant = new Set(), workOffsets = new Set();
+  let curTool = null, pendingTool = null, lastParen = '', spindleMax = 0, spindleDir = '';
+  let cncType = 7;                   // colour-channel slot of the active tool (CNC)
+  const ensureTool = (n) => { let d = toolDefs.get(n); if (!d) { d = { n }; toolDefs.set(n, d); } return d; };
 
   const bump = (px, py, pz) => {
     if (px < minx) minx = px; if (py < miny) miny = py; if (pz < minz) minz = pz;
@@ -135,7 +150,7 @@ function parseGcode(text) {
   const emitFeed = (x0, y0, z0, x1, y1, z1) => {
     const L = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
     cutMM += L; nFeed++;
-    if (ext.count < SEG_CAP) ext.push([x0, y0, z0, x1, y1, z1, 0, 0, feed, 7]);  // width filled later for CNC
+    if (ext.count < SEG_CAP) ext.push([x0, y0, z0, x1, y1, z1, 0, 0, feed, cncType]);  // width filled later for CNC; type = tool slot
     bump(x0, y0, z0); bump(x1, y1, z1);
     if (feed > 0) { if (feed < fmin) fmin = feed; if (feed > fmax) fmax = feed; }
   };
@@ -168,6 +183,33 @@ function parseGcode(text) {
       if (!printTime) { mm = /(?:print(?:ing)?\s*time|Print Time)[^:=]*[:=]?\s*([\dhms :]+\d[hms])/i.exec(cm); if (mm) printTime = mm[1].trim(); }
       line = line.slice(0, semi);
     }
+    // Paren comments: capture into the header/footer blocks (so the CNC program
+    // header shows), pull out tool definitions, and remember the latest non-tool
+    // comment as a candidate operation name for the next tool change.
+    if (!sawExtrude && line.indexOf('(') >= 0) {
+      let pm; const parenRe = /\(([^)]*)\)/g;
+      while ((pm = parenRe.exec(line))) {
+        const c = pm[1].trim();
+        if (!c) continue;
+        if (inHeader && headerComments.length < HDR_CAP) headerComments.push(c);
+        footRun.push(c);
+        const td = /^T(\d+)\b(.*)$/i.exec(c);
+        if (td) {
+          const def = ensureTool(+td[1]), rest = td[2]; let g;
+          if (def.dia == null && (g = /\bD\s*=?\s*([\d.]+)/i.exec(rest))) def.dia = parseFloat(g[1]);
+          if (def.cr == null && (g = /\bCR\s*=?\s*([\d.]+)/i.exec(rest))) def.cr = parseFloat(g[1]);
+          if (def.taper == null && (g = /\bTAPER\s*=?\s*([\d.]+)\s*DEG/i.exec(rest))) def.taper = parseFloat(g[1]);
+          if (def.zmin == null && (g = /\bZMIN\s*=?\s*(-?[\d.]+)/i.exec(rest))) def.zmin = parseFloat(g[1]);
+          if (!def.desc) {
+            const segs = rest.split(/\s*-\s*/).map((s) => s.trim())
+              .filter((s) => s && /MILL|DRILL|FACE|BULL|CHAMFER|ENGRAV|REAM|\bTAP\b|BORE|SLOT|PROBE|\bEND\b|FLAT|BALL|SPOT|THREAD|DOVETAIL|LOLLIPOP/i.test(s) && !/^Z?MIN|^TAPER|^CR\b|^D=?/i.test(s));
+            if (segs.length) def.desc = segs[segs.length - 1];
+          }
+        } else if (c.length <= 40 && !/^[-*=]/.test(c)) {
+          lastParen = c;   // a plausible operation / section label
+        }
+      }
+    }
     line = line.replace(/\([^)]*\)/g, '').trim();
     if (!line) continue;
     // A real command ends the header and resets the trailing-comment run.
@@ -191,6 +233,31 @@ function parseGcode(text) {
     if (cmd === 'M104' || cmd === 'M109') { const s = numAfter(line, 'S'); if (s > 0 && !temps.nozzle) temps.nozzle = s; continue; }
     if (cmd === 'M140' || cmd === 'M190') { const s = numAfter(line, 'S'); if (s > 0 && !temps.bed) temps.bed = s; continue; }
 
+    // CNC modal words (can share a line with motion). Cheap char-gate first so plain
+    // coordinate lines on big files don't pay for the regex scans.
+    if (!sawExtrude && (line.indexOf('T') >= 0 || line.indexOf('M') >= 0 || line.indexOf('S') >= 0 || line.indexOf('G5') >= 0)) {
+      let g;
+      if ((g = /\bT(\d+)\b/.exec(line))) pendingTool = +g[1];
+      if (/\bM0?6\b/.test(line) && pendingTool != null) {
+        ensureTool(pendingTool);
+        toolChanges.push({ n: pendingTool, op: lastParen || '' });
+        curTool = pendingTool; lastParen = '';
+        let slot = toolSlot.get(pendingTool);
+        if (slot == null) { slot = Math.min(7, toolSlot.size); toolSlot.set(pendingTool, slot); }
+        cncType = slot;   // colour subsequent cutting moves by this tool
+      }
+      if (/\bM0?3\b/.test(line)) spindleDir = 'Clockwise (M3)';
+      else if (/\bM0?4\b/.test(line)) spindleDir = 'Counter-clockwise (M4)';
+      if ((g = /\bS(\d+(?:\.\d+)?)\b/.exec(line))) {
+        const rpm = parseFloat(g[1]);
+        if (rpm > spindleMax) spindleMax = rpm;
+        if (curTool != null) { const d = toolDefs.get(curTool); if (d && d.rpm == null && rpm > 0) d.rpm = rpm; }
+      }
+      if (/\bM0?8\b/.test(line)) coolant.add('Flood (M8)');
+      if (/\bM0?7\b/.test(line)) coolant.add('Mist (M7)');
+      if ((g = /\bG5([4-9])(?:\.(\d+))?\b/.exec(line))) workOffsets.add('G5' + g[1] + (g[2] ? '.' + g[2] : ''));
+    }
+
     if (cmd === 'G92') {
       const t = parseAxes(line);
       if (t.x !== null) x = t.x * unit;
@@ -200,9 +267,19 @@ function parseGcode(text) {
       continue;
     }
 
-    const isLine = cmd === 'G0' || cmd === 'G1' || cmd === 'G00' || cmd === 'G01';
-    const isArc = cmd === 'G2' || cmd === 'G3' || cmd === 'G02' || cmd === 'G03';
-    if (!isLine && !isArc) continue;
+    // Normalised motion mode. A bare-coordinate line (no G-word, e.g. "X42 Y3 Z-1")
+    // continues the previous G0-G3 mode - CNC posts (Fanuc/Fusion) rely on this
+    // modal behaviour heavily, so without it most cutting moves are lost.
+    let mo = null;
+    if (cmd === 'G0' || cmd === 'G00') mo = 'G0';
+    else if (cmd === 'G1' || cmd === 'G01') mo = 'G1';
+    else if (cmd === 'G2' || cmd === 'G02') mo = 'G2';
+    else if (cmd === 'G3' || cmd === 'G03') mo = 'G3';
+    else if (motionMode && /^[XYZABCUVWIJKRF][-+.\d]/i.test(line)) mo = motionMode;
+    if (!mo) continue;
+    motionMode = mo;
+    const isLine = mo === 'G0' || mo === 'G1';
+    const isArc = mo === 'G2' || mo === 'G3';
     sawG = true;
 
     const t = parseAxes(line);
@@ -218,12 +295,12 @@ function parseGcode(text) {
       const moved = nx !== x || ny !== y || nz !== z;
       if (moved) {
         if (extruding) { emitExtrude(x, y, z, nx, ny, nz, de); extrudeMM += de; }
-        else if (cmd === 'G0' || cmd === 'G00') emitTravel(x, y, z, nx, ny, nz);
+        else if (mo === 'G0') emitTravel(x, y, z, nx, ny, nz);
         else emitFeed(x, y, z, nx, ny, nz);
       }
     } else {
       nArc++;
-      const cw = (cmd === 'G2' || cmd === 'G02');
+      const cw = (mo === 'G2');
       const pts = arcPoints(x, y, z, nx, ny, nz, t, unit, cw, plane);
       if (pts) {
         const perDe = extruding ? de / (pts.length - 1) : 0;
@@ -292,6 +369,16 @@ function parseGcode(text) {
     counts: { rapid: nRapid, feed: nFeed, extrude: nExtrude, arc: nArc },
     filDia: filDia || DEF_DIA,
     temps,
+    cnc: sawExtrude ? null : {
+      tools: [...toolDefs.values()].sort((a, b) => a.n - b.n),
+      changes: toolChanges,
+      // Tools that actually cut, in encounter order, each mapped to a colour slot -
+      // drives the colour-by-tool mode and the per-tool show/hide legend.
+      toolColors: [...toolSlot.entries()].map(([n, slot]) => ({ n, slot })).sort((a, b) => a.slot - b.slot),
+      spindleMax, spindleDir,
+      coolant: [...coolant],
+      workOffsets: [...workOffsets],
+    },
     headerComments: allComments,
   };
 }
@@ -387,11 +474,15 @@ function boxTemplate() {
 }
 
 // ---------- WebGL viewer (instanced filament beads) ----------
-function buildViewer(data) {
+// opts.antialias toggles hardware MSAA (set at context creation, so changing it
+// rebuilds the viewer). The other anti-aliasing controls (supersampling, minimum
+// line width, distant-bead flattening) are live state flags read each frame.
+function buildViewer(data, opts = {}) {
   const wrap = el('div', { class: 'anr-stl-viewport' });
   const canvas = el('canvas', { class: 'anr-stl-canvas' });
   wrap.appendChild(canvas);
-  const glOpts = { preserveDrawingBuffer: true, antialias: true };
+  const msaa = opts.antialias !== false;
+  const glOpts = { preserveDrawingBuffer: true, antialias: msaa };
   const gl = canvas.getContext('webgl', glOpts) || canvas.getContext('experimental-webgl', glOpts);
   if (!gl) { wrap.appendChild(el('p', { class: 'anr-error' }, 'WebGL is not available in this browser.')); return { wrap, ok: false }; }
   const inst = gl.getExtension('ANGLE_instanced_arrays');
@@ -445,7 +536,8 @@ function buildViewer(data) {
   }
 
   const vsInst = `attribute float aEnd, aSr, aSu; attribute vec3 aA, aB; attribute float aHW, aHH, aFeed, aType;
-    uniform mat4 uProj, uView, uModel; uniform float uYmin, uYspan, uFmin, uFspan, uMode, uTravel, uVis[8];
+    uniform mat4 uMVP, uModel; uniform vec2 uViewport;
+    uniform float uYmin, uYspan, uFmin, uFspan, uMode, uTravel, uMinW, uMinPx, uFlat, uVis[8];
     varying float vT, vVis; varying vec3 vN, vColor;
     vec3 ramp(float t){ vec3 c1=vec3(0.18,0.32,0.92),c2=vec3(0.10,0.80,0.86),c3=vec3(0.22,0.82,0.30),c4=vec3(0.97,0.80,0.20),c5=vec3(0.96,0.26,0.20);
       if(t<0.25)return mix(c1,c2,t/0.25); if(t<0.50)return mix(c2,c3,(t-0.25)/0.25); if(t<0.75)return mix(c3,c4,(t-0.50)/0.25); return mix(c4,c5,(t-0.75)/0.25); }
@@ -453,6 +545,11 @@ function buildViewer(data) {
       if(t==0)return vec3(0.95,0.35,0.25); if(t==1)return vec3(0.95,0.62,0.25); if(t==2)return vec3(0.80,0.55,0.32);
       if(t==3)return vec3(0.30,0.62,0.92); if(t==4)return vec3(0.35,0.72,0.45); if(t==5)return vec3(0.62,0.45,0.85);
       if(t==6)return vec3(0.20,0.78,0.85); return vec3(0.70,0.72,0.78); }
+    // Screen-space size (px) of a world-space offset from the centreline point P.
+    float screenPx(vec4 cClip, vec3 P, vec3 v){
+      vec4 oClip = uMVP*vec4(P+v, 1.0);
+      return length((oClip.xy/oClip.w - cClip.xy/cClip.w) * 0.5 * uViewport);
+    }
     void main(){
       vec3 P = mix(aA, aB, aEnd);
       vec3 d = aB - aA; float dl = length(d); d = dl > 1e-8 ? d/dl : vec3(1.0,0.0,0.0);
@@ -460,9 +557,26 @@ function buildViewer(data) {
       vec3 rt = cross(d, up); float rl = length(rt); rt = rl > 1e-6 ? rt/rl : vec3(1.0,0.0,0.0);
       vec3 uv = normalize(cross(rt, d));
       vec3 off = rt*(aSr*aHW) + uv*(aSu*aHH);
-      vec3 world = P + off;
-      vN = mat3(uModel) * normalize(rt*aSr + uv*aSu);
-      gl_Position = uProj*uView*uModel*vec4(world,1.0);
+      vec4 cClip = uMVP*vec4(P, 1.0);
+      // Minimum on-screen size: fatten beads that would project to fewer than uMinPx
+      // pixels so thin parallel lines don't shimmer or drop out when zoomed out.
+      // Only when the point is in front of the camera (cClip.w > 0) - near/behind the
+      // near plane the perspective divide explodes px and the bead would balloon
+      // across the screen - and the scale is clamped so a sliver can't blow up.
+      if(uMinW > 0.5 && cClip.w > 0.001){
+        float px = screenPx(cClip, P, off);
+        if(px > 1e-3 && px < uMinPx) off *= min(uMinPx/px, 6.0);
+      }
+      // Distance-based normal flattening: as a bead shrinks below a few px wide,
+      // blend its rounded radial normal toward the flat up-normal, dropping the
+      // cross-bead luminance grating that drives moiré on infill / top layers.
+      vec3 nrm = normalize(rt*aSr + uv*aSu);
+      if(uFlat > 0.5 && cClip.w > 0.001){
+        float wpx = screenPx(cClip, P, rt*aHW);
+        nrm = normalize(mix(nrm, uv, clamp(1.0 - wpx/3.0, 0.0, 1.0)));
+      }
+      vN = mat3(uModel) * nrm;
+      gl_Position = uMVP*vec4(P + off, 1.0);
       // Height fraction from the segment CENTRELINE (not the offset bead vertex), so
       // the build-height clip reveals whole layers cleanly and 100% is the true top.
       vT = clamp((P.y - uYmin)/uYspan, 0.0, 1.0);
@@ -496,7 +610,8 @@ function buildViewer(data) {
   gl.enable(gl.DEPTH_TEST);
   // mode: 0 = feature type, 1 = height, 2 = speed. vis: per-feature-type 1/0.
   // shown: how many extrusion segments to draw (in print order) - the progress slider.
-  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, bg: [0.06, 0.06, 0.06], clip: 1, mode: data.hasTypes ? 0 : 1, showTravel: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN };
+  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: true, flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN };
+  let viewW = 600, viewH = 420;   // CSS px, for screen-space size in the shader
   let dirty = true;
   const spinListeners = [];
   function setSpin(v) { if (state.spin === v) return; state.spin = v; dirty = true; for (const cb of spinListeners) cb(v); }
@@ -514,7 +629,7 @@ function buildViewer(data) {
     const L = (n) => gl.getAttribLocation(prog, n);
     const aEnd = L('aEnd'), aSr = L('aSr'), aSu = L('aSu'), aA = L('aA'), aB = L('aB'), aHW = L('aHW'), aHH = L('aHH'), aFeed = L('aFeed'), aType = L('aType');
     const U = (n) => gl.getUniformLocation(prog, n);
-    const uProj = U('uProj'), uView = U('uView'), uModel = U('uModel'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis');
+    const uMVP = U('uMVP'), uModel = U('uModel'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat');
 
     const bindTemplate = () => {
       gl.bindBuffer(gl.ARRAY_BUFFER, tplBuf);
@@ -559,8 +674,11 @@ function buildViewer(data) {
     };
     drawImpl = (proj, view, model) => {
       gl.useProgram(prog);
-      gl.uniformMatrix4fv(uProj, false, proj); gl.uniformMatrix4fv(uView, false, view); gl.uniformMatrix4fv(uModel, false, model);
+      const mvp = mat4Multiply(proj, mat4Multiply(view, model));
+      gl.uniformMatrix4fv(uMVP, false, mvp); gl.uniformMatrix4fv(uModel, false, model);
+      gl.uniform2f(uViewport, viewW, viewH);
       gl.uniform1f(uYmin, yMin); gl.uniform1f(uYspan, ySpan); gl.uniform1f(uFmin, fMin); gl.uniform1f(uFspan, fSpan); gl.uniform1f(uClip, state.clip);
+      gl.uniform1f(uMinW, state.minWidth ? 1 : 0); gl.uniform1f(uMinPx, 1.3); gl.uniform1f(uFlat, state.flatten ? 1 : 0);
       if (uVis) gl.uniform1fv(uVis, state.vis);
       bindTemplate();
       const shown = Math.max(0, Math.min(segN, state.shown | 0));
@@ -604,10 +722,11 @@ function buildViewer(data) {
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = wrap.clientWidth || 600, h = wrap.clientHeight || 420;
+    viewW = w; viewH = h;
     // Supersample to fight the moiré shimmer that many near-parallel thin beads
     // produce against the pixel grid. Scale back the factor for huge prints and
     // cap the total pixel budget so big files stay responsive.
-    const ss = segN > 600000 ? 1.3 : segN > 200000 ? 1.6 : 2.0;
+    const ss = state.ssaa ? (segN > 600000 ? 1.3 : segN > 200000 ? 1.6 : 2.0) : 1;
     let scale = dpr * ss;
     const want = w * h * scale * scale, MAXPIX = 5.5e6;
     if (want > MAXPIX) scale *= Math.sqrt(MAXPIX / want);
@@ -684,6 +803,8 @@ function buildViewer(data) {
   }
   canvas._anrSnapshot = snapshot;
 
+  wrap.addEventListener('fullscreenchange', () => setTimeout(resize, 50));
+
   const api = {
     wrap, ok: true, state, hasTravel: !!drawImpl.hasTravel, instanced: !!(inst && segN > 0), snapshot,
     resize, setSpin, onSpinChange: (cb) => spinListeners.push(cb),
@@ -721,11 +842,14 @@ export async function renderGcode(file, resultsEl) {
 
   const isPrint = data.mode === 'print';
   const u = data.units;
+  const titleCase = (s) => s.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase());
+  const cncTools = (data.cnc && data.cnc.toolColors) ? data.cnc.toolColors : [];
+  const toolLabel = (n) => { const d = data.cnc && data.cnc.tools.find((t) => t.n === n); return 'T' + n + (d && d.desc ? ' - ' + titleCase(d.desc) : ''); };
 
   if (data.segCount > 0) {
     const viewCard = el('div', { class: 'anr-card' });
     viewCard.appendChild(el('h3', {}, isPrint ? 'Reconstructed print' : 'Toolpath'));
-    const viewer = buildViewer(data);
+    let viewer = buildViewer(data, { antialias: true });
     viewCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' }, isPrint
       ? (viewer.instanced
         ? 'Rebuilt from the G-code as solid deposited filament - each extrusion drawn at its real width and height, coloured by layer. Travel moves are hidden.'
@@ -737,14 +861,55 @@ export async function renderGcode(file, resultsEl) {
       const controls = el('div', { class: 'anr-btn-row', style: 'margin-top:10px;align-items:center;flex-wrap:wrap;' });
       const spinBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Pause spin');
       spinBtn.addEventListener('click', () => viewer.setSpin(!viewer.state.spin));
-      viewer.onSpinChange((s) => { spinBtn.textContent = s ? 'Pause spin' : 'Resume spin'; });
+      const updateSpinLabel = (s) => { spinBtn.textContent = s ? 'Pause spin' : 'Resume spin'; };
+      viewer.onSpinChange(updateSpinLabel);
+
+      // Toggling hardware MSAA needs a fresh WebGL context, so rebuild the viewer on
+      // a new canvas, carrying the camera and display state across. Every control
+      // references `viewer` by binding, so they keep working after the swap.
+      function applyMSAA(on) {
+        const s = viewer.state;
+        const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, vis: s.vis, shown: s.shown, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten };
+        const old = viewer;
+        const next = buildViewer(data, { antialias: on });
+        if (!next.ok) return;                         // keep the working viewer if rebuild fails
+        viewer = next;
+        Object.assign(viewer.state, keep, { msaa: on });
+        old.wrap.replaceWith(viewer.wrap);
+        viewer.onSpinChange(updateSpinLabel);
+        viewer.start();
+        viewer.markDirty();
+      }
+
       const resetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Reset view');
       resetBtn.addEventListener('click', () => { Object.assign(viewer.state, { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0 }); viewer.markDirty(); });
       const projBtn = el('button', { type: 'button', class: 'anr-btn' }, viewer.state.ortho ? 'Orthographic' : 'Perspective');
       projBtn.addEventListener('click', () => { viewer.state.ortho = !viewer.state.ortho; projBtn.textContent = viewer.state.ortho ? 'Orthographic' : 'Perspective'; viewer.markDirty(); });
+      // Anti-aliasing / quality popup: hardware MSAA, supersampling, minimum line
+      // width and distant-bead flattening, each toggled independently.
+      const qWrap = el('span', { class: 'anr-aa-wrap' });
+      const qBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Quality');
+      const qPanel = el('div', { class: 'anr-aa-panel is-hidden' });
+      qPanel.appendChild(el('div', { class: 'anr-aa-title' }, 'Anti-aliasing'));
+      const aaRow = (label, desc, get, set) => {
+        const cb = el('input', { type: 'checkbox' }); cb.checked = !!get();
+        cb.addEventListener('change', () => set(cb.checked));
+        const lab = el('label', { class: 'anr-aa-row' }, [cb, el('span', { class: 'anr-aa-label' }, label)]);
+        lab.appendChild(el('span', { class: 'anr-aa-desc' }, desc));
+        qPanel.appendChild(lab);
+        return cb;
+      };
+      aaRow('Hardware MSAA', 'Smooths polygon edges. Toggling rebuilds the view.', () => viewer.state.msaa, (v) => applyMSAA(v));
+      aaRow('Supersampling', 'Renders at higher resolution - best quality, heaviest.', () => viewer.state.ssaa, (v) => { viewer.state.ssaa = v; viewer.resize(); viewer.markDirty(); });
+      aaRow('Minimum line width', 'Stops thin beads shimmering when zoomed out.', () => viewer.state.minWidth, (v) => { viewer.state.minWidth = v; viewer.markDirty(); });
+      aaRow('Flatten distant beads', 'Cuts moiré on flat infill and top surfaces.', () => viewer.state.flatten, (v) => { viewer.state.flatten = v; viewer.markDirty(); });
+      qBtn.addEventListener('click', (e) => { e.stopPropagation(); qPanel.classList.toggle('is-hidden'); });
+      document.addEventListener('click', (e) => { if (!qWrap.contains(e.target)) qPanel.classList.add('is-hidden'); });
+      qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
       // Colour by: feature/line type (when the slicer tagged moves), height, or speed.
       const colorSel = el('select', { class: 'anr-btn anr-select', 'aria-label': 'Colour by', title: 'Colour by' });
       if (data.hasTypes) colorSel.appendChild(el('option', { value: '0' }, 'Colour: line type'));
+      else if (cncTools.length > 1) colorSel.appendChild(el('option', { value: '0' }, 'Colour: tool'));
       colorSel.appendChild(el('option', { value: '1' }, 'Colour: height'));
       colorSel.appendChild(el('option', { value: '2' }, 'Colour: speed'));
       colorSel.value = String(viewer.state.mode);
@@ -759,9 +924,8 @@ export async function renderGcode(file, resultsEl) {
       } else travelBtn.disabled = true;
       const fsBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Fullscreen');
       fsBtn.addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else if (viewer.wrap.requestFullscreen) viewer.wrap.requestFullscreen(); });
-      viewer.wrap.addEventListener('fullscreenchange', () => setTimeout(viewer.resize, 50));
 
-      controls.appendChild(spinBtn); controls.appendChild(resetBtn); controls.appendChild(projBtn); controls.appendChild(colorSel); controls.appendChild(travelBtn); controls.appendChild(fsBtn);
+      controls.appendChild(spinBtn); controls.appendChild(resetBtn); controls.appendChild(projBtn); controls.appendChild(colorSel); controls.appendChild(travelBtn); controls.appendChild(fsBtn); controls.appendChild(qWrap);
       controls.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;margin-left:auto;' }, 'drag to orbit · right-drag to pan · scroll to zoom'));
       viewCard.appendChild(controls);
 
@@ -775,6 +939,21 @@ export async function renderGcode(file, resultsEl) {
           const cb = el('input', { type: 'checkbox', checked: '' });
           cb.addEventListener('change', () => { viewer.state.vis[id] = cb.checked ? 1 : 0; viewer.markDirty(); });
           legend.appendChild(el('label', { class: 'anr-gcode-legitem' }, [cb, swatch, document.createTextNode(f.label)]));
+        }
+        viewCard.appendChild(legend);
+      }
+
+      // CNC: show/hide each tool's cutting moves, with the tool's colour swatch.
+      // All on by default, so every tool is visible at once; untick to isolate.
+      if (cncTools.length > 1) {
+        const legend = el('div', { class: 'anr-gcode-legend' });
+        legend.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;margin-right:2px;' }, 'Tools:'));
+        for (const t of cncTools) {
+          const f = FEATURES[t.slot];
+          const swatch = el('span', { class: 'anr-gcode-swatch', style: `background:rgb(${Math.round(f.rgb[0] * 255)},${Math.round(f.rgb[1] * 255)},${Math.round(f.rgb[2] * 255)})` });
+          const cb = el('input', { type: 'checkbox', checked: '' });
+          cb.addEventListener('change', () => { viewer.state.vis[t.slot] = cb.checked ? 1 : 0; viewer.markDirty(); });
+          legend.appendChild(el('label', { class: 'anr-gcode-legitem' }, [cb, swatch, document.createTextNode(toolLabel(t.n))]));
         }
         viewCard.appendChild(legend);
       }
@@ -820,7 +999,7 @@ export async function renderGcode(file, resultsEl) {
       const speedSel = el('select', { class: 'anr-btn anr-select', 'aria-label': 'Playback speed', title: 'Playback speed' });
       [[100, '100 lines/s'], [500, '500 lines/s'], [1000, '1k lines/s'], [5000, '5k lines/s'], [10000, '10k lines/s'], [20000, '20k lines/s']]
         .forEach(([v, l]) => speedSel.appendChild(el('option', { value: String(v) }, l)));
-      speedSel.value = '10000';
+      speedSel.value = isPrint ? '10000' : '100';
       progSlider.addEventListener('input', () => { stopPlay(); setProgress(Math.round(data.segCount * (+progSlider.value) / 1000), true); });
 
       const progRow = el('div', { class: 'anr-btn-row', style: 'margin-top:8px;align-items:center;' });
@@ -833,7 +1012,7 @@ export async function renderGcode(file, resultsEl) {
 
       resultsEl.appendChild(viewCard);
       viewer.start();
-      window.addEventListener('resize', viewer.resize);
+      window.addEventListener('resize', () => viewer.resize());
     } else resultsEl.appendChild(viewCard);
   } else {
     resultsEl.appendChild(el('div', { class: 'anr-card' }, [el('h3', {}, 'Toolpath'), el('p', { class: 'anr-hint' }, 'No drawable moves were found in this G-code.')]));
@@ -862,8 +1041,15 @@ export async function renderGcode(file, resultsEl) {
     if (data.extrudeMM) tbl.appendChild(rowHelp('Filament used', `${(data.extrudeMM / 1000).toFixed(2)} m  (${Math.round(data.extrudeMM).toLocaleString()} ${u})`, 'Total length of filament extruded, summed from the E axis.'));
     if (data.temps.nozzle) tbl.appendChild(rowHelp('Nozzle temp', data.temps.nozzle + ' °C', 'The hot-end target temperature set in the program (M104/M109).'));
     if (data.temps.bed) tbl.appendChild(rowHelp('Bed temp', data.temps.bed + ' °C', 'The heated-bed target temperature set in the program (M140/M190).'));
-  } else if (data.cutMM) {
-    tbl.appendChild(rowHelp('Cut path length', `${(data.cutMM / 1000).toFixed(2)} m  (${Math.round(data.cutMM).toLocaleString()} ${u})`, 'Total length of the cutting (feed) moves.'));
+  } else {
+    if (data.cutMM) tbl.appendChild(rowHelp('Cut path length', `${(data.cutMM / 1000).toFixed(2)} m  (${Math.round(data.cutMM).toLocaleString()} ${u})`, 'Total length of the cutting (feed) moves.'));
+    const c = data.cnc;
+    if (c) {
+      if (c.changes.length) tbl.appendChild(rowHelp('Tool changes', `${c.changes.length.toLocaleString()}  (${c.tools.length} tool${c.tools.length === 1 ? '' : 's'})`, 'Number of M6 tool changes in the program, and how many distinct tools it uses. See the tooling table below.'));
+      if (c.spindleMax) tbl.appendChild(rowHelp('Max spindle speed', `${Math.round(c.spindleMax).toLocaleString()} rpm${c.spindleDir ? ' · ' + c.spindleDir : ''}`, 'The highest commanded spindle speed (S), and its direction (M3/M4).'));
+      if (c.coolant.length) tbl.appendChild(rowHelp('Coolant', c.coolant.join(', '), 'Coolant modes switched on in the program (M7 mist / M8 flood).'));
+      if (c.workOffsets.length) tbl.appendChild(rowHelp('Work offsets', c.workOffsets.join(', '), 'The work-coordinate systems (G54-G59) the program sets - one per fixture/setup.'));
+    }
   }
   tbl.appendChild(rowHelp(isPrint ? 'Extrusion segments' : 'Cutting moves', data.segCount.toLocaleString(), 'The number of drawn segments - the geometry shown in the viewer (arcs are tessellated into segments).'));
   if (data.counts.arc) tbl.appendChild(rowHelp('Arc moves', data.counts.arc.toLocaleString(), 'G2/G3 circular moves, drawn as smooth tessellated arcs.'));
@@ -891,4 +1077,51 @@ export async function renderGcode(file, resultsEl) {
     card.appendChild(det);
   }
   resultsEl.appendChild(card);
+
+  // --- Tooling (CNC) ---
+  const cnc = data.cnc;
+  if (cnc && (cnc.tools.length || cnc.changes.length)) {
+    const tc = el('div', { class: 'anr-card' });
+    tc.appendChild(el('h3', {}, 'Tooling'));
+
+    if (cnc.tools.length) {
+      const tt = el('table', { class: 'anr-readout anr-gcode-tooltable' });
+      const head = el('tr', {}, [
+        el('th', {}, 'Tool'), el('th', {}, 'Type'), el('th', {}, 'Ø'),
+        el('th', {}, 'Corner / taper'), el('th', {}, 'Z min'), el('th', {}, 'Spindle'),
+      ]);
+      tt.appendChild(head);
+      for (const t of cnc.tools) {
+        let geom = '';
+        if (t.cr != null && t.cr > 0) geom = `R${t.cr} ${u}`;
+        else if (t.taper != null) geom = `${t.taper}° taper`;
+        else if (t.cr === 0) geom = 'flat';
+        tt.appendChild(el('tr', {}, [
+          el('td', {}, 'T' + t.n),
+          el('td', {}, t.desc ? titleCase(t.desc) : '-'),
+          el('td', {}, t.dia != null ? t.dia + ' ' + u : '-'),
+          el('td', {}, geom || '-'),
+          el('td', {}, t.zmin != null ? t.zmin + ' ' + u : '-'),
+          el('td', {}, t.rpm != null ? Math.round(t.rpm).toLocaleString() + ' rpm' : '-'),
+        ]));
+      }
+      tc.appendChild(tt);
+    }
+
+    // Tool-change sequence, with the operation name each change kicks off (when the
+    // CAM post wrote one). Long programs revisit tools, so this shows the order.
+    if (cnc.changes.length) {
+      const seq = cnc.changes.map((c, i) => {
+        const op = c.op ? ` ${titleCase(c.op)}` : '';
+        return `${i + 1}. T${c.n}${op}`;
+      });
+      const det = el('details', { style: 'margin-top:14px;' });
+      det.appendChild(el('summary', {}, `Tool-change sequence (${cnc.changes.length.toLocaleString()})`));
+      const pre = el('pre', { class: 'anr-code', style: 'max-height:280px;overflow:auto;font-size:12px;' });
+      pre.textContent = seq.join('\n');
+      det.appendChild(pre);
+      tc.appendChild(det);
+    }
+    resultsEl.appendChild(tc);
+  }
 }

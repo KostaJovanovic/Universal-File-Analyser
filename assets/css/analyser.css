@@ -1013,6 +1013,21 @@ body.anr-has-file .nav-search { display: flex; }
 }
 .anr-gcode-legitem input { accent-color: var(--accent); }
 
+/* CNC tool table - a true multi-column grid, so override the 2-column readout's
+   wide first-column header rule and tighten the cells. */
+.anr-gcode-tooltable th,
+.anr-gcode-tooltable td {
+  width: auto;
+  padding: 8px 14px 8px 0;
+  white-space: nowrap;
+}
+.anr-gcode-tooltable th {
+  font-size: var(--t-tiny);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.anr-gcode-tooltable td:first-child { color: var(--accent); font-weight: 600; }
+
 /* Sliders in the 3D / G-code viewers - the same hairline track + thin square
    accent thumb the spectrogram controls use, so they match the site aesthetic. */
 .anr-range {
@@ -1064,6 +1079,42 @@ select.anr-select:hover {
   background-repeat: no-repeat;
 }
 select.anr-select option { background: var(--bg); color: var(--fg); }
+
+/* Anti-aliasing / quality popup for the 3D viewers. */
+.anr-aa-wrap { position: relative; display: inline-flex; }
+.anr-aa-panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 5;
+  width: 252px;
+  padding: 12px;
+  background: var(--bg);
+  border: var(--bd-hairline);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.anr-aa-panel.is-hidden { display: none; }
+.anr-aa-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.anr-aa-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  align-items: start;
+  cursor: pointer;
+  font-size: var(--t-small);
+}
+.anr-aa-row input { margin: 2px 0 0; accent-color: var(--accent); cursor: pointer; }
+.anr-aa-label { font-weight: 500; }
+.anr-aa-desc { grid-column: 2; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.3; }
 
 /* View cube - OrcaSlicer-style orientation gizmo in the lower-left of a 3D
    viewport. A CSS-3D cube that rotates with the camera; faces, edges and corners
