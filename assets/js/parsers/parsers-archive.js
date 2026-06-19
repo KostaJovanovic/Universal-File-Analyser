@@ -463,14 +463,17 @@ async function parseCpio(file) {
 // Also the backbone of .deb. Returns parsed members + buffer.
 async function parseArMembers(file, maxBytes = 16 * 1024 * 1024) {
   const b = await readBytes(file, maxBytes);
-  if (ascii(b, 0, 8) !== '!<arch>\n') return null;
+  // Magic "!<arch>\n" and the per-member terminator "`\n" both end in a control
+  // byte, so they must be checked raw - the shared ascii() helper drops bytes < 32.
+  const AR_MAGIC = [0x21, 0x3c, 0x61, 0x72, 0x63, 0x68, 0x3e, 0x0a]; // !<arch>\n
+  if (b.length < 8 || AR_MAGIC.some((c, i) => b[i] !== c)) return null;
   const members = [];
   let pos = 8;
   while (pos + 60 <= b.length) {
     const name = ascii(b, pos, 16).trim();
     const mtime = ascii(b, pos + 16, 12).trim();
     const size = parseInt(ascii(b, pos + 48, 10).trim(), 10) || 0;
-    if (ascii(b, pos + 58, 2) !== '`\n') break;
+    if (b[pos + 58] !== 0x60 || b[pos + 59] !== 0x0a) break; // member header ends with "`\n"
     const dataStart = pos + 60;
     members.push({ name: name.replace(/\/$/, ''), size, mtime: parseInt(mtime, 10) || 0, dataStart });
     pos = dataStart + size + (size % 2); // members are 2-byte aligned
@@ -492,6 +495,69 @@ async function parseAr(file) {
     'Symbol table': hasSymtab ? 'present' : 'none',
     _sections: items.length ? [fileListSection('Members (' + items.length + ')', items, true)] : null,
   };
+}
+
+// ---------- Microsoft COFF library / import library (.lib) ----------
+// A .lib is the same !<arch> container as Unix ar, but its members are COFF
+// objects (and short-import records) rather than Unix .o files. We tell a static
+// library (real COFF objects) apart from an import library (short-import stubs
+// pointing at a DLL) and read the target architecture and the DLLs it binds to.
+const COFF_MACHINE = {
+  0x014c: 'x86 (i386)', 0x0162: 'MIPS', 0x0166: 'MIPS16', 0x0200: 'Itanium (IA-64)',
+  0x8664: 'x64 (AMD64)', 0x01c0: 'ARM', 0x01c2: 'ARM Thumb', 0x01c4: 'ARM Thumb-2',
+  0xaa64: 'ARM64', 0x5032: 'RISC-V 32', 0x5064: 'RISC-V 64', 0x5128: 'RISC-V 128',
+  0x6232: 'LoongArch32', 0x6264: 'LoongArch64', 0x0ebc: 'EFI byte code',
+};
+async function parseLib(file) {
+  const ar = await parseArMembers(file);
+  if (!ar) return null;
+  const b = ar.buf;
+  // Drop the linker bookkeeping members: the two symbol tables (name trims to
+  // "") and the long-name string table ("//" trims to "/").
+  const objs = ar.members.filter((m) => m.name !== '' && m.name !== '/' && m.name !== '__.SYMDEF');
+  let importCount = 0, objCount = 0;
+  const dlls = new Set();
+  const machines = new Set();
+  for (const m of objs) {
+    if (m.dataStart + 4 > b.length) continue;
+    const sig1 = b[m.dataStart] | (b[m.dataStart + 1] << 8);
+    const sig2 = b[m.dataStart + 2] | (b[m.dataStart + 3] << 8);
+    if (sig1 === 0x0000 && sig2 === 0xffff) {
+      // IMPORT_OBJECT_HEADER: machine at +6, then a 20-byte header followed by
+      // two null-terminated strings (the imported symbol, then the DLL name).
+      importCount++;
+      const machine = b[m.dataStart + 6] | (b[m.dataStart + 7] << 8);
+      if (machine) machines.add(machine);
+      let p = m.dataStart + 20;
+      const end = m.dataStart + m.size;
+      const readStr = () => { let s = ''; while (p < end && b[p] !== 0) s += String.fromCharCode(b[p++]); p++; return s; };
+      readStr();                  // imported symbol name (skipped)
+      const dll = readStr();      // DLL the symbol is imported from
+      if (dll) dlls.add(dll);
+    } else {
+      // Regular COFF object member: first u16 is its machine type.
+      objCount++;
+      if (sig1) machines.add(sig1);
+    }
+  }
+  // Any short-import records mean this is an import library binding to a DLL; the
+  // few COFF objects that ride along are just the import-descriptor scaffolding,
+  // not user object code. A library with none of them is a plain static library.
+  const kind = importCount ? 'Import library (links against a DLL)'
+    : objCount ? 'Static library (object code)'
+    : 'COFF library';
+  const out = {
+    'Format': 'Microsoft COFF library (.lib)',
+    'Kind': kind,
+    'Members': objs.length.toLocaleString(),
+  };
+  if (machines.size) out['Architecture'] = [...machines].map((m) => COFF_MACHINE[m] || ('0x' + m.toString(16))).join(', ');
+  if (objCount) out['Object members'] = objCount.toLocaleString();
+  if (importCount) out['Import entries'] = importCount.toLocaleString();
+  if (dlls.size) out['Imports from'] = [...dlls].sort().slice(0, 12).join(', ') + (dlls.size > 12 ? ' +' + (dlls.size - 12) + ' more' : '');
+  const items = objs.map((m) => ({ name: m.name, size: m.size }));
+  if (items.length) out._sections = [fileListSection('Members (' + items.length + ')', items, true)];
+  return out;
 }
 
 // ---------- deb (.deb) ----------
@@ -1249,6 +1315,7 @@ export const PARSERS = {
   lzo: (c) => parseLzo(c.file),
   cpio: (c) => parseCpio(c.file),
   a: (c) => parseAr(c.file),
+  lib: (c) => parseLib(c.file),
   whl: (c) => parseWhl(c.file),
   nupkg: (c) => parseNupkg(c.file),
   crx: (c) => parseCrx(c.file),

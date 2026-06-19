@@ -110,9 +110,22 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
+        self._cc_set = True   # end_headers must not add a second Cache-Control
         self.end_headers()
         self.wfile.write(body)
         return True
+
+    def end_headers(self):
+        # Local dev only: forbid heuristic caching of every static asset so edits
+        # always show on a single refresh - including JS chunks pulled by import()
+        # on a later user action (e.g. dropping a file), which a hard-reload's
+        # cache-bypass does NOT cover. 'no-cache' still lets the browser store and
+        # revalidate (If-Modified-Since -> 304), so it stays fast. The /api/* mocks
+        # set their own no-store and the flag below stops us doubling the header.
+        if not getattr(self, '_cc_set', False):
+            self.send_header('Cache-Control', 'no-cache, must-revalidate')
+            self._cc_set = True
+        super().end_headers()
 
     def do_GET(self):
         path = self.path.split('?', 1)[0].split('#', 1)[0]

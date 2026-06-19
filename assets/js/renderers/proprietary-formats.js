@@ -352,6 +352,7 @@ export const FORMATS = {
   z:       { app: 'compress (.Z)', icon: 'Z', chunk: 'archive' },
   cpio:    { app: 'cpio Archive', icon: 'CPIO', chunk: 'archive' },
   a:       { app: 'Unix ar / Static Library', icon: 'AR', chunk: 'archive' },
+  lib:     { app: 'Microsoft COFF Library', icon: 'LIB', chunk: 'archive' },
   whl:     { app: 'Python Wheel', icon: 'WHL', chunk: 'archive' },
   nupkg:   { app: 'NuGet Package', icon: 'NUPKG', chunk: 'archive' },
   crx:     { app: 'Chrome Extension', icon: 'CRX', chunk: 'archive' },

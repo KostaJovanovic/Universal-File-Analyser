@@ -546,6 +546,85 @@ function renderHandleTree(handle, fileEntries, file, resultsEl, opts) {
   }, onFileClick);
 }
 
+// ---------- ar / static & import library (.a / .lib) ----------
+// A Unix ar archive and a Microsoft COFF library (.lib) are the same !<arch>
+// container. The vendored libarchive build may not include the ar reader, and the
+// layout is trivial, so we walk the members ourselves and hand renderHandleTree a
+// libarchive-shaped handle (flat entries + lazy getBytes) to reuse its tree,
+// treemap and click-to-analyse UI. Members are COFF .obj objects (and, in an
+// import library, short-import stubs), so opening one lands on identification.
+async function extractAr(file) {
+  const b = new Uint8Array(await file.arrayBuffer());
+  const MAGIC = [0x21, 0x3c, 0x61, 0x72, 0x63, 0x68, 0x3e, 0x0a]; // !<arch>\n
+  if (b.length < 8 || MAGIC.some((c, i) => b[i] !== c)) throw new Error('Not an ar archive');
+  const dec = new TextDecoder('latin1');
+  const field = (o, n) => dec.decode(b.subarray(o, o + n));
+  const raw = [];
+  let pos = 8;
+  while (pos + 60 <= b.length) {
+    if (b[pos + 58] !== 0x60 || b[pos + 59] !== 0x0a) break;     // member header ends with "`\n"
+    const size = parseInt(field(pos + 48, 10).trim(), 10) || 0;
+    raw.push({ name16: field(pos, 16), size, dataStart: pos + 60 });
+    pos = pos + 60 + size + (size & 1);                          // members are 2-byte aligned
+  }
+  // GNU/MS long-name string table (member named "//"); names point in as "/<off>".
+  let longnames = null;
+  for (const r of raw) {
+    if (r.name16.replace(/ +$/, '') === '//') { longnames = b.subarray(r.dataStart, r.dataStart + r.size); break; }
+  }
+  const resolveName = (name16) => {
+    const lref = name16.match(/^\/(\d+)/);
+    if (lref && longnames) {
+      const off = parseInt(lref[1], 10);
+      let end = off;
+      while (end < longnames.length && longnames[end] !== 0x0a && longnames[end] !== 0x00) end++;
+      return dec.decode(longnames.subarray(off, end)).replace(/\/$/, '');
+    }
+    let n = name16.replace(/ +$/, '');
+    if (n.endsWith('/')) n = n.slice(0, -1);                     // GNU trailing-slash terminator
+    return n;
+  };
+  // Drop the linker bookkeeping members (symbol tables named "/", long-name table
+  // "//") and give same-named members - every import stub carries the DLL name -
+  // a unique label so they all appear in the tree.
+  const used = new Map();
+  const uniq = (name) => {
+    const seen = used.get(name) || 0; used.set(name, seen + 1);
+    if (!seen) return name;
+    const dot = name.lastIndexOf('.');
+    return dot > 0 ? `${name.slice(0, dot)} (${seen + 1})${name.slice(dot)}` : `${name} (${seen + 1})`;
+  };
+  const entries = raw
+    .map((r, i) => ({ r, name: resolveName(r.name16), i }))
+    .filter(({ name }) => name !== '' && name !== '/')
+    .map(({ r, name, i }) => ({
+      name: uniq(name || ('member-' + i)),
+      size: r.size,
+      getBytes: async () => b.subarray(r.dataStart, r.dataStart + r.size),
+    }));
+  return { names: entries.map((e) => e.name), entries, close() {} };
+}
+
+async function renderArEmbedded(file, resultsEl, opts) {
+  const label = (opts && opts.label) || 'Library';
+  resultsEl.hidden = false;
+  resultsEl.innerHTML = '';
+  resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading ${label} "${file.name}"…`));
+  let handle;
+  try {
+    handle = await extractAr(file);
+  } catch (e) {
+    resultsEl.innerHTML = '';
+    if (isUnreadableError(e)) resultsEl.appendChild(cloudFileWarning(file));
+    else resultsEl.appendChild(errorCard('Could not read this library in the browser.'));
+    return;
+  }
+  const fileEntries = (handle.entries || []).filter((e) => e && e.name);
+  resultsEl.innerHTML = '';
+  if (!fileEntries.length) { resultsEl.appendChild(errorCard('No members found inside this library.')); return; }
+  renderHandleTree(handle, fileEntries, file, resultsEl, opts);
+}
+
 // Decompress a single-stream compressor (gzip / xz / zstd) by magic. Returns
 // { data, codec, drop } where `drop` strips the compression extension from the
 // inner filename, or null if the codec has no in-browser decoder (bzip2) or the
@@ -630,6 +709,7 @@ export async function renderArchiveEmbedded(file, container, opts = {}) {
   try {
     if (opts.mode === 'zip') await renderArchive(file, wrap, { embedded: true });
     else if (compressed) { wrap.remove(); await renderCompressedEmbedded(file, container, label); }
+    else if (opts.mode === 'ar') await renderArEmbedded(file, wrap, { label });
     else await renderLibarchive(file, wrap, { label });
   } catch (e) {
     wrap.appendChild(errorCard('Could not browse this archive: ' + (e && e.message)));
