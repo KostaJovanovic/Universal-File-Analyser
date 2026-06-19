@@ -1196,6 +1196,37 @@ function scanner(name, vendor) {
   return () => ({ 'Format': name, 'Note': vendor + ' - proprietary scan binary, identification only.' });
 }
 
+// ---------- Raise3D ideaMaker (.idea project / exported profile) ----------
+// ideaMaker (Raise3D's slicer) writes a short ASCII signature, then a proprietary
+// compressed/encrypted body. Two flavours turn up: a full sliced project
+// ("IDEA - MAKER") and an exported printer/filament profile ("IEDA - PROFILE" -
+// the transposed letters are genuinely how the bytes read). The body isn't
+// documented, so we identify the file and read the signature only. Shared by the
+// `.idea` extension and, via a magic sniff in app.js, profile exports saved as
+// a bare `.bin`.
+function parseIdeaMaker(c) {
+  const b = c.head;
+  const sig = ascii(b, 0, 14);
+  let format, app, signature;
+  if (sig.startsWith('IDEA - MAKER')) {
+    format = 'ideaMaker project'; app = 'Raise3D ideaMaker project'; signature = 'IDEA - MAKER';
+  } else if (sig.startsWith('IEDA - PROFILE')) {
+    format = 'ideaMaker print profile'; app = 'Raise3D ideaMaker print profile'; signature = 'IEDA - PROFILE';
+  } else {
+    return null;
+  }
+  return {
+    _app: app,
+    'Format': format,
+    'Slicer': 'Raise3D ideaMaker',
+    'Signature': signature,
+    'Note': 'ideaMaker stores its ' + (format === 'ideaMaker project'
+      ? 'sliced project (models, supports and print settings)'
+      : 'exported printer / filament profile')
+      + ' in a proprietary compressed binary after this header, so only the signature is read here.',
+  };
+}
+
 // ---------- identification-only (rare AND hard) ----------
 function ident(name, note) {
   return () => ({ 'Format': name, 'Note': note });
@@ -1229,6 +1260,7 @@ export const PARSERS = {
   gltf:  (c) => parseGltf(c.file),
   '3mf': (c) => parse3mf(c.file),
   amf:   (c) => parseAmf(c.file),
+  idea:  (c) => parseIdeaMaker(c),
 
   // new mesh / scene formats
   off:   (c) => parseOff(c.file),

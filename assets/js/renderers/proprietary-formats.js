@@ -125,6 +125,7 @@ export const FORMATS = {
   // 3D printing
   '3mf':   { app: '3D Manufacturing Format', icon: '3MF', zip: true, chunk: 'threed' },
   amf:     { app: 'Additive Manufacturing File', icon: 'AMF', chunk: 'threed' },
+  idea:    { app: 'Raise3D ideaMaker', icon: 'IDEA', chunk: 'threed' },
 
   // Figma (local)
   fig:     { app: 'Figma', icon: 'FG' },
