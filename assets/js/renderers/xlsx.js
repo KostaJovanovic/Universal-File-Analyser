@@ -2,7 +2,7 @@
    Reads .xlsx (Office Open XML spreadsheet) and renders each worksheet as a
    table, with sheet tabs and document metadata. */
 
-import { el, row, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, fmtBytes, integrityCard, errorCard, showCellPopup } from '../core/util.js';
 import { openZip } from './zip.js';
 
 // "A1" -> { col: 0, row: 0 }; "BC12" -> { col: 54, row: 11 }
@@ -194,13 +194,19 @@ export async function renderXlsx(file, resultsEl) {
   sheetCard.appendChild(el('h3', {}, 'Sheets'));
   const tabRow = el('div', { class: 'anr-xlsx-tabs' });
   const tableWrap = el('div', { class: 'anr-xlsx-table-wrap' });
+  // Controls (show more rows/columns) + the per-sheet formula summary live OUTSIDE
+  // the scrolling table box, so the buttons stay reachable without scrolling the
+  // (height-capped) grid. Cleared and refilled on each sheet switch.
+  const sheetExtra = el('div');
   sheetCard.appendChild(tabRow);
   sheetCard.appendChild(tableWrap);
+  sheetCard.appendChild(sheetExtra);
   resultsEl.appendChild(sheetCard);
 
   async function renderSheet(idx) {
     [...tabRow.children].forEach((c, i) => c.classList.toggle('is-active', i === idx));
     tableWrap.innerHTML = '';
+    sheetExtra.innerHTML = '';
     const sheet = sheets[idx];
     const path = ridToPath[sheet.rid] || ('xl/worksheets/sheet' + (idx + 1) + '.xml');
     if (!zip.has(path)) { tableWrap.appendChild(el('p', { class: 'anr-hint' }, 'Could not locate sheet data.')); return; }
@@ -249,23 +255,59 @@ export async function renderXlsx(file, resultsEl) {
       if (ref.row > maxRow) maxRow = ref.row;
     }
 
-    // Cap render so a giant sheet doesn't lock the page.
-    const ROW_CAP = 200, COL_CAP = 50;
-    const showRows = Math.min(maxRow, ROW_CAP);
-    const showCols = Math.min(maxCol, COL_CAP);
+    // Cap render so a giant sheet doesn't lock the page, but let the user pull in
+    // more rows/columns (or all) on demand. The cells are already parsed into the
+    // in-memory grid above, so repainting at a higher limit is cheap - no re-read.
+    const ROW_CAP = 200, COL_CAP = 50, ROW_STEP = 200, COL_STEP = 50;
+    let rowLim = ROW_CAP, colLim = COL_CAP;
 
-    const table = el('table', { class: 'anr-xlsx-table' });
-    const thead = el('tr', {}, [el('th', { class: 'anr-xlsx-corner' }, '')]);
-    for (let c = 0; c <= showCols; c++) thead.appendChild(el('th', {}, colName(c)));
-    table.appendChild(thead);
-    for (let r = 0; r <= showRows; r++) {
-      const tr = el('tr', {}, [el('th', { class: 'anr-xlsx-rownum' }, String(r + 1))]);
-      for (let c = 0; c <= showCols; c++) {
-        tr.appendChild(el('td', {}, cells[r + ',' + c] || ''));
+    const tableHost = el('div');
+    tableWrap.appendChild(tableHost);
+
+    const btnRow = el('div', { class: 'anr-btn-row' });
+    const moreRowsBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show more rows');
+    const moreColsBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show more columns');
+    const allBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show all');
+    btnRow.appendChild(moreRowsBtn);
+    btnRow.appendChild(moreColsBtn);
+    btnRow.appendChild(allBtn);
+
+    function paint() {
+      const showRows = Math.min(maxRow, rowLim);
+      const showCols = Math.min(maxCol, colLim);
+      tableHost.innerHTML = '';
+      const table = el('table', { class: 'anr-xlsx-table' });
+      const thead = el('tr', {}, [el('th', { class: 'anr-xlsx-corner' }, '')]);
+      for (let c = 0; c <= showCols; c++) thead.appendChild(el('th', {}, colName(c)));
+      table.appendChild(thead);
+      for (let r = 0; r <= showRows; r++) {
+        const tr = el('tr', {}, [el('th', { class: 'anr-xlsx-rownum' }, String(r + 1))]);
+        for (let c = 0; c <= showCols; c++) {
+          const val = cells[r + ',' + c] || '';
+          // Each cell pops up its full value (centred) on click - useful for long
+          // text the one-line table cell clips. Label it with its A1 reference.
+          const td = el('td', { class: 'anr-cell-click', title: 'Click to view the full value' }, val);
+          td.addEventListener('click', () => showCellPopup(val, 'Cell ' + colName(c) + (r + 1)));
+          tr.appendChild(td);
+        }
+        table.appendChild(tr);
       }
-      table.appendChild(tr);
+      tableHost.appendChild(table);
+
+      const moreRows = maxRow > showRows;
+      const moreCols = maxCol > showCols;
+      moreRowsBtn.hidden = !moreRows;
+      moreColsBtn.hidden = !moreCols;
+      allBtn.hidden = !(moreRows || moreCols);
+      btnRow.hidden = !(moreRows || moreCols);
+      moreRowsBtn.textContent = `Show more rows (${showRows + 1} / ${maxRow + 1})`;
+      moreColsBtn.textContent = `Show more columns (${showCols + 1} / ${maxCol + 1})`;
     }
-    tableWrap.appendChild(table);
+    moreRowsBtn.addEventListener('click', () => { rowLim += ROW_STEP; paint(); });
+    moreColsBtn.addEventListener('click', () => { colLim += COL_STEP; paint(); });
+    allBtn.addEventListener('click', () => { rowLim = maxRow + 1; colLim = maxCol + 1; paint(); });
+    paint();
+    sheetExtra.appendChild(btnRow);
 
     // Formulas + format summary for this sheet (additive).
     try {
@@ -284,14 +326,9 @@ export async function renderXlsx(file, resultsEl) {
           det.appendChild(code);
           sum.appendChild(det);
         }
-        tableWrap.appendChild(sum);
+        sheetExtra.appendChild(sum);
       }
     } catch (_) { /* ignore */ }
-
-    if (maxRow > ROW_CAP || maxCol > COL_CAP) {
-      tableWrap.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px;' },
-        `Showing ${showRows + 1} of ${maxRow + 1} rows and ${showCols + 1} of ${maxCol + 1} columns.`));
-    }
   }
 
   sheets.forEach((s, i) => {

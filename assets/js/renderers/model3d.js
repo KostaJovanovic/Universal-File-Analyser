@@ -23,9 +23,112 @@ export async function renderModel3d(file, resultsEl) {
   const ext = (file.name.split('.').pop() || '').toLowerCase();
   if (ext === '3mf') return render3mf(file, resultsEl);
   if (ext === 'amf') return renderAmf(file, resultsEl);
+  if (ext === 'mtl') return renderMtl(file, resultsEl);
   if (ext === 'obj' || ext === 'ply' || ext === 'off') return renderMeshFile(file, resultsEl, ext);
   if (ext === 'gltf' || ext === 'glb') return renderGltf(file, resultsEl, ext);
   return renderStepIges(file, resultsEl, ext);   // step / stp / iges / igs / brep
+}
+
+/* ===================== OBJ material library (.mtl) ========================== */
+
+// Wavefront .mtl - the plain-text material library an .obj references. Parsed into
+// per-material colour/shininess/opacity and the texture maps it points at. No
+// geometry, so there's nothing to view in 3D - we list the materials (with colour
+// swatches) and the textures the model expects beside it.
+export async function renderMtl(file, resultsEl) {
+  resultsEl.hidden = false; resultsEl.innerHTML = '';
+  let text;
+  try { text = await file.text(); }
+  catch (e) { resultsEl.appendChild(errorCard('Could not read file: ' + (e && e.message))); return; }
+
+  const MAP_KEYS = ['map_kd', 'map_ka', 'map_ks', 'map_ke', 'map_ns', 'map_d', 'map_bump', 'bump', 'disp', 'decal', 'norm', 'refl'];
+  const MAP_LABEL = { map_kd: 'Diffuse', map_ka: 'Ambient', map_ks: 'Specular', map_ke: 'Emissive', map_ns: 'Shininess', map_d: 'Opacity', map_bump: 'Bump', bump: 'Bump', disp: 'Displacement', decal: 'Decal', norm: 'Normal', refl: 'Reflection' };
+  const mats = [];
+  let cur = null;
+  const textures = new Set();
+  for (const raw of text.split(/\r\n?|\n/)) {
+    const line = raw.trim();
+    if (!line || line[0] === '#') continue;
+    const sp = line.search(/\s/);
+    const key = (sp < 0 ? line : line.slice(0, sp)).toLowerCase();
+    const val = sp < 0 ? '' : line.slice(sp + 1).trim();
+    if (key === 'newmtl') { cur = { name: val || ('material ' + (mats.length + 1)), props: {}, maps: {} }; mats.push(cur); continue; }
+    if (!cur) continue;
+    if (MAP_KEYS.includes(key)) { const fn = val.split(/\s+/).pop(); if (fn) { cur.maps[key] = fn; textures.add(fn); } }
+    else cur.props[key] = val;
+  }
+
+  const rgb = (v) => { const n = (v || '').split(/\s+/).map(Number); if (n.length < 3 || n.some((x) => !isFinite(x))) return null; return n.slice(0, 3).map((x) => Math.max(0, Math.min(255, Math.round(x * 255)))); };
+  const swatch = (c) => el('span', { style: `display:inline-block;width:13px;height:13px;border:1px solid var(--hairline);background:rgb(${c[0]},${c[1]},${c[2]});vertical-align:-2px;margin-right:6px;` });
+  const colourCell = (v) => { const c = rgb(v); const span = el('span'); if (c) span.appendChild(swatch(c)); span.appendChild(document.createTextNode(c ? `rgb(${c[0]}, ${c[1]}, ${c[2]})` : v)); return span; };
+  const rowNode = (label, node) => el('tr', {}, [el('th', {}, label), el('td', {}, node)]);
+
+  // Summary card.
+  const sum = el('div', { class: 'anr-card' });
+  sum.appendChild(el('h3', {}, 'Material library'));
+  const stbl = el('table', { class: 'anr-readout' });
+  stbl.appendChild(row('Format', 'Wavefront material library (.mtl)'));
+  stbl.appendChild(row('File', file.name));
+  stbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
+  stbl.appendChild(rowHelp('Materials', mats.length.toLocaleString(), 'The number of named materials (newmtl blocks) defined in this library.'));
+  if (textures.size) stbl.appendChild(rowHelp('Textures referenced', textures.size.toLocaleString(), 'Distinct image files this library points at (map_Kd, bump, normal and so on). They are expected to sit beside the .mtl and .obj.'));
+  stbl.appendChild(sha256Row(file));
+  sum.appendChild(stbl);
+  if (textures.size) {
+    const det = el('details', { style: 'margin-top:12px;' });
+    det.appendChild(el('summary', {}, `Referenced texture files (${textures.size})`));
+    const ul = el('ul', { class: 'anr-hint', style: 'margin:8px 0 0;padding-left:18px;font-size:12px;word-break:break-all;' });
+    for (const t of textures) ul.appendChild(el('li', {}, t));
+    det.appendChild(ul);
+    sum.appendChild(det);
+  }
+  resultsEl.appendChild(sum);
+
+  if (!mats.length) { resultsEl.appendChild(el('div', { class: 'anr-card' }, [el('p', { class: 'anr-hint' }, 'No materials (newmtl blocks) were found in this file.')])); }
+
+  // One card per material (capped so a giant library can't flood the page).
+  const CAP = 80;
+  const FIELDS = [
+    ['Kd', 'Diffuse colour', 'colour'], ['Ka', 'Ambient colour', 'colour'], ['Ks', 'Specular colour', 'colour'], ['Ke', 'Emissive colour', 'colour'],
+    ['Ns', 'Specular exponent', 'num'], ['Ni', 'Optical density (IOR)', 'num'], ['d', 'Opacity', 'num'], ['Tr', 'Transparency', 'num'], ['illum', 'Illumination model', 'num'],
+  ];
+  mats.slice(0, CAP).forEach((m) => {
+    const card = el('div', { class: 'anr-card' });
+    const kd = rgb(m.props.kd);
+    const h = el('h3', {});
+    if (kd) h.appendChild(swatch(kd));
+    h.appendChild(document.createTextNode(m.name));
+    card.appendChild(h);
+    const tbl = el('table', { class: 'anr-readout' });
+    for (const [k, label, type] of FIELDS) {
+      const v = m.props[k.toLowerCase()];
+      if (v == null) continue;
+      tbl.appendChild(type === 'colour' ? rowNode(label, colourCell(v)) : row(label, v));
+    }
+    const mapEntries = Object.entries(m.maps);
+    for (const [k, fn] of mapEntries) tbl.appendChild(row((MAP_LABEL[k] || k) + ' map', fn));
+    if (!tbl.children.length) tbl.appendChild(row('Definition', '(no properties)'));
+    card.appendChild(tbl);
+    resultsEl.appendChild(card);
+  });
+  if (mats.length > CAP) resultsEl.appendChild(el('div', { class: 'anr-card' }, [el('p', { class: 'anr-hint' }, `Showing the first ${CAP} of ${mats.length.toLocaleString()} materials.`)]));
+
+  // Raw source with a 200-line preview that opens fully, like the other text views.
+  const lines = text.split(/\r\n?|\n/), PRE = 200;
+  const det = el('details', { style: 'margin-top:4px;' });
+  det.appendChild(el('summary', {}, `Source (${lines.length.toLocaleString()} lines)`));
+  const pre = el('pre', { class: 'anr-code', style: 'max-height:360px;overflow:auto;font-size:12px;' });
+  pre.textContent = lines.slice(0, PRE).join('\n');
+  det.appendChild(pre);
+  if (lines.length > PRE) {
+    const btnRow = el('div', { class: 'anr-btn-row', style: 'margin-top:8px;align-items:center;' });
+    const moreBtn = el('button', { type: 'button', class: 'anr-btn' }, `Show all ${lines.length.toLocaleString()} lines`);
+    const hint = el('span', { class: 'anr-hint', style: 'font-size:12px;' }, `Showing the first ${PRE} lines`);
+    moreBtn.addEventListener('click', () => { pre.textContent = lines.join('\n'); moreBtn.remove(); hint.remove(); });
+    btnRow.appendChild(moreBtn); btnRow.appendChild(hint);
+    det.appendChild(btnRow);
+  }
+  resultsEl.appendChild(el('div', { class: 'anr-card' }, [det]));
 }
 
 /* ================================== 3MF ===================================== */

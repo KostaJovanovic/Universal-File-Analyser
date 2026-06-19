@@ -362,6 +362,194 @@ export async function copyText(text) {
   } catch (_) { return false; }
 }
 
+// Centred popup showing a single table cell's full value - used by the CSV and
+// XLSX viewers, whose cells are clipped to one line so a long value is cut off.
+// Clicking a cell calls this with the whole text and an optional label (the cell
+// reference, e.g. "B12", or the column header). Reuses the .anr-modal overlay so
+// it matches the contact/share modals: click the backdrop, the close button, or
+// Escape to dismiss; a Copy button lifts the value to the clipboard. Only one is
+// ever open at a time. Empty cells show a muted "(empty cell)" note.
+let _cellPopOpen = false;
+export function showCellPopup(value, label) {
+  if (_cellPopOpen) return;
+  _cellPopOpen = true;
+
+  const text = value == null ? '' : String(value);
+  const isEmpty = text.trim() === '';
+
+  const body = isEmpty
+    ? el('p', { class: 'anr-cell-empty' }, '(empty cell)')
+    : el('div', { class: 'anr-cell-value' }, text);
+
+  const copyBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-ok' }, 'Copy');
+  const closeBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, 'Close');
+
+  const kids = [];
+  kids.push(el('p', { class: 'anr-modal-kicker' }, label || 'Cell value'));
+  kids.push(body);
+  const actions = isEmpty ? [closeBtn] : [copyBtn, closeBtn];
+  kids.push(el('div', { class: 'anr-modal-actions' }, actions));
+
+  const card = el('div', { class: 'anr-modal-card anr-cell-card', role: 'document' }, kids);
+  const overlay = el('div', { class: 'anr-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Cell value' }, card);
+  document.body.appendChild(overlay);
+
+  let settled = false;
+  const close = () => {
+    if (settled) return;
+    settled = true;
+    _cellPopOpen = false;
+    overlay.classList.remove('is-open');
+    setTimeout(() => overlay.remove(), 200);
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onKey);
+
+  if (!isEmpty) {
+    copyBtn.addEventListener('click', async () => {
+      const ok = await copyText(text);
+      copyBtn.textContent = ok ? 'Copied!' : 'Hit Ctrl+C';
+      copyBtn.classList.toggle('is-done', ok);
+      setTimeout(() => { copyBtn.textContent = 'Copy'; copyBtn.classList.remove('is-done'); }, 1600);
+    });
+  }
+
+  requestAnimationFrame(() => overlay.classList.add('is-open'));
+}
+
+// OrcaSlicer-style orientation gizmo for a WebGL 3D viewer: a small CSS-3D cube
+// pinned to the lower-left of the viewport that rotates in lock-step with the
+// camera. Its faces, edges and corners are all clickable hotspots that snap the
+// view head-on / edge-on / corner-on, and dragging the cube orbits the camera just
+// like dragging the canvas. Works with any viewer exposing { wrap, state:{yaw,
+// pitch}, markDirty(), setSpin? } - shared by the STL/model and G-code viewers.
+// Yaw/pitch are radians; the model is rotated rotX(pitch)*rotY(yaw) with +pitch
+// looking down from above, so a hotspot pointing outward along d=(dx,dy,dz) snaps
+// to yaw=atan2(-dx,dz), pitch=asin(dy). The CSS cube (Y-down) mirrors the camera as
+// rotateX(-pitch) rotateY(yaw), derived so each hotspot's own face comes head-on.
+export function attachViewCube(viewer) {
+  const wrap = viewer && viewer.wrap, state = viewer && viewer.state;
+  if (!wrap || !state) return;
+  const H = 27;  // half the cube edge (px)
+  const Q = Math.PI / 2, R2D = 180 / Math.PI;
+  // For a hotspot pointing outward along model-space d, the camera orientation that
+  // brings it head-on (yaw=atan2(-dx,dz), pitch=asin(dy)).
+  const target = (dx, dy, dz) => { const l = Math.hypot(dx, dy, dz) || 1; return { yaw: Math.atan2(-dx, dz), pitch: Math.asin(dy / l) }; };
+
+  // The six faces, each with its model-space outward normal F and the in-plane
+  // right/up axes (u,v) that match how it's displayed - so a corner/edge zone at a
+  // given screen position maps to the right cube corner/edge.
+  const FACES = [
+    { name: 'Front', F: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] },
+    { name: 'Back', F: [0, 0, -1], u: [-1, 0, 0], v: [0, 1, 0] },
+    { name: 'Right', F: [1, 0, 0], u: [0, 0, -1], v: [0, 1, 0] },
+    { name: 'Left', F: [-1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] },
+    { name: 'Top', F: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1] },
+    { name: 'Bot', F: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] },
+  ];
+  const cube = el('div', { class: 'anr-viewcube-cube' });
+  const hotspots = [];
+  // A direction signature shared by every hotspot at the same cube feature: a
+  // corner is one zone on each of its 3 faces, an edge one on each of its 2 - all
+  // carry the same key, so hovering any lights the whole corner/edge.
+  const sgn = (v) => (v > 0.5 ? 1 : v < -0.5 ? -1 : 0);
+  const setTarget = (node, dx, dy, dz) => { const t = target(dx, dy, dz); node._yaw = t.yaw; node._pitch = t.pitch; node._key = sgn(dx) + ',' + sgn(dy) + ',' + sgn(dz); hotspots.push(node); };
+  for (const f of FACES) {
+    const [fx, fy, fz] = f.F;
+    const yawCss = Math.atan2(fx, fz) * R2D, pitchCss = Math.asin(fy) * R2D;
+    const face = el('div', { class: 'anr-viewcube-face' }, f.name);
+    face.style.transform = `rotateY(${yawCss}deg) rotateX(${pitchCss}deg) translateZ(${H}px)`;
+    setTarget(face, fx, fy, fz);
+    // Edge + corner zones live as children painted on top of the face, so they
+    // catch clicks the full face can't steal (no 3D occlusion to fight).
+    const O = 38;   // zone offset from face centre, in %
+    const zone = (cls, left, top, dir) => { const z = el('div', { class: cls }); z.style.left = left + '%'; z.style.top = top + '%'; setTarget(z, dir[0], dir[1], dir[2]); face.appendChild(z); };
+    for (const su of [-1, 1]) for (const sv of [-1, 1]) {
+      zone('anr-viewcube-corner', 50 + su * O, 50 - sv * O, [fx + su * f.u[0] + sv * f.v[0], fy + su * f.u[1] + sv * f.v[1], fz + su * f.u[2] + sv * f.v[2]]);
+    }
+    for (const su of [-1, 1]) zone('anr-viewcube-edge', 50 + su * O, 50, [fx + su * f.u[0], fy + su * f.u[1], fz + su * f.u[2]]);
+    for (const sv of [-1, 1]) zone('anr-viewcube-edge', 50, 50 - sv * O, [fx + sv * f.v[0], fy + sv * f.v[1], fz + sv * f.v[2]]);
+    cube.appendChild(face);
+  }
+  const box = el('div', { class: 'anr-viewcube', title: 'Drag to orbit; click a face, edge or corner to snap the view' }, cube);
+  wrap.appendChild(box);
+
+  // Tween the camera to a target orientation (shortest yaw path, ease-in-out).
+  let anim = 0;
+  function orientTo(ty, tp) {
+    const sy = state.yaw, sp = state.pitch;
+    let dy = ty - sy;
+    while (dy > Math.PI) dy -= 2 * Math.PI;
+    while (dy < -Math.PI) dy += 2 * Math.PI;
+    const dp = tp - sp, dur = 320;
+    let t0 = 0;
+    if (anim) cancelAnimationFrame(anim);
+    const tick = (ts) => {
+      if (!t0) t0 = ts;
+      const k = Math.min(1, (ts - t0) / dur);
+      const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      state.yaw = sy + dy * e; state.pitch = sp + dp * e;
+      viewer.markDirty();
+      anim = k < 1 ? requestAnimationFrame(tick) : 0;
+    };
+    anim = requestAnimationFrame(tick);
+  }
+
+  // Grab the cube to orbit (same feel as dragging the canvas); a press that doesn't
+  // move snaps to whichever hotspot was clicked.
+  let drag = false, moved = false, lx = 0, ly = 0;
+  const dn = (x, y) => { drag = true; moved = false; lx = x; ly = y; if (anim) { cancelAnimationFrame(anim); anim = 0; } if (viewer.setSpin) viewer.setSpin(false); };
+  const mv = (x, y) => {
+    if (!drag) return;
+    if (Math.abs(x - lx) + Math.abs(y - ly) > 3) moved = true;
+    state.yaw += (x - lx) * 0.01;
+    state.pitch += (y - ly) * 0.01;
+    state.pitch = Math.max(-Q, Math.min(Q, state.pitch));
+    lx = x; ly = y; viewer.markDirty();
+  };
+  const en = () => { drag = false; };
+  box.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); dn(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', (e) => mv(e.clientX, e.clientY));
+  window.addEventListener('mouseup', en);
+  box.addEventListener('touchstart', (e) => { e.stopPropagation(); if (e.touches[0]) dn(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+  box.addEventListener('touchmove', (e) => { if (e.touches[0]) { mv(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
+  box.addEventListener('touchend', en);
+  for (const hs of hotspots) {
+    hs.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (moved) { moved = false; return; }
+      if (viewer.setSpin) viewer.setSpin(false);
+      orientTo(hs._yaw, hs._pitch);
+    });
+  }
+
+  // Highlight the whole feature under the pointer - the one a click will snap to.
+  // Driven from JS (not :hover): a hovered edge/corner zone is a child of a face
+  // (so :hover would also light the face), and one corner/edge spans several faces,
+  // so we light every hotspot sharing the target's direction key.
+  let hotKey = null;
+  const setHot = (hs) => {
+    const key = hs ? hs._key : null;
+    if (key === hotKey) return;
+    hotKey = key;
+    for (const h of hotspots) h.classList.toggle('is-hot', key != null && h._key === key);
+  };
+  box.addEventListener('mouseover', (e) => setHot(e.target.closest('.anr-viewcube-face, .anr-viewcube-edge, .anr-viewcube-corner')));
+  box.addEventListener('mouseleave', () => setHot(null));
+
+  // Keep the cube's orientation in lock-step with the camera.
+  const sync = () => {
+    if (!wrap.isConnected) return;
+    const yd = state.yaw * R2D, pd = state.pitch * R2D;
+    cube.style.transform = `rotateX(${-pd}deg) rotateY(${yd}deg)`;
+    requestAnimationFrame(sync);
+  };
+  requestAnimationFrame(sync);
+}
+
 // Trigger a browser download of `blob` as `filename` via a throwaway <a>, then
 // revoke the object URL. One revoke policy for the many ad-hoc copies of this.
 export function downloadBlob(filename, blob) {

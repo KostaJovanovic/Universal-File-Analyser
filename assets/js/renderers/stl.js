@@ -3,7 +3,7 @@
    spin), and reports geometry statistics (triangles, bounding box, surface area,
    volume). Self-contained - no external 3D library. */
 
-import { el, row, rowHelp, fmtBytes, sha256Row, errorCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube } from '../core/util.js';
 
 // ---------- STL parsing ----------
 // Returns { format, positions:Float32Array, normals:Float32Array, count,
@@ -131,6 +131,9 @@ function mat4Perspective(fovy, aspect, near, far) {
 }
 function mat4RotX(a) { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]); }
 function mat4RotY(a) { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]); }
+function mat4Ortho(l, r, b, t, n, f) {
+  return new Float32Array([2 / (r - l), 0, 0, 0, 0, 2 / (t - b), 0, 0, 0, 0, -2 / (f - n), 0, -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n), 1]);
+}
 
 // ---------- WebGL viewer ----------
 function buildViewer(geo) {
@@ -164,15 +167,30 @@ function buildViewer(geo) {
   // isometric export snapshot so the model fills the preview with even margins.
   const boundR = Math.sqrt(boundR2) || 0.5;
 
-  const vsrc = `attribute vec3 aPos; attribute vec3 aNormal;
+  // Wireframe overlay (mesh topology) is drawn from a per-vertex barycentric coord:
+  // each triangle's three corners carry (1,0,0)/(0,1,0)/(0,0,1), and the fragment
+  // shader lights up where any coord nears 0 (a triangle edge). Crisp edges need
+  // derivatives (OES_standard_derivatives); without it we fall back to a fixed
+  // width that still reads fine.
+  const deriv = gl.getExtension('OES_standard_derivatives');
+  const vsrc = `attribute vec3 aPos; attribute vec3 aNormal; attribute vec3 aBary;
     uniform mat4 uProj, uView, uModel;
-    varying vec3 vN; varying vec3 vP;
+    varying vec3 vN; varying vec3 vP; varying vec3 vBary;
     void main(){ vec4 w = uModel*vec4(aPos,1.0); vec4 vp = uView*w;
-      gl_Position = uProj*vp; vN = mat3(uModel)*aNormal; vP = vp.xyz; }`;
-  const fsrc = `precision mediump float; varying vec3 vN; varying vec3 vP; uniform vec3 uColor;
+      gl_Position = uProj*vp; vN = mat3(uModel)*aNormal; vP = vp.xyz; vBary = aBary; }`;
+  const fsrc = `${deriv ? '#extension GL_OES_standard_derivatives : enable\n' : ''}precision mediump float;
+    varying vec3 vN; varying vec3 vP; varying vec3 vBary; uniform vec3 uColor; uniform float uWire;
     void main(){ vec3 N = normalize(vN); vec3 L = normalize(vec3(0.35,0.6,0.8));
       float d = max(dot(N,L),0.0); float b = max(dot(-N,L),0.0);
       float lit = max(d, b*0.55); vec3 c = uColor*(0.28+0.72*lit);
+      if(uWire > 0.5){
+        ${deriv
+          ? 'vec3 w = fwidth(vBary); vec3 a = smoothstep(vec3(0.0), w*1.3, vBary); float e = min(min(a.x,a.y),a.z);'
+          : 'vec3 a = step(vec3(0.018), vBary); float e = min(min(a.x,a.y),a.z);'}
+        // Bright edges over a dimmed shaded surface, so form and topology both read.
+        vec3 line = vec3(0.86,0.91,1.0);
+        c = mix(line, c*0.45, e);
+      }
       gl_FragColor = vec4(c,1.0); }`;
   function shader(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; }
   const prog = gl.createProgram();
@@ -195,13 +213,24 @@ function buildViewer(geo) {
   gl.enableVertexAttribArray(aNorm);
   gl.vertexAttribPointer(aNorm, 3, gl.FLOAT, false, 0, 0);
 
+  // Per-vertex barycentric coords (one triangle = three corners, cycling the basis).
+  const bary = new Float32Array(np.length);
+  for (let i = 0; i < bary.length; i += 9) { bary[i] = 1; bary[i + 4] = 1; bary[i + 8] = 1; }
+  const baryBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, baryBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, bary, gl.STATIC_DRAW);
+  const aBary = gl.getAttribLocation(prog, 'aBary');
+  gl.enableVertexAttribArray(aBary);
+  gl.vertexAttribPointer(aBary, 3, gl.FLOAT, false, 0, 0);
+
   const uProj = gl.getUniformLocation(prog, 'uProj');
   const uView = gl.getUniformLocation(prog, 'uView');
   const uModel = gl.getUniformLocation(prog, 'uModel');
   const uColor = gl.getUniformLocation(prog, 'uColor');
+  const uWire = gl.getUniformLocation(prog, 'uWire');
   gl.enable(gl.DEPTH_TEST);
 
-  const state = { yaw: 0.6, pitch: -0.5, dist: 2.6, color: [0.55, 0.62, 0.95], spin: true, bg: [0.06, 0.06, 0.06] };
+  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, color: [0.55, 0.62, 0.95], spin: true, ortho: false, wire: false, bg: [0.06, 0.06, 0.06] };
   let dirty = true;
   // Spin can be turned off two ways - the button, or simply interacting with the
   // canvas (clicking/dragging stops it). Route every change through setSpin so any
@@ -226,13 +255,17 @@ function buildViewer(geo) {
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(state.bg[0], state.bg[1], state.bg[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    const proj = mat4Perspective(45 * Math.PI / 180, canvas.width / canvas.height || 1, 0.01, 100);
-    const view = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -state.dist, 1]);
+    const aspect = canvas.width / canvas.height || 1;
+    let proj;
+    if (state.ortho) { const hh = state.dist * 0.4142; proj = mat4Ortho(-hh * aspect, hh * aspect, -hh, hh, 0.005, 1000); }
+    else proj = mat4Perspective(45 * Math.PI / 180, aspect, 0.005, 1000);
+    const view = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, state.panX, state.panY, -state.dist, 1]);
     const model = mat4Multiply(mat4RotX(state.pitch), mat4RotY(state.yaw));
     gl.uniformMatrix4fv(uProj, false, proj);
     gl.uniformMatrix4fv(uView, false, view);
     gl.uniformMatrix4fv(uModel, false, model);
     gl.uniform3fv(uColor, state.color);
+    gl.uniform1f(uWire, state.wire ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, np.length / 3);
   }
 
@@ -242,25 +275,51 @@ function buildViewer(geo) {
     if (wrap.isConnected) requestAnimationFrame(loop);
   }
 
-  // Orbit + zoom controls.
-  let dragging = false, lx = 0, ly = 0;
-  const down = (x, y) => { dragging = true; lx = x; ly = y; setSpin(false); };
+  // Orbit (left-drag), pan (right-drag or Shift+drag), zoom (wheel). Touch: one
+  // finger orbits, two fingers pan + pinch-zoom.
+  let dragging = false, panning = false, lx = 0, ly = 0;
+  const panK = () => state.dist * 0.0018;
+  const down = (x, y, pan) => { dragging = true; panning = pan; lx = x; ly = y; setSpin(false); };
   const move = (x, y) => {
     if (!dragging) return;
-    state.yaw += (x - lx) * 0.01; state.pitch += (y - ly) * 0.01;
-    state.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, state.pitch));
+    if (panning) {
+      state.panX += (x - lx) * panK();
+      state.panY -= (y - ly) * panK();
+    } else {
+      state.yaw += (x - lx) * 0.01; state.pitch += (y - ly) * 0.01;
+      state.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, state.pitch));
+    }
     lx = x; ly = y; dirty = true;
   };
-  const up = () => { dragging = false; };
-  canvas.addEventListener('mousedown', (e) => down(e.clientX, e.clientY));
+  const up = () => { dragging = false; panning = false; };
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  canvas.addEventListener('mousedown', (e) => down(e.clientX, e.clientY, e.button === 2 || e.shiftKey));
   window.addEventListener('mousemove', (e) => move(e.clientX, e.clientY));
   window.addEventListener('mouseup', up);
-  canvas.addEventListener('touchstart', (e) => { if (e.touches[0]) down(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
-  canvas.addEventListener('touchmove', (e) => { if (e.touches[0]) { move(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
-  canvas.addEventListener('touchend', up);
+  // Touch: one finger orbits; two fingers pan + pinch-zoom.
+  let twoFinger = false, pinchDist = 0, pcx = 0, pcy = 0;
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      twoFinger = true; dragging = false; setSpin(false);
+      const a = e.touches[0], b = e.touches[1];
+      pinchDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      pcx = (a.clientX + b.clientX) / 2; pcy = (a.clientY + b.clientY) / 2;
+    } else if (e.touches[0]) { twoFinger = false; down(e.touches[0].clientX, e.touches[0].clientY, false); }
+  }, { passive: true });
+  canvas.addEventListener('touchmove', (e) => {
+    if (twoFinger && e.touches.length === 2) {
+      const a = e.touches[0], b = e.touches[1];
+      const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      const mx = (a.clientX + b.clientX) / 2, my = (a.clientY + b.clientY) / 2;
+      if (pinchDist > 0) state.dist = Math.max(0.04, Math.min(150,state.dist * (pinchDist / (d || 1))));
+      state.panX += (mx - pcx) * panK(); state.panY -= (my - pcy) * panK();
+      pinchDist = d; pcx = mx; pcy = my; dirty = true; e.preventDefault();
+    } else if (!twoFinger && e.touches[0]) { move(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
+  }, { passive: false });
+  canvas.addEventListener('touchend', (e) => { if (!e.touches.length) { up(); twoFinger = false; } });
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
-    state.dist = Math.max(0.5, Math.min(20, state.dist * (1 + Math.sign(e.deltaY) * 0.1)));
+    state.dist = Math.max(0.04, Math.min(150,state.dist * (1 + Math.sign(e.deltaY) * 0.1)));
     dirty = true;
   }, { passive: false });
 
@@ -270,10 +329,11 @@ function buildViewer(geo) {
   // Saves and restores the live view state, so the interactive preview is
   // unaffected beyond a single redraw.
   function snapshot() {
-    const saved = { yaw: state.yaw, pitch: state.pitch, dist: state.dist, spin: state.spin };
-    state.spin = false;
+    const saved = { yaw: state.yaw, pitch: state.pitch, dist: state.dist, spin: state.spin, ortho: state.ortho, panX: state.panX, panY: state.panY };
+    state.spin = false; state.ortho = false;
+    state.panX = 0; state.panY = 0;             // centre the framing
     state.yaw = Math.PI / 4;                    // 45° azimuth
-    state.pitch = -Math.atan(1 / Math.SQRT2);   // ~-35.26° - the classic isometric tilt
+    state.pitch = Math.atan(1 / Math.SQRT2);    // ~35.26° - the classic isometric tilt, from above
     // Fit the bounding sphere to 96% of the narrower field of view (so both the
     // width and height keep a 2% margin), then back the camera off to suit.
     const aspect = (canvas.width / canvas.height) || 1;
@@ -290,12 +350,14 @@ function buildViewer(geo) {
   }
   canvas._anrSnapshot = snapshot;
 
-  return {
+  const api = {
     wrap, ok: true, state, resize, setSpin, snapshot,
     onSpinChange: (cb) => spinListeners.push(cb),
     start: () => { resize(); requestAnimationFrame(loop); },
     markDirty: () => { dirty = true; },
   };
+  attachViewCube(api);
+  return api;
 }
 
 // Build a "3D model" card around a geometry: the WebGL viewer plus the spin /
@@ -318,10 +380,22 @@ export function buildViewerCard(geo, title = '3D model') {
     viewer.onSpinChange((spinning) => { spinBtn.textContent = spinning ? 'Pause spin' : 'Resume spin'; });
     const resetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Reset view');
     resetBtn.addEventListener('click', () => {
-      Object.assign(viewer.state, { yaw: 0.6, pitch: -0.5, dist: 2.6 });
+      Object.assign(viewer.state, { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0 });
       viewer.markDirty();
     });
-    const colorInput = el('input', { type: 'color', value: '#8c9eef', title: 'Model colour', style: 'width:36px;height:28px;border:1px solid var(--hairline);background:none;cursor:pointer;' });
+    const projBtn = el('button', { type: 'button', class: 'anr-btn' }, viewer.state.ortho ? 'Orthographic' : 'Perspective');
+    projBtn.addEventListener('click', () => {
+      viewer.state.ortho = !viewer.state.ortho;
+      projBtn.textContent = viewer.state.ortho ? 'Orthographic' : 'Perspective';
+      viewer.markDirty();
+    });
+    const wireBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Wireframe');
+    wireBtn.addEventListener('click', () => {
+      viewer.state.wire = !viewer.state.wire;
+      wireBtn.classList.toggle('is-active', viewer.state.wire);
+      viewer.markDirty();
+    });
+    const colorInput = el('input', { type: 'color', value: '#8c9eef', title: 'Model colour', style: 'width:40px;height:36px;box-sizing:border-box;padding:0;border:1px solid var(--hairline);background:none;cursor:pointer;' });
     colorInput.addEventListener('input', () => {
       const h = colorInput.value;
       viewer.state.color = [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255];
@@ -335,9 +409,11 @@ export function buildViewerCard(geo, title = '3D model') {
     viewer.wrap.addEventListener('fullscreenchange', () => setTimeout(viewer.resize, 50));
     controls.appendChild(spinBtn);
     controls.appendChild(resetBtn);
-    controls.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;' }, 'drag to orbit · scroll to zoom'));
-    controls.appendChild(colorInput);
+    controls.appendChild(projBtn);
+    controls.appendChild(wireBtn);
     controls.appendChild(fsBtn);
+    controls.appendChild(colorInput);
+    controls.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;margin-left:auto;' }, 'drag to orbit · scroll to zoom'));
     viewCard.appendChild(controls);
   }
   return { viewCard, viewer };
