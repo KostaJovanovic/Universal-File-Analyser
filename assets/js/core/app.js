@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 151;
+const COMMIT_COUNT = 152;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -254,6 +254,8 @@ async function sniffFileType(file) {
   if (m([0x50, 0x4B, 0x03, 0x04]) || m([0x50, 0x4B, 0x05, 0x06])) return { kind: 'zip', ext: 'zip', label: 'ZIP archive' };
   if (a(0, 4) === 'Rar!') return { kind: 'proprietary', ext: 'rar', label: 'RAR archive' };
   if (m([0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C])) return { kind: 'proprietary', ext: '7z', label: '7-Zip archive' };
+  // ar container: Unix ar (.a) and Microsoft COFF libraries (.lib) share "!<arch>\n".
+  if (m([0x21, 0x3C, 0x61, 0x72, 0x63, 0x68, 0x3E, 0x0A])) return { kind: 'proprietary', ext: 'a', label: 'ar archive / library' };
   if (a(0, 6) === 'SQLite') return { kind: 'proprietary', ext: 'sqlite', label: 'SQLite database' };
   if (m([0x1F, 0x8B])) return { kind: 'proprietary', ext: 'gz', label: 'GZip archive' };
   if (m([0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00])) return { kind: 'proprietary', ext: 'xz', label: 'XZ archive' };
@@ -1267,6 +1269,8 @@ function boot() {
           if (sniff.ext === 'zip') archiveEmbed = { mode: 'zip', label: 'ZIP' };
           else if (sniff.ext === 'rar') archiveEmbed = { mode: 'libarchive', label: 'RAR' };
           else if (sniff.ext === '7z') archiveEmbed = { mode: 'libarchive', label: '7-Zip' };
+          // ar / static & import library (.a / .lib): browsed by our own ar walk.
+          else if (sniff.ext === 'a') archiveEmbed = { mode: 'ar', label: 'Library' };
           // TAR + the single-stream compressors: libarchive reads tar/tarballs,
           // and a bare .gz/.xz/.zst/.lz4/.lzma/.Z stream is decompressed to open
           // the file inside (bare .bz2 is identified only - no in-browser decoder).
@@ -1276,7 +1280,7 @@ function boot() {
           }
         }
         // Don't also pop the "analyse as <archive>" suggestion - it's embedded now.
-        if (archiveEmbed && suggestion && ['zip', 'rar', '7z', 'tar', 'gz', 'xz', 'zst', 'bz2', 'lz4', 'lzma', 'z'].includes(suggestion.ext)) {
+        if (archiveEmbed && suggestion && ['zip', 'rar', '7z', 'tar', 'gz', 'xz', 'zst', 'bz2', 'lz4', 'lzma', 'z', 'a'].includes(suggestion.ext)) {
           suggestion = null;
         }
       } catch (_) {}
