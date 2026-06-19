@@ -4,15 +4,15 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 149;
+const COMMIT_COUNT = 150;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
 // major version and resets the counter within its era: commit 29 reads "1.0" (and
 // 30 → "1.01"), commit 60 reads "2.0", commit 100 reads "3.0" (and 101 → "3.01"),
-// commit 149 reads "4.0". To crown a future 5.0, append its commit number here
+// commit 150 reads "4.0". To crown a future 5.0, append its commit number here
 // (keep the list sorted ascending, and mirror the RELEASES constant in save.bat).
-const RELEASE_COMMITS = [29, 60, 100, 149];
+const RELEASE_COMMITS = [29, 60, 100, 150];
 
 function analyserVersion(n, releases) {
   let major = 0, base = 0;
@@ -784,6 +784,7 @@ const PATCH_DIGEST = [
     'CNC milling files list their whole tool table, spindle, coolant and work offsets, draw each tool in its own colour, and reconstruct the full toolpath faithfully.',
     'A real 3D model viewer for STL, OBJ, PLY, STEP, 3MF, glTF and more, with a grabbable orientation cube, perspective or orthographic views, wireframe mode and .mtl material libraries.',
     'Spreadsheet and CSV cells open their full value on click, every G-code and 3D format gained a guide page, and the home page now says plainly what Analyser is.',
+    'The Everything offline download now includes PostScript and AutoCAD support, leaving the Complete download as purely the extra OCR languages.',
   ] },
   { range: '3.45 - 3.46', notes: [
     'The newest Visual Studio solution format (.slnx) opens, listing every project, language and build configuration.',
@@ -2017,7 +2018,7 @@ function boot() {
   // and used by the post-clear reset) derive from it, and the "+N MB more" upgrade
   // deltas in refreshTierButtons() use the numbers directly. One place to edit.
   const TIER_ORDER = ['essentials', 'everything', 'complete'];
-  const TIER_MB = { essentials: 50, everything: 78, complete: 325 };
+  const TIER_MB = { essentials: 50, everything: 100, complete: 325 };
   const TIER_SIZES = {};
   TIER_ORDER.forEach((t) => { TIER_SIZES[t] = '~' + TIER_MB[t] + ' MB'; });
 
@@ -2138,28 +2139,26 @@ function boot() {
       // OpenCASCADE (occt-import-js) for STEP/IGES/BREP CAD - CDN-hosted, like the
       // ffmpeg core; keep the version in sync with OCCT_VERSION in occt-loader.js.
       'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js',
-      'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.wasm'
+      'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.wasm',
+      // Ghostscript (~16 MB) for EPS/PostScript rendering.
+      './assets/vendor/ghostscript/gs.mjs',
+      './assets/vendor/ghostscript/browser.js',
+      './assets/vendor/ghostscript/gs.js',
+      './assets/vendor/ghostscript/gs.wasm',
+      // LibreDWG (WebAssembly) for AutoCAD DWG/DWT drawings - ~6 MB.
+      './assets/vendor/libredwg/dist/libredwg-web.js',
+      './assets/vendor/libredwg/wasm/libredwg-web.js',
+      './assets/vendor/libredwg/wasm/libredwg-web.wasm'
     ],
-    // Only English is bundled (in the "everything" tier); every other OCR
-    // language is pulled from the CDN (not hosted in the repo). They all land
-    // in the offline cache, so "Complete" still gives every language offline.
+    // The "Complete" tier is OCR languages only: English ships in "Everything", and
+    // every other language is pulled from the CDN (not hosted in the repo). They all
+    // land in the offline cache, so "Complete" gives every language offline.
     complete: [
       'spa', 'fra', 'deu', 'ita', 'por', 'rus', 'chi_sim', 'jpn',
       'srp', 'srp_latn', 'hrv', 'ell', 'ara', 'chi_tra', 'kor', 'heb', 'tur',
       'ukr', 'pol', 'ron', 'hun', 'ces', 'slk', 'slv', 'bul', 'mkd', 'nld',
       'swe', 'nor', 'fin', 'dan'
     ].map(c => 'https://tessdata.projectnaptha.com/4.0.0/' + c + '.traineddata.gz')
-      // Ghostscript (~16 MB) for EPS/PostScript rendering - heaviest tier only.
-      .concat([
-        './assets/vendor/ghostscript/gs.mjs',
-        './assets/vendor/ghostscript/browser.js',
-        './assets/vendor/ghostscript/gs.js',
-        './assets/vendor/ghostscript/gs.wasm',
-        // LibreDWG (WebAssembly) for AutoCAD DWG/DWT drawings - ~6 MB, heaviest tier.
-        './assets/vendor/libredwg/dist/libredwg-web.js',
-        './assets/vendor/libredwg/wasm/libredwg-web.js',
-        './assets/vendor/libredwg/wasm/libredwg-web.wasm'
-      ])
   };
 
   // Shared note under the download buttons (created on first use), used to report
