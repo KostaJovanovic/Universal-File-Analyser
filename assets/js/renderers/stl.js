@@ -270,7 +270,7 @@ function buildViewer(geo) {
   }
 
   function loop() {
-    if (state.spin) { state.yaw += 0.006; dirty = true; }
+    if (state.spin) { state.yaw += 0.003; dirty = true; }
     if (dirty) { draw(); dirty = false; }
     if (wrap.isConnected) requestAnimationFrame(loop);
   }

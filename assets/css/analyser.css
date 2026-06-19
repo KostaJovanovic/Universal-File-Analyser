@@ -1028,6 +1028,13 @@ body.anr-has-file .nav-search { display: flex; }
 }
 .anr-gcode-tooltable td:first-child { color: var(--accent); font-weight: 600; }
 
+/* CNC tool picker - neutral buttons like the 3MF parts chips, each carrying its
+   tool's colour swatch. Shown by default; toggled off (.is-off) dims the chip. */
+.anr-gcode-toolchip { display: inline-flex; align-items: center; gap: 7px; }
+.anr-gcode-toolchip .anr-gcode-swatch { width: 11px; height: 11px; flex: none; }
+.anr-gcode-toolchip.is-off { color: var(--muted); opacity: 0.45; }
+.anr-gcode-toolchip.is-off .anr-gcode-swatch { opacity: 0.4; }
+
 /* Sliders in the 3D / G-code viewers - the same hairline track + thin square
    accent thumb the spectrogram controls use, so they match the site aesthetic. */
 .anr-range {
@@ -1115,6 +1122,37 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 .anr-aa-row input { margin: 2px 0 0; accent-color: var(--accent); cursor: pointer; }
 .anr-aa-label { font-weight: 500; }
 .anr-aa-desc { grid-column: 2; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.3; }
+
+/* Playback-speed popup - two columns of presets (lines/s and total length) plus a
+   custom field. Shares the .anr-aa-panel chrome; just wider with its own layout. */
+.anr-spd-panel { width: auto; min-width: 300px; }
+.anr-spd-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.anr-spd-col { display: flex; flex-direction: column; gap: 6px; }
+.anr-spd-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.anr-spd-opt { width: 100%; text-align: left; padding: 7px 12px; font-size: var(--t-small); }
+.anr-spd-custom { display: flex; gap: 6px; padding-top: 11px; border-top: var(--bd-hairline); }
+.anr-spd-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  padding: 8px 10px;
+  background: var(--bg);
+  color: var(--fg);
+  border: var(--bd-hairline);
+}
+.anr-spd-input:focus { outline: none; border-color: var(--accent); }
+.anr-spd-unit { white-space: nowrap; }
+/* Caveat shown under the speed control when "Real time" is selected. */
+.anr-spd-warn { margin: 6px 0 0; font-size: 12px; line-height: 1.35; color: #e5484d; }
+.anr-spd-warn[hidden] { display: none; }
 
 /* View cube - OrcaSlicer-style orientation gizmo in the lower-left of a 3D
    viewport. A CSS-3D cube that rotates with the camera; faces, edges and corners
