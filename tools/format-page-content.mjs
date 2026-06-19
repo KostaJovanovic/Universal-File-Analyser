@@ -1079,6 +1079,7 @@ export const EXT_PAGES = {
   tlz:     { name: 'LZMA tarball', blurb: 'TLZ is a tar archive compressed with LZMA.', fact: 'TLZ is shorthand for a tar.lzma compressed archive.' },
   tbz:     { name: 'bzip2 tarball', blurb: 'TBZ is a tar archive compressed with bzip2.', fact: 'TBZ is shorthand for a tar.bz2 compressed archive.' },
   tz:      { name: 'Compressed tarball', blurb: 'TZ is a tar archive compressed with Unix compress.', fact: 'TZ is the old shorthand for a tar.Z archive.' },
+  lib:     { name: 'Static / import library', blurb: 'A .lib file is a Microsoft library produced by the Visual Studio / MSVC toolchain - either a static library packed with compiled object code, or a DLL import library holding the stubs a program links against to call into a .dll. It bundles COFF object files in the same container Unix uses for its .a archives.', fact: 'A .lib file is Microsoft’s take on the Unix "ar" archive format, which dates back to 1971 - both begin with the very same eight bytes, "!<arch>" then a newline.' },
 
   // ---- 3D & CAD (advanced) ----
   drc:     { name: 'Draco mesh', blurb: 'DRC is a Draco-compressed 3D mesh or point cloud. Created by Google.', fact: 'Draco shrinks 3D models so they load quickly over the web.' },
