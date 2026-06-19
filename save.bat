@@ -50,7 +50,7 @@ rem Version label mirrors analyserVersion() in app.js. RELEASES is the list of
 rem commits crowned as major releases - keep it in sync with RELEASE_COMMITS in
 rem app.js (sorted ascending). Each release reads X.0 and resets the minor counter:
 rem commit 29 = 1.0, commit 60 = 2.0, etc.
-set RELEASES=29,60,100
+set RELEASES=29,60,100,149
 for /f %%v in ('powershell -NoProfile -Command "$n=%NEXT_COUNT%; $major=0; $base=0; foreach($r in @(%RELEASES%)){ if($n -ge $r){ $major++; $base=$r } else { break } }; if($major -eq 0){ '0.{0:D2}' -f $n } elseif(($n-$base) -eq 0){ '{0}.0' -f $major } else { '{0}.{1:D2}' -f $major,($n-$base) }"') do set VERLABEL=%%v
 echo Bumping version to %VERLABEL% (commit %NEXT_COUNT%)
 

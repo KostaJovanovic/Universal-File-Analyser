@@ -610,7 +610,7 @@ function buildViewer(data, opts = {}) {
   gl.enable(gl.DEPTH_TEST);
   // mode: 0 = feature type, 1 = height, 2 = speed. vis: per-feature-type 1/0.
   // shown: how many extrusion segments to draw (in print order) - the progress slider.
-  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: true, flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN };
+  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: false, flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN };
   let viewW = 600, viewH = 420;   // CSS px, for screen-space size in the shader
   let dirty = true;
   const spinListeners = [];
@@ -746,7 +746,7 @@ function buildViewer(data, opts = {}) {
     drawImpl(proj, view, model);
   }
   function loop() {
-    if (state.spin) { state.yaw += 0.006; dirty = true; }
+    if (state.spin) { state.yaw += 0.003; dirty = true; }
     if (dirty) { draw(); dirty = false; }
     if (wrap.isConnected) requestAnimationFrame(loop);
   }
@@ -943,19 +943,23 @@ export async function renderGcode(file, resultsEl) {
         viewCard.appendChild(legend);
       }
 
-      // CNC: show/hide each tool's cutting moves, with the tool's colour swatch.
-      // All on by default, so every tool is visible at once; untick to isolate.
+      // CNC: a button per tool (styled like the 3MF parts picker) to show/hide that
+      // tool's cutting moves. Shown above the viewer, all visible by default; click
+      // to toggle one off and isolate the rest.
       if (cncTools.length > 1) {
-        const legend = el('div', { class: 'anr-gcode-legend' });
-        legend.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;margin-right:2px;' }, 'Tools:'));
+        const toolRow = el('div', { class: 'anr-btn-row', style: 'margin:0 0 10px;align-items:center;gap:6px;' });
+        toolRow.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;margin-right:2px;' }, 'Tools:'));
         for (const t of cncTools) {
           const f = FEATURES[t.slot];
           const swatch = el('span', { class: 'anr-gcode-swatch', style: `background:rgb(${Math.round(f.rgb[0] * 255)},${Math.round(f.rgb[1] * 255)},${Math.round(f.rgb[2] * 255)})` });
-          const cb = el('input', { type: 'checkbox', checked: '' });
-          cb.addEventListener('change', () => { viewer.state.vis[t.slot] = cb.checked ? 1 : 0; viewer.markDirty(); });
-          legend.appendChild(el('label', { class: 'anr-gcode-legitem' }, [cb, swatch, document.createTextNode(toolLabel(t.n))]));
+          const chip = el('button', { type: 'button', class: 'anr-btn anr-gcode-toolchip' }, [swatch, document.createTextNode(toolLabel(t.n))]);
+          chip.addEventListener('click', () => {
+            const off = chip.classList.toggle('is-off');   // toggle this tool's visibility
+            viewer.state.vis[t.slot] = off ? 0 : 1; viewer.markDirty();
+          });
+          toolRow.appendChild(chip);
         }
-        viewCard.appendChild(legend);
+        viewCard.insertBefore(toolRow, viewer.wrap);   // above the 3D viewport
       }
 
       const zLo = data.bbox.min[2], zHi = data.bbox.max[2];
@@ -984,9 +988,18 @@ export async function renderGcode(file, resultsEl) {
         if (!viewer.wrap.isConnected) { stopPlay(); return; }
         if (!lastTs) lastTs = ts;
         const dt = Math.min(0.25, (ts - lastTs) / 1000); lastTs = ts;
-        const n = viewer.state.shown + (+speedSel.value) * dt;
-        if (n >= data.segCount) { setProgress(data.segCount); stopPlay(); return; }
-        setProgress(n);
+        if (realtime) {
+          // Advance by wall-clock against the real per-move timeline.
+          playElapsed += dt;
+          let n = viewer.state.shown | 0;
+          while (n < data.segCount && cumTime[n + 1] <= playElapsed) n++;
+          if (n >= data.segCount) { setProgress(data.segCount); stopPlay(); return; }
+          setProgress(n);
+        } else {
+          const n = viewer.state.shown + playLps * dt;
+          if (n >= data.segCount) { setProgress(data.segCount); stopPlay(); return; }
+          setProgress(n);
+        }
         playRAF = requestAnimationFrame(stepPlay);
       }
       const playBtn = el('button', { type: 'button', class: 'anr-btn', title: 'Play the print start to finish' }, 'Play');
@@ -994,21 +1007,98 @@ export async function renderGcode(file, resultsEl) {
         if (playing) { stopPlay(); return; }
         if (viewer.state.shown >= data.segCount) setProgress(0);   // replay from the start
         playing = true; lastTs = 0; playBtn.textContent = 'Pause'; viewer.state.head = true; viewer.markDirty();
+        playElapsed = cumTime[Math.max(0, Math.min(data.segCount, viewer.state.shown | 0))];
         playRAF = requestAnimationFrame(stepPlay);
       });
-      const speedSel = el('select', { class: 'anr-btn anr-select', 'aria-label': 'Playback speed', title: 'Playback speed' });
-      [[100, '100 lines/s'], [500, '500 lines/s'], [1000, '1k lines/s'], [5000, '5k lines/s'], [10000, '10k lines/s'], [20000, '20k lines/s']]
-        .forEach(([v, l]) => speedSel.appendChild(el('option', { value: String(v) }, l)));
-      speedSel.value = isPrint ? '10000' : '100';
+      // Playback rate in lines/s. A "length" preset scales to the file
+      // (lines/s = total moves / seconds), so any program finishes in that many
+      // seconds; a "lines/s" preset is a fixed rate. Default: whole job in 20s.
+      const lpsForLen = (sec) => Math.max(1, data.segCount / sec);
+      let playLps = lpsForLen(20);
+      let realtime = false, playElapsed = 0;
+
+      // Per-segment real durations (move length / feedrate) and their running total,
+      // for true real-time playback - each move takes as long as it would on the
+      // machine. Feed is units/min, coords are in file units, so both agree.
+      const cumTime = new Float64Array(data.segCount + 1);
+      for (let s = 0; s < data.segCount; s++) {
+        const p = s * 10;
+        const len = Math.hypot(data.seg[p + 3] - data.seg[p], data.seg[p + 4] - data.seg[p + 1], data.seg[p + 5] - data.seg[p + 2]);
+        const f = data.seg[p + 8];
+        cumTime[s + 1] = cumTime[s] + (f > 1e-6 ? len / (f / 60) : 0);
+      }
+      const realTotal = cumTime[data.segCount];
+      const fmtDur = (sec) => { sec = Math.round(sec); const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), ss = sec % 60; return h ? `${h}h ${m}m` : m ? `${m}m ${ss}s` : `${ss}s`; };
+
+      const LINE_PRESETS = [[100, '100 lines/s'], [500, '500 lines/s'], [1000, '1k lines/s'], [5000, '5k lines/s'], [10000, '10k lines/s'], [20000, '20k lines/s']];
+      const LEN_PRESETS = [10, 20, 30, 60, 120];
+
+      const spdWrap = el('span', { class: 'anr-aa-wrap' });
+      const spdBtn = el('button', { type: 'button', class: 'anr-btn', title: 'Playback speed' }, 'Speed');
+      const spdPanel = el('div', { class: 'anr-aa-panel anr-spd-panel is-hidden' });
+      const setLabel = (txt) => { spdBtn.textContent = 'Speed: ' + txt; };
+      const allPresetBtns = [];
+      const clearActive = () => allPresetBtns.forEach((b) => b.classList.remove('is-active'));
+      const rtWarn = el('p', { class: 'anr-spd-warn', hidden: '' }, 'Real time is only an estimate - the file has no data on acceleration, rapid speeds or tool-change times, so don\'t take it literally.');
+      const choose = (lps, label, btn) => { realtime = false; playLps = lps; setLabel(label); clearActive(); if (btn) btn.classList.add('is-active'); rtWarn.hidden = true; };
+      const chooseReal = (btn) => { realtime = true; setLabel('real time (' + fmtDur(realTotal) + ')'); clearActive(); if (btn) btn.classList.add('is-active'); rtWarn.hidden = false; };
+
+      const cols = el('div', { class: 'anr-spd-cols' });
+      const mkCol = (title) => { const c = el('div', { class: 'anr-spd-col' }); c.appendChild(el('div', { class: 'anr-spd-title' }, title)); return c; };
+      const lpsCol = mkCol('Lines/s'), lenCol = mkCol('Length');
+      for (const [v, l] of LINE_PRESETS) {
+        const b = el('button', { type: 'button', class: 'anr-btn anr-spd-opt' }, l);
+        b.addEventListener('click', () => choose(v, l, b));
+        allPresetBtns.push(b); lpsCol.appendChild(b);
+      }
+      let defBtn = null;
+      for (const s of LEN_PRESETS) {
+        const b = el('button', { type: 'button', class: 'anr-btn anr-spd-opt' }, s + 's');
+        b.addEventListener('click', () => choose(lpsForLen(s), 'whole job in ' + s + 's', b));
+        allPresetBtns.push(b); lenCol.appendChild(b);
+        if (s === 20) defBtn = b;
+      }
+      // Real time: play each move at its true duration. Show the total so it's clear
+      // how long that is before committing to it.
+      if (realTotal > 0) {
+        const rb = el('button', { type: 'button', class: 'anr-btn anr-spd-opt', title: 'Real time - play at the toolpath\'s real execution time' }, fmtDur(realTotal));
+        rb.addEventListener('click', () => chooseReal(rb));
+        allPresetBtns.push(rb); lenCol.appendChild(rb);
+      }
+      cols.appendChild(lpsCol); cols.appendChild(lenCol);
+      spdPanel.appendChild(cols);
+
+      // Custom rate: a number + a unit toggle (lines/s <-> length in seconds).
+      let customMode = 'len';   // 'lps' = lines/s, 'len' = seconds
+      const customRow = el('div', { class: 'anr-spd-custom' });
+      const customIn = el('input', { type: 'number', min: '1', step: '1', class: 'anr-spd-input', placeholder: 'Custom', 'aria-label': 'Custom playback rate' });
+      const unitBtn = el('button', { type: 'button', class: 'anr-btn anr-spd-unit', title: 'Switch the custom value between lines per second and total length' }, 'length (s)');
+      const applyCustom = () => {
+        const v = parseFloat(customIn.value);
+        if (!(v > 0)) return;
+        if (customMode === 'lps') choose(v, Math.round(v).toLocaleString() + ' lines/s', null);
+        else choose(lpsForLen(v), 'whole job in ' + v + 's', null);
+      };
+      customIn.addEventListener('input', applyCustom);
+      unitBtn.addEventListener('click', () => { customMode = customMode === 'lps' ? 'len' : 'lps'; unitBtn.textContent = customMode === 'lps' ? 'lines/s' : 'length (s)'; applyCustom(); });
+      customRow.appendChild(customIn); customRow.appendChild(unitBtn);
+      spdPanel.appendChild(customRow);
+
+      spdBtn.addEventListener('click', (e) => { e.stopPropagation(); spdPanel.classList.toggle('is-hidden'); });
+      document.addEventListener('click', (e) => { if (!spdWrap.contains(e.target)) spdPanel.classList.add('is-hidden'); });
+      spdWrap.appendChild(spdBtn); spdWrap.appendChild(spdPanel);
+      choose(playLps, 'whole job in 20s', defBtn);   // default selection
+
       progSlider.addEventListener('input', () => { stopPlay(); setProgress(Math.round(data.segCount * (+progSlider.value) / 1000), true); });
 
       const progRow = el('div', { class: 'anr-btn-row', style: 'margin-top:8px;align-items:center;' });
       progRow.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;white-space:nowrap;' }, isPrint ? 'Print progress' : 'Toolpath'));
       progRow.appendChild(playBtn);
-      progRow.appendChild(speedSel);
+      progRow.appendChild(spdWrap);
       progRow.appendChild(progSlider);
       progRow.appendChild(progVal);
       viewCard.appendChild(progRow);
+      viewCard.appendChild(rtWarn);   // approximate-real-time caveat (shown in real-time mode)
 
       resultsEl.appendChild(viewCard);
       viewer.start();
