@@ -492,14 +492,39 @@ function buildViewer(data, opts = {}) {
   const cx = (min[0] + max[0]) / 2, cy = (min[1] + max[1]) / 2, cz = (min[2] + max[2]) / 2;
   const span = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) || 1;
   const nrm = (px, py, pz) => [(px - cx) / span, (pz - cz) / span, (py - cy) / span];   // -> [x, up, depth]
-  const boundR = (() => {
-    let m2 = 0;
-    for (let p = 0; p < data.seg.length; p += 10) {
-      for (const v of [nrm(data.seg[p], data.seg[p + 1], data.seg[p + 2]), nrm(data.seg[p + 3], data.seg[p + 4], data.seg[p + 5])]) {
-        const r2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2]; if (r2 > m2) m2 = r2;
-      }
+  // Robust framing. The raw bbox is fragile: a slicer's purge/intro line (or one stray
+  // move to the origin) is a legitimate extrusion far from the part, so the bbox midpoint
+  // drifts off the model and the bounding sphere balloons - leaving the actual part a dot
+  // pushed to one side. So pivot on the median point (outlier-proof) and frame to a high
+  // percentile of the distance from it (ignores the ~1% of outlier moves). The true max
+  // is kept for the depth planes, so nothing the camera can see ever gets clipped.
+  const { boundR, boundRMax, ctr } = (() => {
+    const total = data.seg.length, segs = total / 10;
+    if (!segs) return { boundR: 0.5, boundRMax: 0.5, ctr: [0, 0, 0] };
+    const stride = Math.max(1, Math.floor(segs / 20000));   // cap the sample on huge files
+    const xs = [], ys = [], zs = [];
+    for (let p = 0, si = 0; p < total; p += 10, si++) {
+      if (si % stride) continue;
+      xs.push(data.seg[p], data.seg[p + 3]);
+      ys.push(data.seg[p + 1], data.seg[p + 4]);
+      zs.push(data.seg[p + 2], data.seg[p + 5]);
     }
-    return Math.sqrt(m2) || 0.5;
+    const med = (arr) => { arr.sort((a, b) => a - b); return arr[arr.length >> 1]; };
+    const ctr = nrm(med(xs), med(ys), med(zs));             // normalised orbit centre
+    let m2 = 0; const ds = [];
+    for (let p = 0, si = 0; p < total; p += 10, si++) {
+      const a = nrm(data.seg[p], data.seg[p + 1], data.seg[p + 2]);
+      const b = nrm(data.seg[p + 3], data.seg[p + 4], data.seg[p + 5]);
+      const dax = a[0] - ctr[0], day = a[1] - ctr[1], daz = a[2] - ctr[2];
+      const dbx = b[0] - ctr[0], dby = b[1] - ctr[1], dbz = b[2] - ctr[2];
+      const ra = dax * dax + day * day + daz * daz;
+      const rb = dbx * dbx + dby * dby + dbz * dbz;
+      if (ra > m2) m2 = ra; if (rb > m2) m2 = rb;
+      if (si % stride === 0) ds.push(ra, rb);
+    }
+    ds.sort((x, y) => x - y);
+    const p99 = ds.length ? ds[Math.floor((ds.length - 1) * 0.99)] : m2;
+    return { boundR: Math.sqrt(p99) || 0.5, boundRMax: Math.sqrt(m2) || 0.5, ctr };
   })();
   const yMin = (min[2] - cz) / span, ySpan = ((max[2] - min[2]) / span) || 1e-3;
   const fMin = data.feedRange.min, fSpan = Math.max(1e-6, data.feedRange.max - data.feedRange.min);
@@ -610,7 +635,7 @@ function buildViewer(data, opts = {}) {
   gl.enable(gl.DEPTH_TEST);
   // mode: 0 = feature type, 1 = height, 2 = speed. vis: per-feature-type 1/0.
   // shown: how many extrusion segments to draw (in print order) - the progress slider.
-  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: false, flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN };
+  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: false, flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false };
   let viewW = 600, viewH = 420;   // CSS px, for screen-space size in the shader
   let dirty = true;
   const spinListeners = [];
@@ -625,6 +650,13 @@ function buildViewer(data, opts = {}) {
     const segBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, segBuf); gl.bufferData(gl.ARRAY_BUFFER, instData, gl.STATIC_DRAW);
     let travBuf = null;
     if (travData) { travBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, travBuf); gl.bufferData(gl.ARRAY_BUFFER, travData, gl.STATIC_DRAW); }
+    // One-instance scratch buffers for the in-progress (partially drawn) move: while
+    // playback animates a single move, its bead grows from the start point to the live
+    // tool position instead of popping in whole when the move finishes. Updated per frame.
+    const partBuf = gl.createBuffer();
+    const partArr = new Float32Array(STR);
+    let partTravBuf = null, partTravArr = null;
+    if (travData) { partTravBuf = gl.createBuffer(); partTravArr = new Float32Array(STR); }
 
     const L = (n) => gl.getAttribLocation(prog, n);
     const aEnd = L('aEnd'), aSr = L('aSr'), aSu = L('aSu'), aA = L('aA'), aB = L('aB'), aHW = L('aHW'), aHH = L('aHH'), aFeed = L('aFeed'), aType = L('aType');
@@ -662,11 +694,10 @@ function buildViewer(data, opts = {}) {
     const hU = (n) => gl.getUniformLocation(headProg, n);
     const uHProj = hU('uProj'), uHView = hU('uView'), uHModel = hU('uModel'), uHead = hU('uHead'), uHScale = hU('uScale');
     const headScale = Math.max(0.02, boundR * 0.06);
-    const drawHead = (proj, view, model, shown) => {
-      const idx = Math.max(0, Math.min(segN - 1, shown - 1)), q = idx * STR;
+    const drawHead = (proj, view, model, hx, hy, hz) => {
       gl.useProgram(headProg);
       gl.uniformMatrix4fv(uHProj, false, proj); gl.uniformMatrix4fv(uHView, false, view); gl.uniformMatrix4fv(uHModel, false, model);
-      gl.uniform3f(uHead, instData[q + 3], instData[q + 4], instData[q + 5]); gl.uniform1f(uHScale, headScale);
+      gl.uniform3f(uHead, hx, hy, hz); gl.uniform1f(uHScale, headScale);
       gl.bindBuffer(gl.ARRAY_BUFFER, headBuf);
       gl.enableVertexAttribArray(hPos); gl.vertexAttribPointer(hPos, 3, gl.FLOAT, false, 24, 0); inst.vertexAttribDivisorANGLE(hPos, 0);
       gl.enableVertexAttribArray(hNrm); gl.vertexAttribPointer(hNrm, 3, gl.FLOAT, false, 24, 12); inst.vertexAttribDivisorANGLE(hNrm, 0);
@@ -682,15 +713,54 @@ function buildViewer(data, opts = {}) {
       if (uVis) gl.uniform1fv(uVis, state.vis);
       bindTemplate();
       const shown = Math.max(0, Math.min(segN, state.shown | 0));
+      // Fraction into the move currently being drawn (only while playback animates).
+      // Lets one long move grow smoothly toward the live tool point instead of
+      // teleporting to the end when its full duration elapses. Manual scrubbing keeps
+      // partial at 0, so the sliders only ever land on whole moves.
+      const frac = (state.partial > 0 && shown < segN) ? state.partial : 0;
+
+      // Live tool point: interpolated along the in-progress move when mid-move, else
+      // the end of the last completed move.
+      let hx = 0, hy = 0, hz = 0, haveHead = false;
+      if (frac > 0) {
+        const q = shown * STR;
+        hx = instData[q] + frac * (instData[q + 3] - instData[q]);
+        hy = instData[q + 1] + frac * (instData[q + 4] - instData[q + 1]);
+        hz = instData[q + 2] + frac * (instData[q + 5] - instData[q + 2]);
+        haveHead = true;
+      } else if (shown > 0) {
+        const q = (shown - 1) * STR;
+        hx = instData[q + 3]; hy = instData[q + 4]; hz = instData[q + 5]; haveHead = true;
+      }
+
       if (state.showTravel && travBuf) {
-        // Reveal travels proportionally to print progress.
-        const tShown = segN > 0 ? Math.round(travN * shown / segN) : travN;
+        // Reveal travels proportionally to print progress, with the leading travel
+        // growing in step with the move bead.
+        const tPos = segN > 0 ? travN * (shown + frac) / segN : travN;
+        const tFull = Math.min(travN, Math.floor(tPos));
         gl.uniform1f(uTravel, 1); gl.uniform1f(uMode, 0);
-        bindInstances(travBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, tShown);
+        bindInstances(travBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, tFull);
+        const tFrac = tPos - tFull;
+        if (tFrac > 0 && tFull < travN) {
+          const q = tFull * STR;
+          for (let i = 0; i < STR; i++) partTravArr[i] = travData[q + i];
+          partTravArr[3] = travData[q] + tFrac * (travData[q + 3] - travData[q]);
+          partTravArr[4] = travData[q + 1] + tFrac * (travData[q + 4] - travData[q + 1]);
+          partTravArr[5] = travData[q + 2] + tFrac * (travData[q + 5] - travData[q + 2]);
+          gl.bindBuffer(gl.ARRAY_BUFFER, partTravBuf); gl.bufferData(gl.ARRAY_BUFFER, partTravArr, gl.DYNAMIC_DRAW);
+          bindInstances(partTravBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, 1);
+        }
       }
       gl.uniform1f(uTravel, 0); gl.uniform1f(uMode, state.mode);
       bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
-      if (state.head && shown > 0) drawHead(proj, view, model, shown);
+      if (frac > 0) {
+        const q = shown * STR;
+        for (let i = 0; i < STR; i++) partArr[i] = instData[q + i];
+        partArr[3] = hx; partArr[4] = hy; partArr[5] = hz;   // bead ends at the live tool point
+        gl.bindBuffer(gl.ARRAY_BUFFER, partBuf); gl.bufferData(gl.ARRAY_BUFFER, partArr, gl.DYNAMIC_DRAW);
+        bindInstances(partBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, 1);
+      }
+      if (state.head && haveHead) drawHead(proj, view, model, hx, hy, hz);
     };
     drawImpl.hasTravel = !!travBuf;
   } else {
@@ -705,6 +775,8 @@ function buildViewer(data, opts = {}) {
       linePos[q + 3] = b[0]; linePos[q + 4] = b[1]; linePos[q + 5] = b[2];
     }
     const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, linePos, gl.STATIC_DRAW);
+    const partLineBuf = gl.createBuffer();
+    const partLine = new Float32Array(6);
     const aPos = gl.getAttribLocation(prog, 'aPos');
     const U = (n) => gl.getUniformLocation(prog, n);
     const uProj = U('uProj'), uView = U('uView'), uModel = U('uModel'), uYmin = U('uYmin'), uYspan = U('uYspan'), uClip = U('uClip');
@@ -712,9 +784,22 @@ function buildViewer(data, opts = {}) {
       gl.useProgram(prog);
       gl.uniformMatrix4fv(uProj, false, proj); gl.uniformMatrix4fv(uView, false, view); gl.uniformMatrix4fv(uModel, false, model);
       gl.uniform1f(uYmin, yMin); gl.uniform1f(uYspan, ySpan); gl.uniform1f(uClip, state.clip);
+      const shown = Math.max(0, Math.min(segN, state.shown | 0));
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
-      gl.drawArrays(gl.LINES, 0, Math.max(0, Math.min(segN, state.shown | 0)) * 2);
+      gl.drawArrays(gl.LINES, 0, shown * 2);
+      // Grow the in-progress move's line toward the live tool point during playback.
+      const frac = (state.partial > 0 && shown < segN) ? state.partial : 0;
+      if (frac > 0) {
+        const q = shown * 6;
+        partLine[0] = linePos[q]; partLine[1] = linePos[q + 1]; partLine[2] = linePos[q + 2];
+        partLine[3] = linePos[q] + frac * (linePos[q + 3] - linePos[q]);
+        partLine[4] = linePos[q + 1] + frac * (linePos[q + 4] - linePos[q + 1]);
+        partLine[5] = linePos[q + 2] + frac * (linePos[q + 5] - linePos[q + 2]);
+        gl.bindBuffer(gl.ARRAY_BUFFER, partLineBuf); gl.bufferData(gl.ARRAY_BUFFER, partLine, gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.LINES, 0, 2);
+      }
     };
     drawImpl.hasTravel = false;
   }
@@ -738,11 +823,23 @@ function buildViewer(data, opts = {}) {
     gl.clearColor(state.bg[0], state.bg[1], state.bg[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     const aspect = canvas.width / canvas.height || 1;
+    // Fit the depth range tightly around the model each frame. The geometry is a
+    // bounding sphere of radius `boundR` centred at the origin, viewed from `dist`
+    // away, so it spans depths [dist - r, dist + r]. The old fixed 0.005..1000 range
+    // (a 200000:1 near/far ratio) starved the depth buffer of precision over the part
+    // and caused heavy z-fighting between stacked/adjacent beads; bracketing it makes
+    // far/near small, so the precision lands where the geometry actually is.
+    const r = boundRMax * 1.08 + 0.02;         // true extent (+ head marker / fattened beads) so nothing clips
+    const near = Math.max(0.01, state.dist - r);
+    const far = state.dist + r + 0.02;
     let proj;
-    if (state.ortho) { const hh = state.dist * 0.4142; proj = mat4Ortho(-hh * aspect, hh * aspect, -hh, hh, 0.005, 1000); }
-    else proj = mat4Perspective(45 * Math.PI / 180, aspect, 0.005, 1000);
+    if (state.ortho) { const hh = state.dist * 0.4142; proj = mat4Ortho(-hh * aspect, hh * aspect, -hh, hh, near, far); }
+    else proj = mat4Perspective(45 * Math.PI / 180, aspect, near, far);
     const view = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, state.panX, state.panY, -state.dist, 1]);
-    const model = mat4Multiply(mat4RotX(state.pitch), mat4RotY(state.yaw));
+    // Recentre the part under the orbit pivot (ctr is the robust median centre), then
+    // rotate - so spin/orbit turn about the model, not the outlier-skewed bbox midpoint.
+    const rot = mat4Multiply(mat4RotX(state.pitch), mat4RotY(state.yaw));
+    const model = mat4Multiply(rot, new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -ctr[0], -ctr[1], -ctr[2], 1]));
     drawImpl(proj, view, model);
   }
   function loop() {
@@ -788,15 +885,22 @@ function buildViewer(data, opts = {}) {
   canvas.addEventListener('touchend', (e) => { if (!e.touches.length) { up(); twoFinger = false; } });
   canvas.addEventListener('wheel', (e) => { e.preventDefault(); state.dist = Math.max(0.04, Math.min(150,state.dist * (1 + Math.sign(e.deltaY) * 0.1))); dirty = true; }, { passive: false });
 
+  // Camera distance that frames the model's bounding sphere. `fill` < 1 leaves
+  // padding (e.g. 0.9 -> the sphere spans ~90% of the frame); accounts for the
+  // narrower of the horizontal/vertical FOV so it fits in portrait or landscape.
+  function fitDist(fill) {
+    const aspect = (canvas.width / canvas.height) || 1;
+    const halfFovV = (45 * Math.PI / 180) / 2;
+    const halfFov = Math.min(halfFovV, Math.atan(Math.tan(halfFovV) * aspect));
+    const theta = Math.atan(fill * Math.tan(halfFov));
+    return boundR / Math.sin(theta);
+  }
+
   function snapshot() {
     const saved = { yaw: state.yaw, pitch: state.pitch, dist: state.dist, spin: state.spin, ortho: state.ortho, clip: state.clip, panX: state.panX, panY: state.panY };
     state.spin = false; state.ortho = false; state.clip = 1; state.panX = 0; state.panY = 0;
     state.yaw = Math.PI / 4; state.pitch = Math.atan(1 / Math.SQRT2);
-    const aspect = (canvas.width / canvas.height) || 1;
-    const halfFovV = (45 * Math.PI / 180) / 2;
-    const halfFov = Math.min(halfFovV, Math.atan(Math.tan(halfFovV) * aspect));
-    const theta = Math.atan(0.96 * Math.tan(halfFov));
-    state.dist = boundR / Math.sin(theta);
+    state.dist = fitDist(0.96);
     draw();
     let url = null; try { url = canvas.toDataURL('image/png'); } catch (_) { url = null; }
     Object.assign(state, saved); dirty = true; return url;
@@ -808,7 +912,8 @@ function buildViewer(data, opts = {}) {
   const api = {
     wrap, ok: true, state, hasTravel: !!drawImpl.hasTravel, instanced: !!(inst && segN > 0), snapshot,
     resize, setSpin, onSpinChange: (cb) => spinListeners.push(cb),
-    start: () => { resize(); requestAnimationFrame(loop); }, markDirty: () => { dirty = true; },
+    start: () => { resize(); if (!state.fitted) { state.dist = fitDist(0.9); state.fitted = true; } requestAnimationFrame(loop); }, markDirty: () => { dirty = true; },
+    fit: (fill) => { state.dist = fitDist(fill === undefined ? 0.9 : fill); state.fitted = true; dirty = true; },
   };
   attachViewCube(api);
   return api;
@@ -858,7 +963,12 @@ export async function renderGcode(file, resultsEl) {
     viewCard.appendChild(viewer.wrap);
 
     if (viewer.ok) {
-      const controls = el('div', { class: 'anr-btn-row', style: 'margin-top:10px;align-items:center;flex-wrap:wrap;' });
+      // A caption under the canvas explains how to drive the view; every button and
+      // slider then lives in one toolbar below it, grouped by job (display controls,
+      // what is shown, then the two sliders) so the section reads as a single panel.
+      viewCard.appendChild(el('p', { class: 'anr-gcode-orbithint' }, 'Drag to orbit · right-drag to pan · scroll to zoom'));
+      const toolbar = el('div', { class: 'anr-gcode-toolbar' });
+      const viewRow = el('div', { class: 'anr-btn-row anr-gcode-toolrow' });
       const spinBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Pause spin');
       spinBtn.addEventListener('click', () => viewer.setSpin(!viewer.state.spin));
       const updateSpinLabel = (s) => { spinBtn.textContent = s ? 'Pause spin' : 'Resume spin'; };
@@ -869,7 +979,7 @@ export async function renderGcode(file, resultsEl) {
       // references `viewer` by binding, so they keep working after the swap.
       function applyMSAA(on) {
         const s = viewer.state;
-        const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, vis: s.vis, shown: s.shown, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten };
+        const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, vis: s.vis, shown: s.shown, partial: s.partial, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten, fitted: s.fitted };
         const old = viewer;
         const next = buildViewer(data, { antialias: on });
         if (!next.ok) return;                         // keep the working viewer if rebuild fails
@@ -882,7 +992,7 @@ export async function renderGcode(file, resultsEl) {
       }
 
       const resetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Reset view');
-      resetBtn.addEventListener('click', () => { Object.assign(viewer.state, { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0 }); viewer.markDirty(); });
+      resetBtn.addEventListener('click', () => { Object.assign(viewer.state, { yaw: 0.6, pitch: 0.5, panX: 0, panY: 0 }); viewer.fit(); });
       const projBtn = el('button', { type: 'button', class: 'anr-btn' }, viewer.state.ortho ? 'Orthographic' : 'Perspective');
       projBtn.addEventListener('click', () => { viewer.state.ortho = !viewer.state.ortho; projBtn.textContent = viewer.state.ortho ? 'Orthographic' : 'Perspective'; viewer.markDirty(); });
       // Anti-aliasing / quality popup: hardware MSAA, supersampling, minimum line
@@ -925,30 +1035,40 @@ export async function renderGcode(file, resultsEl) {
       const fsBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Fullscreen');
       fsBtn.addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else if (viewer.wrap.requestFullscreen) viewer.wrap.requestFullscreen(); });
 
-      controls.appendChild(spinBtn); controls.appendChild(resetBtn); controls.appendChild(projBtn); controls.appendChild(colorSel); controls.appendChild(travelBtn); controls.appendChild(fsBtn); controls.appendChild(qWrap);
-      controls.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;margin-left:auto;' }, 'drag to orbit · right-drag to pan · scroll to zoom'));
-      viewCard.appendChild(controls);
+      // Travel/rapid show-hide is a visibility toggle, so when there's a line-type
+      // legend (3D prints) it joins that "Show" row; otherwise it stays with the
+      // display buttons.
+      const hasLegend = data.hasTypes && data.features.length;
+      viewRow.appendChild(spinBtn); viewRow.appendChild(resetBtn); viewRow.appendChild(projBtn); viewRow.appendChild(colorSel); viewRow.appendChild(fsBtn); viewRow.appendChild(qWrap);
+      if (!hasLegend) viewRow.appendChild(travelBtn);
+      toolbar.appendChild(viewRow);
 
-      // OrcaSlicer-style show/hide by line type, with a colour swatch per feature.
-      if (data.hasTypes && data.features.length) {
+      // OrcaSlicer-style show/hide by line type - one toggle chip per feature, built
+      // exactly like the CNC tool chips below (swatch + label, dims when toggled off).
+      if (hasLegend) {
         const legend = el('div', { class: 'anr-gcode-legend' });
-        legend.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;margin-right:2px;' }, 'Show:'));
+        legend.appendChild(el('span', { class: 'anr-gcode-rowlabel' }, 'Show'));
         for (const id of data.features) {
           const f = FEATURES[id];
           const swatch = el('span', { class: 'anr-gcode-swatch', style: `background:rgb(${Math.round(f.rgb[0] * 255)},${Math.round(f.rgb[1] * 255)},${Math.round(f.rgb[2] * 255)})` });
-          const cb = el('input', { type: 'checkbox', checked: '' });
-          cb.addEventListener('change', () => { viewer.state.vis[id] = cb.checked ? 1 : 0; viewer.markDirty(); });
-          legend.appendChild(el('label', { class: 'anr-gcode-legitem' }, [cb, swatch, document.createTextNode(f.label)]));
+          const chip = el('button', { type: 'button', class: 'anr-btn anr-gcode-toolchip', 'aria-pressed': 'true' }, [swatch, document.createTextNode(f.label)]);
+          chip.addEventListener('click', () => {
+            const off = chip.classList.toggle('is-off');
+            chip.setAttribute('aria-pressed', off ? 'false' : 'true');
+            viewer.state.vis[id] = off ? 0 : 1; viewer.markDirty();
+          });
+          legend.appendChild(chip);
         }
-        viewCard.appendChild(legend);
+        legend.appendChild(travelBtn);   // the travel show/hide rides with the line-type toggles
+        toolbar.appendChild(legend);
       }
 
       // CNC: a button per tool (styled like the 3MF parts picker) to show/hide that
-      // tool's cutting moves. Shown above the viewer, all visible by default; click
-      // to toggle one off and isolate the rest.
+      // tool's cutting moves. All visible by default; click one to toggle it off and
+      // isolate the rest.
       if (cncTools.length > 1) {
-        const toolRow = el('div', { class: 'anr-btn-row', style: 'margin:0 0 10px;align-items:center;gap:6px;' });
-        toolRow.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;margin-right:2px;' }, 'Tools:'));
+        const toolRow = el('div', { class: 'anr-btn-row anr-gcode-toolrow' });
+        toolRow.appendChild(el('span', { class: 'anr-gcode-rowlabel' }, 'Tools'));
         for (const t of cncTools) {
           const f = FEATURES[t.slot];
           const swatch = el('span', { class: 'anr-gcode-swatch', style: `background:rgb(${Math.round(f.rgb[0] * 255)},${Math.round(f.rgb[1] * 255)},${Math.round(f.rgb[2] * 255)})` });
@@ -959,26 +1079,39 @@ export async function renderGcode(file, resultsEl) {
           });
           toolRow.appendChild(chip);
         }
-        viewCard.insertBefore(toolRow, viewer.wrap);   // above the 3D viewport
+        toolbar.appendChild(toolRow);
       }
 
       const zLo = data.bbox.min[2], zHi = data.bbox.max[2];
-      const slider = el('input', { type: 'range', class: 'anr-range', min: '1', max: '1000', value: '1000', title: 'Build height', style: 'flex:1;min-width:110px;', 'aria-label': 'Show build up to height' });
-      const sliderVal = el('span', { class: 'anr-hint', style: 'font-size:12px;min-width:64px;text-align:right;' }, zHi.toFixed(1) + ' mm');
-      slider.addEventListener('input', () => { const t = (+slider.value) / 1000; viewer.state.clip = t; viewer.markDirty(); sliderVal.textContent = (zLo + t * (zHi - zLo)).toFixed(1) + ' mm'; });
-      const heightRow = el('div', { class: 'anr-btn-row', style: 'margin-top:8px;align-items:center;flex-wrap:nowrap;' });
-      heightRow.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;white-space:nowrap;' }, 'Build height'));
-      heightRow.appendChild(slider); heightRow.appendChild(sliderVal);
-      viewCard.appendChild(heightRow);
+      const slider = el('input', { type: 'range', class: 'anr-range', min: '1', max: '1000', value: '1000', title: 'Build height', 'aria-label': 'Show build up to height' });
+      const sliderVal = el('span', { class: 'anr-gcode-slider-val' }, zHi.toFixed(1) + ' ' + u);
+      slider.addEventListener('input', () => { const t = (+slider.value) / 1000; viewer.state.clip = t; viewer.markDirty(); sliderVal.textContent = (zLo + t * (zHi - zLo)).toFixed(1) + ' ' + u; });
+      const heightRow = el('div', { class: 'anr-gcode-slider' }, [
+        el('span', { class: 'anr-gcode-rowlabel' }, 'Build height'), slider, sliderVal,
+      ]);
+      toolbar.appendChild(heightRow);
 
       // G-code progress: scrub through the moves in print order to watch the part
       // build up, with a Play button + speed picker that animate it start to finish.
-      const progSlider = el('input', { type: 'range', class: 'anr-range', min: '0', max: '1000', value: '1000', title: 'G-code progress', style: 'flex:1;min-width:110px;', 'aria-label': 'Reveal moves up to' });
-      const progVal = el('span', { class: 'anr-hint', style: 'font-size:12px;min-width:104px;text-align:right;' }, data.segCount.toLocaleString() + ' moves');
+      const progSlider = el('input', { type: 'range', class: 'anr-range', min: '0', max: '1000', value: '1000', title: 'G-code progress', 'aria-label': 'Reveal moves up to' });
+      const progVal = el('span', { class: 'anr-gcode-slider-val anr-gcode-slider-val--wide' }, data.segCount.toLocaleString() + ' moves');
+      // Scrub/stop setter: lands on a whole move (partial = 0), so dragging the slider
+      // only ever shows complete g-code moves, never an interpolated mid-move state.
       const setProgress = (n, fromSlider) => {
         n = Math.max(0, Math.min(data.segCount, n));
-        viewer.state.shown = n; viewer.markDirty();
+        viewer.state.shown = n; viewer.state.partial = 0; viewer.markDirty();
         if (!fromSlider) progSlider.value = String(data.segCount ? Math.round(n / data.segCount * 1000) : 1000);
+        progVal.textContent = Math.round(n).toLocaleString() + ' / ' + data.segCount.toLocaleString();
+      };
+      // Playback setter: `n` whole moves done plus `frac` into the next one, so a single
+      // long move animates smoothly instead of jumping from its start to its end.
+      const setProgressF = (n, frac) => {
+        n = Math.max(0, Math.min(data.segCount, n));
+        viewer.state.shown = n;
+        viewer.state.partial = (n < data.segCount) ? Math.max(0, Math.min(1, frac)) : 0;
+        viewer.markDirty();
+        const pos = n + viewer.state.partial;
+        progSlider.value = String(data.segCount ? Math.round(pos / data.segCount * 1000) : 1000);
         progVal.textContent = Math.round(n).toLocaleString() + ' / ' + data.segCount.toLocaleString();
       };
       let playing = false, playRAF = 0, lastTs = 0;
@@ -989,16 +1122,19 @@ export async function renderGcode(file, resultsEl) {
         if (!lastTs) lastTs = ts;
         const dt = Math.min(0.25, (ts - lastTs) / 1000); lastTs = ts;
         if (realtime) {
-          // Advance by wall-clock against the real per-move timeline.
+          // Advance by wall-clock against the real per-move timeline, interpolating
+          // within whichever move the clock currently sits in.
           playElapsed += dt;
+          if (playElapsed >= realTotal) { setProgress(data.segCount); stopPlay(); return; }
           let n = viewer.state.shown | 0;
           while (n < data.segCount && cumTime[n + 1] <= playElapsed) n++;
-          if (n >= data.segCount) { setProgress(data.segCount); stopPlay(); return; }
-          setProgress(n);
+          const segDur = cumTime[n + 1] - cumTime[n];
+          setProgressF(n, segDur > 1e-9 ? (playElapsed - cumTime[n]) / segDur : 0);
         } else {
-          const n = viewer.state.shown + playLps * dt;
-          if (n >= data.segCount) { setProgress(data.segCount); stopPlay(); return; }
-          setProgress(n);
+          const pos = (viewer.state.shown + viewer.state.partial) + playLps * dt;
+          if (pos >= data.segCount) { setProgress(data.segCount); stopPlay(); return; }
+          const n = Math.floor(pos);
+          setProgressF(n, pos - n);
         }
         playRAF = requestAnimationFrame(stepPlay);
       }
@@ -1007,7 +1143,9 @@ export async function renderGcode(file, resultsEl) {
         if (playing) { stopPlay(); return; }
         if (viewer.state.shown >= data.segCount) setProgress(0);   // replay from the start
         playing = true; lastTs = 0; playBtn.textContent = 'Pause'; viewer.state.head = true; viewer.markDirty();
-        playElapsed = cumTime[Math.max(0, Math.min(data.segCount, viewer.state.shown | 0))];
+        const sShown = Math.max(0, Math.min(data.segCount, viewer.state.shown | 0));
+        const segDur = sShown < data.segCount ? cumTime[sShown + 1] - cumTime[sShown] : 0;
+        playElapsed = cumTime[sShown] + (viewer.state.partial || 0) * segDur;
         playRAF = requestAnimationFrame(stepPlay);
       });
       // Playback rate in lines/s. A "length" preset scales to the file
@@ -1091,14 +1229,15 @@ export async function renderGcode(file, resultsEl) {
 
       progSlider.addEventListener('input', () => { stopPlay(); setProgress(Math.round(data.segCount * (+progSlider.value) / 1000), true); });
 
-      const progRow = el('div', { class: 'anr-btn-row', style: 'margin-top:8px;align-items:center;' });
-      progRow.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;white-space:nowrap;' }, isPrint ? 'Print progress' : 'Toolpath'));
+      const progRow = el('div', { class: 'anr-gcode-slider anr-gcode-player' });
+      progRow.appendChild(el('span', { class: 'anr-gcode-rowlabel' }, 'Playback'));
       progRow.appendChild(playBtn);
       progRow.appendChild(spdWrap);
       progRow.appendChild(progSlider);
       progRow.appendChild(progVal);
-      viewCard.appendChild(progRow);
-      viewCard.appendChild(rtWarn);   // approximate-real-time caveat (shown in real-time mode)
+      toolbar.appendChild(progRow);
+      toolbar.appendChild(rtWarn);   // approximate-real-time caveat (shown in real-time mode)
+      viewCard.appendChild(toolbar);
 
       resultsEl.appendChild(viewCard);
       viewer.start();
@@ -1186,14 +1325,17 @@ export async function renderGcode(file, resultsEl) {
         if (t.cr != null && t.cr > 0) geom = `R${t.cr} ${u}`;
         else if (t.taper != null) geom = `${t.taper}° taper`;
         else if (t.cr === 0) geom = 'flat';
-        tt.appendChild(el('tr', {}, [
-          el('td', {}, 'T' + t.n),
-          el('td', {}, t.desc ? titleCase(t.desc) : '-'),
-          el('td', {}, t.dia != null ? t.dia + ' ' + u : '-'),
-          el('td', {}, geom || '-'),
-          el('td', {}, t.zmin != null ? t.zmin + ' ' + u : '-'),
-          el('td', {}, t.rpm != null ? Math.round(t.rpm).toLocaleString() + ' rpm' : '-'),
-        ]));
+        // data-label drives the stacked card layout on mobile (CSS ::before),
+        // where the table collapses to one labelled block per tool.
+        const cells = [
+          ['Tool', 'T' + t.n],
+          ['Type', t.desc ? titleCase(t.desc) : '-'],
+          ['Ø', t.dia != null ? t.dia + ' ' + u : '-'],
+          ['Corner / taper', geom || '-'],
+          ['Z min', t.zmin != null ? t.zmin + ' ' + u : '-'],
+          ['Spindle', t.rpm != null ? Math.round(t.rpm).toLocaleString() + ' rpm' : '-'],
+        ];
+        tt.appendChild(el('tr', {}, cells.map(([label, val]) => el('td', { 'data-label': label }, val))));
       }
       tc.appendChild(tt);
     }
