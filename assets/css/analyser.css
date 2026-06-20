@@ -5739,6 +5739,121 @@ li.anr-md-task input { margin-right: 0.5em; vertical-align: middle; }
   color: var(--muted);
 }
 
+/* ---- Trend graph (visitors + files over time) ---- */
+.stats-trends-card {
+  border: 1px solid var(--rule);
+  padding: 22px 24px;
+  margin: 36px 0 0;
+}
+.stats-trends-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 6px;
+}
+.stats-trends-title { font-size: var(--t-h3); margin: 0; }
+/* Segmented per-day / cumulative switch. */
+.stats-trends-modes { display: inline-flex; border: 1px solid var(--rule); }
+.stats-trends-mode {
+  font: inherit;
+  font-size: var(--t-small);
+  background: none;
+  border: 0;
+  color: var(--muted);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: color var(--dur-snappy) ease, background var(--dur-snappy) ease;
+}
+.stats-trends-mode + .stats-trends-mode { border-left: 1px solid var(--rule); }
+.stats-trends-mode:hover { color: var(--fg); }
+.stats-trends-mode.is-on { background: var(--accent); color: var(--accent-fg); }
+
+.stats-trends-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 0 0 14px;
+  font-size: var(--t-small);
+  color: var(--muted);
+}
+/* Each key is a button that toggles its series in/out of the chart. */
+.stats-trends-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: inherit;
+  font-size: var(--t-small);
+  color: var(--muted);
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+  transition: opacity var(--dur-snappy) ease;
+}
+.stats-trends-key:hover { color: var(--fg); }
+/* Deselected series: dimmed + struck through, swatch hollowed out. */
+.stats-trends-key.is-off { opacity: 0.45; text-decoration: line-through; }
+.stats-trends-swatch {
+  width: 12px;
+  height: 3px;
+  border-radius: 0;
+  display: inline-block;
+  transition: background var(--dur-snappy) ease;
+}
+.stats-trends-key--visitors .stats-trends-swatch { background: var(--accent); }
+.stats-trends-key--files .stats-trends-swatch { background: var(--fg); opacity: 0.5; }
+.stats-trends-key.is-off .stats-trends-swatch { background: var(--muted); }
+
+.stats-trends-chart { width: 100%; position: relative; }
+.stats-trend-svg { display: block; width: 100%; height: auto; overflow: visible; transition: opacity var(--dur-base) ease; }
+.stats-trend-grid { stroke: var(--rule); stroke-width: 1; }
+.stats-trend-axis {
+  fill: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.stats-trend-axis--y { text-anchor: end; }
+.stats-trend-area { fill: rgba(var(--accent-rgb), 0.1); stroke: none; }
+.stats-trend-line { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.stats-trend-line--visitors { stroke: var(--accent); stroke-width: 2; }
+.stats-trend-line--files { stroke: var(--fg); stroke-width: 1.6; opacity: 0.5; }
+.stats-trend-dot { stroke: var(--bg); stroke-width: 1; }
+.stats-trend-dot--visitors { fill: var(--accent); }
+.stats-trend-dot--files { fill: var(--fg); opacity: 0.5; }
+/* A series group fades when toggled off in the legend. */
+.stats-trend-series { transition: opacity var(--dur-slow) ease; }
+/* Hover affordances: crosshair guide, enlarged focus dots, transparent hit area. */
+.stats-trend-cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; transition: opacity var(--dur-fast) ease; }
+.stats-trend-focus { stroke: var(--bg); stroke-width: 1.5; pointer-events: none; transition: opacity var(--dur-fast) ease; }
+.stats-trend-focus--visitors { fill: var(--accent); }
+.stats-trend-focus--files { fill: var(--fg); }
+.stats-trend-hit { fill: transparent; }
+/* Floating hover tooltip, above the cursor. */
+.stats-trend-tip {
+  position: absolute;
+  z-index: 5;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: var(--bg);
+  border: var(--bd-hairline);
+  box-shadow: var(--shadow-popover);
+  padding: 6px 9px;
+  font-size: var(--t-tiny);
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--fg);
+}
+.stats-trend-tip-date { font-weight: 600; margin-bottom: 3px; }
+.stats-trend-tip-row { display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.stats-trend-tip-row strong { margin-left: auto; padding-left: 10px; font-family: var(--font-mono); }
+.stats-trend-tip-swatch { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.stats-trend-tip-swatch--visitors { background: var(--accent); }
+.stats-trend-tip-swatch--files { background: var(--fg); opacity: 0.5; }
+.stats-trends-note { font-size: var(--t-small); color: var(--muted); margin: 14px 0 0; }
+
 .stats-status {
   font-size: var(--t-small);
   color: var(--muted);

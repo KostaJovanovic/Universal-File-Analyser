@@ -14,6 +14,7 @@ if /i "%ACTION%"=="save"   goto save
 if /i "%ACTION%"=="commit" goto save
 if /i "%ACTION%"=="push"   goto push
 if /i "%ACTION%"=="pull"   goto pull
+if /i "%ACTION%"=="backup" goto backup
 
 :menu
 echo.
@@ -23,14 +24,16 @@ echo   1. Save    (add + commit + push)
 echo   2. Commit  (add + commit, no push)
 echo   3. Push    (push current branch)
 echo   4. Pull    (pull current branch)
-echo   5. Quit
+echo   5. Backup  (download stats to local CSV)
+echo   6. Quit
 echo.
-set /p CHOICE=Choose [1-5]:
+set /p CHOICE=Choose [1-6]:
 if "%CHOICE%"=="1" goto save
 if "%CHOICE%"=="2" (set COMMIT_ONLY=1 & goto save)
 if "%CHOICE%"=="3" goto push
 if "%CHOICE%"=="4" goto pull
-if "%CHOICE%"=="5" exit /b 0
+if "%CHOICE%"=="5" goto backup
+if "%CHOICE%"=="6" exit /b 0
 echo Invalid choice.
 goto menu
 
@@ -100,6 +103,12 @@ rem so the UX-sensitive theme snippet can't drift across pages. Non-fatal.
 echo Stamping shared head...
 node --no-warnings tools/stamp-head.mjs
 if errorlevel 1 echo WARNING: head stamp failed - committing the existing copies.
+
+rem Optional read-only stats snapshot to stats-backup\ (gitignored, kept local).
+rem Pulls from the live /api/stats; non-fatal and skipped by default.
+echo.
+set /p DOBACKUP=Backup live stats to CSV first? (y/n):
+if /i "%DOBACKUP%"=="y" call :runbackup
 
 git add .
 git status
@@ -197,6 +206,23 @@ set SAVE_ERROR=0
 git pull origin main
 if errorlevel 1 set SAVE_ERROR=1
 goto end
+
+
+:backup
+echo.
+echo === BACKUP STATS ===
+echo.
+set SAVE_ERROR=0
+call :runbackup
+goto end
+
+rem Read-only snapshot of the live counters to stats-backup\*.csv. Non-fatal:
+rem a warning (offline / API down) never blocks a commit when called from :save.
+:runbackup
+echo Downloading live stats to stats-backup\ ...
+node --no-warnings tools/backup-stats.mjs
+if errorlevel 1 echo WARNING: stats backup failed - is the network up?
+exit /b 0
 
 
 :end
