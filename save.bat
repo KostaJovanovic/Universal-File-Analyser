@@ -105,10 +105,16 @@ node --no-warnings tools/stamp-head.mjs
 if errorlevel 1 echo WARNING: head stamp failed - committing the existing copies.
 
 rem Optional read-only stats snapshot to stats-backup\ (gitignored, kept local).
-rem Pulls from the live /api/stats; non-fatal and skipped by default.
+rem Pulls from the live /api/stats; non-fatal and skipped by default. The full
+rem Save (option 1 / `save` / --force) skips it entirely; only the commit-only
+rem path still offers it. Use menu option 5 (Backup) to snapshot on demand.
+rem NB: a goto skip (not an if(...) block) - the "(y/n)" prompt text contains a
+rem ")" that would prematurely close a parenthesised block and break parsing.
+if not "%COMMIT_ONLY%"=="1" goto skipbackup
 echo.
 set /p DOBACKUP=Backup live stats to CSV first? (y/n):
 if /i "%DOBACKUP%"=="y" call :runbackup
+:skipbackup
 
 git add .
 git status
