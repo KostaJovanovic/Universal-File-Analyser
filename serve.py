@@ -14,10 +14,33 @@
 
 Run: python serve.py [port]   (defaults to 3000, binds 0.0.0.0 for phone access)
 """
+import datetime
 import json
 import os
 import sys
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+
+
+def _mock_daily(days=45):
+    """Deterministic per-day visitor/file series for the /stats trend graph.
+
+    Anchored to today (UTC) so the x-axis reads sensibly, seeded so it looks the
+    same on every reload, and gently ramped up so the line trends like real
+    growth. Production fills this from the D1 `daily` table (worker/index.js)."""
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    out = []
+    seed = 1337
+    for i in range(days - 1, -1, -1):
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff
+        r1 = seed / 0x7fffffff
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff
+        r2 = seed / 0x7fffffff
+        ramp = 0.5 + (days - i) / days
+        visitors = max(1, round((6 + r1 * 16) * ramp))
+        files = max(visitors, round((120 + r2 * 260) * ramp))
+        day = today - datetime.timedelta(days=i)
+        out.append({'day': day.isoformat(), 'files': files, 'visitors': visitors})
+    return out
 
 # Canned response for the stats Worker (worker/index.js), which only exists on
 # the Cloudflare deploy. server.bat has no Worker/D1, so without this /api/* would
@@ -57,6 +80,8 @@ MOCK_STATS = {
         {'name': 'BLAST', 'score': 940},
         {'name': 'WARP7', 'score': 610},
     ],
+    # Per-day buckets for the trend graph under the live-usage card.
+    'daily': _mock_daily(),
 }
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
