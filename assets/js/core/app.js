@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 154;
+const COMMIT_COUNT = ;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -657,7 +657,7 @@ async function setupStatsPage() {
 
   // Per-day trend graph (visitors + files) under the totals. Only present once
   // the worker has started recording daily buckets; degrades to hidden otherwise.
-  renderStatsTrends(Array.isArray(data.daily) ? data.daily : []);
+  renderStatsTrends(Array.isArray(data.daily) ? data.daily : [], { visitors: data.visitors, files: data.files });
 
   // Asteroids easter-egg leaderboard card (top 5). Shown only when there are
   // scores; rendered before the ext early-returns so it appears even with no exts.
@@ -823,10 +823,14 @@ const _fmtDay = (s, opts) => {
 const _TREND_SERIES = ['visitors', 'files'];
 
 // Per-mode {visitors, files} arrays: each day's count, or the running total.
-function trendSeries(daily, mode) {
+// In cumulative mode `baseline` seeds the running total with the all-time count
+// that existed before the first tracked day, so the line continues from the real
+// figure instead of restarting at zero.
+function trendSeries(daily, mode, baseline) {
   const cumulative = mode === 'cumulative';
   const out = { visitors: [], files: [] };
-  let cv = 0; let cf = 0;
+  let cv = cumulative && baseline ? (Number(baseline.visitors) || 0) : 0;
+  let cf = cumulative && baseline ? (Number(baseline.files) || 0) : 0;
   for (const d of daily) {
     cv += Number(d.visitors) || 0; cf += Number(d.files) || 0;
     out.visitors.push(cumulative ? cv : Number(d.visitors) || 0);
@@ -838,7 +842,7 @@ function trendSeries(daily, mode) {
 // Show the trend card and wire the per-day / cumulative toggle plus the
 // clickable legend (each series can be hidden). Hidden entirely until the worker
 // has at least one day of buckets (older worker -> daily: []).
-function renderStatsTrends(daily) {
+function renderStatsTrends(daily, totals) {
   const card = $('statsTrends');
   if (!card) return;
   const chartEl = $('statsTrendsChart');
@@ -849,16 +853,25 @@ function renderStatsTrends(daily) {
   if (!rows.length) { card.hidden = true; return; }
   card.hidden = false;
 
+  // Cumulative starts from the count already banked before the first tracked day
+  // (all-time total minus the days we have buckets for), not from zero.
+  let sumV = 0; let sumF = 0;
+  for (const d of rows) { sumV += Number(d.visitors) || 0; sumF += Number(d.files) || 0; }
+  const baseline = {
+    visitors: Math.max(0, (Number(totals && totals.visitors) || 0) - sumV),
+    files: Math.max(0, (Number(totals && totals.files) || 0) - sumF),
+  };
+
   let mode = 'daily';
   const visible = { visitors: true, files: true };
-  const chart = buildTrendChart(chartEl, rows);   // builds the SVG once; we only tween attributes after
+  const chart = buildTrendChart(chartEl, rows, baseline);   // builds the SVG once; we only tween attributes after
   let drawnMax = null;   // y-scale currently rendered, tweened for a smooth resize
   let raf = 0;
   let modeSeq = 0;       // guards against overlapping mode cross-fades
 
   // Highest visible value for the current mode (>= 1) - the target y-scale.
   const targetMax = () => {
-    const s = trendSeries(rows, mode);
+    const s = trendSeries(rows, mode, baseline);
     let m = 1;
     for (const k of _TREND_SERIES) if (visible[k]) m = Math.max(m, ...s[k]);
     return m;
@@ -950,7 +963,7 @@ function renderStatsTrends(daily) {
 // existing nodes' attributes (cheap, so animation is smooth); setShown() fades a
 // series via CSS opacity; a transparent overlay drives a custom hover tooltip
 // that snaps to the nearest day.
-function buildTrendChart(chartEl, daily) {
+function buildTrendChart(chartEl, daily, baseline) {
   if (!chartEl) return { apply() {}, setShown() {} };
   const n = daily.length;
   const W = 720; const H = 240;
@@ -1026,7 +1039,7 @@ function buildTrendChart(chartEl, daily) {
   const areaPath = (s, yFor) => linePath(s, yFor) + ' L ' + xFor(n - 1).toFixed(1) + ' ' + yFor(0).toFixed(1)
     + ' L ' + xFor(0).toFixed(1) + ' ' + yFor(0).toFixed(1) + ' Z';
 
-  const state = { mode: 'daily', niceMax: 1, visible: { visitors: true, files: true }, series: trendSeries(daily, 'daily') };
+  const state = { mode: 'daily', niceMax: 1, visible: { visitors: true, files: true }, series: trendSeries(daily, 'daily', baseline) };
   const yFor = (val) => padT + plotH - (val / state.niceMax) * plotH;
 
   let hoverI = -1;
@@ -1084,7 +1097,7 @@ function buildTrendChart(chartEl, daily) {
       state.niceMax = step * TICKS;
       state.mode = mode;
       if (visible) state.visible = visible;
-      const s = trendSeries(daily, mode);
+      const s = trendSeries(daily, mode, baseline);
       state.series = s;
       for (let k = 0; k <= TICKS; k++) {
         const val = step * k; const y = yFor(val);
@@ -1132,7 +1145,7 @@ function buildTrendChart(chartEl, daily) {
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
   { range: '4.01 - 4.03', notes: [
-    'The stats page gained a graph of visitors and files over time - switch between per-day and cumulative, click the key to hide either line and watch it rescale, and hover a day for the exact figures.',
+    'The stats page gained a graph of visitors and files over time - switch between per-day and cumulative (which carries on from the totals banked before tracking began), click the key to hide either line and watch it rescale, and hover a day for the exact figures.',
     'Microsoft COFF .lib libraries open, telling a true static library apart from a DLL import library and listing the target architecture and the DLLs it binds to.',
     'Colour look-up tables come alive: drop a .cube LUT to see its tone curve, before-and-after swatches and an interactive 3D colour cube, then apply the look to your own photo or video.',
     'DaVinci Resolve .drt timelines read out the colour-grade node chain in each clip - every node in order, the LUTs it loads and the ResolveFX it applies.',

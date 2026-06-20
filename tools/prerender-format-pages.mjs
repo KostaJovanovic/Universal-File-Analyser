@@ -248,12 +248,13 @@ function assembleFacts(key, meta, d, e, isFull) {
     const candidates = [];
     if (sibs.length) {
       const shown = sibs.slice(0, 3).map((s) => '.' + s);
-      const list = shown.join(', ') + (sibs.length > shown.length ? ' and more' : '');
-      const fam = label ? `Analyser's "${label}" group` : 'the same family';
+      const tail = sibs.length > shown.length ? ' and more' : '';
+      // Deliberately no category/family label here - the separate "category"
+      // candidate below already states it, so naming it twice reads as a repeat.
       candidates.push({
         gist: 'related',
-        plain: `Analyser handles .${d} alongside related formats in ${label ? '"' + label + '"' : 'the same family'}, such as ${shown.join(', ')}${sibs.length > shown.length ? ' and more' : ''}.`,
-        html: `Analyser handles .${esc(d)} alongside related formats in ${label ? '&ldquo;' + esc(label) + '&rdquo;' : 'the same family'}, such as ${shown.map((s) => `<a href="${escAttr(hrefOf(s.slice(1).toLowerCase()))}">${esc(s)}</a>`).join(', ')}${sibs.length > shown.length ? ' and more' : ''}.`,
+        plain: `Analyser handles .${d} alongside related formats such as ${shown.join(', ')}${tail}.`,
+        html: `Analyser handles .${esc(d)} alongside related formats such as ${shown.map((s) => `<a href="${escAttr(hrefOf(s.slice(1).toLowerCase()))}">${esc(s)}</a>`).join(', ')}${tail}.`,
       });
     }
     if (catLabel) candidates.push({ gist: 'category', plain: `In Analyser's format library, .${d} sits in the ${catLabel} category.` });
