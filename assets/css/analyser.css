@@ -1353,6 +1353,33 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 .anr-folder-scan-report { margin-top: 14px; }
 .anr-scan-ok { margin: 0; font-weight: 500; color: var(--fg); }
 .anr-scan-bad { margin: 0 0 10px; font-weight: 600; color: var(--accent); }
+.anr-scan-copy { margin: 0 0 12px; }
+/* DaVinci Resolve colour-grade node chips */
+.anr-drt-nodes { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.anr-drt-node {
+  display: inline-block; padding: 2px 10px; border: var(--bd-hairline); border-radius: 999px;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .02em;
+  background: rgba(240, 168, 48, .10);
+}
+.anr-drt-arrow { opacity: .4; font-size: 11px; margin: 0 1px; }
+/* Colour LUT (.cube) memory-colour swatches */
+.anr-lut-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.anr-lut-sw { border: var(--bd-hairline); border-radius: 8px; padding: 8px; }
+.anr-lut-sw-pair { display: flex; align-items: center; gap: 7px; }
+.anr-lut-chip { flex: 1 1 0; height: 30px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(128,128,128,.25); }
+.anr-lut-arrow { flex: 0 0 auto; opacity: .5; font-size: 12px; }
+.anr-lut-sw-name { font-size: 12px; font-weight: 600; margin-top: 6px; }
+.anr-lut-sw-hex { font-family: var(--font-mono); font-size: 10.5px; opacity: .6; }
+.anr-lut-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-top: 6px; }
+.anr-lut-frames--single { grid-template-columns: 1fr; max-width: 720px; }
+.anr-lut-frame { border: var(--bd-hairline); border-radius: 8px; padding: 6px; }
+.anr-lut-pair { display: flex; gap: 6px; }
+.anr-lut-half { flex: 1 1 0; min-width: 0; }
+/* Fixed-aspect thumbnails so every uploaded frame is the same size (object-fit
+   crops the source into the box rather than letting it resize the cell). */
+.anr-lut-thumb { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 5px; display: block; background: #0a0a0a; cursor: zoom-in; transition: filter .12s; }
+.anr-lut-thumb:hover { filter: brightness(1.08); }
+.anr-lut-cap { text-align: center; font-size: 10.5px; opacity: .6; margin-top: 2px; }
 .anr-scan-list { list-style: none; margin: 0; padding: 0; }
 .anr-scan-list li {
   display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: space-between;
@@ -5296,6 +5323,11 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 /* Font viewer: live specimen lines, variable-axis sliders, and a glyph grid. */
 .anr-font-specimen { margin-top: 8px; }
 .anr-font-line { margin: 6px 0; line-height: 1.25; word-break: break-word; }
+/* Per-script pangram rows (Japanese / Cyrillic / Arabic / … samples) */
+.anr-font-scripts { display: flex; flex-direction: column; gap: 6px; }
+.anr-font-script-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.anr-font-script-row .anr-font-line { margin: 2px 0; flex: 1 1 240px; min-width: 0; }
+.anr-font-script-label { flex: 0 0 84px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .anr-font-axes { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
 .anr-font-axis { display: grid; grid-template-columns: minmax(120px, 1fr) 2fr auto; align-items: center; gap: 10px; font-size: 12px; }
 .anr-font-axis-name { font-family: var(--font-mono); color: var(--muted); }
