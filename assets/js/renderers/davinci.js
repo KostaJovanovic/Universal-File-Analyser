@@ -27,7 +27,7 @@
 
    There is no public spec; this was reverse-engineered from real .drp files. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, loadScript } from '../core/util.js';
 
 const MAX_ENTRY = 64 * 1024 * 1024;        // cap any single inflated XML we hold
 const STD_FPS = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60];
@@ -105,6 +105,99 @@ async function readEntryText(file, e) {
   return await new Response(stream).text();
 }
 
+// ---- colour-grade node graph (per-version "Body") ----------------------------
+// Each clip's colour-page grade is stored in a <Body> under its active
+// ListMgt::LmVersion: a 1-byte tag, then a zstd frame (magic 28 b5 2f fd)
+// wrapping a protobuf. Reverse-engineered field map of the decompressed message:
+//   1/7         repeated node entry (one per node in the chain)
+//   1/7/6         the node's user label  ("CST IN", "LUT", "HSV SAT", "CON"…)
+//   1/7/9         a LUT path when the node loads one (…\Look LUTs\Ochre.cube)
+//   1/7/10        the ResolveFX / OFX plugin id of any effect on the node
+// We harvest every printable length-delimited field generically, then pick those
+// paths out - so a missing/renamed field just yields less, never an error.
+const LUT_RE = /\.(cube|dctl|3dl|ilut|olut|clf|cdl|dat|look)$/i;
+const FX_NAMES = {
+  colorspacetransform: 'Color Space Transform', colorspacetransformv2: 'Color Space Transform',
+  gamutmapping: 'Gamut Mapping', gamutlimiter: 'Gamut Limiter', filmlooklut: 'Film Look LUT',
+  colorstabilizer: 'Color Stabilizer', facerefinement: 'Face Refinement', magicmask: 'Magic Mask',
+  lensflare: 'Lens Flare', glow: 'Glow', blur: 'Blur', sharpen: 'Sharpen', filmgrain: 'Film Grain',
+  deflicker: 'Deflicker', dehaze: 'Dehaze', warperfx: 'Warper', objectremoval: 'Object Removal',
+};
+const prettyFx = (id) => FX_NAMES[id] || ('ResolveFX ' + id.replace(/v\d+$/, ''));
+
+function hexToBytes(hex) {
+  const n = hex.length >> 1, out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
+}
+
+// Generic protobuf walker: collect every printable length-delimited field as
+// { path, str }, recursing into the ones that are themselves sub-messages.
+function pbStrings(buf, depth, path, out) {
+  let p = 0;
+  while (p < buf.length) {
+    let tag = 0, shift = 0, b;
+    do { if (p >= buf.length) return; b = buf[p++]; tag |= (b & 0x7f) << shift; shift += 7; } while (b & 0x80);
+    const field = tag >>> 3, wt = tag & 7;
+    if (wt === 0) { do { if (p >= buf.length) return; b = buf[p++]; } while (b & 0x80); }
+    else if (wt === 5) p += 4;
+    else if (wt === 1) p += 8;
+    else if (wt === 2) {
+      let len = 0; shift = 0;
+      do { if (p >= buf.length) return; b = buf[p++]; len |= (b & 0x7f) << shift; shift += 7; } while (b & 0x80);
+      if (len < 0 || p + len > buf.length) return;
+      const sub = buf.subarray(p, p + len); p += len;
+      let printable = len >= 1 && len <= 240;
+      if (printable) for (let i = 0; i < sub.length; i++) { const c = sub[i]; if (!(c === 9 || c === 10 || c === 13 || (c >= 32 && c <= 126))) { printable = false; break; } }
+      if (printable) out.push({ path: path + '/' + field, str: String.fromCharCode.apply(null, sub) });
+      else if (depth < 10) pbStrings(sub, depth + 1, path + '/' + field, out);
+    } else return;
+  }
+}
+
+// Decode one Body hex -> { nodes:[labels], luts:[names], effects:[names] } (or null).
+function decodeGrade(hex) {
+  let bytes;
+  try { bytes = hexToBytes(hex); } catch (_) { return null; }
+  let z = -1;
+  for (let i = 0; i < Math.min(8, bytes.length - 4); i++) {
+    if (bytes[i] === 0x28 && bytes[i + 1] === 0xb5 && bytes[i + 2] === 0x2f && bytes[i + 3] === 0xfd) { z = i; break; }
+  }
+  if (z < 0 || !(window.fzstd && window.fzstd.decompress)) return null;
+  let raw;
+  try { raw = window.fzstd.decompress(bytes.subarray(z)); } catch (_) { return null; }
+  const found = [];
+  try { pbStrings(raw, 0, '', found); } catch (_) {}
+  const nodes = [], luts = new Set(), effects = new Set();
+  for (const o of found) {
+    if (o.path === '/1/7/6') { const t = o.str.trim(); if (t && t.length <= 48) nodes.push(t); }
+    if (LUT_RE.test(o.str)) { const clean = o.str.replace(/^[^A-Za-z0-9]+/, '').trim(); if (clean) luts.add(basename(clean) || clean); }
+    const fx = o.str.match(/com\.blackmagicdesign\.resolvefx\.([a-z0-9]+)/i);
+    if (fx) effects.add(prettyFx(fx[1].toLowerCase()));
+  }
+  if (!nodes.length && !luts.size && !effects.size) return null;
+  return { nodes, luts: [...luts], effects: [...effects] };
+}
+
+// Pull the active grade's Body hex (+ version name / corrected flag) from a clip.
+function clipGrade(clipEl) {
+  const vers = clipEl.getElementsByTagName('ListMgt__LmVersion');
+  for (const v of vers) {
+    const body = txt(v, 'Body');
+    if (body && body.length > 16 && /^[0-9a-f]+$/i.test(body)) {
+      return { ver: txt(v, 'Name') || '', corrected: txt(v, 'HasCorrection') === 'true', bodyHex: body };
+    }
+  }
+  return null;
+}
+
+// Render an ordered node chain as pill chips joined by arrows.
+function nodeChipsHtml(nodes) {
+  if (!nodes.length) return '<span class="anr-hint">grade present, no labelled nodes</span>';
+  return nodes.map((n, i) => (i ? '<span class="anr-drt-arrow">→</span>' : '')
+    + '<span class="anr-drt-node">' + esc(n) + '</span>').join('');
+}
+
 // ---- timeline parsing (one SeqContainer XML) ----
 function parseTimeline(xml) {
   const doc = parseXml(xml);
@@ -133,7 +226,8 @@ function parseTimeline(xml) {
         const fps = hexDouble(txt(clipEl, 'MediaFrameRate'));
         // A video-track clip with no source file is a title / generator / transition.
         const gen = kind === 'video' && !path;
-        clips.push({ name, start, dur, path, inPt: isFinite(inPt) ? inPt : null, fps, gen });
+        const grade = kind === 'video' ? clipGrade(clipEl) : null;
+        clips.push({ name, start, dur, path, inPt: isFinite(inPt) ? inPt : null, fps, gen, grade });
         if (path) paths.add(path);
         names.add(basename(path) || name);
       }
@@ -249,9 +343,16 @@ function trackLanesSvg(tl, H, trackW, ppf) {
       const bx = x(c.start), bw = Math.max(2, c.dur * ppf);
       const col = colorOf(t, c);
       const srcTc = c.inPt != null && c.fps ? '\nsrc in ' + tc(c.inPt, c.fps) : '';
+      const gi = c.gradeInfo;
+      const gradeTip = gi ? '\n' + gi.nodes.length + ' node' + (gi.nodes.length === 1 ? '' : 's')
+        + (gi.nodes.length ? ': ' + gi.nodes.join(' → ') : '')
+        + (gi.luts.length ? '\nLUT: ' + gi.luts.join(', ') : '')
+        + (gi.effects.length ? '\nFX: ' + gi.effects.join(', ') : '') : '';
       const tip = c.name + (c.path ? '\n' + c.path : '') + (c.fps ? '\n' + fmtFps(c.fps) : '')
-        + `\n${tc(c.start, fps)} · ${c.dur} frames` + srcTc;
+        + `\n${tc(c.start, fps)} · ${c.dur} frames` + srcTc + gradeTip;
       bars += `<rect x="${bx}" y="${y + 4}" width="${bw}" height="${LH - 8}" rx="3" fill="${col}"><title>${esc(tip)}</title></rect>`;
+      // Small amber dot marks a clip that carries a colour grade (node graph).
+      if (gi && bw > 10) bars += `<circle cx="${bx + bw - 6}" cy="${y + 9}" r="2.6" fill="#f0a830"><title>${esc((gi.nodes.length || '?') + ' grade nodes')}</title></circle>`;
       if (bw > 42) bars += `<text x="${bx + 5}" y="${y + LH / 2 + 4}" fill="#fff" font-size="9.5" opacity=".95" pointer-events="none">${esc(c.name.slice(0, Math.max(3, Math.floor(bw / 6.5))))}</text>`;
     });
   });
@@ -384,6 +485,18 @@ export async function renderDavinci(file, resultsEl) {
     return renderProprietary(file, resultsEl);
   }
 
+  // Decode each graded clip's colour-page node graph (lazy zstd via fzstd).
+  // Best-effort: if fzstd won't load or a Body won't decode, the clip just
+  // shows no grade info - the rest of the view is unaffected.
+  const gradedClips = [];
+  for (const tl of timelines) for (const t of tl.tracks) for (const c of t.clips) if (c.grade) gradedClips.push(c);
+  if (gradedClips.length) {
+    try {
+      if (!(window.fzstd && window.fzstd.decompress)) await loadScript('assets/vendor/fzstd.js');
+      for (const c of gradedClips) { const g = decodeGrade(c.grade.bodyHex); if (g) c.gradeInfo = g; }
+    } catch (_) { /* fzstd unavailable - skip grades */ }
+  }
+
   resultsEl.innerHTML = '';
 
   // ---- Project metadata ----
@@ -410,6 +523,44 @@ export async function renderDavinci(file, resultsEl) {
   const sorted = timelines.slice().sort((a, b) => b.clipCount - a.clipCount);
   sorted.forEach((tl, i) => resultsEl.appendChild(buildTimelineCard(tl, tlNameBySeq.get(tl.seqId) || (timelines.length > 1 ? 'Timeline ' + (i + 1) : 'Timeline'))));
 
+  // ---- Colour grades & nodes ----
+  const graded = [];
+  for (const tl of timelines) for (const t of tl.tracks) for (const c of t.clips) if (c.gradeInfo) graded.push(c);
+  if (graded.length) {
+    const totalVideo = timelines.reduce((s, tl) =>
+      s + tl.tracks.reduce((a, t) => a + (t.kind === 'video' ? t.clips.length : 0), 0), 0);
+    const card = el('div', { class: 'anr-card' });
+    card.appendChild(el('h3', {}, 'Colour grades & nodes'));
+    card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 12px' },
+      graded.length + ' of ' + totalVideo + ' video clips carry a colour grade. The node chain is read straight from the Color page graph stored (zstd-compressed) in each clip’s grade version.'));
+
+    // Distinct node chains, busiest first.
+    const chains = new Map();
+    for (const c of graded) {
+      const key = c.gradeInfo.nodes.join('');
+      const e = chains.get(key) || { n: 0, nodes: c.gradeInfo.nodes };
+      e.n++; chains.set(key, e);
+    }
+    [...chains.values()].sort((a, b) => b.n - a.n).slice(0, 12).forEach((ch) => {
+      card.appendChild(el('div', { style: 'margin:0 0 9px' }, [
+        el('div', { style: 'font-size:12px;opacity:.6;margin-bottom:3px' },
+          '×' + ch.n + ' clip' + (ch.n === 1 ? '' : 's') + '  ·  ' + ch.nodes.length + ' node' + (ch.nodes.length === 1 ? '' : 's')),
+        el('div', { class: 'anr-drt-nodes', html: nodeChipsHtml(ch.nodes) }),
+      ]));
+    });
+
+    // LUTs + ResolveFX used across all grades.
+    const luts = new Set(), fx = new Set();
+    for (const c of graded) { c.gradeInfo.luts.forEach((l) => luts.add(l)); c.gradeInfo.effects.forEach((e) => fx.add(e)); }
+    if (luts.size || fx.size) {
+      const tbl2 = el('table', { class: 'anr-readout', style: 'margin-top:6px' });
+      if (fx.size) tbl2.appendChild(rowHelp('ResolveFX', [...fx].join(', '), 'Blackmagic ResolveFX / OFX plugins applied on grade nodes.'));
+      if (luts.size) tbl2.appendChild(rowHelp('LUTs', [...luts].join(', '), 'Look-up tables loaded by LUT nodes in the grade.'));
+      card.appendChild(tbl2);
+    }
+    resultsEl.appendChild(card);
+  }
+
   // ---- Legend ----
   if (timelines.length) {
     resultsEl.appendChild(el('div', { class: 'anr-card' }, [
@@ -420,7 +571,7 @@ export async function renderDavinci(file, resultsEl) {
         + '<span style="color:#3ba776">audio</span> and '
         + '<span style="color:#9b6cc4">titles / generators / transitions</span> tracks are stacked as Resolve shows them (V1 at the bottom of the video stack). '
         + 'Hover a clip for its source path, frame rate and timecode. Each timeline zooms with ctrl/⌘ + scroll (or the buttons) and pans by dragging. '
-        + 'The timeline frame rate is inferred from the 01:00:00:00 start; effects, colour grades and Fusion comps are not drawn.' }),
+        + 'The timeline frame rate is inferred from the 01:00:00:00 start. An <span style="color:#f0a830">amber dot</span> marks a clip that carries a colour grade - hover it for the node chain, or see the Colour grades card below. Fusion comps are not drawn.' }),
     ]));
   }
 

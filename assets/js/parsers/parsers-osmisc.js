@@ -442,6 +442,94 @@ async function parseScr(file) {
   return out;
 }
 
+// Adobe Font List (AdobeFnt*.lst) - the font cache Adobe apps (Photoshop,
+// Illustrator, InDesign, Acrobat) write to catalogue every font they can see.
+// PostScript-comment header (%!Adobe-FontList <ver>) then one %BeginFont /
+// %EndFont block per font, each a set of Key:Value lines (FontType, FamilyName,
+// OutlineFileName, FileLength, WeightClass, WritingScript, native names, ...).
+async function parseFontList(file) {
+  const text = await file.slice(0, Math.min(file.size, 16_000_000)).text();
+  const verM = text.match(/^%!Adobe-FontList\s+([\d.]+)/);
+  if (!verM) return null;                                   // not an Adobe font list
+  const localeM = text.match(/^%Locale:\s*(\S+)/m);
+  const fonts = text.split(/^%BeginFont\b/m).slice(1).map((b) => {
+    const e = b.search(/^%EndFont\b/m);
+    const f = {};
+    for (const line of (e >= 0 ? b.slice(0, e) : b).split(/\r?\n/)) {
+      const c = line.indexOf(':');
+      if (c < 0) continue;
+      const k = line.slice(0, c).trim();
+      if (k && !(k in f)) f[k] = line.slice(c + 1);          // keep first (NameArray repeats)
+    }
+    return f;
+  });
+
+  const out = {};
+  out._app = 'Adobe Font List';                              // refine the card title from the generic "List / Index File"
+  out['Format'] = 'Adobe Font List ' + verM[1];
+  if (localeM) out['Locale'] = localeM[1];
+  out['Fonts catalogued'] = String(fonts.length);
+
+  const tally = {}, scripts = {};
+  let totalBytes = 0, variable = 0, svg = 0;
+  const families = new Set();
+  for (const f of fonts) {
+    if (f.FontType) tally[f.FontType] = (tally[f.FontType] || 0) + 1;
+    if (f.WritingScript) scripts[f.WritingScript] = (scripts[f.WritingScript] || 0) + 1;
+    const len = parseInt(f.FileLength, 10); if (isFinite(len)) totalBytes += len;
+    if (f.VariableFontType && f.VariableFontType !== 'NonVariableFont') variable++;
+    if (f.hasSVG === 'yes') svg++;
+    if (f.FamilyName) families.add(f.FamilyName.trim());
+  }
+  const brk = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
+  out['Unique families'] = String(families.size);
+  if (Object.keys(tally).length) out['Font types'] = brk(tally);
+  if (Object.keys(scripts).length) out['Writing scripts'] = brk(scripts);
+  if (variable) out['Variable fonts'] = String(variable);
+  if (svg) out['SVG colour fonts'] = String(svg);
+  if (totalBytes) out['Total font data'] = fmtBytes(totalBytes);
+
+  // Source roots: the common directories the catalogued fonts live in.
+  const roots = {};
+  for (const f of fonts) {
+    const p = (f.OutlineFileName || '').trim();
+    if (!p) continue;
+    const dir = p.slice(0, Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')));
+    if (dir) roots[dir] = (roots[dir] || 0) + 1;
+  }
+  const topRoots = Object.entries(roots).sort((a, b) => b[1] - a[1]).slice(0, 6);
+
+  const th = (t) => el('th', { style: 'text-align:left;padding:4px 8px;border-bottom:1px solid var(--hairline);position:sticky;top:0;background:var(--surface)' }, t);
+  const td = (v, extra) => el('td', Object.assign({ style: 'padding:3px 8px;border-bottom:1px solid var(--hairline);white-space:nowrap' }, extra || {}), v);
+  const rows = fonts.slice(0, 600).map((f) => {
+    const name = (f.FamilyName || f.FullName || f.FontName || '?').trim() + (f.StyleName && f.StyleName.trim() && f.StyleName.trim() !== 'Regular' ? ' ' + f.StyleName.trim() : '');
+    const path = (f.OutlineFileName || '').trim();
+    const base = path ? path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1) : '';
+    const ttc = f.TTCOffset && f.TTCOffset.trim() && f.TTCOffset.trim() !== '0' ? ' #' + f.TTCOffset.trim() : '';
+    const len = parseInt(f.FileLength, 10);
+    const nativeName = (f.FullNameNative || f.FamilyNameNative || '').trim();
+    return el('tr', {}, [
+      td(name, nativeName ? { title: nativeName } : null),
+      td(nativeName && nativeName !== name ? nativeName : '', { style: 'padding:3px 8px;border-bottom:1px solid var(--hairline);white-space:nowrap;opacity:.75' }),
+      td((f.FontType || '').trim()),
+      td((f.WeightClass || '').trim()),
+      td((f.WritingScript || '').trim()),
+      td(isFinite(len) ? fmtBytes(len) : ''),
+      td(base + ttc, { title: path, style: 'padding:3px 8px;border-bottom:1px solid var(--hairline);font-family:var(--font-mono);font-size:11px;max-width:280px;overflow:hidden;text-overflow:ellipsis' }),
+    ]);
+  });
+  const table = el('div', { style: 'overflow:auto;max-height:520px' }, [
+    el('table', { style: 'border-collapse:collapse;font-size:12.5px;width:100%' }, [
+      el('thead', {}, el('tr', {}, [th('Font'), th('Native name'), th('Type'), th('Weight'), th('Script'), th('Size'), th('Source file')])),
+      el('tbody', {}, rows),
+    ]),
+  ]);
+
+  out._sections = [{ title: 'Catalogued fonts (' + fonts.length + (fonts.length > 600 ? ', first 600 shown' : '') + ')', node: table, open: true }];
+  if (topRoots.length) out._sections.push({ title: 'Font folders (' + Object.keys(roots).length + ')', node: preBlock(topRoots.map(([d, n]) => n + '  ' + d).join('\n')), open: topRoots.length <= 6 });
+  return out;
+}
+
 // ---------- identification-only (rare AND hard) ----------
 function identDsStore() {
   return { 'Format': 'macOS .DS_Store', 'Note': 'Finder folder-view metadata (Buddy-allocator B-tree). Identification only.' };
@@ -469,6 +557,7 @@ export const PARSERS = {
   job: (c) => parseJob(c.file),
   pol: (c) => parsePol(c.file),
   scr: (c) => parseScr(c.file),
+  lst: (c) => parseFontList(c.file),
   // identification-only (rare AND hard)
   ds_store: () => identDsStore(),
   thumbsdb: () => identThumbsDb(),

@@ -202,7 +202,13 @@ function formatXml(node, indent) {
   return out;
 }
 
-export async function renderUnknown(file, resultsEl) {
+export async function renderUnknown(file, resultsEl, opts) {
+  opts = opts || {};
+  // "Extensionless" mode: a file with no extension that didn't match any magic
+  // route. Same inspector, but framed as an expected category (shown as text,
+  // hex fallback for binary) instead of "unrecognised". handleFile still pops the
+  // "this looks like a X - open as X" suggestion when the bytes match a pattern.
+  const extensionless = !!opts.extensionless;
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Inspecting "${file.name}"…`));
@@ -224,10 +230,12 @@ export async function renderUnknown(file, resultsEl) {
   resultsEl.innerHTML = '';
 
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Unknown file - best-effort inspection'));
+  card.appendChild(el('h3', {}, extensionless
+    ? 'Extensionless file - shown as text'
+    : 'Unknown file - best-effort inspection'));
 
   const tbl = el('table', { class: 'anr-readout' });
-  tbl.appendChild(row('Application', 'Unknown'));
+  tbl.appendChild(row('Application', extensionless ? 'Extensionless (no file extension)' : 'Unknown'));
   tbl.appendChild(row('Name',     file.name));
   tbl.appendChild(row('Size',     `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
   tbl.appendChild(rowHelp('MIME',     file.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
@@ -236,12 +244,19 @@ export async function renderUnknown(file, resultsEl) {
   tbl.appendChild(rowHelp('Magic guess', guess, 'A best-effort file-type identification read from the first few "magic" bytes of the file. It is used when the extension is unknown, missing, or possibly wrong.'));
   card.appendChild(tbl);
 
-  card.appendChild(el('div', { class: 'anr-readout-section' }, 'First 128 bytes'));
-  card.appendChild(el('pre', { class: 'anr-unknown-dump' }, 'HEX:\n' + hex + '\n\nASCII:\n' + ascii));
-
+  // Hex dump + SHA-256. For extensionless files the content IS the point, so the
+  // text/JSON/XML preview goes first and these are appended below it (see end of
+  // the function); for unknown files they stay up top as the primary readout.
+  const hexBlock = [
+    el('div', { class: 'anr-readout-section' }, 'First 128 bytes'),
+    el('pre', { class: 'anr-unknown-dump' }, 'HEX:\n' + hex + '\n\nASCII:\n' + ascii),
+  ];
   const hashTbl = el('table', { class: 'anr-readout' });
   hashTbl.appendChild(sha256Row(file));
-  card.appendChild(hashTbl);
+  if (!extensionless) {
+    hexBlock.forEach((n) => card.appendChild(n));
+    card.appendChild(hashTbl);
+  }
 
   // If it looks like text, JSON, or XML, show enhanced previews
   const ext = fileExt(file.name);
@@ -391,11 +406,17 @@ export async function renderUnknown(file, resultsEl) {
     } catch (_) {}
   }
 
+  // Extensionless: the text preview rendered above; drop the hex dump + hash below it.
+  if (extensionless) {
+    hexBlock.forEach((n) => card.appendChild(n));
+    card.appendChild(hashTbl);
+  }
+
   resultsEl.appendChild(card);
 
-  // Any file that lands in this best-effort renderer is, by definition, an
-  // unrecognised type - Analyser has no dedicated parser for it. Always nudge the
-  // visitor to email the format in so it can be supported, whether the bytes read
-  // as a hex dump or as plain text / JSON / XML.
-  if (window._anrSuggest) window._anrSuggest.show(fileExt(file.name));
+  // An unrecognised type (no dedicated parser) - nudge the visitor to email the
+  // format in so it can be supported. Skipped for extensionless files: there's no
+  // "format" to support, they're just shown as text (and handleFile already offers
+  // a re-open when the bytes match a known pattern).
+  if (!extensionless && window._anrSuggest) window._anrSuggest.show(fileExt(file.name));
 }

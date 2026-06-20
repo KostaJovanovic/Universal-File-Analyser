@@ -2,7 +2,7 @@
    Recursively walks a dropped folder via webkitGetAsEntry
    and renders a treemap + summary using the shared folder/archive modules. */
 
-import { el, row, fmtBytes, buildFileTree, inlineLoader, probeReadable, asciiBar } from '../core/util.js';
+import { el, row, fmtBytes, buildFileTree, inlineLoader, probeReadable, asciiBar, copyText } from '../core/util.js';
 import { normalizeFolder, renderBreakdownCards, renderViewToggle } from './folder-archive-shared.js';
 import { ARCHIVE_EXTS, RAW_EXTS, HEIC_EXTS, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS, CSV_EXTS } from '../core/formats.js';
 import { FORMATS } from './proprietary-formats.js';
@@ -103,8 +103,17 @@ const KNOWN_FIXED_EXTS = new Set([
   'srt', 'vtt', 'ass', 'ssa', 'gpx', 'kml', 'geojson', 'md', 'markdown', 'cbz', 'cbr', 'cbt', 'cb7',
 ]);
 
-function extKnown(ext, type) {
-  type = (type || '').toLowerCase();
+function extKnown(file) {
+  // Prefer the real drop-path classifier (exposed by app.js as window._anrClassify)
+  // so the scan's verdict can never drift from what actually opens - it already
+  // knows every dedicated-renderer extension (glb, doc, gltf, pdn, the Office/ODF
+  // variants, ...) that this file's local sets would otherwise miss. Fall back to
+  // the sets only if the hook is absent (folder.js used outside the app).
+  if (typeof window !== 'undefined' && typeof window._anrClassify === 'function') {
+    try { return window._anrClassify(file) !== 'unknown'; } catch (_) {}
+  }
+  const ext = extOf(file.name);
+  const type = (file.type || '').toLowerCase();
   if (type.startsWith('image/') || type.startsWith('audio/') || type.startsWith('video/')) return true;
   if (type === 'text/csv' || type === 'text/tab-separated-values') return true;
   if (!ext) return false;
@@ -113,38 +122,56 @@ function extKnown(ext, type) {
     || KNOWN_FIXED_EXTS.has(ext) || (ext in FORMATS);
 }
 
-// Last-resort sniff for files with an unrecognised extension: mirror the magic
-// + text checks handleFile() does before treating a file as unknown, so a real
-// PDF/ZIP/SVG or a plain-text file under an odd extension isn't false-flagged.
+// Last-resort sniff for files with an unrecognised extension. This MUST mirror
+// the magic/CSV checks handleFile() runs before it falls through to the unknown
+// (hex-dump) view, so the scan's verdict is identical to what actually opens.
+//
+// Deliberately NO generic "mostly-printable text -> known" rule: the real app
+// has none. A plain-text file with no recognised extension (a licence file like
+// COPYING, a README, a Makefile) is shown in the unknown/hex view, so the scan
+// must report it as unrecognised too - otherwise an extensionless text file
+// passes the scan yet opens as "unknown", which is the very drift being fixed.
+// (git loose objects, which DO open, are content-detected separately in
+// probeOpenable via sniffGitObject.)
 async function sniffKnown(file) {
   try {
-    const buf = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
-    if (!buf.length) return false;
-    const head = String.fromCharCode.apply(null, buf.slice(0, Math.min(buf.length, 256)));
-    if (head.slice(0, 4) === '%PDF') return true;                 // PDF
-    if (buf[0] === 0x50 && buf[1] === 0x4B) return true;          // ZIP family (PK)
-    if (head.includes('<svg') || head.trimStart().startsWith('<?xml')) return true;
-    // Plain text (the app shows UTF-8/UTF-16 text rather than a hex dump): flag as
-    // known when the sample is overwhelmingly printable, or NUL-patterned UTF-16.
-    const n = Math.min(buf.length, 2048);
-    let ctrl = 0, nul = 0;
-    for (let i = 0; i < n; i++) {
-      const c = buf[i];
-      if (c === 0) nul++;
-      if (c === 9 || c === 10 || c === 13) continue;
-      if (c < 32 || c === 127) ctrl++;
+    const head = new Uint8Array(await file.slice(0, 128).arrayBuffer());
+    if (!head.length) return false;
+    const a = (s, l) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
+    if (a(0, 4) === '%PDF') return true;                              // PDF
+    if (head[0] === 0x50 && head[1] === 0x4B) return true;            // ZIP family (PK)
+    // Raise3D ideaMaker / DJI firmware: distinctive signatures shipped under a
+    // generic .bin, routed by magic in handleFile().
+    if (a(0, 12) === 'IDEA - MAKER' || a(0, 14) === 'IEDA - PROFILE') return true;
+    if (head[0] === 0x78 && head[1] === 0x56 && head[2] === 0x34 && head[3] === 0x12 &&
+        head[12] === 0x44 && head[13] === 0x4A && head[14] === 0x49) return true;   // DJI firmware
+    const headStr = a(0, Math.min(head.length, 128));
+    // SVG and extensionless HTML - same tests handleFile() uses (note: a bare
+    // <?xml without an <svg> root is NOT routed by the app, so it isn't here).
+    if (headStr.trimStart().startsWith('<svg') || (headStr.includes('<svg') && headStr.includes('xmlns'))) return true;
+    if (/^\s*(<!doctype html|<html[\s>])/i.test(headStr)) return true;
+    // CSV heuristic: consistent comma/tab counts across the first lines (mirrors
+    // handleFile's extensionless-CSV detection).
+    const peekText = await file.slice(0, 2048).text().catch(() => '');
+    const lines = peekText.split('\n').filter((l) => l.trim()).slice(0, 10);
+    if (lines.length >= 2) {
+      const commas = lines.map((l) => (l.match(/,/g) || []).length);
+      const tabs = lines.map((l) => (l.match(/\t/g) || []).length);
+      const avgCommas = commas.reduce((s, n) => s + n, 0) / commas.length;
+      const avgTabs = tabs.reduce((s, n) => s + n, 0) / tabs.length;
+      const commaConsistent = avgCommas >= 1 && commas.every((c) => Math.abs(c - avgCommas) <= 1);
+      const tabConsistent = avgTabs >= 1 && tabs.every((c) => Math.abs(c - avgTabs) <= 1);
+      if (commaConsistent || tabConsistent) return true;
     }
-    if (ctrl / n < 0.1) return true;                              // mostly-printable UTF-8
-    if (nul / n > 0.2 && nul / n < 0.6) return true;              // UTF-16 (regular NUL bytes)
     return false;
   } catch (_) { return false; }
 }
 
 async function probeOpenable(file) {
-  if (!file) return { ok: false, reason: 'No file data available' };
+  if (!file) return { ok: false, reason: 'No file data available', cloud: true };
   if (file.size === 0) return { ok: true };   // opens, just nothing to show
   if (await probeReadable(file)) {
-    return { ok: false, reason: 'Bytes could not be read (cloud-only file, or no permission)' };
+    return { ok: false, reason: 'Bytes could not be read (cloud-only file, or no permission)', cloud: true };
   }
   const ext = extOf(file.name);
   if (HEIC_EXTS.has(ext)) {
@@ -190,7 +217,7 @@ async function probeOpenable(file) {
   // Unrecognised type: the app can only show a raw hex dump. Sniff magic/text
   // first so a mislabelled-but-real PDF/ZIP/SVG/text file isn't flagged - and
   // content-detect git objects (loose objects are extensionless).
-  if (!extKnown(ext, file.type)) {
+  if (!extKnown(file)) {
     if (await sniffKnown(file)) return { ok: true };
     try { const { sniffGitObject } = await import('./gitobject.js'); if (await sniffGitObject(file)) return { ok: true }; } catch (_) {}
     return { ok: false, reason: 'Unrecognised file type - opens only as a raw hex dump' };
@@ -211,6 +238,42 @@ function renderScanReport(host, total, failures, cancelled, checked) {
     cancelled
       ? checked + ' of ' + total + ' files checked - ' + failures.length + ' can’t be opened:'
       : failures.length + ' of ' + total + ' files can’t be opened:'));
+
+  // "Copy paths" - one representative path per unsupported format, skipping the
+  // cloud-only / unreadable failures (those aren't a format problem, just files
+  // that never downloaded). Format key = extension, or the lowercased basename
+  // for extensionless files (so COPYING / LICENSE / Makefile each count once but
+  // duplicate copies across sub-folders collapse to a single path).
+  const formatKey = (path) => {
+    const name = path.split('/').pop() || path;
+    const ext = extOf(name);
+    return ext ? ext : name.toLowerCase();
+  };
+  const samplePaths = [];
+  const seenFmts = new Set();
+  for (const f of failures) {
+    if (f.cloud) continue;
+    const k = formatKey(f.path);
+    if (seenFmts.has(k)) continue;
+    seenFmts.add(k);
+    samplePaths.push(f.path);
+  }
+  if (samplePaths.length) {
+    const copyBtn = el('button', { type: 'button', class: 'anr-btn anr-scan-copy' },
+      'Copy paths (' + samplePaths.length + ' format' + (samplePaths.length === 1 ? '' : 's') + ')');
+    copyBtn.title = 'Copy one file path per unrecognised format (cloud-only files skipped)';
+    copyBtn.addEventListener('click', async () => {
+      const ok = await copyText(samplePaths.join('\n'));
+      copyBtn.textContent = ok
+        ? 'Copied ' + samplePaths.length + ' path' + (samplePaths.length === 1 ? '' : 's') + ' ✓'
+        : 'Press Ctrl+C';
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy paths (' + samplePaths.length + ' format' + (samplePaths.length === 1 ? '' : 's') + ')';
+      }, 2200);
+    });
+    host.appendChild(copyBtn);
+  }
+
   const list = el('ul', { class: 'anr-scan-list' });
   for (const f of failures) {
     list.appendChild(el('li', {}, [
@@ -334,7 +397,7 @@ export function renderFolder(files, resultsEl) {
         let res;
         try { res = await probeOpenable(f.file); }
         catch (e) { res = { ok: false, reason: 'Unexpected error: ' + ((e && e.message) || e) }; }
-        if (res && !res.ok) failures.push({ path: f.path, size: f.size, reason: res.reason });
+        if (res && !res.ok) failures.push({ path: f.path, size: f.size, reason: res.reason, cloud: !!res.cloud });
         // Throttle repaints so a folder of cheap (non-image) files doesn't pay a
         // frame each - yield only when ~a frame has passed since the last paint.
         const now = performance.now();

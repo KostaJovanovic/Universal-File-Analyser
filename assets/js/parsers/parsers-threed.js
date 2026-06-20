@@ -1252,6 +1252,28 @@ async function parseVdb(file) {
   };
 }
 
+// ---------- Graphisoft ArchiCAD (.pln / .pla - "ROF FDB" container) ----------
+// ArchiCAD 17 and newer write the 8-byte magic "ROF FDB "; older versions begin
+// with "MM", "WW" or "mm". The model body is a proprietary Graphisoft database, so
+// this is header identification only.
+const ARCHICAD_KIND = { pln: 'solo project', pla: 'archive project' };
+async function parseArchicad(file, ext) {
+  const b = await head(file, 4096);
+  if (b.length < 8) return null;
+  const NEW = [0x52, 0x4F, 0x46, 0x20, 0x46, 0x44, 0x42, 0x20]; // "ROF FDB "
+  const isNew = NEW.every((c, i) => b[i] === c);
+  const c0 = b[0], c1 = b[1];
+  const isOld = (c0 === 0x4D && c1 === 0x4D) || (c0 === 0x57 && c1 === 0x57) || (c0 === 0x6D && c1 === 0x6D);
+  if (!isNew && !isOld) return null;
+  return {
+    'Format': 'Graphisoft ArchiCAD ' + (ARCHICAD_KIND[ext] || 'project'),
+    'Container': isNew
+      ? '"ROF FDB" header (ArchiCAD 17 and newer)'
+      : '"' + ascii(b, 0, 2) + '" header (ArchiCAD 16 and older)',
+    'Note': 'ArchiCAD BIM project, identified from its header. The model body is in a proprietary Graphisoft format, so it is not rendered.',
+  };
+}
+
 // ---------- dispatch ----------
 export const PARSERS = {
   // meshes / scenes (already in FORMATS as identification - add richer parse)
@@ -1306,6 +1328,10 @@ export const PARSERS = {
   u3d:   (c) => parseU3d(c.file),
   '3dxml': (c) => parse3dxml(c.file),
   wings: (c) => parseWings(c.file),
+
+  // Graphisoft ArchiCAD (.pln/.pla - "ROF FDB" container)
+  pln:   (c) => parseArchicad(c.file, c.ext),
+  pla:   (c) => parseArchicad(c.file, c.ext),
 
   // Autodesk Revit (OLE/CFBF)
   rvt:   (c) => parseRevit(c.file, c.ext),
