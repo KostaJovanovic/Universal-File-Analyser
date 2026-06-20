@@ -1231,6 +1231,50 @@ async function parseVbk(file) {
 }
 
 // ===================================================================
+//                       DJI firmware container
+// ===================================================================
+// DJI ships device firmware in a container with the little-endian magic
+// 0x12345678 ("78 56 34 12") at offset 0 and the ASCII tag "DJI" at 0x0C. The
+// header is followed by a table of module entries (one per CPU/component), each
+// carrying a packed version word. Files usually have a generic .bin extension, so
+// they reach here via the magic route in app.js (sniffedExt 'djifw'). The module
+// payloads are encrypted/signed, so this is header identification only.
+async function parseDjiFirmware(file) {
+  const b = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+  if (b.length < 0x48) return null;
+  const isDji = b[0] === 0x78 && b[1] === 0x56 && b[2] === 0x34 && b[3] === 0x12 &&
+    b[0x0c] === 0x44 && b[0x0d] === 0x4a && b[0x0e] === 0x49;   // 0x12345678 + "DJI"
+  if (!isDji) return null;
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const verStr = (v) => ((v >>> 24) & 0xff) + '.' + ((v >>> 16) & 0xff) + '.' + ((v >>> 8) & 0xff) + '.' + (v & 0xff);
+  // Target / model string at 0x1C (null-terminated ASCII, e.g. "dm102").
+  let model = '';
+  for (let i = 0x1c; i < 0x2c && b[i]; i++) model += String.fromCharCode(b[i]);
+  const modules = dv.getUint16(0x04, true);
+  // First module entry begins at 0x40; its version word sits at +4. This is the
+  // firmware's headline version (matches the v.. in DJI's filenames).
+  const fwVersion = verStr(dv.getUint32(0x44, true));
+  const out = {
+    'Format': 'DJI firmware image',
+    'Manufacturer': 'DJI',
+    'Target / model': model || 'unknown',
+    'Firmware version': fwVersion,
+    'Modules': modules || 1,
+    'Container': 'DJI firmware container (magic 0x12345678)',
+    'Note': 'DJI device firmware, identified from its header. The module payloads are encrypted/signed, so they are not extracted.',
+  };
+  // First module entry detail (offset 0x40): target id, version, data offset/length.
+  if (b.length >= 0x50) {
+    const off = dv.getUint32(0x48, true), len = dv.getUint32(0x4c, true);
+    if (off && len && off < file.size) {
+      out['First module'] = 'target ' + b[0x40] + ', v' + verStr(dv.getUint32(0x44, true)) +
+        ', ' + fmtBytes(len) + ' at offset ' + off.toLocaleString();
+    }
+  }
+  return out;
+}
+
+// ===================================================================
 //                       identification-only (rare AND hard)
 // ===================================================================
 function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
@@ -1239,6 +1283,8 @@ function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
 //                       dispatch
 // ===================================================================
 export const PARSERS = {
+  // DJI firmware (.bin routed here by magic - sniffedExt 'djifw')
+  djifw: (c) => parseDjiFirmware(c.file),
   // Virtualization
   ovf: (c) => parseOvf(c.file),
   ova: (c) => parseOva(c.file),

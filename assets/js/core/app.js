@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 152;
+const COMMIT_COUNT = 153;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -59,6 +59,7 @@ import { renderDavinci } from '../renderers/davinci.js';
 import { renderVegas } from '../renderers/vegas.js';
 import { renderUnity } from '../renderers/unity.js';
 import { renderVsSolution } from '../renderers/vssolution.js';
+import { renderLut } from '../renderers/lut.js';
 import { renderGcsv } from '../renderers/gcsv.js';
 import { renderAi } from '../renderers/illustrator.js';
 import { renderStl } from '../renderers/stl.js';
@@ -475,10 +476,21 @@ function classifyFile(file) {
   if (ext === 'mdb' || ext === 'accdb') return 'mdb';
   // Kindle / Mobipocket e-books: decode + read via foliate-js.
   if (ext === 'mobi' || ext === 'azw' || ext === 'azw3') return 'mobi';
+  // Colour LUT: a .cube look-up table gets a full parser + visualiser. The same
+  // extension is also Gaussian's volumetric DFT format, so renderLut sniffs for
+  // LUT_*_SIZE and hands a non-LUT .cube back to the generic identifier.
+  if (ext === 'cube') return 'lut';
   if (PHOTO_EXTS.has(ext)) return 'photo';
   if (AUDIO_EXTS.has(ext)) return 'audio';
   if (VIDEO_EXTS.has(ext)) return 'video';
   if (isProprietaryExt(ext)) return 'proprietary';
+  // No extension and nothing else matched: treat it as an "extensionless" file -
+  // shown as text (with a hex fallback for binary) rather than flagged "unknown".
+  // Most extensionless files in real projects are plain text (LICENSE, Makefile,
+  // Dockerfile, shell scripts with no suffix, ...). The magic-sniff and
+  // suggestion-popup paths in handleFile still run for this kind, so an
+  // extensionless PDF / PNG / git object opens as itself or offers a re-open.
+  if (!ext) return 'extensionless';
   return 'unknown';
 }
 
@@ -523,6 +535,7 @@ const ROUTES = {
   vegas:       { render: renderVegas,       results: 'unknown', scroll: '#unknownResults' },
   unity:       { render: renderUnity,       results: 'unknown', scroll: '#unknownResults' },
   vssolution:  { render: renderVsSolution,  results: 'unknown', scroll: '#unknownResults' },
+  lut:         { render: renderLut,         results: 'unknown', scroll: '#unknownResults' },
   gcsv:        { render: renderGcsv,         results: 'unknown', scroll: '#unknownResults' },
   iwork:       { render: renderIwork,       results: 'unknown', scroll: '#unknownResults' },
   stl:         { render: renderStl,         results: 'unknown', scroll: '#unknownResults' },
@@ -549,6 +562,9 @@ const ROUTES = {
   proprietary: { render: renderProprietary, results: 'unknown', scroll: '#unknownResults' },
   'git-object':{ render: renderGitObject,   results: 'unknown', scroll: '#unknownResults' },
   unknown:     { render: renderUnknown,     results: 'unknown', scroll: '#unknownResults' },
+  // Extensionless files: same inspector as 'unknown' but framed as an expected
+  // category (shown as text, hex fallback for binary) rather than "unrecognised".
+  extensionless: { render: (f, r) => renderUnknown(f, r, { extensionless: true }), results: 'unknown', scroll: '#unknownResults' },
 };
 
 // ---------- page-wide drag-drop ----------
@@ -780,6 +796,14 @@ async function setupStatsPage() {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
+  { range: '4.01 - 4.02', notes: [
+    'Microsoft COFF .lib libraries open, telling a true static library apart from a DLL import library and listing the target architecture and the DLLs it binds to.',
+    'Colour look-up tables come alive: drop a .cube LUT to see its tone curve, before-and-after swatches and an interactive 3D colour cube, then apply the look to your own photo or video.',
+    'DaVinci Resolve .drt timelines read out the colour-grade node chain in each clip - every node in order, the LUTs it loads and the ResolveFX it applies.',
+    'Files with no extension open as readable text, with a prompt to reopen them as a known format when their contents give them away.',
+    'Font specimens show a sample sentence for every script a font covers - Japanese, Cyrillic, Greek, Arabic and more - and font collections preview each face inside.',
+    'Hundreds more formats are recognised, past 1,260 in all and each with its own guide page, and the folder openability scan now matches the real drop result exactly.',
+  ] },
   { range: '4.0', milestone: true, notes: [
     'Fourth milestone: Analyser steps into 3D.',
     'A full G-code visualiser rebuilds the real printed or machined object from any .gcode or CNC program - orbit it, colour by height, speed, feature or tool, peel it back by layer, and play it building move by move, in real time if you like.',
@@ -1195,8 +1219,10 @@ function boot() {
     // proprietary renderer knows the real type.
     let sniffedExt = null;
 
-    // For files classified as 'unknown', check magic bytes for PDF / ZIP / SVG / HTML / CSV
-    if (!force && kind === 'unknown') {
+    // For files classified as 'unknown' or 'extensionless', check magic bytes for
+    // PDF / ZIP / SVG / HTML / CSV - so a recognised type auto-routes even with no
+    // (or a wrong) extension. Anything left 'extensionless' renders as text below.
+    if (!force && (kind === 'unknown' || kind === 'extensionless')) {
       try {
         const head = new Uint8Array(await file.slice(0, 128).arrayBuffer());
         const a = (s, l) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
@@ -1207,6 +1233,12 @@ function boot() {
         else if (a(0, 12) === 'IDEA - MAKER' || a(0, 14) === 'IEDA - PROFILE') {
           kind = 'proprietary';
           sniffedExt = 'idea';
+        } else if (head[0] === 0x78 && head[1] === 0x56 && head[2] === 0x34 && head[3] === 0x12 &&
+                   head[12] === 0x44 && head[13] === 0x4A && head[14] === 0x49) {
+          // DJI firmware container (magic 0x12345678 + "DJI") - shipped as a generic
+          // .bin, so route it by magic to the firmware identifier.
+          kind = 'proprietary';
+          sniffedExt = 'djifw';
         } else {
           // Check for SVG: may start with <svg or <?xml ... <svg
           const headStr = a(0, Math.min(head.length, 128));
@@ -1222,12 +1254,12 @@ function boot() {
         // Git objects: loose objects (zlib "<type> <size>\0…"), packfiles (PACK)
         // and pack indexes (\377tOc). Loose objects are extensionless, so this
         // content sniff is the only way to route them.
-        if (kind === 'unknown') {
+        if (kind === 'unknown' || kind === 'extensionless') {
           const git = await sniffGitObject(file);
           if (git) kind = 'git-object';
         }
         // CSV heuristic: check if lines have consistent comma/tab counts
-        if (kind === 'unknown') {
+        if (kind === 'unknown' || kind === 'extensionless') {
           const peekText = await file.slice(0, 2048).text().catch(() => '');
           const lines = peekText.split('\n').filter((l) => l.trim()).slice(0, 10);
           if (lines.length >= 2) {
@@ -1480,6 +1512,11 @@ function boot() {
   }
   _handleFile = handleFile;
   window._anrHandleFile = handleFile;
+  // Expose the (extension/MIME-based) classifier so the folder "can it open?" scan
+  // can use the SAME verdict the real drop path does, instead of a parallel list
+  // that drifts out of sync. Runtime hook (not a static import) to avoid an
+  // app.js <-> folder.js import cycle.
+  window._anrClassify = classifyFile;
 
   // "Analyse next file?" (shown once a file is loaded) reloads to a clean page.
   const analyseNextBtn = $('analyseNext');

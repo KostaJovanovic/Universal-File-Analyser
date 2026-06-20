@@ -204,6 +204,30 @@
                - let the newest version here disagree with app.js.
              ===================================================================== -->
 
+        <div class="patch-entry">
+          <p class="patch-version">4.02</p>
+          <p class="patch-name">Colour Grade</p>
+          <p class="patch-date">20 June 2026, 05:03</p>
+          <ul class="patch-list">
+            <li><strong>See a colour grade, not just a file: a LUT comes to life as an interactive 3D colour cube you can apply to your own photos, and the grades inside DaVinci Resolve timelines are read out node by node.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Colour look-up tables, visualised.</strong> Drop a <a href="/about#ext-cube">.cube</a> LUT and Analyser shows you what it actually does - the tone curve it bends, before-and-after swatches, how it shifts skin, sky and foliage, and an interactive 3D colour cube you can spin and look inside. Load your own photo or a video and the look is applied across eight frames, shown side by side and openable full-screen, so you can judge a grade before you ever use it.</li>
+            <li><span class="patch-tag">New</span><strong>The grades inside a Resolve timeline, read out.</strong> A DaVinci Resolve <a href="/about#ext-drt">.drt</a> timeline now lists each clip&rsquo;s colour-grade node chain - every node in order, the LUTs it loads and the ResolveFX it applies - so you can see how a shot was graded without opening Resolve.</li>
+            <li><span class="patch-tag">New</span><strong>Files with no extension open as text.</strong> A file with no extension at all - a <code>README</code>, a <code>COPYING</code>, a suffix-less config - now opens straight away as readable text, shown above the raw bytes, and if its contents look like a known format Analyser offers to open it that way instead of leaving you at a dead end.</li>
+            <li><span class="patch-tag">New</span><strong>A sample of every script a font can write.</strong> A font specimen now shows a sample sentence for each writing system the font actually covers - Japanese, Korean, Chinese, Cyrillic, Greek, Thai, Devanagari, Arabic and Hebrew - not just the Latin &ldquo;quick brown fox&rdquo;. Font collections (<a href="/about#ext-ttc">.ttc</a>) let you preview each face inside, and Adobe Font List (<strong>.lst</strong>) files are read in full.</li>
+            <li><span class="patch-tag">New</span><strong>Hundreds more formats recognised.</strong> A broad sweep of new file types are named on sight - source code and build files, game-engine assets, electronics designs, runtime and backup files and more - bringing the total past 1,260. Every one gains its own format guide page.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The folder openability scan now tells the truth.</strong> Scanning a folder gives exactly the verdict you would get by dropping each file yourself - an extensionless file counts as openable, an unrecognised one is flagged - and a new button copies the path to every unsupported file at once, one per type, skipping cloud files that are not downloaded.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">4.01</p>
+          <p class="patch-name">Library Card</p>
+          <p class="patch-date">20 June 2026, 01:41</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Windows .lib libraries open.</strong> A Microsoft COFF <a href="/about#ext-lib">.lib</a> - the library files Visual Studio and the MSVC linker produce - now opens and tells a true static library, carrying real compiled code, apart from a DLL import library, the stub that just points at a <strong>.dll</strong>. It reads the target architecture and lists the DLLs the library binds to and the objects inside.</li>
+          </ul>
+        </div>
+
         <div class="patch-entry patch-milestone">
           <p class="patch-version">4.0</p>
           <p class="patch-name">Third Dimension</p>
@@ -222,6 +246,9 @@
             <li><strong>Polish</strong> - optional anti-aliasing controls keep dense toolpaths crisp without the shimmer, a gentler default spin across every 3D view, and a sweep of viewer-control and layout tidying.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">3.45 - 3.46</p>
@@ -245,9 +272,6 @@
             <li><strong>Maintenance</strong> - a sweep of internal tidying: unused code removed, shared helpers brought together, a safeguard so one misbehaving format can no longer interrupt a file&rsquo;s analysis, and the styling and theme set-up single-sourced across the site.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">3.33 - 3.36</p>
@@ -1437,7 +1461,7 @@
       <div><dt>JPEG 2000</dt><dd><a href="https://github.com/chafey/openjpegjs" target="_blank" rel="noopener">OpenJPEG</a> compiled to WASM. Decodes JP2 / J2K images the browser can&rsquo;t. Loaded only when needed.</dd></div>
       <div><dt>PostScript</dt><dd><a href="https://www.ghostscript.com/" target="_blank" rel="noopener">Ghostscript</a> compiled to WASM. Renders EPS / PostScript graphics. ~16 MB, in the Everything download.</dd></div>
       <div><dt>Animation</dt><dd><a href="https://github.com/airbnb/lottie-web" target="_blank" rel="noopener">lottie-web</a>. Plays Lottie / Bodymovin JSON animations. Loaded only when needed.</dd></div>
-      <div><dt>File ID</dt><dd>Built-in identification for 1148+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 1269+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Install</dt><dd>Add to home screen for an offline PWA. Service worker caches the app shell. Use the buttons above to pre-cache heavy dependencies.</dd></div>
         </dl>
       </details>
