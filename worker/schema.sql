@@ -25,6 +25,17 @@ CREATE TABLE IF NOT EXISTS visitor_seen (
   last    INTEGER NOT NULL
 );
 
+-- Per-day buckets for the /stats trend graph: one row per UTC day with that day's
+-- counted visitors and analysed files. The worker self-migrates this table
+-- (ensureDaily) so an existing deploy starts recording without a manual step -
+-- the series therefore begins the day the daily code ships; earlier days were
+-- only ever kept as the running scalars in `totals`, so there is no back-history.
+CREATE TABLE IF NOT EXISTS daily (
+  day      TEXT PRIMARY KEY,        -- 'YYYY-MM-DD' (UTC)
+  files    INTEGER NOT NULL DEFAULT 0,
+  visitors INTEGER NOT NULL DEFAULT 0
+);
+
 -- Asteroids easter-egg leaderboard: one row per submitted run. `name` is 5 chars
 -- of [A-Z0-9], validated + profanity-checked server-side before insert. The /stats
 -- page and the game's end screen show the top 5 by score.

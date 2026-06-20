@@ -133,6 +133,47 @@ const BUMP_FILES = "INSERT INTO totals (key, val) VALUES ('files_total', 1) "
 const BUMP_VISITORS = "INSERT INTO totals (key, val) VALUES ('visitors_total', 1) "
   + 'ON CONFLICT(key) DO UPDATE SET val = val + 1';
 
+// --- Per-day trend buckets (one row per UTC day) ---
+// Upserts that add to today's row. Kept separate from the running totals so the
+// /stats page can draw a per-day / cumulative graph; see worker/schema.sql.
+const BUMP_DAY_VISITOR = 'INSERT INTO daily (day, files, visitors) VALUES (?, 0, 1) '
+  + 'ON CONFLICT(day) DO UPDATE SET visitors = visitors + 1';
+const BUMP_DAY_FILE = 'INSERT INTO daily (day, files, visitors) VALUES (?, 1, 0) '
+  + 'ON CONFLICT(day) DO UPDATE SET files = files + 1';
+
+// UTC calendar day ('YYYY-MM-DD') for a unix-ms timestamp.
+function dayKey(ms) { return new Date(ms).toISOString().slice(0, 10); }
+
+// Lazily create the daily table (idempotent; cached per isolate so it runs at
+// most once). Lets an existing deploy start recording without a manual
+// `wrangler d1 execute`. Callers wrap it in try/catch so a failure here can
+// never block the core count.
+let _dailyReady = false;
+async function ensureDaily(env) {
+  if (_dailyReady) return;
+  await env.DB.prepare(
+    'CREATE TABLE IF NOT EXISTS daily (day TEXT PRIMARY KEY, '
+    + 'files INTEGER NOT NULL DEFAULT 0, visitors INTEGER NOT NULL DEFAULT 0)',
+  ).run();
+  _dailyReady = true;
+}
+
+// The per-day series, oldest first. Bounded so the payload can't grow without
+// limit; the graph shows roughly the last year. Returns [] before the first
+// daily row exists (older worker / fresh table) so /api/stats never breaks.
+async function readDaily(env, limit = 400) {
+  try {
+    const rows = await env.DB.prepare(
+      'SELECT day, files, visitors FROM daily ORDER BY day DESC LIMIT ?',
+    ).bind(limit).all();
+    return (rows.results || [])
+      .map((r) => ({ day: r.day, files: r.files, visitors: r.visitors }))
+      .reverse();
+  } catch (_) {
+    return [];
+  }
+}
+
 // POST /api/visit - count this visitor at most once per IP / 3 days, then return
 // the live totals so the homepage badge can paint. Body is ignored.
 async function handleVisit(request, env) {
@@ -152,6 +193,12 @@ async function handleVisit(request, env) {
       ).bind(ipHash, now),
       env.DB.prepare(BUMP_VISITORS),
     ]);
+    // Add to today's per-day bucket. Best-effort and isolated from the core
+    // count above so a daily-table hiccup never costs us the visit.
+    try {
+      await ensureDaily(env);
+      await env.DB.prepare(BUMP_DAY_VISITOR).bind(dayKey(now * 1000)).run();
+    } catch (_) { /* daily series is non-critical */ }
   }
 
   return json({ ...(await readTotals(env)), counted });
@@ -189,6 +236,11 @@ async function handleAnalysed(request, env) {
     ).bind(ext, supported),
     env.DB.prepare(BUMP_FILES),
   ]);
+  // Add to today's per-day bucket (best-effort; never blocks the file count).
+  try {
+    await ensureDaily(env);
+    await env.DB.prepare(BUMP_DAY_FILE).bind(dayKey(Date.now())).run();
+  } catch (_) { /* daily series is non-critical */ }
 
   return json({ ok: true });
 }
@@ -216,7 +268,12 @@ async function handleStats(env) {
   const unsupported = (un && un.total) || 0;
   if (unsupported > 0) extensions.push({ ext: '(unsupported)', supported: false, count: unsupported });
   extensions.sort((a, b) => (b.count - a.count) || (a.ext < b.ext ? -1 : 1));
-  return json({ ...(await readTotals(env)), extensions, scores: await topScores(env, 100) });
+  return json({
+    ...(await readTotals(env)),
+    extensions,
+    scores: await topScores(env, 100),
+    daily: await readDaily(env),
+  });
 }
 
 // POST /api/score {name, score} - submit one Asteroids run to the leaderboard.

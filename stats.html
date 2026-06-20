@@ -113,6 +113,22 @@
         </table>
         <button type="button" class="stats-toggle" id="statsExtToggle" hidden>Show all</button>
 
+        <div class="stats-trends-card" id="statsTrends" hidden>
+          <div class="stats-trends-head">
+            <h3 class="stats-trends-title">Over time</h3>
+            <div class="stats-trends-modes" id="statsTrendsModes" role="group" aria-label="Graph mode">
+              <button type="button" class="stats-trends-mode is-on" data-mode="daily">Per day</button>
+              <button type="button" class="stats-trends-mode" data-mode="cumulative">Cumulative</button>
+            </div>
+          </div>
+          <div class="stats-trends-legend" id="statsTrendsLegend">
+            <button type="button" class="stats-trends-key stats-trends-key--visitors" data-series="visitors" aria-pressed="true" title="Toggle visitors"><span class="stats-trends-swatch"></span>Visitors</button>
+            <button type="button" class="stats-trends-key stats-trends-key--files" data-series="files" aria-pressed="true" title="Toggle files"><span class="stats-trends-swatch"></span>Files</button>
+          </div>
+          <div class="stats-trends-chart" id="statsTrendsChart"></div>
+          <p class="stats-trends-note" id="statsTrendsNote"></p>
+        </div>
+
         <div class="stats-scores-card" id="statsScores" hidden>
           <h3 class="stats-scores-head">High scores</h3>
           <ol class="stats-scores-list" id="statsScoresList"></ol>

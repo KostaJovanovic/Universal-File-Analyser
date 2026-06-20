@@ -236,10 +236,10 @@ Every commit is its own version. The number after the dot is the commit's
 - `COMMIT_COUNT` in `app.js` is the current commit number, bumped automatically by
   `save.bat` on each commit. Don't change it manually.
 - `RELEASE_COMMITS` in `app.js` is the sorted list of commit numbers crowned as
-  major releases. It is currently `[29, 60]` (commit 29 = `1.0`, commit 60 =
-  `2.0`). To crown a future `3.0`, append that commit's number. The display logic
-  lives in `analyserVersion()` in `app.js`.
-- `save.bat` mirrors this with a `RELEASES=29,60` constant (used only to echo the
+  major releases. It is currently `[29, 60, 100, 151]` (commit 29 = `1.0`, 60 =
+  `2.0`, 100 = `3.0`, 151 = `4.0`). To crown a future `5.0`, append that commit's
+  number. The display logic lives in `analyserVersion()` in `app.js`.
+- `save.bat` mirrors this with a `RELEASES=29,60,100,151` constant (used only to echo the
   version it's bumping to). **Keep `RELEASES` in sync with `RELEASE_COMMITS`** —
   its PowerShell snippet now walks the full list exactly like `analyserVersion()`,
   so crowning another release is just appending the commit number in both places.

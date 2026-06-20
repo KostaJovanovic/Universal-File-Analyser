@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 153;
+const COMMIT_COUNT = 154;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -655,6 +655,10 @@ async function setupStatsPage() {
   // the section's per-letter hover effect, like the header.
   setupSectionFx();
 
+  // Per-day trend graph (visitors + files) under the totals. Only present once
+  // the worker has started recording daily buckets; degrades to hidden otherwise.
+  renderStatsTrends(Array.isArray(data.daily) ? data.daily : []);
+
   // Asteroids easter-egg leaderboard card (top 5). Shown only when there are
   // scores; rendered before the ext early-returns so it appears even with no exts.
   const scoreCard = $('statsScores');
@@ -788,6 +792,337 @@ async function setupStatsPage() {
   }
 }
 
+// ---------- /stats trend graph ----------
+
+// "Nice" upper bound at or above v from the {1,2,2.5,5,10}*10^n ladder, so axis
+// ticks land on readable numbers.
+function niceCeil(v) {
+  if (!(v > 0)) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  const f = v / p;
+  const nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
+  return nf * p;
+}
+
+const _SVGNS = 'http://www.w3.org/2000/svg';
+function svgEl(tag, attrs, kids) {
+  const n = document.createElementNS(_SVGNS, tag);
+  if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (kids != null) (Array.isArray(kids) ? kids : [kids]).forEach((c) => {
+    n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  });
+  return n;
+}
+
+const _fmtDay = (s, opts) => {
+  const d = new Date(s + 'T00:00:00Z');
+  return isNaN(d) ? s : d.toLocaleDateString('en-GB', opts || { day: 'numeric', month: 'short' });
+};
+
+// The two series the chart can show. `key` matches data-series in the legend.
+const _TREND_SERIES = ['visitors', 'files'];
+
+// Per-mode {visitors, files} arrays: each day's count, or the running total.
+function trendSeries(daily, mode) {
+  const cumulative = mode === 'cumulative';
+  const out = { visitors: [], files: [] };
+  let cv = 0; let cf = 0;
+  for (const d of daily) {
+    cv += Number(d.visitors) || 0; cf += Number(d.files) || 0;
+    out.visitors.push(cumulative ? cv : Number(d.visitors) || 0);
+    out.files.push(cumulative ? cf : Number(d.files) || 0);
+  }
+  return out;
+}
+
+// Show the trend card and wire the per-day / cumulative toggle plus the
+// clickable legend (each series can be hidden). Hidden entirely until the worker
+// has at least one day of buckets (older worker -> daily: []).
+function renderStatsTrends(daily) {
+  const card = $('statsTrends');
+  if (!card) return;
+  const chartEl = $('statsTrendsChart');
+  const noteEl = $('statsTrendsNote');
+  const modesEl = $('statsTrendsModes');
+  const legendEl = $('statsTrendsLegend');
+  const rows = (Array.isArray(daily) ? daily : []).filter((d) => d && typeof d.day === 'string');
+  if (!rows.length) { card.hidden = true; return; }
+  card.hidden = false;
+
+  let mode = 'daily';
+  const visible = { visitors: true, files: true };
+  const chart = buildTrendChart(chartEl, rows);   // builds the SVG once; we only tween attributes after
+  let drawnMax = null;   // y-scale currently rendered, tweened for a smooth resize
+  let raf = 0;
+  let modeSeq = 0;       // guards against overlapping mode cross-fades
+
+  // Highest visible value for the current mode (>= 1) - the target y-scale.
+  const targetMax = () => {
+    const s = trendSeries(rows, mode);
+    let m = 1;
+    for (const k of _TREND_SERIES) if (visible[k]) m = Math.max(m, ...s[k]);
+    return m;
+  };
+
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Tween the y-scale from its current value to `to`, updating attributes each
+  // frame (no DOM rebuild, so it stays smooth), then run `done`. Hiding the
+  // larger series grows the smaller one to fill the chart.
+  const animateTo = (to, done) => {
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    if (drawnMax == null || reduceMotion || Math.abs(to - drawnMax) < 0.5) {
+      drawnMax = to; chart.apply(mode, drawnMax, visible); if (done) done();
+      return;
+    }
+    const from = drawnMax; const dur = 480; let start = 0;
+    const tick = (ts) => {
+      if (!start) start = ts;
+      const t = Math.min(1, (ts - start) / dur);
+      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;   // easeInOutCubic
+      drawnMax = from + (to - from) * e;
+      chart.apply(mode, drawnMax, visible);
+      if (t < 1) { raf = requestAnimationFrame(tick); } else { raf = 0; drawnMax = to; chart.apply(mode, drawnMax, visible); if (done) done(); }
+    };
+    raf = requestAnimationFrame(tick);
+  };
+
+  drawnMax = targetMax();
+  chart.apply(mode, drawnMax, visible);
+
+  if (noteEl) {
+    const first = _fmtDay(rows[0].day, { day: 'numeric', month: 'short', year: 'numeric' });
+    noteEl.textContent = rows.length > 1
+      ? 'Per-day counts since ' + first + '. Earlier days were only kept as running totals, so they are not broken out here.'
+      : 'Per-day counts began ' + first + '. The trend builds up from here - check back over the next few days.';
+  }
+
+  if (modesEl && !modesEl._wired) {
+    modesEl._wired = true;
+    modesEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('.stats-trends-mode');
+      if (!btn) return;
+      const next = btn.dataset.mode === 'cumulative' ? 'cumulative' : 'daily';
+      if (next === mode) return;
+      mode = next;
+      modesEl.querySelectorAll('.stats-trends-mode').forEach((b) => b.classList.toggle('is-on', b === btn));
+      // Per-day and cumulative are different curves at very different scales, so
+      // cross-fade the whole plot rather than morph it: fade out, snap to the new
+      // mode + scale while invisible, fade back in.
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (reduceMotion) { drawnMax = targetMax(); chart.apply(mode, drawnMax, visible); return; }
+      const seq = ++modeSeq;
+      chart.fade(0, () => {
+        if (seq !== modeSeq) return;   // a newer switch superseded this one
+        drawnMax = targetMax();
+        chart.apply(mode, drawnMax, visible);
+        chart.fade(1);
+      });
+    });
+  }
+
+  if (legendEl && !legendEl._wired) {
+    legendEl._wired = true;
+    legendEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('.stats-trends-key');
+      if (!btn) return;
+      const key = btn.dataset.series;
+      const turningOn = !visible[key];
+      // Never let the user hide the last visible series (chart would go empty).
+      if (!turningOn && _TREND_SERIES.filter((k) => visible[k]).length <= 1) return;
+      visible[key] = turningOn;
+      btn.classList.toggle('is-off', !turningOn);
+      btn.setAttribute('aria-pressed', String(turningOn));
+      if (turningOn) {
+        // Keep the line invisible while the axis resizes to make room for it, then
+        // fade it in once the resize has settled.
+        chart.setShown(key, false);
+        animateTo(targetMax(), () => chart.setShown(key, true));
+      } else {
+        chart.setShown(key, false);   // fade out now, in step with the resize
+        animateTo(targetMax());
+      }
+    });
+  }
+}
+
+// Build the trend chart's SVG once and return a controller. apply() only mutates
+// existing nodes' attributes (cheap, so animation is smooth); setShown() fades a
+// series via CSS opacity; a transparent overlay drives a custom hover tooltip
+// that snaps to the nearest day.
+function buildTrendChart(chartEl, daily) {
+  if (!chartEl) return { apply() {}, setShown() {} };
+  const n = daily.length;
+  const W = 720; const H = 240;
+  const padL = 46; const padR = 14; const padT = 16; const padB = 30;
+  const plotW = W - padL - padR; const plotH = H - padT - padB;
+  const TICKS = 4;
+  const xFor = (i) => (n > 1 ? padL + (i / (n - 1)) * plotW : padL + plotW / 2);
+  const fmtY = (v) => (v >= 1e6 ? (v / 1e6).toFixed(v % 1e6 ? 1 : 0) + 'M'
+    : v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0) + 'k' : String(v));
+
+  const svg = svgEl('svg', { class: 'stats-trend-svg', viewBox: '0 0 ' + W + ' ' + H, role: 'img' });
+
+  const gridLines = []; const yLabels = [];
+  for (let k = 0; k <= TICKS; k++) {
+    const line = svgEl('line', { class: 'stats-trend-grid', x1: padL, x2: W - padR, y1: 0, y2: 0 });
+    const text = svgEl('text', { class: 'stats-trend-axis stats-trend-axis--y', x: padL - 8, y: 0 }, '');
+    gridLines.push(line); yLabels.push(text);
+    svg.appendChild(line); svg.appendChild(text);
+  }
+
+  // Crosshair guide at the hovered day (hidden until hover).
+  const crosshair = svgEl('line', { class: 'stats-trend-cross', x1: 0, x2: 0, y1: padT, y2: padT + plotH });
+  crosshair.style.opacity = '0';
+  svg.appendChild(crosshair);
+
+  // Files under visitors so the accent line/area reads on top.
+  const gFiles = svgEl('g', { class: 'stats-trend-series stats-trend-series--files' });
+  const gVis = svgEl('g', { class: 'stats-trend-series stats-trend-series--visitors' });
+  const fLine = svgEl('path', { class: 'stats-trend-line stats-trend-line--files' });
+  gFiles.appendChild(fLine);
+  const vArea = svgEl('path', { class: 'stats-trend-area' });
+  const vLine = svgEl('path', { class: 'stats-trend-line stats-trend-line--visitors' });
+  gVis.appendChild(vArea); gVis.appendChild(vLine);
+
+  const fDots = []; const vDots = [];
+  if (n <= 60) {
+    for (let i = 0; i < n; i++) {
+      const fd = svgEl('circle', { class: 'stats-trend-dot stats-trend-dot--files', cx: xFor(i).toFixed(1), cy: 0, r: 2.4 });
+      gFiles.appendChild(fd); fDots.push(fd);
+      const vd = svgEl('circle', { class: 'stats-trend-dot stats-trend-dot--visitors', cx: xFor(i).toFixed(1), cy: 0, r: 2.4 });
+      gVis.appendChild(vd); vDots.push(vd);
+    }
+  }
+  svg.appendChild(gFiles); svg.appendChild(gVis);
+
+  // Enlarged focus markers on the hovered day.
+  const fFocus = svgEl('circle', { class: 'stats-trend-focus stats-trend-focus--files', cx: 0, cy: 0, r: 3.6 });
+  const vFocus = svgEl('circle', { class: 'stats-trend-focus stats-trend-focus--visitors', cx: 0, cy: 0, r: 3.6 });
+  fFocus.style.opacity = '0'; vFocus.style.opacity = '0';
+  svg.appendChild(fFocus); svg.appendChild(vFocus);
+
+  // X-axis labels: first and last day (plus the middle when there's room).
+  const xLabels = n > 1 ? [0, n - 1] : [0];
+  if (n >= 6) xLabels.splice(1, 0, Math.floor((n - 1) / 2));
+  for (const i of xLabels) {
+    const anchor = i === 0 ? 'start' : (i === n - 1 ? 'end' : 'middle');
+    svg.appendChild(svgEl('text', { class: 'stats-trend-axis', x: xFor(i).toFixed(1), y: H - 10, 'text-anchor': anchor }, _fmtDay(daily[i].day)));
+  }
+
+  // Transparent overlay on top to capture pointer moves across the whole plot.
+  const hit = svgEl('rect', { class: 'stats-trend-hit', x: padL, y: padT, width: plotW, height: plotH });
+  svg.appendChild(hit);
+
+  chartEl.innerHTML = '';
+  chartEl.appendChild(svg);
+
+  // Floating HTML tooltip (positioned relative to the chart container).
+  const tip = el('div', { class: 'stats-trend-tip' });
+  tip.hidden = true;
+  chartEl.appendChild(tip);
+
+  const linePath = (s, yFor) => s.map((val, i) => (i ? 'L' : 'M') + xFor(i).toFixed(1) + ' ' + yFor(val).toFixed(1)).join(' ');
+  const areaPath = (s, yFor) => linePath(s, yFor) + ' L ' + xFor(n - 1).toFixed(1) + ' ' + yFor(0).toFixed(1)
+    + ' L ' + xFor(0).toFixed(1) + ' ' + yFor(0).toFixed(1) + ' Z';
+
+  const state = { mode: 'daily', niceMax: 1, visible: { visitors: true, files: true }, series: trendSeries(daily, 'daily') };
+  const yFor = (val) => padT + plotH - (val / state.niceMax) * plotH;
+
+  let hoverI = -1;
+  const hideHover = () => {
+    hoverI = -1;
+    tip.hidden = true;
+    crosshair.style.opacity = '0';
+    fFocus.style.opacity = '0';
+    vFocus.style.opacity = '0';
+  };
+  const onMove = (e) => {
+    if (!state.series || !n) return;
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width) return;
+    const vx = (e.clientX - rect.left) * (W / rect.width);   // client px -> viewBox units (uniform scale)
+    let i = n > 1 ? Math.round((vx - padL) / plotW * (n - 1)) : 0;
+    i = Math.max(0, Math.min(n - 1, i));
+    hoverI = i;
+    const px = xFor(i);
+    crosshair.setAttribute('x1', px.toFixed(1));
+    crosshair.setAttribute('x2', px.toFixed(1));
+    crosshair.style.opacity = '1';
+    if (state.visible.visitors) { vFocus.setAttribute('cx', px.toFixed(1)); vFocus.setAttribute('cy', yFor(state.series.visitors[i]).toFixed(1)); vFocus.style.opacity = '1'; } else vFocus.style.opacity = '0';
+    if (state.visible.files) { fFocus.setAttribute('cx', px.toFixed(1)); fFocus.setAttribute('cy', yFor(state.series.files[i]).toFixed(1)); fFocus.style.opacity = '1'; } else fFocus.style.opacity = '0';
+
+    const tipRow = (key, label) => el('div', { class: 'stats-trend-tip-row' }, [
+      el('span', { class: 'stats-trend-tip-swatch stats-trend-tip-swatch--' + key }),
+      label, el('strong', {}, state.series[key][i].toLocaleString()),
+    ]);
+    const kids = [el('div', { class: 'stats-trend-tip-date' }, _fmtDay(daily[i].day, { day: 'numeric', month: 'short', year: 'numeric' }))];
+    if (state.visible.visitors) kids.push(tipRow('visitors', 'Visitors'));
+    if (state.visible.files) kids.push(tipRow('files', 'Files'));
+    tip.innerHTML = '';
+    kids.forEach((k) => tip.appendChild(k));
+    tip.hidden = false;
+
+    // Place centred above the cursor; flip below if it would clip the top.
+    const crect = chartEl.getBoundingClientRect();
+    const tw = tip.offsetWidth; const th = tip.offsetHeight;
+    let left = e.clientX - crect.left;
+    left = Math.max(tw / 2 + 2, Math.min(crect.width - tw / 2 - 2, left));
+    let top = e.clientY - crect.top - th - 12;
+    if (top < 0) top = e.clientY - crect.top + 18;
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  };
+  hit.addEventListener('pointermove', onMove);
+  hit.addEventListener('pointerenter', onMove);
+  hit.addEventListener('pointerleave', hideHover);
+
+  return {
+    // Lay out everything for `mode` at y-scale `scaleMax` (raw; nice-rounded here).
+    apply(mode, scaleMax, visible) {
+      const step = Math.max(1, Math.ceil(niceCeil(Math.max(1, scaleMax) / TICKS)));
+      state.niceMax = step * TICKS;
+      state.mode = mode;
+      if (visible) state.visible = visible;
+      const s = trendSeries(daily, mode);
+      state.series = s;
+      for (let k = 0; k <= TICKS; k++) {
+        const val = step * k; const y = yFor(val);
+        gridLines[k].setAttribute('y1', y.toFixed(1)); gridLines[k].setAttribute('y2', y.toFixed(1));
+        yLabels[k].setAttribute('y', (y + 3.5).toFixed(1)); yLabels[k].textContent = fmtY(val);
+      }
+      if (n > 1) {
+        vArea.setAttribute('d', areaPath(s.visitors, yFor));
+        vLine.setAttribute('d', linePath(s.visitors, yFor));
+        fLine.setAttribute('d', linePath(s.files, yFor));
+      }
+      for (let i = 0; i < fDots.length; i++) {
+        fDots[i].setAttribute('cy', yFor(s.files[i]).toFixed(1));
+        vDots[i].setAttribute('cy', yFor(s.visitors[i]).toFixed(1));
+      }
+      if (hoverI >= 0) {   // keep the focus markers glued to the line as it rescales
+        if (state.visible.visitors) vFocus.setAttribute('cy', yFor(s.visitors[hoverI]).toFixed(1));
+        if (state.visible.files) fFocus.setAttribute('cy', yFor(s.files[hoverI]).toFixed(1));
+      }
+      const shown = _TREND_SERIES.filter((k) => state.visible[k]).join(' and ') || 'no series';
+      svg.setAttribute('aria-label', (mode === 'cumulative' ? 'Cumulative' : 'Per-day') + ' ' + shown
+        + ' from ' + _fmtDay(daily[0].day) + ' to ' + _fmtDay(daily[n - 1].day) + '.');
+    },
+    setShown(key, on) {
+      const g = key === 'visitors' ? gVis : gFiles;
+      g.style.opacity = on ? '1' : '0';
+      g.style.pointerEvents = on ? '' : 'none';
+      if (!on && (key === 'visitors' ? vFocus : fFocus)) (key === 'visitors' ? vFocus : fFocus).style.opacity = '0';
+    },
+    // Fade the whole plot (CSS transition on the svg); `done` fires after it.
+    fade(to, done) {
+      if (to < 1) hideHover();   // don't leave a tooltip floating over a faded chart
+      svg.style.opacity = String(to);
+      if (done) setTimeout(done, 200);   // matches --dur-base on .stats-trend-svg
+    },
+  };
+}
+
 
 // Changelog "tl;dr" digest - the whole history condensed into release groups of
 // five (the 1.0 and 2.0 milestones kept on their own), each with a few short notes
@@ -796,7 +1131,8 @@ async function setupStatsPage() {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
-  { range: '4.01 - 4.02', notes: [
+  { range: '4.01 - 4.03', notes: [
+    'The stats page gained a graph of visitors and files over time - switch between per-day and cumulative, click the key to hide either line and watch it rescale, and hover a day for the exact figures.',
     'Microsoft COFF .lib libraries open, telling a true static library apart from a DLL import library and listing the target architecture and the DLLs it binds to.',
     'Colour look-up tables come alive: drop a .cube LUT to see its tone curve, before-and-after swatches and an interactive 3D colour cube, then apply the look to your own photo or video.',
     'DaVinci Resolve .drt timelines read out the colour-grade node chain in each clip - every node in order, the LUTs it loads and the ResolveFX it applies.',

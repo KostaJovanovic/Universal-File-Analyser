@@ -205,26 +205,19 @@
              ===================================================================== -->
 
         <div class="patch-entry">
-          <p class="patch-version">4.02</p>
-          <p class="patch-name">Colour Grade</p>
-          <p class="patch-date">20 June 2026, 05:03</p>
+          <p class="patch-version">4.01 - 4.03</p>
+          <p class="patch-name">Trend Line</p>
+          <p class="patch-date">20 June 2026, 06:01</p>
           <ul class="patch-list">
-            <li><strong>See a colour grade, not just a file: a LUT comes to life as an interactive 3D colour cube you can apply to your own photos, and the grades inside DaVinci Resolve timelines are read out node by node.</strong></li>
+            <li><strong>The stats page gains a usage graph over time, colour grades and Resolve timelines come alive, Windows libraries and extensionless files open, fonts show every script they cover, and hundreds more formats are recognised.</strong></li>
+            <li><span class="patch-tag">New</span><strong>A usage graph on the stats page.</strong> The <a href="/stats">stats page</a> now plots visitors and files over time. Switch between a <strong>per-day</strong> view and a running <strong>cumulative</strong> total, click either label in the key to drop that line and watch the graph smoothly rescale to fit what is left, and hover any day to read off the exact figures in a little pop-up.</li>
             <li><span class="patch-tag">New</span><strong>Colour look-up tables, visualised.</strong> Drop a <a href="/about#ext-cube">.cube</a> LUT and Analyser shows you what it actually does - the tone curve it bends, before-and-after swatches, how it shifts skin, sky and foliage, and an interactive 3D colour cube you can spin and look inside. Load your own photo or a video and the look is applied across eight frames, shown side by side and openable full-screen, so you can judge a grade before you ever use it.</li>
             <li><span class="patch-tag">New</span><strong>The grades inside a Resolve timeline, read out.</strong> A DaVinci Resolve <a href="/about#ext-drt">.drt</a> timeline now lists each clip&rsquo;s colour-grade node chain - every node in order, the LUTs it loads and the ResolveFX it applies - so you can see how a shot was graded without opening Resolve.</li>
+            <li><span class="patch-tag">New</span><strong>Windows .lib libraries open.</strong> A Microsoft COFF <a href="/about#ext-lib">.lib</a> - the library files Visual Studio and the MSVC linker produce - now opens and tells a true static library, carrying real compiled code, apart from a DLL import library, the stub that just points at a <strong>.dll</strong>. It reads the target architecture and lists the DLLs the library binds to and the objects inside.</li>
             <li><span class="patch-tag">New</span><strong>Files with no extension open as text.</strong> A file with no extension at all - a <code>README</code>, a <code>COPYING</code>, a suffix-less config - now opens straight away as readable text, shown above the raw bytes, and if its contents look like a known format Analyser offers to open it that way instead of leaving you at a dead end.</li>
             <li><span class="patch-tag">New</span><strong>A sample of every script a font can write.</strong> A font specimen now shows a sample sentence for each writing system the font actually covers - Japanese, Korean, Chinese, Cyrillic, Greek, Thai, Devanagari, Arabic and Hebrew - not just the Latin &ldquo;quick brown fox&rdquo;. Font collections (<a href="/about#ext-ttc">.ttc</a>) let you preview each face inside, and Adobe Font List (<strong>.lst</strong>) files are read in full.</li>
             <li><span class="patch-tag">New</span><strong>Hundreds more formats recognised.</strong> A broad sweep of new file types are named on sight - source code and build files, game-engine assets, electronics designs, runtime and backup files and more - bringing the total past 1,260. Every one gains its own format guide page.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>The folder openability scan now tells the truth.</strong> Scanning a folder gives exactly the verdict you would get by dropping each file yourself - an extensionless file counts as openable, an unrecognised one is flagged - and a new button copies the path to every unsupported file at once, one per type, skipping cloud files that are not downloaded.</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
-          <p class="patch-version">4.01</p>
-          <p class="patch-name">Library Card</p>
-          <p class="patch-date">20 June 2026, 01:41</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>Windows .lib libraries open.</strong> A Microsoft COFF <a href="/about#ext-lib">.lib</a> - the library files Visual Studio and the MSVC linker produce - now opens and tells a true static library, carrying real compiled code, apart from a DLL import library, the stub that just points at a <strong>.dll</strong>. It reads the target architecture and lists the DLLs the library binds to and the objects inside.</li>
           </ul>
         </div>
 
@@ -247,9 +240,6 @@
           </ul>
         </div>
 
-        <details class="about-formats">
-          <summary>Older updates</summary>
-
         <div class="patch-entry">
           <p class="patch-version">3.45 - 3.46</p>
           <p class="patch-name">Long Tail</p>
@@ -261,6 +251,9 @@
             <li><strong>Maintenance</strong> - the format guide pages now carry the live visitor count and link to the changelog, the light and dark switch announces itself to screen readers, the formats list is grouped more accurately, and a pass of small consistency fixes went across page titles, descriptions and tidy-up under the hood.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">3.37 - 3.44</p>
