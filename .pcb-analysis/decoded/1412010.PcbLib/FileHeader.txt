@@ -1,2 +1,0 @@
---- record 0 (27 bytes) [binary, strings] ---
-PCB 6.0 Binary Library Fil
