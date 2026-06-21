@@ -397,6 +397,9 @@ export function buildImuTimeline(d, file) {
 
   // --- optional synced mini player ---
   let video = null;
+  // The transport's own fill bar, so an IMU-line drag can glide it directly instead
+  // of waiting on the video's (coalesced) seeked events, which step during a scrub.
+  let transportFill = null;
   if (file) {
     const url = URL.createObjectURL(file);
     // Bare <video> + the site's own makePlayer transport (no native browser
@@ -411,7 +414,9 @@ export function buildImuTimeline(d, file) {
     // Same transport as the main Player (play / seek / time / volume). It starts
     // muted; pressing play on it makes it the audio owner (exclusive audio) so you
     // hear exactly the clip whose motion the white line is tracking.
-    wrap.appendChild(makePlayer(video, undefined, {}));
+    const transport = makePlayer(video, undefined, {});
+    transportFill = transport.querySelector('.anr-player-fill');
+    wrap.appendChild(transport);
   }
 
   // --- zoom control ---
@@ -441,8 +446,23 @@ export function buildImuTimeline(d, file) {
   // it can't drift from the audio. Priority: the audio companion (the extracted
   // PCM <audio> that plays under a muted video for codecs browsers can't decode -
   // it has its own startup/decode lag, so following the video clock instead would
-  // run the line ahead of the sound), then the audio owner, then this element.
-  const clock = () => (video ? (getAudioCompanion() || getAudioOwner() || video) : null);
+  // run the line ahead of the sound), then the audio owner.
+  // BUT fall back to this viewer's own muted-but-synced <video> clock whenever that
+  // audio source is gone or still parked at 0 while the picture has already moved -
+  // otherwise the line sticks at the left. getAudioCompanion() can hand back a stale
+  // companion from a previous file (it has no isConnected guard), and a companion can
+  // sit at 0 until its play()/decode catches up; either way the video clock always
+  // advances during playback, so it's the reliable fallback.
+  const audioClock = () => {
+    const a = getAudioCompanion() || getAudioOwner();
+    return (a && a.isConnected && isFinite(a.currentTime)) ? a : null;
+  };
+  const clock = () => {
+    if (!video) return null;
+    const a = audioClock();
+    if (a && (a.currentTime > 0.01 || video.currentTime < 0.01)) return a;
+    return video;
+  };
   const curDur = () => { const c = clock(); return (c && isFinite(c.duration) && c.duration > 0) ? c.duration : duration; };
   const curTime = () => { const c = clock(); return c ? c.currentTime : hoverTime; };
 
@@ -484,11 +504,35 @@ export function buildImuTimeline(d, file) {
   // With a video: drag/click the graph to scrub. Without: hover moves the playhead.
   const fracAt = (clientX) => Math.max(0, Math.min(1, (clientX - scroller.getBoundingClientRect().left + scroller.scrollLeft) / Math.max(1, trackW)));
   if (video) {
-    let scrubbing = false;
-    const seekAt = (clientX) => { video.currentTime = fracAt(clientX) * curDur(); place(false); };
-    scroller.addEventListener('pointerdown', (e) => { scrubbing = true; try { scroller.setPointerCapture(e.pointerId); } catch (_) {} seekAt(e.clientX); });
-    scroller.addEventListener('pointermove', (e) => { if (scrubbing) seekAt(e.clientX); });
-    const endScrub = (e) => { scrubbing = false; try { scroller.releasePointerCapture(e.pointerId); } catch (_) {} };
+    let scrubbing = false, lastT = 0;
+    // While dragging, prefer fastSeek(): it jumps to the nearest keyframe quickly
+    // instead of decoding the exact frame on every pointer move, so the picture
+    // keeps up with the cursor (Safari/Firefox). Chrome lacks fastSeek, so it falls
+    // back to currentTime there. On release we always settle on the exact frame.
+    const seekVideo = (t, precise) => {
+      lastT = t;
+      if (!precise && typeof video.fastSeek === 'function') { try { video.fastSeek(t); return; } catch (_) {} }
+      video.currentTime = t;
+    };
+    // Drive the line straight from the cursor (and seek the video to match). Going
+    // through place()/clock() here would read the audio companion, whose currentTime
+    // only re-syncs past a 0.15s deadband, so the line would jump in coarse steps -
+    // positioning it directly from the pointer keeps the scrub smooth.
+    const seekAt = (clientX, precise) => {
+      const frac = fracAt(clientX);
+      seekVideo(frac * curDur(), precise);
+      playhead.style.left = (frac * trackW) + 'px';
+      // Glide the player's seek bar with the drag (same fraction = same position),
+      // rather than letting it lag on the video's coalesced seeked events.
+      if (transportFill) transportFill.style.width = (frac * 100) + '%';
+    };
+    scroller.addEventListener('pointerdown', (e) => { scrubbing = true; try { scroller.setPointerCapture(e.pointerId); } catch (_) {} seekAt(e.clientX, false); });
+    scroller.addEventListener('pointermove', (e) => { if (scrubbing) seekAt(e.clientX, false); });
+    const endScrub = (e) => {
+      if (scrubbing && typeof video.fastSeek === 'function') { try { video.currentTime = lastT; } catch (_) {} }  // land on the exact frame
+      scrubbing = false;
+      try { scroller.releasePointerCapture(e.pointerId); } catch (_) {}
+    };
     scroller.addEventListener('pointerup', endScrub);
     scroller.addEventListener('pointercancel', endScrub);
   } else {
