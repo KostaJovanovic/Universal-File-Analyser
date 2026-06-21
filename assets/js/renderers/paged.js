@@ -106,7 +106,7 @@ export function paginateText(text, opts = {}) {
 // The amount a double-click / double-tap zooms the page in.
 const DOC_ZOOM = 2;
 
-function openDocLightbox(pages, startIndex, label) {
+export function openDocLightbox(pages, startIndex, label) {
   let overlay = document.getElementById('anr-doc-viewer');
   if (!overlay) {
     overlay = el('div', { id: 'anr-doc-viewer', class: 'lightbox anr-doc-lightbox' });

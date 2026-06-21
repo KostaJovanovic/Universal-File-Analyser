@@ -1,0 +1,1054 @@
+{
+  "1412010.PcbLib": [
+    {
+      "stream": [
+        "\u0001Sh33tJ5"
+      ],
+      "bytes": 4,
+      "file": "_Sh33tJ5.bin"
+    },
+    {
+      "stream": [
+        "1412010",
+        "Data"
+      ],
+      "bytes": 2536,
+      "file": "1412010__Data.bin"
+    },
+    {
+      "stream": [
+        "1412010",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "1412010__Header.bin"
+    },
+    {
+      "stream": [
+        "1412010",
+        "Parameters"
+      ],
+      "bytes": 70,
+      "file": "1412010__Parameters.bin"
+    },
+    {
+      "stream": [
+        "1412010",
+        "UniqueIDPrimitiveInformation",
+        "Data"
+      ],
+      "bytes": 440,
+      "file": "1412010__UniqueIDPrimitiveInformation__Data.bin"
+    },
+    {
+      "stream": [
+        "1412010",
+        "UniqueIDPrimitiveInformation",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "1412010__UniqueIDPrimitiveInformation__Header.bin"
+    },
+    {
+      "stream": [
+        "1412010",
+        "WideStrings"
+      ],
+      "bytes": 5,
+      "file": "1412010__WideStrings.bin"
+    },
+    {
+      "stream": [
+        "FileHeader"
+      ],
+      "bytes": 53,
+      "file": "FileHeader.bin"
+    },
+    {
+      "stream": [
+        "FileVersionInfo",
+        "Data"
+      ],
+      "bytes": 2573,
+      "file": "FileVersionInfo__Data.bin"
+    },
+    {
+      "stream": [
+        "FileVersionInfo",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "FileVersionInfo__Header.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "ComponentParamsTOC",
+        "Data"
+      ],
+      "bytes": 53,
+      "file": "Library__ComponentParamsTOC__Data.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "ComponentParamsTOC",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Library__ComponentParamsTOC__Header.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "Data"
+      ],
+      "bytes": 94698,
+      "file": "Library__Data.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "EmbeddedFonts"
+      ],
+      "bytes": 4,
+      "file": "Library__EmbeddedFonts.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Library__Header.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "LayerKindMapping",
+        "Data"
+      ],
+      "bytes": 36,
+      "file": "Library__LayerKindMapping__Data.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "LayerKindMapping",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Library__LayerKindMapping__Header.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "Models",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Library__Models__Data.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "Models",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Library__Models__Header.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "ModelsNoEmbed",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Library__ModelsNoEmbed__Data.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "ModelsNoEmbed",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Library__ModelsNoEmbed__Header.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "PadViaLibrary",
+        "Data"
+      ],
+      "bytes": 131,
+      "file": "Library__PadViaLibrary__Data.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "PadViaLibrary",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Library__PadViaLibrary__Header.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "Textures",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Library__Textures__Data.bin"
+    },
+    {
+      "stream": [
+        "Library",
+        "Textures",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Library__Textures__Header.bin"
+    }
+  ],
+  "1412010.SchLib": [
+    {
+      "stream": [
+        "\u0001Sh33tJ5"
+      ],
+      "bytes": 4,
+      "file": "_Sh33tJ5.bin"
+    },
+    {
+      "stream": [
+        "1412010",
+        "Data"
+      ],
+      "bytes": 2643,
+      "file": "1412010__Data.bin"
+    },
+    {
+      "stream": [
+        "FileHeader"
+      ],
+      "bytes": 700,
+      "file": "FileHeader.bin"
+    },
+    {
+      "stream": [
+        "Storage"
+      ],
+      "bytes": 25,
+      "file": "Storage.bin"
+    }
+  ],
+  "PCB1.PcbDoc": [
+    {
+      "stream": [
+        "Advanced Placer Options6",
+        "Data"
+      ],
+      "bytes": 207,
+      "file": "Advanced_Placer_Options6__Data.bin"
+    },
+    {
+      "stream": [
+        "Advanced Placer Options6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Advanced_Placer_Options6__Header.bin"
+    },
+    {
+      "stream": [
+        "Arcs6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Arcs6__Data.bin"
+    },
+    {
+      "stream": [
+        "Arcs6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Arcs6__Header.bin"
+    },
+    {
+      "stream": [
+        "Board6",
+        "Data"
+      ],
+      "bytes": 86494,
+      "file": "Board6__Data.bin"
+    },
+    {
+      "stream": [
+        "Board6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Board6__Header.bin"
+    },
+    {
+      "stream": [
+        "BoardRegions",
+        "Data"
+      ],
+      "bytes": 395,
+      "file": "BoardRegions__Data.bin"
+    },
+    {
+      "stream": [
+        "BoardRegions",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "BoardRegions__Header.bin"
+    },
+    {
+      "stream": [
+        "Classes6",
+        "Data"
+      ],
+      "bytes": 3318,
+      "file": "Classes6__Data.bin"
+    },
+    {
+      "stream": [
+        "Classes6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Classes6__Header.bin"
+    },
+    {
+      "stream": [
+        "ComponentBodies6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "ComponentBodies6__Data.bin"
+    },
+    {
+      "stream": [
+        "ComponentBodies6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "ComponentBodies6__Header.bin"
+    },
+    {
+      "stream": [
+        "Components6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Components6__Data.bin"
+    },
+    {
+      "stream": [
+        "Components6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Components6__Header.bin"
+    },
+    {
+      "stream": [
+        "Connections6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Connections6__Data.bin"
+    },
+    {
+      "stream": [
+        "Connections6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Connections6__Header.bin"
+    },
+    {
+      "stream": [
+        "ConstraintManager",
+        "Data"
+      ],
+      "bytes": 30,
+      "file": "ConstraintManager__Data.bin"
+    },
+    {
+      "stream": [
+        "ConstraintManager",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "ConstraintManager__Header.bin"
+    },
+    {
+      "stream": [
+        "Coordinates6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Coordinates6__Data.bin"
+    },
+    {
+      "stream": [
+        "Coordinates6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Coordinates6__Header.bin"
+    },
+    {
+      "stream": [
+        "Design Rule Checker Options6",
+        "Data"
+      ],
+      "bytes": 676,
+      "file": "Design_Rule_Checker_Options6__Data.bin"
+    },
+    {
+      "stream": [
+        "Design Rule Checker Options6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Design_Rule_Checker_Options6__Header.bin"
+    },
+    {
+      "stream": [
+        "DifferentialPairs6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "DifferentialPairs6__Data.bin"
+    },
+    {
+      "stream": [
+        "DifferentialPairs6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "DifferentialPairs6__Header.bin"
+    },
+    {
+      "stream": [
+        "Dimensions6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Dimensions6__Data.bin"
+    },
+    {
+      "stream": [
+        "Dimensions6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Dimensions6__Header.bin"
+    },
+    {
+      "stream": [
+        "EmbeddedBoards6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "EmbeddedBoards6__Data.bin"
+    },
+    {
+      "stream": [
+        "EmbeddedBoards6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "EmbeddedBoards6__Header.bin"
+    },
+    {
+      "stream": [
+        "EmbeddedFonts6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "EmbeddedFonts6__Data.bin"
+    },
+    {
+      "stream": [
+        "EmbeddedFonts6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "EmbeddedFonts6__Header.bin"
+    },
+    {
+      "stream": [
+        "Embeddeds6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Embeddeds6__Data.bin"
+    },
+    {
+      "stream": [
+        "Embeddeds6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Embeddeds6__Header.bin"
+    },
+    {
+      "stream": [
+        "ExtendedPrimitiveInformation",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "ExtendedPrimitiveInformation__Data.bin"
+    },
+    {
+      "stream": [
+        "ExtendedPrimitiveInformation",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "ExtendedPrimitiveInformation__Header.bin"
+    },
+    {
+      "stream": [
+        "FileHeader"
+      ],
+      "bytes": 24,
+      "file": "FileHeader.bin"
+    },
+    {
+      "stream": [
+        "FileHeaderSix"
+      ],
+      "bytes": 75,
+      "file": "FileHeaderSix.bin"
+    },
+    {
+      "stream": [
+        "FileVersionInfo",
+        "Data"
+      ],
+      "bytes": 22398,
+      "file": "FileVersionInfo__Data.bin"
+    },
+    {
+      "stream": [
+        "FileVersionInfo",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "FileVersionInfo__Header.bin"
+    },
+    {
+      "stream": [
+        "Fills6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Fills6__Data.bin"
+    },
+    {
+      "stream": [
+        "Fills6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Fills6__Header.bin"
+    },
+    {
+      "stream": [
+        "FromTos6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "FromTos6__Data.bin"
+    },
+    {
+      "stream": [
+        "FromTos6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "FromTos6__Header.bin"
+    },
+    {
+      "stream": [
+        "LayerKindMapping",
+        "Data"
+      ],
+      "bytes": 20,
+      "file": "LayerKindMapping__Data.bin"
+    },
+    {
+      "stream": [
+        "LayerKindMapping",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "LayerKindMapping__Header.bin"
+    },
+    {
+      "stream": [
+        "Models",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Models__Data.bin"
+    },
+    {
+      "stream": [
+        "Models",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Models__Header.bin"
+    },
+    {
+      "stream": [
+        "ModelsNoEmbed",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "ModelsNoEmbed__Data.bin"
+    },
+    {
+      "stream": [
+        "ModelsNoEmbed",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "ModelsNoEmbed__Header.bin"
+    },
+    {
+      "stream": [
+        "Nets6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Nets6__Data.bin"
+    },
+    {
+      "stream": [
+        "Nets6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Nets6__Header.bin"
+    },
+    {
+      "stream": [
+        "PadViaLibrary",
+        "Data"
+      ],
+      "bytes": 131,
+      "file": "PadViaLibrary__Data.bin"
+    },
+    {
+      "stream": [
+        "PadViaLibrary",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "PadViaLibrary__Header.bin"
+    },
+    {
+      "stream": [
+        "PadViaLibraryCache",
+        "Data"
+      ],
+      "bytes": 131,
+      "file": "PadViaLibraryCache__Data.bin"
+    },
+    {
+      "stream": [
+        "PadViaLibraryCache",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "PadViaLibraryCache__Header.bin"
+    },
+    {
+      "stream": [
+        "PadViaLibraryLinks",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "PadViaLibraryLinks__Data.bin"
+    },
+    {
+      "stream": [
+        "PadViaLibraryLinks",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "PadViaLibraryLinks__Header.bin"
+    },
+    {
+      "stream": [
+        "Pads6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Pads6__Data.bin"
+    },
+    {
+      "stream": [
+        "Pads6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Pads6__Header.bin"
+    },
+    {
+      "stream": [
+        "Pin Swap Options6",
+        "Data"
+      ],
+      "bytes": 294,
+      "file": "Pin_Swap_Options6__Data.bin"
+    },
+    {
+      "stream": [
+        "Pin Swap Options6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Pin_Swap_Options6__Header.bin"
+    },
+    {
+      "stream": [
+        "PinPairsSection",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "PinPairsSection__Data.bin"
+    },
+    {
+      "stream": [
+        "PinPairsSection",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "PinPairsSection__Header.bin"
+    },
+    {
+      "stream": [
+        "Polygons6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Polygons6__Data.bin"
+    },
+    {
+      "stream": [
+        "Polygons6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Polygons6__Header.bin"
+    },
+    {
+      "stream": [
+        "PrimitiveGuids",
+        "Data"
+      ],
+      "bytes": 1272,
+      "file": "PrimitiveGuids__Data.bin"
+    },
+    {
+      "stream": [
+        "PrimitiveGuids",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "PrimitiveGuids__Header.bin"
+    },
+    {
+      "stream": [
+        "PrimitiveParameters",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "PrimitiveParameters__Data.bin"
+    },
+    {
+      "stream": [
+        "PrimitiveParameters",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "PrimitiveParameters__Header.bin"
+    },
+    {
+      "stream": [
+        "Regions6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Regions6__Data.bin"
+    },
+    {
+      "stream": [
+        "Regions6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Regions6__Header.bin"
+    },
+    {
+      "stream": [
+        "Rules6",
+        "Data"
+      ],
+      "bytes": 16913,
+      "file": "Rules6__Data.bin"
+    },
+    {
+      "stream": [
+        "Rules6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Rules6__Header.bin"
+    },
+    {
+      "stream": [
+        "ShapeBasedComponentBodies6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "ShapeBasedComponentBodies6__Data.bin"
+    },
+    {
+      "stream": [
+        "ShapeBasedComponentBodies6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "ShapeBasedComponentBodies6__Header.bin"
+    },
+    {
+      "stream": [
+        "ShapeBasedRegions6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "ShapeBasedRegions6__Data.bin"
+    },
+    {
+      "stream": [
+        "ShapeBasedRegions6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "ShapeBasedRegions6__Header.bin"
+    },
+    {
+      "stream": [
+        "SignalClasses",
+        "Data"
+      ],
+      "bytes": 220,
+      "file": "SignalClasses__Data.bin"
+    },
+    {
+      "stream": [
+        "SignalClasses",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "SignalClasses__Header.bin"
+    },
+    {
+      "stream": [
+        "SmartUnions",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "SmartUnions__Data.bin"
+    },
+    {
+      "stream": [
+        "SmartUnions",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "SmartUnions__Header.bin"
+    },
+    {
+      "stream": [
+        "Texts",
+        "Data"
+      ],
+      "bytes": 964,
+      "file": "Texts__Data.bin"
+    },
+    {
+      "stream": [
+        "Texts",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Texts__Header.bin"
+    },
+    {
+      "stream": [
+        "Texts6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Texts6__Data.bin"
+    },
+    {
+      "stream": [
+        "Texts6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Texts6__Header.bin"
+    },
+    {
+      "stream": [
+        "Textures",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Textures__Data.bin"
+    },
+    {
+      "stream": [
+        "Textures",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Textures__Header.bin"
+    },
+    {
+      "stream": [
+        "Tracks6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Tracks6__Data.bin"
+    },
+    {
+      "stream": [
+        "Tracks6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Tracks6__Header.bin"
+    },
+    {
+      "stream": [
+        "UnionNames",
+        "Data"
+      ],
+      "bytes": 4,
+      "file": "UnionNames__Data.bin"
+    },
+    {
+      "stream": [
+        "UnionNames",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "UnionNames__Header.bin"
+    },
+    {
+      "stream": [
+        "UniqueIDPrimitiveInformation",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "UniqueIDPrimitiveInformation__Data.bin"
+    },
+    {
+      "stream": [
+        "UniqueIDPrimitiveInformation",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "UniqueIDPrimitiveInformation__Header.bin"
+    },
+    {
+      "stream": [
+        "Vias6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "Vias6__Data.bin"
+    },
+    {
+      "stream": [
+        "Vias6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "Vias6__Header.bin"
+    },
+    {
+      "stream": [
+        "WaivedViolations",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "WaivedViolations__Data.bin"
+    },
+    {
+      "stream": [
+        "WaivedViolations",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "WaivedViolations__Header.bin"
+    },
+    {
+      "stream": [
+        "WideStrings6",
+        "Data"
+      ],
+      "bytes": 0,
+      "file": "WideStrings6__Data.bin"
+    },
+    {
+      "stream": [
+        "WideStrings6",
+        "Header"
+      ],
+      "bytes": 4,
+      "file": "WideStrings6__Header.bin"
+    }
+  ],
+  "Sheet1.SchDoc": [
+    {
+      "stream": [
+        "Additional"
+      ],
+      "bytes": 75,
+      "file": "Additional.bin"
+    },
+    {
+      "stream": [
+        "FileHeader"
+      ],
+      "bytes": 10466,
+      "file": "FileHeader.bin"
+    },
+    {
+      "stream": [
+        "Storage"
+      ],
+      "bytes": 25,
+      "file": "Storage.bin"
+    }
+  ]
+}

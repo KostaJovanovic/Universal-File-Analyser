@@ -1149,6 +1149,89 @@ body.anr-has-file .nav-search { display: flex; }
   color: var(--muted);
   text-align: center;
 }
+/* Show/hide controls bar that sits ABOVE the viewer (line-type legend + CNC tool
+   picker), so "what is drawn" reads before the canvas. Same row rhythm as the
+   toolbar below; its own rows drop their stock margins. */
+.anr-gcode-showbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.anr-gcode-showbar .anr-gcode-toolrow,
+.anr-gcode-showbar .anr-gcode-legend { margin: 0; align-items: center; }
+
+/* Fullscreen toggle overlaid in the viewer's bottom-right corner (the view cube
+   sits bottom-left). */
+.anr-gcode-fsbtn {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 8;   /* above the toolbar overlay that pins along the bottom in fullscreen */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* Colour panel, overlaid top-right of the viewer: the colour-mode selector with the
+   legend / key for the active mode directly beneath it. The canvas always clears to a
+   dark grey, so the legend is dark-translucent with light text in either theme. */
+.anr-gcode-colpanel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 60%;
+}
+/* Colour selector - ~7% wider than the stock select for breathing room. */
+.anr-gcode-colsel { cursor: pointer; padding-left: 22px; padding-right: 34px; }
+
+/* Top-left overlay slot (Quality popup). The viewport clips overflow, so the popup
+   opens downward here rather than the stock upward direction, and sits above the
+   bottom-left view cube (z-index 3) so when they meet the popup overlaps the cube. */
+.anr-gcode-topleft { position: absolute; top: 12px; left: 12px; z-index: 6; }
+.anr-gcode-topleft .anr-aa-panel { top: calc(100% + 6px); bottom: auto; z-index: 6; }
+.anr-gcode-legendbody {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px 10px;
+  background: rgba(18, 18, 22, 0.66);
+  border: var(--bd-hairline);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  font-family: var(--font-mono);
+  color: #f4f4f6;
+  pointer-events: none;
+}
+.anr-gcode-legendbody:empty { display: none; }
+.anr-gcode-key-row { display: flex; align-items: center; gap: 8px; }
+.anr-gcode-key-label { font-size: var(--t-tiny); white-space: nowrap; }
+.anr-gcode-ramp { display: flex; flex-direction: column; gap: 6px; }
+.anr-gcode-ramp-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  opacity: 0.82;
+}
+.anr-gcode-ramp-body { display: flex; gap: 8px; align-items: stretch; }
+.anr-gcode-ramp-bar {
+  width: 12px;
+  height: 96px;
+  background: linear-gradient(to top,
+    rgb(46, 82, 235) 0%, rgb(26, 204, 219) 25%, rgb(56, 209, 77) 50%,
+    rgb(247, 204, 51) 75%, rgb(245, 66, 51) 100%);
+}
+.anr-gcode-ramp-scale {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: var(--t-tiny);
+  white-space: nowrap;
+}
+
 .anr-gcode-toolbar {
   margin-top: 12px;
   padding-top: 14px;
@@ -1162,6 +1245,37 @@ body.anr-has-file .nav-search { display: flex; }
 .anr-gcode-toolbar .anr-gcode-toolrow,
 .anr-gcode-toolbar .anr-gcode-legend { margin: 0; align-items: center; }
 .anr-gcode-toolbar .anr-spd-warn { margin: 0; }
+/* Fullscreen: the toolbar is reparented into the viewer and pinned along the bottom as a
+   scrollable, blurred overlay so every control (view buttons, sliders, playback, quality)
+   stays reachable without leaving fullscreen. Right padding clears the Exit button. */
+.anr-gcode-toolbar--fs {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  margin: 0;
+  padding: 12px 132px 12px 16px;
+  border-top: var(--bd-hairline);
+  /* Solid (no backdrop-filter): a filter would make this the containing block for the
+     position:fixed popups below and re-clip them inside this scroll box. */
+  background: rgba(12, 12, 16, 0.95);
+  max-height: 48%;
+  overflow-y: auto;
+}
+/* Speed popup while open in fullscreen: reparented onto the viewer wrap (see gcode.js) and
+   pinned as a centred overlay above everything - canvas, view cube, toolbar, Exit button. */
+.anr-spd-panel.anr-spd-panel--fs {
+  position: absolute;
+  left: 50%;
+  right: auto;
+  bottom: 92px;
+  top: auto;
+  transform: translateX(-50%);
+  max-height: 72vh;
+  overflow-y: auto;
+  z-index: 90;
+}
 /* The label that fronts every toggle/slider row. A shared min-width lines the row
    contents up down the left edge so the panel scans cleanly. */
 .anr-gcode-rowlabel {
@@ -1259,7 +1373,7 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: 8px;
 }
 .anr-aa-panel.is-hidden { display: none; }
 .anr-aa-title {
@@ -1269,17 +1383,12 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   text-transform: uppercase;
   color: var(--muted);
 }
-.anr-aa-row {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  column-gap: 8px;
-  align-items: start;
-  cursor: pointer;
-  font-size: var(--t-small);
-}
-.anr-aa-row input { margin: 2px 0 0; accent-color: var(--accent); cursor: pointer; }
-.anr-aa-label { font-weight: 500; }
-.anr-aa-desc { grid-column: 2; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.3; }
+/* Quality settings are site-style buttons stacked in the panel: full width, left-aligned,
+   border lights red (.is-on) when the setting is active, grey when off. No descriptions. */
+.anr-aa-btn { width: 100%; text-align: left; }
+.anr-aa-btn:hover { background: rgba(var(--accent-rgb), 0.06); color: var(--fg); }
+.anr-aa-btn.is-on { border-color: var(--accent); color: var(--accent); }
+.anr-aa-btn.is-on:hover { background: rgba(var(--accent-rgb), 0.10); color: var(--accent); }
 
 /* Playback-speed popup - two columns of presets (lines/s and total length) plus a
    custom field. Shares the .anr-aa-panel chrome; just wider with its own layout. */
@@ -4375,6 +4484,59 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 }
 /* "Import XMP settings" button under the thumbnail (RAW files only). */
 .anr-raw-xmp-import { margin-top: 8px; text-align: center; }
+
+/* Dotenv secrets warning - the loud red "never share this" banner prepended
+   above a .env file's analysis. Accent red with a heavy left rule and a soft
+   accent glow so it can't be missed. */
+.anr-env-warning {
+  margin: 0 0 22px;
+  padding: 16px 18px 16px 20px;
+  border: var(--bd-hairline);
+  border-color: var(--accent);
+  border-left-width: 4px;
+  background: rgba(var(--accent-rgb), 0.06);
+  box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.18), 0 6px 24px rgba(var(--accent-rgb), 0.14);
+}
+.anr-env-warning-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: var(--t-h3);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.anr-env-warning-title::before {
+  content: "!";
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+}
+.anr-env-warning-body {
+  margin: 10px 0 0;
+  font-family: var(--font-sans);
+  font-size: var(--t-small);
+  line-height: var(--lh-prose);
+  color: var(--fg);
+}
+.anr-env-warning-body code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 1px 5px;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+  word-break: break-all;
+}
 
 /* On smaller viewports, meta column already drops below section-content; reorder so
    the preview thumb stays compact and the OCR/histogram sit clearly below it */

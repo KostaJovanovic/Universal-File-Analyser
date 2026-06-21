@@ -287,10 +287,10 @@ async function render3mf(file, resultsEl) {
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3MF "${file.name}"…`));
 
-  let files, mainText, model;
+  let files, mainText, model, ffl, data;
   try {
-    const ffl = await fflate();
-    const data = new Uint8Array(await file.arrayBuffer());
+    ffl = await fflate();
+    data = new Uint8Array(await file.arrayBuffer());
     const unzipped = ffl.unzipSync(data, { filter: (f) => /\.model$/i.test(f.name) });
     files = new Map();
     const dec = new TextDecoder('utf-8');
@@ -333,10 +333,67 @@ async function render3mf(file, resultsEl) {
   mt.appendChild(sha256Row(file));
   metaCard.appendChild(mt);
 
+  // A 3MF with no build items / mesh objects (e.g. a slicer project that only carries
+  // sliced G-code and settings) has nothing to show in the mesh viewer. Rather than a
+  // bare "no models" error, offer to open any embedded G-code and still let the user
+  // browse the archive.
+  if (!parts.length) { await render3mfNoModel(file, resultsEl, ffl, data, metaCard); return; }
+
   renderPartsViewer(file, resultsEl, {
     metaCard, parts, format: '3MF mesh',
     unitLabel: model.unit === 'millimeter' ? 'mm' : (model.unit || 'units')
   });
+}
+
+// No-mesh 3MF: red warning, then (if the archive carries a sliced G-code file, as
+// Bambu/Prusa project 3MFs do) a button to reconstruct it in the G-code viewer, then
+// the document metadata and a full archive browser below.
+async function render3mfNoModel(file, resultsEl, ffl, data, metaCard) {
+  resultsEl.innerHTML = '';
+  resultsEl.appendChild(errorCard('No 3D models found in this 3MF file.'));
+
+  // Scan the archive for embedded G-code and offer to open each one. A multi-plate
+  // 3MF (e.g. Bambu Studio projects) carries one sliced toolpath per plate
+  // (Metadata/plate_1.gcode, plate_2.gcode, ...), so list them all - sorted in
+  // natural plate order - not just the largest.
+  let gcodes = [];
+  try {
+    const gz = ffl.unzipSync(data, { filter: (f) => /\.gco(de)?$/i.test(f.name) });
+    gcodes = Object.keys(gz).filter((k) => gz[k] && gz[k].length)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+      .map((k) => ({ name: k, short: k.split('/').pop(), bytes: gz[k] }));
+  } catch (_) { /* no readable g-code inside */ }
+
+  if (gcodes.length) {
+    const multi = gcodes.length > 1;
+    const card = el('div', { class: 'anr-card' });
+    card.appendChild(el('h3', {}, multi ? `Embedded G-code found (${gcodes.length} plates)` : 'Embedded G-code found'));
+    card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' }, multi
+      ? `This 3MF carries ${gcodes.length} sliced G-code plates. Open one to reconstruct and analyse that plate's print.`
+      : `This 3MF carries a sliced G-code file (${gcodes[0].short}). Open it to reconstruct and analyse the print.`));
+    const host = el('div', {});
+    const btnRow = el('div', { class: 'anr-btn-row', style: 'margin:0 0 10px;flex-wrap:wrap;gap:8px;' });
+    for (const g of gcodes) {
+      const btn = el('button', { type: 'button', class: 'anr-btn' }, 'Open ' + g.short);
+      btn.addEventListener('click', async () => {
+        for (const b of btnRow.children) b.disabled = false;   // let the user switch plates
+        btn.disabled = true;
+        host.innerHTML = '';
+        const gfile = new File([g.bytes], g.short, { type: 'text/plain' });
+        const { renderGcode } = await import('./gcode.js');
+        await renderGcode(gfile, host);
+      });
+      btnRow.appendChild(btn);
+    }
+    card.appendChild(btnRow);
+    card.appendChild(host);
+    resultsEl.appendChild(card);
+  }
+
+  // Keep the document metadata and the archive browser visible under all of the above.
+  if (metaCard) resultsEl.appendChild(metaCard);
+  const { renderArchiveEmbedded } = await import('./archive.js');
+  await renderArchiveEmbedded(file, resultsEl, { mode: 'zip', label: '3MF' });
 }
 
 /* ================================== AMF ===================================== */

@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 159;
+const COMMIT_COUNT = 160;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -436,6 +436,9 @@ function classifyFile(file) {
   if (ext === 'sln' || ext === 'slnx') return 'vssolution';
   // MonoDevelop / Unity user prefs are XML - show them in the markup viewer.
   if (ext === 'userprefs') return 'markup';
+  // 3MF / OOXML package sidecars (e.g. Bambu / slicer 3MF bundles): the OPC
+  // relationship XML (.rels) and the MD5 checksum text (.md5) - shown as source.
+  if (ext === 'rels' || ext === 'md5') return 'markup';
   // Gyroflow IMU log: plot the gyroscope / accelerometer traces.
   if (ext === 'gcsv') return 'gcsv';
   // Apple iWork packages: render the embedded QuickLook preview (PDF or image).
@@ -492,6 +495,33 @@ function classifyFile(file) {
   // extensionless PDF / PNG / git object opens as itself or offers a re-open.
   if (!ext) return 'extensionless';
   return 'unknown';
+}
+
+// A dotenv secrets file: `.env` or any `.env.<environment>` sibling
+// (.env.local, .env.production, …). These routinely hold API keys, database
+// passwords and access tokens in plaintext, so we flag them with a loud "never
+// share this" warning. The example/template/sample siblings are meant to be
+// committed and carry no real secrets, so they're deliberately excluded.
+function isEnvFile(name) {
+  const n = (name || '').toLowerCase().replace(/^.*[\\/]/, '');   // basename
+  if (!/^\.env(\.|$)/.test(n)) return false;
+  return !/\.(example|sample|template|dist|defaults?)$/.test(n);
+}
+
+// The red "never share this" banner shown above a dotenv file's analysis.
+function envSecretWarning(file) {
+  const box = el('div', { class: 'anr-env-warning', role: 'alert' });
+  box.appendChild(el('div', { class: 'anr-env-warning-title' }, 'Never share this file with anyone, ever'));
+  box.appendChild(el('p', { class: 'anr-env-warning-body' }, [
+    'This looks like a ',
+    el('code', {}, file.name || '.env'),
+    ' secrets file. It typically stores API keys, database passwords and access ' +
+    'tokens in plaintext. Do not post it in chat, email, screenshots, an issue or ' +
+    'a public repo - anyone who gets it can impersonate you and take over your ' +
+    'accounts and services. If this file has already been shared, rotate every ' +
+    'secret inside it now.',
+  ]));
+  return box;
 }
 
 // kind → how to route it. `results` names the container (the three media kinds
@@ -1810,6 +1840,12 @@ function boot() {
       }
       if (_currentToken !== token) { stopScrollWatch(); return; }   // superseded
       hideDropLoader();
+      // Loud, unmissable warning for dotenv secrets files - prepended above the
+      // analysis so it's the first thing seen, whatever the renderer produced.
+      if (resultEl && isEnvFile(file.name)) {
+        resultEl.hidden = false;
+        resultEl.insertBefore(envSecretWarning(file), resultEl.firstChild);
+      }
       // Everything above the media section (the Photo/Sound "Analyse" cards) and
       // its player are in place now, so re-assert the scroll - the early one
       // landed too high before they pushed it down. Two rAFs let the final layout
