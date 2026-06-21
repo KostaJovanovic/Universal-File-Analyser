@@ -1,0 +1,4 @@
+[raw binary, 964 bytes, strings dump]
+ZThis is a version 6.0 file and cannot be read correctly into this version of the software.
++Close this file immediately without saving.
+-Saving this file will result in loss of data.
