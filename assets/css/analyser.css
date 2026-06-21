@@ -455,10 +455,45 @@ button.nav-link {
    these literals ARE the contract): 420px = small phone, 700px = phone, 900px =
    tablet / single-column. Header and sections both collapse at 900px. */
 @media (max-width: 900px) {
-  .site-mark { grid-column: 1 / -1; }
-  .site-byline { margin-top: -4px; }
-  .site-meta { grid-column: 1 / -1; margin-top: 24px; }
-  .site-meta dl { grid-template-columns: 100px 1fr; }
+  /* MOBILE / TABLET ONLY (<=900px). Restructure the header into a 5-column grid
+     and reorder it: the version moves up onto the kicker (red text) row, top-right;
+     then title, byline; then the remaining meta in two clusters (Visitors / Status
+     left, Other stuff / Dark mode right); then the description; then the buttons.
+     display:contents on BOTH .site-mark and its .site-meta > dl frees every leaf
+     (kicker, title, byline, sub, nav AND each meta dt/dd) to be placed directly in
+     this header grid, so they can interleave regardless of DOM nesting. Columns:
+     [left label][left value][flex gap][right label][right value]. Every page's
+     header shares this exact structure, so the fixed placements are safe. */
+  .site-header .grid {
+    display: grid;
+    grid-template-columns: auto auto 1fr auto auto;
+    column-gap: 10px;
+    row-gap: 0;
+    align-items: start;
+  }
+  .site-mark { display: contents; }
+  .site-meta { display: contents; }
+  .site-meta dl { display: contents; }
+
+  .site-kicker { grid-column: 1; grid-row: 1; }
+  .site-title  { grid-column: 1 / -1; grid-row: 2; }
+  .site-byline { grid-column: 1 / -1; grid-row: 3; margin-top: -4px; }
+  .site-sub    { grid-column: 1 / -1; grid-row: 6; margin-top: 16px; }
+  .site-mark-nav { grid-column: 1 / -1; grid-row: 7; margin-top: 20px; }
+
+  /* Status (dt/dd = children 5-6) sits on the kicker row, top-right. */
+  .site-meta dl > :nth-child(5) { grid-column: 4; grid-row: 1; }
+  .site-meta dl > :nth-child(6) { grid-column: 5; grid-row: 1; }
+  /* Version (1-2) and Visitors (3-4) form the left cluster, rows 4-5. */
+  .site-meta dl > :nth-child(1) { grid-column: 1; grid-row: 4; margin-top: 16px; }
+  .site-meta dl > :nth-child(2) { grid-column: 2; grid-row: 4; margin-top: 16px; }
+  .site-meta dl > :nth-child(3) { grid-column: 1; grid-row: 5; margin-top: 4px; }
+  .site-meta dl > :nth-child(4) { grid-column: 2; grid-row: 5; margin-top: 4px; }
+  /* Other stuff (7-8) and Dark mode (9-10) form the right cluster, rows 4-5. */
+  .site-meta dl > :nth-child(7) { grid-column: 4; grid-row: 4; margin-top: 16px; }
+  .site-meta dl > :nth-child(8) { grid-column: 5; grid-row: 4; margin-top: 16px; }
+  .site-meta dl > :nth-child(9) { grid-column: 4; grid-row: 5; margin-top: 4px; }
+  .site-meta dl > :nth-child(10) { grid-column: 5; grid-row: 5; margin-top: 4px; }
 }
 
 /* ---------- NAV ---------- */
