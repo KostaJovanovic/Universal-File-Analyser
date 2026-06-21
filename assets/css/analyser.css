@@ -484,14 +484,15 @@ button.nav-link {
   /* Status (dt/dd = children 5-6) sits on the kicker row, top-right. */
   .site-meta dl > :nth-child(5) { grid-column: 4; grid-row: 1; }
   .site-meta dl > :nth-child(6) { grid-column: 5; grid-row: 1; }
-  /* Version (1-2) and Visitors (3-4) form the left cluster, rows 4-5. */
-  .site-meta dl > :nth-child(1) { grid-column: 1; grid-row: 4; margin-top: 16px; }
-  .site-meta dl > :nth-child(2) { grid-column: 2; grid-row: 4; margin-top: 16px; }
+  /* Version (1-2) and Visitors (3-4) form the left cluster, rows 4-5. The row-4
+     margin-top is the gap between the title/byline block above and the meta. */
+  .site-meta dl > :nth-child(1) { grid-column: 1; grid-row: 4; margin-top: 32px; }
+  .site-meta dl > :nth-child(2) { grid-column: 2; grid-row: 4; margin-top: 32px; }
   .site-meta dl > :nth-child(3) { grid-column: 1; grid-row: 5; margin-top: 4px; }
   .site-meta dl > :nth-child(4) { grid-column: 2; grid-row: 5; margin-top: 4px; }
   /* Other stuff (7-8) and Dark mode (9-10) form the right cluster, rows 4-5. */
-  .site-meta dl > :nth-child(7) { grid-column: 4; grid-row: 4; margin-top: 16px; }
-  .site-meta dl > :nth-child(8) { grid-column: 5; grid-row: 4; margin-top: 16px; }
+  .site-meta dl > :nth-child(7) { grid-column: 4; grid-row: 4; margin-top: 32px; }
+  .site-meta dl > :nth-child(8) { grid-column: 5; grid-row: 4; margin-top: 32px; }
   .site-meta dl > :nth-child(9) { grid-column: 4; grid-row: 5; margin-top: 4px; }
   .site-meta dl > :nth-child(10) { grid-column: 5; grid-row: 5; margin-top: 4px; }
 }
