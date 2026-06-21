@@ -1156,9 +1156,10 @@ export async function renderGcode(file, resultsEl, opts) {
 
   if (data.segCount > 0) {
     // "Show full anyway" lifts the segment cap, so the geometry can be many millions of
-    // beads. Disable the heavy quality settings (MSAA, supersampling, min line width,
-    // translucent travel) and keep only the cheap "Flatten distant beads", so the
-    // uncapped render stays viewable instead of choking on antialiasing passes.
+    // beads. Start with the heavy quality settings (MSAA, supersampling, min line width,
+    // translucent travel) turned OFF so the uncapped render stays viewable instead of
+    // choking on antialiasing passes - but leave the buttons enabled so they can be
+    // switched back on deliberately.
     const uncapped = !!(opts && opts.uncapped);
     const viewCard = el('div', { class: 'anr-card' });
     viewCard.appendChild(el('h3', {}, isPrint ? 'Reconstructed print' : 'Toolpath'));
@@ -1214,31 +1215,31 @@ export async function renderGcode(file, resultsEl, opts) {
       qPanel.appendChild(el('div', { class: 'anr-aa-title' }, 'Quality'));
       // Each setting is a site-style button whose border lights red (.is-on) when active,
       // grey when off - no descriptions, just the toggle. The label carries the state.
-      const aaBtn = (label, get, set, locked) => {
+      const aaBtn = (label, get, set) => {
         const btn = el('button', { type: 'button', class: 'anr-btn anr-aa-btn' }, label);
         const sync = () => btn.classList.toggle('is-on', !!get());
-        sync(); if (locked) btn.disabled = true;
+        sync();
         btn.addEventListener('click', () => { set(!get()); sync(); });
         qPanel.appendChild(btn);
         return btn;
       };
       // Multi-stage button: cycles through its choices on each click (off = the first
       // choice). Label shows the current stage; border lights red whenever it is not off.
-      const aaCycleBtn = (label, choices, get, set, locked) => {
+      const aaCycleBtn = (label, choices, get, set) => {
         const btn = el('button', { type: 'button', class: 'anr-btn anr-aa-btn' });
         const sync = () => { const c = choices.find((o) => o.v === get()) || choices[0]; btn.textContent = label + ': ' + c.label; btn.classList.toggle('is-on', get() !== choices[0].v); };
-        sync(); if (locked) btn.disabled = true;
+        sync();
         btn.addEventListener('click', () => { const i = choices.findIndex((o) => o.v === get()); set(choices[(i + 1) % choices.length].v); sync(); });
         qPanel.appendChild(btn);
         return btn;
       };
-      aaBtn('Hardware MSAA', () => viewer.state.msaa, (v) => applyMSAA(v), uncapped);
-      aaBtn('Supersampling', () => viewer.state.ssaa, (v) => { viewer.state.ssaa = v; viewer.resize(); viewer.markDirty(); }, uncapped);
+      aaBtn('Hardware MSAA', () => viewer.state.msaa, (v) => applyMSAA(v));
+      aaBtn('Supersampling', () => viewer.state.ssaa, (v) => { viewer.state.ssaa = v; viewer.resize(); viewer.markDirty(); });
       aaCycleBtn('Minimum line width',
         [{ v: 'none', label: 'None' }, { v: 'travel', label: 'Travel lines' }, { v: 'all', label: 'All' }],
-        () => viewer.state.minWidth, (v) => { viewer.state.minWidth = v; viewer.markDirty(); }, uncapped);
+        () => viewer.state.minWidth, (v) => { viewer.state.minWidth = v; viewer.markDirty(); });
       aaBtn('Flatten distant beads', () => viewer.state.flatten, (v) => { viewer.state.flatten = v; viewer.markDirty(); });
-      aaBtn('Translucent travel lines', () => viewer.state.translucentTravel, (v) => { viewer.state.translucentTravel = v; viewer.markDirty(); }, uncapped);
+      aaBtn('Translucent travel lines', () => viewer.state.translucentTravel, (v) => { viewer.state.translucentTravel = v; viewer.markDirty(); });
       qBtn.addEventListener('click', (e) => { e.stopPropagation(); qPanel.classList.toggle('is-hidden'); });
       document.addEventListener('click', (e) => { if (!qWrap.contains(e.target)) qPanel.classList.add('is-hidden'); });
       qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
