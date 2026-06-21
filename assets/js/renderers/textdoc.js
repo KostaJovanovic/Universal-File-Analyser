@@ -27,6 +27,7 @@ const LABELS = {
   latex: 'LaTeX source', ltx: 'LaTeX source', sty: 'LaTeX style', cls: 'LaTeX class',
   bib: 'BibTeX bibliography',
   mod: 'Go module file',
+  rels: 'OPC relationships (XML)', md5: 'MD5 checksum',
 };
 
 const MONO_KINDS = new Set(['dita', 'ditamap', 'tei', 'jats', 'nxml', 'rst', 'adoc', 'asciidoc', 'org', 'textile', 'tex', 'latex', 'ltx', 'sty', 'cls', 'bib']);

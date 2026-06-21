@@ -264,12 +264,23 @@ If you add new window-level event listeners, put them inside the `if (!boot._onc
 index.html          — main page (the drop/analyse app)
 about.html          — about/info page (format tables, #ext-/#fmt- anchors)
 patch.html          — public changelog (one .patch-entry per commit)
+privacy.html        — privacy page (single-sourced footer)
+stats.html          — public analytics page (reads the Worker's stats API)
+atari.html          — Asteroids easter-egg game page (loads assets/js/games/)
 formats.html        — generated /formats hub (see Generated SEO pages)
 formats/            — generated /formats/<ext> pages (wiped + rebuilt per commit)
 tools/              — Node generator scripts (dev-only, in .assetsignore)
+worker/             — Cloudflare Worker: anonymous analysed-count stats API
+                      (index.js + schema.sql + disperse-unsupported.sql). The only
+                      server-side code; the analyser itself stays browser-only.
 README.md           — public GitHub readme (visitor-facing overview; this
                       file is the real working guidance)
 sw.js               — service worker (precache SHELL + cache epoch VERSION)
+manifest.json       — PWA manifest (format count stamped by stamp-counts.mjs)
+robots.txt          — points crawlers at sitemap.xml + sitemap-formats.xml
+sitemap.xml         — main sitemap (lastmod refreshed by stamp-counts.mjs)
+sitemap-formats.xml — per-format-page sitemap (written by prerender-format-pages.mjs)
+llms.txt            — machine-readable site summary for LLM crawlers
 serve.py            — local dev server mirroring Cloudflare clean-URL routing
 server.bat          — launch serve.py on :3000 (opens browser)
 save.bat            — commit + version bump + push (the only way to commit)
@@ -283,27 +294,49 @@ assets/
   vendor/           — third-party libraries (exifr, ffmpeg, imagemagick, ...)
   js/
     core/
-      app.js        — entry point, file classification, boot()
-      formats.js    — central format catalog (sets + display tables + renderers)
+      app.js        — entry point, file classification (classifyFile/ROUTES),
+                      handleFile pipeline, boot()
+      formats.js    — central format catalog (sets + display tables + catalogGrouped())
       search.js     — metadata search
       navigate.js   — SPA router (View Transitions API)
-      util.js       — shared DOM helpers and formatters
+      effects.js    — page atmosphere/glow/transition effects
+      popups.js     — modal, suggestion + share-nudge popups
+      export-data.js — "export analysis data" (JSON/hash) builder
+      video-sync.js — shared video↔analysis scrubbing/sync helpers
+      util.js       — shared DOM helpers (el, fileExt, …) and formatters
       binutil.js    — shared binary toolkit (cursor reader, decoders, magic)
-    renderers/      — one module per top-level type:
-      photo.js      — photo analysis (EXIF, histogram, OCR, etc.) (+ photo-convert.js)
-      audio.js / audio-analysis.js / audio-codec.js / audio-player.js
-      video.js / video-avi.js / spectrogram.js
-      pdf.js · archive.js · svg.js · csv.js · markdown.js · comic.js · geo.js
-      docx.js · xlsx.js · epub.js · pptx.js · zip.js · folder.js
-      stl.js · model3d.js — 3D viewers (STL; OBJ/PLY/STEP/3MF and friends)
-      timeline.js · midi.js · subtitles.js · lrc.js — EDL/FCPXML/OTIO, MIDI, SRT/VTT/ASS, lyrics
-      treemap.js · folder-archive-shared.js — shared folder/ZIP breakdown visualisation
-      unknown.js    — hex dump and basic identification
-      proprietary.js — 200+ format identification by magic bytes (lazy chunk dispatch)
+    renderers/      — one module per top-level type (classifyFile() routes to these
+                      via ROUTES in app.js). Inventory by domain:
+      photo.js · photo-convert.js · tiff.js · mpo.js · ico · embedded-images.js
+        — photo analysis (EXIF, histogram, OCR), HEIC/RAW conversion, multi-image
+      audio.js · audio-analysis.js · audio-codec.js · audio-player.js · spectrogram.js
+        · media-reverse.js — audio playback, codec/loudness analysis, spectrogram
+      video.js · video-avi.js — video player + per-frame/stream analysis
+      pdf.js · paged.js · djvu.js — PDF (pdf.js), paginated docs, DjVu scans
+      docx.js · xlsx.js · xlsb.js · pptx.js · odf.js · legacy-office.js · textdoc.js
+        · iwork.js · epub.js · mobi.js · mdb.js · notebook.js · markdown.js
+        — office/document/e-book/notebook viewers
+      svg.js · illustrator.js · psd.js · paint.js · diagram.js · lut.js · font.js
+        — vector/raster design files, colour LUTs, font specimens
+      stl.js · model3d.js · gcode.js · unity.js — 3D viewers + G-code toolpath + Unity assets
+      dwg.js · model3d.js — CAD (DWG 2D drawing; STEP/IGES/BREP via OpenCASCADE)
+      aftereffects.js · premiere.js · davinci.js · vegas.js · sony-rtmd.js · timeline.js
+        — NLE/VFX project files (AE/Premiere/Resolve/VEGAS) + EDL/FCPXML/OTIO timelines
+      midi.js · subtitles.js · lrc.js — MIDI score, SRT/VTT/ASS subs, LRC lyrics
+      csv.js · gcsv.js · dataview.js · gitobject.js · email.js — tabular/IMU/data/git/email
+      gif-encode.js · gif-frames.js · webp-frames.js — animated-image frame tooling
+      archive.js · zip.js · folder.js · treemap.js · folder-archive-shared.js · comic.js
+        — archive/folder browsing + treemap breakdown + comic (CBZ/CBR) reader
+      vssolution.js · geo.js — VS solution manifests, GPX/KML/GeoJSON maps
+      unknown.js    — hex dump and basic identification (the 'unknown' fallback)
+      proprietary.js — 200+ format identification by magic bytes (lazy chunk dispatch);
+                      proprietary-formats.js holds the large FORMATS reference table
     parsers/        — parsers-<domain>.js, lazy metadata parser chunks dispatched
                       by proprietary.js (audio, video, image, raw, docs, dev,
                       archive, gaming, threed, geodata, sci, security, email,
-                      disk, osmisc)
-    lib/            — plist · cfbf · sqlite · *-loader (shared binary + WASM
-                      loader helpers: libarchive, xz, occt, ghostscript, openjpeg)
+                      disk, osmisc) + parser-util.js shared helpers
+    lib/            — shared binary + WASM loader helpers: plist · cfbf · nrbf ·
+                      sqlite · sevenzip · legacy-decompress · *-loader (libarchive,
+                      xz, lzma, occt, ghostscript, openjpeg)
+    games/          — Asteroids easter-egg game (loaded by atari.html only)
 ```

@@ -23,8 +23,14 @@
 
 import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube } from '../core/util.js';
 
-const SEG_CAP = 1300000;          // cap on rendered extrusion/feed segments
-const TRAVEL_CAP = 400000;
+// Rendered-segment caps, scaled to the device's RAM so arc-heavy / multi-day prints
+// (millions of tessellated segments) fill in on a capable desktop without OOM-crashing
+// low-memory or mobile devices. navigator.deviceMemory is GB, browser-clamped to 8 at the
+// top and 0.25 at the bottom; absent (Safari/Firefox don't expose it) -> assume mid-range.
+// Each extrusion segment costs ~40B (CPU) + ~44B (instance) + ~44B (GPU), so 6M ~= 0.8GB.
+const DEVICE_GB = (typeof navigator !== 'undefined' && navigator.deviceMemory) || 4;
+const SEG_CAP = DEVICE_GB >= 8 ? 6000000 : DEVICE_GB >= 4 ? 3000000 : 1300000;
+const TRAVEL_CAP = DEVICE_GB >= 8 ? 2000000 : DEVICE_GB >= 4 ? 1000000 : 400000;
 const ARC_TOL = 0.02;             // arc chord tolerance (mm)
 const ARC_MIN_STEPS = 2, ARC_MAX_STEPS = 256;
 const DEF_DIA = 1.75;             // default filament diameter (mm)
@@ -73,13 +79,36 @@ function GrowBuf(stride) {
 }
 
 // ---------- G-code parsing ----------
-function parseGcode(text) {
+function parseGcode(text, opts) {
   const len = text.length;
   if (!len) return null;
+  // Normally the rendered geometry is capped (see SEG_CAP); the "Show full anyway"
+  // button re-parses with the cap lifted so even a multi-million-segment print draws whole.
+  const segCap = opts && opts.uncapped ? Infinity : SEG_CAP;
+  const travCap = opts && opts.uncapped ? Infinity : TRAVEL_CAP;
+  // FDM prints emit travels as G1-without-E (not only G0) and do a lot of priming /
+  // positioning travel *before* the first extrusion. Those leading moves are real
+  // travels, but `sawExtrude` is still false then, so without an up-front print signal
+  // they misroute to emitFeed and get drawn as zero-width (invisible) segments. A
+  // set-hotend-temp (M104/M109) sits in every print's header and never in a CNC / laser
+  // job, so it tells us early that non-extruding moves are travels. .test() short-circuits
+  // on the first match (in the header), so this stays cheap even on huge files.
+  const looksLikePrint = /\bM10[49]\b/.test(text);
 
   // ext record (10 floats): ax,ay,az, bx,by,bz, width, height, feed, type.
-  // trav record (6 floats): ax,ay,az, bx,by,bz.
-  const ext = GrowBuf(10), trav = GrowBuf(6);
+  // trav record (7 floats): ax,ay,az, bx,by,bz, feed (feed lets playback time travels).
+  // order record (1 float): 0 = the next ext segment, 1 = the next travel - the true
+  // print order of every *buffered* move, so playback can replay extrusions and travels
+  // interleaved exactly as the machine runs them.
+  const ext = GrowBuf(10), trav = GrowBuf(7), order = GrowBuf(1), segFil = GrowBuf(1);
+
+  // Multicolour / multi-material: the active filament index (set by T<n> tool selects
+  // and bumped by M600 colour changes), recorded per extrusion segment so "colour by
+  // filament" can paint each move in its filament's colour. filamentColors comes from
+  // the slicer config block (; filament_colour = #RRGGBB;#RRGGBB;...).
+  let curFil = 0, maxFil = 0;
+  const filUsed = new Set();
+  let filColRaw = '', extColRaw = '';
 
   let absXYZ = true, absE = true, unit = 1, plane = 17;
   let motionMode = null;            // last G0-G3 motion, for modal (G-word-less) lines
@@ -141,8 +170,8 @@ function parseGcode(text) {
     }
     const h = forcedH > 0 ? forcedH : curH;
     const w = widthOf(de, L, h);
-    if (ext.count < SEG_CAP) ext.push([x0, y0, z0, x1, y1, z1, w, h, feed, curType]);
-    nExtrude++; sawExtrude = true; featureSet.add(curType);
+    if (ext.count < segCap) { ext.push([x0, y0, z0, x1, y1, z1, w, h, feed, curType]); order.push([0]); segFil.push([curFil]); }
+    nExtrude++; sawExtrude = true; featureSet.add(curType); filUsed.add(curFil);
     layerZ.add(Math.round(z1 * 1000));
     bump(x0, y0, z0); bump(x1, y1, z1);
     if (feed > 0) { if (feed < fmin) fmin = feed; if (feed > fmax) fmax = feed; }
@@ -150,12 +179,12 @@ function parseGcode(text) {
   const emitFeed = (x0, y0, z0, x1, y1, z1) => {
     const L = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
     cutMM += L; nFeed++;
-    if (ext.count < SEG_CAP) ext.push([x0, y0, z0, x1, y1, z1, 0, 0, feed, cncType]);  // width filled later for CNC; type = tool slot
+    if (ext.count < segCap) { ext.push([x0, y0, z0, x1, y1, z1, 0, 0, feed, cncType]); order.push([0]); segFil.push([curFil]); }  // width filled later for CNC; type = tool slot
     bump(x0, y0, z0); bump(x1, y1, z1);
     if (feed > 0) { if (feed < fmin) fmin = feed; if (feed > fmax) fmax = feed; }
   };
   const emitTravel = (x0, y0, z0, x1, y1, z1) => {
-    if (trav.count < TRAVEL_CAP) trav.push([x0, y0, z0, x1, y1, z1]);
+    if (trav.count < travCap) { trav.push([x0, y0, z0, x1, y1, z1, feed]); order.push([1]); }
     nRapid++;
   };
 
@@ -180,6 +209,12 @@ function parseGcode(text) {
       mm = /WIDTH:\s*([\d.]+)/i.exec(cm); if (mm) forcedW = parseFloat(mm[1]) || 0;
       mm = /HEIGHT:\s*([\d.]+)/i.exec(cm); if (mm) forcedH = parseFloat(mm[1]) || 0;
       mm = /Filament\s*Diameter[^:]*:\s*([\d.]+)/i.exec(cm); if (mm && !filDia) filDia = parseFloat(mm[1]) || 0;
+      // Filament colours (multicolour). PrusaSlicer/Orca/Bambu dump a ;-separated
+      // hex list "; filament_colour = #RRGGBB;#RRGGBB". Prefer filament_colour; fall
+      // back to extruder_colour. The "_type"/"default_" variants carry no #, so the
+      // hex-only value class makes them miss.
+      if (!filColRaw) { mm = /filament[_ ]colou?r\s*[:=]\s*("?)(#[0-9A-Fa-f; ]+)/i.exec(cm); if (mm) filColRaw = mm[2].trim(); }
+      if (!extColRaw) { mm = /extruder[_ ]colou?r\s*[:=]\s*("?)(#[0-9A-Fa-f; ]+)/i.exec(cm); if (mm) extColRaw = mm[2].trim(); }
       if (!printTime) { mm = /(?:print(?:ing)?\s*time|Print Time)[^:=]*[:=]?\s*([\dhms :]+\d[hms])/i.exec(cm); if (mm) printTime = mm[1].trim(); }
       line = line.slice(0, semi);
     }
@@ -218,6 +253,23 @@ function parseGcode(text) {
     const sp = line.indexOf(' ');
     const cmd = (sp < 0 ? line : line.slice(0, sp)).toUpperCase();
 
+    // Active filament for multicolour prints: a tool select (T0/T1/...) switches it;
+    // M600 (manual colour change) advances to the next colour. Cheap first-char gate so
+    // ordinary coordinate lines don't pay for it. (CNC also uses T<n> M6 - harmless here,
+    // its own tool-change handling runs below and filament colouring is FDM-only.)
+    // Only small tool indices are real filament slots. Bambu/Prusa fire sentinel tool
+    // codes (T255, T1000, ...) for unload / no-tool that aren't colour changes, so cap at
+    // a sane multi-material range or a single-filament print reads as multicolour.
+    if (sp < 0 && cmd.charCodeAt(0) === 84) { const tn = /^T(\d+)$/.exec(cmd); if (tn) { const ti = +tn[1]; if (ti <= 32) { curFil = ti; if (curFil > maxFil) maxFil = curFil; } continue; } }
+    if (cmd === 'M600') { curFil++; if (curFil > maxFil) maxFil = curFil; continue; }
+
+    // Plane select can share a line with an arc - "G17 G2 X.." - so set the plane but
+    // fall through to motion handling rather than swallowing the move (Fusion/Mastercam
+    // posts combine them). Only consume the line when it carries no motion.
+    if (cmd === 'G17' || cmd === 'G18' || cmd === 'G19') {
+      plane = cmd === 'G17' ? 17 : cmd === 'G18' ? 18 : 19;
+      if (!/\bG0?[0-3]\b/i.test(line) && !(motionMode && /(^|\s)[XYZABCUVWIJKR]-?[\d.]/i.test(line))) continue;
+    }
     switch (cmd) {
       case 'G90': absXYZ = true; continue;
       case 'G91': absXYZ = false; continue;
@@ -225,9 +277,6 @@ function parseGcode(text) {
       case 'M83': absE = false; continue;
       case 'G20': unit = 25.4; continue;
       case 'G21': unit = 1; continue;
-      case 'G17': plane = 17; continue;
-      case 'G18': plane = 18; continue;
-      case 'G19': plane = 19; continue;
       default: break;
     }
     if (cmd === 'M104' || cmd === 'M109') { const s = numAfter(line, 'S'); if (s > 0 && !temps.nozzle) temps.nozzle = s; continue; }
@@ -270,12 +319,13 @@ function parseGcode(text) {
     // Normalised motion mode. A bare-coordinate line (no G-word, e.g. "X42 Y3 Z-1")
     // continues the previous G0-G3 mode - CNC posts (Fanuc/Fusion) rely on this
     // modal behaviour heavily, so without it most cutting moves are lost.
+    // Motion word anywhere on the line (a CNC post can prefix it with a tool-length
+    // offset / plane-select, e.g. "G43 Z.." or "G17 G2 X.."); otherwise a bare-coordinate
+    // line continues the previous G0-G3 mode modally.
     let mo = null;
-    if (cmd === 'G0' || cmd === 'G00') mo = 'G0';
-    else if (cmd === 'G1' || cmd === 'G01') mo = 'G1';
-    else if (cmd === 'G2' || cmd === 'G02') mo = 'G2';
-    else if (cmd === 'G3' || cmd === 'G03') mo = 'G3';
-    else if (motionMode && /^[XYZABCUVWIJKRF][-+.\d]/i.test(line)) mo = motionMode;
+    const gMove = /\bG0?([0-3])\b/i.exec(line);
+    if (gMove) mo = 'G' + gMove[1];
+    else if (motionMode && /(^|\s)[XYZABCUVWIJKR]-?[\d.]/i.test(line)) mo = motionMode;
     if (!mo) continue;
     motionMode = mo;
     const isLine = mo === 'G0' || mo === 'G1';
@@ -291,11 +341,17 @@ function parseGcode(text) {
     if (t.e !== null) de = (absE ? (t.e * unit - e) : t.e * unit);
     const extruding = de > 1e-6;
 
+    // A non-extruding linear/arc move is a travel on a 3D print but a cutting feed
+    // move on a CNC job. Many slicers (PrusaSlicer/SuperSlicer/Orca) emit travels as
+    // G1-without-E, not G0, so keying purely on G0 loses almost every travel; instead,
+    // once any extrusion has been seen (sawExtrude), treat every non-extruding move as
+    // travel. CNC files never extrude, so their feed moves still route to emitFeed.
+    const nonExtrudeTravel = mo === 'G0' || sawExtrude || looksLikePrint;
     if (isLine) {
       const moved = nx !== x || ny !== y || nz !== z;
       if (moved) {
         if (extruding) { emitExtrude(x, y, z, nx, ny, nz, de); extrudeMM += de; }
-        else if (mo === 'G0') emitTravel(x, y, z, nx, ny, nz);
+        else if (nonExtrudeTravel) emitTravel(x, y, z, nx, ny, nz);
         else emitFeed(x, y, z, nx, ny, nz);
       }
     } else {
@@ -307,11 +363,13 @@ function parseGcode(text) {
         for (let k = 1; k < pts.length; k++) {
           const a = pts[k - 1], b = pts[k];
           if (extruding) { emitExtrude(a[0], a[1], a[2], b[0], b[1], b[2], perDe); }
+          else if (nonExtrudeTravel) emitTravel(a[0], a[1], a[2], b[0], b[1], b[2]);
           else emitFeed(a[0], a[1], a[2], b[0], b[1], b[2]);
         }
         if (extruding) extrudeMM += de;
       } else {
         if (extruding) { emitExtrude(x, y, z, nx, ny, nz, de); extrudeMM += de; }
+        else if (nonExtrudeTravel) emitTravel(x, y, z, nx, ny, nz);
         else emitFeed(x, y, z, nx, ny, nz);
       }
     }
@@ -339,6 +397,18 @@ function parseGcode(text) {
   }
   if (allComments.length > 8000) allComments = allComments.slice(0, 8000);
 
+  // Resolve the filament colour palette. Use the slicer's own hex list where present;
+  // otherwise (e.g. M600 colour changes with no list) fall back to a distinct palette so
+  // each filament is still told apart. The number of slots covers every filament used.
+  const FIL_FALLBACK = ['#FF8000', '#1F77FF', '#2CA02C', '#D62798', '#FFD000', '#17BECF', '#E6194B', '#8C56FF'];
+  const hexList = (filColRaw || extColRaw).split(/[;,]/).map((s) => s.trim()).filter((s) => /^#?[0-9A-Fa-f]{6}$/.test(s)).map((s) => s[0] === '#' ? s : '#' + s);
+  const filSlots = Math.max(1, maxFil + 1, hexList.length, filUsed.size);
+  const filamentColors = [];
+  for (let k = 0; k < filSlots; k++) filamentColors.push(hexList[k] || FIL_FALLBACK[k % FIL_FALLBACK.length]);
+  // Only a genuine multi-filament print, not a single-material one whose slicer config
+  // merely lists every configured filament colour in the `; filament_colour =` header.
+  const multicolour = sawExtrude && (filUsed.size > 1 || maxFil > 0);
+
   const zs = [...layerZ].map((v) => v / 1000).sort((a, b) => a - b);
   let layerHeight = 0;
   if (zs.length > 1) {
@@ -356,9 +426,15 @@ function parseGcode(text) {
     hasTypes: sawTypes && featureSet.size > 1,
     features: [...featureSet].sort((a, b) => a - b),
     printTime,
-    travel: trav.view(),       // 6 floats / segment
+    travel: trav.view(),       // 7 floats / segment
     travelCount: trav.count,
-    capped: ext.count >= SEG_CAP || trav.count >= TRAVEL_CAP,
+    order: order.view(),       // 1 float / move: 0 = ext, 1 = travel, in true print order
+    orderCount: order.count,
+    segFil: segFil.view(),     // 1 float / ext segment: active filament index
+    filamentColors,            // ['#RRGGBB', ...] one per filament slot
+    multicolour,               // true when the print uses more than one filament / colour
+    filsUsed: [...filUsed].sort((a, b) => a - b),
+    capped: ext.count >= segCap || trav.count >= travCap,
     bbox: { min: [minx, miny, minz], max: [maxx, maxy, maxz] },
     units: unit === 1 ? 'mm' : 'in',
     layerCount: zs.length,
@@ -491,7 +567,7 @@ function buildViewer(data, opts = {}) {
   const { min, max } = data.bbox;
   const cx = (min[0] + max[0]) / 2, cy = (min[1] + max[1]) / 2, cz = (min[2] + max[2]) / 2;
   const span = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) || 1;
-  const nrm = (px, py, pz) => [(px - cx) / span, (pz - cz) / span, (py - cy) / span];   // -> [x, up, depth]
+  const nrm = (px, py, pz) => [(px - cx) / span, (pz - cz) / span, -(py - cy) / span];   // -> [x, up, depth]; negate Y so the Z<->Y swap stays right-handed (a bare swap mirrors the model)
   // Robust framing. The raw bbox is fragile: a slicer's purge/intro line (or one stray
   // move to the origin) is a legitimate extrusion far from the part, so the bbox midpoint
   // drifts off the model and the bounding sphere balloons - leaving the actual part a dot
@@ -529,21 +605,34 @@ function buildViewer(data, opts = {}) {
   const yMin = (min[2] - cz) / span, ySpan = ((max[2] - min[2]) / span) || 1e-3;
   const fMin = data.feedRange.min, fSpan = Math.max(1e-6, data.feedRange.max - data.feedRange.min);
 
-  // Per-instance buffer: A(3) B(3) halfW halfH feed type (10 floats / segment).
-  const STR = 10;
+  // Filament colour palette (flat vec3 array, max 8) for "colour by filament".
+  const FIL_MAX = 8;
+  const filCols = new Float32Array(FIL_MAX * 3);
+  const hex2rgb = (h) => { const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(h || ''); return m ? [parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255] : [0.7, 0.72, 0.78]; };
+  const palette = data.filamentColors || [];
+  for (let k = 0; k < FIL_MAX; k++) { const c = hex2rgb(palette[k % Math.max(1, palette.length)]); filCols[k * 3] = c[0]; filCols[k * 3 + 1] = c[1]; filCols[k * 3 + 2] = c[2]; }
+
+  // Per-instance buffer: A(3) B(3) halfW halfH feed type tool (11 floats / segment).
+  const STR = 11;
   const segN = data.segCount;
   const instData = new Float32Array(segN * STR);
+  let wHalfMin = Infinity, wHalfMax = 0;   // normalised half-width range, for "colour by width"
   for (let s = 0; s < segN; s++) {
     const p = s * 10, q = s * STR;
     const a = nrm(data.seg[p], data.seg[p + 1], data.seg[p + 2]);
     const b = nrm(data.seg[p + 3], data.seg[p + 4], data.seg[p + 5]);
     instData[q] = a[0]; instData[q + 1] = a[1]; instData[q + 2] = a[2];
     instData[q + 3] = b[0]; instData[q + 4] = b[1]; instData[q + 5] = b[2];
-    instData[q + 6] = (data.seg[p + 6] * 0.5) / span;   // half width (normalised)
+    const hw = (data.seg[p + 6] * 0.5) / span;
+    instData[q + 6] = hw;                               // half width (normalised)
     instData[q + 7] = (data.seg[p + 7] * 0.5) / span;   // half height
     instData[q + 8] = data.seg[p + 8];                  // feed
     instData[q + 9] = data.seg[p + 9];                  // feature type
+    instData[q + 10] = data.segFil ? Math.min(FIL_MAX - 1, data.segFil[s] | 0) : 0;   // filament slot
+    if (data.seg[p + 6] > 0) { if (hw < wHalfMin) wHalfMin = hw; if (hw > wHalfMax) wHalfMax = hw; }
   }
+  if (!(wHalfMin < wHalfMax)) { wHalfMin = 0; wHalfMax = 1e-3; }
+  const wSpan = Math.max(1e-9, wHalfMax - wHalfMin);
   // Travel instances (thin), reusing the same layout.
   const travN = inst ? data.travelCount : 0;
   let travData = null;
@@ -551,19 +640,22 @@ function buildViewer(data, opts = {}) {
     travData = new Float32Array(travN * STR);
     const thin = Math.max(0.04 / span, boundR * 0.0008);
     for (let s = 0; s < travN; s++) {
-      const p = s * 6, q = s * STR;
+      const p = s * 7, q = s * STR;
       const a = nrm(data.travel[p], data.travel[p + 1], data.travel[p + 2]);
       const b = nrm(data.travel[p + 3], data.travel[p + 4], data.travel[p + 5]);
       travData[q] = a[0]; travData[q + 1] = a[1]; travData[q + 2] = a[2];
       travData[q + 3] = b[0]; travData[q + 4] = b[1]; travData[q + 5] = b[2];
-      travData[q + 6] = thin; travData[q + 7] = thin; travData[q + 8] = fMin; travData[q + 9] = 7;
+      travData[q + 6] = thin; travData[q + 7] = thin; travData[q + 8] = data.travel[p + 6]; travData[q + 9] = 7; travData[q + 10] = 0;
     }
   }
 
-  const vsInst = `attribute float aEnd, aSr, aSu; attribute vec3 aA, aB; attribute float aHW, aHH, aFeed, aType;
+  const vsInst = `attribute float aEnd, aSr, aSu; attribute vec3 aA, aB; attribute float aHW, aHH, aFeed, aType, aTool;
     uniform mat4 uMVP, uModel; uniform vec2 uViewport;
-    uniform float uYmin, uYspan, uFmin, uFspan, uMode, uTravel, uMinW, uMinPx, uFlat, uVis[8];
+    uniform float uYmin, uYspan, uFmin, uFspan, uMode, uTravel, uMinW, uMinPx, uFlat, uVis[8], uWmin, uWspan;
+    uniform vec3 uFilCols[8];
     varying float vT, vVis; varying vec3 vN, vColor;
+    vec3 filColor(float ft){ int t=int(ft+0.5);
+      for(int k=0;k<8;k++){ if(k==t) return uFilCols[k]; } return uFilCols[0]; }
     vec3 ramp(float t){ vec3 c1=vec3(0.18,0.32,0.92),c2=vec3(0.10,0.80,0.86),c3=vec3(0.22,0.82,0.30),c4=vec3(0.97,0.80,0.20),c5=vec3(0.96,0.26,0.20);
       if(t<0.25)return mix(c1,c2,t/0.25); if(t<0.50)return mix(c2,c3,(t-0.25)/0.25); if(t<0.75)return mix(c3,c4,(t-0.50)/0.25); return mix(c4,c5,(t-0.75)/0.25); }
     vec3 typeColor(float ft){ int t=int(ft+0.5);
@@ -606,17 +698,23 @@ function buildViewer(data, opts = {}) {
       // the build-height clip reveals whole layers cleanly and 100% is the true top.
       vT = clamp((P.y - uYmin)/uYspan, 0.0, 1.0);
       float sfrac = clamp((aFeed - uFmin)/uFspan, 0.0, 1.0);
-      if(uTravel > 0.5){ vColor = vec3(0.42,0.44,0.50); vVis = 1.0; }
+      float wfrac = clamp((aHW - uWmin)/uWspan, 0.0, 1.0);
+      if(uTravel > 0.5){ vColor = vec3(0.22,0.28,0.61); vVis = 1.0; }   // OrcaSlicer travel blue (RGB 56,72,155)
       else {
-        vColor = (uMode < 0.5) ? typeColor(aType) : (uMode < 1.5) ? ramp(vT) : ramp(sfrac);
+        // 0 line type, 1 height, 2 speed, 3 filament, 4 width.
+        if(uMode < 0.5) vColor = typeColor(aType);
+        else if(uMode < 1.5) vColor = ramp(vT);
+        else if(uMode < 2.5) vColor = ramp(sfrac);
+        else if(uMode < 3.5) vColor = filColor(aTool);
+        else vColor = ramp(wfrac);
         vVis = uVis[int(aType + 0.5)];
       } }`;
   const fsInst = `precision mediump float; varying float vT, vVis; varying vec3 vN, vColor;
-    uniform float uClip;
+    uniform float uClip, uAlpha;
     void main(){ if(vT > uClip) discard; if(vVis < 0.5) discard;
       vec3 N = normalize(vN); vec3 L = normalize(vec3(0.4,0.78,0.5));
       float lit = max(max(dot(N,L),0.0), max(dot(-N,L),0.0)*0.4);
-      gl_FragColor = vec4(vColor*(0.34+0.66*lit), 1.0); }`;
+      gl_FragColor = vec4(vColor*(0.34+0.66*lit), uAlpha); }`;
   // Plain-line fallback (no instancing): centreline reconstruction.
   const vsLine = `attribute vec3 aPos; uniform mat4 uProj,uView,uModel; uniform float uYmin,uYspan; varying float vT;
     void main(){ gl_Position=uProj*uView*uModel*vec4(aPos,1.0); vT=clamp((aPos.y-uYmin)/uYspan,0.0,1.0); }`;
@@ -635,7 +733,11 @@ function buildViewer(data, opts = {}) {
   gl.enable(gl.DEPTH_TEST);
   // mode: 0 = feature type, 1 = height, 2 = speed. vis: per-feature-type 1/0.
   // shown: how many extrusion segments to draw (in print order) - the progress slider.
-  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: false, flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false };
+  const state = { yaw: -0.78, pitch: 0.6, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: 'travel', flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.mode === 'print' && data.multicolour) ? 3 : (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false,
+    // Travel-aware playback: travShown = full travel segments to draw; playKind marks
+    // whether the in-progress (partially drawn) move is an extrusion (1) or a travel (2),
+    // so the head can glide along travels too; playFrac is the fraction into it.
+    travShown: travN, playKind: 0, playFrac: 0, translucentTravel: false };
   let viewW = 600, viewH = 420;   // CSS px, for screen-space size in the shader
   let dirty = true;
   const spinListeners = [];
@@ -659,9 +761,9 @@ function buildViewer(data, opts = {}) {
     if (travData) { partTravBuf = gl.createBuffer(); partTravArr = new Float32Array(STR); }
 
     const L = (n) => gl.getAttribLocation(prog, n);
-    const aEnd = L('aEnd'), aSr = L('aSr'), aSu = L('aSu'), aA = L('aA'), aB = L('aB'), aHW = L('aHW'), aHH = L('aHH'), aFeed = L('aFeed'), aType = L('aType');
+    const aEnd = L('aEnd'), aSr = L('aSr'), aSu = L('aSu'), aA = L('aA'), aB = L('aB'), aHW = L('aHW'), aHH = L('aHH'), aFeed = L('aFeed'), aType = L('aType'), aTool = L('aTool');
     const U = (n) => gl.getUniformLocation(prog, n);
-    const uMVP = U('uMVP'), uModel = U('uModel'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat');
+    const uMVP = U('uMVP'), uModel = U('uModel'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan');
 
     const bindTemplate = () => {
       gl.bindBuffer(gl.ARRAY_BUFFER, tplBuf);
@@ -671,13 +773,14 @@ function buildViewer(data, opts = {}) {
     };
     const bindInstances = (buf) => {
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      const S = 40;
+      const S = 44;
       gl.enableVertexAttribArray(aA); gl.vertexAttribPointer(aA, 3, gl.FLOAT, false, S, 0); inst.vertexAttribDivisorANGLE(aA, 1);
       gl.enableVertexAttribArray(aB); gl.vertexAttribPointer(aB, 3, gl.FLOAT, false, S, 12); inst.vertexAttribDivisorANGLE(aB, 1);
       gl.enableVertexAttribArray(aHW); gl.vertexAttribPointer(aHW, 1, gl.FLOAT, false, S, 24); inst.vertexAttribDivisorANGLE(aHW, 1);
       gl.enableVertexAttribArray(aHH); gl.vertexAttribPointer(aHH, 1, gl.FLOAT, false, S, 28); inst.vertexAttribDivisorANGLE(aHH, 1);
       gl.enableVertexAttribArray(aFeed); gl.vertexAttribPointer(aFeed, 1, gl.FLOAT, false, S, 32); inst.vertexAttribDivisorANGLE(aFeed, 1);
       if (aType >= 0) { gl.enableVertexAttribArray(aType); gl.vertexAttribPointer(aType, 1, gl.FLOAT, false, S, 36); inst.vertexAttribDivisorANGLE(aType, 1); }
+      if (aTool >= 0) { gl.enableVertexAttribArray(aTool); gl.vertexAttribPointer(aTool, 1, gl.FLOAT, false, S, 40); inst.vertexAttribDivisorANGLE(aTool, 1); }
     };
     // Toolhead marker: a small inverted pyramid sitting at the live print point,
     // shown while the print-progress animation plays.
@@ -709,7 +812,10 @@ function buildViewer(data, opts = {}) {
       gl.uniformMatrix4fv(uMVP, false, mvp); gl.uniformMatrix4fv(uModel, false, model);
       gl.uniform2f(uViewport, viewW, viewH);
       gl.uniform1f(uYmin, yMin); gl.uniform1f(uYspan, ySpan); gl.uniform1f(uFmin, fMin); gl.uniform1f(uFspan, fSpan); gl.uniform1f(uClip, state.clip);
-      gl.uniform1f(uMinW, state.minWidth ? 1 : 0); gl.uniform1f(uMinPx, 1.3); gl.uniform1f(uFlat, state.flatten ? 1 : 0);
+      gl.uniform1f(uMinW, state.minWidth === 'all' ? 1 : 0); gl.uniform1f(uMinPx, 1.3); gl.uniform1f(uFlat, state.flatten ? 1 : 0);
+      gl.uniform1f(uAlpha, 1);
+      gl.uniform1f(uWmin, wHalfMin); gl.uniform1f(uWspan, wSpan);
+      if (uFilCols) gl.uniform3fv(uFilCols, filCols);
       if (uVis) gl.uniform1fv(uVis, state.vis);
       bindTemplate();
       const shown = Math.max(0, Math.min(segN, state.shown | 0));
@@ -719,10 +825,17 @@ function buildViewer(data, opts = {}) {
       // partial at 0, so the sliders only ever land on whole moves.
       const frac = (state.partial > 0 && shown < segN) ? state.partial : 0;
 
-      // Live tool point: interpolated along the in-progress move when mid-move, else
-      // the end of the last completed move.
+      const travShown = Math.max(0, Math.min(travN, state.travShown | 0));
+      // Live tool point: when playback is mid-travel, glide along that travel; when
+      // mid-extrusion, grow along the bead; otherwise sit at the end of the last move.
       let hx = 0, hy = 0, hz = 0, haveHead = false;
-      if (frac > 0) {
+      if (state.playKind === 2 && travData && travShown < travN) {
+        const q = travShown * STR, tf = state.playFrac;
+        hx = travData[q] + tf * (travData[q + 3] - travData[q]);
+        hy = travData[q + 1] + tf * (travData[q + 4] - travData[q + 1]);
+        hz = travData[q + 2] + tf * (travData[q + 5] - travData[q + 2]);
+        haveHead = true;
+      } else if (frac > 0) {
         const q = shown * STR;
         hx = instData[q] + frac * (instData[q + 3] - instData[q]);
         hy = instData[q + 1] + frac * (instData[q + 4] - instData[q + 1]);
@@ -733,25 +846,40 @@ function buildViewer(data, opts = {}) {
         hx = instData[q + 3]; hy = instData[q + 4]; hz = instData[q + 5]; haveHead = true;
       }
 
-      if (state.showTravel && travBuf) {
-        // Reveal travels proportionally to print progress, with the leading travel
-        // growing in step with the move bead.
-        const tPos = segN > 0 ? travN * (shown + frac) / segN : travN;
-        const tFull = Math.min(travN, Math.floor(tPos));
+      // Travel pass. Travels are revealed by explicit count from the unified playback
+      // timeline (travShown). Opaque travels draw BEFORE the print so the solid print sits
+      // crisply over them; translucent travels must draw AFTER the print (see below).
+      const drawTravelPass = () => {
         gl.uniform1f(uTravel, 1); gl.uniform1f(uMode, 0);
-        bindInstances(travBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, tFull);
-        const tFrac = tPos - tFull;
-        if (tFrac > 0 && tFull < travN) {
-          const q = tFull * STR;
+        // Travels are hairline-thin, so the "Minimum line width" setting fattens them at
+        // its 'travel' and 'all' stages (only 'none' leaves them sub-pixel) - otherwise long
+        // rapids vanish into slivers when zoomed out.
+        gl.uniform1f(uMinW, state.minWidth === 'none' ? 0 : 1);
+        if (state.translucentTravel) {
+          // Alpha-blend at 30%, depth-write off (don't carve into the depth buffer), but
+          // leave the depth TEST on so travels behind the solid print are occluded by it.
+          gl.uniform1f(uAlpha, 0.3);
+          gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+        }
+        bindInstances(travBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, travShown);
+        // The in-progress travel (head currently gliding along it) grows toward the head.
+        if (state.playKind === 2 && travShown < travN) {
+          const q = travShown * STR, tf = state.playFrac;
           for (let i = 0; i < STR; i++) partTravArr[i] = travData[q + i];
-          partTravArr[3] = travData[q] + tFrac * (travData[q + 3] - travData[q]);
-          partTravArr[4] = travData[q + 1] + tFrac * (travData[q + 4] - travData[q + 1]);
-          partTravArr[5] = travData[q + 2] + tFrac * (travData[q + 5] - travData[q + 2]);
+          partTravArr[3] = travData[q] + tf * (travData[q + 3] - travData[q]);
+          partTravArr[4] = travData[q + 1] + tf * (travData[q + 4] - travData[q + 1]);
+          partTravArr[5] = travData[q + 2] + tf * (travData[q + 5] - travData[q + 2]);
           gl.bindBuffer(gl.ARRAY_BUFFER, partTravBuf); gl.bufferData(gl.ARRAY_BUFFER, partTravArr, gl.DYNAMIC_DRAW);
           bindInstances(partTravBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, 1);
         }
-      }
+        if (state.translucentTravel) { gl.depthMask(true); gl.disable(gl.BLEND); gl.uniform1f(uAlpha, 1); }
+      };
+      const wantTravel = state.showTravel && travBuf;
+      if (wantTravel && !state.translucentTravel) drawTravelPass();
+
+      // Extrusion (solid print) pass.
       gl.uniform1f(uTravel, 0); gl.uniform1f(uMode, state.mode);
+      gl.uniform1f(uMinW, state.minWidth === 'all' ? 1 : 0);   // extrusions only get min width at the 'all' stage
       bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
       if (frac > 0) {
         const q = shown * STR;
@@ -760,6 +888,9 @@ function buildViewer(data, opts = {}) {
         gl.bindBuffer(gl.ARRAY_BUFFER, partBuf); gl.bufferData(gl.ARRAY_BUFFER, partArr, gl.DYNAMIC_DRAW);
         bindInstances(partBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, 1);
       }
+      // Translucent travels draw AFTER the opaque print, depth-test on: the print no longer
+      // overwrites them, travels behind it are correctly hidden, those in front blend over it.
+      if (wantTravel && state.translucentTravel) drawTravelPass();
       if (state.head && haveHead) drawHead(proj, view, model, hx, hy, hz);
     };
     drawImpl.hasTravel = !!travBuf;
@@ -909,8 +1040,80 @@ function buildViewer(data, opts = {}) {
 
   wrap.addEventListener('fullscreenchange', () => setTimeout(resize, 50));
 
+  // Fullscreen toggle anchored in the viewport's bottom-right corner (the view cube
+  // lives bottom-left). Built into the viewer itself so it persists across the MSAA
+  // rebuild and always sits over the canvas.
+  const fsBtn = el('button', { type: 'button', class: 'anr-btn anr-gcode-fsbtn', title: 'Toggle fullscreen', 'aria-label': 'Toggle fullscreen' }, 'Fullscreen');
+  fsBtn.addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else if (wrap.requestFullscreen) wrap.requestFullscreen(); });
+  wrap.addEventListener('fullscreenchange', () => { fsBtn.textContent = document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen'; });
+  wrap.appendChild(fsBtn);
+
+  // Colour panel, top-right: a colour-mode selector with the legend / key for the
+  // active mode directly beneath it. Built into the viewer so it survives the MSAA
+  // rebuild and shows in fullscreen. Modes: 0 line type / tool, 1 height, 2 speed,
+  // 3 filament (multicolour), 4 width.
+  const lu = data.units;
+  const cncToolCols = (data.cnc && data.cnc.toolColors) ? data.cnc.toolColors : [];
+  const isPrintV = data.mode === 'print';
+  const colourSel = el('select', { class: 'anr-btn anr-select anr-gcode-colsel', 'aria-label': 'Colour by', title: 'Colour by' });
+  if (data.hasTypes) colourSel.appendChild(el('option', { value: '0' }, 'Colour: line type'));
+  else if (cncToolCols.length > 1) colourSel.appendChild(el('option', { value: '0' }, 'Colour: tool'));
+  colourSel.appendChild(el('option', { value: '1' }, 'Colour: height'));
+  colourSel.appendChild(el('option', { value: '2' }, 'Colour: speed'));
+  if (isPrintV) colourSel.appendChild(el('option', { value: '4' }, 'Colour: width'));
+  if (isPrintV && data.multicolour) colourSel.appendChild(el('option', { value: '3' }, 'Colour: filament'));
+  colourSel.value = String(state.mode);
+  colourSel.addEventListener('change', () => { state.mode = +colourSel.value; refreshLegend(); dirty = true; });
+  const legendBody = el('div', { class: 'anr-gcode-legendbody' });
+  const colourPanel = el('div', { class: 'anr-gcode-colpanel' }, [colourSel, legendBody]);
+  wrap.appendChild(colourPanel);
+  // Top-left overlay slot (renderGcode parks the Quality popup here).
+  const topLeftSlot = el('div', { class: 'anr-gcode-topleft' });
+  wrap.appendChild(topLeftSlot);
+
+  // Build the legend body for the current colour mode: a blue->red ramp (height /
+  // speed / width) labelled with its min and max, or a swatch key (line type / tool /
+  // filament). Speed is shown in mm/s (feedrate is mm/min, so /60).
+  const swatchRgb = (rgb) => `rgb(${Math.round(rgb[0] * 255)},${Math.round(rgb[1] * 255)},${Math.round(rgb[2] * 255)})`;
+  const rampEl = (title, maxTxt, minTxt) => el('div', { class: 'anr-gcode-ramp' }, [
+    el('div', { class: 'anr-gcode-ramp-title' }, title),
+    el('div', { class: 'anr-gcode-ramp-body' }, [
+      el('div', { class: 'anr-gcode-ramp-bar' }),
+      el('div', { class: 'anr-gcode-ramp-scale' }, [el('span', {}, maxTxt), el('span', {}, minTxt)]),
+    ]),
+  ]);
+  const keyRow = (bg, label) => el('div', { class: 'anr-gcode-key-row' }, [
+    el('span', { class: 'anr-gcode-swatch' }, []), el('span', { class: 'anr-gcode-key-label' }, label),
+  ]);
+  const setSwatch = (rowEl, bg) => { rowEl.firstChild.style.background = bg; return rowEl; };
+  const refreshLegend = () => {
+    colourSel.value = String(state.mode);
+    legendBody.innerHTML = '';
+    const m = state.mode;
+    if (m === 1) {
+      legendBody.appendChild(rampEl('Height', data.bbox.max[2].toFixed(1) + ' ' + lu, data.bbox.min[2].toFixed(1) + ' ' + lu));
+    } else if (m === 2) {
+      const us = lu === 'mm' ? 'mm/s' : lu + '/s';
+      legendBody.appendChild(rampEl('Speed', Math.round(data.feedRange.max / 60).toLocaleString() + ' ' + us, Math.round(data.feedRange.min / 60).toLocaleString() + ' ' + us));
+    } else if (m === 4) {
+      const wMax = wHalfMax * 2 * span, wMin = wHalfMin * 2 * span;
+      legendBody.appendChild(rampEl('Width', wMax.toFixed(2) + ' ' + lu, wMin.toFixed(2) + ' ' + lu));
+    } else if (m === 3) {
+      const fils = (data.filsUsed && data.filsUsed.length) ? data.filsUsed : [0];
+      for (const fi of fils) {
+        const hex = (data.filamentColors && data.filamentColors[fi]) || '#cccccc';
+        const row = keyRow(); setSwatch(row, hex); row.lastChild.textContent = 'Filament ' + (fi + 1); legendBody.appendChild(row);
+      }
+    } else if (data.hasTypes && data.features.length) {
+      for (const id of data.features) { const f = FEATURES[id]; const row = keyRow(); setSwatch(row, swatchRgb(f.rgb)); row.lastChild.textContent = f.label; legendBody.appendChild(row); }
+    } else if (cncToolCols.length > 1) {
+      for (const t of cncToolCols) { const f = FEATURES[t.slot]; const row = keyRow(); setSwatch(row, swatchRgb(f.rgb)); row.lastChild.textContent = 'T' + t.n; legendBody.appendChild(row); }
+    }
+  };
+  refreshLegend();
+
   const api = {
-    wrap, ok: true, state, hasTravel: !!drawImpl.hasTravel, instanced: !!(inst && segN > 0), snapshot,
+    wrap, ok: true, state, hasTravel: !!drawImpl.hasTravel, instanced: !!(inst && segN > 0), snapshot, refreshLegend, colourPanel, topLeft: topLeftSlot,
     resize, setSpin, onSpinChange: (cb) => spinListeners.push(cb),
     start: () => { resize(); if (!state.fitted) { state.dist = fitDist(0.9); state.fitted = true; } requestAnimationFrame(loop); }, markDirty: () => { dirty = true; },
     fit: (fill) => { state.dist = fitDist(fill === undefined ? 0.9 : fill); state.fitted = true; dirty = true; },
@@ -929,7 +1132,7 @@ function detectSlicer(comments) {
   return null;
 }
 
-export async function renderGcode(file, resultsEl) {
+export async function renderGcode(file, resultsEl, opts) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reconstructing the print from "${file.name}"…`));
@@ -940,7 +1143,7 @@ export async function renderGcode(file, resultsEl) {
 
   await new Promise((r) => setTimeout(r, 0));
   let data;
-  try { data = parseGcode(text); } catch (e) { data = null; }
+  try { data = parseGcode(text, opts); } catch (e) { data = null; }
 
   resultsEl.innerHTML = '';
   if (!data || !data.sawG) { resultsEl.appendChild(errorCard('This file does not look like G-code (no G0/G1/G2/G3 moves found).')); return; }
@@ -952,9 +1155,15 @@ export async function renderGcode(file, resultsEl) {
   const toolLabel = (n) => { const d = data.cnc && data.cnc.tools.find((t) => t.n === n); return 'T' + n + (d && d.desc ? ' - ' + titleCase(d.desc) : ''); };
 
   if (data.segCount > 0) {
+    // "Show full anyway" lifts the segment cap, so the geometry can be many millions of
+    // beads. Disable the heavy quality settings (MSAA, supersampling, min line width,
+    // translucent travel) and keep only the cheap "Flatten distant beads", so the
+    // uncapped render stays viewable instead of choking on antialiasing passes.
+    const uncapped = !!(opts && opts.uncapped);
     const viewCard = el('div', { class: 'anr-card' });
     viewCard.appendChild(el('h3', {}, isPrint ? 'Reconstructed print' : 'Toolpath'));
-    let viewer = buildViewer(data, { antialias: true });
+    let viewer = buildViewer(data, { antialias: !uncapped });
+    if (uncapped) { viewer.state.ssaa = false; viewer.state.minWidth = 'none'; viewer.state.translucentTravel = false; }
     viewCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' }, isPrint
       ? (viewer.instanced
         ? 'Rebuilt from the G-code as solid deposited filament - each extrusion drawn at its real width and height, coloured by layer. Travel moves are hidden.'
@@ -979,7 +1188,7 @@ export async function renderGcode(file, resultsEl) {
       // references `viewer` by binding, so they keep working after the swap.
       function applyMSAA(on) {
         const s = viewer.state;
-        const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, vis: s.vis, shown: s.shown, partial: s.partial, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten, fitted: s.fitted };
+        const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, vis: s.vis, shown: s.shown, partial: s.partial, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten, fitted: s.fitted, travShown: s.travShown, playKind: s.playKind, playFrac: s.playFrac, translucentTravel: s.translucentTravel };
         const old = viewer;
         const next = buildViewer(data, { antialias: on });
         if (!next.ok) return;                         // keep the working viewer if rebuild fails
@@ -987,12 +1196,14 @@ export async function renderGcode(file, resultsEl) {
         Object.assign(viewer.state, keep, { msaa: on });
         old.wrap.replaceWith(viewer.wrap);
         viewer.onSpinChange(updateSpinLabel);
+        if (viewer.topLeft) viewer.topLeft.appendChild(qWrap);   // re-park Quality in the rebuilt overlay
         viewer.start();
+        viewer.refreshLegend();   // legend reflects the carried-over colour mode, not the build default
         viewer.markDirty();
       }
 
       const resetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Reset view');
-      resetBtn.addEventListener('click', () => { Object.assign(viewer.state, { yaw: 0.6, pitch: 0.5, panX: 0, panY: 0 }); viewer.fit(); });
+      resetBtn.addEventListener('click', () => { Object.assign(viewer.state, { yaw: -0.78, pitch: 0.6, panX: 0, panY: 0 }); viewer.fit(); });
       const projBtn = el('button', { type: 'button', class: 'anr-btn' }, viewer.state.ortho ? 'Orthographic' : 'Perspective');
       projBtn.addEventListener('click', () => { viewer.state.ortho = !viewer.state.ortho; projBtn.textContent = viewer.state.ortho ? 'Orthographic' : 'Perspective'; viewer.markDirty(); });
       // Anti-aliasing / quality popup: hardware MSAA, supersampling, minimum line
@@ -1000,30 +1211,38 @@ export async function renderGcode(file, resultsEl) {
       const qWrap = el('span', { class: 'anr-aa-wrap' });
       const qBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Quality');
       const qPanel = el('div', { class: 'anr-aa-panel is-hidden' });
-      qPanel.appendChild(el('div', { class: 'anr-aa-title' }, 'Anti-aliasing'));
-      const aaRow = (label, desc, get, set) => {
-        const cb = el('input', { type: 'checkbox' }); cb.checked = !!get();
-        cb.addEventListener('change', () => set(cb.checked));
-        const lab = el('label', { class: 'anr-aa-row' }, [cb, el('span', { class: 'anr-aa-label' }, label)]);
-        lab.appendChild(el('span', { class: 'anr-aa-desc' }, desc));
-        qPanel.appendChild(lab);
-        return cb;
+      qPanel.appendChild(el('div', { class: 'anr-aa-title' }, 'Quality'));
+      // Each setting is a site-style button whose border lights red (.is-on) when active,
+      // grey when off - no descriptions, just the toggle. The label carries the state.
+      const aaBtn = (label, get, set, locked) => {
+        const btn = el('button', { type: 'button', class: 'anr-btn anr-aa-btn' }, label);
+        const sync = () => btn.classList.toggle('is-on', !!get());
+        sync(); if (locked) btn.disabled = true;
+        btn.addEventListener('click', () => { set(!get()); sync(); });
+        qPanel.appendChild(btn);
+        return btn;
       };
-      aaRow('Hardware MSAA', 'Smooths polygon edges. Toggling rebuilds the view.', () => viewer.state.msaa, (v) => applyMSAA(v));
-      aaRow('Supersampling', 'Renders at higher resolution - best quality, heaviest.', () => viewer.state.ssaa, (v) => { viewer.state.ssaa = v; viewer.resize(); viewer.markDirty(); });
-      aaRow('Minimum line width', 'Stops thin beads shimmering when zoomed out.', () => viewer.state.minWidth, (v) => { viewer.state.minWidth = v; viewer.markDirty(); });
-      aaRow('Flatten distant beads', 'Cuts moiré on flat infill and top surfaces.', () => viewer.state.flatten, (v) => { viewer.state.flatten = v; viewer.markDirty(); });
+      // Multi-stage button: cycles through its choices on each click (off = the first
+      // choice). Label shows the current stage; border lights red whenever it is not off.
+      const aaCycleBtn = (label, choices, get, set, locked) => {
+        const btn = el('button', { type: 'button', class: 'anr-btn anr-aa-btn' });
+        const sync = () => { const c = choices.find((o) => o.v === get()) || choices[0]; btn.textContent = label + ': ' + c.label; btn.classList.toggle('is-on', get() !== choices[0].v); };
+        sync(); if (locked) btn.disabled = true;
+        btn.addEventListener('click', () => { const i = choices.findIndex((o) => o.v === get()); set(choices[(i + 1) % choices.length].v); sync(); });
+        qPanel.appendChild(btn);
+        return btn;
+      };
+      aaBtn('Hardware MSAA', () => viewer.state.msaa, (v) => applyMSAA(v), uncapped);
+      aaBtn('Supersampling', () => viewer.state.ssaa, (v) => { viewer.state.ssaa = v; viewer.resize(); viewer.markDirty(); }, uncapped);
+      aaCycleBtn('Minimum line width',
+        [{ v: 'none', label: 'None' }, { v: 'travel', label: 'Travel lines' }, { v: 'all', label: 'All' }],
+        () => viewer.state.minWidth, (v) => { viewer.state.minWidth = v; viewer.markDirty(); }, uncapped);
+      aaBtn('Flatten distant beads', () => viewer.state.flatten, (v) => { viewer.state.flatten = v; viewer.markDirty(); });
+      aaBtn('Translucent travel lines', () => viewer.state.translucentTravel, (v) => { viewer.state.translucentTravel = v; viewer.markDirty(); }, uncapped);
       qBtn.addEventListener('click', (e) => { e.stopPropagation(); qPanel.classList.toggle('is-hidden'); });
       document.addEventListener('click', (e) => { if (!qWrap.contains(e.target)) qPanel.classList.add('is-hidden'); });
       qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
-      // Colour by: feature/line type (when the slicer tagged moves), height, or speed.
-      const colorSel = el('select', { class: 'anr-btn anr-select', 'aria-label': 'Colour by', title: 'Colour by' });
-      if (data.hasTypes) colorSel.appendChild(el('option', { value: '0' }, 'Colour: line type'));
-      else if (cncTools.length > 1) colorSel.appendChild(el('option', { value: '0' }, 'Colour: tool'));
-      colorSel.appendChild(el('option', { value: '1' }, 'Colour: height'));
-      colorSel.appendChild(el('option', { value: '2' }, 'Colour: speed'));
-      colorSel.value = String(viewer.state.mode);
-      colorSel.addEventListener('change', () => { viewer.state.mode = +colorSel.value; viewer.markDirty(); });
+      // Colour mode + its legend live in a top-right overlay built inside the viewer.
       const travelBtn = el('button', { type: 'button', class: 'anr-btn' }, isPrint ? 'Show travel' : 'Show rapids');
       if (viewer.hasTravel) {
         travelBtn.addEventListener('click', () => {
@@ -1032,16 +1251,20 @@ export async function renderGcode(file, resultsEl) {
           viewer.markDirty();
         });
       } else travelBtn.disabled = true;
-      const fsBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Fullscreen');
-      fsBtn.addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else if (viewer.wrap.requestFullscreen) viewer.wrap.requestFullscreen(); });
 
-      // Travel/rapid show-hide is a visibility toggle, so when there's a line-type
-      // legend (3D prints) it joins that "Show" row; otherwise it stays with the
-      // display buttons.
+      // Toolbar display row: travel show-hide sits between perspective and the rest.
+      // Quality moves up into the viewer's top-right colour panel; fullscreen is the
+      // viewer's bottom-right overlay.
       const hasLegend = data.hasTypes && data.features.length;
-      viewRow.appendChild(spinBtn); viewRow.appendChild(resetBtn); viewRow.appendChild(projBtn); viewRow.appendChild(colorSel); viewRow.appendChild(fsBtn); viewRow.appendChild(qWrap);
-      if (!hasLegend) viewRow.appendChild(travelBtn);
+      viewRow.appendChild(spinBtn); viewRow.appendChild(resetBtn); viewRow.appendChild(projBtn); viewRow.appendChild(travelBtn);
       toolbar.appendChild(viewRow);
+      // Park the Quality popup in the viewer's top-left overlay.
+      if (viewer.topLeft) viewer.topLeft.appendChild(qWrap);
+
+      // Show/hide controls - line-type legend (3D prints) and the CNC tool picker -
+      // sit in their own bar ABOVE the viewer, so "what is drawn" reads before the
+      // canvas while the camera/display/playback toolbar stays below it.
+      const showBar = el('div', { class: 'anr-gcode-showbar' });
 
       // OrcaSlicer-style show/hide by line type - one toggle chip per feature, built
       // exactly like the CNC tool chips below (swatch + label, dims when toggled off).
@@ -1059,8 +1282,7 @@ export async function renderGcode(file, resultsEl) {
           });
           legend.appendChild(chip);
         }
-        legend.appendChild(travelBtn);   // the travel show/hide rides with the line-type toggles
-        toolbar.appendChild(legend);
+        showBar.appendChild(legend);
       }
 
       // CNC: a button per tool (styled like the 3MF parts picker) to show/hide that
@@ -1079,8 +1301,11 @@ export async function renderGcode(file, resultsEl) {
           });
           toolRow.appendChild(chip);
         }
-        toolbar.appendChild(toolRow);
+        showBar.appendChild(toolRow);
       }
+
+      // Drop the show/hide bar in just above the viewer (after the hint, before the canvas).
+      if (showBar.childNodes.length) viewCard.insertBefore(showBar, viewer.wrap);
 
       const zLo = data.bbox.min[2], zHi = data.bbox.max[2];
       const slider = el('input', { type: 'range', class: 'anr-range', min: '1', max: '1000', value: '1000', title: 'Build height', 'aria-label': 'Show build up to height' });
@@ -1095,25 +1320,58 @@ export async function renderGcode(file, resultsEl) {
       // build up, with a Play button + speed picker that animate it start to finish.
       const progSlider = el('input', { type: 'range', class: 'anr-range', min: '0', max: '1000', value: '1000', title: 'G-code progress', 'aria-label': 'Reveal moves up to' });
       const progVal = el('span', { class: 'anr-gcode-slider-val anr-gcode-slider-val--wide' }, data.segCount.toLocaleString() + ' moves');
-      // Scrub/stop setter: lands on a whole move (partial = 0), so dragging the slider
-      // only ever shows complete g-code moves, never an interpolated mid-move state.
-      const setProgress = (n, fromSlider) => {
-        n = Math.max(0, Math.min(data.segCount, n));
-        viewer.state.shown = n; viewer.state.partial = 0; viewer.markDirty();
-        if (!fromSlider) progSlider.value = String(data.segCount ? Math.round(n / data.segCount * 1000) : 1000);
-        progVal.textContent = Math.round(n).toLocaleString() + ' / ' + data.segCount.toLocaleString();
-      };
-      // Playback setter: `n` whole moves done plus `frac` into the next one, so a single
-      // long move animates smoothly instead of jumping from its start to its end.
-      const setProgressF = (n, frac) => {
-        n = Math.max(0, Math.min(data.segCount, n));
-        viewer.state.shown = n;
-        viewer.state.partial = (n < data.segCount) ? Math.max(0, Math.min(1, frac)) : 0;
+
+      // Unified playback timeline: every buffered move - extrusions AND travels - in true
+      // print order (data.order), so playback replays them interleaved exactly as the
+      // machine runs them and the head glides along travels instead of teleporting.
+      // order[g] 0=ext / 1=travel; gExt/gTrav are running counts of each up to move g;
+      // gTime is the cumulative real duration (move length / feedrate) for real-time play.
+      const order = data.order, G = data.orderCount;
+      const gExt = new Int32Array(G + 1), gTrav = new Int32Array(G + 1), gTime = new Float64Array(G + 1);
+      for (let g = 0; g < G; g++) {
+        let len, feed;
+        if (order[g] > 0.5) {                 // travel
+          const p = gTrav[g] * 7;
+          len = Math.hypot(data.travel[p + 3] - data.travel[p], data.travel[p + 4] - data.travel[p + 1], data.travel[p + 5] - data.travel[p + 2]);
+          feed = data.travel[p + 6];
+          gExt[g + 1] = gExt[g]; gTrav[g + 1] = gTrav[g] + 1;
+        } else {                              // extrusion / cutting
+          const p = gExt[g] * 10;
+          len = Math.hypot(data.seg[p + 3] - data.seg[p], data.seg[p + 4] - data.seg[p + 1], data.seg[p + 5] - data.seg[p + 2]);
+          feed = data.seg[p + 8];
+          gExt[g + 1] = gExt[g] + 1; gTrav[g + 1] = gTrav[g];
+        }
+        gTime[g + 1] = gTime[g] + (feed > 1e-6 ? len / (feed / 60) : 0);
+      }
+      const realTotal = gTime[G];
+      const fmtDur = (sec) => { sec = Math.round(sec); const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), ss = sec % 60; return h ? `${h}h ${m}m` : m ? `${m}m ${ss}s` : `${ss}s`; };
+
+      // Playback rate in moves/s. A "length" preset scales to the file (G / seconds) so any
+      // job finishes in that many seconds; a "lines/s" preset is a fixed rate.
+      const lpsForLen = (sec) => Math.max(1, G / sec);
+      let playLps = lpsForLen(20), realtime = false;
+
+      // Apply a fractional global position `gi` (in moves): reveal the ext + travel
+      // segments done so far and set the in-progress (partial) move - ext or travel - so
+      // its bead/line grows toward the live head. Syncs the slider + readout.
+      const applyGlobal = (gi) => {
+        gi = Math.max(0, Math.min(G, gi));
+        const g = Math.floor(gi), frac = gi - g, s = viewer.state;
+        if (g >= G) {
+          s.shown = data.segCount; s.travShown = data.travelCount; s.partial = 0; s.playKind = 0; s.playFrac = 0;
+        } else {
+          s.shown = gExt[g]; s.travShown = gTrav[g];
+          if (order[g] > 0.5) { s.playKind = frac > 0 ? 2 : 0; s.playFrac = frac; s.partial = 0; }
+          else { s.playKind = frac > 0 ? 1 : 0; s.partial = frac; s.playFrac = frac; }
+        }
         viewer.markDirty();
-        const pos = n + viewer.state.partial;
-        progSlider.value = String(data.segCount ? Math.round(pos / data.segCount * 1000) : 1000);
-        progVal.textContent = Math.round(n).toLocaleString() + ' / ' + data.segCount.toLocaleString();
+        progSlider.value = String(G ? Math.round(gi / G * 1000) : 1000);
+        progVal.textContent = s.shown.toLocaleString() + ' / ' + data.segCount.toLocaleString();
       };
+      let playPos = G, playElapsed = realTotal;
+      // Scrub: snap to a whole move (no partial), so dragging only ever shows complete moves.
+      const scrubTo = (gi) => { playPos = Math.max(0, Math.min(G, Math.round(gi))); playElapsed = gTime[Math.min(G, playPos)]; applyGlobal(playPos); };
+
       let playing = false, playRAF = 0, lastTs = 0;
       function stopPlay() { if (!playing) return; playing = false; playBtn.textContent = 'Play'; viewer.state.head = false; viewer.markDirty(); if (playRAF) cancelAnimationFrame(playRAF); playRAF = 0; }
       function stepPlay(ts) {
@@ -1122,51 +1380,32 @@ export async function renderGcode(file, resultsEl) {
         if (!lastTs) lastTs = ts;
         const dt = Math.min(0.25, (ts - lastTs) / 1000); lastTs = ts;
         if (realtime) {
-          // Advance by wall-clock against the real per-move timeline, interpolating
-          // within whichever move the clock currently sits in.
+          // Advance by wall-clock against the real per-move timeline (extrusions AND
+          // travels), interpolating within whichever move the clock currently sits in.
           playElapsed += dt;
-          if (playElapsed >= realTotal) { setProgress(data.segCount); stopPlay(); return; }
-          let n = viewer.state.shown | 0;
-          while (n < data.segCount && cumTime[n + 1] <= playElapsed) n++;
-          const segDur = cumTime[n + 1] - cumTime[n];
-          setProgressF(n, segDur > 1e-9 ? (playElapsed - cumTime[n]) / segDur : 0);
+          if (playElapsed >= realTotal) { playPos = G; applyGlobal(G); stopPlay(); return; }
+          let g = Math.max(0, Math.min(G - 1, Math.floor(playPos)));
+          while (g < G && gTime[g + 1] <= playElapsed) g++;
+          while (g > 0 && gTime[g] > playElapsed) g--;
+          const dur = gTime[g + 1] - gTime[g];
+          playPos = g + (dur > 1e-9 ? (playElapsed - gTime[g]) / dur : 0);
+          applyGlobal(playPos);
         } else {
-          const pos = (viewer.state.shown + viewer.state.partial) + playLps * dt;
-          if (pos >= data.segCount) { setProgress(data.segCount); stopPlay(); return; }
-          const n = Math.floor(pos);
-          setProgressF(n, pos - n);
+          playPos += playLps * dt;
+          if (playPos >= G) { playPos = G; applyGlobal(G); stopPlay(); return; }
+          applyGlobal(playPos);
         }
         playRAF = requestAnimationFrame(stepPlay);
       }
       const playBtn = el('button', { type: 'button', class: 'anr-btn', title: 'Play the print start to finish' }, 'Play');
       playBtn.addEventListener('click', () => {
         if (playing) { stopPlay(); return; }
-        if (viewer.state.shown >= data.segCount) setProgress(0);   // replay from the start
+        if (playPos >= G) scrubTo(0);   // replay from the start
         playing = true; lastTs = 0; playBtn.textContent = 'Pause'; viewer.state.head = true; viewer.markDirty();
-        const sShown = Math.max(0, Math.min(data.segCount, viewer.state.shown | 0));
-        const segDur = sShown < data.segCount ? cumTime[sShown + 1] - cumTime[sShown] : 0;
-        playElapsed = cumTime[sShown] + (viewer.state.partial || 0) * segDur;
+        const g = Math.min(G, Math.floor(playPos)), dur = g < G ? gTime[g + 1] - gTime[g] : 0;
+        playElapsed = gTime[g] + (playPos - g) * dur;   // sync the real-time clock to the resume point
         playRAF = requestAnimationFrame(stepPlay);
       });
-      // Playback rate in lines/s. A "length" preset scales to the file
-      // (lines/s = total moves / seconds), so any program finishes in that many
-      // seconds; a "lines/s" preset is a fixed rate. Default: whole job in 20s.
-      const lpsForLen = (sec) => Math.max(1, data.segCount / sec);
-      let playLps = lpsForLen(20);
-      let realtime = false, playElapsed = 0;
-
-      // Per-segment real durations (move length / feedrate) and their running total,
-      // for true real-time playback - each move takes as long as it would on the
-      // machine. Feed is units/min, coords are in file units, so both agree.
-      const cumTime = new Float64Array(data.segCount + 1);
-      for (let s = 0; s < data.segCount; s++) {
-        const p = s * 10;
-        const len = Math.hypot(data.seg[p + 3] - data.seg[p], data.seg[p + 4] - data.seg[p + 1], data.seg[p + 5] - data.seg[p + 2]);
-        const f = data.seg[p + 8];
-        cumTime[s + 1] = cumTime[s] + (f > 1e-6 ? len / (f / 60) : 0);
-      }
-      const realTotal = cumTime[data.segCount];
-      const fmtDur = (sec) => { sec = Math.round(sec); const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), ss = sec % 60; return h ? `${h}h ${m}m` : m ? `${m}m ${ss}s` : `${ss}s`; };
 
       const LINE_PRESETS = [[100, '100 lines/s'], [500, '500 lines/s'], [1000, '1k lines/s'], [5000, '5k lines/s'], [10000, '10k lines/s'], [20000, '20k lines/s']];
       const LEN_PRESETS = [10, 20, 30, 60, 120];
@@ -1222,22 +1461,71 @@ export async function renderGcode(file, resultsEl) {
       customRow.appendChild(customIn); customRow.appendChild(unitBtn);
       spdPanel.appendChild(customRow);
 
-      spdBtn.addEventListener('click', (e) => { e.stopPropagation(); spdPanel.classList.toggle('is-hidden'); });
-      document.addEventListener('click', (e) => { if (!spdWrap.contains(e.target)) spdPanel.classList.add('is-hidden'); });
+      // In fullscreen the popup lives inside the scrollable bottom toolbar overlay, which
+      // would clip it. Park it directly on the fullscreen wrap (a positioned, unclipped
+      // overlay) while open so it floats centred over the whole view; dock it back to the
+      // button on close. `viewer` is reassigned on the MSAA rebuild, so read it live.
+      const dockSpd = () => { if (spdPanel.parentNode !== spdWrap) { spdPanel.classList.remove('anr-spd-panel--fs'); spdWrap.appendChild(spdPanel); } };
+      const openSpd = () => {
+        const fs = document.fullscreenElement;
+        if (fs && viewer && fs === viewer.wrap) { spdPanel.classList.add('anr-spd-panel--fs'); viewer.wrap.appendChild(spdPanel); }
+        spdPanel.classList.remove('is-hidden');
+      };
+      const closeSpd = () => { spdPanel.classList.add('is-hidden'); dockSpd(); };
+      spdBtn.addEventListener('click', (e) => { e.stopPropagation(); if (spdPanel.classList.contains('is-hidden')) openSpd(); else closeSpd(); });
+      document.addEventListener('click', (e) => { if (!spdWrap.contains(e.target) && !spdPanel.contains(e.target)) closeSpd(); });
+      document.addEventListener('fullscreenchange', () => closeSpd());   // dock back when entering/leaving fullscreen
       spdWrap.appendChild(spdBtn); spdWrap.appendChild(spdPanel);
       choose(playLps, 'whole job in 20s', defBtn);   // default selection
 
-      progSlider.addEventListener('input', () => { stopPlay(); setProgress(Math.round(data.segCount * (+progSlider.value) / 1000), true); });
+      progSlider.addEventListener('input', () => { stopPlay(); scrubTo(G * (+progSlider.value) / 1000); });
 
       const progRow = el('div', { class: 'anr-gcode-slider anr-gcode-player' });
-      progRow.appendChild(el('span', { class: 'anr-gcode-rowlabel' }, 'Playback'));
       progRow.appendChild(playBtn);
       progRow.appendChild(spdWrap);
       progRow.appendChild(progSlider);
       progRow.appendChild(progVal);
       toolbar.appendChild(progRow);
       toolbar.appendChild(rtWarn);   // approximate-real-time caveat (shown in real-time mode)
+
+      // Over-cap escape hatch: when the print was truncated to fit memory, offer to
+      // re-parse and redraw the whole thing with the cap lifted (a re-render of this
+      // section, with `uncapped`). Hidden once shown in full (capped becomes false).
+      if (data.capped && !(opts && opts.uncapped)) {
+        const fullBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show full anyway');
+        const capRow = el('div', { class: 'anr-gcode-slider anr-gcode-player' }, [
+          el('span', { class: 'anr-gcode-rowlabel' }, 'Capped'),
+          fullBtn,
+        ]);
+        const fullWarn = el('p', { class: 'anr-spd-warn' },
+          `Only the first ${data.segCount.toLocaleString()} segments are drawn - this print exceeds the ${SEG_CAP.toLocaleString()}-segment limit tuned to your device's memory. Drawing it in full can use a lot of RAM and may run slowly or, on a constrained device, crash the tab.`);
+        fullBtn.addEventListener('click', () => {
+          fullBtn.disabled = true; fullBtn.textContent = 'Rebuilding…';
+          setTimeout(() => renderGcode(file, resultsEl, { uncapped: true }), 30);
+        });
+        toolbar.appendChild(capRow);
+        toolbar.appendChild(fullWarn);
+      }
       viewCard.appendChild(toolbar);
+
+      // Fullscreen targets the viewer's wrap, so the controls (the show/hide bar above it
+      // and the camera/playback toolbar below it) would be hidden. While fullscreen,
+      // reparent BOTH into the wrap as a bottom overlay - show/hide bar first, toolbar
+      // under it - so every control is reachable; move them back on exit. `viewer` is
+      // reassigned on the MSAA rebuild, so always read the current wrap.
+      const hasShowBar = showBar.childNodes.length > 0;
+      document.addEventListener('fullscreenchange', () => {
+        const fs = document.fullscreenElement;
+        if (fs && viewer && fs === viewer.wrap) {
+          toolbar.classList.add('anr-gcode-toolbar--fs');
+          if (hasShowBar) toolbar.insertBefore(showBar, toolbar.firstChild);   // show/hide bar reads first
+          viewer.wrap.appendChild(toolbar);
+        } else if (toolbar.classList.contains('anr-gcode-toolbar--fs')) {
+          toolbar.classList.remove('anr-gcode-toolbar--fs');
+          if (hasShowBar) viewCard.insertBefore(showBar, viewer.wrap);   // restore above the viewer
+          viewCard.appendChild(toolbar);
+        }
+      });
 
       resultsEl.appendChild(viewCard);
       viewer.start();
