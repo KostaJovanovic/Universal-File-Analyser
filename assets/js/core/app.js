@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 160;
+const COMMIT_COUNT = 161;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -53,6 +53,7 @@ import { renderDjvu } from '../renderers/djvu.js';
 import { renderMdb } from '../renderers/mdb.js';
 import { renderMobi } from '../renderers/mobi.js';
 import { renderDwg } from '../renderers/dwg.js';
+import { renderAltium } from '../renderers/altium.js';
 import { renderAep } from '../renderers/aftereffects.js';
 import { renderPremiere } from '../renderers/premiere.js';
 import { renderDavinci } from '../renderers/davinci.js';
@@ -417,6 +418,13 @@ function classifyFile(file) {
   if (ext === 'dxf') return 'dxf';
   // AutoCAD DWG / template: parse + render to a 2D drawing via libredwg-web.
   if (ext === 'dwg' || ext === 'dwt') return 'dwg';
+  // Altium Designer schematics + boards (OLE compound files): rebuild the
+  // schematic / PCB / footprint geometry as an interactive vector view. The
+  // text sidecars (.epw model wrapper, .PrjPcb project, *Preview cache) share
+  // the same renderer, which branches on extension.
+  if (ext === 'schdoc' || ext === 'schlib' || ext === 'pcbdoc' || ext === 'pcblib') return 'altium';
+  if (ext === 'epw' || ext === 'prjpcb' || ext === 'prjpcbstructure') return 'altium';
+  if (ext === 'schdocpreview' || ext === 'pcbdocpreview') return 'altium';
   // Adobe After Effects project: walk the RIFX tree to rebuild the comp timelines.
   if (ext === 'aep' || ext === 'aet') return 'aep';
   // Adobe Premiere Pro / Elements project: inflate the PremiereData XML and
@@ -559,6 +567,7 @@ const ROUTES = {
   drawio:      { render: renderDrawio,      results: 'unknown', scroll: '#unknownResults' },
   dxf:         { render: renderDxf,         results: 'unknown', scroll: '#unknownResults' },
   dwg:         { render: renderDwg,         results: 'unknown', scroll: '#unknownResults' },
+  altium:      { render: renderAltium,      results: 'unknown', scroll: '#unknownResults' },
   aep:         { render: renderAep,         results: 'unknown', scroll: '#unknownResults' },
   premiere:    { render: renderPremiere,    results: 'unknown', scroll: '#unknownResults' },
   davinci:     { render: renderDavinci,     results: 'unknown', scroll: '#unknownResults' },
@@ -1977,6 +1986,23 @@ function boot() {
       });
       section.classList.add('is-tappable');
     }
+  }
+
+  // ----- "Analyse any file" CTA on the per-format landing pages -----
+  // The /formats/<ext> pages carry a CTA that should open the OS file picker
+  // (any extension) rather than just linking home. On pick we stash the file
+  // and SPA-navigate to '/', where boot() below reads window._anrPendingFile and
+  // analyses it. Re-bound every navigation (the element is swapped on SPA nav);
+  // a flag guards against double-binding when boot re-runs on the same element.
+  const fmtPick = $('fmtPick'), fmtPickInput = $('fmtPickInput');
+  if (fmtPick && fmtPickInput && !fmtPick._anrWired) {
+    fmtPick._anrWired = true;
+    fmtPick.addEventListener('click', (e) => { e.preventDefault(); fmtPickInput.click(); });
+    fmtPickInput.addEventListener('change', () => {
+      if (!fmtPickInput.files || !fmtPickInput.files.length) return;
+      window._anrPendingFile = fmtPickInput.files[0];
+      const a = document.createElement('a'); a.href = '/'; document.body.appendChild(a); a.click(); a.remove();
+    });
   }
 
   // ----- Page-level drag/drop (window listeners added once) -----

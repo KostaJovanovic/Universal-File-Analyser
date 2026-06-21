@@ -125,6 +125,7 @@ const SHELL = [
   './assets/js/renderers/mdb.js',
   './assets/js/renderers/mobi.js',
   './assets/js/renderers/dwg.js',
+  './assets/js/renderers/altium.js',
   './assets/js/renderers/aftereffects.js',
   './assets/js/renderers/premiere.js',
   './assets/js/renderers/davinci.js',
