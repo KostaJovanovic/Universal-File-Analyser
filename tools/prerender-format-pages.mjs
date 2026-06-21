@@ -375,6 +375,7 @@ function page(key, e, depth) {
   ${THEME_SCRIPT}
 </head>
 <body>
+<noscript><div class="noscript-warning" role="alert"><strong>JavaScript is off.</strong> Analyser runs entirely in your browser, so nothing on this page works without it - you cannot open or analyse any file. Please enable JavaScript and reload.</div></noscript>
 
 <div id="pageDrop" class="page-drop" hidden aria-hidden="true">
   <div class="page-drop-inner">
@@ -415,7 +416,8 @@ ${siteNav(key)}
 
 <main class="site-main about-page patch-page format-page">
   <div class="format-cta">
-    <a href="/" class="format-cta-btn">Click here to analyse any file <span aria-hidden="true">&rarr;</span></a>
+    <a href="/" class="format-cta-btn" id="fmtPick">Click here to analyse any file <span aria-hidden="true">&rarr;</span></a>
+    <input type="file" id="fmtPickInput" hidden aria-hidden="true">
   </div>
   <section class="section">
     <div class="grid">

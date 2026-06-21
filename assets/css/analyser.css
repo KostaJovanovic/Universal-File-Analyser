@@ -123,6 +123,22 @@ body::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cline x1='0' y1='24' x2='15' y2='24' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='33' y1='24' x2='48' y2='24' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='24' y1='0' x2='24' y2='15' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='24' y1='33' x2='24' y2='48' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='19' y1='24' x2='29' y2='24' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='24' y1='19' x2='24' y2='29' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3C/svg%3E");
 }
 
+/* No-JavaScript warning. Analyser is a browser-only app driven entirely by
+   JavaScript, so with it disabled nothing works - this full-bleed accent banner
+   makes that obvious. Only ever rendered inside <noscript>. */
+.noscript-warning {
+  margin: 0;
+  padding: 16px 22px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: var(--t-base);
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  text-align: center;
+}
+.noscript-warning strong { font-weight: 800; }
+
 h1, h2, h3, h4, p, dl, dd, dt { margin: 0; }
 
 a {
@@ -5564,6 +5580,41 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 /* DWG drawing: rendered SVG on a white field so black CAD strokes stay visible. */
 .anr-dwg-wrap { overflow: auto; max-height: 640px; border: 1px solid var(--rule); background: #fff; padding: 8px; }
 .anr-dwg-wrap svg { max-width: 100%; height: auto; display: block; }
+
+/* ----- Altium schematic / PCB viewer ----- */
+.anr-altium-wrap { border: var(--bd-hairline); background: #0b0b0f; position: relative; }
+.anr-altium-svg {
+  display: block;
+  width: 100%;
+  height: clamp(360px, 60vh, 620px);
+  touch-action: none;
+  cursor: grab;
+  background:
+    radial-gradient(120% 120% at 50% 0%, rgba(var(--accent-rgb), 0.06), transparent 60%),
+    #0b0b0f;
+}
+.anr-altium-svg.is-grabbing { cursor: grabbing; }
+.anr-altium-svg text { font-family: var(--font-sans); user-select: none; }
+.anr-altium-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px;
+  border-top: var(--bd-hairline);
+  background: var(--bg);
+}
+.anr-altium-bar .anr-btn { padding: 5px 11px; font-size: 12px; }
+/* Layer toggle chips: a colour swatch + the layer name; dim when toggled off. */
+.anr-altium-layer { display: inline-flex; align-items: center; gap: 7px; }
+.anr-altium-layer:not(.is-on) { opacity: 0.4; }
+.anr-altium-layer.is-on { border-color: var(--accent); }
+.anr-altium-swatch {
+  width: 11px; height: 11px;
+  border-radius: 2px;
+  box-shadow: 0 0 4px currentColor;
+  flex: none;
+}
+.anr-altium-pads th, .anr-altium-pads td { text-align: left; padding-right: 18px; white-space: nowrap; }
 .anr-pptx-notes { margin-top: 14px; font-size: 13px; color: var(--muted); }
 .anr-pptx-notes summary { cursor: pointer; }
 /* Speaker notes are noise in a thumbnail - only show them in the open lightbox. */
