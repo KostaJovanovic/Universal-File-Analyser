@@ -980,6 +980,29 @@ body.anr-has-file .nav-search { display: flex; }
 .anr-btn.is-recording .anr-rec-dot { animation: anr-blink 1s steps(2, end) infinite; }
 @keyframes anr-blink { 50% { opacity: 0; } }
 
+/* Prominent red call-to-action button (the "Analyse audio"/"Analyse photo"
+   prompts a video drops into the Sound/Photo sections). Larger than the stock
+   .anr-btn and filled with the accent so it reads as the one thing to click. */
+.anr-btn--cta {
+  font-size: var(--t-base);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 14px 28px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+.anr-btn--cta:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+  filter: brightness(1.08);
+}
+.anr-btn--cta:disabled {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
 .anr-btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 /* `display: flex` above outranks the UA `[hidden]` rule, so a `.hidden = true`
    row would otherwise stay as an empty gap - collapse it explicitly. */
@@ -6309,13 +6332,14 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   text-decoration: none;
-  color: var(--fg);
-  background: var(--surface);
+  color: var(--accent-fg);
+  background: var(--accent);
   border: var(--bd-hairline);
+  border-color: var(--accent);
   padding: 11px 24px;
-  transition: background var(--dur-base) ease, color var(--dur-base) ease;
+  transition: background var(--dur-base) ease, color var(--dur-base) ease, filter var(--dur-base) ease;
 }
-.format-cta-btn:hover { background: var(--fg); color: var(--bg); }
+.format-cta-btn:hover { background: var(--accent); color: var(--accent-fg); filter: brightness(1.08); }
 .format-cta-btn span { transition: transform var(--dur-snappy) ease; display: inline-block; }
 .format-cta-btn:hover span { transform: translateX(4px); }
 

@@ -128,11 +128,23 @@ function buildFrameControls(playerEl, getFps, file) {
     cv.getContext('2d').drawImage(playerEl, 0, 0, vw, vh);
     return cv;
   }
-  const prevBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => { playerEl.pause(); playerEl.currentTime = Math.max(0, playerEl.currentTime - 1 / fps()); } }, '← Prev frame');
-  const nextBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
-    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) { playerEl.requestVideoFrameCallback(() => { playerEl.pause(); refresh(); }); playerEl.play(); }
-    else { playerEl.currentTime = Math.min(playerEl.duration || Infinity, playerEl.currentTime + 1 / fps()); }
-  } }, 'Next frame →');
+  // Step exactly one frame in either direction. Both buttons share this so they
+  // behave symmetrically: snap to the current frame index, shift by `delta`, then
+  // seek to the MIDDLE of the target frame (the + 0.5) so float rounding can never
+  // spill the seek into a neighbouring frame or land on a boundary and drift.
+  // (The old "Next" played the video and paused on the next painted frame, which
+  // advanced by a non-deterministic number of frames in real wall-clock time.)
+  function stepFrame(delta) {
+    playerEl.pause();
+    const f = fps();
+    const idx = Math.floor(playerEl.currentTime * f + 1e-6);
+    let target = (idx + delta + 0.5) / f;
+    const dur = playerEl.duration;
+    if (isFinite(dur) && dur > 0) target = Math.min(target, dur - 0.5 / f);
+    playerEl.currentTime = Math.max(0, target);
+  }
+  const prevBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => stepFrame(-1) }, '← Prev frame');
+  const nextBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => stepFrame(1) }, 'Next frame →');
   const analyseBtn = el('button', { type: 'button', class: 'anr-btn', onclick: async () => {
     const cv = grabCanvas(); if (!cv) return;
     analyseBtn.disabled = true; analyseBtn.textContent = 'Capturing…';
@@ -188,7 +200,7 @@ function mountAudioAnalyseButton(audioResultsEl, run) {
   card.appendChild(el('h3', {}, 'Audio track'));
   card.appendChild(el('p', { class: 'anr-info' },
     'This video carries an embedded sound track. Extract it for a player, waveform, spectrogram and level stats.'));
-  const btn = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse audio');
+  const btn = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Analyse audio');
   card.appendChild(btn);
   audioResultsEl.appendChild(card);
   btn.addEventListener('click', () => {
@@ -205,16 +217,16 @@ function mountAudioAnalyseButton(audioResultsEl, run) {
   });
 }
 
-// Photo counterpart of mountAudioAnalyseButton: a video's first frame is no
-// longer pushed into the Photo section automatically. This drops an "Analyse
-// photo" prompt card there; the frame is only analysed when the user clicks.
+// Photo counterpart of mountAudioAnalyseButton: a video frame is no longer pushed
+// into the Photo section automatically. This drops an "Analyse photo" prompt card
+// there; the current frame is only analysed when the user clicks.
 function mountPhotoAnalyseButton(photoResultsEl, run) {
   photoResultsEl.hidden = false;
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Frame analysis'));
   card.appendChild(el('p', { class: 'anr-info' },
-    'Pull this video’s first frame into the photo tools for colours, dimensions, EXIF and the rest.'));
-  const btn = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse photo');
+    'Pull the current video frame into the photo tools for colours, dimensions, EXIF and the rest.'));
+  const btn = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Analyse photo');
   card.appendChild(btn);
   photoResultsEl.appendChild(card);
   btn.addEventListener('click', () => {
@@ -3088,12 +3100,17 @@ export async function renderVideo(file, resultsEl, opts = {}) {
         // (picture + sound) with FFmpeg - same path as the normal player.
         if (frames.length > 1) resultsEl.appendChild(buildReverseVideoCard(file, renderSignal));
 
-        // First frame - gated behind an "Analyse photo" button.
+        // Current frame - gated behind an "Analyse photo" button. The frame is read
+        // at click time from wherever the frame viewer is parked (currentFrame), not
+        // fixed at frame 0.
         const photoResultsEl = document.getElementById('photoResults');
         if (photoResultsEl) {
-          const blob = new Blob([frames[0]], { type: 'image/jpeg' });
-          const frameFile = new File([blob], 'frame_0.000s.jpg', { type: 'image/jpeg' });
-          mountPhotoAnalyseButton(photoResultsEl, () => renderPhoto(frameFile, photoResultsEl));
+          mountPhotoAnalyseButton(photoResultsEl, () => {
+            const idx = Math.max(0, Math.min(currentFrame | 0, frames.length - 1));
+            const blob = new Blob([frames[idx]], { type: 'image/jpeg' });
+            const frameFile = new File([blob], `frame_${idx}.jpg`, { type: 'image/jpeg' });
+            renderPhoto(frameFile, photoResultsEl, { sourceNote: 'Frame ' + idx + ' of ' + (file.name || 'the video') + '.' });
+          });
         }
       }
 
@@ -3203,30 +3220,17 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     previewSlot.appendChild(thumb);
   }
 
-  // First frame into the photo section - gated behind an "Analyse photo" button.
-  // The frame is grabbed from the probe now (it sits at frame 0 at this point;
-  // later scene detection may seek it away), but only rendered on click.
+  // Frame 0, captured now from the probe (full-res) - kept only as a fallback for
+  // the "Analyse photo" button while the visible player is still parked at the
+  // start with no decoded frame to grab. The button itself is mounted after the
+  // player is built (below), and prefers the player's CURRENT frame at click time.
   const photoResultsEl = document.getElementById('photoResults');
+  let firstFrameFile = null;
   if (photoResultsEl && vw && vh) {
     const fcv = document.createElement('canvas');
     fcv.width = vw; fcv.height = vh;
     fcv.getContext('2d').drawImage(probe, 0, 0, vw, vh);
-    fcv.toBlob(blob => {
-      if (!blob) return;
-      const frameFile = new File([blob], `frame_0.000s.png`, { type: 'image/png' });
-      mountPhotoAnalyseButton(photoResultsEl, () => {
-        let lastPhotoHeight = photoResultsEl.offsetHeight;
-        const photoScrollComp = new ResizeObserver(() => {
-          const newHeight = photoResultsEl.offsetHeight;
-          const delta = newHeight - lastPhotoHeight;
-          if (delta > 0) window.scrollBy(0, delta);
-          lastPhotoHeight = newHeight;
-        });
-        photoScrollComp.observe(photoResultsEl);
-        renderSignal.addEventListener('abort', () => photoScrollComp.disconnect());
-        renderPhoto(frameFile, photoResultsEl);
-      });
-    }, 'image/png');
+    fcv.toBlob(blob => { if (blob) firstFrameFile = new File([blob], 'frame_0.000s.png', { type: 'image/png' }); }, 'image/png');
   }
 
   // NOTE: the probe is intentionally kept alive here. It already decodes this
@@ -3260,6 +3264,40 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   playerCard.appendChild(frameControls.wrap);
 
   resultsEl.appendChild(playerCard);
+
+  // Analyse photo -> the CURRENT frame of the player (wherever it has been scrubbed
+  // or played to), captured at click time. While the player is still parked at the
+  // very start it may have no decoded frame to grab, so fall back to the full-res
+  // frame 0 captured from the probe above.
+  if (photoResultsEl && vw && vh) {
+    mountPhotoAnalyseButton(photoResultsEl, () => {
+      let lastPhotoHeight = photoResultsEl.offsetHeight;
+      const photoScrollComp = new ResizeObserver(() => {
+        const newHeight = photoResultsEl.offsetHeight;
+        const delta = newHeight - lastPhotoHeight;
+        if (delta > 0) window.scrollBy(0, delta);
+        lastPhotoHeight = newHeight;
+      });
+      photoScrollComp.observe(photoResultsEl);
+      renderSignal.addEventListener('abort', () => photoScrollComp.disconnect());
+
+      const t = playerEl.currentTime || 0;
+      const live = playerEl.readyState >= 2 && playerEl.videoWidth && t > 0.001;
+      if (live) {
+        const cv = document.createElement('canvas');
+        cv.width = playerEl.videoWidth; cv.height = playerEl.videoHeight;
+        try {
+          cv.getContext('2d').drawImage(playerEl, 0, 0, cv.width, cv.height);
+          cv.toBlob(blob => {
+            const f = blob ? new File([blob], `frame_${t.toFixed(3)}s.png`, { type: 'image/png' }) : firstFrameFile;
+            if (f) renderPhoto(f, photoResultsEl, { sourceNote: 'Frame captured at ' + t.toFixed(3) + 's from ' + (file.name || 'the video') + '.' });
+          }, 'image/png');
+          return;
+        } catch (_) { /* tainted/undecoded - fall through to frame 0 */ }
+      }
+      if (firstFrameFile) renderPhoto(firstFrameFile, photoResultsEl, { sourceNote: 'First frame of ' + (file.name || 'the video') + '.' });
+    });
+  }
 
   // ---- Reverse playback (re-encode the video backwards, on demand) ----
   resultsEl.appendChild(buildReverseVideoCard(file, renderSignal));
