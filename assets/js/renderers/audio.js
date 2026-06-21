@@ -1033,22 +1033,32 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
   // Waveform playhead synced with audio
   const waveLine = el('div', { class: 'anr-playhead' });
   waveWrap.appendChild(waveLine);
-  function tickWaveLine() {
+  // `animate` lets the line ease into place for discrete seeks while paused; during
+  // live playback (and scrubbing) it tracks frame-by-frame with transition:none so
+  // it can't lag behind - the 0.28s CSS ease on .anr-playhead would otherwise make
+  // every RAF update visibly trail the audio.
+  function tickWaveLine(animate) {
     const d = audioBuffer.duration;
     const currentSample = (audioEl.currentTime / d) * mono.length;
     const visLen = zoomEnd - zoomStart;
     const pct = ((currentSample - zoomStart) / visLen) * 100;
     if (pct >= 0 && pct <= 100) {
+      waveLine.style.transition = animate ? '' : 'none';
       waveLine.style.left = pct + '%';
       waveLine.hidden = false;
     } else {
       waveLine.hidden = true;
     }
-    if (!audioEl.paused) requestAnimationFrame(tickWaveLine);
   }
-  audioEl.addEventListener('play', () => requestAnimationFrame(tickWaveLine));
-  audioEl.addEventListener('pause', tickWaveLine);
-  audioEl.addEventListener('seeked', tickWaveLine);
+  // The RAF loop drives live playback, always non-animated (passing the bare
+  // function would feed the RAF timestamp in as `animate`, re-enabling the ease).
+  function tickWaveLoop() {
+    tickWaveLine(false);
+    if (!audioEl.paused) requestAnimationFrame(tickWaveLoop);
+  }
+  audioEl.addEventListener('play', () => requestAnimationFrame(tickWaveLoop));
+  audioEl.addEventListener('pause', () => tickWaveLine(true));
+  audioEl.addEventListener('seeked', () => tickWaveLine(audioEl.paused));
 
   // Grab the playhead line and drag to scrub (respects the current zoom window).
   attachScrub(waveLine, (clientX) => {
