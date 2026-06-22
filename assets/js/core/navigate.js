@@ -74,6 +74,11 @@
   }
 
   document.addEventListener('click', function (e) {
+    // Another handler already claimed this click (e.g. the per-format pages' CTA
+    // <a href="/"> that calls preventDefault to open the OS file picker instead of
+    // navigating). Honour that - hijacking it here would swap the page out from
+    // under the picker and break the pending-file hand-off home.
+    if (e.defaultPrevented) return;
     var link = e.target.closest('a[href]');
     if (!link) return;
     var href = link.getAttribute('href');

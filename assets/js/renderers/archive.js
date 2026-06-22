@@ -316,6 +316,45 @@ export async function renderArchive(file, resultsEl, opts = {}) {
     return new File([content], fileName, { type: guessMime(ext) });
   }
 
+  // Batch-extract a set of entries into [{ path, file }] for the EDA project views.
+  async function extractFiles(names) {
+    const ffl = await loadFflate();
+    const set = new Set(names);
+    const unzipped = ffl.unzipSync(new Uint8Array(buf), { filter: (f) => set.has(f.name) });
+    const out = [];
+    for (const name of names) {
+      const content = unzipped[name];
+      if (content) out.push({ path: name, file: new File([content], name.split('/').pop() || name, { type: 'application/octet-stream' }) });
+    }
+    return out;
+  }
+
+  // --- EDA project detection: if the archive holds an Altium or KiCad project,
+  // stitch its documents into one combined cross-probing view at the top, exactly
+  // as a dropped project FOLDER does (folder.js). The renderer module is loaded
+  // lazily, only when a project is actually present. ---
+  if (!embedded) detectEdaProject();
+  function detectEdaProject() {
+    const names = fileEntries.map((e) => e.name);
+    const ALT_RE = /\.(prjpcb|prjpcbstructure|schdoc|schlib|pcbdoc|pcblib|epw|schdocpreview|pcbdocpreview)$/i;
+    const ALT_DOC_RE = /\.(schdoc|schlib|pcbdoc|pcblib|prjpcb)$/i;
+    const KI_RE = /(\.kicad_(pcb|sch|sym|mod|pro|prl)$|\.wbk$|(^|\/)(fp-lib-table|sym-lib-table|fp-info-cache)$)/i;
+    const KI_DOC_RE = /\.kicad_(pcb|sch|pro)$/i;
+    const altNames = names.filter((n) => ALT_RE.test(n));
+    const kiNames = names.filter((n) => KI_RE.test(n));
+    const folderLabel = (file.name || 'archive').replace(/\.[^.]+$/, '');
+    if (altNames.some((n) => ALT_DOC_RE.test(n)) && altNames.length >= 2) loadProjectView('./altium.js', 'buildAltiumProjectCard', altNames, folderLabel, 'Altium');
+    if (kiNames.some((n) => KI_DOC_RE.test(n)) && kiNames.length >= 2) loadProjectView('./kicad.js', 'buildKicadProjectCard', kiNames, folderLabel, 'KiCad');
+  }
+  function loadProjectView(mod, fn, names, label, kind) {
+    const slot = el('div', { class: 'anr-card' }, el('div', { class: 'anr-info' }, `Building combined ${kind} project view…`));
+    resultsEl.insertBefore(slot, resultsEl.firstChild);
+    Promise.all([import(mod), extractFiles(names)])
+      .then(([m, fileList]) => m[fn](fileList, label))
+      .then((cardEl) => { slot.replaceWith(cardEl); })
+      .catch(() => { slot.remove(); });
+  }
+
   // Register a Back-bar restore that re-renders THIS archive before opening a
   // child, so the breadcrumb can step back to it one level at a time. Skipped in
   // embedded mode (the browse-as-archive view under a primary analysis), whose
