@@ -1206,7 +1206,111 @@ async function parseBatch(file, ext) {
   return out;
 }
 
+// ---------- ONNX model (.onnx) ----------
+// ONNX models are protobuf-encoded ModelProto messages. Without the schema we
+// scan the top-level fields we care about: ir_version (1, varint), producer_name
+// (2, string), producer_version (3, string), domain (4), model_version (5),
+// opset_import (8). Enough to identify the framework that exported the model.
+const ONNX_IR = { 3: '1.1', 4: '1.5', 5: '1.6', 6: '1.7', 7: '1.9', 8: '1.11', 9: '1.13', 10: '1.15', 11: '1.17' };
+async function parseOnnx(file) {
+  const buf = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+  let p = 0;
+  const varint = () => { let shift = 0, v = 0n; while (p < buf.length) { const b = buf[p++]; v |= BigInt(b & 0x7f) << BigInt(shift); if (!(b & 0x80)) break; shift += 7; } return v; };
+  const out = { 'Format': 'ONNX model (.onnx)', 'Type': 'Open Neural Network Exchange' };
+  let opsets = 0;
+  try {
+    while (p < buf.length) {
+      const key = Number(varint());
+      const field = key >> 3, wire = key & 7;
+      if (field === 0 || field > 20) break;
+      if (wire === 0) {                       // varint
+        const v = varint();
+        if (field === 1) out['IR version'] = ONNX_IR[Number(v)] ? ONNX_IR[Number(v)] + ' (ir ' + v + ')' : 'ir ' + v;
+        if (field === 5) out['Model version'] = String(v);
+      } else if (wire === 2) {                // length-delimited
+        const len = Number(varint());
+        if (len < 0 || p + len > buf.length) { p += Math.max(0, len); if (field !== 2 && field !== 3 && field !== 4) continue; else break; }
+        const slice = buf.subarray(p, p + len); p += len;
+        if (field === 2) out['Exported by'] = ascii(slice, 0, slice.length);
+        else if (field === 3) out['Producer version'] = ascii(slice, 0, slice.length);
+        else if (field === 4 && slice.length) out['Domain'] = ascii(slice, 0, slice.length);
+        else if (field === 8) opsets++;       // opset_import (count them)
+      } else if (wire === 5) { p += 4; }
+      else if (wire === 1) { p += 8; }
+      else break;
+    }
+  } catch (_) {}
+  if (opsets) out['Opset imports'] = opsets + (opsets >= 1 ? '+ (in header)' : '');
+  out['Note'] = 'A trained neural-network graph in the framework-neutral ONNX format (PyTorch, TensorFlow, scikit-learn and others export to it). Protobuf-encoded; header scanned in-browser.';
+  return out;
+}
+
+// ---------- Native module (.node) / dynamic library (.dylib) ----------
+const MACHO_CPU = { 7: 'x86', 0x01000007: 'x86-64', 12: 'ARM', 0x0100000c: 'ARM64', 0x01000012: 'PowerPC64' };
+async function parseNativeBinary(file, ext) {
+  const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
+  const dv = new DataView(head.buffer);
+  const be = dv.getUint32(0, false);
+  const label = ext === 'dylib' ? 'macOS dynamic library (.dylib)' : 'Native add-on module (.node)';
+  const out = { 'Format': label };
+  if (be === 0xFEEDFACE || be === 0xFEEDFACF) {            // thin Mach-O (BE magic written LE)
+    out['Container'] = 'Mach-O (' + (be === 0xFEEDFACF ? '64-bit' : '32-bit') + ')';
+    const cpu = dv.getUint32(4, true);
+    if (MACHO_CPU[cpu]) out['Architecture'] = MACHO_CPU[cpu];
+    out['Platform'] = 'macOS';
+  } else if (be === 0xCAFEBABE || be === 0xCAFEBABF) {     // fat / universal Mach-O
+    out['Container'] = 'Mach-O universal (fat)';
+    out['Architectures'] = dv.getUint32(4, false);
+    out['Platform'] = 'macOS';
+  } else if (head[0] === 0x4D && head[1] === 0x5A) {       // PE
+    out['Container'] = 'PE / DLL';
+    out['Platform'] = 'Windows';
+  } else if (head[0] === 0x7F && head[1] === 0x45 && head[2] === 0x4C && head[3] === 0x46) {  // ELF
+    out['Container'] = 'ELF';
+    out['Platform'] = 'Linux';
+  }
+  out['Note'] = ext === 'node'
+    ? 'A compiled native Node.js / Electron add-on - a platform-specific shared library loaded via require(). The container (Mach-O / PE / ELF) reveals the OS it was built for.'
+    : 'A Mach-O shared library loaded by macOS apps at runtime (the Apple equivalent of a Windows .dll / Linux .so).';
+  return out;
+}
+
+// ---------- LevelDB table (.ldb) ----------
+async function parseLevelDb(file) {
+  if (file.size < 8) return null;
+  const foot = new Uint8Array(await file.slice(file.size - 8, file.size).arrayBuffer());
+  // LevelDB/RocksDB table footer magic 0xdb4775248b80fb57 (stored little-endian).
+  const ok = foot[0] === 0x57 && foot[1] === 0xfb && foot[2] === 0x80 && foot[3] === 0x8b &&
+             foot[4] === 0x24 && foot[5] === 0x75 && foot[6] === 0x47 && foot[7] === 0xdb;
+  if (!ok) return { 'Format': 'LevelDB table (.ldb)', 'Note': 'Expected LevelDB footer magic not found - this .ldb may be an Access lock file or a different store.' };
+  return {
+    'Format': 'LevelDB SSTable (.ldb)',
+    'Footer magic': '0xdb4775248b80fb57',
+    'Note': 'A sorted-string table from a LevelDB / RocksDB key-value store (used by Chrome, Electron, Discord, IndexedDB and many apps). Immutable on-disk segment; keys/values are block-compressed.',
+  };
+}
+
+// ---------- Git packfile reverse index (.rev) ----------
+async function parseGitRev(file) {
+  const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  if (ascii(head, 0, 4) !== 'RIDX') return null;
+  const dv = new DataView(head.buffer);
+  const version = dv.getUint32(4, false);
+  const hashId = dv.getUint32(8, false);
+  return {
+    'Format': 'Git pack reverse index (.rev)',
+    'Version': version,
+    'Hash function': hashId === 1 ? 'SHA-1' : hashId === 2 ? 'SHA-256' : 'id ' + hashId,
+    'Note': 'Maps a pack\'s objects from pack-position order to index (SHA) order, so Git can answer "what is at offset N" quickly. Pairs with the .idx / .pack in .git/objects/pack.',
+  };
+}
+
 export const PARSERS = {
+  onnx: (c) => parseOnnx(c.file),
+  node: (c) => parseNativeBinary(c.file, c.ext),
+  dylib: (c) => parseNativeBinary(c.file, c.ext),
+  ldb: (c) => parseLevelDb(c.file),
+  rev: (c) => parseGitRev(c.file),
   ps1: (c) => parsePowerShell(c.file, c.ext),
   psm1: (c) => parsePowerShell(c.file, c.ext),
   psd1: (c) => parsePowerShell(c.file, c.ext),
