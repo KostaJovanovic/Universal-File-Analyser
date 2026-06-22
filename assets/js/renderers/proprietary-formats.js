@@ -566,6 +566,95 @@ export const FORMATS = {
   e01:     { app: 'EnCase Forensic Image', icon: 'E01', chunk: 'security' },
   etl:     { app: 'Event Trace Log', icon: 'ETL', chunk: 'security' },
 
+  // REDengine 4 (Cyberpunk 2077 / The Witcher) - lazy chunk parsers-gaming.js.
+  // oodledict / redshadercache / innouninstall are virtual keys: their real
+  // extensions (.bin / .cache / .dat) are too generic to route by name, so app.js
+  // content-gates them by magic and routes via sniffedExt.
+  archive:          { app: 'REDengine 4 archive (Cyberpunk 2077)', icon: 'RED', magic: [0x52, 0x44, 0x41, 0x52], chunk: 'gaming' },
+  redscripts:       { app: 'REDengine compiled scripts', icon: 'RED', magic: [0x52, 0x45, 0x44, 0x53], chunk: 'gaming' },
+  addcont_keystone: { app: 'REDengine add-on content keystone', icon: 'RED', chunk: 'gaming' },
+  script:           { app: 'REDengine / redscript source', icon: 'RED', parse: 'text' },
+  tweak:            { app: 'REDengine TweakXL source', icon: 'RED', parse: 'text' },
+  rne:              { app: 'Renamed DLL (REDengine / Cyberpunk)', icon: 'DLL', magic: [0x4D, 0x5A] },
+  oodledict:        { app: 'Oodle-compressed data (REDengine)', icon: 'RED', chunk: 'gaming' },
+  redshadercache:   { app: 'REDengine shader cache', icon: 'RED', chunk: 'gaming' },
+  innouninstall:    { app: 'Inno Setup uninstall log', icon: 'INNO', chunk: 'gaming' },
+
+  // Source text long-tail (Python venv / scientific stacks) - shown as source.
+  // pythonpath is a virtual key: .pth is content-gated (text vs PyTorch binary).
+  pyi:  { app: 'Python type stub', icon: 'PYI', parse: 'text' },
+  pxi:  { app: 'Cython include', icon: 'PYX', parse: 'text' },
+  pxd:  { app: 'Cython definition file', icon: 'PYX', parse: 'text' },
+  pyf:  { app: 'F2PY interface (Fortran/Python)', icon: 'PYF', parse: 'text' },
+  pys:  { app: 'Python script', icon: 'PY', parse: 'text' },
+  vbs:  { app: 'VBScript', icon: 'VBS', parse: 'text' },
+  f90:  { app: 'Fortran 90 source', icon: 'F90', parse: 'text' },
+  f95:  { app: 'Fortran 95 source', icon: 'F95', parse: 'text' },
+  f:    { app: 'Fortran source (fixed-form)', icon: 'F', parse: 'text' },
+  sct:  { app: 'Windows Script Component', icon: 'SCT', parse: 'xml' },
+  rng:  { app: 'RELAX NG schema', icon: 'RNG', parse: 'xml' },
+  xsl:  { app: 'XSLT stylesheet', icon: 'XSL', parse: 'xml' },
+  cnf:  { app: 'Configuration file', icon: 'CNF', parse: 'text' },
+  zi:   { app: 'tz database source', icon: 'ZI', parse: 'text' },
+  '1':  { app: 'Unix manual page (troff)', icon: 'MAN', parse: 'text' },
+  pythonpath: { app: 'Python path configuration (.pth)', icon: 'PTH', parse: 'text' },
+
+  // Cross-platform binaries, ML & misc (lazy chunk parsers-dev.js). citationcff
+  // is a virtual key: .cff is content-gated (YAML citation vs binary CFF font).
+  onnx:   { app: 'ONNX neural-network model', icon: 'ONX', chunk: 'dev' },
+  node:   { app: 'Native add-on module (.node)', icon: 'N', chunk: 'dev' },
+  dylib:  { app: 'macOS dynamic library', icon: 'DYL', chunk: 'dev' },
+  ldb:    { app: 'LevelDB table', icon: 'LDB', chunk: 'dev' },
+  rev:    { app: 'Git pack reverse index', icon: 'GIT', magic: [0x52, 0x49, 0x44, 0x58], chunk: 'dev' },
+  citationcff: { app: 'Citation File Format (CITATION.cff)', icon: 'CFF', parse: 'text' },
+  rsp:    { app: 'Compiler response file', icon: 'RSP', parse: 'text' },
+  cgp:    { app: 'Pattern / grid data (.cgp)', icon: 'CGP', parse: 'text' },
+  chroma: { app: 'Razer Chroma animation', icon: 'RZ' },
+  stamp:  { app: 'Build stamp / marker', icon: 'STP' },
+
+  // Marathon / Aleph One (lazy chunk parsers-gaming.js). Keys are lowercase
+  // because extFromName lowercases (.sceA -> scea). .mml is XML text.
+  scen: { app: 'Marathon / Aleph One scenario', icon: 'M∞', chunk: 'gaming' },
+  scea: { app: 'Marathon / Aleph One scenario', icon: 'M∞', chunk: 'gaming' },
+  appl: { app: 'Marathon / Aleph One plugin data', icon: 'M∞', chunk: 'gaming' },
+  phys: { app: 'Marathon / Aleph One physics', icon: 'M∞', chunk: 'gaming' },
+  phya: { app: 'Marathon / Aleph One physics', icon: 'M∞', chunk: 'gaming' },
+  shps: { app: 'Marathon / Aleph One shapes', icon: 'M∞', chunk: 'gaming' },
+  shpa: { app: 'Marathon / Aleph One shapes', icon: 'M∞', chunk: 'gaming' },
+  sndz: { app: 'Marathon / Aleph One sounds', icon: 'M∞', chunk: 'gaming' },
+  snda: { app: 'Marathon / Aleph One sounds', icon: 'M∞', chunk: 'gaming' },
+  fila: { app: 'Marathon / Aleph One film', icon: 'M∞', chunk: 'gaming' },
+  imga: { app: 'Marathon / Aleph One images', icon: 'M∞', chunk: 'gaming' },
+  mml:  { app: 'Aleph One MML config', icon: 'MML', parse: 'xml' },
+
+  // Unity / IL2CPP - lazy chunk parsers-gaming.js. il2cppmeta / addrcatalog /
+  // unitymanifest are virtual keys: their real extensions (.dat / .bin /
+  // .manifest) are content-gated by app.js.
+  usym:          { app: 'IL2CPP symbol map', icon: 'IL2', magic: [0x73, 0x79, 0x6D, 0x2D], chunk: 'gaming' },
+  pd_:           { app: '.NET assembly metadata (renamed)', icon: 'NET', magic: [0x42, 0x53, 0x4A, 0x42], chunk: 'gaming' },
+  hfthumb:       { app: 'House Flipper thumbnail', icon: 'HF', chunk: 'gaming' },
+  shadervariants: { app: 'Unity shader variant collection', icon: 'U', parse: 'text' },
+  shader:        { app: 'Shader (ShaderLab / GPU shader)', icon: 'SHA', parse: 'text' },
+  il2cppmeta:    { app: 'IL2CPP global metadata', icon: 'IL2', chunk: 'gaming' },
+  addrcatalog:   { app: 'Unity Addressables catalog', icon: 'U', chunk: 'gaming' },
+  unitymanifest: { app: 'Unity asset bundle manifest', icon: 'U', chunk: 'gaming', parse: 'text' },
+  hash:          { app: 'Hash / checksum', icon: 'HSH', parse: 'text' },
+
+  // Source 2 (Valve: Deadlock / CS2 / Dota 2) - text assets. chunk parser
+  // surfaces the KV3 header / gameinfo, parse:'text' shows the source.
+  // valveres is a virtual key: .res is content-gated by app.js (text vs binary).
+  gi:            { app: 'Source 2 game info (gameinfo.gi)', icon: 'S2', chunk: 'gaming', parse: 'text' },
+  kv3:           { app: 'Valve KeyValues3', icon: 'KV3', chunk: 'gaming', parse: 'text' },
+  vcfg:          { app: 'Source 2 config', icon: 'S2', chunk: 'gaming', parse: 'text' },
+  vqlayout:      { app: 'Source 2 tools layout', icon: 'S2', chunk: 'gaming', parse: 'text' },
+  vsc:           { app: 'Source 2 style colours', icon: 'S2', chunk: 'gaming', parse: 'text' },
+  qss:           { app: 'Qt style sheet', icon: 'QSS', chunk: 'gaming', parse: 'text' },
+  signatures:    { app: 'Source 2 function signatures', icon: 'S2', chunk: 'gaming', parse: 'text' },
+  vsnd_template: { app: 'Source 2 sound-event template', icon: 'S2', chunk: 'gaming', parse: 'text' },
+  vnm_template:  { app: 'Source 2 node-graph template', icon: 'S2', chunk: 'gaming', parse: 'text' },
+  mks_template:  { app: 'Source 2 sheet template', icon: 'S2', chunk: 'gaming', parse: 'text' },
+  valveres:      { app: 'Valve resource / UI layout', icon: 'S2', chunk: 'gaming', parse: 'text' },
+
   // Game ROMs / engine assets (lazy parser chunk: parsers-gaming.js)
   nes:     { app: 'NES ROM (iNES)', icon: 'NES', chunk: 'gaming' },
   gb:      { app: 'Game Boy ROM', icon: 'GB', chunk: 'gaming' },

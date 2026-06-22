@@ -3796,6 +3796,7 @@ const PARSERS = {
   swf:   c => parseSwf(c.head),
   exe:   c => parseExe(c),
   dll:   c => parseExe(c),
+  rne:   c => parseExe(c),   // Cyberpunk ships steam_api64.dll renamed to .rne
   ttf:   c => parseFont(c.file),
   otf:   c => parseFont(c.file),
   ttc:   c => parseFont(c.file),

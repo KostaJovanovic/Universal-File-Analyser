@@ -1682,7 +1682,370 @@ async function parseEmuSave(file, ext) {
   };
 }
 
+// ---------- REDengine 4 (Cyberpunk 2077 / The Witcher) ----------
+// .archive: the engine's packed asset bundle. The 40-byte header is
+//   magic "RDAR"(4) version(u32) indexPosition(u64) indexSize(u32)
+//   debugPosition(u64) debugSize(u32) fileSize(u64).
+// We read the header fields and, when the index table fits, its declared file
+// count (index header: u32 unknown, u32 fileTableOffset, u32 fileTableSize,
+// u32 crc, u32 fileEntryCount).
+async function parseRedArchive(file) {
+  const head = await readSlice(file, 0, 40);
+  if (ascii(head, 0, 4) !== 'RDAR') return null;
+  const r = new Reader(head, true); r.seek(4);
+  const version = r.u32();
+  const indexPos = Number(r.u64());
+  const indexSize = r.u32();
+  r.skip(12); // debugPosition(8) + debugSize(4)
+  const fileSize = Number(r.u64());
+  const out = {
+    'Format': 'REDengine 4 archive (.archive)',
+    'Engine': 'REDengine 4 - Cyberpunk 2077 / The Witcher 3 (next-gen)',
+    'Archive version': version,
+    'Index position': '0x' + indexPos.toString(16).toUpperCase(),
+    'Index size': fmtBytes(indexSize),
+  };
+  if (fileSize) out['Declared size'] = fmtBytes(fileSize) + (fileSize === file.size ? ' (matches)' : '');
+  // Index sub-header: u32 headerSize, u32 fileTableSize, u64 checksum, then
+  // u32 fileEntryCount (0x10), u32 fileSegmentCount, u32 resourceDependencyCount.
+  if (indexPos > 0 && indexPos + 28 <= file.size && indexSize >= 28) {
+    try {
+      const idx = await readSlice(file, indexPos, 28);
+      const ir = new Reader(idx, true);
+      ir.skip(16);                      // headerSize + fileTableSize + checksum
+      const entryCount = ir.u32();      // fileEntryCount
+      const segmentCount = ir.u32();    // fileSegmentCount
+      if (entryCount > 0 && entryCount < 5_000_000) out['Files'] = entryCount.toLocaleString();
+      if (segmentCount > 0 && segmentCount < 50_000_000) out['Segments'] = segmentCount.toLocaleString();
+    } catch (_) {}
+  }
+  out['Note'] = 'Encrypted/compressed asset bundle (Oodle/Kraken). Contents are extracted with WolvenKit; identification + header only here.';
+  return out;
+}
+
+// .redscripts: compiled redscript bytecode cache (Final.redscripts).
+// Header: magic "REDS"(4) then a 4-byte version, file size and CRC.
+async function parseRedScripts(file) {
+  const head = await readSlice(file, 0, 16);
+  if (ascii(head, 0, 4) !== 'REDS') return null;
+  const r = new Reader(head, true); r.seek(4);
+  const version = r.u32();
+  return {
+    'Format': 'REDengine compiled scripts (.redscripts)',
+    'Engine': 'REDengine 4 - Cyberpunk 2077',
+    'Cache version': version,
+    'Note': 'Compiled redscript bytecode (the game\'s gameplay scripting), produced by the redscript compiler. Decompiled with redscript/RED4; identification only here.',
+  };
+}
+
+// .addcont_keystone: a small fixed binary token written beside REDengine DLC /
+// add-on content (ep1.addcont_keystone). 16 bytes of opaque key material.
+async function parseAddcontKeystone(file) {
+  const head = await readSlice(file, 0, Math.min(file.size, 64));
+  const hex = Array.from(head.slice(0, 16)).map((b) => b.toString(16).padStart(2, '0')).join(' ');
+  return {
+    'Format': 'REDengine add-on content keystone (.addcont_keystone)',
+    'Engine': 'REDengine 4 - Cyberpunk 2077 (Phantom Liberty / DLC)',
+    'Token (first 16 bytes)': hex,
+    'Note': 'A small opaque token the launcher writes to register installed expansion / add-on content. Holds no asset data.',
+  };
+}
+
+// Content-gated by magic from app.js (these extensions are too generic to route
+// by name): an Oodle-compressed REDengine blob (oodle_dictionary.bin) and the
+// engine's compiled shader cache (shaderPS5.cache etc.).
+async function parseOodleDict(file) {
+  const head = await readSlice(file, 0, 16);
+  const r = new Reader(head, true); r.seek(4);
+  return {
+    'Format': 'Oodle-compressed data (REDengine)',
+    'Engine': 'REDengine 4 - Cyberpunk 2077',
+    'Magic': Array.from(head.slice(0, 4)).map((b) => b.toString(16).padStart(2, '0')).join(' '),
+    'Note': 'An Oodle (Kraken/Leviathan) compressed blob - here a shader/oodle dictionary shipped with a generic .bin extension. The Oodle codec is proprietary (RAD Game Tools); contents are not decompressed in-browser.',
+  };
+}
+
+async function parseRedShaderCache(file) {
+  const out = {
+    'Format': 'REDengine shader cache (.cache)',
+    'Engine': 'REDengine 4 - Cyberpunk 2077',
+  };
+  // Per-platform hint from the file name (shaderPS5 / staticshaderVulkan / ...).
+  const name = (file.name || '').toLowerCase();
+  const plat = name.match(/(ps4|ps5|vulkan|xboxone|xsx|dx12|pc)/);
+  if (plat) out['Platform'] = plat[1].toUpperCase();
+  if (/^static/.test(name.replace(/^.*[\\/]/, ''))) out['Kind'] = 'static (material) shader cache';
+  // Footer: "RDHS" magic + u32 version in the last 8 bytes.
+  if (file.size >= 8) {
+    try {
+      const tail = await readSlice(file, file.size - 8, 8);
+      if (ascii(tail, 0, 4) === 'RDHS') {
+        out['Footer magic'] = 'RDHS';
+        out['Cache version'] = new Reader(tail, true).seek(4).u32();
+      }
+    } catch (_) {}
+  }
+  out['Note'] = 'Pre-compiled GPU shader bytecode the engine caches per platform (shaderPS4/PS5/Vulkan/XSX). The leading bytes are a per-file hash; the format is identified by the trailing RDHS footer. Driver/platform-specific binary; identification only.';
+  return out;
+}
+
+// Inno Setup uninstall log (unins000.dat) - the binary record of everything an
+// Inno Setup installer placed, so its uninstaller can reverse it. The 64-byte
+// header is an ASCII id ("Inno Setup Uninstall Log (b)") plus the app id/name.
+async function parseInnoUninstall(file) {
+  const head = await readSlice(file, 0, 448);
+  const id = cleanAscii(head, 0, 64).replace(/\.+$/, '');
+  if (!/Inno Setup Uninstall Log/.test(id)) return null;
+  // AppId (64 bytes) at 0x40, then the app name (64 bytes) at 0x80.
+  const appId = cleanAscii(head, 0x40, 64);
+  const appName = cleanAscii(head, 0x80, 128);
+  const out = {
+    'Format': 'Inno Setup uninstall log (unins000.dat)',
+    'Header id': id,
+  };
+  if (appId.trim()) out['App id'] = appId;
+  if (appName.trim()) out['Application'] = appName;
+  out['Note'] = 'The binary log an Inno Setup installer writes so its uninstaller can undo every file, registry key and shortcut it created. Paired with unins000.exe.';
+  return out;
+}
+
+// ---------- Source 2 (Valve: Deadlock / CS2 / Dota 2) text assets ----------
+// gameinfo.gi, *.kv3, *.vcfg, *.vqlayout, *.vsc, *.qss, *.signatures and the
+// *.vsnd_template / *.vnm_template / *.mks_template editor templates are all
+// human-readable text. We surface the KeyValues3 header (encoding + format) or
+// the gameinfo identity, and let the generic text preview show the source.
+const S2_LABELS = {
+  gi: 'Source 2 game info (gameinfo.gi)',
+  kv3: 'Valve KeyValues3 (.kv3)',
+  vcfg: 'Source 2 config (.vcfg)',
+  vqlayout: 'Source 2 tools layout (.vqlayout)',
+  vsc: 'Source 2 style colours (.vsc)',
+  qss: 'Qt style sheet (.qss)',
+  signatures: 'Source 2 function signatures (.signatures)',
+  vsnd_template: 'Source 2 sound-event template (.vsnd_template)',
+  vnm_template: 'Source 2 node-graph template (.vnm_template)',
+  mks_template: 'Source 2 sheet template (.mks_template)',
+  valveres: 'Valve resource / UI layout (.res)',
+};
+async function parseSource2(file, ext) {
+  const text = await file.slice(0, 64 * 1024).text().catch(() => '');
+  if (!text) return null;
+  const out = { 'Format': S2_LABELS[ext] || 'Source 2 asset', 'Engine': 'Source 2 (Valve)' };
+
+  // KeyValues3 header comment: <!-- kv3 encoding:text:version{...} format:generic:version{...} -->
+  const kv3 = text.match(/<!--\s*kv3\s+encoding:([\w-]+):[^>]*?format:([\w-]+):/i);
+  if (kv3) {
+    out['Container'] = 'KeyValues3 (text)';
+    out['KV3 encoding'] = kv3[1];
+    out['KV3 format'] = kv3[2];
+  } else if (/^\s*<!--\s*kv3/i.test(text)) {
+    out['Container'] = 'KeyValues3 (text)';
+  }
+
+  // gameinfo.gi identity (KeyValues v1).
+  if (ext === 'gi') {
+    const game = text.match(/^\s*game\s+"?([\w .-]+?)"?\s*$/im);
+    const title = text.match(/^\s*title\s+"?([\w .-]+?)"?\s*$/im);
+    const type = text.match(/^\s*type\s+"?([\w-]+)"?/im);
+    if (game) out['Game'] = game[1];
+    if (title) out['Title'] = title[1];
+    if (type) out['App type'] = type[1];
+    const mounts = (text.match(/\bGame\s+[a-z0-9_./]+/gi) || []).length;
+    if (mounts) out['Search-path mounts'] = mounts;
+  }
+
+  // Function-signature database: one signature/pattern per line.
+  if (ext === 'signatures') {
+    const lines = text.split('\n').filter((l) => l.trim() && !l.trim().startsWith('//'));
+    out['Entries (first 64 KB)'] = lines.length.toLocaleString();
+  }
+
+  // Qt style sheet: count rule blocks.
+  if (ext === 'qss') {
+    out['Container'] = 'Qt style sheet (CSS-like)';
+    const rules = (text.match(/\{/g) || []).length;
+    if (rules) out['Style rules'] = rules.toLocaleString();
+  }
+
+  out['Note'] = ext === 'signatures'
+    ? 'A signature/pattern database the engine or its tools use to locate functions in memory. Plain text.'
+    : 'A human-readable Source 2 text asset (Valve\'s KeyValues / tools format). Shown as source below.';
+  return out;
+}
+
+// ---------- Unity / IL2CPP ----------
+// il2cpp.usym: IL2CPP symbol map (managed method -> native address) used to
+// symbolicate native crash stacks. Header: magic "sym-"(4) u32 version u64 id.
+async function parseUsym(file) {
+  const head = await readSlice(file, 0, 16);
+  if (ascii(head, 0, 4) !== 'sym-') return null;
+  const r = new Reader(head, true); r.seek(4);
+  const version = r.u32();
+  const count = Number(r.u64());
+  const out = {
+    'Format': 'IL2CPP symbol map (.usym)',
+    'Engine': 'Unity (IL2CPP)',
+    'Version': version,
+  };
+  if (count > 0 && count < 50_000_000) out['Symbol entries'] = count.toLocaleString();
+  out['Note'] = 'Maps IL2CPP-compiled C# methods to native code addresses so a native crash stack can be symbolicated. Used by Unity / Backtrace.';
+  return out;
+}
+
+// global-metadata.dat: the IL2CPP metadata blob (all type, method, string and
+// field definitions). Magic 0xFAB11BAF, then a u32 version. Content-gated by
+// app.js (the .dat extension is generic).
+const IL2CPP_UNITY = { 24: '2019', 27: '2020-2021', 29: '2021.3', 31: '2022.3+ / 2023' };
+async function parseIl2cppMeta(file) {
+  const head = await readSlice(file, 0, 8);
+  if (!(head[0] === 0xAF && head[1] === 0x1B && head[2] === 0xB1 && head[3] === 0xFA)) return null;
+  const version = new Reader(head, true).seek(4).u32();
+  const out = {
+    'Format': 'IL2CPP global metadata (global-metadata.dat)',
+    'Engine': 'Unity (IL2CPP)',
+    'Metadata version': version + (IL2CPP_UNITY[version] ? ' (~Unity ' + IL2CPP_UNITY[version] + ')' : ''),
+    'Magic': '0xFAB11BAF',
+    'Note': 'The metadata IL2CPP ships beside the native GameAssembly: every C# type, method, field and string literal. Paired with the compiled binary; identification + version only here.',
+  };
+  return out;
+}
+
+// Addressables content catalog (catalog.bin): a BinaryStorageBuffer. Magic
+// 0x0DE38942, then a u32 version. Content-gated by app.js (.bin is generic).
+async function parseAddrCatalog(file) {
+  const head = await readSlice(file, 0, 8);
+  if (!(head[0] === 0x42 && head[1] === 0x89 && head[2] === 0xE3 && head[3] === 0x0D)) return null;
+  const version = new Reader(head, true).seek(4).u32();
+  return {
+    'Format': 'Unity Addressables catalog (catalog.bin)',
+    'Engine': 'Unity (Addressables)',
+    'Buffer version': version,
+    'Magic': '0x0DE38942 (BinaryStorageBuffer)',
+    'Note': 'The binary content catalog the Addressables system loads at runtime to resolve asset keys to bundles/locations. Paired with catalog.hash.',
+  };
+}
+
+// A renamed .NET metadata blob (Assembly-CSharp.pd_): the CLI metadata root,
+// signature "BSJB", carrying the runtime version string.
+async function parseBsjb(file, ext) {
+  const head = await readSlice(file, 0, 64);
+  if (ascii(head, 0, 4) !== 'BSJB') return null;
+  const r = new Reader(head, true); r.seek(4);
+  const major = r.u16(), minor = r.u16();
+  r.skip(4);                       // reserved
+  const verLen = r.u32();
+  let runtime = '';
+  if (verLen > 0 && verLen <= 255 && 16 + verLen <= head.length) runtime = cleanAscii(head, 16, verLen);
+  const out = {
+    'Format': '.NET assembly metadata (BSJB)' + (ext === 'pd_' ? ' (.pd_)' : ''),
+    'Engine': 'Unity / Mono / .NET',
+    'Metadata version': major + '.' + minor,
+  };
+  if (runtime) out['Runtime version'] = runtime;
+  out['Note'] = 'The CLI metadata stream (types, methods, strings) of a managed assembly. Here shipped under a renamed extension; identification only.';
+  return out;
+}
+
+// House Flipper thumbnail (.hfthumb): a JPEG/JFIF wrapped under a custom name.
+async function parseHfThumb(file) {
+  const head = await readSlice(file, 0, 4);
+  const isJpeg = head[0] === 0xFF && head[1] === 0xD8 && head[2] === 0xFF;
+  return {
+    'Format': 'House Flipper thumbnail (.hfthumb)',
+    'Engine': 'Unity (House Flipper)',
+    'Wrapped image': isJpeg ? 'JPEG (JFIF)' : 'unknown',
+    'Note': isJpeg
+      ? 'An in-game photo thumbnail stored as a plain JPEG under a custom extension - re-open it as a JPEG (offered above) for full EXIF, ICC and histogram analysis.'
+      : 'House Flipper in-game photo thumbnail.',
+  };
+}
+
+// ---------- Marathon / Aleph One ----------
+// The Marathon engine (and the open-source Aleph One that revives it) stores
+// maps, physics, shapes, sounds and recorded films in big-endian "wad"-style
+// containers with an embedded ASCII name. The exact header varies by sub-format,
+// so we read the version word and pull the embedded name string, which is the
+// useful identifier (e.g. "Map", "Marathon v1.2", "Standard", "Shapes").
+const MARATHON_KINDS = {
+  scen: 'Scenario / map', scea: 'Scenario / map',
+  appl: 'Application / plugin data',
+  phys: 'Physics model', phya: 'Physics model',
+  shps: 'Shapes collection (sprites / textures)', shpa: 'Shapes collection (sprites / textures)',
+  sndz: 'Sounds collection', snda: 'Sounds collection',
+  fila: 'Recorded film (saved replay)',
+  imga: 'Images / interface graphics',
+};
+const PHYS_TAGS = { mons: 'monsters', effe: 'effects', proj: 'projectiles', phys: 'physics', weap: 'weapons' };
+async function parseMarathon(file, ext) {
+  const head = await readSlice(file, 0, 128);
+  if (head.length < 6) return null;
+  const r = new Reader(head, false);   // big-endian
+  const version = r.u16();
+  // Pull the first printable-ASCII run (>= 3 chars) from the header area.
+  let name = '';
+  let run = '';
+  for (let i = 2; i < Math.min(head.length, 80); i++) {
+    const c = head[i];
+    if (c >= 0x20 && c < 0x7f) { run += String.fromCharCode(c); }
+    else { if (run.length >= 3 && run.length > name.length) name = run; run = ''; }
+  }
+  if (run.length >= 3 && run.length > name.length) name = run;
+
+  const out = {
+    'Format': 'Marathon / Aleph One ' + (MARATHON_KINDS[ext] || 'data') + ' (.' + ext + ')',
+    'Engine': 'Marathon (Bungie) / Aleph One',
+  };
+  if (version <= 16) out['Wad version'] = version;
+  if (name) out[ext === 'appl' ? 'Title' : 'Internal name'] = name.trim();
+  // Physics files lead with a chunk tag (mons/effe/proj/phys/weap).
+  const tag0 = ascii(head, 0, 4);
+  if (PHYS_TAGS[tag0]) out['First definition block'] = tag0 + ' (' + PHYS_TAGS[tag0] + ')';
+  out['Note'] = 'Big-endian Marathon data container. Aleph One is the open-source engine that runs the original Bungie Marathon trilogy (Steam: Classic Marathon).';
+  return out;
+}
+
 export const PARSERS = {
+  // Marathon / Aleph One (lowercase keys: extFromName lowercases .sceA -> scea)
+  scen: wrap((c) => parseMarathon(c.file, c.ext)),
+  scea: wrap((c) => parseMarathon(c.file, c.ext)),
+  appl: wrap((c) => parseMarathon(c.file, c.ext)),
+  phys: wrap((c) => parseMarathon(c.file, c.ext)),
+  phya: wrap((c) => parseMarathon(c.file, c.ext)),
+  shps: wrap((c) => parseMarathon(c.file, c.ext)),
+  shpa: wrap((c) => parseMarathon(c.file, c.ext)),
+  sndz: wrap((c) => parseMarathon(c.file, c.ext)),
+  snda: wrap((c) => parseMarathon(c.file, c.ext)),
+  fila: wrap((c) => parseMarathon(c.file, c.ext)),
+  imga: wrap((c) => parseMarathon(c.file, c.ext)),
+
+  // Unity / IL2CPP
+  usym: wrap((c) => parseUsym(c.file)),
+  il2cppmeta: wrap((c) => parseIl2cppMeta(c.file)),
+  addrcatalog: wrap((c) => parseAddrCatalog(c.file)),
+  pd_: wrap((c) => parseBsjb(c.file, c.ext)),
+  hfthumb: wrap((c) => parseHfThumb(c.file)),
+
+  // Source 2 (Valve: Deadlock / CS2 / Dota 2)
+  gi: wrap((c) => parseSource2(c.file, c.ext)),
+  kv3: wrap((c) => parseSource2(c.file, c.ext)),
+  vcfg: wrap((c) => parseSource2(c.file, c.ext)),
+  vqlayout: wrap((c) => parseSource2(c.file, c.ext)),
+  vsc: wrap((c) => parseSource2(c.file, c.ext)),
+  qss: wrap((c) => parseSource2(c.file, c.ext)),
+  signatures: wrap((c) => parseSource2(c.file, c.ext)),
+  vsnd_template: wrap((c) => parseSource2(c.file, c.ext)),
+  vnm_template: wrap((c) => parseSource2(c.file, c.ext)),
+  mks_template: wrap((c) => parseSource2(c.file, c.ext)),
+  valveres: wrap((c) => parseSource2(c.file, c.ext)),
+
+  // REDengine 4 (Cyberpunk 2077 / The Witcher)
+  archive: wrap((c) => parseRedArchive(c.file)),
+  redscripts: wrap((c) => parseRedScripts(c.file)),
+  addcont_keystone: wrap((c) => parseAddcontKeystone(c.file)),
+  oodledict: wrap((c) => parseOodleDict(c.file)),
+  redshadercache: wrap((c) => parseRedShaderCache(c.file)),
+  innouninstall: wrap((c) => parseInnoUninstall(c.file)),
+
   // ROM headers
   nes: wrap((c) => parseNes(c.head)),
   gb: wrap((c) => parseGb(c.head, c.ext)),

@@ -108,13 +108,26 @@ body::before {
   content: '';
   position: fixed;
   inset: -72px;
-  z-index: -1;
+  /* z-index 0, NOT -1. Firefox refuses to async-animate a negative-z-index fixed
+     layer (it paints it into the page's main-thread display list), which made the
+     drift main-thread paint-bound and choppy - only in Firefox; Chrome/Safari
+     composite it regardless. The page chrome below is lifted to z-index 1 so the
+     grid still sits visually behind all content. (Same recipe as the masinci
+     millimetre-paper background, which stays smooth in Firefox.) */
+  z-index: 0;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cline x1='0' y1='24' x2='15' y2='24' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='33' y1='24' x2='48' y2='24' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='24' y1='0' x2='24' y2='15' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='24' y1='33' x2='24' y2='48' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='19' y1='24' x2='29' y2='24' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='24' y1='19' x2='24' y2='29' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3C/svg%3E");
   background-size: 72px 72px;
   animation: bg-drift 24s linear infinite;
   will-change: transform;
   pointer-events: none;
 }
+/* Lift all page chrome above the z-index:0 grid so it reads as a backdrop. Mirrors
+   masinci's position:relative grid sections. position:relative (not just z-index)
+   is required for z-index to take effect on these otherwise-static blocks. */
+.noscript-warning,
+.site-header,
+.site-main,
+.site-footer { position: relative; z-index: 1; }
 @keyframes bg-drift {
   from { transform: translate3d(0, 0, 0); }
   to   { transform: translate3d(72px, 72px, 0); }
