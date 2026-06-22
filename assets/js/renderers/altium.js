@@ -43,23 +43,23 @@ function bgr(v) {
 // Standard Altium layer identities for the layer ids we render. Anything not
 // listed degrades to a neutral teal "Layer N" so unusual stacks still draw.
 const LAYER_INFO = {
-  1:  { name: 'Top Layer',       color: '#e6342f' },
-  32: { name: 'Bottom Layer',    color: '#3656e6' },
-  33: { name: 'Top Overlay',     color: '#e3e34a' },
-  34: { name: 'Bottom Overlay',  color: '#c77000' },
-  35: { name: 'Top Paste',       color: '#9aa0a6' },
-  36: { name: 'Bottom Paste',    color: '#6b7075' },
-  37: { name: 'Top Solder',      color: '#a64ad6' },
-  38: { name: 'Bottom Solder',   color: '#7a3aa0' },
-  74: { name: 'Multi-Layer',     color: '#9fb39f' },
+  1:  { name: 'Top Layer',       color: '#c81410' },
+  32: { name: 'Bottom Layer',    color: '#1538c8' },
+  33: { name: 'Top Overlay',     color: '#7a6a00' },
+  34: { name: 'Bottom Overlay',  color: '#9a5000' },
+  35: { name: 'Top Paste',       color: '#56565c' },
+  36: { name: 'Bottom Paste',    color: '#37373c' },
+  37: { name: 'Top Solder',      color: '#8a1ab0' },
+  38: { name: 'Bottom Solder',   color: '#5a1a80' },
+  74: { name: 'Multi-Layer',     color: '#1f6a1f' },
 };
 // Mechanical layers (assembly / courtyard / dimension) cluster in the 57-88
 // range depending on Altium version; give them distinct hues by id.
-const MECH_COLORS = ['#23c6c6', '#c623c6', '#62c623', '#c68a23', '#2398c6', '#c6236b'];
+const MECH_COLORS = ['#0a8a8a', '#9a0a9a', '#3a8a0a', '#955f10', '#0a6498', '#9a0a4a'];
 function layerInfo(n) {
   if (LAYER_INFO[n]) return LAYER_INFO[n];
   if (n >= 56 && n <= 88) return { name: 'Mechanical ' + (n - 56), color: MECH_COLORS[(n - 56) % MECH_COLORS.length] };
-  return { name: 'Layer ' + n, color: '#7a9a8a' };
+  return { name: 'Layer ' + n, color: '#2a5a44' };
 }
 
 // ---- record parsing -------------------------------------------------------
@@ -98,28 +98,50 @@ const unesc = (s) => (s || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').repla
 
 // ---- schematic ------------------------------------------------------------
 
+// Walk the schematic FileHeader stream yielding { fields, ord } for every framed
+// record, counting from 0 at the header. Altium's OwnerIndex (on designators and
+// parameters) is this ordinal minus one - the header is excluded from that index
+// space - so a record owns the component at ord === OwnerIndex + 1. We must NOT
+// skip zero-length records here, or the ordinals would drift out of step.
+function schRecords(head) {
+  const dv = new DataView(head.buffer, head.byteOffset, head.byteLength);
+  const out = [];
+  let off = 0, ord = 0, guard = 0;
+  while (off + 4 <= head.length && guard++ < 200000) {
+    const ln = dv.getUint32(off, true) >>> 0;
+    if (off + 4 + ln > head.length) break;
+    out.push({ f: parseFields(head.subarray(off + 4, off + 4 + ln)), ord });
+    off += 4 + ln; ord++;
+  }
+  return out;
+}
+
 function parseSchematic(reader) {
   const head = reader.readStream('FileHeader');
   if (!head) return null;
-  const recs = walkRecords(head).map(parseFields);
+  const records = schRecords(head);
   const objs = [];            // drawable {kind,...}
   const parts = [];           // component summary rows
   let header = null;
-  const params = [];          // component parameters (mfr / mpn / links)
+  const params = [];          // sheet-level (document) parameters
+  const compByOwner = new Map();   // OwnerIndex value -> component
 
-  for (const f of recs) {
+  for (const { f, ord } of records) {
     const r = f.RECORD;
     if (!r && f.HEADER) { header = f; continue; }
     const x = num(f, 'LOCATION.X'), y = num(f, 'LOCATION.Y');
     switch (r) {
-      case '1': // component
-        parts.push({
+      case '1': { // component
+        const c = {
           designator: null,
           libref: f.LIBREFERENCE || f.DESIGNITEMID || '',
           desc: unesc(f.COMPONENTDESCRIPTION || ''),
-          x, y,
-        });
+          x, y, params: [],
+        };
+        parts.push(c);
+        compByOwner.set(ord - 1, c);   // designators/params reference ord-1
         break;
+      }
       case '2': { // pin
         const len = num(f, 'PINLENGTH');
         const cong = num(f, 'PINCONGLOMERATE');
@@ -141,7 +163,7 @@ function parseSchematic(reader) {
           if (px != null) pts.push([parseFloat(px), parseFloat(py)]);
         }
         if (!pts.length) pts.push([x, y], [num(f, 'CORNER.X'), num(f, 'CORNER.Y')]);
-        objs.push({ kind: 'poly', pts, stroke: bgr(f.COLOR) || '#9fe' });
+        objs.push({ kind: 'poly', pts, stroke: bgr(f.COLOR) || '#1a6a5a' });
         break;
       }
       case '27': { // wire
@@ -151,21 +173,30 @@ function parseSchematic(reader) {
           const px = f['LOCATION.X' + i], py = f['LOCATION.Y' + i];
           if (px != null) pts.push([parseFloat(px), parseFloat(py)]);
         }
-        if (pts.length >= 2) objs.push({ kind: 'wire', pts, stroke: bgr(f.COLOR) || '#3b8eea' });
+        if (pts.length >= 2) objs.push({ kind: 'wire', pts, stroke: bgr(f.COLOR) || '#10559a' });
         break;
       }
-      case '4': case '25': case '34': case '17': // label / net label / designator / power port
-        if (f.TEXT) objs.push({ kind: 'text', x, y, text: f.TEXT, fill: bgr(f.COLOR) || '#eaeaea', power: r === '17' });
-        if (r === '34' && parts.length) parts[parts.length - 1].designator = f.TEXT;
+      case '4': case '25': case '34': case '17': { // label / net label / designator / power port
+        if (f.TEXT) objs.push({ kind: 'text', x, y, text: f.TEXT, fill: bgr(f.COLOR) || '#20283a', power: r === '17' });
+        if (r === '34') {
+          // Attach the designator to its owning component (by OwnerIndex), falling
+          // back to the most recent component for unusual ordering.
+          const owner = compByOwner.get(num(f, 'OWNERINDEX', NaN)) || (parts.length ? parts[parts.length - 1] : null);
+          if (owner && f.TEXT) { owner.designator = f.TEXT; owner.dx = x; owner.dy = y; }
+        }
         break;
-      case '41': // component parameter (mfr / mpn / datasheet / mouser)
-        if (f.NAME && f.TEXT && f.TEXT !== '*' && f.ISHIDDEN !== 'T' || (f.NAME && f.TEXT && f.TEXT !== '*' && /datasheet|mouser|manufacturer|supplier|geometry|part/i.test(f.NAME)))
-          params.push({ name: f.NAME, value: unesc(f.TEXT) });
+      }
+      case '41': { // parameter (mfr / mpn / datasheet / mouser / sheet field)
+        if (!f.NAME || !f.TEXT || f.TEXT === '*') break;
+        const owner = f.OWNERINDEX != null ? compByOwner.get(num(f, 'OWNERINDEX', NaN)) : null;
+        if (owner) owner.params.push({ name: f.NAME, value: unesc(f.TEXT) });
+        else if (f.ISHIDDEN !== 'T') params.push({ name: f.NAME, value: unesc(f.TEXT) });   // document-level field
         break;
+      }
       case '209': // text frame (notes)
         objs.push({ kind: 'rect', x1: x, y1: y, x2: num(f, 'CORNER.X'), y2: num(f, 'CORNER.Y'),
           stroke: f.SHOWBORDER === 'T' ? bgr(f.AREACOLOR) : null, fill: f.ISSOLID === 'T' ? bgr(f.AREACOLOR) : null });
-        if (f.TEXT) objs.push({ kind: 'text', x: x + 5, y: num(f, 'CORNER.Y') - 8, text: f.TEXT, fill: bgr(f.TEXTCOLOR) || '#fff' });
+        if (f.TEXT) objs.push({ kind: 'text', x: x + 5, y: num(f, 'CORNER.Y') - 8, text: f.TEXT, fill: bgr(f.TEXTCOLOR) || '#20283a' });
         break;
     }
   }
@@ -283,6 +314,32 @@ function parseBoard(bytes) {
 
 // ---- SVG viewer (pan / zoom / fit / layer toggles) ------------------------
 
+// Round to a "nice" 1/2/5 x 10^n step so the grid reads like graph paper
+// whatever the document's unit scale (sheet units, mm, or a tiny footprint).
+function niceStep(x) {
+  if (!(x > 0)) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(x))), f = x / p;
+  return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p;
+}
+// Draw a graph-paper grid (minor lines + a heavier line every 5th) behind the
+// geometry, emulating the Altium / KiCad sheet. Lines are in document space so
+// they pan/zoom with the board, but use non-scaling strokes so they stay 1px.
+function addPaperGrid(parent, bbox) {
+  const w = bbox.maxx - bbox.minx, h = bbox.maxy - bbox.miny;
+  const span = Math.max(w, h);
+  if (!(span > 0) || !Number.isFinite(span)) return;
+  const step = niceStep(span / 28), pad = step * 2;
+  const x0 = Math.floor((bbox.minx - pad) / step) * step, x1 = Math.ceil((bbox.maxx + pad) / step) * step;
+  const y0 = Math.floor((bbox.miny - pad) / step) * step, y1 = Math.ceil((bbox.maxy + pad) / step) * step;
+  if ((x1 - x0) / step > 2000 || (y1 - y0) / step > 2000) return;   // safety cap
+  const g = svg('g', { class: 'anr-eda-grid' });
+  const line = (x1_, y1_, x2_, y2_, major) => svg('line', { x1: x1_, y1: y1_, x2: x2_, y2: y2_,
+    stroke: major ? 'rgba(36,50,80,0.26)' : 'rgba(36,50,80,0.12)', 'stroke-width': major ? 0.9 : 0.5, 'vector-effect': 'non-scaling-stroke' });
+  for (let x = x0, i = Math.round(x0 / step); x <= x1 + 1e-6; x += step, i++) g.appendChild(line(x, y0, x, y1, i % 5 === 0));
+  for (let y = y0, i = Math.round(y0 / step); y <= y1 + 1e-6; y += step, i++) g.appendChild(line(x0, y, x1, y, i % 5 === 0));
+  parent.insertBefore(g, parent.firstChild);
+}
+
 function buildViewer(build, opts = {}) {
   // build(group) populates an SVG <g> and returns the data bbox {minx,miny,maxx,maxy}.
   const wrap = el('div', { class: 'anr-altium-wrap' });
@@ -292,18 +349,30 @@ function buildViewer(build, opts = {}) {
   wrap.appendChild(s);
 
   const bbox = build(root);
+  addPaperGrid(root, bbox);
   const pad = Math.max((bbox.maxx - bbox.minx), (bbox.maxy - bbox.miny)) * 0.06 + 1;
   const vb = { x: bbox.minx - pad, y: bbox.miny - pad, w: (bbox.maxx - bbox.minx) + pad * 2, h: (bbox.maxy - bbox.miny) + pad * 2 };
   const home = { ...vb };
   const apply = () => s.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
   apply();
 
+  // The viewBox preserves aspect ratio (xMidYMid meet), so it is letterboxed
+  // inside the element and the screen->document scale is UNIFORM on both axes.
+  // Using vb.w/width for x and vb.h/height for y separately (as before) makes the
+  // axis with the spare letterbox margin move at the wrong rate - hence panning
+  // felt slower on one axis. Map through the single uniform scale + its centring
+  // offset instead.
+  const screenToUser = (r) => {
+    const scale = Math.min(r.width / vb.w, r.height / vb.h);
+    return { scale, offX: (r.width - vb.w * scale) / 2, offY: (r.height - vb.h * scale) / 2 };
+  };
   // wheel zoom toward the cursor
   s.addEventListener('wheel', (e) => {
     e.preventDefault();
     const r = s.getBoundingClientRect();
-    const mx = vb.x + (e.clientX - r.left) / r.width * vb.w;
-    const my = vb.y + (e.clientY - r.top) / r.height * vb.h;
+    const { scale, offX, offY } = screenToUser(r);
+    const mx = vb.x + (e.clientX - r.left - offX) / scale;
+    const my = vb.y + (e.clientY - r.top - offY) / scale;
     const k = e.deltaY < 0 ? 0.85 : 1 / 0.85;
     vb.x = mx - (mx - vb.x) * k; vb.y = my - (my - vb.y) * k;
     vb.w *= k; vb.h *= k; apply();
@@ -313,9 +382,9 @@ function buildViewer(build, opts = {}) {
   s.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; s.setPointerCapture(e.pointerId); s.classList.add('is-grabbing'); });
   s.addEventListener('pointermove', (e) => {
     if (!drag) return;
-    const r = s.getBoundingClientRect();
-    vb.x -= (e.clientX - drag.x) / r.width * vb.w;
-    vb.y -= (e.clientY - drag.y) / r.height * vb.h;
+    const { scale } = screenToUser(s.getBoundingClientRect());
+    vb.x -= (e.clientX - drag.x) / scale;
+    vb.y -= (e.clientY - drag.y) / scale;
     drag = { x: e.clientX, y: e.clientY }; apply();
   });
   const end = () => { drag = null; s.classList.remove('is-grabbing'); };
@@ -342,8 +411,27 @@ function buildViewer(build, opts = {}) {
       bar.appendChild(chip);
     }
   }
+  // Programmatic pan/zoom (used by the project view's cross-probe): centre the
+  // viewBox on a data-space point, optionally tightening to a target width.
+  function centerOn(cx, cy, w) {
+    if (w && w > 0) { const aspect = vb.h / vb.w; vb.w = w; vb.h = w * aspect; }
+    vb.x = cx - vb.w / 2; vb.y = cy - vb.h / 2; apply();
+  }
+  // Drop a short-lived "ping" ring at a data-space point to draw the eye there.
+  let flashNode = null, flashTimer = null;
+  function flash(cx, cy) {
+    if (flashNode) flashNode.remove();
+    const span = Math.max(vb.w, vb.h);
+    flashNode = svg('circle', { class: 'anr-altium-ping', cx, cy, r: span * 0.05,
+      fill: 'none', stroke: '#e8480a', 'stroke-width': span * 0.014 });
+    root.appendChild(flashNode);
+    if (flashTimer) clearTimeout(flashTimer);
+    const node = flashNode;
+    flashTimer = setTimeout(() => { if (node) node.remove(); if (flashNode === node) flashNode = null; }, 1500);
+  }
+
   wrap.appendChild(bar);
-  return wrap;
+  return { wrap, centerOn, flash, home: { ...home } };
 }
 
 function fitBox() { return { minx: Infinity, miny: Infinity, maxx: -Infinity, maxy: -Infinity }; }
@@ -352,7 +440,7 @@ function safeBox(b) { if (!Number.isFinite(b.minx)) return { minx: -100, miny: -
 
 // Render a schematic (Y flipped so the sheet reads the right way up).
 function schView(parsed) {
-  return buildViewer((g) => {
+  const v = buildViewer((g) => {
     const b = fitBox();
     const Y = (v) => -v;
     for (const o of parsed.objs) {
@@ -361,9 +449,9 @@ function schView(parsed) {
         const r = svg('rect', { x, y: Y(y + h), width: w, height: h, fill: o.fill || 'none', stroke: o.stroke || 'none', 'stroke-width': 1 });
         g.appendChild(r); grow(b, x, Y(y)); grow(b, x + w, Y(y + h));
       } else if (o.kind === 'pin') {
-        g.appendChild(svg('line', { x1: o.x, y1: Y(o.y), x2: o.x2, y2: Y(o.y2), stroke: '#7fd4ff', 'stroke-width': 1.4 }));
-        g.appendChild(svg('circle', { cx: o.x, cy: Y(o.y), r: 1.6, fill: '#7fd4ff' }));
-        if (o.desig) { const t = svg('text', { x: o.x2, y: Y(o.y2) - 1, 'font-size': 6, fill: '#cfe' }); t.textContent = o.desig; g.appendChild(t); }
+        g.appendChild(svg('line', { x1: o.x, y1: Y(o.y), x2: o.x2, y2: Y(o.y2), stroke: '#0a5a8a', 'stroke-width': 1.4 }));
+        g.appendChild(svg('circle', { cx: o.x, cy: Y(o.y), r: 1.6, fill: '#0a5a8a' }));
+        if (o.desig) { const t = svg('text', { x: o.x2, y: Y(o.y2) - 1, 'font-size': 6, fill: '#0a5a8a' }); t.textContent = o.desig; g.appendChild(t); }
         grow(b, o.x, Y(o.y)); grow(b, o.x2, Y(o.y2));
       } else if (o.kind === 'wire' || o.kind === 'poly') {
         const pts = o.pts.map(([x, y]) => `${x},${Y(y)}`).join(' ');
@@ -376,6 +464,23 @@ function schView(parsed) {
     }
     return safeBox(b);
   });
+
+  // Map each designator to its component location (SVG space) so the project
+  // view can pan/flash straight to a part when its BOM row is clicked.
+  const at = new Map();
+  for (const p of parsed.parts || []) {
+    if (!p.designator) continue;
+    const x = p.x || p.dx || 0, y = p.y || p.dy || 0;
+    at.set(String(p.designator).toUpperCase(), { x, y: -y });
+  }
+  v.focus = (desig) => {
+    const c = at.get(String(desig).toUpperCase());
+    if (!c) return false;
+    v.centerOn(c.x, c.y, Math.max(v.home.w * 0.3, 160));
+    v.flash(c.x, c.y);
+    return true;
+  };
+  return v;
 }
 
 // Render PCB / footprint primitives with per-layer colouring + toggles.
@@ -385,7 +490,7 @@ function pcbView(prims, layers, outline) {
     const Y = (v) => -v;
     if (outline && outline.length >= 2) {
       const pts = outline.map(([x, y]) => `${x},${Y(y)}`).join(' ');
-      g.appendChild(svg('polygon', { points: pts, fill: 'rgba(120,160,140,0.06)', stroke: '#9fb39f', 'stroke-width': 2, 'data-layer': 'outline' }));
+      g.appendChild(svg('polygon', { points: pts, fill: 'rgba(40,120,80,0.05)', stroke: '#1f6a3a', 'stroke-width': 2, 'data-layer': 'outline' }));
       for (const [x, y] of outline) grow(b, x, Y(y));
     }
     for (const p of prims) {
@@ -420,7 +525,7 @@ function pcbView(prims, layers, outline) {
 }
 function group1(n, layer) { n.setAttribute('data-layer', layer); return n; }
 function padLabel(p, Y) {
-  const t = svg('text', { x: p.x, y: Y(p.y) + Math.min(p.sx, p.sy) * 0.18, 'font-size': Math.min(p.sx, p.sy) * 0.5, fill: '#0b0b0f', 'text-anchor': 'middle', 'data-layer': p.layer, 'font-weight': 700 });
+  const t = svg('text', { x: p.x, y: Y(p.y) + Math.min(p.sx, p.sy) * 0.18, 'font-size': Math.min(p.sx, p.sy) * 0.5, fill: '#fff', 'text-anchor': 'middle', 'data-layer': p.layer, 'font-weight': 700 });
   t.textContent = p.name; return t;
 }
 function arcPath(p, Y, col) {
@@ -534,23 +639,28 @@ function sourceCard(text) {
   return src;
 }
 
+// Parse a .PrjPcb INI into { projName, docs[], version, cfg, outCount }. The
+// member documents are [DocumentN] DocumentPath= entries, in project order.
+function parsePrj(text, fileName) {
+  const docs = [];
+  const reDoc = /\[Document\d+\][^[]*?DocumentPath=([^\r\n]+)/gi;
+  let m;
+  while ((m = reDoc.exec(text))) docs.push(m[1].trim());
+  const grab = (k) => { const r = new RegExp('^' + k + '=([^\\r\\n]+)', 'im').exec(text); return r ? r[1].trim() : ''; };
+  return {
+    projName: (fileName || '').replace(/\.[^.]+$/, ''),
+    docs, version: grab('Version'), cfg: grab('DefaultConfiguration'),
+    outCount: (text.match(/OutputName=/gi) || []).length,
+  };
+}
+
 // Altium project file (.PrjPcb) - an INI listing the member documents, the
 // configuration and the output-job template. Plain text, not an OLE file.
 async function renderPrjPcb(file, resultsEl) {
   resultsEl.innerHTML = '';
   let text = '';
   try { text = await file.text(); } catch (_) {}
-  // Collect [DocumentN] DocumentPath entries and a few [Design] fields.
-  const docs = [];
-  let projName = '', version = '', cfg = '';
-  const reDoc = /\[Document\d+\][^[]*?DocumentPath=([^\r\n]+)/gi;
-  let m;
-  while ((m = reDoc.exec(text))) docs.push(m[1].trim());
-  const grab = (k) => { const r = new RegExp('^' + k + '=([^\\r\\n]+)', 'im').exec(text); return r ? r[1].trim() : ''; };
-  version = grab('Version');
-  cfg = grab('DefaultConfiguration');
-  const outCount = (text.match(/OutputName=/gi) || []).length;
-  projName = (file.name || '').replace(/\.[^.]+$/, '');
+  const { projName, docs, version, cfg, outCount } = parsePrj(text, file.name);
 
   resultsEl.appendChild(metaCard('Altium project', 'An Altium Designer PCB project file (.PrjPcb) - the INI manifest that ties a schematic and board together. Analyser reads its member documents and configuration.', [
     ['Format', 'Altium PcbProject (.PrjPcb)'],
@@ -562,6 +672,10 @@ async function renderPrjPcb(file, resultsEl) {
     ['Default configuration', cfg || null],
     ['Output jobs', outCount || null],
   ], file));
+
+  // When the project is opened on its own (not from a folder drop), point the
+  // user at the combined view that a folder drop unlocks.
+  resultsEl.appendChild(el('div', { class: 'anr-info' }, 'Tip: drop the whole project folder (not just this file) to open every schematic, board and library together in one cross-probing project view.'));
 
   if (docs.length) {
     const card = el('div', { class: 'anr-card' });
@@ -627,7 +741,7 @@ function renderSch(file, reader, resultsEl, ext) {
     tbl.appendChild(row('Designator', part.designator || '(unannotated)'));
     tbl.appendChild(row('Library reference', part.libref));
     if (part.desc) tbl.appendChild(row('Description', part.desc));
-    for (const p of (parsed.params || [])) {
+    for (const p of (part.params || [])) {
       if (/^https?:/i.test(p.value)) {
         const a = el('a', { href: p.value, target: '_blank', rel: 'noopener' }, p.value.length > 60 ? p.value.slice(0, 57) + '…' : p.value);
         const tr = el('tr', {}, [el('th', {}, p.name), el('td', {}, a)]);
@@ -642,28 +756,30 @@ function renderSch(file, reader, resultsEl, ext) {
   if (parsed && parsed.objs.length) {
     const dcard = el('div', { class: 'anr-card' });
     dcard.appendChild(el('h3', {}, 'Schematic'));
-    dcard.appendChild(schView(parsed));
+    dcard.appendChild(schView(parsed).wrap);
     resultsEl.appendChild(dcard);
   }
 }
 
-function renderPcbLib(file, reader, resultsEl) {
-  // find the footprint geometry stream: a `<name>/Data` that is not "Library/Data".
-  let dataBytes = null, fpName = '';
-  // The footprint geometry lives in a top-level `<name>/Data` stream (exactly
-  // one path segment before Data) - not Library/Data (the library TOC) nor the
-  // deeper `<name>/UniqueIDPrimitiveInformation/Data` sidecar. Pick the largest.
-  let best = -1;
+// Decode a .PcbLib reader into { prims, layers, pads, fpName }. The footprint
+// geometry lives in a top-level `<name>/Data` stream (exactly one path segment
+// before Data) - not Library/Data (the library TOC) nor the deeper
+// `<name>/UniqueIDPrimitiveInformation/Data` sidecar. Pick the largest.
+function parsePcbLibData(reader) {
+  let fpName = '', best = -1;
   for (const e of reader.entries) {
     if (e.type !== 2) continue;
     const m = /^([^/]+)\/Data$/.exec(e.path);
     if (!m || /^(Library|FileVersionInfo)$/i.test(m[1])) continue;
     if (e.size > best) { best = e.size; fpName = m[1]; }
   }
-  if (fpName) dataBytes = reader.readStream(fpName + '/Data');
   let prims = [], layers = new Set();
-  if (dataBytes) ({ prims, layers } = parseFootprintData(dataBytes));
-  const pads = prims.filter((p) => p.kind === 'pad');
+  if (fpName) { const db = reader.readStream(fpName + '/Data'); if (db) ({ prims, layers } = parseFootprintData(db)); }
+  return { prims, layers, pads: prims.filter((p) => p.kind === 'pad'), fpName };
+}
+
+function renderPcbLib(file, reader, resultsEl) {
+  const { prims, layers, pads, fpName } = parsePcbLibData(reader);
 
   resultsEl.appendChild(metaCard('Altium footprint library', 'Altium PCB footprint library (.PcbLib). Pads, tracks and arcs are decoded from the footprint geometry stream and rebuilt to scale.', [
     ['Format', 'Altium PcbLib'],
@@ -678,47 +794,50 @@ function renderPcbLib(file, reader, resultsEl) {
   if (pads.length) {
     const card = el('div', { class: 'anr-card' });
     card.appendChild(el('h3', {}, 'Pads'));
-    const tbl = el('table', { class: 'anr-readout anr-altium-pads' });
-    tbl.appendChild(el('tr', {}, [el('th', {}, 'Pad'), el('th', {}, 'X (mm)'), el('th', {}, 'Y (mm)'), el('th', {}, 'Size (mm)'), el('th', {}, 'Hole'), el('th', {}, 'Type')]));
-    const mm = (mil) => (mil * 0.0254).toFixed(3);
-    const shapeName = { 1: 'Round', 2: 'Rect', 3: 'Rounded' };
-    for (const p of pads) {
-      tbl.appendChild(el('tr', {}, [
-        el('td', {}, p.name || '?'),
-        el('td', {}, mm(p.x)), el('td', {}, mm(p.y)),
-        el('td', {}, `${mm(p.sx)} × ${mm(p.sy)}`),
-        el('td', {}, p.hole > 0 ? mm(p.hole) + ' mm' : '–'),
-        el('td', {}, (shapeName[p.shape] || '?') + (p.hole > 0 ? ' THT' : ' SMD')),
-      ]));
-    }
-    card.appendChild(tbl);
+    card.appendChild(padsTable(pads));
     resultsEl.appendChild(card);
   }
 
   if (prims.length) {
     const dcard = el('div', { class: 'anr-card' });
     dcard.appendChild(el('h3', {}, 'Footprint'));
-    dcard.appendChild(pcbView(prims, layers, null));
+    dcard.appendChild(pcbView(prims, layers, null).wrap);
     resultsEl.appendChild(dcard);
   } else {
     resultsEl.appendChild(el('div', { class: 'anr-info' }, 'No footprint geometry could be decoded from this library.'));
   }
 }
 
-function renderPcbDoc(file, reader, resultsEl) {
+// Shared pad-table builder (used by the library view and the project view).
+function padsTable(pads) {
+  const tbl = el('table', { class: 'anr-readout anr-altium-pads' });
+  tbl.appendChild(el('tr', {}, [el('th', {}, 'Pad'), el('th', {}, 'X (mm)'), el('th', {}, 'Y (mm)'), el('th', {}, 'Size (mm)'), el('th', {}, 'Hole'), el('th', {}, 'Type')]));
+  const mm = (mil) => (mil * 0.0254).toFixed(3);
+  const shapeName = { 1: 'Round', 2: 'Rect', 3: 'Rounded' };
+  for (const p of pads) {
+    tbl.appendChild(el('tr', {}, [
+      el('td', {}, p.name || '?'),
+      el('td', {}, mm(p.x)), el('td', {}, mm(p.y)),
+      el('td', {}, `${mm(p.sx)} × ${mm(p.sy)}`),
+      el('td', {}, p.hole > 0 ? mm(p.hole) + ' mm' : '–'),
+      el('td', {}, (shapeName[p.shape] || '?') + (p.hole > 0 ? ' THT' : ' SMD')),
+    ]));
+  }
+  return tbl;
+}
+
+// Decode a .PcbDoc reader into { prims, layers, outline, fields, boardW, boardH }.
+function parsePcbDocData(reader) {
   const board = parseBoard(reader.readStream((e) => /Board6\/Data$/i.test(e.path)));
   const layers = new Set();
   let prims = [];
-  const streams = [
-    ['Tracks6', 'line'], ['Arcs6', 'arc'], ['Fills6', 'line'],
-  ];
-  for (const [nm, kind] of streams) {
+  for (const [nm, kind] of [['Tracks6', 'line'], ['Arcs6', 'arc'], ['Fills6', 'line']]) {
     const bytes = reader.readStream((e) => new RegExp(nm + '/Data$', 'i').test(e.path));
     const got = parsePcbStream(bytes, kind);
     for (const p of got) layers.add(p.layer);
     prims = prims.concat(got);
   }
-  const f = board && board.fields || {};
+  const fields = (board && board.fields) || {};
   const outline = board && board.outline;
   let boardW = null, boardH = null;
   if (outline && outline.length) {
@@ -726,6 +845,11 @@ function renderPcbDoc(file, reader, resultsEl) {
     boardW = (Math.max(...xs) - Math.min(...xs)) * 0.0254;
     boardH = (Math.max(...ys) - Math.min(...ys)) * 0.0254;
   }
+  return { prims, layers, outline, fields, boardW, boardH };
+}
+
+function renderPcbDoc(file, reader, resultsEl) {
+  const { prims, layers, outline, fields: f, boardW, boardH } = parsePcbDocData(reader);
 
   resultsEl.appendChild(metaCard('Altium PCB', 'Altium Designer PCB document (.PcbDoc). The board outline and any routed copper are decoded from the binary primitive streams and drawn to scale.', [
     ['Format', 'Altium PcbDoc'],
@@ -740,10 +864,283 @@ function renderPcbDoc(file, reader, resultsEl) {
   const dcard = el('div', { class: 'anr-card' });
   dcard.appendChild(el('h3', {}, 'Board'));
   if (outline && outline.length >= 2) {
-    dcard.appendChild(pcbView(prims, layers, outline));
+    dcard.appendChild(pcbView(prims, layers, outline).wrap);
     if (!prims.length) dcard.appendChild(el('div', { class: 'anr-info' }, 'This board has no routed copper, components or polygons - only the board outline is defined.'));
   } else {
     dcard.appendChild(el('div', { class: 'anr-info' }, 'No board outline or geometry could be decoded from this document.'));
   }
   resultsEl.appendChild(dcard);
+}
+
+// ---- combined project view (folder drop) ----------------------------------
+// When a whole Altium project FOLDER is dropped, the individual documents stop
+// being isolated files and become one design: schematic(s) + board + footprint
+// library, tied together by a shared bill of materials. This view stitches them
+// into a single tabbed workbench and lets a BOM row cross-probe straight to the
+// part on its schematic sheet.
+
+const base = (p) => p.split(/[\\/]/).pop();
+const extOfName = (n) => (n.split('.').pop() || '').toLowerCase();
+
+// True for any file that belongs to an Altium project (used by folder.js to
+// decide whether to offer the combined view).
+export function isAltiumProjectFile(name) {
+  const ext = extOfName(name);
+  return ext === 'prjpcb' || ext === 'prjpcbstructure'
+    || ext === 'schdoc' || ext === 'schlib' || ext === 'pcbdoc' || ext === 'pcblib'
+    || ext === 'epw' || /preview$/.test(ext);
+}
+
+// Pull a parameter value by trying each name pattern in priority order.
+function paramVal(params, patterns) {
+  for (const re of patterns) {
+    const m = (params || []).find((p) => re.test(p.name));
+    if (m && m.value) return m.value;
+  }
+  return '';
+}
+function bomFields(comp) {
+  const p = comp.params || [];
+  return {
+    mfr: paramVal(p, [/^manufacturer.?name$/i, /^manufacturer$/i, /manufacturer(?!.*part)/i]),
+    mpn: paramVal(p, [/manufacturer.?part.?number/i, /^mpn$/i, /^part.?number$/i]),
+    datasheet: paramVal(p, [/datasheet/i, /product.?detail/i]),
+  };
+}
+
+// Small key/value table for a doc panel header (lighter than the full metaCard).
+function miniMeta(rows) {
+  const tbl = el('table', { class: 'anr-readout' });
+  for (const [k, v] of rows) if (v != null && v !== '') tbl.appendChild(row(k, String(v)));
+  return tbl;
+}
+
+// Build a project card from the Altium files found in a dropped folder.
+// `altFiles` are folder entries: { path, file }. Returns a card element.
+export async function buildAltiumProjectCard(altFiles, folderName) {
+  // Categorise the files by role.
+  let prjFile = null;
+  const schF = [], pcbF = [], libF = [], epwF = [], prevF = [];
+  for (const af of altFiles) {
+    const ext = extOfName(base(af.path));
+    if (ext === 'prjpcb' || ext === 'prjpcbstructure') { if (!prjFile) prjFile = af; }
+    else if (ext === 'schdoc' || ext === 'schlib') schF.push(af);
+    else if (ext === 'pcbdoc') pcbF.push(af);
+    else if (ext === 'pcblib') libF.push(af);
+    else if (ext === 'epw') epwF.push(af);
+    else if (/preview$/.test(ext)) prevF.push(af);
+  }
+
+  let prj = null;
+  if (prjFile) { try { prj = parsePrj(await prjFile.file.text(), base(prjFile.path)); } catch (_) {} }
+
+  // Parse each OLE document. Failures are skipped so one bad file can't sink the
+  // whole project view.
+  const docs = [];
+  async function addDoc(af, kind) {
+    try {
+      const reader = await openCfbf(af.file);
+      if (!reader) return;
+      if (kind === 'sch') docs.push({ kind: 'sch', name: base(af.path), file: af.file, parsed: parseSchematic(reader) });
+      else if (kind === 'pcbdoc') docs.push({ kind: 'pcbdoc', name: base(af.path), file: af.file, data: parsePcbDocData(reader) });
+      else if (kind === 'pcblib') docs.push({ kind: 'pcblib', name: base(af.path), file: af.file, data: parsePcbLibData(reader) });
+    } catch (_) {}
+  }
+  for (const af of schF) await addDoc(af, 'sch');
+  for (const af of pcbF) await addDoc(af, 'pcbdoc');
+  for (const af of libF) await addDoc(af, 'pcblib');
+
+  // Order documents the way the .PrjPcb lists them, then anything left over.
+  if (prj && prj.docs.length) {
+    const ordOf = (name) => {
+      const i = prj.docs.findIndex((d) => base(d).toLowerCase() === name.toLowerCase());
+      return i < 0 ? 999 : i;
+    };
+    docs.sort((a, b) => ordOf(a.name) - ordOf(b.name));
+  }
+
+  // Combined BOM across every schematic.
+  const schDocs = docs.filter((d) => d.kind === 'sch');
+  const bom = [];
+  for (const d of schDocs) {
+    for (const c of (d.parsed ? d.parsed.parts : []) || []) {
+      if (c.libref || c.designator) bom.push({ comp: c, doc: d });
+    }
+  }
+  bom.sort((a, b) => (a.comp.designator || '~').localeCompare(b.comp.designator || '~', undefined, { numeric: true }));
+
+  // ---- card + tab scaffolding ----
+  const card = el('div', { class: 'anr-card anr-altium-project' });
+  card.appendChild(el('h3', {}, 'Altium project'));
+  card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 12px;' },
+    'Every document in this folder, opened together as one design. Click a designator in the bill of materials to jump to that part on its schematic.'));
+
+  const tabsBar = el('div', { class: 'anr-altium-tabs' });
+  const panels = el('div', { class: 'anr-altium-tabwrap' });
+  card.appendChild(tabsBar);
+  card.appendChild(panels);
+
+  const tabs = [];
+  function addTab(label, buildPanel) {
+    const idx = tabs.length;
+    const btn = el('button', { type: 'button', class: 'anr-btn anr-altium-tab' }, label);
+    const panel = el('div', { class: 'anr-altium-tabpanel', hidden: '' });
+    btn.addEventListener('click', () => setActive(idx));
+    tabsBar.appendChild(btn);
+    panels.appendChild(panel);
+    tabs.push({ btn, panel, build: buildPanel, built: false, view: null });
+    return idx;
+  }
+  function setActive(i) {
+    tabs.forEach((t, j) => { t.btn.classList.toggle('is-on', j === i); t.panel.hidden = j !== i; });
+    const t = tabs[i];
+    if (t && !t.built) { t.built = true; t.view = t.build(t.panel) || null; }
+  }
+
+  // Overview tab (built last so it can reference every doc's tab index).
+  const overviewIdx = addTab('Overview', (panel) => buildOverview(panel));
+
+  // One tab per document.
+  for (const d of docs) {
+    d.tabIndex = addTab(d.name, (panel) => buildDocPanel(panel, d));
+  }
+
+  function buildDocPanel(panel, d) {
+    if (d.kind === 'sch') {
+      const p = d.parsed;
+      const isLib = /schlib$/i.test(d.name) || !p || !p.objs.length;
+      panel.appendChild(miniMeta([
+        ['Type', isLib ? 'Schematic library' : 'Schematic sheet'],
+        ['Components', p ? p.parts.length : 0],
+        ['Primitives', p ? p.objs.length : 0],
+      ]));
+      if (p && p.objs.length) {
+        const v = schView(p);
+        panel.appendChild(v.wrap);
+        return v;   // exposes focus() for cross-probe
+      }
+      panel.appendChild(el('div', { class: 'anr-info' }, 'No drawable primitives could be decoded from this sheet.'));
+      return null;
+    }
+    if (d.kind === 'pcbdoc') {
+      const { prims, layers, outline, boardW } = d.data;
+      panel.appendChild(miniMeta([
+        ['Type', 'PCB document'],
+        ['Board size', boardW ? `${boardW.toFixed(1)} × ${d.data.boardH.toFixed(1)} mm` : null],
+        ['Routed primitives', prims.length],
+      ]));
+      if (outline && outline.length >= 2) {
+        panel.appendChild(pcbView(prims, layers, outline).wrap);
+        if (!prims.length) panel.appendChild(el('div', { class: 'anr-info' }, 'Only the board outline is defined - no routed copper or placed components.'));
+      } else panel.appendChild(el('div', { class: 'anr-info' }, 'No board outline or geometry could be decoded.'));
+      return null;
+    }
+    // pcblib
+    const { prims, layers, pads, fpName } = d.data;
+    panel.appendChild(miniMeta([
+      ['Type', 'Footprint library'],
+      ['Footprint', fpName],
+      ['Pads', pads.length],
+      ['Layers used', [...layers].map((l) => layerInfo(l).name).join(', ')],
+    ]));
+    if (pads.length) panel.appendChild(padsTable(pads));
+    if (prims.length) panel.appendChild(pcbView(prims, layers, null).wrap);
+    else panel.appendChild(el('div', { class: 'anr-info' }, 'No footprint geometry could be decoded.'));
+    return null;
+  }
+
+  function buildOverview(panel) {
+    // Project summary.
+    panel.appendChild(miniMeta([
+      ['Project', (prj && prj.projName) || folderName],
+      ['Schematics', schDocs.length || null],
+      ['Boards', docs.filter((d) => d.kind === 'pcbdoc').length || null],
+      ['Footprint libraries', docs.filter((d) => d.kind === 'pcblib').length || null],
+      ['Components', bom.length || null],
+      ['Default configuration', (prj && prj.cfg) || null],
+    ]));
+
+    // Combined bill of materials with cross-probe.
+    if (bom.length) {
+      const bomCard = el('div', { class: 'anr-altium-bomwrap' });
+      bomCard.appendChild(el('h3', {}, 'Bill of materials'));
+      const multiSheet = schDocs.length > 1;
+      const tbl = el('table', { class: 'anr-readout anr-altium-bom' });
+      const head = ['Designator', 'Part', 'Description', 'Manufacturer', 'Mfr part №', 'Datasheet'];
+      if (multiSheet) head.push('Sheet');
+      tbl.appendChild(el('tr', {}, head.map((h) => el('th', {}, h))));
+      for (const { comp, doc } of bom) {
+        const { mfr, mpn, datasheet } = bomFields(comp);
+        const desigBtn = el('button', { type: 'button', class: 'anr-btn anr-altium-desig' }, comp.designator || '—');
+        desigBtn.title = 'Show ' + (comp.designator || 'this part') + ' on ' + doc.name;
+        desigBtn.addEventListener('click', () => {
+          setActive(doc.tabIndex);
+          const v = tabs[doc.tabIndex] && tabs[doc.tabIndex].view;
+          if (v && v.focus && comp.designator) v.focus(comp.designator);
+          tabsBar.scrollIntoView({ block: 'nearest' });
+        });
+        const cells = [
+          el('td', {}, desigBtn),
+          el('td', {}, comp.libref || '—'),
+          el('td', { class: 'anr-altium-bom-desc' }, comp.desc || '—'),
+          el('td', {}, mfr || '—'),
+          el('td', {}, mpn || '—'),
+          el('td', {}, /^https?:/i.test(datasheet) ? el('a', { href: datasheet, target: '_blank', rel: 'noopener' }, 'Open') : '—'),
+        ];
+        if (multiSheet) {
+          const sheetBtn = el('button', { type: 'button', class: 'anr-btn anr-altium-desig' }, doc.name);
+          sheetBtn.addEventListener('click', () => { setActive(doc.tabIndex); tabsBar.scrollIntoView({ block: 'nearest' }); });
+          cells.push(el('td', {}, sheetBtn));
+        }
+        tbl.appendChild(el('tr', {}, cells));
+      }
+      bomCard.appendChild(tbl);
+      panel.appendChild(bomCard);
+    } else {
+      panel.appendChild(el('div', { class: 'anr-info' }, 'No components with a designator were found in the schematics.'));
+    }
+
+    // Library parts / sourcing from any .epw wrappers.
+    if (epwF.length) {
+      const list = el('table', { class: 'anr-readout' });
+      list.appendChild(el('tr', {}, [el('th', {}, 'SamacSys model'), el('th', {}, 'Component ID'), el('th', {}, 'Source')]));
+      panel.appendChild(el('h3', {}, 'Sourced library parts'));
+      panel.appendChild(list);
+      const SRC = { ms: 'Mouser', fa: 'Farnell / element14', di: 'Digi-Key', rs: 'RS Components', ar: 'Arrow' };
+      epwF.forEach(async (af) => {
+        let text = '';
+        try { text = await af.file.text(); } catch (_) {}
+        const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        const srcLine = lines.find((l) => /^Source=/i.test(l));
+        const src = srcLine ? (srcLine.split('=')[1] || '') : '';
+        const descLine = lines.find((l) => /^\d+\/\d+\//.test(l));
+        const compId = descLine ? descLine.split('/')[0] : (lines[0] || '');
+        list.appendChild(el('tr', {}, [
+          el('td', {}, base(af.path)),
+          el('td', {}, compId || '—'),
+          el('td', {}, src ? (SRC[src.toLowerCase()] || src) : '—'),
+        ]));
+      });
+    }
+
+    // Every file in the project, with its role.
+    const filesCard = el('table', { class: 'anr-readout' });
+    panel.appendChild(el('h3', {}, 'Project files'));
+    panel.appendChild(filesCard);
+    const roleOf = (n) => {
+      const e = extOfName(n);
+      if (e === 'prjpcb' || e === 'prjpcbstructure') return 'Project manifest';
+      if (e === 'schdoc') return 'Schematic';
+      if (e === 'schlib') return 'Schematic library';
+      if (e === 'pcbdoc') return 'PCB';
+      if (e === 'pcblib') return 'Footprint library';
+      if (e === 'epw') return 'SamacSys model';
+      if (/preview$/.test(e)) return 'Preview cache';
+      return 'Document';
+    };
+    for (const af of altFiles) filesCard.appendChild(row(roleOf(base(af.path)), base(af.path)));
+  }
+
+  setActive(overviewIdx);
+  return card;
 }

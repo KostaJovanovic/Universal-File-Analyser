@@ -5582,7 +5582,9 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-dwg-wrap svg { max-width: 100%; height: auto; display: block; }
 
 /* ----- Altium schematic / PCB viewer ----- */
-.anr-altium-wrap { border: var(--bd-hairline); background: #0b0b0f; position: relative; }
+/* Schematic/PCB canvas: paper off-white, so the boards read like a printed
+   drawing (shared by the Altium and KiCad viewers). */
+.anr-altium-wrap { border: var(--bd-hairline); background: #f4f0e6; position: relative; }
 .anr-altium-svg {
   display: block;
   width: 100%;
@@ -5590,8 +5592,8 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   touch-action: none;
   cursor: grab;
   background:
-    radial-gradient(120% 120% at 50% 0%, rgba(var(--accent-rgb), 0.06), transparent 60%),
-    #0b0b0f;
+    radial-gradient(130% 130% at 50% 0%, rgba(0, 0, 0, 0.03), transparent 58%),
+    #f4f0e6;
 }
 .anr-altium-svg.is-grabbing { cursor: grabbing; }
 .anr-altium-svg text { font-family: var(--font-sans); user-select: none; }
@@ -5615,6 +5617,92 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   flex: none;
 }
 .anr-altium-pads th, .anr-altium-pads td { text-align: left; padding-right: 18px; white-space: nowrap; }
+
+/* Cross-probe ping: a ring that pulses over a part when its BOM row is clicked. */
+.anr-altium-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: anr-altium-ping 1.5s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes anr-altium-ping {
+  0%   { opacity: 0;   transform: scale(0.3); }
+  18%  { opacity: 1; }
+  100% { opacity: 0;   transform: scale(2.1); }
+}
+
+/* ----- Combined Altium project workbench (folder drop) ----- */
+.anr-altium-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: var(--bd-hairline);
+}
+.anr-altium-tab { padding: 6px 13px; font-size: 13px; }
+.anr-altium-tab.is-on { border-color: var(--accent); color: var(--accent); }
+.anr-altium-tabpanel > .anr-readout { margin-bottom: 16px; }
+.anr-altium-tabpanel > h3 { margin: 22px 0 10px; }
+.anr-altium-tabpanel > h3:first-child { margin-top: 0; }
+.anr-altium-bomwrap { margin-top: 6px; }
+/* BOM: shrink-to-fit (NOT width:100%, which dumps all the slack into the first
+   column and crushes the rest until their headers wrap a letter at a time).
+   Headers stay on one line; only the description column wraps, capped in width. */
+.anr-altium-bom { border-collapse: collapse; }
+.anr-altium-bom th, .anr-altium-bom td { text-align: left; padding: 5px 16px 5px 0; vertical-align: top; }
+.anr-altium-bom th { white-space: nowrap; color: var(--muted); font-weight: 600; }
+.anr-altium-bom td { white-space: nowrap; }
+.anr-altium-bom-desc, td.anr-altium-bom-desc { max-width: 360px; white-space: normal; color: var(--muted); font-size: 12px; }
+/* Designator / sheet cross-probe buttons: compact, accent on hover. */
+.anr-altium-desig {
+  padding: 2px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.anr-altium-desig:hover { border-color: var(--accent); color: var(--accent); }
+
+/* KiCad symbol / footprint picker (a dropdown above its viewer). */
+.anr-kicad-select { padding: 6px 11px; font-size: 13px; margin-bottom: 12px; max-width: 100%; }
+.anr-kicad-symhost { margin-top: 4px; }
+.anr-kicad-symhost > .anr-readout { margin-bottom: 12px; }
+
+/* ----- SPICE / LTspice .raw waveform viewer ----- */
+.anr-spice { margin-top: 4px; }
+.anr-spice-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.anr-spice-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; font-size: 12px; font-family: ui-monospace, monospace;
+  border: var(--bd-hairline); border-radius: 999px; background: transparent;
+  color: var(--ink, inherit); cursor: pointer; transition: opacity .12s, border-color .12s;
+}
+.anr-spice-chip.is-off { opacity: .42; }
+.anr-spice-swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--tc, #888); flex: none; }
+.anr-spice-track { position: relative; border: var(--bd-hairline); border-radius: var(--radius); background: #f4f0e6; overflow: hidden; }
+.anr-spice-canvas { display: block; width: 100%; }
+.anr-spice-guide { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(20,30,55,0.55); pointer-events: none; }
+.anr-spice-readout {
+  position: absolute; top: 8px; pointer-events: none; z-index: 2;
+  background: rgba(255,255,255,0.94); border: var(--bd-hairline); border-radius: 6px;
+  padding: 6px 8px; font-size: 12px; font-family: ui-monospace, monospace; color: #1a2233;
+  box-shadow: 0 4px 14px rgba(20,30,55,0.16); max-width: 60%;
+}
+.anr-spice-ro-x { font-weight: 600; margin-bottom: 3px; }
+.anr-spice-ro-row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.anr-spice-ro-name { color: #444; }
+.anr-spice-ro-val { margin-left: auto; font-weight: 600; }
+.anr-spice-op td:last-child { font-family: ui-monospace, monospace; }
+
+/* ----- IPC-D-356 netlist viewer ----- */
+.anr-ipc-maphost { border: var(--bd-hairline); border-radius: var(--radius); background: #f4f0e6; padding: 8px; }
+.anr-ipc-svg { display: block; width: 100%; max-height: 520px; }
+.anr-ipc-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; }
+.anr-ipc-nets td.anr-ipc-conns { max-width: 420px; white-space: normal; color: var(--muted); font-size: 12px; }
+.anr-ipc-nets, .anr-ipc-comps { border-collapse: collapse; }
+.anr-ipc-nets th, .anr-ipc-nets td, .anr-ipc-comps th, .anr-ipc-comps td { text-align: left; padding: 4px 16px 4px 0; vertical-align: top; }
+.anr-ipc-nets th, .anr-ipc-comps th { white-space: nowrap; color: var(--muted); font-weight: 600; }
+.anr-ipc-special td { color: var(--muted); }
 .anr-pptx-notes { margin-top: 14px; font-size: 13px; color: var(--muted); }
 .anr-pptx-notes summary { cursor: pointer; }
 /* Speaker notes are noise in a thumbnail - only show them in the open lightbox. */
