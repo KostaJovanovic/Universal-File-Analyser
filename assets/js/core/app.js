@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 162;
+const COMMIT_COUNT = 163;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -54,6 +54,9 @@ import { renderMdb } from '../renderers/mdb.js';
 import { renderMobi } from '../renderers/mobi.js';
 import { renderDwg } from '../renderers/dwg.js';
 import { renderAltium } from '../renderers/altium.js';
+import { renderKicad } from '../renderers/kicad.js';
+import { renderSpiceRaw, sniffSpiceRaw } from '../renderers/spice.js';
+import { renderIpcNetlist } from '../renderers/ipcnet.js';
 import { renderAep } from '../renderers/aftereffects.js';
 import { renderPremiere } from '../renderers/premiere.js';
 import { renderDavinci } from '../renderers/davinci.js';
@@ -425,6 +428,20 @@ function classifyFile(file) {
   if (ext === 'schdoc' || ext === 'schlib' || ext === 'pcbdoc' || ext === 'pcblib') return 'altium';
   if (ext === 'epw' || ext === 'prjpcb' || ext === 'prjpcbstructure') return 'altium';
   if (ext === 'schdocpreview' || ext === 'pcbdocpreview') return 'altium';
+  // KiCad documents (S-expression text + JSON sidecars): rebuild the schematic /
+  // board / footprint / symbol geometry as an interactive vector view. The
+  // extension-less library tables and footprint cache route by exact name.
+  if (ext === 'kicad_pcb' || ext === 'kicad_sch' || ext === 'kicad_sym' || ext === 'kicad_mod'
+    || ext === 'kicad_pro' || ext === 'kicad_prl' || ext === 'wbk') return 'kicad';
+  // KiCad writes a "-bak" backup beside each saved document (foo.kicad_sch-bak).
+  // Route those to the same viewer; renderKicad strips the -bak suffix.
+  if (/\.kicad_(sch|pcb|sym|mod|pro|prl)-bak$/.test((file.name || '').toLowerCase())) return 'kicad';
+  {
+    const lower = (file.name || '').toLowerCase();
+    if (lower === 'fp-lib-table' || lower === 'sym-lib-table' || lower === 'fp-info-cache') return 'kicad';
+  }
+  // IPC-D-356(A) bare-board / fabrication test netlist.
+  if (ext === 'ipc') return 'ipcnet';
   // Adobe After Effects project: walk the RIFX tree to rebuild the comp timelines.
   if (ext === 'aep' || ext === 'aet') return 'aep';
   // Adobe Premiere Pro / Elements project: inflate the PremiereData XML and
@@ -568,6 +585,9 @@ const ROUTES = {
   dxf:         { render: renderDxf,         results: 'unknown', scroll: '#unknownResults' },
   dwg:         { render: renderDwg,         results: 'unknown', scroll: '#unknownResults' },
   altium:      { render: renderAltium,      results: 'unknown', scroll: '#unknownResults' },
+  kicad:       { render: renderKicad,       results: 'unknown', scroll: '#unknownResults' },
+  spice:       { render: renderSpiceRaw,    results: 'unknown', scroll: '#unknownResults' },
+  ipcnet:      { render: renderIpcNetlist,  results: 'unknown', scroll: '#unknownResults' },
   aep:         { render: renderAep,         results: 'unknown', scroll: '#unknownResults' },
   premiere:    { render: renderPremiere,    results: 'unknown', scroll: '#unknownResults' },
   davinci:     { render: renderDavinci,     results: 'unknown', scroll: '#unknownResults' },
@@ -1183,7 +1203,12 @@ function buildTrendChart(chartEl, daily, baseline) {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
-  { range: '4.01 - 4.03', notes: [
+  { range: '4.08 - 4.11', notes: [
+    'Altium Designer files open: schematics, circuit boards, footprints and symbol/footprint libraries are rebuilt as interactive vector views with pan, zoom and per-layer toggles, plus part numbers, the pad table and the project manifest.',
+    'The G-code visualiser now draws the non-printing travel moves in true order and paints multicolour / multi-material prints in each filament\'s real colour.',
+    'A "Show full anyway" button renders even million-segment prints whole, with detail scaled to your device, and the render-quality controls stay available on a full uncapped print.',
+  ] },
+  { range: '4.01 - 4.07', notes: [
     'The stats page gained a graph of visitors and files over time - switch between per-day and cumulative (which carries on from the totals banked before tracking began), click the key to hide either line and watch it rescale, and hover a day for the exact figures.',
     'Microsoft COFF .lib libraries open, telling a true static library apart from a DLL import library and listing the target architecture and the DLLs it binds to.',
     'Colour look-up tables come alive: drop a .cube LUT to see its tone curve, before-and-after swatches and an interactive 3D colour cube, then apply the look to your own photo or video.',
@@ -1191,6 +1216,8 @@ const PATCH_DIGEST = [
     'Files with no extension open as readable text, with a prompt to reopen them as a known format when their contents give them away.',
     'Font specimens show a sample sentence for every script a font covers - Japanese, Cyrillic, Greek, Arabic and more - and font collections preview each face inside.',
     'Hundreds more formats are recognised, past 1,260 in all and each with its own guide page, and the folder openability scan now matches the real drop result exactly.',
+    'Video gains Prev/Next frame buttons that step exactly one frame at a time, and a chosen frame is pulled into the photo tools on demand rather than automatically.',
+    'A tidier page header on phones and tablets, laying the version, visitor and status details out in neat clusters.',
   ] },
   { range: '4.0', milestone: true, notes: [
     'Fourth milestone: Analyser steps into 3D.',
@@ -1607,6 +1634,17 @@ function boot() {
     // proprietary renderer knows the real type.
     let sniffedExt = null;
 
+    // A .raw file classifies as a camera RAW photo by extension, but ngspice /
+    // LTspice simulation dumps share it. Sniff the header and reroute the SPICE
+    // waveform files to their own viewer before the photo pipeline takes them.
+    if (!force && kind === 'photo' && fileExt(file.name) === 'raw') {
+      try {
+        const isSpice = await sniffSpiceRaw(file);
+        if (token.cancelled) return;
+        if (isSpice) kind = 'spice';
+      } catch (_) {}
+    }
+
     // For files classified as 'unknown' or 'extensionless', check magic bytes for
     // PDF / ZIP / SVG / HTML / CSV - so a recognised type auto-routes even with no
     // (or a wrong) extension. Anything left 'extensionless' renders as text below.
@@ -1791,14 +1829,19 @@ function boot() {
     // "misses" by whatever appears above afterwards). So we scroll now for
     // responsiveness and re-assert once the renderer settles (below) - unless the
     // user has grabbed the scroll themselves in the meantime.
-    // Audio/video always autoscroll (their sections sit low on the page). When a
-    // file is opened FROM a folder/zip view (nested), the user is scrolled down at
-    // the treemap, so scroll to wherever the result lands - its section, or the
-    // generic results block - regardless of kind, so the analysis comes into view.
+    // Autoscroll the analysed section into view, right under the nav bar (each
+    // target carries scroll-margin-top: --nav-offset). Audio/video scroll to their
+    // own low-on-the-page sections; photo keeps its existing behaviour (it only
+    // autoscrolls when opened nested from a folder/zip view). Every OTHER kind -
+    // documents, archives, EDA projects, the unknown/hex view - now scrolls to
+    // wherever its result lands (the generic #unknownResults block or its section),
+    // so the analysis is in view the moment the file is dropped instead of leaving
+    // the user up at the dropzones.
     const resultEl = resultsByName[route.results];
     const autoScrollSec = kind === 'video' ? sectionVideo
       : kind === 'audio' ? sectionAudio
-      : nested && resultEl ? (resultEl.closest('.section') || resultEl)
+      : kind === 'photo' ? (nested && resultEl ? (resultEl.closest('.section') || resultEl) : null)
+      : resultEl ? (resultEl.closest('.section') || resultEl)
       : null;
     let userTookScroll = false;
     let stopScrollWatch = () => {};
@@ -2058,7 +2101,11 @@ function boot() {
           return;
         }
         const ur = $('unknownResults');
-        if (ur) { resetNav(); renderFolder(folderFiles, ur); enterLoadedUI(); }
+        if (ur) {
+          resetNav(); renderFolder(folderFiles, ur); enterLoadedUI();
+          // Match the file-drop behaviour: bring the overview up under the nav bar.
+          requestAnimationFrame(() => ur.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+        }
         hideDropLoader();
         return;
       }
@@ -2263,6 +2310,7 @@ function boot() {
     resetNav();
     renderFolder(window._anrPendingFolder, unknownResults);
     enterLoadedUI();
+    requestAnimationFrame(() => unknownResults.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     delete window._anrPendingFolder;
   }
 

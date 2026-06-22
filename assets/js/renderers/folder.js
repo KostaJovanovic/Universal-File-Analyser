@@ -361,6 +361,36 @@ export function renderFolder(files, resultsEl) {
     row('Name', folderName)
   ]);
 
+  // Altium project: if the folder holds Altium documents, stitch them into one
+  // combined cross-probing view above the generic breakdown. altium.js (and its
+  // CFBF reader) is loaded lazily, only for folders that actually need it.
+  const ALT_RE = /\.(prjpcb|prjpcbstructure|schdoc|schlib|pcbdoc|pcblib|epw|schdocpreview|pcbdocpreview)$/i;
+  const ALT_DOC_RE = /\.(schdoc|schlib|pcbdoc|pcblib|prjpcb)$/i;
+  const altFiles = files.filter((f) => ALT_RE.test(f.path));
+  if (altFiles.some((f) => ALT_DOC_RE.test(f.path)) && altFiles.length >= 2) {
+    const slot = el('div', { class: 'anr-card' }, inlineLoader('Building combined Altium project view…'));
+    resultsEl.insertBefore(slot, resultsEl.firstChild);
+    import('./altium.js')
+      .then((m) => m.buildAltiumProjectCard(altFiles, folderName))
+      .then((cardEl) => { slot.replaceWith(cardEl); })
+      .catch(() => { slot.remove(); });
+  }
+
+  // KiCad project: same idea - if the folder holds KiCad documents, stitch the
+  // schematic + board + libraries into one cross-probing view. kicad.js loads
+  // lazily, only for folders that actually contain KiCad files.
+  const KI_RE = /(\.kicad_(pcb|sch|sym|mod|pro|prl)$|\.wbk$|[\\/](fp-lib-table|sym-lib-table|fp-info-cache)$|^(fp-lib-table|sym-lib-table|fp-info-cache)$)/i;
+  const KI_DOC_RE = /\.kicad_(pcb|sch|pro)$/i;
+  const kiFiles = files.filter((f) => KI_RE.test(f.path) || KI_RE.test(f.path.split('/').pop() || ''));
+  if (kiFiles.some((f) => KI_DOC_RE.test(f.path)) && kiFiles.length >= 2) {
+    const slot = el('div', { class: 'anr-card' }, inlineLoader('Building combined KiCad project view…'));
+    resultsEl.insertBefore(slot, resultsEl.firstChild);
+    import('./kicad.js')
+      .then((m) => m.buildKicadProjectCard(kiFiles, folderName))
+      .then((cardEl) => { slot.replaceWith(cardEl); })
+      .catch(() => { slot.remove(); });
+  }
+
   // Openability check: walk every file and flag the ones the app can't open.
   if (files.length) {
     const scanCard = el('div', { class: 'anr-card anr-folder-scan' });

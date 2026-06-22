@@ -206,11 +206,25 @@
              ===================================================================== -->
 
         <div class="patch-entry">
-          <p class="patch-version">4.01 - 4.03</p>
-          <p class="patch-name">Colour Grade</p>
-          <p class="patch-date">20 June 2026, 06:01</p>
+          <p class="patch-version">4.08 - 4.11</p>
+          <p class="patch-name">Printed Circuit</p>
+          <p class="patch-date">22 June 2026, 00:14</p>
           <ul class="patch-list">
-            <li><strong>The stats page gains a usage graph over time, colour grades and Resolve timelines come alive, Windows libraries and extensionless files open, fonts show every script they cover, and hundreds more formats are recognised.</strong></li>
+            <li><strong>Altium circuit-board designs open as interactive schematics and boards, and the G-code visualiser learns travel moves and full-colour multi-material prints.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Altium Designer files open.</strong> An Altium schematic (<a href="/about#ext-schdoc">.SchDoc</a>), circuit board (<a href="/about#ext-pcbdoc">.PcbDoc</a>), symbol library (<strong>.SchLib</strong>) or footprint library (<strong>.PcbLib</strong>) is rebuilt as an interactive vector view - the schematic symbols, wires and pins, or the board outline, copper, pads, tracks and arcs - that you can pan, zoom and switch on and off layer by layer. It reads out each component&rsquo;s part number with its datasheet and supplier links, the pad table and the layers in use, and opens the project file (<strong>.PrjPcb</strong>) with the documents it ties together. Everything is rebuilt on your own device - nothing is uploaded.</li>
+            <li><span class="patch-tag">New</span><strong>G-code travel moves, drawn in.</strong> The <a href="/about#ext-gcode">.gcode</a> viewer now shows the non-printing travel moves - where the head lifts and repositions between extrusions - woven in the true order the machine runs them, so you can see exactly how a print is stitched together.</li>
+            <li><span class="patch-tag">New</span><strong>Multi-material prints in their real colours.</strong> A multicolour or multi-material print now paints each move in its actual filament colour, read straight from the slicer&rsquo;s own settings, with every tool change and colour swap followed through.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Even the biggest prints draw whole.</strong> Huge or arc-heavy prints - millions of segments - are capped to stay smooth, with how much is drawn scaled to your device&rsquo;s memory, and a <strong>Show full anyway</strong> button redraws the entire object whenever you want every last detail.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Quality controls stay within reach.</strong> Showing a very large G-code file in full no longer greys out the render-quality buttons - the heavier settings simply start switched off, ready to turn back on whenever you like.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">4.01 - 4.07</p>
+          <p class="patch-name">Colour Grade</p>
+          <p class="patch-date">21 June 2026, 03:50</p>
+          <ul class="patch-list">
+            <li><strong>The stats page gains a usage graph over time, colour grades and Resolve timelines come alive, Windows libraries and extensionless files open, fonts show every script they cover, video gains frame-by-frame stepping, and hundreds more formats are recognised.</strong></li>
             <li><span class="patch-tag">New</span><strong>A usage graph on the stats page.</strong> The <a href="/stats">stats page</a> now plots visitors and files over time. Switch between a <strong>per-day</strong> view and a running <strong>cumulative</strong> total, click either label in the key to drop that line and watch the graph smoothly rescale to fit what is left, and hover any day to read off the exact figures in a little pop-up. The cumulative line carries on from the totals already banked before tracking began, so it climbs from the real figure rather than restarting at zero.</li>
             <li><span class="patch-tag">New</span><strong>Colour look-up tables, visualised.</strong> Drop a <a href="/about#ext-cube">.cube</a> LUT and Analyser shows you what it actually does - the tone curve it bends, before-and-after swatches, how it shifts skin, sky and foliage, and an interactive 3D colour cube you can spin and look inside. Load your own photo or a video and the look is applied across eight frames, shown side by side and openable full-screen, so you can judge a grade before you ever use it.</li>
             <li><span class="patch-tag">New</span><strong>The grades inside a Resolve timeline, read out.</strong> A DaVinci Resolve <a href="/about#ext-drt">.drt</a> timeline now lists each clip&rsquo;s colour-grade node chain - every node in order, the LUTs it loads and the ResolveFX it applies - so you can see how a shot was graded without opening Resolve.</li>
@@ -219,6 +233,8 @@
             <li><span class="patch-tag">New</span><strong>A sample of every script a font can write.</strong> A font specimen now shows a sample sentence for each writing system the font actually covers - Japanese, Korean, Chinese, Cyrillic, Greek, Thai, Devanagari, Arabic and Hebrew - not just the Latin &ldquo;quick brown fox&rdquo;. Font collections (<a href="/about#ext-ttc">.ttc</a>) let you preview each face inside, and Adobe Font List (<strong>.lst</strong>) files are read in full.</li>
             <li><span class="patch-tag">New</span><strong>Hundreds more formats recognised.</strong> A broad sweep of new file types are named on sight - source code and build files, game-engine assets, electronics designs, runtime and backup files and more - bringing the total past 1,260. Every one gains its own format guide page.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>The folder openability scan now tells the truth.</strong> Scanning a folder gives exactly the verdict you would get by dropping each file yourself - an extensionless file counts as openable, an unrecognised one is flagged - and a new button copies the path to every unsupported file at once, one per type, skipping cloud files that are not downloaded.</li>
+            <li><span class="patch-tag">New</span><strong>Step through a video frame by frame.</strong> A video now has <strong>Prev frame</strong> and <strong>Next frame</strong> buttons that move exactly one frame at a time in either direction, landing dead on each frame instead of drifting, and the frame you are looking at is pulled into the photo tools only when you ask - for its colours, dimensions and EXIF - rather than automatically.</li>
+            <li><strong>A tidier header on phones and tablets.</strong> On smaller screens the page header now lays its version, visitor and status details out in neat clusters instead of stacking awkwardly.</li>
           </ul>
         </div>
 
@@ -241,6 +257,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">3.45 - 3.46</p>
           <p class="patch-name">Long Tail</p>
@@ -252,9 +271,6 @@
             <li><strong>Maintenance</strong> - the format guide pages now carry the live visitor count and link to the changelog, the light and dark switch announces itself to screen readers, the formats list is grouped more accurately, and a pass of small consistency fixes went across page titles, descriptions and tidy-up under the hood.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">3.37 - 3.44</p>
@@ -1455,7 +1471,7 @@
       <div><dt>JPEG 2000</dt><dd><a href="https://github.com/chafey/openjpegjs" target="_blank" rel="noopener">OpenJPEG</a> compiled to WASM. Decodes JP2 / J2K images the browser can&rsquo;t. Loaded only when needed.</dd></div>
       <div><dt>PostScript</dt><dd><a href="https://www.ghostscript.com/" target="_blank" rel="noopener">Ghostscript</a> compiled to WASM. Renders EPS / PostScript graphics. ~16 MB, in the Everything download.</dd></div>
       <div><dt>Animation</dt><dd><a href="https://github.com/airbnb/lottie-web" target="_blank" rel="noopener">lottie-web</a>. Plays Lottie / Bodymovin JSON animations. Loaded only when needed.</dd></div>
-      <div><dt>File ID</dt><dd>Built-in identification for 1277+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 1280+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Install</dt><dd>Add to home screen for an offline PWA. Service worker caches the app shell. Use the buttons above to pre-cache heavy dependencies.</dd></div>
         </dl>
       </details>
