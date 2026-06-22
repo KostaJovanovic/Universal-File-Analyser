@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 163;
+const COMMIT_COUNT = 164;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -512,6 +512,12 @@ function classifyFile(file) {
   if (AUDIO_EXTS.has(ext)) return 'audio';
   if (VIDEO_EXTS.has(ext)) return 'video';
   if (isProprietaryExt(ext)) return 'proprietary';
+  // Licence/marker files whose suffix isn't a real extension (LICENSE.APACHE,
+  // COPYING.GPL, LICENSE-MPL-2.0, py.typed, CACHEDIR.TAG) - shown as text.
+  {
+    const bn = (file.name || '').toLowerCase().replace(/^.*[\\/]/, '');
+    if (/^(licen[cs]e|copying)([.\-]|$)/.test(bn) || bn === 'py.typed' || bn === 'cachedir.tag') return 'markup';
+  }
   // No extension and nothing else matched: treat it as an "extensionless" file -
   // shown as text (with a hex fallback for binary) rather than flagged "unknown".
   // Most extensionless files in real projects are plain text (LICENSE, Makefile,
@@ -1652,6 +1658,8 @@ function boot() {
       try {
         const head = new Uint8Array(await file.slice(0, 128).arrayBuffer());
         const a = (s, l) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
+        const lowerExt = fileExt(file.name);
+        const lowerName = (file.name || '').toLowerCase().replace(/^.*[\\/]/, '');
         if (a(0, 4) === '%PDF') kind = 'pdf';
         else if (head[0] === 0x50 && head[1] === 0x4B) kind = 'zip';
         // Raise3D ideaMaker writes a distinctive ASCII signature; profile exports
@@ -1665,6 +1673,55 @@ function boot() {
           // .bin, so route it by magic to the firmware identifier.
           kind = 'proprietary';
           sniffedExt = 'djifw';
+        } else if (lowerExt === 'bin' && head[0] === 0x01 && head[1] === 0x58 && head[2] === 0x23 && head[3] === 0x11) {
+          // Oodle-compressed REDengine blob (Cyberpunk's oodle_dictionary.bin) -
+          // a generic .bin, routed by its 01 58 23 11 magic.
+          kind = 'proprietary';
+          sniffedExt = 'oodledict';
+        } else if (lowerExt === 'bin' && head[0] === 0x42 && head[1] === 0x89 && head[2] === 0xE3 && head[3] === 0x0D) {
+          // Unity Addressables catalog (catalog.bin) - BinaryStorageBuffer magic.
+          kind = 'proprietary';
+          sniffedExt = 'addrcatalog';
+        } else if (lowerExt === 'dat' && head[0] === 0xAF && head[1] === 0x1B && head[2] === 0xB1 && head[3] === 0xFA) {
+          // IL2CPP global-metadata.dat - magic 0xFAB11BAF, a generic .dat.
+          kind = 'proprietary';
+          sniffedExt = 'il2cppmeta';
+        } else if (lowerExt === 'cff' && (lowerName === 'citation.cff' ||
+                   /^[﻿#\s]*(cff-version|#|abstract|authors|title)\b/i.test(a(0, 48)))) {
+          // Citation File Format is YAML text; a binary CFF (Compact Font Format)
+          // starts with version bytes. Route only the text citation here.
+          kind = 'proprietary';
+          sniffedExt = 'citationcff';
+        } else if (lowerExt === 'pth' && !head.slice(0, 64).includes(0)) {
+          // A site-packages .pth is a tiny text path-config file; a PyTorch .pth
+          // is a ZIP (caught above) or pickle (binary - left as unknown). Route
+          // only the text form to the path-config view.
+          kind = 'proprietary';
+          sniffedExt = 'pythonpath';
+        } else if (lowerExt === 'manifest' && a(0, 19) === 'ManifestFileVersion') {
+          // Unity asset bundle manifest (text) - the .manifest extension is also a
+          // Windows side-by-side / ClickOnce XML manifest, so gate on the marker.
+          kind = 'proprietary';
+          sniffedExt = 'unitymanifest';
+        } else if (lowerExt === 'cache' && file.size >= 16 &&
+                   (await file.slice(file.size - 8, file.size - 4).text().catch(() => '')) === 'RDHS') {
+          // REDengine compiled shader cache (shaderPS5.cache etc.) - a generic
+          // .cache. The head is a per-file hash, so route by the trailing "RDHS"
+          // footer magic instead.
+          kind = 'proprietary';
+          sniffedExt = 'redshadercache';
+        } else if ((lowerExt === 'dat' || lowerName === 'unins000.dat') && a(0, 24) === 'Inno Setup Uninstall Log') {
+          // Inno Setup uninstall log (unins000.dat) - an installer bookkeeping
+          // file shipped with a generic .dat extension.
+          kind = 'proprietary';
+          sniffedExt = 'innouninstall';
+        } else if (lowerExt === 'res' && !head.slice(0, 64).includes(0) &&
+                   /^[﻿\s]*(["/]|[A-Za-z_])/.test(a(0, 64)) &&
+                   /[{}]/.test(await file.slice(0, 2048).text().catch(() => ''))) {
+          // Valve resource / UI layout (.res) is text KeyValues; a Windows compiled
+          // .res is binary (NUL bytes in the head). Route only the text form here.
+          kind = 'proprietary';
+          sniffedExt = 'valveres';
         } else {
           // Check for SVG: may start with <svg or <?xml ... <svg
           const headStr = a(0, Math.min(head.length, 128));
@@ -2310,6 +2367,11 @@ function boot() {
     resetNav();
     renderFolder(window._anrPendingFolder, unknownResults);
     enterLoadedUI();
+    // The folder was dropped on a non-home page, which showed the bottom drop
+    // loader before SPA-navigating here. That loader lives on document.body and
+    // survives the swap, so it would spin forever - dismiss it now that the
+    // folder overview is rendered (mirrors the same-page folder-drop branch).
+    hideDropLoader();
     requestAnimationFrame(() => unknownResults.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     delete window._anrPendingFolder;
   }
