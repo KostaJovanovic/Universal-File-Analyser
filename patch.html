@@ -85,7 +85,7 @@
     <div class="site-meta">
       <dl>
         <dt>Version</dt><dd><a href="/patch" id="versionNum" class="version-link" title="See the changelog">0.00</a></dd>
-        <dt class="visit-stat">Visitors</dt><dd class="visit-stat"><a href="/stats" class="visit-link" title="See full usage stats"><span id="visitCount">...</span></a></dd>
+        <dt class="visit-stat">Analysed</dt><dd class="visit-stat"><a href="/stats" class="visit-link" title="See full usage stats"><span id="analysedCount">...</span></a></dd>
         <dt>Status</dt><dd class="net-status"><span class="dot"></span> <span class="net-label">Local-only</span></dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
         <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button></dd>
@@ -206,6 +206,22 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">4.16</p>
+          <p class="patch-name">Tamper Evident</p>
+          <p class="patch-date">24 June 2026, 00:44</p>
+          <ul class="patch-list">
+            <li><strong>Analyser learns to spot files that are not what they claim to be - flagging disguised and tampered files, finding data hidden after a file&rsquo;s end, offering the full set of forensic fingerprints, and checking archive integrity. The header now counts files analysed, and spreadsheets point out the odd row.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Spot a file in disguise.</strong> When a file&rsquo;s real contents do not match its name - a program renamed to look like a photo, say - Analyser flags it the moment you open it and tells you what the file actually is. A file claiming a type its own bytes do not back up is called out the same way.</li>
+            <li><span class="patch-tag">New</span><strong>Find data hidden after the end.</strong> Analyser now detects extra data tacked on after a file&rsquo;s real ending - a classic way to smuggle one file inside another, or to hide content a normal viewer ignores - for <a href="/about#ext-jpg">JPEG</a>, <a href="/about#ext-png">PNG</a>, GIF, BMP, WAV and <a href="/about#ext-zip">ZIP</a> files. It tells you how much is there and what it looks like.</li>
+            <li><span class="patch-tag">New</span><strong>More fingerprints, on demand.</strong> A file&rsquo;s integrity panel now offers <strong>MD5</strong>, <strong>SHA-1</strong> and <strong>SHA-512</strong> alongside the existing SHA-256 - the fingerprints that forensic tools, antivirus databases and older checksum files rely on.</li>
+            <li><span class="patch-tag">New</span><strong>Archive timing and integrity.</strong> Open a <a href="/about#ext-zip">.zip</a> and a new panel charts when each file inside was last stamped, flagging archives that were repacked in one go or carry placeholder or future-dated entries. A button then recomputes every entry&rsquo;s stored checksum to catch corruption or tampering.</li>
+            <li><span class="patch-tag">New</span><strong>A private record of what you analysed.</strong> The home page now keeps a short list of the files you have analysed recently - their names, sizes and types only, never the files themselves - stored on your own device alone and clearable any time. The latest ten are kept for a week.</li>
+            <li><span class="patch-tag">New</span><strong>Spreadsheets flag the odd one out.</strong> A <a href="/about#ext-csv">.csv</a> or spreadsheet now points out anomalies in your data - numbers far outside the rest, columns that never change, dates spaced too evenly to be real, and identifier-like columns - so unusual entries are easy to find.</li>
+            <li><strong>The header now counts files analysed.</strong> The running tally in the page header shows how many files Analyser has analysed, in place of the visitor count.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">4.12 - 4.15</p>
           <p class="patch-name">Source &amp; Circuit</p>
           <p class="patch-date">23 June 2026, 04:22</p>
@@ -235,6 +251,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">4.01 - 4.07</p>
           <p class="patch-name">Colour Grade</p>
@@ -253,9 +272,6 @@
             <li><strong>A tidier header on phones and tablets.</strong> On smaller screens the page header now lays its version, visitor and status details out in neat clusters instead of stacking awkwardly.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry patch-milestone">
           <p class="patch-version">4.0</p>

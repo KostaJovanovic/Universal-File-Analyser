@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 166;
+const COMMIT_COUNT = 167;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -78,7 +78,7 @@ import { renderMarkdown } from '../renderers/markdown.js';
 import { renderComic } from '../renderers/comic.js';
 import { renderGitObject, sniffGitObject } from '../renderers/gitobject.js';
 import { initSearch } from './search.js';
-import { fileExt, el, probeReadable, cloudFileWarning, openOverlayBack } from './util.js';
+import { fileExt, el, row, fmtBytes, probeReadable, cloudFileWarning, openOverlayBack } from './util.js';
 import { walkItems, renderFolder } from '../renderers/folder.js';
 import { setupHeaderFx, setupSectionFx, setupFooterFx, setupFmtHeaderFx } from './effects.js';
 import { showSuggestPopup, hideSuggestPopup, scheduleShareNudge, hideShareNudge, wireShareButtons, wireFooterContact, updateNetStatus } from './popups.js';
@@ -305,6 +305,230 @@ function showTypeSuggestion(sniff, onAccept) {
   _typeSuggestEl = el('div', { class: 'anr-drop-loader', role: 'status' }, [head, el('div', { style: 'margin-top:8px;' }, [yes])]);
   document.body.appendChild(_typeSuggestEl);
   requestAnimationFrame(() => _typeSuggestEl.classList.add('is-open'));
+}
+
+// ---------- signature-vs-extension mismatch (forensic) ----------
+// Extensions whose true content sniffFileType() can positively confirm, grouped
+// by the sniffed ext(s) that legitimately satisfy them. Because we KNOW what these
+// files' leading bytes should look like, we can flag two forensic tells: a wrong
+// signature (a renamed/disguised file or a polyglot) and a missing one (the bytes
+// match no known signature for the claimed type - corrupt, truncated, empty or
+// disguised). Extensions NOT listed here get no warning - we can't be sure what
+// their magic should be, so silence beats a false positive. `label` is the human
+// name of the format the extension claims to be.
+//   ftyp/ISO-BMFF (mp4/mov/m4a/heic/avif/3gp ...) all share one container, so any
+//   ftyp-sniffed result satisfies any ftyp extension - renaming .m4a to .mp4 is
+//   benign and must not flag. Likewise the whole PK zip family (docx/xlsx/epub ...).
+const ISOBMFF = ['mp4', 'heic', 'avif', 'm4a', '3gp'];
+const SIG_EXPECT = {
+  jpg:  { sniff: ['jpg'],  label: 'JPEG image' }, jpeg: { sniff: ['jpg'], label: 'JPEG image' },
+  jpe:  { sniff: ['jpg'],  label: 'JPEG image' }, jfif: { sniff: ['jpg'], label: 'JPEG image' },
+  png:  { sniff: ['png'],  label: 'PNG image' },
+  gif:  { sniff: ['gif'],  label: 'GIF image' },
+  bmp:  { sniff: ['bmp'],  label: 'BMP image' }, dib: { sniff: ['bmp'], label: 'BMP image' },
+  tif:  { sniff: ['tiff'], label: 'TIFF image' }, tiff: { sniff: ['tiff'], label: 'TIFF image' },
+  webp: { sniff: ['webp'], label: 'WebP image' },
+  psd:  { sniff: ['psd'],  label: 'Photoshop PSD' }, psb: { sniff: ['psd'], label: 'Photoshop PSD' },
+  pdf:  { sniff: ['pdf'],  label: 'PDF document' },
+  wav:  { sniff: ['wav'],  label: 'WAV audio' },
+  avi:  { sniff: ['avi'],  label: 'AVI video' },
+  mp3:  { sniff: ['mp3'],  label: 'MP3 audio' },
+  flac: { sniff: ['flac'], label: 'FLAC audio' },
+  ogg:  { sniff: ['ogg'],  label: 'Ogg media' }, oga: { sniff: ['ogg'], label: 'Ogg media' }, opus: { sniff: ['ogg'], label: 'Opus audio' },
+  mkv:  { sniff: ['mkv'],  label: 'Matroska video' }, webm: { sniff: ['mkv'], label: 'WebM video' },
+  mp4:  { sniff: ISOBMFF,  label: 'MP4 video' }, m4v: { sniff: ISOBMFF, label: 'MP4 video' }, mov: { sniff: ISOBMFF, label: 'QuickTime video' },
+  m4a:  { sniff: ISOBMFF,  label: 'M4A audio' }, m4b: { sniff: ISOBMFF, label: 'M4B audio' },
+  heic: { sniff: ISOBMFF,  label: 'HEIC image' }, heif: { sniff: ISOBMFF, label: 'HEIF image' }, avif: { sniff: ISOBMFF, label: 'AVIF image' },
+  '3gp': { sniff: ISOBMFF, label: '3GP video' }, '3g2': { sniff: ISOBMFF, label: '3G2 video' },
+  zip:  { sniff: ['zip'],  label: 'ZIP archive' }, docx: { sniff: ['zip'], label: 'Word document' },
+  xlsx: { sniff: ['zip'],  label: 'Excel workbook' }, pptx: { sniff: ['zip'], label: 'PowerPoint deck' },
+  epub: { sniff: ['zip'],  label: 'EPUB e-book' }, odt: { sniff: ['zip'], label: 'OpenDocument text' },
+  ods:  { sniff: ['zip'],  label: 'OpenDocument sheet' }, odp: { sniff: ['zip'], label: 'OpenDocument slides' },
+  odg:  { sniff: ['zip'],  label: 'OpenDocument drawing' }, jar: { sniff: ['zip'], label: 'Java archive' },
+  apk:  { sniff: ['zip'],  label: 'Android package' }, hwpx: { sniff: ['zip'], label: 'HWPX document' },
+  cbz:  { sniff: ['zip'],  label: 'Comic archive (ZIP)' },
+  rar:  { sniff: ['rar'],  label: 'RAR archive' }, cbr: { sniff: ['rar'], label: 'Comic archive (RAR)' },
+  '7z': { sniff: ['7z'],   label: '7-Zip archive' },
+  gz:   { sniff: ['gz'],   label: 'GZip archive' }, tgz: { sniff: ['gz'], label: 'Gzipped tar' },
+  xz:   { sniff: ['xz'],   label: 'XZ archive' },
+  zst:  { sniff: ['zst'],  label: 'Zstandard archive' },
+  bz2:  { sniff: ['bz2'],  label: 'bzip2 archive' },
+  lz4:  { sniff: ['lz4'],  label: 'LZ4 archive' },
+  exe:  { sniff: ['exe'],  label: 'Windows executable' }, dll: { sniff: ['exe'], label: 'Windows DLL' },
+  elf:  { sniff: ['elf'],  label: 'ELF binary' }, so: { sniff: ['elf'], label: 'ELF shared object' },
+  sqlite: { sniff: ['sqlite'], label: 'SQLite database' }, sqlite3: { sniff: ['sqlite'], label: 'SQLite database' },
+  dcm:  { sniff: ['dcm'],  label: 'DICOM image' },
+  tar:  { sniff: ['tar'],  label: 'TAR archive' },
+  eps:  { sniff: ['eps'],  label: 'PostScript / EPS' }, ps: { sniff: ['eps'], label: 'PostScript' },
+};
+
+// Decide whether a file's declared extension is contradicted by its leading
+// bytes. `sniff` is the sniffFileType() result (or null). Returns a descriptor
+// for signatureCard(), or null when the extension is unknown to us or the
+// signature checks out. Reads the first 16 bytes for the hex readout.
+async function signatureCheck(file, sniff) {
+  const ext = (fileExt(file.name) || '').toLowerCase();
+  const expect = SIG_EXPECT[ext];
+  if (!expect) return null;                                // no expectation - stay quiet
+  if (sniff && expect.sniff.includes(sniff.ext)) return null;   // signature matches the extension
+  let hex = '';
+  try {
+    const b = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+    hex = Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join(' ');
+  } catch (_) {}
+  return { ext, label: expect.label, sniff: sniff || null, missing: !sniff, hex };
+}
+
+// Forensic readout card: declared type vs. what the bytes actually are. Styled as
+// a flagged integrity card (accent left border), prepended above the analysis.
+function signatureCard(info) {
+  const card = el('div', { class: 'anr-card anr-sig-flag', role: 'alert' });
+  card.appendChild(el('h3', {}, 'Signature mismatch'));
+  const t = el('table', { class: 'anr-readout' });
+  t.appendChild(row('Declared as', '.' + info.ext + ' (' + info.label + ')'));
+  if (info.missing) t.appendChild(row('Content', 'no recognised ' + info.label + ' signature'));
+  else t.appendChild(row('Content looks like', info.sniff.label + ' (.' + info.sniff.ext + ')'));
+  if (info.hex) t.appendChild(row('Leading bytes', info.hex));
+  card.appendChild(t);
+  const msg = info.missing
+    ? 'The name claims a ' + info.label + ', but the leading bytes match no known ' + info.label
+      + ' signature. The file may be renamed, corrupt, truncated or empty - do not trust the extension alone.'
+    : 'The name says .' + info.ext + ', but the contents are actually a ' + info.sniff.label
+      + '. This is a renamed or disguised file (or a polyglot) - verify it before trusting the declared type.';
+  card.appendChild(el('p', { class: 'anr-sig-flag-note' }, msg));
+  return card;
+}
+
+// ---------- trailing data after the logical end (forensic) ----------
+// Bytes after a file's structural end are a classic way to smuggle or hide
+// content (a polyglot, an appended archive, steganography) - normal viewers
+// ignore them. PDF has its own appended-%%EOF check in pdf.js; this generalises
+// the idea to the common containers whose true end we can pin down cheaply:
+// declared-size formats (BMP, RIFF/WAV/AVI/WebP, ZIP-via-EOCD) and the chunk/
+// marker-terminated images (PNG IEND, JPEG EOI, GIF trailer). Whole-file scans
+// (PNG/JPEG/GIF) are capped so a giant image can't stall the drop.
+const TRAIL_MAX_FULL = 64 * 1024 * 1024;
+
+// ZIP: the End Of Central Directory record is the last structure; anything after
+// it (past its own comment field) is appended. Scan the tail for the last EOCD.
+async function zipLogicalEnd(file) {
+  const readLen = Math.min(file.size, 65557);   // EOCD(22) + max comment(65535)
+  const start = file.size - readLen;
+  const b = new Uint8Array(await file.slice(start).arrayBuffer());
+  for (let i = b.length - 22; i >= 0; i--) {
+    if (b[i] === 0x50 && b[i + 1] === 0x4B && b[i + 2] === 0x05 && b[i + 3] === 0x06) {
+      const commentLen = b[i + 20] | (b[i + 21] << 8);
+      return start + i + 22 + commentLen;
+    }
+  }
+  return null;
+}
+
+// PNG: walk length-prefixed chunks from byte 8 to IEND; end is past IEND's CRC.
+async function pngLogicalEnd(file) {
+  const b = new Uint8Array(await file.arrayBuffer());
+  const dv = new DataView(b.buffer);
+  let pos = 8;
+  while (pos + 12 <= b.length) {
+    const len = dv.getUint32(pos);
+    const type = String.fromCharCode(b[pos + 4], b[pos + 5], b[pos + 6], b[pos + 7]);
+    pos += 12 + len;                    // length(4) + type(4) + data + crc(4)
+    if (type === 'IEND') return pos;
+    if (pos > b.length) return null;    // malformed / truncated
+  }
+  return null;
+}
+
+// JPEG: the real EOI is the last FF D9 (appended data after it has no marker
+// meaning). Scanning from the end under-reports rather than false-flags.
+async function jpegLogicalEnd(file) {
+  const b = new Uint8Array(await file.arrayBuffer());
+  for (let i = b.length - 2; i >= 2; i--) {
+    if (b[i] === 0xFF && b[i + 1] === 0xD9) return i + 2;
+  }
+  return null;
+}
+
+// GIF: block walk (screen descriptor -> extensions / image blocks) to the 0x3B
+// trailer; end is the byte after it.
+async function gifLogicalEnd(file) {
+  const b = new Uint8Array(await file.arrayBuffer());
+  let p = 6;                            // after "GIF87a"/"GIF89a"
+  if (p + 7 > b.length) return null;
+  const packed = b[p + 4];
+  p += 7;
+  if (packed & 0x80) p += 3 * (1 << ((packed & 7) + 1));   // global colour table
+  const skipSubBlocks = () => { while (p < b.length) { const sz = b[p++]; if (sz === 0) break; p += sz; } };
+  while (p < b.length) {
+    const sep = b[p++];
+    if (sep === 0x3B) return p;                             // trailer
+    if (sep === 0x21) { p++; skipSubBlocks(); }             // extension: label + sub-blocks
+    else if (sep === 0x2C) {                                // image descriptor
+      if (p + 9 > b.length) return null;
+      const ipacked = b[p + 8];
+      p += 9;
+      if (ipacked & 0x80) p += 3 * (1 << ((ipacked & 7) + 1));   // local colour table
+      p++;                                                  // LZW min code size
+      skipSubBlocks();
+    } else return null;                                     // unknown block - bail
+    if (p > b.length) return null;
+  }
+  return null;
+}
+
+// Decide whether a file carries data past its logical end. `sniff` (from
+// sniffFileType) names the container. Returns a descriptor for trailingCard() or
+// null. Pure zero-padding is treated as benign and ignored.
+async function trailingDataCheck(file, sniff) {
+  if (!sniff) return null;
+  const ext = sniff.ext;
+  let logicalEnd = null;
+  try {
+    if (ext === 'bmp') {
+      const b = new Uint8Array(await file.slice(0, 6).arrayBuffer());
+      logicalEnd = b[2] | (b[3] << 8) | (b[4] << 16) | (b[5] << 24);
+    } else if (ext === 'wav' || ext === 'avi' || ext === 'webp') {
+      const b = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+      logicalEnd = 8 + ((b[4] | (b[5] << 8) | (b[6] << 16) | (b[7] << 24)) >>> 0);
+    } else if (ext === 'zip') {
+      logicalEnd = await zipLogicalEnd(file);
+    } else if (ext === 'png' || ext === 'jpg' || ext === 'gif') {
+      if (file.size > TRAIL_MAX_FULL) return null;
+      logicalEnd = ext === 'png' ? await pngLogicalEnd(file)
+        : ext === 'jpg' ? await jpegLogicalEnd(file)
+        : await gifLogicalEnd(file);
+    } else {
+      return null;
+    }
+  } catch (_) { return null; }
+  if (logicalEnd == null || logicalEnd <= 0 || logicalEnd >= file.size) return null;
+  const trailing = file.size - logicalEnd;
+  if (trailing < 1) return null;
+  // Ignore benign zero-padding (some tools pad to a block boundary).
+  const sample = new Uint8Array(await file.slice(logicalEnd, logicalEnd + Math.min(trailing, 4096)).arrayBuffer());
+  if (sample.every((x) => x === 0)) return null;
+  const hex = Array.from(sample.slice(0, 16)).map((x) => x.toString(16).padStart(2, '0')).join(' ');
+  const tSniff = await sniffFileType(file.slice(logicalEnd)).catch(() => null);
+  return { logicalEnd, trailing, hex, sniffLabel: tSniff ? tSniff.label : null, fmtLabel: sniff.label };
+}
+
+// Forensic readout for appended data, styled like the signature-mismatch card.
+function trailingCard(info) {
+  const card = el('div', { class: 'anr-card anr-sig-flag', role: 'alert' });
+  card.appendChild(el('h3', {}, 'Trailing data'));
+  const t = el('table', { class: 'anr-readout' });
+  t.appendChild(row('File type', info.fmtLabel));
+  t.appendChild(row('Logical end', info.logicalEnd.toLocaleString() + ' bytes'));
+  t.appendChild(row('Trailing data', info.trailing.toLocaleString() + ' bytes after the end'));
+  if (info.sniffLabel) t.appendChild(row('Appended content', 'looks like ' + info.sniffLabel));
+  if (info.hex) t.appendChild(row('First bytes', info.hex));
+  card.appendChild(t);
+  card.appendChild(el('p', { class: 'anr-sig-flag-note' },
+    info.trailing.toLocaleString() + ' bytes sit after the logical end of this ' + info.fmtLabel + '. '
+    + 'Data appended past a file’s structural end is ignored by normal viewers and is a classic way to '
+    + 'smuggle or hide content - a polyglot, an appended archive, or steganography. Inspect it if the file '
+    + 'came from an untrusted source.'));
+  return card;
 }
 
 // Cursor-style confirm popup (reuses the treemap .anr-treemap-menu look) shown
@@ -663,6 +887,91 @@ function recordAnalysed(ext, supported) {
       keepalive: true,
     }).catch(() => {});
   } catch (_) {}
+}
+
+// ---------- analysis history (on-device, metadata only) ----------
+// A small "Recently analysed" list persisted in localStorage: name/size/type/
+// time only - never the file bytes, so it can't re-open files and nothing leaves
+// the device. Capped to the last 10 entries and pruned after a week.
+const HISTORY_KEY = 'anr-history';
+const HISTORY_MAX = 20;
+const HISTORY_TTL = 7 * 24 * 60 * 60 * 1000;
+
+function readHistory() {
+  let arr;
+  try { arr = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch (_) { return []; }
+  if (!Array.isArray(arr)) return [];
+  const cutoff = Date.now() - HISTORY_TTL;
+  return arr.filter((e) => e && typeof e.when === 'number' && e.when >= cutoff);
+}
+
+function recordHistory(entry) {
+  try {
+    const list = readHistory().filter((e) => !(e.name === entry.name && e.size === entry.size));
+    list.unshift(entry);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX)));
+  } catch (_) { /* storage full / disabled - history is best-effort */ }
+}
+
+// Folders bypass handleFile (they render via renderFolder), so record them here.
+// `files` is the walkItems() array of { path, file }; the folder name is the
+// first path segment and the size is the sum of every file inside.
+function recordFolderHistory(files) {
+  try {
+    const list = Array.isArray(files) ? files : [];
+    if (!list.length) return;
+    const name = (list[0].path || '').split('/')[0] || 'Folder';
+    let size = 0;
+    for (const f of list) size += (f.file && f.file.size) || 0;
+    recordHistory({ name, size, ext: '', kind: 'folder', count: list.length, when: Date.now() });
+    renderHistoryPanel();
+  } catch (_) { /* best-effort */ }
+}
+
+function relTime(ms) {
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 60) return 'just now';
+  const m = s / 60; if (m < 60) return Math.floor(m) + ' min ago';
+  const h = m / 60; if (h < 24) return Math.floor(h) + ' h ago';
+  const d = h / 24; if (d < 7) return Math.floor(d) === 1 ? 'yesterday' : Math.floor(d) + ' days ago';
+  return new Date(ms).toLocaleDateString();
+}
+
+// Repaint the "Recently analysed" panel (no-op off the main page). Each entry is a
+// <details> showing the stored metadata snapshot when opened.
+function renderHistoryPanel() {
+  const section = document.getElementById('recentHistory');
+  const listEl = document.getElementById('recentList');
+  if (!section || !listEl) return;
+  const list = readHistory();
+  if (!list.length) { section.hidden = true; listEl.innerHTML = ''; return; }
+  section.hidden = false;
+  listEl.innerHTML = '';
+  for (const e of list) {
+    const det = el('details', { class: 'recent-item' });
+    const typeLabel = e.kind === 'folder'
+      ? 'Folder' + (e.count != null ? ' · ' + e.count.toLocaleString() + ' files' : '')
+      : (e.ext ? '.' + e.ext : (e.kind || 'file'));
+    const sum = el('summary', { class: 'recent-summary' }, [
+      el('span', { class: 'recent-summary-main' }, [
+        el('span', { class: 'recent-name' }, e.name || '(unnamed)'),
+        el('span', { class: 'recent-meta' }, typeLabel + ' · ' + fmtBytes(e.size || 0)),
+      ]),
+      el('span', { class: 'recent-when' }, relTime(e.when)),
+    ]);
+    det.appendChild(sum);
+    const body = el('table', { class: 'recent-detail' });
+    if (e.kind === 'folder') {
+      body.appendChild(row('Type', 'Folder'));
+      if (e.count != null) body.appendChild(row('Files', e.count.toLocaleString()));
+    } else {
+      body.appendChild(row('Type', (e.ext ? '.' + e.ext + '  ' : '') + (e.kind || 'unknown')));
+    }
+    body.appendChild(row('Size', fmtBytes(e.size || 0) + '   (' + (e.size || 0).toLocaleString() + ' bytes)'));
+    body.appendChild(row('Analysed', new Date(e.when).toLocaleString()));
+    det.appendChild(body);
+    listEl.appendChild(el('li', {}, det));
+  }
 }
 
 // Count one visit and return the live totals for the homepage badge. Cached in a
@@ -1214,6 +1523,13 @@ function buildTrendChart(chartEl, daily, baseline) {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
+  { range: '4.16', notes: [
+    'Files that are not what they claim are flagged on open - a program renamed to look like a photo, or any file whose contents do not match its extension.',
+    'Data hidden after a file\'s real end is detected, a common way to smuggle one file inside another, for JPEG, PNG, GIF, BMP, WAV and ZIP files.',
+    'A file\'s integrity panel adds MD5, SHA-1 and SHA-512 fingerprints on demand, alongside the existing SHA-256.',
+    'ZIP archives gain a timing chart that flags repacked, placeholder or future-dated entries, plus an on-demand check of every entry\'s stored checksum.',
+    'The home page keeps a short, private, on-device list of recently analysed files (names and types only), spreadsheets flag statistical anomalies in their data, and the header tally now counts files analysed rather than visitors.',
+  ] },
   { range: '4.12 - 4.15', notes: [
     'KiCad circuit designs open: schematics, boards, footprints and symbol libraries are rebuilt as interactive drawings with pan, zoom and per-layer toggles, and opening the project ties a schematic and its board together. SPICE simulation waveforms (ngspice, LTspice) and IPC-D-356 fabrication netlists open too.',
     'Source code in almost any language opens as readable text - C and C++, C#, Java, Go, Rust, Python and many more - along with the build, shader and configuration files that fill a project.',
@@ -1776,9 +2092,17 @@ function boot() {
     // When the file is physically a zip/rar/7z container, browse-as-archive is
     // appended under its primary analysis (set here, rendered after it settles).
     let archiveEmbed = null;
+    // Forensic checks prepended above the analysis below: signature-vs-extension
+    // mismatch and data appended past the file's logical end.
+    let sigCheck = null;
+    let trailCheck = null;
     if (!force) {
       try {
         const sniff = await sniffFileType(file);
+        if (token.cancelled) return;
+        sigCheck = await signatureCheck(file, sniff);
+        if (token.cancelled) return;
+        trailCheck = await trailingDataCheck(file, sniff);
         if (token.cancelled) return;
         const noExt = !fileExt(file.name);
         const zipFamily = new Set(['docx', 'xlsx', 'pptx', 'epub', 'zip', 'comic', 'odt', 'ods', 'odp', 'odg', 'hwpx', 'iwork']);
@@ -1817,6 +2141,9 @@ function boot() {
     // early above - are correctly never counted. 'unknown' = a type Analyser
     // doesn't recognise, recorded as unsupported.
     recordAnalysed(fileExt(file.name), kind !== 'unknown');
+    // On-device "Recently analysed" snapshot (metadata only, never the bytes).
+    recordHistory({ name: file.name, size: file.size, ext: fileExt(file.name), kind, when: Date.now() });
+    renderHistoryPanel();
 
     const navMap = { photo: '#photo', audio: '#audio', video: '#video' };
     const href = navMap[kind];
@@ -1965,6 +2292,17 @@ function boot() {
       if (resultEl && isEnvFile(file.name)) {
         resultEl.hidden = false;
         resultEl.insertBefore(envSecretWarning(file), resultEl.firstChild);
+      }
+      // Signature-vs-extension mismatch: a renamed/disguised file or one whose
+      // declared type its bytes don't back up. Prepended so it leads the analysis.
+      if (resultEl && sigCheck) {
+        resultEl.hidden = false;
+        resultEl.insertBefore(signatureCard(sigCheck), resultEl.firstChild);
+      }
+      // Data appended past the file's logical end (polyglot / smuggled content).
+      if (resultEl && trailCheck) {
+        resultEl.hidden = false;
+        resultEl.insertBefore(trailingCard(trailCheck), resultEl.firstChild);
       }
       // Everything above the media section (the Photo/Sound "Analyse" cards) and
       // its player are in place now, so re-assert the scroll - the early one
@@ -2171,6 +2509,7 @@ function boot() {
         const ur = $('unknownResults');
         if (ur) {
           resetNav(); renderFolder(folderFiles, ur); enterLoadedUI();
+          recordFolderHistory(folderFiles);
           // Match the file-drop behaviour: bring the overview up under the nav bar.
           requestAnimationFrame(() => ur.scrollIntoView({ behavior: 'smooth', block: 'start' }));
         }
@@ -2255,7 +2594,10 @@ function boot() {
         var k = localStorage.key(i);
         // anr-asteroids-hi / -bestwave are permanent records with no :ts companion - skip them,
         // or the sweep's "no timestamp" branch would delete them on every page load.
-        if (!k || !k.startsWith('anr-') || k.endsWith(':ts') || k === 'anr-asteroids-hi' || k === 'anr-asteroids-bestwave') continue;
+        // anr-history manages its own per-entry 7-day expiry (readHistory), so it has
+        // no :ts companion either and must be exempted the same way.
+        if (!k || !k.startsWith('anr-') || k.endsWith(':ts')
+            || k === 'anr-asteroids-hi' || k === 'anr-asteroids-bestwave' || k === 'anr-history') continue;
         var ts = parseInt(localStorage.getItem(k + ':ts'), 10);
         if (!ts || now - ts > ANR_TTL) {
           localStorage.removeItem(k);
@@ -2377,6 +2719,7 @@ function boot() {
   if (window._anrPendingFolder && unknownResults) {
     resetNav();
     renderFolder(window._anrPendingFolder, unknownResults);
+    recordFolderHistory(window._anrPendingFolder);
     enterLoadedUI();
     // The folder was dropped on a non-home page, which showed the bottom drop
     // loader before SPA-navigating here. That loader lives on document.body and
@@ -2424,13 +2767,25 @@ function boot() {
   // Anonymous visitor count, shown above Status in the header of every main page.
   // The markup ships a "..." placeholder so the badge is visible before JS runs;
   // recordVisit() pings the stats Worker once per page load (cached across SPA
-  // navigations, one visit per IP / 3 days) and swaps in the live total once it
-  // arrives. Offline or on the mock-less dev server it simply stays "...".
-  if ($('visitCount')) {
+  // navigations, one visit per IP / 3 days) and swaps the live files-analysed
+  // total into the header badge once it arrives. The visit is still counted
+  // server-side; the header just shows the analysed count. Offline or on the
+  // mock-less dev server it simply stays "...".
+  if ($('analysedCount')) {
     recordVisit().then((t) => {
-      if (!t || typeof t.visitors !== 'number') return;
-      const n = $('visitCount');
-      if (n) n.textContent = t.visitors.toLocaleString();
+      if (!t || typeof t.files !== 'number') return;
+      const n = $('analysedCount');
+      if (n) n.textContent = t.files.toLocaleString();
+    });
+  }
+
+  // "Recently analysed" panel (main page only). Paint it, and wire its Clear button.
+  renderHistoryPanel();
+  const recentClear = $('recentClear');
+  if (recentClear) {
+    recentClear.addEventListener('click', () => {
+      try { localStorage.removeItem(HISTORY_KEY); } catch (_) {}
+      renderHistoryPanel();
     });
   }
 
@@ -3086,6 +3441,7 @@ function boot() {
       refreshTierButtons();
       offlineUserToggled = false;
       applyDefaultOfflineCollapse();
+      renderHistoryPanel();   // history lived in localStorage - now wiped
       clearBtn.textContent = 'Storage cleared ✓';
       setTimeout(() => { clearBtn.textContent = 'Clear storage'; }, 3000);
     });

@@ -108,7 +108,7 @@
     <div class="site-meta">
       <dl>
         <dt>Version</dt><dd><a href="/patch" id="versionNum" class="version-link" title="See the changelog">0.00</a></dd>
-        <dt class="visit-stat">Visitors</dt><dd class="visit-stat"><a href="/stats" class="visit-link" title="See full usage stats"><span id="visitCount">...</span></a></dd>
+        <dt class="visit-stat">Analysed</dt><dd class="visit-stat"><a href="/stats" class="visit-link" title="See full usage stats"><span id="analysedCount">...</span></a></dd>
         <dt>Status</dt><dd class="net-status"><span class="dot"></span> <span class="net-label">Local-only</span></dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
         <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button></dd>
@@ -334,6 +334,14 @@
     </div>
   </div>
   <!-- FOOTER:END -->
+  <section class="recent-history" id="recentHistory" hidden aria-label="Recently analysed files">
+    <div class="recent-history-head">
+      <h2>Recently analysed</h2>
+      <button type="button" id="recentClear" class="recent-clear">Clear</button>
+    </div>
+    <ul class="recent-list" id="recentList"></ul>
+    <p class="anr-hint recent-note">Kept only on this device. The files themselves are never stored, so they cannot be re-opened automatically - this is just a record of what you analysed.</p>
+  </section>
   <div class="footer-row footer-bottom">
     <p class="footer-meta"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
     <p class="footer-meta"><a href="/formats">Supported file types</a> &middot; <a href="/stats">Stats</a> &middot; <a href="/privacy">Privacy</a></p>

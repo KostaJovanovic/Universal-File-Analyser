@@ -3682,6 +3682,117 @@ details[open] summary::after { content: "\2212"; }
   max-width: 1440px;
   margin: 0 auto;
 }
+
+/* ---------- "Recently analysed" history panel (in the About footer) ---------- */
+/* A peer footer section: the same top-hairline + padding as .offline-section, the
+   mono/uppercase footer section heading, and dependency-list-style rows. Lives
+   only in the dark footer, so it's styled directly for light-on-dark. */
+.recent-history {
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  padding-top: 24px;
+  margin: 0 0 24px;
+}
+.recent-history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.recent-history-head h2 {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0;
+}
+.recent-clear {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: none;
+  border: none;
+  color: var(--white-a40);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.12s ease;
+}
+.recent-clear:hover { color: var(--accent); }
+.recent-list { list-style: none; margin: 0; padding: 0; }
+/* Each entry is a <details>, so strip the global details chrome (top hairline,
+   block padding/margin, the +/- marker) for a tight, divider-free list. */
+.recent-item { border-top: none; padding: 0; margin: 0; }
+.recent-item summary::after,
+.recent-item[open] summary::after { content: none; }
+.recent-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 2px 0;
+  cursor: pointer;
+  list-style: none;
+  line-height: 1.3;
+  font-family: var(--font-sans);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--white-a80);
+}
+.recent-summary::-webkit-details-marker { display: none; }
+.recent-summary-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.recent-name {
+  font-size: var(--t-small);
+  color: var(--white-a80);
+  word-break: break-all;
+}
+/* Type and size shown inline next to the filename on desktop; the expand still
+   carries them on narrow screens, where they would crowd the row. */
+.recent-meta {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.04em;
+  color: var(--white-a40);
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .recent-meta { display: none; }
+}
+.recent-item[open] .recent-name { color: var(--accent); }
+.recent-when {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.04em;
+  color: var(--white-a40);
+}
+.recent-detail { margin: 2px 0 8px; border-collapse: collapse; }
+.recent-detail th {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--white-a40);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  padding: 2px 16px 2px 0;
+}
+.recent-detail td {
+  font-size: var(--t-small);
+  color: var(--white-a80);
+  padding: 2px 0;
+}
+.recent-note { margin-top: 8px; font-size: var(--t-tiny); color: var(--white-a40); }
 /* Replaces the three dropzones once a file is loaded; reloads to a clean page.
    Swiss treatment: a mono, tracked, uppercase label in a sharp-cornered box that
    inverts on hover, with an arrow that nudges forward. */
@@ -4567,6 +4678,44 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   color: var(--accent);
   word-break: break-all;
 }
+
+/* Forensic signature-mismatch card: a normal integrity card flagged with the
+   accent left border (calmer than the full .env alert above) so a renamed or
+   disguised file reads as a flag without shouting. */
+.anr-sig-flag {
+  border-left: 3px solid var(--accent);
+  padding-left: 16px;
+  background: rgba(var(--accent-rgb), 0.04);
+}
+.anr-sig-flag > h3 { color: var(--accent); }
+.anr-sig-flag-note {
+  margin: 12px 0 0;
+  font-family: var(--font-sans);
+  font-size: var(--t-small);
+  line-height: var(--lh-prose);
+  color: var(--fg);
+}
+
+/* ZIP entry-timestamp histogram (archive timing forensics). A row of bars whose
+   heights show how many entries fall in each time bucket, earliest -> latest. */
+.anr-ziphist {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 60px;
+  padding: 5px;
+  border: var(--bd-hairline);
+  background: var(--surface);
+}
+.anr-ziphist-bar {
+  flex: 1 1 0;
+  min-height: 2px;
+  background: var(--accent);
+  opacity: 0.65;
+  border-radius: 1px 1px 0 0;
+  transition: opacity 0.12s ease;
+}
+.anr-ziphist-bar:hover { opacity: 1; }
 
 /* On smaller viewports, meta column already drops below section-content; reorder so
    the preview thumb stays compact and the OCR/histogram sit clearly below it */
