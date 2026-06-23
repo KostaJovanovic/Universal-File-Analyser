@@ -93,6 +93,29 @@ function propVal(node, name) {
   for (const x of node || []) if (isNode(x) && x[0] === 'property' && x[1] === name) return x[2];
   return null;
 }
+// A field's (effects) hide flag: KiCad 7+ writes (hide yes); older writes a bare
+// `hide` token in the effects list.
+function isHidden(eff) {
+  if (!eff) return false;
+  for (const c of eff) {
+    if (c === 'hide') return true;
+    if (isNode(c) && c[0] === 'hide') return args(c)[0] !== 'no';
+  }
+  return false;
+}
+// Visible symbol property fields (Reference, Value, ...) with their own placed
+// position, so they render where KiCad puts them rather than a guessed offset.
+function symFields(node) {
+  const out = [];
+  for (const x of node || []) {
+    if (!isNode(x) || x[0] !== 'property') continue;
+    const p = atOf(x), eff = kid(x, 'effects');
+    out.push({ key: x[1], value: x[2], x: p ? p.x : 0, y: p ? p.y : 0, rot: p ? p.rot : 0,
+      hide: isHidden(eff), size: numAt(kid(kid(eff || [], 'font') || [], 'size'), 0, 1.27),
+      justify: args(kid(eff || [], 'justify')) });
+  }
+  return out;
+}
 // list of (xy x y) points inside a (pts ...) child
 function ptsOf(node) {
   const p = kid(node, 'pts');
@@ -134,7 +157,7 @@ const SCH = {
   body: '#9a2417', fill: 'rgba(154,36,23,0.12)', bgFill: 'rgba(150,118,10,0.16)',
   pin: '#8a4a00', wire: '#0a6a5a', bus: '#0a4a78', junction: '#0a6a5a',
   label: '#163a78', glabel: '#9a4810', hlabel: '#0a5878', text: '#20283a',
-  ref: '#7a3600', val: '#125a4a', noconn: '#b01020',
+  ref: '#7a3600', val: '#125a4a', noconn: '#b01020', frame: '#2a3340', gfx: '#2c4a86',
 };
 
 // Round to a "nice" 1/2/5 x 10^n step so the grid reads like graph paper at any
@@ -272,19 +295,26 @@ function arc3(x1, y1, xm, ym, x2, y2) {
   const uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d;
   const r = Math.hypot(ax - ux, ay - uy);
   const cross = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-  const sweep = cross < 0 ? 1 : 0;               // SVG sweep flag
-  const large = isLargeArc(ax, ay, bx, by, cx, cy, ux, uy) ? 1 : 0;
+  // SVG sweep flag. Coords are board-space (Y-down, no flip), so a positive
+  // start->mid->end turn is clockwise on screen = SVG's positive (sweep=1)
+  // direction. The old `cross < 0 ? 1 : 0` was inverted, so every arc (rounded
+  // board corners, the perimeter copper/mask frame, arc tracks) bulged the wrong
+  // way - verified against the true mid point of each corner arc.
+  const sweep = cross < 0 ? 0 : 1;
+  const large = isLargeArc(ax, ay, bx, by, ux, uy) ? 1 : 0;
   return { r, sweep, large };
 }
-function isLargeArc(ax, ay, bx, by, cx, cy, ux, uy) {
-  const a1 = Math.atan2(ay - uy, ax - ux);
-  const a2 = Math.atan2(cy - uy, cx - ux);
-  const am = Math.atan2(by - uy, bx - ux);
-  const norm = (t) => { while (t < 0) t += 2 * Math.PI; while (t >= 2 * Math.PI) t -= 2 * Math.PI; return t; };
-  const span = norm(a2 - a1);
-  const midRel = norm(am - a1);
-  // If the mid point isn't on the minor sweep, it's the major arc.
-  return midRel > span ? true : span > Math.PI;
+// KiCad's mid point bisects the arc, so the total sweep is twice the centre angle
+// between start and mid. acos depends only on lengths/dot product, so it is
+// mirror-invariant - the Bottom view negates X, and the old fixed-direction span
+// calculation then misread every mirrored minor corner arc as the 270 major arc
+// (corners ballooned into full loops). This stays correct in both orientations.
+function isLargeArc(ax, ay, bx, by, ux, uy) {
+  const r2 = (ax - ux) ** 2 + (ay - uy) ** 2;
+  if (r2 < 1e-12) return false;
+  const dot = (ax - ux) * (bx - ux) + (ay - uy) * (by - uy);
+  const half = Math.acos(Math.max(-1, Math.min(1, dot / r2)));
+  return 2 * half > Math.PI;
 }
 
 // ===========================================================================
@@ -294,6 +324,12 @@ function isLargeArc(ax, ay, bx, by, cx, cy, ux, uy) {
 // unit sub-symbols). Returns primitives in symbol-local (Y-up) coordinates.
 function symbolGraphics(symNode) {
   const prims = [];
+  // Pin number/name visibility is a symbol-level setting; the offset positions
+  // the name relative to the pin's body end. (Sub-units inherit these.)
+  const pnNode = kid(symNode, 'pin_numbers'), nmNode = kid(symNode, 'pin_names');
+  const numbersHidden = isHidden(pnNode), namesHidden = isHidden(nmNode);
+  const nameOffset = nmNode ? numAt(kid(nmNode, 'offset'), 0, 0.508) : 0.508;
+  const fontOf = (node, dflt) => numAt(kid(kid(node || [], 'font') || [], 'size'), 0, dflt);
   (function walk(node) {
     for (const x of node) {
       if (!isNode(x)) continue;
@@ -311,7 +347,14 @@ function symbolGraphics(symNode) {
         if (a && m && e) prims.push({ kind: 'arc', x1: numAt(a, 0), y1: numAt(a, 1), xm: numAt(m, 0), ym: numAt(m, 1), x2: numAt(e, 0), y2: numAt(e, 1) });
       } else if (t === 'pin') {
         const p = atOf(x);
-        prims.push({ kind: 'pin', x: p ? p.x : 0, y: p ? p.y : 0, rot: p ? p.rot : 0, len: numAt(kid(x, 'length'), 0, 2.54) });
+        const nameN = kid(x, 'name'), numN = kid(x, 'number');
+        const name = nameN ? nameN[1] : '', number = numN ? numN[1] : '';
+        const pinHidden = isHidden(x);           // (pin ... (hide yes)) - power pins; KiCad draws nothing
+        prims.push({ kind: 'pin', x: p ? p.x : 0, y: p ? p.y : 0, rot: p ? p.rot : 0, len: numAt(kid(x, 'length'), 0, 2.54),
+          name, number, nameOffset, hidden: pinHidden,
+          showNum: !!number && !pinHidden && !numbersHidden && !isHidden(kid(numN || [], 'effects')),
+          showName: !!name && name !== '~' && !pinHidden && !namesHidden && !isHidden(kid(nameN || [], 'effects')),
+          numSize: fontOf(kid(numN || [], 'effects'), 1.27), nameSize: fontOf(kid(nameN || [], 'effects'), 1.27) });
       } else if (t === 'symbol') {
         walk(x);   // descend into unit sub-symbol
       }
@@ -327,7 +370,7 @@ function parseSchematic(rootNode) {
   if (lib) for (const sym of kids(lib, 'symbol')) libs[sym[1]] = symbolGraphics(sym);
 
   const instances = [];   // placed components
-  const wires = [], buses = [], junctions = [], labels = [], noconns = [], texts = [];
+  const wires = [], buses = [], junctions = [], labels = [], noconns = [], texts = [], graphics = [];
   for (const x of rootNode) {
     if (!isNode(x)) continue;
     const t = x[0];
@@ -342,7 +385,8 @@ function parseSchematic(rootNode) {
         ref, value: propVal(x, 'Value'), footprint: propVal(x, 'Footprint'),
         datasheet: propVal(x, 'Datasheet'), desc: propVal(x, 'Description'),
         inBom: (args(kid(x, 'in_bom'))[0] !== 'no'),
-        unit: numAt(kid(x, 'unit'), 0, 1),
+        dnp: (args(kid(x, 'dnp'))[0] === 'yes'),
+        unit: numAt(kid(x, 'unit'), 0, 1), fields: symFields(x),
       });
     } else if (t === 'wire') { wires.push(ptsOf(x)); }
     else if (t === 'bus') { buses.push(ptsOf(x)); }
@@ -351,15 +395,107 @@ function parseSchematic(rootNode) {
       const p = atOf(x); if (p) labels.push({ x: p.x, y: p.y, rot: p.rot, text: x[1], kind: t });
     } else if (t === 'no_connect') { const p = atOf(x); if (p) noconns.push(p); }
     else if (t === 'text') { const p = atOf(x); if (p) texts.push({ x: p.x, y: p.y, rot: p.rot, text: x[1] }); }
+    // Root-level graphic items (the grouping boxes drawn on the sheet) - sheet
+    // space (Y-down), so no symbol placement transform needed.
+    else if (t === 'rectangle' || t === 'polyline' || t === 'bezier' || t === 'circle' || t === 'arc') {
+      const s = schShape(x, t); if (s) graphics.push(s);
+    }
   }
 
-  const title = propValTitle(rootNode);
-  return { libs, instances, wires, buses, junctions, labels, noconns, texts, title,
-    version: args(kid(rootNode, 'version'))[0], paper: args(kid(rootNode, 'paper'))[0] };
+  const tb = titleBlock(rootNode);
+  const paperRaw = args(kid(rootNode, 'paper'));
+  return { libs, instances, wires, buses, junctions, labels, noconns, texts, graphics,
+    title: tb.title, rev: tb.rev, date: tb.date, company: tb.company,
+    version: args(kid(rootNode, 'version'))[0], paper: paperRaw[0], paperRaw };
 }
-function propValTitle(rootNode) {
+// Read a schematic graphic shape (shared by symbol bodies and root-level sheet
+// graphics). Coordinates are returned as-is; the caller decides the space.
+function schShape(x, t) {
+  if (t === 'rectangle') { const a = kid(x, 'start'), b = kid(x, 'end'); return (a && b) ? { kind: 'rect', x1: numAt(a, 0), y1: numAt(a, 1), x2: numAt(b, 0), y2: numAt(b, 1), fill: fillType(x) } : null; }
+  if (t === 'polyline' || t === 'bezier') return { kind: 'poly', pts: ptsOf(x), fill: fillType(x) };
+  if (t === 'circle') { const c = kid(x, 'center'); return { kind: 'circle', cx: numAt(c, 0), cy: numAt(c, 1), r: numAt(kid(x, 'radius'), 0), fill: fillType(x) }; }
+  if (t === 'arc') { const a = kid(x, 'start'), m = kid(x, 'mid'), e = kid(x, 'end'); return (a && m && e) ? { kind: 'arc', x1: numAt(a, 0), y1: numAt(a, 1), xm: numAt(m, 0), ym: numAt(m, 1), x2: numAt(e, 0), y2: numAt(e, 1) } : null; }
+  return null;
+}
+function titleBlock(rootNode) {
   const tb = kid(rootNode, 'title_block');
-  return tb ? (args(kid(tb, 'title'))[0] || '') : '';
+  if (!tb) return {};
+  return { title: args(kid(tb, 'title'))[0] || '', rev: args(kid(tb, 'rev'))[0] || '',
+    date: args(kid(tb, 'date'))[0] || '', company: args(kid(tb, 'company'))[0] || '' };
+}
+
+// KiCad paper sizes in mm (landscape width x height); portrait swaps them, and
+// "User w h" carries explicit dimensions. KiCad draws the sheet frame + title
+// block from this (the .kicad_sch stores no frame geometry), so we synthesise it.
+const PAPER_MM = {
+  A0: [1189, 841], A1: [841, 594], A2: [594, 420], A3: [420, 297], A4: [297, 210], A5: [210, 148],
+  A: [279.4, 215.9], B: [431.8, 279.4], C: [558.8, 431.8], D: [863.6, 558.8], E: [1117.6, 863.6],
+  USLetter: [279.4, 215.9], USLegal: [355.6, 215.9], USLedger: [431.8, 279.4],
+};
+function paperSize(raw) {
+  if (!raw || !raw.length) return null;
+  const name = raw[0];
+  if (name === 'User') { const w = parseFloat(raw[1]), h = parseFloat(raw[2]); return (w > 0 && h > 0) ? [w, h] : null; }
+  const base = PAPER_MM[name];
+  if (!base) return null;
+  return raw.includes('portrait') ? [base[1], base[0]] : [base[0], base[1]];
+}
+// The drawing frame (page edge + inset border) and title block, in sheet space
+// (origin top-left, Y-down) - matching how KiCad renders the worksheet.
+function drawSheetFrame(g, W, H, parsed, b) {
+  const M = 10, ink = SCH.frame;                                   // KiCad default 10mm margin
+  g.appendChild(svg('rect', { x: 0, y: 0, width: W, height: H, fill: 'none', stroke: ink, 'stroke-width': 0.15, opacity: 0.45 }));
+  g.appendChild(svg('rect', { x: M, y: M, width: W - 2 * M, height: H - 2 * M, fill: 'none', stroke: ink, 'stroke-width': 0.3 }));
+  // Title block: bottom-right, inside the frame, rows stacked upward.
+  const rows = [];
+  if (parsed.title) rows.push(['Title', parsed.title]);
+  if (parsed.company) rows.push(['', parsed.company]);
+  if (parsed.date) rows.push(['Date', parsed.date]);
+  rows.push(['Rev', parsed.rev || '-'], ['Size', parsed.paper || '']);
+  const tbw = Math.min(110, (W - 2 * M) * 0.62), rowH = 5, nh = rows.length * rowH;
+  const x0 = W - M - tbw, y0 = H - M - nh;
+  g.appendChild(svg('rect', { x: x0, y: y0, width: tbw, height: nh, fill: SCH.bgFill, stroke: ink, 'stroke-width': 0.3 }));
+  rows.forEach((r, i) => {
+    const ry = y0 + i * rowH;
+    if (i > 0) g.appendChild(svg('line', { x1: x0, y1: ry, x2: x0 + tbw, y2: ry, stroke: ink, 'stroke-width': 0.12 }));
+    const t = svg('text', { x: x0 + 1.6, y: ry + rowH * 0.68, 'font-size': 2.3, fill: ink });
+    t.textContent = r[0] ? `${r[0]}: ${r[1]}` : r[1];
+    g.appendChild(t);
+  });
+  grow(b, 0, 0); grow(b, W, H);
+}
+// A root-level sheet graphic (grouping box / outline) in sheet space.
+function drawSchGraphic(g, gr, b) {
+  const col = SCH.gfx, W = 0.15;
+  if (gr.kind === 'rect') {
+    const x = Math.min(gr.x1, gr.x2), y = Math.min(gr.y1, gr.y2), w = Math.abs(gr.x2 - gr.x1), h = Math.abs(gr.y2 - gr.y1);
+    g.appendChild(svg('rect', { x, y, width: w, height: h, fill: gr.fill === 'background' ? SCH.bgFill : 'none', stroke: col, 'stroke-width': W }));
+    grow(b, x, y); grow(b, x + w, y + h);
+  } else if (gr.kind === 'poly') {
+    if (gr.pts.length < 2) return;
+    g.appendChild(svg('polyline', { points: gr.pts.map((p) => p.join(',')).join(' '), fill: gr.fill === 'background' ? SCH.bgFill : 'none', stroke: col, 'stroke-width': W }));
+    for (const p of gr.pts) grow(b, p[0], p[1]);
+  } else if (gr.kind === 'circle') {
+    g.appendChild(svg('circle', { cx: gr.cx, cy: gr.cy, r: gr.r, fill: 'none', stroke: col, 'stroke-width': W }));
+    grow(b, gr.cx - gr.r, gr.cy - gr.r); grow(b, gr.cx + gr.r, gr.cy + gr.r);
+  } else if (gr.kind === 'arc') {
+    const arc = arc3(gr.x1, gr.y1, gr.xm, gr.ym, gr.x2, gr.y2);
+    if (arc) { g.appendChild(svg('path', { d: `M ${gr.x1} ${gr.y1} A ${arc.r} ${arc.r} 0 ${arc.large} ${arc.sweep} ${gr.x2} ${gr.y2}`, fill: 'none', stroke: col, 'stroke-width': W })); grow(b, gr.x1, gr.y1); grow(b, gr.x2, gr.y2); }
+  }
+}
+
+// A symbol property field (Reference/Value/...) drawn at its placed sheet
+// position, anchored per KiCad's justify, skipping hidden + power-symbol refs.
+function drawSchField(g, f, b) {
+  if (f.hide || f.value == null || f.value === '' || f.value === '~') return;
+  if (f.key === 'Reference' && /^#/.test(f.value)) return;       // power/hidden pseudo-refs
+  if (f.key !== 'Reference' && f.key !== 'Value') return;        // KiCad hides the rest by default
+  const col = f.key === 'Reference' ? SCH.ref : SCH.val;
+  const a = { x: f.x, y: f.y, 'font-size': f.size || 1.27, fill: col, 'dominant-baseline': 'central' };
+  a['text-anchor'] = f.justify.includes('right') ? 'end' : f.justify.includes('left') ? 'start' : 'middle';
+  if (f.rot === 90 || f.rot === 270) a.transform = `rotate(${-f.rot} ${f.x} ${f.y})`;
+  const t = svg('text', a); t.textContent = f.value; g.appendChild(t);
+  grow(b, f.x, f.y);
 }
 
 // Map a symbol-local (Y-up) point through a placed instance to sheet space.
@@ -374,6 +510,11 @@ function placeSym(inst, lx, ly) {
 function schView(parsed) {
   const v = buildViewer((g) => {
     const b = fitBox();
+    // sheet frame + title block (behind everything), synthesised from the paper size
+    const page = paperSize(parsed.paperRaw);
+    if (page) drawSheetFrame(g, page[0], page[1], parsed, b);
+    // root-level sheet graphics (grouping boxes) - behind the circuit
+    for (const gr of parsed.graphics) drawSchGraphic(g, gr, b);
     // wires + buses
     for (const w of parsed.wires) {
       if (w.length < 2) continue;
@@ -389,11 +530,8 @@ function schView(parsed) {
     for (const inst of parsed.instances) {
       const prims = parsed.libs[inst.libId] || [];
       for (const pr of prims) drawSchPrim(g, inst, pr, b);
-      // reference text near the symbol origin
-      if (inst.ref && !/^#/.test(inst.ref)) {
-        const t = svg('text', { x: inst.x + 1, y: inst.y - 1, 'font-size': 1.6, fill: SCH.ref, 'font-weight': 700 });
-        t.textContent = inst.ref; g.appendChild(t);
-      }
+      // visible property fields (Reference, Value, ...) at their placed positions
+      for (const f of (inst.fields || [])) drawSchField(g, f, b);
       grow(b, inst.x, inst.y);
     }
     // junctions
@@ -441,12 +579,30 @@ function drawSchPrim(g, inst, pr, b) {
     const arc = arc3(a[0], a[1], m[0], m[1], e[0], e[1]);
     if (arc) { g.appendChild(svg('path', { d: `M ${a[0]} ${a[1]} A ${arc.r} ${arc.r} 0 ${arc.large} ${arc.sweep} ${e[0]} ${e[1]}`, fill: 'none', stroke: SCH.body, 'stroke-width': 0.15 })); grow(b, a[0], a[1]); grow(b, e[0], e[1]); grow(b, m[0], m[1]); }
   } else if (pr.kind === 'pin') {
-    // pin extends from its origin along its own rotation (symbol Y-up space).
+    if (pr.hidden) return;                   // hidden pins (e.g. power) draw nothing in KiCad
+    // pin extends from its origin (connection tip) along its rotation, into the
+    // body (symbol Y-up space).
     const [ex, ey] = rot(pr.len, 0, pr.rot);
     const o = placeSym(inst, pr.x, pr.y), t = placeSym(inst, pr.x + ex, pr.y + ey);
     g.appendChild(svg('line', { x1: o[0], y1: o[1], x2: t[0], y2: t[1], stroke: SCH.pin, 'stroke-width': 0.15 }));
     grow(b, o[0], o[1]); grow(b, t[0], t[1]);
+    // pin number: near the middle of the pin, nudged to the screen-up side.
+    if (pr.showNum) {
+      const mx = pr.x + ex * 0.5, my = pr.y + ey * 0.5, [px, py] = rot(0, 0.8, pr.rot);
+      const c1 = placeSym(inst, mx + px, my + py), c2 = placeSym(inst, mx - px, my - py);
+      pinText(g, c1[1] < c2[1] ? c1 : c2, pr.number, Math.min(pr.numSize, 1.2), SCH.pin, b);
+    }
+    // pin name: offset from the body end further into the body, along the pin.
+    if (pr.showName) {
+      const [ux, uy] = rot(1, 0, pr.rot), off = pr.nameOffset > 0 ? pr.nameOffset + 0.3 : 0.6;
+      pinText(g, placeSym(inst, pr.x + ex + ux * off, pr.y + ey + uy * off), pr.name, Math.min(pr.nameSize, 1.2), SCH.body, b);
+    }
   }
+}
+// A small centred pin label (number/name) at a placed sheet position.
+function pinText(g, pos, str, size, col, b) {
+  const t = svg('text', { x: pos[0], y: pos[1], 'font-size': size, fill: col, 'text-anchor': 'middle', 'dominant-baseline': 'central' });
+  t.textContent = str; g.appendChild(t); grow(b, pos[0], pos[1]);
 }
 
 // ===========================================================================
@@ -458,7 +614,20 @@ function drawSchPrim(g, inst, pr, b) {
 function parseFootprint(fpNode, ox = 0, oy = 0, orot = 0) {
   const prims = [];
   const pads = [];
-  const place = (lx, ly) => { const [rx, ry] = rot(lx, ly, orot); return [ox + rx, oy + ry]; };
+  // Rotation: KiCad's RotatePoint(+a) maps (x,y)->(x*cos+y*sin, -x*sin+y*cos),
+  // which is our rot() called with -a (rot() is the opposite-handed matrix).
+  // Using +orot here rotated the wrong way for any non-symmetric part at a
+  // non-0/180 angle, so we pass -orot to match KiCad exactly.
+  // A footprint placed on the back of the board (its own (layer ...) is a B.*
+  // layer) is drawn mirrored when viewed from the top. KiCad stores the child
+  // geometry un-mirrored (side comes only from the layer), so we mirror about the
+  // vertical axis through the footprint origin - negate the rotated X offset -
+  // which is KiCad's "mirror local X + negate orientation" flip. Without this,
+  // bottom-side components render flipped (pin 1 on the wrong side, asymmetric
+  // outlines back-to-front).
+  const flip = /^B\./.test(args(kid(fpNode, 'layer'))[0] || '');
+  const place = (lx, ly) => { const [rx, ry] = rot(lx, ly, -orot); return [ox + (flip ? -rx : rx), oy + ry]; };
+  const ref = propVal(fpNode, 'Reference'), value = propVal(fpNode, 'Value');
   for (const x of fpNode) {
     if (!isNode(x)) continue;
     const t = x[0];
@@ -469,19 +638,29 @@ function parseFootprint(fpNode, ox = 0, oy = 0, orot = 0) {
       const shape = x[2];                       // smd/thru_hole/np_thru_hole + shape word
       const shapeWord = x[3];
       const layerList = (kid(x, 'layers') ? args(kid(x, 'layers')) : []);
-      const drill = kid(x, 'drill');
+      const drillNode = kid(x, 'drill');
+      let drillX = 0, drillY = 0;
+      if (drillNode) {                                  // round: (drill D)  slot: (drill oval X Y)
+        const da = args(drillNode);
+        if (da[0] === 'oval') { drillX = parseFloat(da[1]) || 0; drillY = parseFloat(da[2]) || 0; }
+        else drillX = parseFloat(da[0]) || 0;
+      }
       const c = place(p ? p.x : 0, p ? p.y : 0);
+      // SVG rotate() is clockwise-positive; KiCad orients the pad CCW by
+      // (footprint + pad) angle, so we negate it - and flip the sign again on the
+      // back, where the board mirror reverses the handedness.
       pads.push({
         num: x[1], cx: c[0], cy: c[1], sx: numAt(size, 0), sy: numAt(size, 1),
-        rot: orot + padrot, shape: shapeWord || 'rect', type: shape,
-        drill: drill ? numAt(drill, 0) : 0, layers: layerList,
+        rot: (flip ? 1 : -1) * (orot + padrot), shape: shapeWord || 'rect', type: shape,
+        drill: drillX, drillY, layers: layerList,
+        rratio: numAt(kid(x, 'roundrect_rratio'), 0, 0.25),   // per-pad corner ratio (default 0.25, 0..0.5)
         color: padColor(layerList),
       });
     } else if (t === 'fp_line' || t === 'fp_rect' || t === 'fp_circle' || t === 'fp_arc' || t === 'fp_poly') {
       addGraphic(prims, x, t.slice(3), place);
     }
   }
-  return { prims, pads, ref: propVal(fpNode, 'Reference'), value: propVal(fpNode, 'Value'),
+  return { prims, pads, ref, value,
     name: fpNode[1], descr: args(kid(fpNode, 'descr'))[0] || '', tags: args(kid(fpNode, 'tags'))[0] || '' };
 }
 
@@ -553,34 +732,384 @@ function parsePcb(rootNode) {
     version: args(kid(rootNode, 'version'))[0] };
 }
 
+// Sample a circular arc (through a -> mid -> b) into a polyline (excludes a,
+// includes b). Falls back to a straight step if the points are collinear.
+function arcPoints(a, m, b, n) {
+  const [ax, ay] = a, [mx, my] = m, [bx, by] = b;
+  const d = 2 * (ax * (my - by) + mx * (by - ay) + bx * (ay - my));
+  if (Math.abs(d) < 1e-9) return [b];
+  const ux = ((ax * ax + ay * ay) * (my - by) + (mx * mx + my * my) * (by - ay) + (bx * bx + by * by) * (ay - my)) / d;
+  const uy = ((ax * ax + ay * ay) * (bx - mx) + (mx * mx + my * my) * (ax - bx) + (bx * bx + by * by) * (mx - ax)) / d;
+  const r = Math.hypot(ax - ux, ay - uy), TWO = 2 * Math.PI, norm = (t) => ((t % TWO) + TWO) % TWO;
+  const a0 = Math.atan2(ay - uy, ax - ux), a1 = Math.atan2(by - uy, bx - ux), am = Math.atan2(my - uy, mx - ux);
+  const ccw = norm(am - a0) < norm(a1 - a0), span = ccw ? norm(a1 - a0) : -norm(a0 - a1);
+  const out = [];
+  for (let i = 1; i <= n; i++) { const t = a0 + span * (i / n); out.push([ux + r * Math.cos(t), uy + r * Math.sin(t)]); }
+  return out;
+}
+// Stitch the Edge.Cuts primitives into one closed outline polyline (board coords).
+// Returns { pts, bbox } or null. The polyline drives the face clip, the board
+// substrate and the extruded edge wall, so they all share the exact silhouette -
+// including rounded corners and round/arbitrary boards.
+let _pcbClipSeq = 0;
+function boardOutline(prims) {
+  const edges = prims.filter((p) => p.layer === 'Edge.Cuts');
+  if (!edges.length) return null;
+  const circ = edges.length === 1 && edges[0].kind === 'circle' ? edges[0] : null;
+  if (circ) {
+    const pts = [];
+    for (let i = 0; i < 72; i++) { const t = i / 72 * 2 * Math.PI; pts.push([circ.cx + circ.r * Math.cos(t), circ.cy + circ.r * Math.sin(t)]); }
+    return { pts, bbox: { minx: circ.cx - circ.r, miny: circ.cy - circ.r, maxx: circ.cx + circ.r, maxy: circ.cy + circ.r } };
+  }
+  const segs = [];
+  for (const p of edges) {
+    if (p.kind === 'line') segs.push({ a: [p.x1, p.y1], b: [p.x2, p.y2], arc: false });
+    else if (p.kind === 'arc') segs.push({ a: [p.x1, p.y1], b: [p.x2, p.y2], mid: [p.xm, p.ym], arc: true });
+    else if (p.kind === 'rect') {
+      const x0 = Math.min(p.x1, p.x2), x1 = Math.max(p.x1, p.x2), y0 = Math.min(p.y1, p.y2), y1 = Math.max(p.y1, p.y2);
+      segs.push({ a: [x0, y0], b: [x1, y0], arc: false }, { a: [x1, y0], b: [x1, y1], arc: false }, { a: [x1, y1], b: [x0, y1], arc: false }, { a: [x0, y1], b: [x0, y0], arc: false });
+    }
+  }
+  if (!segs.length) return null;
+  const used = new Array(segs.length).fill(false), eq = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.05;
+  const stepPts = (s, rev) => {
+    const from = rev ? s.b : s.a, to = rev ? s.a : s.b;
+    return s.arc ? arcPoints(from, s.mid, to, 6) : [to];
+  };
+  used[0] = true; const start = segs[0].a; let pt = segs[0].b;
+  const pts = [segs[0].a, ...stepPts(segs[0], false)];
+  const bb = fitBox();
+  for (const s of segs) { grow(bb, s.a[0], s.a[1]); grow(bb, s.b[0], s.b[1]); if (s.mid) grow(bb, s.mid[0], s.mid[1]); }
+  for (let guard = 0; guard < segs.length + 2 && !eq(pt, start); guard++) {
+    let found = -1, rev = false;
+    for (let i = 0; i < segs.length; i++) { if (used[i]) continue; if (eq(segs[i].a, pt)) { found = i; rev = false; break; } if (eq(segs[i].b, pt)) { found = i; rev = true; break; } }
+    if (found < 0) break;                       // open outline - bail (caller falls back)
+    used[found] = true; const s = segs[found];
+    pts.push(...stepPts(s, rev)); pt = rev ? s.a : s.b;
+  }
+  if (!eq(pt, start)) return null;              // didn't close - not a usable silhouette
+  return { pts, bbox: safeBox(bb) };
+}
+
+// Paint a parsed board into an SVG <g> (shared by the flat viewer and the 3D
+// faces). Returns the geometry bbox. Order matters: copper pours first, then
+// board/footprint graphics, tracks, pads, vias on top. With opts.substrate the
+// board is drawn as its real Edge.Cuts silhouette (filled + soft shadow) and all
+// content is clipped to it, so nothing spills past the board edge (the 3D faces).
+function paintBoard(g, pcb, opts = {}) {
+  const b = fitBox();
+  const holes = [], labels = [];   // drilled last so a hole cuts through every overlapping pad
+  let host = g;
+  if (opts.substrate && opts.outline) {
+    const ptsStr = opts.outline.pts.map((p) => `${p[0]},${p[1]}`).join(' ');
+    // Substrate + clip, no SVG filter: feDropShadow on a supersampled face is
+    // expensive to rasterise (and can force per-frame re-raster), so the board edge
+    // is defined by a plain stroke + the FR4 walls instead - much cheaper.
+    const n = ++_pcbClipSeq, clip = 'anr-pcb-clip-' + n;
+    const defs = svg('defs', {});
+    const cp = svg('clipPath', { id: clip }); cp.appendChild(svg('polygon', { points: ptsStr })); defs.appendChild(cp);
+    g.appendChild(defs);
+    g.appendChild(svg('polygon', { points: ptsStr, fill: '#f4f0e6', stroke: 'rgba(40,60,40,0.55)', 'stroke-width': 0.25 }));
+    host = svg('g', { 'clip-path': `url(#${clip})` }); g.appendChild(host);
+  }
+  for (const p of pcb.prims) if (p.kind === 'poly' && p.zone) drawPrim(host, p, b);
+  for (const p of pcb.prims) if (!(p.kind === 'poly' && p.zone)) drawPrim(host, p, b);
+  for (const tk of pcb.tracks) drawTrack(host, tk, b);
+  for (const pd of pcb.pads) drawPad(host, pd, b, holes, labels);
+  for (const vi of pcb.vias) {
+    host.appendChild(svg('circle', { cx: vi.cx, cy: vi.cy, r: vi.r, fill: '#a87800', 'data-layer': 'F.Cu' }));
+    holes.push({ cx: vi.cx, cy: vi.cy, rx: vi.drill / 2, ry: vi.drill / 2, rot: 0 });
+    grow(b, vi.cx - vi.r, vi.cy - vi.r); grow(b, vi.cx + vi.r, vi.cy + vi.r);
+  }
+  for (const h of holes) drawHole(host, h);      // punch holes through all copper
+  for (const t of labels) host.appendChild(t);   // pad numbers sit on top of the holes
+  const box = safeBox(b);
+  if (opts.substrate && !opts.outline) {         // no Edge.Cuts: fall back to a rectangular board
+    const r = svg('rect', { x: box.minx, y: box.miny, width: box.maxx - box.minx, height: box.maxy - box.miny, fill: '#f4f0e6', stroke: 'rgba(40,60,40,0.4)', 'stroke-width': 0.18 });
+    g.insertBefore(r, g.firstChild);
+  }
+  return box;
+}
+// A plated/unplated hole, drawn after all copper so it reads as a real drill.
+function drawHole(g, h) {
+  if (h.ry > 0 && Math.abs(h.ry - h.rx) > 1e-6) {     // slot (oval drill)
+    const n = svg('rect', { x: h.cx - h.rx, y: h.cy - h.ry, width: h.rx * 2, height: h.ry * 2, rx: Math.min(h.rx, h.ry), fill: '#0b0b0f' });
+    if (h.rot) n.setAttribute('transform', `rotate(${h.rot} ${h.cx} ${h.cy})`);
+    g.appendChild(n);
+  } else if (h.rx > 0) {
+    g.appendChild(svg('circle', { cx: h.cx, cy: h.cy, r: h.rx, fill: '#0b0b0f' }));
+  }
+}
+
 function pcbView(pcb, opts = {}) {
   // Build a layer->colour map for the toggle chips (only layers that drew).
   const layerMap = new Map();
   for (const ly of [...pcb.layersUsed].sort()) layerMap.set(ly, layerColor(ly));
 
-  const v = buildViewer((g) => {
-    const b = fitBox();
-    // copper pours / filled polys first (so traces and pads sit on top)
-    for (const p of pcb.prims) if (p.kind === 'poly' && p.zone) drawPrim(g, p, b);
-    // board graphics + footprint silk/courtyard
-    for (const p of pcb.prims) if (!(p.kind === 'poly' && p.zone)) drawPrim(g, p, b);
-    // tracks
-    for (const tk of pcb.tracks) drawTrack(g, tk, b);
-    // pads
-    for (const pd of pcb.pads) drawPad(g, pd, b);
-    // vias
-    for (const vi of pcb.vias) {
-      g.appendChild(svg('circle', { cx: vi.cx, cy: vi.cy, r: vi.r, fill: '#a87800', 'data-layer': 'F.Cu' }));
-      g.appendChild(svg('circle', { cx: vi.cx, cy: vi.cy, r: vi.drill / 2, fill: '#0b0b0f' }));
-      grow(b, vi.cx - vi.r, vi.cy - vi.r); grow(b, vi.cx + vi.r, vi.cy + vi.r);
-    }
-    return safeBox(b);
-  }, { layers: opts.noChips ? null : layerMap });
+  const v = buildViewer((g) => paintBoard(g, pcb), { layers: opts.noChips ? null : layerMap });
 
   const at = new Map();
   for (const fp of pcb.footprints) at.set(fp.ref.toUpperCase(), { x: fp.cx, y: fp.cy });
   v.focus = (ref) => { const c = at.get(String(ref).toUpperCase()); if (!c) return false; v.centerOn(c.x, c.y, Math.max(v.home.w * 0.18, 12)); v.flash(c.x, c.y); return true; };
   return v;
+}
+
+// ---- board sides (for the 3D flip + the Top/Bottom flat views) -------------
+// Which side of the board a layer lives on. Through features (Edge.Cuts, vias,
+// plated holes) belong to both; inner copper and documentation default to top.
+function sideOfLayer(layer) {
+  if (!layer) return 'top';
+  if (/^B\./.test(layer)) return 'bottom';
+  if (layer === 'Edge.Cuts') return 'both';
+  return 'top';
+}
+function padSide(pd) {
+  if (pd.drill > 0) return 'both';                      // plated through-hole
+  const L = pd.layers || [];
+  if (L.includes('*.Cu')) return 'both';
+  if (L.some((l) => /^B\./.test(l)) && !L.some((l) => /^F\./.test(l))) return 'bottom';
+  return 'top';
+}
+// A copy of the board holding only the geometry on one side (keeping the
+// through/outline features so the silhouette and holes show on both faces).
+function sidePcb(pcb, side) {
+  const keep = (layer) => { const s = sideOfLayer(layer); return s === 'both' || s === side; };
+  const prims = pcb.prims.filter((p) => keep(p.layer));
+  const tracks = pcb.tracks.filter((t) => keep(t.layer));
+  const pads = pcb.pads.filter((p) => { const s = padSide(p); return s === 'both' || s === side; });
+  const layersUsed = new Set();
+  for (const p of prims) layersUsed.add(p.layer);
+  for (const t of tracks) layersUsed.add(t.layer);
+  for (const pd of pads) for (const ly of pd.layers || []) if (ly !== '*.Mask' && ly !== '*.Paste') layersUsed.add(ly === '*.Cu' ? (side === 'bottom' ? 'B.Cu' : 'F.Cu') : ly);
+  return { prims, pads, tracks, vias: pcb.vias, footprints: pcb.footprints, zones: pcb.zones, layersUsed, thickness: pcb.thickness, version: pcb.version };
+}
+// Mirror a board left-right (reflect every X about cx, negate pad rotation) so a
+// bottom side reads correctly (silk forward, left/right as physically flipped).
+// cx defaults to 0 for the standalone flat view; the 3D back face passes the
+// board centre so the mirrored bottom still lines up with the front face.
+function mirrorXPcb(pcb, cx = 0) {
+  const mx = (v) => 2 * cx - v;
+  const mp = (p) => {
+    const q = { ...p };
+    if (q.x1 != null) q.x1 = mx(q.x1);
+    if (q.x2 != null) q.x2 = mx(q.x2);
+    if (q.xm != null) q.xm = mx(q.xm);
+    if (q.cx != null) q.cx = mx(q.cx);
+    if (q.pts) q.pts = q.pts.map(([x, y]) => [mx(x), y]);
+    return q;
+  };
+  return {
+    prims: pcb.prims.map(mp), tracks: pcb.tracks.map(mp),
+    pads: pcb.pads.map((pd) => ({ ...pd, cx: mx(pd.cx), rot: -pd.rot })),
+    vias: pcb.vias.map((vi) => ({ ...vi, cx: mx(vi.cx) })),
+    footprints: pcb.footprints.map((f) => ({ ...f, cx: mx(f.cx) })),
+    zones: pcb.zones, layersUsed: pcb.layersUsed, thickness: pcb.thickness, version: pcb.version,
+  };
+}
+
+// A flat, non-interactive SVG of one side, used as a face of the 3D board. The
+// content is clipped to the board's Edge.Cuts silhouette so the face shows the
+// real board shape, not a cream rectangle.
+function staticFace(pcb) {
+  const s = svg('svg', { class: 'anr-pcb3d-svg' });
+  const g = svg('g', {});
+  s.appendChild(g);
+  const outline = boardOutline(pcb.prims);
+  const bb = paintBoard(g, pcb, { substrate: true, outline });
+  return { s, bb, outline };
+}
+
+// Build a 3D, drag-to-rotate board: a thin slab with the top side on the front
+// face and the bottom side on the back (a real rotateY(180) flip, so it mirrors
+// physically and you can read the other side). Pure CSS 3D - no WebGL, vector
+// crisp at any angle. Reuses the same painter as the flat view.
+function buildBoard3D(pcb, opts = {}) {
+  const ss = opts.ss !== false;                  // supersampling toggle (Quality popup)
+  const view = opts.view || { rx: -22, ry: 0, zoom: 1, panX: 0, panY: 0 };   // preserved across rebuilds
+  const front = staticFace(sidePcb(pcb, 'top'));
+  // The back face is mirrored about the board centre so the physical flip reads
+  // correctly (forward silk, sides as KiCad's 3D viewer) while staying aligned
+  // with the front under the shared viewBox. Without this it shows the bottom in
+  // top-view coordinates - mirrored text, swapped sides.
+  const cx = (front.bb.minx + front.bb.maxx) / 2;
+  const back = staticFace(mirrorXPcb(sidePcb(pcb, 'bottom'), cx));
+
+  // Shared viewBox (union of both faces' real board outlines) so the faces line up
+  // and the slab is sized to the board edge, not stray geometry beyond it.
+  const b = fitBox();
+  for (const f of [front, back]) {
+    const ob = (f.outline && f.outline.bbox) || f.bb;
+    grow(b, ob.minx, ob.miny); grow(b, ob.maxx, ob.maxy);
+  }
+  safeBox(b);
+  const w = b.maxx - b.minx, h = b.maxy - b.miny, pad = Math.max(w, h) * 0.03 + 1;
+  const V = { x: b.minx - pad, y: b.miny - pad, w: w + pad * 2, h: h + pad * 2 };
+  const vbStr = `${V.x} ${V.y} ${V.w} ${V.h}`;
+
+  // Pixel size: fit the board aspect into a viewport box, then supersample - the
+  // faces are laid out RES x larger and the board is scaled back down by RES in
+  // its transform, so the SVG rasterises into the 3D texture at high density and
+  // stays crisp when zoomed/rotated (a plain scale() just magnifies a blurry
+  // bitmap). Perspective is untouched: scale(1/RES) exactly cancels the RES, so
+  // the projection is identical - only the backing resolution changes.
+  // RES = supersample factor (the CSS/SVG board has no MSAA, so oversampling is
+  // the antialiasing). The browser already multiplies the 3D layer by the device
+  // pixel ratio, so use a higher factor on 1x displays and ease off on HiDPI to
+  // keep the backing texture within size limits while staying ~4x oversampled.
+  const aspect = V.w / V.h, MAXW = 470, MAXH = 340;
+  // RES_ON is the supersampled factor; RES drops to 1 when supersampling is off.
+  // The board is scaled by 1/RES *inside* the perspective, and CSS perspective
+  // interacts non-linearly with that scale - so the perspective distance must
+  // scale with RES too (below), or changing RES warps the projection (turning the
+  // board orthographic when supersampling is off). PERSP keeps the on-state look
+  // identical on every display and only compensates the off-state.
+  const RES_ON = (typeof window !== 'undefined' && (window.devicePixelRatio || 1) >= 2) ? 2 : 3;
+  const RES = ss ? RES_ON : 1;
+  const PERSP = 2200 * RES / RES_ON;
+  let W = MAXW, H = MAXW / aspect;
+  if (H > MAXH) { H = MAXH; W = MAXH * aspect; }
+  W *= RES; H *= RES;
+  const T = Math.max(6, Math.min(18, (pcb.thickness || 1.6) * 6)) * RES;   // board thickness in px
+  const k = W / V.w;                       // px per board-mm (uniform - aspect matched)
+  const Vcx = V.x + V.w / 2, Vcy = V.y + V.h / 2;   // board centre in board coords
+
+  for (const f of [front, back]) {
+    f.s.setAttribute('viewBox', vbStr);
+    f.s.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    f.s.setAttribute('width', W); f.s.setAttribute('height', H);
+  }
+
+  // stage = viewport; cam = 2D zoom/pan (outside the perspective, so zooming is a
+  // plain camera move and never warps the perspective); scene = the perspective;
+  // board = the rotating 3D slab.
+  const stage = el('div', { class: 'anr-pcb3d' });
+  const cam = el('div', { class: 'anr-pcb3d-cam' });
+  const scene = el('div', { class: 'anr-pcb3d-scene' });
+  scene.style.perspective = PERSP + 'px';        // scaled with RES so supersampling never warps the projection
+  const board = el('div', { class: 'anr-pcb3d-board' });
+  for (const d of [cam, scene, board]) { d.style.width = W + 'px'; d.style.height = H + 'px'; }
+  scene.appendChild(board); cam.appendChild(scene); stage.appendChild(cam);
+
+  const mkFace = (cls, sNode, tf) => {
+    const d = el('div', { class: 'anr-pcb3d-face ' + cls });
+    d.style.width = W + 'px'; d.style.height = H + 'px'; d.style.transform = tf;
+    d.appendChild(sNode);
+    return d;
+  };
+  board.appendChild(mkFace('anr-pcb3d-front', front.s, `translate(-50%,-50%) translateZ(${T / 2}px)`));
+  board.appendChild(mkFace('anr-pcb3d-back', back.s, `translate(-50%,-50%) rotateY(180deg) translateZ(${T / 2}px)`));
+
+  // FR4 edge: an extruded wall following the whole outline (board px, relative to
+  // centre), so rounded corners and round/arbitrary boards get a continuous edge
+  // instead of four straight strips with corner gaps. Each polyline segment is a
+  // thin quad stood up perpendicular to the board (rotateX 90) and aimed along the
+  // segment (rotateZ). Falls back to the bbox rectangle when there's no outline.
+  const wallSeg = (A, B) => {
+    const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy);
+    if (L < 0.5) return;
+    const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2, ang = Math.atan2(dy, dx) * 180 / Math.PI;
+    const d = el('div', { class: 'anr-pcb3d-wall' });
+    d.style.width = L + 'px'; d.style.height = T + 'px';
+    d.style.transform = `translate(-50%,-50%) translate(${mx}px, ${my}px) rotateZ(${ang}deg) rotateX(90deg)`;
+    board.appendChild(d);
+  };
+  const rel = (front.outline ? front.outline.pts : [[b.minx, b.miny], [b.maxx, b.miny], [b.maxx, b.maxy], [b.minx, b.maxy]])
+    .map((p) => [(p[0] - Vcx) * k, (p[1] - Vcy) * k]);
+  for (let i = 0; i < rel.length; i++) wallSeg(rel[i], rel[(i + 1) % rel.length]);
+
+  // View state lives in the shared `view` object so the Quality popup can rebuild
+  // the slab at a new supersample factor without losing the camera. Left-drag
+  // rotates (board, inside the perspective); right/middle-drag pans and the wheel
+  // zooms (cam, a plain 2D transform outside the perspective). 1/RES undoes the
+  // supersample. Double-click/Reset returns home.
+  const HOME = { rx: -22, ry: 0, zoom: 1 };
+  const applyCam = () => { cam.style.transform = `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`; };
+  const applyBoard = () => { board.style.transform = `scale(${1 / RES}) rotateX(${view.rx}deg) rotateY(${view.ry}deg)`; };
+  applyCam(); applyBoard();
+
+  let drag = null;
+  stage.addEventListener('contextmenu', (e) => e.preventDefault());   // right-drag pans - suppress the menu
+  stage.addEventListener('pointerdown', (e) => {
+    drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.button === 1 };
+    board.classList.add('is-dragging'); stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (drag.pan) { view.panX += dx; view.panY += dy; applyCam(); }
+    else { view.ry += dx * 0.5; view.rx = Math.max(-90, Math.min(90, view.rx - dy * 0.5)); applyBoard(); }
+    drag.x = e.clientX; drag.y = e.clientY;
+  });
+  const endDrag = () => { drag = null; board.classList.remove('is-dragging'); };
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
+  stage.addEventListener('wheel', (e) => { e.preventDefault(); view.zoom = Math.max(0.3, Math.min(4, view.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); applyCam(); }, { passive: false });
+  stage.addEventListener('dblclick', () => { Object.assign(view, { rx: HOME.rx, ry: HOME.ry, zoom: HOME.zoom, panX: 0, panY: 0 }); applyCam(); applyBoard(); });
+
+  const bar = el('div', { class: 'anr-altium-bar' });
+  const flip = el('button', { class: 'anr-btn', type: 'button' }, 'Flip over');
+  flip.addEventListener('click', () => { view.ry = Math.abs(((view.ry % 360) + 360) % 360 - 180) < 90 ? 0 : 180; applyBoard(); });
+  const reset = el('button', { class: 'anr-btn', type: 'button' }, 'Reset view');
+  reset.addEventListener('click', () => { Object.assign(view, { rx: HOME.rx, ry: HOME.ry, zoom: HOME.zoom, panX: 0, panY: 0 }); applyCam(); applyBoard(); });
+  // Quality popup: supersampling toggle (rebuilds the slab via onToggleSS). MSAA
+  // is shown disabled - it is a WebGL feature, not available to this CSS/SVG board.
+  const qWrap = el('span', { class: 'anr-aa-wrap' });
+  const qBtn = el('button', { class: 'anr-btn', type: 'button' }, 'Quality');
+  const qPanel = el('div', { class: 'anr-aa-panel is-hidden' });
+  qPanel.appendChild(el('div', { class: 'anr-aa-title' }, 'Quality'));
+  const ssBtn = el('button', { class: 'anr-btn anr-aa-btn', type: 'button' }, 'Supersampling');
+  ssBtn.classList.toggle('is-on', ss);
+  ssBtn.addEventListener('click', () => { if (opts.onToggleSS) opts.onToggleSS(); });
+  qPanel.appendChild(ssBtn);
+  const msaaBtn = el('button', { class: 'anr-btn anr-aa-btn', type: 'button', title: 'Hardware MSAA needs WebGL - available on the 3D model viewer, not this vector board' }, 'Hardware MSAA - n/a');
+  msaaBtn.disabled = true;
+  qPanel.appendChild(msaaBtn);
+  qBtn.addEventListener('click', (e) => { e.stopPropagation(); qPanel.classList.toggle('is-hidden'); });
+  document.addEventListener('click', (e) => { if (!qWrap.contains(e.target)) qPanel.classList.add('is-hidden'); });
+  qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
+  bar.appendChild(flip); bar.appendChild(reset); bar.appendChild(qWrap);
+  bar.appendChild(el('span', { class: 'anr-hint anr-pcb3d-hint' }, 'Drag to rotate - right-drag to pan - wheel to zoom - double-click to reset.'));
+
+  const wrap = el('div', { class: 'anr-altium-wrap anr-pcb3d-wrap' });
+  wrap.appendChild(stage); wrap.appendChild(bar);
+  return wrap;
+}
+
+// Board view with mode buttons: a 3D flip board, plus flat Top and Bottom
+// (interactive, with the usual pan/zoom + per-layer toggles). Returns the same
+// { wrap, focus } shape as pcbView so the project cross-probe still works.
+function boardView(pcb) {
+  const wrap = el('div', { class: 'anr-board-modes' });
+  const bar = el('div', { class: 'anr-altium-bar anr-board-modebar' });
+  const host = el('div', { class: 'anr-board-host' });
+  const cache = {};
+  let topV = null;
+  // 3D supersampling state + a camera shared across rebuilds, so toggling
+  // supersampling keeps the view. onToggleSS flips it and rebuilds the 3D node.
+  let ss3d = true;
+  const view3d = { rx: -22, ry: 0, zoom: 1, panX: 0, panY: 0 };
+  const build = (mode) => {
+    if (cache[mode]) return cache[mode];
+    let node;
+    if (mode === 'top') { topV = pcbView(sidePcb(pcb, 'top')); node = topV.wrap; }
+    else if (mode === 'bottom') node = pcbView(mirrorXPcb(sidePcb(pcb, 'bottom'))).wrap;
+    else node = buildBoard3D(pcb, { ss: ss3d, view: view3d, onToggleSS: () => { ss3d = !ss3d; cache['3d'] = null; show('3d'); } });
+    return (cache[mode] = node);
+  };
+  const show = (mode) => {
+    host.innerHTML = '';
+    host.appendChild(build(mode));
+    for (const btn of bar.querySelectorAll('button[data-mode]')) btn.classList.toggle('is-on', btn.dataset.mode === mode);
+  };
+  for (const [mode, label] of [['3d', '3D board'], ['top', 'Top'], ['bottom', 'Bottom']]) {
+    const btn = el('button', { class: 'anr-btn anr-board-mode', type: 'button', 'data-mode': mode }, label);
+    btn.addEventListener('click', () => show(mode));
+    bar.appendChild(btn);
+  }
+  wrap.appendChild(bar); wrap.appendChild(host);
+  show('3d');
+  // Cross-probe always lands on the flat Top view (it has pan/zoom + ping).
+  return { wrap, focus: (ref) => { show('top'); return topV ? topV.focus(ref) : false; } };
 }
 
 function drawPrim(g, p, b) {
@@ -615,22 +1144,35 @@ function drawTrack(g, tk, b) {
     if (arc) { g.appendChild(svg('path', { d: `M ${tk.x1} ${tk.y1} A ${arc.r} ${arc.r} 0 ${arc.large} ${arc.sweep} ${tk.x2} ${tk.y2}`, fill: 'none', stroke: col, 'stroke-width': W, 'stroke-linecap': 'round', 'data-layer': tk.layer })); grow(b, tk.x1, tk.y1); grow(b, tk.x2, tk.y2); }
   }
 }
-function drawPad(g, pd, b) {
+// Draws a pad's copper and records its hole + number for the final passes. The
+// hole must be punched after ALL copper (some footprints stack a hole-less
+// "connect" pad over a drilled one - e.g. plated mounting holes - and drawing
+// the hole per-pad would let the larger pad paint over it).
+function drawPad(g, pd, b, holes, labels) {
   const layerKey = pd.layers.includes('*.Cu') ? 'F.Cu' : (pd.layers.find((l) => /\.Cu$/.test(l)) || pd.layers[0] || 'F.Cu');
-  let n;
-  if (/circle/.test(pd.shape) || (pd.sx === pd.sy && /circle/.test(pd.shape))) {
-    n = svg('ellipse', { cx: pd.cx, cy: pd.cy, rx: pd.sx / 2, ry: pd.sy / 2, fill: pd.color });
-  } else {
-    // rect / roundrect / oval - draw as a rotated rounded rect
-    const rr = /round|oval/.test(pd.shape) ? Math.min(pd.sx, pd.sy) * (/oval/.test(pd.shape) ? 0.5 : 0.25) : 0;
-    n = svg('rect', { x: pd.cx - pd.sx / 2, y: pd.cy - pd.sy / 2, width: pd.sx, height: pd.sy, rx: rr, fill: pd.color });
-    if (pd.rot) n.setAttribute('transform', `rotate(${pd.rot} ${pd.cx} ${pd.cy})`);
+  // Copper only when the pad is on a copper layer AND is larger than its drill
+  // (an annular ring). A pure hole - np_thru_hole, or a pad sized to its drill -
+  // carries no copper and renders as a bare hole in the final pass.
+  const hasCu = pd.layers.some((l) => l === '*.Cu' || /\.Cu$/.test(l));
+  const copper = hasCu && (!(pd.drill > 0) || Math.max(pd.sx, pd.sy) > pd.drill + 1e-6);
+  if (copper) {
+    let n;
+    if (/circle/.test(pd.shape)) {
+      n = svg('ellipse', { cx: pd.cx, cy: pd.cy, rx: pd.sx / 2, ry: pd.sy / 2, fill: pd.color });
+    } else {
+      const rr = /oval/.test(pd.shape) ? Math.min(pd.sx, pd.sy) * 0.5 : /round/.test(pd.shape) ? Math.min(pd.sx, pd.sy) * (pd.rratio != null ? pd.rratio : 0.25) : 0;
+      n = svg('rect', { x: pd.cx - pd.sx / 2, y: pd.cy - pd.sy / 2, width: pd.sx, height: pd.sy, rx: rr, fill: pd.color });
+      if (pd.rot) n.setAttribute('transform', `rotate(${pd.rot} ${pd.cx} ${pd.cy})`);
+    }
+    n.setAttribute('data-layer', layerKey);
+    g.appendChild(n);
   }
-  n.setAttribute('data-layer', layerKey);
-  g.appendChild(n);
   grow(b, pd.cx - pd.sx / 2, pd.cy - pd.sy / 2); grow(b, pd.cx + pd.sx / 2, pd.cy + pd.sy / 2);
-  if (pd.drill > 0) g.appendChild(svg('circle', { cx: pd.cx, cy: pd.cy, r: pd.drill / 2, fill: '#0b0b0f' }));
-  if (pd.num) { const t = svg('text', { x: pd.cx, y: pd.cy + Math.min(pd.sx, pd.sy) * 0.18, 'font-size': Math.min(pd.sx, pd.sy) * 0.45, fill: '#fff', 'text-anchor': 'middle', 'font-weight': 700, 'data-layer': layerKey }); t.textContent = pd.num; g.appendChild(t); }
+  if (pd.drill > 0) holes.push({ cx: pd.cx, cy: pd.cy, rx: pd.drill / 2, ry: (pd.drillY || pd.drill) / 2, rot: pd.rot });
+  if (pd.num && copper) {
+    const t = svg('text', { x: pd.cx, y: pd.cy + Math.min(pd.sx, pd.sy) * 0.18, 'font-size': Math.min(pd.sx, pd.sy) * 0.45, fill: '#fff', 'text-anchor': 'middle', 'font-weight': 700, 'data-layer': layerKey });
+    t.textContent = pd.num; labels.push(t);
+  }
 }
 function hexA(hex, a) {
   const m = /^#([0-9a-f]{6})$/i.exec(hex);
@@ -752,7 +1294,7 @@ function renderPcbDoc(file, node, resultsEl) {
 
   const dcard = el('div', { class: 'anr-card' });
   dcard.appendChild(el('h3', {}, 'Board'));
-  dcard.appendChild(pcbView(pcb).wrap);
+  dcard.appendChild(boardView(pcb).wrap);
   resultsEl.appendChild(dcard);
 }
 
@@ -1036,7 +1578,7 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
   });
   if (pcb) pcbTab = addTab(pcbFile ? base(pcbFile.path) : 'PCB', (panel) => {
     panel.appendChild(miniMeta([['Footprints', pcb.footprints.length], ['Tracks', pcb.tracks.length], ['Vias', pcb.vias.length], ['Zones', pcb.zones || null]]));
-    const v = pcbView(pcb); panel.appendChild(v.wrap); return v;
+    const v = boardView(pcb); panel.appendChild(v.wrap); return v;
   });
   if (symFile) addTab(base(symFile.path), (panel) => { buildSymPanel(panel, symFile); });
   if (modFiles.length) addTab('Footprints (' + modFiles.length + ')', (panel) => buildModPanel(panel, modFiles));
@@ -1117,7 +1659,8 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
     draw(mods[0].path);
   }
 
-  setActive(overviewIdx);
+  // Open on the board by default (then schematic, then the overview).
+  setActive(pcbTab >= 0 ? pcbTab : schTab >= 0 ? schTab : overviewIdx);
   return card;
 }
 

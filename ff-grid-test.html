@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FF grid drift test</title>
+<style>
+  /* Shared light grid SVG (same artwork as the site, but darker so motion shows). */
+  :root {
+    --grid: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cline x1='0' y1='24' x2='15' y2='24' stroke='%23000' stroke-opacity='0.18' stroke-width='0.75'/%3E%3Cline x1='33' y1='24' x2='48' y2='24' stroke='%23000' stroke-opacity='0.18' stroke-width='0.75'/%3E%3Cline x1='24' y1='0' x2='24' y2='15' stroke='%23000' stroke-opacity='0.18' stroke-width='0.75'/%3E%3Cline x1='24' y1='33' x2='24' y2='48' stroke='%23000' stroke-opacity='0.18' stroke-width='0.75'/%3E%3Cline x1='19' y1='24' x2='29' y2='24' stroke='%23000' stroke-opacity='0.18' stroke-width='0.75'/%3E%3Cline x1='24' y1='19' x2='24' y2='29' stroke='%23000' stroke-opacity='0.18' stroke-width='0.75'/%3E%3C/svg%3E");
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { height: 100%; background: #fff; }
+  body { height: 100%; background: transparent; font: 14px/1.5 system-ui, sans-serif; overflow: hidden; }
+
+  /* The layer under test. The active technique is chosen by a class on <html>. */
+  .layer {
+    position: fixed;
+    inset: -72px;
+    z-index: -1;
+    background-image: var(--grid);
+    background-size: 72px 72px;
+    pointer-events: none;
+  }
+
+  /* A) transform drift on a real element (the original site approach) */
+  .mode-a .layer {
+    animation: drift-tf 24s linear infinite;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    will-change: transform;
+  }
+  @keyframes drift-tf { from { transform: translate3d(0,0,0); } to { transform: translate3d(72px,72px,0); } }
+
+  /* B) background-position drift (no big composited layer, inset:0) */
+  .mode-b .layer {
+    inset: 0;
+    animation: drift-bp 24s linear infinite;
+  }
+  @keyframes drift-bp { from { background-position: 0 0; } to { background-position: 72px 72px; } }
+
+  /* C) transform drift but NO will-change / translateZ (let FF decide) */
+  .mode-c .layer { animation: drift-tf 24s linear infinite; }
+
+  /* D) faster transform drift (4x) - tests if slowness/sub-pixel is the issue */
+  .mode-d .layer {
+    animation: drift-tf 6s linear infinite;
+    will-change: transform;
+  }
+
+  /* E) transform drift on a CSS gradient grid - NO SVG data-URI. Tests whether
+     Firefox is choking on rasterising the SVG tile each frame. */
+  .mode-e .layer {
+    background-image:
+      repeating-linear-gradient(0deg,  transparent 0 71px, rgba(0,0,0,0.18) 71px 72px),
+      repeating-linear-gradient(90deg, transparent 0 71px, rgba(0,0,0,0.18) 71px 72px);
+    background-size: 72px 72px;
+    animation: drift-tf 24s linear infinite;
+    transform: translateZ(0);
+    will-change: transform;
+  }
+
+  /* F) a single solid box sliding across - the simplest possible compositor
+     animation. If even THIS is choppy, Firefox isn't GPU-animating anything here. */
+  .box { display: none; position: fixed; top: 40%; left: 0; width: 180px; height: 180px;
+         background: #e60023; z-index: -1; will-change: transform; }
+  .mode-f .layer { display: none; }
+  .mode-f .box { display: block; animation: slide 3s linear infinite alternate; }
+  @keyframes slide { from { transform: translateX(0); } to { transform: translateX(80vw); } }
+
+  /* G) the FULL grid layer, but moved fast/coarse like the box (not a slow
+     sub-pixel drift). If this glides smoothly, Firefox CAN composite the big
+     layer and the real problem is sub-pixel snapping of the slow drift. If this
+     is choppy too, Firefox can't composite a full-screen layer at all here. */
+  .mode-g .layer { animation: slide 3s linear infinite alternate; will-change: transform; }
+
+  /* H) slow drift, but the layer carries a microscopic rotate so WebRender can't
+     treat it as axis-aligned and pixel-snap it -> forced sub-pixel sampling.
+     THIS is the fix shipped on the site. */
+  .mode-h .layer { animation: drift-rot 24s linear infinite; will-change: transform; }
+  @keyframes drift-rot {
+    from { transform: translate3d(0,0,0) rotate(0.02deg); }
+    to   { transform: translate3d(72px,72px,0) rotate(0.02deg); }
+  }
+
+  /* I) slow drift with a microscopic scale instead of rotate (does NOT defeat the
+     snap - kept as the counter-example). */
+  .mode-i .layer { animation: drift-scale 24s linear infinite; will-change: transform; }
+  @keyframes drift-scale {
+    from { transform: translate3d(0,0,0) scale(1.0008); }
+    to   { transform: translate3d(72px,72px,0) scale(1.0008); }
+  }
+
+  .panel {
+    position: fixed; left: 16px; top: 16px; z-index: 10;
+    background: #fff; border: 1px solid #0a0a0a; padding: 14px 16px; max-width: 460px;
+  }
+  .panel h1 { font-size: 15px; margin-bottom: 8px; }
+  .panel p { margin-bottom: 10px; }
+  .panel button { font: inherit; padding: 6px 10px; margin: 0 6px 6px 0; cursor: pointer; border: 1px solid #0a0a0a; background: #f4f4f4; }
+  .panel button.on { background: #0a0a0a; color: #fff; }
+  .panel code { background: #f0f0f0; padding: 1px 4px; }
+  #fps { font-weight: 700; }
+</style>
+</head>
+<body class="">
+  <div class="layer"></div>
+  <div class="box"></div>
+  <div class="panel">
+    <h1>Firefox grid-drift isolation test</h1>
+    <p>Nothing here but the drifting grid. Watch each mode for ~10s and note which are smooth vs choppy. Approx FPS: <span id="fps">-</span></p>
+    <div>
+      <button data-mode="a" class="on">A transform (site)</button>
+      <button data-mode="b">B background-position</button>
+      <button data-mode="c">C transform, no will-change</button>
+      <button data-mode="d">D transform 4x faster</button>
+      <button data-mode="e">E gradient grid (no SVG)</button>
+      <button data-mode="f">F single red box</button>
+      <button data-mode="g">G full grid, fast/coarse</button>
+      <button data-mode="h">H slow drift + micro-rotate</button>
+      <button data-mode="i">I slow drift + micro-scale</button>
+    </div>
+    <p style="margin-top:10px"><strong>Result:</strong> H (micro-rotate) is the shipped fix - it defeats Firefox/WebRender pixel-snapping of the slow, axis-aligned drift.</p>
+  </div>
+<script>
+  var root = document.documentElement;
+  function setMode(m) {
+    root.className = 'mode-' + m;
+    document.querySelectorAll('button[data-mode]').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.mode === m);
+    });
+  }
+  document.querySelectorAll('button[data-mode]').forEach(function (b) {
+    b.addEventListener('click', function () { setMode(b.dataset.mode); });
+  });
+  setMode('a');
+
+  // Rough FPS meter (rAF cadence). Choppy compositor animations often still show
+  // ~60/240 here because the jank is in the compositor, not the main loop - but a
+  // low number would point at main-thread stalls instead.
+  var last = performance.now(), frames = 0, acc = 0;
+  function tick(now) {
+    frames++; acc += now - last; last = now;
+    if (acc >= 500) { document.getElementById('fps').textContent = Math.round(frames / (acc / 1000)); frames = 0; acc = 0; }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+</script>
+</body>
+</html>
