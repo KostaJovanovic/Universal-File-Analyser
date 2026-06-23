@@ -2,7 +2,7 @@
    Lazy-loads fflate from CDN to inspect ZIP archives without full extraction.
    Uses the shared folder/archive modules for treemap, breakdown, and tree. */
 
-import { el, row, rowHelp, fmtBytes, buildFileTree, isUnreadableError, cloudFileWarning, errorCard, integrityCard, loadScript } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, buildFileTree, isUnreadableError, cloudFileWarning, errorCard, integrityCard, loadScript, asciiBar } from '../core/util.js';
 import { normalizeArchive, renderBreakdownCards, renderViewToggle, categorizeExt } from './folder-archive-shared.js';
 import { ARCHIVE_EXTS } from '../core/formats.js';
 import { extractArchive } from '../lib/libarchive-loader.js';
@@ -136,6 +136,168 @@ const HOST_OS = {
 // An entry is encrypted when general-purpose bit 0 of its flags is set.
 function isEncrypted(e) {
   return ((e.flags || 0) & 0x0001) !== 0;
+}
+
+// ---------- timing & CRC forensics ----------
+
+// DOS date+time -> epoch milliseconds (local), or null when zero/invalid. Parses
+// the same fields as dosDateTime() but returns a number for span/histogram maths.
+function dosToMs(modDate, modTime) {
+  if (!modDate) return null;
+  const day   = modDate & 0x1f;
+  const month = (modDate >> 5) & 0x0f;
+  const year  = ((modDate >> 9) & 0x7f) + 1980;
+  const sec   = (modTime & 0x1f) * 2;
+  const min   = (modTime >> 5) & 0x3f;
+  const hour  = (modTime >> 11) & 0x1f;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const d = new Date(year, month - 1, day, hour, min, sec);
+  return isNaN(d.getTime()) ? null : d.getTime();
+}
+
+function fmtDuration(ms) {
+  if (ms <= 0) return '0 seconds';
+  const s = ms / 1000;
+  if (s < 60) return (s < 1 ? Math.round(ms) + ' ms' : Math.round(s) + ' second' + (Math.round(s) === 1 ? '' : 's'));
+  const m = s / 60; if (m < 60) return m.toFixed(m < 10 ? 1 : 0) + ' minutes';
+  const h = m / 60; if (h < 24) return h.toFixed(h < 10 ? 1 : 0) + ' hours';
+  const d = h / 24; if (d < 365) return d.toFixed(d < 10 ? 1 : 0) + ' days';
+  return (d / 365).toFixed(1) + ' years';
+}
+
+// Standard table-based CRC-32 (the polynomial ZIP uses) for entry verification.
+let CRC_TABLE = null;
+function crc32(bytes) {
+  if (!CRC_TABLE) {
+    CRC_TABLE = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      CRC_TABLE[n] = c >>> 0;
+    }
+  }
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) crc = CRC_TABLE[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+// A small bar histogram of entry timestamps across [min, max] (left = earliest).
+function buildTimeHistogram(stamps, min, max) {
+  const N = 24;
+  const span = max - min;
+  const buckets = new Array(N).fill(0);
+  for (const s of stamps) {
+    const idx = span > 0 ? Math.min(N - 1, Math.floor((s - min) / span * N)) : 0;
+    buckets[idx]++;
+  }
+  const peak = Math.max(...buckets, 1);
+  const hist = el('div', { class: 'anr-ziphist' });
+  buckets.forEach((c, i) => {
+    const at = new Date(min + (span > 0 ? span * (i + 0.5) / N : 0));
+    hist.appendChild(el('div', {
+      class: 'anr-ziphist-bar',
+      style: `height:${Math.max(2, Math.round(c / peak * 100))}%`,
+      title: `${at.toLocaleString()} - ${c} file${c === 1 ? '' : 's'}`,
+    }));
+  });
+  return el('div', {}, [el('div', { class: 'anr-hint', style: 'margin:10px 0 4px;' }, 'Timestamp distribution (earliest → latest)'), hist]);
+}
+
+// Decompress each verifiable entry, recompute its CRC-32, and compare to the
+// value stored in the central directory. Bulk-decompress once, falling back to a
+// per-entry pass so one bad stream can't void the whole run.
+async function verifyArchiveCrcs(buf, verifiable) {
+  const ffl = await loadFflate();
+  const data = new Uint8Array(buf);
+  await new Promise((r) => setTimeout(r, 0));   // let the progress bar paint first
+  let decoded = null;
+  try { decoded = ffl.unzipSync(data); } catch (_) { decoded = null; }
+  let pass = 0, fail = 0, skipped = 0;
+  const mismatches = [];
+  for (const e of verifiable) {
+    let content = decoded ? decoded[e.name] : null;
+    if (!content) {
+      try { content = ffl.unzipSync(data, { filter: (f) => f.name === e.name })[e.name]; } catch (_) {}
+    }
+    if (!content) { skipped++; continue; }
+    if (crc32(content) === (e.crc >>> 0)) pass++;
+    else { fail++; mismatches.push(e.name); }
+  }
+  return { pass, fail, skipped, mismatches };
+}
+
+// Build the "Timing & integrity" card: timestamp summary + flags + histogram, and
+// an on-demand CRC verification control. Returns null when there's nothing to show.
+function buildArchiveForensics(buf, fileEntries) {
+  const dated = fileEntries.map((e) => dosToMs(e.modDate, e.modTime)).filter((t) => t != null).sort((a, b) => a - b);
+  const verifiable = fileEntries.filter((e) => !isEncrypted(e));
+  if (!dated.length && !verifiable.length) return null;
+
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Timing & integrity'));
+
+  if (dated.length) {
+    const min = dated[0], max = dated[dated.length - 1], span = max - min;
+    const fmtT = (ms) => { const d = new Date(ms), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+    const tbl = el('table', { class: 'anr-readout' });
+    tbl.appendChild(row('Entries dated', `${dated.length} of ${fileEntries.length}`));
+    tbl.appendChild(row('Earliest', fmtT(min)));
+    tbl.appendChild(row('Latest', fmtT(max)));
+    tbl.appendChild(rowHelp('Time span', fmtDuration(span),
+      'How far apart the oldest and newest entry timestamps are. A span of seconds across many files suggests they were packed in one pass rather than gathered over time.'));
+
+    const uniq = new Set(dated).size;
+    const now = Date.now();
+    const placeholder = dated.filter((s) => s === new Date(1980, 0, 1, 0, 0, 0).getTime()).length;
+    const future = dated.filter((s) => s > now + 86400000).length;
+    if (fileEntries.length >= 3 && span <= 2000) {
+      tbl.appendChild(rowHelp('⚠ Bulk-added', `all ${dated.length} dated entries within ${fmtDuration(span)}`,
+        'Every entry shares almost the same timestamp - a sign the archive was generated or repacked programmatically in a single pass, not assembled file by file.'));
+    } else if (uniq === 1 && dated.length > 1) {
+      tbl.appendChild(rowHelp('⚠ Identical timestamps', `all ${dated.length} dated entries share one timestamp`,
+        'A single shared timestamp across every entry is typical of a tool-generated or repacked archive.'));
+    }
+    if (placeholder) tbl.appendChild(rowHelp('Placeholder dates', `${placeholder} entr${placeholder === 1 ? 'y' : 'ies'} at 1980-01-01`,
+      'The DOS epoch (1980-01-01 00:00) is what tools write when no real modification time is available.'));
+    if (future) tbl.appendChild(rowHelp('⚠ Future-dated', `${future} entr${future === 1 ? 'y' : 'ies'} dated after today`,
+      'A timestamp in the future usually means a wrong system clock or a deliberately forged date.'));
+    card.appendChild(tbl);
+    card.appendChild(buildTimeHistogram(dated, min, max));
+  }
+
+  // On-demand CRC verification.
+  const crcWrap = el('div', { style: 'margin-top:14px;' });
+  crcWrap.appendChild(el('div', { class: 'anr-hint', style: 'margin:0 0 6px;' },
+    'Recompute each entry’s CRC-32 and compare it to the value stored in the archive.'));
+  const btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' },
+    `Verify entry CRCs (${verifiable.length} file${verifiable.length === 1 ? '' : 's'})`);
+  const out = el('div', { style: 'margin-top:8px;' });
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    out.textContent = '';
+    const bar = asciiBar(); bar.indeterminate(); out.appendChild(bar);
+    try {
+      const res = await verifyArchiveCrcs(buf, verifiable);
+      bar.stop(); out.textContent = '';
+      const t = el('table', { class: 'anr-readout' });
+      t.appendChild(row('Result', `${res.pass} passed, ${res.fail} failed${res.skipped ? `, ${res.skipped} unreadable` : ''}`));
+      if (res.fail) {
+        const sample = res.mismatches.slice(0, 8).join(', ') + (res.mismatches.length > 8 ? `, …(+${res.mismatches.length - 8} more)` : '');
+        t.appendChild(rowHelp('⚠ CRC mismatches', sample,
+          'These entries’ recomputed CRC-32 does not match the value stored in the archive - the data is corrupt or was altered after the archive was built.'));
+      }
+      out.appendChild(t);
+    } catch (e) {
+      bar.stop(); out.textContent = '';
+      out.appendChild(errorCard('CRC verification failed: ' + (e && e.message)));
+      btn.disabled = false;
+    }
+  });
+  crcWrap.appendChild(btn);
+  crcWrap.appendChild(out);
+  card.appendChild(crcWrap);
+
+  return card;
 }
 
 // A name is "unsafe" if it would escape the extraction directory: a parent
@@ -298,6 +460,14 @@ export async function renderArchive(file, resultsEl, opts = {}) {
   } catch (e) {
     // Safety inspection is best-effort; never break ZIP browsing over it.
     if (window.console) console.warn('ZIP safety inspection failed:', e);
+  }
+
+  // --- Timing & CRC forensics ---
+  try {
+    const fcard = buildArchiveForensics(buf, fileEntries);
+    if (fcard) resultsEl.appendChild(fcard);
+  } catch (e) {
+    if (window.console) console.warn('ZIP forensics failed:', e);
   }
 
   // --- Category breakdown ---
