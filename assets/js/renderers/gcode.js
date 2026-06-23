@@ -733,7 +733,7 @@ function buildViewer(data, opts = {}) {
   gl.enable(gl.DEPTH_TEST);
   // mode: 0 = feature type, 1 = height, 2 = speed. vis: per-feature-type 1/0.
   // shown: how many extrusion segments to draw (in print order) - the progress slider.
-  const state = { yaw: -0.78, pitch: 0.6, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: 'travel', flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.mode === 'print' && data.multicolour) ? 3 : (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false,
+  const state = { yaw: -0.78, pitch: 0.6, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: 'travel', flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.mode === 'print' && data.multicolour) ? 3 : (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, showLegend: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false,
     // Travel-aware playback: travShown = full travel segments to draw; playKind marks
     // whether the in-progress (partially drawn) move is an extrusion (1) or a travel (2),
     // so the head can glide along travels too; playFrac is the fraction into it.
@@ -1065,7 +1065,18 @@ function buildViewer(data, opts = {}) {
   colourSel.value = String(state.mode);
   colourSel.addEventListener('change', () => { state.mode = +colourSel.value; refreshLegend(); dirty = true; });
   const legendBody = el('div', { class: 'anr-gcode-legendbody' });
-  const colourPanel = el('div', { class: 'anr-gcode-colpanel' }, [colourSel, legendBody]);
+  // Small show/hide toggle for the legend, sitting under the colour select. Off by
+  // default so the canvas starts clean; state.showLegend persists across MSAA rebuilds.
+  const legendToggle = el('button', { type: 'button', class: 'anr-btn anr-gcode-legendtoggle', 'aria-pressed': 'false' }, 'Show legend');
+  const syncLegendVis = () => {
+    const on = !!state.showLegend;
+    legendBody.classList.toggle('is-hidden', !on);
+    legendToggle.textContent = on ? 'Hide legend' : 'Show legend';
+    legendToggle.classList.toggle('is-on', on);
+    legendToggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+  };
+  legendToggle.addEventListener('click', () => { state.showLegend = !state.showLegend; syncLegendVis(); });
+  const colourPanel = el('div', { class: 'anr-gcode-colpanel' }, [colourSel, legendToggle, legendBody]);
   wrap.appendChild(colourPanel);
   // Top-left overlay slot (renderGcode parks the Quality popup here).
   const topLeftSlot = el('div', { class: 'anr-gcode-topleft' });
@@ -1109,6 +1120,7 @@ function buildViewer(data, opts = {}) {
     } else if (cncToolCols.length > 1) {
       for (const t of cncToolCols) { const f = FEATURES[t.slot]; const row = keyRow(); setSwatch(row, swatchRgb(f.rgb)); row.lastChild.textContent = 'T' + t.n; legendBody.appendChild(row); }
     }
+    syncLegendVis();   // keep the show/hide state + button label in sync (incl. after MSAA rebuilds)
   };
   refreshLegend();
 
@@ -1189,7 +1201,7 @@ export async function renderGcode(file, resultsEl, opts) {
       // references `viewer` by binding, so they keep working after the swap.
       function applyMSAA(on) {
         const s = viewer.state;
-        const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, vis: s.vis, shown: s.shown, partial: s.partial, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten, fitted: s.fitted, travShown: s.travShown, playKind: s.playKind, playFrac: s.playFrac, translucentTravel: s.translucentTravel };
+        const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, showLegend: s.showLegend, vis: s.vis, shown: s.shown, partial: s.partial, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten, fitted: s.fitted, travShown: s.travShown, playKind: s.playKind, playFrac: s.playFrac, translucentTravel: s.translucentTravel };
         const old = viewer;
         const next = buildViewer(data, { antialias: on });
         if (!next.ok) return;                         // keep the working viewer if rebuild fails
@@ -1423,16 +1435,16 @@ export async function renderGcode(file, resultsEl, opts) {
 
       const cols = el('div', { class: 'anr-spd-cols' });
       const mkCol = (title) => { const c = el('div', { class: 'anr-spd-col' }); c.appendChild(el('div', { class: 'anr-spd-title' }, title)); return c; };
-      const lpsCol = mkCol('Lines/s'), lenCol = mkCol('Length');
+      const lpsCol = mkCol('Lines/s'), lenCol = mkCol('Duration');
       for (const [v, l] of LINE_PRESETS) {
         const b = el('button', { type: 'button', class: 'anr-btn anr-spd-opt' }, l);
-        b.addEventListener('click', () => choose(v, l, b));
+        b.addEventListener('click', () => { choose(v, l, b); closeSpd(); });
         allPresetBtns.push(b); lpsCol.appendChild(b);
       }
       let defBtn = null;
       for (const s of LEN_PRESETS) {
         const b = el('button', { type: 'button', class: 'anr-btn anr-spd-opt' }, s + 's');
-        b.addEventListener('click', () => choose(lpsForLen(s), 'whole job in ' + s + 's', b));
+        b.addEventListener('click', () => { choose(lpsForLen(s), 'whole job in ' + s + 's', b); closeSpd(); });
         allPresetBtns.push(b); lenCol.appendChild(b);
         if (s === 20) defBtn = b;
       }
@@ -1440,7 +1452,7 @@ export async function renderGcode(file, resultsEl, opts) {
       // how long that is before committing to it.
       if (realTotal > 0) {
         const rb = el('button', { type: 'button', class: 'anr-btn anr-spd-opt', title: 'Real time - play at the toolpath\'s real execution time' }, fmtDur(realTotal));
-        rb.addEventListener('click', () => chooseReal(rb));
+        rb.addEventListener('click', () => { chooseReal(rb); closeSpd(); });
         allPresetBtns.push(rb); lenCol.appendChild(rb);
       }
       cols.appendChild(lpsCol); cols.appendChild(lenCol);
@@ -1450,7 +1462,7 @@ export async function renderGcode(file, resultsEl, opts) {
       let customMode = 'len';   // 'lps' = lines/s, 'len' = seconds
       const customRow = el('div', { class: 'anr-spd-custom' });
       const customIn = el('input', { type: 'number', min: '1', step: '1', class: 'anr-spd-input', placeholder: 'Custom', 'aria-label': 'Custom playback rate' });
-      const unitBtn = el('button', { type: 'button', class: 'anr-btn anr-spd-unit', title: 'Switch the custom value between lines per second and total length' }, 'length (s)');
+      const unitBtn = el('button', { type: 'button', class: 'anr-btn anr-spd-unit', title: 'Switch the custom value between lines per second and total length' }, 'duration (s)');
       const applyCustom = () => {
         const v = parseFloat(customIn.value);
         if (!(v > 0)) return;
@@ -1458,7 +1470,7 @@ export async function renderGcode(file, resultsEl, opts) {
         else choose(lpsForLen(v), 'whole job in ' + v + 's', null);
       };
       customIn.addEventListener('input', applyCustom);
-      unitBtn.addEventListener('click', () => { customMode = customMode === 'lps' ? 'len' : 'lps'; unitBtn.textContent = customMode === 'lps' ? 'lines/s' : 'length (s)'; applyCustom(); });
+      unitBtn.addEventListener('click', () => { customMode = customMode === 'lps' ? 'len' : 'lps'; unitBtn.textContent = customMode === 'lps' ? 'lines/s' : 'duration (s)'; applyCustom(); });
       customRow.appendChild(customIn); customRow.appendChild(unitBtn);
       spdPanel.appendChild(customRow);
 

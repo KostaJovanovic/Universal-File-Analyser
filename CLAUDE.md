@@ -225,6 +225,27 @@ on every main page, so it is single-sourced, not copy-pasted.
   drop `<!-- FOOTER:START -->` / `<!-- FOOTER:END -->` inside it above the
   `.footer-bottom`, add its filename to `PAGES`, and run the generator.
 
+## Single-sourced head
+
+The `<head>` **tail** - the two stylesheet links plus the before-first-paint theme
+bootstrap `<script>` - is byte-identical on every main page, so (like the footer)
+it is single-sourced, not copy-pasted.
+
+- **Source of truth:** `THEME_SCRIPT` in `tools/prerender-common.mjs` (the theme
+  snippet). `tools/stamp-head.mjs` stamps it plus the stylesheet links into each
+  page between `<!-- HEAD:START -->` / `<!-- HEAD:END -->` markers.
+- **Generator:** `tools/stamp-head.mjs`, run by `save.bat` on every commit before
+  `git add` (idempotent, re-runnable). **Never hand-edit between the markers.**
+- **Scope:** same `PAGES` as the footer (`index`, `about`, `patch`, `stats`,
+  `privacy`, `formats`). The per-format `/formats/<ext>` pages instead import
+  `THEME_SCRIPT` directly in `prerender-format-pages.mjs`, so the theme snippet
+  lives in exactly one place across all 7+ emitters.
+- The theme `<script>` must stay byte-stable - it runs before paint to apply the
+  saved/preferred theme without a flash, and is UX-sensitive.
+
+(`save.bat`'s full generator order on each commit: prerender-formats →
+prerender-format-pages → stamp-counts → stamp-footer → stamp-head, then `git add`.)
+
 ## Version numbering
 
 Every commit is its own version. The number after the dot is the commit's

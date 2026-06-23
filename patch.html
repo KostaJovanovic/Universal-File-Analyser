@@ -206,6 +206,22 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">4.12 - 4.15</p>
+          <p class="patch-name">Source &amp; Circuit</p>
+          <p class="patch-date">23 June 2026, 04:22</p>
+          <ul class="patch-list">
+            <li><strong>KiCad circuit designs open as interactive schematics and boards, source code in almost any language opens as readable text, hundreds more game, machine-learning and developer formats are recognised, and plain-text files gain a full-text reader.</strong></li>
+            <li><span class="patch-tag">New</span><strong>KiCad designs open.</strong> A KiCad schematic (<a href="/about#ext-kicad_sch">.kicad_sch</a>), circuit board (<a href="/about#ext-kicad_pcb">.kicad_pcb</a>), footprint (<strong>.kicad_mod</strong>) or symbol library (<strong>.kicad_sym</strong>) is rebuilt as an interactive drawing you can pan, zoom and fit, with the board&rsquo;s copper, silkscreen, pads, tracks and outline switchable layer by layer. Open the project (<strong>.kicad_pro</strong>) and the schematic and board are tied together, so a part&rsquo;s reference jumps between the two. Everything is rebuilt on your own device - nothing is uploaded.</li>
+            <li><span class="patch-tag">New</span><strong>Simulation waveforms and fabrication netlists.</strong> A SPICE <strong>.raw</strong> dump from KiCad&rsquo;s ngspice or LTspice opens with its analysis type and every signal decoded and the traces drawn on a graph you can hover to read off values, and an IPC-D-356 netlist (<strong>.ipc</strong>) draws a fabrication map of every test point, coloured by net.</li>
+            <li><span class="patch-tag">New</span><strong>Source code opens as text.</strong> Drop a source file in almost any language - C and C++, C#, Java, Kotlin, Go, Rust, Python, Ruby, PHP, Swift and more - or the build and configuration files that fill a project (CMake, Makefiles, Docker, Git and npm dotfiles, GPU shaders, shell scripts) and it opens straight to a readable source preview with a line count.</li>
+            <li><span class="patch-tag">New</span><strong>Hundreds more formats recognised.</strong> Game files from Cyberpunk 2077 and The Witcher 3 (REDengine), Valve&rsquo;s Source 2 (Counter-Strike 2, Dota 2, Deadlock, Half-Life: Alyx), Unity games and the classic Marathon trilogy are now named on sight - alongside ONNX machine-learning models, Node.js native add-ons and macOS dynamic libraries - each with its own guide page.</li>
+            <li><span class="patch-tag">New</span><strong>Read a plain-text file in full.</strong> A text or extensionless file now offers a <strong>Show full text</strong> button to open the whole thing rather than just a preview, and a <code>LICENSE</code> or <code>COPYING</code> file opens as clean plain text like a <strong>.txt</strong>, with its own full-screen reader.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Clearer G-code playback speeds.</strong> The <a href="/about#ext-gcode">G-code</a> playback speed picker now labels its job-time column <strong>Duration</strong> instead of the ambiguous &ldquo;Length&rdquo;.</li>
+            <li><strong>Polish</strong> - the KiCad board and 3D model views render more cleanly, with a sweep of small fixes across the viewers.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">4.08 - 4.11</p>
           <p class="patch-name">Printed Circuit</p>
           <p class="patch-date">22 June 2026, 00:14</p>
@@ -238,6 +254,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry patch-milestone">
           <p class="patch-version">4.0</p>
           <p class="patch-name">Third Dimension</p>
@@ -256,9 +275,6 @@
             <li><strong>Polish</strong> - optional anti-aliasing controls keep dense toolpaths crisp without the shimmer, a gentler default spin across every 3D view, and a sweep of viewer-control and layout tidying.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">3.45 - 3.46</p>
