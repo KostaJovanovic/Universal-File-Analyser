@@ -79,4 +79,10 @@ Every commit is its own version (currently in the 2.x era), stamped automaticall
 
 ## Credits
 
-The idea and need for this website was mine, originally made as a simple tool for generating spectrograms and reading a photo aspect ratio, that spiraled out of control pretty quickly. Many thanks to my parents, who encouraged me to continue by finding this cool, and to friends who tested this for me on platforms i do not possess or use frequently (linux arch and debian, MacOS). Since this project was made possible with Claude, and having in mind the moral and ethical dilemmas regarding AI usage, I decided to make this completely open source and available to the public.
+The idea and need for this website was mine, originally made as a simple tool for generating spectrograms and reading a photo aspect ratio, that spiraled out of control pretty quickly. Many thanks to my parents, who encouraged me to continue by finding this cool, and to friends who tested this for me on platforms i do not possess or use frequently (linux arch and debian, MacOS). Since this project was made possible with Claude, and having in mind the moral and ethical dilemmas regarding AI usage, I decided to make the source available to the public.
+
+## License
+
+Copyright © 2026 Kosta. Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+You are free to use, study, modify and share this code for any **noncommercial** purpose, as long as you keep the copyright notice. **Commercial use is not permitted** without a separate licence from me - get in touch if you want one.

@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 165;
+const COMMIT_COUNT = 166;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -513,10 +513,11 @@ function classifyFile(file) {
   if (VIDEO_EXTS.has(ext)) return 'video';
   if (isProprietaryExt(ext)) return 'proprietary';
   // Licence/marker files whose suffix isn't a real extension (LICENSE.APACHE,
-  // COPYING.GPL, LICENSE-MPL-2.0, py.typed, CACHEDIR.TAG) - shown as text.
+  // COPYING.GPL, LICENSE-MPL-2.0, py.typed, CACHEDIR.TAG) - opened as plain text,
+  // exactly like a .txt (the Plain Text view, with its "Open full" reader).
   {
     const bn = (file.name || '').toLowerCase().replace(/^.*[\\/]/, '');
-    if (/^(licen[cs]e|copying)([.\-]|$)/.test(bn) || bn === 'py.typed' || bn === 'cachedir.tag') return 'markup';
+    if (/^(licen[cs]e|copying)([.\-]|$)/.test(bn) || bn === 'py.typed' || bn === 'cachedir.tag') return 'plaintext';
   }
   // No extension and nothing else matched: treat it as an "extensionless" file -
   // shown as text (with a hex fallback for binary) rather than flagged "unknown".
@@ -625,6 +626,10 @@ const ROUTES = {
   svg:         { render: renderSvg,         results: 'unknown', scroll: '#unknownResults' },
   csv:         { render: renderCsv,         results: 'unknown', scroll: '#unknownResults' },
   proprietary: { render: renderProprietary, results: 'unknown', scroll: '#unknownResults' },
+  // Licence / marker text files open exactly like a .txt - the Plain Text view in
+  // proprietary.js (metadata, line count, source preview + the "Open full" reader),
+  // not the paginated markup page-sheets.
+  plaintext:   { render: (f, r) => renderProprietary(f, r, 'txt'), results: 'unknown', scroll: '#unknownResults' },
   'git-object':{ render: renderGitObject,   results: 'unknown', scroll: '#unknownResults' },
   unknown:     { render: renderUnknown,     results: 'unknown', scroll: '#unknownResults' },
   // Extensionless files: same inspector as 'unknown' but framed as an expected
@@ -1209,6 +1214,12 @@ function buildTrendChart(chartEl, daily, baseline) {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
+  { range: '4.12 - 4.15', notes: [
+    'KiCad circuit designs open: schematics, boards, footprints and symbol libraries are rebuilt as interactive drawings with pan, zoom and per-layer toggles, and opening the project ties a schematic and its board together. SPICE simulation waveforms (ngspice, LTspice) and IPC-D-356 fabrication netlists open too.',
+    'Source code in almost any language opens as readable text - C and C++, C#, Java, Go, Rust, Python and many more - along with the build, shader and configuration files that fill a project.',
+    'Hundreds more formats are recognised: game files from Cyberpunk 2077, Valve\'s Source 2, Unity and the classic Marathon trilogy, plus ONNX machine-learning models, Node.js add-ons and macOS libraries.',
+    'Plain-text and extensionless files gain a Show full text reader, licence files open as clean text like a .txt, and the G-code playback speeds read clearer.',
+  ] },
   { range: '4.08 - 4.11', notes: [
     'Altium Designer files open: schematics, circuit boards, footprints and symbol/footprint libraries are rebuilt as interactive vector views with pan, zoom and per-layer toggles, plus part numbers, the pad table and the project manifest.',
     'The G-code visualiser now draws the non-printing travel moves in true order and paints multicolour / multi-material prints in each filament\'s real colour.',

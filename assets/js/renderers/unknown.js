@@ -289,10 +289,31 @@ export async function renderUnknown(file, resultsEl, opts) {
 
   if (showPlainText && !showXml) {
     // --- Plain text preview + stats ---
-    card.appendChild(el('div', { class: 'anr-readout-section' }, 'Text preview (first 2 kB)'));
+    const previewLabel = el('div', { class: 'anr-readout-section' }, 'Text preview (first 2 kB)');
+    card.appendChild(previewLabel);
     const previewOut = el('pre', { class: 'anr-ocr-text' }, '');
     card.appendChild(previewOut);
     readSlice(0, 2048).then((txt) => { previewOut.textContent = txt; }).catch(() => {});
+
+    // "Show full text" - load the whole file into the (already scrollable) preview
+    // box. Plain text has no page structure, so it expands inline as a scrollable
+    // monospace block rather than the Word/PDF-style page lightbox. Only offered
+    // when the file holds more than the 2 kB preview above; the read is capped.
+    if (file.size > 2048) {
+      const FULL_CAP = 4 * 1024 * 1024;
+      const fullBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show full text');
+      fullBtn.addEventListener('click', async () => {
+        fullBtn.disabled = true;
+        fullBtn.textContent = 'Loading…';
+        try {
+          const full = await readSlice(0, FULL_CAP);
+          previewOut.textContent = full;
+          previewLabel.textContent = full.length >= FULL_CAP ? 'Full text (first 4 MB)' : 'Full text';
+          fullBtn.remove();
+        } catch (_) { fullBtn.disabled = false; fullBtn.textContent = 'Show full text'; }
+      });
+      card.appendChild(el('div', { class: 'anr-btn-row' }, [fullBtn]));
+    }
 
     // Text statistics
     try {
