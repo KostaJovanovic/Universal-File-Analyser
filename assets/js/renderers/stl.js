@@ -136,14 +136,18 @@ function mat4Ortho(l, r, b, t, n, f) {
 }
 
 // ---------- WebGL viewer ----------
-function buildViewer(geo) {
+function buildViewer(geo, opts = {}) {
   const wrap = el('div', { class: 'anr-stl-viewport' });
   const canvas = el('canvas', { class: 'anr-stl-canvas' });
   wrap.appendChild(canvas);
   // preserveDrawingBuffer keeps the last rendered frame readable after compositing,
   // so the export (toDataURL) can snapshot the live preview - without it a WebGL
   // canvas reads back blank once the frame has been presented.
-  const glOpts = { preserveDrawingBuffer: true };
+  // antialias asks the driver for hardware MSAA on the default framebuffer; it can
+  // only be set here (at context creation), so the Quality toggle rebuilds the
+  // viewer to change it. Defaults on.
+  const msaa = opts.antialias !== false;
+  const glOpts = { preserveDrawingBuffer: true, antialias: msaa };
   const gl = canvas.getContext('webgl', glOpts) || canvas.getContext('experimental-webgl', glOpts);
   if (!gl) {
     wrap.appendChild(el('p', { class: 'anr-error' }, 'WebGL is not available in this browser.'));
@@ -230,7 +234,7 @@ function buildViewer(geo) {
   const uWire = gl.getUniformLocation(prog, 'uWire');
   gl.enable(gl.DEPTH_TEST);
 
-  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, color: [0.55, 0.62, 0.95], spin: true, ortho: false, wire: false, bg: [0.06, 0.06, 0.06] };
+  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, color: [0.55, 0.62, 0.95], spin: true, ortho: false, wire: false, bg: [0.06, 0.06, 0.06], msaa, ssaa: true };
   let dirty = true;
   // Spin can be turned off two ways - the button, or simply interacting with the
   // canvas (clicking/dragging stops it). Route every change through setSpin so any
@@ -244,7 +248,10 @@ function buildViewer(geo) {
   }
 
   function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // Supersampling: render the canvas above its CSS size and let the browser
+    // downsample (SSAA). Off = native device pixels only.
+    const ss = state.ssaa ? 1.5 : 1;
+    const dpr = Math.min((window.devicePixelRatio || 1) * ss, 3);
     const w = wrap.clientWidth || 600, h = wrap.clientHeight || 420;
     canvas.width = Math.floor(w * dpr); canvas.height = Math.floor(h * dpr);
     canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
@@ -368,16 +375,51 @@ function buildViewer(geo) {
 export function buildViewerCard(geo, title = '3D model') {
   const viewCard = el('div', { class: 'anr-card' });
   viewCard.appendChild(el('h3', {}, title));
-  const viewer = buildViewer(geo);
+  let viewer = buildViewer(geo);
   viewCard.appendChild(viewer.wrap);
 
   if (viewer.ok) {
     const controls = el('div', { class: 'anr-btn-row', style: 'margin-top:10px;align-items:center;flex-wrap:wrap;' });
     const spinBtn = el('button', { type: 'button', class: 'anr-btn' }, viewer.state.spin ? 'Pause spin' : 'Resume spin');
+    const updateSpin = (spinning) => { spinBtn.textContent = spinning ? 'Pause spin' : 'Resume spin'; };
     // Toggle via the button, but also reflect spin stopping when the user clicks
     // into the canvas - onSpinChange fires for either trigger.
     spinBtn.addEventListener('click', () => viewer.setSpin(!viewer.state.spin));
-    viewer.onSpinChange((spinning) => { spinBtn.textContent = spinning ? 'Pause spin' : 'Resume spin'; });
+    viewer.onSpinChange(updateSpin);
+
+    // Quality popup (hardware MSAA + supersampling), exactly like the G-code viewer.
+    // Toggling MSAA needs a fresh WebGL context, so rebuild the viewer on a new
+    // canvas and carry the camera/display state across; every control reads
+    // `viewer` by binding, so they keep working after the swap.
+    function applyMSAA(on) {
+      const s = viewer.state;
+      const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, color: s.color, spin: s.spin, ortho: s.ortho, wire: s.wire, bg: s.bg, ssaa: s.ssaa };
+      const next = buildViewer(geo, { antialias: on });
+      if (!next.ok) return;                        // keep the working viewer if rebuild fails
+      const old = viewer; viewer = next;
+      Object.assign(viewer.state, keep, { msaa: on });
+      old.wrap.replaceWith(viewer.wrap);
+      viewer.onSpinChange(updateSpin);
+      viewer.start();
+      window.addEventListener('resize', viewer.resize);
+      viewer.markDirty();
+    }
+    const qWrap = el('span', { class: 'anr-aa-wrap' });
+    const qBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Quality');
+    const qPanel = el('div', { class: 'anr-aa-panel is-hidden' });
+    qPanel.appendChild(el('div', { class: 'anr-aa-title' }, 'Quality'));
+    const aaBtn = (label, get, set) => {
+      const btn = el('button', { type: 'button', class: 'anr-btn anr-aa-btn' }, label);
+      const sync = () => btn.classList.toggle('is-on', !!get());
+      sync();
+      btn.addEventListener('click', () => { set(!get()); sync(); });
+      qPanel.appendChild(btn);
+    };
+    aaBtn('Hardware MSAA', () => viewer.state.msaa, (v) => applyMSAA(v));
+    aaBtn('Supersampling', () => viewer.state.ssaa, (v) => { viewer.state.ssaa = v; viewer.resize(); viewer.markDirty(); });
+    qBtn.addEventListener('click', (e) => { e.stopPropagation(); qPanel.classList.toggle('is-hidden'); });
+    document.addEventListener('click', (e) => { if (!qWrap.contains(e.target)) qPanel.classList.add('is-hidden'); });
+    qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
     const resetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Reset view');
     resetBtn.addEventListener('click', () => {
       Object.assign(viewer.state, { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0 });
@@ -411,6 +453,7 @@ export function buildViewerCard(geo, title = '3D model') {
     controls.appendChild(resetBtn);
     controls.appendChild(projBtn);
     controls.appendChild(wireBtn);
+    controls.appendChild(qWrap);
     controls.appendChild(fsBtn);
     controls.appendChild(colorInput);
     controls.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;margin-left:auto;' }, 'drag to orbit · scroll to zoom'));
