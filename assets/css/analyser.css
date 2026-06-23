@@ -104,30 +104,24 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+/* Faint drifting grid backdrop. NOTE: on high-refresh-rate displays a recent
+   Firefox/WebRender regression pixel-snaps this slow axis-aligned drift, so it can
+   look choppy in Firefox (Chrome/Safari stay smooth). It is NOT a site bug - 2.0
+   and 3.0 snapshots with identical code are choppy too. A rotate(0.02deg) hack
+   defeats the snap but softens the lines and causes moire at fractional zoom, so we
+   keep the crisp original and wait for Firefox to fix the snapping. Don't re-add the
+   rotate workaround. */
 body::before {
   content: '';
   position: fixed;
   inset: -72px;
-  /* z-index 0, NOT -1. Firefox refuses to async-animate a negative-z-index fixed
-     layer (it paints it into the page's main-thread display list), which made the
-     drift main-thread paint-bound and choppy - only in Firefox; Chrome/Safari
-     composite it regardless. The page chrome below is lifted to z-index 1 so the
-     grid still sits visually behind all content. (Same recipe as the masinci
-     millimetre-paper background, which stays smooth in Firefox.) */
-  z-index: 0;
+  z-index: -1;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cline x1='0' y1='24' x2='15' y2='24' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='33' y1='24' x2='48' y2='24' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='24' y1='0' x2='24' y2='15' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='24' y1='33' x2='24' y2='48' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='19' y1='24' x2='29' y2='24' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='24' y1='19' x2='24' y2='29' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3C/svg%3E");
   background-size: 72px 72px;
   animation: bg-drift 24s linear infinite;
   will-change: transform;
   pointer-events: none;
 }
-/* Lift all page chrome above the z-index:0 grid so it reads as a backdrop. Mirrors
-   masinci's position:relative grid sections. position:relative (not just z-index)
-   is required for z-index to take effect on these otherwise-static blocks. */
-.noscript-warning,
-.site-header,
-.site-main,
-.site-footer { position: relative; z-index: 1; }
 @keyframes bg-drift {
   from { transform: translate3d(0, 0, 0); }
   to   { transform: translate3d(72px, 72px, 0); }
@@ -5630,6 +5624,47 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   flex: none;
 }
 .anr-altium-pads th, .anr-altium-pads td { text-align: left; padding-right: 18px; white-space: nowrap; }
+
+/* ----- KiCad board: 3D flip + Top/Bottom modes ----- */
+/* Mode bar sits above the viewer (3D / Top / Bottom). The active mode chip
+   borrows the layer-chip highlight. */
+.anr-board-modebar { border-top: none; border-bottom: var(--bd-hairline); }
+.anr-board-mode.is-on { border-color: var(--accent); }
+.anr-board-host { position: relative; }
+.anr-pcb3d-hint { margin-left: auto; align-self: center; }
+
+/* The 3D stage: same cream canvas as the flat boards, with perspective. The
+   board is a thin slab - top side on the front face, bottom side on the back
+   (a real rotateY(180) flip), with FR4-green edge walls for thickness. */
+.anr-pcb3d {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: clamp(360px, 60vh, 620px);
+  touch-action: none; cursor: grab; overflow: hidden;
+  background:
+    radial-gradient(120% 120% at 50% 0%, rgba(0, 0, 0, 0.05), transparent 60%),
+    #f4f0e6;
+}
+.anr-pcb3d:active { cursor: grabbing; }
+/* cam = 2D zoom/pan (no perspective), scene = the perspective. Keeping zoom/pan
+   outside the perspective stops them from warping the projection. */
+.anr-pcb3d-cam { position: relative; will-change: transform; }
+.anr-pcb3d-scene { position: relative; perspective: 2200px; }
+.anr-pcb3d-board {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.45s cubic-bezier(0.4, 0.1, 0.2, 1);
+  will-change: transform;
+}
+.anr-pcb3d-board.is-dragging { transition: none; }
+.anr-pcb3d-face, .anr-pcb3d-wall { position: absolute; left: 50%; top: 50%; }
+.anr-pcb3d-face {
+  background: transparent;   /* the board silhouette + shadow are drawn in the SVG */
+  backface-visibility: hidden;
+  overflow: hidden;
+}
+.anr-pcb3d-svg { display: block; }
+.anr-pcb3d-svg text { font-family: var(--font-sans); user-select: none; }
+.anr-pcb3d-wall { background: linear-gradient(180deg, #5d6c2c, #3d4a1a); }
 
 /* Cross-probe ping: a ring that pulses over a part when its BOM row is clicked. */
 .anr-altium-ping {

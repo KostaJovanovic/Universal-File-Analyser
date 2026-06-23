@@ -355,9 +355,21 @@ export function renderFolder(files, resultsEl) {
   const fileByPath = {};
   for (const f of files) fileByPath[f.path] = f.file;
 
+  // KiCad project detection (done early): when the folder is a KiCad project, the
+  // combined board/schematic view is the main thing, so the generic folder
+  // analysis (breakdown, treemap, openability) is rendered into a collapsible
+  // container - `host` - that sits behind a "Show folder analysis" button, instead
+  // of straight into resultsEl.
+  const KI_RE = /(\.kicad_(pcb|sch|sym|mod|pro|prl)$|\.wbk$|[\\/](fp-lib-table|sym-lib-table|fp-info-cache)$|^(fp-lib-table|sym-lib-table|fp-info-cache)$)/i;
+  const KI_DOC_RE = /\.kicad_(pcb|sch|pro)$/i;
+  const kiFiles = files.filter((f) => KI_RE.test(f.path) || KI_RE.test(f.path.split('/').pop() || ''));
+  const isKiProject = kiFiles.some((f) => KI_DOC_RE.test(f.path)) && kiFiles.length >= 2;
+  const analysisHost = isKiProject ? el('div', { class: 'anr-folder-analysis', hidden: '' }) : null;
+  const host = analysisHost || resultsEl;
+
   // Summary + breakdown cards (with folder name as extra row) - rendered
   // immediately so the Overview/File-types paint instantly for big folders.
-  renderBreakdownCards(items, resultsEl, [
+  renderBreakdownCards(items, host, [
     row('Name', folderName)
   ]);
 
@@ -379,16 +391,23 @@ export function renderFolder(files, resultsEl) {
   // KiCad project: same idea - if the folder holds KiCad documents, stitch the
   // schematic + board + libraries into one cross-probing view. kicad.js loads
   // lazily, only for folders that actually contain KiCad files.
-  const KI_RE = /(\.kicad_(pcb|sch|sym|mod|pro|prl)$|\.wbk$|[\\/](fp-lib-table|sym-lib-table|fp-info-cache)$|^(fp-lib-table|sym-lib-table|fp-info-cache)$)/i;
-  const KI_DOC_RE = /\.kicad_(pcb|sch|pro)$/i;
-  const kiFiles = files.filter((f) => KI_RE.test(f.path) || KI_RE.test(f.path.split('/').pop() || ''));
-  if (kiFiles.some((f) => KI_DOC_RE.test(f.path)) && kiFiles.length >= 2) {
+  if (isKiProject) {
     const slot = el('div', { class: 'anr-card' }, inlineLoader('Building combined KiCad project view…'));
     resultsEl.insertBefore(slot, resultsEl.firstChild);
     import('./kicad.js')
       .then((m) => m.buildKicadProjectCard(kiFiles, folderName))
       .then((cardEl) => { slot.replaceWith(cardEl); })
       .catch(() => { slot.remove(); });
+    // The folder analysis lives in `host` (analysisHost) - tuck it behind a button
+    // below the project view.
+    const toggle = el('button', { type: 'button', class: 'anr-btn anr-folder-analysis-toggle' }, 'Show folder analysis');
+    toggle.addEventListener('click', () => {
+      const reveal = analysisHost.hidden;
+      analysisHost.hidden = !reveal;
+      toggle.textContent = reveal ? 'Hide folder analysis' : 'Show folder analysis';
+    });
+    resultsEl.appendChild(toggle);
+    resultsEl.appendChild(analysisHost);
   }
 
   // Openability check: walk every file and flag the ones the app can't open.
@@ -406,7 +425,7 @@ export function renderFolder(files, resultsEl) {
     scanCard.appendChild(scanProgress);
     scanCard.appendChild(scanStatus);
     scanCard.appendChild(scanReport);
-    resultsEl.appendChild(scanCard);
+    host.appendChild(scanCard);
 
     let scanning = false, cancelScan = false;
     scanBtn.addEventListener('click', async () => {
@@ -451,9 +470,9 @@ export function renderFolder(files, resultsEl) {
   pendingCard.appendChild(inlineLoader('Building file map…'));
   // Sit the placeholder at the anchor slot (between Overview and File types) so
   // it occupies the spot the real tree/treemap will take when they finish.
-  const contentsSlot = resultsEl.querySelector('.anr-contents-slot');
-  if (contentsSlot) resultsEl.insertBefore(pendingCard, contentsSlot);
-  else resultsEl.appendChild(pendingCard);
+  const contentsSlot = host.querySelector('.anr-contents-slot');
+  if (contentsSlot) host.insertBefore(pendingCard, contentsSlot);
+  else host.appendChild(pendingCard);
 
   // Open a file: nested archive → archive view; everything else → main analyser.
   // Before leaving, register a Back-bar restore that re-renders this folder so the
@@ -505,7 +524,7 @@ export function renderFolder(files, resultsEl) {
     }
 
     pendingCard.remove();
-    renderViewToggle(resultsEl, items, tree, {
+    renderViewToggle(host, items, tree, {
       isDir: (v) => v !== null && typeof v === 'object' && !v[LEAF],
       fileSize: (v) => v.size,
       copyPath: (_key, leaf) => leaf && leaf.path,
