@@ -92,6 +92,10 @@ function buildProfile(card, ctx) {
   const textTbl = el('table', { class: 'anr-readout' });
   const dateTbl = el('table', { class: 'anr-readout' });
   let hasNum = false, hasText = false, hasDate = false;
+  // Per-column anomaly tells (statistical outliers, synthetic/placeholder
+  // patterns, identifier-like text) gathered as [label, detail] for the
+  // additive "Anomalies" section rendered after data quality.
+  const anomalies = [];
 
   for (let c = 0; c < colCount; c++) {
     const header = headers[c] || `Col ${c + 1}`;
@@ -129,16 +133,51 @@ function buildProfile(card, ctx) {
       const q3 = percentile(sorted, 0.75);
       numTbl.appendChild(row(header,
         `median: ${num(median)}  Q1: ${num(q1)}  Q3: ${num(q3)}  stddev: ${num(std)}`));
+      // Anomaly: values more than 3 standard deviations from the mean, or a
+      // column that never varies (often a placeholder / stuck sensor).
+      if (std > 0) {
+        const out = nums.filter((n) => Math.abs(n - mean) > 3 * std);
+        if (out.length) {
+          const ex = out.slice().sort((a, b) => Math.abs(b - mean) - Math.abs(a - mean)).slice(0, 3).map(num).join(', ');
+          anomalies.push([`${header}: outliers`,
+            `${out.length} value(s) beyond ±3σ (mean ${num(mean)}, stddev ${num(std)}) - e.g. ${ex}`]);
+        }
+      } else if (nums.length > 1) {
+        anomalies.push([`${header}: constant`, `every numeric value is ${num(nums[0])}`]);
+      }
     } else if (colTypes[c] === 'date' && dates.length > 0) {
       hasDate = true;
       const minD = new Date(Math.min(...dates)).toISOString().slice(0, 10);
       const maxD = new Date(Math.max(...dates)).toISOString().slice(0, 10);
       dateTbl.appendChild(row(header, `${minD}  →  ${maxD}  (${dates.length} dates)`));
+      // Anomaly: all dates identical, or a perfectly regular cadence (a
+      // generated/synthetic series rather than organically recorded events).
+      const uniqD = new Set(dates);
+      if (dates.length > 1 && uniqD.size === 1) {
+        anomalies.push([`${header}: constant date`, `all ${dates.length} dates are ${minD}`]);
+      } else if (dates.length > 2) {
+        const sd = dates.slice().sort((a, b) => a - b);
+        const step = sd[1] - sd[0];
+        let even = step > 0;
+        for (let i = 2; even && i < sd.length; i++) if (sd[i] - sd[i - 1] !== step) even = false;
+        if (even) anomalies.push([`${header}: regular cadence`,
+          `dates evenly spaced by ${fmtStep(step)} - looks like a generated series`]);
+      }
     } else if (colTypes[c] === 'text' && freq.size > 0) {
       hasText = true;
       const top = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
         .map(([v, n]) => `${truncate(v)} (${n})`).join(',  ');
       textTbl.appendChild(row(header, `${freq.size} distinct  •  top: ${top}`));
+      // Anomaly: every value distinct (identifier-like / maximal entropy) or one
+      // value swamping the column (near-zero entropy - a stuck/placeholder field).
+      const topCount = Math.max(...freq.values());
+      if (freq.size === filled && filled > 3) {
+        anomalies.push([`${header}: all unique`,
+          `every value distinct across ${filled} rows - identifier-like (maximal entropy)`]);
+      } else if (filled > 0 && freq.size > 1 && topCount / filled >= 0.95) {
+        anomalies.push([`${header}: single value`,
+          `${Math.round(topCount / filled * 100)}% of rows share one value (very low entropy)`]);
+      }
     }
   }
 
@@ -215,6 +254,23 @@ function buildProfile(card, ctx) {
     qTbl.appendChild(row('Delimiter confidence', `${conf}% of rows split cleanly into ${expected} columns.`));
     card.appendChild(qTbl);
   }
+
+  // ---- Anomalies (statistical / synthetic-pattern tells) ----
+  if (anomalies.length > 0) {
+    card.appendChild(el('div', { class: 'anr-readout-section' }, 'Anomalies'));
+    const aTbl = el('table', { class: 'anr-readout' });
+    for (const [k, v] of anomalies) aTbl.appendChild(row(k, v));
+    card.appendChild(aTbl);
+  }
+}
+
+// Human-readable spacing between two timestamps, for the regular-cadence tell.
+function fmtStep(ms) {
+  const day = 86400000;
+  if (ms % day === 0) { const d = ms / day; return d === 1 ? '1 day' : d + ' days'; }
+  if (ms % 3600000 === 0) { const h = ms / 3600000; return h === 1 ? '1 hour' : h + ' hours'; }
+  if (ms % 60000 === 0) { const m = ms / 60000; return m === 1 ? '1 minute' : m + ' minutes'; }
+  return Math.round(ms / 1000) + ' seconds';
 }
 
 function truncate(s, n = 24) {

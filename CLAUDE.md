@@ -341,6 +341,7 @@ assets/
         — vector/raster design files, colour LUTs, font specimens
       stl.js · model3d.js · gcode.js · unity.js — 3D viewers + G-code toolpath + Unity assets
       dwg.js · model3d.js — CAD (DWG 2D drawing; STEP/IGES/BREP via OpenCASCADE)
+      altium.js · kicad.js · spice.js · ipcnet.js — EDA/electronics (PCB projects, SPICE netlists, IPC netlists)
       aftereffects.js · premiere.js · davinci.js · vegas.js · sony-rtmd.js · timeline.js
         — NLE/VFX project files (AE/Premiere/Resolve/VEGAS) + EDL/FCPXML/OTIO timelines
       midi.js · subtitles.js · lrc.js — MIDI score, SRT/VTT/ASS subs, LRC lyrics

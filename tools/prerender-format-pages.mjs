@@ -403,7 +403,7 @@ function page(key, e, depth) {
     <div class="site-meta">
       <dl>
         <dt>Version</dt><dd><a href="/patch" id="versionNum" class="version-link" title="See the changelog">0.00</a></dd>
-        <dt class="visit-stat">Visitors</dt><dd class="visit-stat"><a href="/stats" class="visit-link" title="See full usage stats"><span id="visitCount">...</span></a></dd>
+        <dt class="visit-stat">Analysed</dt><dd class="visit-stat"><a href="/stats" class="visit-link" title="See full usage stats"><span id="analysedCount">...</span></a></dd>
         <dt>Status</dt><dd class="net-status"><span class="dot"></span> <span class="net-label">Local-only</span></dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
         <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button></dd>

@@ -605,11 +605,84 @@ export function fileExt(name) {
   return m ? m[1].toLowerCase() : '';
 }
 
+function hex(buf) {
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export async function sha256Hex(file) {
   if (!crypto.subtle) return null;
   const buf = await file.arrayBuffer();
-  const hash = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  return hex(await crypto.subtle.digest('SHA-256', buf));
+}
+
+// SubtleCrypto covers SHA-1/256/384/512 but not MD5. subtleHex hashes an already
+// in-memory ArrayBuffer (so a multi-hash pass reads the file just once).
+async function subtleHex(algo, buf) {
+  if (!crypto.subtle) return null;
+  return hex(await crypto.subtle.digest(algo, buf));
+}
+
+// Compact MD5 (RFC 1321) - browsers don't expose it, but forensic toolchains
+// (NSRL, VirusTotal, old checksum files) still key on it. Operates on a
+// Uint8Array; pure integer maths, no dependency.
+export function md5Hex(bytes) {
+  const rotl = (x, c) => (x << c) | (x >>> (32 - c));
+  const add = (a, b) => (a + b) | 0;
+  const S = [7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+    5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+    6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21];
+  const K = new Int32Array(64);
+  for (let i = 0; i < 64; i++) K[i] = (Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296)) | 0;
+
+  const origLen = bytes.length;
+  const bitLen = origLen * 8;
+  // Pad to 56 mod 64, then append the 64-bit little-endian length.
+  const padded = new Uint8Array((((origLen + 8) >> 6) + 1) * 64);
+  padded.set(bytes);
+  padded[origLen] = 0x80;
+  const dv = new DataView(padded.buffer);
+  dv.setUint32(padded.length - 8, bitLen >>> 0, true);
+  dv.setUint32(padded.length - 4, Math.floor(bitLen / 4294967296), true);
+
+  let a0 = 0x67452301, b0 = 0xefcdab89, c0 = 0x98badcfe, d0 = 0x10325476;
+  const M = new Int32Array(16);
+  for (let off = 0; off < padded.length; off += 64) {
+    for (let i = 0; i < 16; i++) M[i] = dv.getUint32(off + i * 4, true);
+    let A = a0, B = b0, C = c0, D = d0;
+    for (let i = 0; i < 64; i++) {
+      let F, g;
+      if (i < 16) { F = (B & C) | (~B & D); g = i; }
+      else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) & 15; }
+      else if (i < 48) { F = B ^ C ^ D; g = (3 * i + 5) & 15; }
+      else { F = C ^ (B | ~D); g = (7 * i) & 15; }
+      F = add(add(add(F, A), K[i]), M[g]);
+      A = D; D = C; C = B;
+      B = add(B, rotl(F, S[i]));
+    }
+    a0 = add(a0, A); b0 = add(b0, B); c0 = add(c0, C); d0 = add(d0, D);
+  }
+  const out = new Uint8Array(16);
+  const odv = new DataView(out.buffer);
+  odv.setUint32(0, a0 >>> 0, true); odv.setUint32(4, b0 >>> 0, true);
+  odv.setUint32(8, c0 >>> 0, true); odv.setUint32(12, d0 >>> 0, true);
+  return hex(out);
+}
+
+// MD5 + SHA-1 + SHA-512 over one in-memory read, returned as [label, hex] pairs.
+// Used by the "Show more hashes" affordance in sha256Row().
+export async function extraHashRows(file) {
+  const buf = await file.arrayBuffer();
+  const [sha1, sha512] = await Promise.all([
+    subtleHex('SHA-1', buf),
+    subtleHex('SHA-512', buf),
+  ]);
+  const md5 = md5Hex(new Uint8Array(buf));
+  return [
+    ['MD5', md5],
+    ['SHA-1', sha1 || 'unavailable'],
+    ['SHA-512', sha512 || 'unavailable'],
+  ];
 }
 
 // Above this size SHA-256 isn't computed automatically (hashing reads the whole
@@ -622,6 +695,37 @@ export function sha256Row(file) {
   const td = hashRow.querySelector('td');
   td.textContent = '';
 
+  // Once SHA-256 is shown, offer the forensic-standard extras (MD5/SHA-1/SHA-512)
+  // on demand, inserted as sibling rows below this one so every renderer that uses
+  // sha256Row()/integrityCard() gets them with no per-renderer change.
+  function appendMoreHashesControl() {
+    const tbody = hashRow.parentNode;
+    if (!tbody) return;
+    const cell = el('td', { colspan: '2', style: 'padding-top:4px;' });
+    const btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Show MD5 / SHA-1 / SHA-512');
+    cell.appendChild(btn);
+    const ctrlRow = el('tr', { class: 'anr-morehash-row' }, cell);
+    hashRow.after(ctrlRow);
+    btn.addEventListener('click', () => {
+      const bar = asciiBar();
+      bar.indeterminate();
+      cell.textContent = '';
+      cell.appendChild(bar);
+      extraHashRows(file).then(rows => {
+        bar.stop();
+        let anchor = ctrlRow;
+        rows.forEach(([label, value]) => {
+          const tr = rowHelp(label, value, label + ' is a cryptographic fingerprint of the file’s exact bytes, for matching against forensic databases and checksum files.');
+          const vtd = tr.querySelector('td');
+          if (vtd) vtd.style.wordBreak = 'break-all';
+          anchor.after(tr);
+          anchor = tr;
+        });
+        ctrlRow.remove();
+      });
+    }, { once: true });
+  }
+
   function compute() {
     const bar = asciiBar();
     bar.indeterminate();
@@ -631,6 +735,7 @@ export function sha256Row(file) {
       bar.stop();
       td.textContent = h || 'unavailable';
       td.style.wordBreak = 'break-all';
+      if (h) appendMoreHashesControl();
     });
   }
 
