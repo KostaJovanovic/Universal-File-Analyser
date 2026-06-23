@@ -1193,6 +1193,9 @@ body.anr-has-file .nav-search { display: flex; }
   z-index: 8;   /* above the toolbar overlay that pins along the bottom in fullscreen */
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
+/* Mobile browsers (notably iOS Safari) don't support element fullscreen, and the
+   button overlaps the view cube on a small canvas - hide it there. */
+@media (max-width: 700px) { .anr-gcode-fsbtn { display: none; } }
 
 /* Colour panel, overlaid top-right of the viewer: the colour-mode selector with the
    legend / key for the active mode directly beneath it. The canvas always clears to a
@@ -1230,6 +1233,9 @@ body.anr-has-file .nav-search { display: flex; }
   pointer-events: none;
 }
 .anr-gcode-legendbody:empty { display: none; }
+.anr-gcode-legendbody.is-hidden { display: none; }
+/* Small toggle that shows/hides the colour legend, sitting under the colour select. */
+.anr-gcode-legendtoggle { font-size: var(--t-tiny); padding: 5px 11px; }
 .anr-gcode-key-row { display: flex; align-items: center; gap: 8px; }
 .anr-gcode-key-label { font-size: var(--t-tiny); white-space: nowrap; }
 .anr-gcode-ramp { display: flex; flex-direction: column; gap: 6px; }
@@ -1450,7 +1456,8 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
    always fully on-screen, whatever column the button ended up in. */
 @media (max-width: 700px) {
   .anr-aa-panel,
-  .anr-spd-panel {
+  .anr-spd-panel,
+  .anr-gcode-topleft .anr-aa-panel {
     position: fixed;
     left: 12px;
     right: 12px;

@@ -185,8 +185,20 @@ export async function renderJsonData(file, container) {
     const srcCard = el('div', { class: 'anr-card' });
     srcCard.appendChild(el('h3', {}, 'Source'));
     const pre = el('pre', { class: 'anr-pagetext anr-code-src' });
-    pre.textContent = text.length > 500_000 ? text.slice(0, 500_000) + '\n... (truncated)' : text;
+    const truncated = text.length > 500_000;
+    pre.textContent = truncated ? text.slice(0, 500_000) + '\n... (truncated)' : text;
     srcCard.appendChild(pre);
+    // When the inline source is truncated, expand it in place as a scrollable
+    // block - it is source text, not a paged document, so no page lightbox.
+    if (truncated) {
+      const fullBtn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:8px;' }, 'Show full source');
+      fullBtn.addEventListener('click', () => {
+        pre.textContent = text;
+        pre.classList.add('anr-pre-scroll');
+        fullBtn.remove();
+      });
+      srcCard.appendChild(fullBtn);
+    }
     container.appendChild(srcCard);
 
     if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
