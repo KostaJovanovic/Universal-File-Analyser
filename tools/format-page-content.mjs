@@ -1437,5 +1437,115 @@ export const EXT_PAGES = {
   tsj:    { name: 'Tiled tileset', blurb: 'TSJ is a Tiled tileset in JSON form - the tile definitions a 2D game map made in the Tiled editor refers to.', fact: 'Tiled splits a level into a map and the tilesets it draws from, so one shared .tsj of tiles can be reused across many maps.' },
   vda:    { name: 'Truevision TGA', blurb: 'VDA is a Truevision raster image - a TGA-format picture named after the Truevision Video Display Adapter board.', fact: 'Like .icb and .vst, the .vda extension is just a TGA file named after one of Truevision’s 1980s graphics cards.' },
 
+  // ---- newly added identification formats ----
+  idl:  { name: 'Interface Definition file', blurb: 'IDL is an Interface Definition Language file - a language-neutral description of an API\'s interfaces, methods and data types. Microsoft COM/OLE uses MIDL .idl files to generate type libraries and marshalling code; CORBA and other RPC systems use the same idea.', fact: 'Microsoft\'s MIDL compiler turns a COM .idl file into a binary type library (.tlb) plus the C/C++ proxy-stub code that lets components call each other across process boundaries.' },
+  asp:  { name: 'Classic ASP page', blurb: 'ASP (Active Server Pages) is Microsoft\'s original server-side scripting format - an HTML page with embedded <% %> code, usually VBScript or JScript, run by IIS to build the page before it is sent. The newer ASP.NET uses .aspx instead.', fact: 'Classic ASP shipped with IIS in 1996; the <%= %> tag it introduced for inlining server output is still used by many templating languages today.' },
+  pc:   { name: 'pkg-config file', blurb: 'A .pc file is pkg-config metadata - it tells the build tool pkg-config which compiler include paths (Cflags) and linker flags (Libs) a library needs, plus its name, version and dependencies. Used across Linux and Unix C/C++ builds.', fact: 'A single `pkg-config --cflags --libs gtk+-3.0` reads the installed .pc file and prints every flag a compiler needs, which is why .pc files are the backbone of Unix C build systems.' },
+  obb:  { name: 'Android OBB expansion file', blurb: 'OBB (Opaque Binary Blob) is an Android APK expansion file - extra assets (textures, audio, video) too big to fit in the APK, downloaded alongside a game or app. It is often a ZIP, sometimes an encrypted jobb image or a game-specific bundle.', fact: 'Google Play caps the base APK size, so large games ship the rest as one or two .obb expansion files (main and patch) stored under Android/obb on the device.' },
+  agc:  { name: 'Google Camera config', blurb: 'An .agc file is a Google Camera (GCam) configuration - an Android shared-preferences XML of <string>, <int> and <boolean> entries that tunes a GCam port\'s HDR, colour and processing settings. Loaded by the GCam app to switch between community-made looks.', fact: 'GCam ports expose hundreds of internal tuning keys as a single shareable .agc XML, which is why swapping one config file can completely change how an Android phone\'s camera renders photos.' },
+  dsd:  { name: 'DraStic shader', blurb: 'A .dsd file is a shader for DraStic, the Nintendo DS emulator - GLSL ES source wrapped in <vertex> and <fragment> sections that post-processes the rendered screen (scaling, FXAA, colour). It is unrelated to DSD audio, which uses .dsf and .dff.', fact: 'DraStic loads .dsd shaders to upscale and filter the DS\'s low-resolution dual screens in real time on the GPU.' },
+  penc: { name: 'Samsung encrypted package', blurb: 'A .penc file is a Samsung Secure Folder encrypted package from a phone backup - an app (often an APK) sealed with a Knox device-bound key. Its 00 10 00 10 header identifies it, but the payload cannot be decrypted off the original device.', fact: 'Samsung Secure Folder uses the phone\'s hardware-backed Knox keystore, so a .penc copied off the device is cryptographically useless without that exact phone.' },
   // EXT_PAGES_END
+};
+
+// Per-variant "Did you know" facts for the ambiguous-extension pages (EXT_VARIANTS
+// in formats.js). Keyed by extension, then by the EXACT variant `name`, so each of
+// the per-filetype cards on /formats/<ext> carries its own unique fact. One concise,
+// genuinely-interesting sentence each (British spelling, no em-dash). A variant with
+// no entry here simply renders its card without a Did-you-know.
+export const VARIANT_FACTS = {
+  ts: {
+    'MPEG transport stream': "Transport streams chop video into fixed 188-byte packets so a glitch only ever loses one tiny packet, which is why digital TV and Blu-ray still rely on them.",
+    'TypeScript source': "TypeScript was designed at Microsoft by Anders Hejlsberg, who had earlier created Turbo Pascal, Delphi and C#.",
+  },
+  key: {
+    'Apple Keynote presentation': "Keynote began as private software built for Steve Jobs's own stage presentations before Apple released it to the public in 2003.",
+    'PEM cryptographic key': "PEM stands for Privacy-Enhanced Mail, a 1990s email scheme that flopped - but its Base64 -----BEGIN----- wrapper became the universal way to store keys and certificates.",
+  },
+  cube: {
+    'Colour LUT': "The same .cube LUT a colourist builds in DaVinci Resolve loads unchanged into Photoshop, Premiere and OBS, because it is just a text table of input-to-output colours.",
+    'Gaussian volumetric grid': "A Gaussian cube stores a value at every point of a 3D grid, so one molecule's electron density can run to tens of millions of numbers.",
+  },
+  pkg: {
+    'macOS Installer Package': "Apple's flat .pkg is really a XAR archive with an XML table of contents, which let an entire installer become one signable, downloadable file.",
+    'Destiny package (Bungie Tiger engine)': "Destiny 2 ships its assets in hundreds of these Tiger-engine packages; the four hex digits in each filename (like 02b8) are the package id stored at offset 0x10 inside.",
+  },
+  cdp: {
+    'CDP4 (COMET) model': "CDP4 / COMET is the European Space Agency's concurrent-design platform, used to design spacecraft with dozens of engineers editing one model at once.",
+    'Criterium DecisionPlus model': "Criterium DecisionPlus ranks choices with the Analytic Hierarchy Process, a 1970s method for turning gut-feel comparisons into hard numbers.",
+  },
+  mat: {
+    'MATLAB MAT-file': "A modern MATLAB v7.3 .mat file is secretly an HDF5 container - the same scientific data format used by NASA missions and the Large Hadron Collider.",
+    'Unity material': "A Unity .mat is plain YAML text, so material changes diff and merge in Git just like source code.",
+  },
+  nsf: {
+    'NES Sound Format': "An NSF holds the actual 6502 machine code from the game's sound engine, so playing one means emulating the NES processor and audio chip in real time.",
+    'Lotus Notes database': "Lotus Notes .nsf files store documents, mail and whole apps together, and some corporate ones have been in continuous use since the early 1990s.",
+  },
+  dts: {
+    'Device Tree Source': "The device tree was invented so a single Linux kernel binary could boot wildly different ARM boards just by loading a different hardware description.",
+    'DTS audio': "DTS made its cinema debut on Jurassic Park in 1993, played from a CD-ROM kept in sync with the film by timecode printed along the reel.",
+  },
+  nc: {
+    'NetCDF dataset': "NetCDF was built by Unidata for atmospheric science, and today almost every climate model and weather dataset in the world is distributed in it.",
+    'CNC G-code': "G-code dates to the late 1950s at MIT and barely changed - the same G0/G1 move commands drive a $200 3D printer and a million-dollar mill alike.",
+  },
+  sav: {
+    'SPSS dataset': "SPSS launched in 1968 as one of the first statistics packages for social scientists, and its .sav still tags every variable with its survey question and value labels.",
+    'Game save file': "There is no standard .sav format - each game invents its own, which is why save editors are written per-game and a hex view is often the only way in.",
+  },
+  obj: {
+    'Compiled object file': "An object file holds machine code with the jump addresses left blank; the linker fills them in when it stitches the objects into an executable.",
+    'Wavefront 3D model': "The OBJ format comes from 1980s Wavefront Advanced Visualizer software, and its plain-text simplicity is exactly why it became the universal 3D interchange format.",
+  },
+  mod: {
+    'Camcorder video': "JVC Everio hard-disk camcorders saved clips as .mod MPEG-2 files; renaming one to .mpg is often enough to make an ordinary player open it.",
+    'Tracker module': "The Amiga MOD format bundles its instrument samples inside the song, so a 1990s tracker tune sounds identical on any machine decades later.",
+  },
+  map: {
+    'Source map': "A source map lets browser dev-tools show your original TypeScript or Sass while the browser runs minified code, using a compact Base64 VLQ encoding to map positions.",
+    'Game level map': "A Quake .map stores a level as convex 3D 'brushes' that the compiler carves out of solid space, an approach id Software pioneered in 1996.",
+    'Linker map': "A linker map is often the only record of exactly where each function landed in memory, which is why crash-dump analysis leans on it so heavily.",
+  },
+  asc: {
+    'Esri ASCII grid': "The Esri ASCII grid is so simple - a tiny header then a wall of numbers - that it became the lowest-common-denominator way to swap elevation and raster data.",
+    'PGP armored data': "ASCII armor wraps a binary key in Base64 so it survives being pasted into email, and the trailing line starting with = is a checksum that catches copy-paste corruption.",
+    'Plain ASCII text': "ASCII fixed the English alphabet into 7 bits in 1963, and modern UTF-8's first 128 characters still match it exactly.",
+  },
+  md: {
+    'Sega Mega Drive ROM': "Mega Drive cartridges carry the word SEGA near the start of the ROM, which the console checked for as a crude licensing lock.",
+    'Markdown document': "Markdown was created in 2004 by John Gruber to read as plain text first, which is why a README.md still looks fine even where nothing renders it.",
+  },
+  cdf: {
+    'NetCDF dataset': "The CDF in a NetCDF file's first bytes stands for Common Data Form, an early self-describing-data idea that is now everywhere in science.",
+    'Wolfram CDF': "A Wolfram CDF can embed live, interactive Mathematica computations that a reader manipulates without owning Mathematica.",
+  },
+  gem: {
+    'RubyGems package': "Every `gem install` pulls down one of these .gem files - a TAR holding the code plus a YAML gemspec listing its dependencies.",
+    'GEM image / metafile': "GEM was Digital Research's 1985 graphical desktop; an Apple lawsuit forced changes that helped doom it, but its image format lived on across the Atari ST.",
+  },
+  g: {
+    'BRL-CAD geometry': "BRL-CAD has been developed by the US Army Research Laboratory since 1979, making it one of the oldest continuously maintained CAD systems in the world.",
+    'G-code': "The same G-code language drives 3D printers and CNC mills, but a printer reads each move as extrusion where a mill reads it as cutting.",
+  },
+  prj: {
+    'Esri projection (WKT)': "A shapefile's .prj holds one line of Well-Known Text naming the coordinate system, so software knows whether your numbers are degrees or metres.",
+    'Generic project file': "Dozens of unrelated apps grabbed .prj for 'project file', which is why the same extension can mean a map projection or a sound-editor session.",
+  },
+  r: {
+    'R source': "The R language is named after the first initials of its creators, statisticians Ross Ihaka and Robert Gentleman.",
+    'REBOL / Rez resource': "Classic Mac apps kept their icons, menus and dialogs in a 'resource fork' compiled from Rez text, an idea decades ahead of its time.",
+  },
+  scr: {
+    'Windows screensaver': "A Windows .scr is just an .exe under a different extension, which is exactly why screensavers were once a favourite way to smuggle in malware.",
+    'Script file': "Several tools repurpose .scr for plain-text scripts, so the only reliable way to tell one from a screensaver is the MZ executable header.",
+  },
+  rc: {
+    'Windows resource script': "A Windows .rc is compiled into the binary .res that bakes a program's icons, menus and version info into its .exe.",
+    'Unix rc / runcom config': "The 'rc' in .bashrc and /etc/rc means 'run commands', a name inherited from a 1965 MIT system.",
+  },
+  fs: {
+    'F# source': "F# brought OCaml-style functional programming to .NET; its name nods both to 'functional' and to the ML language family it descends from.",
+    'GPU fragment shader': "A fragment shader runs once per pixel, potentially millions of times per frame, which is why even a tiny .fs file can bring a GPU to its knees.",
+  },
 };

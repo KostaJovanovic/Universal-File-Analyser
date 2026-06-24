@@ -416,6 +416,17 @@ export const FORMATS = {
   eslintrc:  { app: 'ESLint Config', icon: 'ESL', parse: 'text' },
   yarnclean: { app: 'Yarn Clean List', icon: 'YARN', parse: 'text' },
   aspx:    { app: 'ASP.NET Web Page', icon: 'ASPX', parse: 'text' },
+  asp:     { app: 'Classic ASP Page', icon: 'ASP', parse: 'text', chunk: 'dev' },
+  idl:     { app: 'Interface Definition (IDL)', icon: 'IDL', parse: 'text', chunk: 'dev' },
+  pc:      { app: 'pkg-config Metadata', icon: 'PC', parse: 'text', chunk: 'dev' },
+  dsd:     { app: 'DraStic Shader', icon: 'DSD', parse: 'text', chunk: 'dev' },
+  template: { app: 'Text Template', icon: 'TPL', parse: 'text', chunk: 'dev' },
+  static:  { app: 'Static Asset / Fixture', icon: 'TXT', parse: 'text' },
+  agc:     { app: 'Google Camera Config', icon: 'AGC', parse: 'xml', chunk: 'osmisc' },
+  obb:     { app: 'Android OBB Expansion', icon: 'OBB', chunk: 'archive' },
+  penc:    { app: 'Samsung Encrypted Package', icon: 'PENC', magic: [0x00, 0x10, 0x00, 0x10], chunk: 'osmisc' },
+  enc:     { app: 'Encrypted File', icon: 'ENC', chunk: 'osmisc' },
+  bk:      { app: 'Backup Container', icon: 'BK', chunk: 'osmisc' },
 
   // Config, language and info text
   config:  { app: 'Configuration File', icon: 'CONF', parse: 'text' },

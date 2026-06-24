@@ -100,6 +100,25 @@ File: `assets/js/renderers/proprietary.js`
   live in `formats.js` alone, but to extract metadata it needs a `FORMATS` entry
   here too.
 
+### 2b. Ambiguous extensions (one extension, several unrelated formats)
+Some extensions name genuinely different file types (`.pkg` = macOS installer OR
+Destiny package; `.cube` = colour LUT OR Gaussian volumetric grid; `.ts` =
+TypeScript OR MPEG transport stream). These are declared in **`EXT_VARIANTS`** in
+`formats.js` - the single source of truth, read by two consumers:
+- `tools/prerender-format-pages.mjs` renders ONE `/formats/<ext>` page with a
+  titled section per variant (instead of the single auto capability block).
+- `detectVariant(ext, bytes, text, opts?)` (also in `formats.js`) sniffs the
+  bytes/text at drop time so the in-app readout names the right variant.
+
+To add one, add an `EXT_VARIANTS[ext] = { summary, variants: [{ name, desc, tell,
+detect? }] }` entry (each `detect` is a rule like `{ magic, hex, hexAt, textStarts,
+textIncludes, default }`). Drop-time wiring uses `detectVariant`:
+- **Identification path** (`proprietary.js` `renderProprietary`) calls it with
+  `{ specificOnly: true }` to set the card title only when a rule actually matched.
+- **Heavy-renderer reroutes** (`app.js` `VARIANT_REROUTE` in `handleFile`) divert a
+  file whose bytes prove the variant the default renderer can't handle (e.g. a
+  TypeScript `.ts` to the text view instead of the video player).
+
 ### 3. New top-level category (rare)
 If the format isn't photo/audio/video/csv/svg and needs its own renderer:
 - Create a module (e.g. `assets/js/renderers/newtype.js`), export

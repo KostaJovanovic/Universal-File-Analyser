@@ -756,11 +756,31 @@ function rgbToHsl(r, g, b) {
   return Math.round(h * 360) + '°,' + Math.round(s * 100) + '%,' + Math.round(l * 100) + '%';
 }
 
-// ---------- sharpness (Laplacian variance) ----------
+// ---------- sharpness (normalised Laplacian energy) ----------
+// Raw Laplacian variance scales with scene contrast and image size, so it pins
+// almost every real photo at the top of the range and even rewards high-contrast
+// blur. Instead we report the Laplacian (high-frequency) energy as a fraction of
+// the image's total luminance energy: lapVar / lumVar. That ratio cancels overall
+// contrast, so a flat-but-focused shot still scores well and a punchy-but-blurred
+// shot scores low - it tracks focus, not contrast. The ratio runs ~0 (perfectly
+// smooth) up towards ~20 (pure high-frequency noise); a saturating curve maps it
+// onto a clean 0-100 score.
+const SHARP_K = 0.35; // curve steepness - the one tuning knob (see score map below)
+
 function computeSharpness(imgData) {
   const w = imgData.width, h = imgData.height, d = imgData.data;
   const gray = new Float32Array(w * h);
-  for (let i = 0; i < w * h; i++) gray[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  let lumSum = 0, lumSqSum = 0;
+  for (let i = 0; i < w * h; i++) {
+    const y = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    gray[i] = y;
+    lumSum += y;
+    lumSqSum += y * y;
+  }
+  const npx = w * h;
+  // Global luminance variance (E[Y^2] - E[Y]^2) = the image's total energy.
+  const lumMean = npx > 0 ? lumSum / npx : 0;
+  const lumVar = npx > 0 ? Math.max(0, lumSqSum / npx - lumMean * lumMean) : 0;
   let sum = 0, n = 0;
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
@@ -771,14 +791,18 @@ function computeSharpness(imgData) {
       n++;
     }
   }
-  return n > 0 ? sum / n : 0;
+  const lapVar = n > 0 ? sum / n : 0;
+  // eps guards flat/near-uniform frames (tiny lumVar) from blowing the ratio up.
+  const ratio = lapVar / (lumVar + 1);
+  // Saturating map: ratio 0.3 -> ~10, 1 -> ~30, 3 -> ~65, 6 -> ~88. Bounded 0-100.
+  return Math.round(100 * (1 - Math.exp(-SHARP_K * ratio)));
 }
 
 function sharpnessLabel(v) {
-  if (v > 800) return 'very sharp';
-  if (v > 300) return 'sharp';
-  if (v > 100) return 'normal';
-  if (v > 30)  return 'soft';
+  if (v >= 80) return 'very sharp';
+  if (v >= 60) return 'sharp';
+  if (v >= 40) return 'normal';
+  if (v >= 20) return 'soft';
   return 'blurry';
 }
 
@@ -2521,8 +2545,8 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     'The width-to-height proportion of the image. The first figure is the exact reduced ratio (and its decimal); “≈” is the nearest standard ratio such as 3:2 or 16:9.'));
   tbl.appendChild(rowHelp('Megapixels', mp + ' MP',
     'Total number of pixels in the image, in millions (width × height ÷ 1,000,000).'));
-  tbl.appendChild(rowHelp('Sharpness', sharpness.toFixed(1) + '  (' + sharpnessLabel(sharpness) + ')',
-    'Laplacian variance of the luminance channel. Higher = sharper detail. Below 50 is typically blurry, above 200 is very sharp.'));
+  tbl.appendChild(rowHelp('Sharpness', sharpness + ' / 100  (' + sharpnessLabel(sharpness) + ')',
+    'High-frequency (Laplacian) detail as a fraction of the image’s total contrast, mapped to a 0 to 100 score. Normalising by contrast means the score tracks focus rather than how punchy the scene is, so a flat but sharp photo still scores well and a high-contrast blurred one scores low. Around 60 and up reads as sharp, under 40 as soft or blurry.'));
   const fpx = Math.round(focus.focusX / pixData.width * w);
   const fpy = Math.round(focus.focusY / pixData.height * h);
   tbl.appendChild(rowHelp('Focus point', fpx + ', ' + fpy + '  (estimated)',

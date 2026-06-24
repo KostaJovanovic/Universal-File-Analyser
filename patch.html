@@ -206,6 +206,21 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">4.17</p>
+          <p class="patch-name">Split Personality</p>
+          <p class="patch-date">24 June 2026, 05:18</p>
+          <ul class="patch-list">
+            <li><strong>Extensions that quietly stand for several unrelated file types now get a guide page that explains each one on its own, the folder scanner judges files by what is inside them rather than their name, more developer and phone formats are recognised, and a photo&rsquo;s sharpness score is fairer.</strong></li>
+            <li><span class="patch-tag">New</span><strong>One extension, many file types - told apart.</strong> Some extensions are shared by completely unrelated formats - a <strong>.pkg</strong> is a macOS installer or a Destiny game package, a <strong>.key</strong> a Keynote slideshow or an encryption key, a <strong>.map</strong> a linker map or a game level. Their guide pages now carry a separate, self-contained card for each meaning - its own description, a note on how to tell them apart, and its own &ldquo;Did you know&rdquo; - so a search for one lands on the right one. Twenty-three such extensions are covered.</li>
+            <li><span class="patch-tag">New</span><strong>The folder scanner reads contents, not just names.</strong> When you check a folder for openable files, Analyser now identifies each one by what is actually inside it - so a misnamed or extensionless file it can still read counts as openable, and a file that is genuinely unreadable is flagged, instead of trusting the name alone.</li>
+            <li><span class="patch-tag">New</span><strong>Destiny game packages recognised.</strong> A Destiny or Destiny 2 <strong>.pkg</strong> - Bungie&rsquo;s Tiger engine - is now told apart from a macOS installer of the same name, reading its package id and build date.</li>
+            <li><span class="patch-tag">New</span><strong>More developer and phone formats.</strong> Interface definitions (<strong>.idl</strong>), classic ASP pages, pkg-config files (<strong>.pc</strong>), GPU shaders and project templates are now recognised, alongside Android extras - Google Camera settings, Samsung Secure Folder encrypted items and phone backups, and Android game data packs (<strong>.obb</strong>) - each with its own guide page.</li>
+            <li><span class="patch-tag">New</span><strong>A fairer photo sharpness score.</strong> The sharpness reading for a photo now measures focus on its own terms instead of being thrown off by a scene&rsquo;s overall contrast, so a softly-lit but well-focused shot reads as sharp and a punchy but out-of-focus one reads as soft, on a clean 0 to 100 scale.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The folder breakdown pop-up stays put.</strong> In a folder or archive breakdown, the pop-up listing the files in a slice no longer vanishes the moment you scroll inside it - you can scroll its list freely, and only a scroll outside it closes it.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">4.16</p>
           <p class="patch-name">Tamper Evident</p>
           <p class="patch-date">24 June 2026, 00:44</p>
@@ -237,6 +252,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">4.08 - 4.11</p>
           <p class="patch-name">Printed Circuit</p>
@@ -250,9 +268,6 @@
             <li><span class="patch-tag is-fix">Fix</span><strong>Quality controls stay within reach.</strong> Showing a very large G-code file in full no longer greys out the render-quality buttons - the heavier settings simply start switched off, ready to turn back on whenever you like.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">4.01 - 4.07</p>
@@ -1503,7 +1518,7 @@
       <div><dt>JPEG 2000</dt><dd><a href="https://github.com/chafey/openjpegjs" target="_blank" rel="noopener">OpenJPEG</a> compiled to WASM. Decodes JP2 / J2K images the browser can&rsquo;t. Loaded only when needed.</dd></div>
       <div><dt>PostScript</dt><dd><a href="https://www.ghostscript.com/" target="_blank" rel="noopener">Ghostscript</a> compiled to WASM. Renders EPS / PostScript graphics. ~16 MB, in the Everything download.</dd></div>
       <div><dt>Animation</dt><dd><a href="https://github.com/airbnb/lottie-web" target="_blank" rel="noopener">lottie-web</a>. Plays Lottie / Bodymovin JSON animations. Loaded only when needed.</dd></div>
-      <div><dt>File ID</dt><dd>Built-in identification for 1340+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 1351+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Install</dt><dd>Add to home screen for an offline PWA. Service worker caches the app shell. Use the buttons above to pre-cache heavy dependencies.</dd></div>
         </dl>
       </details>
