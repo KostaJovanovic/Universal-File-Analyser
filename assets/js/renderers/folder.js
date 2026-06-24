@@ -122,17 +122,16 @@ function extKnown(file) {
     || KNOWN_FIXED_EXTS.has(ext) || (ext in FORMATS);
 }
 
-// Last-resort sniff for files with an unrecognised extension. This MUST mirror
-// the magic/CSV checks handleFile() runs before it falls through to the unknown
-// (hex-dump) view, so the scan's verdict is identical to what actually opens.
+// Last-resort magic/CSV sniff for files with an unrecognised extension - the
+// FALLBACK mirror used only when the app's shared resolver (window._anrResolveContent)
+// is absent (folder.js run outside the app). In the app, probeOpenable calls that
+// resolver instead, so the two can never drift.
 //
-// Deliberately NO generic "mostly-printable text -> known" rule: the real app
-// has none. A plain-text file with no recognised extension (a licence file like
-// COPYING, a README, a Makefile) is shown in the unknown/hex view, so the scan
-// must report it as unrecognised too - otherwise an extensionless text file
-// passes the scan yet opens as "unknown", which is the very drift being fixed.
-// (git loose objects, which DO open, are content-detected separately in
-// probeOpenable via sniffGitObject.)
+// No text rule here on purpose - readable text is handled separately by
+// looksLikeText() in probeOpenable, so an extensionless plain-text file (COPYING,
+// README, Makefile) passes (it opens as text), while a binary with no recognised
+// type is flagged (it opens only as a hex dump). git loose objects are
+// content-detected via sniffGitObject.
 async function sniffKnown(file) {
   try {
     const head = new Uint8Array(await file.slice(0, 128).arrayBuffer());
@@ -214,15 +213,60 @@ async function probeOpenable(file) {
     } catch (_) {}
     return { ok: false, reason: 'No usable preview and the RAW could not be decoded' };
   }
-  // Unrecognised type: the app can only show a raw hex dump. Sniff magic/text
-  // first so a mislabelled-but-real PDF/ZIP/SVG/text file isn't flagged - and
-  // content-detect git objects (loose objects are extensionless).
-  if (!extKnown(file)) {
+  // A file the extension classifier sends to a dedicated renderer opens as its
+  // type (HEIC/RAW were decided above). Everything else - an unrecognised
+  // extension OR no extension at all - can only open by content or as a text/hex
+  // view, so probe the bytes and decide.
+  const cls = classifyOf(file);
+  const openableByExt = cls ? (cls !== 'unknown' && cls !== 'extensionless') : extKnown(file);
+  if (openableByExt) return { ok: true };
+
+  // Resolve the true type from content with the SAME resolver the drop path uses
+  // (window._anrResolveContent), so the scan can't disagree with what opens - this
+  // covers images saved under an odd/absent extension, the niche game/dev magics,
+  // git objects and CSV. Fall back to folder.js's local mirror if the hook is
+  // absent (used outside the app).
+  if (typeof window !== 'undefined' && window._anrResolveContent) {
+    try { const r = await window._anrResolveContent(file); if (r && r.kind && r.kind !== 'unknown') return { ok: true }; } catch (_) {}
+  } else {
     if (await sniffKnown(file)) return { ok: true };
     try { const { sniffGitObject } = await import('./gitobject.js'); if (await sniffGitObject(file)) return { ok: true }; } catch (_) {}
-    return { ok: false, reason: 'Unrecognised file type - opens only as a raw hex dump' };
   }
-  return { ok: true };
+  // Readable text opens fine (an extensionless LICENSE / README / Makefile shows
+  // as text); a binary with no recognised type only opens as a raw hex dump, so
+  // flag it - including extensionless binaries, which used to slip through.
+  if (await looksLikeText(file)) return { ok: true };
+  return { ok: false, reason: extOf(file.name)
+    ? 'Unrecognised file type - opens only as a raw hex dump'
+    : 'No extension and unreadable binary content - opens only as a hex dump' };
+}
+
+// The real drop-path classifier (window._anrClassify), guarded - '' when the hook
+// is absent (folder.js used outside the app). Lets probeOpenable tell an
+// extensionless file (which classifies as 'extensionless', not 'unknown') apart
+// from a file a dedicated renderer handles, so the former gets a content probe.
+function classifyOf(file) {
+  if (typeof window !== 'undefined' && typeof window._anrClassify === 'function') {
+    try { return window._anrClassify(file) || ''; } catch (_) {}
+  }
+  return '';
+}
+
+// Whether a file opens as readable text rather than a raw hex dump - mirrors the
+// unknown/extensionless viewer's rule (UTF-16 BOM, or >85% printable bytes).
+// Prefers the app's shared implementation so the two never diverge.
+async function looksLikeText(file) {
+  if (typeof window !== 'undefined' && window._anrReadableText) {
+    try { return await window._anrReadableText(file); } catch (_) {}
+  }
+  try {
+    const b = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+    if (!b.length) return true;
+    if (b.length >= 2 && ((b[0] === 0xFF && b[1] === 0xFE) || (b[0] === 0xFE && b[1] === 0xFF))) return true;
+    let p = 0;
+    for (const c of b) if (c === 9 || c === 10 || c === 13 || (c >= 0x20 && c <= 0x7E)) p++;
+    return p / b.length > 0.85;
+  } catch (_) { return false; }
 }
 
 function renderScanReport(host, total, failures, cancelled, checked) {

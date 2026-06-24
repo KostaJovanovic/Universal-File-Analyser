@@ -517,10 +517,14 @@ function closeFileList() {
   _tmList = null;
   document.removeEventListener('mousedown', onListOutside, true);
   document.removeEventListener('keydown', onListEsc, true);
-  window.removeEventListener('scroll', closeFileList, true);
+  window.removeEventListener('scroll', onListScroll, true);
 }
 function onListOutside(e) { if (_tmList && !_tmList.contains(e.target)) closeFileList(); }
 function onListEsc(e) { if (e.key === 'Escape') closeFileList(); }
+// Dismiss when the page/treemap behind the popup scrolls, but NOT when the user
+// scrolls the popup's own file list (a captured scroll fires for inner elements
+// too, which would otherwise close the menu the moment you try to scroll it).
+function onListScroll(e) { if (_tmList && _tmList.contains(e.target)) return; closeFileList(); }
 
 const LIST_CAP = 300;   // rows rendered at once; refine via the filter box
 
@@ -583,7 +587,7 @@ function showFileListMenu(clientX, clientY, files, opts) {
     search.focus();
     document.addEventListener('mousedown', onListOutside, true);
     document.addEventListener('keydown', onListEsc, true);
-    window.addEventListener('scroll', closeFileList, true);
+    window.addEventListener('scroll', onListScroll, true);
   }, 0);
 }
 

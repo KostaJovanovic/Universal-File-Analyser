@@ -7,6 +7,7 @@ import { el, row, rowHelp, fmtBytes, sha256Row, preBlock } from '../core/util.js
 import { findBytes, utf16, utf8, ascii } from '../core/binutil.js';
 import { openZip } from './zip.js';
 import { FORMATS } from './proprietary-formats.js';
+import { EXT_VARIANTS, detectVariant } from '../core/formats.js';
 import { parseNrbf } from '../lib/nrbf.js';
 import { safe } from '../parsers/parser-util.js';
 
@@ -3929,6 +3930,20 @@ export async function renderProprietary(file, container, extOverride) {
 
   // Generic text/XML version detection for formats without a dedicated parser
   if (!extra && (fmt.parse === 'text' || fmt.parse === 'xml')) extra = await parseTextVersion(file);
+
+  // Ambiguous extension (one ext naming several unrelated formats): once the
+  // parsers above have run, name the specific variant the bytes/text prove, so
+  // the readout title is right (e.g. .nsf NES chiptune vs Lotus Notes database).
+  // A parser that already pinned a more specific app via _app wins (e.g. .pkg).
+  if (EXT_VARIANTS[ext] && !(extra && extra._app)) {
+    const vname = detectVariant(ext, head, ascii(head, 0, Math.min(head.length, 1024)), { specificOnly: true });
+    if (vname) {
+      h3El.textContent = vname;
+      appRow.lastChild.textContent = vname;
+      const v = EXT_VARIANTS[ext].variants.find((x) => x.name === vname);
+      if (v && v.tell) tbl.appendChild(rowHelp('Detected as', vname, v.tell));
+    }
+  }
 
   let extraFileList = null;
   if (extra) {
