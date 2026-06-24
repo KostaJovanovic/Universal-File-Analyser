@@ -48,8 +48,8 @@ const SITE = 'https://lab.valjdakosta.com';
 const _d = new Date();
 const TODAY = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`;
 
-const { catalogGrouped } = await import(pathToFileURL(join(ROOT, 'assets/js/core/formats.js')).href);
-const { EXT_PAGES } = await import(pathToFileURL(join(ROOT, 'tools/format-page-content.mjs')).href);
+const { catalogGrouped, EXT_VARIANTS } = await import(pathToFileURL(join(ROOT, 'assets/js/core/formats.js')).href);
+const { EXT_PAGES, VARIANT_FACTS } = await import(pathToFileURL(join(ROOT, 'tools/format-page-content.mjs')).href);
 // Extra "Did you know" bullets, keyed by lowercase ext -> [fact, ...]. A
 // generated-input sidecar (built in batches) so the 1000+ primary entries in
 // format-page-content.mjs stay hand-curated and untouched. Absent = no extras.
@@ -139,6 +139,29 @@ function capabilityBlocks(e, isFull) {
   return caps.join('\n            ');
 }
 
+// One full, self-contained body CARD per distinct format a genuinely-ambiguous
+// extension (EXT_VARIANTS) names - each with its own title, "what it is", "how to
+// tell it apart" and its OWN "Did you know" (per-variant fact from VARIANT_FACTS,
+// keyed by variant name). So /formats/pkg shows two complete cards - one for the
+// macOS installer, one for the Destiny package - not two rows in a shared card.
+function variantCards(variants, key) {
+  const facts = (VARIANT_FACTS && VARIANT_FACTS[key]) || {};
+  return variants.map((v) => {
+    const fact = facts[v.name];
+    const rows = [
+      `<div><dt>What it is</dt><dd>${esc(v.desc)}</dd></div>`,
+      v.tell ? `<div><dt>How to tell it apart</dt><dd>${esc(v.tell)}</dd></div>` : '',
+      fact ? `<div class="didyouknow"><dt>Did you know</dt><dd>${esc(fact)}</dd></div>` : '',
+    ].filter(Boolean).join('\n            ');
+    return `<div class="about-block fmt-variant-card">
+          <h3 class="fmt-variant-title">${esc(v.name)}</h3>
+          <dl class="about-caps">
+            ${rows}
+          </dl>
+        </div>`;
+  }).join('\n        ');
+}
+
 function relatedLinks(e) {
   const sibs = [...e.sibs].slice(0, 18);
   if (!sibs.length) return `Browse the <a href="/formats">full list of supported file types</a>.`;
@@ -196,7 +219,7 @@ const MAGIC_BYTES = {
   avi:['52 49 46 46','the "RIFF" container tag'],
 };
 
-function assembleFacts(key, meta, d, e, isFull) {
+function assembleFacts(key, meta, d, e, isFull, ambiguous) {
   const items = []; // { html, plain }
   if (meta.fact) {
     items.push({
@@ -215,24 +238,28 @@ function assembleFacts(key, meta, d, e, isFull) {
   const has = (...needles) => needles.some((n) => lower.some((f) => f.includes(n)));
   const push = (plain, html) => { items.push({ plain, html: html || esc(plain) }); lower.push(plain.toLowerCase()); };
 
-  if (ZIP_CONTAINERS.has(key) && !has('zip archive', 'a zip', 'is a zip', 'really a zip')) {
-    push(`Under the hood a .${d} file is really a ZIP archive - rename it to .zip and you can browse the files inside.`);
-  } else if (CFBF_CONTAINERS.has(key) && !has('compound file', 'ole compound', 'ole container')) {
-    push(`A .${d} file uses Microsoft's OLE Compound File container - the same wrapper as the legacy .doc and .xls binaries.`);
-  }
-  if (TEXT_FORMATS.has(key) && !has('plain text', 'text-based', 'human-readable', 'human readable', 'text file')) {
-    push(`A .${d} file is plain text, so you can open and edit it in any text editor.`);
-  }
-  const mime = MIME_TYPES[key];
-  if (mime && !has('mime', mime)) {
-    push(`On the web a .${d} file is served with the MIME type ${mime}.`,
-      `On the web a .${esc(d)} file is served with the MIME type <code>${esc(mime)}</code>.`);
-  }
-  const mg = MAGIC_BYTES[key];
-  if (mg && !has('signature', 'magic byte', mg[0].toLowerCase())) {
-    const tail = mg[1] ? ' - ' + mg[1] : '';
-    push(`Analyser spots a .${d} file by its signature bytes ${mg[0]}${tail}.`,
-      `Analyser spots a .${esc(d)} file by its signature bytes <code>${esc(mg[0])}</code>${esc(tail)}.`);
+  // Format-assuming auto-facts (container/text/MIME/magic) are skipped for an
+  // ambiguous extension - they would assert one format's traits as if universal.
+  if (!ambiguous) {
+    if (ZIP_CONTAINERS.has(key) && !has('zip archive', 'a zip', 'is a zip', 'really a zip')) {
+      push(`Under the hood a .${d} file is really a ZIP archive - rename it to .zip and you can browse the files inside.`);
+    } else if (CFBF_CONTAINERS.has(key) && !has('compound file', 'ole compound', 'ole container')) {
+      push(`A .${d} file uses Microsoft's OLE Compound File container - the same wrapper as the legacy .doc and .xls binaries.`);
+    }
+    if (TEXT_FORMATS.has(key) && !has('plain text', 'text-based', 'human-readable', 'human readable', 'text file')) {
+      push(`A .${d} file is plain text, so you can open and edit it in any text editor.`);
+    }
+    const mime = MIME_TYPES[key];
+    if (mime && !has('mime', mime)) {
+      push(`On the web a .${d} file is served with the MIME type ${mime}.`,
+        `On the web a .${esc(d)} file is served with the MIME type <code>${esc(mime)}</code>.`);
+    }
+    const mg = MAGIC_BYTES[key];
+    if (mg && !has('signature', 'magic byte', mg[0].toLowerCase())) {
+      const tail = mg[1] ? ' - ' + mg[1] : '';
+      push(`Analyser spots a .${d} file by its signature bytes ${mg[0]}${tail}.`,
+        `Analyser spots a .${esc(d)} file by its signature bytes <code>${esc(mg[0])}</code>${esc(tail)}.`);
+    }
   }
 
   // Backfill so every page carries at least three facts. These are derived from
@@ -277,8 +304,13 @@ function page(key, e, depth) {
   const fallback = isFull
     ? { name: '.' + d + ' file', blurb: `.${d} is a file format that Analyser can open and analyse in your browser.` }
     : { name: '.' + d + ' file (' + e.rows[0].label + ')', blurb: `.${d} is a ${e.rows[0].label} file (${e.rows[0].catLabel}). Analyser identifies a .${d} file and reads the metadata in its header, right in your browser.` };
-  const meta = EXT_PAGES[key] || fallback;
-  const facts = assembleFacts(key, meta, d, e, isFull);
+  // Ambiguous extension: one page, a titled section per distinct format. The
+  // curated summary becomes the lede (and meta/FAQ text), and the variant blocks
+  // replace the single auto capability block.
+  const variant = EXT_VARIANTS[key];
+  const baseMeta = EXT_PAGES[key] || fallback;
+  const meta = variant ? { name: baseMeta.name, blurb: variant.summary } : baseMeta;
+  const facts = assembleFacts(key, meta, d, e, isFull, !!variant);
   const factBody = facts.length === 1
     ? facts[0].html
     : `<ul class="dyk-list">${facts.map((f) => `<li>${f.html}</li>`).join('')}</ul>`;
@@ -426,9 +458,9 @@ ${siteNav(key)}
         <h2 class="section-head">What is a .${esc(d)} file?</h2>
         <p class="section-lede">${esc(meta.blurb)}</p>
 
-        <div class="about-block">
+        ${variant ? variantCards(variant.variants, key) + '\n        ' : ''}<div class="about-block">
           <dl class="about-caps">
-            ${factBlock}${capabilityBlocks(e, isFull)}${depthNote}
+            ${variant ? '' : factBlock + capabilityBlocks(e, isFull)}${depthNote}
             <div><dt>Open a .${esc(d)} file</dt><dd>Drag a .${esc(d)} file onto <a href="/">the Analyser home page</a> (or tap to pick one). ${openVerb} entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd>${relatedLinks(e)}</dd></div>
           </dl>

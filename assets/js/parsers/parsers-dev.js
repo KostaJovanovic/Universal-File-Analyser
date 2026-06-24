@@ -1305,7 +1305,121 @@ async function parseGitRev(file) {
   };
 }
 
+// ---------- Microsoft / OMG IDL (.idl) ----------
+// Interface Definition Language: COM/OLE type libraries (MIDL) and CORBA/OMG.
+// Walk the declarations and surface interfaces, coclasses, the type library and
+// the import list. The text itself is shown by the parse:'text' source preview.
+async function parseIdl(file) {
+  const text = (await file.text()).slice(0, 2_000_000);
+  if (!/\b(interface|coclass|library|dispinterface|import|importlib|module|typedef)\b/.test(text)) return null;
+  const names = (re) => [...text.matchAll(re)].map((m) => m[1]);
+  const interfaces = names(/\b(?:interface|dispinterface)\s+([A-Za-z_]\w*)/g);
+  const coclasses = names(/\bcoclass\s+([A-Za-z_]\w*)/g);
+  const libs = names(/\blibrary\s+([A-Za-z_]\w*)/g);
+  const imports = [...text.matchAll(/\bimport(?:lib)?\s*(?:\(\s*)?["']([^"']+)["']/g)].map((m) => m[1]);
+  const uuids = (text.match(/\buuid\s*\(/gi) || []).length;
+  const methods = (text.match(/\bHRESULT\b/g) || []).length;
+  const ms = /import\s+["']oaidl|["']ocidl|\bdispinterface\b|\bcoclass\b/.test(text);
+  const out = {
+    'Format': ms ? 'Microsoft COM / OLE interface definition (MIDL .idl)' : 'Interface Definition Language (.idl)',
+    'Interfaces': interfaces.length,
+  };
+  if (coclasses.length) out['Coclasses'] = coclasses.length;
+  if (libs.length) out['Type library'] = [...new Set(libs)].join(', ');
+  if (uuids) out['GUIDs declared'] = uuids;
+  if (methods) out['HRESULT methods'] = methods;
+  if (imports.length) out['Imports'] = [...new Set(imports)].slice(0, 12).join(', ');
+  const secs = [];
+  if (interfaces.length) secs.push({ title: 'Interfaces (' + interfaces.length + ')', node: preBlock([...new Set(interfaces)].slice(0, 200).join('\n')) });
+  if (coclasses.length) secs.push({ title: 'Coclasses (' + coclasses.length + ')', node: preBlock([...new Set(coclasses)].join('\n')) });
+  if (secs.length) out._sections = secs;
+  return out;
+}
+
+// ---------- Classic ASP (.asp) ----------
+// Active Server Pages: server-side code blocks (<% %>) plus the server language
+// from the <%@ Language %> directive or <script runat=server>. Distinct from the
+// .NET .aspx page already handled.
+async function parseAsp(file) {
+  const text = (await file.text()).slice(0, 2_000_000);
+  const codeBlocks = (text.match(/<%[^@=]/g) || []).length;
+  const exprBlocks = (text.match(/<%=/g) || []).length;
+  const serverScripts = [...text.matchAll(/<script[^>]*runat\s*=\s*["']?server/gi)].length;
+  const includes = [...text.matchAll(/<!--\s*#include\s+(?:file|virtual)\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]);
+  if (!codeBlocks && !exprBlocks && !serverScripts && !includes.length && !/<%@/.test(text)) return null;
+  const dir = text.match(/<%@\s*([^%]*?)%>/);
+  let lang = dir && (dir[1].match(/Language\s*=\s*["']?([A-Za-z]+)/i) || [])[1];
+  if (!lang) { const sl = text.match(/<script[^>]*language\s*=\s*["']?([A-Za-z]+)/i); if (sl) lang = sl[1]; }
+  const out = {
+    'Format': 'Classic ASP page (Active Server Pages)',
+    'Server language': lang || 'VBScript (default)',
+  };
+  if (codeBlocks) out['Server code blocks'] = codeBlocks;
+  if (exprBlocks) out['Inline expressions (<%=)'] = exprBlocks;
+  if (serverScripts) out['Server <script> blocks'] = serverScripts;
+  if (includes.length) out['Server-side includes'] = includes.length + ': ' + includes.slice(0, 8).join(', ');
+  return out;
+}
+
+// ---------- pkg-config (.pc) ----------
+// The metadata file pkg-config reads to emit compiler/linker flags for a library.
+async function parsePkgConfig(file) {
+  const text = (await file.text()).slice(0, 200_000);
+  if (!/^\s*(Name|Description|Version|Cflags|Libs)\s*:/mi.test(text)) return null;
+  const field = (k) => { const m = text.match(new RegExp('^\\s*' + k + '\\s*:\\s*(.+)$', 'mi')); return m ? m[1].trim() : null; };
+  const vars = [...text.matchAll(/^\s*([A-Za-z_]\w*)\s*=\s*.+$/gm)].map((m) => m[1]);
+  const out = { 'Format': 'pkg-config metadata (.pc)' };
+  for (const k of ['Name', 'Description', 'Version', 'URL', 'Requires', 'Requires.private', 'Conflicts', 'Libs', 'Libs.private', 'Cflags']) {
+    const v = field(k); if (v) out[k] = v;
+  }
+  if (vars.length) out['Variables'] = [...new Set(vars)].join(', ');
+  return out;
+}
+
+// ---------- DraStic shader (.dsd) ----------
+// The Nintendo DS emulator's GLSL ES shader bundle: <vertex> and <fragment>
+// sections wrapping shader source. (Unrelated to DSD audio, which is .dsf/.dff.)
+async function parseDsdShader(file) {
+  const text = (await file.text()).slice(0, 500_000);
+  const hasV = /<vertex>/i.test(text), hasF = /<fragment>/i.test(text);
+  if (!hasV && !hasF) return null;
+  const out = {
+    'Format': 'DraStic shader (GLSL ES)',
+    'Stages': [hasV && 'vertex', hasF && 'fragment'].filter(Boolean).join(' + '),
+  };
+  const defines = (text.match(/^\s*#define\b/gm) || []).length;
+  const uniforms = (text.match(/\buniform\b/g) || []).length;
+  const attribs = (text.match(/\battribute\b/g) || []).length;
+  const varyings = (text.match(/\bvarying\b/g) || []).length;
+  if (defines) out['#define directives'] = defines;
+  if (uniforms) out['Uniforms'] = uniforms;
+  if (attribs) out['Attributes'] = attribs;
+  if (varyings) out['Varyings'] = varyings;
+  return out;
+}
+
+// ---------- generic template (.template) ----------
+// A text file with ${...} / @...@ placeholders meant to be substituted at build
+// time (CMake configure, Meson, autotools, CI templates). Surfaces the engine
+// (Meson recognised by its project() call) and the placeholders it expects.
+async function parseTemplate(file) {
+  const text = (await file.text()).slice(0, 500_000);
+  const ph = [...new Set([...text.matchAll(/\$\{(\w+)\}|@(\w+)@/g)].map((m) => m[1] || m[2]))];
+  const isMeson = /\bproject\s*\(/.test(text) && /\bmeson|get_compiler|dependency\b/.test(text);
+  const isCMake = /@\w+@/.test(text) && /cmake/i.test(text);
+  const out = {
+    'Format': isMeson ? 'Meson build template' : isCMake ? 'CMake configure template' : 'Text template (placeholder substitution)',
+  };
+  if (ph.length) out['Placeholders'] = ph.length + ': ' + ph.slice(0, 16).join(', ');
+  return out;
+}
+
 export const PARSERS = {
+  idl: (c) => parseIdl(c.file),
+  asp: (c) => parseAsp(c.file),
+  pc: (c) => parsePkgConfig(c.file),
+  dsd: (c) => parseDsdShader(c.file),
+  template: (c) => parseTemplate(c.file),
   onnx: (c) => parseOnnx(c.file),
   node: (c) => parseNativeBinary(c.file, c.ext),
   dylib: (c) => parseNativeBinary(c.file, c.ext),

@@ -601,7 +601,12 @@ export function h3help(title, helpHtml) {
 }
 
 export function fileExt(name) {
-  const m = (name || '').match(/\.([^.]+)$/);
+  // Strip a trailing copy marker that file managers append AFTER the real
+  // extension, which would otherwise hide it: "ut.c (1)" -> "ut.c",
+  // "report.pdf - Copy" -> "report.pdf". Done before the extension is read so
+  // the duplicate still classifies as its real type.
+  const n = (name || '').replace(/ (?:\(\d+\)|-\s*[Cc]opy)$/, '');
+  const m = n.match(/\.([^.]+)$/);
   return m ? m[1].toLowerCase() : '';
 }
 

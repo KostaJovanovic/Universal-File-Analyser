@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 167;
+const COMMIT_COUNT = 168;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -87,7 +87,7 @@ import {
   PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, CSV_EXTS, SVG_EXTS,
   renderFmtOverlay, renderAboutFormats, formatCount,
   CATEGORIES, categoryCounts, catalogGrouped,
-  formatPageHref, hasFormatPage
+  formatPageHref, hasFormatPage, detectVariant
 } from './formats.js';
 
 function $(id) { return document.getElementById(id); }
@@ -283,6 +283,83 @@ async function sniffFileType(file) {
   const start = a(0, Math.min(b.length, 220)).trimStart();
   if (start.startsWith('<svg') || (start.includes('<svg') && start.includes('xmlns'))) return { kind: 'svg', ext: 'svg', label: 'SVG image' };
   return null;
+}
+
+// Resolve a file's true type from its CONTENT - the niche text/game magics first,
+// then the broad sniffFileType() magic table, then git objects and the CSV
+// heuristic. The SINGLE source of truth shared by the drop path (handleFile) and
+// the folder analysability scan (folder.js via window._anrResolveContent), so the
+// scan's verdict can never drift from what actually opens. Returns
+// { kind, sniffedExt }; kind is a ROUTES key, or 'unknown' when nothing matched
+// (the caller then keeps the file's extension-based kind, e.g. 'extensionless').
+async function resolveByContent(file) {
+  let kind = 'unknown';
+  let sniffedExt = null;
+  try {
+    const head = new Uint8Array(await file.slice(0, 128).arrayBuffer());
+    const a = (s, l) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
+    const lowerExt = fileExt(file.name);
+    const lowerName = (file.name || '').toLowerCase().replace(/^.*[\\/]/, '');
+    if (a(0, 4) === '%PDF') kind = 'pdf';
+    else if (head[0] === 0x50 && head[1] === 0x4B) kind = 'zip';
+    else if (a(0, 12) === 'IDEA - MAKER' || a(0, 14) === 'IEDA - PROFILE') { kind = 'proprietary'; sniffedExt = 'idea'; }
+    else if (head[0] === 0x78 && head[1] === 0x56 && head[2] === 0x34 && head[3] === 0x12 &&
+             head[12] === 0x44 && head[13] === 0x4A && head[14] === 0x49) { kind = 'proprietary'; sniffedExt = 'djifw'; }
+    else if (lowerExt === 'bin' && head[0] === 0x01 && head[1] === 0x58 && head[2] === 0x23 && head[3] === 0x11) { kind = 'proprietary'; sniffedExt = 'oodledict'; }
+    else if (lowerExt === 'bin' && head[0] === 0x42 && head[1] === 0x89 && head[2] === 0xE3 && head[3] === 0x0D) { kind = 'proprietary'; sniffedExt = 'addrcatalog'; }
+    else if (lowerExt === 'dat' && head[0] === 0xAF && head[1] === 0x1B && head[2] === 0xB1 && head[3] === 0xFA) { kind = 'proprietary'; sniffedExt = 'il2cppmeta'; }
+    else if (lowerExt === 'cff' && (lowerName === 'citation.cff' || /^[﻿#\s]*(cff-version|#|abstract|authors|title)\b/i.test(a(0, 48)))) { kind = 'proprietary'; sniffedExt = 'citationcff'; }
+    else if (lowerExt === 'pth' && !head.slice(0, 64).includes(0)) { kind = 'proprietary'; sniffedExt = 'pythonpath'; }
+    else if (lowerExt === 'manifest' && a(0, 19) === 'ManifestFileVersion') { kind = 'proprietary'; sniffedExt = 'unitymanifest'; }
+    else if (lowerExt === 'cache' && file.size >= 16 && (await file.slice(file.size - 8, file.size - 4).text().catch(() => '')) === 'RDHS') { kind = 'proprietary'; sniffedExt = 'redshadercache'; }
+    else if ((lowerExt === 'dat' || lowerName === 'unins000.dat') && a(0, 24) === 'Inno Setup Uninstall Log') { kind = 'proprietary'; sniffedExt = 'innouninstall'; }
+    else if (lowerExt === 'res' && !head.slice(0, 64).includes(0) && /^[﻿\s]*(["/]|[A-Za-z_])/.test(a(0, 64)) && /[{}]/.test(await file.slice(0, 2048).text().catch(() => ''))) { kind = 'proprietary'; sniffedExt = 'valveres'; }
+    else if (a(0, 14) === 'ANDROID BACKUP') { kind = 'proprietary'; sniffedExt = 'ab'; }
+    else {
+      const headStr = a(0, Math.min(head.length, 128));
+      if (headStr.trimStart().startsWith('<svg') || (headStr.includes('<svg') && headStr.includes('xmlns'))) kind = 'svg';
+      else if (/^\s*(<!doctype html|<html[\s>])/i.test(headStr)) { kind = 'proprietary'; sniffedExt = 'html'; }
+    }
+    // Broad magic table (images, audio, video, archives, PSD, ELF/EXE, DICOM, ...):
+    // routes a PNG saved as ".icon" or with no extension to the photo viewer, etc.
+    if (kind === 'unknown') {
+      const s = await sniffFileType(file);
+      if (s && s.kind) { kind = s.kind; if (s.kind === 'proprietary' || s.kind === 'comic') sniffedExt = s.ext; }
+    }
+    // Git loose objects / packfiles (zlib or PACK) - content-only, no extension.
+    if (kind === 'unknown') { const git = await sniffGitObject(file); if (git) kind = 'git-object'; }
+    // CSV / TSV heuristic: consistent comma/tab counts across the first lines.
+    if (kind === 'unknown') {
+      const peekText = await file.slice(0, 2048).text().catch(() => '');
+      const lines = peekText.split('\n').filter((l) => l.trim()).slice(0, 10);
+      if (lines.length >= 2) {
+        const commas = lines.map((l) => (l.match(/,/g) || []).length);
+        const tabs = lines.map((l) => (l.match(/\t/g) || []).length);
+        const avgCommas = commas.reduce((s, n) => s + n, 0) / commas.length;
+        const avgTabs = tabs.reduce((s, n) => s + n, 0) / tabs.length;
+        const commaConsistent = avgCommas >= 1 && commas.every((c) => Math.abs(c - avgCommas) <= 1);
+        const tabConsistent = avgTabs >= 1 && tabs.every((c) => Math.abs(c - avgTabs) <= 1);
+        if (commaConsistent || tabConsistent) kind = 'csv';
+      }
+    }
+  } catch (_) {}
+  return { kind, sniffedExt };
+}
+
+// Whether a file would render as readable text rather than a raw hex dump - the
+// same rule the unknown/extensionless viewer uses (renderUnknown): a UTF-16 BOM,
+// or >85% printable bytes in the head. Used by the folder scan so an extensionless
+// LICENSE / README / Makefile passes while a binary that only opens as hex is
+// flagged. Shared via window._anrReadableText.
+async function isReadableText(file) {
+  try {
+    const b = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+    if (!b.length) return true;   // empty file opens (nothing to show), not a hex dump
+    if (b.length >= 2 && ((b[0] === 0xFF && b[1] === 0xFE) || (b[0] === 0xFE && b[1] === 0xFF))) return true;
+    let printable = 0;
+    for (const c of b) if (c === 9 || c === 10 || c === 13 || (c >= 0x20 && c <= 0x7E)) printable++;
+    return printable / b.length > 0.85;
+  } catch (_) { return false; }
 }
 
 // Bottom-of-window suggestion popup (same look as the drop loader) offering to
@@ -595,6 +672,25 @@ const UNITY_EXTS = new Set([
 // G-code from 3D-print slicers and CNC/CAM toolpaths - reconstructed in the
 // gcode viewer (extruded moves drawn as the printed shape, or cut moves for CNC).
 const GCODE_EXTS = new Set(['gcode', 'gco', 'g', 'ngc', 'nc', 'tap', 'cnc']);
+
+// Extensions that name more than one unrelated format and whose classifyFile()
+// route (by extension alone) is tuned for the COMMON variant - so a file that is
+// actually the OTHER variant would be fed to the wrong viewer (TypeScript .ts to
+// the video player, NetCDF .nc to the G-code viewer). For each, `primary` is the
+// variant the default renderer handles (from EXT_VARIANTS) and `to` is the safe
+// fallback kind when the bytes prove a different variant: 'plaintext' for a
+// text/source variant, 'unknown' for a binary one (hex + identify). detectVariant()
+// (in formats.js) is the single source of truth for which variant the bytes are.
+const VARIANT_REROUTE = {
+  ts:  { primary: 'MPEG transport stream',      to: 'plaintext' }, // TypeScript source
+  dts: { primary: 'DTS audio',                  to: 'plaintext' }, // Device Tree Source
+  key: { primary: 'Apple Keynote presentation', to: 'plaintext' }, // PEM key (text)
+  obj: { primary: 'Wavefront 3D model',         to: 'unknown' },   // compiled object (binary)
+  nc:  { primary: 'CNC G-code',                 to: 'unknown' },   // NetCDF (binary)
+  md:  { primary: 'Markdown document',          to: 'unknown' },   // Mega Drive ROM (binary)
+  mat: { primary: 'Unity material',             to: 'unknown' },   // MATLAB MAT-file (binary)
+  mod: { primary: 'Tracker module',             to: 'unknown' },   // JVC camcorder video (MPEG-2)
+};
 
 function classifyFile(file) {
   const t = (file.type || '').toLowerCase();
@@ -1523,7 +1619,10 @@ function buildTrendChart(chartEl, daily, baseline) {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
-  { range: '4.16', notes: [
+  { range: '4.16 - 4.17', notes: [
+    'Extensions shared by unrelated formats (a .pkg is a macOS installer or a Destiny package, a .key a Keynote or an encryption key) now get a guide page with a separate, self-contained card for each meaning, its own "Did you know" and all.',
+    'The folder openability scan judges each file by its contents, not just its name - a misnamed or extensionless file it can read counts as openable, an unreadable one is flagged - and more developer and Android/Samsung phone formats are recognised.',
+    'A photo\'s sharpness score now measures focus on its own terms rather than being skewed by scene contrast, and the folder breakdown pop-up no longer closes when you scroll inside it.',
     'Files that are not what they claim are flagged on open - a program renamed to look like a photo, or any file whose contents do not match its extension.',
     'Data hidden after a file\'s real end is detected, a common way to smuggle one file inside another, for JPEG, PNG, GIF, BMP, WAV and ZIP files.',
     'A file\'s integrity panel adds MD5, SHA-1 and SHA-512 fingerprints on demand, alongside the existing SHA-256.',
@@ -1978,111 +2077,33 @@ function boot() {
       } catch (_) {}
     }
 
-    // For files classified as 'unknown' or 'extensionless', check magic bytes for
-    // PDF / ZIP / SVG / HTML / CSV - so a recognised type auto-routes even with no
-    // (or a wrong) extension. Anything left 'extensionless' renders as text below.
-    if (!force && (kind === 'unknown' || kind === 'extensionless')) {
+    // Ambiguous-extension reroute: classifyFile() routes these by extension to the
+    // common variant's viewer, so sniff the bytes and divert a file that is really
+    // the OTHER variant (a TypeScript .ts, a NetCDF .nc, ...) to a safe view rather
+    // than the wrong heavy renderer. See VARIANT_REROUTE / detectVariant().
+    const _vr = !force && VARIANT_REROUTE[fileExt(file.name)];
+    if (_vr) {
       try {
-        const head = new Uint8Array(await file.slice(0, 128).arrayBuffer());
-        const a = (s, l) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
-        const lowerExt = fileExt(file.name);
-        const lowerName = (file.name || '').toLowerCase().replace(/^.*[\\/]/, '');
-        if (a(0, 4) === '%PDF') kind = 'pdf';
-        else if (head[0] === 0x50 && head[1] === 0x4B) kind = 'zip';
-        // Raise3D ideaMaker writes a distinctive ASCII signature; profile exports
-        // are often saved with a generic .bin extension, so route them by magic.
-        else if (a(0, 12) === 'IDEA - MAKER' || a(0, 14) === 'IEDA - PROFILE') {
-          kind = 'proprietary';
-          sniffedExt = 'idea';
-        } else if (head[0] === 0x78 && head[1] === 0x56 && head[2] === 0x34 && head[3] === 0x12 &&
-                   head[12] === 0x44 && head[13] === 0x4A && head[14] === 0x49) {
-          // DJI firmware container (magic 0x12345678 + "DJI") - shipped as a generic
-          // .bin, so route it by magic to the firmware identifier.
-          kind = 'proprietary';
-          sniffedExt = 'djifw';
-        } else if (lowerExt === 'bin' && head[0] === 0x01 && head[1] === 0x58 && head[2] === 0x23 && head[3] === 0x11) {
-          // Oodle-compressed REDengine blob (Cyberpunk's oodle_dictionary.bin) -
-          // a generic .bin, routed by its 01 58 23 11 magic.
-          kind = 'proprietary';
-          sniffedExt = 'oodledict';
-        } else if (lowerExt === 'bin' && head[0] === 0x42 && head[1] === 0x89 && head[2] === 0xE3 && head[3] === 0x0D) {
-          // Unity Addressables catalog (catalog.bin) - BinaryStorageBuffer magic.
-          kind = 'proprietary';
-          sniffedExt = 'addrcatalog';
-        } else if (lowerExt === 'dat' && head[0] === 0xAF && head[1] === 0x1B && head[2] === 0xB1 && head[3] === 0xFA) {
-          // IL2CPP global-metadata.dat - magic 0xFAB11BAF, a generic .dat.
-          kind = 'proprietary';
-          sniffedExt = 'il2cppmeta';
-        } else if (lowerExt === 'cff' && (lowerName === 'citation.cff' ||
-                   /^[﻿#\s]*(cff-version|#|abstract|authors|title)\b/i.test(a(0, 48)))) {
-          // Citation File Format is YAML text; a binary CFF (Compact Font Format)
-          // starts with version bytes. Route only the text citation here.
-          kind = 'proprietary';
-          sniffedExt = 'citationcff';
-        } else if (lowerExt === 'pth' && !head.slice(0, 64).includes(0)) {
-          // A site-packages .pth is a tiny text path-config file; a PyTorch .pth
-          // is a ZIP (caught above) or pickle (binary - left as unknown). Route
-          // only the text form to the path-config view.
-          kind = 'proprietary';
-          sniffedExt = 'pythonpath';
-        } else if (lowerExt === 'manifest' && a(0, 19) === 'ManifestFileVersion') {
-          // Unity asset bundle manifest (text) - the .manifest extension is also a
-          // Windows side-by-side / ClickOnce XML manifest, so gate on the marker.
-          kind = 'proprietary';
-          sniffedExt = 'unitymanifest';
-        } else if (lowerExt === 'cache' && file.size >= 16 &&
-                   (await file.slice(file.size - 8, file.size - 4).text().catch(() => '')) === 'RDHS') {
-          // REDengine compiled shader cache (shaderPS5.cache etc.) - a generic
-          // .cache. The head is a per-file hash, so route by the trailing "RDHS"
-          // footer magic instead.
-          kind = 'proprietary';
-          sniffedExt = 'redshadercache';
-        } else if ((lowerExt === 'dat' || lowerName === 'unins000.dat') && a(0, 24) === 'Inno Setup Uninstall Log') {
-          // Inno Setup uninstall log (unins000.dat) - an installer bookkeeping
-          // file shipped with a generic .dat extension.
-          kind = 'proprietary';
-          sniffedExt = 'innouninstall';
-        } else if (lowerExt === 'res' && !head.slice(0, 64).includes(0) &&
-                   /^[﻿\s]*(["/]|[A-Za-z_])/.test(a(0, 64)) &&
-                   /[{}]/.test(await file.slice(0, 2048).text().catch(() => ''))) {
-          // Valve resource / UI layout (.res) is text KeyValues; a Windows compiled
-          // .res is binary (NUL bytes in the head). Route only the text form here.
-          kind = 'proprietary';
-          sniffedExt = 'valveres';
-        } else {
-          // Check for SVG: may start with <svg or <?xml ... <svg
-          const headStr = a(0, Math.min(head.length, 128));
-          if (headStr.trimStart().startsWith('<svg') || (headStr.includes('<svg') && headStr.includes('xmlns'))) {
-            kind = 'svg';
-          } else if (/^\s*(<!doctype html|<html[\s>])/i.test(headStr)) {
-            // Extensionless HTML (e.g. a git blob holding a web page): open it in the
-            // HTML view rather than dropping to a raw hex dump.
-            kind = 'proprietary';
-            sniffedExt = 'html';
-          }
-        }
-        // Git objects: loose objects (zlib "<type> <size>\0…"), packfiles (PACK)
-        // and pack indexes (\377tOc). Loose objects are extensionless, so this
-        // content sniff is the only way to route them.
-        if (kind === 'unknown' || kind === 'extensionless') {
-          const git = await sniffGitObject(file);
-          if (git) kind = 'git-object';
-        }
-        // CSV heuristic: check if lines have consistent comma/tab counts
-        if (kind === 'unknown' || kind === 'extensionless') {
-          const peekText = await file.slice(0, 2048).text().catch(() => '');
-          const lines = peekText.split('\n').filter((l) => l.trim()).slice(0, 10);
-          if (lines.length >= 2) {
-            const commas = lines.map((l) => (l.match(/,/g) || []).length);
-            const tabs = lines.map((l) => (l.match(/\t/g) || []).length);
-            const avgCommas = commas.reduce((s, n) => s + n, 0) / commas.length;
-            const avgTabs = tabs.reduce((s, n) => s + n, 0) / tabs.length;
-            const commaConsistent = avgCommas >= 1 && commas.every((c) => Math.abs(c - avgCommas) <= 1);
-            const tabConsistent = avgTabs >= 1 && tabs.every((c) => Math.abs(c - avgTabs) <= 1);
-            if (commaConsistent || tabConsistent) kind = 'csv';
-          }
-        }
+        const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
+        if (token.cancelled) return;
+        let txt = ''; for (let i = 0; i < head.length; i++) txt += String.fromCharCode(head[i]);
+        const vname = detectVariant(fileExt(file.name), head, txt);
+        if (vname && vname !== _vr.primary) kind = _vr.to;
       } catch (_) {}
+    }
+
+    // For files classified as 'unknown' or 'extensionless', resolve the true type
+    // from the bytes (PDF/ZIP/image/git/CSV/the niche game+dev magics) via the
+    // shared resolver, so a recognised type auto-routes even with no (or a wrong)
+    // extension. Nothing recognised: keep the original kind - 'extensionless'
+    // still renders as text below, 'unknown' as a hex dump.
+    if (!force && (kind === 'unknown' || kind === 'extensionless')) {
+      const r = await resolveByContent(file);
+      if (token.cancelled) return;
+      if (r.kind && r.kind !== 'unknown') {
+        kind = r.kind;
+        if (r.sniffedExt) sniffedExt = r.sniffedExt;
+      }
     }
 
     // Offer to re-analyse as the sniffed true type when the file has no extension
@@ -2360,6 +2381,10 @@ function boot() {
   // that drifts out of sync. Runtime hook (not a static import) to avoid an
   // app.js <-> folder.js import cycle.
   window._anrClassify = classifyFile;
+// Shared with folder.js's analysability scan so its verdict matches what actually
+// opens: the content resolver (magic/text/git/CSV) and the readable-text test.
+window._anrResolveContent = resolveByContent;
+window._anrReadableText = isReadableText;
 
   // "Analyse next file?" (shown once a file is loaded) reloads to a clean page.
   const analyseNextBtn = $('analyseNext');

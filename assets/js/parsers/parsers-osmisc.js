@@ -544,11 +544,69 @@ function identSdb() {
   return { 'Format': 'Windows Shim Database (.sdb)', 'Note': 'Application Compatibility shim database. Identification only.' };
 }
 
+// ---------- Android shared-preferences XML / GCam config (.agc) ----------
+// Android stores app settings as <map> XML (<string>/<int>/<boolean>/<float>
+// children). Google Camera ports (GCam) ship their tuning as .agc files in this
+// exact shape, so read the entry counts by type and the key list.
+async function parseAndroidPrefs(file, ext) {
+  const text = (await file.text()).slice(0, 4_000_000);
+  if (!/<map\b/.test(text)) return null;
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.querySelector('parsererror')) return null;
+  const map = doc.querySelector('map');
+  if (!map) return null;
+  const kids = Array.from(map.children);
+  const byTag = {};
+  for (const k of kids) byTag[k.tagName] = (byTag[k.tagName] || 0) + 1;
+  const gcam = ext === 'agc' || /\b(lib_luma|sabre|hdr|libpatcher|saturation|awb)\b/i.test(text);
+  const out = {
+    'Format': gcam ? 'Google Camera (GCam) config (.agc)' : 'Android shared-preferences XML',
+    'Entries': kids.length,
+  };
+  if (Object.keys(byTag).length) out['By type'] = Object.entries(byTag).map(([k, v]) => k + ': ' + v).join('   ');
+  const names = kids.map((k) => k.getAttribute('name')).filter(Boolean);
+  if (names.length) out._sections = [{ title: 'Keys (' + names.length + ')', node: preBlock(names.slice(0, 400).join('\n')) }];
+  return out;
+}
+
+// ---------- Samsung Secure Folder / Smart Switch encrypted (.penc / .enc) ----------
+// Knox-encrypted blobs from a Samsung phone backup. .penc (packed encrypted app)
+// has a fixed 00 10 00 10 header; .enc (Secure Folder self item) has none. The
+// payload is AES-encrypted with a device-bound key, so this is identification only.
+async function parseSamsungEncrypted(file, ext) {
+  const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  const penc = head[0] === 0x00 && head[1] === 0x10 && head[2] === 0x00 && head[3] === 0x10;
+  const out = {
+    'Format': ext === 'penc'
+      ? 'Samsung Secure Folder encrypted package (.penc)'
+      : 'Samsung Secure Folder / Smart Switch encrypted item (.' + ext + ')',
+    'Encryption': 'AES (Samsung Knox), device-bound key',
+    'Size': fmtBytes(file.size),
+  };
+  if (penc) out['Header'] = '00 10 00 10';
+  out['Note'] = 'Encrypted on a Samsung phone (Secure Folder / Smart Switch). The original (often an APK or app data) cannot be decrypted off-device.';
+  return out;
+}
+
+// ---------- Samsung Smart Switch backup container (.bk) ----------
+async function parseSamsungBackup(file) {
+  return {
+    'Format': 'Backup container (.bk)',
+    'Likely origin': 'Samsung Smart Switch / Kies device backup',
+    'Size': fmtBytes(file.size),
+    'Note': 'A per-device backup container (such as AppList.bk), usually compressed or encrypted. Contents are not unpacked in-browser; .bk is also a generic backup suffix used by other tools.',
+  };
+}
+
 // ---------- dispatch ----------
 export const PARSERS = {
   opml: (c) => parseOpml(c.file),
   rss: (c) => parseFeed(c.file),
   atom: (c) => parseFeed(c.file),
+  agc: (c) => parseAndroidPrefs(c.file, c.ext),
+  penc: (c) => parseSamsungEncrypted(c.file, c.ext),
+  enc: (c) => parseSamsungEncrypted(c.file, c.ext),
+  bk: (c) => parseSamsungBackup(c.file),
   desktop: (c) => parseDesktop(c.file),
   nfo: (c) => parseNfo(c.file),
   service: (c) => parseService(c.file),

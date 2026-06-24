@@ -1149,6 +1149,54 @@ async function parseXar(file, ext) {
   return out;
 }
 
+// ---------- Bungie Tiger engine package (.pkg - Destiny / Destiny 2) ----------
+// Destiny ships its assets in "Tiger" engine .pkg files (not Apple XAR despite the
+// extension). The header is a small fixed record: a u16 format version, the u16
+// package id at 0x10 (the same id hex-encoded in the filename, e.g.
+// w64_sr_audio_02b8_0.pkg -> id 0x02b8), and a u32 Unix build timestamp at 0x20.
+// The entry/block tables that follow are proprietary, so this is a header read.
+const TIGER_PLATFORM = { w64: 'Windows (x64)', w32: 'Windows (x86)', ps4: 'PlayStation 4', ps5: 'PlayStation 5', xb1: 'Xbox One', xbs: 'Xbox Series', xboxone: 'Xbox One' };
+function parseTigerPkg(head, file) {
+  if (head.length < 0x24) return null;
+  const r = new Reader(head, true); // little-endian
+  const version = r.u16();           // 0x00 - format version (0x0035 on current D2)
+  // Sanity gate: known Tiger header shape is version<0x100 with 0x0002 at 0x02.
+  const tag2 = head[2] | (head[3] << 8);
+  if (version === 0 || version >= 0x100 || tag2 !== 0x0002) return null;
+  const pkgId = head[0x10] | (head[0x11] << 8);
+  // Cross-check against the id baked into Bungie's filename (..._<id>_<patch>.pkg).
+  const m = /_([0-9a-f]{4})_(\d+)\.pkg$/i.exec(file.name || '');
+  const nameId = m ? parseInt(m[1], 16) : null;
+  if (nameId !== null && nameId !== pkgId) return null; // not a Tiger package
+  const out = {
+    'Format': 'Bungie Tiger engine package (Destiny / Destiny 2)',
+    '_app': 'Destiny package (Bungie Tiger engine)',
+    'Header version': '0x' + version.toString(16).padStart(4, '0'),
+    'Package ID': '0x' + pkgId.toString(16).padStart(4, '0') + ' (' + pkgId + ')',
+  };
+  if (m) {
+    out['Patch / sequence'] = m[2];
+    const plat = (file.name.split('_')[0] || '').toLowerCase();
+    if (TIGER_PLATFORM[plat]) out['Platform'] = TIGER_PLATFORM[plat];
+  }
+  // u32 LE Unix build timestamp at 0x20 (decodes to the build date for each patch).
+  const ts = head[0x20] | (head[0x21] << 8) | (head[0x22] << 16) | (head[0x23] * 0x1000000);
+  if (ts > 0x40000000 && ts < 0x90000000) out['Build date'] = fmtDate(new Date(ts * 1000));
+  out['Size'] = fmtBytes(file.size);
+  out['Note'] = 'Tiger packages store assets (audio, models, textures, strings) in a proprietary entry/block table that is not unpacked in-browser - header identification only.';
+  return out;
+}
+
+// Dispatcher for the .pkg / .mpkg extension: Apple flat installers are XAR
+// archives; Destiny's same-extension files are Bungie Tiger packages. Sniff the
+// magic and route to whichever the bytes prove (XAR 'xar!' wins, else Tiger).
+async function parsePkg(file, ext, head) {
+  if (ascii(head, 0, 4) === 'xar!') return parseXar(file, ext);
+  const tiger = parseTigerPkg(head, file);
+  if (tiger) return tiger;
+  return parseXar(file, ext); // fall back (lets XAR report its own header read)
+}
+
 // ---------- lzop (.lzo) ----------
 // lzop file: 9-byte magic, then a big-endian header (version, method, level,
 // flags, optional mtime/mode/name). One of the few LZO-framed formats with a
@@ -1297,7 +1345,38 @@ async function parseBr(file) {
 function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
 
 // ---------- dispatch ----------
+// ---------- Android OBB (.obb) expansion file ----------
+// The APK "opaque binary blob" expansion. Several encodings exist: a plain ZIP
+// (the common case - list it), an encrypted/jobb FAT image, or a game-specific
+// bundle (Unity, custom). Detect the container and, when it is a ZIP, show the
+// member tree; otherwise surface the leading signature.
+async function parseObb(file) {
+  const head = await readBytes(file, 16);
+  const out = { 'Format': 'Android APK expansion file (OBB)', 'Size': fmtBytes(file.size) };
+  if (head[0] === 0x50 && head[1] === 0x4B) {
+    out['Container'] = 'ZIP';
+    try {
+      const zip = await openZip(file);
+      if (zip && zip.entries) {
+        out['Members'] = zip.entries.length.toLocaleString();
+        const items = zip.entries.slice(0, 1000).map((e) => {
+          const dir = /\/$/.test(e.name);
+          return { name: e.name, size: dir ? null : e.uncompSize, extra: dir ? 'directory' : 'file' };
+        });
+        if (items.length) out._sections = [fileListSection('Files (' + items.length + (zip.entries.length > items.length ? '+' : '') + ')', items, true)];
+      }
+    } catch (_) { out['Note'] = 'ZIP-based OBB; member list could not be read.'; }
+    return out;
+  }
+  const fourcc = ascii(head, 0, 4);
+  const printable = /^[\x20-\x7e]{2,4}/.test(fourcc);
+  if (printable) out['Container signature'] = fourcc.replace(/[^\x20-\x7e]/g, '.') + (fourcc === 'WBND' ? ' (game-specific bundle)' : '');
+  out['Note'] = 'Not a ZIP-based OBB - this is an encrypted (jobb) or game-specific bundle, so its contents are not unpacked in-browser.';
+  return out;
+}
+
 export const PARSERS = {
+  obb: (c) => parseObb(c.file),
   tar: (c) => parseTar(c.file),
   gz: (c) => parseGzip(c.file, c.ext),
   tgz: (c) => parseGzip(c.file, c.ext),
@@ -1332,8 +1411,8 @@ export const PARSERS = {
   cab: (c) => parseCab(c.file),
   msu: (c) => parseCab(c.file),                  // MS Update Standalone is a CAB
   xar: (c) => parseXar(c.file, c.ext),
-  pkg: (c) => parseXar(c.file, c.ext),           // macOS flat installer (XAR)
-  mpkg: (c) => parseXar(c.file, c.ext),          // macOS meta-installer (XAR)
+  pkg: (c) => parsePkg(c.file, c.ext, c.head),   // macOS XAR installer or Bungie Tiger package
+  mpkg: (c) => parsePkg(c.file, c.ext, c.head),  // macOS meta-installer (XAR)
   snap: (c) => parseSnap(c.file, c.ext),
   sit: (c) => parseSit(c.head),
   sitx: (c) => parseSit(c.head),
