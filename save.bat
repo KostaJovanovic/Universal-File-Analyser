@@ -12,9 +12,10 @@ if /i "%ACTION%"=="--commit"  (set COMMIT_ONLY=1 & set ACTION=save)
 if /i "%ACTION%"=="--no-push" (set COMMIT_ONLY=1 & set ACTION=save)
 if /i "%ACTION%"=="save"   goto save
 if /i "%ACTION%"=="commit" goto save
-if /i "%ACTION%"=="push"   goto push
-if /i "%ACTION%"=="pull"   goto pull
-if /i "%ACTION%"=="backup" goto backup
+if /i "%ACTION%"=="push"    goto push
+if /i "%ACTION%"=="pull"    goto pull
+if /i "%ACTION%"=="backup"  goto backup
+if /i "%ACTION%"=="samples" goto samples
 
 :menu
 echo.
@@ -25,15 +26,17 @@ echo   2. Commit  (add + commit, no push)
 echo   3. Push    (push current branch)
 echo   4. Pull    (pull current branch)
 echo   5. Backup  (download stats to local CSV)
-echo   6. Quit
+echo   6. Samples (rebuild /samples gallery from samples\ folder)
+echo   7. Quit
 echo.
-set /p CHOICE=Choose [1-6]:
+set /p CHOICE=Choose [1-7]:
 if "%CHOICE%"=="1" goto save
 if "%CHOICE%"=="2" (set COMMIT_ONLY=1 & goto save)
 if "%CHOICE%"=="3" goto push
 if "%CHOICE%"=="4" goto pull
 if "%CHOICE%"=="5" goto backup
-if "%CHOICE%"=="6" exit /b 0
+if "%CHOICE%"=="6" goto samples
+if "%CHOICE%"=="7" exit /b 0
 echo Invalid choice.
 goto menu
 
@@ -83,6 +86,12 @@ rem a real viewer/deep analysis - depth 'full' in the catalog) plus sitemap-form
 echo Prerendering per-format landing pages...
 node --no-warnings tools/prerender-format-pages.mjs
 if errorlevel 1 echo WARNING: per-format page prerender failed - committing the existing copies.
+
+rem Rebuild the /samples gallery from the files in the samples/ directory, so the
+rem clickable example cards always match the folder. Non-fatal.
+echo Prerendering /samples gallery...
+node --no-warnings tools/prerender-samples.mjs
+if errorlevel 1 echo WARNING: samples gallery prerender failed - committing the existing copy.
 
 rem Stamp the live format count into the static crawler-only copy (meta/OG/JSON-LD
 rem descriptions, manifest, feature text) and refresh the main sitemap lastmod, so
@@ -222,6 +231,26 @@ echo === BACKUP STATS ===
 echo.
 set SAVE_ERROR=0
 call :runbackup
+goto end
+
+
+rem Rebuild only the /samples gallery from the samples\ folder, without a version bump
+rem or commit. Use this after adding/removing files in samples\ to refresh samples.html;
+rem the next real Save re-runs it anyway, so changes here are just previewed locally.
+:samples
+echo.
+echo === UPDATE SAMPLES ===
+echo.
+set SAVE_ERROR=0
+echo Rebuilding /samples gallery from the samples\ folder...
+node --no-warnings tools/prerender-samples.mjs
+if errorlevel 1 (
+  echo.
+  echo ERROR: samples gallery rebuild failed.
+  set SAVE_ERROR=1
+) else (
+  echo Done. Review samples.html, then commit with a normal Save when ready.
+)
 goto end
 
 rem Read-only snapshot of the live counters to stats-backup\*.csv. Non-fatal:

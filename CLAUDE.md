@@ -347,11 +347,17 @@ assets/
       binutil.js    — shared binary toolkit (cursor reader, decoders, magic)
     renderers/      — one module per top-level type (classifyFile() routes to these
                       via ROUTES in app.js). Inventory by domain:
-      photo.js · photo-convert.js · tiff.js · mpo.js · ico · embedded-images.js
-        — photo analysis (EXIF, histogram, OCR), HEIC/RAW conversion, multi-image
+      photo.js · photo-convert.js · photo-recover.js · tiff.js · mpo.js · ico · embedded-images.js
+        — photo analysis (EXIF, histogram, OCR), HEIC/RAW conversion, multi-image;
+        photo-recover.js salvages broken/truncated/corrupt stills (repair a cut-off
+        JPEG/PNG, rebuild a damaged JPEG header from a reference photo, carve
+        embedded images out of a blob) - the stills twin of video-recover.js
       audio.js · audio-analysis.js · audio-codec.js · audio-player.js · spectrogram.js
         · media-reverse.js — audio playback, codec/loudness analysis, spectrogram
-      video.js · video-avi.js — video player + per-frame/stream analysis
+      video.js · video-avi.js · video-recover.js — video player + per-frame/stream
+        analysis; video-recover.js salvages truncated/unfinalised MP4-MOV with no
+        moov index (carves H.264/H.265 NALs from the mdat, borrows SPS/PPS in-band
+        or from a reference clip, plays via the raw-stream segmented player)
       pdf.js · paged.js · djvu.js — PDF (pdf.js), paginated docs, DjVu scans
       docx.js · xlsx.js · xlsb.js · pptx.js · odf.js · legacy-office.js · textdoc.js
         · iwork.js · epub.js · mobi.js · mdb.js · notebook.js · markdown.js

@@ -258,9 +258,13 @@ function gatherObject(model, files, mainText, objectid, baseM, acc) {
   }
 }
 
-function resolvePart(model, files, mainText, objectid) {
+// Resolve one part's mesh. The build <item>'s transform is the authored "how this
+// object sits on the plate" orientation (often rotating an object authored in some
+// other axis onto the printer's Z-up bed), so apply it - otherwise the per-part view
+// shows the raw object space and the model is mis-oriented (e.g. stood on its tail).
+function resolvePart(model, files, mainText, objectid, transform) {
   const acc = { verts: [], tris: [] };
-  gatherObject(model, files, mainText, objectid, IDENTITY12, acc);
+  gatherObject(model, files, mainText, objectid, parseTransform(transform), acc);
   return acc.tris.length ? buildGeoFromIndexed(acc.verts, acc.tris, '3MF') : null;
 }
 
@@ -311,7 +315,7 @@ async function render3mf(file, resultsEl) {
 
   const parts = items.map((it, i) => {
     const obj = model.objects.get(it.objectid) || { comps: [], name: '' };
-    return { key: 'p' + i, name: partName(obj, i + 1), build: () => resolvePart(model, files, mainText, it.objectid) };
+    return { key: 'p' + i, name: partName(obj, i + 1), build: () => resolvePart(model, files, mainText, it.objectid, it.transform) };
   });
   if (parts.length > 1) {
     parts.unshift({ key: 'all', name: `Whole build (${items.length} parts)`, build: () => resolveWholeBuild(model, files, mainText) });
@@ -340,7 +344,7 @@ async function render3mf(file, resultsEl) {
   if (!parts.length) { await render3mfNoModel(file, resultsEl, ffl, data, metaCard); return; }
 
   renderPartsViewer(file, resultsEl, {
-    metaCard, parts, format: '3MF mesh',
+    metaCard, parts, format: '3MF mesh', zUp: true,
     unitLabel: model.unit === 'millimeter' ? 'mm' : (model.unit || 'units')
   });
 }
@@ -460,32 +464,141 @@ async function renderAmf(file, resultsEl) {
   mt.appendChild(sha256Row(file));
   metaCard.appendChild(mt);
 
-  renderPartsViewer(file, resultsEl, { metaCard, parts, format: 'AMF mesh', unitLabel: AMF_UNIT[unit] || unit });
+  renderPartsViewer(file, resultsEl, { metaCard, parts, format: 'AMF mesh', unitLabel: AMF_UNIT[unit] || unit, zUp: true });
 }
 
 /* =========================== OBJ / PLY / OFF ================================ */
 
-function parseObjMesh(text) {
-  const verts = [], tris = [];
+// Full Wavefront OBJ parse: geometry plus the bits needed to colour it - the
+// usemtl material per triangle, texture coords (vt) per face-vertex, the
+// referenced mtllib, and any embedded per-vertex colours (v x y z r g b). Faces
+// are fan-triangulated; vt indices and the active material are tracked in step
+// with the emitted triangles so colours and UVs can be expanded later.
+function parseObjFull(text) {
+  const verts = [], vts = [], vertColors = [];
+  const tris = [], triVT = [], triMat = [];
+  let hasVC = false, curMat = null, mtllib = null;
   const lines = text.split('\n');
   for (const line of lines) {
     const c0 = line.charCodeAt(0);
-    if (c0 === 118 /* v */ && (line[1] === ' ' || line[1] === '\t')) {
-      const p = line.trim().split(/\s+/);
-      verts.push(+p[1], +p[2], +p[3]);
-    } else if (c0 === 102 /* f */ && (line[1] === ' ' || line[1] === '\t')) {
-      const p = line.trim().split(/\s+/);
-      const idx = [];
-      for (let i = 1; i < p.length; i++) {
-        let vi = parseInt(p[i].split('/')[0], 10);
-        if (!isFinite(vi)) continue;
-        if (vi < 0) vi = verts.length / 3 + vi + 1;   // relative index
-        idx.push(vi - 1);
+    if (c0 === 118 /* v */) {
+      const c1 = line[1];
+      if (c1 === ' ' || c1 === '\t') {
+        const p = line.trim().split(/\s+/);
+        verts.push(+p[1], +p[2], +p[3]);
+        if (p.length >= 7) { hasVC = true; vertColors.push(+p[4], +p[5], +p[6]); }
+        else vertColors.push(1, 1, 1);
+      } else if (c1 === 't') {
+        const p = line.trim().split(/\s+/);
+        vts.push(+p[1], +(p[2] || 0));
       }
-      for (let i = 1; i + 1 < idx.length; i++) tris.push(idx[0], idx[i], idx[i + 1]);  // fan triangulate
+      continue;   // 'vn' lines ignored - the viewer uses flat face normals
+    }
+    if (c0 === 102 /* f */ && (line[1] === ' ' || line[1] === '\t')) {
+      const p = line.trim().split(/\s+/);
+      const vi = [], ti = [];
+      for (let i = 1; i < p.length; i++) {
+        const seg = p[i].split('/');
+        let v = parseInt(seg[0], 10);
+        if (!isFinite(v)) continue;
+        if (v < 0) v = verts.length / 3 + v + 1;   // relative index
+        vi.push(v - 1);
+        let t = (seg.length > 1 && seg[1]) ? parseInt(seg[1], 10) : NaN;
+        if (isFinite(t)) { if (t < 0) t = vts.length / 2 + t + 1; ti.push(t - 1); } else ti.push(-1);
+      }
+      for (let i = 1; i + 1 < vi.length; i++) {
+        tris.push(vi[0], vi[i], vi[i + 1]);
+        triVT.push(ti[0], ti[i], ti[i + 1]);
+        triMat.push(curMat);
+      }
+      continue;
+    }
+    if (line.startsWith('usemtl')) { curMat = line.slice(6).trim(); }
+    else if (line.startsWith('mtllib')) { mtllib = line.slice(6).trim(); }
+  }
+  return { verts, vts, tris, triVT, triMat, vertColors: hasVC ? vertColors : null, mtllib, hasVT: vts.length > 0 };
+}
+
+// Parse a .mtl into name -> { kd:[r,g,b]|null, mapKd:filename|null }.
+function parseMtlMaterials(text) {
+  const mats = new Map(); let cur = null;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (/^newmtl\b/.test(line)) { cur = line.slice(6).trim(); mats.set(cur, { kd: null, mapKd: null }); }
+    else if (cur && /^Kd\b/.test(line)) { const p = line.split(/\s+/); mats.get(cur).kd = [+p[1], +p[2], +p[3]]; }
+    else if (cur && /^map_Kd\b/i.test(line)) {
+      // The filename is the last whitespace-separated token (skip -options).
+      mats.get(cur).mapKd = line.replace(/^map_Kd\b/i, '').trim().split(/\s+/).pop().replace(/\\/g, '/').split('/').pop();
     }
   }
-  return { verts, tris };
+  return mats;
+}
+
+// Expand embedded per-vertex colours into the non-indexed triangle vertex order
+// buildGeoFromIndexed produces (triangle t -> verts a,b,c), so the colour buffer
+// lines up 1:1 with the position buffer.
+function objVertexColors(parsed) {
+  const triCount = parsed.tris.length / 3;
+  const colors = new Float32Array(triCount * 9);
+  for (let t = 0; t < triCount; t++) {
+    for (let j = 0; j < 3; j++) {
+      const vi = parsed.tris[t * 3 + j], o = t * 9 + j * 3;
+      colors[o] = parsed.vertColors[vi * 3]; colors[o + 1] = parsed.vertColors[vi * 3 + 1]; colors[o + 2] = parsed.vertColors[vi * 3 + 2];
+    }
+  }
+  return colors;
+}
+
+// Bake each triangle's material diffuse colour (Kd) into a per-vertex colour
+// buffer. Returns null if no triangle resolved to a material with a Kd.
+function objMaterialColors(parsed, materials) {
+  const triCount = parsed.tris.length / 3;
+  const colors = new Float32Array(triCount * 9);
+  let any = false;
+  for (let t = 0; t < triCount; t++) {
+    const m = materials.get(parsed.triMat[t]);
+    const kd = (m && m.kd) ? m.kd : [0.8, 0.8, 0.83];
+    if (m && m.kd) any = true;
+    const o = t * 9;
+    for (let k = 0; k < 9; k += 3) { colors[o + k] = kd[0]; colors[o + k + 1] = kd[1]; colors[o + k + 2] = kd[2]; }
+  }
+  return any ? colors : null;
+}
+
+// Expand vt texture coords into the same non-indexed vertex order.
+function objUVs(parsed) {
+  const triCount = parsed.tris.length / 3;
+  const uvs = new Float32Array(triCount * 6);
+  for (let t = 0; t < triCount; t++) {
+    for (let j = 0; j < 3; j++) {
+      const ti = parsed.triVT[t * 3 + j], o = t * 6 + j * 2;
+      if (ti >= 0) { uvs[o] = parsed.vts[ti * 2]; uvs[o + 1] = parsed.vts[ti * 2 + 1]; }
+    }
+  }
+  return uvs;
+}
+
+// Before the .mtl is supplied, an OBJ with several materials would otherwise look
+// like one solid blob. Give each distinct material a different grey brightness so
+// the material breakdown is visible immediately; real colours replace these once
+// the .mtl is added. Returns null when there's nothing to distinguish (<2 mats).
+function objMaterialPreviewColors(parsed) {
+  const order = [], idx = new Map();
+  for (const m of parsed.triMat) {
+    const key = (m == null) ? ' none' : m;
+    if (!idx.has(key)) { idx.set(key, order.length); order.push(key); }
+  }
+  if (order.length < 2) return null;
+  const N = order.length, lo = 0.42, hi = 0.95;
+  const bright = order.map((_, i) => hi - (hi - lo) * (i / (N - 1)));   // brightest -> darkest
+  const triCount = parsed.tris.length / 3;
+  const colors = new Float32Array(triCount * 9);
+  for (let t = 0; t < triCount; t++) {
+    const g = bright[idx.get(parsed.triMat[t] == null ? ' none' : parsed.triMat[t])];
+    const o = t * 9;
+    for (let k = 0; k < 9; k++) colors[o + k] = g;   // greyscale: r = g = b
+  }
+  return colors;
 }
 
 function parseOffMesh(text) {
@@ -591,18 +704,25 @@ async function renderMeshFile(file, resultsEl, ext) {
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));
 
-  let geo, mesh;
+  let mesh, parsed = null;
   try {
     if (ext === 'ply') mesh = parsePlyMesh(await file.arrayBuffer());
     else if (ext === 'off') mesh = parseOffMesh(await file.text());
-    else mesh = parseObjMesh(await file.text());   // obj
-    geo = mesh ? buildGeoFromIndexed(mesh.verts, mesh.tris, ext.toUpperCase()) : null;
+    else { parsed = parseObjFull(await file.text()); mesh = { verts: parsed.verts, tris: parsed.tris }; }   // obj
   } catch (e) {
     resultsEl.innerHTML = '';
     resultsEl.appendChild(errorCard('Could not read ' + ext.toUpperCase() + ': ' + (e && e.message)));
     return;
   }
   resultsEl.innerHTML = '';
+  if (!mesh || !mesh.tris || !mesh.tris.length) { resultsEl.appendChild(errorCard('No triangles found in this ' + ext.toUpperCase() + '.')); return; }
+
+  // OBJ that carries colour - embedded vertex colours or a referenced .mtl - goes
+  // to the coloured single-mesh path (with a picker to supply the sibling .mtl +
+  // textures a lone drop can't read). Plain OBJ/PLY/OFF keep the body-split path.
+  if (ext === 'obj' && (parsed.mtllib || parsed.vertColors)) return renderObjColoured(file, resultsEl, parsed);
+
+  const geo = buildGeoFromIndexed(mesh.verts, mesh.tris, ext.toUpperCase());
   if (!geo || !geo.count) { resultsEl.appendChild(errorCard('No triangles found in this ' + ext.toUpperCase() + '.')); return; }
 
   // Multi-body: split into connected components and, when there's more than one,
@@ -621,6 +741,123 @@ async function renderMeshFile(file, resultsEl, ext) {
   resultsEl.appendChild(viewCard);
   startViewer(viewer);
   resultsEl.appendChild(geoStatsCard(geo, file, ext.toUpperCase(), 'units'));
+}
+
+// OBJ viewer that honours colour. `materials` (parsed .mtl) and `texImage` (a
+// decoded map_Kd image) are supplied on the second pass, once the user picks the
+// sibling files; the first pass shows the model and a picker to add them.
+async function renderObjColoured(file, resultsEl, parsed, materials = null, texImage = null) {
+  const geo = buildGeoFromIndexed(parsed.verts, parsed.tris, 'OBJ');
+  if (!geo || !geo.count) { resultsEl.innerHTML = ''; resultsEl.appendChild(errorCard('No triangles found in this OBJ.')); return; }
+
+  if (parsed.vertColors) {
+    geo.colors = objVertexColors(parsed);                  // embedded vertex colours win
+  } else if (materials) {
+    const cols = objMaterialColors(parsed, materials);
+    if (cols) geo.colors = cols;
+    if (texImage && parsed.hasVT) { geo.uvs = objUVs(parsed); geo.textureImage = texImage; }
+  } else {
+    // No .mtl yet: shade each material a distinct brightness so the groups read.
+    const preview = objMaterialPreviewColors(parsed);
+    if (preview) geo.colors = preview;
+  }
+
+  resultsEl.innerHTML = '';
+  const { viewCard, viewer } = buildViewerCard(geo, '3D model');
+  resultsEl.appendChild(viewCard);
+  startViewer(viewer);
+
+  if (parsed.mtllib && !parsed.vertColors && !materials) {
+    resultsEl.appendChild(objMaterialsPrompt(file, resultsEl, parsed));
+  } else if (materials) {
+    resultsEl.appendChild(materialsSummaryCard(materials, !!texImage));
+  }
+  resultsEl.appendChild(geoStatsCard(geo, file, 'OBJ', 'units'));
+}
+
+// Prompt + picker to supply the .mtl (and any texture images) that a lone OBJ
+// drop has no access to. Mirrors the RAW+XMP sidecar / video reference-clip flow.
+function objMaterialsPrompt(file, resultsEl, parsed) {
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Colours and textures'));
+  card.appendChild(el('p', { class: 'anr-hint' },
+    `This model references materials in "${parsed.mtllib}". A dropped .obj can't read its sibling files, so its materials show above as plain grey shades. Add the .mtl (and any texture images it uses) to see its real colours and textures - everything stays on your device.`));
+
+  const input = el('input', { type: 'file', accept: '.mtl,image/*', multiple: true, style: 'display:none' });
+  const status = el('span', { class: 'anr-hint', style: 'display:block;margin-top:8px;' }, '');
+
+  // Shared by the dropzone and the click-to-pick fallback: find the .mtl, parse
+  // its materials, optionally decode the first matching map_Kd texture image, then
+  // re-render the model in colour.
+  async function applyFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const mtlFile = files.find((f) => /\.mtl$/i.test(f.name));
+    if (!mtlFile) { status.textContent = 'No .mtl among the chosen files.'; return; }
+    status.textContent = 'Applying materials…';
+    try {
+      const materials = parseMtlMaterials(await mtlFile.text());
+      // Single-texture support: the first material with a map_Kd whose image was
+      // also supplied, matched by filename.
+      let texImage = null;
+      for (const m of materials.values()) {
+        if (!m.mapKd) continue;
+        const want = m.mapKd.toLowerCase();
+        const img = files.find((f) => f.name.toLowerCase() === want || f.name.toLowerCase().endsWith('/' + want));
+        if (img) { try { texImage = await createImageBitmap(img); } catch (_) { texImage = null; } break; }
+      }
+      renderObjColoured(file, resultsEl, parsed, materials, texImage);
+    } catch (e) {
+      status.textContent = 'Could not read the .mtl: ' + (e && e.message);
+    }
+  }
+
+  // The card body is a dropzone: drag the .mtl (+ any textures) onto it, or click
+  // to pick. The drop is handled here and stopped from bubbling so the page-wide
+  // drop handler in app.js doesn't grab the .mtl and open it on its own.
+  const zone = el('div', { class: 'anr-mtl-drop', tabindex: '0', role: 'button' }, [
+    el('span', { class: 'anr-mtl-drop-ico', 'aria-hidden': 'true' }, '+'),
+    el('span', {}, ['Drop ', el('strong', {}, parsed.mtllib || '.mtl'), ' here, or click to choose']),
+  ]);
+  const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+  zone.addEventListener('dragenter', (e) => { stop(e); zone.classList.add('is-dragover'); });
+  zone.addEventListener('dragover', (e) => { stop(e); zone.classList.add('is-dragover'); });
+  zone.addEventListener('dragleave', (e) => { stop(e); zone.classList.remove('is-dragover'); });
+  zone.addEventListener('drop', (e) => {
+    stop(e);
+    zone.classList.remove('is-dragover');
+    const pd = document.getElementById('pageDrop'); if (pd) pd.hidden = true;   // dismiss the page-wide overlay
+    applyFiles(e.dataTransfer && e.dataTransfer.files);
+  });
+  input.addEventListener('change', () => applyFiles(input.files));
+
+  card.appendChild(zone);
+  card.appendChild(status);
+  card.appendChild(input);
+  return card;
+}
+
+// Small readout of the applied materials: a colour swatch + name, and the
+// texture filename when one was mapped.
+function materialsSummaryCard(materials, textured) {
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Materials'));
+  const list = el('div', { style: 'display:flex;flex-direction:column;gap:6px;margin-top:6px;' });
+  for (const [name, m] of materials) {
+    const swatch = el('span', {
+      style: `display:inline-block;width:14px;height:14px;border:1px solid var(--hairline);flex:none;background:${m.kd ? `rgb(${Math.round(m.kd[0] * 255)},${Math.round(m.kd[1] * 255)},${Math.round(m.kd[2] * 255)})` : 'transparent'};`,
+    });
+    const label = el('span', { style: 'font-size:13px;' }, name + (m.mapKd ? `  ·  texture: ${m.mapKd}` : ''));
+    list.appendChild(el('div', { style: 'display:flex;align-items:center;gap:8px;' }, [swatch, label]));
+  }
+  card.appendChild(list);
+  if (!textured && [...materials.values()].some((m) => m.mapKd)) {
+    card.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px;' },
+      'Add the texture image alongside the .mtl to see the mapped texture, not just the base colour.'));
+  }
+  return card;
 }
 
 /* ============================== glTF / GLB ================================= */
@@ -929,14 +1166,14 @@ async function renderStepIges(file, resultsEl, ext) {
       build: () => occtMeshesToGeo([m]),
     }));
     renderPartsViewer(file, resultsEl, {
-      metaCard, parts, format: fmtLabel + ' (tessellated)', unitLabel: 'mm', partsTitle: 'Bodies',
+      metaCard, parts, format: fmtLabel + ' (tessellated)', unitLabel: 'mm', partsTitle: 'Bodies', zUp: true,
       partsHint: `This model contains ${meshes.length} separate bodies. Pick one to view on its own, or see them all together.`,
     });
     return;
   }
 
   resultsEl.innerHTML = '';
-  const { viewCard, viewer } = buildViewerCard(geo, '3D model');
+  const { viewCard, viewer } = buildViewerCard(geo, '3D model', { zUp: true });
   resultsEl.appendChild(viewCard);
   startViewer(viewer);
   resultsEl.appendChild(geoStatsCard(geo, file, fmtLabel + ' (tessellated)', 'mm'));

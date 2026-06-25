@@ -1,7 +1,7 @@
 ﻿/* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v168';
+const VERSION = 'analyser-v169';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -17,6 +17,7 @@ const SHELL = [
   './formats',
   './stats',
   './privacy',
+  './samples',
   './manifest.json',
   './assets/css/analyser.css',
   './assets/css/fonts.css',
@@ -29,6 +30,7 @@ const SHELL = [
   './assets/js/core/search.js',
   './assets/js/renderers/photo.js',
   './assets/js/renderers/photo-convert.js',
+  './assets/js/renderers/photo-recover.js',
   './assets/js/renderers/gif-frames.js',
   './assets/js/renderers/webp-frames.js',
   './assets/js/renderers/gif-encode.js',
@@ -58,6 +60,7 @@ const SHELL = [
   './assets/js/renderers/audio-codec.js',
   './assets/js/renderers/video.js',
   './assets/js/renderers/video-avi.js',
+  './assets/js/renderers/video-recover.js',
   './assets/js/renderers/sony-rtmd.js',
   './assets/js/renderers/gcsv.js',
   './assets/js/core/video-sync.js',

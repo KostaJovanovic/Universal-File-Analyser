@@ -89,6 +89,7 @@ export const FORMATS = {
   ply:     { app: 'PLY Point Cloud / Mesh', icon: 'PLY', chunk: 'threed' },
   usdz:    { app: 'Universal Scene Description (Apple AR)', icon: 'USD' },
   usd:     { app: 'Universal Scene Description', icon: 'USD' },
+  zcode:   { app: 'Zortrax Z-SUITE (compiled print)', icon: 'ZC', magic: [0x5A, 0x43, 0x6F, 0x64, 0x65] },
   usda:    { app: 'Universal Scene Description ASCII', icon: 'USD' },
 
   // Blender

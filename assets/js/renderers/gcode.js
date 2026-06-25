@@ -34,6 +34,28 @@ const TRAVEL_CAP = DEVICE_GB >= 8 ? 2000000 : DEVICE_GB >= 4 ? 1000000 : 400000;
 const ARC_TOL = 0.02;             // arc chord tolerance (mm)
 const ARC_MIN_STEPS = 2, ARC_MAX_STEPS = 256;
 const DEF_DIA = 1.75;             // default filament diameter (mm)
+// Per-feature-type depth nudge. Overlapping beads of different feature types
+// (outer wall / inner wall / infill / solid) sit at nearly the same depth where the
+// boxes interpenetrate, so the depth buffer flickers between them per pixel (z-fighting).
+// Offsetting each type by a tiny amount keeps lower types (outer wall first) consistently
+// in front, killing the rainbow shimmer. The nudge is a constant WORLD-space depth offset
+// (computed per frame from the projection, not a constant NDC offset - which would balloon
+// with camera distance and shove a lower layer through the one above it), and the per-type
+// step is a small fraction of a layer height so the total across all types stays well under
+// one layer - it can never reorder real stacked layers, only break coplanar same-layer ties.
+const TYPE_BIAS_LAYER_FRAC = 0.06;   // per feature-type, as a fraction of one layer height
+
+// Pause / dwell playback timing. A real heat-up or program stop can take minutes,
+// which would freeze playback, so every hold is capped to a few seconds of replay.
+const PAUSE_CAP_S = 5;            // max hold for any single pause (playback seconds)
+const MANUAL_PAUSE_S = 3;         // M0/M1 are indefinite real-world stops - a fixed, capped beat
+const TOOLCHANGE_PAUSE_S = 4;     // M600 filament change / tool-change Tn - park-and-swap beat
+const HEAT_AMBIENT_C = 25;        // assumed cold/ambient start for heat-up estimates
+const HEAT_RATE_C_PER_S = 8;      // rough nozzle/bed heating rate (deg C per second)
+// Heat-up estimate from ambient to a target temperature (seconds): realHeat is the
+// full estimate shown on the wait label; heatSecs is that capped to the playback hold.
+const realHeat = (target) => Math.max(0, target - HEAT_AMBIENT_C) / HEAT_RATE_C_PER_S;
+const heatSecs = (target) => Math.min(realHeat(target), PAUSE_CAP_S);
 
 // Normalised feature types (the "line types" OrcaSlicer colours by). Each slicer
 // names them differently in its per-move comments - PrusaSlicer/Orca use
@@ -97,18 +119,29 @@ function parseGcode(text, opts) {
 
   // ext record (10 floats): ax,ay,az, bx,by,bz, width, height, feed, type.
   // trav record (7 floats): ax,ay,az, bx,by,bz, feed (feed lets playback time travels).
-  // order record (1 float): 0 = the next ext segment, 1 = the next travel - the true
-  // print order of every *buffered* move, so playback can replay extrusions and travels
-  // interleaved exactly as the machine runs them.
-  const ext = GrowBuf(10), trav = GrowBuf(7), order = GrowBuf(1), segFil = GrowBuf(1);
+  // order record (1 float): 0 = the next ext segment, 1 = the next travel, 2 = a pause
+  // (a timeline-only hold - see `pause`) - the true print order of every *buffered*
+  // move, so playback can replay extrusions and travels interleaved exactly as the
+  // machine runs them, holding at dwells / waits.
+  // pause record (1 float): hold duration in seconds, one per order==2 entry, in order.
+  const ext = GrowBuf(10), trav = GrowBuf(7), order = GrowBuf(1), segFil = GrowBuf(1), pause = GrowBuf(1);
+  // Per-pause human info for the wait label (one entry per order==2 move, in order):
+  // { label: 'what it is waiting for', realSec: the G-code's intended duration (uncapped) }.
+  const pauseInfo = [];
 
   // Multicolour / multi-material: the active filament index (set by T<n> tool selects
   // and bumped by M600 colour changes), recorded per extrusion segment so "colour by
   // filament" can paint each move in its filament's colour. filamentColors comes from
   // the slicer config block (; filament_colour = #RRGGBB;#RRGGBB;...).
-  let curFil = 0, maxFil = 0;
+  let curFil = 0, maxFil = 0, sawTool = false;
+  // Tool-change marks for the progress slider: { at: move index, label } per change.
+  const toolMarks = [];
   const filUsed = new Set();
   let filColRaw = '', extColRaw = '';
+  // Machine / bed metadata, read from the slicer config block (Prusa/Orca/Bambu dump it
+  // as `;` header/footer comments). printable_area / bed_shape is a polygon of "XxY"
+  // points; curr_bed_type names the build plate; printable_height is the Z clearance.
+  let bedShapeRaw = '', bedType = '', bedHeight = 0, printerModel = '';
 
   let absXYZ = true, absE = true, unit = 1, plane = 17;
   let motionMode = null;            // last G0-G3 motion, for modal (G-word-less) lines
@@ -128,6 +161,7 @@ function parseGcode(text, opts) {
   const headerComments = [];
   const HDR_CAP = 4000;
   let inHeader = true, footRun = [];
+  let skipActive = false;   // inside a Bambu "; SKIPPABLE_START ... timelapse ..." block
   const temps = {};
   let filDia = 0, sawG = false, sawExtrude = false;
 
@@ -137,13 +171,19 @@ function parseGcode(text, opts) {
   // work-coordinate systems (G54-G59) and per-operation names (the () comment that
   // immediately precedes a tool change). Only scanned while no extrusion has been
   // seen, so 3D-print parsing stays fast.
-  const toolDefs = new Map();        // tool# -> { n, dia, cr, taper, zmin, desc, rpm }
+  const toolDefs = new Map();        // tool# -> { n, dia, cr, taper, zmin, desc, rpm, h }
   const toolChanges = [];            // ordered [{ n, op }]
   const toolSlot = new Map();        // tool# -> colour slot (0-based, encounter order, cap 7)
   const coolant = new Set(), workOffsets = new Set();
   let curTool = null, pendingTool = null, lastParen = '', spindleMax = 0, spindleDir = '';
   let cncType = 7;                   // colour-channel slot of the active tool (CNC)
   const ensureTool = (n) => { let d = toolDefs.get(n); if (!d) { d = { n }; toolDefs.set(n, d); } return d; };
+  // CAM operations (Fusion/HSM name each one in a () comment, e.g. "(2D ADAPTIVE1)").
+  // Tools are reused across operations, so the op list is richer than the tool-change
+  // list; track each op with the tool active during it and per-op move/length/depth.
+  const operations = [];             // [{ name, tool, moves, cutLen, zmin }]
+  let curOp = null;
+  let progNum = '', progEnd = '', optStops = 0;   // O-number, M2/M30 end, M1 optional stops
 
   const bump = (px, py, pz) => {
     if (px < minx) minx = px; if (py < miny) miny = py; if (pz < minz) minz = pz;
@@ -187,11 +227,29 @@ function parseGcode(text, opts) {
     if (trav.count < travCap) { trav.push([x0, y0, z0, x1, y1, z1, feed]); order.push([1]); }
     nRapid++;
   };
+  // A pause is a timeline event, not geometry: it advances move order (so playback
+  // can hold) but adds no ext/travel segment and leaves x/y/z and the bbox untouched.
+  const emitPause = (holdSec, label, realSec) => {
+    if (holdSec > 0) { order.push([2]); pause.push([holdSec]); pauseInfo.push({ label, realSec: realSec != null ? realSec : holdSec }); }
+  };
 
   let i = 0;
   while (i < len) {
     let j = text.indexOf('\n', i); if (j < 0) j = len;
     let line = text.slice(i, j); i = j + 1;
+
+    // Bambu timelapse: a per-layer "; SKIPPABLE_START / ; SKIPTYPE: timelapse /
+    // ; SKIPPABLE_END" block parks the head to take a photo. The printer can skip the
+    // block; skip it here too so the photo excursion isn't drawn as part of the print.
+    // Markers are matched anchored (^...$) so the one-line "; time_lapse_gcode = ..."
+    // header config (which mentions the marker words) can't trip it. Only timelapse
+    // blocks are skipped - other SKIPPABLE types fall through and render normally.
+    if (skipActive) {
+      if (/^;\s*SKIPPABLE_END\s*$/i.test(line)) skipActive = false;
+      else if (/^;\s*SKIPTYPE:/i.test(line) && !/timelapse/i.test(line)) skipActive = false;
+      continue;
+    }
+    if (/^;\s*SKIPPABLE_START\s*$/i.test(line)) { skipActive = true; continue; }
 
     const semi = line.indexOf(';');
     if (semi >= 0) {
@@ -213,9 +271,16 @@ function parseGcode(text, opts) {
       // hex list "; filament_colour = #RRGGBB;#RRGGBB". Prefer filament_colour; fall
       // back to extruder_colour. The "_type"/"default_" variants carry no #, so the
       // hex-only value class makes them miss.
-      if (!filColRaw) { mm = /filament[_ ]colou?r\s*[:=]\s*("?)(#[0-9A-Fa-f; ]+)/i.exec(cm); if (mm) filColRaw = mm[2].trim(); }
-      if (!extColRaw) { mm = /extruder[_ ]colou?r\s*[:=]\s*("?)(#[0-9A-Fa-f; ]+)/i.exec(cm); if (mm) extColRaw = mm[2].trim(); }
+      if (!filColRaw) { mm = /filament[_ ]colou?r\s*[:=]\s*("?)(#[0-9A-Fa-f;,# ]+)/i.exec(cm); if (mm) filColRaw = mm[2].trim(); }
+      if (!extColRaw) { mm = /extruder[_ ]colou?r\s*[:=]\s*("?)(#[0-9A-Fa-f;,# ]+)/i.exec(cm); if (mm) extColRaw = mm[2].trim(); }
       if (!printTime) { mm = /(?:print(?:ing)?\s*time|Print Time)[^:=]*[:=]?\s*([\dhms :]+\d[hms])/i.exec(cm); if (mm) printTime = mm[1].trim(); }
+      // Machine / bed. printable_area (Bambu/Orca) and bed_shape (PrusaSlicer) are the
+      // same "0x0,256x0,256x256,0x256" polygon; printer_model / curr_bed_type name the
+      // hardware and plate. Anchored value classes so empty (`= `) fields don't match.
+      if (!printerModel) { mm = /\bprinter_model\s*[:=]\s*("?)([^";\r\n]+)/i.exec(cm); if (mm) printerModel = mm[2].trim(); }
+      if (!bedShapeRaw) { mm = /\b(?:printable_area|bed_shape|machine_bed_shape)\s*[:=]\s*([\d][\dxX.,\- ]+)/i.exec(cm); if (mm) bedShapeRaw = mm[1].trim(); }
+      if (!bedType) { mm = /\b(?:curr_bed_type|default_bed_type|bed_type)\s*[:=]\s*([A-Za-z][\w .\-/+]*)/i.exec(cm); if (mm) bedType = mm[1].trim(); }
+      if (!bedHeight) { mm = /\b(?:printable_height|max_print_height|machine_max_height)\s*[:=]\s*([\d.]+)/i.exec(cm); if (mm) bedHeight = parseFloat(mm[1]) || 0; }
       line = line.slice(0, semi);
     }
     // Paren comments: capture into the header/footer blocks (so the CNC program
@@ -240,8 +305,14 @@ function parseGcode(text, opts) {
               .filter((s) => s && /MILL|DRILL|FACE|BULL|CHAMFER|ENGRAV|REAM|\bTAP\b|BORE|SLOT|PROBE|\bEND\b|FLAT|BALL|SPOT|THREAD|DOVETAIL|LOLLIPOP/i.test(s) && !/^Z?MIN|^TAPER|^CR\b|^D=?/i.test(s));
             if (segs.length) def.desc = segs[segs.length - 1];
           }
-        } else if (c.length <= 40 && !/^[-*=]/.test(c)) {
+        } else if (/^O?\d{1,6}$/.test(c)) {
+          if (!progNum) progNum = c.replace(/^O/i, '');   // Fusion writes the program number as "(1001)"
+        } else if (c.length <= 40 && !/^[-*=]/.test(c) && !/ATTENTION|ENSURE|RAISE|CLEARANCE|WARNING|^USING|^STOCK|^PART/i.test(c)) {
           lastParen = c;   // a plausible operation / section label
+          // A new named operation. Tool may not be selected yet (the op comment precedes
+          // its "T<n> M6"), so leave tool null - it is filled in at the tool change.
+          curOp = { name: c, tool: curTool, moves: 0, cutLen: 0, zmin: Infinity };
+          operations.push(curOp);
         }
       }
     }
@@ -260,8 +331,17 @@ function parseGcode(text, opts) {
     // Only small tool indices are real filament slots. Bambu/Prusa fire sentinel tool
     // codes (T255, T1000, ...) for unload / no-tool that aren't colour changes, so cap at
     // a sane multi-material range or a single-filament print reads as multicolour.
-    if (sp < 0 && cmd.charCodeAt(0) === 84) { const tn = /^T(\d+)$/.exec(cmd); if (tn) { const ti = +tn[1]; if (ti <= 32) { curFil = ti; if (curFil > maxFil) maxFil = curFil; } continue; } }
-    if (cmd === 'M600') { curFil++; if (curFil > maxFil) maxFil = curFil; continue; }
+    // Tool select (T0/T1/...): switches the active filament/colour. Bambu and others
+    // append params - e.g. "T2 H-1" - so match the first token, not only a bare-token line
+    // (without this, multicolour prints look single-colour). Leave "Tn M6" to the CNC
+    // tool-change handler below. AMS/toolchanger swaps purge into a wipe tower (geometry),
+    // so they switch colour but don't pause; an explicit manual change (M600) does pause.
+    if (cmd.charCodeAt(0) === 84 && !/\bM0?6\b/.test(line)) {
+      const tn = /^T(\d+)$/.exec(cmd);
+      if (tn) { const ti = +tn[1]; if (ti <= 32) {
+        if (sawTool && ti !== curFil) toolMarks.push({ at: order.count, kind: 'tool', from: curFil, to: ti, z });
+        sawTool = true; curFil = ti; if (curFil > maxFil) maxFil = curFil; } continue; } }
+    if (cmd === 'M600') { toolMarks.push({ at: order.count, kind: 'filament', from: curFil, to: curFil + 1, z }); emitPause(TOOLCHANGE_PAUSE_S, 'Filament change', TOOLCHANGE_PAUSE_S); curFil++; if (curFil > maxFil) maxFil = curFil; continue; }
 
     // Plane select can share a line with an arc - "G17 G2 X.." - so set the plane but
     // fall through to motion handling rather than swallowing the move (Fusion/Mastercam
@@ -279,17 +359,34 @@ function parseGcode(text, opts) {
       case 'G21': unit = 1; continue;
       default: break;
     }
-    if (cmd === 'M104' || cmd === 'M109') { const s = numAfter(line, 'S'); if (s > 0 && !temps.nozzle) temps.nozzle = s; continue; }
-    if (cmd === 'M140' || cmd === 'M190') { const s = numAfter(line, 'S'); if (s > 0 && !temps.bed) temps.bed = s; continue; }
+    // M104/M140 set a temperature and move on; M109/M190 *wait* for it to be reached,
+    // which is a real hold - estimate (and cap) the heat-up so playback pauses for it.
+    if (cmd === 'M104' || cmd === 'M109') { const s = numAfter(line, 'S'); if (s > 0 && !temps.nozzle) temps.nozzle = s; if (cmd === 'M109' && s > 0) emitPause(heatSecs(s), 'Heat nozzle ' + Math.round(s) + '°C', realHeat(s)); continue; }
+    if (cmd === 'M140' || cmd === 'M190') { const s = numAfter(line, 'S'); if (s > 0 && !temps.bed) temps.bed = s; if (cmd === 'M190' && s > 0) emitPause(heatSecs(s), 'Heat bed ' + Math.round(s) + '°C', realHeat(s)); continue; }
+    // G4 dwell (P = milliseconds, S = seconds) and M0/M1 program stops are deliberate
+    // pauses - hold for them so playback matches how the machine actually runs.
+    if (cmd === 'G4' || cmd === 'G04') { const p = numAfter(line, 'P'), s = numAfter(line, 'S'); const sec = p > 0 ? p / 1000 : (s > 0 ? s : 0); emitPause(Math.min(sec, PAUSE_CAP_S), 'Dwell', sec); continue; }
+    if (cmd === 'M0' || cmd === 'M00') { emitPause(MANUAL_PAUSE_S, 'Pause', MANUAL_PAUSE_S); continue; }
+    if (cmd === 'M1' || cmd === 'M01') { optStops++; emitPause(MANUAL_PAUSE_S, 'Optional stop', MANUAL_PAUSE_S); continue; }
+    if (cmd === 'M2' || cmd === 'M02') { if (!progEnd) progEnd = 'M2 (end)'; continue; }
+    if (cmd === 'M30') { progEnd = 'M30 (end + rewind)'; continue; }
+    if (!progNum && /^O\d{1,6}$/.test(cmd)) { progNum = cmd.slice(1); continue; }
 
     // CNC modal words (can share a line with motion). Cheap char-gate first so plain
     // coordinate lines on big files don't pay for the regex scans.
-    if (!sawExtrude && (line.indexOf('T') >= 0 || line.indexOf('M') >= 0 || line.indexOf('S') >= 0 || line.indexOf('G5') >= 0)) {
+    if (!sawExtrude && (line.indexOf('T') >= 0 || line.indexOf('M') >= 0 || line.indexOf('S') >= 0 || line.indexOf('G5') >= 0 || line.indexOf('H') >= 0)) {
       let g;
       if ((g = /\bT(\d+)\b/.exec(line))) pendingTool = +g[1];
       if (/\bM0?6\b/.test(line) && pendingTool != null) {
         ensureTool(pendingTool);
         toolChanges.push({ n: pendingTool, op: lastParen || '' });
+        // A tool change at the very start of an operation (before it has cut anything)
+        // belongs to that operation - the op-name comment is written just before it, so
+        // curOp.tool still holds the previous tool and must be corrected to this one.
+        if (curOp && curOp.moves === 0) curOp.tool = pendingTool;
+        // A change to a different tool mid-program is a real pause - the spindle stops
+        // and the tool is swapped (ATC or by hand). Skip the initial load (curTool null).
+        if (curTool != null && pendingTool !== curTool) { toolMarks.push({ at: order.count, kind: 'tool', from: curTool, to: pendingTool, z, desc: (toolDefs.get(pendingTool) || {}).desc }); emitPause(TOOLCHANGE_PAUSE_S, 'Tool change', TOOLCHANGE_PAUSE_S); }
         curTool = pendingTool; lastParen = '';
         let slot = toolSlot.get(pendingTool);
         if (slot == null) { slot = Math.min(7, toolSlot.size); toolSlot.set(pendingTool, slot); }
@@ -305,6 +402,8 @@ function parseGcode(text, opts) {
       if (/\bM0?8\b/.test(line)) coolant.add('Flood (M8)');
       if (/\bM0?7\b/.test(line)) coolant.add('Mist (M7)');
       if ((g = /\bG5([4-9])(?:\.(\d+))?\b/.exec(line))) workOffsets.add('G5' + g[1] + (g[2] ? '.' + g[2] : ''));
+      // G43 tool-length compensation: remember the H offset register per tool.
+      if (/\bG43\b/.test(line) && (g = /\bH(\d+)\b/.exec(line)) && curTool != null) { const d = toolDefs.get(curTool); if (d && d.h == null) d.h = +g[1]; }
     }
 
     if (cmd === 'G92') {
@@ -373,6 +472,13 @@ function parseGcode(text, opts) {
         else emitFeed(x, y, z, nx, ny, nz);
       }
     }
+    // Per-operation tally (CNC): count source moves, deepest Z and cutting length so the
+    // operations table can show the size of each one.
+    if (curOp) {
+      curOp.moves++;
+      if (nz < curOp.zmin) curOp.zmin = nz;
+      if (!extruding && mo !== 'G0') curOp.cutLen += Math.hypot(nx - x, ny - y, nz - z);
+    }
     x = nx; y = ny; z = nz;
     if (t.e !== null) e = absE ? t.e * unit : e + t.e * unit;
     forcedW = 0; forcedH = 0;          // hints apply to the next move only
@@ -409,6 +515,23 @@ function parseGcode(text, opts) {
   // merely lists every configured filament colour in the `; filament_colour =` header.
   const multicolour = sawExtrude && (filUsed.size > 1 || maxFil > 0);
 
+  // Parse the printable-area polygon ("x0 x y0, x1 x y0, ...") into a bounding rectangle
+  // (+ the raw polygon for non-rectangular plates) so the viewer can draw the plate.
+  let bed = null;
+  if (bedShapeRaw) {
+    const poly = [];
+    for (const tok of bedShapeRaw.split(',')) {
+      const m = /(-?[\d.]+)\s*[xX]\s*(-?[\d.]+)/.exec(tok.trim());
+      if (m) poly.push([parseFloat(m[1]), parseFloat(m[2])]);
+    }
+    if (poly.length >= 2) {
+      let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+      for (const [px, py] of poly) { if (px < bx0) bx0 = px; if (py < by0) by0 = py; if (px > bx1) bx1 = px; if (py > by1) by1 = py; }
+      const w = bx1 - bx0, d = by1 - by0;
+      if (w > 1 && d > 1) bed = { x0: bx0, y0: by0, x1: bx1, y1: by1, w, d, h: bedHeight, type: bedType, poly };
+    }
+  }
+
   const zs = [...layerZ].map((v) => v / 1000).sort((a, b) => a - b);
   let layerHeight = 0;
   if (zs.length > 1) {
@@ -428,14 +551,20 @@ function parseGcode(text, opts) {
     printTime,
     travel: trav.view(),       // 7 floats / segment
     travelCount: trav.count,
-    order: order.view(),       // 1 float / move: 0 = ext, 1 = travel, in true print order
+    order: order.view(),       // 1 float / move: 0 = ext, 1 = travel, 2 = pause, in true print order
     orderCount: order.count,
+    pauses: pause.view(),      // 1 float / pause move (order==2): hold duration in seconds
+    pauseCount: pause.count,
+    pauseInfo,                 // [{ label, realSec }] per pause move, in order - for the wait label
+    toolMarks,                 // [{ at: move index, label }] per tool change - for the slider markers
     segFil: segFil.view(),     // 1 float / ext segment: active filament index
     filamentColors,            // ['#RRGGBB', ...] one per filament slot
     multicolour,               // true when the print uses more than one filament / colour
     filsUsed: [...filUsed].sort((a, b) => a - b),
     capped: ext.count >= segCap || trav.count >= travCap,
     bbox: { min: [minx, miny, minz], max: [maxx, maxy, maxz] },
+    bed,                       // { x0,y0,x1,y1,w,d,h,type,poly } printable area, or null
+    printerModel,              // e.g. "Bambu Lab A1" (from the slicer config), or ''
     units: unit === 1 ? 'mm' : 'in',
     layerCount: zs.length,
     layerHeight,
@@ -448,35 +577,47 @@ function parseGcode(text, opts) {
     cnc: sawExtrude ? null : {
       tools: [...toolDefs.values()].sort((a, b) => a.n - b.n),
       changes: toolChanges,
+      // CAM operations in program order, with per-op move/length/depth (zmin -> null when
+      // the op drew nothing, e.g. a pure setup block).
+      operations: operations.map((o) => ({ name: o.name, tool: o.tool, moves: o.moves, cutLen: o.cutLen, zmin: isFinite(o.zmin) ? o.zmin : null })),
       // Tools that actually cut, in encounter order, each mapped to a colour slot -
       // drives the colour-by-tool mode and the per-tool show/hide legend.
       toolColors: [...toolSlot.entries()].map(([n, slot]) => ({ n, slot })).sort((a, b) => a.slot - b.slot),
       spindleMax, spindleDir,
       coolant: [...coolant],
       workOffsets: [...workOffsets],
+      progNum, progEnd, optStops,
+      maxDepth: isFinite(minz) ? minz : null,   // deepest Z reached (most negative)
     },
     headerComments: allComments,
   };
 }
 
 function arcPoints(x0, y0, z0, x1, y1, z1, t, unit, cw, plane) {
-  if (plane !== 17) return null;
-  let cxv, cyv;
-  if (t.i !== null || t.j !== null) {
-    cxv = x0 + (t.i || 0) * unit; cyv = y0 + (t.j || 0) * unit;
-  } else if (t.r !== null) {
-    const r = t.r * unit, mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
-    const dx = x1 - x0, dy = y1 - y0, d = Math.hypot(dx, dy);
+  // Work in the active plane's two in-plane axes (f, s) plus the out-of-plane axis (w,
+  // linearly interpolated for a helix). The RS274 canonical axis ordering per plane -
+  // G17 (X,Y), G18 (Z,X), G19 (Y,Z) - is chosen so the same maths and CW/CCW sense work
+  // for all three (each pair is right-handed about its perpendicular axis).
+  const I = t.i !== null ? t.i * unit : null, J = t.j !== null ? t.j * unit : null, K = t.k !== null ? t.k * unit : null;
+  let f0, s0, f1, s1, w0, w1, cf, cs;
+  if (plane === 18) { f0 = z0; s0 = x0; f1 = z1; s1 = x1; w0 = y0; w1 = y1; if (I !== null || K !== null) { cf = z0 + (K || 0); cs = x0 + (I || 0); } }
+  else if (plane === 19) { f0 = y0; s0 = z0; f1 = y1; s1 = z1; w0 = x0; w1 = x1; if (J !== null || K !== null) { cf = y0 + (J || 0); cs = z0 + (K || 0); } }
+  else { f0 = x0; s0 = y0; f1 = x1; s1 = y1; w0 = z0; w1 = z1; if (I !== null || J !== null) { cf = x0 + (I || 0); cs = y0 + (J || 0); } }
+  if (cf === undefined) {
+    // R (radius) form: centre is offset from the chord midpoint, perpendicular to it.
+    if (t.r === null) return null;
+    const r = t.r * unit, mf = (f0 + f1) / 2, ms = (s0 + s1) / 2;
+    const df = f1 - f0, ds = s1 - s0, d = Math.hypot(df, ds);
     if (d < 1e-9 || Math.abs(r) < d / 2 - 1e-6) return null;
     const h = Math.sqrt(Math.max(0, r * r - (d * d) / 4));
-    const ox = -dy / d * h, oy = dx / d * h;
+    const of = -ds / d * h, os = df / d * h;
     const sign = (cw ? 1 : -1) * (r < 0 ? -1 : 1);
-    cxv = mx + sign * ox; cyv = my + sign * oy;
-  } else return null;
-  const r0 = Math.hypot(x0 - cxv, y0 - cyv);
+    cf = mf + sign * of; cs = ms + sign * os;
+  }
+  const r0 = Math.hypot(f0 - cf, s0 - cs);
   if (r0 < 1e-6) return null;
-  let a0 = Math.atan2(y0 - cyv, x0 - cxv);
-  let a1 = Math.atan2(y1 - cyv, x1 - cxv);
+  let a0 = Math.atan2(s0 - cs, f0 - cf);
+  let a1 = Math.atan2(s1 - cs, f1 - cf);
   if (cw) { while (a1 >= a0) a1 -= 2 * Math.PI; } else { while (a1 <= a0) a1 += 2 * Math.PI; }
   const sweep = Math.abs(a1 - a0);
   const maxAng = 2 * Math.acos(Math.max(0, 1 - ARC_TOL / Math.max(r0, ARC_TOL)));
@@ -484,15 +625,18 @@ function arcPoints(x0, y0, z0, x1, y1, z1, t, unit, cw, plane) {
   steps = Math.max(ARC_MIN_STEPS, Math.min(ARC_MAX_STEPS, steps));
   const pts = [];
   for (let k = 0; k <= steps; k++) {
-    const f = k / steps, a = a0 + (a1 - a0) * f;
-    pts.push([cxv + r0 * Math.cos(a), cyv + r0 * Math.sin(a), z0 + (z1 - z0) * f]);
+    const fr = k / steps, a = a0 + (a1 - a0) * fr;
+    const ff = cf + r0 * Math.cos(a), ss = cs + r0 * Math.sin(a), ww = w0 + (w1 - w0) * fr;
+    if (plane === 18) pts.push([ss, ww, ff]);        // s->X, w->Y, f->Z
+    else if (plane === 19) pts.push([ww, ff, ss]);   // w->X, f->Y, s->Z
+    else pts.push([ff, ss, ww]);                     // f->X, s->Y, w->Z
   }
   return pts;
 }
 
 function parseAxes(line) {
-  const o = { x: null, y: null, z: null, e: null, f: null, i: null, j: null, r: null };
-  const re = /([XYZEFIJR])(-?\d*\.?\d+)/gi;
+  const o = { x: null, y: null, z: null, e: null, f: null, i: null, j: null, k: null, r: null };
+  const re = /([XYZEFIJKR])(-?\d*\.?\d+)/gi;
   let m;
   while ((m = re.exec(line))) { const v = parseFloat(m[2]); if (!isNaN(v)) o[m[1].toLowerCase()] = v; }
   return o;
@@ -557,6 +701,12 @@ function buildViewer(data, opts = {}) {
   const wrap = el('div', { class: 'anr-stl-viewport' });
   const canvas = el('canvas', { class: 'anr-stl-canvas' });
   wrap.appendChild(canvas);
+  // Wait label: a small monospace box that billboards over the toolhead while it dwells /
+  // heats / pauses, saying what it is waiting for and the time remaining. A DOM overlay
+  // (always faces the camera); positioned each frame in draw() and hidden otherwise.
+  const pauseTag = el('div', { class: 'anr-gcode-wait' });
+  pauseTag.style.cssText = 'position:absolute;display:none;left:0;top:0;pointer-events:none;transform:translate(-50%,-100%);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:1.35;white-space:nowrap;padding:2px 7px;border-radius:5px;background:rgba(10,12,16,0.82);color:#eef2ff;border:1px solid rgba(255,255,255,0.22);box-shadow:0 1px 6px rgba(0,0,0,0.4);z-index:6;';
+  wrap.appendChild(pauseTag);
   const msaa = opts.antialias !== false;
   const glOpts = { preserveDrawingBuffer: true, antialias: msaa };
   const gl = canvas.getContext('webgl', glOpts) || canvas.getContext('experimental-webgl', glOpts);
@@ -605,6 +755,65 @@ function buildViewer(data, opts = {}) {
   const yMin = (min[2] - cz) / span, ySpan = ((max[2] - min[2]) / span) || 1e-3;
   const fMin = data.feedRange.min, fSpan = Math.max(1e-6, data.feedRange.max - data.feedRange.min);
 
+  // Print-bed floor: a grid + printable-area outline at machine Z=0, built once in the
+  // viewer's normalised space (machine Z=0 -> the viewer's horizontal plane) so the part
+  // is seen sitting on its plate, in its real position. bedBoundR widens the depth frustum
+  // in draw() so the plate (which can extend well past the part) doesn't clip.
+  // Render the bed-info lines (printer / size / plate) to a 2D canvas, to be pasted onto
+  // the plate as a texture so the box is genuinely part of the bed (lies flat, follows
+  // the plate's perspective) rather than a screen overlay. Returns the canvas + its size.
+  const makeBedLabelCanvas = (lines) => {
+    const sc = 2, fs = 22 * sc, lh = 30 * sc, pad = 14 * sc;
+    const cv = document.createElement('canvas');
+    const ctx = cv.getContext('2d');
+    const fontFor = (b) => `${b ? '600 ' : ''}${fs}px ui-monospace, Menlo, Consolas, monospace`;
+    let wmax = 0;
+    for (const ln of lines) { ctx.font = fontFor(ln.bold); wmax = Math.max(wmax, ctx.measureText(ln.text).width); }
+    cv.width = Math.ceil(wmax + pad * 2); cv.height = Math.ceil(lines.length * lh + pad * 2);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = 'rgba(10,12,16,0.82)'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 1 * sc; ctx.strokeRect(0.5 * sc, 0.5 * sc, cv.width - sc, cv.height - sc);
+    ctx.textBaseline = 'top';
+    let y = pad;
+    for (const ln of lines) { ctx.font = fontFor(ln.bold); ctx.fillStyle = ln.dim ? 'rgba(238,242,255,0.8)' : '#eef2ff'; ctx.fillText(ln.text, pad, y); y += lh; }
+    return cv;
+  };
+
+  let bedGrid = null, bedOutline = null, bedBoundR = 0, bedLabelCanvas = null, bedLabelQuad = null;
+  if (data.bed) {
+    const b = data.bed, grid = [], outline = [];
+    const pushSeg = (arr, ax, ay, bx, by) => {
+      const A = nrm(ax, ay, 0), B = nrm(bx, by, 0);
+      arr.push(A[0], A[1], A[2], B[0], B[1], B[2]);
+      for (const P of [A, B]) { const dd = Math.hypot(P[0] - ctr[0], P[1] - ctr[1], P[2] - ctr[2]); if (dd > bedBoundR) bedBoundR = dd; }
+    };
+    // "Nice" grid step (1/2/5 x 10^n) giving ~14 divisions across the larger bed axis.
+    const niceStep = (t) => { const pw = Math.pow(10, Math.floor(Math.log10(t || 1))); const f = (t || 1) / pw; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * pw; };
+    const step = Math.max(1, niceStep(Math.max(b.w, b.d) / 14));
+    for (let gx = Math.ceil(b.x0 / step) * step; gx <= b.x1 + 1e-6; gx += step) pushSeg(grid, gx, b.y0, gx, b.y1);
+    for (let gy = Math.ceil(b.y0 / step) * step; gy <= b.y1 + 1e-6; gy += step) pushSeg(grid, b.x0, gy, b.x1, gy);
+    const poly = (b.poly && b.poly.length >= 3) ? b.poly : [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]];
+    for (let k = 0; k < poly.length; k++) { const p = poly[k], q = poly[(k + 1) % poly.length]; pushSeg(outline, p[0], p[1], q[0], q[1]); }
+    bedGrid = new Float32Array(grid); bedOutline = new Float32Array(outline);
+
+    // Info label as a textured quad lying flat in the front-right corner of the plate
+    // (machine +X = reads right, +Y = reads up), lifted a hair above Z=0 so it sits over
+    // the grid lines but under the first print layer.
+    const bu = data.units || 'mm';
+    const lines = [];
+    if (data.printerModel) lines.push({ text: data.printerModel, bold: true });
+    lines.push({ text: `${b.w.toFixed(0)} × ${b.d.toFixed(0)}${b.h ? ` × ${b.h.toFixed(0)}` : ''} ${bu}`, bold: false });
+    if (b.type) lines.push({ text: b.type, dim: true });
+    bedLabelCanvas = makeBedLabelCanvas(lines);
+    const inset = Math.min(b.w, b.d) * 0.03;
+    const tw = b.w * 0.34, th = tw * (bedLabelCanvas.height / bedLabelCanvas.width);
+    const rx1 = b.x1 - inset, ry0 = b.y0 + inset, rx0 = rx1 - tw, ry1 = ry0 + th;
+    const zl = bu === 'in' ? 0.004 : 0.1;   // tiny lift above the plate
+    const v = (mx, my, uu, vv) => { const P = nrm(mx, my, zl); return [P[0], P[1], P[2], uu, vv]; };
+    const A = v(rx0, ry1, 0, 0), B = v(rx1, ry1, 1, 0), C = v(rx1, ry0, 1, 1), D = v(rx0, ry0, 0, 1);
+    bedLabelQuad = new Float32Array([...A, ...B, ...C, ...A, ...C, ...D]);
+  }
+
   // Filament colour palette (flat vec3 array, max 8) for "colour by filament".
   const FIL_MAX = 8;
   const filCols = new Float32Array(FIL_MAX * 3);
@@ -617,6 +826,7 @@ function buildViewer(data, opts = {}) {
   const segN = data.segCount;
   const instData = new Float32Array(segN * STR);
   let wHalfMin = Infinity, wHalfMax = 0;   // normalised half-width range, for "colour by width"
+  let minHalfH = Infinity;                 // smallest positive bead half-height (normalised) -> layer height
   for (let s = 0; s < segN; s++) {
     const p = s * 10, q = s * STR;
     const a = nrm(data.seg[p], data.seg[p + 1], data.seg[p + 2]);
@@ -630,9 +840,13 @@ function buildViewer(data, opts = {}) {
     instData[q + 9] = data.seg[p + 9];                  // feature type
     instData[q + 10] = data.segFil ? Math.min(FIL_MAX - 1, data.segFil[s] | 0) : 0;   // filament slot
     if (data.seg[p + 6] > 0) { if (hw < wHalfMin) wHalfMin = hw; if (hw > wHalfMax) wHalfMax = hw; }
+    if (data.seg[p + 7] > 0) { const hh = instData[q + 7]; if (hh < minHalfH) minHalfH = hh; }
   }
   if (!(wHalfMin < wHalfMax)) { wHalfMin = 0; wHalfMax = 1e-3; }
   const wSpan = Math.max(1e-9, wHalfMax - wHalfMin);
+  // One layer height in normalised world units (full bead height ~= layer spacing). Caps
+  // the per-type depth nudge below so it can never push a bead a whole layer deep.
+  const layerH = (minHalfH < Infinity ? minHalfH * 2 : 0.002) || 0.002;
   // Travel instances (thin), reusing the same layout.
   const travN = inst ? data.travelCount : 0;
   let travData = null;
@@ -651,7 +865,7 @@ function buildViewer(data, opts = {}) {
 
   const vsInst = `attribute float aEnd, aSr, aSu; attribute vec3 aA, aB; attribute float aHW, aHH, aFeed, aType, aTool;
     uniform mat4 uMVP, uModel; uniform vec2 uViewport;
-    uniform float uYmin, uYspan, uFmin, uFspan, uMode, uTravel, uMinW, uMinPx, uFlat, uVis[8], uWmin, uWspan;
+    uniform float uYmin, uYspan, uFmin, uFspan, uMode, uTravel, uMinW, uMinPx, uFlat, uVis[8], uWmin, uWspan, uTypeBias;
     uniform vec3 uFilCols[8];
     varying float vT, vVis; varying vec3 vN, vColor;
     vec3 filColor(float ft){ int t=int(ft+0.5);
@@ -694,6 +908,14 @@ function buildViewer(data, opts = {}) {
       }
       vN = mat3(uModel) * nrm;
       gl_Position = uMVP*vec4(P + off, 1.0);
+      // Anti z-fighting: push higher feature types fractionally back so overlapping
+      // beads of different types stop flickering (outer wall stays in front). uTypeBias
+      // is a constant clip-space z step (-proj[10] * worldStep), so after the perspective
+      // divide it is a roughly constant WORLD-depth offset regardless of camera distance -
+      // bounded well under a layer height, so it never reorders stacked layers. (Note: no
+      // * gl_Position.w here - that older form gave a constant NDC offset that grew with
+      // distance and let lower layers punch through upper ones when zoomed out.)
+      gl_Position.z += aType * uTypeBias;
       // Height fraction from the segment CENTRELINE (not the offset bead vertex), so
       // the build-height clip reveals whole layers cleanly and 100% is the true top.
       vT = clamp((P.y - uYmin)/uYspan, 0.0, 1.0);
@@ -731,13 +953,79 @@ function buildViewer(data, opts = {}) {
   }
 
   gl.enable(gl.DEPTH_TEST);
+
+  // Print-bed renderer (a thin line program, shared by both draw paths). Draws the grid
+  // dim and the printable-area outline brighter, alpha-blended, at machine Z=0.
+  let drawBed = () => {};
+  if (bedGrid) {
+    const bedProg = makeProg(
+      'attribute vec3 aPos; uniform mat4 uMVP; void main(){ gl_Position = uMVP*vec4(aPos,1.0); }',
+      'precision mediump float; uniform vec4 uCol; void main(){ gl_FragColor = uCol; }');
+    const aBedPos = gl.getAttribLocation(bedProg, 'aPos');
+    const uBedMVP = gl.getUniformLocation(bedProg, 'uMVP'), uBedCol = gl.getUniformLocation(bedProg, 'uCol');
+    const gBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, gBuf); gl.bufferData(gl.ARRAY_BUFFER, bedGrid, gl.STATIC_DRAW);
+    const oBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, oBuf); gl.bufferData(gl.ARRAY_BUFFER, bedOutline, gl.STATIC_DRAW);
+
+    // Info-label quad pasted flat onto the plate: a textured (printer/size/plate) panel.
+    let drawBedLabel = () => {};
+    if (bedLabelQuad && bedLabelCanvas) {
+      const texProg = makeProg(
+        'attribute vec3 aPos; attribute vec2 aUV; uniform mat4 uMVP; varying vec2 vUV; void main(){ vUV = aUV; gl_Position = uMVP*vec4(aPos,1.0); }',
+        'precision mediump float; varying vec2 vUV; uniform sampler2D uTex; void main(){ vec4 c = texture2D(uTex, vUV); if(c.a < 0.01) discard; gl_FragColor = c; }');
+      const aTPos = gl.getAttribLocation(texProg, 'aPos'), aTUV = gl.getAttribLocation(texProg, 'aUV');
+      const uTMVP = gl.getUniformLocation(texProg, 'uMVP'), uTSamp = gl.getUniformLocation(texProg, 'uTex');
+      const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bedLabelCanvas);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      const qBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, qBuf); gl.bufferData(gl.ARRAY_BUFFER, bedLabelQuad, gl.STATIC_DRAW);
+      drawBedLabel = (mvp) => {
+        gl.useProgram(texProg);
+        gl.uniformMatrix4fv(uTMVP, false, mvp);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(uTSamp, 0);
+        gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);   // premultiplied
+        gl.bindBuffer(gl.ARRAY_BUFFER, qBuf);
+        gl.enableVertexAttribArray(aTPos); gl.vertexAttribPointer(aTPos, 3, gl.FLOAT, false, 20, 0); if (inst) inst.vertexAttribDivisorANGLE(aTPos, 0);
+        gl.enableVertexAttribArray(aTUV); gl.vertexAttribPointer(aTUV, 2, gl.FLOAT, false, 20, 12); if (inst) inst.vertexAttribDivisorANGLE(aTUV, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.disable(gl.BLEND);
+      };
+    }
+
+    drawBed = (mvp) => {
+      if (!state.showBed) return;
+      gl.useProgram(bedProg);
+      gl.uniformMatrix4fv(uBedMVP, false, mvp);
+      gl.enableVertexAttribArray(aBedPos);
+      if (inst) inst.vertexAttribDivisorANGLE(aBedPos, 0);   // never inherit an instanced divisor
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.bindBuffer(gl.ARRAY_BUFFER, gBuf); gl.vertexAttribPointer(aBedPos, 3, gl.FLOAT, false, 0, 0);
+      gl.uniform4f(uBedCol, 0.46, 0.52, 0.64, 0.5);
+      gl.drawArrays(gl.LINES, 0, bedGrid.length / 3);
+      gl.bindBuffer(gl.ARRAY_BUFFER, oBuf); gl.vertexAttribPointer(aBedPos, 3, gl.FLOAT, false, 0, 0);
+      gl.uniform4f(uBedCol, 0.64, 0.72, 0.88, 0.92);
+      gl.drawArrays(gl.LINES, 0, bedOutline.length / 3);
+      gl.disable(gl.BLEND);
+      drawBedLabel(mvp);   // the info panel rides on the plate
+    };
+  }
+
   // mode: 0 = feature type, 1 = height, 2 = speed. vis: per-feature-type 1/0.
   // shown: how many extrusion segments to draw (in print order) - the progress slider.
-  const state = { yaw: -0.78, pitch: 0.6, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: 'travel', flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.mode === 'print' && data.multicolour) ? 3 : (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, showLegend: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false,
+  const state = { yaw: -0.78, pitch: 0.6, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: 'travel', flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.mode === 'print' && data.multicolour) ? 3 : (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, showBed: !!bedGrid, showLegend: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false,
     // Travel-aware playback: travShown = full travel segments to draw; playKind marks
     // whether the in-progress (partially drawn) move is an extrusion (1) or a travel (2),
     // so the head can glide along travels too; playFrac is the fraction into it.
-    travShown: travN, playKind: 0, playFrac: 0, translucentTravel: false };
+    travShown: travN, playKind: 0, playFrac: 0, paused: false, translucentTravel: false,
+    // Follow camera: 0 = off (free), 1 = height (vertical pivot tracks the toolhead's
+    // build height, the rest free), 2 = toolhead (pivot locked to the toolhead, only
+    // rotation/zoom free). headX/Y/Z carry the live tool point (in geometry space) that
+    // draw() pivots on; updated each frame by the draw impl.
+    follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, pauseText: '' };
   let viewW = 600, viewH = 420;   // CSS px, for screen-space size in the shader
   let dirty = true;
   const spinListeners = [];
@@ -760,10 +1048,20 @@ function buildViewer(data, opts = {}) {
     let partTravBuf = null, partTravArr = null;
     if (travData) { partTravBuf = gl.createBuffer(); partTravArr = new Float32Array(STR); }
 
+    // Last live tool point, kept across frames so the toolhead stays put (and visible)
+    // while the machine is paused/dwelling/heating instead of vanishing. Seeded with the
+    // first real move's start so the head is already parked there during a leading
+    // heat-up wait (M109/M190), before any geometry has been drawn.
+    let lastHX = 0, lastHY = 0, lastHZ = 0, haveLastHead = false;
+    { const ord = data.order, G0 = data.orderCount;
+      for (let g = 0; g < G0; g++) { const o = ord[g]; if (o > 1.5) continue;
+        const src = o > 0.5 ? travData : instData;
+        if (src) { lastHX = src[0]; lastHY = src[1]; lastHZ = src[2]; haveLastHead = true; } break; } }
+
     const L = (n) => gl.getAttribLocation(prog, n);
     const aEnd = L('aEnd'), aSr = L('aSr'), aSu = L('aSu'), aA = L('aA'), aB = L('aB'), aHW = L('aHW'), aHH = L('aHH'), aFeed = L('aFeed'), aType = L('aType'), aTool = L('aTool');
     const U = (n) => gl.getUniformLocation(prog, n);
-    const uMVP = U('uMVP'), uModel = U('uModel'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan');
+    const uMVP = U('uMVP'), uModel = U('uModel'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan'), uTypeBias = U('uTypeBias');
 
     const bindTemplate = () => {
       gl.bindBuffer(gl.ARRAY_BUFFER, tplBuf);
@@ -807,8 +1105,9 @@ function buildViewer(data, opts = {}) {
       gl.drawArrays(gl.TRIANGLES, 0, 12);
     };
     drawImpl = (proj, view, model) => {
-      gl.useProgram(prog);
       const mvp = mat4Multiply(proj, mat4Multiply(view, model));
+      drawBed(mvp);   // floor first, so the solid print draws crisply over it
+      gl.useProgram(prog);
       gl.uniformMatrix4fv(uMVP, false, mvp); gl.uniformMatrix4fv(uModel, false, model);
       gl.uniform2f(uViewport, viewW, viewH);
       gl.uniform1f(uYmin, yMin); gl.uniform1f(uYspan, ySpan); gl.uniform1f(uFmin, fMin); gl.uniform1f(uFspan, fSpan); gl.uniform1f(uClip, state.clip);
@@ -829,7 +1128,11 @@ function buildViewer(data, opts = {}) {
       // Live tool point: when playback is mid-travel, glide along that travel; when
       // mid-extrusion, grow along the bead; otherwise sit at the end of the last move.
       let hx = 0, hy = 0, hz = 0, haveHead = false;
-      if (state.playKind === 2 && travData && travShown < travN) {
+      if (state.paused && haveLastHead) {
+        // Dwelling / waiting / heating: freeze the head where it last was, don't recompute
+        // (recomputing from `shown` would snap it back to the last extrusion endpoint).
+        hx = lastHX; hy = lastHY; hz = lastHZ; haveHead = true;
+      } else if (state.playKind === 2 && travData && travShown < travN) {
         const q = travShown * STR, tf = state.playFrac;
         hx = travData[q] + tf * (travData[q + 3] - travData[q]);
         hy = travData[q + 1] + tf * (travData[q + 4] - travData[q + 1]);
@@ -845,12 +1148,19 @@ function buildViewer(data, opts = {}) {
         const q = (shown - 1) * STR;
         hx = instData[q + 3]; hy = instData[q + 4]; hz = instData[q + 5]; haveHead = true;
       }
+      // Remember the live point (but not while paused - keep the pre-pause position).
+      if (haveHead && !state.paused) { lastHX = hx; lastHY = hy; lastHZ = hz; haveLastHead = true; }
+      // Publish the live point for the follow camera (draw() reads this on the next
+      // frame); fall back to the seeded/last point so following works before play too.
+      if (haveHead) { state.headX = hx; state.headY = hy; state.headZ = hz; }
+      else if (haveLastHead) { state.headX = lastHX; state.headY = lastHY; state.headZ = lastHZ; }
+      state.headValid = haveHead || haveLastHead;
 
       // Travel pass. Travels are revealed by explicit count from the unified playback
       // timeline (travShown). Opaque travels draw BEFORE the print so the solid print sits
       // crisply over them; translucent travels must draw AFTER the print (see below).
       const drawTravelPass = () => {
-        gl.uniform1f(uTravel, 1); gl.uniform1f(uMode, 0);
+        gl.uniform1f(uTravel, 1); gl.uniform1f(uMode, 0); gl.uniform1f(uTypeBias, 0);   // travels are one type, no bias
         // Travels are hairline-thin, so the "Minimum line width" setting fattens them at
         // its 'travel' and 'all' stages (only 'none' leaves them sub-pixel) - otherwise long
         // rapids vanish into slivers when zoomed out.
@@ -877,8 +1187,13 @@ function buildViewer(data, opts = {}) {
       const wantTravel = state.showTravel && travBuf;
       if (wantTravel && !state.translucentTravel) drawTravelPass();
 
-      // Extrusion (solid print) pass.
-      gl.uniform1f(uTravel, 0); gl.uniform1f(uMode, state.mode);
+      // Extrusion (solid print) pass. Per-type depth nudge as a constant world-space offset:
+      // a clip-space z step of (-proj[10]) * worldStep divides through to a ~constant world
+      // depth offset (see the shader note). worldStep is a small fraction of a layer height,
+      // so the largest type's total nudge stays well under one layer and can never reorder
+      // stacked layers - only break coplanar same-layer z-fighting.
+      const worldStep = TYPE_BIAS_LAYER_FRAC * layerH;
+      gl.uniform1f(uTravel, 0); gl.uniform1f(uMode, state.mode); gl.uniform1f(uTypeBias, -proj[10] * worldStep);
       gl.uniform1f(uMinW, state.minWidth === 'all' ? 1 : 0);   // extrusions only get min width at the 'all' stage
       bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
       if (frac > 0) {
@@ -912,6 +1227,7 @@ function buildViewer(data, opts = {}) {
     const U = (n) => gl.getUniformLocation(prog, n);
     const uProj = U('uProj'), uView = U('uView'), uModel = U('uModel'), uYmin = U('uYmin'), uYspan = U('uYspan'), uClip = U('uClip');
     drawImpl = (proj, view, model) => {
+      drawBed(mat4Multiply(proj, mat4Multiply(view, model)));
       gl.useProgram(prog);
       gl.uniformMatrix4fv(uProj, false, proj); gl.uniformMatrix4fv(uView, false, view); gl.uniformMatrix4fv(uModel, false, model);
       gl.uniform1f(uYmin, yMin); gl.uniform1f(uYspan, ySpan); gl.uniform1f(uClip, state.clip);
@@ -960,18 +1276,50 @@ function buildViewer(data, opts = {}) {
     // (a 200000:1 near/far ratio) starved the depth buffer of precision over the part
     // and caused heavy z-fighting between stacked/adjacent beads; bracketing it makes
     // far/near small, so the precision lands where the geometry actually is.
-    const r = boundRMax * 1.08 + 0.02;         // true extent (+ head marker / fattened beads) so nothing clips
+    // Orbit pivot. Normally the robust median centre (ctr); with the follow camera on
+    // (toolhead), the tool point drives it and is centred (pan disabled).
+    let pvx = ctr[0], pvy = ctr[1], pvz = ctr[2];
+    if (state.follow && state.headValid) { pvx = state.headX; pvy = state.headY; pvz = state.headZ; }
+    const lockPan = !!state.follow;
+    const panX = lockPan ? 0 : state.panX, panY = lockPan ? 0 : state.panY;
+    // Depth range: bracket the bounding sphere, widened by how far the pivot sits from
+    // ctr so an off-centre (followed) pivot doesn't clip the far side of the model.
+    const pvDisp = Math.hypot(pvx - ctr[0], pvy - ctr[1], pvz - ctr[2]);
+    let r = boundRMax * 1.08 + 0.02 + pvDisp;   // true extent (+ head marker / fattened beads) so nothing clips
+    // The plate can extend well past the part; widen the frustum to keep it from clipping
+    // when shown (capped at 4x the part extent so a huge bed under a tiny part doesn't wreck
+    // depth precision - beyond that the plate's far corners simply clip).
+    if (state.showBed && bedGrid) r = Math.max(r, Math.min(bedBoundR + 0.05 + pvDisp, (boundRMax * 1.08 + 0.02) * 4));
     const near = Math.max(0.01, state.dist - r);
     const far = state.dist + r + 0.02;
     let proj;
     if (state.ortho) { const hh = state.dist * 0.4142; proj = mat4Ortho(-hh * aspect, hh * aspect, -hh, hh, near, far); }
     else proj = mat4Perspective(45 * Math.PI / 180, aspect, near, far);
-    const view = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, state.panX, state.panY, -state.dist, 1]);
-    // Recentre the part under the orbit pivot (ctr is the robust median centre), then
-    // rotate - so spin/orbit turn about the model, not the outlier-skewed bbox midpoint.
+    const view = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, panX, panY, -state.dist, 1]);
+    // Recentre the part under the orbit pivot, then rotate - so spin/orbit turn about
+    // the pivot, not the outlier-skewed bbox midpoint.
     const rot = mat4Multiply(mat4RotX(state.pitch), mat4RotY(state.yaw));
-    const model = mat4Multiply(rot, new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -ctr[0], -ctr[1], -ctr[2], 1]));
+    const model = mat4Multiply(rot, new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -pvx, -pvy, -pvz, 1]));
     drawImpl(proj, view, model);
+    positionWaitTag(proj, view, model);
+  }
+  // Billboard the wait label over the toolhead tip while it dwells / heats / pauses.
+  // Projects the live tool point to screen space (so a DOM box always faces the camera)
+  // and parks it just above the tip; hidden whenever the head isn't holding.
+  function positionWaitTag(proj, view, model) {
+    if (!(state.head && state.paused && state.pauseText && state.headValid)) { pauseTag.style.display = 'none'; return; }
+    const m = mat4Multiply(proj, mat4Multiply(view, model));
+    const x = state.headX, y = state.headY, z = state.headZ;
+    const cx = m[0] * x + m[4] * y + m[8] * z + m[12];
+    const cy = m[1] * x + m[5] * y + m[9] * z + m[13];
+    const cw = m[3] * x + m[7] * y + m[11] * z + m[15];
+    if (cw <= 1e-4) { pauseTag.style.display = 'none'; return; }   // behind the camera
+    const sx = (cx / cw * 0.5 + 0.5) * viewW;
+    const sy = (1 - (cy / cw * 0.5 + 0.5)) * viewH;
+    if (pauseTag.textContent !== state.pauseText) pauseTag.textContent = state.pauseText;
+    pauseTag.style.left = sx + 'px';
+    pauseTag.style.top = (sy - 14) + 'px';   // a touch above the tip, clear of the marker
+    pauseTag.style.display = '';
   }
   function loop() {
     if (state.spin) { state.yaw += 0.003; dirty = true; }
@@ -1028,8 +1376,8 @@ function buildViewer(data, opts = {}) {
   }
 
   function snapshot() {
-    const saved = { yaw: state.yaw, pitch: state.pitch, dist: state.dist, spin: state.spin, ortho: state.ortho, clip: state.clip, panX: state.panX, panY: state.panY };
-    state.spin = false; state.ortho = false; state.clip = 1; state.panX = 0; state.panY = 0;
+    const saved = { yaw: state.yaw, pitch: state.pitch, dist: state.dist, spin: state.spin, ortho: state.ortho, clip: state.clip, panX: state.panX, panY: state.panY, follow: state.follow };
+    state.spin = false; state.ortho = false; state.clip = 1; state.panX = 0; state.panY = 0; state.follow = 0;
     state.yaw = Math.PI / 4; state.pitch = Math.atan(1 / Math.SQRT2);
     state.dist = fitDist(0.96);
     draw();
@@ -1124,9 +1472,38 @@ function buildViewer(data, opts = {}) {
   };
   refreshLegend();
 
+  // Animate the camera back to the default framing (mirrors the 3D model viewer's Reset
+  // view): yaw, pitch, zoom distance and pan eased together over 320ms, shortest way
+  // round on yaw, with spin paused so it doesn't fight the tween.
+  let resetAnim = 0;
+  function resetView() {
+    setSpin(false);
+    const from = { yaw: state.yaw, pitch: state.pitch, dist: state.dist, panX: state.panX, panY: state.panY };
+    const to = { yaw: -0.78, pitch: 0.6, dist: fitDist(0.9), panX: 0, panY: 0 };
+    state.fitted = true;
+    let dyaw = to.yaw - from.yaw;
+    while (dyaw > Math.PI) dyaw -= 2 * Math.PI;
+    while (dyaw < -Math.PI) dyaw += 2 * Math.PI;
+    const dur = 320; let t0 = 0;
+    if (resetAnim) cancelAnimationFrame(resetAnim);
+    const tick = (ts) => {
+      if (!t0) t0 = ts;
+      const k = Math.min(1, (ts - t0) / dur);
+      const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;   // ease-in-out, matching the view-cube
+      state.yaw = from.yaw + dyaw * e;
+      state.pitch = from.pitch + (to.pitch - from.pitch) * e;
+      state.dist = from.dist + (to.dist - from.dist) * e;
+      state.panX = from.panX + (to.panX - from.panX) * e;
+      state.panY = from.panY + (to.panY - from.panY) * e;
+      dirty = true;
+      resetAnim = k < 1 ? requestAnimationFrame(tick) : 0;
+    };
+    resetAnim = requestAnimationFrame(tick);
+  }
+
   const api = {
     wrap, ok: true, state, hasTravel: !!drawImpl.hasTravel, instanced: !!(inst && segN > 0), snapshot, refreshLegend, colourPanel, topLeft: topLeftSlot,
-    resize, setSpin, onSpinChange: (cb) => spinListeners.push(cb),
+    resize, setSpin, onSpinChange: (cb) => spinListeners.push(cb), resetView,
     start: () => { resize(); if (!state.fitted) { state.dist = fitDist(0.9); state.fitted = true; } requestAnimationFrame(loop); }, markDirty: () => { dirty = true; },
     fit: (fill) => { state.dist = fitDist(fill === undefined ? 0.9 : fill); state.fitted = true; dirty = true; },
   };
@@ -1201,7 +1578,7 @@ export async function renderGcode(file, resultsEl, opts) {
       // references `viewer` by binding, so they keep working after the swap.
       function applyMSAA(on) {
         const s = viewer.state;
-        const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, showLegend: s.showLegend, vis: s.vis, shown: s.shown, partial: s.partial, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten, fitted: s.fitted, travShown: s.travShown, playKind: s.playKind, playFrac: s.playFrac, translucentTravel: s.translucentTravel };
+        const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, showLegend: s.showLegend, vis: s.vis, shown: s.shown, partial: s.partial, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten, fitted: s.fitted, travShown: s.travShown, playKind: s.playKind, playFrac: s.playFrac, paused: s.paused, translucentTravel: s.translucentTravel, follow: s.follow };
         const old = viewer;
         const next = buildViewer(data, { antialias: on });
         if (!next.ok) return;                         // keep the working viewer if rebuild fails
@@ -1216,7 +1593,7 @@ export async function renderGcode(file, resultsEl, opts) {
       }
 
       const resetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Reset view');
-      resetBtn.addEventListener('click', () => { Object.assign(viewer.state, { yaw: -0.78, pitch: 0.6, panX: 0, panY: 0 }); viewer.fit(); });
+      resetBtn.addEventListener('click', () => viewer.resetView());
       const projBtn = el('button', { type: 'button', class: 'anr-btn' }, viewer.state.ortho ? 'Orthographic' : 'Perspective');
       projBtn.addEventListener('click', () => { viewer.state.ortho = !viewer.state.ortho; projBtn.textContent = viewer.state.ortho ? 'Orthographic' : 'Perspective'; viewer.markDirty(); });
       // Anti-aliasing / quality popup: hardware MSAA, supersampling, minimum line
@@ -1256,20 +1633,33 @@ export async function renderGcode(file, resultsEl, opts) {
       document.addEventListener('click', (e) => { if (!qWrap.contains(e.target)) qPanel.classList.add('is-hidden'); });
       qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
       // Colour mode + its legend live in a top-right overlay built inside the viewer.
-      const travelBtn = el('button', { type: 'button', class: 'anr-btn' }, isPrint ? 'Show travel' : 'Show rapids');
+      const travelBtn = el('button', { type: 'button', class: 'anr-btn' }, isPrint ? 'Travel' : 'Rapids');
+      const setTravel = (on) => {
+        viewer.state.showTravel = on;
+        travelBtn.classList.toggle('is-active', on);   // red while travel is shown
+        viewer.markDirty();
+      };
       if (viewer.hasTravel) {
-        travelBtn.addEventListener('click', () => {
-          viewer.state.showTravel = !viewer.state.showTravel;
-          travelBtn.textContent = viewer.state.showTravel ? (isPrint ? 'Hide travel' : 'Hide rapids') : (isPrint ? 'Show travel' : 'Show rapids');
+        travelBtn.addEventListener('click', () => setTravel(!viewer.state.showTravel));
+      } else travelBtn.disabled = true;
+
+      // Bed toggle (only when the file declared a printable area). On by default, red while shown.
+      let bedBtn = null;
+      if (data.bed) {
+        bedBtn = el('button', { type: 'button', class: 'anr-btn is-active', title: 'Show the print bed / build plate' }, 'Bed');
+        bedBtn.addEventListener('click', () => {
+          viewer.state.showBed = !viewer.state.showBed;
+          bedBtn.classList.toggle('is-active', viewer.state.showBed);
           viewer.markDirty();
         });
-      } else travelBtn.disabled = true;
+      }
 
       // Toolbar display row: travel show-hide sits between perspective and the rest.
       // Quality moves up into the viewer's top-right colour panel; fullscreen is the
       // viewer's bottom-right overlay.
       const hasLegend = data.hasTypes && data.features.length;
       viewRow.appendChild(spinBtn); viewRow.appendChild(resetBtn); viewRow.appendChild(projBtn); viewRow.appendChild(travelBtn);
+      if (bedBtn) viewRow.appendChild(bedBtn);
       toolbar.appendChild(viewRow);
       // Park the Quality popup in the viewer's top-left overlay.
       if (viewer.topLeft) viewer.topLeft.appendChild(qWrap);
@@ -1337,11 +1727,19 @@ export async function renderGcode(file, resultsEl, opts) {
       // Unified playback timeline: every buffered move - extrusions AND travels - in true
       // print order (data.order), so playback replays them interleaved exactly as the
       // machine runs them and the head glides along travels instead of teleporting.
-      // order[g] 0=ext / 1=travel; gExt/gTrav are running counts of each up to move g;
-      // gTime is the cumulative real duration (move length / feedrate) for real-time play.
+      // order[g] 0=ext / 1=travel / 2=pause; gExt/gTrav are running counts of each up to
+      // move g; gTime is the cumulative real duration (move length / feedrate, plus any
+      // dwell / wait holds) for real-time play.
       const order = data.order, G = data.orderCount;
-      const gExt = new Int32Array(G + 1), gTrav = new Int32Array(G + 1), gTime = new Float64Array(G + 1);
+      const gExt = new Int32Array(G + 1), gTrav = new Int32Array(G + 1), gTime = new Float64Array(G + 1), gPause = new Int32Array(G + 1);
       for (let g = 0; g < G; g++) {
+        gPause[g + 1] = gPause[g];
+        if (order[g] > 1.5) {                 // pause: holds the timeline, reveals no geometry
+          const pi = gPause[g]; gPause[g + 1] = pi + 1;
+          gExt[g + 1] = gExt[g]; gTrav[g + 1] = gTrav[g];
+          gTime[g + 1] = gTime[g] + (data.pauses ? data.pauses[pi] : 0);
+          continue;
+        }
         let len, feed;
         if (order[g] > 0.5) {                 // travel
           const p = gTrav[g] * 7;
@@ -1358,11 +1756,16 @@ export async function renderGcode(file, resultsEl, opts) {
       }
       const realTotal = gTime[G];
       const fmtDur = (sec) => { sec = Math.round(sec); const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), ss = sec % 60; return h ? `${h}h ${m}m` : m ? `${m}m ${ss}s` : `${ss}s`; };
+      // Compact remaining-time for the wait label: one decimal under 10s, else whole.
+      const fmtWait = (sec) => sec >= 60 ? `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s` : `${sec.toFixed(sec < 10 ? 1 : 0)}s`;
 
       // Playback rate in moves/s. A "length" preset scales to the file (G / seconds) so any
       // job finishes in that many seconds; a "lines/s" preset is a fixed rate.
       const lpsForLen = (sec) => Math.max(1, G / sec);
-      let playLps = lpsForLen(20), realtime = false;
+      // Real-time is the default so playback honours feedrates and dwell / wait holds out
+      // of the box; files with no feedrate data (realTotal === 0) fall back to a fixed
+      // length preset below.
+      let playLps = lpsForLen(20), realtime = true;
 
       // Apply a fractional global position `gi` (in moves): reveal the ext + travel
       // segments done so far and set the in-progress (partial) move - ext or travel - so
@@ -1371,11 +1774,20 @@ export async function renderGcode(file, resultsEl, opts) {
         gi = Math.max(0, Math.min(G, gi));
         const g = Math.floor(gi), frac = gi - g, s = viewer.state;
         if (g >= G) {
-          s.shown = data.segCount; s.travShown = data.travelCount; s.partial = 0; s.playKind = 0; s.playFrac = 0;
+          s.shown = data.segCount; s.travShown = data.travelCount; s.partial = 0; s.playKind = 0; s.playFrac = 0; s.paused = false; s.pauseText = '';
         } else {
           s.shown = gExt[g]; s.travShown = gTrav[g];
-          if (order[g] > 0.5) { s.playKind = frac > 0 ? 2 : 0; s.playFrac = frac; s.partial = 0; }
-          else { s.playKind = frac > 0 ? 1 : 0; s.partial = frac; s.playFrac = frac; }
+          if (order[g] > 1.5) {   // pause: head holds where it was, nothing new
+            s.playKind = 0; s.partial = 0; s.playFrac = 0; s.paused = true;
+            // Wait label: what it is waiting for + how long the VIEWER still waits (the
+            // capped playback hold counted down, frac is 0..1 over it), so it reaches 0
+            // exactly when playback resumes. In real-time mode this ticks at 1 s/second.
+            const pi = gPause[g];
+            const info = data.pauseInfo && data.pauseInfo[pi];
+            const hold = data.pauses ? data.pauses[pi] : 0;
+            s.pauseText = info ? (hold > 0 ? info.label + '  ' + fmtWait(Math.max(0, hold * (1 - frac))) : info.label) : '';
+          } else if (order[g] > 0.5) { s.playKind = frac > 0 ? 2 : 0; s.playFrac = frac; s.partial = 0; s.paused = false; s.pauseText = ''; }
+          else { s.playKind = frac > 0 ? 1 : 0; s.partial = frac; s.playFrac = frac; s.paused = false; s.pauseText = ''; }
         }
         viewer.markDirty();
         progSlider.value = String(G ? Math.round(gi / G * 1000) : 1000);
@@ -1385,7 +1797,7 @@ export async function renderGcode(file, resultsEl, opts) {
       // Scrub: snap to a whole move (no partial), so dragging only ever shows complete moves.
       const scrubTo = (gi) => { playPos = Math.max(0, Math.min(G, Math.round(gi))); playElapsed = gTime[Math.min(G, playPos)]; applyGlobal(playPos); };
 
-      let playing = false, playRAF = 0, lastTs = 0;
+      let playing = false, playRAF = 0, lastTs = 0, firstPlay = true;
       function stopPlay() { if (!playing) return; playing = false; playBtn.textContent = 'Play'; viewer.state.head = false; viewer.markDirty(); if (playRAF) cancelAnimationFrame(playRAF); playRAF = 0; }
       function stepPlay(ts) {
         if (!playing) return;
@@ -1413,11 +1825,32 @@ export async function renderGcode(file, resultsEl, opts) {
       const playBtn = el('button', { type: 'button', class: 'anr-btn', title: 'Play the print start to finish' }, 'Play');
       playBtn.addEventListener('click', () => {
         if (playing) { stopPlay(); return; }
+        // First play of this print: pause spin, ease the camera back to the default
+        // framing, and reveal travel moves so the head's hops read. Later plays just
+        // continue from where it is.
+        if (firstPlay) { firstPlay = false; viewer.resetView(); if (viewer.hasTravel) setTravel(true); }
         if (playPos >= G) scrubTo(0);   // replay from the start
         playing = true; lastTs = 0; playBtn.textContent = 'Pause'; viewer.state.head = true; viewer.markDirty();
         const g = Math.min(G, Math.floor(playPos)), dur = g < G ? gTime[g + 1] - gTime[g] : 0;
         playElapsed = gTime[g] + (playPos - g) * dur;   // sync the real-time clock to the resume point
         playRAF = requestAnimationFrame(stepPlay);
+      });
+
+      // Follow camera: toggle off <-> toolhead. 'Toolhead' keeps the tool point centred
+      // (only rotation/zoom free). draw() reads viewer.state.follow.
+      const FOLLOW_LABELS = ['Follow: off', 'Follow: toolhead'];
+      const FOLLOW_TITLES = [
+        'Camera follows nothing - free orbit, pan and zoom',
+        'Camera locks onto the toolhead and keeps it centred; only rotation and zoom stay free',
+      ];
+      const followBtn = el('button', { type: 'button', class: 'anr-btn', title: FOLLOW_TITLES[0] }, FOLLOW_LABELS[0]);
+      followBtn.addEventListener('click', () => {
+        const s = viewer.state;
+        s.follow = (s.follow + 1) % 2;
+        followBtn.textContent = FOLLOW_LABELS[s.follow];
+        followBtn.title = FOLLOW_TITLES[s.follow];
+        followBtn.classList.toggle('is-active', s.follow !== 0);
+        viewer.markDirty();
       });
 
       const LINE_PRESETS = [[100, '100 lines/s'], [500, '500 lines/s'], [1000, '1k lines/s'], [5000, '5k lines/s'], [10000, '10k lines/s'], [20000, '20k lines/s']];
@@ -1450,10 +1883,11 @@ export async function renderGcode(file, resultsEl, opts) {
       }
       // Real time: play each move at its true duration. Show the total so it's clear
       // how long that is before committing to it.
+      let rtBtn = null;
       if (realTotal > 0) {
         const rb = el('button', { type: 'button', class: 'anr-btn anr-spd-opt', title: 'Real time - play at the toolpath\'s real execution time' }, fmtDur(realTotal));
         rb.addEventListener('click', () => { chooseReal(rb); closeSpd(); });
-        allPresetBtns.push(rb); lenCol.appendChild(rb);
+        allPresetBtns.push(rb); lenCol.appendChild(rb); rtBtn = rb;
       }
       cols.appendChild(lpsCol); cols.appendChild(lenCol);
       spdPanel.appendChild(cols);
@@ -1489,15 +1923,95 @@ export async function renderGcode(file, resultsEl, opts) {
       document.addEventListener('click', (e) => { if (!spdWrap.contains(e.target) && !spdPanel.contains(e.target)) closeSpd(); });
       document.addEventListener('fullscreenchange', () => closeSpd());   // dock back when entering/leaving fullscreen
       spdWrap.appendChild(spdBtn); spdWrap.appendChild(spdPanel);
-      choose(playLps, 'whole job in 20s', defBtn);   // default selection
+      // Default to real time (honours feedrates + pauses); fall back to a fixed length
+      // preset when the file carries no feedrate data to time against.
+      if (realTotal > 0) chooseReal(rtBtn);
+      else choose(playLps, 'whole job in 20s', defBtn);
 
       progSlider.addEventListener('input', () => { stopPlay(); scrubTo(G * (+progSlider.value) / 1000); });
 
-      const progRow = el('div', { class: 'anr-gcode-slider anr-gcode-player' });
-      progRow.appendChild(playBtn);
-      progRow.appendChild(spdWrap);
-      progRow.appendChild(progSlider);
-      progRow.appendChild(progVal);
+      // Tool-change markers: a thin white tick on the progress slider at every tool /
+      // filament change, with a mono hover popup naming it. Near-coincident changes are
+      // bucketed so a many-swap print doesn't spawn thousands of ticks. The slider stays
+      // fully draggable (the tick layer is pointer-events:none); hover is read from a
+      // mousemove on the wrapper and snapped to the nearest tick.
+      const Gm = data.orderCount || 1;
+      const markBuckets = new Map();
+      for (const m of (data.toolMarks || [])) {
+        const pct = Math.max(0, Math.min(1, m.at / Gm));
+        const key = Math.round(pct * 300);
+        let e = markBuckets.get(key);
+        if (!e) { e = { pct, count: 0, items: [] }; markBuckets.set(key, e); }
+        e.count++; if (e.items.length < 6) e.items.push(m);
+      }
+      const marks = [...markBuckets.values()].sort((a, b) => a.pct - b.pct);
+      // Build the (multi-line, mono) hover popup for a bucket: title, each change's
+      // from -> to tool with its filament colour swatch (or CNC tool description), and a
+      // footer with the build height, move number and progress.
+      const buildMarkPop = (e) => {
+        markPop.textContent = '';
+        const single = e.count === 1;
+        markPop.appendChild(el('div', { style: 'font-weight:600;' }, single ? (e.items[0].kind === 'filament' ? 'Filament change' : 'Tool change') : (e.count + ' tool changes')));
+        for (const m of (single ? e.items : e.items)) {
+          const line = el('div', {});
+          line.appendChild(document.createTextNode((m.from != null && m.from !== m.to) ? ('T' + m.from + ' → T' + m.to) : ('T' + m.to)));
+          const col = data.filamentColors && data.filamentColors[m.to];
+          if (data.multicolour && col) {
+            line.appendChild(el('span', { style: `display:inline-block;width:9px;height:9px;margin:0 4px -1px;border:1px solid rgba(255,255,255,0.45);background:${col};` }));
+            line.appendChild(document.createTextNode(col));
+          } else if (m.desc) { line.appendChild(document.createTextNode(' - ' + titleCase(m.desc))); }
+          markPop.appendChild(line);
+        }
+        const m0 = e.items[0];
+        const foot = single
+          ? `Z ${(+m0.z || 0).toFixed(1)} ${u} · move ${m0.at.toLocaleString()} · ${Math.round(e.pct * 100)}%`
+          : `~${Math.round(e.pct * 100)}%`;
+        markPop.appendChild(el('div', { style: 'opacity:0.7;margin-top:1px;' }, foot));
+      };
+
+      progSlider.style.width = '100%'; progSlider.style.display = 'block';
+      const sliderWrap = el('div', { class: 'anr-gcode-slidwrap', style: 'position:relative;flex:1;min-width:0;display:flex;align-items:center;' });
+      const markLayer = el('div', { style: 'position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;' });
+      const markPop = el('div', { class: 'anr-gcode-markpop', style: 'position:absolute;top:-4px;display:none;transform:translate(-50%,-100%);pointer-events:none;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;white-space:nowrap;padding:2px 6px;border-radius:4px;background:rgba(10,12,16,0.85);color:#eef2ff;border:1px solid rgba(255,255,255,0.22);z-index:7;' });
+      for (const m of marks) {
+        markLayer.appendChild(el('div', { class: 'anr-gcode-mark', style: `position:absolute;top:1px;bottom:1px;left:${(m.pct * 100).toFixed(3)}%;width:1px;background:rgba(255,255,255,0.9);box-shadow:0 0 2px rgba(0,0,0,0.7);` }));
+      }
+      let toolMarksOn = true;
+      sliderWrap.appendChild(progSlider); sliderWrap.appendChild(markLayer); sliderWrap.appendChild(markPop);
+      sliderWrap.addEventListener('mousemove', (e) => {
+        if (!toolMarksOn || !marks.length) { markPop.style.display = 'none'; return; }
+        const rect = sliderWrap.getBoundingClientRect();
+        const frac = (e.clientX - rect.left) / (rect.width || 1);
+        let best = null, bestd = 1e9;
+        for (const m of marks) { const d = Math.abs(m.pct - frac); if (d < bestd) { bestd = d; best = m; } }
+        if (best && bestd * rect.width <= 6) { buildMarkPop(best); markPop.style.left = (best.pct * 100).toFixed(3) + '%'; markPop.style.display = ''; }
+        else markPop.style.display = 'none';
+      });
+      sliderWrap.addEventListener('mouseleave', () => { markPop.style.display = 'none'; });
+
+      // Toggle (in the view-controls row, on by default): show/hide the tool-change ticks.
+      const markBtn = el('button', { type: 'button', class: 'anr-btn is-active', title: 'Show a tick on the progress slider at every tool / filament change' }, 'Tool changes');
+      if (!marks.length) markBtn.disabled = true;
+      markBtn.addEventListener('click', () => {
+        toolMarksOn = !toolMarksOn;
+        markBtn.classList.toggle('is-active', toolMarksOn);
+        markLayer.style.display = toolMarksOn ? '' : 'none';
+        if (!toolMarksOn) markPop.style.display = 'none';
+      });
+      viewRow.appendChild(markBtn);
+
+      // Layout: Play + the progress bar on one row (bar stays at Play's height); Speed and
+      // Follow tucked into a second row beneath Play.
+      const playTopRow = el('div', { style: 'display:flex;align-items:center;gap:8px;' });
+      playTopRow.appendChild(playBtn);
+      playTopRow.appendChild(sliderWrap);
+      playTopRow.appendChild(progVal);
+      const playCtrlRow = el('div', { style: 'display:flex;align-items:center;gap:8px;margin-top:6px;' });
+      playCtrlRow.appendChild(spdWrap);
+      playCtrlRow.appendChild(followBtn);
+      const progRow = el('div', { class: 'anr-gcode-slider anr-gcode-player', style: 'flex-direction:column;align-items:stretch;' });
+      progRow.appendChild(playTopRow);
+      progRow.appendChild(playCtrlRow);
       toolbar.appendChild(progRow);
       toolbar.appendChild(rtWarn);   // approximate-real-time caveat (shown in real-time mode)
 
@@ -1552,39 +2066,67 @@ export async function renderGcode(file, resultsEl, opts) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'G-code analysis'));
   const tbl = el('table', { class: 'anr-readout' });
-  tbl.appendChild(row('Application', 'G-code (3D printing / CNC)'));
-  tbl.appendChild(row('File', file.name));
-  tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
-  tbl.appendChild(rowHelp('Type', isPrint ? '3D print (extrusion)' : 'CNC / laser (no extrusion)', 'Whether the program extrudes material (a 3D print) or only moves a tool/laser (CNC machining or laser cutting).'));
-  tbl.appendChild(rowHelp('Units', u === 'mm' ? 'Millimetres (G21)' : 'Inches (G20)', 'The measurement units the coordinates are expressed in.'));
   const slicer = detectSlicer(data.headerComments);
-  if (slicer) tbl.appendChild(rowHelp(isPrint ? 'Slicer' : 'CAM / sender', slicer, 'The program that generated this G-code, read from the file header.'));
+  // Ordered by what an end user most wants to know: WHAT it is, then the headline
+  // outcome (time / size / material), then the print/job specs, then the machine,
+  // then provenance, then toolpath technicals, and finally the raw file metadata.
+
+  // What it is, and the machine it is for.
+  tbl.appendChild(rowHelp('Type', isPrint ? '3D print (extrusion)' : 'CNC / laser (no extrusion)', 'Whether the program extrudes material (a 3D print) or only moves a tool/laser (CNC machining or laser cutting).'));
+  if (data.printerModel) tbl.appendChild(rowHelp('Printer', data.printerModel, 'The printer/machine profile the file was sliced for, read from the slicer config in the header.'));
+
+  // Headline outcome - the first things you reach for.
   if (data.printTime) tbl.appendChild(rowHelp('Est. print time', data.printTime, 'The print-time estimate the slicer wrote into the file header.'));
   if (data.bbox && isFinite(data.bbox.min[0])) {
     const dx = data.bbox.max[0] - data.bbox.min[0], dy = data.bbox.max[1] - data.bbox.min[1], dz = data.bbox.max[2] - data.bbox.min[2];
     tbl.appendChild(rowHelp(isPrint ? 'Object size' : 'Work size', `${dx.toFixed(1)} × ${dy.toFixed(1)} × ${dz.toFixed(1)} ${u}`, 'The bounding box of all drawn moves - width × depth × height.'));
   }
+
   if (isPrint) {
+    // Material + print specs.
+    if (data.extrudeMM) tbl.appendChild(rowHelp('Filament used', `${(data.extrudeMM / 1000).toFixed(2)} m  (${Math.round(data.extrudeMM).toLocaleString()} ${u})`, 'Total length of filament extruded, summed from the E axis.'));
     if (data.layerCount) tbl.appendChild(rowHelp('Layers', data.layerCount.toLocaleString(), 'The number of distinct Z heights at which material was extruded.'));
     if (data.layerHeight) tbl.appendChild(rowHelp('Layer height', data.layerHeight.toFixed(3) + ' ' + u, 'The typical vertical step between layers (median Z gap).'));
-    tbl.appendChild(rowHelp('Filament Ø', data.filDia.toFixed(2) + ' mm', 'The filament diameter used to recover extrusion widths (from the file, else 1.75 mm).'));
-    if (data.extrudeMM) tbl.appendChild(rowHelp('Filament used', `${(data.extrudeMM / 1000).toFixed(2)} m  (${Math.round(data.extrudeMM).toLocaleString()} ${u})`, 'Total length of filament extruded, summed from the E axis.'));
     if (data.temps.nozzle) tbl.appendChild(rowHelp('Nozzle temp', data.temps.nozzle + ' °C', 'The hot-end target temperature set in the program (M104/M109).'));
     if (data.temps.bed) tbl.appendChild(rowHelp('Bed temp', data.temps.bed + ' °C', 'The heated-bed target temperature set in the program (M140/M190).'));
+    // The build plate it is for.
+    if (data.bed) {
+      const b = data.bed, bu = data.units;
+      tbl.appendChild(rowHelp('Bed size', `${b.w.toFixed(0)} × ${b.d.toFixed(0)}${b.h ? ` × ${b.h.toFixed(0)}` : ''} ${bu}`, 'The printable area (X × Y' + (b.h ? ' × Z height' : '') + ') declared by the slicer profile - drawn as the plate in the viewer.'));
+      if (b.type) tbl.appendChild(rowHelp('Build plate', b.type, 'The build-plate / bed surface selected in the slicer (e.g. textured PEI, smooth, glass).'));
+    }
+    tbl.appendChild(rowHelp('Filament Ø', data.filDia.toFixed(2) + ' mm', 'The filament diameter used to recover extrusion widths (from the file, else 1.75 mm).'));
   } else {
-    if (data.cutMM) tbl.appendChild(rowHelp('Cut path length', `${(data.cutMM / 1000).toFixed(2)} m  (${Math.round(data.cutMM).toLocaleString()} ${u})`, 'Total length of the cutting (feed) moves.'));
+    // CNC / laser job specs.
     const c = data.cnc;
+    if (c && c.progNum) tbl.appendChild(rowHelp('Program number', 'O' + c.progNum, 'The program (O) number the CAM post wrote - the job identifier the controller lists.'));
+    if (c && c.operations && c.operations.length) tbl.appendChild(rowHelp('Operations', c.operations.length.toLocaleString(), 'The number of named CAM operations (toolpaths) in the program. See the operations table below.'));
+    if (data.cutMM) tbl.appendChild(rowHelp('Cut path length', `${(data.cutMM / 1000).toFixed(2)} m  (${Math.round(data.cutMM).toLocaleString()} ${u})`, 'Total length of the cutting (feed) moves.'));
+    if (c && c.maxDepth != null && c.maxDepth < 0) tbl.appendChild(rowHelp('Max cut depth', `${c.maxDepth.toFixed(2)} ${u}  (${Math.abs(c.maxDepth).toFixed(2)} ${u} below Z0)`, 'The deepest Z the tool reaches - the lowest point of any move.'));
     if (c) {
       if (c.changes.length) tbl.appendChild(rowHelp('Tool changes', `${c.changes.length.toLocaleString()}  (${c.tools.length} tool${c.tools.length === 1 ? '' : 's'})`, 'Number of M6 tool changes in the program, and how many distinct tools it uses. See the tooling table below.'));
       if (c.spindleMax) tbl.appendChild(rowHelp('Max spindle speed', `${Math.round(c.spindleMax).toLocaleString()} rpm${c.spindleDir ? ' · ' + c.spindleDir : ''}`, 'The highest commanded spindle speed (S), and its direction (M3/M4).'));
       if (c.coolant.length) tbl.appendChild(rowHelp('Coolant', c.coolant.join(', '), 'Coolant modes switched on in the program (M7 mist / M8 flood).'));
       if (c.workOffsets.length) tbl.appendChild(rowHelp('Work offsets', c.workOffsets.join(', '), 'The work-coordinate systems (G54-G59) the program sets - one per fixture/setup.'));
+      if (c.optStops) tbl.appendChild(rowHelp('Optional stops', c.optStops.toLocaleString(), 'M1 optional stops - the controller pauses here only if the "optional stop" switch is on.'));
+      if (c.progEnd) tbl.appendChild(rowHelp('Program end', c.progEnd, 'How the program signals completion - M2 (end) or M30 (end and rewind).'));
     }
   }
+
+  // Provenance.
+  if (slicer) tbl.appendChild(rowHelp(isPrint ? 'Slicer' : 'CAM / sender', slicer, 'The program that generated this G-code, read from the file header.'));
+  tbl.appendChild(rowHelp('Units', u === 'mm' ? 'Millimetres (G21)' : 'Inches (G20)', 'The measurement units the coordinates are expressed in.'));
+
+  // Toolpath technicals - for the curious / the viewer's geometry counts.
   tbl.appendChild(rowHelp(isPrint ? 'Extrusion segments' : 'Cutting moves', data.segCount.toLocaleString(), 'The number of drawn segments - the geometry shown in the viewer (arcs are tessellated into segments).'));
   if (data.counts.arc) tbl.appendChild(rowHelp('Arc moves', data.counts.arc.toLocaleString(), 'G2/G3 circular moves, drawn as smooth tessellated arcs.'));
   tbl.appendChild(rowHelp('Travel / rapid moves', data.counts.rapid.toLocaleString(), 'Non-cutting repositioning moves, hidden by default in the viewer.'));
   if (data.feedRange.max) tbl.appendChild(rowHelp('Feedrate range', `${Math.round(data.feedRange.min).toLocaleString()} - ${Math.round(data.feedRange.max).toLocaleString()} ${u}/min`, 'The slowest to fastest commanded feedrate (F) across drawn moves.'));
+
+  // Raw file metadata - least important, kept last.
+  tbl.appendChild(row('File', file.name));
+  tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
+  tbl.appendChild(row('Application', 'G-code (3D printing / CNC)'));
   if (data.capped) tbl.appendChild(row('Note', `Capped at ${SEG_CAP.toLocaleString()} segments for performance; the viewer shows the first ones.`));
   tbl.appendChild(sha256Row(file));
   card.appendChild(tbl);
@@ -1618,7 +2160,7 @@ export async function renderGcode(file, resultsEl, opts) {
       const tt = el('table', { class: 'anr-readout anr-gcode-tooltable' });
       const head = el('tr', {}, [
         el('th', {}, 'Tool'), el('th', {}, 'Type'), el('th', {}, 'Ø'),
-        el('th', {}, 'Corner / taper'), el('th', {}, 'Z min'), el('th', {}, 'Spindle'),
+        el('th', {}, 'Corner / taper'), el('th', {}, 'Z min'), el('th', {}, 'Offset'), el('th', {}, 'Spindle'),
       ]);
       tt.appendChild(head);
       for (const t of cnc.tools) {
@@ -1634,11 +2176,38 @@ export async function renderGcode(file, resultsEl, opts) {
           ['Ø', t.dia != null ? t.dia + ' ' + u : '-'],
           ['Corner / taper', geom || '-'],
           ['Z min', t.zmin != null ? t.zmin + ' ' + u : '-'],
+          ['Offset', t.h != null ? 'H' + t.h : '-'],
           ['Spindle', t.rpm != null ? Math.round(t.rpm).toLocaleString() + ' rpm' : '-'],
         ];
         tt.appendChild(el('tr', {}, cells.map(([label, val]) => el('td', { 'data-label': label }, val))));
       }
       tc.appendChild(tt);
+    }
+
+    // Operations table: each named CAM toolpath, the tool it runs, and its size. Tools
+    // are reused across operations, so this is the real "what the job does" breakdown.
+    if (cnc.operations && cnc.operations.length) {
+      const ot = el('table', { class: 'anr-readout anr-gcode-tooltable' });
+      ot.appendChild(el('tr', {}, [
+        el('th', {}, '#'), el('th', {}, 'Operation'), el('th', {}, 'Tool'),
+        el('th', {}, 'Moves'), el('th', {}, 'Cut length'), el('th', {}, 'Depth'),
+      ]));
+      cnc.operations.forEach((o, i) => {
+        const cells = [
+          ['#', String(i + 1)],
+          ['Operation', titleCase(o.name)],
+          ['Tool', o.tool != null ? 'T' + o.tool : '-'],
+          ['Moves', o.moves ? o.moves.toLocaleString() : '-'],
+          ['Cut length', o.cutLen ? (o.cutLen >= 1000 ? (o.cutLen / 1000).toFixed(2) + ' m' : Math.round(o.cutLen).toLocaleString() + ' ' + u) : '-'],
+          ['Depth', o.zmin != null && o.zmin < 0 ? o.zmin.toFixed(2) + ' ' + u : '-'],
+        ];
+        ot.appendChild(el('tr', {}, cells.map(([label, val]) => el('td', { 'data-label': label }, val))));
+      });
+      const det = el('details', { style: 'margin-top:14px;' });
+      if (cnc.operations.length <= 12) det.open = true;   // short list: open by default
+      det.appendChild(el('summary', {}, `Operations (${cnc.operations.length.toLocaleString()})`));
+      det.appendChild(ot);
+      tc.appendChild(det);
     }
 
     // Tool-change sequence, with the operation name each change kicks off (when the

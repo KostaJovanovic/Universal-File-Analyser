@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 168;
+const COMMIT_COUNT = 169;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -2018,6 +2018,10 @@ function boot() {
     // Opened from a folder/zip/document view: bytes are already in memory and the
     // render beats the loader's 160ms debounce, so show the bar immediately.
     const nested = !!(opts && opts.nested);
+    // Sandboxed sample (clicked from the /samples gallery): analyse it fully, but
+    // never count it in the public stats and never log it to the local history -
+    // samples are a demo, kept completely separate from real user analyses.
+    const isSample = !!(opts && opts.sample);
     if (!nested) resetNav();   // a fresh top-level drop ends any drill-down breadcrumb
     hideTypeSuggestion();
     hideSuggestPopup();   // clear any "suggest this format" nudge from a prior file
@@ -2161,10 +2165,15 @@ function boot() {
     // the read probe already passed, so cloud-unavailable files - which return
     // early above - are correctly never counted. 'unknown' = a type Analyser
     // doesn't recognise, recorded as unsupported.
-    recordAnalysed(fileExt(file.name), kind !== 'unknown');
-    // On-device "Recently analysed" snapshot (metadata only, never the bytes).
-    recordHistory({ name: file.name, size: file.size, ext: fileExt(file.name), kind, when: Date.now() });
-    renderHistoryPanel();
+    // Sandboxed samples are excluded from both the public tally and the local
+    // history - the /api/analysed POST is the only thing that bumps the global
+    // files_total and per-extension counts, so this single gate fully isolates them.
+    if (!isSample) {
+      recordAnalysed(fileExt(file.name), kind !== 'unknown');
+      // On-device "Recently analysed" snapshot (metadata only, never the bytes).
+      recordHistory({ name: file.name, size: file.size, ext: fileExt(file.name), kind, when: Date.now() });
+      renderHistoryPanel();
+    }
 
     const navMap = { photo: '#photo', audio: '#audio', video: '#video' };
     const href = navMap[kind];
@@ -2256,7 +2265,7 @@ function boot() {
     const resultEl = resultsByName[route.results];
     const autoScrollSec = kind === 'video' ? sectionVideo
       : kind === 'audio' ? sectionAudio
-      : kind === 'photo' ? (nested && resultEl ? (resultEl.closest('.section') || resultEl) : null)
+      : kind === 'photo' ? ((nested || isSample) && resultEl ? (resultEl.closest('.section') || resultEl) : null)
       : resultEl ? (resultEl.closest('.section') || resultEl)
       : null;
     let userTookScroll = false;
@@ -2479,6 +2488,39 @@ window._anrReadableText = isReadableText;
     });
   }
 
+  // ----- Sample gallery chips (the /samples page) -----
+  // Each chip carries the sample's path in data-sample. On click we fetch it,
+  // wrap it in a File and run the normal analyser pipeline inline, flagged
+  // { sample: true } so it never touches the public stats or local history.
+  // Wired every boot (the <main> is swapped on SPA nav); _anrWired guards against
+  // double-binding the same element.
+  document.querySelectorAll('.sample-chip').forEach((card) => {
+    if (card._anrWired) return;
+    card._anrWired = true;
+    card.addEventListener('click', async () => {
+      const url = card.dataset.sample;
+      if (!url || card._anrLoading) return;
+      card._anrLoading = true;
+      card.classList.add('is-loading');
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const blob = await res.blob();
+        const file = new File([blob], card.dataset.name || 'sample', { type: blob.type || '' });
+        await handleFile(file, { sample: true });
+      } catch (e) {
+        console.warn('Sample load failed:', e);
+        if (unknownResults) {
+          unknownResults.hidden = false;
+          unknownResults.innerHTML = '<p class="anr-hint">Could not load that sample - please try again.</p>';
+        }
+      } finally {
+        card._anrLoading = false;
+        card.classList.remove('is-loading');
+      }
+    });
+  });
+
   // ----- Page-level drag/drop (window listeners added once) -----
   if (!boot._once) {
     let dragCounter = 0;
@@ -2503,6 +2545,12 @@ window._anrReadableText = isReadableText;
       const drop = $('pageDrop');
       if (drop) drop.hidden = true;
 
+      // The /samples page can render inline (it has the result containers), but a
+      // dropped file is the user's own - it must NOT be treated as a sandboxed demo
+      // sample. Route it to the home page so it analyses (and counts) like any real
+      // drop, exactly as dropping on a /formats page does.
+      const onSamples = /\/samples(\.html)?\/?$/.test(location.pathname);
+
       // Synchronous folder peek so the bottom loading bar can show while the
       // (potentially slow) recursive folder walk reads thousands of File objects.
       let droppedFolderName = null;
@@ -2519,7 +2567,7 @@ window._anrReadableText = isReadableText;
       const folderFiles = await walkItems(e.dataTransfer);
       if (folderToken.cancelled) return;   // cancelled during the folder walk
       if (folderFiles) {
-        if (!$('photoResults')) {
+        if (!$('photoResults') || onSamples) {
           window._anrPendingFolder = folderFiles;
           const home = new URL('/', location.href).href;
           if (location.href !== home) {
@@ -2546,7 +2594,7 @@ window._anrReadableText = isReadableText;
       const files = e.dataTransfer && e.dataTransfer.files;
       if (!files || !files.length) return;
 
-      if (!$('photoResults')) {
+      if (!$('photoResults') || onSamples) {
         window._anrPendingFile = files[0];
         // Navigate to the site root with an ABSOLUTE path. A relative 'index.html'
         // resolves against the current directory, which breaks on the nested
