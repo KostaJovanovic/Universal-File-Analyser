@@ -123,13 +123,13 @@ if (existsSync(SAMPLES_DIR)) {
 }
 
 // Sort order keyed on the catalog row label (not the broad category): the
-// 'Photo'/'RAW photo' rows first, then 'Video', then 'Sound', then everything
+// 'Photo'/'RAW photo' rows first, then 'Sound', then 'Video', then everything
 // else; alphabetical (case-insensitive) by filename within each bucket.
 const bucketOf = (name) => {
   const label = (extInfo.get(extOf(name)) || {}).label;
   if (label === 'Photo' || label === 'RAW photo') return 0;
-  if (label === 'Video') return 1;
-  if (label === 'Sound') return 2;
+  if (label === 'Sound') return 1;
+  if (label === 'Video') return 2;
   return 3;
 };
 
