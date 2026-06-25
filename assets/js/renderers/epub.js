@@ -300,7 +300,7 @@ export async function renderEpub(file, resultsEl) {
   const nav = el('div', { class: 'anr-epub-nav' });
   const prevBtn = el('button', { type: 'button', class: 'anr-btn' }, '← Prev');
   const nextBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Next →');
-  const chapSel = el('select', { class: 'anr-dropdown' });
+  const chapSel = el('select', { class: 'anr-btn anr-select', style: 'flex:1; min-width:0;', 'aria-label': 'Chapter' });
   spine.forEach((p, i) => {
     const label = tocByPath[p] || ('Chapter ' + (i + 1));
     chapSel.appendChild(el('option', { value: String(i) }, label.length > 80 ? label.slice(0, 80) + '…' : label));

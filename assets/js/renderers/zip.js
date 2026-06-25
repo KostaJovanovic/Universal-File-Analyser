@@ -3,6 +3,22 @@
    headers sequentially and inflates entries on demand with DecompressionStream.
    Used by xlsx.js, epub.js, and pptx.js. */
 
+import { loadScript } from '../core/util.js';
+
+// Zstandard (ZIP method 93) - Autodesk Fusion 360 .f3d packs every member this
+// way. Decompressed lazily via the vendored fzstd UMD library, loaded on first
+// use. Returns the bytes, or null on any failure so callers degrade gracefully.
+async function zstdInflate(raw) {
+  try {
+    if (!(window.fzstd && window.fzstd.decompress)) await loadScript('assets/vendor/fzstd.js');
+    if (!(window.fzstd && window.fzstd.decompress)) return null;
+    const out = window.fzstd.decompress(raw);
+    return out instanceof Uint8Array ? out : (out ? new Uint8Array(out) : null);
+  } catch (_) {
+    return null;
+  }
+}
+
 // Read the local-file-header table. Returns { entries, buf } where each entry is
 // { name, method, compSize, uncompSize, dataStart }. Reads up to maxBytes.
 export async function readZipEntries(file, maxBytes = 32 * 1024 * 1024) {
@@ -53,6 +69,7 @@ export async function inflateToBytes(buf, entry) {
     for (const c of chunks) { out.set(c, off); off += c.length; }
     return out;
   }
+  if (entry.method === 93) return zstdInflate(raw);
   return null;
 }
 

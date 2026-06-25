@@ -69,6 +69,8 @@
   <url><loc>https://lab.valjdakosta.com/formats/epub</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/epw</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/erf</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://lab.valjdakosta.com/formats/f3d</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://lab.valjdakosta.com/formats/f3z</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/fb2</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/fcpxml</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/fff</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
@@ -554,8 +556,6 @@
   <url><loc>https://lab.valjdakosta.com/formats/id/ext</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/ext4</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/f</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://lab.valjdakosta.com/formats/id/f3d</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://lab.valjdakosta.com/formats/id/f3z</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/f4m</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/f4v</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://lab.valjdakosta.com/formats/id/f90</loc><lastmod>2026-06-25</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>

@@ -207,6 +207,22 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">4.18</p>
+          <p class="patch-name">Second Chance</p>
+          <p class="patch-date">25 June 2026, 04:34</p>
+          <ul class="patch-list">
+            <li><strong>Analyser learns to bring broken files back from the dead - salvaging cut-off photos and unfinished videos that no normal viewer will touch - a new gallery of example files lets you try it all without a file of your own, 3D models open the right way up, and G-code playback finally pauses where the machine does.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Rescue a broken photo.</strong> A truncated, cut-off or corrupt photo that no viewer will open can now be salvaged - Analyser repairs a half-written <a href="/about#ext-jpg">JPEG</a>, <a href="/about#ext-png">PNG</a> or <a href="/about#ext-heic">HEIC</a>, rebuilds a damaged JPEG&rsquo;s header from a working reference shot, and carves any photos buried inside an unknown file back out.</li>
+            <li><span class="patch-tag">New</span><strong>Recover an unfinished video.</strong> A video cut off mid-recording - a camera that lost power, a transfer that stopped - with no index left to play it by is now rebuilt frame by frame, borrowing the missing setup from the clip itself or from a reference video, and played back in place.</li>
+            <li><span class="patch-tag">New</span><strong>Try it with built-in examples.</strong> A new <strong>Samples</strong> gallery offers a spread of example files - photos, audio, video, 3D models, a circuit board, G-code and more - that open in a single click, so you can see what Analyser does with no file of your own. They are sandboxed: never counted, never recorded.</li>
+            <li><span class="patch-tag">New</span><strong>3D models stand the right way up.</strong> An <a href="/about#ext-stl">STL</a>, 3MF, AMF or STEP/IGES model now opens upright instead of lying on its side, with a one-tap <strong>Z-up / Y-up</strong> button to flip whichever way a particular file expects.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>G-code playback pauses where the print does.</strong> The <a href="/about#ext-gcode">G-code</a> player now honours dwell commands, manual pauses and heat-up waits - the head holds still exactly where the real machine would - and plays at true speed by default.</li>
+            <li><span class="patch-tag">New</span><strong>Colour LUTs preview at a glance.</strong> Open a colour look-up table (<a href="/about#ext-cube">.cube</a>) and it is shown applied to a sample photo straight away, before and after, so you can read the look without dropping your own footage first.</li>
+            <li><span class="patch-tag">New</span><strong>Zortrax prints recognised.</strong> A Zortrax Z-SUITE compiled print (<strong>.zcode</strong>) - the sliced, machine-ready job sent to a Zortrax 3D printer - is now identified on sight.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">4.17</p>
           <p class="patch-name">Split Personality</p>
           <p class="patch-date">24 June 2026, 05:18</p>
@@ -237,6 +253,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">4.12 - 4.15</p>
           <p class="patch-name">Source &amp; Circuit</p>
@@ -252,9 +271,6 @@
             <li><strong>Polish</strong> - the KiCad board and 3D model views render more cleanly, with a sweep of small fixes across the viewers.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">4.08 - 4.11</p>

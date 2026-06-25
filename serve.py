@@ -193,6 +193,30 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
         self.path = target
         return super().do_HEAD()
 
+    # A hard reload (or SPA navigation) aborts the in-flight requests the browser
+    # no longer needs. On Windows that surfaces as ConnectionAbortedError /
+    # ConnectionResetError / BrokenPipeError while we're still writing the
+    # response - which otherwise prints an alarming traceback and, with the
+    # service worker firing concurrent revalidation fetches, was taking the dev
+    # server down. Swallow exactly those: the client is gone, so there is nothing
+    # to send and nothing to report. Any other error still propagates normally.
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            self.close_connection = True
+
+    def copyfile(self, source, outputfile):
+        try:
+            super().copyfile(source, outputfile)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            pass
+
+    def log_error(self, *args):
+        # Aborted-connection noise only reaches here as a "code 400, message Bad
+        # request version" style line; keep the dev console readable.
+        pass
+
 
 if __name__ == '__main__':
     os.chdir(ROOT)
