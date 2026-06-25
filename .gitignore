@@ -9,3 +9,6 @@ research/OrcaSlicer-main/
 
 # Local stats backup snapshots (tools/backup-stats.mjs) - kept off-repo
 stats-backup/
+
+# Standalone minimal build - destined to be its own repo
+minimal/

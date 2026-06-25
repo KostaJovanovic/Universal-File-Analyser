@@ -365,7 +365,9 @@ assets/
       svg.js · illustrator.js · psd.js · paint.js · diagram.js · lut.js · font.js
         — vector/raster design files, colour LUTs, font specimens
       stl.js · model3d.js · gcode.js · unity.js — 3D viewers + G-code toolpath + Unity assets
-      dwg.js · model3d.js — CAD (DWG 2D drawing; STEP/IGES/BREP via OpenCASCADE)
+      dwg.js · model3d.js · solidworks.js — CAD (DWG 2D drawing; STEP/IGES/BREP
+        via OpenCASCADE; SolidWorks .sldprt/.sldasm/.slddrw - OLE2 preview+metadata
+        for older files, identify-only for modern encrypted ones)
       altium.js · kicad.js · spice.js · ipcnet.js — EDA/electronics (PCB projects, SPICE netlists, IPC netlists)
       aftereffects.js · premiere.js · davinci.js · vegas.js · sony-rtmd.js · timeline.js
         — NLE/VFX project files (AE/Premiere/Resolve/VEGAS) + EDL/FCPXML/OTIO timelines

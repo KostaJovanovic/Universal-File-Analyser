@@ -470,6 +470,9 @@ function spectrogramFile(name) {
 // caps say no, so a suppressed run never marks the day as "seen".
 export function scheduleShareNudge(ctx) {
   if (_shareNudgeTimer) { clearTimeout(_shareNudgeTimer); _shareNudgeTimer = null; }
+  // Never nudge on the /samples demo page - those are sandboxed example runs, not the
+  // visitor's own analysis worth sharing.
+  if (typeof document !== 'undefined' && document.body && document.body.dataset.page === 'samples') return;
   if (!shareNudgeAllowed()) return;
   // The "suggest this format" popup (shown during render, before this runs) owns the
   // analysis - don't even schedule the nudge if it's up for this file.
