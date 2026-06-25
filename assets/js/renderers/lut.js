@@ -60,6 +60,100 @@ function parseCubeLut(text) {
   return lut;
 }
 
+// ---- Adobe SpeedGrade / Iridas .look ----------------------------------------
+// A .look is XML: a <shaders> stack of grading stages (basic correction, tints,
+// wheels, curves, secondaries, vignette, ...), then a baked <LUT> with a <size>
+// and a <data> blob of little-endian float32 R,G,B triplets, red varying fastest
+// - the same lattice order as a .cube. That baked LUT is the whole grade stack
+// flattened, so we visualise it exactly like a .cube and also list the stages.
+const looksLikeLook = (text) => /<look[\s>]/i.test(text.slice(0, 4096));
+
+function hexLEToFloats(hex) {
+  const n = hex.length >> 3;                              // 8 hex chars per float32
+  const out = new Float32Array(n);
+  const dv = new DataView(new ArrayBuffer(4));
+  for (let i = 0; i < n; i++) {
+    const o = i * 8;
+    dv.setUint8(0, parseInt(hex.substr(o, 2), 16));
+    dv.setUint8(1, parseInt(hex.substr(o + 2, 2), 16));
+    dv.setUint8(2, parseInt(hex.substr(o + 4, 2), 16));
+    dv.setUint8(3, parseInt(hex.substr(o + 6, 2), 16));
+    out[i] = dv.getFloat32(0, true);
+  }
+  return out;
+}
+
+function parseLookShaders(text) {
+  const stages = [];
+  const re = /<shader>([\s\S]*?)<\/shader>/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const body = m[1];
+    const get = (tag) => { const r = body.match(new RegExp('<' + tag + '>\\s*"?([^"<]*)"?\\s*</' + tag + '>', 'i')); return r ? r[1] : ''; };
+    const pblk = (body.match(/<parameters>([\s\S]*?)<\/parameters>/i) || [])[1] || '';
+    const params = [];
+    const pre = /<([A-Za-z_][\w.]*)>\s*"?([^"<]*)"?\s*<\/\1>/g;
+    let pm;
+    while ((pm = pre.exec(pblk))) params.push([pm[1], pm[2]]);
+    stages.push({ name: get('name'), custom: get('customname'), visible: get('visible'), opacity: get('opacity'), params });
+  }
+  return stages;
+}
+
+function parseLook(text) {
+  if (!looksLikeLook(text)) return null;
+  const look = { lut: null, stages: parseLookShaders(text) };
+  const m = text.match(/<LUT>\s*<size>\s*"?(\d+)"?\s*<\/size>\s*<data>([\s\S]*?)<\/data>\s*<\/LUT>/i);
+  if (m) {
+    const size = parseInt(m[1], 10);
+    const hex = m[2].replace(/[^0-9A-Fa-f]/g, '');
+    const expected = size * size * size;
+    if (size > 1 && hex.length >= expected * 3 * 8) {
+      const data = hexLEToFloats(hex.slice(0, expected * 3 * 8));
+      let mn = Infinity, mx = -Infinity;
+      for (let i = 0; i < data.length; i++) { if (data[i] < mn) mn = data[i]; if (data[i] > mx) mx = data[i]; }
+      look.lut = { title: '', type: '3D', size, domainMin: [0, 0, 0], domainMax: [1, 1, 1], comments: [], data, expected, count: data.length / 3, complete: true, range: [mn, mx] };
+    }
+  }
+  return (look.lut || look.stages.length) ? look : null;
+}
+
+// A SpeedGrade parameter value is prefixed with a letter ("D0", "N100", "N0.5")
+// when it sits at its default; a user-changed value is a bare signed decimal. We
+// surface only the changed numeric ones (skipping pure 0/1 enable toggles, the
+// "__"-prefixed internal fields that carry their own non-zero defaults, and the
+// structural working-space fields that aren't creative adjustments) so the
+// readout shows what each stage actually does.
+const LOOK_SKIP_PARAMS = new Set(['Range', 'Gamma']);
+function lookActiveParams(params) {
+  return params.filter(([k, v]) => !k.startsWith('__') && !LOOK_SKIP_PARAMS.has(k) &&
+    /^-?\d+(\.\d+)?$/.test(v) && v !== '0' && v !== '1' && Math.abs(parseFloat(v)) > 1e-4);
+}
+const prettyLookParam = (k) => k.replace(/\./g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+const fmtLookNum = (v) => { const n = parseFloat(v); return Number.isInteger(n) ? String(n) : n.toFixed(2); };
+
+function lookNamedStages(stages) { return stages.filter((s) => s.name && !s.name.startsWith('__')); }
+
+function buildLookStack(stages) {
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Grade stack'));
+  card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px' },
+    'The grading stages this look applies, in order, as built in Adobe SpeedGrade / Premiere Lumetri. Stages left at their defaults are marked so; the baked 3D LUT is the whole stack flattened into one table.'));
+  const tbl = el('table', { class: 'anr-readout' });
+  for (const op of lookNamedStages(stages)) {
+    const label = (op.custom && !op.custom.startsWith('__')) ? op.custom : op.name;
+    const active = lookActiveParams(op.params);
+    let val;
+    if (op.name === 'LUT') val = 'embedded 3D LUT (shown below)';
+    else if (op.visible === '0') val = 'hidden';
+    else if (active.length) val = active.map(([k, v]) => prettyLookParam(k) + ' ' + fmtLookNum(v)).join(', ');
+    else val = 'default';
+    tbl.appendChild(row(label, val));
+  }
+  card.appendChild(tbl);
+  return card;
+}
+
 // ---- LUT sampling (trilinear for 3D, linear for 1D) --------------------------
 function makeSampler(lut) {
   const { data, size: n } = lut;
@@ -471,14 +565,36 @@ export async function renderLut(file, resultsEl) {
   try { text = await file.slice(0, 64 * 1024 * 1024).text(); } catch (e) {
     resultsEl.innerHTML = ''; resultsEl.appendChild(errorCard('Could not read this file: ' + (e && e.message))); return;
   }
-  const lut = parseCubeLut(text);
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  // A .look (Adobe SpeedGrade / Iridas) is an XML grade stack carrying a baked
+  // 3D LUT; otherwise treat the text as a .cube LUT.
+  const look = (ext === 'look' || looksLikeLook(text)) ? parseLook(text) : null;
+  const lut = look ? look.lut : parseCubeLut(text);
 
-  // Not a colour LUT (e.g. a Gaussian volumetric .cube) - hand back to the
-  // generic identifier so it still gets its proper analysis.
-  if (!lut) {
+  // Neither a colour LUT nor a readable look (e.g. a Gaussian volumetric .cube) -
+  // hand back to the generic identifier so it still gets its proper analysis.
+  if (!lut && !look) {
     resultsEl.innerHTML = '';
     const { renderProprietary } = await import('./proprietary.js');
-    return renderProprietary(file, resultsEl, 'cube');
+    return renderProprietary(file, resultsEl, ext === 'look' ? 'look' : 'cube');
+  }
+
+  // A .look without an embedded baked LUT - show its identity + grade stack only
+  // (there is no flattened table to push imagery through).
+  if (look && !lut) {
+    resultsEl.innerHTML = '';
+    const idCard = el('div', { class: 'anr-card' });
+    idCard.appendChild(el('h3', {}, 'Colour LUT'));
+    const idTbl = el('table', { class: 'anr-readout' });
+    idTbl.appendChild(row('Format', 'SpeedGrade look (.look)'));
+    idTbl.appendChild(row('Grade stages', lookNamedStages(look.stages).length + ' stages'));
+    idTbl.appendChild(row('Baked LUT', 'none embedded'));
+    idTbl.appendChild(row('Size', fmtBytes(file.size)));
+    idCard.appendChild(idTbl);
+    resultsEl.appendChild(idCard);
+    resultsEl.appendChild(buildLookStack(look.stages));
+    resultsEl.appendChild(integrityCard(file));
+    return;
   }
 
   const sample = makeSampler(lut);
@@ -488,7 +604,8 @@ export async function renderLut(file, resultsEl) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Colour LUT'));
   const tbl = el('table', { class: 'anr-readout' });
-  tbl.appendChild(row('Format', 'Cube LUT (.cube)'));
+  tbl.appendChild(row('Format', look ? `SpeedGrade look (.look) - baked ${lut.size}x${lut.size}x${lut.size} 3D LUT` : 'Cube LUT (.cube)'));
+  if (look) tbl.appendChild(row('Grade stages', lookNamedStages(look.stages).length + ' stages'));
   if (lut.title) tbl.appendChild(row('Title', lut.title));
   tbl.appendChild(rowHelp('Type', lut.type === '3D' ? '3D LUT (full colour cube)' : '1D LUT (per-channel curve)',
     'A 3D LUT remaps every R/G/B combination, so it can change hue and saturation; a 1D LUT only reshapes each channel independently (a tone curve).'));
@@ -501,6 +618,9 @@ export async function renderLut(file, resultsEl) {
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   card.appendChild(tbl);
   resultsEl.appendChild(card);
+
+  // ---- Grade stack (.look only) ----
+  if (look) resultsEl.appendChild(buildLookStack(look.stages));
 
   // ---- Tone-response curve ----
   const curveCard = el('div', { class: 'anr-card' });

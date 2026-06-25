@@ -10,10 +10,11 @@
        rational u32@44 / scale (seconds); width = u16@140, height = u16@142.
      - idta (item):        type = u16@0 (1 folder, 4 comp, 7 footage), id = u32@16.
      - ldta (layer):       quality = u16@4; three (value, scale) rationals at
-       offsets 12 / 20 / 28 give startTime / inPoint / outPoint in seconds, where
-       the scale is the comp's u32@8 (it comes out frame-aligned, which confirms
-       the decode); attribute bits at 37..39; source item id = u32@40; the layer
-       name follows as a "Utf8".
+       offsets 12 / 20 / 28 give startTime / inPoint / outPoint in seconds, each
+       value divided by ITS OWN denominator stored in the next u32 (16 / 24 / 32) -
+       these are per-layer (a stretched / time-remapped layer carries a larger
+       scale than the comp's), not the comp's u32@8; attribute bits at 37..39;
+       source item id = u32@40; the layer name follows as a "Utf8".
    The authoring app + version live in an XMP packet near the end of the file
    (xmp:CreatorTool, the xmpMM history's softwareAgent entries, and the
    create/modify dates), which is where the "made in After Effects 20XX" comes
@@ -75,8 +76,9 @@ function parseAep(buf) {
       } else if (t === 'ldta') {
         const a = [buf[ds + 37], buf[ds + 38], buf[ds + 39]];
         const sc = (c.cur && c.cur.scale) || SCALE;
+        const dn = (off) => u32(ds + off) || sc;   // each rational's own denominator (per-layer time scale)
         const L = {
-          start: i32(ds + 12) / sc, in: i32(ds + 20) / sc, out: i32(ds + 28) / sc,
+          start: i32(ds + 12) / dn(16), in: i32(ds + 20) / dn(24), out: i32(ds + 28) / dn(32),
           threeD: !!(a[1] & 4), audio: !!(a[2] & 2), src: u32(ds + 40),
           name: null, fld: cstr(ds + 64, 31),    // legacy fixed-field layer name
         };

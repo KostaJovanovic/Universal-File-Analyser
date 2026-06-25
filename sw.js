@@ -1,7 +1,7 @@
 ﻿/* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v170';
+const VERSION = 'analyser-v171';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -142,6 +142,7 @@ const SHELL = [
   './assets/js/renderers/stl.js',
   './assets/js/renderers/model3d.js',
   './assets/js/renderers/f3d.js',
+  './assets/js/renderers/solidworks.js',
   './assets/js/renderers/gcode.js',
   './assets/js/renderers/timeline.js',
   './assets/js/lib/occt-loader.js',
