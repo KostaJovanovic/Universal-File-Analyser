@@ -47,7 +47,7 @@ const TYPE_BIAS_LAYER_FRAC = 0.06;   // per feature-type, as a fraction of one l
 
 // Pause / dwell playback timing. A real heat-up or program stop can take minutes,
 // which would freeze playback, so every hold is capped to a few seconds of replay.
-const PAUSE_CAP_S = 5;            // max hold for any single pause (playback seconds)
+const PAUSE_CAP_S = 3;            // max hold for any single pause (playback seconds)
 const MANUAL_PAUSE_S = 3;         // M0/M1 are indefinite real-world stops - a fixed, capped beat
 const TOOLCHANGE_PAUSE_S = 4;     // M600 filament change / tool-change Tn - park-and-swap beat
 const HEAT_AMBIENT_C = 25;        // assumed cold/ambient start for heat-up estimates
@@ -1016,16 +1016,19 @@ function buildViewer(data, opts = {}) {
 
   // mode: 0 = feature type, 1 = height, 2 = speed. vis: per-feature-type 1/0.
   // shown: how many extrusion segments to draw (in print order) - the progress slider.
-  const state = { yaw: -0.78, pitch: 0.6, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: 'travel', flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.mode === 'print' && data.multicolour) ? 3 : (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, showBed: !!bedGrid, showLegend: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false,
+  const state = { yaw: -0.78, pitch: 0.6, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: 'none', flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.mode === 'print' && data.multicolour) ? 3 : (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, showBed: !!bedGrid, showLegend: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false,
     // Travel-aware playback: travShown = full travel segments to draw; playKind marks
     // whether the in-progress (partially drawn) move is an extrusion (1) or a travel (2),
     // so the head can glide along travels too; playFrac is the fraction into it.
-    travShown: travN, playKind: 0, playFrac: 0, paused: false, translucentTravel: false,
+    travShown: travN, playKind: 0, playFrac: 0, paused: false, translucentTravel: true,
     // Follow camera: 0 = off (free), 1 = height (vertical pivot tracks the toolhead's
     // build height, the rest free), 2 = toolhead (pivot locked to the toolhead, only
     // rotation/zoom free). headX/Y/Z carry the live tool point (in geometry space) that
     // draw() pivots on; updated each frame by the draw impl.
-    follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, pauseText: '' };
+    // restX/Y/Z carry the head's resting tool point (RAW mm; drawImpl normalises) for when
+    // it sits at a move boundary and isn't mid-glide - travel-aware, so it doesn't snap back
+    // to the last *extrusion* endpoint when the tool actually rests at a travel endpoint.
+    follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, restX: 0, restY: 0, restZ: 0, restValid: false, pauseText: '' };
   let viewW = 600, viewH = 420;   // CSS px, for screen-space size in the shader
   let dirty = true;
   const spinListeners = [];
@@ -1128,10 +1131,14 @@ function buildViewer(data, opts = {}) {
       // Live tool point: when playback is mid-travel, glide along that travel; when
       // mid-extrusion, grow along the bead; otherwise sit at the end of the last move.
       let hx = 0, hy = 0, hz = 0, haveHead = false;
-      if (state.paused && haveLastHead) {
-        // Dwelling / waiting / heating: freeze the head where it last was, don't recompute
-        // (recomputing from `shown` would snap it back to the last extrusion endpoint).
-        hx = lastHX; hy = lastHY; hz = lastHZ; haveHead = true;
+      if (state.paused && (state.restValid || haveLastHead)) {
+        // Dwelling / waiting / heating: hold at the resting tool point. Prefer the travel-aware
+        // rest point (applyGlobal) over the cached last-live point - the latter can be a stale
+        // last-extrusion endpoint left by pre-play full-model frames, which would park the head
+        // on the model during a leading dwell and then teleport it to the corner.
+        if (state.restValid) { const r = nrm(state.restX, state.restY, state.restZ); hx = r[0]; hy = r[1]; hz = r[2]; }
+        else { hx = lastHX; hy = lastHY; hz = lastHZ; }
+        haveHead = true;
       } else if (state.playKind === 2 && travData && travShown < travN) {
         const q = travShown * STR, tf = state.playFrac;
         hx = travData[q] + tf * (travData[q + 3] - travData[q]);
@@ -1144,6 +1151,13 @@ function buildViewer(data, opts = {}) {
         hy = instData[q + 1] + frac * (instData[q + 4] - instData[q + 1]);
         hz = instData[q + 2] + frac * (instData[q + 5] - instData[q + 2]);
         haveHead = true;
+      } else if (state.restValid) {
+        // At rest between moves (frac 0): sit at the current move's start point - the true
+        // tool position, whichever move type led here. (The old fallback below used the last
+        // *extrusion* endpoint, which teleports the head back to the prime/last-bead corner
+        // whenever the tool actually arrived via travels, e.g. the first move of every print.)
+        const r = nrm(state.restX, state.restY, state.restZ);
+        hx = r[0]; hy = r[1]; hz = r[2]; haveHead = true;
       } else if (shown > 0) {
         const q = (shown - 1) * STR;
         hx = instData[q + 3]; hy = instData[q + 4]; hz = instData[q + 5]; haveHead = true;
@@ -1777,6 +1791,19 @@ export async function renderGcode(file, resultsEl, opts) {
           s.shown = data.segCount; s.travShown = data.travelCount; s.partial = 0; s.playKind = 0; s.playFrac = 0; s.paused = false; s.pauseText = '';
         } else {
           s.shown = gExt[g]; s.travShown = gTrav[g];
+          // Resting tool point = the start of the next non-pause move. During a dwell the
+          // machine holds this spot, and (the path being continuous) it equals the end of the
+          // previous move, so it's the true tool position at a boundary. Travel- or extrusion-
+          // aware - without this the head falls back to a stale last-extrusion endpoint and
+          // teleports (e.g. a leading dwell freezing on the model, then snapping to the corner
+          // when the first travel begins). gExt/gTrav don't advance across pauses, so gExt[g]/
+          // gTrav[g] already index that next move.
+          { let k = g; while (k < G && order[k] > 1.5) k++;
+            if (k < G) {
+              if (order[k] < 0.5) { const q = gExt[g] * 10; s.restX = data.seg[q]; s.restY = data.seg[q + 1]; s.restZ = data.seg[q + 2]; }
+              else { const q = gTrav[g] * 7; s.restX = data.travel[q]; s.restY = data.travel[q + 1]; s.restZ = data.travel[q + 2]; }
+              s.restValid = true;
+            } }
           if (order[g] > 1.5) {   // pause: head holds where it was, nothing new
             s.playKind = 0; s.partial = 0; s.playFrac = 0; s.paused = true;
             // Wait label: what it is waiting for + how long the VIEWER still waits (the
@@ -1976,7 +2003,8 @@ export async function renderGcode(file, resultsEl, opts) {
       for (const m of marks) {
         markLayer.appendChild(el('div', { class: 'anr-gcode-mark', style: `position:absolute;top:1px;bottom:1px;left:${(m.pct * 100).toFixed(3)}%;width:1px;background:rgba(255,255,255,0.9);box-shadow:0 0 2px rgba(0,0,0,0.7);` }));
       }
-      let toolMarksOn = true;
+      let toolMarksOn = marks.length > 0;   // off when the file has no tool / filament changes
+      markLayer.style.display = toolMarksOn ? '' : 'none';
       sliderWrap.appendChild(progSlider); sliderWrap.appendChild(markLayer); sliderWrap.appendChild(markPop);
       sliderWrap.addEventListener('mousemove', (e) => {
         if (!toolMarksOn || !marks.length) { markPop.style.display = 'none'; return; }
@@ -1990,8 +2018,9 @@ export async function renderGcode(file, resultsEl, opts) {
       sliderWrap.addEventListener('mouseleave', () => { markPop.style.display = 'none'; });
 
       // Toggle (in the view-controls row, on by default): show/hide the tool-change ticks.
-      const markBtn = el('button', { type: 'button', class: 'anr-btn is-active', title: 'Show a tick on the progress slider at every tool / filament change' }, 'Tool changes');
-      if (!marks.length) markBtn.disabled = true;
+      const markBtn = el('button', { type: 'button', class: 'anr-btn', title: 'Show a tick on the progress slider at every tool / filament change' }, 'Tool changes');
+      markBtn.classList.toggle('is-active', toolMarksOn);
+      if (!marks.length) { markBtn.disabled = true; markBtn.title = 'No tool or filament changes in this file'; }
       markBtn.addEventListener('click', () => {
         toolMarksOn = !toolMarksOn;
         markBtn.classList.toggle('is-active', toolMarksOn);
