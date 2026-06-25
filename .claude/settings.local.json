@@ -33,7 +33,8 @@
       "Bash(grep -iE \"^\\\\w+ 2\\\\.0\\( |$\\)\")",
       "Bash(tar -x -C v2.0-snapshot)",
       "Bash(awk '{print $NF}')",
-      "Bash(xxd \"J:/SteamLibrary/steamapps/common/Destiny 2/packages/w64_sr_audio_02b8_0.pkg\")"
+      "Bash(xxd \"J:/SteamLibrary/steamapps/common/Destiny 2/packages/w64_sr_audio_02b8_0.pkg\")",
+      "Bash(xargs grep -l \"attachViewCube\\\\|buildViewer\\\\|snapshot\")"
     ]
   },
   "spinnerTipsEnabled": false

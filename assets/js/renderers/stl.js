@@ -147,6 +147,9 @@ function buildViewer(geo, opts = {}) {
   // only be set here (at context creation), so the Quality toggle rebuilds the
   // viewer to change it. Defaults on.
   const msaa = opts.antialias !== false;
+  // zUp: the model was authored Z-up (STL/3MF/AMF/STEP/IGES/BREP). The viewer is
+  // Y-up, so a view-only -90 deg rotation about X stands these models upright.
+  const zUp = opts.zUp === true;
   const glOpts = { preserveDrawingBuffer: true, antialias: msaa };
   const gl = canvas.getContext('webgl', glOpts) || canvas.getContext('experimental-webgl', glOpts);
   if (!gl) {
@@ -178,15 +181,24 @@ function buildViewer(geo, opts = {}) {
   // width that still reads fine.
   const deriv = gl.getExtension('OES_standard_derivatives');
   const vsrc = `attribute vec3 aPos; attribute vec3 aNormal; attribute vec3 aBary;
+    attribute vec3 aColor; attribute vec2 aUV;
     uniform mat4 uProj, uView, uModel;
-    varying vec3 vN; varying vec3 vP; varying vec3 vBary;
+    varying vec3 vN; varying vec3 vP; varying vec3 vBary; varying vec3 vCol; varying vec2 vUV;
     void main(){ vec4 w = uModel*vec4(aPos,1.0); vec4 vp = uView*w;
-      gl_Position = uProj*vp; vN = mat3(uModel)*aNormal; vP = vp.xyz; vBary = aBary; }`;
+      gl_Position = uProj*vp; vN = mat3(uModel)*aNormal; vP = vp.xyz; vBary = aBary; vCol = aColor; vUV = aUV; }`;
   const fsrc = `${deriv ? '#extension GL_OES_standard_derivatives : enable\n' : ''}precision mediump float;
-    varying vec3 vN; varying vec3 vP; varying vec3 vBary; uniform vec3 uColor; uniform float uWire;
+    varying vec3 vN; varying vec3 vP; varying vec3 vBary; varying vec3 vCol; varying vec2 vUV;
+    uniform vec3 uColor; uniform float uWire; uniform float uHasVCol; uniform float uHasTex; uniform sampler2D uTex;
     void main(){ vec3 N = normalize(vN); vec3 L = normalize(vec3(0.35,0.6,0.8));
       float d = max(dot(N,L),0.0); float b = max(dot(-N,L),0.0);
-      float lit = max(d, b*0.55); vec3 c = uColor*(0.28+0.72*lit);
+      float lit = max(d, b*0.55);
+      // Base albedo: a texture sample (OBJ map_Kd) wins, then per-vertex colour
+      // (OBJ material Kd baked per-vertex, or embedded vertex colours), else the
+      // single uniform colour used by STL/STEP and the colour picker.
+      vec3 base = uColor;
+      if(uHasVCol > 0.5) base = vCol;
+      if(uHasTex > 0.5) base = texture2D(uTex, vUV).rgb;
+      vec3 c = base*(0.28+0.72*lit);
       if(uWire > 0.5){
         ${deriv
           ? 'vec3 w = fwidth(vBary); vec3 a = smoothstep(vec3(0.0), w*1.3, vBary); float e = min(min(a.x,a.y),a.z);'
@@ -227,14 +239,54 @@ function buildViewer(geo, opts = {}) {
   gl.enableVertexAttribArray(aBary);
   gl.vertexAttribPointer(aBary, 3, gl.FLOAT, false, 0, 0);
 
+  // Optional per-vertex colour (OBJ material Kd baked per-vertex, or embedded
+  // vertex colours). Defaults to white so the uniform colour drives the look when
+  // a geometry carries none - keeping STL/STEP/3MF rendering identical.
+  const hasVCol = !!(geo.colors && geo.colors.length === np.length);
+  const colArr = hasVCol ? geo.colors : (() => { const a = new Float32Array(np.length); a.fill(1); return a; })();
+  const colBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, colBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, colArr, gl.STATIC_DRAW);
+  const aColor = gl.getAttribLocation(prog, 'aColor');
+  if (aColor >= 0) { gl.enableVertexAttribArray(aColor); gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0); }
+
+  // Optional texture coords (OBJ vt) + a single texture image (OBJ map_Kd).
+  const uvCount = np.length / 3 * 2;
+  const uvArr = (geo.uvs && geo.uvs.length === uvCount) ? geo.uvs : new Float32Array(uvCount);
+  const uvBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, uvArr, gl.STATIC_DRAW);
+  const aUV = gl.getAttribLocation(prog, 'aUV');
+  if (aUV >= 0) { gl.enableVertexAttribArray(aUV); gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 0, 0); }
+
+  let tex = null;
+  if (geo.uvs && geo.textureImage) {
+    try {
+      const img = geo.textureImage;
+      const isPow2 = (n) => (n & (n - 1)) === 0;
+      const wrap = (isPow2(img.width) && isPow2(img.height)) ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+      tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);   // OBJ uv origin is bottom-left
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    } catch (_) { tex = null; }
+  }
+
   const uProj = gl.getUniformLocation(prog, 'uProj');
   const uView = gl.getUniformLocation(prog, 'uView');
   const uModel = gl.getUniformLocation(prog, 'uModel');
   const uColor = gl.getUniformLocation(prog, 'uColor');
   const uWire = gl.getUniformLocation(prog, 'uWire');
+  const uHasVCol = gl.getUniformLocation(prog, 'uHasVCol');
+  const uHasTex = gl.getUniformLocation(prog, 'uHasTex');
+  const uTex = gl.getUniformLocation(prog, 'uTex');
   gl.enable(gl.DEPTH_TEST);
 
-  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, color: [0.55, 0.62, 0.95], spin: true, ortho: false, wire: false, bg: [0.06, 0.06, 0.06], msaa, ssaa: true };
+  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, color: [0.55, 0.62, 0.95], spin: true, ortho: false, wire: false, bg: [0.06, 0.06, 0.06], msaa, ssaa: true, upZ: zUp };
   let dirty = true;
   // Spin can be turned off two ways - the button, or simply interacting with the
   // canvas (clicking/dragging stops it). Route every change through setSpin so any
@@ -267,12 +319,22 @@ function buildViewer(geo, opts = {}) {
     if (state.ortho) { const hh = state.dist * 0.4142; proj = mat4Ortho(-hh * aspect, hh * aspect, -hh, hh, 0.005, 1000); }
     else proj = mat4Perspective(45 * Math.PI / 180, aspect, 0.005, 1000);
     const view = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, state.panX, state.panY, -state.dist, 1]);
-    const model = mat4Multiply(mat4RotX(state.pitch), mat4RotY(state.yaw));
+    let model = mat4Multiply(mat4RotX(state.pitch), mat4RotY(state.yaw));
+    // Up-axis fix as the innermost transform: rotate the model itself before the
+    // orbit, so Z-up geometry reads upright and the view-cube/orbit stay correct.
+    if (state.upZ) model = mat4Multiply(model, mat4RotX(-Math.PI / 2));
     gl.uniformMatrix4fv(uProj, false, proj);
     gl.uniformMatrix4fv(uView, false, view);
     gl.uniformMatrix4fv(uModel, false, model);
     gl.uniform3fv(uColor, state.color);
     gl.uniform1f(uWire, state.wire ? 1 : 0);
+    gl.uniform1f(uHasVCol, hasVCol ? 1 : 0);
+    if (tex) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.uniform1i(uTex, 0);
+      gl.uniform1f(uHasTex, 1);
+    } else gl.uniform1f(uHasTex, 0);
     gl.drawArrays(gl.TRIANGLES, 0, np.length / 3);
   }
 
@@ -372,10 +434,10 @@ function buildViewer(geo, opts = {}) {
 // appends viewCard to the DOM, then calls startViewer(viewer) once it's attached
 // (the viewer measures its container, so it must be in the document first).
 // Reused by the STL, STEP/IGES and 3MF renderers.
-export function buildViewerCard(geo, title = '3D model') {
+export function buildViewerCard(geo, title = '3D model', opts = {}) {
   const viewCard = el('div', { class: 'anr-card' });
   viewCard.appendChild(el('h3', {}, title));
-  let viewer = buildViewer(geo);
+  let viewer = buildViewer(geo, opts);
   viewCard.appendChild(viewer.wrap);
 
   if (viewer.ok) {
@@ -393,8 +455,8 @@ export function buildViewerCard(geo, title = '3D model') {
     // `viewer` by binding, so they keep working after the swap.
     function applyMSAA(on) {
       const s = viewer.state;
-      const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, color: s.color, spin: s.spin, ortho: s.ortho, wire: s.wire, bg: s.bg, ssaa: s.ssaa };
-      const next = buildViewer(geo, { antialias: on });
+      const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, color: s.color, spin: s.spin, ortho: s.ortho, wire: s.wire, bg: s.bg, ssaa: s.ssaa, upZ: s.upZ };
+      const next = buildViewer(geo, { antialias: on, zUp: opts.zUp });
       if (!next.ok) return;                        // keep the working viewer if rebuild fails
       const old = viewer; viewer = next;
       Object.assign(viewer.state, keep, { msaa: on });
@@ -422,8 +484,30 @@ export function buildViewerCard(geo, title = '3D model') {
     qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
     const resetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Reset view');
     resetBtn.addEventListener('click', () => {
-      Object.assign(viewer.state, { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0 });
-      viewer.markDirty();
+      const s = viewer.state;
+      // Pause spin so the auto-rotation in loop() doesn't fight the tween's yaw.
+      if (s.spin && viewer.setSpin) viewer.setSpin(false);
+      const from = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY };
+      const to = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0 };
+      // Take the shortest way round on yaw (it accumulates freely while spinning).
+      let dyaw = to.yaw - from.yaw;
+      while (dyaw > Math.PI) dyaw -= 2 * Math.PI;
+      while (dyaw < -Math.PI) dyaw += 2 * Math.PI;
+      const dur = 320; let t0 = 0;
+      if (resetBtn._anim) cancelAnimationFrame(resetBtn._anim);
+      const tick = (ts) => {
+        if (!t0) t0 = ts;
+        const k = Math.min(1, (ts - t0) / dur);
+        const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;   // ease-in-out, matching the view-cube
+        s.yaw = from.yaw + dyaw * e;
+        s.pitch = from.pitch + (to.pitch - from.pitch) * e;
+        s.dist = from.dist + (to.dist - from.dist) * e;
+        s.panX = from.panX + (to.panX - from.panX) * e;
+        s.panY = from.panY + (to.panY - from.panY) * e;
+        viewer.markDirty();
+        resetBtn._anim = k < 1 ? requestAnimationFrame(tick) : 0;
+      };
+      resetBtn._anim = requestAnimationFrame(tick);
     });
     const projBtn = el('button', { type: 'button', class: 'anr-btn' }, viewer.state.ortho ? 'Orthographic' : 'Perspective');
     projBtn.addEventListener('click', () => {
@@ -435,6 +519,15 @@ export function buildViewerCard(geo, title = '3D model') {
     wireBtn.addEventListener('click', () => {
       viewer.state.wire = !viewer.state.wire;
       wireBtn.classList.toggle('is-active', viewer.state.wire);
+      viewer.markDirty();
+    });
+    // Up-axis toggle: most CAD/printing formats are Z-up, design/glTF are Y-up.
+    // Defaults to the format's convention; this lets the user flip any model.
+    const upBtn = el('button', { type: 'button', class: 'anr-btn' }, viewer.state.upZ ? 'Z-up' : 'Y-up');
+    upBtn.title = 'Flip which axis points up';
+    upBtn.addEventListener('click', () => {
+      viewer.state.upZ = !viewer.state.upZ;
+      upBtn.textContent = viewer.state.upZ ? 'Z-up' : 'Y-up';
       viewer.markDirty();
     });
     const colorInput = el('input', { type: 'color', value: '#8c9eef', title: 'Model colour', style: 'width:40px;height:36px;box-sizing:border-box;padding:0;border:1px solid var(--hairline);background:none;cursor:pointer;' });
@@ -453,9 +546,12 @@ export function buildViewerCard(geo, title = '3D model') {
     controls.appendChild(resetBtn);
     controls.appendChild(projBtn);
     controls.appendChild(wireBtn);
+    controls.appendChild(upBtn);
     controls.appendChild(qWrap);
     controls.appendChild(fsBtn);
-    controls.appendChild(colorInput);
+    // The colour picker sets the single uniform colour; hide it when the model
+    // carries its own per-vertex colours or a texture (they override it anyway).
+    if (!(geo.colors || geo.textureImage)) controls.appendChild(colorInput);
     controls.appendChild(el('span', { class: 'anr-hint', style: 'font-size:12px;margin-left:auto;' }, 'drag to orbit · scroll to zoom'));
     viewCard.appendChild(controls);
   }
@@ -607,7 +703,7 @@ export function geoSpan(geo) {
 // { key, name, build() -> geo } and is built lazily + cached. The viewer sits
 // above the textual readouts. Reused by STL/OBJ/PLY/OFF/STEP body-splitting and
 // by the 3MF/AMF container renderers.
-export function renderPartsViewer(file, resultsEl, { metaCard, parts, format, unitLabel, partsTitle, partsHint }) {
+export function renderPartsViewer(file, resultsEl, { metaCard, parts, format, unitLabel, partsTitle, partsHint, zUp }) {
   resultsEl.innerHTML = '';
   if (!parts.length) { resultsEl.appendChild(errorCard('No models found in this file.')); return; }
 
@@ -644,7 +740,7 @@ export function renderPartsViewer(file, resultsEl, { metaCard, parts, format, un
       viewCardEl.replaceWith(errCard); viewCardEl = errCard;
       return;
     }
-    const { viewCard, viewer } = buildViewerCard(geo, part.name);
+    const { viewCard, viewer } = buildViewerCard(geo, part.name, { zUp });
     viewCardEl.replaceWith(viewCard); viewCardEl = viewCard;
     startViewer(viewer);
     const stats = geoStatsCard(geo, file, format, unitLabel);
@@ -698,14 +794,14 @@ export async function renderStl(file, resultsEl) {
   if (bodies.length > 1) {
     const parts = bodyParts(geo, bodies, (g) => geoFromTriSubset(geo.positions, geo.normals, g, geo.format));
     renderPartsViewer(file, resultsEl, {
-      parts, format: geo.format, unitLabel: 'units', partsTitle: 'Bodies',
+      parts, format: geo.format, unitLabel: 'units', partsTitle: 'Bodies', zUp: true,
       partsHint: `This STL contains ${bodies.length} separate bodies. Pick one to view on its own, or see them all together.`,
     });
     return;
   }
 
   // ---- 3D viewer card ----
-  const { viewCard, viewer } = buildViewerCard(geo, '3D model');
+  const { viewCard, viewer } = buildViewerCard(geo, '3D model', { zUp: true });
   resultsEl.appendChild(viewCard);
   startViewer(viewer);
 

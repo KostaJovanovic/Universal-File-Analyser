@@ -320,6 +320,16 @@ async function loadImageFrame(file, maxW) {
   return { frames: [{ t: null, img: cx.getImageData(0, 0, W, H) }], W, H };
 }
 
+// The built-in sample shown automatically for every LUT, before the user drops
+// their own footage. Fetched as a blob so loadImageFrame's createImageBitmap path
+// (and the maxW downscale) can be reused unchanged.
+const SAMPLE_IMG_URL = '/assets/img/LUT_TEST.jpg';
+async function loadSampleFrame(maxW) {
+  const resp = await fetch(SAMPLE_IMG_URL);
+  if (!resp.ok) throw new Error('sample image unavailable (' + resp.status + ')');
+  return loadImageFrame(await resp.blob(), maxW);
+}
+
 // Draw an ImageData into a fixed-aspect thumbnail canvas (CSS object-fit handles
 // the uniform display size, so every thumbnail looks the same regardless of the
 // source resolution or aspect).
@@ -340,9 +350,9 @@ function itemUrl(it) {
 
 function buildTryout(sample) {
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Try it on your own footage'));
+  card.appendChild(el('h3', {}, 'See the look'));
   card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px' },
-    'Drop in a photo or video and Analyser applies this LUT to it - on your device, nothing uploaded. A video is sampled at 8 equally spaced frames at full resolution; each is shown original next to graded. Click any frame to open it full-size, then step through with the arrows (or ← / → keys).'));
+    'This LUT applied to a sample photo, shown original next to graded. Drop in your own photo or video to replace it - on your device, nothing uploaded. A video is sampled at 8 equally spaced frames at full resolution. Click any frame to open it full-size, then step through with the arrows (or ← / → keys).'));
   const input = el('input', { type: 'file', accept: 'image/*,video/*', style: 'display:none' });
   const btn = el('button', { type: 'button', class: 'anr-btn' }, 'Choose photo or video');
   btn.addEventListener('click', () => input.click());
@@ -439,6 +449,15 @@ function buildTryout(sample) {
     } catch (e) { status.textContent = 'Could not process this file: ' + ((e && e.message) || e); }
     input.value = '';
   });
+
+  // Auto-load the built-in sample so every analysed LUT shows a real before/after
+  // straight away, without waiting for the user to drop their own footage.
+  status.textContent = 'Loading sample photo…';
+  loadSampleFrame(1800).then((res) => {
+    status.textContent = 'Sample photo  ·  ' + res.W + ' x ' + res.H + '  ·  choose your own above to replace it';
+    renderGrid(res.frames);
+  }).catch((e) => { status.textContent = 'Could not load the sample photo: ' + ((e && e.message) || e); });
+
   return card;
 }
 

@@ -17,6 +17,7 @@ import { encodeAnimatedGif } from './gif-encode.js';
 import { buildIcoImagesCard } from './ico.js';
 import { buildMpoImagesCard } from './mpo.js';
 import { buildTiffPagesCard } from './tiff.js';
+import { diagnoseImage, repairJpeg, repairPng, decodePngPartial, extractJpegTables, spliceJpegHeader, carveImages, repairHeifContainer } from './photo-recover.js';
 
 // ---------- Browser-undecodable images ----------
 // Some image formats a web browser has no decoder for, so an <img> can't paint
@@ -55,6 +56,186 @@ function rawUndecodableBanner() {
 // Shown when the browser can't display the image: the banner above (or a caller-
 // supplied one), basic file info, and any EXIF/IPTC/XMP metadata exifr can still
 // read from the raw bytes.
+// ---------- broken / corrupt image salvage ----------
+// The still-image twin of the video recovery path: when the browser refuses to
+// paint a recognised image, photo-recover.js diagnoses the damage and we offer to
+// salvage it - repair a truncated JPEG/PNG, rebuild a damaged JPEG header from a
+// reference photo, or carve embedded images out of an unrecognised blob. The
+// recovered picture is shown, downloadable, and can be re-run through the full
+// photo analysis (opts.salvaged stops that re-render from looping back here).
+
+// Probe whether a Blob/File decodes as an image in this browser (resolves boolean).
+function imageDecodes(url) {
+  return new Promise((res) => { const im = new Image(); im.onload = () => res(true); im.onerror = () => res(false); im.src = url; });
+}
+function rgbaToCanvas(rgba, w, h) {
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), w, h), 0, 0);
+  return cv;
+}
+function canvasToPngFile(cv, name) {
+  return new Promise((res) => cv.toBlob((b) => res(b ? new File([b], name, { type: 'image/png' }) : null), 'image/png'));
+}
+
+async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
+  resultsEl.innerHTML = '';
+  const base = (file.name || 'image').replace(/\.[^/.]+$/, '');
+
+  const diagCard = el('div', { class: 'anr-card' });
+  diagCard.appendChild(el('h3', {}, 'Broken image - salvage'));
+  const t = el('table', { class: 'anr-readout' });
+  t.appendChild(row('Name', file.name));
+  t.appendChild(row('Size', fmtBytes(file.size) + '  (' + file.size.toLocaleString() + ' bytes)'));
+  t.appendChild(rowHelp('Detected format', (diag.format || 'unrecognised data').toUpperCase(),
+    'The real format read from the file’s signature bytes, regardless of its extension. Salvage works on the actual contents.'));
+  diagCard.appendChild(t);
+  diagCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:10px 0 4px;' }, 'What’s wrong:'));
+  const ul = el('ul', { style: 'margin:0; padding-left:18px;' });
+  for (const is of (diag.issues || [])) ul.appendChild(el('li', { class: 'anr-hint', style: 'margin:2px 0;' }, is.msg));
+  diagCard.appendChild(ul);
+  diagCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:10px;' },
+    'Analyser can scoop up whatever still decodes and stitch it into a viewable image. Everything stays on your device.'));
+  resultsEl.appendChild(diagCard);
+
+  const out = el('div', { class: 'anr-card' });
+  resultsEl.appendChild(out);
+
+  // Show a recovered File: preview (if the browser can paint it), a download, and a
+  // CTA to run the full photo analysis on it.
+  async function present(recoveredFile, note, extra) {
+    if (signal.aborted) return;
+    const url = URL.createObjectURL(recoveredFile);
+    const ok = await imageDecodes(url);
+    out.appendChild(el('p', {}, note));
+    if (ok) {
+      out.appendChild(el('img', {
+        src: url, alt: 'Recovered image', style: 'max-width:100%; display:block; border:1px solid var(--hairline); margin-top:10px; cursor:zoom-in;',
+        onclick: () => openLightbox(url, 'Recovered image', 'Recovered image', null, false, false),
+      }));
+    } else {
+      out.appendChild(el('p', { class: 'anr-hint' }, 'The recovered file can’t be shown inline in this browser, but the download below opens in desktop viewers (GIMP, Photoshop, IrfanView).'));
+    }
+    const analyse = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Run full analysis');
+    analyse.addEventListener('click', () => renderPhoto(recoveredFile, resultsEl, { salvaged: true, sourceFile: file }));
+    const dl = el('a', { class: 'anr-btn', href: url, download: recoveredFile.name }, 'Download recovered image');
+    out.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:12px;' }, [analyse, dl, ...(extra || [])]));
+  }
+
+  // ---- JPEG ----
+  if (diag.format === 'jpeg') {
+    const rep = repairJpeg(bytes);
+    if (rep.ok && !rep.needsReference && rep.data) {
+      const f = new File([rep.data], base + '.recovered.jpg', { type: 'image/jpeg' });
+      await present(f, 'Recovered - ' + rep.actions.join('; ').replace(/^(.)/, (m) => m.toLowerCase()) + '. The decodable part of the picture is shown; any cut-off region appears blank.');
+      return;
+    }
+    if (rep.needsReference) {
+      out.appendChild(el('h3', {}, 'Reference photo needed'));
+      out.appendChild(el('p', { class: 'anr-hint' },
+        'The JPEG header (its quantisation / Huffman tables) is damaged, so the picture data can’t be decoded on its own. Analyser can rebuild the header from a healthy photo shot on the same camera in the same mode - then the scan data decodes. Pick one:'));
+      const inp = el('input', { type: 'file', accept: 'image/jpeg,.jpg,.jpeg', style: 'display:none' });
+      const pick = el('button', { type: 'button', class: 'anr-btn' }, 'Choose reference photo…');
+      pick.addEventListener('click', () => inp.click());
+      out.appendChild(el('div', { class: 'anr-btn-row' }, [inp, pick]));
+      const note = el('p', { class: 'anr-hint' }, '');
+      out.appendChild(note);
+      inp.addEventListener('change', async () => {
+        const ref = inp.files && inp.files[0];
+        if (!ref) return;
+        pick.textContent = ref.name;
+        note.textContent = 'Borrowing tables from “' + ref.name + '”…';
+        let tables = null;
+        try { tables = extractJpegTables(new Uint8Array(await ref.arrayBuffer())); } catch (_) {}
+        if (!tables) { note.textContent = 'Couldn’t read tables from that photo. Pick a healthy JPEG from the same camera.'; return; }
+        const spliced = spliceJpegHeader(bytes, tables);
+        if (!spliced) { note.textContent = 'Couldn’t rebuild the header - no scan data could be located in the broken file.'; return; }
+        note.innerHTML = '';
+        const f = new File([spliced], base + '.recovered.jpg', { type: 'image/jpeg' });
+        await present(f, 'Rebuilt the damaged header using tables borrowed from “' + ref.name + '” (' + (tables.width || '?') + ' × ' + (tables.height || '?') + ').');
+      });
+      return;
+    }
+    out.appendChild(el('p', { class: 'anr-hint' }, 'Could not salvage this JPEG: ' + (rep.reason || 'no recoverable scan data') + '.'));
+    return;
+  }
+
+  // ---- PNG ----
+  if (diag.format === 'png') {
+    let done = false;
+    try {
+      const dec = await decodePngPartial(bytes);
+      if (dec && dec.rowsRecovered > 0) {
+        const cv = rgbaToCanvas(dec.rgba, dec.width, dec.height);
+        const f = await canvasToPngFile(cv, base + '.recovered.png');
+        if (f) {
+          const pct = Math.round((dec.rowsRecovered / dec.height) * 100);
+          await present(f, 'Recovered ' + dec.rowsRecovered.toLocaleString() + ' of ' + dec.height.toLocaleString() + ' rows (' + pct + '%) and re-encoded them as a clean PNG. Any unrecovered rows are blank.');
+          done = true;
+        }
+      }
+    } catch (_) {}
+    if (!done) {
+      const rep = repairPng(bytes);
+      if (rep.ok && rep.data) {
+        const f = new File([rep.data], base + '.recovered.png', { type: 'image/png' });
+        await present(f, 'Repaired the PNG container - ' + rep.actions.join('; ').replace(/^(.)/, (m) => m.toLowerCase()) + '.');
+      } else {
+        out.appendChild(el('p', { class: 'anr-hint' }, 'Could not salvage this PNG: ' + ((rep && rep.reason) || 'unreadable') + '.'));
+      }
+    }
+    return;
+  }
+
+  // ---- HEIF / HEIC / AVIF ----
+  // These store metadata at the front, so a tail-truncated file keeps a decodable
+  // image - libheif / the browser recover the surviving tiles once the over-large
+  // mdat box is clamped to the real file length.
+  if (diag.format === 'heif' || diag.format === 'avif') {
+    const rep = repairHeifContainer(bytes);
+    const note = rep.truncated ? 'Repaired the container (' + rep.actions.join('; ').replace(/^(.)/, (m) => m.toLowerCase()) + '); decoding the tiles that survived.' : 'Attempting to decode the damaged file.';
+    if (diag.format === 'avif') {
+      const f = new File([rep.data], base + '.recovered.avif', { type: 'image/avif' });
+      await present(f, note + ' Any lost region appears blank.');
+      return;
+    }
+    const f = new File([rep.data], base + '.recovered.heic', { type: 'image/heic' });
+    try {
+      const jpg = await convertHeic(f);
+      await present(jpg, note + ' Converted the recovered tiles to JPEG; any lost region appears blank.');
+    } catch (e) {
+      out.appendChild(el('p', { class: 'anr-hint' }, 'Could not decode this HEIC even after repair (' + ((e && e.message) || e) + ') - it may be too damaged, or its front-stored metadata was lost. The repaired file below may still open in a desktop viewer.'));
+      const url = URL.createObjectURL(f);
+      out.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:10px;' }, [el('a', { class: 'anr-btn', href: url, download: f.name }, 'Download repaired file')]));
+    }
+    return;
+  }
+
+  // ---- carving (unrecognised blob / wrong extension / disk fragment) ----
+  const carved = (diag.carved && diag.carved.length) ? diag.carved : carveImages(bytes);
+  out.appendChild(el('p', {}, 'Found ' + carved.length + ' embedded image' + (carved.length === 1 ? '' : 's') + ' in the data:'));
+  const grid = el('div', { style: 'display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-top:10px;' });
+  const MIME = { jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
+  for (let k = 0; k < carved.length; k++) {
+    const c = carved[k];
+    let sub = bytes.subarray(c.start, c.end);
+    if (c.format === 'jpeg') { const r = repairJpeg(sub); if (r.data) sub = r.data; }   // append EOI to a cut-off carve
+    const cf = new File([sub], 'carved_' + (k + 1) + '.' + c.format, { type: MIME[c.format] || 'application/octet-stream' });
+    const cell = el('div', { style: 'border:1px solid var(--hairline); padding:8px;' });
+    const url = URL.createObjectURL(cf);
+    if (await imageDecodes(url)) {
+      cell.appendChild(el('img', { src: url, style: 'max-width:100%; display:block; cursor:zoom-in;', onclick: () => openLightbox(url, 'Carved image', 'Carved image', null, false, false) }));
+    } else {
+      cell.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 6px;' }, c.format.toUpperCase() + '  ' + (c.width || '?') + ' × ' + (c.height || '?') + (c.complete ? '' : ' (partial)')));
+    }
+    const an = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Analyse');
+    an.addEventListener('click', () => renderPhoto(cf, resultsEl, { salvaged: true, sourceFile: file }));
+    const dl = el('a', { class: 'anr-btn anr-btn-sm', href: url, download: cf.name }, 'Download');
+    cell.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:6px; gap:6px;' }, [an, dl]));
+    grid.appendChild(cell);
+  }
+  out.appendChild(grid);
+}
+
 async function renderUndisplayableImage(file, ext, resultsEl, bannerNode) {
   resultsEl.appendChild(bannerNode || undecodableImageBanner(ext));
   const info = el('div', { class: 'anr-card' });
@@ -2232,6 +2413,17 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
         imgInfo = await loadImageFromFile(convertedFile);
       } catch (e2) {
         resultsEl.innerHTML = '';
+        // A truncated HEIC/HEIF keeps a decodable image (metadata sits at the front)
+        // - route to salvage, which clamps the over-large mdat box and re-decodes
+        // the surviving tiles. Only when actually truncated; a healthy-but-unsupported
+        // HEIC still shows the plain conversion error.
+        if (!opts.salvaged) {
+          let hb = null; try { hb = new Uint8Array(await file.arrayBuffer()); } catch (_) {}
+          let hd = null; if (hb) { try { hd = diagnoseImage(hb); } catch (_) {} }
+          if (hd && !hd.healthy && (hd.format === 'heif' || hd.format === 'avif')) {
+            return renderPhotoRecovery(file, hb, hd, resultsEl, renderSignal);
+          }
+        }
         resultsEl.appendChild(errorCard('HEIC conversion failed: ' + (e2 && e2.message ? e2.message : e2)));
         return;
       }
@@ -2301,10 +2493,24 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
       // renderUndisplayableImage below needs readable bytes anyway, so a failed
       // full read can only mean the file is unavailable (sync app off, online-only,
       // permission lost), regardless of the exact DOMException name/message.
-      let unreadable = false;
-      try { await file.arrayBuffer(); } catch (re) { unreadable = true; }
+      let unreadable = false, fileBytes = null;
+      try { fileBytes = new Uint8Array(await file.arrayBuffer()); } catch (re) { unreadable = true; }
+      // Broken / truncated / corrupt image the browser refused to paint: if the
+      // bytes show a recognisable-but-damaged image (or embedded images inside an
+      // unrecognised blob), offer to salvage it rather than dropping to the bare
+      // "undecodable" banner. Guarded so the repaired file we re-render doesn't loop.
+      let salvageDiag = null;
+      if (!unreadable && !inline && !opts.salvaged) {
+        try { salvageDiag = diagnoseImage(fileBytes); } catch (_) { salvageDiag = null; }
+      }
+      const canSalvage = salvageDiag && !salvageDiag.healthy &&
+        (salvageDiag.format === 'jpeg' || salvageDiag.format === 'png' ||
+          salvageDiag.format === 'avif' || salvageDiag.format === 'heif' ||
+          (!salvageDiag.format && salvageDiag.carved && salvageDiag.carved.length));
       if (unreadable) {
         resultsEl.appendChild(cloudFileWarning(file));
+      } else if (canSalvage) {
+        return renderPhotoRecovery(file, fileBytes, salvageDiag, resultsEl, renderSignal);
       } else if (!inline && (ext === 'tif' || ext === 'tiff')) {
         // Browsers can't decode TIFF, but a TIFF can hold many pages. Render them
         // all with ImageMagick (only if there are 2+; single-page falls through to

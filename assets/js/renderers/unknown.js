@@ -3,6 +3,7 @@
    previews for plain text, JSON, and XML. */
 
 import { el, row, rowHelp, fmtBytes, fileExt, sha256Row, errorCard } from '../core/util.js';
+import { carveImages, repairJpeg } from './photo-recover.js';
 
 function esc(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -435,9 +436,59 @@ export async function renderUnknown(file, resultsEl, opts) {
 
   resultsEl.appendChild(card);
 
+  // Carve any embedded images out of the blob (recovered disk fragments, joined
+  // dumps, mis-typed files often hide whole JPEGs/PNGs inside). Non-blocking.
+  try { await appendEmbeddedImagesCard(file, resultsEl); } catch (_) {}
+
   // An unrecognised type (no dedicated parser) - nudge the visitor to email the
   // format in so it can be supported. Skipped for extensionless files: there's no
   // "format" to support, they're just shown as text (and handleFile already offers
   // a re-open when the bytes match a known pattern).
   if (!extensionless && window._anrSuggest) window._anrSuggest.show(fileExt(file.name));
+}
+
+// Scan an unrecognised file for embedded image signatures and, if any are found,
+// append a card that previews each one with download + "analyse" buttons. Mines
+// recovered disk fragments / joined dumps / mis-typed files for whole JPEGs, PNGs,
+// GIFs, WebPs and BMPs. Reads up to a cap so a huge blob can't blow the heap.
+const CARVE_SCAN_CAP = 128 * 1024 * 1024;
+const CARVE_MIME = { jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
+
+function imageDecodes(url) {
+  return new Promise((res) => { const im = new Image(); im.onload = () => res(true); im.onerror = () => res(false); im.src = url; });
+}
+
+async function appendEmbeddedImagesCard(file, resultsEl) {
+  const bytes = new Uint8Array(await file.slice(0, Math.min(file.size, CARVE_SCAN_CAP)).arrayBuffer());
+  const carved = carveImages(bytes, { max: 48 });
+  if (!carved.length) return;
+
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Embedded images'));
+  card.appendChild(el('p', { class: 'anr-hint' },
+    'Found ' + carved.length + ' image' + (carved.length === 1 ? '' : 's') + ' hidden in this file'
+    + (file.size > CARVE_SCAN_CAP ? ' (first ' + fmtBytes(CARVE_SCAN_CAP) + ' scanned)' : '') + '. Salvaged on your device.'));
+  const grid = el('div', { style: 'display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-top:10px;' });
+
+  for (let k = 0; k < carved.length; k++) {
+    const c = carved[k];
+    let sub = bytes.subarray(c.start, c.end);
+    if (c.format === 'jpeg') { const r = repairJpeg(sub); if (r && r.data) sub = r.data; }   // close off a cut-off carve
+    const cf = new File([sub], 'carved_' + (k + 1) + '.' + c.format, { type: CARVE_MIME[c.format] || 'application/octet-stream' });
+    const url = URL.createObjectURL(cf);
+    const cell = el('div', { style: 'border:1px solid var(--hairline); padding:8px;' });
+    if (await imageDecodes(url)) {
+      cell.appendChild(el('img', { src: url, style: 'max-width:100%; display:block;' }));
+    } else {
+      cell.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 6px;' },
+        c.format.toUpperCase() + '  ' + (c.width || '?') + ' × ' + (c.height || '?') + (c.complete ? '' : ' (partial)')));
+    }
+    const an = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Analyse');
+    an.addEventListener('click', async () => { const { renderPhoto } = await import('./photo.js'); renderPhoto(cf, resultsEl, { salvaged: true, sourceFile: file }); });
+    const dl = el('a', { class: 'anr-btn anr-btn-sm', href: url, download: cf.name }, 'Download');
+    cell.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:6px; gap:6px;' }, [an, dl]));
+    grid.appendChild(cell);
+  }
+  card.appendChild(grid);
+  resultsEl.appendChild(card);
 }
