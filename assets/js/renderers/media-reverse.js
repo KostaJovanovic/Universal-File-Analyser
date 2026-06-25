@@ -47,11 +47,19 @@ export function buildReverseAudioCard(audioBuffer, baseName, signal) {
       const audioEl = el('audio', { src: url, class: 'is-hidden' });
       out.appendChild(audioEl);
       out.appendChild(makePlayer(audioEl, audioBuffer.duration));
+      const revName = (baseName || 'audio') + '_reversed.wav';
       const dl = el('a', {
-        href: url, download: (baseName || 'audio') + '_reversed.wav', class: 'anr-btn',
-        style: 'margin-top:10px;display:inline-block;text-decoration:none;'
+        href: url, download: revName, class: 'anr-btn',
+        style: 'display:inline-block;text-decoration:none;'
       }, 'Download reversed (WAV)');
-      out.appendChild(el('div', { style: 'margin-top:10px;' }, [dl]));
+      const analyse = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse reversed');
+      analyse.addEventListener('click', () => {
+        const file = new File([blob], revName, { type: 'audio/wav' });
+        if (window._anrHandleFile) window._anrHandleFile(file);
+      });
+      out.appendChild(el('div', {
+        style: 'margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;'
+      }, [dl, analyse]));
       btn.remove();
     }, 0);
   });
