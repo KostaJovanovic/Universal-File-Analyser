@@ -28,7 +28,7 @@ const START = '<!-- SAMPLES:START -->';
 const END = '<!-- SAMPLES:END -->';
 
 // pathToFileURL: a bare Windows path (C:\…) is not a valid ESM specifier.
-const { catalogGrouped } = await import(
+const { catalogGrouped, EXT_VARIANTS } = await import(
   pathToFileURL(join(ROOT, 'assets/js/core/formats.js')).href
 );
 
@@ -38,6 +38,15 @@ try {
   ({ SAMPLE_PAGES } = await import(pathToFileURL(join(ROOT, 'tools/sample-content.mjs')).href));
   SAMPLE_PAGES = SAMPLE_PAGES || {};
 } catch (_) { SAMPLE_PAGES = {}; }
+
+// Per-extension "what is a .X file" blurbs - the same one/two-sentence copy the
+// /formats/<ext> landing pages use. Keyed by lowercase ext; the hover popup
+// prefers these over the catalog desc (which describes what Analyser does).
+let EXT_PAGES = {};
+try {
+  ({ EXT_PAGES } = await import(pathToFileURL(join(ROOT, 'tools/format-page-content.mjs')).href));
+  EXT_PAGES = EXT_PAGES || {};
+} catch (_) { EXT_PAGES = {}; }
 
 // Build a lookup: lowercase ext -> { label, desc, catKey, catLabel, catOrder }.
 // catOrder keeps the gallery grouped in the same domain order as the catalog.
@@ -72,10 +81,35 @@ function chip(name, bytes) {
   const info = extInfo.get(ext) || { label: ext ? ext.toUpperCase() : 'File', desc: '', catKey: 'system', catLabel: 'System', catOrder: 999 };
   const caption = SAMPLE_PAGES[name] || info.desc || '';
   const href = '/samples/' + name.split('/').map(encodeURIComponent).join('/');
-  // Everything (label, caption, size) lives in the tooltip - the chip itself just
-  // shows the filename so the buttons stay small and flow with the page width.
-  const title = `${info.label}${caption ? ' - ' + caption : ''} (${humanSize(bytes)})`;
-  return `        <button type="button" class="sample-chip" data-sample="${escAttr(href)}" data-name="${escAttr(name)}" data-cat="${escAttr(info.catKey)}" title="${escAttr(title)}">${esc(name)}</button>`;
+  // The square chip shows the extension as a big tile (top three quarters) over
+  // the filename (bottom quarter); the longer the extension the smaller it is
+  // drawn, so it always fits. The hover popup (wired in app.js) reads the
+  // label / ext / size / blurb from the data-* attributes below; aria-label keeps
+  // the full name + type available to assistive tech.
+  const size = humanSize(bytes);
+  const aria = `${info.label} - ${name} (${size})`;
+  // Popup blurb: prefer the per-extension "what is a .X file" line (one or two
+  // sentences, /formats-page style). For ambiguous extensions (one ext, several
+  // unrelated formats - e.g. .cube is a colour LUT OR a Gaussian grid) the single
+  // EXT_PAGES blurb can name the wrong variant for this sample, so use the
+  // EXT_VARIANTS summary (which names both) instead. Catalog caption's first
+  // sentence is the last-ditch fallback.
+  const variant = EXT_VARIANTS && EXT_VARIANTS[ext];
+  const catSentence = caption ? (caption.match(/^.*?[.!?](?=\s|$)/) || [caption])[0].trim() : '';
+  const shortDesc = variant
+    ? (variant.summary || catSentence)
+    : ((EXT_PAGES[ext] && EXT_PAGES[ext].blurb) || catSentence);
+  const tile = '.' + (ext || 'file').toUpperCase();
+  // Size by the extension length (ignore the leading dot) so the dot never tips
+  // a short ext into a smaller tier.
+  const len = (ext || 'file').length;
+  const sizeMod = len >= 8 ? ' sample-thumb--xlong'
+    : len >= 6 ? ' sample-thumb--long'
+      : len >= 4 ? ' sample-thumb--mid' : '';
+  // The visible label drops the extension (the thumbnail tile already shows it);
+  // data-name keeps the full filename so the click handler loads the right file.
+  const display = name.replace(/\.[^.]+$/, '') || name;
+  return `        <button type="button" class="sample-chip" data-sample="${escAttr(href)}" data-name="${escAttr(name)}" data-cat="${escAttr(info.catKey)}" data-label="${escAttr(info.label)}" data-ext="${escAttr(tile)}" data-size="${escAttr(size)}" data-desc="${escAttr(shortDesc)}" aria-label="${escAttr(aria)}"><span class="sample-thumb${sizeMod}" aria-hidden="true">${esc(tile)}</span><span class="sample-name"><span>${esc(display)}</span></span></button>`;
 }
 
 // Gather files (skip dotfiles and _-prefixed meta files, and any sub-directories).
@@ -88,32 +122,30 @@ if (existsSync(SAMPLES_DIR)) {
     });
 }
 
+// Sort order keyed on the catalog row label (not the broad category): the
+// 'Photo'/'RAW photo' rows first, then 'Video', then 'Sound', then everything
+// else; alphabetical (case-insensitive) by filename within each bucket.
+const bucketOf = (name) => {
+  const label = (extInfo.get(extOf(name)) || {}).label;
+  if (label === 'Photo' || label === 'RAW photo') return 0;
+  if (label === 'Video') return 1;
+  if (label === 'Sound') return 2;
+  return 3;
+};
+
 let block;
 if (files.length) {
-  // Group the samples into the same domain categories the formats page uses
-  // (Images, Audio, Video, 3D / CAD, ...), in the catalog's own order. Each group
-  // becomes a titled section with its own row of chips.
-  const groupsMap = new Map(); // catKey -> { key, label, order, names: [] }
-  for (const name of files) {
-    const info = extInfo.get(extOf(name)) || { catKey: 'system', catLabel: 'System', catOrder: 999 };
-    let g = groupsMap.get(info.catKey);
-    if (!g) { g = { key: info.catKey, label: info.catLabel, order: info.catOrder, names: [] }; groupsMap.set(info.catKey, g); }
-    g.names.push(name);
-  }
-  const ordered = [...groupsMap.values()].sort((a, b) => a.order - b.order);
-  block = ordered.map((g) => {
-    const chips = g.names
-      .sort((a, b) => a.localeCompare(b))
-      .map((n) => chip(n, statSync(join(SAMPLES_DIR, n)).size))
-      .join('\n');
-    const n = g.names.length;
-    return `        <div class="sample-group" data-cat="${escAttr(g.key)}">
-          <h3 class="sample-group-label">${esc(g.label)}<span class="sample-group-count">${n} sample${n === 1 ? '' : 's'}</span></h3>
-          <div class="sample-gallery">
+  // One flat gallery - no per-category grouping or headings. Within each bucket,
+  // sort alphabetically by extension (filename as the tie-breaker).
+  const chips = files
+    .sort((a, b) => bucketOf(a) - bucketOf(b)
+      || extOf(a).localeCompare(extOf(b))
+      || a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    .map((n) => chip(n, statSync(join(SAMPLES_DIR, n)).size))
+    .join('\n');
+  block = `        <div class="sample-gallery">
 ${chips}
-          </div>
         </div>`;
-  }).join('\n');
 } else {
   block = '        <p class="anr-hint">No samples yet. Drop files into the <code>samples/</code> folder and re-run <code>tools/prerender-samples.mjs</code> (or <code>save.bat</code>).</p>';
 }

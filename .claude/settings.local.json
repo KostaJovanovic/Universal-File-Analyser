@@ -38,7 +38,8 @@
       "Bash(echo \"=== size ===\")",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(rtk gh *)",
-      "Bash(gh search *)"
+      "Bash(gh search *)",
+      "Bash(rtk find *)"
     ]
   },
   "spinnerTipsEnabled": false

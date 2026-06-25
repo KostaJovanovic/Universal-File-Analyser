@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 171;
+const COMMIT_COUNT = 172;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -699,9 +699,14 @@ function classifyFile(file) {
   const ext = fileExt(file.name);
   // SVG before generic image/ MIME so it gets its own handler
   if (t === 'image/svg+xml' || SVG_EXTS.has(ext)) return 'svg';
-  if (t.startsWith('image/')) return 'photo';
-  if (t.startsWith('audio/')) return 'audio';
-  if (t.startsWith('video/')) return 'video';
+  // NB: the generic image/ · audio/ · video/ MIME shortcuts live further down,
+  // just above the PHOTO/AUDIO/VIDEO_EXTS fallbacks - NOT here. A recognised
+  // extension with a dedicated renderer must win over the MIME guess: many
+  // structured formats carry a misleading vendor image MIME (.tap is served as
+  // image/vnd.tencent.tap, .dwg as image/vnd.dwg, .dxf as image/vnd.dxf, .djvu
+  // as image/vnd.djvu) or a non-decodable audio MIME (.mid as audio/midi), and
+  // checking the MIME first would route a CNC G-code / CAD / MIDI file to the
+  // photo or audio renderer, which then fails ("image can't be decoded").
   if (CSV_EXTS.has(ext) || t === 'text/csv' || t === 'text/tab-separated-values') return 'csv';
   // Word, Excel, PowerPoint OOXML and their template / macro-enabled / show
   // siblings share the same package, so they reuse the same renderers.
@@ -839,6 +844,13 @@ function classifyFile(file) {
   // is an Adobe SpeedGrade / Iridas grade stack carrying a baked 3D LUT, read by
   // the same renderer (grade stack + the embedded LUT visualised).
   if (ext === 'cube' || ext === 'look') return 'lut';
+  // Generic media MIME fallback - only now that every dedicated-extension route
+  // above has had its say (see the note near the top of this function). A file
+  // with a standard image/audio/video MIME and no recognised structured
+  // extension is handled by its type here.
+  if (t.startsWith('image/')) return 'photo';
+  if (t.startsWith('audio/')) return 'audio';
+  if (t.startsWith('video/')) return 'video';
   if (PHOTO_EXTS.has(ext)) return 'photo';
   if (AUDIO_EXTS.has(ext)) return 'audio';
   if (VIDEO_EXTS.has(ext)) return 'video';
@@ -2513,10 +2525,60 @@ window._anrReadableText = isReadableText;
   // { sample: true } so it never touches the public stats or local history.
   // Wired every boot (the <main> is swapped on SPA nav); _anrWired guards against
   // double-binding the same element.
+  // Lazily-created singleton popup that floats above the cursor while a chip is
+  // hovered, showing the extension, type, size and a one-line blurb (from the
+  // chip's data-* attributes). pointer-events:none, so it never blocks the chip.
+  let samplePop = null;
+  const ensureSamplePop = () => {
+    if (samplePop && document.body.contains(samplePop)) return samplePop;
+    samplePop = document.createElement('div');
+    samplePop.className = 'sample-pop';
+    samplePop.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(samplePop);
+    return samplePop;
+  };
+  let samplePopTimer = 0;
+  const hideSamplePop = () => {
+    clearTimeout(samplePopTimer);
+    if (samplePop) samplePop.classList.remove('is-on');
+  };
+
   document.querySelectorAll('.sample-chip').forEach((card) => {
     if (card._anrWired) return;
     card._anrWired = true;
+    card.addEventListener('pointerenter', (e) => {
+      if (e.pointerType && e.pointerType !== 'mouse') return; // touch/pen: no hover popup
+      const ext = card.dataset.ext || '';
+      const label = card.dataset.label || '';
+      const size = card.dataset.size || '';
+      const desc = card.dataset.desc || '';
+      // Show only after a 0.7s hover dwell, so sweeping across the gallery
+      // doesn't flash a popup over every chip.
+      clearTimeout(samplePopTimer);
+      samplePopTimer = setTimeout(() => {
+        const pop = ensureSamplePop();
+        pop.innerHTML =
+          '<div class="sample-pop-head">'
+          + (ext ? '<span class="sample-pop-ext"></span>' : '')
+          + (label ? '<span class="sample-pop-label"></span>' : '')
+          + (size ? '<span class="sample-pop-size"></span>' : '')
+          + '</div>'
+          + (desc ? '<div class="sample-pop-desc"></div>' : '');
+        if (ext) pop.querySelector('.sample-pop-ext').textContent = ext;
+        if (label) pop.querySelector('.sample-pop-label').textContent = label;
+        if (size) pop.querySelector('.sample-pop-size').textContent = size;
+        if (desc) pop.querySelector('.sample-pop-desc').textContent = desc;
+        // Anchor centred above the card (the CSS translate puts the popup's
+        // bottom-centre at this point), so it sits over the card, not the cursor.
+        const r = card.getBoundingClientRect();
+        pop.style.left = (r.left + r.width / 2) + 'px';
+        pop.style.top = r.top + 'px';
+        pop.classList.add('is-on');
+      }, 700);
+    });
+    card.addEventListener('pointerleave', hideSamplePop);
     card.addEventListener('click', async () => {
+      hideSamplePop();
       const url = card.dataset.sample;
       if (!url || card._anrLoading) return;
       card._anrLoading = true;

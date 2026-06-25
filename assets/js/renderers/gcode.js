@@ -661,19 +661,26 @@ function mat4Ortho(l, r, b, t, n, f) {
   return new Float32Array([2 / (r - l), 0, 0, 0, 0, 2 / (t - b), 0, 0, 0, 0, -2 / (f - n), 0, -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n), 1]);
 }
 
-// Upside-down 3-sided pyramid (a stylised nozzle/toolhead): apex at the origin -
-// the deposition point - with the triangular base lifted above it. Interleaved
-// position(3) + flat normal(3), 12 vertices (3 sides + base cap).
-function pyramidGeo() {
-  const apex = [0, 0, 0], yb = 1.45, rb = 0.62, base = [];
-  for (let k = 0; k < 3; k++) { const a = Math.PI / 2 + k * 2 * Math.PI / 3; base.push([Math.cos(a) * rb, yb, Math.sin(a) * rb]); }
-  const tris = [[apex, base[0], base[1]], [apex, base[1], base[2]], [apex, base[2], base[0]], [base[0], base[2], base[1]]];
+// Upside-down N-sided pyramid (a stylised nozzle/toolhead): apex at the origin -
+// the deposition point - with the N-gon base lifted above it. Interleaved
+// position(3) + flat normal(3); (2*sides - 2) triangles -> sides=3 gives the
+// classic 12-vertex 3-sided marker, byte-for-byte as before. The base ring sits at
+// y = PYR_YB so the digit quad (multi-tool marker) can be placed coplanar with it.
+const PYR_YB = 1.45, PYR_RB = 0.62;
+function pyramidGeo(sides) {
+  const n = Math.max(3, sides | 0), apex = [0, 0, 0], yb = PYR_YB, rb = PYR_RB, base = [];
+  for (let k = 0; k < n; k++) { const a = Math.PI / 2 + k * 2 * Math.PI / n; base.push([Math.cos(a) * rb, yb, Math.sin(a) * rb]); }
+  const tris = [];
+  for (let k = 0; k < n; k++) tris.push([apex, base[k], base[(k + 1) % n]]);   // side faces
+  // Base cap as a reversed triangle fan so its flat normal points up (+y), matching
+  // the original 3-gon winding ([base0, base2, base1]).
+  for (let k = 1; k < n - 1; k++) tris.push([base[0], base[k + 1], base[k]]);
   const out = [];
   for (const [A, B, C] of tris) {
     const u = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], v = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
-    let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-    const L = Math.hypot(n[0], n[1], n[2]) || 1; n = [n[0] / L, n[1] / L, n[2] / L];
-    for (const P of [A, B, C]) out.push(P[0], P[1], P[2], n[0], n[1], n[2]);
+    let n2 = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const L = Math.hypot(n2[0], n2[1], n2[2]) || 1; n2 = [n2[0] / L, n2[1] / L, n2[2] / L];
+    for (const P of [A, B, C]) out.push(P[0], P[1], P[2], n2[0], n2[1], n2[2]);
   }
   return new Float32Array(out);
 }
@@ -865,7 +872,7 @@ function buildViewer(data, opts = {}) {
 
   const vsInst = `attribute float aEnd, aSr, aSu; attribute vec3 aA, aB; attribute float aHW, aHH, aFeed, aType, aTool;
     uniform mat4 uMVP, uModel; uniform vec2 uViewport;
-    uniform float uYmin, uYspan, uFmin, uFspan, uMode, uTravel, uMinW, uMinPx, uFlat, uVis[8], uWmin, uWspan, uTypeBias;
+    uniform float uYmin, uYspan, uFmin, uFspan, uMode, uTravel, uMinW, uMinPx, uFlat, uVis[8], uFilVis[8], uWmin, uWspan, uTypeBias;
     uniform vec3 uFilCols[8];
     varying float vT, vVis; varying vec3 vN, vColor;
     vec3 filColor(float ft){ int t=int(ft+0.5);
@@ -929,7 +936,7 @@ function buildViewer(data, opts = {}) {
         else if(uMode < 2.5) vColor = ramp(sfrac);
         else if(uMode < 3.5) vColor = filColor(aTool);
         else vColor = ramp(wfrac);
-        vVis = uVis[int(aType + 0.5)];
+        vVis = uVis[int(aType + 0.5)] * uFilVis[int(aTool + 0.5)];
       } }`;
   const fsInst = `precision mediump float; varying float vT, vVis; varying vec3 vN, vColor;
     uniform float uClip, uAlpha;
@@ -1016,7 +1023,7 @@ function buildViewer(data, opts = {}) {
 
   // mode: 0 = feature type, 1 = height, 2 = speed. vis: per-feature-type 1/0.
   // shown: how many extrusion segments to draw (in print order) - the progress slider.
-  const state = { yaw: -0.78, pitch: 0.6, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: 'none', flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.mode === 'print' && data.multicolour) ? 3 : (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, showBed: !!bedGrid, showLegend: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false,
+  const state = { yaw: -0.78, pitch: 0.6, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: 'none', flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.mode === 'print' && data.multicolour) ? 3 : (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, showBed: !!bedGrid, showLegend: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), filVis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false,
     // Travel-aware playback: travShown = full travel segments to draw; playKind marks
     // whether the in-progress (partially drawn) move is an extrusion (1) or a travel (2),
     // so the head can glide along travels too; playFrac is the fraction into it.
@@ -1028,14 +1035,14 @@ function buildViewer(data, opts = {}) {
     // restX/Y/Z carry the head's resting tool point (RAW mm; drawImpl normalises) for when
     // it sits at a move boundary and isn't mid-glide - travel-aware, so it doesn't snap back
     // to the last *extrusion* endpoint when the tool actually rests at a travel endpoint.
-    follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, restX: 0, restY: 0, restZ: 0, restValid: false, pauseText: '' };
+    follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, headLive: false, headToolRank: 1, headToolNum: 0, toolMarkers: true, restX: 0, restY: 0, restZ: 0, restValid: false, pauseText: '' };
   let viewW = 600, viewH = 420;   // CSS px, for screen-space size in the shader
   let dirty = true;
   const spinListeners = [];
   function setSpin(v) { if (state.spin === v) return; state.spin = v; dirty = true; for (const cb of spinListeners) cb(v); }
 
   // ----- instanced path -----
-  let drawImpl;
+  let drawImpl, computeHead;
   if (inst && segN > 0) {
     const prog = makeProg(vsInst, fsInst); gl.useProgram(prog);
     const tpl = boxTemplate();
@@ -1064,7 +1071,7 @@ function buildViewer(data, opts = {}) {
     const L = (n) => gl.getAttribLocation(prog, n);
     const aEnd = L('aEnd'), aSr = L('aSr'), aSu = L('aSu'), aA = L('aA'), aB = L('aB'), aHW = L('aHW'), aHH = L('aHH'), aFeed = L('aFeed'), aType = L('aType'), aTool = L('aTool');
     const U = (n) => gl.getUniformLocation(prog, n);
-    const uMVP = U('uMVP'), uModel = U('uModel'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan'), uTypeBias = U('uTypeBias');
+    const uMVP = U('uMVP'), uModel = U('uModel'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uFilVis = U('uFilVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan'), uTypeBias = U('uTypeBias');
 
     const bindTemplate = () => {
       gl.bindBuffer(gl.ARRAY_BUFFER, tplBuf);
@@ -1084,52 +1091,116 @@ function buildViewer(data, opts = {}) {
       if (aTool >= 0) { gl.enableVertexAttribArray(aTool); gl.vertexAttribPointer(aTool, 1, gl.FLOAT, false, S, 40); inst.vertexAttribDivisorANGLE(aTool, 1); }
     };
     // Toolhead marker: a small inverted pyramid sitting at the live print point,
-    // shown while the print-progress animation plays.
+    // shown while the print-progress animation plays. Single-tool prints get the
+    // classic 3-sided yellow marker; multi-tool prints give each tool a distinct
+    // marker - sides grow linearly with the tool's first-use order (1st -> 3 sides,
+    // 2nd -> 4, ... capped at 9), the colour cycles through HEAD_PAL, and the raw
+    // gcode tool number is textured onto the upward base face.
     const headProg = makeProg(
       `attribute vec3 aPos, aNrm; uniform mat4 uProj, uView, uModel; uniform vec3 uHead; uniform float uScale; varying vec3 vN;
        void main(){ vN = mat3(uModel)*aNrm; gl_Position = uProj*uView*uModel*vec4(uHead + aPos*uScale, 1.0); }`,
-      `precision mediump float; varying vec3 vN;
+      `precision mediump float; varying vec3 vN; uniform vec3 uHeadColor;
        void main(){ vec3 N=normalize(vN); vec3 L=normalize(vec3(0.4,0.78,0.5));
          float lit=max(max(dot(N,L),0.0), max(dot(-N,L),0.0)*0.4);
-         gl_FragColor = vec4(vec3(1.0,0.92,0.30)*(0.45+0.55*lit), 1.0); }`);
-    const headGeo = pyramidGeo();
-    const headBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, headBuf); gl.bufferData(gl.ARRAY_BUFFER, headGeo, gl.STATIC_DRAW);
+         gl_FragColor = vec4(uHeadColor*(0.45+0.55*lit), 1.0); }`);
+    // Tool colour cycle. [0] is the exact original yellow, so a single-tool print (and
+    // every print's first tool) is pixel-identical to before.
+    const HEAD_PAL = [[1.0, 0.92, 0.30], [0.20, 0.90, 0.95], [0.95, 0.32, 0.85], [0.95, 0.33, 0.33], [0.38, 0.85, 0.45], [0.42, 0.55, 0.97]];
+    // One geometry per side-count 3..9 (index = sides-3); rank N (1-based first-use
+    // order) uses min(N+2, 9) sides, so the 7th tool onward stops gaining sides.
+    const headVariants = [];
+    for (let s = 3; s <= 9; s++) { const geo = pyramidGeo(s); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, geo, gl.STATIC_DRAW); headVariants.push({ buf: b, count: geo.length / 6 }); }
     const hPos = gl.getAttribLocation(headProg, 'aPos'), hNrm = gl.getAttribLocation(headProg, 'aNrm');
     const hU = (n) => gl.getUniformLocation(headProg, n);
-    const uHProj = hU('uProj'), uHView = hU('uView'), uHModel = hU('uModel'), uHead = hU('uHead'), uHScale = hU('uScale');
+    const uHProj = hU('uProj'), uHView = hU('uView'), uHModel = hU('uModel'), uHead = hU('uHead'), uHScale = hU('uScale'), uHColor = hU('uHeadColor');
     const headScale = Math.max(0.02, boundR * 0.06);
+
+    // ---- Tool identity (multi-tool prints) -------------------------------------
+    // CNC stores the tool's colour slot in aType (offset 9); FDM stores the filament
+    // index in aTool (offset 10). Scan the (chronological) instance data once to rank
+    // each distinct tool by first use, and map a raw value to the number to display.
+    const isCNC = !!data.cnc;
+    const toolOff = isCNC ? 9 : 10;
+    const slotToNum = new Map();
+    if (isCNC && data.cnc.toolColors) for (const tc of data.cnc.toolColors) slotToNum.set(tc.slot, tc.n);
+    const rawToNum = (raw) => isCNC ? (slotToNum.has(raw) ? slotToNum.get(raw) : raw) : raw;
+    const rankMap = new Map();
+    for (let s = 0; s < segN; s++) { const raw = instData[s * STR + toolOff] | 0; if (!rankMap.has(raw)) rankMap.set(raw, rankMap.size + 1); }
+    const multiTool = rankMap.size > 1;
+
+    // ---- Digit textured onto the marker's top (base) face ----------------------
+    // A small quad coplanar with the base, in the marker's local space (so it rides
+    // uHead+aPos*uScale and rotates/tilts with the model - edge-on from the side,
+    // legible from above). One cached texture per displayed number.
+    const digitProg = makeProg(
+      `attribute vec3 aPos; attribute vec2 aUV; uniform mat4 uProj, uView, uModel; uniform vec3 uHead; uniform float uScale; varying vec2 vUV;
+       void main(){ vUV = aUV; gl_Position = uProj*uView*uModel*vec4(uHead + aPos*uScale, 1.0); }`,
+      `precision mediump float; varying vec2 vUV; uniform sampler2D uTex;
+       void main(){ vec4 c = texture2D(uTex, vUV); if (c.a < 0.02) discard; gl_FragColor = c; }`);
+    const aDPos = gl.getAttribLocation(digitProg, 'aPos'), aDUV = gl.getAttribLocation(digitProg, 'aUV');
+    const dU = (n) => gl.getUniformLocation(digitProg, n);
+    const uDProj = dU('uProj'), uDView = dU('uView'), uDModel = dU('uModel'), uDHead = dU('uHead'), uDScale = dU('uScale'), uDSamp = dU('uTex');
+    const dHe = PYR_RB * 0.82, dY = PYR_YB + 0.02;   // quad half-extent + tiny lift above the base cap
+    const digitQuad = new Float32Array([
+      -dHe, dY, -dHe, 1, 1,  dHe, dY, -dHe, 0, 1,  dHe, dY, dHe, 0, 0,
+      -dHe, dY, -dHe, 1, 1,  dHe, dY, dHe, 0, 0,  -dHe, dY, dHe, 1, 0,
+    ]);
+    const digitBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, digitBuf); gl.bufferData(gl.ARRAY_BUFFER, digitQuad, gl.STATIC_DRAW);
+    const digitCache = new Map();
+    const digitTex = (num) => {
+      let t = digitCache.get(num); if (t) return t;
+      const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64;
+      const c = cv.getContext('2d'); const str = String(num);
+      c.clearRect(0, 0, 64, 64);
+      c.font = 'bold ' + (str.length > 1 ? 34 : 46) + 'px ui-monospace, Menlo, Consolas, monospace';
+      c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.lineJoin = 'round'; c.lineWidth = 8; c.strokeStyle = 'rgba(18,20,26,0.95)'; c.strokeText(str, 32, 34);
+      c.fillStyle = '#ffffff'; c.fillText(str, 32, 34);
+      t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      digitCache.set(num, t); return t;
+    };
+    const drawDigit = (proj, view, model, hx, hy, hz, num) => {
+      gl.useProgram(digitProg);
+      gl.uniformMatrix4fv(uDProj, false, proj); gl.uniformMatrix4fv(uDView, false, view); gl.uniformMatrix4fv(uDModel, false, model);
+      gl.uniform3f(uDHead, hx, hy, hz); gl.uniform1f(uDScale, headScale);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, digitTex(num)); gl.uniform1i(uDSamp, 0);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);   // premultiplied
+      gl.bindBuffer(gl.ARRAY_BUFFER, digitBuf);
+      gl.enableVertexAttribArray(aDPos); gl.vertexAttribPointer(aDPos, 3, gl.FLOAT, false, 20, 0); inst.vertexAttribDivisorANGLE(aDPos, 0);
+      gl.enableVertexAttribArray(aDUV); gl.vertexAttribPointer(aDUV, 2, gl.FLOAT, false, 20, 12); inst.vertexAttribDivisorANGLE(aDUV, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.depthMask(true); gl.disable(gl.BLEND);
+    };
     const drawHead = (proj, view, model, hx, hy, hz) => {
+      const rank = Math.max(1, state.headToolRank | 0);
+      const variant = headVariants[Math.min(rank - 1, headVariants.length - 1)];
+      const col = HEAD_PAL[(rank - 1) % HEAD_PAL.length];
       gl.useProgram(headProg);
       gl.uniformMatrix4fv(uHProj, false, proj); gl.uniformMatrix4fv(uHView, false, view); gl.uniformMatrix4fv(uHModel, false, model);
       gl.uniform3f(uHead, hx, hy, hz); gl.uniform1f(uHScale, headScale);
-      gl.bindBuffer(gl.ARRAY_BUFFER, headBuf);
+      gl.uniform3f(uHColor, col[0], col[1], col[2]);
+      gl.bindBuffer(gl.ARRAY_BUFFER, variant.buf);
       gl.enableVertexAttribArray(hPos); gl.vertexAttribPointer(hPos, 3, gl.FLOAT, false, 24, 0); inst.vertexAttribDivisorANGLE(hPos, 0);
       gl.enableVertexAttribArray(hNrm); gl.vertexAttribPointer(hNrm, 3, gl.FLOAT, false, 24, 12); inst.vertexAttribDivisorANGLE(hNrm, 0);
-      gl.drawArrays(gl.TRIANGLES, 0, 12);
+      gl.drawArrays(gl.TRIANGLES, 0, variant.count);
+      if (multiTool && state.toolMarkers) drawDigit(proj, view, model, hx, hy, hz, state.headToolNum | 0);
     };
-    drawImpl = (proj, view, model) => {
-      const mvp = mat4Multiply(proj, mat4Multiply(view, model));
-      drawBed(mvp);   // floor first, so the solid print draws crisply over it
-      gl.useProgram(prog);
-      gl.uniformMatrix4fv(uMVP, false, mvp); gl.uniformMatrix4fv(uModel, false, model);
-      gl.uniform2f(uViewport, viewW, viewH);
-      gl.uniform1f(uYmin, yMin); gl.uniform1f(uYspan, ySpan); gl.uniform1f(uFmin, fMin); gl.uniform1f(uFspan, fSpan); gl.uniform1f(uClip, state.clip);
-      gl.uniform1f(uMinW, state.minWidth === 'all' ? 1 : 0); gl.uniform1f(uMinPx, 1.3); gl.uniform1f(uFlat, state.flatten ? 1 : 0);
-      gl.uniform1f(uAlpha, 1);
-      gl.uniform1f(uWmin, wHalfMin); gl.uniform1f(uWspan, wSpan);
-      if (uFilCols) gl.uniform3fv(uFilCols, filCols);
-      if (uVis) gl.uniform1fv(uVis, state.vis);
-      bindTemplate();
+    // Resolve the live tool point and remember it across frames. Split out from
+    // drawImpl so draw() can run it BEFORE building the orbit pivot: when the follow
+    // camera centres on the toolhead it then uses *this* frame's point, pinning the
+    // head to screen centre instead of trailing it by one frame. Publishes the point
+    // (and a `headLive` flag) into state for both the pivot and drawImpl to read.
+    computeHead = () => {
       const shown = Math.max(0, Math.min(segN, state.shown | 0));
-      // Fraction into the move currently being drawn (only while playback animates).
-      // Lets one long move grow smoothly toward the live tool point instead of
-      // teleporting to the end when its full duration elapses. Manual scrubbing keeps
-      // partial at 0, so the sliders only ever land on whole moves.
       const frac = (state.partial > 0 && shown < segN) ? state.partial : 0;
-
       const travShown = Math.max(0, Math.min(travN, state.travShown | 0));
-      // Live tool point: when playback is mid-travel, glide along that travel; when
-      // mid-extrusion, grow along the bead; otherwise sit at the end of the last move.
       let hx = 0, hy = 0, hz = 0, haveHead = false;
       if (state.paused && (state.restValid || haveLastHead)) {
         // Dwelling / waiting / heating: hold at the resting tool point. Prefer the travel-aware
@@ -1164,11 +1235,52 @@ function buildViewer(data, opts = {}) {
       }
       // Remember the live point (but not while paused - keep the pre-pause position).
       if (haveHead && !state.paused) { lastHX = hx; lastHY = hy; lastHZ = hz; haveLastHead = true; }
-      // Publish the live point for the follow camera (draw() reads this on the next
-      // frame); fall back to the seeded/last point so following works before play too.
       if (haveHead) { state.headX = hx; state.headY = hy; state.headZ = hz; }
       else if (haveLastHead) { state.headX = lastHX; state.headY = lastHY; state.headZ = lastHZ; }
       state.headValid = haveHead || haveLastHead;
+      state.headLive = haveHead;
+      // Which tool is at the head. Read the tool of the move being drawn (mid-extrusion,
+      // segIdx = shown) or, between moves, the one coming up next (shown points at the
+      // not-yet-drawn segment). A tool change stamps the new tool onto that upcoming
+      // segment, so the marker switches the instant the tool changes - through the
+      // post-change travel and dwell - instead of waiting for the new tool to extrude.
+      // Returning to an already-used tool shows its marker again. Single-tool prints stay
+      // rank 1 (the classic yellow marker).
+      // Gated on state.toolMarkers (the "Tool changes" toggle): when off, the head stays
+      // the default rank-1 marker (classic 3-sided yellow, no number) for the whole job.
+      if (multiTool && state.toolMarkers) {
+        const segIdx = Math.max(0, Math.min(shown, segN - 1));
+        const raw = instData[segIdx * STR + toolOff] | 0;
+        state.headToolRank = rankMap.get(raw) || 1;
+        state.headToolNum = rawToNum(raw);
+      } else { state.headToolRank = 1; state.headToolNum = 0; }
+    };
+    drawImpl = (proj, view, model) => {
+      const mvp = mat4Multiply(proj, mat4Multiply(view, model));
+      drawBed(mvp);   // floor first, so the solid print draws crisply over it
+      gl.useProgram(prog);
+      gl.uniformMatrix4fv(uMVP, false, mvp); gl.uniformMatrix4fv(uModel, false, model);
+      gl.uniform2f(uViewport, viewW, viewH);
+      gl.uniform1f(uYmin, yMin); gl.uniform1f(uYspan, ySpan); gl.uniform1f(uFmin, fMin); gl.uniform1f(uFspan, fSpan); gl.uniform1f(uClip, state.clip);
+      gl.uniform1f(uMinW, state.minWidth === 'all' ? 1 : 0); gl.uniform1f(uMinPx, 1.3); gl.uniform1f(uFlat, state.flatten ? 1 : 0);
+      gl.uniform1f(uAlpha, 1);
+      gl.uniform1f(uWmin, wHalfMin); gl.uniform1f(uWspan, wSpan);
+      if (uFilCols) gl.uniform3fv(uFilCols, filCols);
+      if (uVis) gl.uniform1fv(uVis, state.vis);
+      if (uFilVis) gl.uniform1fv(uFilVis, state.filVis);
+      bindTemplate();
+      const shown = Math.max(0, Math.min(segN, state.shown | 0));
+      // Fraction into the move currently being drawn (only while playback animates).
+      // Lets one long move grow smoothly toward the live tool point instead of
+      // teleporting to the end when its full duration elapses. Manual scrubbing keeps
+      // partial at 0, so the sliders only ever land on whole moves.
+      const frac = (state.partial > 0 && shown < segN) ? state.partial : 0;
+
+      const travShown = Math.max(0, Math.min(travN, state.travShown | 0));
+      // Live tool point: resolved in computeHead(), which draw() always runs before
+      // building the orbit pivot (so a followed head pins to screen centre this frame
+      // instead of lagging it). Just read the point it published.
+      const hx = state.headX, hy = state.headY, hz = state.headZ, haveHead = state.headLive;
 
       // Travel pass. Travels are revealed by explicit count from the unified playback
       // timeline (travShown). Opaque travels draw BEFORE the print so the solid print sits
@@ -1290,6 +1402,10 @@ function buildViewer(data, opts = {}) {
     // (a 200000:1 near/far ratio) starved the depth buffer of precision over the part
     // and caused heavy z-fighting between stacked/adjacent beads; bracketing it makes
     // far/near small, so the precision lands where the geometry actually is.
+    // Resolve this frame's live tool point up front, so the pivot below locks onto
+    // exactly where the head marker will be drawn (no one-frame lag = the followed
+    // head sits pinned to screen centre).
+    if (computeHead) computeHead();
     // Orbit pivot. Normally the robust median centre (ctr); with the follow camera on
     // (toolhead), the tool point drives it and is centred (pan disabled).
     let pvx = ctr[0], pvy = ctr[1], pvz = ctr[2];
@@ -1568,11 +1684,9 @@ export async function renderGcode(file, resultsEl, opts) {
     viewCard.appendChild(el('h3', {}, isPrint ? 'Reconstructed print' : 'Toolpath'));
     let viewer = buildViewer(data, { antialias: !uncapped });
     if (uncapped) { viewer.state.ssaa = false; viewer.state.minWidth = 'none'; viewer.state.translucentTravel = false; }
-    viewCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' }, isPrint
-      ? (viewer.instanced
-        ? 'Rebuilt from the G-code as solid deposited filament - each extrusion drawn at its real width and height, coloured by layer. Travel moves are hidden.'
-        : 'Rebuilt from the G-code toolpath, coloured by layer height (your browser lacks instanced rendering, so beads are shown as centrelines).')
-      : 'The machining / laser toolpath - every cutting move drawn at the tool width, coloured by height. Rapids are hidden.'));
+    if (isPrint) viewCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' }, viewer.instanced
+      ? 'Rebuilt from the G-code as solid deposited filament - each extrusion drawn at its real width and height, coloured by layer. Travel moves are hidden.'
+      : 'Rebuilt from the G-code toolpath, coloured by layer height (your browser lacks instanced rendering, so beads are shown as centrelines).'));
     viewCard.appendChild(viewer.wrap);
 
     if (viewer.ok) {
@@ -1581,7 +1695,7 @@ export async function renderGcode(file, resultsEl, opts) {
       // what is shown, then the two sliders) so the section reads as a single panel.
       viewCard.appendChild(el('p', { class: 'anr-gcode-orbithint' }, 'Drag to orbit · right-drag to pan · scroll to zoom'));
       const toolbar = el('div', { class: 'anr-gcode-toolbar' });
-      const viewRow = el('div', { class: 'anr-btn-row anr-gcode-toolrow' });
+      const viewRow = el('div', { class: 'anr-btn-row anr-gcode-toolrow anr-gcode-viewrow' });
       const spinBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Pause spin');
       spinBtn.addEventListener('click', () => viewer.setSpin(!viewer.state.spin));
       const updateSpinLabel = (s) => { spinBtn.textContent = s ? 'Pause spin' : 'Resume spin'; };
@@ -1592,7 +1706,7 @@ export async function renderGcode(file, resultsEl, opts) {
       // references `viewer` by binding, so they keep working after the swap.
       function applyMSAA(on) {
         const s = viewer.state;
-        const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, showLegend: s.showLegend, vis: s.vis, shown: s.shown, partial: s.partial, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten, fitted: s.fitted, travShown: s.travShown, playKind: s.playKind, playFrac: s.playFrac, paused: s.paused, translucentTravel: s.translucentTravel, follow: s.follow };
+        const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, showLegend: s.showLegend, vis: s.vis, filVis: s.filVis, shown: s.shown, partial: s.partial, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten, fitted: s.fitted, travShown: s.travShown, playKind: s.playKind, playFrac: s.playFrac, paused: s.paused, translucentTravel: s.translucentTravel, follow: s.follow, toolMarkers: s.toolMarkers };
         const old = viewer;
         const next = buildViewer(data, { antialias: on });
         if (!next.ok) return;                         // keep the working viewer if rebuild fails
@@ -1674,19 +1788,21 @@ export async function renderGcode(file, resultsEl, opts) {
       const hasLegend = data.hasTypes && data.features.length;
       viewRow.appendChild(spinBtn); viewRow.appendChild(resetBtn); viewRow.appendChild(projBtn); viewRow.appendChild(travelBtn);
       if (bedBtn) viewRow.appendChild(bedBtn);
-      toolbar.appendChild(viewRow);
+      // The view-control buttons (spin / reset / perspective / rapids / tool changes) sit
+      // ABOVE the viewer; the playback + sliders toolbar stays below it. (markBtn / Tool
+      // changes is appended to viewRow further down.)
+      viewCard.insertBefore(viewRow, viewer.wrap);
       // Park the Quality popup in the viewer's top-left overlay.
       if (viewer.topLeft) viewer.topLeft.appendChild(qWrap);
 
-      // Show/hide controls - line-type legend (3D prints) and the CNC tool picker -
-      // sit in their own bar ABOVE the viewer, so "what is drawn" reads before the
-      // canvas while the camera/display/playback toolbar stays below it.
-      const showBar = el('div', { class: 'anr-gcode-showbar' });
+      // Show/hide controls - the line-type legend (3D prints) and the CNC tool picker -
+      // are built here and placed in the toolbar BELOW the Build height slider (see below).
 
       // OrcaSlicer-style show/hide by line type - one toggle chip per feature, built
       // exactly like the CNC tool chips below (swatch + label, dims when toggled off).
+      let legend = null;
       if (hasLegend) {
-        const legend = el('div', { class: 'anr-gcode-legend' });
+        legend = el('div', { class: 'anr-gcode-legend' });
         legend.appendChild(el('span', { class: 'anr-gcode-rowlabel' }, 'Show'));
         for (const id of data.features) {
           const f = FEATURES[id];
@@ -1699,14 +1815,37 @@ export async function renderGcode(file, resultsEl, opts) {
           });
           legend.appendChild(chip);
         }
-        showBar.appendChild(legend);
+      }
+
+      // Multicolour FDM: a chip per filament (its real colour swatch + tool label) to
+      // show/hide that filament's extrusions. Keyed on the filament index (aTool) via the
+      // separate filVis array, so it stacks with the line-type Show toggles above. Placed
+      // in the toolbar directly under the line-type legend.
+      let filRow = null;
+      if (data.multicolour && (data.filsUsed || []).length > 1) {
+        filRow = el('div', { class: 'anr-gcode-legend' });
+        filRow.appendChild(el('span', { class: 'anr-gcode-rowlabel' }, 'Filaments'));
+        for (const idx of data.filsUsed) {
+          const slot = Math.min(7, idx);
+          const col = (data.filamentColors && data.filamentColors[idx]) || '#888888';
+          const swatch = el('span', { class: 'anr-gcode-swatch', style: `background:${col}` });
+          const chip = el('button', { type: 'button', class: 'anr-btn anr-gcode-toolchip', 'aria-pressed': 'true' }, [swatch, document.createTextNode('T' + idx)]);
+          chip.addEventListener('click', () => {
+            const off = chip.classList.toggle('is-off');
+            chip.setAttribute('aria-pressed', off ? 'false' : 'true');
+            viewer.state.filVis[slot] = off ? 0 : 1; viewer.markDirty();
+          });
+          filRow.appendChild(chip);
+        }
       }
 
       // CNC: a button per tool (styled like the 3MF parts picker) to show/hide that
       // tool's cutting moves. All visible by default; click one to toggle it off and
-      // isolate the rest.
+      // isolate the rest. Built here but placed in the toolbar under the Build height
+      // slider (see below).
+      let toolRow = null;
       if (cncTools.length > 1) {
-        const toolRow = el('div', { class: 'anr-btn-row anr-gcode-toolrow' });
+        toolRow = el('div', { class: 'anr-btn-row anr-gcode-toolrow' });
         toolRow.appendChild(el('span', { class: 'anr-gcode-rowlabel' }, 'Tools'));
         for (const t of cncTools) {
           const f = FEATURES[t.slot];
@@ -1718,20 +1857,16 @@ export async function renderGcode(file, resultsEl, opts) {
           });
           toolRow.appendChild(chip);
         }
-        showBar.appendChild(toolRow);
       }
-
-      // Drop the show/hide bar in just above the viewer (after the hint, before the canvas).
-      if (showBar.childNodes.length) viewCard.insertBefore(showBar, viewer.wrap);
 
       const zLo = data.bbox.min[2], zHi = data.bbox.max[2];
       const slider = el('input', { type: 'range', class: 'anr-range', min: '1', max: '1000', value: '1000', title: 'Build height', 'aria-label': 'Show build up to height' });
       const sliderVal = el('span', { class: 'anr-gcode-slider-val' }, zHi.toFixed(1) + ' ' + u);
       slider.addEventListener('input', () => { const t = (+slider.value) / 1000; viewer.state.clip = t; viewer.markDirty(); sliderVal.textContent = (zLo + t * (zHi - zLo)).toFixed(1) + ' ' + u; });
+      // Built here, but placed lower down (last row of the toolbar).
       const heightRow = el('div', { class: 'anr-gcode-slider' }, [
         el('span', { class: 'anr-gcode-rowlabel' }, 'Build height'), slider, sliderVal,
       ]);
-      toolbar.appendChild(heightRow);
 
       // G-code progress: scrub through the moves in print order to watch the part
       // build up, with a Play button + speed picker that animate it start to finish.
@@ -1849,7 +1984,9 @@ export async function renderGcode(file, resultsEl, opts) {
         }
         playRAF = requestAnimationFrame(stepPlay);
       }
-      const playBtn = el('button', { type: 'button', class: 'anr-btn', title: 'Play the print start to finish' }, 'Play');
+      // Fixed min-width so the button doesn't jump in width between 'Play' and the
+      // wider 'Pause' (sized to comfortably hold 'Pause'), with the label centred.
+      const playBtn = el('button', { type: 'button', class: 'anr-btn', title: 'Play the print start to finish', style: 'min-width:74px;text-align:center;' }, 'Play');
       playBtn.addEventListener('click', () => {
         if (playing) { stopPlay(); return; }
         // First play of this print: pause spin, ease the camera back to the default
@@ -2017,20 +2154,24 @@ export async function renderGcode(file, resultsEl, opts) {
       });
       sliderWrap.addEventListener('mouseleave', () => { markPop.style.display = 'none'; });
 
-      // Toggle (in the view-controls row, on by default): show/hide the tool-change ticks.
-      const markBtn = el('button', { type: 'button', class: 'anr-btn', title: 'Show a tick on the progress slider at every tool / filament change' }, 'Tool changes');
+      // Toggle (in the view-controls row, on by default): show/hide the tool-change ticks
+      // AND the per-tool toolhead markers. When off, the toolhead stays the default marker.
+      const markBtn = el('button', { type: 'button', class: 'anr-btn', title: 'Show a tick on the progress slider at every tool / filament change, and give each tool its own toolhead marker' }, 'Tool changes');
       markBtn.classList.toggle('is-active', toolMarksOn);
       if (!marks.length) { markBtn.disabled = true; markBtn.title = 'No tool or filament changes in this file'; }
+      viewer.state.toolMarkers = toolMarksOn;   // keep the head markers in step with the toggle
       markBtn.addEventListener('click', () => {
         toolMarksOn = !toolMarksOn;
         markBtn.classList.toggle('is-active', toolMarksOn);
         markLayer.style.display = toolMarksOn ? '' : 'none';
         if (!toolMarksOn) markPop.style.display = 'none';
+        viewer.state.toolMarkers = toolMarksOn; viewer.markDirty();
       });
       viewRow.appendChild(markBtn);
 
-      // Layout: Play + the progress bar on one row (bar stays at Play's height); Speed and
-      // Follow tucked into a second row beneath Play.
+      // Toolbar (below the viewer): Play + progress bar on one row (bar stays at Play's
+      // height); Speed + Follow always on a second row beneath Play; then the Build height
+      // slider; then the CNC Tools picker last.
       const playTopRow = el('div', { style: 'display:flex;align-items:center;gap:8px;' });
       playTopRow.appendChild(playBtn);
       playTopRow.appendChild(sliderWrap);
@@ -2041,8 +2182,12 @@ export async function renderGcode(file, resultsEl, opts) {
       const progRow = el('div', { class: 'anr-gcode-slider anr-gcode-player', style: 'flex-direction:column;align-items:stretch;' });
       progRow.appendChild(playTopRow);
       progRow.appendChild(playCtrlRow);
-      toolbar.appendChild(progRow);
-      toolbar.appendChild(rtWarn);   // approximate-real-time caveat (shown in real-time mode)
+      progRow.appendChild(rtWarn);                          // real-time caveat under Speed/Follow
+      toolbar.appendChild(progRow);                         // player block (top of the toolbar)
+      toolbar.appendChild(heightRow);                       // Build height slider
+      if (legend) toolbar.appendChild(legend);              // line-type show/hide under Build height
+      if (filRow) toolbar.appendChild(filRow);              // filament show/hide under the line types
+      if (toolRow) toolbar.appendChild(toolRow);            // CNC Tools picker under Build height
 
       // Over-cap escape hatch: when the print was truncated to fit memory, offer to
       // re-parse and redraw the whole thing with the cap lifted (a re-render of this
@@ -2064,21 +2209,20 @@ export async function renderGcode(file, resultsEl, opts) {
       }
       viewCard.appendChild(toolbar);
 
-      // Fullscreen targets the viewer's wrap, so the controls (the show/hide bar above it
-      // and the camera/playback toolbar below it) would be hidden. While fullscreen,
-      // reparent BOTH into the wrap as a bottom overlay - show/hide bar first, toolbar
-      // under it - so every control is reachable; move them back on exit. `viewer` is
-      // reassigned on the MSAA rebuild, so always read the current wrap.
-      const hasShowBar = showBar.childNodes.length > 0;
+      // Fullscreen targets the viewer's wrap, so the controls that live OUTSIDE it (the
+      // view-button row above the viewer and the camera/playback toolbar below it) would be
+      // hidden. While fullscreen, reparent both into the wrap as a bottom overlay - view
+      // buttons first, then the toolbar - so every control is reachable; move them back on
+      // exit. `viewer` is reassigned on the MSAA rebuild, so always read the current wrap.
       document.addEventListener('fullscreenchange', () => {
         const fs = document.fullscreenElement;
         if (fs && viewer && fs === viewer.wrap) {
           toolbar.classList.add('anr-gcode-toolbar--fs');
-          if (hasShowBar) toolbar.insertBefore(showBar, toolbar.firstChild);   // show/hide bar reads first
+          toolbar.insertBefore(viewRow, toolbar.firstChild);                   // view buttons read first
           viewer.wrap.appendChild(toolbar);
         } else if (toolbar.classList.contains('anr-gcode-toolbar--fs')) {
           toolbar.classList.remove('anr-gcode-toolbar--fs');
-          if (hasShowBar) viewCard.insertBefore(showBar, viewer.wrap);   // restore above the viewer
+          viewCard.insertBefore(viewRow, viewer.wrap);                         // restore view buttons above the viewer
           viewCard.appendChild(toolbar);
         }
       });
