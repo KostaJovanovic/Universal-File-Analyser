@@ -612,7 +612,7 @@ export async function renderPdf(file, resultsEl) {
     toolbar.innerHTML = '';
 
     let current = startPage;
-    let hiRes = false;            // toggled by the High-res button below
+    let hiRes = true;             // on by default; toggled by the High-res button below
 
     // Overlay a selectable, position-aligned text layer on top of the canvas.
     async function buildTextLayer(pg, cssScale, cssW, cssH) {
@@ -673,7 +673,7 @@ export async function renderPdf(file, resultsEl) {
     nextBtn.addEventListener('click', (e) => { e.stopPropagation(); if (current < pdf.numPages) showPage(current + 1); });
     const zoomBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' }, 'Zoom');
     zoomBtn.addEventListener('click', (e) => { e.stopPropagation(); overlay._toggleZoom(window.innerWidth / 2, window.innerHeight / 2); });
-    const hiResBtn = el('button', { type: 'button', class: 'lightbox-tool-btn', title: 'Render this page at much higher resolution for sharper zooming (slower, more memory)' }, 'High-res');
+    const hiResBtn = el('button', { type: 'button', class: 'lightbox-tool-btn is-active', title: 'Render this page at much higher resolution for sharper zooming (slower, more memory)' }, 'High-res');
     hiResBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       hiRes = !hiRes;

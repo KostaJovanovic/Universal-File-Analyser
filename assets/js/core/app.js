@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 170;
+const COMMIT_COUNT = 171;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -69,6 +69,7 @@ import { renderAi } from '../renderers/illustrator.js';
 import { renderStl } from '../renderers/stl.js';
 import { renderModel3d } from '../renderers/model3d.js';
 import { renderF3d } from '../renderers/f3d.js';
+import { renderSolidworks } from '../renderers/solidworks.js';
 import { renderGcode } from '../renderers/gcode.js';
 import { renderTimeline } from '../renderers/timeline.js';
 import { renderLrc } from '../renderers/lrc.js';
@@ -799,6 +800,10 @@ function classifyFile(file) {
   // Autodesk Fusion 360 design / archive: a Zstd-compressed ZIP. Read the embedded
   // render preview + document metadata (the BREP geometry itself is proprietary).
   if (ext === 'f3d' || ext === 'f3z') return 'f3d';
+  // SolidWorks part / assembly / drawing. Older files are OLE2 (preview + metadata
+  // readable); modern files are encrypted (identified + an honest note). NOT
+  // .sldreg (a registry-export text file - left to proprietary.js / parsers).
+  if (ext === 'sldprt' || ext === 'sldasm' || ext === 'slddrw') return 'solidworks';
   // G-code: reconstruct the printed object from the extruded toolpath (3D-print
   // slicers) - or render the cutting path (CNC) when there's no extrusion.
   if (GCODE_EXTS.has(ext)) return 'gcode';
@@ -830,8 +835,10 @@ function classifyFile(file) {
   if (ext === 'mobi' || ext === 'azw' || ext === 'azw3') return 'mobi';
   // Colour LUT: a .cube look-up table gets a full parser + visualiser. The same
   // extension is also Gaussian's volumetric DFT format, so renderLut sniffs for
-  // LUT_*_SIZE and hands a non-LUT .cube back to the generic identifier.
-  if (ext === 'cube') return 'lut';
+  // LUT_*_SIZE and hands a non-LUT .cube back to the generic identifier. A .look
+  // is an Adobe SpeedGrade / Iridas grade stack carrying a baked 3D LUT, read by
+  // the same renderer (grade stack + the embedded LUT visualised).
+  if (ext === 'cube' || ext === 'look') return 'lut';
   if (PHOTO_EXTS.has(ext)) return 'photo';
   if (AUDIO_EXTS.has(ext)) return 'audio';
   if (VIDEO_EXTS.has(ext)) return 'video';
@@ -931,6 +938,7 @@ const ROUTES = {
   stl:         { render: renderStl,         results: 'unknown', scroll: '#unknownResults' },
   model3d:     { render: renderModel3d,     results: 'unknown', scroll: '#unknownResults' },
   f3d:         { render: renderF3d,         results: 'unknown', scroll: '#unknownResults' },
+  solidworks:  { render: renderSolidworks,  results: 'unknown', scroll: '#unknownResults' },
   gcode:       { render: renderGcode,       results: 'unknown', scroll: '#unknownResults' },
   timeline:    { render: renderTimeline,    results: 'unknown', scroll: '#unknownResults' },
   lrc:         { render: renderLrc,         results: 'unknown', scroll: '#unknownResults' },
@@ -2516,6 +2524,15 @@ window._anrReadableText = isReadableText;
       try {
         const res = await fetch(url);
         if (!res.ok) throw new Error('HTTP ' + res.status);
+        // A missing sample path doesn't 404 - it hits the SPA fallback and returns the
+        // app shell (index.html, 200 text/html). Feeding that to a renderer silently
+        // "analyses" the wrong file (the classic "works imported, not from samples"), so
+        // reject an HTML response for a sample that isn't itself HTML.
+        const ctype = res.headers.get('content-type') || '';
+        const sx = (card.dataset.name || '').split('.').pop().toLowerCase();
+        if (/^\s*text\/html/i.test(ctype) && sx !== 'html' && sx !== 'htm' && sx !== 'xhtml') {
+          throw new Error('sample not found (got the app shell): ' + url);
+        }
         const blob = await res.blob();
         const file = new File([blob], card.dataset.name || 'sample', { type: blob.type || '' });
         await handleFile(file, { sample: true });
