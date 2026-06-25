@@ -18,6 +18,7 @@ import datetime
 import json
 import os
 import sys
+import urllib.parse
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 
@@ -91,7 +92,15 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 class CleanURLHandler(SimpleHTTPRequestHandler):
     def _route(self):
         """Map the request path to a file to serve, or return None to redirect."""
-        path = self.path.split('?', 1)[0].split('#', 1)[0]
+        raw = self.path.split('?', 1)[0].split('#', 1)[0]
+        # Decode percent-escapes before any filesystem check: a request for
+        # "/samples/analyser%20plaque.obj" must match the on-disk file with a
+        # literal space, not a file named "...%20...". Without this, any asset
+        # whose name contains a space (or other escaped char) fails os.path.isfile
+        # and wrongly falls through to the SPA fallback (index.html) - which is how
+        # clicked /samples files came back as HTML. Cloudflare decodes for us in
+        # production, so this only bites the dev server.
+        path = urllib.parse.unquote(raw)
 
         # /x.html -> redirect to the clean /x  (and /index.html -> /)
         if path.endswith('.html'):
@@ -101,7 +110,7 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
             if clean == '':
                 clean = '/'
             self.send_response(308)
-            self.send_header('Location', clean)
+            self.send_header('Location', urllib.parse.quote(clean))
             self.end_headers()
             return None
 
@@ -111,7 +120,9 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
         rel = path.lstrip('/')
         full = os.path.join(ROOT, rel)
         if os.path.isfile(full):
-            return path                       # real asset (css/js/img/txt/...)
+            return raw                        # real asset (css/js/img/txt/...): hand
+                                              # back the still-encoded path so the base
+                                              # handler unquotes it once, as normal
         if os.path.isfile(full + '.html'):
             return '/' + rel + '.html'        # clean page route: /about -> about.html
         return '/index.html'                  # SPA fallback

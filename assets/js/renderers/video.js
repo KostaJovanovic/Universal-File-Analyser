@@ -10,6 +10,7 @@ import { parseAviHeader, extractAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
 import { registerSyncedVideo, setAudioCompanion } from '../core/video-sync.js';
 import { buildReverseAudioCard } from './media-reverse.js';
+import { detectMoovlessMp4, extractMp4ParamSets, findInbandParamSets, carveAvccToAnnexB } from './video-recover.js';
 
 // iOS (iPhone/iPad) detection. On iOS the custom scrubber's touch handling is
 // unreliable, so we show the native <video> controls there; everywhere else the
@@ -1982,6 +1983,143 @@ function appendTrackRows(tbl, tracks) {
   }
 }
 
+// ---------- broken / unfinalised MP4-MOV recovery ----------
+
+// A byte-range reader over a File for the recovery helpers (which are source-
+// agnostic: the same code runs over Node fs in tests).
+function fileRangeReader(file) {
+  return async (start, end) => new Uint8Array(await file.slice(start, end).arrayBuffer());
+}
+
+// Recover playable video from a moov-less (truncated / unfinalised) MP4-MOV. The
+// moov index is gone, so we carve the encoded video straight out of the mdat: each
+// NAL is stored length-prefixed and interleaved with audio/metadata we can't index,
+// so video-recover.js walks the length-prefixed NAL chain (validating each against
+// the next so audio bytes can't pose as video) and re-emits Annex B. Cameras like
+// Sony keep the SPS/PPS only in the lost moov, so we look for them in-band first
+// and otherwise borrow them from a healthy reference clip shot on the same camera.
+// The carved Annex B stream then plays through the existing raw-H.264 segmented
+// player. Audio (often LPCM, with no recoverable timing) is dropped.
+async function renderMoovlessRecovery(file, header, det, resultsEl, signal) {
+  resultsEl.innerHTML = '';
+  const reader = fileRangeReader(file);
+  const brandStr = (header.brand || '') + ' ' + (header.container || '');
+  const codec = /hvc1|hev1|hevc|h\.?265/i.test(brandStr) ? 'h265' : 'h264';
+  const codecName = codec === 'h265' ? 'HEVC (H.265)' : 'H.264 / AVC';
+
+  // ---- diagnosis ----
+  const diag = el('div', { class: 'anr-card' });
+  diag.appendChild(el('h3', {}, 'Broken video - missing index'));
+  const tbl = el('table', { class: 'anr-readout' });
+  tbl.appendChild(row('Name', file.name));
+  tbl.appendChild(row('Size', fmtBytes(file.size) + '   (' + file.size.toLocaleString() + ' bytes)'));
+  if (header.container) tbl.appendChild(row('Container', header.container + (header.brand ? '  (' + header.brand + ')' : '')));
+  tbl.appendChild(rowHelp('Index (moov atom)', 'missing',
+    'MP4/MOV files carry a sample index - the "moov" atom - that every player needs to find frames. Cameras write it last, so an interrupted recording or an incomplete file copy leaves it out. The encoded video itself is still in the file; it just has no index, which is why no player will open it.'));
+  if (det.truncated) {
+    const expect = det.declaredMdatEnd - det.mdatStart;
+    tbl.appendChild(rowHelp('Media data', 'truncated - ' + fmtBytes(det.missingBytes) + ' short of the ' + fmtBytes(expect) + ' the header expects',
+      'The media-data box (mdat) declares more bytes than the file actually holds, so the recording or copy stopped early. Everything up to the cut-off can still be salvaged.'));
+  }
+  diag.appendChild(tbl);
+  diag.appendChild(el('p', { class: 'anr-hint' },
+    'Analyser can scan the leftover data, scoop up every video frame it can decode - keyframes and the frames between them - and stitch them into a playable clip. Audio can’t be recovered without the index.'));
+  resultsEl.appendChild(diag);
+
+  // ---- action card ----
+  const action = el('div', { class: 'anr-card' });
+  resultsEl.appendChild(action);
+  const scanning = el('div', { class: 'anr-info' }, 'Checking for codec setup in the file…');
+  action.appendChild(scanning);
+
+  // Carve the whole mdat, prepend the parameter sets, wrap as a raw .h264/.h265
+  // File and hand it to the normal raw-stream path (segmented player for big files).
+  async function startSalvage(paramSets, refInfo) {
+    action.innerHTML = '';
+    const useCodec = (refInfo && refInfo.codec) || codec;
+    const lenSize = (refInfo && refInfo.lenSize) || 4;
+    const prog = el('div', { class: 'anr-info' }, 'Scanning and salvaging video… 0%');
+    action.appendChild(prog);
+    const blobs = [new Blob([paramSets])];
+    let lastPct = -1;
+    try {
+      await carveAvccToAnnexB(reader, det.mdatStart, det.mdatEnd, {
+        codec: useCodec, lenSize, signal,
+        onChunk: (u8) => { blobs.push(new Blob([u8])); },
+        onProgress: (f, info) => {
+          const p = Math.floor(f * 100);
+          if (p !== lastPct) {
+            lastPct = p;
+            prog.textContent = 'Scanning and salvaging video… ' + p + '%'
+              + (info ? '   (' + info.nals.toLocaleString() + ' NAL units, ' + fmtBytes(info.bytes) + ' so far)' : '');
+          }
+        },
+      });
+    } catch (e) {
+      if (signal.aborted) return;
+      prog.textContent = 'Salvage failed: ' + ((e && e.message) || e);
+      return;
+    }
+    if (signal.aborted) return;
+    const ext = useCodec === 'h265' ? 'h265' : 'h264';
+    const kind = useCodec === 'h265' ? 'H.265' : 'H.264';
+    const base = (file.name || 'video').replace(/\.[^/.]+$/, '');
+    const carved = new File(blobs, base + '.recovered.' + ext, { type: 'video/' + ext });
+    // Re-enter the normal pipeline: the carved file is a raw Annex B stream, so it
+    // takes the raw-H.264 branch (segmented player above the size cap). opts.recovered
+    // stops the moov-less check from firing again; sourceFile keeps the original's
+    // name/size on the info card.
+    return renderVideo(carved, resultsEl, { recovered: true, sourceFile: file, sourceKind: kind, noAudio: true });
+  }
+
+  // Prefer the stream's own in-band SPS/PPS (correct ids, no reference needed);
+  // cameras like Sony don't embed them, so fall back to a reference clip.
+  let inband = null;
+  try { inband = await findInbandParamSets(reader, det.mdatStart, det.mdatEnd, { codec, scanBytes: 128 * 1024 * 1024 }); } catch (_) {}
+  if (signal.aborted) return;
+  action.innerHTML = '';
+
+  if (inband) {
+    action.appendChild(el('p', {}, 'Codec setup (' + codecName + ') found inside the file - ready to salvage.'));
+    const btn = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Salvage video');
+    btn.addEventListener('click', () => startSalvage(inband, { codec }));
+    action.appendChild(el('div', { class: 'anr-btn-row' }, [btn]));
+    return;
+  }
+
+  // Reference-clip path.
+  action.appendChild(el('h3', {}, 'Reference clip needed'));
+  action.appendChild(el('p', { class: 'anr-hint' },
+    'This recording stored its codec setup (SPS/PPS) only inside the missing index. To salvage it, Analyser needs to borrow that setup from a healthy clip shot on the same camera in the same mode - same resolution and codec (for example another clip from the same memory card). Everything stays on your device.'));
+  const inp = el('input', { type: 'file', accept: 'video/mp4,video/quicktime,.mp4,.mov,.m4v,.3gp', style: 'display:none' });
+  const pick = el('button', { type: 'button', class: 'anr-btn' }, 'Choose reference clip…');
+  pick.addEventListener('click', () => inp.click());
+  action.appendChild(el('div', { class: 'anr-btn-row' }, [inp, pick]));
+  const note = el('p', { class: 'anr-hint' }, '');
+  action.appendChild(note);
+  inp.addEventListener('change', async () => {
+    const ref = inp.files && inp.files[0];
+    if (!ref) return;
+    pick.textContent = ref.name;
+    note.textContent = 'Reading codec setup from “' + ref.name + '”…';
+    let rp = null;
+    try { rp = await extractMp4ParamSets(fileRangeReader(ref), ref.size); } catch (_) {}
+    if (!rp || !rp.paramSets) {
+      note.textContent = 'Couldn’t read codec setup from that file. Pick a healthy, complete MP4/MOV from the same camera.';
+      return;
+    }
+    note.innerHTML = '';
+    const desc = (rp.codec === 'h265' ? 'HEVC' : 'H.264')
+      + (rp.width ? '  ·  ' + rp.width + ' × ' + rp.height : '')
+      + (rp.profile ? '  ·  profile ' + rp.profile : '')
+      + (rp.level ? '  ·  L' + (rp.level / 10).toFixed(1).replace(/\.0$/, '') : '');
+    note.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' }, 'Borrowing ' + desc + ' from “' + ref.name + '”. For a clean result this must match the broken clip’s resolution and codec.'));
+    const btn = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Salvage video');
+    btn.addEventListener('click', () => startSalvage(rp.paramSets, rp));
+    note.appendChild(el('div', { class: 'anr-btn-row' }, [btn]));
+  });
+}
+
 // Shown when neither the off-screen probe nor a visible <video> can decode the
 // file: the browser has no decoder for this codec (ProRes, DNxHD, uncompressed,
 // etc.). Instead of a bare "couldn't load" error, surface the container/codec
@@ -2595,6 +2733,18 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // Enrich with the authoring software recorded in the container (Matroska
   // WritingApp/MuxingApp, AVI ISFT). header is reused by every render path below.
   try { Object.assign(header, await readContainerSoftware(file, header.container)); } catch (_) { /* ignore */ }
+
+  // Broken / unfinalised MP4-MOV: an ftyp + mdat with no moov index. An interrupted
+  // recording or an incomplete file copy leaves out the moov (cameras write it
+  // last), so no player can locate frames - but the encoded video is still in the
+  // mdat. Offer to salvage it. Skipped on the recovered stream we re-enter with.
+  if (!opts.recovered && /MP4|MOV|M4V|3GP|3G2|QuickTime/i.test(header.container || '')) {
+    let moovless = null;
+    try { moovless = await detectMoovlessMp4(fileRangeReader(file), file.size); } catch (_) {}
+    if (moovless && moovless.moovless) {
+      return renderMoovlessRecovery(file, header, moovless, resultsEl, renderSignal);
+    }
+  }
 
   // Raw H.264 / H.265 elementary stream: no container, so the browser can't open
   // it. FFmpeg stream-copies it into an MP4 (no re-encode, a second or two), and

@@ -28,7 +28,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Pages that carry the full footer. The per-format /formats/<ext> pages are
 // deliberately excluded - hundreds of thin SEO pages keep their own minimal
 // footer (same "main pages only" scope as the visitor counter).
-const PAGES = ['index.html', 'about.html', 'patch.html', 'stats.html', 'privacy.html', 'formats.html', 'atari.html'];
+const PAGES = ['index.html', 'about.html', 'patch.html', 'stats.html', 'privacy.html', 'formats.html', 'samples.html', 'atari.html'];
 
 // The shared block, exactly as it should sit inside <footer> (2-space indented).
 const shared = readFileSync(join(ROOT, 'tools/partials/footer-shared.html'), 'utf8').replace(/\r?\n+$/, '');
