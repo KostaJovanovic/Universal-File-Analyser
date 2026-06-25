@@ -1276,6 +1276,17 @@ body.anr-has-file .nav-search { display: flex; }
 .anr-gcode-toolbar .anr-gcode-toolrow,
 .anr-gcode-toolbar .anr-gcode-legend { margin: 0; align-items: center; }
 .anr-gcode-toolbar .anr-spd-warn { margin: 0; }
+/* The view-control row (spin / reset / perspective / rapids / tool changes) above the
+   viewer: equal-width buttons that together span the full width of the row. */
+.anr-gcode-viewrow { flex-wrap: nowrap; }
+.anr-gcode-viewrow .anr-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* Fullscreen: the toolbar is reparented into the viewer and pinned along the bottom as a
    scrollable, blurred overlay so every control (view buttons, sliders, playback, quality)
    stays reachable without leaving fullscreen. Right padding clears the Exit button. */
@@ -7044,6 +7055,27 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
    their two-column (meta aside + content) layout. */
 .samples-page .samples-intro .grid { display: block; }
 .samples-page .samples-intro .section-content { grid-column: auto; }
+/* Let the heading run the full width of the card and wrap at its edge, rather
+   than at the default 22ch (which broke it at roughly two thirds). */
+.samples-page .samples-intro .section-head { max-width: none; }
+/* On mobile the samples card goes full-bleed: the frame (background, top/bottom
+   border) spans the whole screen width by dropping the 14px grid gutter and the
+   card's left/right border. The content keeps a 14px inner gutter so the heading
+   and chips don't touch the screen edges. (More specific than the generic
+   .section .grid / .section-content mobile rules above, so it wins.) */
+@media (max-width: 700px) {
+  .samples-page .samples-intro .grid { padding-left: 0; padding-right: 0; }
+  .samples-page .samples-intro .section-content {
+    padding-left: 14px;
+    padding-right: 14px;
+    border-left: none;
+    border-right: none;
+  }
+  /* Three chips per row: let them flex to fill the width and stay square via
+     aspect-ratio instead of the fixed 132px desktop size. */
+  .samples-page .sample-gallery { grid-template-columns: repeat(3, 1fr); }
+  .samples-page .sample-chip { width: auto; height: auto; aspect-ratio: 1 / 1; }
+}
 /* The samples are grouped into the formats page's domain categories (Images,
    Audio, Video, 3D / CAD, ...). Each group is a titled section with a hairline
    divider above it, echoing the /formats section labels. */
@@ -7077,32 +7109,118 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
 }
 .sample-group-count::before { content: ' · '; }
 .sample-gallery {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 132px);
+  gap: 12px;
 }
 .sample-chip {
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  padding: 5px 11px;
-  font-family: var(--font-mono);
-  font-size: var(--t-small);
-  line-height: 1.3;
-  color: var(--fg);
+  display: flex;
+  flex-direction: column;
+  width: 132px;
+  height: 132px;
+  padding: 0;
   background: var(--bg);
   border: var(--bd-hairline);
   cursor: pointer;
-  white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  /* The tile text is sized in cqw (a share of the chip's own width) so it scales
+     with the chip - the fixed 132px desktop size or the flexible mobile thirds. */
+  container-type: inline-size;
+}
+/* Top three quarters: the extension drawn big and black (Geist - the site's
+   sans). Size steps down for longer extensions (set in prerender-samples.mjs)
+   so even "KICAD_PCB" fits the tile. */
+.sample-thumb {
+  flex: 3 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 6px;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 28cqw;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: var(--fg);
+  overflow: hidden;
+}
+.sample-thumb--mid { font-size: 20cqw; }
+.sample-thumb--long { font-size: 15cqw; }
+.sample-thumb--xlong { font-size: 11cqw; word-break: break-all; text-align: center; }
+/* Bottom quarter: the filename, vertically centred and wrapped to at most two
+   lines (with ellipsis) so even a long name always fits. The inner span does the
+   line-clamp; the outer cell centres it. */
+.sample-name {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  border-top: var(--bd-hairline);
+  background: var(--bg-soft, var(--bg));
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.15;
+  color: var(--fg);
+  text-align: center;
+  overflow: hidden;
+}
+.sample-name > span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  word-break: break-word;
 }
 .sample-chip:hover,
 .sample-chip:focus-visible {
   border-color: var(--accent);
-  color: var(--accent);
   outline: none;
+  transform: translateY(-4px);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.14);
 }
-.sample-chip:active { transform: translateY(1px); }
+.sample-chip:hover .sample-thumb,
+.sample-chip:focus-visible .sample-thumb { color: var(--accent); }
+.sample-chip:active { transform: translateY(-1px); }
 .sample-chip.is-loading { opacity: 0.55; pointer-events: none; }
+
+/* Cursor-following info popup, shown while hovering a sample chip (wired in
+   app.js). Fixed-positioned and pointer-events:none so it never blocks the chip
+   it describes; JS sets its left/top to sit just above the cursor. */
+.sample-pop {
+  position: fixed;
+  z-index: 999;
+  max-width: 260px;
+  padding: 8px 11px;
+  background: var(--bg);
+  border: var(--bd-hairline);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -100%) translateY(-6px);
+  transition: opacity 0.12s ease;
+}
+.sample-pop.is-on { opacity: 1; }
+.sample-pop-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.sample-pop-ext {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--accent);
+}
+.sample-pop-label { font-weight: 600; }
+.sample-pop-size { margin-left: auto; color: var(--muted); font-size: 11px; }
+.sample-pop-desc { color: var(--muted); }
