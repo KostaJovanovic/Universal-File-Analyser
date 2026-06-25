@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 169;
+const COMMIT_COUNT = 170;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -68,6 +68,7 @@ import { renderGcsv } from '../renderers/gcsv.js';
 import { renderAi } from '../renderers/illustrator.js';
 import { renderStl } from '../renderers/stl.js';
 import { renderModel3d } from '../renderers/model3d.js';
+import { renderF3d } from '../renderers/f3d.js';
 import { renderGcode } from '../renderers/gcode.js';
 import { renderTimeline } from '../renderers/timeline.js';
 import { renderLrc } from '../renderers/lrc.js';
@@ -795,6 +796,9 @@ function classifyFile(file) {
   if (ext === 'mtl') return 'model3d';
   if (ext === 'gltf' || ext === 'glb') return 'model3d';
   if (ext === 'step' || ext === 'stp' || ext === 'iges' || ext === 'igs' || ext === 'brep') return 'model3d';
+  // Autodesk Fusion 360 design / archive: a Zstd-compressed ZIP. Read the embedded
+  // render preview + document metadata (the BREP geometry itself is proprietary).
+  if (ext === 'f3d' || ext === 'f3z') return 'f3d';
   // G-code: reconstruct the printed object from the extruded toolpath (3D-print
   // slicers) - or render the cutting path (CNC) when there's no extrusion.
   if (GCODE_EXTS.has(ext)) return 'gcode';
@@ -926,6 +930,7 @@ const ROUTES = {
   iwork:       { render: renderIwork,       results: 'unknown', scroll: '#unknownResults' },
   stl:         { render: renderStl,         results: 'unknown', scroll: '#unknownResults' },
   model3d:     { render: renderModel3d,     results: 'unknown', scroll: '#unknownResults' },
+  f3d:         { render: renderF3d,         results: 'unknown', scroll: '#unknownResults' },
   gcode:       { render: renderGcode,       results: 'unknown', scroll: '#unknownResults' },
   timeline:    { render: renderTimeline,    results: 'unknown', scroll: '#unknownResults' },
   lrc:         { render: renderLrc,         results: 'unknown', scroll: '#unknownResults' },
@@ -1619,7 +1624,9 @@ function buildTrendChart(chartEl, daily, baseline) {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
-  { range: '4.16 - 4.17', notes: [
+  { range: '4.16 - 4.18', notes: [
+    'Broken files can be salvaged: a cut-off or corrupt photo is repaired (rebuilding a damaged JPEG header from a reference shot when needed), and an unfinished video with no playable index is reconstructed frame by frame and played in place.',
+    'A new Samples gallery lets you try Analyser on built-in example files in one click, 3D models open the right way up with a Z-up/Y-up toggle, G-code playback pauses where the machine does and plays at true speed by default, colour LUTs preview on a sample photo instantly, and Zortrax Z-SUITE compiled prints (.zcode) are recognised.',
     'Extensions shared by unrelated formats (a .pkg is a macOS installer or a Destiny package, a .key a Keynote or an encryption key) now get a guide page with a separate, self-contained card for each meaning, its own "Did you know" and all.',
     'The folder openability scan judges each file by its contents, not just its name - a misnamed or extensionless file it can read counts as openable, an unreadable one is flagged - and more developer and Android/Samsung phone formats are recognised.',
     'A photo\'s sharpness score now measures focus on its own terms rather than being skewed by scene contrast, and the folder breakdown pop-up no longer closes when you scroll inside it.',
@@ -2140,7 +2147,11 @@ function boot() {
         // isn't already the dedicated ZIP tree view) gets the archive browser
         // appended below its normal results.
         const mediaKind = kind === 'photo' || kind === 'audio' || kind === 'video';
-        if (sniff && !mediaKind && kind !== 'zip') {
+        // Fusion 360 (.f3d/.f3z) is physically a Zstd ZIP, but its members are
+        // opaque proprietary blobs (Manifest.dat, BulkStream.dat, ShapeManager
+        // BREP) - "browse as archive" just lists files that analyse to nothing,
+        // so skip it; renderF3d already reports what the package holds.
+        if (sniff && !mediaKind && kind !== 'zip' && kind !== 'f3d') {
           if (sniff.ext === 'zip') archiveEmbed = { mode: 'zip', label: 'ZIP' };
           else if (sniff.ext === 'rar') archiveEmbed = { mode: 'libarchive', label: 'RAR' };
           else if (sniff.ext === '7z') archiveEmbed = { mode: 'libarchive', label: '7-Zip' };

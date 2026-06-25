@@ -187,6 +187,88 @@ function parseMainModel(text) {
   return { meta, unit, objects, build };
 }
 
+// "#RRGGBB" / "#RRGGBBAA" / "#RGB" -> [r,g,b] in 0..1, or null.
+function hexRgb3mf(h) {
+  if (!h) return null;
+  let s = String(h).trim().replace(/^#/, '');
+  if (s.length === 3) s = s.split('').map((c) => c + c).join('');
+  if (s.length !== 6 && s.length !== 8) return null;
+  const r = parseInt(s.slice(0, 2), 16), g = parseInt(s.slice(2, 4), 16), b = parseInt(s.slice(4, 6), 16);
+  return (isFinite(r) && isFinite(g) && isFinite(b)) ? [r / 255, g / 255, b / 255] : null;
+}
+// Unmapped-but-coloured fallback (a neutral grey), so a part with no colour of its own
+// in an otherwise coloured model doesn't render pure white.
+const NEUTRAL_3MF = [0.82, 0.82, 0.86];
+
+// Resolve per-object / per-part colours from a 3MF, covering the two schemes in the wild:
+//   - Bambu Studio / OrcaSlicer: a filament palette in Metadata/project_settings.config
+//     ("filament_colour": ["#RRGGBB", ...]) plus a per-object/part extruder index in
+//     Metadata/model_settings.config (an object's extruder is the default for its parts;
+//     extruder 0/absent inherits it). The slicer side-cars, not the core-spec materials.
+//   - Core 3MF materials: <basematerials>/<colorgroup> resource groups in the .model
+//     files, selected by an object's pid/pindex.
+// Returns { comp, obj }: component-objectid -> rgb, and object-id -> rgb (ids kept as
+// the raw strings used elsewhere in this module). Empty maps mean "no colour info".
+function build3mfColors(files, modelSettings, projectSettings) {
+  const comp = new Map(), obj = new Map();
+
+  // --- Bambu/Orca: filament palette + extruder index ---
+  let palette = [];
+  if (projectSettings) {
+    const m = /"filament_colou?r"\s*:\s*\[([\s\S]*?)\]/i.exec(projectSettings);
+    if (m) palette = [...m[1].matchAll(/"([^"]*)"/g)].map((x) => hexRgb3mf(x[1]));   // index N-1 == extruder N
+  }
+  if (modelSettings && palette.length) {
+    const metaVal = (block, key) => { const r = new RegExp('key="' + key + '"\\s+value="([^"]*)"').exec(block); return r ? r[1] : null; };
+    let om; const oRe = /<object\b([^>]*)>([\s\S]*?)<\/object>/gi;
+    while ((om = oRe.exec(modelSettings))) {
+      const oid = attr(om[1], 'id'); if (oid == null) continue;
+      const oext = parseInt(metaVal(om[2].split('<part')[0], 'extruder') || '0', 10);
+      const oRgb = oext > 0 ? palette[oext - 1] : null;
+      if (oRgb) obj.set(oid, oRgb);
+      let pm; const pRe = /<part\b([^>]*)>([\s\S]*?)<\/part>/gi;
+      while ((pm = pRe.exec(om[2]))) {
+        const pid = attr(pm[1], 'id'); if (pid == null) continue;        // part id == component objectid
+        const pext = parseInt(metaVal(pm[2], 'extruder') || '0', 10);
+        const ext = pext > 0 ? pext : oext;                              // 0/absent inherits the object's
+        const rgb = ext > 0 ? palette[ext - 1] : null;
+        if (rgb) comp.set(pid, rgb);
+      }
+    }
+  }
+
+  // --- Core 3MF materials: <basematerials>/<colorgroup> picked by object pid/pindex ---
+  const groups = new Map();   // resource-group id -> [rgb, ...]
+  for (const text of files.values()) {
+    let gm;
+    const bmRe = /<basematerials\b[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/basematerials>/gi;
+    while ((gm = bmRe.exec(text))) groups.set(gm[1], [...gm[2].matchAll(/<base\b[^>]*\bdisplaycolor="([^"]+)"/gi)].map((x) => hexRgb3mf(x[1])));
+    const cgRe = /<(?:\w+:)?colorgroup\b[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/(?:\w+:)?colorgroup>/gi;
+    while ((gm = cgRe.exec(text))) groups.set(gm[1], [...gm[2].matchAll(/<(?:\w+:)?color\b[^>]*\bcolor="([^"]+)"/gi)].map((x) => hexRgb3mf(x[1])));
+  }
+  if (groups.size) {
+    for (const text of files.values()) {
+      let om; const oRe = /<object\b([^>]*)>/gi;
+      while ((om = oRe.exec(text))) {
+        const oid = attr(om[1], 'id'), pid = attr(om[1], 'pid');
+        if (oid == null || pid == null || comp.has(oid)) continue;       // slicer extruder colour wins
+        const arr = groups.get(pid), rgb = arr && arr[parseInt(attr(om[1], 'pindex') || '0', 10)];
+        if (rgb) comp.set(oid, rgb);
+      }
+    }
+  }
+
+  return { comp, obj };
+}
+
+// Expand one rgb-per-triangle list into the non-indexed (3 verts/triangle) colour
+// buffer buildGeoFromIndexed's positions use, so geo.colors lines up 1:1.
+function expandTriColors3mf(cols) {
+  const out = new Float32Array(cols.length * 9);
+  for (let t = 0; t < cols.length; t++) { const c = cols[t]; for (let j = 0; j < 3; j++) { const o = t * 9 + j * 3; out[o] = c[0]; out[o + 1] = c[1]; out[o + 2] = c[2]; } }
+  return out;
+}
+
 // Slice out a single <object id="ID">…</object> block from a .model file's text.
 function extractObjectText(text, id) {
   const re = new RegExp('<object\\b[^>]*\\bid="' + id + '"[\\s\\S]*?</object>', 'i');
@@ -226,7 +308,7 @@ function findFile(files, path) {
   return null;
 }
 
-function addMesh(acc, mesh, M) {
+function addMesh(acc, mesh, M, rgb) {
   const base = acc.verts.length / 3;
   const v = mesh.verts;
   for (let i = 0; i < v.length; i += 3) {
@@ -238,23 +320,27 @@ function addMesh(acc, mesh, M) {
     );
   }
   for (const t of mesh.tris) acc.tris.push(t + base);
+  // Per-triangle colour (only when the model carries colour info; acc.cols stays null
+  // otherwise, leaving the mesh its solid default + colour picker).
+  if (acc.cols) { const c = rgb || NEUTRAL_3MF; for (let k = mesh.tris.length / 3; k > 0; k--) acc.cols.push(c); }
 }
 
 // Accumulate the meshes of a main-file object: its own mesh (rare) plus each
 // component's referenced part, with transforms composed onto the base matrix.
-function gatherObject(model, files, mainText, objectid, baseM, acc) {
+function gatherObject(model, files, mainText, objectid, baseM, acc, colors) {
   const obj = model.objects.get(objectid);
   if (!obj) return;
+  const objRgb = colors ? (colors.obj.get(objectid) || null) : null;   // the object's default colour
   if (obj.hasMesh) {
     const t = extractObjectText(mainText, objectid);
-    if (t) addMesh(acc, parseMeshText(t), baseM);
+    if (t) addMesh(acc, parseMeshText(t), baseM, colors ? (colors.comp.get(objectid) || objRgb) : undefined);
   }
   for (const c of obj.comps) {
     const m = compose(parseTransform(c.transform), baseM);
     const text = findFile(files, c.path);
     if (!text) continue;
     const t = extractObjectText(text, c.objectid);
-    if (t) addMesh(acc, parseMeshText(t), m);
+    if (t) addMesh(acc, parseMeshText(t), m, colors ? (colors.comp.get(c.objectid) || objRgb) : undefined);
   }
 }
 
@@ -262,16 +348,22 @@ function gatherObject(model, files, mainText, objectid, baseM, acc) {
 // object sits on the plate" orientation (often rotating an object authored in some
 // other axis onto the printer's Z-up bed), so apply it - otherwise the per-part view
 // shows the raw object space and the model is mis-oriented (e.g. stood on its tail).
-function resolvePart(model, files, mainText, objectid, transform) {
-  const acc = { verts: [], tris: [] };
-  gatherObject(model, files, mainText, objectid, parseTransform(transform), acc);
-  return acc.tris.length ? buildGeoFromIndexed(acc.verts, acc.tris, '3MF') : null;
+function resolvePart(model, files, mainText, objectid, transform, colors) {
+  const acc = { verts: [], tris: [], cols: colors ? [] : null };
+  gatherObject(model, files, mainText, objectid, parseTransform(transform), acc, colors);
+  if (!acc.tris.length) return null;
+  const geo = buildGeoFromIndexed(acc.verts, acc.tris, '3MF');
+  if (acc.cols && acc.cols.length) geo.colors = expandTriColors3mf(acc.cols);
+  return geo;
 }
 
-function resolveWholeBuild(model, files, mainText) {
-  const acc = { verts: [], tris: [] };
-  for (const it of model.build) gatherObject(model, files, mainText, it.objectid, parseTransform(it.transform), acc);
-  return acc.tris.length ? buildGeoFromIndexed(acc.verts, acc.tris, '3MF') : null;
+function resolveWholeBuild(model, files, mainText, colors) {
+  const acc = { verts: [], tris: [], cols: colors ? [] : null };
+  for (const it of model.build) gatherObject(model, files, mainText, it.objectid, parseTransform(it.transform), acc, colors);
+  if (!acc.tris.length) return null;
+  const geo = buildGeoFromIndexed(acc.verts, acc.tris, '3MF');
+  if (acc.cols && acc.cols.length) geo.colors = expandTriColors3mf(acc.cols);
+  return geo;
 }
 
 function partName(obj, idx) {
@@ -295,11 +387,14 @@ async function render3mf(file, resultsEl) {
   try {
     ffl = await fflate();
     data = new Uint8Array(await file.arrayBuffer());
-    const unzipped = ffl.unzipSync(data, { filter: (f) => /\.model$/i.test(f.name) });
+    // Pull the geometry (.model) plus the slicer side-cars that carry colour: Bambu/Orca
+    // keep the filament palette in project_settings.config and the per-object/part extruder
+    // index in model_settings.config.
+    const unzipped = ffl.unzipSync(data, { filter: (f) => /\.model$/i.test(f.name) || /(?:model_settings|project_settings)\.config$/i.test(f.name) });
     files = new Map();
     const dec = new TextDecoder('utf-8');
     for (const [name, bytes] of Object.entries(unzipped)) files.set(name, dec.decode(bytes));
-    const mainKey = [...files.keys()].find((k) => /(^|\/)3dmodel\.model$/i.test(k)) || [...files.keys()][0];
+    const mainKey = [...files.keys()].find((k) => /(^|\/)3dmodel\.model$/i.test(k)) || [...files.keys()].find((k) => /\.model$/i.test(k));
     mainText = files.get(mainKey);
     model = parseMainModel(mainText);
   } catch (e) {
@@ -313,12 +408,21 @@ async function render3mf(file, resultsEl) {
     ? model.build
     : [...model.objects.values()].filter((o) => o.comps.length || o.hasMesh).map((o) => ({ objectid: o.id }));
 
+  // Per-object / per-part colours (Bambu/Orca filament palette + extruder, or core-spec
+  // materials). Best-effort - never let colour extraction break the mesh view.
+  let colors = null;
+  try {
+    const find = (re) => { for (const k of files.keys()) if (re.test(k)) return files.get(k); return ''; };
+    const c = build3mfColors(files, find(/model_settings\.config$/i), find(/project_settings\.config$/i));
+    if (c.comp.size || c.obj.size) colors = c;
+  } catch (_) { colors = null; }
+
   const parts = items.map((it, i) => {
     const obj = model.objects.get(it.objectid) || { comps: [], name: '' };
-    return { key: 'p' + i, name: partName(obj, i + 1), build: () => resolvePart(model, files, mainText, it.objectid, it.transform) };
+    return { key: 'p' + i, name: partName(obj, i + 1), build: () => resolvePart(model, files, mainText, it.objectid, it.transform, colors) };
   });
   if (parts.length > 1) {
-    parts.unshift({ key: 'all', name: `Whole build (${items.length} parts)`, build: () => resolveWholeBuild(model, files, mainText) });
+    parts.unshift({ key: 'all', name: `Whole build (${items.length} parts)`, build: () => resolveWholeBuild(model, files, mainText, colors) });
   }
 
   // ---- 3MF document metadata ----
@@ -332,6 +436,7 @@ async function render3mf(file, resultsEl) {
   if (model.meta.License) mt.appendChild(row('License', model.meta.License));
   if (model.meta.CreationDate) mt.appendChild(row('Created', model.meta.CreationDate));
   mt.appendChild(row('Objects', String(items.length)));
+  if (colors) { const set = new Set([...colors.comp.values(), ...colors.obj.values()].map((c) => c.join(','))); mt.appendChild(row('Colours', `${set.size} applied from the file`)); }
   mt.appendChild(row('File', file.name));
   mt.appendChild(row('Size', fmtBytes(file.size)));
   mt.appendChild(sha256Row(file));
