@@ -1287,6 +1287,13 @@ body.anr-has-file .nav-search { display: flex; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* On phones the six controls won't fit one row legibly - wrap them three to a
+   row (so six become two rows of three). Each button is locked to a third of the
+   width minus the two 8px gaps between three items. */
+@media (max-width: 700px) {
+  .anr-gcode-viewrow { flex-wrap: wrap; }
+  .anr-gcode-viewrow .anr-btn { flex: 0 0 calc((100% - 16px) / 3); }
+}
 /* Fullscreen: the toolbar is reparented into the viewer and pinned along the bottom as a
    scrollable, blurred overlay so every control (view buttons, sliders, playback, quality)
    stays reachable without leaving fullscreen. Right padding clears the Exit button. */

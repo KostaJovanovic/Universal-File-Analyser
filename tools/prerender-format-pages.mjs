@@ -219,6 +219,35 @@ const MAGIC_BYTES = {
   avi:['52 49 46 46','the "RIFF" container tag'],
 };
 
+// Catalog-derived "Did you know" candidates (sibling formats, category, on-device).
+// Format-agnostic and true by construction, so they are safe even on an ambiguous
+// extension's page - used both to backfill a thin single-format page to three facts
+// and to top an ambiguous page up past its per-variant facts.
+function backfillCandidates(d, e, isFull) {
+  const row = (e && e.rows && e.rows[0]) || {};
+  const catLabel = row.catLabel || '';
+  const sibs = (e && e.sibs) ? [...e.sibs] : [];
+  const out = [];
+  if (sibs.length) {
+    const shown = sibs.slice(0, 3).map((s) => '.' + s);
+    const tail = sibs.length > shown.length ? ' and more' : '';
+    out.push({
+      gist: 'related',
+      plain: `Analyser handles .${d} alongside related formats such as ${shown.join(', ')}${tail}.`,
+      html: `Analyser handles .${esc(d)} alongside related formats such as ${shown.map((s) => `<a href="${escAttr(hrefOf(s.slice(1).toLowerCase()))}">${esc(s)}</a>`).join(', ')}${tail}.`,
+    });
+  }
+  if (catLabel) {
+    const p = `In Analyser's format library, .${d} sits in the ${catLabel} category.`;
+    out.push({ gist: 'category', plain: p, html: esc(p) });
+  }
+  const od = isFull
+    ? `Analyser opens .${d} files right in your browser - they are parsed and rendered on your device, never uploaded to a server.`
+    : `Analyser recognises .${d} files from their contents and reads what metadata it can - entirely on your device, with nothing uploaded.`;
+  out.push({ gist: 'on-device', plain: od, html: esc(od) });
+  return out;
+}
+
 function assembleFacts(key, meta, d, e, isFull, ambiguous) {
   const items = []; // { html, plain }
   if (meta.fact) {
@@ -268,30 +297,10 @@ function assembleFacts(key, meta, d, e, isFull, ambiguous) {
   // internals. Specific ones (siblings, family) come before the generic on-device
   // line, and anything overlapping an existing fact's gist is skipped.
   if (e && items.length < 3) {
-    const row = (e.rows && e.rows[0]) || {};
-    const label = row.label || '';
-    const catLabel = row.catLabel || '';
-    const sibs = e.sibs ? [...e.sibs] : [];
-    const candidates = [];
-    if (sibs.length) {
-      const shown = sibs.slice(0, 3).map((s) => '.' + s);
-      const tail = sibs.length > shown.length ? ' and more' : '';
-      // Deliberately no category/family label here - the separate "category"
-      // candidate below already states it, so naming it twice reads as a repeat.
-      candidates.push({
-        gist: 'related',
-        plain: `Analyser handles .${d} alongside related formats such as ${shown.join(', ')}${tail}.`,
-        html: `Analyser handles .${esc(d)} alongside related formats such as ${shown.map((s) => `<a href="${escAttr(hrefOf(s.slice(1).toLowerCase()))}">${esc(s)}</a>`).join(', ')}${tail}.`,
-      });
-    }
-    if (catLabel) candidates.push({ gist: 'category', plain: `In Analyser's format library, .${d} sits in the ${catLabel} category.` });
-    candidates.push(isFull
-      ? { gist: 'on-device', plain: `Analyser opens .${d} files right in your browser - they are parsed and rendered on your device, never uploaded to a server.` }
-      : { gist: 'on-device', plain: `Analyser recognises .${d} files from their contents and reads what metadata it can - entirely on your device, with nothing uploaded.` });
-    for (const c of candidates) {
+    for (const c of backfillCandidates(d, e, isFull)) {
       if (items.length >= 3) break;
       if (has(c.gist)) continue;
-      items.push({ plain: c.plain, html: c.html || esc(c.plain) });
+      items.push({ plain: c.plain, html: c.html });
       lower.push(c.plain.toLowerCase());
     }
   }
@@ -318,6 +327,23 @@ function page(key, e, depth) {
     ? `<div class="didyouknow"><dt>Did you know</dt><dd>${factBody}</dd></div>\n            `
     : '';
   const factPlain = facts.map((f) => f.plain).join(' ');
+  // Ambiguous pages render their facts per variant (one "Did you know" per card),
+  // skipping factBlock - so they can fall short of three. Top them up with the same
+  // catalog-derived backfill, shown as one shared "Did you know" under the cards.
+  let variantFill = '';
+  if (variant) {
+    const vf = (VARIANT_FACTS && VARIANT_FACTS[key]) || {};
+    const have = variant.variants.filter((v) => vf[v.name]).length;
+    if (have < 3) {
+      const cands = backfillCandidates(d, e, isFull).slice(0, 3 - have);
+      if (cands.length) {
+        const body = cands.length === 1
+          ? cands[0].html
+          : `<ul class="dyk-list">${cands.map((c) => `<li>${c.html}</li>`).join('')}</ul>`;
+        variantFill = `<div class="didyouknow"><dt>Did you know</dt><dd>${body}</dd></div>\n            `;
+      }
+    }
+  }
   const url = `${SITE}${isFull ? '/formats/' : '/formats/id/'}${key}`;
   const title = isFull
     ? `.${d} file - what it is and how to open it online - Analyser`
@@ -460,7 +486,7 @@ ${siteNav(key)}
 
         ${variant ? variantCards(variant.variants, key) + '\n        ' : ''}<div class="about-block">
           <dl class="about-caps">
-            ${variant ? '' : factBlock + capabilityBlocks(e, isFull)}${depthNote}
+            ${variant ? variantFill : factBlock + capabilityBlocks(e, isFull)}${depthNote}
             <div><dt>Open a .${esc(d)} file</dt><dd>Drag a .${esc(d)} file onto <a href="/">the Analyser home page</a> (or tap to pick one). ${openVerb} entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd>${relatedLinks(e)}</dd></div>
           </dl>

@@ -377,6 +377,14 @@ export async function renderArchive(file, resultsEl, opts = {}) {
   if (methodStr) tbl.appendChild(rowHelp('Compression', methodStr, 'The compression method(s) used for the entries. Deflate is the standard ZIP method; Stored means no compression.'));
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
+
+  // --- Category breakdown (Overview + contents-slot + File types) ---
+  // Rendered before the integrity/safety/forensics cards so the contents
+  // visualisation (the treemap, which renderViewToggle drops into the slot this
+  // leaves between Overview and File types) sits above the Integrity section.
+  const items = normalizeArchive(entries);
+  renderBreakdownCards(items, resultsEl);
+
   // SHA-256 of the whole archive (was previously missing for ZIP). Skipped when
   // embedded under another analysis that already shows the file hash.
   if (!embedded) resultsEl.appendChild(integrityCard(file));
@@ -469,10 +477,6 @@ export async function renderArchive(file, resultsEl, opts = {}) {
   } catch (e) {
     if (window.console) console.warn('ZIP forensics failed:', e);
   }
-
-  // --- Category breakdown ---
-  const items = normalizeArchive(entries);
-  renderBreakdownCards(items, resultsEl);
 
   // --- Extract a file from the archive (for click-to-analyse) ---
   async function extractFile(entryName) {
