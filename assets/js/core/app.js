@@ -4,15 +4,16 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 172;
+const COMMIT_COUNT = 173;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
 // major version and resets the counter within its era: commit 29 reads "1.0" (and
 // 30 → "1.01"), commit 60 reads "2.0", commit 100 reads "3.0" (and 101 → "3.01"),
-// commit 151 reads "4.0". To crown a future 5.0, append its commit number here
-// (keep the list sorted ascending, and mirror the RELEASES constant in save.bat).
-const RELEASE_COMMITS = [29, 60, 100, 151];
+// commit 151 reads "4.0", commit 173 reads "5.0". To crown a future 6.0, append its
+// commit number here (keep the list sorted ascending, and mirror the RELEASES
+// constant in save.bat).
+const RELEASE_COMMITS = [29, 60, 100, 151, 173];
 
 function analyserVersion(n, releases) {
   let major = 0, base = 0;
@@ -1644,9 +1645,15 @@ function buildTrendChart(chartEl, daily, baseline) {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
-  { range: '4.16 - 4.18', notes: [
-    'Broken files can be salvaged: a cut-off or corrupt photo is repaired (rebuilding a damaged JPEG header from a reference shot when needed), and an unfinished video with no playable index is reconstructed frame by frame and played in place.',
-    'A new Samples gallery lets you try Analyser on built-in example files in one click, 3D models open the right way up with a Z-up/Y-up toggle, G-code playback pauses where the machine does and plays at true speed by default, colour LUTs preview on a sample photo instantly, and Zortrax Z-SUITE compiled prints (.zcode) are recognised.',
+  { range: '5.0', milestone: true, notes: [
+    'Fifth milestone: Analyser brings broken files back from the dead and opens professional CAD.',
+    'A truncated or corrupt photo is repaired (rebuilding a damaged JPEG header from a reference shot when needed), and an unfinished video with no playable index is reconstructed frame by frame and played in place.',
+    'Autodesk Fusion 360 (.f3d / .f3z) and SolidWorks (.sldprt / .sldasm / .slddrw) designs open - the rendered thumbnail shown as the model, with the document type and metadata; older SolidWorks files also give up their saved preview, while encrypted modern ones are identified on sight.',
+    'A new Samples gallery lets you try the whole workbench on built-in example files in one click, sorted by type with a plain-language note on hover.',
+    'Adobe SpeedGrade / Iridas .look colour grades open with their full grade stack and baked LUT, every LUT previews on a sample photo at a glance, 3D models open the right way up with a Z-up/Y-up toggle, and multi-tool G-code prints mark each tool with its own numbered, colour-coded toolhead.',
+    'G-code playback pauses where the machine does and plays at true speed, Zortrax .zcode prints are recognised, Zstandard archives are handled, and a ZIP\'s contents treemap now sits above its integrity panel.',
+  ] },
+  { range: '4.16 - 4.17', notes: [
     'Extensions shared by unrelated formats (a .pkg is a macOS installer or a Destiny package, a .key a Keynote or an encryption key) now get a guide page with a separate, self-contained card for each meaning, its own "Did you know" and all.',
     'The folder openability scan judges each file by its contents, not just its name - a misnamed or extensionless file it can read counts as openable, an unreadable one is flagged - and more developer and Android/Samsung phone formats are recognised.',
     'A photo\'s sharpness score now measures focus on its own terms rather than being skewed by scene contrast, and the folder breakdown pop-up no longer closes when you scroll inside it.',

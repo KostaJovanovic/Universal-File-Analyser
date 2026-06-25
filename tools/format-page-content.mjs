@@ -59,7 +59,7 @@ export const EXT_PAGES = {
   rw2:  { name: 'Panasonic RAW', blurb: 'RW2 is Panasonic’s camera RAW format, used by Lumix cameras. Opened in Adobe Lightroom or Panasonic’s software.', fact: 'RW2 is the raw format for Panasonic’s Lumix line.' },
   orf:  { name: 'Olympus RAW', blurb: 'ORF is Olympus’s camera RAW format. Opened in OM Workspace or Adobe Lightroom.', fact: 'ORF is the raw format used by Olympus (now OM System) cameras.' },
   pef:  { name: 'Pentax RAW', blurb: 'PEF is Pentax’s camera RAW format (Pentax Electronic Format). Opened in Adobe Lightroom or Pentax software.', fact: 'PEF is the raw format for Pentax DSLRs.' },
-  sr2:  { name: 'Sony RAW (SR2)', blurb: 'SR2 is an older Sony camera RAW format, predating ARW. Opened in Adobe Lightroom.', fact: 'SR2 came from Sony’s earlier DSLR cameras before ARW took over.' },
+  sr2:  { name: 'Sony RAW (SR2)', blurb: 'SR2 is an older Sony camera RAW format, predating ARW. Opened in Adobe Lightroom.', fact: 'SR2 came from Sony’s early fixed-lens Cyber-shot cameras such as the DSC-R1, before ARW took over in its Alpha line.' },
   srw:  { name: 'Samsung RAW', blurb: 'SRW is Samsung’s camera RAW format. Opened in Adobe Lightroom.' },
   x3f:  { name: 'Sigma RAW', blurb: 'X3F is Sigma’s camera RAW format, produced by its Foveon X3 sensors. Opened in Sigma Photo Pro.', fact: 'X3F stores data from Sigma’s unusual three-layer Foveon sensor, which captures colour very differently to ordinary sensors.' },
   '3fr':{ name: 'Hasselblad RAW', blurb: '3FR is Hasselblad’s camera RAW format. Opened in Hasselblad Phocus.', fact: '3FR comes from Hasselblad’s medium-format cameras and digital backs.' },
@@ -125,7 +125,7 @@ export const EXT_PAGES = {
   avc:  { name: 'H.264 / AVC stream', blurb: 'AVC is another name for the H.264 video codec; a raw .avc file is an unwrapped elementary stream.', fact: 'In 2013 Cisco open-sourced its AVC codec as OpenH264 and offered to pay the patent royalties on its binaries itself, which is how Firefox was able to add H.264 support for WebRTC video calls.' },
   h265: { name: 'H.265 stream', blurb: 'H.265 (HEVC) is a high-efficiency video codec; a raw .h265 file is an unwrapped elementary stream.', fact: 'H.265 (HEVC) arrived in 2013, roughly doubling H.264’s efficiency at the same quality.' },
   '265':{ name: 'H.265 stream', blurb: 'A .265 file is a raw H.265 (HEVC) video elementary stream, without a container.', fact: 'Apple’s HEIC photo format, the iPhone’s default camera output since 2017, stores its images using HEVC compression, so billions of photos are saved with this video codec.' },
-  hevc: { name: 'HEVC stream', blurb: 'HEVC is another name for the H.265 video codec; a raw .hevc file is an unwrapped elementary stream.', fact: 'HDR10, the most widely supported HDR video standard, is defined on top of HEVC’s Main 10 profile, whose 10-bit colour depth is where the format gets its name.' },
+  hevc: { name: 'HEVC stream', blurb: 'HEVC is another name for the H.265 video codec; a raw .hevc file is an unwrapped elementary stream.', fact: 'HDR10, the most widely supported HDR video standard, takes its name from its 10-bit colour depth; it is codec-agnostic but most often carried in HEVC’s Main 10 profile.' },
 
   // ---- Editing timelines ----
   edl:    { name: 'Edit Decision List', blurb: 'EDL (Edit Decision List) is a plain-text video-editing format listing cuts and timecodes. Read by DaVinci Resolve, Premiere Pro and most editors.', fact: 'EDLs date back to the 1970s, when they controlled tape-based video editing machines.' },
@@ -213,7 +213,7 @@ export const EXT_PAGES = {
 
   // ---- 3D models ----
   stl:  { name: 'STL 3D model', blurb: 'STL is the most common 3D-printing mesh format, storing a model’s surface as triangles. Exported by most CAD tools and read by every slicer.', fact: 'STL was created by 3D Systems in 1987 for the first stereolithography 3D printers - hence the name.' },
-  obj:  { name: 'OBJ 3D model', blurb: 'OBJ is a widely supported 3D model format storing geometry, and optionally materials and texture coordinates. Read by Blender, Maya and most 3D tools.', fact: 'OBJ was developed by Wavefront Technologies in the 1990s and is still a universal exchange format.' },
+  obj:  { name: 'OBJ 3D model', blurb: 'OBJ is a widely supported 3D model format storing geometry, and optionally materials and texture coordinates. Read by Blender, Maya and most 3D tools.', fact: 'OBJ was developed by Wavefront Technologies in the 1980s for its Advanced Visualizer software and is still a universal exchange format.' },
   mtl:  { name: 'MTL material library', blurb: 'MTL is the plain-text material library a Wavefront OBJ model points at, defining each surface’s colours, shininess and opacity and the texture image files it uses. Analyser breaks it into one entry per material, with colour swatches and the list of textures the model expects beside it.', fact: 'MTL files always travel with an OBJ - the OBJ references the .mtl by name with a mtllib line, and each face picks a material with usemtl.' },
   ply:  { name: 'PLY 3D model', blurb: 'PLY (Polygon File Format) stores 3D meshes and point clouds, often with per-vertex colour. Common in 3D scanning.', fact: 'PLY was created at Stanford in the 1990s and is famous for storing the Stanford Bunny scan.' },
   off:  { name: 'OFF 3D model', blurb: 'OFF (Object File Format) is a simple 3D mesh format storing polygons.', fact: 'OFF is a long-standing teaching and research mesh format from the early 1990s.' },
@@ -273,7 +273,7 @@ export const EXT_PAGES = {
   gcsv:       { name: 'Gyroflow IMU log', blurb: 'GCSV is Gyroflow’s generic IMU-log format, holding the per-sample gyroscope and accelerometer readings used to stabilise video footage. Created and read by Gyroflow.', fact: 'Gyroflow is an open-source video stabiliser that uses a camera’s gyro data, and the .gcsv format lets any device feed it motion data.' },
   mogrt:      { name: 'Motion Graphics Template', blurb: 'MOGRT is a reusable Motion Graphics Template shared between After Effects and Premiere Pro. Created by Adobe’s video apps.', fact: 'MOGRT templates, introduced by Adobe in 2017, move animated graphics between After Effects and Premiere Pro.' },
   sesx:       { name: 'Audition session', blurb: 'SESX is an Adobe Audition multitrack session. Created and opened by Adobe Audition.', fact: 'Audition grew out of Cool Edit Pro, which Adobe bought from Syntrillium in 2003.' },
-  xd:         { name: 'Adobe XD design', blurb: 'XD is an Adobe XD interface-design file. Created and opened by Adobe XD.', fact: 'XD launched in 2016 but Adobe wound down its development in 2023 after its bid to buy Figma collapsed.' },
+  xd:         { name: 'Adobe XD design', blurb: 'XD is an Adobe XD interface-design file. Created and opened by Adobe XD.', fact: 'XD launched in 2016, but Adobe put it into maintenance mode in 2023 ahead of its planned Figma takeover - a 20-billion-dollar bid that then collapsed under regulators at year’s end.' },
   fla:        { name: 'Animate (Flash) source', blurb: 'FLA is the editable source file of Adobe Animate, formerly Flash. Created and opened by Adobe Animate.', fact: 'FLA dates back to Macromedia Flash in the late 1990s; Adobe renamed the app to Animate in 2016.' },
   swf:        { name: 'Flash movie', blurb: 'SWF is the compiled Flash format that ran web animations and games. Played by the old Flash Player.', fact: 'SWF powered web games and animation for two decades until Adobe retired Flash at the end of 2020.' },
   xmp:        { name: 'XMP metadata', blurb: 'XMP is Adobe’s XML metadata sidecar, storing edits and information about a media file. Used across Adobe apps.', fact: 'Adobe introduced XMP in 2001 as an open standard for embedding metadata in files.' },
@@ -482,7 +482,7 @@ export const EXT_PAGES = {
   slnx: { name: 'Visual Studio solution (XML)', blurb: 'SLNX is the newer XML form of a Visual Studio solution - a terse <Solution> tree of projects, folders and build configurations. Introduced with Visual Studio 2022 and the dotnet sln tooling as a cleaner replacement for the classic text .sln.', fact: 'The XML .slnx drops the opaque GUIDs of the old .sln, so merge conflicts on a solution file are finally readable.' },
   userprefs: { name: 'MonoDevelop user preferences', blurb: 'USERPREFS is an XML file storing a developer’s per-solution IDE state - open documents, cursor positions and breakpoints - for MonoDevelop / Unity’s old script editor.', fact: 'Because it only holds personal editor state, .userprefs is one of the files projects usually exclude from version control.' },
   wfp: { name: 'Filmora project', blurb: 'WFP is a project from Wondershare Filmora, a consumer video editor. Created and opened by Filmora.', fact: 'Filmora is aimed at everyday creators who want easy editing without a steep learning curve.' },
-  wsp: { name: 'Filmora project', blurb: 'WSP is a project file used by Wondershare Filmora. Created and opened by Filmora.', fact: 'Filmora started out in 2012 as Wondershare Video Editor, and the software only took the Filmora name in a 2015 rebrand, after a brief earlier spell under the name Vivideo.' },
+  wsp: { name: 'Filmora project', blurb: 'WSP is a project file used by Wondershare Filmora. Created and opened by Filmora.', fact: 'Filmora began in 2010 as Video Studio Express, became Wondershare Vivideo in 2011 (later Wondershare Video Editor), and took the Filmora name in a 2015 rebrand.' },
 
   // ---- CNC / 3D print ----
   gcode: { name: 'G-code', blurb: 'G-code is the instruction language that tells 3D printers and CNC machines how to move. Produced by slicers like Cura and PrusaSlicer.', fact: 'G-code dates back to the 1950s, when it was created at MIT for the first numerically controlled machine tools.' },
@@ -654,14 +654,14 @@ export const EXT_PAGES = {
 
   // ---- Game ROMs & patches ----
   nes:     { name: 'NES ROM', blurb: 'NES is a Nintendo Entertainment System game ROM, run on emulators.', fact: 'The NES launched as the Famicom in Japan in 1983 and revived the home console market.' },
-  gb:      { name: 'Game Boy ROM', blurb: 'GB is a Nintendo Game Boy game ROM, run on emulators.', fact: 'The Game Boy launched in 1989 and sold over 100 million units worldwide.' },
+  gb:      { name: 'Game Boy ROM', blurb: 'GB is a Nintendo Game Boy game ROM, run on emulators.', fact: 'The Game Boy launched in 1989 and, together with the Game Boy Color, sold over 100 million units worldwide.' },
   gbc:     { name: 'Game Boy Color ROM', blurb: 'GBC is a Game Boy Color game ROM, run on emulators.', fact: 'The Game Boy Color arrived in 1998, adding colour to the handheld line.' },
   gba:     { name: 'Game Boy Advance ROM', blurb: 'GBA is a Game Boy Advance game ROM, run on emulators.', fact: 'The Game Boy Advance launched in 2001 with 32-bit power in a handheld.' },
   sfc:     { name: 'Super Famicom ROM', blurb: 'SFC is a Super Nintendo (Super Famicom) game ROM, run on emulators.', fact: 'The Super Nintendo arrived in 1990 and is fondly remembered for its 16-bit classics.' },
   smc:     { name: 'SNES ROM', blurb: 'SMC is a Super Nintendo game ROM, named after the Super Magicom copier.', fact: 'The SMC name comes from the Super Magicom, a 1990s device for copying SNES cartridges.' },
   nds:     { name: 'Nintendo DS ROM', blurb: 'NDS is a Nintendo DS game ROM, run on emulators.', fact: 'The dual-screen Nintendo DS launched in 2004 and became one of the best-selling consoles ever.' },
   dsi:     { name: 'Nintendo DSi ROM', blurb: 'DSI is a Nintendo DSi game ROM, for the camera-equipped DS revision.', fact: 'The DSi, released in 2008, added cameras and a download store to the DS line.' },
-  z64:     { name: 'Nintendo 64 ROM', blurb: 'Z64 is a Nintendo 64 game ROM in big-endian byte order, run on emulators.', fact: 'The Nintendo 64, launched in 1996, was the last major console to use cartridges.' },
+  z64:     { name: 'Nintendo 64 ROM', blurb: 'Z64 is a Nintendo 64 game ROM in big-endian byte order, run on emulators.', fact: 'The Nintendo 64, launched in 1996, was the last major home console of its era to use cartridges instead of discs.' },
   n64:     { name: 'Nintendo 64 ROM', blurb: 'N64 is a Nintendo 64 game ROM in little-endian byte order, run on emulators.', fact: 'N64 ROMs come in several byte orders, which is why the same game has .z64, .n64 and .v64 versions.' },
   v64:     { name: 'Nintendo 64 ROM', blurb: 'V64 is a Nintendo 64 game ROM in byte-swapped order, from the Doctor V64 copier.', fact: 'The .v64 order comes from the Doctor V64, a 1990s N64 backup device.' },
   gen:     { name: 'Mega Drive ROM', blurb: 'GEN is a Sega Genesis (Mega Drive) game ROM, run on emulators.', fact: 'The Sega Mega Drive, known as the Genesis in North America, launched in 1988.' },
@@ -709,7 +709,7 @@ export const EXT_PAGES = {
   hex:    { name: 'Intel HEX', blurb: 'HEX is an Intel HEX file, carrying firmware as text to flash onto microcontrollers.', fact: 'Intel HEX, from 1973, is still how firmware reaches countless chips today.' },
   srec:   { name: 'Motorola S-record', blurb: 'SREC is a Motorola S-record file, storing firmware as ASCII hex for flashing.', fact: 'Motorola created the S-record format in the 1970s for loading code onto chips.' },
   s19:    { name: 'Motorola S-record', blurb: 'S19 is a Motorola S-record firmware file with 16-bit addresses.', fact: 'The number in .s19/.s28/.s37 marks how many address bytes each record uses.' },
-  s28:    { name: 'Motorola S-record', blurb: 'S28 is a Motorola S-record firmware file with 24-bit addresses.', fact: 'Records with 24-bit addresses suited Motorola’s 68000 family, whose external address bus was exactly 24 lines wide.' },
+  s28:    { name: 'Motorola S-record', blurb: 'S28 is a Motorola S-record firmware file with 24-bit addresses.', fact: 'Records with 24-bit addresses suited Motorola’s 68000 family, which had a 24-bit (16 MB) address space exposed on 23 external address lines.' },
   s37:    { name: 'Motorola S-record', blurb: 'S37 is a Motorola S-record firmware file with 32-bit addresses.', fact: 'Motorola’s S-records compete with Intel HEX, a rival 1970s format that encodes the same firmware data in lines beginning with a colon instead of an S.' },
   mot:    { name: 'Motorola S-record', blurb: 'MOT is a Motorola S-record firmware file for flashing microcontrollers.', fact: 'The Motorola S-record format stores binary firmware safely as plain text.' },
   uf2:    { name: 'USB Flashing Format', blurb: 'UF2 lets you flash a microcontroller by dragging the file onto a USB drive. Created by Microsoft.', fact: 'Microsoft made UF2 for MakeCode so beginners could flash boards with a simple drag-and-drop.' },
@@ -786,7 +786,7 @@ export const EXT_PAGES = {
   sas7bdat: { name: 'SAS dataset', blurb: 'SAS7BDAT is a dataset for the SAS statistical software.', fact: 'SAS has been a heavyweight in enterprise statistics and analytics since the 1970s.' },
 
   // ---- Scientific visualisation & genomics ----
-  vtk:  { name: 'VTK data', blurb: 'VTK stores 3D scientific data for the Visualization Toolkit.', fact: 'The Visualization Toolkit, open-sourced in 1998, powers much scientific 3D visualisation.' },
+  vtk:  { name: 'VTK data', blurb: 'VTK stores 3D scientific data for the Visualization Toolkit.', fact: 'The Visualization Toolkit, released as open source in the mid-1990s, powers much scientific 3D visualisation.' },
   vtu:  { name: 'VTK unstructured grid', blurb: 'VTU is a VTK XML file holding an unstructured mesh for scientific visualisation.', fact: 'VTU is part of VTK’s modern XML-based file family.' },
   vtp:  { name: 'VTK polygon data', blurb: 'VTP is a VTK XML file storing polygonal geometry for visualisation.' },
   vti:  { name: 'VTK image data', blurb: 'VTI is a VTK XML file holding a regular grid of values, such as a volume.', fact: 'VTI stores image and volume data on a regular grid for VTK.' },
@@ -949,7 +949,7 @@ export const EXT_PAGES = {
   sf3:   { name: 'Compressed SoundFont', blurb: 'SF3 is a SoundFont with its samples compressed as Ogg Vorbis.', fact: 'SF3 shrinks a SoundFont by compressing its instrument samples.' },
   sfz:   { name: 'SFZ instrument', blurb: 'SFZ is an open text format describing a sampled instrument and how to play it.' },
   dls:   { name: 'Downloadable Sounds', blurb: 'DLS is a downloadable-instruments bank, defined by the MIDI Manufacturers Association.', fact: 'DLS was the standard way to ship custom instruments alongside MIDI music.' },
-  rmi:   { name: 'RMID MIDI', blurb: 'RMI wraps a MIDI song in a RIFF container, sometimes with embedded instruments.', fact: 'RMI lets a MIDI file carry its own sound bank so it plays the same everywhere.' },
+  rmi:   { name: 'RMID MIDI', blurb: 'RMI wraps a MIDI song in a RIFF container, sometimes with embedded instruments.', fact: 'RMI is a RIFF-wrapped MIDI file, and an extended version can embed a DLS sound bank so it plays the same everywhere.' },
   mmf:   { name: 'Yamaha SMAF', blurb: 'MMF (Yamaha SMAF) carried ringtones and sound to early mobile phones.', fact: 'SMAF was Yamaha’s rich ringtone format in the era before MP3 ringtones.' },
   gig:   { name: 'GigaStudio instrument', blurb: 'GIG holds the large sampled instruments of the GigaStudio sampler.', fact: 'GigaStudio streamed huge instrument samples straight from disk for realism.' },
   rtttl: { name: 'Nokia ringtone', blurb: 'RTTTL is the simple text format behind classic monophonic Nokia ringtones.', fact: 'RTTTL let people type out and share ringtones as short lines of text.' },
@@ -1199,7 +1199,7 @@ export const EXT_PAGES = {
   sms:         { name: 'Master System ROM', blurb: 'SMS is a Sega Master System game ROM.', fact: 'The Sega Master System was Sega’s 8-bit rival to the NES.' },
   ws:          { name: 'WonderSwan ROM', blurb: 'WS is a Bandai WonderSwan handheld game ROM.', fact: 'The WonderSwan, designed by Game Boy’s creator, was a hit in late-1990s Japan.' },
   wsc:         { name: 'WonderSwan Color ROM', blurb: 'WSC is a Bandai WonderSwan Color game ROM.', fact: 'The WonderSwan Color added colour to Bandai’s Japan-only handheld.' },
-  w3x:         { name: 'Warcraft III map', blurb: 'W3X is a Warcraft III: The Frozen Throne map. Created with Blizzard’s World Editor.', fact: 'Custom W3X maps gave rise to the MOBA genre, including the original DotA.' },
+  w3x:         { name: 'Warcraft III map', blurb: 'W3X is a Warcraft III: The Frozen Throne map. Created with Blizzard’s World Editor.', fact: 'Custom Warcraft III maps gave rise to the MOBA genre, with DotA Allstars maturing in the Frozen Throne (W3X) era.' },
   w3m:         { name: 'Warcraft III map', blurb: 'W3M is a Warcraft III map from the original Reign of Chaos.', fact: 'W3M maps powered the huge custom-game scene of Warcraft III.' },
 
   // ---- Game saves, scripts & emulator data ----
@@ -1332,7 +1332,7 @@ export const EXT_PAGES = {
   'db-shm': { name: 'SQLite shared-memory index (.db sidecar)', blurb: 'A .db-shm file is the shared-memory WAL index for a SQLite database stored as .db, coordinating concurrent access to its write-ahead log. Same format as .sqlite-shm.', fact: 'Both WAL sidecars (-wal and -shm) exist only while a database uses WAL journalling mode, and disappear on a clean shutdown.' },
 
   // ---- Developer / data - additions ----
-  capnp: { name: 'Cap’n Proto schema', blurb: 'A .capnp file is a Cap’n Proto schema - it defines the message types for Cap’n Proto, a fast data-interchange and RPC format created by one of the original authors of Protocol Buffers.', fact: 'Cap’n Proto’s trick is that there is no encoding or decoding step - its wire format matches the in-memory layout, so reading a message is essentially free, which is where the "Proto" pun on "faster than light" comes from.' },
+  capnp: { name: 'Cap’n Proto schema', blurb: 'A .capnp file is a Cap’n Proto schema - it defines the message types for Cap’n Proto, a fast data-interchange and RPC format created by one of the original authors of Protocol Buffers.', fact: 'Cap’n Proto’s trick is that there is no encoding or decoding step - its wire format matches the in-memory layout, so reading a message is essentially free, the basis for its joking “infinitely faster than Protobuf” claim that the nautical “Cap’n” name plays on.' },
 
   // ---- Audio (more) - additions ----
   umx:     { name: 'Unreal Music Package', blurb: 'UMX is an Unreal Engine music package - tracker-module music wrapped in the Unreal package format, used by the original Unreal and Unreal Tournament.', fact: 'A UMX is really a tracker module (often .it or .s3m) inside an Unreal package, so the game’s soundtrack was played back by the same engine that loaded its maps.' },
@@ -1371,7 +1371,7 @@ export const EXT_PAGES = {
   schematic: { name: 'Minecraft schematic', blurb: 'SCHEMATIC is the original MCEdit/WorldEdit schematic format for Minecraft - an NBT file holding a saved region of blocks to paste elsewhere.', fact: 'The classic .schematic stored blocks by their old numeric IDs, so builds made before "the flattening" update can import with wrong blocks.' },
   mcaddon:   { name: 'Minecraft Bedrock add-on', blurb: 'MCADDON is a Minecraft Bedrock Edition add-on - a ZIP bundle of behaviour and resource packs the game imports together in one click.', fact: 'Double-clicking an .mcaddon hands it straight to Minecraft, which unpacks the behaviour and resource packs inside and installs them as a set.' },
   mcpack:    { name: 'Minecraft Bedrock pack', blurb: 'MCPACK is a single Minecraft Bedrock resource or behaviour pack - a ZIP the game imports to change textures, sounds or gameplay.', fact: 'An .mcpack is just a renamed ZIP with a manifest telling Minecraft whether it changes how the world looks or how it behaves.' },
-  pk4:       { name: 'id Tech 4 archive', blurb: 'PK4 is the data archive for id Tech 4 games like Doom 3 - a ZIP under another name holding the maps, textures, models and scripts.', fact: 'id Software long shipped game data as renamed ZIPs - .pak, .pk3, then .pk4 - so the engine could load assets straight from the archive.' },
+  pk4:       { name: 'id Tech 4 archive', blurb: 'PK4 is the data archive for id Tech 4 games like Doom 3 - a ZIP under another name holding the maps, textures, models and scripts.', fact: 'id Software long shipped game data as archives - the custom .pak, then the ZIP-based .pk3 and .pk4 - so the engine could load assets straight from the archive.' },
 
   // ---- 3D / CAD / point clouds - additions ----
   prc:   { name: 'PRC 3D data', blurb: 'PRC (Product Representation Compact) is a compact 3D format for engineering models, most often embedded inside a 3D PDF so a CAD assembly can be rotated.', fact: 'When you spin a 3D model inside a PDF, you are almost always looking at an embedded PRC stream, an ISO-standard format made for exactly that.' },
@@ -1481,7 +1481,7 @@ export const VARIANT_FACTS = {
     'Criterium DecisionPlus model': "Criterium DecisionPlus ranks choices with the Analytic Hierarchy Process, a 1970s method for turning gut-feel comparisons into hard numbers.",
   },
   mat: {
-    'MATLAB MAT-file': "A modern MATLAB v7.3 .mat file is secretly an HDF5 container - the same scientific data format used by NASA missions and the Large Hadron Collider.",
+    'MATLAB MAT-file': "A modern MATLAB v7.3 .mat file is secretly an HDF5 container - the same scientific data format used across NASA Earth-science missions and countless research datasets.",
     'Unity material': "A Unity .mat is plain YAML text, so material changes diff and merge in Git just like source code.",
   },
   nsf: {
