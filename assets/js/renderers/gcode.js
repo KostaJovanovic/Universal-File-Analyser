@@ -872,9 +872,9 @@ function buildViewer(data, opts = {}) {
 
   const vsInst = `attribute float aEnd, aSr, aSu; attribute vec3 aA, aB; attribute float aHW, aHH, aFeed, aType, aTool;
     uniform mat4 uMVP, uModel; uniform vec2 uViewport;
-    uniform float uYmin, uYspan, uFmin, uFspan, uMode, uTravel, uMinW, uMinPx, uFlat, uVis[8], uFilVis[8], uWmin, uWspan, uTypeBias;
+    uniform float uYmin, uYspan, uFmin, uFspan, uMode, uTravel, uMinW, uMinPx, uFlat, uVis[8], uFilVis[8], uWmin, uWspan, uTypeBias, uIsoUseType;
     uniform vec3 uFilCols[8];
-    varying float vT, vVis; varying vec3 vN, vColor;
+    varying float vT, vVis, vTool; varying vec3 vN, vColor;
     vec3 filColor(float ft){ int t=int(ft+0.5);
       for(int k=0;k<8;k++){ if(k==t) return uFilCols[k]; } return uFilCols[0]; }
     vec3 ramp(float t){ vec3 c1=vec3(0.18,0.32,0.92),c2=vec3(0.10,0.80,0.86),c3=vec3(0.22,0.82,0.30),c4=vec3(0.97,0.80,0.20),c5=vec3(0.96,0.26,0.20);
@@ -926,6 +926,9 @@ function buildViewer(data, opts = {}) {
       // Height fraction from the segment CENTRELINE (not the offset bead vertex), so
       // the build-height clip reveals whole layers cleanly and 100% is the true top.
       vT = clamp((P.y - uYmin)/uYspan, 0.0, 1.0);
+      // Tool identity for the "Dim other tools" isolate pass: CNC keeps it in aType,
+      // FDM in aTool (the filament index). The fragment shader compares it to uIsoTool.
+      vTool = uIsoUseType > 0.5 ? aType : aTool;
       float sfrac = clamp((aFeed - uFmin)/uFspan, 0.0, 1.0);
       float wfrac = clamp((aHW - uWmin)/uWspan, 0.0, 1.0);
       if(uTravel > 0.5){ vColor = vec3(0.22,0.28,0.61); vVis = 1.0; }   // OrcaSlicer travel blue (RGB 56,72,155)
@@ -938,9 +941,12 @@ function buildViewer(data, opts = {}) {
         else vColor = ramp(wfrac);
         vVis = uVis[int(aType + 0.5)] * uFilVis[int(aTool + 0.5)];
       } }`;
-  const fsInst = `precision mediump float; varying float vT, vVis; varying vec3 vN, vColor;
-    uniform float uClip, uAlpha;
+  const fsInst = `precision mediump float; varying float vT, vVis, vTool; varying vec3 vN, vColor;
+    uniform float uClip, uAlpha, uIsoMode, uIsoTool;
     void main(){ if(vT > uClip) discard; if(vVis < 0.5) discard;
+      // Isolate pass: 1 = draw only the current tool, 2 = draw only the others.
+      if(uIsoMode > 0.5){ bool cur = abs(vTool - uIsoTool) < 0.5;
+        if(uIsoMode < 1.5){ if(!cur) discard; } else { if(cur) discard; } }
       vec3 N = normalize(vN); vec3 L = normalize(vec3(0.4,0.78,0.5));
       float lit = max(max(dot(N,L),0.0), max(dot(-N,L),0.0)*0.4);
       gl_FragColor = vec4(vColor*(0.34+0.66*lit), uAlpha); }`;
@@ -1035,7 +1041,7 @@ function buildViewer(data, opts = {}) {
     // restX/Y/Z carry the head's resting tool point (RAW mm; drawImpl normalises) for when
     // it sits at a move boundary and isn't mid-glide - travel-aware, so it doesn't snap back
     // to the last *extrusion* endpoint when the tool actually rests at a travel endpoint.
-    follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, headLive: false, headToolRank: 1, headToolNum: 0, toolMarkers: true, restX: 0, restY: 0, restZ: 0, restValid: false, pauseText: '' };
+    follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, headLive: false, headToolRank: 1, headToolNum: 0, headToolRaw: 0, toolMarkers: true, isoTool: false, restX: 0, restY: 0, restZ: 0, restValid: false, pauseText: '' };
   let viewW = 600, viewH = 420;   // CSS px, for screen-space size in the shader
   let dirty = true;
   const spinListeners = [];
@@ -1071,7 +1077,7 @@ function buildViewer(data, opts = {}) {
     const L = (n) => gl.getAttribLocation(prog, n);
     const aEnd = L('aEnd'), aSr = L('aSr'), aSu = L('aSu'), aA = L('aA'), aB = L('aB'), aHW = L('aHW'), aHH = L('aHH'), aFeed = L('aFeed'), aType = L('aType'), aTool = L('aTool');
     const U = (n) => gl.getUniformLocation(prog, n);
-    const uMVP = U('uMVP'), uModel = U('uModel'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uFilVis = U('uFilVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan'), uTypeBias = U('uTypeBias');
+    const uMVP = U('uMVP'), uModel = U('uModel'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uFilVis = U('uFilVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan'), uTypeBias = U('uTypeBias'), uIsoMode = U('uIsoMode'), uIsoTool = U('uIsoTool'), uIsoUseType = U('uIsoUseType');
 
     const bindTemplate = () => {
       gl.bindBuffer(gl.ARRAY_BUFFER, tplBuf);
@@ -1248,12 +1254,13 @@ function buildViewer(data, opts = {}) {
       // rank 1 (the classic yellow marker).
       // Gated on state.toolMarkers (the "Tool changes" toggle): when off, the head stays
       // the default rank-1 marker (classic 3-sided yellow, no number) for the whole job.
-      if (multiTool && state.toolMarkers) {
+      if (multiTool) {
         const segIdx = Math.max(0, Math.min(shown, segN - 1));
         const raw = instData[segIdx * STR + toolOff] | 0;
-        state.headToolRank = rankMap.get(raw) || 1;
-        state.headToolNum = rawToNum(raw);
-      } else { state.headToolRank = 1; state.headToolNum = 0; }
+        state.headToolRaw = raw;   // for the "Dim other tools" isolate pass (toggle-independent)
+        if (state.toolMarkers) { state.headToolRank = rankMap.get(raw) || 1; state.headToolNum = rawToNum(raw); }
+        else { state.headToolRank = 1; state.headToolNum = 0; }
+      } else { state.headToolRank = 1; state.headToolNum = 0; state.headToolRaw = 0; }
     };
     drawImpl = (proj, view, model) => {
       const mvp = mat4Multiply(proj, mat4Multiply(view, model));
@@ -1264,6 +1271,7 @@ function buildViewer(data, opts = {}) {
       gl.uniform1f(uYmin, yMin); gl.uniform1f(uYspan, ySpan); gl.uniform1f(uFmin, fMin); gl.uniform1f(uFspan, fSpan); gl.uniform1f(uClip, state.clip);
       gl.uniform1f(uMinW, state.minWidth === 'all' ? 1 : 0); gl.uniform1f(uMinPx, 1.3); gl.uniform1f(uFlat, state.flatten ? 1 : 0);
       gl.uniform1f(uAlpha, 1);
+      gl.uniform1f(uIsoUseType, isCNC ? 1 : 0); gl.uniform1f(uIsoMode, 0);
       gl.uniform1f(uWmin, wHalfMin); gl.uniform1f(uWspan, wSpan);
       if (uFilCols) gl.uniform3fv(uFilCols, filCols);
       if (uVis) gl.uniform1fv(uVis, state.vis);
@@ -1321,13 +1329,32 @@ function buildViewer(data, opts = {}) {
       const worldStep = TYPE_BIAS_LAYER_FRAC * layerH;
       gl.uniform1f(uTravel, 0); gl.uniform1f(uMode, state.mode); gl.uniform1f(uTypeBias, -proj[10] * worldStep);
       gl.uniform1f(uMinW, state.minWidth === 'all' ? 1 : 0);   // extrusions only get min width at the 'all' stage
-      bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
-      if (frac > 0) {
+      // The in-progress (partially drawn) bead grows toward the live tool point; it always
+      // belongs to the current tool, so it rides the opaque pass.
+      const drawPartial = () => {
+        if (frac <= 0) return;
         const q = shown * STR;
         for (let i = 0; i < STR; i++) partArr[i] = instData[q + i];
         partArr[3] = hx; partArr[4] = hy; partArr[5] = hz;   // bead ends at the live tool point
         gl.bindBuffer(gl.ARRAY_BUFFER, partBuf); gl.bufferData(gl.ARRAY_BUFFER, partArr, gl.DYNAMIC_DRAW);
         bindInstances(partBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, 1);
+      };
+      // "Dim other tools": draw the current tool's beads solid (pass 1), then every other
+      // tool's beads translucent over them (pass 2, depth-write off, blended) - exactly the
+      // treatment travels get, so a multi-tool job reads as "this tool, right now".
+      if (state.isoTool && multiTool) {
+        gl.uniform1f(uIsoTool, state.headToolRaw | 0);
+        gl.uniform1f(uIsoMode, 1);                                  // pass 1: current tool, opaque
+        bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
+        drawPartial();
+        gl.uniform1f(uIsoMode, 2); gl.uniform1f(uAlpha, 0.1);       // pass 2: other tools, translucent
+        gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+        bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
+        gl.depthMask(true); gl.disable(gl.BLEND);
+        gl.uniform1f(uIsoMode, 0); gl.uniform1f(uAlpha, 1);
+      } else {
+        bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
+        drawPartial();
       }
       // Translucent travels draw AFTER the opaque print, depth-test on: the print no longer
       // overwrites them, travels behind it are correctly hidden, those in front blend over it.
@@ -2167,18 +2194,34 @@ export async function renderGcode(file, resultsEl, opts) {
         if (!toolMarksOn) markPop.style.display = 'none';
         viewer.state.toolMarkers = toolMarksOn; viewer.markDirty();
       });
-      viewRow.appendChild(markBtn);
+      // "Tool changes" now lives next to Follow (below the viewer); its old slot in the
+      // view-controls row is taken by "Dim other tools" (the isolate toggle below).
+
+      // Dim other tools: fade every tool except the one currently at the head to a
+      // travel-like translucency, leaving just the active tool's beads solid. Only
+      // meaningful when the file actually uses more than one tool / filament.
+      const hasMultiTool = (data.multicolour && (data.filsUsed || []).length > 1) || cncTools.length > 1;
+      const isoBtn = el('button', { type: 'button', class: 'anr-btn', title: 'Fade every tool except the one currently printing - its lines stay solid, the rest go translucent like travel moves' }, 'Dim other tools');
+      if (!hasMultiTool) { isoBtn.disabled = true; isoBtn.title = 'This file only uses one tool'; }
+      isoBtn.addEventListener('click', () => {
+        const on = !viewer.state.isoTool;
+        viewer.state.isoTool = on;
+        isoBtn.classList.toggle('is-active', on);
+        viewer.markDirty();
+      });
+      viewRow.appendChild(isoBtn);
 
       // Toolbar (below the viewer): Play + progress bar on one row (bar stays at Play's
-      // height); Speed + Follow always on a second row beneath Play; then the Build height
-      // slider; then the CNC Tools picker last.
+      // height); Speed + Follow + Tool changes on a second row beneath Play; then the Build
+      // height slider; then the CNC Tools picker last.
       const playTopRow = el('div', { style: 'display:flex;align-items:center;gap:8px;' });
       playTopRow.appendChild(playBtn);
       playTopRow.appendChild(sliderWrap);
       playTopRow.appendChild(progVal);
-      const playCtrlRow = el('div', { style: 'display:flex;align-items:center;gap:8px;margin-top:6px;' });
+      const playCtrlRow = el('div', { style: 'display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;' });
       playCtrlRow.appendChild(spdWrap);
       playCtrlRow.appendChild(followBtn);
+      playCtrlRow.appendChild(markBtn);
       const progRow = el('div', { class: 'anr-gcode-slider anr-gcode-player', style: 'flex-direction:column;align-items:stretch;' });
       progRow.appendChild(playTopRow);
       progRow.appendChild(playCtrlRow);
