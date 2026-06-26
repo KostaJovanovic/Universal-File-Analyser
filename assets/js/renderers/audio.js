@@ -612,7 +612,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     recBtn.addEventListener('click', () => {
       const ar = document.getElementById('audioResults');
       const topRecBtn = document.getElementById('audioRecord');
-      if (topRecBtn && topRecBtn.classList.contains('is-recording')) return;
+      if (topRecBtn && topRecBtn.classList.contains('is-recording')) { if (topRecBtn._stopRec) topRecBtn._stopRec(); return; }
       if (ar) startRecording(ar, topRecBtn || recBtn);
     });
     liveBtn.addEventListener('click', () => document.getElementById('audioLive')?.click());
@@ -1570,6 +1570,7 @@ async function startRecording(resultsEl, recordBtn) {
   liveCard.appendChild(timer);
   liveCard.appendChild(stopBtn);
   resultsEl.appendChild(liveCard);
+  try { liveCard.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {}
 
   const startMs = performance.now();
   const tick = setInterval(() => {
@@ -1578,11 +1579,15 @@ async function startRecording(resultsEl, recordBtn) {
 
   rec.start();
   recordBtn.classList.add('is-recording');
+  // Expose a stop handle so the same Record button (or the panel's) can end the take -
+  // not just the in-card Stop button. Cleared in finish().
+  recordBtn._stopRec = () => { try { rec.stop(); } catch (_) {} };
 
   return new Promise((resolve) => {
     function finish() {
       clearInterval(tick);
       recordBtn.classList.remove('is-recording');
+      recordBtn._stopRec = null;
       stream.getTracks().forEach((t) => t.stop());
     }
     rec.onstop = async () => {
@@ -1713,6 +1718,7 @@ async function startLive(resultsEl, liveBtn) {
   wrap.appendChild(yWrap); wrap.appendChild(scrollEl);
   card.appendChild(wrap);
   resultsEl.appendChild(card);
+  try { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {}
 
   let state = { scale: 'log', cmap: 'magma', height: 320 };
 
@@ -1952,7 +1958,7 @@ export function initAudio({ dropEl, inputEl, recordBtn, liveBtn, resultsEl, onFi
   );
 
   recordBtn.addEventListener('click', () => {
-    if (recordBtn.classList.contains('is-recording')) return;
+    if (recordBtn.classList.contains('is-recording')) { if (recordBtn._stopRec) recordBtn._stopRec(); return; }
     startRecording(resultsEl, recordBtn);
   });
 

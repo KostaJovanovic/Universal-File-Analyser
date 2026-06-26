@@ -73,6 +73,13 @@ rem instead of leaving cached clients on a stale shell (stale-while-revalidate
 rem otherwise keeps serving the old code until VERSION changes).
 powershell -Command "(Get-Content 'sw.js' -Encoding UTF8) -replace 'const VERSION = ''analyser-v\d+'';', 'const VERSION = ''analyser-v%NEXT_COUNT%'';' | Set-Content 'sw.js' -Encoding utf8"
 
+rem Rebuild the /samples gallery from the files in the samples/ directory, so the
+rem clickable example cards always match the folder. Run first, before every other
+rem generator/stamping step. Non-fatal.
+echo Prerendering /samples gallery...
+node --no-warnings tools/prerender-samples.mjs
+if errorlevel 1 echo WARNING: samples gallery prerender failed - committing the existing copy.
+
 rem Prerender the static /formats page from the catalog (single source of truth
 rem in assets/js/core/formats.js), so the supported-formats list and its #fmt- /
 rem #ext- deep-link anchors exist in plain HTML for crawlers. Non-fatal: a missing
@@ -86,12 +93,6 @@ rem a real viewer/deep analysis - depth 'full' in the catalog) plus sitemap-form
 echo Prerendering per-format landing pages...
 node --no-warnings tools/prerender-format-pages.mjs
 if errorlevel 1 echo WARNING: per-format page prerender failed - committing the existing copies.
-
-rem Rebuild the /samples gallery from the files in the samples/ directory, so the
-rem clickable example cards always match the folder. Non-fatal.
-echo Prerendering /samples gallery...
-node --no-warnings tools/prerender-samples.mjs
-if errorlevel 1 echo WARNING: samples gallery prerender failed - committing the existing copy.
 
 rem Stamp the live format count into the static crawler-only copy (meta/OG/JSON-LD
 rem descriptions, manifest, feature text) and refresh the main sitemap lastmod, so
