@@ -178,6 +178,42 @@ export async function inflate(bytes, format = 'gzip') {
 }
 export const gunzip = (bytes) => inflate(bytes, 'gzip');
 
+// ---------- entropy ----------
+
+// Shannon entropy of a byte range, in bits/byte (0 = uniform/repetitive, 8 =
+// maximally random). Compressed or encrypted data sits near 8; text and code
+// well below. `start`/`end` bound the range (defaults to the whole array).
+export function shannonEntropy(bytes, start = 0, end = bytes.length) {
+  const freq = new Uint32Array(256);
+  let n = 0;
+  for (let i = start; i < end; i++) { freq[bytes[i]]++; n++; }
+  if (!n) return 0;
+  let h = 0;
+  for (let i = 0; i < 256; i++) {
+    if (!freq[i]) continue;
+    const p = freq[i] / n;
+    h -= p * Math.log2(p);
+  }
+  return h;
+}
+
+// Slice `bytes` into `buckets` equal chunks and return each chunk's Shannon
+// entropy (bits/byte) plus its byte offset - the data behind an entropy heatmap.
+// High flat regions flag packed/encrypted/compressed/stego content; sharp steps
+// flag a boundary between unlike sections (e.g. an appended archive).
+export function entropyProfile(bytes, buckets = 256) {
+  const len = bytes.length;
+  if (!len) return [];
+  const n = Math.max(1, Math.min(buckets, len));
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const s = Math.floor(i * len / n);
+    const e = Math.floor((i + 1) * len / n);
+    out[i] = { start: s, end: e, entropy: shannonEntropy(bytes, s, Math.max(e, s + 1)) };
+  }
+  return out;
+}
+
 // ---------- misc formatters used by binary parsers ----------
 
 // FILETIME (100-ns ticks since 1601-01-01 UTC) -> JS Date, or null.

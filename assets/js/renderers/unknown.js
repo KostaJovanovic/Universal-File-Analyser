@@ -3,6 +3,8 @@
    previews for plain text, JSON, and XML. */
 
 import { el, row, rowHelp, fmtBytes, fileExt, sha256Row, errorCard } from '../core/util.js';
+import { entropyProfile } from '../core/binutil.js';
+import { buildOsintCard } from '../core/osint.js';
 import { carveImages, repairJpeg } from './photo-recover.js';
 
 function esc(s) {
@@ -260,6 +262,7 @@ export async function renderUnknown(file, resultsEl, opts) {
   }
 
   // If it looks like text, JSON, or XML, show enhanced previews
+  let osintText = '';   // text fed to the network-indicator (OSINT) scan below
   const ext = fileExt(file.name);
   const isJsonExt = ext === 'json';
   const isXmlExt = ext === 'xml' || ext === 'html' || ext === 'htm';
@@ -319,6 +322,7 @@ export async function renderUnknown(file, resultsEl, opts) {
     // Text statistics
     try {
       const fullText = await readSlice(0, 1024 * 1024);
+      osintText = fullText;
       const charCount = fullText.length;
       const words = fullText.trim().length === 0 ? [] : fullText.trim().split(/\s+/);
       const wordCount = words.length;
@@ -345,6 +349,7 @@ export async function renderUnknown(file, resultsEl, opts) {
     // --- JSON pretty printer ---
     try {
       const jsonText = await file.slice(0, 500 * 1024).text();
+      osintText = jsonText;
       let parsed;
       let parseError = null;
       try {
@@ -379,6 +384,25 @@ export async function renderUnknown(file, resultsEl, opts) {
         const jsonPre = el('pre', { class: 'anr-ocr-text anr-pre-scroll', html: highlightJson(parsed, 0) });
         details.appendChild(jsonPre);
         card.appendChild(details);
+
+        // If this JSON is actually a Lottie animation, offer to play it. (Re-reads
+        // the full file via the Lottie renderer, so large animations work even
+        // though the preview above only parsed the first slice.)
+        if (parsed && typeof parsed === 'object' && 'v' in parsed && typeof parsed.fr === 'number'
+          && typeof parsed.op === 'number' && Array.isArray(parsed.layers)) {
+          const btn = el('button', { type: 'button', class: 'anr-btn' }, '▶ Play as Lottie animation');
+          btn.addEventListener('click', async () => {
+            btn.disabled = true; btn.textContent = 'Loading…';
+            try {
+              const { renderLottie } = await import('./lottie.js');
+              const holder = el('div', {});
+              resultsEl.appendChild(holder);
+              await renderLottie(file, holder);
+              btn.remove();
+            } catch (_) { btn.disabled = false; btn.textContent = '▶ Play as Lottie animation'; }
+          });
+          card.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [btn]));
+        }
       }
     } catch (_) {}
   }
@@ -387,6 +411,7 @@ export async function renderUnknown(file, resultsEl, opts) {
     // --- XML pretty printer ---
     try {
       const xmlText = await file.slice(0, 500 * 1024).text();
+      osintText = xmlText;
 
       card.appendChild(el('div', { class: 'anr-readout-section' }, 'Text preview (first 2 kB)'));
       const previewOut = el('pre', { class: 'anr-ocr-text' }, '');
@@ -436,6 +461,19 @@ export async function renderUnknown(file, resultsEl, opts) {
 
   resultsEl.appendChild(card);
 
+  // Network indicators (URLs / IPs / domains / emails) found in the text, with
+  // OSINT lookup links. Only when we actually read text out of the file.
+  if (osintText) {
+    const oc = buildOsintCard(osintText, { limit: 100 });
+    if (oc) resultsEl.appendChild(oc);
+  }
+
+  // Byte-entropy heatmap - most telling for binary blobs (packed/encrypted regions,
+  // appended archives). Skipped for files shown as text/JSON/XML, where it adds little.
+  if (!showPlainText && !showJson && !showXml) {
+    try { await appendEntropyCard(file, resultsEl); } catch (_) {}
+  }
+
   // Carve any embedded images out of the blob (recovered disk fragments, joined
   // dumps, mis-typed files often hide whole JPEGs/PNGs inside). Non-blocking.
   try { await appendEmbeddedImagesCard(file, resultsEl); } catch (_) {}
@@ -445,6 +483,66 @@ export async function renderUnknown(file, resultsEl, opts) {
   // "format" to support, they're just shown as text (and handleFile already offers
   // a re-open when the bytes match a known pattern).
   if (!extensionless && window._anrSuggest) window._anrSuggest.show(fileExt(file.name));
+}
+
+// Byte-entropy heatmap. Slices the file into chunks, plots each chunk's Shannon
+// entropy as a coloured column (blue = low/repetitive, red = high/random), and
+// reports the mean/range with a plain-language assessment. Reads up to a cap so a
+// huge blob can't blow the heap.
+const ENTROPY_SCAN_CAP = 64 * 1024 * 1024;
+async function appendEntropyCard(file, resultsEl) {
+  if (file.size < 256) return;   // too small for a meaningful profile
+  let bytes;
+  try { bytes = new Uint8Array(await file.slice(0, Math.min(file.size, ENTROPY_SCAN_CAP)).arrayBuffer()); }
+  catch (_) { return; }
+  const buckets = Math.max(64, Math.min(512, Math.floor(bytes.length / 256)));
+  const prof = entropyProfile(bytes, buckets);
+  if (!prof.length) return;
+
+  let sum = 0, min = 8, max = 0;
+  for (const p of prof) { sum += p.entropy; if (p.entropy < min) min = p.entropy; if (p.entropy > max) max = p.entropy; }
+  const mean = sum / prof.length;
+
+  let assessment;
+  if (max > 7.5 && (max - min) > 1.5) assessment = 'Contains a high-entropy region - likely compressed, encrypted or packed data embedded in lower-entropy content.';
+  else if (mean > 7.5) assessment = 'Uniformly high - the whole file looks compressed or encrypted.';
+  else if (mean < 4.5) assessment = 'Low - consistent with text or simple structured data.';
+  else assessment = 'Mixed - typical of a structured binary (headers plus packed payloads).';
+
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Byte entropy'));
+  card.appendChild(el('p', { class: 'anr-hint' },
+    'Shannon entropy per chunk (0 = repetitive, 8 = random). High flat regions suggest compressed or encrypted data; sharp steps mark a boundary between unlike sections'
+    + (file.size > ENTROPY_SCAN_CAP ? ' (first ' + fmtBytes(ENTROPY_SCAN_CAP) + ' scanned)' : '') + '.'));
+
+  const cv = el('canvas', { class: 'anr-entropy-map' });
+  cv.width = prof.length; cv.height = 1;   // 1px-tall strip, CSS-stretched; columns stay crisp
+  const ctx = cv.getContext('2d');
+  for (let i = 0; i < prof.length; i++) {
+    const t = Math.max(0, Math.min(1, prof[i].entropy / 8));
+    ctx.fillStyle = 'hsl(' + Math.round(220 - 220 * t) + ', 75%, 50%)';   // blue (low) -> red (high)
+    ctx.fillRect(i, 0, 1, 1);
+  }
+  card.appendChild(cv);
+
+  // Hover readout: which offset + entropy sits under the cursor.
+  const hoverEl = el('div', { class: 'anr-hint', style: 'margin:6px 0 2px;min-height:1.2em;font-variant-numeric:tabular-nums;' }, 'Hover the strip for per-chunk detail.');
+  card.appendChild(hoverEl);
+  const scanned = Math.min(file.size, ENTROPY_SCAN_CAP);
+  cv.addEventListener('mousemove', (e) => {
+    const r = cv.getBoundingClientRect();
+    const idx = Math.max(0, Math.min(prof.length - 1, Math.floor((e.clientX - r.left) / r.width * prof.length)));
+    const off = Math.floor(idx * scanned / prof.length);
+    hoverEl.textContent = 'Offset 0x' + off.toString(16).toUpperCase() + ' (' + fmtBytes(off) + ')  ·  entropy ' + prof[idx].entropy.toFixed(2) + ' / 8';
+  });
+  cv.addEventListener('mouseleave', () => { hoverEl.textContent = 'Hover the strip for per-chunk detail.'; });
+
+  const t = el('table', { class: 'anr-readout' });
+  t.appendChild(row('Mean entropy', mean.toFixed(2) + ' / 8 bits'));
+  t.appendChild(row('Range', min.toFixed(2) + ' - ' + max.toFixed(2)));
+  t.appendChild(row('Assessment', assessment));
+  card.appendChild(t);
+  resultsEl.appendChild(card);
 }
 
 // Scan an unrecognised file for embedded image signatures and, if any are found,

@@ -7,6 +7,7 @@
    All three feed the shared WebGL viewer from stl.js. */
 
 import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard } from '../core/util.js';
+import { inflate, ascii, latin1 } from '../core/binutil.js';
 import {
   buildViewerCard, startViewer, makeResult,
   buildGeoFromIndexed, geoStatsCard, renderPartsViewer,
@@ -26,6 +27,7 @@ export async function renderModel3d(file, resultsEl) {
   if (ext === 'mtl') return renderMtl(file, resultsEl);
   if (ext === 'obj' || ext === 'ply' || ext === 'off') return renderMeshFile(file, resultsEl, ext);
   if (ext === 'gltf' || ext === 'glb') return renderGltf(file, resultsEl, ext);
+  if (ext === 'fbx') return renderFbx(file, resultsEl);
   return renderStepIges(file, resultsEl, ext);   // step / stp / iges / igs / brep
 }
 
@@ -1283,4 +1285,202 @@ async function renderStepIges(file, resultsEl, ext) {
   startViewer(viewer);
   resultsEl.appendChild(geoStatsCard(geo, file, fmtLabel + ' (tessellated)', 'mm'));
   resultsEl.appendChild(metaCard);
+}
+
+/* ============================ FBX (Autodesk) ================================
+   FBX stores mesh geometry in Geometry nodes as a flat Vertices double array and
+   a PolygonVertexIndex int array (the last index of each polygon is bitwise-NOT,
+   i.e. negative, to mark the polygon end). Two on-disk forms:
+     - Binary  : "Kaydara FBX Binary" magic, a node-record tree; array properties
+                 may be zlib-deflated (Encoding == 1).
+     - ASCII   : Vertices: *N { a: ... } / PolygonVertexIndex: *M { a: ... }.
+   We pull every geometry's vertices + polygon indices, fan-triangulate, and feed
+   the shared mesh viewer. Materials, skinning and animation are not interpreted -
+   this is a geometry viewer, like the OBJ/PLY path. ========================== */
+
+const FBX_BIN_MAGIC = 'Kaydara FBX Binary';
+
+// Decode one FBX binary array property descriptor (inflating if zlib-encoded).
+async function decodeFbxArray(d) {
+  if (!d || !d.__fbxArray) return null;
+  let bytes = d.data;
+  if (d.encoding === 1) { bytes = await inflate(d.data, 'deflate'); if (!bytes) return null; }
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const out = new Array(d.arrayLength);
+  let o = 0;
+  for (let i = 0; i < d.arrayLength; i++) {
+    if (d.type === 'd') { out[i] = dv.getFloat64(o, true); o += 8; }
+    else if (d.type === 'f') { out[i] = dv.getFloat32(o, true); o += 4; }
+    else if (d.type === 'i') { out[i] = dv.getInt32(o, true); o += 4; }
+    else if (d.type === 'l') { out[i] = Number(dv.getBigInt64(o, true)); o += 8; }
+    else { out[i] = bytes[o]; o += 1; }   // 'b'
+  }
+  return out;
+}
+
+// Walk the binary node tree and collect each Geometry node's Vertices +
+// PolygonVertexIndex array descriptors (decoded lazily by the caller).
+function fbxBinaryGeoms(u8) {
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  const version = dv.getUint32(23, true);
+  const big = version >= 7500;
+  const word = (pos) => big ? Number(dv.getBigUint64(pos, true)) : dv.getUint32(pos, true);
+  const wsz = big ? 8 : 4;
+  const nullRec = big ? 25 : 13;
+
+  const readProp = (pos) => {
+    const type = String.fromCharCode(u8[pos]); pos += 1;
+    switch (type) {
+      case 'Y': return { value: dv.getInt16(pos, true), next: pos + 2 };
+      case 'C': return { value: u8[pos], next: pos + 1 };
+      case 'I': return { value: dv.getInt32(pos, true), next: pos + 4 };
+      case 'F': return { value: dv.getFloat32(pos, true), next: pos + 4 };
+      case 'D': return { value: dv.getFloat64(pos, true), next: pos + 8 };
+      case 'L': return { value: Number(dv.getBigInt64(pos, true)), next: pos + 8 };
+      case 'S': case 'R': { const len = dv.getUint32(pos, true); pos += 4; const v = type === 'S' ? ascii(u8, pos, len) : null; return { value: v, next: pos + len }; }
+      case 'f': case 'd': case 'l': case 'i': case 'b': {
+        const arrayLength = dv.getUint32(pos, true); const encoding = dv.getUint32(pos + 4, true); const compLen = dv.getUint32(pos + 8, true);
+        pos += 12;
+        return { value: { __fbxArray: true, type, arrayLength, encoding, data: u8.slice(pos, pos + compLen) }, next: pos + compLen };
+      }
+      default: return { value: null, next: pos, bail: true };
+    }
+  };
+
+  const readNode = (pos) => {
+    const endOffset = word(pos);
+    if (endOffset === 0) return null;   // null record terminates a sibling list
+    let p = pos + wsz;
+    const numProps = word(p); p += wsz;
+    p += wsz;                            // propertyListLen (unused)
+    const nameLen = u8[p]; p += 1;
+    const name = ascii(u8, p, nameLen); p += nameLen;
+    const props = [];
+    for (let i = 0; i < numProps; i++) { const r = readProp(p); props.push(r.value); p = r.next; if (r.bail) break; }
+    const children = [];
+    while (p < endOffset && p + nullRec <= u8.length) {
+      if (word(p) === 0) { p += nullRec; break; }
+      const child = readNode(p);
+      if (!child) break;
+      children.push(child.node); p = child.next;
+    }
+    return { node: { name, props, children }, next: endOffset };
+  };
+
+  const geoms = [];
+  const collect = (node) => {
+    if (node.name === 'Geometry') {
+      let v = null, idx = null;
+      for (const c of node.children) {
+        if (c.name === 'Vertices' && c.props[0] && c.props[0].__fbxArray) v = c.props[0];
+        else if (c.name === 'PolygonVertexIndex' && c.props[0] && c.props[0].__fbxArray) idx = c.props[0];
+      }
+      if (v && idx) geoms.push({ v, idx });
+    }
+    for (const c of node.children) collect(c);
+  };
+
+  let pos = 27;   // 23-byte magic block + 4-byte version
+  while (pos < u8.length - nullRec) {
+    if (word(pos) === 0) break;
+    const r = readNode(pos);
+    if (!r) break;
+    collect(r.node);
+    pos = r.next;
+  }
+  return { geoms, version };
+}
+
+// ASCII FBX: pull the numeric arrays straight out of the text blocks.
+function fbxAsciiGeoms(text) {
+  const grab = (re) => { const out = []; let m; while ((m = re.exec(text))) out.push(m[1]); return out; };
+  const vs = grab(/Vertices:\s*\*\d+\s*\{\s*a:\s*([\s\S]*?)\}/g);
+  const is = grab(/PolygonVertexIndex:\s*\*\d+\s*\{\s*a:\s*([\s\S]*?)\}/g);
+  const geoms = [];
+  for (let i = 0; i < Math.min(vs.length, is.length); i++) {
+    geoms.push({
+      vertices: vs[i].split(',').map(parseFloat).filter((x) => !isNaN(x)),
+      indices: is[i].split(',').map((s) => parseInt(s, 10)).filter((x) => !isNaN(x)),
+    });
+  }
+  return geoms;
+}
+
+// Parse an FBX buffer into merged { verts, tris } plus a little metadata.
+async function parseFbx(buf) {
+  const u8 = new Uint8Array(buf);
+  let isBinary = u8.length > FBX_BIN_MAGIC.length;
+  for (let i = 0; i < FBX_BIN_MAGIC.length && isBinary; i++) if (u8[i] !== FBX_BIN_MAGIC.charCodeAt(i)) isBinary = false;
+
+  let rawGeoms = [], version = null;
+  if (isBinary) {
+    const r = fbxBinaryGeoms(u8); version = r.version;
+    for (const g of r.geoms) {
+      const vertices = await decodeFbxArray(g.v);
+      const indices = await decodeFbxArray(g.idx);
+      if (vertices && indices) rawGeoms.push({ vertices, indices });
+    }
+  } else {
+    const text = latin1(u8);
+    rawGeoms = fbxAsciiGeoms(text);
+    const vm = text.match(/FBXVersion:\s*(\d+)/); if (vm) version = +vm[1];
+  }
+
+  const verts = [], tris = [];
+  for (const g of rawGeoms) {
+    const base = verts.length / 3;
+    for (const x of g.vertices) verts.push(x);
+    let poly = [];
+    for (let k = 0; k < g.indices.length; k++) {
+      let idx = g.indices[k]; let end = false;
+      if (idx < 0) { idx = ~idx; end = true; }
+      poly.push(base + idx);
+      if (end) { for (let f = 1; f + 1 < poly.length; f++) tris.push(poly[0], poly[f], poly[f + 1]); poly = []; }
+    }
+  }
+  return { verts, tris, version, geomCount: rawGeoms.length };
+}
+
+async function renderFbx(file, resultsEl) {
+  resultsEl.hidden = false;
+  resultsEl.innerHTML = '';
+  resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));
+
+  let mesh;
+  try { mesh = await parseFbx(await file.arrayBuffer()); }
+  catch (e) { resultsEl.innerHTML = ''; resultsEl.appendChild(errorCard('Could not read FBX: ' + (e && e.message))); return; }
+  resultsEl.innerHTML = '';
+
+  if (!mesh.tris.length) {
+    const c = el('div', { class: 'anr-card' });
+    c.appendChild(el('h3', {}, 'FBX model'));
+    const t = el('table', { class: 'anr-readout' });
+    t.appendChild(row('File', file.name));
+    t.appendChild(row('Size', fmtBytes(file.size)));
+    if (mesh.version) t.appendChild(row('FBX version', String(mesh.version)));
+    t.appendChild(sha256Row(file));
+    c.appendChild(t);
+    c.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px;' },
+      'No displayable mesh geometry was found - this FBX may contain only cameras, lights, skeletons or animation, or use an array encoding this viewer does not support.'));
+    resultsEl.appendChild(c);
+    return;
+  }
+
+  const geo = buildGeoFromIndexed(mesh.verts, mesh.tris, 'FBX');
+  if (!geo || !geo.count) { resultsEl.appendChild(errorCard('No triangles found in this FBX.')); return; }
+
+  const bodies = geo.count <= BODY_SPLIT_CAP ? splitBodiesIndexed(mesh.verts, mesh.tris, geoSpan(geo) * 1e-6) : [];
+  if (bodies.length > 1) {
+    const parts = bodyParts(geo, bodies, (g) => buildGeoFromIndexed(mesh.verts, subTris(mesh.tris, g), 'FBX'));
+    renderPartsViewer(file, resultsEl, {
+      parts, format: 'FBX', unitLabel: 'units', partsTitle: 'Bodies',
+      partsHint: `This model contains ${bodies.length} separate bodies. Pick one to view on its own, or see them all together.`,
+    });
+    return;
+  }
+
+  const { viewCard, viewer } = buildViewerCard(geo, '3D model');
+  resultsEl.appendChild(viewCard);
+  startViewer(viewer);
+  resultsEl.appendChild(geoStatsCard(geo, file, 'FBX', 'units'));
 }

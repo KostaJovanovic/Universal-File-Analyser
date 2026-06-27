@@ -25,8 +25,11 @@ function exportRoots() {
   const byId = (id) => document.getElementById(id);
   return [
     { title: 'File',  main: byId('unknownResults'), extras: [] },
+    // leadExtras render BEFORE the main results - the photo preview leads the
+    // section so the image itself sits at the top of the export, not the bottom.
     { title: 'Photo', main: byId('photoResults'),
-      extras: [byId('photoPreview'), byId('photoHistSlot'), byId('photoOcrSlot')] },
+      leadExtras: [byId('photoPreview')],
+      extras: [byId('photoHistSlot'), byId('photoOcrSlot')] },
     { title: 'Sound', main: byId('audioResults'), extras: [] },
     { title: 'Video', main: byId('videoResults'), extras: [byId('videoPreview')] },
   ];
@@ -62,6 +65,25 @@ function collectBlocks(root, fallbackHeading) {
     for (const child of Array.from(node.children)) {
       const tag = child.tagName;
       if (/^H[1-6]$/.test(tag)) { ctx.heading = cellText(child) || ctx.heading; continue; }
+      // An .anr-export-gallery (e.g. the LSB bit-plane row) collapses into a single
+      // gallery block - its canvases/imgs become smaller side-by-side figures.
+      if (child.classList && child.classList.contains('anr-export-gallery')) {
+        const heading = child.getAttribute('data-export-heading') || ctx.heading;
+        const items = [];
+        child.querySelectorAll('canvas, img').forEach((node2) => {
+          const label = node2.getAttribute('data-export-label') || '';
+          if (node2.tagName === 'CANVAS') {
+            if (!node2.width || !node2.height) return;
+            let url = null;
+            try { url = node2.toDataURL('image/png'); } catch (_) { url = null; }
+            if (url) items.push({ dataUrl: url, imgEl: null, label });
+          } else if (node2.getClientRects().length) {
+            items.push({ dataUrl: null, imgEl: node2, label });
+          }
+        });
+        if (items.length) blocks.push({ type: 'gallery', heading, items });
+        continue;
+      }
       if (tag === 'TABLE') {
         if (child.matches('.anr-readout')) {
           const rows = [];
@@ -118,7 +140,11 @@ function collectSections() {
   const out = [];
   for (const root of exportRoots()) {
     if (!isVisible(root.main)) continue;
-    let blocks = collectBlocks(root.main, root.title);
+    let blocks = [];
+    for (const lead of (root.leadExtras || [])) {
+      if (isVisible(lead)) blocks = blocks.concat(collectBlocks(lead, root.title));
+    }
+    blocks = blocks.concat(collectBlocks(root.main, root.title));
     for (const extra of root.extras) {
       if (isVisible(extra)) blocks = blocks.concat(collectBlocks(extra, root.title));
     }
@@ -184,6 +210,29 @@ function nowStamp() {
   try { return new Date().toLocaleString(); } catch (_) { return ''; }
 }
 
+// Tamper-evident provenance for the report: the analysed file's SHA-256, size, a
+// UTC export timestamp and the Analyser version. A reader can recompute the hash
+// of their copy and compare it to prove the file is the one this report describes.
+async function verificationData() {
+  const file = window._anrLastFile;
+  const a = window._anrLastAnalysis;
+  let sha = null;
+  if (file) { try { sha = await sha256Hex(file); } catch (_) { sha = null; } }
+  let exportedUtc = '';
+  try { exportedUtc = new Date().toISOString(); } catch (_) { exportedUtc = ''; }
+  const ver = (typeof document !== 'undefined' && document.getElementById('versionNum')
+    ? (document.getElementById('versionNum').textContent || '').trim() : '');
+  return {
+    name: (a && a.name) || (file && file.name) || 'unknown',
+    size: file ? file.size : null,
+    sha256: sha,
+    exportedUtc,
+    version: ver ? 'v' + ver : 'unknown',
+  };
+}
+
+const VERIFY_INSTRUCTIONS = 'To confirm this report describes the original file unchanged, recompute the file\'s SHA-256 and compare it to the value above. macOS / Linux: "shasum -a 256 <file>". Windows: "certutil -hashfile <file> SHA256". A matching hash proves the file has not been altered since this report was generated.';
+
 function download(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = el('a', { href: url, download: filename });
@@ -215,6 +264,8 @@ function buildCsv(sections) {
         lines.push([sec.title, b.heading, '(text)', b.text].map(csvField).join(','));
       } else if (b.type === 'image') {
         lines.push([sec.title, b.heading, '(image)', 'Not exportable to CSV - use the Complete (HTML) export to include it.'].map(csvField).join(','));
+      } else if (b.type === 'gallery') {
+        lines.push([sec.title, b.heading, '(images)', b.items.length + ' image(s) - use the Complete (HTML) export to include them.'].map(csvField).join(','));
       }
     }
   }
@@ -227,12 +278,20 @@ function buildCsv(sections) {
 // ordered list of typed blocks. kv readouts become a `fields` map; other tables
 // keep their `rows`; <pre> payloads become `text` (already capped); visuals are
 // noted by label only (the base64 lives in the Complete HTML export instead).
-function buildJson(sections) {
+async function buildJson(sections) {
   const a = window._anrLastAnalysis;
+  const vd = await verificationData();
   const doc = {
     tool: 'Analyser',
     url: 'https://lab.valjdakosta.com/',
     exported: nowStamp(),
+    verification: {
+      sha256: vd.sha256,
+      size: vd.size,
+      exportedUtc: vd.exportedUtc,
+      analyserVersion: vd.version,
+      instructions: VERIFY_INSTRUCTIONS,
+    },
     file: {
       name: (a && a.name) || null,
       extension: (a && a.ext) ? ('.' + a.ext) : null,
@@ -253,6 +312,7 @@ function buildJson(sections) {
         }
         if (b.type === 'table') return { heading: b.heading || null, type: 'table', rows: b.rows };
         if (b.type === 'text') return { heading: b.heading || null, type: 'text', text: b.text };
+        if (b.type === 'gallery') return { heading: b.heading || null, type: 'gallery', images: b.items.map((it) => it.label || 'image'), note: 'binary images - included in the Complete (HTML) export' };
         return { heading: b.heading || null, type: 'image', label: b.heading || 'image', note: 'binary image - included in the Complete (HTML) export' };
       }),
     })),
@@ -303,21 +363,59 @@ const REPORT_CSS = [
   'section{margin:0 0 40px}',
   'h2{font-size:12px;text-transform:uppercase;letter-spacing:.15em;color:var(--accent);border-bottom:1px solid var(--rule);padding-bottom:8px;margin:0 0 18px}',
   'h3{font-size:15px;margin:24px 0 10px}',
-  'table{border-collapse:collapse;width:100%;margin:0 0 8px;font-size:13.5px}',
+  'table{border-collapse:collapse;width:100%;margin:0;font-size:13.5px}',
+  // Wide data tables scroll inside their own box instead of overflowing the page.
+  '.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 0 8px}',
   'th,td{text-align:left;vertical-align:top;padding:6px 12px 6px 0;border-bottom:1px solid var(--rule)}',
   'th{width:34%;font-weight:600;color:#333;white-space:nowrap}',
   'td{color:#111;word-break:break-word}',
   'table.generic th,table.generic td{width:auto;white-space:normal}',
   'pre{background:#f4f4f4;border:1px solid var(--rule);padding:12px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word;margin:0 0 8px}',
   'img{max-width:100%;height:auto;border:1px solid var(--rule);background:#0a0a0a;display:block;margin:0 0 8px}',
+  // Gallery: a row of small, side-by-side figures (e.g. the LSB R/G/B bit planes).
+  '.gallery{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 8px}',
+  '.gallery .gfig{flex:1;min-width:120px;max-width:240px;margin:0;text-align:center}',
+  '.gallery figcaption{font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}',
+  '.gallery img{margin:0}',
   'footer{border-top:1px solid var(--rule);margin-top:48px;padding-top:16px;color:var(--muted);font-size:12px}',
   'a{color:var(--accent)}',
+  'code{font:12px/1.4 ui-monospace,Consolas,monospace;word-break:break-all}',
+  '.verify{border:1px solid var(--rule);background:#fafafa;padding:16px 18px;border-radius:6px}',
+  '.verify h2{margin-top:0}',
+  '.verify-note{margin:10px 0 0;color:var(--muted);font-size:12px}',
+  // Phones: tighten the margins, and reflow key-value tables (everything except the
+  // multi-column data tables) into stacked label-over-value rows so nothing has to
+  // squeeze a two-column grid into a narrow screen.
+  '@media (max-width:600px){',
+  '.wrap{padding:28px 16px 56px}',
+  'h1{font-size:26px}',
+  'header .file{font-size:15px}',
+  'table:not(.generic),table:not(.generic) tbody,table:not(.generic) tr,table:not(.generic) th,table:not(.generic) td{display:block}',
+  'table:not(.generic) tr{padding:0 0 4px}',
+  'table:not(.generic) th{width:auto;white-space:normal;border:0;padding:8px 0 2px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em}',
+  'table:not(.generic) td{padding:0 0 10px;border-bottom:1px solid var(--rule)}',
+  '}',
+  '@media print{.verify{background:#fff}body{font-size:12px}.wrap{padding:0}}',
 ].join('');
 
 async function buildHtml(sections) {
   const a = window._anrLastAnalysis;
   const fileName = (a && a.name) ? a.name : 'this file';
   const parts = [];
+
+  // Tamper-evident verification section, led first so it anchors the report.
+  const vd = await verificationData();
+  const vrows = [
+    ['File', esc(vd.name)],
+    vd.size != null ? ['Size', esc(vd.size.toLocaleString() + ' bytes')] : null,
+    vd.sha256 ? ['SHA-256', '<code>' + esc(vd.sha256) + '</code>'] : ['SHA-256', 'unavailable'],
+    ['Exported (UTC)', esc(vd.exportedUtc)],
+    ['Analyser version', esc(vd.version)],
+  ].filter(Boolean);
+  parts.push('<section class="verify"><h2>Verification</h2><div class="tablewrap"><table>'
+    + vrows.map(([l, v]) => '<tr><th>' + esc(l) + '</th><td>' + v + '</td></tr>').join('')
+    + '</table></div><p class="verify-note">' + esc(VERIFY_INSTRUCTIONS) + '</p></section>');
+
   for (const sec of sections) {
     parts.push('<section><h2>' + esc(sec.title) + '</h2>');
     let lastHeading = null;
@@ -327,17 +425,28 @@ async function buildHtml(sections) {
         lastHeading = b.heading;
       }
       if (b.type === 'kv') {
-        parts.push('<table>' + b.rows.map(([l, v]) =>
-          '<tr><th>' + esc(l) + '</th><td>' + esc(v) + '</td></tr>').join('') + '</table>');
+        parts.push('<div class="tablewrap"><table>' + b.rows.map(([l, v]) =>
+          '<tr><th>' + esc(l) + '</th><td>' + esc(v) + '</td></tr>').join('') + '</table></div>');
       } else if (b.type === 'table') {
-        parts.push('<table class="generic">' + b.rows.map((row) =>
-          '<tr>' + row.map((c) => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>');
+        parts.push('<div class="tablewrap"><table class="generic">' + b.rows.map((row) =>
+          '<tr>' + row.map((c) => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table></div>');
       } else if (b.type === 'text') {
         parts.push('<pre>' + esc(b.text) + '</pre>');
       } else if (b.type === 'image') {
         let url = b.dataUrl;
         if (!url && b.imgEl) url = await imgToDataUrl(b.imgEl);
         if (url) parts.push('<img alt="' + esc(b.heading || 'image') + '" src="' + url + '">');
+      } else if (b.type === 'gallery') {
+        const figs = [];
+        for (const it of b.items) {
+          let url = it.dataUrl;
+          if (!url && it.imgEl) url = await imgToDataUrl(it.imgEl);
+          if (!url) continue;
+          figs.push('<figure class="gfig">'
+            + (it.label ? '<figcaption>' + esc(it.label) + '</figcaption>' : '')
+            + '<img alt="' + esc(it.label || b.heading || 'image') + '" src="' + url + '"></figure>');
+        }
+        if (figs.length) parts.push('<div class="gallery">' + figs.join('') + '</div>');
       }
     }
     parts.push('</section>');
@@ -403,6 +512,10 @@ function showChooser() {
       el('strong', {}, 'Machine-readable'),
       el('span', {}, 'A structured JSON file - every field, table and text block, typed and grouped by section. Ideal for scripts and tooling.'),
     ]);
+    const pdfBtn = el('button', { type: 'button', class: 'anr-export-opt' }, [
+      el('strong', {}, 'PDF (print)'),
+      el('span', {}, 'Opens the complete report in a new tab and launches your browser\'s print dialog - choose "Save as PDF". Includes the verification block.'),
+    ]);
     const csvBtn = el('button', { type: 'button', class: 'anr-export-opt' }, [
       el('strong', {}, 'Plain text only'),
       el('span', {}, 'A CSV of all metadata and text. Long text is capped; images are listed but not included.'),
@@ -418,9 +531,24 @@ function showChooser() {
       } catch (_) {}
       close();
     });
-    jsonBtn.addEventListener('click', () => {
+    // Open the print window synchronously (preserve the click gesture so it isn't
+    // pop-up-blocked), then stream the built report into it and print.
+    pdfBtn.addEventListener('click', async () => {
+      if (pdfBtn._busy) return;
+      pdfBtn._busy = true;
+      const w = window.open('', '_blank');
       try {
-        const json = buildJson(sections);
+        const html = await buildHtml(sections);
+        if (w) {
+          w.document.open(); w.document.write(html); w.document.close(); w.focus();
+          setTimeout(() => { try { w.print(); } catch (_) {} }, 400);
+        }
+      } catch (_) { if (w) try { w.close(); } catch (_) {} }
+      close();
+    });
+    jsonBtn.addEventListener('click', async () => {
+      try {
+        const json = await buildJson(sections);
         download(new Blob([json], { type: 'application/json;charset=utf-8' }), baseName() + '-analysis.json');
       } catch (_) {}
       close();
@@ -434,7 +562,7 @@ function showChooser() {
     });
 
     slot.innerHTML = '';
-    slot.appendChild(el('div', { class: 'anr-export-choices' }, [htmlBtn, jsonBtn, csvBtn]));
+    slot.appendChild(el('div', { class: 'anr-export-choices' }, [htmlBtn, pdfBtn, jsonBtn, csvBtn]));
   }
 
   // Prepare the page (open closed sections, generate the video contact sheet),

@@ -421,6 +421,11 @@ body:not(:has(.site-nav)) .site-header::after { margin-top: clamp(28px, 4vw, 48p
 .header-btn:hover { background: var(--fg); color: var(--bg); }
 button.header-btn { cursor: pointer; line-height: 1; }
 
+/* The Samples nav chip is accented red (not the default ink/grey) to draw the
+   eye to the live demos; hover fills red to match the site's accent language. */
+.header-btn[href="/samples"] { color: var(--accent); border-color: var(--accent); }
+.header-btn[href="/samples"]:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
 /* The "I'm feeling lucky" cell in the per-format .site-nav bar is a <button>;
    strip the native chrome so it sits in the grid exactly like the <a> nav-links
    (font, colour and dividers still come from .nav-link / .format-nav below). */
@@ -4964,6 +4969,90 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   line-height: 1.55;
 }
 
+/* Network-indicator (OSINT) list: each found URL/IP/domain on its own row with
+   its monospace value and small lookup links trailing it. */
+.anr-osint-list { margin: 8px 0 4px; }
+.anr-osint-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.anr-osint-val {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  word-break: break-all;
+  flex: 1 1 60%;
+  min-width: 0;
+}
+.anr-osint-lk {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border: var(--bd-hairline);
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.anr-osint-lk:hover { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
+/* Lottie player: a checkerboard stage (animations are usually transparent) and a
+   timeline scrubber that grows to fill the control row. */
+.anr-lottie-stage {
+  max-width: 480px;
+  margin: 8px auto 0;
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: repeating-conic-gradient(#d8d8d8 0% 25%, #fff 0% 50%) 50% / 20px 20px;
+  border: var(--bd-hairline);
+}
+.anr-lottie-stage svg { display: block; max-width: 100%; height: auto; }
+.anr-lottie-range { flex: 1 1 auto; min-width: 80px; }
+
+/* ASS/SSA styled subtitle preview: a dark "stage" so the per-style colours (often
+   white/yellow on transparent) read the way they would over video. */
+.anr-ass-stage {
+  background: #14161a;
+  border: var(--bd-hairline);
+  padding: 8px 10px;
+  border-radius: 4px;
+}
+.anr-ass-stage .anr-lrc-time { color: #8a8f98; }
+.anr-ass-line { white-space: pre-wrap; }
+
+/* SQLite read-only query box. */
+.anr-sql-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 8px;
+  background: var(--surface);
+  border: var(--bd-hairline);
+  color: var(--fg);
+  resize: vertical;
+}
+.anr-sql-input:focus { outline: none; border-color: var(--accent); }
+.anr-sql-result { margin-top: 6px; }
+
+/* Byte-entropy heatmap: a 1px-tall canvas stretched full-width. image-rendering
+   keeps the per-chunk colour columns crisp instead of blurred when scaled up. */
+.anr-entropy-map {
+  display: block;
+  width: 100%;
+  height: 44px;
+  margin: 10px 0 0;
+  border: var(--bd-hairline);
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+
 /* ---------- NAV FLASH (E6) ---------- */
 @keyframes anr-nav-flash {
   0%   { background: var(--accent); color: var(--accent-fg); }
@@ -5146,11 +5235,22 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 /* Export chooser (see export-data.js showChooser): two stacked, left-aligned
    options - a strong title over a small grey description - above the Cancel
    action. Same hairline-box-inverts-on-hover idiom as the rest of the modal. */
+/* The options sit two-by-two on desktop, so the card is widened past the modal's
+   default 360px to give each column the same roomy width (and button aspect ratio)
+   the single-column stack had. The card is NOT height-capped and its body does not
+   scroll - it sizes to its content - because the 2x2 grid keeps it short enough to
+   fit. On a narrow viewport the card returns to the default width and the options
+   stack into four. */
+.anr-export-card { max-width: 560px; }
 .anr-export-choices {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin: 0 0 18px;
+}
+@media (max-width: 600px) {
+  .anr-export-card { max-width: 360px; }
+  .anr-export-choices { grid-template-columns: 1fr; }
 }
 .anr-export-opt {
   display: flex;
@@ -5790,6 +5890,12 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-psd-layer { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 4px; }
 .anr-psd-layer:hover { background: var(--hover, rgba(127,127,127,0.08)); }
 .anr-psd-layer.is-hidden { opacity: 0.45; }
+/* Hidden/invisible layer kept visible in the tree (greyed), plus the forensic
+   highlight for layers carrying content the flattened image drops. */
+.anr-psd-layer.anr-psd-off { opacity: 0.5; }
+.anr-psd-layer.anr-psd-flagged { background: rgba(var(--accent-rgb), 0.08); box-shadow: inset 2px 0 0 var(--accent); }
+.anr-psd-meta { flex: 1 1 auto; }
+.anr-psd-export { flex: 0 0 auto; margin-left: auto; }
 .anr-psd-thumb { flex: 0 0 30px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--rule); background: repeating-conic-gradient(#bbb 0% 25%, #fff 0% 50%) 50% / 10px 10px; color: var(--muted); font-size: 12px; }
 .anr-psd-thumb canvas { display: block; max-width: 28px; max-height: 28px; }
 .anr-psd-meta { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
@@ -6492,6 +6598,17 @@ li.anr-md-task input { margin-right: 0.5em; vertical-align: middle; }
 .stats-trend-tip-swatch--visitors { background: var(--accent); }
 .stats-trend-tip-swatch--files { background: var(--fg); opacity: 0.5; }
 .stats-trends-note { font-size: var(--t-small); color: var(--muted); margin: 14px 0 0; }
+
+/* On phones the chart switches to a taller, near-1:1-width viewBox (trendLayout()
+   in app.js); trim the card padding so the plot keeps its width, and give the
+   mode/legend controls fuller tap targets. */
+@media (max-width: 700px) {
+  .stats-trends-card { padding: 18px 14px; }
+  .stats-trends-head { margin-bottom: 10px; }
+  .stats-trends-mode { padding: 8px 16px; }
+  .stats-trends-legend { gap: 22px; margin-bottom: 16px; }
+  .stats-trends-key { padding: 6px 0; }
+}
 
 .stats-status {
   font-size: var(--t-small);

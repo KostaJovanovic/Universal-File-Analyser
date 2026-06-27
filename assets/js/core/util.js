@@ -330,6 +330,47 @@ export function fmtBytes(n) {
   return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
 }
 
+// Detect impossible or internally-inconsistent timestamps across a file's dates.
+// Pass any of { captured, created, modified, filesystem } as Date objects (others
+// omitted/null). Returns an array of plain-language anomaly strings (empty = none).
+// A generous skew margin keeps timezone-naive metadata and copy-resets from
+// false-positiving - only clearly wrong relationships are reported.
+export function timeAnomalies(opts = {}) {
+  const now = opts.now || new Date();
+  const DAY = 86400000;
+  const SKEW = 2 * DAY;   // tolerate clock/timezone slop on "in the future" checks
+  const ok = (d) => d instanceof Date && !isNaN(d) && d.getTime() > 0;
+  const stamp = (d) => d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  const out = [];
+  const labels = { captured: 'Capture date', created: 'Creation date', modified: 'Modification date' };
+  for (const k of ['captured', 'created', 'modified']) {
+    if (ok(opts[k]) && opts[k].getTime() - now.getTime() > SKEW) {
+      out.push(labels[k] + ' is in the future (' + stamp(opts[k]) + ') - the clock was wrong or the date was edited.');
+    }
+  }
+  const origin = ok(opts.captured) ? opts.captured : (ok(opts.created) ? opts.created : null);
+  const originWord = ok(opts.captured) ? 'capture' : 'creation';
+  if (ok(origin) && ok(opts.modified) && origin.getTime() - opts.modified.getTime() > DAY) {
+    out.push('Modification date is earlier than the ' + originWord + ' date - inconsistent edit history.');
+  }
+  if (ok(origin) && ok(opts.filesystem) && origin.getTime() - opts.filesystem.getTime() > DAY + 3600000) {
+    out.push('The file was last saved before its ' + originWord + ' date - it predates the content it carries (possible backdated metadata).');
+  }
+  return out;
+}
+
+// Build a forensic card from timeAnomalies() output, or null when there's nothing
+// to flag. Styled like the other alert cards (.anr-sig-flag).
+export function timeAnomalyCard(anomalies) {
+  if (!anomalies || !anomalies.length) return null;
+  const card = el('div', { class: 'anr-card anr-sig-flag', role: 'alert' });
+  card.appendChild(el('h3', {}, 'Timestamp anomaly'));
+  const ul = el('ul', { style: 'margin:6px 0 0;padding-left:20px;' });
+  for (const a of anomalies) ul.appendChild(el('li', { style: 'margin:3px 0;' }, a));
+  card.appendChild(ul);
+  return card;
+}
+
 // A scrollable, wrapping <pre> for raw text payloads (hex dumps, headers, etc.).
 // Shared by the lazy parser chunks so every readout block looks the same.
 export function preBlock(text, cls) {

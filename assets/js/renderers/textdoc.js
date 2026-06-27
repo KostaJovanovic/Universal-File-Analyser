@@ -15,6 +15,7 @@
    ============================================================================ */
 
 import { el, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '../core/util.js';
+import { buildOsintCard } from '../core/osint.js';
 import { openZip } from './zip.js';
 import { paginateText, paginateFlow, pagedPreviewCard, pagedTextCard } from './paged.js';
 
@@ -246,6 +247,9 @@ export async function renderTextDoc(file, container, kind, ext) {
         el('p', { class: 'anr-hint' }, 'No readable text content could be extracted from this file.'),
       ]));
     }
+
+    // Network indicators (URLs / IPs / domains / emails) lifted from the source text.
+    try { const oc = buildOsintCard(pageTexts.join('\n'), { limit: 100 }); if (oc) container.appendChild(oc); } catch (_) { /* ignore */ }
 
     if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
   } catch (e) {
