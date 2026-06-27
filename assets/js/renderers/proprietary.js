@@ -17,6 +17,20 @@ function extFromName(name) {
   return dot > 0 ? name.slice(dot + 1).toLowerCase().replace(/^\./, '') : '';
 }
 
+// Make an HTML string lay out for the current screen inside the preview iframe by
+// guaranteeing a device-width viewport. An iframe document otherwise uses a wide
+// desktop fallback viewport, so a responsive page's mobile breakpoints never fire
+// on a phone. Replace an existing viewport meta (a forced wide one defeats the
+// preview) or inject one after <head> / <html>, falling back to a prefix.
+const VIEWPORT_META = '<meta name="viewport" content="width=device-width, initial-scale=1">';
+function forceDeviceViewport(html) {
+  const vpRe = /<meta\b[^>]*\bname\s*=\s*["']?viewport["']?[^>]*>/i;
+  if (vpRe.test(html)) return html.replace(vpRe, VIEWPORT_META);
+  if (/<head\b[^>]*>/i.test(html)) return html.replace(/<head\b[^>]*>/i, (m) => m + VIEWPORT_META);
+  if (/<html\b[^>]*>/i.test(html)) return html.replace(/<html\b[^>]*>/i, (m) => m + '<head>' + VIEWPORT_META + '</head>');
+  return VIEWPORT_META + html;
+}
+
 // ---------- PSD header ----------
 function parsePsd(buf) {
   if (buf.length < 30) return null;
@@ -1062,6 +1076,62 @@ async function parseSqlite(buf, file) {
           }
           wrap.appendChild(st);
           sections.push({ title: 'Sample data - ' + a.sample.table + ' (first 5 rows)', node: wrap });
+        }
+        // Interactive read-only query box. Opens its own copy of the DB lazily on
+        // the first run and reuses it; runs entirely in the browser (sql.js WASM),
+        // and is restricted to a single SELECT/WITH/PRAGMA/EXPLAIN statement.
+        {
+          const firstTable = a.tables[0] ? a.tables[0].name : null;
+          const ta = el('textarea', { class: 'anr-sql-input', spellcheck: 'false', rows: '3' });
+          ta.value = firstTable
+            ? 'SELECT * FROM "' + firstTable.replace(/"/g, '""') + '" LIMIT 50;'
+            : 'SELECT name FROM sqlite_master;';
+          const runBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Run query');
+          const resultEl = el('div', { class: 'anr-sql-result' });
+          let qdb = null, opening = null;
+          const ensureDb = async () => {
+            if (qdb) return qdb;
+            if (!opening) { const { sqliteQuery } = await import('../lib/sqlite.js'); opening = sqliteQuery(file); }
+            qdb = await opening; return qdb;
+          };
+          const run = async () => {
+            const sql = ta.value.trim().replace(/;+\s*$/, '');
+            resultEl.innerHTML = '';
+            if (!sql) return;
+            if (/;/.test(sql) || !/^(?:select|with|pragma|explain)\b/i.test(sql)) {
+              resultEl.appendChild(el('p', { class: 'anr-hint anr-syn-error' }, 'Only a single read-only statement (SELECT, WITH, PRAGMA or EXPLAIN) is allowed.'));
+              return;
+            }
+            runBtn.disabled = true; runBtn.textContent = 'Running…';
+            try {
+              const db = await ensureDb();
+              if (!db) { resultEl.appendChild(el('p', { class: 'anr-hint anr-syn-error' }, 'Could not open the database engine.')); return; }
+              let res;
+              try { res = db.exec(sql); } catch (e) { resultEl.appendChild(el('p', { class: 'anr-hint anr-syn-error' }, 'SQL error: ' + (e && e.message))); return; }
+              if (!res || !res[0]) { resultEl.appendChild(el('p', { class: 'anr-hint' }, 'Query ran - no rows returned.')); return; }
+              const { columns, values } = res[0];
+              resultEl.appendChild(el('p', { class: 'anr-hint' }, values.length + ' row' + (values.length === 1 ? '' : 's') + (values.length > 1000 ? ' (showing first 1000)' : '')));
+              const wrap = el('div', { class: 'anr-table-wrap' });
+              const t = el('table', { class: 'anr-readout anr-table-data' });
+              const hr = el('tr', {});
+              for (const c of columns) hr.appendChild(el('th', {}, String(c)));
+              t.appendChild(hr);
+              for (const r of values.slice(0, 1000)) {
+                const tr = el('tr', {});
+                for (const cell of r) tr.appendChild(el('td', {}, cell == null ? 'NULL' : String(cell).slice(0, 300)));
+                t.appendChild(tr);
+              }
+              wrap.appendChild(t); resultEl.appendChild(wrap);
+            } finally { runBtn.disabled = false; runBtn.textContent = 'Run query'; }
+          };
+          runBtn.addEventListener('click', run);
+          ta.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); } });
+          const qnode = el('div', {});
+          qnode.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 6px;' }, 'Run a read-only SQL query against a copy of this database, entirely in your browser. Ctrl/Cmd+Enter to run.'));
+          qnode.appendChild(ta);
+          qnode.appendChild(el('div', { class: 'anr-btn-row', style: 'margin:6px 0;' }, [runBtn]));
+          qnode.appendChild(resultEl);
+          sections.push({ title: 'Run SQL query', node: qnode });
         }
         if (sections.length) out._sections = sections;
       }
@@ -4020,18 +4090,67 @@ export async function renderProprietary(file, container, extOverride) {
       const lines = fullText.split('\n');
       tbl.insertBefore(row('Lines', lines.length.toLocaleString()), hashRow);
 
-      // HTML: sandboxed rendered preview
+      // HTML: sandboxed rendered preview.
       if (fmt.parse === 'html') {
         const previewDet = el('details', { style: 'margin-top: 14px;', open: '' });
         previewDet.appendChild(el('summary', {}, 'Rendered preview'));
-        const blob = new Blob([fullText], { type: 'text/html;charset=utf-8' });
-        const iframe = el('iframe', {
-          src: URL.createObjectURL(blob),
-          sandbox: 'allow-same-origin',
-          style: 'width:100%;height:400px;border:1px solid var(--rule);background:#fff;margin-top:8px'
-        });
-        previewDet.appendChild(iframe);
+
+        // An iframe's layout viewport doesn't reliably track its on-screen box, so a
+        // responsive page renders at the wrong width and looks broken. Instead we lay
+        // the page out at a FIXED logical width and scale it to fit: forcing a
+        // device-width viewport (see forceDeviceViewport) ties its layout to the
+        // iframe's CSS width, which we set to the chosen mode's width; a CSS transform
+        // then shrinks it into the preview box. Desktop = the full wide layout; Mobile
+        // = the page's phone layout. An inner "scaler" sized to the scaled dimensions
+        // keeps the stage scrollable through the whole page.
+        const MODES = { desktop: 1280, mobile: 390 };
+        let mode = (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) ? 'mobile' : 'desktop';
+
+        const blob = new Blob([forceDeviceViewport(fullText)], { type: 'text/html;charset=utf-8' });
+        const stage = el('div', { style: 'position:relative;overflow:auto;width:100%;height:420px;border:1px solid var(--rule);background:#fff;margin-top:8px' });
+        const scaler = el('div', { style: 'position:relative;margin:0 auto;overflow:hidden' });
+        const iframe = el('iframe', { src: URL.createObjectURL(blob), sandbox: 'allow-same-origin', scrolling: 'no', style: 'border:0;background:#fff;transform-origin:0 0;display:block' });
+        scaler.appendChild(iframe);
+        stage.appendChild(scaler);
+
+        // Full content height (blob is same-origin, so readable); fall back if not.
+        const contentHeight = () => {
+          try { const d = iframe.contentDocument; if (d && d.documentElement) return Math.max(d.documentElement.scrollHeight, d.body ? d.body.scrollHeight : 0) || 1600; } catch (_) {}
+          return 1600;
+        };
+        const fit = () => {
+          const lw = MODES[mode];
+          iframe.style.width = lw + 'px';                 // set width first so the page reflows before we measure
+          const cw = stage.clientWidth || 1;
+          const s = mode === 'mobile' ? Math.min(1, cw / lw) : cw / lw;
+          const lh = contentHeight();
+          iframe.style.height = lh + 'px';
+          iframe.style.transform = 'scale(' + s + ')';
+          scaler.style.width = Math.round(lw * s) + 'px';
+          scaler.style.height = Math.round(lh * s) + 'px';
+        };
+
+        const btnRow = el('div', { class: 'anr-btn-row', style: 'gap:6px;margin-top:10px' });
+        const mkBtn = (label, m) => {
+          const b = el('button', { type: 'button', class: 'anr-btn' + (m === mode ? ' is-active' : '') }, label);
+          b.addEventListener('click', () => {
+            mode = m;
+            Array.from(btnRow.children).forEach((x) => x.classList.remove('is-active'));
+            b.classList.add('is-active');
+            fit();
+          });
+          return b;
+        };
+        btnRow.appendChild(mkBtn('Desktop', 'desktop'));
+        btnRow.appendChild(mkBtn('Mobile', 'mobile'));
+        previewDet.appendChild(btnRow);
+        previewDet.appendChild(stage);
         card.appendChild(previewDet);
+
+        // Fit on load (twice - late web-fonts/images can grow the page), and whenever
+        // the stage is resized (window resize, fullscreen, details toggling open).
+        iframe.addEventListener('load', () => { fit(); setTimeout(fit, 80); });
+        if (window.ResizeObserver) { const ro = new ResizeObserver(fit); ro.observe(stage); }
       }
 
       const det = el('details', { style: 'margin-top: 14px;' });

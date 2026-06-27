@@ -126,15 +126,61 @@ function flattenLayers(children, depth, out) {
   return out;
 }
 
+// A pixel layer's dimensions from its bounds (ag-psd: left/top/right/bottom).
+function layerSize(layer) {
+  return { w: (layer.right || 0) - (layer.left || 0), h: (layer.bottom || 0) - (layer.top || 0) };
+}
+
+// Download a layer's pixels as a PNG. Returns a button, or null for a layer with
+// no raster (groups, adjustment layers).
+function layerPngButton(layer) {
+  if (!layer.canvas || !layer.canvas.width) return null;
+  const btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm anr-psd-export', title: 'Download this layer as a PNG' }, 'PNG');
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    layer.canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = (layer.name || 'layer').replace(/[^\w.-]+/g, '_').slice(0, 80) + '.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }, 'image/png');
+  });
+  return btn;
+}
+
 function layerTreeCard(psd) {
   const rows = flattenLayers(psd.children, 0, []);
   if (!rows.length) return null;
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, `Layers (${rows.length})`));
+
+  // Hidden-content scan: layers carrying pixels you can't see in the composite -
+  // toggled off, fully transparent, or collapsed to zero size. A classic place to
+  // stash content (watermarks, earlier drafts, notes) that a flattened export drops.
+  const flagged = [];
+  for (const r of rows) {
+    const reasons = [];
+    if (r.layer.hidden) reasons.push('hidden');
+    if (opacityPct(r.layer) === 0) reasons.push('opacity 0');
+    if (!r.isGroup) { const s = layerSize(r.layer); if (s.w === 0 || s.h === 0) reasons.push('zero size'); }
+    r.reasons = reasons;
+    if (reasons.length) flagged.push(r);
+  }
+  if (flagged.length) {
+    card.appendChild(el('p', { class: 'anr-hint', style: 'color:var(--accent);font-weight:600;margin:0 0 8px;' },
+      '⚠ ' + flagged.length + ' of ' + rows.length + ' layers carry invisible content (hidden, fully transparent, or zero-size) - not shown in the flattened image.'));
+  }
+
   const list = el('div', { class: 'anr-psd-layers' });
-  for (const { layer, depth, isGroup } of rows) {
-    const r = el('div', { class: 'anr-psd-layer' + (layer.hidden ? ' is-hidden' : '') });
-    r.style.paddingLeft = (depth * 16) + 'px';
+  for (const r of rows) {
+    const { layer, depth, isGroup } = r;
+    const flaggedCls = r.reasons.length ? ' anr-psd-flagged' : '';
+    // NB: use a dedicated greyed class, not the global `is-hidden` utility (which is
+    // display:none !important and would drop the row - exactly the content we want to surface).
+    const row = el('div', { class: 'anr-psd-layer' + (layer.hidden ? ' anr-psd-off' : '') + flaggedCls });
+    row.style.paddingLeft = (depth * 16) + 'px';
     const thumb = el('span', { class: 'anr-psd-thumb' });
     if (!isGroup && layer.canvas && layer.canvas.width) {
       const c = layer.canvas;
@@ -145,17 +191,19 @@ function layerTreeCard(psd) {
     } else {
       thumb.textContent = isGroup ? '▸' : '·';
     }
-    r.appendChild(thumb);
+    row.appendChild(thumb);
     const meta = el('span', { class: 'anr-psd-meta' });
     meta.appendChild(el('span', { class: 'anr-psd-name' }, layer.name || (isGroup ? 'Group' : 'Layer')));
     const bits = [];
     if (layer.blendMode && layer.blendMode !== 'normal') bits.push(layer.blendMode.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase());
     const op = opacityPct(layer);
     if (op !== 100) bits.push(op + '%');
-    if (layer.hidden) bits.push('hidden');
-    if (bits.length) meta.appendChild(el('span', { class: 'anr-psd-sub' }, bits.join(' · ')));
-    r.appendChild(meta);
-    list.appendChild(r);
+    for (const reason of r.reasons) if (reason !== 'opacity 0' || op !== 100) bits.push(reason);
+    if (bits.length) meta.appendChild(el('span', { class: 'anr-psd-sub' }, [...new Set(bits)].join(' · ')));
+    row.appendChild(meta);
+    const png = layerPngButton(layer);
+    if (png) row.appendChild(png);
+    list.appendChild(row);
   }
   card.appendChild(list);
   return card;

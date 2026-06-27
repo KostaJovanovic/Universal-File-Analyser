@@ -356,9 +356,42 @@ function extractPptText(cf) {
   return runs.filter((t) => t && t.trim()).join('\n\n');
 }
 
+// ---------- security signals (VBA macros, external URLs) ----------
+
+// VBA "active content" lives in a dedicated storage in the compound file: Word and
+// PowerPoint use a 'Macros' storage, Excel a '_VBA_PROJECT_CUR' storage, both
+// holding a 'VBA' sub-storage with the '_VBA_PROJECT' stream. The presence of any
+// of these directory entries is a reliable macro flag (we don't decompile the code).
+function hasVbaMacros(cf) {
+  try {
+    return (cf.entries || []).some((e) => {
+      const n = e.name || '';
+      return n === 'Macros' || n === '_VBA_PROJECT_CUR' || n === 'VBA' || /_VBA_PROJECT/i.test(n);
+    });
+  } catch (_) { return false; }
+}
+
+// Best-effort external-URL scan of a binary stream. Hyperlink targets are stored as
+// plain text - 8-bit in some structures, UTF-16LE in URL monikers - so decode both
+// ways and pull http(s) URLs out. The 'http(s)://' anchor is specific enough that
+// the "wrong" decode of a given stretch almost never yields a false hit.
+const LEGACY_URL_RE = /https?:\/\/[^\s"'<>()[\]\x00-\x1F]{4,}/gi;
+function scanUrls(bytes, set) {
+  if (!bytes || !bytes.length || set.size > 500) return;
+  for (const txt of [cp1252(bytes), utf16le(bytes)]) {
+    LEGACY_URL_RE.lastIndex = 0;
+    let m;
+    while ((m = LEGACY_URL_RE.exec(txt))) {
+      const u = m[0].replace(/[.,;:'")\]}>]+$/, '');   // trim trailing punctuation
+      if (u.length >= 8 && u.length <= 2048) set.add(u);
+      if (set.size > 500) return;
+    }
+  }
+}
+
 // ---------- shared shell ----------
 
-function infoCard(file, appLabel, extraRows) {
+function infoCard(file, appLabel, extraRows, links) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, appLabel));
   card.appendChild(buildReadout([
@@ -368,6 +401,14 @@ function infoCard(file, appLabel, extraRows) {
     ...(extraRows || []),
     file.lastModified && ['Last modified', new Date(file.lastModified).toLocaleString()],
   ]));
+  if (links && links.length) {
+    const det = el('details', { style: 'margin-top:8px;' });
+    det.appendChild(el('summary', {}, 'View external links (' + links.length + ')'));
+    for (const u of links.slice(0, 100)) {
+      det.appendChild(el('a', { href: u, target: '_blank', rel: 'noopener noreferrer', style: 'display:block;word-break:break-all;color:var(--accent);' }, u));
+    }
+    card.appendChild(det);
+  }
   card.appendChild(el('p', { class: 'anr-hint', style: 'font-size:12px;margin:10px 0 0;' },
     'Legacy binary Office format - content is extracted best-effort. Original fonts, styling, images and exact page layout are not reconstructed.'));
   return card;
@@ -415,7 +456,19 @@ export async function renderLegacyOffice(file, container, kind) {
       pages = paginateFlow(textToContent(fullText));
     }
 
-    container.appendChild(infoCard(file, appLabel, extraRows));
+    // Security signals (additive): VBA macros + external hyperlink URLs. Scan the
+    // app's main content stream(s) - hyperlink targets and monikers live there.
+    const macros = hasVbaMacros(cf);
+    const urlSet = new Set();
+    try {
+      const scanStreams = { xls: ['Workbook', 'Book'], ppt: ['PowerPoint Document'], doc: ['WordDocument', '1Table', '0Table'] }[kind] || [];
+      for (const sname of scanStreams) scanUrls(cf.readStream(sname), urlSet);
+    } catch (_) { /* ignore */ }
+    const links = [...urlSet];
+    if (macros) extraRows.push(['Macros', '⚠ Contains macros (VBA project)']);
+    if (links.length) extraRows.push(['External links', String(links.length)]);
+
+    container.appendChild(infoCard(file, appLabel, extraRows, links));
     if (pages.length && (fullText.trim() || kind === 'xls')) {
       container.appendChild(pagedPreviewCard(pages, { title: 'Page previews', label: pageLabel }));
       const pageTexts = pages.map((p) => p.textContent);
