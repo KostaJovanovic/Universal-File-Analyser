@@ -7,10 +7,10 @@
    - On-device OCR via lazy-loaded Tesseract.js with language picker
    - SHA-256 file hash */
 
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, cloudFileWarning, errorCard, attachZoomPan, openOverlayBack } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, cloudFileWarning, errorCard, attachZoomPan, openOverlayBack, timeAnomalies, timeAnomalyCard } from '../core/util.js';
 import { HEIC_EXTS, RAW_EXTS } from '../core/formats.js';
 import { convertHeic, extractRawPreview, convertWithImageMagick, demosaicRaw, extractRawJpegs, extractX3fPreview } from './photo-convert.js';
-import { ascii, latin1, utf8, inflate } from '../core/binutil.js';
+import { ascii, latin1, utf8, inflate, findBytes } from '../core/binutil.js';
 import { decodeGifFrames } from './gif-frames.js';
 import { decodeWebpFrames } from './webp-frames.js';
 import { encodeAnimatedGif } from './gif-encode.js';
@@ -454,6 +454,18 @@ function aspectRatio(w, h) {
   return `${w / d}:${h / d}  (${(w / h).toFixed(4)})`;
 }
 
+// Decode a blob to its pixel dimensions via a throwaway <img>. Used by the EXIF
+// thumbnail-proportion check; resolves null if the browser can't decode it.
+function decodeImageDims(blob) {
+  return new Promise((resolve) => {
+    const u = URL.createObjectURL(blob);
+    const im = new Image();
+    im.onload = () => { const d = { w: im.naturalWidth, h: im.naturalHeight }; URL.revokeObjectURL(u); resolve(d); };
+    im.onerror = () => { URL.revokeObjectURL(u); resolve(null); };
+    im.src = u;
+  });
+}
+
 // The exact reduced ratio is often an ugly fraction (e.g. a 4288×2848 sensor is
 // 134:89). Snap the decimal to the nearest standard photo/video ratio so there's
 // a recognisable "≈ 3:2" to read next to it. Returns null when nothing common is
@@ -783,6 +795,154 @@ async function detectComputational(file, exif) {
     rows.push(['Depth map', 'likely - an auxiliary depth/disparity image is present']);
   }
   return rows;
+}
+
+// ---------- Live Photo / Motion Photo - the appended motion clip ----------
+// A "live" still (Google/Samsung Motion Photo, or an Apple Live Photo exported as
+// a single file) appends a whole MP4/QuickTime clip after the picture. The browser
+// only paints the still, so the motion is invisible. We locate that trailer, then
+// - on demand, behind a button - run it through the real video + audio renderers so
+// the live part gets the full player, frame tools, waveform and spectrogram.
+const VIDEO_BRANDS = ['isom', 'iso2', 'mp41', 'mp42', 'mmp4', 'M4V ', 'M4VH', 'avc1', 'qt  ', '3gp4', '3gp5', '3gg6'];
+
+// Find where the appended clip starts, reading as little of the file as possible.
+// Returns { start, kind, brand } or null. Strategy, most-trusted first:
+//   1. XMP MicroVideoOffset  - Google's older tag: clip starts `offset` bytes
+//      before EOF (computed from metadata; only a 12-byte probe confirms it).
+//   2. XMP Container:Directory - Google's newer tag: trailing items appended after
+//      the primary image; sum the lengths of every item after the first.
+//   3. Marker-gated full scan - Samsung/Apple trailers with no usable offset: read
+//      the whole file and find an ISO-BMFF box whose major brand is a *video* brand
+//      (which naturally skips a HEIC's own leading `ftyp`, brand heic/mif1/avif).
+async function detectLiveVideo(file) {
+  const size = file.size;
+  if (size < 65536) return null;
+  let xmp = '';
+  try {
+    const head = latin1(new Uint8Array(await file.slice(0, 131072).arrayBuffer()));
+    const tail = latin1(new Uint8Array(await file.slice(Math.max(0, size - 262144)).arrayBuffer()));
+    xmp = head + tail;
+  } catch (_) { return null; }
+
+  // Confirm a candidate offset really is the head of an ISO-BMFF clip (`....ftyp`).
+  const confirm = async (start, kind) => {
+    if (!(start > 0 && start < size)) return null;
+    try {
+      const p = new Uint8Array(await file.slice(start, start + 12).arrayBuffer());
+      if (ascii(p, 4, 4) === 'ftyp') return { start, kind, brand: ascii(p, 8, 4) };
+    } catch (_) {}
+    return null;
+  };
+
+  let m = xmp.match(/MicroVideoOffset["'\s>=]+(\d{3,})/i);
+  if (m) { const r = await confirm(size - (+m[1]), 'Google Motion Photo'); if (r) return r; }
+
+  const lengths = [...xmp.matchAll(/Item:Length["'\s>=]+(\d+)/gi)].map((x) => +x[1]);
+  const mimes = [...xmp.matchAll(/Item:Mime["'\s>=]+([^"'\s>]+)/gi)].map((x) => x[1].toLowerCase());
+  if (lengths.length >= 2) {
+    let trailing = 0;
+    for (let i = 1; i < lengths.length; i++) trailing += lengths[i] || 0;
+    const kind = mimes.some((x) => /quicktime|qt/.test(x)) ? 'Live Photo (embedded video)' : 'Google Motion Photo';
+    const r = await confirm(size - trailing, kind); if (r) return r;
+  }
+
+  // Full scan only when markers say this really is a live/motion still - the clip's
+  // ftyp can sit megabytes deep, so a tail-only scan would miss it.
+  if (/MotionPhoto|MicroVideo|ContentIdentifier|com\.apple\.quicktime|GContainer/i.test(xmp)) {
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let from = 0;
+      for (;;) {
+        const ft = findBytes(bytes, [0x66, 0x74, 0x79, 0x70], from); // "ftyp"
+        if (ft < 4) break;
+        const start = ft - 4;
+        const brand = ascii(bytes, ft + 4, 4);
+        const boxSz = (bytes[start] << 24) | (bytes[start + 1] << 16) | (bytes[start + 2] << 8) | bytes[start + 3];
+        if (VIDEO_BRANDS.includes(brand) && boxSz >= 8 && boxSz <= 4096) {
+          return { start, kind: /qt/i.test(brand) ? 'Live Photo (embedded video)' : 'Motion Photo', brand };
+        }
+        from = ft + 4;
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
+// Does the carved clip carry a decodable audio track? Probes with the Web Audio
+// decoder so a silent Motion Photo shows a tidy "no audio" note instead of the
+// audio renderer's scary "can't decode this format" card.
+async function liveClipHasAudio(clipFile) {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return true; // can't probe - let the audio renderer try
+    const c = new AC();
+    let ab = null;
+    try { ab = await c.decodeAudioData((await clipFile.arrayBuffer()).slice(0)); } finally { try { c.close(); } catch (_) {} }
+    return !!(ab && ab.length > 0 && ab.duration > 0);
+  } catch (_) { return false; }
+}
+
+// On-demand: carve the trailer with file.slice (no full in-memory copy) and hand it
+// to the real video + audio renderers, each in its own sub-section.
+async function analyseLivePhoto(file, found, container) {
+  container.innerHTML = '';
+  const isQt = /qt/i.test(found.brand || '') || /Live Photo/i.test(found.kind);
+  const clipFile = new File([file.slice(found.start)],
+    (file.name.replace(/\.[^.]+$/, '') || 'live') + (isQt ? '.mov' : '.mp4'),
+    { type: isQt ? 'video/quicktime' : 'video/mp4' });
+
+  const head = el('div', { class: 'anr-card' });
+  head.appendChild(el('h3', {}, 'Live motion'));
+  head.appendChild(el('p', { class: 'anr-hint' },
+    found.kind + ' - the moving clip appended to this still, analysed as a full video and its audio track (' +
+    fmtBytes(clipFile.size) + ' from 0x' + found.start.toString(16) + ').'));
+  container.appendChild(head);
+
+  // Heavy modules, loaded only now (dynamic import also sidesteps the photo<->video
+  // circular static import).
+  let renderVideo, renderAudio;
+  try { ({ renderVideo } = await import('./video.js')); ({ renderAudio } = await import('./audio.js')); }
+  catch (_) { container.appendChild(errorCard('Could not load the video/audio analysers.')); return; }
+
+  const videoSlot = el('div');
+  container.appendChild(videoSlot);
+  try { await renderVideo(clipFile, videoSlot); }
+  catch (_) { videoSlot.appendChild(errorCard('Could not play the embedded video clip.')); }
+
+  if (await liveClipHasAudio(clipFile)) {
+    container.appendChild(el('p', { style: 'margin:22px 0 6px; font-weight:600;' }, 'Audio track'));
+    const audioSlot = el('div');
+    container.appendChild(audioSlot);
+    try { await renderAudio(clipFile, audioSlot); }
+    catch (_) { audioSlot.appendChild(errorCard('Could not decode the embedded audio track.')); }
+  } else {
+    container.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:10px;' }, 'This live clip has no audio track.'));
+  }
+}
+
+// The "Analyse live photo" button (lives beside the preview, like the RAW demosaic
+// button): detects the clip in the background and reveals itself only if one is
+// found; on click it renders the video + audio sections at the foot of the column.
+function wireLivePhotoButton(file, previewSlot, resultsEl, signal) {
+  const btn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:10px;font-size:11px;width:100%;', hidden: '' }, 'Analyse live photo');
+  const slot = el('div', { class: 'anr-live-slot' });
+  let found = null;
+  btn.addEventListener('click', () => {
+    if (!found) return;
+    btn.disabled = true;
+    btn.textContent = 'Analysing live photo…';
+    if (!slot.isConnected) resultsEl.appendChild(slot);
+    analyseLivePhoto(file, found, slot)
+      .then(() => { btn.hidden = true; })
+      .catch(() => { btn.disabled = false; btn.textContent = 'Analyse live photo'; });
+  });
+  previewSlot.appendChild(btn);
+  (async () => {
+    try {
+      const f = await detectLiveVideo(file);
+      if (f && !(signal && signal.aborted)) { found = f; btn.hidden = false; }
+    } catch (_) {}
+  })();
 }
 
 // ---------- RAW develop-settings sidecar (.xmp) ----------
@@ -1376,7 +1536,10 @@ function renderLsbPlanes(img, container) {
     { label: 'B', offset: 2 }
   ];
 
-  const wrap = el('div', { style: 'display:flex; gap:12px; flex-wrap:wrap;' });
+  // The export collector (export-data.js) treats an .anr-export-gallery container as
+  // one image group, rendering its canvases as smaller side-by-side figures under
+  // the data-export-heading rather than three full-width images.
+  const wrap = el('div', { class: 'anr-export-gallery', 'data-export-heading': 'LSB Analysis', style: 'display:flex; gap:12px; flex-wrap:wrap;' });
 
   let fullSrcs = null;
   function ensureFullRes() {
@@ -1449,6 +1612,7 @@ function renderLsbPlanes(img, container) {
   for (let ci = 0; ci < channels.length; ci++) {
     const ch = channels[ci];
     const cv = makeLsbPlane(srcData, w, h, ch.offset);
+    cv.setAttribute('data-export-label', ch.label);
     cv.style.maxWidth = '100%';
     cv.style.imageRendering = 'pixelated';
     cv.style.cursor = 'zoom-in';
@@ -2684,6 +2848,10 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     }, convertedFile ? 'Download photo (JPEG)' : 'Download photo');
     previewSlot.appendChild(dlBtn);
 
+    // Live Photo / Motion Photo: if a motion clip is appended to this still, show an
+    // "Analyse live photo" button that plays it in the full video + audio sections.
+    wireLivePhotoButton(file, previewSlot, resultsEl, renderSignal);
+
     // RAW only: a button under the thumbnail to import the .xmp develop-settings
     // sidecar a raw developer (Photoshop / Lightroom / Camera Raw) saved alongside.
     if (RAW_EXTS.has(fileExt(file.name))) {
@@ -2850,6 +3018,61 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   } else {
     resultsEl.appendChild(el('div', { class: 'anr-info' }, 'No EXIF / IPTC / XMP / ICC metadata found.'));
   }
+
+  // ---- EXIF thumbnail proportion check ----
+  // The embedded EXIF thumbnail is a downscaled copy cached at capture time. If the
+  // photo is later cropped/edited but the thumbnail isn't refreshed, the two carry
+  // different proportions - a tell the pixels were changed after capture. Compare
+  // orientation-independent aspect ratios and only flag a clear gap. Fully isolated;
+  // a failure (or no thumbnail) just shows nothing.
+  try {
+    if (typeof exifr !== 'undefined' && exifr.thumbnail && w && h) {
+      const thumbBytes = await exifr.thumbnail(file).catch(() => null);
+      if (thumbBytes && thumbBytes.byteLength) {
+        const tDim = await decodeImageDims(new Blob([thumbBytes], { type: 'image/jpeg' }));
+        if (tDim && tDim.w && tDim.h) {
+          const longShort = (a, b) => Math.max(a, b) / Math.min(a, b);
+          const mainAR = longShort(w, h);
+          const thumbAR = longShort(tDim.w, tDim.h);
+          // Many older cameras write a fixed 160×120 thumbnail regardless of the
+          // photo's real shape - that's not an edit tell, so don't flag it.
+          const isFixedThumb = (tDim.w === 160 && tDim.h === 120) || (tDim.w === 120 && tDim.h === 160);
+          const diff = Math.abs(mainAR - thumbAR) / mainAR;
+          if (!isFixedThumb && diff > 0.05) {
+            const card = el('div', { class: 'anr-card' });
+            card.appendChild(el('h3', {}, 'Thumbnail check'));
+            card.appendChild(el('p', { style: 'color:var(--accent);font-weight:600;margin-bottom:8px;' },
+              '⚠ Embedded thumbnail proportions differ from the full image'));
+            const tt = el('table', { class: 'anr-readout' });
+            tt.appendChild(row('Full image', w + ' × ' + h + '  (' + mainAR.toFixed(3) + ':1)'));
+            tt.appendChild(row('EXIF thumbnail', tDim.w + ' × ' + tDim.h + '  (' + thumbAR.toFixed(3) + ':1)'));
+            tt.appendChild(row('Difference', (diff * 100).toFixed(1) + '%'));
+            card.appendChild(tt);
+            card.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px;' },
+              'The embedded thumbnail is a cached copy made at capture. Proportions that no longer match the full image can mean the photo was cropped or edited afterwards without the thumbnail being refreshed. Some cameras store a fixed-size thumbnail, which on its own is not a sign of editing.'));
+            resultsEl.appendChild(card);
+          }
+        }
+      }
+    }
+  } catch (_) { /* ignore */ }
+
+  // ---- Timestamp anomaly check ----
+  // Compare the EXIF capture/create/modify dates against each other and the file's
+  // own last-modified time; flag impossible relationships (future dates, modified
+  // before captured, a file that predates the photo it holds). Generous skew margin.
+  try {
+    if (exif) {
+      const tac = timeAnomalyCard(timeAnomalies({
+        captured: exif.DateTimeOriginal instanceof Date ? exif.DateTimeOriginal : null,
+        created: exif.CreateDate instanceof Date ? exif.CreateDate
+          : (exif.DateTimeDigitized instanceof Date ? exif.DateTimeDigitized : null),
+        modified: exif.ModifyDate instanceof Date ? exif.ModifyDate : null,
+        filesystem: file.lastModified ? new Date(file.lastModified) : null,
+      }));
+      if (tac) resultsEl.appendChild(tac);
+    }
+  } catch (_) { /* ignore */ }
 
   // ---- AI detection ----
   const aiHints = detectAI(exif);

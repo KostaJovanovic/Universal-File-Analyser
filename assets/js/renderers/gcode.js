@@ -871,10 +871,10 @@ function buildViewer(data, opts = {}) {
   }
 
   const vsInst = `attribute float aEnd, aSr, aSu; attribute vec3 aA, aB; attribute float aHW, aHH, aFeed, aType, aTool;
-    uniform mat4 uMVP, uModel; uniform vec2 uViewport;
+    uniform mat4 uMVP, uModel, uMV; uniform vec2 uViewport;
     uniform float uYmin, uYspan, uFmin, uFspan, uMode, uTravel, uMinW, uMinPx, uFlat, uVis[8], uFilVis[8], uWmin, uWspan, uTypeBias, uIsoUseType;
     uniform vec3 uFilCols[8];
-    varying float vT, vVis, vTool; varying vec3 vN, vColor;
+    varying float vT, vVis, vTool; varying vec3 vN, vColor, vEyeN, vEyeP;
     vec3 filColor(float ft){ int t=int(ft+0.5);
       for(int k=0;k<8;k++){ if(k==t) return uFilCols[k]; } return uFilCols[0]; }
     vec3 ramp(float t){ vec3 c1=vec3(0.18,0.32,0.92),c2=vec3(0.10,0.80,0.86),c3=vec3(0.22,0.82,0.30),c4=vec3(0.97,0.80,0.20),c5=vec3(0.96,0.26,0.20);
@@ -914,6 +914,10 @@ function buildViewer(data, opts = {}) {
         nrm = normalize(mix(nrm, uv, clamp(1.0 - wpx/3.0, 0.0, 1.0)));
       }
       vN = mat3(uModel) * nrm;
+      // Eye-space normal + position for the "Realistic view" Phong path (fixed
+      // camera-relative lights need lighting evaluated in eye space).
+      vEyeN = mat3(uMV) * nrm;
+      vEyeP = (uMV * vec4(P + off, 1.0)).xyz;
       gl_Position = uMVP*vec4(P + off, 1.0);
       // Anti z-fighting: push higher feature types fractionally back so overlapping
       // beads of different types stop flickering (outer wall stays in front). uTypeBias
@@ -941,15 +945,25 @@ function buildViewer(data, opts = {}) {
         else vColor = ramp(wfrac);
         vVis = uVis[int(aType + 0.5)] * uFilVis[int(aTool + 0.5)];
       } }`;
-  const fsInst = `precision mediump float; varying float vT, vVis, vTool; varying vec3 vN, vColor;
-    uniform float uClip, uAlpha, uIsoMode, uIsoTool;
+  const fsInst = `precision mediump float; varying float vT, vVis, vTool; varying vec3 vN, vColor, vEyeN, vEyeP;
+    uniform float uClip, uAlpha, uIsoMode, uIsoTool, uReal;
     void main(){ if(vT > uClip) discard; if(vVis < 0.5) discard;
       // Isolate pass: 1 = draw only the current tool, 2 = draw only the others.
       if(uIsoMode > 0.5){ bool cur = abs(vTool - uIsoTool) < 0.5;
         if(uIsoMode < 1.5){ if(!cur) discard; } else { if(cur) discard; } }
-      vec3 N = normalize(vN); vec3 L = normalize(vec3(0.4,0.78,0.5));
-      float lit = max(max(dot(N,L),0.0), max(dot(-N,L),0.0)*0.4);
-      gl_FragColor = vec4(vColor*(0.34+0.66*lit), uAlpha); }`;
+      if(uReal > 0.5){
+        // Realistic view: OrcaSlicer-style two fixed (eye-space) lights, Blinn-Phong
+        // with a glossy filament sheen so beads read as deposited plastic.
+        vec3 N = normalize(vEyeN); vec3 V = normalize(-vEyeP);
+        vec3 LT = vec3(-0.4574957,0.4574957,0.7624929), LF = vec3(0.6985074,0.1397015,0.6985074);
+        float diff = 0.28 + max(dot(N,LT),0.0)*0.5 + max(dot(N,LF),0.0)*0.22;
+        float spec = 0.30*pow(max(dot(N,normalize(LT+V)),0.0),28.0) + 0.10*pow(max(dot(N,normalize(LF+V)),0.0),16.0);
+        gl_FragColor = vec4(clamp(vColor*diff + vec3(spec), 0.0, 1.0), uAlpha);
+      } else {
+        vec3 N = normalize(vN); vec3 L = normalize(vec3(0.4,0.78,0.5));
+        float lit = max(max(dot(N,L),0.0), max(dot(-N,L),0.0)*0.4);
+        gl_FragColor = vec4(vColor*(0.34+0.66*lit), uAlpha);
+      } }`;
   // Plain-line fallback (no instancing): centreline reconstruction.
   const vsLine = `attribute vec3 aPos; uniform mat4 uProj,uView,uModel; uniform float uYmin,uYspan; varying float vT;
     void main(){ gl_Position=uProj*uView*uModel*vec4(aPos,1.0); vT=clamp((aPos.y-uYmin)/uYspan,0.0,1.0); }`;
@@ -1041,7 +1055,7 @@ function buildViewer(data, opts = {}) {
     // restX/Y/Z carry the head's resting tool point (RAW mm; drawImpl normalises) for when
     // it sits at a move boundary and isn't mid-glide - travel-aware, so it doesn't snap back
     // to the last *extrusion* endpoint when the tool actually rests at a travel endpoint.
-    follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, headLive: false, headToolRank: 1, headToolNum: 0, headToolRaw: 0, toolMarkers: true, isoTool: false, restX: 0, restY: 0, restZ: 0, restValid: false, pauseText: '' };
+    follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, headLive: false, headToolRank: 1, headToolNum: 0, headToolRaw: 0, toolMarkers: true, isoTool: false, real: false, restX: 0, restY: 0, restZ: 0, restValid: false, pauseText: '' };
   let viewW = 600, viewH = 420;   // CSS px, for screen-space size in the shader
   let dirty = true;
   const spinListeners = [];
@@ -1077,7 +1091,7 @@ function buildViewer(data, opts = {}) {
     const L = (n) => gl.getAttribLocation(prog, n);
     const aEnd = L('aEnd'), aSr = L('aSr'), aSu = L('aSu'), aA = L('aA'), aB = L('aB'), aHW = L('aHW'), aHH = L('aHH'), aFeed = L('aFeed'), aType = L('aType'), aTool = L('aTool');
     const U = (n) => gl.getUniformLocation(prog, n);
-    const uMVP = U('uMVP'), uModel = U('uModel'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uFilVis = U('uFilVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan'), uTypeBias = U('uTypeBias'), uIsoMode = U('uIsoMode'), uIsoTool = U('uIsoTool'), uIsoUseType = U('uIsoUseType');
+    const uMVP = U('uMVP'), uModel = U('uModel'), uMV = U('uMV'), uReal = U('uReal'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uFilVis = U('uFilVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan'), uTypeBias = U('uTypeBias'), uIsoMode = U('uIsoMode'), uIsoTool = U('uIsoTool'), uIsoUseType = U('uIsoUseType');
 
     const bindTemplate = () => {
       gl.bindBuffer(gl.ARRAY_BUFFER, tplBuf);
@@ -1263,10 +1277,12 @@ function buildViewer(data, opts = {}) {
       } else { state.headToolRank = 1; state.headToolNum = 0; state.headToolRaw = 0; }
     };
     drawImpl = (proj, view, model) => {
-      const mvp = mat4Multiply(proj, mat4Multiply(view, model));
+      const mv = mat4Multiply(view, model);
+      const mvp = mat4Multiply(proj, mv);
       drawBed(mvp);   // floor first, so the solid print draws crisply over it
       gl.useProgram(prog);
       gl.uniformMatrix4fv(uMVP, false, mvp); gl.uniformMatrix4fv(uModel, false, model);
+      gl.uniformMatrix4fv(uMV, false, mv); gl.uniform1f(uReal, state.real ? 1 : 0);
       gl.uniform2f(uViewport, viewW, viewH);
       gl.uniform1f(uYmin, yMin); gl.uniform1f(uYspan, ySpan); gl.uniform1f(uFmin, fMin); gl.uniform1f(uFspan, fSpan); gl.uniform1f(uClip, state.clip);
       gl.uniform1f(uMinW, state.minWidth === 'all' ? 1 : 0); gl.uniform1f(uMinPx, 1.3); gl.uniform1f(uFlat, state.flatten ? 1 : 0);
@@ -1733,7 +1749,7 @@ export async function renderGcode(file, resultsEl, opts) {
       // references `viewer` by binding, so they keep working after the swap.
       function applyMSAA(on) {
         const s = viewer.state;
-        const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, showLegend: s.showLegend, vis: s.vis, filVis: s.filVis, shown: s.shown, partial: s.partial, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten, fitted: s.fitted, travShown: s.travShown, playKind: s.playKind, playFrac: s.playFrac, paused: s.paused, translucentTravel: s.translucentTravel, follow: s.follow, toolMarkers: s.toolMarkers };
+        const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, spin: s.spin, ortho: s.ortho, head: s.head, clip: s.clip, mode: s.mode, showTravel: s.showTravel, showBed: s.showBed, showLegend: s.showLegend, vis: s.vis, filVis: s.filVis, shown: s.shown, partial: s.partial, ssaa: s.ssaa, minWidth: s.minWidth, flatten: s.flatten, fitted: s.fitted, travShown: s.travShown, playKind: s.playKind, playFrac: s.playFrac, paused: s.paused, translucentTravel: s.translucentTravel, follow: s.follow, toolMarkers: s.toolMarkers, isoTool: s.isoTool, real: s.real };
         const old = viewer;
         const next = buildViewer(data, { antialias: on });
         if (!next.ok) return;                         // keep the working viewer if rebuild fails
@@ -1777,6 +1793,7 @@ export async function renderGcode(file, resultsEl, opts) {
         qPanel.appendChild(btn);
         return btn;
       };
+      // aaBtn('Realistic view', () => viewer.state.real, (v) => { viewer.state.real = v; viewer.markDirty(); });
       aaBtn('Hardware MSAA', () => viewer.state.msaa, (v) => applyMSAA(v));
       aaBtn('Supersampling', () => viewer.state.ssaa, (v) => { viewer.state.ssaa = v; viewer.resize(); viewer.markDirty(); });
       aaCycleBtn('Minimum line width',
@@ -2210,6 +2227,14 @@ export async function renderGcode(file, resultsEl, opts) {
         viewer.markDirty();
       });
       viewRow.appendChild(isoBtn);
+      // Equal-width view buttons clip with an ellipsis when narrow; rather than show
+      // "Dim other to..." swap to the shorter "Dim tools" once the full label can't fit.
+      // Measure from the long label each time so it restores when there's room again.
+      const fitIsoLabel = () => {
+        isoBtn.textContent = 'Dim other tools';
+        if (isoBtn.scrollWidth > isoBtn.clientWidth) isoBtn.textContent = 'Dim tools';
+      };
+      if (window.ResizeObserver) { const ro = new ResizeObserver(fitIsoLabel); ro.observe(isoBtn); }
 
       // Toolbar (below the viewer): Play + progress bar on one row (bar stays at Play's
       // height); Speed + Follow + Tool changes on a second row beneath Play; then the Build

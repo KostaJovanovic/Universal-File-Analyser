@@ -290,6 +290,25 @@ async function buildCollabCard(zip) {
     const detailsBlocks = []; // collapsible blocks appended after the table
     let any = false;
 
+    // --- Ghost authorship (creator != last editor) ---
+    // A document created by one person but last saved by another is a normal
+    // collaboration signal on its own, but worth surfacing - it's the simplest
+    // "this isn't all one author's work" tell.
+    try {
+      if (zip.has('docProps/core.xml')) {
+        const xml = await zip.text('docProps/core.xml');
+        if (xml) {
+          const grab = (tag) => { const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+          const creator = grab('creator');
+          const lastBy = grab('lastModifiedBy');
+          if (creator && lastBy && creator !== lastBy) {
+            tbl.appendChild(row('Authorship', '⚠ Created by "' + creator + '" but last saved by "' + lastBy + '"'));
+            any = true;
+          }
+        }
+      }
+    } catch (_) { /* ignore */ }
+
     // --- Comments (word/comments.xml) ---
     try {
       if (zip.has('word/comments.xml')) {
@@ -336,10 +355,32 @@ async function buildCollabCard(zip) {
           const del = ddoc.getElementsByTagNameNS(W, 'del');
           const n = ins.length + del.length;
           if (n) {
-            const authors = new Set();
-            for (const e of [...ins, ...del]) { const a = wAttr(e, 'author'); if (a) authors.add(a); }
-            tbl.appendChild(row('Tracked changes', n + (authors.size ? ' (by ' + [...authors].join(', ') + ')' : '')));
+            // Tally insertions/deletions per author for an edit-density breakdown.
+            const byAuthor = new Map();   // author -> { ins, del }
+            const tally = (list, key) => {
+              for (const e of list) {
+                const a = wAttr(e, 'author') || '(unknown)';
+                const rec = byAuthor.get(a) || { ins: 0, del: 0 };
+                rec[key]++; byAuthor.set(a, rec);
+              }
+            };
+            tally(ins, 'ins'); tally(del, 'del');
+            const named = [...byAuthor.keys()].filter((a) => a !== '(unknown)');
+            tbl.appendChild(row('Tracked changes', n + (named.length ? ' (by ' + named.join(', ') + ')' : '')));
             any = true;
+            // Edit density: rank authors by how much of the revision they own.
+            const ranked = [...byAuthor.entries()].sort((a, b) => (b[1].ins + b[1].del) - (a[1].ins + a[1].del));
+            if (ranked.length) {
+              const det = el('details', { style: 'margin-top:8px;' });
+              det.appendChild(el('summary', {}, 'Edits by author (' + ranked.length + ')'));
+              const et = el('table', { class: 'anr-readout' });
+              for (const [a, rec] of ranked) {
+                const tot = rec.ins + rec.del;
+                et.appendChild(row(a, tot + ' edits  (' + rec.ins + ' ins, ' + rec.del + ' del) · ' + Math.round(tot / n * 100) + '%'));
+              }
+              det.appendChild(et);
+              detailsBlocks.push(det);
+            }
           }
         }
       }

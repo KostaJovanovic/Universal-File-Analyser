@@ -183,22 +183,34 @@ function buildViewer(geo, opts = {}) {
   const vsrc = `attribute vec3 aPos; attribute vec3 aNormal; attribute vec3 aBary;
     attribute vec3 aColor; attribute vec2 aUV;
     uniform mat4 uProj, uView, uModel;
-    varying vec3 vN; varying vec3 vP; varying vec3 vBary; varying vec3 vCol; varying vec2 vUV;
+    varying vec3 vN; varying vec3 vNe; varying vec3 vP; varying vec3 vBary; varying vec3 vCol; varying vec2 vUV;
     void main(){ vec4 w = uModel*vec4(aPos,1.0); vec4 vp = uView*w;
-      gl_Position = uProj*vp; vN = mat3(uModel)*aNormal; vP = vp.xyz; vBary = aBary; vCol = aColor; vUV = aUV; }`;
+      gl_Position = uProj*vp; vN = mat3(uModel)*aNormal; vNe = mat3(uView*uModel)*aNormal; vP = vp.xyz; vBary = aBary; vCol = aColor; vUV = aUV; }`;
   const fsrc = `${deriv ? '#extension GL_OES_standard_derivatives : enable\n' : ''}precision mediump float;
-    varying vec3 vN; varying vec3 vP; varying vec3 vBary; varying vec3 vCol; varying vec2 vUV;
-    uniform vec3 uColor; uniform float uWire; uniform float uHasVCol; uniform float uHasTex; uniform sampler2D uTex;
-    void main(){ vec3 N = normalize(vN); vec3 L = normalize(vec3(0.35,0.6,0.8));
-      float d = max(dot(N,L),0.0); float b = max(dot(-N,L),0.0);
-      float lit = max(d, b*0.55);
+    varying vec3 vN; varying vec3 vNe; varying vec3 vP; varying vec3 vBary; varying vec3 vCol; varying vec2 vUV;
+    uniform vec3 uColor; uniform float uWire; uniform float uHasVCol; uniform float uHasTex; uniform sampler2D uTex; uniform float uReal;
+    void main(){
       // Base albedo: a texture sample (OBJ map_Kd) wins, then per-vertex colour
       // (OBJ material Kd baked per-vertex, or embedded vertex colours), else the
       // single uniform colour used by STL/STEP and the colour picker.
       vec3 base = uColor;
       if(uHasVCol > 0.5) base = vCol;
       if(uHasTex > 0.5) base = texture2D(uTex, vUV).rgb;
-      vec3 c = base*(0.28+0.72*lit);
+      vec3 c;
+      if(uReal > 0.5){
+        // Realistic view: OrcaSlicer-style two fixed (eye-space) lights, Blinn-Phong
+        // with a soft specular for a moulded, lit-from-above look.
+        vec3 N = normalize(vNe); vec3 V = normalize(-vP);
+        vec3 LT = vec3(-0.4574957,0.4574957,0.7624929), LF = vec3(0.6985074,0.1397015,0.6985074);
+        float diff = 0.25 + max(dot(N,LT),0.0)*0.55 + max(dot(N,LF),0.0)*0.22;
+        float spec = 0.22*pow(max(dot(N,normalize(LT+V)),0.0),32.0) + 0.07*pow(max(dot(N,normalize(LF+V)),0.0),16.0);
+        c = clamp(base*diff + vec3(spec), 0.0, 1.0);
+      } else {
+        vec3 N = normalize(vN); vec3 L = normalize(vec3(0.35,0.6,0.8));
+        float d = max(dot(N,L),0.0); float b = max(dot(-N,L),0.0);
+        float lit = max(d, b*0.55);
+        c = base*(0.28+0.72*lit);
+      }
       if(uWire > 0.5){
         ${deriv
           ? 'vec3 w = fwidth(vBary); vec3 a = smoothstep(vec3(0.0), w*1.3, vBary); float e = min(min(a.x,a.y),a.z);'
@@ -284,9 +296,10 @@ function buildViewer(geo, opts = {}) {
   const uHasVCol = gl.getUniformLocation(prog, 'uHasVCol');
   const uHasTex = gl.getUniformLocation(prog, 'uHasTex');
   const uTex = gl.getUniformLocation(prog, 'uTex');
+  const uReal = gl.getUniformLocation(prog, 'uReal');
   gl.enable(gl.DEPTH_TEST);
 
-  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, color: [0.55, 0.62, 0.95], spin: true, ortho: false, wire: false, bg: [0.06, 0.06, 0.06], msaa, ssaa: true, upZ: zUp };
+  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, color: [0.55, 0.62, 0.95], spin: true, ortho: false, wire: false, real: false, bg: [0.06, 0.06, 0.06], msaa, ssaa: true, upZ: zUp };
   let dirty = true;
   // Spin can be turned off two ways - the button, or simply interacting with the
   // canvas (clicking/dragging stops it). Route every change through setSpin so any
@@ -328,6 +341,7 @@ function buildViewer(geo, opts = {}) {
     gl.uniformMatrix4fv(uModel, false, model);
     gl.uniform3fv(uColor, state.color);
     gl.uniform1f(uWire, state.wire ? 1 : 0);
+    gl.uniform1f(uReal, state.real ? 1 : 0);
     gl.uniform1f(uHasVCol, hasVCol ? 1 : 0);
     if (tex) {
       gl.activeTexture(gl.TEXTURE0);
@@ -455,7 +469,7 @@ export function buildViewerCard(geo, title = '3D model', opts = {}) {
     // `viewer` by binding, so they keep working after the swap.
     function applyMSAA(on) {
       const s = viewer.state;
-      const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, color: s.color, spin: s.spin, ortho: s.ortho, wire: s.wire, bg: s.bg, ssaa: s.ssaa, upZ: s.upZ };
+      const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, color: s.color, spin: s.spin, ortho: s.ortho, wire: s.wire, real: s.real, bg: s.bg, ssaa: s.ssaa, upZ: s.upZ };
       const next = buildViewer(geo, { antialias: on, zUp: opts.zUp });
       if (!next.ok) return;                        // keep the working viewer if rebuild fails
       const old = viewer; viewer = next;
@@ -477,6 +491,7 @@ export function buildViewerCard(geo, title = '3D model', opts = {}) {
       btn.addEventListener('click', () => { set(!get()); sync(); });
       qPanel.appendChild(btn);
     };
+    // aaBtn('Realistic view', () => viewer.state.real, (v) => { viewer.state.real = v; viewer.markDirty(); });
     aaBtn('Hardware MSAA', () => viewer.state.msaa, (v) => applyMSAA(v));
     aaBtn('Supersampling', () => viewer.state.ssaa, (v) => { viewer.state.ssaa = v; viewer.resize(); viewer.markDirty(); });
     qBtn.addEventListener('click', (e) => { e.stopPropagation(); qPanel.classList.toggle('is-hidden'); });

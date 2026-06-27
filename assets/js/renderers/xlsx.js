@@ -25,6 +25,57 @@ function parseXml(text) {
   return new DOMParser().parseFromString(text, 'application/xml');
 }
 
+// Resolve a relationship Target (possibly '../') against the part it came from.
+function resolveRel(basePath, target) {
+  const dir = basePath.slice(0, basePath.lastIndexOf('/') + 1);
+  const out = [];
+  for (const p of (dir + target).split('/')) { if (p === '..') out.pop(); else if (p !== '.' && p !== '') out.push(p); }
+  return out.join('/');
+}
+
+// Collect pivot-table definitions: name, target location, field counts, and the
+// source range (followed through the table's rels to its pivot-cache definition).
+// Purely additive - any malformed part is skipped, never thrown.
+async function collectPivots(zip) {
+  const out = [];
+  let files;
+  try { files = zip.match(/^xl\/pivotTables\/pivotTable\d+\.xml$/); } catch (_) { return out; }
+  for (const f of files) {
+    try {
+      const def = parseXml(await zip.text(f.name));
+      const root = def.documentElement;
+      const name = root.getAttribute('name') || root.getAttribute('dataCaption') || '(unnamed)';
+      const loc = def.getElementsByTagName('location')[0];
+      const location = loc ? (loc.getAttribute('ref') || '') : '';
+      const cnt = (tag) => { const e = def.getElementsByTagName(tag)[0]; return e ? (parseInt(e.getAttribute('count'), 10) || e.getElementsByTagName('field').length || 0) : 0; };
+      const fields = { row: cnt('rowFields'), col: cnt('colFields'), data: cnt('dataFields'), page: cnt('pageFields') };
+      // Source range lives in the linked pivot-cache definition's worksheetSource.
+      let source = '';
+      try {
+        const relName = f.name.replace(/pivotTables\/(pivotTable\d+)\.xml$/, 'pivotTables/_rels/$1.xml.rels');
+        if (zip.has(relName)) {
+          const rd = parseXml(await zip.text(relName));
+          let cacheTarget = '';
+          for (const r of rd.getElementsByTagName('Relationship')) {
+            if (/pivotCacheDefinition/i.test(r.getAttribute('Target') || '')) { cacheTarget = r.getAttribute('Target'); break; }
+          }
+          const cachePath = cacheTarget && resolveRel(f.name, cacheTarget);
+          if (cachePath && zip.has(cachePath)) {
+            const ws = parseXml(await zip.text(cachePath)).getElementsByTagName('worksheetSource')[0];
+            if (ws) {
+              const sheet = ws.getAttribute('sheet') || '';
+              const ref = ws.getAttribute('ref') || ws.getAttribute('name') || '';
+              source = (sheet && ref && !/!/.test(ref) ? sheet + '!' : '') + ref;
+            }
+          }
+        }
+      } catch (_) { /* ignore source */ }
+      out.push({ name, location, source, fields });
+    } catch (_) { /* ignore this pivot */ }
+  }
+  return out;
+}
+
 // Built-in number-format ids (a subset). Used to classify columns as date or
 // currency when xl/styles.xml references them without an explicit format code.
 const BUILTIN_FMT = {
@@ -110,6 +161,8 @@ export async function renderXlsx(file, resultsEl) {
   try { externalLinkCount = zip.match(/^xl\/externalLinks\/externalLink\d+\.xml$/).length; } catch (_) { /* ignore */ }
   // VBA macro project presence.
   const hasMacros = zip.has('xl/vbaProject.bin');
+  // Pivot-table definitions (name / location / source / field counts).
+  const pivots = await collectPivots(zip);
 
   // ---- Number formats from xl/styles.xml (cell xf index -> 'date'|'currency'|'') ----
   const xfKind = [];
@@ -167,7 +220,7 @@ export async function renderXlsx(file, resultsEl) {
   // ---- Computation & structure (additive) ----
   try {
     const hidden = sheets.filter((s) => s.state === 'hidden' || s.state === 'veryHidden');
-    const showCard = hasMacros || hidden.length || namedRanges.length || externalLinkCount;
+    const showCard = hasMacros || hidden.length || namedRanges.length || externalLinkCount || pivots.length;
     if (showCard) {
       const c = el('div', { class: 'anr-card' });
       c.appendChild(el('h3', {}, 'Computation & structure'));
@@ -178,7 +231,28 @@ export async function renderXlsx(file, resultsEl) {
       }
       if (namedRanges.length) t.appendChild(row('Named ranges', namedRanges.length));
       if (externalLinkCount) t.appendChild(row('External workbook links', externalLinkCount));
+      if (pivots.length) t.appendChild(row('Pivot tables', pivots.length));
       c.appendChild(t);
+      if (pivots.length) {
+        const det = el('details', { style: 'margin-top:8px;' });
+        det.appendChild(el('summary', {}, 'View pivot tables (' + pivots.length + ')'));
+        const pt = el('table', { class: 'anr-readout' });
+        for (const p of pivots) {
+          const fieldBits = [];
+          if (p.fields.row) fieldBits.push(p.fields.row + ' row');
+          if (p.fields.col) fieldBits.push(p.fields.col + ' col');
+          if (p.fields.data) fieldBits.push(p.fields.data + ' value');
+          if (p.fields.page) fieldBits.push(p.fields.page + ' filter');
+          const detail = [
+            p.source ? 'source ' + p.source : '',
+            p.location ? 'at ' + p.location : '',
+            fieldBits.join(', '),
+          ].filter(Boolean).join('  ·  ');
+          pt.appendChild(row(p.name, detail || '-'));
+        }
+        det.appendChild(pt);
+        c.appendChild(det);
+      }
       if (namedRanges.length) {
         const det = el('details', { style: 'margin-top:8px;' });
         det.appendChild(el('summary', {}, 'View named ranges (' + namedRanges.length + ')'));

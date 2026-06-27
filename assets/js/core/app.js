@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 175;
+const COMMIT_COUNT = 176;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -31,6 +31,7 @@ import { initVideo, renderVideo } from '../renderers/video.js';
 import { renderPdf } from '../renderers/pdf.js';
 import { renderArchive, renderArchiveEmbedded } from '../renderers/archive.js';
 import { renderSvg } from '../renderers/svg.js';
+import { renderLottie } from '../renderers/lottie.js';
 import { renderCsv } from '../renderers/csv.js';
 import { renderUnknown } from '../renderers/unknown.js';
 import { renderProprietary, isProprietaryExt, extractPeIcon } from '../renderers/proprietary.js';
@@ -589,11 +590,18 @@ async function trailingDataCheck(file, sniff) {
   if (sample.every((x) => x === 0)) return null;
   const hex = Array.from(sample.slice(0, 16)).map((x) => x.toString(16).padStart(2, '0')).join(' ');
   const tSniff = await sniffFileType(file.slice(logicalEnd)).catch(() => null);
-  return { logicalEnd, trailing, hex, sniffLabel: tSniff ? tSniff.label : null, fmtLabel: sniff.label };
+  return {
+    logicalEnd, trailing, hex, fmtLabel: sniff.label,
+    sniffLabel: tSniff ? tSniff.label : null,
+    sniffExt: tSniff ? tSniff.ext : null,
+    sniffKind: tSniff ? tSniff.kind : null,
+  };
 }
 
 // Forensic readout for appended data, styled like the signature-mismatch card.
-function trailingCard(info) {
+// `file` is supplied so the hidden trailing blob can be extracted (downloaded) or
+// fed straight back into the analyser (browse an appended ZIP, view a smuggled JPEG).
+function trailingCard(info, file) {
   const card = el('div', { class: 'anr-card anr-sig-flag', role: 'alert' });
   card.appendChild(el('h3', {}, 'Trailing data'));
   const t = el('table', { class: 'anr-readout' });
@@ -608,6 +616,22 @@ function trailingCard(info) {
     + 'Data appended past a file’s structural end is ignored by normal viewers and is a classic way to '
     + 'smuggle or hide content - a polyglot, an appended archive, or steganography. Inspect it if the file '
     + 'came from an untrusted source.'));
+  // Extraction: carve the trailing region out as a blob. Download it, or analyse it
+  // in place (an appended ZIP opens the archive browser, a JPEG the photo analyser).
+  if (file) {
+    const slice = () => file.slice(info.logicalEnd);
+    const base = (file.name || 'file').replace(/\.[^.]*$/, '') || 'file';
+    const dlName = base + '.appended.' + (info.sniffExt || 'bin');
+    const dl = el('a', { class: 'anr-btn anr-btn-sm', href: URL.createObjectURL(slice()), download: dlName }, 'Extract appended data');
+    const btns = [dl];
+    if (info.sniffKind) {
+      const an = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' },
+        'Analyse appended ' + (info.sniffExt ? info.sniffExt.toUpperCase() : 'data'));
+      an.addEventListener('click', () => { if (_handleFile) _handleFile(new File([slice()], dlName, { type: '' })); });
+      btns.push(an);
+    }
+    card.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, btns));
+  }
   return card;
 }
 
@@ -716,6 +740,10 @@ function classifyFile(file) {
   if (ext === 'xlsb') return 'xlsb';   // binary BIFF12 - needs the SheetJS path, not the OOXML reader
   if (ext === 'pptx' || ext === 'pptm' || ext === 'ppsx' || ext === 'ppsm' || ext === 'potx' || ext === 'potm') return 'pptx';
   if (ext === 'epub') return 'epub';
+  // Lottie / Bodymovin vector animations: dotLottie (.lottie, a ZIP) and Telegram
+  // stickers (.tgs, gzip). Plain-.json Lottie is detected by content in the JSON
+  // inspector, which offers to play it (classifyFile can't peek at content here).
+  if (ext === 'lottie' || ext === 'tgs') return 'lottie';
   // OpenDocument, its template siblings (.ott/.ots/.otp/.otg), the flat
   // single-XML variants (.fodt/.fods/.fodp/.fodg) and legacy StarOffice 1.x
   // (.sxw/.sxc/.sxi/.sxd) all share the OpenDocument content model.
@@ -802,6 +830,7 @@ function classifyFile(file) {
   if (ext === '3mf' || ext === 'amf' || ext === 'obj' || ext === 'ply' || ext === 'off') return 'model3d';
   if (ext === 'mtl') return 'model3d';
   if (ext === 'gltf' || ext === 'glb') return 'model3d';
+  if (ext === 'fbx') return 'model3d';   // Autodesk FBX - geometry viewer (binary + ASCII)
   if (ext === 'step' || ext === 'stp' || ext === 'iges' || ext === 'igs' || ext === 'brep') return 'model3d';
   // Autodesk Fusion 360 design / archive: a Zstd-compressed ZIP. Read the embedded
   // render preview + document metadata (the BREP geometry itself is proprietary).
@@ -970,6 +999,7 @@ const ROUTES = {
   pdf:         { render: renderPdf,         results: 'unknown', scroll: '#unknownResults' },
   zip:         { render: renderArchive,     results: 'unknown', scroll: '#unknownResults' },
   svg:         { render: renderSvg,         results: 'unknown', scroll: '#unknownResults' },
+  lottie:      { render: renderLottie,      results: 'unknown', scroll: '#unknownResults' },
   csv:         { render: renderCsv,         results: 'unknown', scroll: '#unknownResults' },
   proprietary: { render: renderProprietary, results: 'unknown', scroll: '#unknownResults' },
   // Licence / marker text files open exactly like a .txt - the Plain Text view in
@@ -1363,9 +1393,10 @@ function renderStatsTrends(daily, totals) {
     files: Math.max(0, (Number(totals && totals.files) || 0) - sumF),
   };
 
-  let mode = 'daily';
+  let mode = 'cumulative';
   const visible = { visitors: true, files: true };
-  const chart = buildTrendChart(chartEl, rows, baseline);   // builds the SVG once; we only tween attributes after
+  let layout = trendLayout();
+  let chart = buildTrendChart(chartEl, rows, baseline, layout);   // builds the SVG once; we only tween attributes after
   let drawnMax = null;   // y-scale currently rendered, tweened for a smooth resize
   let raf = 0;
   let modeSeq = 0;       // guards against overlapping mode cross-fades
@@ -1458,17 +1489,54 @@ function renderStatsTrends(daily, totals) {
       }
     });
   }
+
+  // The viewBox geometry is chosen for the current width, so rebuild the SVG when
+  // the viewport crosses the narrow/wide breakpoint (e.g. a phone rotates) - cheap
+  // and rare. Same-category resizes need nothing: the SVG already scales fluidly.
+  // Replace any handler from a previous render so SPA re-navigation can't stack them.
+  if (chartEl._trendResize) window.removeEventListener('resize', chartEl._trendResize);
+  let resizeRaf = 0;
+  const onResize = () => {
+    if (resizeRaf) return;
+    resizeRaf = requestAnimationFrame(() => {
+      resizeRaf = 0;
+      const next = trendLayout();
+      if (next.narrow === layout.narrow) return;
+      layout = next;
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      chart = buildTrendChart(chartEl, rows, baseline, layout);
+      drawnMax = targetMax();
+      chart.apply(mode, drawnMax, visible);
+      for (const k of _TREND_SERIES) chart.setShown(k, visible[k]);
+    });
+  };
+  chartEl._trendResize = onResize;
+  window.addEventListener('resize', onResize);
+}
+
+// Geometry for the trend chart, picked from the viewport width. The SVG renders
+// at width:100% height:auto, so its viewBox units map to roughly this many screen
+// pixels: a 720-wide box on a 360px phone halves everything (11px axis text -> 5px
+// mush, plot only ~120px tall). On narrow screens we use a near-1:1-width, taller
+// box so axis text stays legible and the plot is tall enough to read.
+function trendLayout() {
+  const narrow = (window.innerWidth || 800) <= 700;
+  return narrow
+    ? { narrow: true,  W: 360, H: 300, padL: 38, padR: 12, padT: 14, padB: 32, dotCap: 40 }
+    : { narrow: false, W: 720, H: 240, padL: 46, padR: 14, padT: 16, padB: 30, dotCap: 60 };
 }
 
 // Build the trend chart's SVG once and return a controller. apply() only mutates
 // existing nodes' attributes (cheap, so animation is smooth); setShown() fades a
 // series via CSS opacity; a transparent overlay drives a custom hover tooltip
-// that snaps to the nearest day.
-function buildTrendChart(chartEl, daily, baseline) {
-  if (!chartEl) return { apply() {}, setShown() {} };
+// that snaps to the nearest day. `layout` comes from trendLayout(); the chart is
+// rebuilt (not resized) when the viewport crosses the narrow/wide breakpoint.
+function buildTrendChart(chartEl, daily, baseline, layout) {
+  if (!chartEl) return { apply() {}, setShown() {}, fade() {} };
   const n = daily.length;
-  const W = 720; const H = 240;
-  const padL = 46; const padR = 14; const padT = 16; const padB = 30;
+  const L = layout || trendLayout();
+  const W = L.W; const H = L.H;
+  const padL = L.padL; const padR = L.padR; const padT = L.padT; const padB = L.padB;
   const plotW = W - padL - padR; const plotH = H - padT - padB;
   const TICKS = 4;
   const xFor = (i) => (n > 1 ? padL + (i / (n - 1)) * plotW : padL + plotW / 2);
@@ -1500,7 +1568,7 @@ function buildTrendChart(chartEl, daily, baseline) {
   gVis.appendChild(vArea); gVis.appendChild(vLine);
 
   const fDots = []; const vDots = [];
-  if (n <= 60) {
+  if (n <= L.dotCap) {
     for (let i = 0; i < n; i++) {
       const fd = svgEl('circle', { class: 'stats-trend-dot stats-trend-dot--files', cx: xFor(i).toFixed(1), cy: 0, r: 2.4 });
       gFiles.appendChild(fd); fDots.push(fd);
@@ -1645,6 +1713,13 @@ function buildTrendChart(chartEl, daily, baseline) {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
+  { range: '5.01 - 5.03', notes: [
+    'Analyser sharpens into a forensic toolkit: an unknown file gets a byte-entropy strip showing where its data turns random (compressed/encrypted/packed regions and the seams between them), data hidden after a file\'s real end can be extracted or opened in place, and URLs, IPs, domains and emails found in a file are listed with one-click OSINT lookups.',
+    'Forensic checks deepen: photos and PDFs are flagged for impossible timestamps, a JPEG whose embedded thumbnail no longer matches the full image is flagged as cropped/edited, and a PDF\'s embedded scripts are traced by trigger (open/print/save) with network, file and launch patterns called out.',
+    'Documents give up more: Photoshop layers export to PNG with hidden/transparent/zero-size layers flagged, Word flags ghost authorship and per-author edit density, Excel lists pivot tables, PowerPoint and legacy .doc/.xls/.ppt are checked for macros and external links, and a SQLite database gains an in-browser read-only query box.',
+    'More opens and plays: ASS/SSA subtitles render with their real styling, Lottie and Telegram sticker animations play with a scrubbable timeline, and Autodesk FBX models open in the 3D viewer.',
+    'Exported reports lead with a tamper-evident verification block (file SHA-256, size, UTC time, Analyser version, verify instructions) and can be printed straight to PDF.',
+  ] },
   { range: '5.0', milestone: true, notes: [
     'Fifth milestone: Analyser brings broken files back from the dead and opens professional CAD.',
     'A truncated or corrupt photo is repaired (rebuilding a damaged JPEG header from a reference shot when needed), and an unfinished video with no playable index is reconstructed frame by frame and played in place.',
@@ -2370,7 +2445,7 @@ function boot() {
       // Data appended past the file's logical end (polyglot / smuggled content).
       if (resultEl && trailCheck) {
         resultEl.hidden = false;
-        resultEl.insertBefore(trailingCard(trailCheck), resultEl.firstChild);
+        resultEl.insertBefore(trailingCard(trailCheck, file), resultEl.firstChild);
       }
       // Everything above the media section (the Photo/Sound "Analyse" cards) and
       // its player are in place now, so re-assert the scroll - the early one
@@ -2418,7 +2493,10 @@ function boot() {
         }
       }
       const unreadable = document.querySelector('.anr-results:not([hidden]) .anr-cloud-warning');
-      if (!suggestion && !unreadable) scheduleShareNudge(analysed);
+      // Never nudge for a sandboxed /samples demo run - those aren't the visitor's
+      // own analysis worth sharing. (scheduleShareNudge also guards on the page, but
+      // this flag is the ground truth and holds even if the page check is bypassed.)
+      if (!suggestion && !unreadable && !isSample) scheduleShareNudge(analysed);
     });
   }
   _handleFile = handleFile;

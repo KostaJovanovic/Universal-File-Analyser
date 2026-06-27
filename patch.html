@@ -206,6 +206,31 @@
                - let the newest version here disagree with app.js.
              ===================================================================== -->
 
+        <div class="patch-entry">
+          <p class="patch-version">5.01 - 5.03</p>
+          <p class="patch-name">Forensic Sweep</p>
+          <p class="patch-date">27 June 2026, 18:30</p>
+          <ul class="patch-list">
+            <li><strong>Analyser sharpens into a forensic toolkit and opens more of what you drop: it maps where a file&rsquo;s data turns random, pulls hidden files back out, spots edited photos and tampered timestamps, traces a PDF&rsquo;s scripts, plays Lottie animations and opens FBX models, and signs off its reports so anyone can verify them.</strong></li>
+            <li><span class="patch-tag">New</span><strong>See where a file turns random.</strong> An unknown file now gets a colour strip charting how random each part of it is - flat, high regions point to compressed, encrypted or packed data, and a sudden step marks the seam where one kind of content gives way to another.</li>
+            <li><span class="patch-tag">New</span><strong>Pull a hidden file back out.</strong> When data is tacked on after a file&rsquo;s real end - a smuggled archive or image - you can now extract it with one click or open it in place, so an archive hidden behind a <a href="/about#ext-jpg">JPEG</a> opens straight into the archive browser.</li>
+            <li><span class="patch-tag">New</span><strong>Network indicators, gathered.</strong> URLs, IP addresses, domains and email addresses found inside a document, script or config file are now listed together, each with one-click lookup links to public reputation services. Nothing is sent until you choose to click.</li>
+            <li><span class="patch-tag">New</span><strong>Catch a tampered date.</strong> A photo or <a href="/about#ext-pdf">PDF</a> is now checked for impossible timestamps - a date in the future, a file last saved before the photo it holds was taken, or a modification dated before the original - and warns when a file&rsquo;s history does not add up.</li>
+            <li><span class="patch-tag">New</span><strong>Spot a cropped photo.</strong> The small preview a camera tucks inside a <a href="/about#ext-jpg">JPEG</a> is now compared to the full image; when their proportions no longer match it is flagged as a sign the photo was cropped or edited after it was taken.</li>
+            <li><span class="patch-tag">New</span><strong>See what a PDF&rsquo;s scripts do.</strong> Embedded <a href="/about#ext-pdf">PDF</a> JavaScript is now laid out by what triggers it - on open, on print, on save - with the scripts that run automatically called out, and a scan that flags code reaching the network, touching files, launching programs or hiding itself.</li>
+            <li><span class="patch-tag">New</span><strong>Photoshop layers, in full.</strong> A <a href="/about#ext-psd">.psd</a> now lets you save any layer as a PNG, and flags the layers carrying content you cannot see in the flattened image - switched off, fully transparent, or collapsed to nothing - a common place to stash a watermark or an earlier draft.</li>
+            <li><span class="patch-tag">New</span><strong>Office files give up more.</strong> Word documents flag &ldquo;ghost authorship&rdquo; when the last editor is not the original author and break down who made which tracked changes; Excel lists its pivot tables and their sources; and PowerPoint and the old <a href="/about#ext-doc">.doc</a> / <a href="/about#ext-xls">.xls</a> / <a href="/about#ext-ppt">.ppt</a> files are now checked for macros and links pointing to outside servers.</li>
+            <li><span class="patch-tag">New</span><strong>Query a database in place.</strong> A SQLite database now offers a query box to run your own read-only SQL against a copy of it, right in your browser, alongside the schema and sample rows it already showed.</li>
+            <li><span class="patch-tag">New</span><strong>Subtitles the way they look.</strong> Advanced SubStation Alpha subtitles (<strong>.ass</strong> / <strong>.ssa</strong>) now render with their real styling - colours, bold, italics and line breaks - on a dark stage, with a table of every style the file defines, instead of a plain list of lines.</li>
+            <li><span class="patch-tag">New</span><strong>Play a Lottie animation.</strong> A Lottie or Telegram sticker animation (<strong>.lottie</strong>, <strong>.tgs</strong>, or a Lottie <a href="/about#ext-json">.json</a>) now plays live with a timeline you can scrub, plus play, pause, speed and loop controls - not merely identified.</li>
+            <li><span class="patch-tag">New</span><strong>Open an FBX model.</strong> An Autodesk <strong>.fbx</strong> model - from Blender, Maya, Unreal and most 3D tools - now opens in the interactive 3D viewer, reading its mesh from both the binary and text forms of the format.</li>
+            <li><span class="patch-tag">New</span><strong>Reports you can verify and print.</strong> The exported analysis report now leads with a verification block - the file&rsquo;s SHA-256, size, a UTC timestamp and the Analyser version, with instructions to re-check the hash - and a new <strong>PDF</strong> option prints the whole report straight to a PDF.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Web pages preview properly.</strong> The rendered preview of an <a href="/about#ext-html">.html</a> file now lays the page out at a real browser width and scales it to fit, instead of cramming it into the panel and breaking the layout, with a <strong>Desktop</strong> / <strong>Mobile</strong> switch to see a responsive page either way.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>G-code display settings stay as you set them.</strong> Switching a render-quality option in the <a href="/about#ext-gcode">G-code</a> viewer no longer resets &ldquo;dim other tools&rdquo; or the build-plate view - what you had showing stays showing.</li>
+            <li><strong>Polish</strong> - the <a href="/samples">Samples</a> button is highlighted in the navbar and its example runs never trigger the share prompt, the stats graph opens on the cumulative view and reshapes to stay readable on a phone, the export panel lays its options out two-by-two and fits within the height of the screen, and the <a href="/about#ext-gcode">G-code</a> viewer&rsquo;s &ldquo;dim other tools&rdquo; button shortens to fit when space is tight.</li>
+          </ul>
+        </div>
+
         <div class="patch-entry patch-milestone">
           <p class="patch-version">5.0</p>
           <p class="patch-name">Machine Shop</p>
@@ -242,6 +267,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">4.16</p>
           <p class="patch-name">Tamper Evident</p>
@@ -257,9 +285,6 @@
             <li><strong>The header now counts files analysed.</strong> The running tally in the page header shows how many files Analyser has analysed, in place of the visitor count.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">4.12 - 4.15</p>

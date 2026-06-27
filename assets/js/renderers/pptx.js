@@ -141,6 +141,8 @@ export async function renderPptx(file, resultsEl) {
   const outline = [];       // { num, title, hidden }
   let totalHyperlinks = 0;
   const tableReports = [];  // { num, rows, cols }
+  const externalLinks = []; // external hyperlink targets (TargetMode=External) from slide rels
+  const hasMacros = zip.has('ppt/vbaProject.bin'); // .pptm carries a VBA project here
 
   // ---- Slides ----
   const slidesCard = el('div', { class: 'anr-card' });
@@ -224,7 +226,15 @@ export async function renderPptx(file, resultsEl) {
       if (zip.has(relsPath)) {
         const rels = parseXml(await zip.text(relsPath));
         const relMap = {};
-        for (const r of rels.getElementsByTagName('Relationship')) relMap[r.getAttribute('Id')] = r.getAttribute('Target');
+        for (const r of rels.getElementsByTagName('Relationship')) {
+          relMap[r.getAttribute('Id')] = r.getAttribute('Target');
+          // External hyperlink rels (TargetMode='External', or a bare http target)
+          // point off-document - the same signal docx/xlsx flag.
+          const type = r.getAttribute('Type') || '';
+          const target = r.getAttribute('Target') || '';
+          const isExt = (r.getAttribute('TargetMode') || '') === 'External';
+          if (/hyperlink/i.test(type) && (isExt || /^https?:/i.test(target)) && target) externalLinks.push(target);
+        }
         for (const blip of doc.getElementsByTagName('a:blip')) {
           const embed = blip.getAttribute('r:embed') || blip.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed');
           if (embed && relMap[embed]) {
@@ -274,16 +284,26 @@ export async function renderPptx(file, resultsEl) {
   // ---- Populate structure card (additive) ----
   try {
     const hiddenCount = outline.filter((o) => o.hidden).length;
-    const hasContent = outline.length || tableReports.length || totalHyperlinks || hiddenCount;
+    const hasContent = outline.length || tableReports.length || totalHyperlinks || hiddenCount || hasMacros || externalLinks.length;
     if (hasContent) {
       structCard.appendChild(el('h3', {}, 'Outline & structure'));
       const t = el('table', { class: 'anr-readout' });
+      if (hasMacros) t.appendChild(row('Macros', '⚠ Contains macros (ppt/vbaProject.bin)'));
       if (hiddenCount) t.appendChild(row('Hidden slides', hiddenCount));
       if (tableReports.length) {
         t.appendChild(row('Tables', tableReports.length + ' (' + tableReports.map((r) => 'slide ' + r.num + ': ' + r.rows + '×' + r.cols).join(', ') + ')'));
       }
       if (totalHyperlinks) t.appendChild(row('Hyperlinks', totalHyperlinks));
+      if (externalLinks.length) t.appendChild(row('External links', externalLinks.length));
       structCard.appendChild(t);
+      if (externalLinks.length) {
+        const det = el('details', { style: 'margin-top:8px;' });
+        det.appendChild(el('summary', {}, 'View links (' + externalLinks.length + ')'));
+        for (const u of externalLinks.slice(0, 100)) {
+          det.appendChild(el('a', { href: u, target: '_blank', rel: 'noopener noreferrer', style: 'display:block;word-break:break-all;color:var(--accent);' }, u));
+        }
+        structCard.appendChild(det);
+      }
       if (outline.length) {
         const det = el('details', { style: 'margin-top:8px;' });
         det.appendChild(el('summary', {}, 'Slide outline (' + outline.length + ')'));

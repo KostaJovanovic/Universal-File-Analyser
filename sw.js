@@ -1,7 +1,7 @@
 ﻿/* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v175';
+const VERSION = 'analyser-v176';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -26,9 +26,11 @@ const SHELL = [
   './assets/js/core/popups.js',
   './assets/js/core/export-data.js',
   './assets/js/core/util.js',
+  './assets/js/core/osint.js',
   './assets/js/core/formats.js',
   './assets/js/core/search.js',
   './assets/js/renderers/photo.js',
+  './assets/js/renderers/lottie.js',
   './assets/js/renderers/photo-convert.js',
   './assets/js/renderers/photo-recover.js',
   './assets/js/renderers/gif-frames.js',

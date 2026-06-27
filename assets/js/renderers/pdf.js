@@ -1,7 +1,7 @@
 /* Analyser - PDF module
    Lazy-loads pdf.js from CDN, extracts metadata, text, and page thumbnails. */
 
-import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, openOverlayBack } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, openOverlayBack, timeAnomalies, timeAnomalyCard } from '../core/util.js';
 import { renderPhoto, revealPhotoSection, pickOcrLanguage, ocrLangPath } from './photo.js';
 
 // Resolved against this module's URL so the dynamic import() gets a valid
@@ -86,6 +86,19 @@ function fmtDate(d) {
   }
   if (d instanceof Date) return d.toISOString().replace('T', ' ').replace(/\..*$/, '');
   return String(d);
+}
+
+// Parse a PDF date string (D:YYYYMMDDHHmmSS±HH'mm') into a Date, or null. Used by
+// the timestamp-anomaly check; a missing timezone is treated as UTC.
+function pdfDate(d) {
+  if (typeof d !== 'string') return d instanceof Date ? d : null;
+  const m = /D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?([+\-Z])?(\d{2})?'?(\d{2})?/.exec(d);
+  if (!m) return null;
+  const [, Y, Mo = '01', D = '01', H = '00', Mi = '00', S = '00', tz, tzh = '00', tzm = '00'] = m;
+  let iso = `${Y}-${Mo}-${D}T${H}:${Mi}:${S}`;
+  iso += (!tz || tz === 'Z') ? 'Z' : `${tz}${tzh}:${tzm}`;
+  const dt = new Date(iso);
+  return isNaN(dt) ? null : dt;
 }
 
 // Scan the raw PDF bytes for forensic signals pdf.js does not surface: how many
@@ -181,6 +194,17 @@ export async function renderPdf(file, resultsEl) {
   resultsEl.appendChild(infoCard);
   resultsEl.appendChild(integrityCard(file));
 
+  // Timestamp anomaly check: PDF creation/modification dates against each other and
+  // the file's own last-modified time (future dates, mod-before-create, etc.).
+  try {
+    const tac = timeAnomalyCard(timeAnomalies({
+      created: pdfDate(meta.CreationDate),
+      modified: pdfDate(meta.ModDate),
+      filesystem: file.lastModified ? new Date(file.lastModified) : null,
+    }));
+    if (tac) resultsEl.appendChild(tac);
+  } catch (_) { /* ignore */ }
+
   // --- Document structure (outline, forms, links, attachments, security) ---
   // Everything here is additive and best-effort: each pdf.js call may reject or
   // be absent, so every step is guarded and only rows with real data are shown.
@@ -262,39 +286,63 @@ export async function renderPdf(file, resultsEl) {
       }
     } catch (_) {}
 
-    // -- Embedded JavaScript (security flag + source) --
+    // -- Embedded JavaScript: trace which trigger runs which script, and scan each
+    //    script for higher-risk patterns (network / file / launch / obfuscation /
+    //    crypto). The getJSActions() keys ARE the trigger events. --
     try {
-      const jsSources = [];
+      const PDF_JS_PATTERNS = [
+        { label: 'network', re: /\b(?:submitForm|getURL|launchURL|SOAP\.|Net\.HTTP|XMLHttpRequest|fetch\s*\()/i },
+        { label: 'file access', re: /\b(?:exportDataObject|importDataObject|createDataObject|saveAs|app\.openDoc)/i },
+        { label: 'launch/exec', re: /\b(?:launchURL|app\.launchURL|Launch)\b|\.exec\s*\(/i },
+        { label: 'obfuscation', re: /\b(?:eval|unescape|String\.fromCharCode|util\.byteToChar)\s*\(?/i },
+        { label: 'crypto', re: /\b(?:encrypt|decrypt|Crypt)\b/i },
+      ];
+      // Trigger names that fire automatically (no user choice) - the dangerous ones.
+      const AUTO_TRIGGERS = { OpenAction: 'Document open', WillPrint: 'Before print', DidPrint: 'After print', WillSave: 'Before save', DidSave: 'After save', WillClose: 'Before close' };
+      const triggerLabel = (k) => AUTO_TRIGGERS[k] ? AUTO_TRIGGERS[k] + ' (auto-run)' : 'Named script: ' + k;
+      const actions = [];          // { trigger, source, flags }
+      const seen = new Set();
+      const pushAction = (k, s) => {
+        if (!s) return;
+        const src = String(s);
+        const key = k + ' ' + src;
+        if (seen.has(key)) return;
+        seen.add(key);
+        actions.push({ trigger: k, source: src, flags: PDF_JS_PATTERNS.filter((p) => p.re.test(src)).map((p) => p.label) });
+      };
       try {
         const jsActions = await pdf.getJSActions().catch(() => null);
-        if (jsActions) {
-          for (const k of Object.keys(jsActions)) {
-            const v = jsActions[k];
-            const arr = Array.isArray(v) ? v : [v];
-            for (const s of arr) { if (s) jsSources.push('// ' + k + '\n' + String(s)); }
-          }
+        if (jsActions) for (const k of Object.keys(jsActions)) {
+          const v = jsActions[k];
+          for (const s of (Array.isArray(v) ? v : [v])) pushAction(k, s);
         }
       } catch (_) {}
-      let hasJs = jsSources.length > 0;
-      // OpenAction-level JavaScript (auto-run on open) is a separate, older path.
-      if (typeof pdf.getOpenAction === 'function') {
-        try {
+      try {
+        if (typeof pdf.getOpenAction === 'function') {
           const oa = await pdf.getOpenAction().catch(() => null);
-          if (oa && oa.action === 'JavaScript') hasJs = true;
-        } catch (_) {}
-      }
-      if (hasJs) {
-        addRow(rowHelp('Embedded JavaScript', '⚠ yes',
-          'The PDF contains document-level JavaScript that a viewer may execute. Embedded scripts can be benign (form logic) but are also a common malware vector, so treat unexpected scripts with caution.'));
-        // Surface the actual source so it can be reviewed in place.
-        if (jsSources.length) {
-          const det = el('details');
-          det.appendChild(el('summary', {}, 'JavaScript source (' + jsSources.length + ')'));
-          const pre = el('pre', { class: 'anr-ocr-text', style: 'max-height:300px;overflow:auto;white-space:pre-wrap;font-size:12px;margin:8px 0 0;' });
-          pre.textContent = jsSources.join('\n\n');
-          det.appendChild(pre);
-          extras.push(det);
+          if (oa && oa.action === 'JavaScript') pushAction('OpenAction', oa.jsCode || '(script present, source not exposed)');
         }
+      } catch (_) {}
+      if (actions.length) {
+        addRow(rowHelp('Embedded JavaScript', '⚠ yes (' + actions.length + ' action' + (actions.length === 1 ? '' : 's') + ')',
+          'The PDF contains JavaScript a viewer may execute. Scripts can be benign (form logic) but are also a common malware vector, so treat unexpected ones with caution.'));
+        const autoRun = actions.filter((a) => AUTO_TRIGGERS[a.trigger]);
+        if (autoRun.length) addRow(rowHelp('Auto-run scripts', '⚠ ' + [...new Set(autoRun.map((a) => AUTO_TRIGGERS[a.trigger]))].join(', '),
+          'These scripts run automatically on the named event, with no user action - the riskiest kind.'));
+        const allFlags = [...new Set(actions.flatMap((a) => a.flags))];
+        if (allFlags.length) addRow(rowHelp('Suspicious patterns', '⚠ ' + allFlags.join(', '),
+          'A heuristic scan of the scripts found calls associated with: ' + allFlags.join(', ') + ' - higher-risk behaviours like reaching the network, touching files, launching programs, or obfuscating code.'));
+        // Per-trigger source so each action can be reviewed in place.
+        const det = el('details');
+        det.appendChild(el('summary', {}, 'JavaScript actions (' + actions.length + ')'));
+        for (const a of actions) {
+          det.appendChild(el('div', { class: 'anr-readout-section', style: 'margin-top:8px;' },
+            triggerLabel(a.trigger) + (a.flags.length ? '  -  ⚠ ' + a.flags.join(', ') : '')));
+          const pre = el('pre', { class: 'anr-ocr-text', style: 'max-height:240px;overflow:auto;white-space:pre-wrap;font-size:12px;margin:6px 0 0;' });
+          pre.textContent = a.source;
+          det.appendChild(pre);
+        }
+        extras.push(det);
       }
     } catch (_) {}
 
