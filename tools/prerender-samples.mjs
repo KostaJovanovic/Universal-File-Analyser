@@ -18,7 +18,7 @@
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
-import { esc, escAttr } from './prerender-common.mjs';
+import { esc, escAttr, DEPTH_BADGE } from './prerender-common.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PAGE = join(ROOT, 'samples.html');
@@ -57,7 +57,7 @@ groups.forEach((g, order) => {
     for (const tok of r.exts) {
       const k = tok.toLowerCase();
       if (!extInfo.has(k)) {
-        extInfo.set(k, { label: r.label, desc: r.desc, catKey: g.key, catLabel: g.label, catOrder: order });
+        extInfo.set(k, { label: r.label, desc: r.desc, depth: r.depth, catKey: g.key, catLabel: g.label, catOrder: order });
       }
     }
   }
@@ -78,7 +78,7 @@ function humanSize(bytes) {
 
 function chip(name, bytes) {
   const ext = extOf(name);
-  const info = extInfo.get(ext) || { label: ext ? ext.toUpperCase() : 'File', desc: '', catKey: 'system', catLabel: 'System', catOrder: 999 };
+  const info = extInfo.get(ext) || { label: ext ? ext.toUpperCase() : 'File', desc: '', depth: 'id', catKey: 'system', catLabel: 'System', catOrder: 999 };
   const caption = SAMPLE_PAGES[name] || info.desc || '';
   const href = '/samples/' + name.split('/').map(encodeURIComponent).join('/');
   // The square chip shows the extension as a big tile (top three quarters) over
@@ -109,7 +109,14 @@ function chip(name, bytes) {
   // The visible label drops the extension (the thumbnail tile already shows it);
   // data-name keeps the full filename so the click handler loads the right file.
   const display = name.replace(/\.[^.]+$/, '') || name;
-  return `        <button type="button" class="sample-chip" data-sample="${escAttr(href)}" data-name="${escAttr(name)}" data-cat="${escAttr(info.catKey)}" data-label="${escAttr(info.label)}" data-ext="${escAttr(tile)}" data-size="${escAttr(size)}" data-desc="${escAttr(shortDesc)}" aria-label="${escAttr(aria)}"><span class="sample-thumb${sizeMod}" aria-hidden="true">${esc(tile)}</span><span class="sample-name"><span>${esc(display)}</span></span></button>`;
+  // Depth tag in the thumbnail's top-right corner - only for the Partial and ID
+  // tiers (matching the /formats list badge), to flag the samples that aren't read
+  // in full. Full-analysis samples carry no tag, since that is the default.
+  const dm = DEPTH_BADGE[info.depth];
+  const depthTag = (dm && info.depth !== 'full')
+    ? `<span class="sample-depth ${dm.cls}" title="${escAttr(dm.title)}">${dm.label}</span>`
+    : '';
+  return `        <button type="button" class="sample-chip" data-sample="${escAttr(href)}" data-name="${escAttr(name)}" data-cat="${escAttr(info.catKey)}" data-label="${escAttr(info.label)}" data-ext="${escAttr(tile)}" data-size="${escAttr(size)}" data-desc="${escAttr(shortDesc)}" aria-label="${escAttr(aria)}">${depthTag}<span class="sample-thumb${sizeMod}" aria-hidden="true">${esc(tile)}</span><span class="sample-name"><span>${esc(display)}</span></span></button>`;
 }
 
 // Gather files (skip dotfiles and _-prefixed meta files, and any sub-directories).

@@ -1026,31 +1026,73 @@ function buildBoard3D(pcb, opts = {}) {
   const applyCam = () => { cam.style.transform = `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`; };
   const applyBoard = () => { board.style.transform = `scale(${1 / RES}) rotateX(${view.rx}deg) rotateY(${view.ry}deg)`; };
   applyCam(); applyBoard();
+  // Reset: ease the camera (zoom + pan) home as well as the board, so the whole
+  // view glides back instead of the rotation animating while the zoom snaps. The
+  // cam transition is off during live zoom/pan (it would lag the gesture) and only
+  // switched on for this animation, then cleared after the 0.45s ease.
+  let resetTimer = null;
+  const resetView = () => {
+    cam.classList.add('is-animating');
+    Object.assign(view, { rx: HOME.rx, ry: HOME.ry, zoom: HOME.zoom, panX: 0, panY: 0 });
+    applyCam(); applyBoard();
+    if (resetTimer) clearTimeout(resetTimer);
+    resetTimer = setTimeout(() => cam.classList.remove('is-animating'), 480);
+  };
 
-  let drag = null;
+  // Pointer gestures, unified for mouse and touch. One pointer rotates the slab
+  // (or pans with the right/middle mouse button); two pointers pinch-zoom and
+  // pan together, so a phone gets the zoom/pan the wheel + right-drag give a
+  // mouse. Every active pointer is tracked by id, so a touch can move between one
+  // and two fingers mid-gesture without the camera jumping.
+  const ZMIN = 0.3, ZMAX = 4;
+  const pts = new Map();      // pointerId -> { x, y }
+  let mode = null;            // 'rotate' | 'pan' | 'pinch'
+  let pinch = null;          // { dist, cx, cy } baseline for the two-finger gesture
+  const twoFinger = () => {
+    const a = [...pts.values()];
+    return { dist: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) || 1, cx: (a[0].x + a[1].x) / 2, cy: (a[0].y + a[1].y) / 2 };
+  };
   stage.addEventListener('contextmenu', (e) => e.preventDefault());   // right-drag pans - suppress the menu
   stage.addEventListener('pointerdown', (e) => {
-    drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.button === 1 };
-    board.classList.add('is-dragging'); stage.setPointerCapture(e.pointerId);
+    stage.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    board.classList.add('is-dragging');
+    if (pts.size >= 2) { mode = 'pinch'; pinch = twoFinger(); }
+    else mode = (e.button === 2 || e.button === 1) ? 'pan' : 'rotate';
   });
   stage.addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    if (drag.pan) { view.panX += dx; view.panY += dy; applyCam(); }
-    else { view.ry += dx * 0.5; view.rx = Math.max(-90, Math.min(90, view.rx - dy * 0.5)); applyBoard(); }
-    drag.x = e.clientX; drag.y = e.clientY;
+    const p = pts.get(e.pointerId);
+    if (!p) return;
+    const px = p.x, py = p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    if (mode === 'pinch' && pts.size >= 2) {
+      // Spread drives the zoom, centroid travel drives the pan - so two fingers
+      // zoom and slide the board at once, the way every map app does.
+      const t = twoFinger();
+      view.zoom = Math.max(ZMIN, Math.min(ZMAX, view.zoom * (t.dist / pinch.dist)));
+      view.panX += t.cx - pinch.cx; view.panY += t.cy - pinch.cy;
+      pinch = t; applyCam();
+    } else if (mode === 'pan') {
+      view.panX += e.clientX - px; view.panY += e.clientY - py; applyCam();
+    } else if (mode === 'rotate') {
+      view.ry += (e.clientX - px) * 0.5; view.rx = Math.max(-90, Math.min(90, view.rx - (e.clientY - py) * 0.5)); applyBoard();
+    }
   });
-  const endDrag = () => { drag = null; board.classList.remove('is-dragging'); };
-  stage.addEventListener('pointerup', endDrag);
-  stage.addEventListener('pointercancel', endDrag);
-  stage.addEventListener('wheel', (e) => { e.preventDefault(); view.zoom = Math.max(0.3, Math.min(4, view.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); applyCam(); }, { passive: false });
-  stage.addEventListener('dblclick', () => { Object.assign(view, { rx: HOME.rx, ry: HOME.ry, zoom: HOME.zoom, panX: 0, panY: 0 }); applyCam(); applyBoard(); });
+  const dropPointer = (e) => {
+    pts.delete(e.pointerId);
+    if (pts.size === 0) { mode = null; board.classList.remove('is-dragging'); }
+    else if (pts.size === 1) { mode = 'rotate'; pinch = null; }   // back to one finger: resume rotating, no jump
+  };
+  stage.addEventListener('pointerup', dropPointer);
+  stage.addEventListener('pointercancel', dropPointer);
+  stage.addEventListener('wheel', (e) => { e.preventDefault(); view.zoom = Math.max(ZMIN, Math.min(ZMAX, view.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); applyCam(); }, { passive: false });
+  stage.addEventListener('dblclick', resetView);
 
   const bar = el('div', { class: 'anr-altium-bar' });
   const flip = el('button', { class: 'anr-btn', type: 'button' }, 'Flip over');
   flip.addEventListener('click', () => { view.ry = Math.abs(((view.ry % 360) + 360) % 360 - 180) < 90 ? 0 : 180; applyBoard(); });
   const reset = el('button', { class: 'anr-btn', type: 'button' }, 'Reset view');
-  reset.addEventListener('click', () => { Object.assign(view, { rx: HOME.rx, ry: HOME.ry, zoom: HOME.zoom, panX: 0, panY: 0 }); applyCam(); applyBoard(); });
+  reset.addEventListener('click', resetView);
   // Quality popup: supersampling toggle (rebuilds the slab via onToggleSS). MSAA
   // is shown disabled - it is a WebGL feature, not available to this CSS/SVG board.
   const qWrap = el('span', { class: 'anr-aa-wrap' });
@@ -1068,7 +1110,7 @@ function buildBoard3D(pcb, opts = {}) {
   document.addEventListener('click', (e) => { if (!qWrap.contains(e.target)) qPanel.classList.add('is-hidden'); });
   qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
   bar.appendChild(flip); bar.appendChild(reset); bar.appendChild(qWrap);
-  bar.appendChild(el('span', { class: 'anr-hint anr-pcb3d-hint' }, 'Drag to rotate - right-drag to pan - wheel to zoom - double-click to reset.'));
+  bar.appendChild(el('span', { class: 'anr-hint anr-pcb3d-hint' }, 'Drag to rotate - pinch or wheel to zoom - two-finger or right-drag to pan - double-tap to reset.'));
 
   const wrap = el('div', { class: 'anr-altium-wrap anr-pcb3d-wrap' });
   wrap.appendChild(stage); wrap.appendChild(bar);
