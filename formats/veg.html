@@ -92,7 +92,7 @@
   <section class="section">
     <div class="grid">
       <div class="section-content">
-        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.VEG</span><span class="fmt-item-badge format-crumb-badge is-full" title="Opens in a viewer with deep metadata">Full</span></p>
+        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.VEG</span><span class="fmt-item-badge format-crumb-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span></p>
         <h2 class="section-head">What is a .VEG file?</h2>
         <p class="section-lede">VEG is a project from VEGAS Pro, a video editor. Created and opened by VEGAS Pro (now from MAGIX).</p>
 
@@ -100,6 +100,7 @@
           <dl class="about-caps">
             <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>VEGAS Pro began at Sonic Foundry, then passed to Sony and now MAGIX.</li><li>VEGAS launched in 1999 as an audio-only editor at the NAMM show, gaining video editing tools in 2000.</li><li>A .veg references the source media rather than embedding it, so the clips it points to must stay in place for the project to reopen intact.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>Open Sony / MAGIX VEGAS Pro (.veg) and VEGAS Movie Studio (.vf) projects in the browser. A .veg is a Sonic Foundry "RIFF GUID" container; Analyser reads the VEGAS version, the project summary (author, copyright, contact), every media generator and video FX used by its plugin id and friendly name (Titles &amp; Text, Solid Color, Cookie Cutter and more), the actual title and text content decoded from the embedded RTF, and the source media and template file paths the project references.</dd></div>
+            <div><dt>Depth of analysis</dt><dd>.VEG is a partial-analysis format: Analyser opens it and shows the embedded preview or thumbnail and the metadata it can read, but the real editable content stays in the application's proprietary format and is not reconstructed in the browser. Formats with a complete viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .VEG file</dt><dd>Drag a .VEG file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd><a href="/formats/vf">.VF</a>. See <a href="/formats">all supported file types</a>.</dd></div>
           </dl>

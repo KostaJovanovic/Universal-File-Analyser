@@ -92,7 +92,7 @@
   <section class="section">
     <div class="grid">
       <div class="section-content">
-        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.SLDASM</span><span class="fmt-item-badge format-crumb-badge is-full" title="Opens in a viewer with deep metadata">Full</span></p>
+        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.SLDASM</span><span class="fmt-item-badge format-crumb-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span></p>
         <h2 class="section-head">What is a .SLDASM file?</h2>
         <p class="section-lede">SLDASM is a SolidWorks assembly of several parts. Created and opened by SolidWorks.</p>
 
@@ -100,6 +100,7 @@
           <dl class="about-caps">
             <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Parts in a .sldasm are held together with mates - geometric relations such as coincident, concentric and parallel that also define how the mechanism can move.</li><li>SolidWorks founder Jon Hirschtick bankrolled the company with around a million dollars he had won as a member of the famous MIT Blackjack Team.</li><li>An assembly file references its component part files rather than embedding them, so the parts must travel with it.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>Open a SolidWorks part (.sldprt), assembly (.sldasm) or drawing (.slddrw). Older (pre-2015) files are OLE2 documents: Analyser reads the saved preview thumbnail and the document metadata (title, author, who last saved it and when). Files saved by SolidWorks 2015 or later are encrypted by Dassault Systemes, so they are identified but their contents cannot be read outside SolidWorks - in either case the editable Parasolid geometry stays proprietary, so export to STEP, STL or 3MF for the full 3D viewer.</dd></div>
+            <div><dt>Depth of analysis</dt><dd>.SLDASM is a partial-analysis format: Analyser opens it and shows the embedded preview or thumbnail and the metadata it can read, but the real editable content stays in the application's proprietary format and is not reconstructed in the browser. Formats with a complete viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .SLDASM file</dt><dd>Drag a .SLDASM file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd><a href="/formats/sldprt">.SLDPRT</a> &middot; <a href="/formats/slddrw">.SLDDRW</a>. See <a href="/formats">all supported file types</a>.</dd></div>
           </dl>

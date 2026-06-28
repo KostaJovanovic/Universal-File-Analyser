@@ -92,7 +92,7 @@
   <section class="section">
     <div class="grid">
       <div class="section-content">
-        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.PDN</span><span class="fmt-item-badge format-crumb-badge is-full" title="Opens in a viewer with deep metadata">Full</span></p>
+        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.PDN</span><span class="fmt-item-badge format-crumb-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span></p>
         <h2 class="section-head">What is a .PDN file?</h2>
         <p class="section-lede">PDN is the native layered format of Paint.NET, a free Windows image editor. Created and opened by Paint.NET.</p>
 
@@ -100,6 +100,7 @@
           <dl class="about-caps">
             <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Paint.NET began in 2004 as a university project meant to better Microsoft Paint.</li><li>Paint.NET is written in C# on Microsoft’s .NET platform, and a PDN preserves its layers and transparency.</li><li>The PDN file is a compressed dump of the editor’s internal document object rather than a generic image format.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>Open Krita (.kra), Procreate and Paint.NET (.pdn) paintings by showing the flattened preview baked into the file - the full merged image for Krita, the QuickLook thumbnail for Procreate, the embedded PNG preview for Paint.NET - alongside the canvas size, layer count and app version. Their per-layer artwork is in a private format, so the embedded preview is the faithful render.</dd></div>
+            <div><dt>Depth of analysis</dt><dd>.PDN is a partial-analysis format: Analyser opens it and shows the embedded preview or thumbnail and the metadata it can read, but the real editable content stays in the application's proprietary format and is not reconstructed in the browser. Formats with a complete viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .PDN file</dt><dd>Drag a .PDN file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd><a href="/formats/kra">.KRA</a> &middot; <a href="/formats/procreate">.Procreate</a>. See <a href="/formats">all supported file types</a>.</dd></div>
           </dl>

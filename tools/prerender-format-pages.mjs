@@ -36,7 +36,7 @@
 import { writeFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
-import { esc, escAttr, buildFullKeys, makeHrefOf, THEME_SCRIPT } from './prerender-common.mjs';
+import { esc, escAttr, buildFullKeys, makeHrefOf, THEME_SCRIPT, DEPTH_BADGE } from './prerender-common.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUTDIR = join(ROOT, 'formats');
@@ -69,17 +69,22 @@ const fullKeys = buildFullKeys(groups);
 // The canonical URL path for an extension token, whichever depth it lives at.
 const hrefOf = makeHrefOf(fullKeys);
 
-// lowercase ext -> { display, rows:[{label,catKey,catLabel,desc}], sibs:Set }
-function collect(depth) {
+// lowercase ext -> { display, depth, rows:[{label,catKey,catLabel,desc}], sibs:Set }
+// The 'full' bucket also holds 'partial' rows: they open in the app and keep a
+// /formats/<ext> viewer page, differing only in the depth badge. A real 'full'
+// row outranks 'partial' for the same extension.
+function collect(bucket) {
   const ext = new Map();
   for (const g of groups) {
     for (const r of g.rows) {
-      if (r.depth !== depth) continue;
+      const inBucket = bucket === 'id' ? r.depth === 'id' : r.depth !== 'id';
+      if (!inBucket) continue;
       for (const tok of r.exts) {
         const key = tok.toLowerCase();
-        if (depth === 'id' && fullKeys.has(key)) continue; // the full page covers it
+        if (bucket === 'id' && fullKeys.has(key)) continue; // the full page covers it
         let e = ext.get(key);
-        if (!e) { e = { display: tok, rows: [], sibs: new Set() }; ext.set(key, e); }
+        if (!e) { e = { display: tok, depth: r.depth, rows: [], sibs: new Set() }; ext.set(key, e); }
+        if (r.depth === 'full') e.depth = 'full';          // full outranks partial
         e.rows.push({ label: r.label, catKey: g.key, catLabel: g.label, desc: r.desc });
         for (const sib of r.exts) if (sib.toLowerCase() !== key) e.sibs.add(sib);
       }
@@ -308,6 +313,10 @@ function assembleFacts(key, meta, d, e, isFull, ambiguous) {
 }
 
 function page(key, e, depth) {
+  // 'partial' rides in the full bucket - it gets a full-style viewer page (URL,
+  // copy), and only the depth badge/note tells it apart. So isFull stays true for
+  // partial; badgeDepth carries the real tier for the corner badge and the note.
+  const badgeDepth = e.depth || depth;
   const isFull = depth === 'full';
   const d = e.display;            // curated casing for display, e.g. WebP
   const fallback = isFull
@@ -385,9 +394,13 @@ function page(key, e, depth) {
     ],
   };
 
-  // Identification-only pages say so up front, instead of implying a viewer.
-  const depthNote = isFull ? '' : `
-            <div><dt>Depth of analysis</dt><dd>.${esc(d)} is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>`;
+  // Identification-only and partial pages say so up front, instead of implying a
+  // complete viewer.
+  const depthNote = badgeDepth === 'id' ? `
+            <div><dt>Depth of analysis</dt><dd>.${esc(d)} is an identification-grade format: Analyser recognises it from its bytes and decodes the header metadata it carries, rather than opening it in a full viewer. Formats that do get a full viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>`
+    : badgeDepth === 'partial' ? `
+            <div><dt>Depth of analysis</dt><dd>.${esc(d)} is a partial-analysis format: Analyser opens it and shows the embedded preview or thumbnail and the metadata it can read, but the real editable content stays in the application's proprietary format and is not reconstructed in the browser. Formats with a complete viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>`
+    : '';
   const openVerb = isFull ? 'It opens' : 'It is identified';
 
   return `<!DOCTYPE html>
@@ -480,7 +493,7 @@ ${siteNav(key)}
   <section class="section">
     <div class="grid">
       <div class="section-content">
-        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.${esc(d)}</span><span class="fmt-item-badge format-crumb-badge ${isFull ? 'is-full' : 'is-id'}" title="${isFull ? 'Opens in a viewer with deep metadata' : 'Identified + header metadata'}">${isFull ? 'Full' : 'ID'}</span></p>
+        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.${esc(d)}</span><span class="fmt-item-badge format-crumb-badge ${(DEPTH_BADGE[badgeDepth] || DEPTH_BADGE.id).cls}" title="${escAttr((DEPTH_BADGE[badgeDepth] || DEPTH_BADGE.id).title)}">${(DEPTH_BADGE[badgeDepth] || DEPTH_BADGE.id).label}</span></p>
         <h2 class="section-head">What is a .${esc(d)} file?</h2>
         <p class="section-lede">${esc(meta.blurb)}</p>
 

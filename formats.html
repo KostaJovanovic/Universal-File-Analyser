@@ -313,7 +313,7 @@
               <span class="fmt-item-label">VEGAS Pro</span>
               <span class="fmt-item-exts"><span class="fmt-item-ext" id="ext-veg">VEG</span> <span class="fmt-item-ext" id="ext-vf">VF</span></span>
             </div>
-            <span class="fmt-item-badge is-full" title="Opens in a viewer with deep metadata">Full</span>
+            <span class="fmt-item-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span>
           </summary>
           <div class="fmt-item-desc">Open Sony / MAGIX VEGAS Pro (.veg) and VEGAS Movie Studio (.vf) projects in the browser. A .veg is a Sonic Foundry "RIFF GUID" container; Analyser reads the VEGAS version, the project summary (author, copyright, contact), every media generator and video FX used by its plugin id and friendly name (Titles &amp; Text, Solid Color, Cookie Cutter and more), the actual title and text content decoded from the embedded RTF, and the source media and template file paths the project references.</div>
           <p class="fmt-item-guides">Per-format guides: <a href="/formats/veg">.VEG</a> &middot; <a href="/formats/vf">.VF</a></p>
@@ -361,7 +361,7 @@
               <span class="fmt-item-label">Illustrator</span>
               <span class="fmt-item-exts"><span class="fmt-item-ext" id="ext-ai">AI</span></span>
             </div>
-            <span class="fmt-item-badge is-full" title="Opens in a viewer with deep metadata">Full</span>
+            <span class="fmt-item-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span>
           </summary>
           <div class="fmt-item-desc">Open Adobe Illustrator artwork (.ai) in the browser. Modern Illustrator files (version 9 and later) are PDF-compatible, so Analyser renders the artwork page by page with pdf.js - the vector art, text and embedded images - and reads the document metadata. Older EPS/PostScript-based .ai files are identified from their header.</div>
           <p class="fmt-item-guides">Per-format guides: <a href="/formats/ai">.AI</a></p>
@@ -372,7 +372,7 @@
               <span class="fmt-item-label">Photoshop</span>
               <span class="fmt-item-exts"><span class="fmt-item-ext" id="ext-psd">PSD</span> <span class="fmt-item-ext" id="ext-psb">PSB</span></span>
             </div>
-            <span class="fmt-item-badge is-full" title="Opens in a viewer with deep metadata">Full</span>
+            <span class="fmt-item-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span>
           </summary>
           <div class="fmt-item-desc">Open Adobe Photoshop documents (PSD and PSB) in the browser: the flattened composite image Photoshop bakes in is shown, plus the full layer tree with each layer name, blend mode, opacity, visibility and a per-layer thumbnail. Reads the canvas dimensions, colour mode and bit depth. Files saved without Maximize Compatibility have no composite, so their layers are shown instead.</div>
           <p class="fmt-item-guides">Per-format guides: <a href="/formats/psd">.PSD</a> &middot; <a href="/formats/psb">.PSB</a></p>
@@ -383,7 +383,7 @@
               <span class="fmt-item-label">Raster art</span>
               <span class="fmt-item-exts"><span class="fmt-item-ext" id="ext-kra">KRA</span> <span class="fmt-item-ext" id="ext-procreate">Procreate</span> <span class="fmt-item-ext" id="ext-pdn">PDN</span></span>
             </div>
-            <span class="fmt-item-badge is-full" title="Opens in a viewer with deep metadata">Full</span>
+            <span class="fmt-item-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span>
           </summary>
           <div class="fmt-item-desc">Open Krita (.kra), Procreate and Paint.NET (.pdn) paintings by showing the flattened preview baked into the file - the full merged image for Krita, the QuickLook thumbnail for Procreate, the embedded PNG preview for Paint.NET - alongside the canvas size, layer count and app version. Their per-layer artwork is in a private format, so the embedded preview is the faithful render.</div>
           <p class="fmt-item-guides">Per-format guides: <a href="/formats/kra">.KRA</a> &middot; <a href="/formats/procreate">.Procreate</a> &middot; <a href="/formats/pdn">.PDN</a></p>
@@ -486,7 +486,7 @@
               <span class="fmt-item-label">Apple iWork</span>
               <span class="fmt-item-exts"><span class="fmt-item-ext" id="ext-pages">Pages</span> <span class="fmt-item-ext" id="ext-numbers">Numbers</span> <span class="fmt-item-ext" id="ext-keynote">Keynote</span></span>
             </div>
-            <span class="fmt-item-badge is-full" title="Opens in a viewer with deep metadata">Full</span>
+            <span class="fmt-item-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span>
           </summary>
           <div class="fmt-item-desc">Open Apple iWork documents - Pages (word processing and page layout), Numbers (spreadsheets) and Keynote (presentations, .key) - by showing the QuickLook preview Apple embeds in the file: a PDF rendered page by page, or the preview image. Reads the document type and the iWork app version that wrote it. The document body itself is stored in Apple’s undocumented Snappy / Protocol-Buffer .iwa format, which is not re-rendered.</div>
           <p class="fmt-item-guides">Per-format guides: <a href="/formats/pages">.Pages</a> &middot; <a href="/formats/numbers">.Numbers</a> &middot; <a href="/formats/keynote">.Keynote</a></p>
@@ -725,7 +725,7 @@
               <span class="fmt-item-label">Fusion 360</span>
               <span class="fmt-item-exts"><span class="fmt-item-ext" id="ext-f3d">F3D</span> <span class="fmt-item-ext" id="ext-f3z">F3Z</span></span>
             </div>
-            <span class="fmt-item-badge is-full" title="Opens in a viewer with deep metadata">Full</span>
+            <span class="fmt-item-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span>
           </summary>
           <div class="fmt-item-desc">Open an Autodesk Fusion 360 design (.f3d) or archive (.f3z) and read what it holds: the document type (part, assembly, drawing or sheet metal), the Fusion document version, the number of solid bodies and embedded appearance assets, and the thumbnail Fusion rendered into the file - shown as the model. The editable geometry is stored as Autodesk ShapeManager BREP, a proprietary format that cannot be rebuilt in the browser, so export to STL, OBJ, STEP or 3MF for the full 3D viewer.</div>
           <p class="fmt-item-guides">Per-format guides: <a href="/formats/f3d">.F3D</a> &middot; <a href="/formats/f3z">.F3Z</a></p>
@@ -736,7 +736,7 @@
               <span class="fmt-item-label">SolidWorks</span>
               <span class="fmt-item-exts"><span class="fmt-item-ext" id="ext-sldprt">SLDPRT</span> <span class="fmt-item-ext" id="ext-sldasm">SLDASM</span> <span class="fmt-item-ext" id="ext-slddrw">SLDDRW</span></span>
             </div>
-            <span class="fmt-item-badge is-full" title="Opens in a viewer with deep metadata">Full</span>
+            <span class="fmt-item-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span>
           </summary>
           <div class="fmt-item-desc">Open a SolidWorks part (.sldprt), assembly (.sldasm) or drawing (.slddrw). Older (pre-2015) files are OLE2 documents: Analyser reads the saved preview thumbnail and the document metadata (title, author, who last saved it and when). Files saved by SolidWorks 2015 or later are encrypted by Dassault Systemes, so they are identified but their contents cannot be read outside SolidWorks - in either case the editable Parasolid geometry stays proprietary, so export to STEP, STL or 3MF for the full 3D viewer.</div>
           <p class="fmt-item-guides">Per-format guides: <a href="/formats/sldprt">.SLDPRT</a> &middot; <a href="/formats/sldasm">.SLDASM</a> &middot; <a href="/formats/slddrw">.SLDDRW</a></p>

@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 176;
+const COMMIT_COUNT = 177;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -602,7 +602,10 @@ async function trailingDataCheck(file, sniff) {
 // `file` is supplied so the hidden trailing blob can be extracted (downloaded) or
 // fed straight back into the analyser (browse an appended ZIP, view a smuggled JPEG).
 function trailingCard(info, file) {
-  const card = el('div', { class: 'anr-card anr-sig-flag', role: 'alert' });
+  // A plain card (not the red anr-sig-flag alert): trailing data is worth noting
+  // but not an integrity failure, and it sits low in the readout, just above the
+  // Integrity card, rather than leading the analysis.
+  const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Trailing data'));
   const t = el('table', { class: 'anr-readout' });
   t.appendChild(row('File type', info.fmtLabel));
@@ -633,6 +636,18 @@ function trailingCard(info, file) {
     card.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, btns));
   }
   return card;
+}
+
+// Find the renderer's "Integrity" card (a plain .anr-card led by an <h3> whose
+// text starts with "Integrity" - the plain or h3help "Integrity[?]" form). Used
+// to slot the trailing-data card in just above it, since integrity is the last
+// card most renderers append.
+function findIntegrityCard(root) {
+  for (const card of root.querySelectorAll('.anr-card')) {
+    const h = card.querySelector('h3');
+    if (h && h.textContent.trim().startsWith('Integrity')) return card;
+  }
+  return null;
 }
 
 // Cursor-style confirm popup (reuses the treemap .anr-treemap-menu look) shown
@@ -1713,7 +1728,8 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
-  { range: '5.01 - 5.03', notes: [
+  { range: '5.01 - 5.04', notes: [
+    'Every format is tagged Full, Partial or ID so you can see before dropping a file whether it opens in a complete viewer, shows only its embedded preview and details, or is just identified - Photoshop, Illustrator, Fusion 360, SolidWorks, iWork and Krita are now honestly marked Partial across the format list, samples gallery and guide pages. The 3D KiCad board view also gains pinch-zoom and two-finger pan on phones with a smooth double-tap reset, the board bill of materials stops overflowing a phone screen, and a video\'s reverse-playback and trailing-data cards move lower in the report.',
     'Analyser sharpens into a forensic toolkit: an unknown file gets a byte-entropy strip showing where its data turns random (compressed/encrypted/packed regions and the seams between them), data hidden after a file\'s real end can be extracted or opened in place, and URLs, IPs, domains and emails found in a file are listed with one-click OSINT lookups.',
     'Forensic checks deepen: photos and PDFs are flagged for impossible timestamps, a JPEG whose embedded thumbnail no longer matches the full image is flagged as cropped/edited, and a PDF\'s embedded scripts are traced by trigger (open/print/save) with network, file and launch patterns called out.',
     'Documents give up more: Photoshop layers export to PNG with hidden/transparent/zero-size layers flagged, Word flags ghost authorship and per-author edit density, Excel lists pivot tables, PowerPoint and legacy .doc/.xls/.ppt are checked for macros and external links, and a SQLite database gains an in-browser read-only query box.',
@@ -2443,9 +2459,14 @@ function boot() {
         resultEl.insertBefore(signatureCard(sigCheck), resultEl.firstChild);
       }
       // Data appended past the file's logical end (polyglot / smuggled content).
+      // Slotted in just above the Integrity card (the renderer has finished, so it
+      // is in the DOM by now); falls back to the end when there is no integrity card.
       if (resultEl && trailCheck) {
         resultEl.hidden = false;
-        resultEl.insertBefore(trailingCard(trailCheck, file), resultEl.firstChild);
+        const tCard = trailingCard(trailCheck, file);
+        const integ = findIntegrityCard(resultEl);
+        if (integ) resultEl.insertBefore(tCard, integ);
+        else resultEl.appendChild(tCard);
       }
       // Everything above the media section (the Photo/Sound "Analyse" cards) and
       // its player are in place now, so re-assert the scroll - the early one

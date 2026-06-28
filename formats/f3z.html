@@ -92,7 +92,7 @@
   <section class="section">
     <div class="grid">
       <div class="section-content">
-        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.F3Z</span><span class="fmt-item-badge format-crumb-badge is-full" title="Opens in a viewer with deep metadata">Full</span></p>
+        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.F3Z</span><span class="fmt-item-badge format-crumb-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span></p>
         <h2 class="section-head">What is a .F3Z file?</h2>
         <p class="section-lede">F3Z is a Fusion 360 archive bundling a design with everything it references. Created by Fusion 360.</p>
 
@@ -100,6 +100,7 @@
           <dl class="about-caps">
             <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Autodesk offers Fusion 360 free for personal hobbyist use, which has made its files a fixture of the maker and 3D-printing community.</li><li>An F3Z bundles an assembly’s F3D along with every component, sub-assembly and reference it depends on.</li><li>Fusion 360 designs use ShapeManager, a kernel derived from ACIS, so an F3Z carries full parametric construction history.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>Open an Autodesk Fusion 360 design (.f3d) or archive (.f3z) and read what it holds: the document type (part, assembly, drawing or sheet metal), the Fusion document version, the number of solid bodies and embedded appearance assets, and the thumbnail Fusion rendered into the file - shown as the model. The editable geometry is stored as Autodesk ShapeManager BREP, a proprietary format that cannot be rebuilt in the browser, so export to STL, OBJ, STEP or 3MF for the full 3D viewer.</dd></div>
+            <div><dt>Depth of analysis</dt><dd>.F3Z is a partial-analysis format: Analyser opens it and shows the embedded preview or thumbnail and the metadata it can read, but the real editable content stays in the application's proprietary format and is not reconstructed in the browser. Formats with a complete viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .F3Z file</dt><dd>Drag a .F3Z file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd><a href="/formats/f3d">.F3D</a>. See <a href="/formats">all supported file types</a>.</dd></div>
           </dl>

@@ -92,7 +92,7 @@
   <section class="section">
     <div class="grid">
       <div class="section-content">
-        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.AI</span><span class="fmt-item-badge format-crumb-badge is-full" title="Opens in a viewer with deep metadata">Full</span></p>
+        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.AI</span><span class="fmt-item-badge format-crumb-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span></p>
         <h2 class="section-head">What is a .AI file?</h2>
         <p class="section-lede">AI is Adobe Illustrator’s native vector artwork format. Created and opened by Adobe Illustrator.</p>
 
@@ -100,6 +100,7 @@
           <dl class="about-caps">
             <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Illustrator launched in 1987 and was one of the first apps designed for Apple’s Macintosh.</li><li>Early AI files were essentially PostScript with a special header, reflecting Illustrator’s roots in Adobe’s page-description language.</li><li>Illustrator 9 in 2000 rebuilt the format around PDF, so modern AI files can double as readable PDF documents.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>Open Adobe Illustrator artwork (.ai) in the browser. Modern Illustrator files (version 9 and later) are PDF-compatible, so Analyser renders the artwork page by page with pdf.js - the vector art, text and embedded images - and reads the document metadata. Older EPS/PostScript-based .ai files are identified from their header.</dd></div>
+            <div><dt>Depth of analysis</dt><dd>.AI is a partial-analysis format: Analyser opens it and shows the embedded preview or thumbnail and the metadata it can read, but the real editable content stays in the application's proprietary format and is not reconstructed in the browser. Formats with a complete viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .AI file</dt><dd>Drag a .AI file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd>Browse the <a href="/formats">full list of supported file types</a>.</dd></div>
           </dl>

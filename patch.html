@@ -207,6 +207,19 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">5.04</p>
+          <p class="patch-name">Three Tiers</p>
+          <p class="patch-date">28 June 2026, 02:39</p>
+          <ul class="patch-list">
+            <li><strong>Analyser now says plainly how deeply it can open each format - a new &ldquo;Partial&rdquo; tag for files it can only preview - the circuit-board 3D view gains pinch-zoom and two-finger pan on phones, and a couple of report cards move to where they belong.</strong></li>
+            <li><span class="patch-tag">New</span><strong>See how deeply a format opens, at a glance.</strong> Every format now carries one of three tags - <strong>Full</strong>, <strong>Partial</strong> or <strong>ID</strong> - so you know before you drop a file whether it opens in a complete viewer, shows only the preview and details baked inside it, or is simply identified. Files like <a href="/about#ext-psd">Photoshop</a>, <a href="/about#ext-ai">Illustrator</a>, Fusion 360, SolidWorks, Apple iWork and Krita - which only give up an embedded preview - are now honestly marked <strong>Partial</strong>, on the format list, the samples gallery and each guide page, which spells out what you do and do not get.</li>
+            <li><span class="patch-tag">New</span><strong>Pinch and pan a circuit board on your phone.</strong> The 3D view of a <a href="/about#ext-kicad_pcb">KiCad</a> board now zooms with a pinch and pans with two fingers, the way the mouse wheel and right-drag already worked on a computer, so you can lean right into the copper on a touchscreen. Double-tap glides the view smoothly back to where it started.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Board part lists fit the screen.</strong> On a phone, a circuit board&rsquo;s bill of materials no longer stretches the page wider than the screen - long part numbers and footprint paths wrap, and a wide table scrolls within its own card.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The findings that matter lead.</strong> A video&rsquo;s reverse-playback option and the note about data hidden after a file&rsquo;s end now sit lower in the report, just above the file&rsquo;s fingerprints, instead of pushing the main analysis down - and that hidden-data note is no longer dressed as a red alert, since it is worth knowing but is not a failure.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">5.01 - 5.03</p>
           <p class="patch-name">Forensic Sweep</p>
           <p class="patch-date">27 June 2026, 18:30</p>
@@ -252,6 +265,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">4.17</p>
           <p class="patch-name">Split Personality</p>
@@ -266,9 +282,6 @@
             <li><span class="patch-tag is-fix">Fix</span><strong>The folder breakdown pop-up stays put.</strong> In a folder or archive breakdown, the pop-up listing the files in a slice no longer vanishes the moment you scroll inside it - you can scroll its list freely, and only a scroll outside it closes it.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">4.16</p>
