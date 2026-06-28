@@ -2480,13 +2480,10 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
     setTimeout(() => finish(false), 12000);
   });
   // Only keep the player (and offer reverse) if it actually decoded - otherwise
-  // bail so the caller can fall through to the unplayable / convert path. Mounting
-  // the reverse card here, AFTER the load check, stops it lingering above the
-  // "can't play this codec" info when the player failed.
+  // bail so the caller can fall through to the unplayable / convert path. The
+  // reverse card is mounted lower down (just above Integrity), so an early bail
+  // here keeps it off a player that never played.
   if (!loaded) { playerCard.remove(); return false; }
-
-  // ---- Reverse playback (re-encode the video backwards, on demand) ----
-  resultsEl.appendChild(buildReverseVideoCard(file, signal));
 
   const vw = playerEl.videoWidth, vh = playerEl.videoHeight, dur = playerEl.duration;
 
@@ -2703,6 +2700,10 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
       audioCard.appendChild(el('p', { class: 'anr-hint' }, 'Audio decode failed: ' + (e && e.message || 'unknown error')));
     }
   });
+
+  // ---- Reverse playback (re-encode the video backwards, on demand) ----
+  // Sits just above Integrity, below the scene-change card.
+  resultsEl.appendChild(buildReverseVideoCard(file, signal));
 
   // SHA-256
   if (file.size <= 500 * 1024 * 1024) {
@@ -3449,9 +3450,6 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     });
   }
 
-  // ---- Reverse playback (re-encode the video backwards, on demand) ----
-  resultsEl.appendChild(buildReverseVideoCard(file, renderSignal));
-
   // ---- File info ----
   // For a remuxed raw stream, show the ORIGINAL file's name/size/MIME (and base
   // the bitrate on it) - the .mp4 we built is just a playback wrapper.
@@ -3855,6 +3853,10 @@ export async function renderVideo(file, resultsEl, opts = {}) {
         'Audio decode failed: ' + (e && e.message || 'unknown error') + '. Try converting to MP4 (H.264 + AAC).'));
     }
   });
+
+  // ---- Reverse playback (re-encode the video backwards, on demand) ----
+  // Sits just above Integrity, below the scene-change card.
+  resultsEl.appendChild(buildReverseVideoCard(file, renderSignal));
 
   // ---- SHA-256 ----
   // Hash the ORIGINAL bytes (the raw .h264), not the remuxed MP4 wrapper.

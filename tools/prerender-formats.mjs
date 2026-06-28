@@ -19,7 +19,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
-import { esc, escAttr, buildFullKeys, makeHrefOf } from './prerender-common.mjs';
+import { esc, escAttr, buildFullKeys, makeHrefOf, DEPTH_BADGE } from './prerender-common.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PAGE = join(ROOT, 'formats.html');
@@ -40,11 +40,7 @@ const guideHref = makeHrefOf(fullKeys);
 // One <details class="fmt-item"> - byte-for-byte the shape fmtItem() builds in
 // formats.js, so the shared CSS renders it identically to the in-app overlay.
 function item(r, catKey) {
-  const isFull = r.depth === 'full';
-  const badgeCls = isFull ? 'is-full' : 'is-id';
-  const badgeTitle = isFull
-    ? 'Opens in a viewer with deep metadata'
-    : 'Identified + header metadata';
+  const badge = DEPTH_BADGE[r.depth] || DEPTH_BADGE.id;
   const exts = r.exts
     .map((t) => `<span class="fmt-item-ext" id="ext-${escAttr(t.toLowerCase())}">${esc(t)}</span>`)
     .join(' ');
@@ -58,7 +54,7 @@ function item(r, catKey) {
               <span class="fmt-item-label">${esc(r.label)}</span>
               <span class="fmt-item-exts">${exts}</span>
             </div>
-            <span class="fmt-item-badge ${badgeCls}" title="${escAttr(badgeTitle)}">${isFull ? 'Full' : 'ID'}</span>
+            <span class="fmt-item-badge ${badge.cls}" title="${escAttr(badge.title)}">${badge.label}</span>
           </summary>
           <div class="fmt-item-desc">${esc(r.desc)}</div>${guides}
         </details>`;

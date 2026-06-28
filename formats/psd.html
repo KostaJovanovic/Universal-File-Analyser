@@ -92,7 +92,7 @@
   <section class="section">
     <div class="grid">
       <div class="section-content">
-        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.PSD</span><span class="fmt-item-badge format-crumb-badge is-full" title="Opens in a viewer with deep metadata">Full</span></p>
+        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.PSD</span><span class="fmt-item-badge format-crumb-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span></p>
         <h2 class="section-head">What is a .PSD file?</h2>
         <p class="section-lede">PSD is Adobe Photoshop’s native layered image format. Created and opened by Adobe Photoshop.</p>
 
@@ -100,6 +100,7 @@
           <dl class="about-caps">
             <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>PSD is Photoshop’s native format; Photoshop first shipped in 1990 and effectively created the digital-imaging industry.</li><li>Photoshop began as a program called Display, written by Thomas Knoll on a Macintosh Plus and developed with his brother John of Industrial Light &amp; Magic.</li><li>Before Adobe took over, early copies shipped bundled with Barneyscan slide scanners; Adobe bought the rights outright in 1995.</li><li>Analyser spots a .PSD file by its signature bytes <code>38 42 50 53</code> - ASCII for "8BPS".</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>Open Adobe Photoshop documents (PSD and PSB) in the browser: the flattened composite image Photoshop bakes in is shown, plus the full layer tree with each layer name, blend mode, opacity, visibility and a per-layer thumbnail. Reads the canvas dimensions, colour mode and bit depth. Files saved without Maximize Compatibility have no composite, so their layers are shown instead.</dd></div>
+            <div><dt>Depth of analysis</dt><dd>.PSD is a partial-analysis format: Analyser opens it and shows the embedded preview or thumbnail and the metadata it can read, but the real editable content stays in the application's proprietary format and is not reconstructed in the browser. Formats with a complete viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .PSD file</dt><dd>Drag a .PSD file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd><a href="/formats/psb">.PSB</a>. See <a href="/formats">all supported file types</a>.</dd></div>
           </dl>

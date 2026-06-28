@@ -92,7 +92,7 @@
   <section class="section">
     <div class="grid">
       <div class="section-content">
-        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.Procreate</span><span class="fmt-item-badge format-crumb-badge is-full" title="Opens in a viewer with deep metadata">Full</span></p>
+        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.Procreate</span><span class="fmt-item-badge format-crumb-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span></p>
         <h2 class="section-head">What is a .Procreate file?</h2>
         <p class="section-lede">A Procreate file is a painting from the iPad app Procreate. Created and opened by Procreate.</p>
 
@@ -100,6 +100,7 @@
           <dl class="about-caps">
             <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Procreate launched in 2011 and became the best-known painting app on the iPad.</li><li>Procreate is made by Savage Interactive, a studio based in Hobart, Tasmania, Australia.</li><li>Inside the file, each layer is stored as LZO-compressed RGBA tiles together with a thumbnail and an optional time-lapse recording.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>Open Krita (.kra), Procreate and Paint.NET (.pdn) paintings by showing the flattened preview baked into the file - the full merged image for Krita, the QuickLook thumbnail for Procreate, the embedded PNG preview for Paint.NET - alongside the canvas size, layer count and app version. Their per-layer artwork is in a private format, so the embedded preview is the faithful render.</dd></div>
+            <div><dt>Depth of analysis</dt><dd>.Procreate is a partial-analysis format: Analyser opens it and shows the embedded preview or thumbnail and the metadata it can read, but the real editable content stays in the application's proprietary format and is not reconstructed in the browser. Formats with a complete viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .Procreate file</dt><dd>Drag a .Procreate file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd><a href="/formats/kra">.KRA</a> &middot; <a href="/formats/pdn">.PDN</a>. See <a href="/formats">all supported file types</a>.</dd></div>
           </dl>

@@ -92,7 +92,7 @@
   <section class="section">
     <div class="grid">
       <div class="section-content">
-        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.KRA</span><span class="fmt-item-badge format-crumb-badge is-full" title="Opens in a viewer with deep metadata">Full</span></p>
+        <p class="format-crumbs"><a href="/">Home</a> &rsaquo; <a href="/formats">Formats</a> &rsaquo; <span>.KRA</span><span class="fmt-item-badge format-crumb-badge is-partial" title="Opens, but only an embedded preview and metadata are recoverable">Partial</span></p>
         <h2 class="section-head">What is a .KRA file?</h2>
         <p class="section-lede">KRA is the native format of Krita, a free painting app for digital artists. Created and opened by Krita.</p>
 
@@ -100,6 +100,7 @@
           <dl class="about-caps">
             <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Krita grew out of the KDE project and is built specifically for digital painting.</li><li>Krita was originally called KImageShop, then Krayon, before trademark trouble led to the name Krita in 2002.</li><li>Inside a KRA the layers are stored as XML and PNG data, with a “mimetype” entry reading “application/x-krita”.</li></ul></dd></div>
             <div><dt>What Analyser shows you</dt><dd>Open Krita (.kra), Procreate and Paint.NET (.pdn) paintings by showing the flattened preview baked into the file - the full merged image for Krita, the QuickLook thumbnail for Procreate, the embedded PNG preview for Paint.NET - alongside the canvas size, layer count and app version. Their per-layer artwork is in a private format, so the embedded preview is the faithful render.</dd></div>
+            <div><dt>Depth of analysis</dt><dd>.KRA is a partial-analysis format: Analyser opens it and shows the embedded preview or thumbnail and the metadata it can read, but the real editable content stays in the application's proprietary format and is not reconstructed in the browser. Formats with a complete viewer are marked "Full" on the <a href="/formats">formats page</a>.</dd></div>
             <div><dt>Open a .KRA file</dt><dd>Drag a .KRA file onto <a href="/">the Analyser home page</a> (or tap to pick one). It opens entirely in your browser - nothing is uploaded, there is no account, and it works offline once installed.</dd></div>
             <div><dt>Related formats</dt><dd><a href="/formats/procreate">.Procreate</a> &middot; <a href="/formats/pdn">.PDN</a>. See <a href="/formats">all supported file types</a>.</dd></div>
           </dl>

@@ -22,6 +22,7 @@
   --surface:   #f4f4f4;
   --accent:    #e60023;
   --accent-fg: #ffffff;
+  --partial:   #c47a0f;   /* yellowish-orange: the in-between "Partial" depth tag */
 
   --font-sans: "Geist", -apple-system, "Helvetica Neue", Helvetica, "Liberation Sans", system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace;
@@ -4429,6 +4430,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   color: var(--muted);
 }
 .fmt-item-badge.is-full { color: var(--accent); border-color: var(--accent); }
+.fmt-item-badge.is-partial { color: var(--partial); border-color: var(--partial); }
 .fmt-item[open] > .fmt-item-summary .fmt-item-badge.is-id { border-color: var(--fg); color: var(--fg); }
 
 /* ---- Search match highlight ---- */
@@ -5075,6 +5077,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   --surface:   #141414;
   --accent:    #ff3347;
   --accent-fg: #ffffff;
+  --partial:   #f2ad3a;   /* yellowish-orange: the "Partial" depth tag (dark theme) */
   --accent-rgb: 255, 51, 71;
   --bg-rgb:     10, 10, 10;
   --shadow-color: rgba(0, 0, 0, 0.6);
@@ -5985,6 +5988,10 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 /* cam = 2D zoom/pan (no perspective), scene = the perspective. Keeping zoom/pan
    outside the perspective stops them from warping the projection. */
 .anr-pcb3d-cam { position: relative; will-change: transform; }
+/* No transition during live zoom/pan (it would lag the gesture); the JS adds
+   .is-animating only for Reset / double-tap, so the camera eases home in step
+   with the board's rotation instead of the zoom snapping. */
+.anr-pcb3d-cam.is-animating { transition: transform 0.45s cubic-bezier(0.4, 0.1, 0.2, 1); }
 .anr-pcb3d-scene { position: relative; perspective: 2200px; }
 .anr-pcb3d-board {
   position: relative;
@@ -6030,7 +6037,9 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-altium-tabpanel > .anr-readout { margin-bottom: 16px; }
 .anr-altium-tabpanel > h3 { margin: 22px 0 10px; }
 .anr-altium-tabpanel > h3:first-child { margin-top: 0; }
-.anr-altium-bomwrap { margin-top: 6px; }
+/* The BOM can be wider than a narrow viewport; let it scroll inside its card
+   instead of stretching the whole page. */
+.anr-altium-bomwrap { margin-top: 6px; max-width: 100%; overflow-x: auto; }
 /* BOM: shrink-to-fit (NOT width:100%, which dumps all the slack into the first
    column and crushes the rest until their headers wrap a letter at a time).
    Headers stay on one line; only the description column wraps, capped in width. */
@@ -6038,7 +6047,14 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-altium-bom th, .anr-altium-bom td { text-align: left; padding: 5px 16px 5px 0; vertical-align: top; }
 .anr-altium-bom th { white-space: nowrap; color: var(--muted); font-weight: 600; }
 .anr-altium-bom td { white-space: nowrap; }
-.anr-altium-bom-desc, td.anr-altium-bom-desc { max-width: 360px; white-space: normal; color: var(--muted); font-size: 12px; }
+.anr-altium-bom-desc, td.anr-altium-bom-desc { max-width: 360px; white-space: normal; overflow-wrap: anywhere; color: var(--muted); font-size: 12px; }
+/* Phones: stop the BOM from forcing the page wide. Let the value and footprint
+   columns wrap and break long unbroken tokens (part numbers, footprint library
+   paths) rather than running off the side; cap the description to the screen. */
+@media (max-width: 700px) {
+  .anr-altium-bom td { white-space: normal; overflow-wrap: anywhere; }
+  .anr-altium-bom-desc, td.anr-altium-bom-desc { max-width: min(360px, 46vw); }
+}
 /* Designator / sheet cross-probe buttons: compact, accent on hover. */
 .anr-altium-desig {
   padding: 2px 9px;
@@ -7238,6 +7254,7 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
   gap: 12px;
 }
 .sample-chip {
+  position: relative;          /* positioning context for the depth tag */
   display: flex;
   flex-direction: column;
   width: 132px;
@@ -7252,6 +7269,27 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
      with the chip - the fixed 132px desktop size or the flexible mobile thirds. */
   container-type: inline-size;
 }
+/* Depth tag in the thumbnail's top-right corner - Full / Partial / ID, the same
+   badge (and colours) the /formats list uses, so the gallery says at a glance how
+   deeply each sample is analysed. */
+.sample-depth {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 1;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.3;
+  padding: 1px 4px;
+  background: var(--bg);
+  border: var(--bd-hairline);
+  color: var(--muted);
+  pointer-events: none;
+}
+.sample-depth.is-full { color: var(--accent); border-color: var(--accent); }
+.sample-depth.is-partial { color: var(--partial); border-color: var(--partial); }
 /* Top three quarters: the extension drawn big and black (Geist - the site's
    sans). Size steps down for longer extensions (set in prerender-samples.mjs)
    so even "KICAD_PCB" fits the tile. */
