@@ -1542,6 +1542,89 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   if (specPanel && specPanel.firstPaint) { try { await specPanel.firstPaint; } catch (_) {} }
 }
 
+// --- Compact streaming spectrogram (mic visual for the Record card) ---
+// Attaches a scrolling log-scale spectrogram to `mountEl`, fed live from
+// `source` (a MediaStreamAudioSourceNode on audio context `ac`). Returns a
+// stop() that ends the draw loop and disconnects the analyser. Mirrors the
+// rendering in startLive() but stripped of controls - just the live visual.
+function streamSpectrogram(ac, source, mountEl) {
+  const analyser = ac.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0;
+  source.connect(analyser);
+
+  const wrap     = el('div', { class: 'anr-spec-wrap' });
+  const yWrap    = el('div', { class: 'anr-spec-yaxis-wrap' });
+  const axisY    = el('div', { class: 'anr-spec-yaxis' });
+  yWrap.appendChild(axisY);
+  const scrollEl = el('div', { class: 'anr-spec-scroll' });
+  const canvas   = el('canvas', { class: 'anr-spec-canvas' });
+  scrollEl.appendChild(canvas);
+  wrap.appendChild(yWrap); wrap.appendChild(scrollEl);
+  mountEl.appendChild(wrap);
+
+  const height = 240;
+  const ctxC = canvas.getContext('2d');
+  function sizeCanvas() {
+    const newW = Math.max(200, (wrap.clientWidth || 600) - 48);
+    if (newW === canvas.width && height === canvas.height) return;
+    canvas.width = newW; canvas.height = height;
+    canvas.style.width = newW + 'px'; canvas.style.height = height + 'px';
+    ctxC.fillStyle = '#0a0a0a'; ctxC.fillRect(0, 0, newW, height);
+  }
+  sizeCanvas();
+  buildFreqAxis(axisY, ac.sampleRate, 'log');
+
+  let raf, stopped = false;
+  function onResize() { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { sizeCanvas(); }); }
+  window.addEventListener('resize', onResize);
+
+  let dbData = new Float32Array(analyser.frequencyBinCount);
+  const cmap = colormaps.magma || colormaps.viridis;
+  const nyq = ac.sampleRate / 2;
+  const dbFloor = -100, dbCeil = -10, range = dbCeil - dbFloor;
+  const drawW = 1;
+  const logMin = Math.log10(20), logMax = Math.log10(nyq);
+
+  function tick() {
+    if (stopped) return;
+    const bins = analyser.frequencyBinCount;
+    if (dbData.length !== bins) dbData = new Float32Array(bins);
+    analyser.getFloatFrequencyData(dbData);
+    const w = canvas.width, h = canvas.height;
+    if (w <= drawW || h <= 0) { raf = requestAnimationFrame(tick); return; }
+    // Scroll the existing bitmap one column left, draw the newest FFT slice at the right edge.
+    const img = ctxC.getImageData(drawW, 0, w - drawW, h);
+    ctxC.putImageData(img, 0, 0);
+    const colImg = ctxC.createImageData(drawW, h);
+    for (let y = 0; y < h; y++) {
+      const frac = 1 - y / (h - 1);
+      const hz = Math.pow(10, logMin + frac * (logMax - logMin));
+      const binF = (hz / nyq) * bins;
+      const b0 = Math.max(0, Math.min(bins - 1, Math.floor(binF)));
+      const b1 = Math.max(0, Math.min(bins - 1, b0 + 1));
+      const k  = binF - b0;
+      const db = dbData[b0] + (dbData[b1] - dbData[b0]) * k;
+      let t = (db - dbFloor) / range;
+      if (t < 0) t = 0; else if (t > 1) t = 1;
+      const [r, g, bl] = cmap(t);
+      const o = y * drawW * 4;
+      colImg.data[o] = r; colImg.data[o + 1] = g; colImg.data[o + 2] = bl; colImg.data[o + 3] = 255;
+    }
+    ctxC.putImageData(colImg, w - drawW, 0);
+    raf = requestAnimationFrame(tick);
+  }
+  raf = requestAnimationFrame(tick);
+
+  return function stop() {
+    stopped = true;
+    cancelAnimationFrame(raf);
+    window.removeEventListener('resize', onResize);
+    try { analyser.disconnect(); } catch (_) {}
+    try { source.disconnect(); } catch (_) {}
+  };
+}
+
 // --- Recording UI ---
 async function startRecording(resultsEl, recordBtn) {
   let stream;
@@ -1563,11 +1646,21 @@ async function startRecording(resultsEl, recordBtn) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
 
-  const liveCard = el('div', { class: 'anr-card' });
+  const liveCard = el('div', { class: 'anr-card anr-spec-card' });
   liveCard.appendChild(el('h3', {}, 'Recording...'));
   const timer = el('p', { class: 'anr-hint' }, '0.0 s');
-  const stopBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Stop');
   liveCard.appendChild(timer);
+
+  // Live spectrogram of the mic while recording. Feeds off the same stream; a
+  // failure here must not abort the take, so it is best-effort.
+  let stopSpec = null;
+  try {
+    const ac = ctx();
+    await ac.resume();
+    stopSpec = streamSpectrogram(ac, ac.createMediaStreamSource(stream), liveCard);
+  } catch (_) {}
+
+  const stopBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Stop');
   liveCard.appendChild(stopBtn);
   resultsEl.appendChild(liveCard);
   try { liveCard.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {}
@@ -1586,6 +1679,7 @@ async function startRecording(resultsEl, recordBtn) {
   return new Promise((resolve) => {
     function finish() {
       clearInterval(tick);
+      if (stopSpec) stopSpec();
       recordBtn.classList.remove('is-recording');
       recordBtn._stopRec = null;
       stream.getTracks().forEach((t) => t.stop());
