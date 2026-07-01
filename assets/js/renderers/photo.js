@@ -2848,6 +2848,43 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     }, convertedFile ? 'Download photo (JPEG)' : 'Download photo');
     previewSlot.appendChild(dlBtn);
 
+    // Sonify: read the picture as a spectrogram and resynthesise audio from it.
+    // Presented as a card in the Sound section (like a video's "Audio track"
+    // prompt), not a button under the thumbnail. Only for a genuinely dropped
+    // photo - skipped for inline cover art and for video frames / cover art pulled
+    // in with a sourceNote, so the host file's own Sound section stays clean. It
+    // reuses the image we already decoded (so HEIC/RAW work without re-decoding);
+    // the heavy synthesis module loads on demand.
+    if (!inline && !opts.sourceNote) {
+      const audioResultsEl = document.getElementById('audioResults');
+      if (audioResultsEl) {
+        audioResultsEl.hidden = false;
+        const sonifyCard = el('div', { class: 'anr-card' });
+        sonifyCard.appendChild(el('h3', {}, 'Sonify image'));
+        sonifyCard.appendChild(el('p', { class: 'anr-info' },
+          'Read this picture as a spectrogram - brightness becomes loudness, height becomes pitch - and resynthesise it as sound you can play, scrub and export.'));
+        const sonifyBtn = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Sonify (play as spectrogram)');
+        sonifyCard.appendChild(sonifyBtn);
+        audioResultsEl.appendChild(sonifyCard);
+        sonifyBtn.addEventListener('click', async () => {
+          sonifyBtn.disabled = true;
+          sonifyBtn.textContent = 'Loading sonifier…';
+          const mount = el('div', { id: 'photoSonifyMount' });
+          sonifyCard.replaceWith(mount);
+          // Scroll to the top of the Sound section (heading + lede), matching the
+          // video "Analyse audio" behaviour, not just the results container.
+          (audioResultsEl.closest('.section') || audioResultsEl)
+            .scrollIntoView({ behavior: 'smooth', block: 'start' });
+          try {
+            const { renderSonify } = await import('./sonify.js');
+            await renderSonify(file, mount, { source: img, signal: renderSignal });
+          } catch (e) {
+            mount.appendChild(el('div', { class: 'anr-info' }, 'Sonifier failed to load: ' + (e && e.message ? e.message : e)));
+          }
+        });
+      }
+    }
+
     // Live Photo / Motion Photo: if a motion clip is appended to this still, show an
     // "Analyse live photo" button that plays it in the full video + audio sections.
     wireLivePhotoButton(file, previewSlot, resultsEl, renderSignal);

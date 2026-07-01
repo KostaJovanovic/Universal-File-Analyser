@@ -359,11 +359,14 @@ assets/
       binutil.js    — shared binary toolkit (cursor reader, decoders, magic)
     renderers/      — one module per top-level type (classifyFile() routes to these
                       via ROUTES in app.js). Inventory by domain:
-      photo.js · photo-convert.js · photo-recover.js · tiff.js · mpo.js · ico · embedded-images.js
+      photo.js · photo-convert.js · photo-recover.js · sonify.js · tiff.js · mpo.js · ico · embedded-images.js
         — photo analysis (EXIF, histogram, OCR), HEIC/RAW conversion, multi-image;
         photo-recover.js salvages broken/truncated/corrupt stills (repair a cut-off
         JPEG/PNG, rebuild a damaged JPEG header from a reference photo, carve
-        embedded images out of a blob) - the stills twin of video-recover.js
+        embedded images out of a blob) - the stills twin of video-recover.js.
+        sonify.js is the inverse of spectrogram.js (image → sound, oscillator-bank
+        or Griffin-Lim) - not a top-level type but lazy-imported by photo.js's
+        "Sonify" button, so it lives in renderers/ and ships in sw.js SHELL
       audio.js · audio-analysis.js · audio-codec.js · audio-player.js · spectrogram.js
         · media-reverse.js — audio playback, codec/loudness analysis, spectrogram
       video.js · video-avi.js · video-recover.js — video player + per-frame/stream

@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 178;
+const COMMIT_COUNT = 179;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1728,6 +1728,11 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
+  { range: '5.05 - 5.06', notes: [
+    'Analyser can turn a picture into sound: any photo can be Sonified from the Sound section - read as a spectrogram (left-right is time, top-bottom is pitch, brightness is loudness) and resynthesised with a choice of oscillator-bank or Griffin-Lim engine, an adjustable pitch range and a length up to three minutes (or any typed value), then played and scrubbed with a line sweeping across the image and a progress bar tracking the render.',
+    'A real spectrogram image can be inverted back into the sound it depicts, with colour-map presets and an Invert switch for plots drawn dark on light; the rendered audio then runs straight through the full Sound analysis (interactive spectrogram, waveform, level/loudness/pitch/tempo) with a WAV download.',
+    'Recording from the microphone and the live spectrogram capture now offer a Download button to save the captured sound.',
+  ] },
   { range: '5.01 - 5.04', notes: [
     'Every format is tagged Full, Partial or ID so you can see before dropping a file whether it opens in a complete viewer, shows only its embedded preview and details, or is just identified - Photoshop, Illustrator, Fusion 360, SolidWorks, iWork and Krita are now honestly marked Partial across the format list, samples gallery and guide pages. The 3D KiCad board view also gains pinch-zoom and two-finger pan on phones with a smooth double-tap reset, the board bill of materials stops overflowing a phone screen, and a video\'s reverse-playback and trailing-data cards move lower in the report.',
     'Analyser sharpens into a forensic toolkit: an unknown file gets a byte-entropy strip showing where its data turns random (compressed/encrypted/packed regions and the seams between them), data hidden after a file\'s real end can be extracted or opened in place, and URLs, IPs, domains and emails found in a file are listed with one-click OSINT lookups.',
