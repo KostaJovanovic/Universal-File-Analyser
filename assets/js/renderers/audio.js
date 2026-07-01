@@ -1385,6 +1385,18 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   infoCard.appendChild(audioEl);
   infoCard.appendChild(makePlayer(audioEl, audioBuffer.duration));
 
+  // Download button for in-browser captures (recording / live spectrogram), where
+  // the analysed sound exists only as a blob and would otherwise be unsaveable. A
+  // normally-dropped file already lives on disk, so this is opt-in (opts.download).
+  if (opts.download) {
+    const dlName = playbackFile.name || 'recording';
+    const dlLink = el('a', {
+      href: audioUrl, download: dlName, class: 'anr-btn',
+      style: 'margin-top:10px;display:inline-block;text-decoration:none;'
+    }, 'Download recording');
+    infoCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [dlLink]));
+  }
+
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Name',           file.name));
   tbl.appendChild(row('Size',           fmtBytes(file.size)));
@@ -1459,10 +1471,13 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // ---- Reverse playback (play / download the audio backwards) ----
   resultsEl.appendChild(buildReverseAudioCard(audioBuffer, (file.name || 'audio').replace(/\.[^/.]+$/, ''), renderSignal));
 
-  // ---- Spectrogram (sits directly under the file info) ----
+  // ---- Spectrogram (normally directly under the file info) ----
+  // opts.spectrogramFirst hoists it above the info card - used when sonifying a
+  // picture, where the spectrogram (what the image became) is the headline.
   const basename = (file.name || 'spectrogram').replace(/\.[^/.]+$/, '');
   const specPanel = makeSpectrogramPanel(mono, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, capture: true });
-  resultsEl.appendChild(specPanel);
+  if (opts.spectrogramFirst) resultsEl.insertBefore(specPanel, infoCard);
+  else resultsEl.appendChild(specPanel);
 
   // ---- Amplitude histogram (under the spectrogram) ----
   resultsEl.appendChild(buildHistogramCard(mono));
@@ -1689,7 +1704,7 @@ async function startRecording(resultsEl, recordBtn) {
       const blob = new Blob(chunks, { type: mime || 'audio/webm' });
       const ext = (mime.match(/audio\/(\w+)/) || [, 'webm'])[1];
       const file = new File([blob], 'recording.' + ext, { type: blob.type });
-      await renderAudio(file, resultsEl);
+      await renderAudio(file, resultsEl, { download: true });
       resolve(file);
     };
     stopBtn.addEventListener('click', () => rec.stop());
@@ -1986,7 +2001,7 @@ async function startLive(resultsEl, liveBtn) {
       teardownCapture();
       detachFs();
       window.removeEventListener('resize', onWinResize);
-      await renderAudio(file, resultsEl);
+      await renderAudio(file, resultsEl, { download: true });
     };
     liveRec.start();
     recBtn.classList.add('is-recording');
