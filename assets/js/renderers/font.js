@@ -74,18 +74,93 @@ function specimenCard(family, axes, font) {
 
   if (axes.length) {
     const axisBox = el('div', { class: 'anr-font-axes' });
-    for (const a of axes) {
+
+    // ---- Oscillation. Each axis can auto-sweep min -> max -> min on a raised
+    // cosine; one shared requestAnimationFrame loop drives whichever axes are
+    // "playing". It is user-initiated (a play button) so it runs even in Clear
+    // view, and self-stops when the card leaves the DOM (collection member
+    // switch, SPA navigation) via the isConnected guard - no manual teardown.
+    const PLAY = '▶', PAUSE = '❚❚';   // filled triangle / double bar
+    const playing = new Set();
+    let rafId = 0;
+    const PERIOD = 4200;   // ms for one full min -> max -> min sweep
+
+    // Referenced by syncButtons below, so it must exist before the first call.
+    const playAllBtn = el('button', { type: 'button', class: 'anr-btn anr-font-playall' });
+
+    const syncButtons = () => {
+      for (const a of axes) {
+        const on = playing.has(a);
+        a.playBtn.textContent = on ? PAUSE : PLAY;
+        a.playBtn.classList.toggle('is-playing', on);
+        a.playBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      }
+      const allOn = playing.size === axes.length;
+      playAllBtn.textContent = allOn ? PAUSE + '  Pause all' : PLAY + '  Play all';
+      playAllBtn.classList.toggle('is-playing', playing.size > 0);
+    };
+
+    // Start (or restart) an axis from wherever its slider currently sits, so
+    // pressing play resumes from the current value instead of snapping to
+    // wherever the global sweep phase happens to be. Solve the raised cosine for
+    // the phase matching the current value (acos gives the rising branch, so it
+    // heads towards max first - or, if already at max, eases back down). The
+    // resulting per-axis offset also de-syncs axes that start at different values.
+    const startAxis = (a, now) => {
+      const span = a.max - a.min;
+      const k = span ? (parseFloat(a.input.value) - a.min) / span : 0;
+      const phase0 = Math.acos(1 - 2 * Math.min(1, Math.max(0, k)));   // [0, π]
+      a._off = phase0 / (Math.PI * 2) - now / PERIOD;                  // offset in cycles
+      playing.add(a);
+    };
+
+    const frame = (now) => {
+      rafId = 0;
+      if (!axisBox.isConnected) { playing.clear(); return; }   // detached - stop for good
+      for (const a of playing) {
+        const phase = ((now / PERIOD) + a._off) * Math.PI * 2;
+        const k = 0.5 - 0.5 * Math.cos(phase);                 // eased 0..1
+        const v = a.min + (a.max - a.min) * k;
+        a.input.value = String(v);
+        a.val.textContent = (Math.round(v * 100) / 100).toString();
+      }
+      applyAxes();
+      if (playing.size) rafId = requestAnimationFrame(frame);
+    };
+    const kick = () => { if (!rafId && playing.size) rafId = requestAnimationFrame(frame); };
+    const toggle = (a) => { if (playing.has(a)) playing.delete(a); else startAxis(a, performance.now()); syncButtons(); kick(); };
+
+    playAllBtn.addEventListener('click', () => {
+      if (playing.size === axes.length) { playing.clear(); }
+      else { const now = performance.now(); for (const a of axes) if (!playing.has(a)) startAxis(a, now); }
+      syncButtons(); kick();
+    });
+    axisBox.appendChild(el('div', { class: 'anr-font-axes-head' }, [
+      el('span', { class: 'anr-font-axes-title' }, 'Variable axes'),
+      playAllBtn,
+    ]));
+
+    axes.forEach((a) => {
       const val = el('span', { class: 'anr-font-axis-val' }, String(a.def));
-      const input = el('input', { type: 'range', min: String(a.min), max: String(a.max), value: String(a.def), step: String(Math.max(0.001, (a.max - a.min) / 200)) });
-      a.input = input;
-      input.addEventListener('input', () => { val.textContent = (Math.round(input.value * 100) / 100).toString(); applyAxes(); });
-      const labelTxt = `${a.name} (${a.tag})`;
-      axisBox.appendChild(el('label', { class: 'anr-font-axis' }, [
-        el('span', { class: 'anr-font-axis-name' }, labelTxt),
+      const input = el('input', { type: 'range', class: 'anr-range', min: String(a.min), max: String(a.max), value: String(a.def), step: String(Math.max(0.001, (a.max - a.min) / 200)) });
+      const playBtn = el('button', { type: 'button', class: 'anr-player-play anr-font-axis-play', 'aria-label': `Animate ${a.name} (${a.tag})` }, PLAY);
+      a.input = input; a.val = val; a.playBtn = playBtn;
+      input.addEventListener('input', () => {
+        // A manual drag takes the wheel - stop that axis animating.
+        if (playing.has(a)) { playing.delete(a); syncButtons(); }
+        val.textContent = (Math.round(input.value * 100) / 100).toString();
+        applyAxes();
+      });
+      playBtn.addEventListener('click', () => toggle(a));
+      axisBox.appendChild(el('div', { class: 'anr-font-axis' }, [
+        el('span', { class: 'anr-font-axis-name' }, `${a.name} (${a.tag})`),
         input,
         val,
+        playBtn,
       ]));
-    }
+    });
+
+    syncButtons();
     card.appendChild(axisBox);
   }
 
@@ -209,7 +284,7 @@ function extractCollection(buf) {
 // Per-font metadata table (the naming/version/glyph rows for one font).
 function fontMetaCard(font, axes) {
   const card = el('div', { class: 'anr-card' });
-  const [h, help] = h3help('Font', 'Reads the typeface naming, metadata and outlines; the live specimen below is the real rendering.');
+  const [h, help] = h3help('Font', 'Reads the typeface naming, metadata and outlines; the live specimen above is the real rendering.');
   card.appendChild(h); card.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
   const fam = fontName(font, 'fontFamily'); if (fam) tbl.appendChild(row('Family', fam));
@@ -221,7 +296,7 @@ function fontMetaCard(font, axes) {
   if (font && font.outlinesFormat) tbl.appendChild(row('Outlines', font.outlinesFormat === 'cff' ? 'PostScript (CFF)' : 'TrueType (glyf)'));
   if (font && font.unitsPerEm) tbl.appendChild(row('Units per em', String(font.unitsPerEm)));
   if (font && font.glyphs && font.glyphs.length) tbl.appendChild(row('Glyphs', font.glyphs.length.toLocaleString()));
-  if (axes.length) tbl.appendChild(rowHelp('Variable', axes.length + (axes.length === 1 ? ' axis' : ' axes') + ' - ' + axes.map((a) => a.tag).join(', '), 'A variable font carries multiple styles on continuous axes; the sliders in the specimen below interpolate them live.'));
+  if (axes.length) tbl.appendChild(rowHelp('Variable', axes.length + (axes.length === 1 ? ' axis' : ' axes') + ' - ' + axes.map((a) => a.tag).join(', '), 'A variable font carries multiple styles on continuous axes; the sliders in the specimen above interpolate them live.'));
   const copyright = fontName(font, 'copyright'); if (copyright) tbl.appendChild(rowHelp('Copyright', copyright.length > 160 ? copyright.slice(0, 160) + '…' : copyright, 'The copyright notice from the font name table.'));
   if (!tbl.children.length) tbl.appendChild(row('Naming', 'not available'));
   card.appendChild(tbl);
@@ -257,6 +332,10 @@ export async function renderFont(file, resultsEl) {
 
   resultsEl.innerHTML = '';
 
+  // ---- Live specimen (pinned above the file details so the real rendering leads) ----
+  const specimenWrap = el('div', {});
+  resultsEl.appendChild(specimenWrap);
+
   // ---- File-level card ----
   const isColl = !!members;
   const card = el('div', { class: 'anr-card' });
@@ -288,12 +367,14 @@ export async function renderFont(file, resultsEl) {
 
   async function renderMember() {
     subWrap.innerHTML = '';
+    specimenWrap.innerHTML = '';
     const e = entries[current];
     const axes = axesOf(e.font);
 
     subWrap.appendChild(fontMetaCard(e.font, axes));
 
-    // Live specimen via FontFace, from the standalone (member) bytes.
+    // Live specimen via FontFace, from the standalone (member) bytes. Rendered
+    // into specimenWrap (pinned above the file card), not subWrap.
     const family = 'AnalyserFont' + (++_faceSeq);
     let faceOk = false;
     try {
@@ -302,8 +383,8 @@ export async function renderFont(file, resultsEl) {
       document.fonts.add(face);
       faceOk = true;
     } catch (_) { faceOk = false; }
-    if (faceOk) subWrap.appendChild(specimenCard(family, axes, e.font));
-    else subWrap.appendChild(el('div', { class: 'anr-info' }, 'The browser could not load this font for live preview, so only its metadata and glyph outlines are shown.'));
+    if (faceOk) specimenWrap.appendChild(specimenCard(family, axes, e.font));
+    else specimenWrap.appendChild(el('div', { class: 'anr-info' }, 'The browser could not load this font for live preview, so only its metadata and glyph outlines are shown.'));
 
     // Glyph grid via opentype.js.
     if (e.font) {

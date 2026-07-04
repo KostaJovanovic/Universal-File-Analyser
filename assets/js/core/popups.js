@@ -473,6 +473,9 @@ export function scheduleShareNudge(ctx) {
   // Never nudge on the /samples demo page - those are sandboxed example runs, not the
   // visitor's own analysis worth sharing.
   if (typeof document !== 'undefined' && document.body && document.body.dataset.page === 'samples') return;
+  // Clear view promises a decluttered page - never surface the promotional nudge
+  // there. Skipping before scheduling means the day-stamp is never consumed.
+  if (document.documentElement.getAttribute('data-a11y') === 'on') return;
   if (!shareNudgeAllowed()) return;
   // The "suggest this format" popup (shown during render, before this runs) owns the
   // analysis - don't even schedule the nudge if it's up for this file.

@@ -478,6 +478,7 @@ function page(key, e, depth) {
         <dt>Status</dt><dd class="net-status"><span class="dot"></span> <span class="net-label">Local-only</span></dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
         <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button></dd>
+        <dt>Clear view</dt><dd><button type="button" id="a11yToggle" class="dark-toggle" aria-pressed="false" aria-label="Clear view - larger text, higher contrast, less motion and clutter">&#9675; OFF</button></dd>
       </dl>
     </div>
   </div>
