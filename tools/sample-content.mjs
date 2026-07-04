@@ -12,4 +12,5 @@
 export const SAMPLE_PAGES = {
   // 'sunset.cr2': 'Canon R5 RAW - full EXIF, RAW decode, histogram and palette.',
   // 'voice-memo.m4a': 'iPhone voice memo - waveform, spectrogram and loudness.',
+  'Fraunces.ttf': 'Fraunces variable font - drag the axis sliders to morph weight, optical size and softness live.',
 };

@@ -2333,20 +2333,6 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 /* Font preview card (nested in the identification card): give it clear breathing
    room above so it doesn't butt against the metadata table. */
 .anr-font-preview { margin-top: 48px; }
-/* Variable-font axis sliders (reusing .anr-control's styled range). */
-.anr-font-var { margin: 2px 0 4px; }
-.anr-font-axis { margin: 9px 0; }
-.anr-font-axislabel {
-  flex: 0 0 156px;
-  font-family: var(--font-mono); font-size: var(--t-tiny);
-  letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
-}
-.anr-font-axis input[type="range"] { flex: 1 1 auto; width: auto; }
-.anr-font-axis .anr-player-play { flex: 0 0 auto; width: 28px; height: 28px; font-size: 11px; }
-@media (max-width: 560px) {
-  .anr-font-axis { flex-wrap: wrap; }
-  .anr-font-axislabel { flex-basis: 100%; }
-}
 
 /* At-a-glance spectrogram stats strip (under the canvas) */
 /* Stats block under the spectrogram: a captioned header with a [?] toggle, then
@@ -5103,6 +5089,90 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   color: var(--bg);
 }
 
+/* ---------- CLEAR VIEW (low-vision accessibility mode, E2) ----------
+   Opt-in via the "Clear view" chip: sets data-a11y="on" on <html> (persisted as
+   the permanent anr-a11y key, applied before paint by THEME_SCRIPT). Three legs:
+   1. Legibility - re-points existing design tokens (larger type, higher-contrast
+      greys and rules) so every component that already draws from var(--t-*) /
+      var(--muted) / var(--rule) scales up automatically, with no per-component
+      rules. Fonts stay Geist, by design.
+   2. Stillness - a blanket animation/transition kill (the reduced-motion pattern:
+      near-zero durations rather than `animation: none`, so `forwards` animations
+      still land on their end state and transitionend still fires) plus no
+      view-transition cross-fade. The JS-driven motion (header letter sweep/hover)
+      is gated in effects.js off the same attribute.
+   3. Declutter - the drifting grid backdrop is hidden outright, and popups.js
+      skips the promotional share nudge.
+   Theme-independent bits sit in this first block; the per-theme contrast nudges
+   follow. */
+:root[data-a11y="on"] {
+  --t-h3:    19px;
+  --t-body:  19px;
+  --t-small: 16px;
+  --t-tiny:  14px;
+  --t-micro: 13px;
+  --t-h2:    clamp(24px, 2.6vw, 32px);
+  --t-h1:    clamp(34px, 4.6vw, 60px);
+  --lh-body:  1.6;
+  --lh-prose: 1.75;
+  /* Darker secondary text + visible rules against the light page (--muted carries
+     most secondary copy; darkening it lifts it well past AA on white). */
+  --muted: #3f3f3f;
+  --rule:  #a8a8a8;
+}
+:root[data-theme="dark"][data-a11y="on"] {
+  --muted:    #c4c4c4;
+  --rule:     #565656;
+  --hairline: #5a5a5a;
+}
+/* Thicker, higher-offset focus ring - easier to locate for low vision. */
+:root[data-a11y="on"] a:focus-visible,
+:root[data-a11y="on"] button:focus-visible,
+:root[data-a11y="on"] summary:focus-visible,
+:root[data-a11y="on"] select:focus-visible,
+:root[data-a11y="on"] input:not([type="range"]):focus-visible,
+:root[data-a11y="on"] [tabindex]:focus-visible {
+  outline-width: 3px;
+  outline-offset: 3px;
+}
+/* Always underline in-body links (not colour alone) in prose contexts. */
+:root[data-a11y="on"] .site-sub a,
+:root[data-a11y="on"] .site-main p a,
+:root[data-a11y="on"] .anr-info a {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+/* Stillness: freeze every CSS animation and transition. Near-zero durations, not
+   `animation: none`, so `forwards` animations (e.g. the Altium cross-probe ping)
+   still snap to their end state and code awaiting transitionend still runs. */
+:root[data-a11y="on"] *,
+:root[data-a11y="on"] *::before,
+:root[data-a11y="on"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+/* No cross-fade on SPA page swaps - navigation becomes an instant cut. */
+:root[data-a11y="on"]::view-transition-old(root),
+:root[data-a11y="on"]::view-transition-new(root) {
+  animation: none !important;
+}
+/* Declutter: drop the drifting grid backdrop entirely (it is both motion and
+   visual noise behind the text). */
+:root[data-a11y="on"] body::before { display: none; }
+/* The chip shows its on-state with an accent fill, like a pressed control. */
+#a11yToggle[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+#a11yToggle[aria-pressed="true"]:hover {
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--fg);
+}
+
 /* ---------- CUSTOM DROPDOWN ---------- */
 .anr-dropdown {
   position: relative;
@@ -5913,9 +5983,21 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-font-script-row .anr-font-line { margin: 2px 0; flex: 1 1 240px; min-width: 0; }
 .anr-font-script-label { flex: 0 0 84px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .anr-font-axes { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
-.anr-font-axis { display: grid; grid-template-columns: minmax(120px, 1fr) 2fr auto; align-items: center; gap: 10px; font-size: 12px; }
+.anr-font-axes-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.anr-font-axes-title { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.anr-font-playall { font-size: 11px; padding: 3px 10px; }
+.anr-font-playall.is-playing { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.anr-font-axis { display: grid; grid-template-columns: minmax(110px, 1fr) 2fr auto auto; align-items: center; gap: 10px; font-size: 12px; }
 .anr-font-axis-name { font-family: var(--font-mono); color: var(--muted); }
 .anr-font-axis-val { font-family: var(--font-mono); min-width: 48px; text-align: right; }
+.anr-font-axis .anr-range { width: 100%; min-width: 0; }
+.anr-font-axis-play { width: 26px; height: 26px; font-size: 10px; }
+.anr-font-axis-play.is-playing { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.anr-font-axis-play.is-playing:hover { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+@media (max-width: 560px) {
+  .anr-font-axis { grid-template-columns: 1fr auto auto; }
+  .anr-font-axis-name { grid-column: 1 / -1; }
+}
 .anr-font-glyphs { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fill, 44px); gap: 4px; }
 .anr-font-glyph { width: 44px; height: 44px; border: 1px solid var(--rule); border-radius: 3px; background: var(--card, transparent); }
 /* DjVu page viewer: pager bar + rendered page canvas. */

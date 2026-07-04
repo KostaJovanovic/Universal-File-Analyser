@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 179;
+const COMMIT_COUNT = 180;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1728,10 +1728,11 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
-  { range: '5.05 - 5.06', notes: [
+  { range: '5.05 - 5.07', notes: [
     'Analyser can turn a picture into sound: any photo can be Sonified from the Sound section - read as a spectrogram (left-right is time, top-bottom is pitch, brightness is loudness) and resynthesised with a choice of oscillator-bank or Griffin-Lim engine, an adjustable pitch range and a length up to three minutes (or any typed value), then played and scrubbed with a line sweeping across the image and a progress bar tracking the render.',
     'A real spectrogram image can be inverted back into the sound it depicts, with colour-map presets and an Invert switch for plots drawn dark on light; the rendered audio then runs straight through the full Sound analysis (interactive spectrogram, waveform, level/loudness/pitch/tempo) with a WAV download.',
     'Recording from the microphone and the live spectrogram capture now offer a Download button to save the captured sound.',
+    'Variable fonts animate on their own: each axis (weight, optical size, softness and the rest) gets a play button that sweeps it back and forth, with a Play all control, and each axis resumes from wherever its slider sits. The Samples gallery gains the Fraunces variable font to try it on, the live specimen now leads the font report, and the Everything offline download bundles more (EPS/PostScript graphics, AutoCAD drawings, STEP/IGES CAD models and the whole sample gallery).',
   ] },
   { range: '5.01 - 5.04', notes: [
     'Every format is tagged Full, Partial or ID so you can see before dropping a file whether it opens in a complete viewer, shows only its embedded preview and details, or is just identified - Photoshop, Illustrator, Fusion 360, SolidWorks, iWork and Krita are now honestly marked Partial across the format list, samples gallery and guide pages. The 3D KiCad board view also gains pinch-zoom and two-finger pan on phones with a smooth double-tap reset, the board bill of materials stops overflowing a phone screen, and a video\'s reverse-playback and trailing-data cards move lower in the report.',
@@ -2869,9 +2870,12 @@ window._anrReadableText = isReadableText;
         // anr-asteroids-hi / -bestwave are permanent records with no :ts companion - skip them,
         // or the sweep's "no timestamp" branch would delete them on every page load.
         // anr-history manages its own per-entry 7-day expiry (readHistory), so it has
-        // no :ts companion either and must be exempted the same way.
+        // no :ts companion either and must be exempted the same way. anr-a11y is the
+        // "Clear view" accessibility pref - deliberately permanent (an accessibility
+        // choice must not silently expire), so it too carries no :ts and is exempt.
         if (!k || !k.startsWith('anr-') || k.endsWith(':ts')
-            || k === 'anr-asteroids-hi' || k === 'anr-asteroids-bestwave' || k === 'anr-history') continue;
+            || k === 'anr-asteroids-hi' || k === 'anr-asteroids-bestwave'
+            || k === 'anr-history' || k === 'anr-a11y') continue;
         var ts = parseInt(localStorage.getItem(k + ':ts'), 10);
         if (!ts || now - ts > ANR_TTL) {
           localStorage.removeItem(k);
@@ -2907,6 +2911,37 @@ window._anrReadableText = isReadableText;
       document.documentElement.setAttribute('data-theme', next);
       anrSet('anr-theme', next);
       darkBtn.textContent = themeLabel();
+    });
+  }
+
+  // ----- Clear view (low-vision accessibility mode) -----
+  // Larger type + higher contrast, applied by flipping data-a11y on <html> (the
+  // CSS re-points the type/contrast tokens - no per-component work). Persisted as
+  // a PERMANENT key: raw localStorage with no :ts, exempted from anrSweep, because
+  // an accessibility choice must not silently expire the way the 7-day theme pref
+  // does. THEME_SCRIPT applies it before paint; this only wires the chip + keeps
+  // its label/pressed-state in sync. Lives on the persistent .site-meta node
+  // (never swapped by the SPA router), so wiring it once here is enough.
+  const a11yBtn = $('a11yToggle');
+  if (a11yBtn) {
+    const DOT_ON = String.fromCodePoint(0x25C9, 0xFE0E);   // filled circle
+    const DOT_OFF = String.fromCodePoint(0x25CB, 0xFE0E);  // hollow circle
+    const a11yOn = () => document.documentElement.getAttribute('data-a11y') === 'on';
+    const syncA11y = () => {
+      const on = a11yOn();
+      a11yBtn.textContent = on ? DOT_ON + ' ON' : DOT_OFF + ' OFF';
+      a11yBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    };
+    syncA11y();
+    a11yBtn.addEventListener('click', () => {
+      const next = a11yOn() ? null : 'on';
+      if (next) document.documentElement.setAttribute('data-a11y', 'on');
+      else document.documentElement.removeAttribute('data-a11y');
+      try {
+        if (next) localStorage.setItem('anr-a11y', 'on');
+        else localStorage.removeItem('anr-a11y');
+      } catch (e) { /* quota or private mode */ }
+      syncA11y();
     });
   }
 
@@ -3220,7 +3255,7 @@ window._anrReadableText = isReadableText;
   // and used by the post-clear reset) derive from it, and the "+N MB more" upgrade
   // deltas in refreshTierButtons() use the numbers directly. One place to edit.
   const TIER_ORDER = ['essentials', 'everything', 'complete'];
-  const TIER_MB = { essentials: 50, everything: 100, complete: 325 };
+  const TIER_MB = { essentials: 50, everything: 120, complete: 345 };
   const TIER_SIZES = {};
   TIER_ORDER.forEach((t) => { TIER_SIZES[t] = '~' + TIER_MB[t] + ' MB'; });
 
@@ -3350,7 +3385,33 @@ window._anrReadableText = isReadableText;
       // LibreDWG (WebAssembly) for AutoCAD DWG/DWT drawings - ~6 MB.
       './assets/vendor/libredwg/dist/libredwg-web.js',
       './assets/vendor/libredwg/wasm/libredwg-web.js',
-      './assets/vendor/libredwg/wasm/libredwg-web.wasm'
+      './assets/vendor/libredwg/wasm/libredwg-web.wasm',
+      // Small on-demand pieces with no other offline guarantee: the LZMA decode
+      // core (lazy-loaded by lzma-loader.js), the LUT preview sample image
+      // (fetched at runtime by lut.js) and the PNG favicon fallback.
+      './assets/vendor/lzma/lzma-decode.js',
+      './assets/img/LUT_TEST.jpg',
+      './assets/img/favicon.png',
+      // Pages and app modules that previously had no tier entry (most sit in the
+      // sw.js SHELL, whose cache is dropped on every version bump; /atari was in
+      // neither, so the Konami-code easter egg used to 404 offline). Listing them
+      // here gives them the permanent analyser-offline cache too.
+      './formats', './stats', './privacy', './samples', './atari',
+      './assets/js/core/osint.js', './assets/js/renderers/lottie.js',
+      './assets/js/renderers/photo-recover.js', './assets/js/renderers/video-recover.js',
+      './assets/js/renderers/sonify.js', './assets/js/renderers/altium.js',
+      './assets/js/renderers/kicad.js', './assets/js/renderers/spice.js',
+      './assets/js/renderers/ipcnet.js', './assets/js/renderers/lut.js',
+      './assets/js/renderers/f3d.js', './assets/js/renderers/solidworks.js',
+      './assets/js/renderers/gcode.js',
+      // The /samples gallery files (~18 MB) so the demo gallery works fully
+      // offline. Keep this list in step with the samples/ directory.
+      './samples/3D model.obj', './samples/3D models.3mf', './samples/3D printer.gcode',
+      './samples/After effects.aep', './samples/CNC mill.tap', './samples/Cave14.ogg',
+      './samples/LUT file.cube', './samples/PCB design.kicad_pcb', './samples/archive.zip',
+      './samples/audio.mp3', './samples/image.jpg', './samples/pdf file.pdf',
+      './samples/spreadsheet.csv', './samples/video.mp4', './samples/webpage.html',
+      './samples/Fraunces.ttf'
     ],
     // The "Complete" tier is OCR languages only: English ships in "Everything", and
     // every other language is pulled from the CDN (not hosted in the repo). They all

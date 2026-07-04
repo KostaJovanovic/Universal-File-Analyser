@@ -38,7 +38,7 @@
   </script>
   <link rel="stylesheet" href="/assets/css/fonts.css">
   <link rel="stylesheet" href="/assets/css/analyser.css">
-  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
 </head>
 <body>
 <noscript><div class="noscript-warning" role="alert"><strong>JavaScript is off.</strong> Analyser runs entirely in your browser, so nothing on this page works without it - you cannot open or analyse any file. Please enable JavaScript and reload.</div></noscript>
@@ -73,6 +73,7 @@
         <dt>Status</dt><dd class="net-status"><span class="dot"></span> <span class="net-label">Local-only</span></dd>
         <dt>Other stuff</dt><dd><a href="https://link.valjdakosta.com/" id="otherStuffLink" target="_blank" rel="noopener" class="dark-toggle" style="text-decoration:none;display:inline-block;text-align:center;">Links ↗</a></dd>
         <dt>Dark mode</dt><dd><button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button></dd>
+        <dt>Clear view</dt><dd><button type="button" id="a11yToggle" class="dark-toggle" aria-pressed="false" aria-label="Clear view - larger text, higher contrast, less motion and clutter">&#9675; OFF</button></dd>
       </dl>
     </div>
   </div>

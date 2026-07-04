@@ -3,6 +3,13 @@
    intro sweep) and on each section heading. Split out of app.js; boot() calls
    setupHeaderFx()/setupSectionFx() per navigation. Dependency-free (DOM only). */
 
+// Clear view (the low-vision accessibility mode) turns all decorative motion
+// off. Checked at each activation point - not once at bind time - so flipping
+// the chip mid-session stops (or restores) the effects immediately, with no
+// unbind/rebind bookkeeping. The split letter spans render identically to
+// plain text, so leaving them in place while gated is invisible.
+const a11yOn = () => document.documentElement.getAttribute('data-a11y') === 'on';
+
 // Splits an element's text into per-letter inline-block <span>s, each carrying a
 // base font-weight, so a proximity effect can vary letters independently. Bakes
 // letter-spacing as an em ratio (survives browser zoom on vw-sized type). Each
@@ -137,6 +144,7 @@ export function setupHeaderFx() {
       fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 500);
     }
     function startSweep(radius) {
+      if (a11yOn()) return;
       const rect = mark.getBoundingClientRect();
       sweep = { t0: null, duration: 3500, sx: rect.left - radius, ex: rect.right + radius,
                 cy: rect.top + rect.height / 2, vx: rect.left - radius, radius };
@@ -145,6 +153,7 @@ export function setupHeaderFx() {
 
     if (window.matchMedia('(hover:hover) and (pointer:fine)').matches) {
       const activateHover = () => {
+        if (a11yOn()) return;
         if (!inside) {
           inside = true;
           // Ease the letters into their hover weight on entry, then drop the
@@ -248,6 +257,7 @@ export function setupSectionFx() {
       }
     };
     section.addEventListener('mouseenter', () => {
+      if (a11yOn()) return;
       lockWidths();                 // measure/apply base widths before any weight change
       inside = true;
       // Ease the letters in on entry, then drop the transition so tracking is instant.
@@ -333,6 +343,7 @@ function bindLetterFx(mark) {
     }
   };
   mark.addEventListener('mouseenter', () => {
+    if (a11yOn()) return;
     lockWidths();
     inside = true;
     clearTimeout(fxT);
