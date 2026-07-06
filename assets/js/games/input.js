@@ -43,19 +43,17 @@ function onKeyDown(e) {
   if (k === 'r' || k === 'R') { e.preventDefault(); restart(); return; }   // restart the run anytime
   if (k === 'p' || k === 'P') { e.preventDefault(); openPause(); return; }  // pause anytime mid-run
   if (g.gameOver && (k === ' ' || k === 'Enter')) { e.preventDefault(); restart(); return; }
+  // Record which direction keys are down; update.js interprets them (steer-and-glide by
+  // default, or rotate/thrust under legacy controls).
   const m = KEY[k];
-  if (m === 'left') g.input.left = true;
-  else if (m === 'right') g.input.right = true;
-  else if (m === 'up') g.input.thrust = true;
+  if (m === 'left' || m === 'right' || m === 'up' || m === 'down') g.input[m] = true;
   else if (k === ' ') g.input.fire = true;
   else return;
   e.preventDefault();
 }
 function onKeyUp(e) {
   const m = KEY[e.key];
-  if (m === 'left') g.input.left = false;
-  else if (m === 'right') g.input.right = false;
-  else if (m === 'up') g.input.thrust = false;
+  if (m === 'left' || m === 'right' || m === 'up' || m === 'down') g.input[m] = false;
   else if (e.key === ' ') g.input.fire = false;
 }
 
@@ -115,20 +113,22 @@ function buildControls() {
     mobileControls.push(fire);
 
     // Left/right rotate arrows beside the joystick - fine aiming when the stick is idle.
+    // These are always pure rotation (input.rotL/rotR), independent of the keyboard
+    // steer-vs-legacy scheme, so touch aiming feels the same however desktop is configured.
     const arrows = document.createElement('div');
     arrows.style.cssText = 'position:absolute; bottom:' + ctrlBottom + 'px; left:' + (24 + JOY_R * 2 + 14) + 'px; display:flex; gap:8px; z-index:2;';
-    const mkArrow = (label, prop) => {
+    const mkArrow = (label, prop, tok) => {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'anr-game-btn'; b.textContent = label;
       b.style.cssText = 'width:' + SQ + 'px; height:' + SQ + 'px; font-size:20px; touch-action:none;';
-      const set = (v) => (e) => { e.preventDefault(); if (v) trackTouchCombo(prop); input[prop] = v; };
+      const set = (v) => (e) => { e.preventDefault(); if (v) trackTouchCombo(tok); input[prop] = v; };
       b.addEventListener('pointerdown', set(true));
       b.addEventListener('pointerup', set(false));
       b.addEventListener('pointercancel', set(false));
       b.addEventListener('pointerleave', set(false));
       arrows.appendChild(b);
     };
-    mkArrow('◀', 'left'); mkArrow('▶', 'right');
+    mkArrow('◀', 'rotL', 'left'); mkArrow('▶', 'rotR', 'right');
     overlay.appendChild(arrows);
     mobileControls.push(arrows);
   }

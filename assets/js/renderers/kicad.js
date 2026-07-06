@@ -21,7 +21,7 @@
    footprint, which the project view uses for two-way cross-probing.
 */
 
-import { el, row, h3help, fmtBytes, sha256Row, errorCard, inlineLoader } from '../core/util.js';
+import { el, row, h3help, fmtBytes, sha256Row, errorCard, inlineLoader, wheelZoomToggle } from '../core/util.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const svg = (tag, attrs) => {
@@ -192,7 +192,13 @@ function buildViewer(build, opts = {}) {
   const s = svg('svg', { class: 'anr-altium-svg' });
   const root = svg('g', {});
   s.appendChild(root);
-  wrap.appendChild(s);
+  // Positioned stage around the SVG so the scroll-zoom toggle anchors to the
+  // drawing area's bottom-right, clear of the toolbar below.
+  const stage = el('div', { class: 'anr-wheelzoom-stage' });
+  stage.appendChild(s);
+  const wheelZoom = wheelZoomToggle();
+  stage.appendChild(wheelZoom.el);
+  wrap.appendChild(stage);
 
   const bbox = build(root);
   addPaperGrid(root, bbox);
@@ -212,6 +218,7 @@ function buildViewer(build, opts = {}) {
     return { scale, offX: (r.width - vb.w * scale) / 2, offY: (r.height - vb.h * scale) / 2 };
   };
   s.addEventListener('wheel', (e) => {
+    if (!wheelZoom.enabled()) return;   // let the wheel scroll the page instead
     e.preventDefault();
     const r = s.getBoundingClientRect();
     const { scale, offX, offY } = screenToUser(r);
@@ -1085,7 +1092,9 @@ function buildBoard3D(pcb, opts = {}) {
   };
   stage.addEventListener('pointerup', dropPointer);
   stage.addEventListener('pointercancel', dropPointer);
-  stage.addEventListener('wheel', (e) => { e.preventDefault(); view.zoom = Math.max(ZMIN, Math.min(ZMAX, view.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); applyCam(); }, { passive: false });
+  const wheelZoom = wheelZoomToggle();
+  stage.appendChild(wheelZoom.el);
+  stage.addEventListener('wheel', (e) => { if (!wheelZoom.enabled()) return; e.preventDefault(); view.zoom = Math.max(ZMIN, Math.min(ZMAX, view.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); applyCam(); }, { passive: false });
   stage.addEventListener('dblclick', resetView);
 
   const bar = el('div', { class: 'anr-altium-bar' });

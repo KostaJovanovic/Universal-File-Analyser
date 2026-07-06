@@ -421,6 +421,9 @@ function readUtf16Value(buf, key) {
 
 async function parseExe(c) {
   const result = parsePe(c.head) || {};
+  // A .scr screensaver is a plain PE the OS launches with switches; flag it so the
+  // readout frames the file as a screensaver rather than a bare executable.
+  if (c.ext === 'scr') result['Screensaver'] = 'Runs with /s (show), /p (preview), /c (configure)';
   const rsrc = result._rsrc;
   delete result._rsrc;
   if (rsrc && rsrc.size && c.file) {
@@ -3868,6 +3871,7 @@ const PARSERS = {
   exe:   c => parseExe(c),
   dll:   c => parseExe(c),
   rne:   c => parseExe(c),   // Cyberpunk ships steam_api64.dll renamed to .rne
+  scr:   c => parseExe(c),   // Windows screensaver - a renamed PE executable
   ttf:   c => parseFont(c.file),
   otf:   c => parseFont(c.file),
   ttc:   c => parseFont(c.file),
@@ -3957,7 +3961,7 @@ export async function renderProprietary(file, container, extOverride) {
   tbl.appendChild(row('Size', fmtBytes(file.size)));
 
   // Read header bytes for magic-based parsing (more for PE/EXE to walk import tables)
-  const headSize = (ext === 'exe' || ext === 'dll' || ext === 'msi') ? Math.min(file.size, 65536) : 4096;
+  const headSize = (ext === 'exe' || ext === 'dll' || ext === 'msi' || ext === 'scr') ? Math.min(file.size, 65536) : 4096;
   const head = new Uint8Array(await file.slice(0, headSize).arrayBuffer());
   let extra = null;
 

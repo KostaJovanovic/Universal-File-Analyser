@@ -473,7 +473,8 @@ function hud() {
   // Keyboard controls + top title are desktop-only.
   if (!g.isTouch) {
     ctx.font = F12; ctx.fillStyle = MUTED;
-    ctx.fillText('← → rotate · ↑ thrust · space fire · r reset · esc exit', cx, cy + HH + 44);
+    const moveHint = g.settings.legacyControls ? '← → rotate · ↑ thrust' : 'WASD / arrows move';
+    ctx.fillText(moveHint + ' · space fire · r reset · esc exit', cx, cy + HH + 44);
     ctx.font = F11; ctx.fillStyle = MUTED;
     ctx.fillText('ASTEROIDS · SUPPORTED FORMATS', cx, 24);
   }

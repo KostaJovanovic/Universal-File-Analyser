@@ -87,8 +87,31 @@ export function update(dt) {
       const max = 4.6 * dt;
       ship.angle += Math.max(-max, Math.min(max, d));
     } else {
-      if (input.left) ship.angle -= 4.6 * dt;
-      if (input.right) ship.angle += 4.6 * dt;
+      // Touch fine-aim arrows always rotate in place, in either control scheme.
+      if (input.rotL) ship.angle -= 4.6 * dt;
+      if (input.rotR) ship.angle += 4.6 * dt;
+      if (g.settings.legacyControls) {
+        // Classic Asteroids: left/right rotate the ship, up thrusts along its heading.
+        if (input.left) ship.angle -= 4.6 * dt;
+        if (input.right) ship.angle += 4.6 * dt;
+        input.thrust = !!input.up;
+      } else {
+        // Steer & glide (default): WASD / arrows point the ship at that direction. It
+        // rotates in place toward the heading at the same rate; thrust only engages once
+        // aligned, then stays on while any direction key is held (even through a turn), so
+        // it never veers off-line on the initial press.
+        const dx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+        const dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+        if (dx || dy) {
+          const desired = Math.atan2(dy, dx);
+          let d = desired - ship.angle; d = Math.atan2(Math.sin(d), Math.cos(d));
+          const max = 4.6 * dt; ship.angle += Math.max(-max, Math.min(max, d));
+          let rem = desired - ship.angle; rem = Math.atan2(Math.sin(rem), Math.cos(rem));
+          if (Math.abs(rem) < 0.15) input.thrust = true;   // reached the heading -> engines on
+        } else {
+          input.thrust = false;   // engines cut only when no direction key is pressed
+        }
+      }
     }
     const ramming = g.weapon === 'ram';
     // The battering ram accelerates much harder, lifts the speed cap, and runs higher drag.

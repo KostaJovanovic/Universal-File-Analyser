@@ -6,7 +6,7 @@ import {
   computeSpectrogram, computeReassignedSpectrogram, renderSpectrogram, colormaps,
   frequencyTicks, timeTicks, formatHz, formatTime
 } from './spectrogram.js';
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, errorCard, integrityCard, downloadBlob } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, errorCard, integrityCard, downloadBlob, inlineLoader } from '../core/util.js';
 import {
   computeStats, computeCentroid, computeLufs,
   detectPitch, detectBPM, computeStereoStats
@@ -54,6 +54,39 @@ function describeChannels(n) {
     10: '  (7.1.2 Atmos)', 12: '  (7.1.4 Atmos)', 16: '  (9.1.6 Atmos)'
   };
   return map[n] || (n > 2 ? '  (' + n + '-channel surround)' : '');
+}
+
+// Per-channel speaker names for the standard layouts, matching the channel order
+// the Web Audio decoder exposes for that count. Returns { short, full } per index;
+// unknown layouts fall back to plain "Ch N". Order follows the file's declared
+// layout, so it's a best-effort label rather than a guarantee.
+function channelLabels(n) {
+  const layouts = {
+    1: [['M', 'Mono']],
+    2: [['L', 'Left'], ['R', 'Right']],
+    3: [['L', 'Left'], ['R', 'Right'], ['LFE', 'LFE (sub-bass)']],
+    4: [['L', 'Left'], ['R', 'Right'], ['SL', 'Surround left'], ['SR', 'Surround right']],
+    6: [['L', 'Left'], ['R', 'Right'], ['C', 'Centre'], ['LFE', 'LFE (sub-bass)'], ['SL', 'Surround left'], ['SR', 'Surround right']],
+    8: [['L', 'Left'], ['R', 'Right'], ['C', 'Centre'], ['LFE', 'LFE (sub-bass)'], ['SL', 'Surround left'], ['SR', 'Surround right'], ['RL', 'Rear left'], ['RR', 'Rear right']]
+  };
+  const known = layouts[n];
+  if (known) return known.map(([short, full]) => ({ short, full }));
+  const out = [];
+  for (let i = 0; i < n; i++) out.push({ short: 'Ch ' + (i + 1), full: 'Channel ' + (i + 1) });
+  return out;
+}
+
+// Build the switchable-signal list for a decoded buffer: a "Mix" downmix first (the
+// default), then one entry per discrete channel. Each is { short, full, data }.
+function channelOptions(audioBuffer, mono) {
+  const n = audioBuffer.numberOfChannels;
+  if (n < 2) return [{ short: 'Mix', full: 'Mono', data: mono }];
+  const labels = channelLabels(n);
+  const opts = [{ short: 'Mix', full: 'Mix (all channels averaged)', data: mono }];
+  for (let c = 0; c < n; c++) {
+    opts.push({ short: labels[c].short, full: labels[c].full, data: audioBuffer.getChannelData(c) });
+  }
+  return opts;
 }
 
 // Make a playhead line grabbable, so you can drag it to scrub. `seekFromClientX`
@@ -1471,16 +1504,64 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // ---- Reverse playback (play / download the audio backwards) ----
   resultsEl.appendChild(buildReverseAudioCard(audioBuffer, (file.name || 'audio').replace(/\.[^/.]+$/, ''), renderSignal));
 
+  // ---- Channel picker (multi-channel files) ----
+  // For stereo / surround, let the user drive the spectrogram + waveform below off
+  // a chosen channel (or the Mix downmix), instead of always analysing the merged
+  // mono. Both visuals live in slots that re-render when the channel changes.
+  const basename = (file.name || 'spectrogram').replace(/\.[^/.]+$/, '');
+  const chans = channelOptions(audioBuffer, mono);
+  const specSlot = el('div');
+  const waveSlot = el('div');
+  let curSpecPanel = null;
+
+  function renderSignalViews(idx, showLoader) {
+    const sig = chans[idx].data;
+    specSlot.innerHTML = '';
+    // On a channel switch the spectrogram recomputes on a deferred timeout, so drop
+    // in the standard inline loader (as elsewhere) until the new panel first paints.
+    let loader = null;
+    if (showLoader) { loader = inlineLoader('Analysing ' + chans[idx].full + '…'); specSlot.appendChild(loader); }
+    curSpecPanel = makeSpectrogramPanel(sig, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, capture: true });
+    if (loader) curSpecPanel.style.visibility = 'hidden';   // keep the blank canvas out of view behind the bar
+    specSlot.appendChild(curSpecPanel);
+    waveSlot.innerHTML = '';
+    waveSlot.appendChild(buildWaveformCard(file, sig, audioBuffer, audioEl));
+    if (loader) {
+      const panel = curSpecPanel;
+      const clear = () => { loader.remove(); panel.style.visibility = ''; };
+      if (panel.firstPaint) panel.firstPaint.then(clear).catch(clear);
+      else clear();
+    }
+  }
+
+  if (chans.length > 1) {
+    const chanCard = el('div', { class: 'anr-card' });
+    const [chH, chHelp] = h3help('Channel',
+      'This file has ' + audioBuffer.numberOfChannels + ' channels. Choose which one feeds the spectrogram and waveform below - <strong>Mix</strong> is every channel averaged together, or isolate a single speaker (Left, Right, Centre, LFE, surrounds) to inspect it on its own. Per-channel peak and RMS update with your choice. Speaker names follow the file\'s declared layout, so treat them as a best-effort label.');
+    chanCard.appendChild(chH); chanCard.appendChild(chHelp);
+    const seg = el('div', { class: 'anr-btn-row', style: 'margin-top:4px;' });
+    const stat = el('p', { class: 'anr-hint', style: 'margin:8px 0 0;' });
+    const btns = [];
+    const setActive = (i) => {
+      btns.forEach((b, j) => b.classList.toggle('is-active', j === i));
+      const s = computeStats(chans[i].data);
+      stat.textContent = chans[i].full + '  -  peak ' + s.peakDb.toFixed(1) + ' dBFS, RMS ' + s.rmsDb.toFixed(1) + ' dBFS';
+    };
+    chans.forEach((c, i) => {
+      const b = el('button', { type: 'button', class: 'anr-btn', title: c.full }, c.short);
+      b.addEventListener('click', () => { setActive(i); renderSignalViews(i, true); });
+      btns.push(b); seg.appendChild(b);
+    });
+    setActive(0);
+    chanCard.appendChild(seg); chanCard.appendChild(stat);
+    resultsEl.appendChild(chanCard);
+  }
+
   // ---- Spectrogram (normally directly under the file info) ----
   // opts.spectrogramFirst hoists it above the info card - used when sonifying a
   // picture, where the spectrogram (what the image became) is the headline.
-  const basename = (file.name || 'spectrogram').replace(/\.[^/.]+$/, '');
-  const specPanel = makeSpectrogramPanel(mono, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, capture: true });
-  if (opts.spectrogramFirst) resultsEl.insertBefore(specPanel, infoCard);
-  else resultsEl.appendChild(specPanel);
-
-  // ---- Amplitude histogram (under the spectrogram) ----
-  resultsEl.appendChild(buildHistogramCard(mono));
+  if (opts.spectrogramFirst) resultsEl.insertBefore(specSlot, infoCard);
+  else resultsEl.appendChild(specSlot);
 
   // ---- Embedded cover art (filled in asynchronously so it doesn't block) ----
   const coverSlot = el('div');
@@ -1511,7 +1592,10 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   }).catch(() => {});
 
   // ---- Waveform card ----
-  resultsEl.appendChild(buildWaveformCard(file, mono, audioBuffer, audioEl));
+  resultsEl.appendChild(waveSlot);
+
+  // Fill the spectrogram + waveform slots now that both are in the DOM (Mix by default).
+  renderSignalViews(0);
 
   // ---- Stereo Width / Vectorscope card (stereo files only) ----
   if (audioBuffer.numberOfChannels >= 2) {
@@ -1554,7 +1638,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // Keep the bottom "Reading…" loader up until the spectrogram has actually
   // painted (it computes on a deferred timeout after the cards are built), so the
   // bar doesn't vanish while the main visual is still blank.
-  if (specPanel && specPanel.firstPaint) { try { await specPanel.firstPaint; } catch (_) {} }
+  if (curSpecPanel && curSpecPanel.firstPaint) { try { await curSpecPanel.firstPaint; } catch (_) {} }
 }
 
 // --- Compact streaming spectrogram (mic visual for the Record card) ---
@@ -2049,29 +2133,34 @@ async function startLive(resultsEl, liveBtn) {
 }
 
 // --- Setup ---
+// dropEl / inputEl are optional: the single "any file" hero layout wires only the
+// Record / Live buttons here (its drop + picker go through initVideo instead), so
+// each piece is guarded rather than assumed present.
 export function initAudio({ dropEl, inputEl, recordBtn, liveBtn, resultsEl, onFile }) {
   const handle = onFile || ((file) => renderAudio(file, resultsEl));
 
-  inputEl.addEventListener('change', (e) => {
+  if (inputEl) inputEl.addEventListener('change', (e) => {
     const file = e.target.files && e.target.files[0];
     if (file) handle(file);
     inputEl.value = '';
   });
 
   // Visual highlight only; the actual drop is handled at the window level
-  ['dragenter', 'dragover'].forEach((ev) =>
-    dropEl.addEventListener(ev, () => dropEl.classList.add('is-dragover'))
-  );
-  ['dragleave', 'drop'].forEach((ev) =>
-    dropEl.addEventListener(ev, () => dropEl.classList.remove('is-dragover'))
-  );
+  if (dropEl) {
+    ['dragenter', 'dragover'].forEach((ev) =>
+      dropEl.addEventListener(ev, () => dropEl.classList.add('is-dragover'))
+    );
+    ['dragleave', 'drop'].forEach((ev) =>
+      dropEl.addEventListener(ev, () => dropEl.classList.remove('is-dragover'))
+    );
+  }
 
-  recordBtn.addEventListener('click', () => {
+  if (recordBtn) recordBtn.addEventListener('click', () => {
     if (recordBtn.classList.contains('is-recording')) { if (recordBtn._stopRec) recordBtn._stopRec(); return; }
     startRecording(resultsEl, recordBtn);
   });
 
-  liveBtn.addEventListener('click', () => {
+  if (liveBtn) liveBtn.addEventListener('click', () => {
     if (liveBtn.classList.contains('is-active')) return;
     startLive(resultsEl, liveBtn);
   });

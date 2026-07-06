@@ -823,7 +823,7 @@ export const FORMATS = {
   ab:      { app: 'Android Backup', icon: 'AB', chunk: 'osmisc' },
   job:     { app: 'Task Scheduler Job', icon: 'JOB', chunk: 'osmisc' },
   pol:     { app: 'Group Policy (Registry.pol)', icon: 'POL', chunk: 'osmisc' },
-  scr:     { app: 'Windows Screensaver', icon: 'SCR', chunk: 'osmisc' },
+  scr:     { app: 'Windows Screensaver', icon: 'SCR', magic: [0x4D, 0x5A] },
   ds_store:{ app: 'macOS .DS_Store', icon: 'DS', chunk: 'osmisc' },
   thumbsdb:{ app: 'Windows Thumbs.db', icon: 'THMB', chunk: 'osmisc' },
   dsym:    { app: 'dSYM Debug Symbols', icon: 'DSYM', chunk: 'osmisc' },

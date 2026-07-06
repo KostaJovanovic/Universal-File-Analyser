@@ -65,7 +65,7 @@ export function parseIcoEntries(buf) {
 }
 
 // Build the "Embedded images" card for an ICO/CUR, or null if not one.
-export async function buildIcoImagesCard(file, signal) {
+export async function buildIcoImagesCard(file, signal, resultsEl) {
   let parsed = null;
   try { parsed = parseIcoEntries(await file.arrayBuffer()); } catch (_) { parsed = null; }
   if (!parsed) return null;
@@ -87,6 +87,6 @@ export async function buildIcoImagesCard(file, signal) {
     title: 'Embedded images',
     hint: entries.length + ' image' + (entries.length === 1 ? '' : 's') + ' packed in this ' +
       (type === 2 ? 'cursor' : 'icon') + ' - each at its own size and colour depth. The browser only displays one; here is every one.',
-    items, signal,
+    items, signal, resultsEl, sourceFile: file,
   });
 }

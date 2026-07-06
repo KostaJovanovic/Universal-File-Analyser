@@ -401,47 +401,6 @@ async function parsePol(file) {
   };
 }
 
-// ---------- PE header (.scr screensaver) ----------
-const PE_MACHINE = { 0x014c: 'x86 (i386)', 0x8664: 'x64 (AMD64)', 0x01c0: 'ARM', 0xaa64: 'ARM64', 0x0200: 'IA-64' };
-const PE_SUBSYSTEM = { 1: 'Native', 2: 'Windows GUI', 3: 'Windows console', 7: 'POSIX', 9: 'Windows CE GUI', 10: 'EFI application' };
-async function parseScr(file) {
-  const b = new Uint8Array(await file.slice(0, Math.min(file.size, 4096)).arrayBuffer());
-  if (!(b[0] === 0x4D && b[1] === 0x5A)) return null; // 'MZ'
-  const r = new Reader(b, true);
-  const peOff = r.seek(0x3C).u32();
-  if (peOff + 24 > b.length) return null;
-  if (!(b[peOff] === 0x50 && b[peOff + 1] === 0x45 && b[peOff + 2] === 0 && b[peOff + 3] === 0)) return null; // 'PE\0\0'
-  r.seek(peOff + 4);
-  const machine = r.u16();
-  const numSections = r.u16();
-  const timestamp = r.u32();
-  r.skip(4 + 4); // ptr to symbol table, num symbols
-  const optHeaderSize = r.u16();
-  const characteristics = r.u16();
-  const optStart = peOff + 24;
-  let magic = 0, subsystem = 0;
-  if (optStart + 2 <= b.length) {
-    magic = b[optStart] | (b[optStart + 1] << 8);
-    // Subsystem sits at offset 68 in the optional header (same for PE32/PE32+).
-    const subOff = optStart + 68;
-    if (subOff + 2 <= b.length) subsystem = b[subOff] | (b[subOff + 1] << 8);
-  }
-  const isDll = !!(characteristics & 0x2000);
-  const isExe = !!(characteristics & 0x0002);
-  const out = {
-    'Format': 'Windows screensaver (PE executable)',
-    'Machine': PE_MACHINE[machine] || ('0x' + machine.toString(16)),
-    'PE type': magic === 0x20b ? 'PE32+ (64-bit)' : magic === 0x10b ? 'PE32 (32-bit)' : 'unknown',
-    'Subsystem': PE_SUBSYSTEM[subsystem] || ('0x' + subsystem.toString(16)),
-    'Sections': numSections,
-    'Executable': isExe ? 'yes' + (isDll ? ' (DLL flag set)' : '') : (isDll ? 'DLL' : 'no'),
-  };
-  const ts = timestamp ? new Date(timestamp * 1000) : null;
-  if (ts && !isNaN(ts) && timestamp < 0xFFFFFFFF) out['Link timestamp'] = fmtDate(ts);
-  out['Note'] = '.scr screensavers are standard PE executables run with /s, /c, /p';
-  return out;
-}
-
 // Adobe Font List (AdobeFnt*.lst) - the font cache Adobe apps (Photoshop,
 // Illustrator, InDesign, Acrobat) write to catalogue every font they can see.
 // PostScript-comment header (%!Adobe-FontList <ver>) then one %BeginFont /
@@ -614,7 +573,6 @@ export const PARSERS = {
   ab: (c) => parseAb(c.file),
   job: (c) => parseJob(c.file),
   pol: (c) => parsePol(c.file),
-  scr: (c) => parseScr(c.file),
   lst: (c) => parseFontList(c.file),
   // identification-only (rare AND hard)
   ds_store: () => identDsStore(),

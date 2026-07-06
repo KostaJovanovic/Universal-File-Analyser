@@ -418,6 +418,14 @@ body:not(:has(.site-nav)) .site-header::after { margin-top: clamp(28px, 4vw, 48p
   border: var(--bd-hairline);
   color: var(--fg);
   text-decoration: none;
+  /* Every chip shares one box model (inline-flex, tight 1em line box) so a
+     text <a> and the icon-bearing Share <button> are the same intrinsic
+     height. Without this the two heights only match because a single flex row
+     stretches them together - once the row wraps, each row stretches on its
+     own and the chips visibly change height. */
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 .header-btn:hover { background: var(--fg); color: var(--bg); }
 button.header-btn { cursor: pointer; line-height: 1; }
@@ -509,8 +517,8 @@ button.nav-link {
   .site-kicker { grid-column: 1; grid-row: 1; }
   .site-title  { grid-column: 1 / -1; grid-row: 2; }
   .site-byline { grid-column: 1 / -1; grid-row: 3; margin-top: -4px; }
-  .site-sub    { grid-column: 1 / -1; grid-row: 6; margin-top: 16px; }
-  .site-mark-nav { grid-column: 1 / -1; grid-row: 7; margin-top: 20px; }
+  .site-sub    { grid-column: 1 / -1; grid-row: 7; margin-top: 16px; }
+  .site-mark-nav { grid-column: 1 / -1; grid-row: 8; margin-top: 20px; }
 
   /* Status (dt/dd = children 5-6) sits on the kicker row, top-right. */
   .site-meta dl > :nth-child(5) { grid-column: 4; grid-row: 1; }
@@ -521,11 +529,14 @@ button.nav-link {
   .site-meta dl > :nth-child(2) { grid-column: 2; grid-row: 4; margin-top: 32px; }
   .site-meta dl > :nth-child(3) { grid-column: 1; grid-row: 5; margin-top: 4px; }
   .site-meta dl > :nth-child(4) { grid-column: 2; grid-row: 5; margin-top: 4px; }
-  /* Other stuff (7-8) and Dark mode (9-10) form the right cluster, rows 4-5. */
+  /* Other stuff (7-8) and Dark mode (9-10) form the right cluster, rows 4-5;
+     Clear view (11-12) sits directly under Dark mode on row 6. */
   .site-meta dl > :nth-child(7) { grid-column: 4; grid-row: 4; margin-top: 32px; }
   .site-meta dl > :nth-child(8) { grid-column: 5; grid-row: 4; margin-top: 32px; }
   .site-meta dl > :nth-child(9) { grid-column: 4; grid-row: 5; margin-top: 4px; }
   .site-meta dl > :nth-child(10) { grid-column: 5; grid-row: 5; margin-top: 4px; }
+  .site-meta dl > :nth-child(11) { grid-column: 4; grid-row: 6; margin-top: 4px; }
+  .site-meta dl > :nth-child(12) { grid-column: 5; grid-row: 6; margin-top: 4px; }
 }
 
 /* ---------- NAV ---------- */
@@ -1043,7 +1054,19 @@ body.anr-has-file .nav-search { display: flex; }
   color: var(--accent-fg);
   border-color: var(--accent);
 }
-.anr-rec-dot { color: currentColor; font-size: 0.9em; vertical-align: middle; }
+/* A real CSS circle (like the site's other status dots), not the ● glyph, which
+   sat low on the baseline inside the button. currentColor so it inverts with the
+   button on hover / while recording. */
+.anr-rec-dot {
+  display: inline-block;
+  width: 0.62em;
+  height: 0.62em;
+  background: currentColor;
+  border-radius: 50%;
+  vertical-align: middle;
+  position: relative;
+  top: -0.04em;
+}
 .anr-btn.is-recording .anr-rec-dot { animation: anr-blink 1s steps(2, end) infinite; }
 @keyframes anr-blink { 50% { opacity: 0; } }
 
@@ -3020,6 +3043,13 @@ details[open] summary::after { content: "\2212"; }
   color: rgba(255,255,255,0.5);
   margin-top: 4px;
 }
+/* On the home page the footer also carries the "Recently analysed" panel, which
+   sits ahead of this heading in source (the heading lives inside the generated
+   FOOTER markers and can't be moved there). Flex-reorder so the heading leads
+   the footer, above the recent panel. Scoped by :has so only the home footer
+   (the one containing .recent-history) becomes a flex column. */
+.site-footer--about:has(.recent-history) { display: flex; flex-direction: column; }
+.site-footer--about:has(.recent-history) .footer-about-heading { order: -1; }
 .about-defs {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -4506,6 +4536,67 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .quickdrop-zone .anr-audio-modes .anr-btn:hover { border-right-color: var(--fg); }
 .quickdrop-zone .anr-audio-modes .anr-btn:last-child { border-right: none; }
 
+/* ============================================================================
+   DROPZONE VARIANT - single "any file" hero zone (opt-in)
+   ----------------------------------------------------------------------------
+   Both layouts live in index.html at once; the `quickdrop--hero` class on
+   <section class="quickdrop"> flips which one shows - WITH it the single hero
+   dropzone (.quickdrop-hero), WITHOUT it the original three cards
+   (.quickdrop-grid). Removing that one class is the whole switch; both stay
+   wired in app.js. The hero reuses the base .anr-dropzone look (bordered box,
+   accent-on-hover border, dashed dragover) and adds a divided action strip. */
+.quickdrop-hero { display: none; }
+.quickdrop--hero .quickdrop-grid { display: none; }
+.quickdrop--hero .quickdrop-hero { display: block; }
+
+/* Width + offset are tied to the nav bar: its left edge lands on the centre of
+   the Photo link and its right edge on the centre of the Video link. The nav is
+   `grid-template-columns: 1fr 1fr 1fr auto` with the search column hidden while
+   no file is loaded (the only time this dropzone is visible), so Photo/Sound/
+   Video are exact thirds - Photo's centre sits at 1/6 of the width, Video's at
+   5/6. The nav and .quickdrop share the same content box (same max-width / auto
+   margins / --pad-x), so 1/6 offset + 2/3 width reproduces that with no JS.
+   Height is matched to the old separate cards by mirroring the .quickdrop-zone
+   inner padding + icon/heading sizing (the base .anr-dropzone is much taller).
+   Full-width on phones - see the 700px override below. */
+.quickdrop-hero.anr-dropzone { width: 66.6667%; margin: 0 0 0 16.6667%; }
+.quickdrop-hero .anr-dropzone-inner { padding: clamp(24px, 4vw, 48px) 18px; }
+.quickdrop-hero .anr-drop-icon { font-size: clamp(22px, 3.5vw, 34px); margin-bottom: 6px; }
+/* Keep the site's established red dropzone heading (the classic cards do this
+   via .quickdrop-zone; the hero isn't one, so set it here) and match their size. */
+.quickdrop-hero .anr-dropzone-inner strong { color: var(--accent); font-size: clamp(16px, 1.8vw, 22px); }
+
+/* Divided action strip along the bottom (Record / Live spectrogram / Info),
+   mirroring the audio-mode strip: equal flex cells split by hairlines. It sits
+   outside the label, so the card's hover content-fade leaves the buttons crisp. */
+.quickdrop-hero-actions {
+  display: flex;
+  border-top: var(--bd-hairline);
+  transition: border-color var(--dur-base) ease;
+}
+.quickdrop-hero-actions .anr-btn {
+  flex: 1 1 0;
+  margin: 0;
+  border: none;
+  border-right: var(--bd-hairline);
+  border-radius: 0;
+  padding: 12px 10px;
+  min-width: 0;
+}
+.quickdrop-hero-actions .anr-btn:last-child { border-right: none; }
+.quickdrop-hero-actions .anr-btn:hover { border-right-color: var(--fg); }
+/* Match the base card-hover: tint the strip's dividers accent along with the
+   card border. */
+.quickdrop-hero.anr-dropzone:hover .quickdrop-hero-actions { border-top-color: var(--accent); }
+.quickdrop-hero.anr-dropzone:hover .quickdrop-hero-actions .anr-btn { border-right-color: var(--accent); }
+
+/* Phones: keep the single hero dropzone, just render it normally - full width
+   and flush left, dropping the desktop nav-aligned 2/3 offset (which would be an
+   odd narrow strip on a small screen). */
+@media (max-width: 700px) {
+  .quickdrop-hero.anr-dropzone { width: 100%; margin-left: 0; }
+}
+
 @media (max-width: 420px) {
   .site-nav { padding-left: 14px; padding-right: 14px; }
   .quickdrop { padding-left: 14px; padding-right: 14px; }
@@ -5871,6 +5962,38 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-stl-canvas { display: block; touch-action: none; cursor: grab; }
 .anr-stl-canvas:active { cursor: grabbing; }
 
+/* Scroll-zoom toggle (wheelZoomToggle in util.js), overlaid bottom-right of
+   every viewer that zooms on a plain wheel scroll (G-code/STL 3D, LUT cubes,
+   PCB 2D/3D boards). Sharp-cornered like every other control on the site;
+   dark-translucent so it reads on both the dark WebGL canvas and the cream PCB
+   stage. Hidden on small screens (no wheel on touch - pinch still zooms) and
+   in fullscreen (no page underneath to scroll). */
+.anr-wheelzoom {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 5;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 10px;
+  border-radius: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(10, 12, 16, 0.72);
+  color: #eef2ff;
+  cursor: pointer;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+}
+.anr-wheelzoom:hover { border-color: rgba(255, 255, 255, 0.45); }
+.anr-wheelzoom.is-off { color: rgba(238, 242, 255, 0.55); border-style: dashed; }
+/* G-code viewer: the fullscreen button already owns the bottom-right corner. */
+.anr-wheelzoom--raised { bottom: 52px; }
+.anr-stl-viewport:fullscreen .anr-wheelzoom { display: none; }
+@media (max-width: 700px) { .anr-wheelzoom { display: none; } }
+/* Positioned stage wrapped around the 2D board SVG, so the toggle anchors to
+   the drawing area rather than the toolbar below it. */
+.anr-wheelzoom-stage { position: relative; }
+
 /* XLSX spreadsheet viewer */
 .anr-xlsx-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
 .anr-xlsx-tab {
@@ -6061,6 +6184,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-pcb3d {
   display: flex; align-items: center; justify-content: center;
   width: 100%; height: clamp(360px, 60vh, 620px);
+  position: relative;   /* anchors the scroll-zoom toggle */
   touch-action: none; cursor: grab; overflow: hidden;
   background:
     radial-gradient(120% 120% at 50% 0%, rgba(0, 0, 0, 0.05), transparent 60%),

@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 180;
+const COMMIT_COUNT = 181;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1729,66 +1729,60 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
   { range: '5.05 - 5.07', notes: [
-    'Analyser can turn a picture into sound: any photo can be Sonified from the Sound section - read as a spectrogram (left-right is time, top-bottom is pitch, brightness is loudness) and resynthesised with a choice of oscillator-bank or Griffin-Lim engine, an adjustable pitch range and a length up to three minutes (or any typed value), then played and scrubbed with a line sweeping across the image and a progress bar tracking the render.',
-    'A real spectrogram image can be inverted back into the sound it depicts, with colour-map presets and an Invert switch for plots drawn dark on light; the rendered audio then runs straight through the full Sound analysis (interactive spectrogram, waveform, level/loudness/pitch/tempo) with a WAV download.',
-    'Recording from the microphone and the live spectrogram capture now offer a Download button to save the captured sound.',
-    'Variable fonts animate on their own: each axis (weight, optical size, softness and the rest) gets a play button that sweeps it back and forth, with a Play all control, and each axis resumes from wherever its slider sits. The Samples gallery gains the Fraunces variable font to try it on, the live specimen now leads the font report, and the Everything offline download bundles more (EPS/PostScript graphics, AutoCAD drawings, STEP/IGES CAD models and the whole sample gallery).',
+    'Turn any photo into sound: it is read as a spectrogram and resynthesised, with a choice of engine, an adjustable pitch range and a length up to three minutes.',
+    'A real spectrogram image can be inverted back into the sound it depicts, then run through the full Sound analysis with a WAV download.',
+    'Microphone and live-spectrogram recordings gain a Download button.',
+    'Variable fonts animate each axis on their own, the Samples gallery adds the Fraunces variable font, and the offline download bundles more formats.',
   ] },
   { range: '5.01 - 5.04', notes: [
-    'Every format is tagged Full, Partial or ID so you can see before dropping a file whether it opens in a complete viewer, shows only its embedded preview and details, or is just identified - Photoshop, Illustrator, Fusion 360, SolidWorks, iWork and Krita are now honestly marked Partial across the format list, samples gallery and guide pages. The 3D KiCad board view also gains pinch-zoom and two-finger pan on phones with a smooth double-tap reset, the board bill of materials stops overflowing a phone screen, and a video\'s reverse-playback and trailing-data cards move lower in the report.',
-    'Analyser sharpens into a forensic toolkit: an unknown file gets a byte-entropy strip showing where its data turns random (compressed/encrypted/packed regions and the seams between them), data hidden after a file\'s real end can be extracted or opened in place, and URLs, IPs, domains and emails found in a file are listed with one-click OSINT lookups.',
-    'Forensic checks deepen: photos and PDFs are flagged for impossible timestamps, a JPEG whose embedded thumbnail no longer matches the full image is flagged as cropped/edited, and a PDF\'s embedded scripts are traced by trigger (open/print/save) with network, file and launch patterns called out.',
-    'Documents give up more: Photoshop layers export to PNG with hidden/transparent/zero-size layers flagged, Word flags ghost authorship and per-author edit density, Excel lists pivot tables, PowerPoint and legacy .doc/.xls/.ppt are checked for macros and external links, and a SQLite database gains an in-browser read-only query box.',
-    'More opens and plays: ASS/SSA subtitles render with their real styling, Lottie and Telegram sticker animations play with a scrubbable timeline, and Autodesk FBX models open in the 3D viewer.',
-    'Exported reports lead with a tamper-evident verification block (file SHA-256, size, UTC time, Analyser version, verify instructions) and can be printed straight to PDF.',
+    'Every format is tagged Full, Partial or ID, so you can see before dropping a file whether it opens in a complete viewer, a preview, or is just identified.',
+    'An unknown file gets a byte-entropy strip showing where its data turns random, and data hidden after a file\'s real end can be extracted.',
+    'URLs, IPs, domains and emails found in a file are listed with one-click OSINT lookups.',
+    'New forensic flags: impossible photo and PDF timestamps, a JPEG thumbnail that no longer matches the full image, and a PDF\'s embedded scripts traced by trigger.',
+    'Documents give up more: Photoshop layers export to PNG, Word flags ghost authorship, Excel lists pivot tables, and a SQLite database gains a query box.',
+    'ASS/SSA subtitles render with their real styling, Lottie and Telegram stickers play with a timeline, and Autodesk FBX models open in 3D.',
+    'Exported reports lead with a tamper-evident verification block and can be printed straight to PDF.',
   ] },
   { range: '5.0', milestone: true, notes: [
     'Fifth milestone: Analyser brings broken files back from the dead and opens professional CAD.',
-    'A truncated or corrupt photo is repaired (rebuilding a damaged JPEG header from a reference shot when needed), and an unfinished video with no playable index is reconstructed frame by frame and played in place.',
-    'Autodesk Fusion 360 (.f3d / .f3z) and SolidWorks (.sldprt / .sldasm / .slddrw) designs open - the rendered thumbnail shown as the model, with the document type and metadata; older SolidWorks files also give up their saved preview, while encrypted modern ones are identified on sight.',
-    'A new Samples gallery lets you try the whole workbench on built-in example files in one click, sorted by type with a plain-language note on hover.',
-    'Adobe SpeedGrade / Iridas .look colour grades open with their full grade stack and baked LUT, every LUT previews on a sample photo at a glance, 3D models open the right way up with a Z-up/Y-up toggle, and multi-tool G-code prints mark each tool with its own numbered, colour-coded toolhead.',
-    'G-code playback pauses where the machine does and plays at true speed, Zortrax .zcode prints are recognised, Zstandard archives are handled, and a ZIP\'s contents treemap now sits above its integrity panel.',
+    'A truncated or corrupt photo is repaired, and an unfinished video with no playable index is rebuilt frame by frame.',
+    'Autodesk Fusion 360 and SolidWorks designs open, shown as their rendered thumbnail with the document type and metadata.',
+    'A new Samples gallery runs the whole workbench on built-in example files in one click.',
+    'Adobe .look colour grades open, every LUT previews on a sample photo, and multi-tool G-code marks each toolhead in its own colour.',
   ] },
   { range: '4.16 - 4.17', notes: [
-    'Extensions shared by unrelated formats (a .pkg is a macOS installer or a Destiny package, a .key a Keynote or an encryption key) now get a guide page with a separate, self-contained card for each meaning, its own "Did you know" and all.',
-    'The folder openability scan judges each file by its contents, not just its name - a misnamed or extensionless file it can read counts as openable, an unreadable one is flagged - and more developer and Android/Samsung phone formats are recognised.',
-    'A photo\'s sharpness score now measures focus on its own terms rather than being skewed by scene contrast, and the folder breakdown pop-up no longer closes when you scroll inside it.',
-    'Files that are not what they claim are flagged on open - a program renamed to look like a photo, or any file whose contents do not match its extension.',
-    'Data hidden after a file\'s real end is detected, a common way to smuggle one file inside another, for JPEG, PNG, GIF, BMP, WAV and ZIP files.',
-    'A file\'s integrity panel adds MD5, SHA-1 and SHA-512 fingerprints on demand, alongside the existing SHA-256.',
-    'ZIP archives gain a timing chart that flags repacked, placeholder or future-dated entries, plus an on-demand check of every entry\'s stored checksum.',
-    'The home page keeps a short, private, on-device list of recently analysed files (names and types only), spreadsheets flag statistical anomalies in their data, and the header tally now counts files analysed rather than visitors.',
+    'Extensions shared by unrelated formats (a .pkg installer or a Destiny package) get a guide page with a self-contained card for each meaning.',
+    'The folder scan judges each file by its contents, not just its name, and recognises more developer and Android/Samsung formats.',
+    'Files that are not what they claim are flagged on open, including data hidden after a file\'s real end.',
+    'A file\'s integrity panel adds MD5, SHA-1 and SHA-512 fingerprints on demand, alongside SHA-256.',
+    'ZIP archives gain a timing chart that flags repacked or future-dated entries, plus a stored-checksum check.',
+    'The home page keeps a private on-device list of recently analysed files, and spreadsheets flag statistical anomalies.',
   ] },
   { range: '4.12 - 4.15', notes: [
-    'KiCad circuit designs open: schematics, boards, footprints and symbol libraries are rebuilt as interactive drawings with pan, zoom and per-layer toggles, and opening the project ties a schematic and its board together. SPICE simulation waveforms (ngspice, LTspice) and IPC-D-356 fabrication netlists open too.',
-    'Source code in almost any language opens as readable text - C and C++, C#, Java, Go, Rust, Python and many more - along with the build, shader and configuration files that fill a project.',
-    'Hundreds more formats are recognised: game files from Cyberpunk 2077, Valve\'s Source 2, Unity and the classic Marathon trilogy, plus ONNX machine-learning models, Node.js add-ons and macOS libraries.',
-    'Plain-text and extensionless files gain a Show full text reader, licence files open as clean text like a .txt, and the G-code playback speeds read clearer.',
+    'KiCad circuit designs open as interactive drawings with pan, zoom and per-layer toggles, tying a schematic to its board.',
+    'SPICE simulation waveforms and IPC-D-356 fabrication netlists open too.',
+    'Source code in almost any language opens as readable text, along with build, shader and configuration files.',
+    'Hundreds more formats are recognised, from Cyberpunk 2077 and Unity game files to ONNX machine-learning models.',
   ] },
   { range: '4.08 - 4.11', notes: [
-    'Altium Designer files open: schematics, circuit boards, footprints and symbol/footprint libraries are rebuilt as interactive vector views with pan, zoom and per-layer toggles, plus part numbers, the pad table and the project manifest.',
-    'The G-code visualiser now draws the non-printing travel moves in true order and paints multicolour / multi-material prints in each filament\'s real colour.',
-    'A "Show full anyway" button renders even million-segment prints whole, with detail scaled to your device, and the render-quality controls stay available on a full uncapped print.',
+    'Altium Designer schematics, boards and libraries open as interactive vector views with pan, zoom and per-layer toggles.',
+    'The G-code visualiser draws travel moves in true order and paints multi-material prints in each filament\'s real colour.',
+    'A "Show full anyway" button renders even million-segment prints whole, with detail scaled to your device.',
   ] },
   { range: '4.01 - 4.07', notes: [
-    'The stats page gained a graph of visitors and files over time - switch between per-day and cumulative (which carries on from the totals banked before tracking began), click the key to hide either line and watch it rescale, and hover a day for the exact figures.',
-    'Microsoft COFF .lib libraries open, telling a true static library apart from a DLL import library and listing the target architecture and the DLLs it binds to.',
-    'Colour look-up tables come alive: drop a .cube LUT to see its tone curve, before-and-after swatches and an interactive 3D colour cube, then apply the look to your own photo or video.',
-    'DaVinci Resolve .drt timelines read out the colour-grade node chain in each clip - every node in order, the LUTs it loads and the ResolveFX it applies.',
-    'Files with no extension open as readable text, with a prompt to reopen them as a known format when their contents give them away.',
-    'Font specimens show a sample sentence for every script a font covers - Japanese, Cyrillic, Greek, Arabic and more - and font collections preview each face inside.',
-    'Hundreds more formats are recognised, past 1,260 in all and each with its own guide page, and the folder openability scan now matches the real drop result exactly.',
-    'Video gains Prev/Next frame buttons that step exactly one frame at a time, and a chosen frame is pulled into the photo tools on demand rather than automatically.',
-    'A tidier page header on phones and tablets, laying the version, visitor and status details out in neat clusters.',
+    'The stats page gained a graph of visitors and files over time, switchable between per-day and cumulative.',
+    'Colour look-up tables come alive: drop a .cube to see its tone curve and 3D colour cube, then apply the look to your own photo or video.',
+    'DaVinci Resolve .drt timelines read out each clip\'s colour-grade node chain, and Microsoft .lib libraries open.',
+    'Files with no extension open as readable text, with a prompt to reopen them as a known format.',
+    'Font specimens show a sample sentence for every script a font covers, and collections preview each face inside.',
+    'Hundreds more formats are recognised, past 1,260 in all, each with its own guide page.',
+    'Video gains Prev/Next frame buttons that step exactly one frame at a time.',
   ] },
   { range: '4.0', milestone: true, notes: [
     'Fourth milestone: Analyser steps into 3D.',
-    'A full G-code visualiser rebuilds the real printed or machined object from any .gcode or CNC program - orbit it, colour by height, speed, feature or tool, peel it back by layer, and play it building move by move, in real time if you like.',
-    'CNC milling files list their whole tool table, spindle, coolant and work offsets, draw each tool in its own colour, and reconstruct the full toolpath faithfully.',
-    'A real 3D model viewer for STL, OBJ, PLY, STEP, 3MF, glTF and more, with a grabbable orientation cube, perspective or orthographic views, wireframe mode and .mtl material libraries.',
-    'Spreadsheet and CSV cells open their full value on click, every G-code and 3D format gained a guide page, and the home page now says plainly what Analyser is.',
-    'The Everything offline download now includes PostScript and AutoCAD support, leaving the Complete download as purely the extra OCR languages.',
+    'A full G-code visualiser rebuilds the printed or machined object - orbit it, colour by height or tool, peel it back by layer, and play it building move by move.',
+    'CNC milling files list their whole tool table and reconstruct the full toolpath faithfully.',
+    'A real 3D model viewer for STL, OBJ, PLY, STEP, 3MF and glTF, with a grabbable orientation cube and wireframe mode.',
   ] },
   { range: '3.45 - 3.46', notes: [
     'The newest Visual Studio solution format (.slnx) opens, listing every project, language and build configuration.',
@@ -2339,7 +2333,7 @@ function boot() {
       mediaSections.forEach(s => { if (s) s.hidden = false; });
     } else {
       const ext = fileExt(file.name);
-      const keepPhoto = ext === 'exe' || ext === 'dll';
+      const keepPhoto = ext === 'exe' || ext === 'dll' || ext === 'scr';
       if (sectionPhoto) sectionPhoto.hidden = !keepPhoto;
       if (sectionAudio) sectionAudio.hidden = true;
       if (sectionVideo) sectionVideo.hidden = true;
@@ -2422,10 +2416,13 @@ function boot() {
       });
     }
 
-    // Windows executables/DLLs carry their app icon in the PE resource section.
-    // Pull it out and analyse it as a photo (the Photo section is kept visible
-    // above for exe/dll). Best-effort and fully async - never blocks the render.
-    if (kind === 'proprietary' && /\.(exe|dll)$/i.test(file.name) && photoResults) {
+    // Windows executables/DLLs/screensavers carry their app icon in the PE
+    // resource section. Pull it out and analyse it as a photo (the Photo section
+    // is kept visible above for exe/dll/scr). A screensaver (.scr) is just a
+    // renamed PE, so this is the preview of what the screensaver ships as its
+    // icon. Best-effort and fully async - never blocks the render.
+    if (kind === 'proprietary' && /\.(exe|dll|scr)$/i.test(file.name) && photoResults) {
+      const isScr = /\.scr$/i.test(file.name);
       extractPeIcon(file).then(async (iconFile) => {
         if (!iconFile || token.cancelled || _currentToken !== token) return;
         await ensureExifr();
@@ -2433,7 +2430,8 @@ function boot() {
         photoResults.hidden = false;
         markAnalysed('photo');
         renderPhoto(iconFile, photoResults,
-          { sourceNote: 'Application icon extracted from ' + (file.name || 'the executable') + '.' });
+          { sourceNote: (isScr ? 'Screensaver icon extracted from ' : 'Application icon extracted from ')
+            + (file.name || (isScr ? 'the screensaver' : 'the executable')) + '.' });
       }).catch(() => {});
     }
 
@@ -2571,6 +2569,24 @@ window._anrReadableText = isReadableText;
     dropEl:    $('videoDrop'),
     inputEl:   $('videoInput'),
     resultsEl: videoResults,
+    onFile:    handleFile
+  });
+
+  // Single "any file" hero dropzone (the quickdrop--hero layout). Its drop +
+  // picker route through handleFile exactly like the classic video zone; its
+  // Record / Live spectrogram buttons reuse the audio pipeline (no drop/input of
+  // their own). Both the classic grid and the hero stay in the DOM - CSS shows
+  // one at a time - so wiring both is harmless: the hidden one can't be clicked.
+  if ($('heroDrop')) initVideo({
+    dropEl:    $('heroDrop'),
+    inputEl:   $('heroInput'),
+    resultsEl: videoResults,
+    onFile:    handleFile
+  });
+  if ($('heroRecord') || $('heroLive')) initAudio({
+    recordBtn: $('heroRecord'),
+    liveBtn:   $('heroLive'),
+    resultsEl: audioResults,
     onFile:    handleFile
   });
 
@@ -3545,8 +3561,11 @@ window._anrReadableText = isReadableText;
 
   // Download (or, with force, re-download) every file in a tier into the
   // 'analyser-offline' cache, driving the button's progress bar. Records the
-  // current app version on full success; clears the record on partial failure.
-  async function downloadTier(btn, { force = false } = {}) {
+  // current app version on full success. On partial failure a user-initiated
+  // download clears the record (so the button offers a retry), but the automatic
+  // version-refresh (auto) leaves the existing cached record untouched - a flaky
+  // network must not downgrade a tier the user already has fully cached.
+  async function downloadTier(btn, { force = false, auto = false } = {}) {
     if (btn.classList.contains('is-active')) return false;
     const tier = btn.dataset.tier;
     const urls = tierUrls(tier);
@@ -3605,6 +3624,11 @@ window._anrReadableText = isReadableText;
     setBar(1);
     const state = readOfflineState();
     if (failed > 0) {
+      // Automatic version-refresh: a transient failure (a flaky network on the
+      // post-update auto-reload) must NOT tear down a tier the user already has
+      // cached. Keep the saved record and repaint the "Cached" badge at its stored
+      // version - the existing files stay fully usable - and let the next load retry.
+      if (auto) { refreshTierButtons(); return false; }
       // Leave the button enabled (no is-done) so the user can retry the rest,
       // and drop any stale "cached" record for this tier.
       sizeEl.textContent = 'Try again';
@@ -3699,7 +3723,7 @@ window._anrReadableText = isReadableText;
     refreshTierButtons();
     for (const tier of Object.keys(state)) {
       if (state[tier] !== COMMIT_COUNT && buttons[tier]) {
-        await downloadTier(buttons[tier], { force: true });
+        await downloadTier(buttons[tier], { force: true, auto: true });
       }
     }
     refreshTierButtons();
@@ -3740,9 +3764,10 @@ window._anrReadableText = isReadableText;
     deferredPrompt = null;
   });
 
-  // ----- Clear storage (localStorage / sessionStorage / IndexedDB; keeps the
-  //        dark-mode preference and the Asteroids high score). Leaves the cached
-  //        scripts/assets alone - that's the "Clear scripts" button's job. -----
+  // ----- Clear storage (localStorage / sessionStorage / IndexedDB + the
+  //        downloaded offline tiers; keeps the dark-mode preference and the
+  //        Asteroids high score). Leaves the SW app-shell cache alone - wiping
+  //        the scripts/assets and reloading is the "Clear scripts" button's job. -----
   const clearBtn = document.getElementById('offlineClear');
   if (clearBtn) {
     clearBtn.addEventListener('click', async () => {
@@ -3764,8 +3789,13 @@ window._anrReadableText = isReadableText;
           })));
         }
       } catch (_) {}
-      // The 'anr-offline' record is gone, so repaint the tier buttons to un-cached
-      // (the files themselves may still be in Cache Storage until "Clear scripts").
+      // Delete the downloaded offline tiers (their own Cache Storage bucket). The
+      // SW app-shell cache is a separate bucket and stays - only "Clear scripts"
+      // wipes that. Without this the tier files survive and detectCachedTier()
+      // self-heals the "Cached" badge on the next load, so the clear looked inert.
+      try { await caches.delete('analyser-offline'); } catch (_) {}
+      // The 'anr-offline' record and the cached tier files are both gone now, so
+      // repaint the tier buttons to un-cached.
       document.querySelectorAll('.offline-btn').forEach(b => {
         b.classList.remove('is-done', 'is-active', 'is-fading', 'is-included');
         const bar = b.querySelector('.offline-bar');

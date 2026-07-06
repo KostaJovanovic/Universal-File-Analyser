@@ -48,6 +48,34 @@ intentionally **em-dash-free** and uses British spelling (colour, analyse,
 visualise). Use a spaced hyphen " - " as the separator, never `—`. (This doc and
 other internal `.md`/code comments aren't bound by it.)
 
+## Site aesthetics - high priority
+
+Visual polish is a **high priority**: treat every new UI element as a design
+task, not an afterthought. Before styling anything new, find the closest
+existing component in `analyser.css` and match its visual language. Concretely:
+
+- **No rounded corners, ever.** The site is deliberately sharp-cornered
+  (`.anr-btn` sets `border-radius: 0`). No pills, no rounded chips, no
+  `border-radius` on new elements.
+- Reuse existing idioms instead of inventing: `.anr-btn` for buttons,
+  `var(--bd-hairline)` for borders, theme variables (`var(--bg)`, `var(--fg)`,
+  `var(--muted)`, `var(--font-mono)`, `var(--t-small)`) over hardcoded values
+  wherever the element sits on a themed surface. (Overlays on media canvases
+  are the exception: they use the fixed dark-translucent treatment - see the
+  G-code pause tag - so they stay legible on any canvas in either theme.)
+- Check the element in **both light and dark themes** and at narrow widths
+  before calling it done.
+- **The reference sheet is `/test`** (test.html): a deployed-but-unlisted
+  (noindex, unlinked) style-guide page showing every token, font, animation,
+  button, control, chip, card, message, popup, loader and viewer overlay the
+  site uses, with an in-page theme toggle. Its token/animation sections are
+  generated from analyser.css by `tools/prerender-testpage.mjs` (run by
+  save.bat, markers `TOKENS:START/END` - never hand-edit between them); the
+  component demos are hand-authored static markup using the real classes.
+  **When you add or change a shared UI element, add/update its demo there.**
+  test.html is also in stamp-head's PAGES (theme bootstrap) but deliberately
+  NOT in stamp-footer's (it keeps a demo footer of its own).
+
 ## Adding a new file type
 
 **`assets/js/core/formats.js` is the single source of truth for supported file
@@ -271,7 +299,7 @@ it is single-sourced, not copy-pasted.
 
 (`save.bat`'s full generator order on each commit: prerender-samples →
 prerender-formats → prerender-format-pages → stamp-counts → stamp-footer →
-stamp-head, then `git add`.)
+stamp-head → prerender-testpage, then `git add`.)
 
 ## Version numbering
 

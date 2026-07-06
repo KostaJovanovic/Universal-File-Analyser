@@ -452,6 +452,32 @@ export async function renderSonify(file, mountEl, opts = {}) {
   const viewWrap = el('div', { style: 'position:relative;max-width:640px;margin:0 0 16px;background:var(--media-bg);border:var(--bd-hairline);' }, [viewCv, cursor]);
   card.appendChild(viewWrap);
 
+  // The Gamma slider shapes brightness -> amplitude in the synthesis (toMag). Mirror
+  // that curve on the working image so dragging Gamma previews, in real time, the
+  // tonal response the render will hear. Preview into a separate buffer - the
+  // synthesis reads the pristine `imageData` and applies gamma itself, so baking it
+  // into those pixels would double-apply it.
+  const viewCtx = viewCv.getContext('2d');
+  const basePixels = new Uint8ClampedArray(imageData.data);
+  const displayData = viewCtx.createImageData(workW, workH);
+  const gammaLut = new Uint8ClampedArray(256);
+  function redrawImage() {
+    const g = +gammaSld._input.value;
+    const dst = displayData.data;
+    if (g === 1) {
+      dst.set(basePixels);
+    } else {
+      for (let i = 0; i < 256; i++) gammaLut[i] = Math.round(Math.pow(i / 255, g) * 255);
+      for (let i = 0; i < basePixels.length; i += 4) {
+        dst[i]     = gammaLut[basePixels[i]];
+        dst[i + 1] = gammaLut[basePixels[i + 1]];
+        dst[i + 2] = gammaLut[basePixels[i + 2]];
+        dst[i + 3] = basePixels[i + 3];
+      }
+    }
+    viewCtx.putImageData(displayData, 0, 0);
+  }
+
   // ---- controls ----
   const modeSel   = mkSelect([['image', 'Arbitrary image'], ['spectro', 'Real spectrogram']], DEFAULTS.mode);
   const methodSel = mkSelect([['oscillator', 'Oscillator bank'], ['griffin', 'Griffin-Lim']], DEFAULTS.method);
@@ -465,6 +491,7 @@ export async function renderSonify(file, mountEl, opts = {}) {
   const winSel   = mkSelect([['hann', 'Hann'], ['hamming', 'Hamming'], ['blackman', 'Blackman'], ['rect', 'Rect']], DEFAULTS.window);
   const glSld    = rangeCtl('GL iters', 4, 100, 1, DEFAULTS.glIters, v => String(v));
   const gammaSld = rangeCtl('Gamma', 0.3, 3, 0.1, DEFAULTS.gamma, v => v.toFixed(1));
+  gammaSld._input.addEventListener('input', redrawImage);
   const leftSel  = mkSelect([['luma', 'Luminance'], ['r', 'Red'], ['g', 'Green'], ['b', 'Blue']], DEFAULTS.leftSrc);
   const rightSel = mkSelect([['none', 'None (mono)'], ['luma', 'Luminance'], ['r', 'Red'], ['g', 'Green'], ['b', 'Blue']], DEFAULTS.rightSrc);
   const cmapSel  = mkSelect([['grayscale', 'Grey'], ['viridis', 'Viridis'], ['magma', 'Magma'], ['inferno', 'Inferno']], DEFAULTS.colormap);

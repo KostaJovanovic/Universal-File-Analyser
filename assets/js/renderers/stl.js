@@ -3,7 +3,7 @@
    spin), and reports geometry statistics (triangles, bounding box, surface area,
    volume). Self-contained - no external 3D library. */
 
-import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube, wheelZoomToggle } from '../core/util.js';
 
 // ---------- STL parsing ----------
 // Returns { format, positions:Float32Array, normals:Float32Array, count,
@@ -400,7 +400,10 @@ function buildViewer(geo, opts = {}) {
     } else if (!twoFinger && e.touches[0]) { move(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
   }, { passive: false });
   canvas.addEventListener('touchend', (e) => { if (!e.touches.length) { up(); twoFinger = false; } });
+  const wheelZoom = wheelZoomToggle();
+  wrap.appendChild(wheelZoom.el);
   canvas.addEventListener('wheel', (e) => {
+    if (!wheelZoom.enabled()) return;   // let the wheel scroll the page instead
     e.preventDefault();
     state.dist = Math.max(0.04, Math.min(150,state.dist * (1 + Math.sign(e.deltaY) * 0.1)));
     dirty = true;
