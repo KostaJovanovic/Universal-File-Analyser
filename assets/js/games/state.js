@@ -38,7 +38,7 @@ export const maxStartWave = () => Math.max(1, (g.bestWave || 0) - 2);
 // orchestrator after this runs.
 export function initState() {
   // Persistent player settings; saved overrides merged in. Read live each frame.
-  g.settings = { reduceFlash: false, bgDetail: true, showFps: true, hideAsteroidText: false, renderScale: 1 };
+  g.settings = { reduceFlash: false, bgDetail: true, showFps: true, hideAsteroidText: false, legacyControls: false, renderScale: 1 };
   try { Object.assign(g.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (_) {}
 
   // Persistent high score (survives the footer "Clear storage", which preserves this key).
@@ -84,7 +84,9 @@ export function initState() {
   // Ship + input.
   g.ship = { x: 0, y: 0, vx: 0, vy: 0, angle: -Math.PI / 2, invuln: 0, dead: false };
   g.fireCd = 0; g.deathTimer = 0; g.clock = 0;
-  g.input = { left: false, right: false, thrust: false, fire: false };
+  // Directional keys (up/down/left/right) drive both control schemes; rotL/rotR are the
+  // touch fine-aim arrows (always pure rotation); thrust is derived per frame in update.js.
+  g.input = { up: false, down: false, left: false, right: false, rotL: false, rotR: false, thrust: false, fire: false };
   g.joy = { active: false, angle: 0, mag: 0 };
 
   // Background flyer cadence.

@@ -17,7 +17,11 @@ import { el, fmtBytes } from '../core/util.js';
 //                           // rasterised to PNG on demand
 //   downloadName,           // file name for the download
 // }]
-export function buildEmbeddedImagesCard({ title, hint, items, signal }) {
+// resultsEl + sourceFile (optional): when given, each image also gets an "Analyse"
+// button that re-runs the full photo analysis on that extracted picture, rendered
+// into resultsEl (the same container this card lives in - the drill-in replaces the
+// list view, matching the carve/salvage "Analyse" buttons).
+export function buildEmbeddedImagesCard({ title, hint, items, signal, resultsEl, sourceFile }) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, title || 'Embedded images'));
   if (hint) card.appendChild(el('p', { class: 'anr-hint' }, hint));
@@ -85,7 +89,29 @@ export function buildEmbeddedImagesCard({ title, hint, items, signal }) {
       el('div', { class: 'anr-hint' }, (it.label || '') + (it.bytes ? (it.label ? ' · ' : '') + fmtBytes(it.bytes) : '')),
     ]);
 
-    grid.appendChild(el('div', {}, [stage, meta, el('div', { style: 'text-align:center;' }, [dl])]));
+    const actions = el('div', { style: 'display:flex; justify-content:center; gap:6px;' });
+    // Full photo analysis on this extracted image (only when the caller wired a
+    // render target). Prefer the native downloadBlob; fall back to the viewBlob.
+    if (resultsEl) {
+      const an = el('button', {
+        type: 'button', class: 'anr-btn',
+        style: 'margin-top:8px; font-size:12px; padding:4px 8px;',
+      }, 'Analyse');
+      an.addEventListener('click', async () => {
+        const src = it.downloadBlob || it.viewBlob;
+        if (!src) return;
+        const name = it.downloadName || 'image.png';
+        const f = new File([src], name, { type: src.type || 'image/png' });
+        const dims = (it.width && it.height) ? ' (' + it.width + ' × ' + it.height + ')' : '';
+        const note = 'Extracted from ' + ((sourceFile && sourceFile.name) || 'this file') + dims + '.';
+        const { renderPhoto } = await import('./photo.js');
+        renderPhoto(f, resultsEl, { sourceNote: note });
+      });
+      actions.appendChild(an);
+    }
+    actions.appendChild(dl);
+
+    grid.appendChild(el('div', {}, [stage, meta, actions]));
   }
 
   card.appendChild(grid);

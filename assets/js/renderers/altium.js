@@ -22,7 +22,7 @@
      Pad   (2): pascal-name block + main block (layer@0 x@13 y@17 sizeX@21 sizeY@25 hole@45 shape@49 rot@52(f64))
 */
 
-import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard, wheelZoomToggle } from '../core/util.js';
 import { openCfbf } from '../lib/cfbf.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -346,7 +346,13 @@ function buildViewer(build, opts = {}) {
   const s = svg('svg', { class: 'anr-altium-svg' });
   const root = svg('g', {});
   s.appendChild(root);
-  wrap.appendChild(s);
+  // Positioned stage around the SVG so the scroll-zoom toggle anchors to the
+  // drawing area's bottom-right, clear of the toolbar below.
+  const stage = el('div', { class: 'anr-wheelzoom-stage' });
+  stage.appendChild(s);
+  const wheelZoom = wheelZoomToggle();
+  stage.appendChild(wheelZoom.el);
+  wrap.appendChild(stage);
 
   const bbox = build(root);
   addPaperGrid(root, bbox);
@@ -368,6 +374,7 @@ function buildViewer(build, opts = {}) {
   };
   // wheel zoom toward the cursor
   s.addEventListener('wheel', (e) => {
+    if (!wheelZoom.enabled()) return;   // let the wheel scroll the page instead
     e.preventDefault();
     const r = s.getBoundingClientRect();
     const { scale, offX, offY } = screenToUser(r);

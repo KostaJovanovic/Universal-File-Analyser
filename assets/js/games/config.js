@@ -92,10 +92,14 @@ export const DRONE_WEAPONS = ['normal', 'machine', 'sniper', 'triple', 'homing']
 export const UFO_PATTERNS = ['circle', 'triangle', 'square', 'figure8'];
 
 // ---- Input maps + cheat codes ----
+// Directional map: each key names the direction it steers (default "steer & glide"
+// controls). Legacy controls reinterpret these in update.js - left/right rotate, up
+// thrusts, down unused - but the key->direction mapping is the same either way.
 export const KEY = {
   ArrowLeft: 'left', a: 'left', A: 'left',
   ArrowRight: 'right', d: 'right', D: 'right',
-  ArrowUp: 'up', w: 'up', W: 'up'
+  ArrowUp: 'up', w: 'up', W: 'up',
+  ArrowDown: 'down', s: 'down', S: 'down'
 };
 export const KONAMI = ['arrowup', 'arrowup', 'arrowdown', 'arrowdown', 'arrowleft', 'arrowright', 'arrowleft', 'arrowright', 'b', 'a'];
 export const TOUCH_COMBO = ['left', 'left', 'right', 'right', 'left', 'right', 'left', 'right', 'fire', 'fire'];
@@ -106,6 +110,7 @@ export const HI_KEY = 'anr-asteroids-hi';
 export const BOSS_UNLOCK_KEY = 'anr-asteroids-bossbeat';
 export const STARTWAVE_KEY = 'anr-asteroids-startwave';
 export const BESTWAVE_KEY = 'anr-asteroids-bestwave';   // highest wave ever reached; caps the start-wave picker
+export const LAYOUT_HINT_KEY = 'anr-asteroids-layouthint';   // dismissed the "your keyboard can't type WASD - use arrows" nudge
 // Leaderboard local memory is kept under non-anr keys so app.js's anrSweep
 // (which refreshes anr-* timestamps and would defeat a TTL) doesn't touch them.
 export const NAME_KEY = 'asteroids-name';

@@ -12,6 +12,7 @@ import { restart, makeAsteroid } from './world.js';
 // Drives the Settings menu rows. type 'toggle' (default) renders a switch; 'select'
 // renders a segmented control over `options`. `apply` (optional) runs on change.
 export const SETTING_DEFS = [
+  { key: 'legacyControls', t: 'Classic controls', d: 'Rotate with A / D, thrust with W - the original Asteroids steering' },
   { key: 'reduceFlash', t: 'Reduce flashing' },
   { key: 'bgDetail', t: 'Background detail', d: 'Starfield and drifting ship squadrons' },
   { key: 'showFps', t: 'Show FPS / bodies', d: 'Frame-rate and on-screen body counter' },
@@ -114,7 +115,10 @@ function renderSplash() {
   const title = menuLine('anr-score-go', 'ASTEROIDS'); title.style.fontSize = '30px';
   p.append(title, menuLine('anr-score-title', 'SUPPORTED FILE TYPES'));
   if (g.highScore > 0) p.append(menuLine('anr-score-sub', 'HIGH ' + String(g.highScore).padStart(5, '0')));
-  p.append(menuLine('anr-score-msg', g.isTouch ? 'Steer with the stick, tap to fire' : '← → rotate · ↑ thrust · space fire · P pause'));
+  const desktopHint = g.settings.legacyControls
+    ? '← → rotate · ↑ thrust · space fire · P pause'
+    : 'WASD / arrows move · space fire · P pause';
+  p.append(menuLine('anr-score-msg', g.isTouch ? 'Steer with the stick, tap to fire' : desktopHint));
   p.append(menuRule());
   p.append(menuButton('▶', 'Play', startGame, true));
   p.append(menuButton('⚙', 'Settings', () => renderSettings(renderSplash)));
@@ -158,7 +162,8 @@ export function openPause() {
   if (g.splash || g.gameOver || g.menuOpen) return;
   g.menuOpen = true;
   // Drop any held input so nothing sticks while paused.
-  g.input.left = g.input.right = g.input.thrust = g.input.fire = false;
+  g.input.up = g.input.down = g.input.left = g.input.right = false;
+  g.input.rotL = g.input.rotR = g.input.thrust = g.input.fire = false;
   g.joy.active = false; g.joy.mag = 0;
   if (g.pauseBtn) g.pauseBtn.textContent = '▶';
   renderPauseRoot();

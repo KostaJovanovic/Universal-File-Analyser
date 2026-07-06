@@ -3019,14 +3019,14 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     // An icon container holds several images; the <img> above paints only one, so
     // pull out and show every embedded size/depth.
     try {
-      const icoCard = await buildIcoImagesCard(file, renderSignal);
+      const icoCard = await buildIcoImagesCard(file, renderSignal, resultsEl);
       if (icoCard && !renderSignal.aborted) resultsEl.appendChild(icoCard);
     } catch (_) { /* malformed ICO - leave the normal photo view untouched */ }
   } else if (!inline && (/^(jpe?g|jpe|jfif|mpo)$/.test(fileExt(file.name)) || file.type === 'image/jpeg')) {
     // A JPEG / MPO can carry several full images via Multi-Picture Format (stereo
     // 3D pairs, multi-angle sets). The <img> paints only the first - show them all.
     try {
-      const mpoCard = await buildMpoImagesCard(file, renderSignal);
+      const mpoCard = await buildMpoImagesCard(file, renderSignal, resultsEl);
       if (mpoCard && !renderSignal.aborted) resultsEl.appendChild(mpoCard);
     } catch (_) { /* not a multi-picture JPEG - leave the normal photo view */ }
   }

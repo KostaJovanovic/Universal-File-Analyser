@@ -14,7 +14,7 @@
    before/after of memory colours and a hue/luma test chart pushed through the
    LUT, and an interactive 3D scatter of the colour cube it defines. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, attachZoomPan, openOverlayBack } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, attachZoomPan, openOverlayBack, wheelZoomToggle } from '../core/util.js';
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const to255 = (v) => Math.round(clamp01(v) * 255);
@@ -337,7 +337,9 @@ function buildCubePair(lut, sample) {
   let raf = 0; const queue = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; drawAll(); }); };
 
   // Pointer + wheel + pinch on EITHER canvas drive the shared state, so the two
-  // cubes always rotate and zoom together.
+  // cubes always rotate and zoom together. One scroll-zoom toggle (mounted over
+  // the second cube) arms/disarms the wheel on both.
+  const wheelZoom = wheelZoomToggle();
   let drag = false, lx = 0, ly = 0, pinch = 0;
   const attach = (cv) => {
     cv.addEventListener('pointerdown', (e) => { drag = true; lx = e.clientX; ly = e.clientY; cv.style.cursor = 'grabbing'; try { cv.setPointerCapture(e.pointerId); } catch (_) {} });
@@ -350,7 +352,7 @@ function buildCubePair(lut, sample) {
     });
     const end = (e) => { drag = false; cv.style.cursor = 'grab'; try { cv.releasePointerCapture(e.pointerId); } catch (_) {} };
     cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
-    cv.addEventListener('wheel', (e) => { e.preventDefault(); state.zoom = Math.max(0.5, Math.min(6, state.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12))); queue(); }, { passive: false });
+    cv.addEventListener('wheel', (e) => { if (!wheelZoom.enabled()) return; e.preventDefault(); state.zoom = Math.max(0.5, Math.min(6, state.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12))); queue(); }, { passive: false });
     cv.addEventListener('touchmove', (e) => {
       if (e.touches.length === 2) {
         e.preventDefault();
@@ -364,8 +366,13 @@ function buildCubePair(lut, sample) {
   attach(cN); attach(cL);
   drawAll();
 
-  const wrap = (cv, label) => el('div', { style: 'flex:1 1 220px;min-width:180px;max-width:300px' }, [cv, el('div', { class: 'anr-hint', style: 'text-align:center;margin-top:4px' }, label)]);
-  return el('div', { style: 'display:flex;gap:14px;flex-wrap:wrap;justify-content:center' }, [wrap(cN, 'Original (RGB cube)'), wrap(cL, 'Through LUT')]);
+  // The toggle needs a positioned box that shrink-fits the canvas (max-width
+  // 280px, same as the canvas) so bottom-right of the box is the cube's corner.
+  const wrap = (cv, label, pill) => el('div', { style: 'flex:1 1 220px;min-width:180px;max-width:300px' }, [
+    el('div', { style: 'position:relative;max-width:280px' }, pill ? [cv, pill] : [cv]),
+    el('div', { class: 'anr-hint', style: 'text-align:center;margin-top:4px' }, label),
+  ]);
+  return el('div', { style: 'display:flex;gap:14px;flex-wrap:wrap;justify-content:center' }, [wrap(cN, 'Original (RGB cube)'), wrap(cL, 'Through LUT', wheelZoom.el)]);
 }
 
 // ---- apply the LUT to your own photo / video ---------------------------------

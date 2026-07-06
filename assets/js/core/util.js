@@ -1049,6 +1049,33 @@ export function attachZoomPan(wrap, opts = {}) {
   return { reset };
 }
 
+// Scroll-zoom toggle button for viewers that zoom on a plain (unmodified) wheel
+// scroll - G-code/STL 3D, the LUT cubes, the PCB boards. Those viewers swallow
+// the wheel whenever the pointer crosses them, which hijacks page scrolling;
+// this gives the user an off switch. Returns { el, enabled }: append `el`
+// bottom-right of a position:relative stage (it carries the .anr-wheelzoom
+// overlay styling) and gate the wheel handler on enabled() BEFORE calling
+// preventDefault, so a disabled viewer lets the wheel scroll the page.
+export function wheelZoomToggle(extraClass) {
+  let on = true;
+  const btn = el('button', { type: 'button', class: 'anr-wheelzoom' + (extraClass ? ' ' + extraClass : '') });
+  const paint = () => {
+    btn.textContent = on ? 'Scroll zoom on' : 'Scroll zoom off';
+    btn.title = on ? 'Scrolling over the viewer zooms it. Click to let the wheel scroll the page instead.'
+                   : 'Scrolling over the viewer moves the page. Click to zoom with the scroll wheel again.';
+    btn.classList.toggle('is-off', !on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  };
+  btn.addEventListener('click', (e) => { e.stopPropagation(); on = !on; paint(); });
+  // The stages under this pill own drag / double-click gestures - keep a press
+  // on the button from also starting an orbit or triggering a view reset.
+  btn.addEventListener('pointerdown', (e) => e.stopPropagation());
+  btn.addEventListener('mousedown', (e) => e.stopPropagation());
+  btn.addEventListener('dblclick', (e) => e.stopPropagation());
+  paint();
+  return { el: btn, enabled: () => on };
+}
+
 // ===========================================================================
 // Back-button handling: close overlays, and confirm before exiting a PWA.
 // ---------------------------------------------------------------------------

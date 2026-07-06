@@ -104,7 +104,7 @@ export function parseMpfEntries(buf) {
 }
 
 // Build the "Embedded images" card for an MPO / multi-picture JPEG, or null.
-export async function buildMpoImagesCard(file, signal) {
+export async function buildMpoImagesCard(file, signal, resultsEl) {
   let ranges = null, buf = null;
   try { buf = await file.arrayBuffer(); ranges = parseMpfEntries(buf); } catch (_) { ranges = null; }
   if (!ranges) return null;
@@ -128,6 +128,6 @@ export async function buildMpoImagesCard(file, signal) {
   return buildEmbeddedImagesCard({
     title: 'Embedded images',
     hint: ranges.length + ' images packed in this Multi-Picture (MPO) file - for example a stereo 3D pair or multi-angle set. The browser only displays the first; here is every one.',
-    items, signal,
+    items, signal, resultsEl, sourceFile: file,
   });
 }

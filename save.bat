@@ -116,6 +116,13 @@ echo Stamping shared head...
 node --no-warnings tools/stamp-head.mjs
 if errorlevel 1 echo WARNING: head stamp failed - committing the existing copies.
 
+rem Regenerate the token/animation sections of /test (the hidden UI style-guide
+rem sheet) straight from analyser.css, so it can't drift from the stylesheet. The
+rem component demos in test.html are hand-authored and untouched. Non-fatal.
+echo Prerendering /test style-guide tokens...
+node --no-warnings tools/prerender-testpage.mjs
+if errorlevel 1 echo WARNING: test page prerender failed - committing the existing copy.
+
 rem Optional read-only stats snapshot to stats-backup\ (gitignored, kept local).
 rem Pulls from the live /api/stats; non-fatal and skipped by default. The full
 rem Save (option 1 / `save` / --force) skips it entirely; only the commit-only

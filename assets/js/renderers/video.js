@@ -174,8 +174,31 @@ function buildFrameControls(playerEl, getFps, file) {
     grabBtn.disabled = false;
   } }, 'Frame grab');
 
-  const grid = el('div', { class: 'anr-frame-grid' }, [prevBtn, nextBtn, analyseBtn, grabBtn]);
-  const wrap = el('div', { class: 'anr-frame-wrap' }, [tc, grid]);
+  // Sonify frame: read the current frame as a spectrogram and resynthesise it as
+  // sound. Deliberately mounted into its OWN container below the controls (never
+  // #audioResults), so the video's extracted-audio analysis is left untouched.
+  const sonifyMount = el('div');
+  const sonifyBtn = el('button', { type: 'button', class: 'anr-btn', style: 'grid-column:1 / -1;', onclick: async () => {
+    const cv = grabCanvas(); if (!cv) return;
+    sonifyBtn.disabled = true; sonifyBtn.textContent = 'Loading sonifier…';
+    try {
+      const blob = await new Promise((r) => cv.toBlob(r, 'image/png'));
+      const p = parts(playerEl.currentTime);
+      const tcName = `${pad(p.h)}-${pad(p.m)}-${pad(p.s)}-${pad(p.f)}`;
+      const frameFile = new File([blob], (file.name || 'video').replace(/\.[^.]+$/, '') + `_${tcName}.png`, { type: 'image/png' });
+      sonifyMount.innerHTML = '';
+      // Pass the grabbed canvas as the pixel source so the sonifier skips a re-decode.
+      const { renderSonify } = await import('./sonify.js');
+      await renderSonify(frameFile, sonifyMount, { source: cv });
+      sonifyMount.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (e) {
+      sonifyMount.appendChild(el('div', { class: 'anr-info' }, 'Sonifier failed to load: ' + (e && e.message ? e.message : e)));
+    }
+    sonifyBtn.disabled = false; sonifyBtn.textContent = 'Sonify frame';
+  } }, 'Sonify frame');
+
+  const grid = el('div', { class: 'anr-frame-grid' }, [prevBtn, nextBtn, analyseBtn, grabBtn, sonifyBtn]);
+  const wrap = el('div', { class: 'anr-frame-wrap' }, [tc, grid, sonifyMount]);
   refresh();
   return { wrap, refresh };
 }

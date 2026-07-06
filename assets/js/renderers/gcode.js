@@ -21,7 +21,7 @@
    (tessellated), and ;WIDTH:/;HEIGHT: hints. Orbit / pan / zoom / spin, colour by
    height or feedrate, and a build-height scrubber. No external 3D library. */
 
-import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube, wheelZoomToggle } from '../core/util.js';
 
 // Rendered-segment caps, scaled to the device's RAM so arc-heavy / multi-day prints
 // (millions of tessellated segments) fill in on a capable desktop without OOM-crashing
@@ -1535,7 +1535,10 @@ function buildViewer(data, opts = {}) {
     } else if (!twoFinger && e.touches[0]) { move(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
   }, { passive: false });
   canvas.addEventListener('touchend', (e) => { if (!e.touches.length) { up(); twoFinger = false; } });
-  canvas.addEventListener('wheel', (e) => { e.preventDefault(); state.dist = Math.max(0.04, Math.min(150,state.dist * (1 + Math.sign(e.deltaY) * 0.1))); dirty = true; }, { passive: false });
+  // Raised above the fullscreen button, which owns the bottom-right corner here.
+  const wheelZoom = wheelZoomToggle('anr-wheelzoom--raised');
+  wrap.appendChild(wheelZoom.el);
+  canvas.addEventListener('wheel', (e) => { if (!wheelZoom.enabled()) return; e.preventDefault(); state.dist = Math.max(0.04, Math.min(150,state.dist * (1 + Math.sign(e.deltaY) * 0.1))); dirty = true; }, { passive: false });
 
   // Camera distance that frames the model's bounding sphere. `fill` < 1 leaves
   // padding (e.g. 0.9 -> the sphere spans ~90% of the frame); accounts for the

@@ -12,7 +12,7 @@
    until the code is entered. */
 
 import {
-  rand, pick, ARCHIVE_POOL, FILE_POOL, WAVE_GRACE, POWERUP_TYPES, POWERUP_DEF, MONO, STARTWAVE_KEY
+  rand, pick, ARCHIVE_POOL, FILE_POOL, WAVE_GRACE, POWERUP_TYPES, POWERUP_DEF, MONO, STARTWAVE_KEY, LAYOUT_HINT_KEY
 } from './config.js';
 import { gameCss } from './style.js';
 import { g, initState, maxStartWave } from './state.js';
@@ -28,6 +28,56 @@ import { update } from './update.js';
 import { render } from './render.js';
 
 let active = false;   // singleton guard - the Konami code can't stack instances
+
+// Detect a keyboard that can't produce WASD (AZERTY, or a non-Latin script like Cyrillic,
+// Greek or Arabic) so the game can point the player at the arrow keys, which steer the ship
+// in every control scheme. Sets g._nonWasd; the frame loop shows the hint once in a run.
+async function detectKeyboardLayout() {
+  if (g.isTouch) return;                        // touch has its own on-screen controls
+  try { if (localStorage.getItem(LAYOUT_HINT_KEY) === '1') return; } catch (_) {}   // already dismissed
+  try {
+    const kb = navigator.keyboard;
+    if (kb && kb.getLayoutMap) {
+      // Keyboard API (Chromium): read what the physical W/A/S/D keys actually type.
+      const map = await kb.getLayoutMap();
+      const need = [['KeyW', 'w'], ['KeyA', 'a'], ['KeyS', 's'], ['KeyD', 'd']];
+      g._nonWasd = need.some(([code, ch]) => { const c = map.get(code); return !c || c.toLowerCase() !== ch; });
+    } else {
+      // No Keyboard API (Firefox/Safari): fall back to the UI language and flag non-Latin
+      // scripts, which can't type WASD at all. (AZERTY on a Latin locale can't be told apart
+      // here, so it's only caught on Chromium above.)
+      const lang = (navigator.language || (navigator.languages && navigator.languages[0]) || '').toLowerCase();
+      g._nonWasd = /^(ru|uk|be|bg|sr|mk|kk|ky|tg|mn|el|ar|fa|ur|ps|he|yi|hy|ka|hi|bn|pa|gu|ta|te|kn|ml|th|lo|km|my)/.test(lang);
+    }
+  } catch (_) { /* detection is best-effort; stay silent on failure */ }
+}
+
+// The one-time nudge box (desktop only): "use the arrow keys". Auto-hides after a spell,
+// and any close remembers the dismissal so it never nags again.
+function showLayoutHint() {
+  g._layoutHintShown = true;
+  const box = document.createElement('div');
+  box.style.cssText = 'position:absolute; bottom:90px; left:50%; transform:translateX(-50%); z-index:6; ' +
+    'display:flex; align-items:center; gap:12px; max-width:min(92vw,440px); padding:12px 14px; ' +
+    'background:rgba(10,10,10,0.92); border:1px solid ' + g.ACCENT + '; color:' + g.ON_DARK + '; ' +
+    'font-family:' + MONO + '; font-size:13px; line-height:1.5;';
+  const msg = document.createElement('span');
+  msg.innerHTML = 'Your keyboard can&rsquo;t type WASD - steer with the arrow keys ' +
+    '<span style="white-space:nowrap; color:' + g.ACCENT + '">&larr; &uarr; &rarr; &darr;</span> instead.';
+  const x = document.createElement('button');
+  x.type = 'button'; x.className = 'anr-game-btn'; x.textContent = '✕';
+  x.setAttribute('aria-label', 'Dismiss');
+  x.style.cssText = 'width:26px; height:26px; font-size:12px; flex:none;';
+  const done = () => {
+    try { localStorage.setItem(LAYOUT_HINT_KEY, '1'); } catch (_) {}
+    if (g._layoutHintTimer) { clearTimeout(g._layoutHintTimer); g._layoutHintTimer = null; }
+    box.remove();
+  };
+  x.addEventListener('click', done);
+  box.append(msg, x);
+  g.overlay.appendChild(box);
+  g._layoutHintTimer = setTimeout(done, 12000);
+}
 
 export function launchAsteroids() {
   if (active) return;
@@ -160,6 +210,11 @@ export function launchAsteroids() {
   layout();
   loadLeaderboard();   // fetch the top 5 for the left-margin board (fire and forget)
 
+  // Non-WASD keyboards (AZERTY, Cyrillic, Greek, Arabic, ...) can't type WASD; detect that
+  // and, once the player is in a run, nudge them toward the arrow keys (which always steer).
+  g._nonWasd = false; g._layoutHintShown = false; g._layoutHintTimer = null;
+  detectKeyboardLayout();
+
   // ---- Sandbox (test mode) ----
   // A panel to spawn anything in the game and toggle invulnerability, with scoring frozen
   // while it's on. The SB button shows automatically on dev hosts; everywhere else it stays
@@ -201,6 +256,8 @@ export function launchAsteroids() {
     else if (g.menuOpen) { /* paused: freeze the sim, render the held frame */ }
     else if (!g.gameOver) update(dt);
     else driftAsteroids(dt);        // keep the field drifting under the game-over screen
+    // Once actually in a run, surface the arrow-keys nudge for non-WASD keyboards (once).
+    if (g._nonWasd && !g._layoutHintShown && !g.splash && !g.gameOver && !g.menuOpen) showLayoutHint();
     render();
   }
   raf = requestAnimationFrame(frame);
@@ -462,6 +519,7 @@ export function launchAsteroids() {
     if (window.visualViewport) window.visualViewport.removeEventListener('resize', onResize);
     document.removeEventListener('visibilitychange', onVis);
     if (g.sbAsteroidHold) { clearTimeout(g.sbAsteroidHold); clearInterval(g.sbAsteroidHold); g.sbAsteroidHold = null; }
+    if (g._layoutHintTimer) { clearTimeout(g._layoutHintTimer); g._layoutHintTimer = null; }
     // Drop out of fullscreen if we put ourselves there.
     try {
       if (document.fullscreenElement) { const r = (document.exitFullscreen || document.webkitExitFullscreen).call(document); if (r && r.catch) r.catch(() => {}); }
