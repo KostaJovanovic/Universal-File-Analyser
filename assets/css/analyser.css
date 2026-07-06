@@ -1203,20 +1203,6 @@ body.anr-has-file .nav-search { display: flex; }
   color: var(--muted);
   text-align: center;
 }
-/* Show/hide controls bar that sits ABOVE the viewer (line-type legend + CNC tool
-   picker), so "what is drawn" reads before the canvas. Same row rhythm as the
-   toolbar below; its own rows drop their stock margins. */
-.anr-gcode-showbar {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.anr-gcode-showbar .anr-gcode-toolrow,
-.anr-gcode-showbar .anr-gcode-legend { margin: 0; align-items: center; }
-
-/* Fullscreen toggle overlaid in the viewer's bottom-right corner (the view cube
-   sits bottom-left). */
 /* Bottom-right camera-control stack (the view cube owns bottom-left): the manual
    zoom pad, the scroll-zoom toggle, then the fullscreen button at the corner. One
    positioned column so the three read as a set and stack with a consistent gap. */
@@ -1404,6 +1390,84 @@ body.anr-has-file .nav-search { display: flex; }
 .anr-gcode-toolbar--fs .anr-range:hover::-moz-range-thumb { background: var(--on-dark); }
 .anr-gcode-toolbar--fs .anr-gcode-slider-val,
 .anr-gcode-toolbar--fs .anr-gcode-rowlabel { color: var(--muted-on-dark); }
+/* ---- Export clip (G-code viewer) ---- */
+/* Settings rows in the Export clip popup: a mono label column, then the preset /
+   toggle buttons. Reuses .anr-btn + is-active for the segmented choices. */
+.anr-clip-card { max-width: 400px; }
+.anr-clip-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.anr-clip-lab {
+  flex: 0 0 62px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.anr-clip-opts { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.anr-clip-opt { padding: 6px 10px; }
+/* Quiet section divider grouping the rows (Frame / Output / Camera): a short mono
+   caps word underlined by a hairline, sitting flush-left with the row labels. */
+.anr-clip-sec {
+  margin: 16px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: var(--bd-hairline);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fg);
+}
+.anr-clip-sec:first-of-type { margin-top: 4px; }
+.anr-clip-est {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--muted);
+}
+/* Footer bar: the live size estimate on the left, the Cancel / Render actions on
+   the right, over a hairline rule. Wraps to stacked rows when the card is narrow. */
+.anr-clip-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: var(--bd-hairline);
+}
+.anr-clip-foot .anr-clip-est { flex: 2 1 120px; min-width: 0; margin: 0; }
+.anr-clip-foot .anr-modal-actions { flex: 1 1 160px; }
+/* Render-progress chip pinned top-centre over the canvas while a clip renders:
+   the fixed dark-translucent overlay treatment (media-canvas exception), so it
+   reads on any toolpath in either theme. */
+.anr-gcode-clipstat {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(10, 12, 16, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #eef2ff;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  white-space: nowrap;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+}
+.anr-gcode-clipstat .anr-btn {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #eef2ff;
+  background: transparent;
+}
+.anr-gcode-clipstat .anr-btn:hover { border-color: rgba(255, 255, 255, 0.7); }
 /* Speed popup while open in fullscreen: reparented onto the viewer wrap (see gcode.js) and
    pinned as a centred overlay above everything - canvas, view cube, toolbar, Exit button. */
 .anr-spd-panel.anr-spd-panel--fs {
@@ -1447,6 +1511,39 @@ body.anr-has-file .nav-search { display: flex; }
   font-feature-settings: "tnum";
 }
 .anr-gcode-slider-val--wide { min-width: 104px; }
+
+/* Live playback HUD under the play bar: elapsed / total time, current layer, and the
+   active tool (with a colour swatch). Monospace + tabular figures so the ticking
+   numbers don't jitter; items divided by a hairline rule. */
+.anr-gcode-hud {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--muted);
+  font-feature-settings: "tnum";
+}
+.anr-gcode-hud-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.anr-gcode-hud-item + .anr-gcode-hud-item {
+  padding-left: 14px;
+  border-left: var(--bd-hairline);
+}
+.anr-gcode-hud-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: var(--bd-hairline);
+  background: #ccc;
+}
+.anr-gcode-toolbar--fs .anr-gcode-hud { color: var(--muted-on-dark); }
 
 /* Sliders in the 3D / G-code viewers - the same hairline track + thin square
    accent thumb the spectrogram controls use, so they match the site aesthetic. */

@@ -332,11 +332,13 @@ function hideFfmpegLoader() {
 // handing back a corpse. Without this, the first reverse that ran out of memory
 // poisoned the shared instance and every later reverse (and other ffmpeg feature)
 // failed for the rest of the session.
-function killFFmpeg() {
+// Both are exported: gcode.js borrows the shared instance (and the kill switch,
+// for its Cancel button) to convert clip exports to MP4 where WebCodecs can't.
+export function killFFmpeg() {
   if (ffmpegInstance) { try { ffmpegInstance.terminate(); } catch (_) {} ffmpegInstance = null; }
 }
 
-async function loadFFmpeg(onProgress) {
+export async function loadFFmpeg(onProgress) {
   if (ffmpegInstance && ffmpegInstance.loaded) return ffmpegInstance;
   if (ffmpegInstance) killFFmpeg();   // half-loaded / terminated leftover
   showFfmpegLoader();
@@ -1112,27 +1114,6 @@ async function renderSegmentedRawVideo(file, header, resultsEl, kind, signal) {
   });
 
   await goTo(0, false);
-}
-
-// Mean luma (0-255) of a JPEG blob, sampled on a small canvas. Used to tell a
-// black/blank frame from a frame with real picture in it. Returns null on failure.
-async function meanLuma(blob) {
-  try {
-    const bmp = await createImageBitmap(blob);
-    const w = Math.min(160, bmp.width || 160);
-    const h = Math.max(1, Math.round((bmp.height || 90) * (w / (bmp.width || 160))));
-    const cv = document.createElement('canvas');
-    cv.width = w; cv.height = h;
-    const ctx = cv.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(bmp, 0, 0, w, h);
-    if (bmp.close) bmp.close();
-    const d = ctx.getImageData(0, 0, w, h).data;
-    let sum = 0;
-    for (let i = 0; i < d.length; i += 4) sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    return sum / (d.length / 4);
-  } catch (_) {
-    return null;
-  }
 }
 
 // Grab the very first frame of a video the browser itself can't decode (ProRes,

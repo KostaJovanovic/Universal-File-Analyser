@@ -421,6 +421,73 @@
             </div>
           </div>
 
+          <div class="tst-sub">G-code Export clip settings (.anr-modal-card.anr-clip-card: .anr-clip-sec dividers group .anr-clip-row label + segmented .anr-clip-opt choices, then a .anr-clip-foot footer bar with the .anr-clip-est size line beside the actions)</div>
+          <div class="tst-fixwrap">
+            <div class="anr-modal is-open">
+              <div class="anr-modal-card anr-clip-card">
+                <p class="anr-modal-kicker">Export clip</p>
+                <p class="anr-modal-title">A short MP4 of the whole build.</p>
+                <div class="anr-clip-sec">Frame</div>
+                <div class="anr-clip-row">
+                  <span class="anr-clip-lab">Length</span>
+                  <div class="anr-clip-opts">
+                    <button type="button" class="anr-btn anr-clip-opt">5s</button>
+                    <button type="button" class="anr-btn anr-clip-opt is-active">10s</button>
+                    <button type="button" class="anr-btn anr-clip-opt">20s</button>
+                    <button type="button" class="anr-btn anr-clip-opt">30s</button>
+                  </div>
+                </div>
+                <div class="anr-clip-row">
+                  <span class="anr-clip-lab">Aspect</span>
+                  <div class="anr-clip-opts">
+                    <button type="button" class="anr-btn anr-clip-opt is-active">16:9</button>
+                    <button type="button" class="anr-btn anr-clip-opt">9:16</button>
+                    <button type="button" class="anr-btn anr-clip-opt">1:1</button>
+                  </div>
+                </div>
+                <div class="anr-clip-sec">Output</div>
+                <div class="anr-clip-row">
+                  <span class="anr-clip-lab">Quality</span>
+                  <div class="anr-clip-opts">
+                    <button type="button" class="anr-btn anr-clip-opt">720p</button>
+                    <button type="button" class="anr-btn anr-clip-opt is-active">1080p</button>
+                  </div>
+                </div>
+                <div class="anr-clip-row">
+                  <span class="anr-clip-lab">Rate</span>
+                  <div class="anr-clip-opts">
+                    <button type="button" class="anr-btn anr-clip-opt is-active">30 fps</button>
+                    <button type="button" class="anr-btn anr-clip-opt">60 fps</button>
+                  </div>
+                </div>
+                <div class="anr-clip-sec">Camera</div>
+                <div class="anr-clip-row">
+                  <div class="anr-clip-opts">
+                    <button type="button" class="anr-btn anr-clip-opt is-active">Perspective</button>
+                    <button type="button" class="anr-btn anr-clip-opt is-active">Orbit camera</button>
+                    <button type="button" class="anr-btn anr-clip-opt">Follow toolhead</button>
+                  </div>
+                </div>
+                <div class="anr-clip-sec">Scene</div>
+                <div class="anr-clip-row">
+                  <div class="anr-clip-opts">
+                    <button type="button" class="anr-btn anr-clip-opt is-active">Show bed</button>
+                    <button type="button" class="anr-btn anr-clip-opt">Travel moves</button>
+                    <button type="button" class="anr-btn anr-clip-opt" disabled>Dim other tools</button>
+                    <button type="button" class="anr-btn anr-clip-opt is-active">Info overlay</button>
+                  </div>
+                </div>
+                <div class="anr-clip-foot">
+                  <p class="anr-clip-est">1920&times;1080 &middot; 30 fps &middot; ~7.8 MB</p>
+                  <div class="anr-modal-actions">
+                    <button type="button" class="anr-modal-btn anr-modal-cancel">Cancel</button>
+                    <button type="button" class="anr-modal-btn anr-modal-ok">Render</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="tst-sub">Suggest popup + share nudge (the bottom-corner popovers)</div>
           <div class="tst-fixwrap">
             <div class="anr-suggest-pop is-open" role="status">
@@ -538,6 +605,14 @@
               </div>
               <button type="button" class="anr-btn anr-gcode-zoombtn" aria-pressed="false">Scroll zoom off</button>
               <button type="button" class="anr-btn anr-gcode-fsbtn">Fullscreen</button>
+            </div>
+          </div>
+
+          <div class="tst-sub">Clip render progress chip (.anr-gcode-clipstat - pinned top-centre over the canvas while the G-code viewer exports a video)</div>
+          <div class="tst-stage tst-stage--dark tst-stage--rel" style="height:80px">
+            <div class="anr-gcode-clipstat">
+              <span>Rendering clip&hellip; 43%</span>
+              <button type="button" class="anr-btn">Cancel</button>
             </div>
           </div>
 
