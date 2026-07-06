@@ -21,7 +21,7 @@
    (tessellated), and ;WIDTH:/;HEIGHT: hints. Orbit / pan / zoom / spin, colour by
    height or feedrate, and a build-height scrubber. No external 3D library. */
 
-import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube, wheelZoomToggle } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube } from '../core/util.js';
 
 // Rendered-segment caps, scaled to the device's RAM so arc-heavy / multi-day prints
 // (millions of tessellated segments) fill in on a capable desktop without OOM-crashing
@@ -1535,10 +1535,26 @@ function buildViewer(data, opts = {}) {
     } else if (!twoFinger && e.touches[0]) { move(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
   }, { passive: false });
   canvas.addEventListener('touchend', (e) => { if (!e.touches.length) { up(); twoFinger = false; } });
-  // Raised above the fullscreen button, which owns the bottom-right corner here.
-  const wheelZoom = wheelZoomToggle('anr-wheelzoom--raised');
-  wrap.appendChild(wheelZoom.el);
-  canvas.addEventListener('wheel', (e) => { if (!wheelZoom.enabled()) return; e.preventDefault(); state.dist = Math.max(0.04, Math.min(150,state.dist * (1 + Math.sign(e.deltaY) * 0.1))); dirty = true; }, { passive: false });
+  // Shared zoom step for the wheel and the manual +/- pad. Zooming = changing the
+  // camera distance; factor < 1 moves in, > 1 moves out (clamped to the orbit range).
+  function zoomBy(factor) { state.dist = Math.max(0.04, Math.min(150, state.dist * factor)); dirty = true; }
+
+  // Scroll-zoom toggle: styled and placed like the fullscreen button (they share the
+  // bottom-right stack below), OFF by default so the wheel scrolls the page until the
+  // user opts in. Gate the wheel handler on wheelOn BEFORE preventDefault, so a
+  // disabled viewer lets the wheel scroll the page through it.
+  let wheelOn = false;
+  const wheelZoomBtn = el('button', { type: 'button', class: 'anr-btn anr-gcode-zoombtn', 'aria-pressed': 'false' });
+  const paintWheel = () => {
+    wheelZoomBtn.textContent = wheelOn ? 'Scroll zoom on' : 'Scroll zoom off';
+    wheelZoomBtn.title = wheelOn ? 'Scrolling over the viewer zooms it. Click to let the wheel scroll the page instead.'
+                                 : 'Scrolling over the viewer moves the page. Click to zoom with the scroll wheel again.';
+    wheelZoomBtn.setAttribute('aria-pressed', wheelOn ? 'true' : 'false');
+    wheelZoomBtn.classList.toggle('is-active', wheelOn);   // red while on, like every toggle
+  };
+  wheelZoomBtn.addEventListener('click', (e) => { e.stopPropagation(); wheelOn = !wheelOn; paintWheel(); });
+  paintWheel();
+  canvas.addEventListener('wheel', (e) => { if (!wheelOn) return; e.preventDefault(); zoomBy(1 + Math.sign(e.deltaY) * 0.1); }, { passive: false });
 
   // Camera distance that frames the model's bounding sphere. `fill` < 1 leaves
   // padding (e.g. 0.9 -> the sphere spans ~90% of the frame); accounts for the
@@ -1570,7 +1586,32 @@ function buildViewer(data, opts = {}) {
   const fsBtn = el('button', { type: 'button', class: 'anr-btn anr-gcode-fsbtn', title: 'Toggle fullscreen', 'aria-label': 'Toggle fullscreen' }, 'Fullscreen');
   fsBtn.addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else if (wrap.requestFullscreen) wrap.requestFullscreen(); });
   wrap.addEventListener('fullscreenchange', () => { fsBtn.textContent = document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen'; });
-  wrap.appendChild(fsBtn);
+
+  // Manual zoom pad (+ over -): a press-and-hold repeats the zoom step on a timer, so
+  // you can ride the camera in or out without spamming clicks. Pointer capture keeps
+  // it zooming even if the finger/cursor drifts off the button mid-hold.
+  function holdZoom(btn, factor) {
+    let timer = null;
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+      zoomBy(factor);                                   // one step immediately on press
+      stop(); timer = setInterval(() => zoomBy(factor), 60);
+    });
+    btn.addEventListener('pointerup', stop);
+    btn.addEventListener('pointercancel', stop);
+    btn.addEventListener('lostpointercapture', stop);
+  }
+  const zoomInBtn = el('button', { type: 'button', class: 'anr-btn anr-gcode-zbtn', title: 'Zoom in (hold)', 'aria-label': 'Zoom in' }, '+');
+  const zoomOutBtn = el('button', { type: 'button', class: 'anr-btn anr-gcode-zbtn', title: 'Zoom out (hold)', 'aria-label': 'Zoom out' }, '−');
+  holdZoom(zoomInBtn, 0.94);
+  holdZoom(zoomOutBtn, 1.06);
+  const zoomPad = el('div', { class: 'anr-gcode-zoompad' }, [zoomInBtn, zoomOutBtn]);
+
+  // Bottom-right camera stack (the view cube sits bottom-left): zoom pad on top,
+  // then the scroll-zoom toggle, then fullscreen anchored at the corner.
+  wrap.appendChild(el('div', { class: 'anr-gcode-cambtns' }, [zoomPad, wheelZoomBtn, fsBtn]));
 
   // Colour panel, top-right: a colour-mode selector with the legend / key for the
   // active mode directly beneath it. Built into the viewer so it survives the MSAA
@@ -2242,11 +2283,23 @@ export async function renderGcode(file, resultsEl, opts) {
       // Toolbar (below the viewer): Play + progress bar on one row (bar stays at Play's
       // height); Speed + Follow + Tool changes on a second row beneath Play; then the Build
       // height slider; then the CNC Tools picker last.
-      const playTopRow = el('div', { style: 'display:flex;align-items:center;gap:8px;' });
+      const playTopRow = el('div', { class: 'anr-gcode-playrow' });
       playTopRow.appendChild(playBtn);
       playTopRow.appendChild(sliderWrap);
       playTopRow.appendChild(progVal);
-      const playCtrlRow = el('div', { style: 'display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;' });
+      // Fullscreen-only (hidden otherwise via CSS): the pinned bottom toolbar starts
+      // collapsed to just this play row so the canvas keeps the screen; this button
+      // expands / re-collapses the full control set.
+      const fsMoreBtn = el('button', { type: 'button', class: 'anr-btn anr-gcode-fsmore', 'aria-expanded': 'false' }, 'More controls');
+      const paintFsMore = () => {
+        const collapsed = toolbar.classList.contains('is-collapsed');
+        fsMoreBtn.textContent = collapsed ? 'More controls' : 'Fewer controls';
+        fsMoreBtn.title = collapsed ? 'Show all viewer controls' : 'Collapse the controls back to the play bar';
+        fsMoreBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      };
+      fsMoreBtn.addEventListener('click', () => { toolbar.classList.toggle('is-collapsed'); paintFsMore(); });
+      playTopRow.appendChild(fsMoreBtn);
+      const playCtrlRow = el('div', { class: 'anr-gcode-playctrl' });
       playCtrlRow.appendChild(spdWrap);
       playCtrlRow.appendChild(followBtn);
       playCtrlRow.appendChild(markBtn);
@@ -2285,17 +2338,34 @@ export async function renderGcode(file, resultsEl, opts) {
       // hidden. While fullscreen, reparent both into the wrap as a bottom overlay - view
       // buttons first, then the toolbar - so every control is reachable; move them back on
       // exit. `viewer` is reassigned on the MSAA rebuild, so always read the current wrap.
+      // In fullscreen the bottom-right camera stack (+/- pad, scroll zoom, Exit) must
+      // ride ON TOP of the pinned toolbar, not be overlapped by it - keep its bottom
+      // offset tracking the toolbar's live height (the bar grows and shrinks with
+      // More/Fewer controls, legend rows, window size).
+      const liftCamBtns = () => {
+        const cam = viewer && viewer.wrap.querySelector('.anr-gcode-cambtns');
+        if (!cam) return;
+        const fs = document.fullscreenElement === viewer.wrap && toolbar.parentNode === viewer.wrap;
+        cam.style.bottom = fs ? (toolbar.offsetHeight + 12) + 'px' : '';
+      };
+      const camRO = window.ResizeObserver ? new ResizeObserver(liftCamBtns) : null;
       document.addEventListener('fullscreenchange', () => {
         const fs = document.fullscreenElement;
         if (fs && viewer && fs === viewer.wrap) {
           toolbar.classList.add('anr-gcode-toolbar--fs');
+          toolbar.classList.add('is-collapsed');                               // start slim - the canvas keeps the screen
+          paintFsMore();
           toolbar.insertBefore(viewRow, toolbar.firstChild);                   // view buttons read first
           viewer.wrap.appendChild(toolbar);
+          if (camRO) camRO.observe(toolbar);
         } else if (toolbar.classList.contains('anr-gcode-toolbar--fs')) {
           toolbar.classList.remove('anr-gcode-toolbar--fs');
+          toolbar.classList.remove('is-collapsed');
+          if (camRO) camRO.unobserve(toolbar);
           viewCard.insertBefore(viewRow, viewer.wrap);                         // restore view buttons above the viewer
           viewCard.appendChild(toolbar);
         }
+        liftCamBtns();
       });
 
       resultsEl.appendChild(viewCard);

@@ -1050,7 +1050,7 @@ export function attachZoomPan(wrap, opts = {}) {
 }
 
 // Scroll-zoom toggle button for viewers that zoom on a plain (unmodified) wheel
-// scroll - G-code/STL 3D, the LUT cubes, the PCB boards. Those viewers swallow
+// scroll - STL 3D, the LUT cubes, the PCB boards. Those viewers swallow
 // the wheel whenever the pointer crosses them, which hijacks page scrolling;
 // this gives the user an off switch. Returns { el, enabled }: append `el`
 // bottom-right of a position:relative stage (it carries the .anr-wheelzoom

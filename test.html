@@ -519,7 +519,7 @@
         <h2 class="section-head" id="viewer">Viewer chrome.</h2>
         <p class="section-lede">Overlays that live on the always-dark media surfaces (they keep fixed dark styling in both themes). The scroll-zoom toggle and the fullscreen button hide below 700px wide.</p>
         <div class="about-block">
-          <div class="tst-sub">3D viewer stage: view cube (static replica of the attachViewCube DOM), scroll-zoom toggle (raised) and fullscreen button</div>
+          <div class="tst-sub">G-code 3D viewer stage: view cube (static replica of the attachViewCube DOM) bottom-left; the .anr-gcode-cambtns stack bottom-right - manual zoom pad (hold to zoom), scroll-zoom toggle (off by default) and fullscreen button</div>
           <div class="tst-stage tst-stage--dark tst-stage--rel" style="height:230px">
             <div class="anr-viewcube" title="View cube (static replica)">
               <div class="anr-viewcube-cube" style="transform:rotateX(-20deg) rotateY(-32deg)">
@@ -531,12 +531,19 @@
                 <div class="anr-viewcube-face" style="transform:rotateY(0deg) rotateX(-90deg) translateZ(27px)">Bot</div>
               </div>
             </div>
-            <button type="button" class="anr-wheelzoom anr-wheelzoom--raised" aria-pressed="true">Scroll zoom on</button>
-            <button type="button" class="anr-btn anr-gcode-fsbtn">Fullscreen</button>
+            <div class="anr-gcode-cambtns">
+              <div class="anr-gcode-zoompad">
+                <button type="button" class="anr-btn anr-gcode-zbtn" aria-label="Zoom in">+</button>
+                <button type="button" class="anr-btn anr-gcode-zbtn" aria-label="Zoom out">−</button>
+              </div>
+              <button type="button" class="anr-btn anr-gcode-zoombtn" aria-pressed="false">Scroll zoom off</button>
+              <button type="button" class="anr-btn anr-gcode-fsbtn">Fullscreen</button>
+            </div>
           </div>
 
-          <div class="tst-sub">Scroll-zoom toggle, off state (.anr-wheelzoom.is-off - dimmed, dashed)</div>
+          <div class="tst-sub">Shared scroll-zoom pill (.anr-wheelzoom - STL, LUT cubes, PCB boards): on state, then off state (.is-off - dimmed, dashed)</div>
           <div class="tst-stage tst-stage--dark tst-stage--rel" style="height:110px">
+            <button type="button" class="anr-wheelzoom" aria-pressed="true" style="right:130px">Scroll zoom on</button>
             <button type="button" class="anr-wheelzoom is-off" aria-pressed="false">Scroll zoom off</button>
           </div>
 
