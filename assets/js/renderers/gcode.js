@@ -21,7 +21,7 @@
    (tessellated), and ;WIDTH:/;HEIGHT: hints. Orbit / pan / zoom / spin, colour by
    height or feedrate, and a build-height scrubber. No external 3D library. */
 
-import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube, downloadBlob } from '../core/util.js';
 
 // Rendered-segment caps, scaled to the device's RAM so arc-heavy / multi-day prints
 // (millions of tessellated segments) fill in on a capable desktop without OOM-crashing
@@ -427,8 +427,7 @@ function parseGcode(text, opts) {
     else if (motionMode && /(^|\s)[XYZABCUVWIJKR]-?[\d.]/i.test(line)) mo = motionMode;
     if (!mo) continue;
     motionMode = mo;
-    const isLine = mo === 'G0' || mo === 'G1';
-    const isArc = mo === 'G2' || mo === 'G3';
+    const isLine = mo === 'G0' || mo === 'G1';   // else it's an arc (G2/G3)
     sawG = true;
 
     const t = parseAxes(line);
@@ -567,6 +566,7 @@ function parseGcode(text, opts) {
     printerModel,              // e.g. "Bambu Lab A1" (from the slicer config), or ''
     units: unit === 1 ? 'mm' : 'in',
     layerCount: zs.length,
+    layerZs: zs,                // sorted unique layer heights - drives the live "Layer x / y" readout
     layerHeight,
     extrudeMM,
     cutMM,
@@ -699,6 +699,11 @@ function boxTemplate() {
   }
   return new Float32Array(v);
 }
+
+// Default "home" camera orientation - the framing the "Reset view" button eases
+// back to, and the angle every clip export starts from (see resetView / arm()).
+// One source of truth so the interactive reset and the recorded clip can't drift.
+const HOME_YAW = -0.78, HOME_PITCH = 0.6;
 
 // ---------- WebGL viewer (instanced filament beads) ----------
 // opts.antialias toggles hardware MSAA (set at context creation, so changing it
@@ -946,7 +951,7 @@ function buildViewer(data, opts = {}) {
         vVis = uVis[int(aType + 0.5)] * uFilVis[int(aTool + 0.5)];
       } }`;
   const fsInst = `precision mediump float; varying float vT, vVis, vTool; varying vec3 vN, vColor, vEyeN, vEyeP;
-    uniform float uClip, uAlpha, uIsoMode, uIsoTool, uReal;
+    uniform float uClip, uAlpha, uIsoMode, uIsoTool, uReal, uDim;
     void main(){ if(vT > uClip) discard; if(vVis < 0.5) discard;
       // Isolate pass: 1 = draw only the current tool, 2 = draw only the others.
       if(uIsoMode > 0.5){ bool cur = abs(vTool - uIsoTool) < 0.5;
@@ -958,11 +963,11 @@ function buildViewer(data, opts = {}) {
         vec3 LT = vec3(-0.4574957,0.4574957,0.7624929), LF = vec3(0.6985074,0.1397015,0.6985074);
         float diff = 0.28 + max(dot(N,LT),0.0)*0.5 + max(dot(N,LF),0.0)*0.22;
         float spec = 0.30*pow(max(dot(N,normalize(LT+V)),0.0),28.0) + 0.10*pow(max(dot(N,normalize(LF+V)),0.0),16.0);
-        gl_FragColor = vec4(clamp(vColor*diff + vec3(spec), 0.0, 1.0), uAlpha);
+        gl_FragColor = vec4(clamp(vColor*diff + vec3(spec), 0.0, 1.0) * uDim, uAlpha);
       } else {
         vec3 N = normalize(vN); vec3 L = normalize(vec3(0.4,0.78,0.5));
         float lit = max(max(dot(N,L),0.0), max(dot(-N,L),0.0)*0.4);
-        gl_FragColor = vec4(vColor*(0.34+0.66*lit), uAlpha);
+        gl_FragColor = vec4(vColor*(0.34+0.66*lit) * uDim, uAlpha);
       } }`;
   // Plain-line fallback (no instancing): centreline reconstruction.
   const vsLine = `attribute vec3 aPos; uniform mat4 uProj,uView,uModel; uniform float uYmin,uYspan; varying float vT;
@@ -1043,7 +1048,7 @@ function buildViewer(data, opts = {}) {
 
   // mode: 0 = feature type, 1 = height, 2 = speed. vis: per-feature-type 1/0.
   // shown: how many extrusion segments to draw (in print order) - the progress slider.
-  const state = { yaw: -0.78, pitch: 0.6, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: 'none', flatten: true, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.mode === 'print' && data.multicolour) ? 3 : (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, showBed: !!bedGrid, showLegend: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), filVis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false,
+  const state = { yaw: -0.78, pitch: 0.6, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: 'none', flatten: false, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.mode === 'print' && data.multicolour) ? 3 : (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, showBed: !!bedGrid, showLegend: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), filVis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false,
     // Travel-aware playback: travShown = full travel segments to draw; playKind marks
     // whether the in-progress (partially drawn) move is an extrusion (1) or a travel (2),
     // so the head can glide along travels too; playFrac is the fraction into it.
@@ -1091,7 +1096,7 @@ function buildViewer(data, opts = {}) {
     const L = (n) => gl.getAttribLocation(prog, n);
     const aEnd = L('aEnd'), aSr = L('aSr'), aSu = L('aSu'), aA = L('aA'), aB = L('aB'), aHW = L('aHW'), aHH = L('aHH'), aFeed = L('aFeed'), aType = L('aType'), aTool = L('aTool');
     const U = (n) => gl.getUniformLocation(prog, n);
-    const uMVP = U('uMVP'), uModel = U('uModel'), uMV = U('uMV'), uReal = U('uReal'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uFilVis = U('uFilVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan'), uTypeBias = U('uTypeBias'), uIsoMode = U('uIsoMode'), uIsoTool = U('uIsoTool'), uIsoUseType = U('uIsoUseType');
+    const uMVP = U('uMVP'), uModel = U('uModel'), uMV = U('uMV'), uReal = U('uReal'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uFilVis = U('uFilVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan'), uTypeBias = U('uTypeBias'), uIsoMode = U('uIsoMode'), uIsoTool = U('uIsoTool'), uIsoUseType = U('uIsoUseType'), uDim = U('uDim');
 
     const bindTemplate = () => {
       gl.bindBuffer(gl.ARRAY_BUFFER, tplBuf);
@@ -1286,7 +1291,7 @@ function buildViewer(data, opts = {}) {
       gl.uniform2f(uViewport, viewW, viewH);
       gl.uniform1f(uYmin, yMin); gl.uniform1f(uYspan, ySpan); gl.uniform1f(uFmin, fMin); gl.uniform1f(uFspan, fSpan); gl.uniform1f(uClip, state.clip);
       gl.uniform1f(uMinW, state.minWidth === 'all' ? 1 : 0); gl.uniform1f(uMinPx, 1.3); gl.uniform1f(uFlat, state.flatten ? 1 : 0);
-      gl.uniform1f(uAlpha, 1);
+      gl.uniform1f(uAlpha, 1); gl.uniform1f(uDim, 1);
       gl.uniform1f(uIsoUseType, isCNC ? 1 : 0); gl.uniform1f(uIsoMode, 0);
       gl.uniform1f(uWmin, wHalfMin); gl.uniform1f(uWspan, wSpan);
       if (uFilCols) gl.uniform3fv(uFilCols, filCols);
@@ -1356,18 +1361,19 @@ function buildViewer(data, opts = {}) {
         bindInstances(partBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, 1);
       };
       // "Dim other tools": draw the current tool's beads solid (pass 1), then every other
-      // tool's beads translucent over them (pass 2, depth-write off, blended) - exactly the
-      // treatment travels get, so a multi-tool job reads as "this tool, right now".
+      // tool's beads OPAQUE but darkened toward the background (pass 2). Darkening (not
+      // translucency) keeps depth writes on, so the faded beads occlude each other
+      // normally instead of stacking their alpha along the view ray - which is what made
+      // dense regions and the silhouette bloom into a glow. They still read clearly as
+      // "everything but this tool, right now", just cleanly recessed.
       if (state.isoTool && multiTool) {
         gl.uniform1f(uIsoTool, state.headToolRaw | 0);
-        gl.uniform1f(uIsoMode, 1);                                  // pass 1: current tool, opaque
+        gl.uniform1f(uIsoMode, 1);                                  // pass 1: current tool, full brightness
         bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
         drawPartial();
-        gl.uniform1f(uIsoMode, 2); gl.uniform1f(uAlpha, 0.1);       // pass 2: other tools, translucent
-        gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+        gl.uniform1f(uIsoMode, 2); gl.uniform1f(uDim, 0.22);        // pass 2: other tools, opaque + dimmed
         bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
-        gl.depthMask(true); gl.disable(gl.BLEND);
-        gl.uniform1f(uIsoMode, 0); gl.uniform1f(uAlpha, 1);
+        gl.uniform1f(uIsoMode, 0); gl.uniform1f(uDim, 1);
       } else {
         bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
         drawPartial();
@@ -1421,6 +1427,7 @@ function buildViewer(data, opts = {}) {
   }
 
   function resize() {
+    if (exportW) { applyExportSize(); return; }   // clip export owns the canvas size
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = wrap.clientWidth || 600, h = wrap.clientHeight || 420;
     viewW = w; viewH = h;
@@ -1433,6 +1440,38 @@ function buildViewer(data, opts = {}) {
     if (want > MAXPIX) scale *= Math.sqrt(MAXPIX / want);
     canvas.width = Math.round(w * scale); canvas.height = Math.round(h * scale);
     canvas.style.width = w + 'px'; canvas.style.height = h + 'px'; dirty = true;
+  }
+  // Clip export: lock the backing store to the clip resolution (draw() reads
+  // canvas.width/height, so frames come out at the exact target aspect - and the
+  // shader's screen-space effects read viewW/viewH, so they scale as if the video
+  // were the screen) while the CSS size letterboxes the canvas inside the wrap,
+  // keeping the render watchable as it happens. The GL render is oversampled up to
+  // a 1440p ceiling and the exporter's compositing canvas downscales it, which
+  // doubles as the clip's antialiasing. While an export size
+  // is set, resize() (window resizes, fullscreen changes) re-applies it instead of
+  // reverting to responsive sizing. Call with (0, 0) to restore normal sizing.
+  let exportW = 0, exportH = 0;
+  function applyExportSize() {
+    // Oversample the GL render up to a 1440p ceiling (2560x1440 = 3.69 MP), then
+    // let the exporter's compositing canvas downscale it - that downscale doubles
+    // as the clip's antialiasing. So 720p renders at the full 2x (landing on
+    // 1440p) and 1080p at ~1.33x (also landing on 1440p); the cap stays at 2
+    // because the single drawImage downscale only samples a 2x2 neighbourhood in
+    // some browsers - beyond 2x it would skip pixels, not average them.
+    const ss = Math.max(1, Math.min(2, Math.sqrt(3.69e6 / (exportW * exportH))));
+    viewW = exportW; viewH = exportH;
+    canvas.width = Math.round(exportW * ss); canvas.height = Math.round(exportH * ss);
+    const cw = wrap.clientWidth || 600, ch = wrap.clientHeight || 420;
+    const k = Math.min(cw / exportW, ch / exportH);
+    const dw = Math.max(1, Math.round(exportW * k)), dh = Math.max(1, Math.round(exportH * k));
+    canvas.style.width = dw + 'px'; canvas.style.height = dh + 'px';
+    canvas.style.margin = Math.max(0, Math.round((ch - dh) / 2)) + 'px auto 0';
+    dirty = true;
+  }
+  function setExportSize(w, h) {
+    exportW = w || 0; exportH = h || 0;
+    if (exportW) applyExportSize();
+    else { canvas.style.margin = ''; resize(); }
   }
   function draw() {
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -1696,7 +1735,7 @@ function buildViewer(data, opts = {}) {
   function resetView() {
     setSpin(false);
     const from = { yaw: state.yaw, pitch: state.pitch, dist: state.dist, panX: state.panX, panY: state.panY };
-    const to = { yaw: -0.78, pitch: 0.6, dist: fitDist(0.9), panX: 0, panY: 0 };
+    const to = { yaw: HOME_YAW, pitch: HOME_PITCH, dist: fitDist(0.9), panX: 0, panY: 0 };
     state.fitted = true;
     let dyaw = to.yaw - from.yaw;
     while (dyaw > Math.PI) dyaw -= 2 * Math.PI;
@@ -1720,6 +1759,10 @@ function buildViewer(data, opts = {}) {
 
   const api = {
     wrap, ok: true, state, hasTravel: !!drawImpl.hasTravel, instanced: !!(inst && segN > 0), snapshot, refreshLegend, colourPanel, topLeft: topLeftSlot,
+    // Clip-export hooks: a synchronous draw, the live canvas (rebuilt on the MSAA
+    // swap, so exporters must re-read it) and the export-resolution lock. Framing
+    // at the export aspect goes through fit(), which reads the locked canvas size.
+    draw, canvas, setExportSize,
     resize, setSpin, onSpinChange: (cb) => spinListeners.push(cb), resetView,
     start: () => { resize(); if (!state.fitted) { state.dist = fitDist(0.9); state.fitted = true; } requestAnimationFrame(loop); }, markDirty: () => { dirty = true; },
     fit: (fill) => { state.dist = fitDist(fill === undefined ? 0.9 : fill); state.fitted = true; dirty = true; },
@@ -1996,6 +2039,54 @@ export async function renderGcode(file, resultsEl, opts) {
       // Compact remaining-time for the wait label: one decimal under 10s, else whole.
       const fmtWait = (sec) => sec >= 60 ? `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s` : `${sec.toFixed(sec < 10 ? 1 : 0)}s`;
 
+      // Live playback HUD, refreshed by applyGlobal as you scrub / play: elapsed / total
+      // time, the current layer, and - on multi-material prints or multi-tool CNC jobs -
+      // the active tool with its colour swatch. Each item only exists when its data
+      // applies (no feedrates -> no time; single-material -> no tool line), and the whole
+      // strip is omitted if none apply.
+      const hudShowTime = realTotal > 0;
+      const hudShowLayer = isPrint && data.layerZs && data.layerZs.length > 1;
+      const hudShowTool = (isPrint && data.multicolour) || (!isPrint && cncTools.length > 1);
+      const hudTime = el('span', { class: 'anr-gcode-hud-item', title: 'Elapsed / total print time (from feedrates and holds)' });
+      const hudLayer = el('span', { class: 'anr-gcode-hud-item', title: 'Current layer at the print head / total layers' });
+      const hudSwatch = el('span', { class: 'anr-gcode-hud-swatch' });
+      const hudToolText = el('span');
+      const hudTool = el('span', { class: 'anr-gcode-hud-item', title: isPrint ? 'Active filament at the print head' : 'Active cutting tool' }, [hudSwatch, hudToolText]);
+      const hudItems = [];
+      if (hudShowTime) hudItems.push(hudTime);
+      if (hudShowLayer) hudItems.push(hudLayer);
+      if (hudShowTool) hudItems.push(hudTool);
+      const hud = hudItems.length ? el('div', { class: 'anr-gcode-hud' }, hudItems) : null;
+      // Rewrite the HUD for a global position `gi` (moves). Cheap: a binary search for the
+      // layer and a small linear tool lookup, so it's fine to run every playback frame.
+      const updateHud = (gi) => {
+        const g = Math.max(0, Math.min(G, Math.floor(gi))), frac = Math.max(0, Math.min(G, gi)) - g, s = viewer.state;
+        if (hudShowTime) {
+          const elapsed = g >= G ? realTotal : gTime[g] + frac * (gTime[g + 1] - gTime[g]);
+          hudTime.textContent = fmtDur(elapsed) + ' / ' + fmtDur(realTotal);
+        }
+        if (hudShowLayer) {
+          const zs = data.layerZs;
+          const curZ = g >= G ? zs[zs.length - 1] : (s.restValid ? s.restZ : zs[0]);
+          let lo = 0, hi = zs.length;   // count of layer heights at or below the head's Z
+          while (lo < hi) { const mid = (lo + hi) >> 1; if (zs[mid] <= curZ + 1e-4) lo = mid + 1; else hi = mid; }
+          hudLayer.textContent = 'Layer ' + Math.max(1, Math.min(zs.length, lo)) + ' / ' + zs.length;
+        }
+        if (hudShowTool) {
+          const idx = g >= G ? data.segCount - 1 : Math.max(0, Math.min(data.segCount - 1, gExt[g]));
+          if (isPrint) {
+            const fi = (data.segFil && data.segFil[idx]) | 0;
+            hudToolText.textContent = 'Filament ' + (fi + 1);
+            hudSwatch.style.background = (data.filamentColors && data.filamentColors[fi]) || '#cccccc';
+          } else {
+            const slot = data.seg[idx * 10 + 9] | 0, t = cncTools.find((c) => c.slot === slot), f = FEATURES[slot] || FEATURES[7];
+            hudToolText.textContent = t ? toolLabel(t.n) : 'Tool';
+            hudSwatch.style.background = `rgb(${Math.round(f.rgb[0] * 255)},${Math.round(f.rgb[1] * 255)},${Math.round(f.rgb[2] * 255)})`;
+          }
+        }
+      };
+      if (hud) updateHud(G);   // seed the readout to the finished state (the default full view)
+
       // Playback rate in moves/s. A "length" preset scales to the file (G / seconds) so any
       // job finishes in that many seconds; a "lines/s" preset is a fixed rate.
       const lpsForLen = (sec) => Math.max(1, G / sec);
@@ -2042,6 +2133,7 @@ export async function renderGcode(file, resultsEl, opts) {
         viewer.markDirty();
         progSlider.value = String(G ? Math.round(gi / G * 1000) : 1000);
         progVal.textContent = s.shown.toLocaleString() + ' / ' + data.segCount.toLocaleString();
+        if (hud) updateHud(gi);
       };
       let playPos = G, playElapsed = realTotal;
       // Scrub: snap to a whole move (no partial), so dragging only ever shows complete moves.
@@ -2280,6 +2372,494 @@ export async function renderGcode(file, resultsEl, opts) {
       };
       if (window.ResizeObserver) { const ro = new ResizeObserver(fitIsoLabel); ro.observe(isoBtn); }
 
+      // ---- Export clip: deterministic offline render to an MP4 download ----
+      // Steps the same applyGlobal() timeline the scrubber uses through N frames,
+      // draws each one synchronously at the exact clip resolution, and encodes via
+      // WebCodecs into an H.264 MP4 (muxed by the vendored mp4-muxer). Deterministic:
+      // every frame is perfect regardless of machine load, and it renders faster
+      // than real time. Only offered where WebCodecs can encode (Chrome, Edge,
+      // Safari 16.4+, recent Firefox) - the button simply doesn't exist elsewhere.
+      let clipBtn = null;
+      if (window.VideoEncoder && window.VideoFrame) {
+        // orbit/follow/overlay are clip-only motion/stamp options. persp/bed/travel/dim
+        // mirror live viewer-state flags (ortho / showBed / showTravel / isoTool) and are
+        // re-seeded from the viewer each time the popup opens, so the export defaults to
+        // whatever the user set in the normal viewer but can be overridden here.
+        const clipCfg = { dur: 10, aspect: '16:9', size: 720, fps: 60, reset: true, orbit: true, follow: false, overlay: true, persp: true, bed: true, travel: false, dim: false };
+        // Single definition of the four toggles that mirror viewer state. `cfg` is the
+        // clipCfg key, `st` the viewer.state flag; `get` reads state -> clip value (to
+        // seed the popup), `put` writes clip value -> state (on export). Some invert
+        // (persp is !ortho) and dim only bites with multiple tools. Drives all three
+        // sites - seed, apply, snapshot - so they can never drift.
+        const SCENE_MIRROR = [
+          { cfg: 'persp', st: 'ortho', get: (s) => !s.ortho, put: (c) => !c },
+          { cfg: 'bed', st: 'showBed', get: (s) => !!s.showBed, put: (c) => !!c },
+          { cfg: 'travel', st: 'showTravel', get: (s) => !!s.showTravel, put: (c) => !!c },
+          { cfg: 'dim', st: 'isoTool', get: (s) => !!s.isoTool, put: (c) => !!c && hasMultiTool },
+        ];
+        const CLIP_TAIL_S = 3;   // hold on the finished build this long after the print completes
+        const clipDims = () => {
+          const s = clipCfg.size;
+          return clipCfg.aspect === '16:9' ? [Math.round(s * 16 / 9), s]
+            : clipCfg.aspect === '9:16' ? [s, Math.round(s * 16 / 9)]
+              : [s, s];
+        };
+        // Bitrate scales with the pixel rate (~0.1 bit per pixel), and the H.264
+        // level (the last two hex digits of the codec string) steps up with the same
+        // rate so 1080p60 doesn't exceed what a Level 4.0 decoder accepts.
+        const clipRate = (W, H) => Math.round(W * H * clipCfg.fps * 0.1);
+        const clipLevel = (W, H) => {
+          const r = W * H * clipCfg.fps;
+          return r > 1920 * 1080 * 30 ? '2a' : r > 1280 * 720 * 60 ? '28' : r > 1280 * 720 * 30 ? '20' : '1f';
+        };
+
+        // H.264 Annex B plumbing for encoders (Firefox) that produce a fine bitstream
+        // but no decoderConfig metadata: MP4 needs the SPS/PPS parameter sets in a
+        // header box (avcC) and length-prefixed NALs in the samples, while Annex B
+        // carries the parameter sets in-band between start codes. These three turn
+        // one into the other; pure bitstream structure, identical in every browser.
+        // (Emulation-prevention bytes guarantee no start code can occur inside a NAL,
+        // so the naive scan is safe.)
+        const splitAnnexB = (buf) => {
+          const nals = [];
+          let i = 0, start = -1;
+          const n = buf.length;
+          while (i + 3 <= n) {
+            if (buf[i] === 0 && buf[i + 1] === 0 && (buf[i + 2] === 1 || (buf[i + 2] === 0 && buf[i + 3] === 1))) {
+              const sc = buf[i + 2] === 1 ? 3 : 4;
+              if (start >= 0) nals.push(buf.subarray(start, i));
+              i += sc; start = i;
+            } else i++;
+          }
+          if (start >= 0 && start < n) nals.push(buf.subarray(start, n));
+          return nals;
+        };
+        // AVCDecoderConfigurationRecord from one SPS + one PPS (all this encoder emits).
+        const buildAvcC = (sps, pps) => new Uint8Array([
+          1, sps[1], sps[2], sps[3], 0xff, 0xe1,
+          sps.length >> 8, sps.length & 0xff, ...sps,
+          1, pps.length >> 8, pps.length & 0xff, ...pps,
+        ]);
+        // Annex B frame -> MP4 sample: drop the in-band parameter sets (7/8, they live
+        // in the avcC) and access-unit delimiters (9), length-prefix what remains.
+        const annexbToAvcc = (buf) => {
+          const nals = splitAnnexB(buf).filter((nal) => { const t = nal[0] & 31; return t !== 7 && t !== 8 && t !== 9; });
+          let len = 0;
+          for (const nal of nals) len += 4 + nal.length;
+          const out = new Uint8Array(len);
+          let o = 0;
+          for (const nal of nals) {
+            out[o++] = nal.length >>> 24; out[o++] = (nal.length >>> 16) & 255; out[o++] = (nal.length >>> 8) & 255; out[o++] = nal.length & 255;
+            out.set(nal, o); o += nal.length;
+          }
+          return out;
+        };
+
+        // Stamp overlay chips onto a composited frame. The site tag (bottom-right) is
+        // always drawn - it is the clip's watermark and stays on every export. The
+        // file name + progress (+ build height) chip (bottom-left) is the toggleable
+        // "Info overlay" and is drawn only when `withInfo`. Fixed dark-translucent
+        // treatment (like the pause tag) so it reads on any canvas.
+        const drawClipOverlay = (ctx, W, H, t, withInfo) => {
+          const s = viewer.state;
+          const fpx = Math.max(11, Math.round(Math.min(W, H) * 0.021));
+          const pad = Math.round(fpx * 0.6), m = Math.round(fpx * 0.9), chipH = fpx + pad * 2;
+          ctx.font = '500 ' + fpx + 'px "Geist Mono", ui-monospace, Consolas, monospace';
+          ctx.textBaseline = 'middle';
+          const chip = (txt, right) => {
+            const w = Math.ceil(ctx.measureText(txt).width) + pad * 2;
+            const x = right ? W - m - w : m, y = H - m - chipH;
+            ctx.fillStyle = 'rgba(10, 12, 16, 0.78)'; ctx.fillRect(x, y, w, chipH);
+            ctx.fillStyle = '#eef2ff'; ctx.fillText(txt, x + pad, y + chipH / 2 + 1);
+          };
+          if (withInfo) {
+            const tail = ' · ' + Math.round(t * 100) + '%' + (s.restValid ? ' · Z ' + s.restZ.toFixed(u === 'mm' ? 1 : 2) + ' ' + u : '');
+            // Ellipsize a long file name so the left chip never collides with the tag.
+            let name = file.name;
+            while (name.length > 6 && ctx.measureText(name + tail).width + pad * 2 > W * 0.6) name = name.slice(0, -2);
+            if (name !== file.name) name += '…';
+            chip(name + tail, false);
+          }
+          chip('lab.valjdakosta.com', true);   // always: the site watermark on every clip
+        };
+
+        let clipBusy = false;
+        async function renderClip() {
+          if (clipBusy || !viewer.ok) return;
+          clipBusy = true; clipBtn.disabled = true;
+          stopPlay();
+          playBtn.disabled = true; progSlider.disabled = true;   // they'd fight the frame loop
+          const [W, H] = clipDims();
+          const fps = clipCfg.fps, N = Math.max(1, Math.round(clipCfg.dur * fps));
+          // Hold on the finished build for 3s after the print completes (the orbit
+          // keeps turning), so the clip doesn't cut on the final layer.
+          const NF = N + CLIP_TAIL_S * fps;
+          const s0 = viewer.state;
+          // spin is restored through setSpin (not the state assign) so its listeners
+          // repaint the Pause/Resume spin button.
+          const savedSpin = s0.spin;
+          const saved = { yaw: s0.yaw, pitch: s0.pitch, dist: s0.dist, panX: s0.panX, panY: s0.panY, follow: s0.follow, head: s0.head, fitted: s0.fitted };
+          for (const m of SCENE_MIRROR) saved[m.st] = s0[m.st];   // snapshot the mirrored flags so export reverts them
+          const savedPos = playPos;
+          // Progress chip over the canvas; Cancel aborts cleanly and restores the view.
+          let cancelled = false, failed = false;
+          const statTxt = el('span', {}, 'Rendering clip…');
+          const statCancel = el('button', { type: 'button', class: 'anr-btn' }, 'Cancel');
+          statCancel.addEventListener('click', () => { cancelled = true; });
+          const statBox = el('div', { class: 'anr-gcode-clipstat' }, [statTxt, statCancel]);
+          // Arm (or re-arm, after an MSAA rebuild swaps the canvas mid-render) the
+          // export camera: exact clip resolution, no pan, auto-fit framing at that
+          // aspect - the user's angle is kept, the composition is guaranteed.
+          let curCanvas = null;
+          const arm = () => {
+            const v = viewer;
+            curCanvas = v.canvas;
+            if (statBox.parentNode !== v.wrap) v.wrap.appendChild(statBox);
+            v.canvas.style.pointerEvents = 'none';   // a mid-render drag would wreck the framing
+            v.setExportSize(W, H);
+            const s = v.state;
+            s.panX = 0; s.panY = 0; s.head = true; s.follow = clipCfg.follow ? 1 : 0;
+            // "Reset view" (on by default): start the clip from the default home
+            // orientation (the "Reset view" angle) instead of wherever the user last
+            // orbited to, so the composition is reproducible regardless of the live
+            // camera. Off keeps the current angle. The orbit (if on) advances from this
+            // base; yaw0 is snapshotted right after arm().
+            if (clipCfg.reset) { s.yaw = HOME_YAW; s.pitch = HOME_PITCH; }
+            // Scene/projection toggles from the popup (set before fit() so the bed is
+            // framed when shown). Restored from `saved` after the render.
+            for (const m of SCENE_MIRROR) s[m.st] = m.put(clipCfg[m.cfg]);
+            // Portrait frames tighter than it looks (the fit is against the narrow
+            // horizontal FOV, and the overlay chips eat into it) - give 9:16 the most
+            // air, and pull 1:1 back a touch too (a square crop hugs the model on the
+            // orbit); 16:9 stays at the standard fill.
+            v.fit(clipCfg.aspect === '9:16' ? 0.72 : clipCfg.aspect === '1:1' ? 0.8 : 0.92);
+          };
+          let encoder = null, encErr = null;
+          try {
+            const comp = el('canvas'); comp.width = W; comp.height = H;
+            const ctx = comp.getContext('2d');
+            ctx.imageSmoothingQuality = 'high';   // the GL canvas is supersampled; this is the downscale
+            // Pick the H.264 config: the highest profile the encoder claims to support
+            // at the level this pixel rate needs (High -> Main -> Constrained Baseline).
+            // contentHint 'detail' asks the encoder to preserve spatial detail - the
+            // render is all thin lines - and is ignored where unsupported.
+            const base = { width: W, height: H, bitrate: clipRate(W, H), framerate: fps, contentHint: 'detail' };
+            let cfgEnc = null;
+            for (const prof of ['avc1.6400', 'avc1.4d40', 'avc1.42e0']) {
+              const cand = { ...base, codec: prof + clipLevel(W, H), avc: { format: 'avc' } };
+              const sup = await VideoEncoder.isConfigSupported(cand).catch(() => null);
+              if (sup && sup.supported) { cfgEnc = cand; break; }
+            }
+            // Three-tier strategy, decided by probing one real-size frame up front
+            // (a failure would otherwise only surface at finalize, after the render):
+            //  1. The encoder attaches decoderConfig metadata (Chrome/Edge/Safari):
+            //     H.264 straight into mp4-muxer.
+            //  2. It doesn't (Firefox), but can emit H.264 as Annex B: encode that and
+            //     build the MP4 header ourselves from the in-band SPS/PPS - still one
+            //     native-speed encode straight to MP4.
+            //  3. No usable H.264 at all: render VP9/VP8 into a WebM and let the
+            //     finish step convert it to MP4 with ffmpeg.wasm.
+            let mp4 = false, annexb = false, probeDesc = null, sps = null, pps = null;
+            if (cfgEnc) {
+              let gotCfg = false;
+              const probe = new VideoEncoder({ output: (pc, pm) => { if (pm && pm.decoderConfig && pm.decoderConfig.description) { gotCfg = true; probeDesc = pm.decoderConfig; } }, error: () => {} });
+              try {
+                probe.configure(cfgEnc);
+                const pf = new VideoFrame(comp, { timestamp: 0, duration: Math.round(1e6 / fps) });
+                probe.encode(pf, { keyFrame: true }); pf.close();
+                await probe.flush();
+              } catch (_) { gotCfg = false; }
+              try { if (probe.state !== 'closed') probe.close(); } catch (_) {}
+              mp4 = gotCfg;
+            }
+            if (!mp4 && cfgEnc) {
+              // OpenH264 (Firefox) is a notch below the other native encoders at equal
+              // bitrate, and this is the final output - pay it back with bitrate.
+              const cfgAB = { ...cfgEnc, bitrate: Math.round(clipRate(W, H) * 1.5), avc: { format: 'annexb' } };
+              const sup = await VideoEncoder.isConfigSupported(cfgAB).catch(() => null);
+              if (sup && sup.supported) {
+                const probe = new VideoEncoder({
+                  output: (pc) => {
+                    const d = new Uint8Array(pc.byteLength); pc.copyTo(d);
+                    for (const nal of splitAnnexB(d)) { const t = nal[0] & 31; if (t === 7 && !sps) sps = nal.slice(); else if (t === 8 && !pps) pps = nal.slice(); }
+                  },
+                  error: () => {},
+                });
+                try {
+                  probe.configure(cfgAB);
+                  const pf = new VideoFrame(comp, { timestamp: 0, duration: Math.round(1e6 / fps) });
+                  probe.encode(pf, { keyFrame: true }); pf.close();
+                  await probe.flush();
+                } catch (_) { sps = pps = null; }
+                try { if (probe.state !== 'closed') probe.close(); } catch (_) {}
+                if (sps && pps) { annexb = true; cfgEnc = cfgAB; }
+              }
+            }
+            if (!mp4 && !annexb) {
+              // latencyMode 'realtime' disables the VPx encoder's frame lookahead
+              // (altref) - the source of Firefox's dropped first frame and out-of-order
+              // chunks, which either break the muxer or, reordered, decode as shaky
+              // geometry. Realtime rate control is less efficient, so pay it back with
+              // a higher bitrate; ffmpeg re-encodes to H.264 afterwards anyway.
+              cfgEnc = null;
+              for (const vc of ['vp09.00.10.08', 'vp8']) {
+                const cand = { ...base, codec: vc, latencyMode: 'realtime', bitrate: Math.round(clipRate(W, H) * 1.5) };
+                const sup = await VideoEncoder.isConfigSupported(cand).catch(() => null);
+                if (sup && sup.supported) { cfgEnc = cand; break; }
+              }
+              if (!cfgEnc) throw new Error('this browser cannot encode video');
+            }
+            const isMp4 = mp4 || annexb;   // H.264 into the MP4 container, direct or rebuilt
+            const { Muxer, ArrayBufferTarget } = await import(isMp4 ? '../../vendor/mp4-muxer.min.mjs' : '../../vendor/webm-muxer.min.mjs');
+            const target = new ArrayBufferTarget();
+            // firstTimestampBehavior 'offset': Firefox's encoder can drop or time-shift
+            // the first frame, so the first chunk arrives stamped one frame in and a
+            // strict muxer rejects the whole clip; offsetting re-bases every timestamp
+            // so the first is 0. A no-op where the encoder behaves (first chunk at 0).
+            const muxer = isMp4
+              ? new Muxer({ target, video: { codec: 'avc', width: W, height: H, frameRate: fps }, fastStart: 'in-memory', firstTimestampBehavior: 'offset' })
+              : new Muxer({ target, video: { codec: cfgEnc.codec === 'vp8' ? 'V_VP8' : 'V_VP9', width: W, height: H, frameRate: fps }, firstTimestampBehavior: 'offset' });
+            // Buffer every encoded chunk and mux only after the encode completes:
+            // Firefox's encoder can drop the first frame AND deliver chunks with
+            // shifted or pairwise-swapped timestamps, which the strictly-ordered
+            // muxers reject mid-stream. The mux loop below re-stamps chunks from
+            // their arrival index, which needs the full set first.
+            const chunks = [];
+            encoder = new VideoEncoder({ output: (c, m) => { chunks.push([c, m]); }, error: (e) => { encErr = e; } });
+            encoder.configure(cfgEnc);
+            viewer.setSpin(false);
+            arm();
+            const yaw0 = viewer.state.yaw;
+            let lastYield = performance.now();
+            for (let i = 0; i <= NF; i++) {
+              if (cancelled || encErr) break;
+              if (!viewer.wrap.isConnected) { cancelled = true; break; }
+              if (viewer.canvas !== curCanvas) arm();
+              const t = Math.min(1, i / N);   // clamps at 1 through the hold tail
+              applyGlobal(t * G);
+              // Once the build is finished and the clip is just holding + spinning on the
+              // completed part (the CLIP_TAIL_S tail, i >= N), drop "Dim other tools" so
+              // the whole model shows fully lit for the beauty spin. Checked every tail
+              // frame so a mid-render arm() (MSAA swap) re-enabling it can't stick.
+              // Reverted with the rest of the scene flags via `saved` after the render.
+              if (i >= N && viewer.state.isoTool) viewer.state.isoTool = false;
+              // Deterministic orbit at the live spin's feel (0.18 rad/s of clip time),
+              // running on the frame clock so it carries on through the tail.
+              if (clipCfg.orbit) { viewer.state.yaw = yaw0 + (i / fps) * 0.18; viewer.markDirty(); }
+              viewer.draw();
+              ctx.drawImage(viewer.canvas, 0, 0, W, H);
+              drawClipOverlay(ctx, W, H, t, clipCfg.overlay);   // tag always; info chip if toggled
+              const vf = new VideoFrame(comp, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) });
+              encoder.encode(vf, { keyFrame: i % (fps * 2) === 0 });
+              vf.close();
+              // Backpressure (don't let raw frames pile up in the encoder), then yield
+              // to the page only every ~14ms of render work - not per frame - so the
+              // export runs as fast as the encoder allows instead of one frame per
+              // screen refresh (a 60fps clip would otherwise render in real time; the
+              // letterboxed preview simply skips frames). rAF stalls in a background
+              // tab, so fall back to a timeout there and keep rendering.
+              while (encoder.encodeQueueSize > 8 && !encErr) await new Promise((r) => setTimeout(r, 4));
+              if (performance.now() - lastYield > 14) {
+                statTxt.textContent = 'Rendering clip… ' + Math.round(i / NF * 100) + '%';
+                await new Promise((r) => (document.hidden ? setTimeout(r, 0) : requestAnimationFrame(r)));
+                lastYield = performance.now();
+              }
+            }
+            if (encErr) throw encErr;
+            if (!cancelled) {
+              statTxt.textContent = 'Encoding…';
+              await encoder.flush();
+              // Mux in ARRIVAL order - that is decode order, and reordering it (e.g.
+              // sorting by timestamp) breaks the frames' prediction chain and decodes
+              // as shaking geometry. None of our encoder configs reorder frames, so
+              // arrival order IS display order too - and Firefox stamps chunks
+              // unreliably on EVERY path (shifted or pairwise-swapped; trusted, that
+              // either halved the frame rate or bounced the muxer). We generated the
+              // frames at exact intervals, so ignore the encoder's timestamps
+              // entirely and re-stamp each chunk from its arrival index. A no-op for
+              // encoders that behave (their stamps already equal the re-stamp).
+              // What actually happened, for diagnosing per-browser encoder quirks: the
+              // path taken and whether the encoder returned one chunk per frame.
+              console.info('[analyser] clip export: path=' + (mp4 ? 'h264-direct' : annexb ? 'h264-annexb' : cfgEnc.codec + '-webm')
+                + ', frames=' + (NF + 1) + ', chunks=' + chunks.length
+                + (chunks.length < NF + 1 ? ' (encoder skipped ' + (NF + 1 - chunks.length) + ')' : ''));
+              let haveCfg = false, nOut = 0;
+              for (const [c, m] of chunks) {
+                const d = new Uint8Array(c.byteLength); c.copyTo(d);
+                const ts = Math.round(nOut * 1e6 / fps), du = Math.round(1e6 / fps);
+                nOut++;
+                if (isMp4) {
+                  // MP4 needs the avcC header with the first sample: Annex B builds
+                  // it from the probe's SPS/PPS (and converts each chunk to
+                  // length-prefixed samples); the direct path takes the streaming
+                  // chunk's own decoderConfig, falling back to the probe's copy
+                  // (some encoders only attach it once, at flush).
+                  let meta;
+                  if (!haveCfg) {
+                    meta = {
+                      decoderConfig: annexb
+                        ? { codec: cfgEnc.codec, description: buildAvcC(sps, pps) }
+                        : (m && m.decoderConfig && m.decoderConfig.description) ? m.decoderConfig : probeDesc,
+                    };
+                    haveCfg = true;
+                  }
+                  muxer.addVideoChunkRaw(annexb ? annexbToAvcc(d) : d, c.type, ts, du, meta);
+                } else {
+                  muxer.addVideoChunkRaw(d, c.type, ts, du, m);
+                }
+              }
+              muxer.finalize();
+              let bytes = target.buffer, ext = 'mp4', mime = 'video/mp4';
+              if (!isMp4) {
+                // The fallback render produced VP9/VP8 in a WebM (the browser couldn't
+                // hand the muxer MP4-ready H.264 - Firefox). Convert it to a real
+                // H.264 MP4 with the shared ffmpeg.wasm so every browser ends up with
+                // the same file type. Slow (software x264), but it's one bounded pass
+                // with live progress; if ffmpeg can't load or is cancelled/crashes,
+                // fall back to downloading the WebM itself.
+                let ffMod = null, ff = null, onProg = null;
+                try {
+                  statTxt.textContent = 'Converting to MP4…';
+                  ffMod = await import('./video.js');
+                  ff = await ffMod.loadFFmpeg();
+                  const killOnCancel = () => { try { ffMod.killFFmpeg(); } catch (_) {} };
+                  statCancel.addEventListener('click', killOnCancel);
+                  onProg = (ev) => { const p = ev && ev.progress; if (p > 0 && p <= 1) statTxt.textContent = 'Converting to MP4… ' + Math.round(p * 100) + '%'; };
+                  if (ff.on) ff.on('progress', onProg);
+                  await ff.writeFile('clip.webm', new Uint8Array(target.buffer));
+                  await ff.exec(['-i', 'clip.webm', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', 'clip.mp4']);
+                  const out = await ff.readFile('clip.mp4');
+                  await ff.deleteFile('clip.webm').catch(() => {});
+                  await ff.deleteFile('clip.mp4').catch(() => {});
+                  statCancel.removeEventListener('click', killOnCancel);
+                  bytes = out.buffer || out;
+                } catch (_) {
+                  ext = 'webm'; mime = 'video/webm';   // the WebM is still a good clip
+                } finally {
+                  if (ff && ff.off && onProg) { try { ff.off('progress', onProg); } catch (_) {} }
+                }
+              }
+              if (!cancelled) {
+                // Name: "<source>-clip-HH-MM-SS.<ext>" with a local time-of-day stamp
+                // so repeat exports don't collide, and every space collapsed to an
+                // underscore for a clean, shell-friendly file name.
+                const now = new Date(), p2 = (n) => String(n).padStart(2, '0');
+                const stamp = p2(now.getHours()) + '-' + p2(now.getMinutes()) + '-' + p2(now.getSeconds());
+                const clipName = (file.name.replace(/\.[^.]+$/, '') + '-clip-' + stamp + '.' + ext).replace(/\s+/g, '_');
+                downloadBlob(clipName, new Blob([bytes], { type: mime }));
+              }
+            }
+          } catch (e) {
+            failed = true;
+            statCancel.remove();
+            statTxt.textContent = 'Clip export failed - ' + ((e && e.message) || e);
+            setTimeout(() => statBox.remove(), 4000);
+          } finally {
+            try { if (encoder && encoder.state !== 'closed') encoder.close(); } catch (_) {}
+            if (!failed) statBox.remove();
+            const v = viewer;
+            v.canvas.style.pointerEvents = '';
+            v.setExportSize(0, 0);
+            Object.assign(v.state, saved);
+            v.setSpin(savedSpin);
+            scrubTo(savedPos);
+            playBtn.disabled = false; progSlider.disabled = false;
+            clipBusy = false; clipBtn.disabled = false;
+          }
+        }
+
+        // The pre-render settings popup (the .anr-modal idiom, like the spectrogram
+        // PNG save): segmented preset rows + option toggles reading/writing clipCfg,
+        // with a live size estimate. Parked on the fullscreen element when one is
+        // active - document.body is hidden behind it.
+        const openClipPopup = () => {
+          // Re-seed the scene/projection toggles from the live viewer each open, so the
+          // panel reflects whatever the user last set in the normal viewer.
+          for (const m of SCENE_MIRROR) clipCfg[m.cfg] = m.get(viewer.state);
+          const paints = [];
+          const repaint = () => paints.forEach((p) => p());
+          const segRow = (label, pairs, get, set) => {
+            const box = el('div', { class: 'anr-clip-opts' });
+            for (const [val, lab] of pairs) {
+              const b = el('button', { type: 'button', class: 'anr-btn anr-clip-opt' }, lab);
+              b.addEventListener('click', () => { set(val); repaint(); });
+              paints.push(() => b.classList.toggle('is-active', get() === val));
+              box.appendChild(b);
+            }
+            return el('div', { class: 'anr-clip-row' }, [el('span', { class: 'anr-clip-lab' }, label), box]);
+          };
+          // defs: [key, label, title, off?]. A truthy `off` string disables the toggle
+          // and shows that reason as its tooltip (e.g. a file with no travel moves).
+          const togRow = (defs) => {
+            const box = el('div', { class: 'anr-clip-opts' });
+            for (const [key, lab, title, off] of defs) {
+              const b = el('button', { type: 'button', class: 'anr-btn anr-clip-opt', title: off || title }, lab);
+              if (off) b.disabled = true;
+              else b.addEventListener('click', () => { clipCfg[key] = !clipCfg[key]; repaint(); });
+              paints.push(() => b.classList.toggle('is-active', !!clipCfg[key]));
+              box.appendChild(b);
+            }
+            // No label column: the section header above stands in for it, so the
+            // toggles sit flush under it.
+            return el('div', { class: 'anr-clip-row' }, [box]);
+          };
+          const secHead = (t) => el('div', { class: 'anr-clip-sec' }, t);
+          const est = el('p', { class: 'anr-clip-est' });
+          paints.push(() => {
+            const [W, H] = clipDims();
+            const mb = clipRate(W, H) * (clipCfg.dur + CLIP_TAIL_S) / 8 / 1e6;
+            est.textContent = W + '×' + H + ' · ' + clipCfg.fps + ' fps · ~' + (mb < 9.5 ? mb.toFixed(1) : Math.round(mb)) + ' MB';
+          });
+          const cancelBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, 'Cancel');
+          const okBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-ok' }, 'Render');
+          const card = el('div', { class: 'anr-modal-card anr-clip-card' }, [
+            el('p', { class: 'anr-modal-kicker' }, 'Export clip'),
+            el('p', { class: 'anr-modal-title' }, 'A short MP4 of the whole build.'),
+            secHead('Frame'),
+            segRow('Length', [[5, '5s'], [10, '10s'], [20, '20s'], [30, '30s']], () => clipCfg.dur, (v) => { clipCfg.dur = v; }),
+            segRow('Aspect', [['16:9', '16:9'], ['9:16', '9:16'], ['1:1', '1:1']], () => clipCfg.aspect, (v) => { clipCfg.aspect = v; }),
+            secHead('Output'),
+            segRow('Quality', [[720, '720p'], [1080, '1080p']], () => clipCfg.size, (v) => { clipCfg.size = v; }),
+            segRow('Rate', [[30, '30 fps'], [60, '60 fps']], () => clipCfg.fps, (v) => { clipCfg.fps = v; }),
+            secHead('Camera'),
+            togRow([
+              ['reset', 'Reset view', 'Start the recording from the default home angle instead of the current view'],
+              ['persp', 'Perspective', 'Perspective projection - off is orthographic, flat like a technical drawing'],
+              ['orbit', 'Orbit camera', 'Circle the model slowly while it builds'],
+              ['follow', 'Follow toolhead', 'Keep the camera locked on the toolhead'],
+            ]),
+            secHead('Scene'),
+            togRow([
+              ['bed', 'Show bed', 'Draw the printer bed / build plate under the model', data.bed ? '' : 'This file declares no build plate'],
+              ['travel', 'Travel moves', 'Show the non-printing travel / rapid moves as faint lines', viewer.hasTravel ? '' : 'This file has no travel moves'],
+              ['dim', 'Dim other tools', 'Fade every tool except the one currently printing - the rest go translucent', hasMultiTool ? '' : 'This file only uses one tool'],
+              ['overlay', 'Info overlay', 'Stamp the file name, progress and build height on the frames'],
+            ]),
+            el('div', { class: 'anr-clip-foot' }, [est, el('div', { class: 'anr-modal-actions' }, [cancelBtn, okBtn])]),
+          ]);
+          const overlay = el('div', { class: 'anr-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Export clip' }, card);
+          (document.fullscreenElement || document.body).appendChild(overlay);
+          repaint();
+          let settled = false;
+          const close = () => {
+            if (settled) return;
+            settled = true;
+            overlay.classList.remove('is-open');
+            setTimeout(() => overlay.remove(), 200);
+            document.removeEventListener('keydown', onKey);
+          };
+          const onKey = (e) => { if (e.key === 'Escape') close(); };
+          cancelBtn.addEventListener('click', close);
+          overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+          document.addEventListener('keydown', onKey);
+          okBtn.addEventListener('click', () => { close(); renderClip(); });
+          requestAnimationFrame(() => overlay.classList.add('is-open'));
+        };
+
+        clipBtn = el('button', { type: 'button', class: 'anr-btn', title: 'Render the build as a short MP4 video and download it' }, 'Export clip');
+        clipBtn.addEventListener('click', openClipPopup);
+      }
+
       // Toolbar (below the viewer): Play + progress bar on one row (bar stays at Play's
       // height); Speed + Follow + Tool changes on a second row beneath Play; then the Build
       // height slider; then the CNC Tools picker last.
@@ -2303,8 +2883,10 @@ export async function renderGcode(file, resultsEl, opts) {
       playCtrlRow.appendChild(spdWrap);
       playCtrlRow.appendChild(followBtn);
       playCtrlRow.appendChild(markBtn);
+      if (clipBtn) playCtrlRow.appendChild(clipBtn);
       const progRow = el('div', { class: 'anr-gcode-slider anr-gcode-player', style: 'flex-direction:column;align-items:stretch;' });
       progRow.appendChild(playTopRow);
+      if (hud) progRow.appendChild(hud);                    // live time / layer / tool readout
       progRow.appendChild(playCtrlRow);
       progRow.appendChild(rtWarn);                          // real-time caveat under Speed/Follow
       toolbar.appendChild(progRow);                         // player block (top of the toolbar)

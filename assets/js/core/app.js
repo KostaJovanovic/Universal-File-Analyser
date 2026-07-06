@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 182;
+const COMMIT_COUNT = 183;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -3403,9 +3403,12 @@ window._anrReadableText = isReadableText;
       './assets/vendor/libredwg/wasm/libredwg-web.js',
       './assets/vendor/libredwg/wasm/libredwg-web.wasm',
       // Small on-demand pieces with no other offline guarantee: the LZMA decode
-      // core (lazy-loaded by lzma-loader.js), the LUT preview sample image
-      // (fetched at runtime by lut.js) and the PNG favicon fallback.
+      // core (lazy-loaded by lzma-loader.js), the MP4/WebM muxers behind the G-code
+      // viewer's clip export (lazy-imported by gcode.js), the LUT preview sample
+      // image (fetched at runtime by lut.js) and the PNG favicon fallback.
       './assets/vendor/lzma/lzma-decode.js',
+      './assets/vendor/mp4-muxer.min.mjs',
+      './assets/vendor/webm-muxer.min.mjs',
       './assets/img/LUT_TEST.jpg',
       './assets/img/favicon.png',
       // Pages and app modules that previously had no tier entry (most sit in the

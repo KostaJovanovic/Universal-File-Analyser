@@ -381,6 +381,9 @@ assets/
       navigate.js   — SPA router (View Transitions API)
       effects.js    — page atmosphere/glow/transition effects
       popups.js     — modal, suggestion + share-nudge popups
+      osint.js      — network-indicator (OSINT) extraction: pulls URLs/IPs/domains/
+                      emails from a file's text into a card of click-to-open lookup
+                      links (nothing sent automatically — the no-upload promise holds)
       export-data.js — "export analysis data" (JSON/hash) builder
       video-sync.js — shared video↔analysis scrubbing/sync helpers
       util.js       — shared DOM helpers (el, fileExt, …) and formatters
