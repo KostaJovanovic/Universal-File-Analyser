@@ -1217,16 +1217,41 @@ body.anr-has-file .nav-search { display: flex; }
 
 /* Fullscreen toggle overlaid in the viewer's bottom-right corner (the view cube
    sits bottom-left). */
-.anr-gcode-fsbtn {
+/* Bottom-right camera-control stack (the view cube owns bottom-left): the manual
+   zoom pad, the scroll-zoom toggle, then the fullscreen button at the corner. One
+   positioned column so the three read as a set and stack with a consistent gap. */
+.anr-gcode-cambtns {
   position: absolute;
   right: 12px;
   bottom: 12px;
   z-index: 8;   /* above the toolbar overlay that pins along the bottom in fullscreen */
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
 }
-/* Mobile browsers (notably iOS Safari) don't support element fullscreen, and the
-   button overlaps the view cube on a small canvas - hide it there. */
-@media (max-width: 700px) { .anr-gcode-fsbtn { display: none; } }
+.anr-gcode-cambtns .anr-btn { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
+/* The two wide text buttons match each other's width; the square zoom pad stays
+   flush to the right edge above them. The scroll-zoom toggle is a stock .anr-btn
+   toggle: white when off, accent-red (.is-active) while on. */
+.anr-gcode-zoombtn, .anr-gcode-fsbtn { align-self: stretch; text-align: center; }
+/* Manual zoom pad: a + stacked over a -, hold to zoom continuously. */
+.anr-gcode-zoompad { display: flex; flex-direction: column; gap: 8px; }
+.anr-gcode-zbtn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 20px;
+  line-height: 1;
+  touch-action: none;   /* hold-to-zoom on touch must not also scroll the page */
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* Mobile browsers (notably iOS Safari) don't support element fullscreen, and there
+   is no wheel to gate - hide those two on a small canvas, but keep the manual zoom
+   pad, which is the only precise zoom aid touch users get besides pinch. */
+@media (max-width: 700px) { .anr-gcode-fsbtn, .anr-gcode-zoombtn { display: none; } }
 
 /* Colour panel, overlaid top-right of the viewer: the colour-mode selector with the
    legend / key for the active mode directly beneath it. The canvas always clears to a
@@ -1325,7 +1350,8 @@ body.anr-has-file .nav-search { display: flex; }
 }
 /* Fullscreen: the toolbar is reparented into the viewer and pinned along the bottom as a
    scrollable, blurred overlay so every control (view buttons, sliders, playback, quality)
-   stays reachable without leaving fullscreen. Right padding clears the Exit button. */
+   stays reachable without leaving fullscreen. The camera stack (zoom pad / scroll zoom /
+   Exit) is lifted above the bar by gcode.js, so no right padding is needed to clear it. */
 .anr-gcode-toolbar--fs {
   position: absolute;
   left: 0;
@@ -1333,7 +1359,7 @@ body.anr-has-file .nav-search { display: flex; }
   bottom: 0;
   z-index: 6;
   margin: 0;
-  padding: 12px 132px 12px 16px;
+  padding: 12px 16px;
   border-top: var(--bd-hairline);
   /* Solid (no backdrop-filter): a filter would make this the containing block for the
      position:fixed popups below and re-clip them inside this scroll box. */
@@ -1341,6 +1367,43 @@ body.anr-has-file .nav-search { display: flex; }
   max-height: 48%;
   overflow-y: auto;
 }
+/* Fullscreen starts collapsed to just the play bar (Play + progress + the More
+   button), so the canvas keeps the screen - "More controls" expands the full set.
+   The rules hide every toolbar block except the player, and inside the player
+   everything after its first row (the speed/follow row and the real-time warning). */
+.anr-gcode-toolbar--fs.is-collapsed > *:not(.anr-gcode-player) { display: none; }
+.anr-gcode-toolbar--fs.is-collapsed .anr-gcode-player > *:not(:first-child) { display: none; }
+/* The More/Fewer controls toggle only exists in fullscreen. Pinned to the far right
+   of the play row (margin-left:auto), with extra clearance from the move counter on
+   its left so the two never crowd; flex-none so it keeps its full width and padding
+   instead of being squeezed by the slider. */
+.anr-gcode-fsmore { display: none; }
+.anr-gcode-toolbar--fs .anr-gcode-fsmore {
+  display: inline-block;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+/* The counter sits between the slider and the button - give it breathing room. */
+.anr-gcode-toolbar--fs .anr-gcode-playrow .anr-gcode-slider-val { margin-right: 12px; }
+/* The two player rows (Play + progress bar, then Speed / Follow / Tool changes).
+   Classes, not inline styles, so the collapsed rule above can hide the second row. */
+.anr-gcode-playrow { display: flex; align-items: center; gap: 8px; }
+.anr-gcode-playctrl { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+/* The bar is always dark, which defeats the sliders' theme-dependent colours (a
+   light-theme hairline track disappears on it). Use the same on-dark tokens as the
+   fullscreen spectrogram controls: a brighter track, a slightly larger accent thumb
+   (white on hover, not the theme fg), and on-dark text for labels and readouts. */
+.anr-gcode-toolbar--fs .anr-range::-webkit-slider-runnable-track { height: 4px; background: var(--muted-on-dark); }
+.anr-gcode-toolbar--fs .anr-range::-moz-range-track { height: 4px; background: var(--muted-on-dark); }
+.anr-gcode-toolbar--fs .anr-range::-webkit-slider-thumb { width: 6px; height: 16px; margin-top: -6px; }
+.anr-gcode-toolbar--fs .anr-range::-moz-range-thumb { width: 6px; height: 16px; }
+.anr-gcode-toolbar--fs .anr-range:hover::-webkit-slider-thumb { background: var(--on-dark); }
+.anr-gcode-toolbar--fs .anr-range:hover::-moz-range-thumb { background: var(--on-dark); }
+.anr-gcode-toolbar--fs .anr-gcode-slider-val,
+.anr-gcode-toolbar--fs .anr-gcode-rowlabel { color: var(--muted-on-dark); }
 /* Speed popup while open in fullscreen: reparented onto the viewer wrap (see gcode.js) and
    pinned as a centred overlay above everything - canvas, view cube, toolbar, Exit button. */
 .anr-spd-panel.anr-spd-panel--fs {
@@ -5963,8 +6026,9 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-stl-canvas:active { cursor: grabbing; }
 
 /* Scroll-zoom toggle (wheelZoomToggle in util.js), overlaid bottom-right of
-   every viewer that zooms on a plain wheel scroll (G-code/STL 3D, LUT cubes,
-   PCB 2D/3D boards). Sharp-cornered like every other control on the site;
+   every viewer that zooms on a plain wheel scroll (STL 3D, LUT cubes, PCB 2D/3D
+   boards; the G-code viewer uses its own .anr-gcode-cambtns stack instead).
+   Sharp-cornered like every other control on the site;
    dark-translucent so it reads on both the dark WebGL canvas and the cream PCB
    stage. Hidden on small screens (no wheel on touch - pinch still zooms) and
    in fullscreen (no page underneath to scroll). */
@@ -5986,8 +6050,6 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 }
 .anr-wheelzoom:hover { border-color: rgba(255, 255, 255, 0.45); }
 .anr-wheelzoom.is-off { color: rgba(238, 242, 255, 0.55); border-style: dashed; }
-/* G-code viewer: the fullscreen button already owns the bottom-right corner. */
-.anr-wheelzoom--raised { bottom: 52px; }
 .anr-stl-viewport:fullscreen .anr-wheelzoom { display: none; }
 @media (max-width: 700px) { .anr-wheelzoom { display: none; } }
 /* Positioned stage wrapped around the 2D board SVG, so the toggle anchors to
