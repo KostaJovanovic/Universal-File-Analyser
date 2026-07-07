@@ -3519,9 +3519,6 @@ details[open] summary::after { content: "\2212"; }
   margin-top: 10px;
 }
 .offline-bottom-row > * { min-width: 0; }   /* let labels wrap instead of widening the track */
-/* "Clear storage" / "Clear scripts" share one grid cell, split evenly. */
-.offline-clear-pair { display: flex; gap: 6px; min-width: 0; }
-.offline-clear-pair > .offline-clear { flex: 1 1 0; min-width: 0; }
 
 /* Keep the three tiers on one row even on mobile; drop the long descriptions
    there so the compact name + size cards fit across a narrow screen. */
@@ -6503,9 +6500,11 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   width: 100%; height: clamp(360px, 60vh, 620px);
   position: relative;   /* anchors the scroll-zoom toggle */
   touch-action: none; cursor: grab; overflow: hidden;
+  /* Black stage behind the board, matching the STL / G-code 3D viewers. The board's
+     own FR4 faces stay their material colour; only the surround goes black. */
   background:
-    radial-gradient(120% 120% at 50% 0%, rgba(0, 0, 0, 0.05), transparent 60%),
-    #f4f0e6;
+    radial-gradient(120% 120% at 50% 0%, rgba(255, 255, 255, 0.04), transparent 60%),
+    #000000;
 }
 .anr-pcb3d:active { cursor: grabbing; }
 /* cam = 2D zoom/pan (no perspective), scene = the perspective. Keeping zoom/pan
@@ -7425,7 +7424,18 @@ a.stats-ext-link:hover { color: var(--accent); text-decoration: none; }
 /* PDF page viewer: a canvas with a selectable, position-aligned text layer
    overlaid (PDF.js v4 text-layer styles). Single tap/drag selects, double-click
    zooms (handled in pdf.js). */
-.anr-pdf-stage { text-align: center; }
+/* Reserve the scrollbar gutter so a vertical scrollbar (tall / zoomed page)
+   never eats into the content width - that width loss is what clipped a sliver
+   off the side and made an otherwise-fitting page pannable sideways. */
+.anr-pdf-stage { text-align: center; scrollbar-gutter: stable; }
+/* Grab-to-pan: a hand cursor when the page overflows and can be dragged, and a
+   closed hand plus suppressed selection while a drag is in progress. */
+.anr-pdf-stage.is-grabbable { cursor: grab; }
+.anr-pdf-stage.is-panning {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
 .anr-pdf-pagebox {
   position: relative;
   display: inline-block;

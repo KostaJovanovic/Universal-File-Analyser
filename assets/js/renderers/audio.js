@@ -1669,6 +1669,12 @@ export async function renderAudio(file, resultsEl, opts = {}) {
 
   let playbackFile = file;
   let audioBuffer;
+  // True when the browser's own decoder couldn't handle this file and we decoded
+  // it with ffmpeg.wasm instead. That's precisely the population where the native
+  // <audio> element is untrustworthy for playback too (it may accept the file and
+  // fire no error yet produce no sound - e.g. HE-AAC, or a codec-stripped Chromium
+  // build), so it's the signal to play from a WAV of the decoded PCM instead.
+  let usedFfmpeg = false;
 
   if (header.container === 'AAC') {
     try {
@@ -1692,6 +1698,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
       // a metadata-only view. Codec-agnostic: whatever failed above lands here.
       try {
         audioBuffer = await ffmpegDecodeAudio(file, resultsEl);
+        usedFfmpeg = true;
       } catch (e2) {
         resultsEl.innerHTML = '';
         await renderUndecodableAudio(file, header, resultsEl, playbackFile);
@@ -1708,7 +1715,16 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // ---- File info card ----
   const infoCard = el('div', { class: 'anr-card' });
   infoCard.appendChild(el('h3', {}, 'File info'));
-  const audioUrl = URL.createObjectURL(playbackFile);
+  // Pick the playback source. When the native decoder couldn't read the file
+  // (usedFfmpeg), the <audio> element can't play it reliably either, so serve a
+  // lossless WAV built from the PCM we already decoded - it plays in every browser
+  // regardless of codec support. The WAV (16-bit) is smaller than the Float32
+  // audioBuffer that's already in memory, so this adds no meaningful footprint.
+  let playbackSrc = playbackFile;
+  if (usedFfmpeg) {
+    try { playbackSrc = new Blob([encodeWav(audioBuffer)], { type: 'audio/wav' }); } catch (_) {}
+  }
+  const audioUrl = URL.createObjectURL(playbackSrc);
   const audioEl = el('audio', { src: audioUrl, class: 'is-hidden' });
   infoCard.appendChild(audioEl);
   infoCard.appendChild(makePlayer(audioEl, audioBuffer.duration));
