@@ -2505,6 +2505,77 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   margin-top: 10px;
 }
 
+/* ---------- ISOLATE FREQUENCIES (spectrogram band-stop) ---------- */
+/* Overlay layer sits over the canvas but below the playhead (z-index 3). Bands
+   are purely visual - the drag handler lives on .anr-spec-canvas-wrap. */
+.anr-spec-bandlayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.anr-spec-band,
+.anr-spec-bandsel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+/* A disabled band: dim + desaturate the spectrogram beneath it, hatch it, and
+   fence it with accent hairlines so it reads as "cut". Fixed dark treatment - the
+   spectrogram surface is always dark, in either theme. */
+.anr-spec-band {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(230, 0, 35, 0.18) 0, rgba(230, 0, 35, 0.18) 6px,
+    rgba(0, 0, 0, 0.30) 6px, rgba(0, 0, 0, 0.30) 12px);
+  border-top: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+  backdrop-filter: saturate(0.12) brightness(0.5);
+  -webkit-backdrop-filter: saturate(0.12) brightness(0.5);
+}
+/* The live drag rectangle before the band is committed. */
+.anr-spec-bandsel {
+  background: rgba(230, 0, 35, 0.14);
+  border-top: 1px dashed var(--accent);
+  border-bottom: 1px dashed var(--accent);
+}
+.anr-spec-canvas-wrap.anr-spec-isolating { touch-action: none; }
+.anr-spec-isolating .anr-spec-canvas { cursor: ns-resize; }
+
+/* Control panel under the actions row: band list + numeric editing. */
+.anr-iso-panel {
+  border-bottom: var(--bd-hairline);
+  padding: 10px 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.anr-iso-panel.is-hidden { display: none; }
+.anr-iso-hint { margin: 0; }
+.anr-iso-list { display: flex; flex-direction: column; gap: 6px; }
+.anr-iso-list:empty { display: none; }
+.anr-iso-band {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+}
+.anr-iso-num {
+  width: 88px;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  padding: 4px 6px;
+  background: var(--bg);
+  color: var(--fg);
+  border: var(--bd-hairline);
+}
+.anr-iso-sep,
+.anr-iso-unit { color: var(--muted); }
+.anr-iso-actions { display: flex; gap: 8px; }
+
 /* Segmented control groups (View / Resolution / Actions) - a captioned cluster
    with a hairline divider on its left edge. align-self:stretch makes the divider
    span the full row height even though the row centres its items. */
