@@ -128,18 +128,19 @@ export async function renderDrawio(file, container) {
     if (!diagrams.length) { container.appendChild(errorCard('No diagram pages found in this file.')); return; }
 
     let drewAny = false;
+    const _renderAnchor = container.firstChild;
     for (let i = 0; i < diagrams.length; i++) {
       const name = diagrams[i].getAttribute('name') || ('Page ' + (i + 1));
       const model = await decodeDiagram(diagrams[i]);
-      if (!model) { container.appendChild(el('div', { class: 'anr-card' }, [el('h3', {}, name), el('p', { class: 'anr-hint' }, 'Could not decode this page.')])); continue; }
+      if (!model) { container.insertBefore(el('div', { class: 'anr-card' }, [el('h3', {}, name), el('p', { class: 'anr-hint' }, 'Could not decode this page.')]), _renderAnchor); continue; }
       const r = renderMxModel(model);
       if (r.svg) {
         drewAny = true;
         const card = svgCard(name, r.svg);
         card.appendChild(el('p', { class: 'anr-hint' }, r.verts + ' shape' + (r.verts === 1 ? '' : 's') + ', ' + r.edges + ' connector' + (r.edges === 1 ? '' : 's')));
-        container.appendChild(card);
+        container.insertBefore(card, _renderAnchor);
       } else {
-        container.appendChild(el('div', { class: 'anr-card' }, [el('h3', {}, name), el('p', { class: 'anr-hint' }, 'This page has no drawable shapes (' + r.edges + ' connectors).')]));
+        container.insertBefore(el('div', { class: 'anr-card' }, [el('h3', {}, name), el('p', { class: 'anr-hint' }, 'This page has no drawable shapes (' + r.edges + ' connectors).')]), _renderAnchor);
       }
     }
     if (!drewAny && diagrams.length) { /* messages already shown per page */ }
@@ -267,7 +268,7 @@ export async function renderDxf(file, container) {
     ]));
     container.appendChild(info);
 
-    if (r.svg) container.appendChild(svgCard('Drawing preview', r.svg));
+    if (r.svg) container.insertBefore(svgCard('Drawing preview', r.svg), container.firstChild);
     else container.appendChild(el('div', { class: 'anr-card' }, [el('h3', {}, 'Preview'), el('p', { class: 'anr-hint' }, entities.length ? 'No drawable geometry in the ENTITIES section (it may use blocks/inserts only).' : 'No entities found to draw.')]));
 
     if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));

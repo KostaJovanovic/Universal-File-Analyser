@@ -151,7 +151,7 @@ export async function renderPptx(file, resultsEl) {
   // .anr-pptx-grid. Kept in its own wrapper so the card's <h3> stays full-width.
   const slidesGrid = el('div', { class: 'anr-pptx-grid' });
   slidesCard.appendChild(slidesGrid);
-  resultsEl.appendChild(slidesCard);
+  resultsEl.insertBefore(slidesCard, resultsEl.firstChild);
 
   const aspect = slideH / slideW;
 

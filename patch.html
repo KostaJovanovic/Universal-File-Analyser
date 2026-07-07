@@ -208,6 +208,60 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">5.11</p>
+          <p class="patch-name">Render First</p>
+          <p class="patch-date">7 July 2026, 03:40</p>
+          <ul class="patch-list">
+            <li><strong>Every file now leads with the real thing - the render, preview or file tree first and the technical details below - a recorded G-code build saves as a clip you can share anywhere, including WhatsApp, and the After Effects project timeline is rebuilt with true layer timing, real label colours and a frame-snapping scrubber.</strong></li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The render comes first.</strong> Across every viewer, the actual result - a rendered web page, a document preview, an archive&rsquo;s file tree, a spectrogram - now sits at the very top of the report, with the file&rsquo;s technical details beneath it, so you see the file itself before its fingerprints.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Clips you can share anywhere.</strong> A recorded <a href="/about#ext-gcode">G-code</a> clip now plays and sends far more widely - including on WhatsApp and social apps - by saving in a broadly compatible video format instead of one some apps refused to open.</li>
+            <li><span class="patch-tag">New</span><strong>Set the clip speed exactly.</strong> The <strong>Export clip</strong> panel now offers recording speeds in lines per second, plus fields to type an exact duration or lines-per-second, alongside the length presets.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The export panel fits your phone.</strong> On a phone the Export clip settings now fill the screen with a close button in the corner, instead of running off the bottom out of reach.</li>
+            <li><strong>Sound leads with its spectrogram.</strong> The <a href="/about#where">Sound analysis</a> now opens with the interactive spectrogram at the top and the channel picker directly beneath it.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>After Effects timelines read true.</strong> An <a href="/about#ext-aep">After Effects</a> project timeline now places every layer at its real position - trimmed clips that used to pile up at the start spread across the timeline exactly as they sit in After Effects - and it drops the hidden camera-view rows that were being counted as layers.</li>
+            <li><span class="patch-tag">New</span><strong>Layers coloured and marked like After Effects.</strong> Each layer takes its real After Effects label colour, with a glyph naming its kind - text, shape, image, video, audio, pre-comp, solid, camera or light - so the timeline reads at a glance.</li>
+            <li><span class="patch-tag">New</span><strong>Scrub an After Effects timeline.</strong> Hovering the timeline now draws a guide line that snaps to the nearest frame and shows its timecode and frame number in a small readout.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">5.10</p>
+          <p class="patch-name">Take One</p>
+          <p class="patch-date">7 July 2026, 00:43</p>
+          <ul class="patch-list">
+            <li><strong>A G-code build can now be recorded as a video - the object drawing itself on from the first move to the last - and downloaded to keep or share.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Record a build as a video.</strong> The <a href="/about#ext-gcode">G-code</a> viewer gains an <strong>Export clip</strong> button that renders the whole build as an MP4 - the toolpath drawing on move by move while the camera slowly orbits - with a panel to choose the length, frame rate, aspect (landscape, portrait or square), quality and which camera and scene extras to include. It renders faster than real time, entirely on your own device.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A cleaner &ldquo;dim other tools&rdquo;.</strong> On a multi-tool print, fading every tool except the one currently printing no longer makes dense areas and the outline bloom into a glow - the faded tools recede cleanly instead.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">5.09</p>
+          <p class="patch-name">Close Up</p>
+          <p class="patch-date">6 July 2026, 15:50</p>
+          <ul class="patch-list">
+            <li><strong>The G-code and 3D viewer gains proper zoom controls and a tidier fullscreen.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Zoom in without a mouse wheel.</strong> The <a href="/about#ext-gcode">G-code</a> viewer adds a <strong>+ / -</strong> zoom pad you can press and hold to ride the camera in or out, and a scroll-zoom toggle so the wheel zooms the model only when you turn it on - otherwise the wheel scrolls the page as usual.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Fullscreen keeps the controls in reach.</strong> In fullscreen the viewer now starts with the canvas filling the screen and the controls collapsed to a slim bar, with a <strong>More controls</strong> button to expand them - and the zoom and exit buttons always ride on top of that bar instead of hiding behind it.</li>
+          </ul>
+        </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
+        <div class="patch-entry">
+          <p class="patch-version">5.08</p>
+          <p class="patch-name">Any File</p>
+          <p class="patch-date">6 July 2026, 13:15</p>
+          <ul class="patch-list">
+            <li><strong>The home page becomes a single &ldquo;drop any file&rdquo; zone, and multi-channel sound can be analysed one channel at a time.</strong></li>
+            <li><span class="patch-tag">New</span><strong>One dropzone for everything.</strong> The home page now leads with a single <strong>drop any file or folder</strong> zone - photos, sound, video, PDFs, archives, folders and every other format go through the same target - with <strong>Record sound</strong> and <strong>Live spectrogram</strong> a click away, in place of the three separate cards.</li>
+            <li><span class="patch-tag">New</span><strong>Pick a channel to analyse.</strong> A stereo or surround sound file now lets you choose which channel drives the spectrogram and waveform - the mix, or any individual channel, each labelled by its speaker position - instead of always merging them to mono.</li>
+            <li><span class="patch-tag">New</span><strong>Analyse an image found inside a file.</strong> Pictures carved out of another file now carry an <strong>Analyse</strong> button that runs the full photo tools on the extracted image, and the photo <strong>Sonify</strong> tool previews its Gamma curve on the image live as you drag it.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">5.07</p>
           <p class="patch-name">Living Type</p>
           <p class="patch-date">4 July 2026, 10:00</p>
@@ -245,9 +299,6 @@
             <li><span class="patch-tag is-fix">Fix</span><strong>The findings that matter lead.</strong> A video&rsquo;s reverse-playback option and the note about data hidden after a file&rsquo;s end now sit lower in the report, just above the file&rsquo;s fingerprints, instead of pushing the main analysis down - and that hidden-data note is no longer dressed as a red alert, since it is worth knowing but is not a failure.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">5.01 - 5.03</p>

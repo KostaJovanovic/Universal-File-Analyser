@@ -124,7 +124,7 @@ export async function renderLottieData(data, resultsEl, file) {
   loopBtn.addEventListener('click', () => { anim.loop = !anim.loop; loopBtn.classList.toggle('is-on', anim.loop); if (anim.loop && playing) anim.play(); });
 
   card.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;align-items:center;gap:8px;' }, [playBtn, range, speed, loopBtn]));
-  resultsEl.appendChild(card);
+  resultsEl.insertBefore(card, resultsEl.firstChild);
 }
 
 export async function renderLottie(file, resultsEl) {

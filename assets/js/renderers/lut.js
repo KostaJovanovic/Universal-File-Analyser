@@ -630,12 +630,13 @@ export async function renderLut(file, resultsEl) {
   if (look) resultsEl.appendChild(buildLookStack(look.stages));
 
   // ---- Tone-response curve ----
+  const _renderAnchor = resultsEl.firstChild;
   const curveCard = el('div', { class: 'anr-card' });
   curveCard.appendChild(el('h3', {}, 'Tone response (neutral axis)'));
   curveCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px' },
     'How the LUT maps a neutral grey ramp from black to white. The dashed line is no change; curves bowing above it lift, below it crush. Separation between the red, green and blue curves is the colour cast the LUT introduces.'));
   curveCard.appendChild(el('div', { html: toneCurveSvg(sample, 520, 200), style: 'border:1px solid var(--hairline);border-radius:8px;overflow:hidden' }));
-  resultsEl.appendChild(curveCard);
+  resultsEl.insertBefore(curveCard, _renderAnchor);
 
   // ---- Before / after test chart ----
   const chartCard = el('div', { class: 'anr-card' });
@@ -649,7 +650,7 @@ export async function renderLut(file, resultsEl) {
     return el('div', { style: 'flex:1 1 220px;min-width:200px' }, [cv, el('div', { class: 'anr-hint', style: 'text-align:center;margin-top:4px' }, label)]);
   };
   chartCard.appendChild(el('div', { style: 'display:flex;gap:12px;flex-wrap:wrap' }, [mk('Original', false), mk('Through LUT', true)]));
-  resultsEl.appendChild(chartCard);
+  resultsEl.insertBefore(chartCard, _renderAnchor);
 
   // ---- Apply to your own photo / video ----
   resultsEl.appendChild(buildTryout(sample));
@@ -680,7 +681,7 @@ export async function renderLut(file, resultsEl) {
     cubeCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px' },
       'The left cube is the untouched RGB space; the right is the same lattice recoloured by this LUT, so the difference is exactly what the LUT does. Each point sits at its input R/G/B position. Drag either cube to rotate both, scroll (or pinch) to zoom in and look inside.'));
     cubeCard.appendChild(buildCubePair(lut, sample));
-    resultsEl.appendChild(cubeCard);
+    resultsEl.insertBefore(cubeCard, _renderAnchor);
   }
 
   // ---- Integrity (includes the SHA-256) ----

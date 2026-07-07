@@ -60,6 +60,8 @@ export async function renderMobi(file, resultsEl) {
   card.appendChild(tbl);
   resultsEl.appendChild(card);
 
+  const _renderAnchor = resultsEl.firstChild;
+
   // ---- Cover ----
   try {
     const cover = book.getCover && await book.getCover();
@@ -67,7 +69,7 @@ export async function renderMobi(file, resultsEl) {
       const pcard = el('div', { class: 'anr-card' });
       pcard.appendChild(el('h3', {}, 'Cover'));
       pcard.appendChild(el('img', { src: URL.createObjectURL(cover), alt: 'Cover', class: 'anr-iwork-preview' }));
-      resultsEl.appendChild(pcard);
+      resultsEl.insertBefore(pcard, _renderAnchor);
     }
   } catch (_) { /* no cover */ }
 
@@ -85,7 +87,7 @@ export async function renderMobi(file, resultsEl) {
   view.appendChild(el('div', { class: 'anr-djvu-bar' }, [prev, status, next]));
   const frame = el('iframe', { class: 'anr-ebook-frame', sandbox: 'allow-same-origin' });
   view.appendChild(frame);
-  resultsEl.appendChild(view);
+  resultsEl.insertBefore(view, _renderAnchor);
 
   let cur = -1, busy = false;
   async function show(n) {

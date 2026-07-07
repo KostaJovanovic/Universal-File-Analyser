@@ -129,7 +129,6 @@ export async function renderGcsv(file, resultsEl) {
   if (parsed.rate) tbl.appendChild(rowHelp('Sample rate', '~' + Math.round(parsed.rate).toLocaleString() + ' Hz', 'Estimated from the median time step between samples.'));
   if (parsed.durationSec) tbl.appendChild(row('Duration', parsed.durationSec.toFixed(2) + ' s'));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
-  card.appendChild(tbl);
 
   card.appendChild(buildImuTimeline(parsed.d, null));
   card.appendChild(el('div', { class: 'anr-imu-legend' }, [
@@ -139,6 +138,7 @@ export async function renderGcsv(file, resultsEl) {
     el('span', { style: 'color:#3b82c4' }, parsed.hasGyro ? 'gyro Z' : 'Z'),
     el('span', { class: 'anr-hint' }, '  -  hover the graph to read off a time; ctrl/⌘ + scroll to zoom.'),
   ]));
+  card.appendChild(tbl);   // metadata table sits below the timeline render
   resultsEl.appendChild(card);
   resultsEl.appendChild(integrityCard(file));
 }
@@ -252,7 +252,6 @@ export async function renderGyroCsv(file, resultsEl, preText) {
   if (parsed.rate) tbl.appendChild(rowHelp('Sample rate', '~' + Math.round(parsed.rate).toLocaleString() + ' Hz', 'Estimated from the median time step between rows.'));
   if (parsed.durationSec) tbl.appendChild(row('Duration', parsed.durationSec.toFixed(2) + ' s'));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
-  card.appendChild(tbl);
 
   card.appendChild(buildImuTimeline(parsed.d, null));
   card.appendChild(el('div', { class: 'anr-imu-legend' }, [
@@ -262,6 +261,7 @@ export async function renderGyroCsv(file, resultsEl, preText) {
     el('span', { style: 'color:#3b82c4' }, parsed.hasGyro ? 'gyro Z' : 'Z'),
     el('span', { class: 'anr-hint' }, '  -  gyroscope (top), accelerometer in g (bottom); hover to inspect, ctrl/⌘ + scroll to zoom.'),
   ]));
+  card.appendChild(tbl);   // metadata table sits below the timeline render
   resultsEl.appendChild(card);
   resultsEl.appendChild(integrityCard(file));
 }

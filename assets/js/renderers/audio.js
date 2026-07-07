@@ -1534,10 +1534,11 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     }
   }
 
+  let chanCard = null;
   if (chans.length > 1) {
-    const chanCard = el('div', { class: 'anr-card' });
+    chanCard = el('div', { class: 'anr-card' });
     const [chH, chHelp] = h3help('Channel',
-      'This file has ' + audioBuffer.numberOfChannels + ' channels. Choose which one feeds the spectrogram and waveform below - <strong>Mix</strong> is every channel averaged together, or isolate a single speaker (Left, Right, Centre, LFE, surrounds) to inspect it on its own. Per-channel peak and RMS update with your choice. Speaker names follow the file\'s declared layout, so treat them as a best-effort label.');
+      'This file has ' + audioBuffer.numberOfChannels + ' channels. Choose which one feeds the spectrogram and waveform - <strong>Mix</strong> is every channel averaged together, or isolate a single speaker (Left, Right, Centre, LFE, surrounds) to inspect it on its own. Per-channel peak and RMS update with your choice. Speaker names follow the file\'s declared layout, so treat them as a best-effort label.');
     chanCard.appendChild(chH); chanCard.appendChild(chHelp);
     const seg = el('div', { class: 'anr-btn-row', style: 'margin-top:4px;' });
     const stat = el('p', { class: 'anr-hint', style: 'margin:8px 0 0;' });
@@ -1554,14 +1555,17 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     });
     setActive(0);
     chanCard.appendChild(seg); chanCard.appendChild(stat);
-    resultsEl.appendChild(chanCard);
   }
 
-  // ---- Spectrogram (normally directly under the file info) ----
-  // opts.spectrogramFirst hoists it above the info card - used when sonifying a
-  // picture, where the spectrogram (what the image became) is the headline.
-  if (opts.spectrogramFirst) resultsEl.insertBefore(specSlot, infoCard);
-  else resultsEl.appendChild(specSlot);
+  // ---- Spectrogram (leads the analysis, above the file-info card) ----
+  // The spectrogram is the headline visual, so it sits at the very top of the
+  // result - above the file info + player. (opts.spectrogramFirst predates this
+  // being the default and is kept for the image-sonify caller; the placement is
+  // now the same either way.)
+  resultsEl.insertBefore(specSlot, infoCard);
+
+  // Channel picker (multi-channel files) sits directly under the spectrogram it drives.
+  if (chanCard) resultsEl.insertBefore(chanCard, specSlot.nextSibling);
 
   // ---- Embedded cover art (filled in asynchronously so it doesn't block) ----
   const coverSlot = el('div');

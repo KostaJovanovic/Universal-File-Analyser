@@ -442,10 +442,10 @@ export async function renderOdf(file, container, kind) {
     const pageTexts = pages.map((p) => p.textContent);
 
     container.appendChild(infoCard(file, kindLabel, meta));
-    container.appendChild(pagedPreviewCard(pages, {
+    container.insertBefore(pagedPreviewCard(pages, {
       title: 'Page previews',
       label: pageLabel,
-    }));
+    }), container.firstChild);
     if (pageTexts.some((t) => t.trim())) {
       container.appendChild(pagedTextCard(pageTexts, { label: pageLabel }));
     }

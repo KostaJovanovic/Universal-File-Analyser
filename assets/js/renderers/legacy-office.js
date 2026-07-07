@@ -470,7 +470,7 @@ export async function renderLegacyOffice(file, container, kind) {
 
     container.appendChild(infoCard(file, appLabel, extraRows, links));
     if (pages.length && (fullText.trim() || kind === 'xls')) {
-      container.appendChild(pagedPreviewCard(pages, { title: 'Page previews', label: pageLabel }));
+      container.insertBefore(pagedPreviewCard(pages, { title: 'Page previews', label: pageLabel }), container.firstChild);
       const pageTexts = pages.map((p) => p.textContent);
       if (pageTexts.some((t) => t.trim())) {
         container.appendChild(pagedTextCard(pageTexts, { label: pageLabel }));

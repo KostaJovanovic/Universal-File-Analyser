@@ -259,5 +259,5 @@ export async function renderTimeline(file, resultsEl) {
     return;
   }
   resultsEl.appendChild(infoCard(file, model));
-  resultsEl.appendChild(buildTimelineCard(model));
+  resultsEl.insertBefore(buildTimelineCard(model), resultsEl.firstChild);
 }

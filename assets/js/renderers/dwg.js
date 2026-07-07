@@ -79,7 +79,7 @@ export async function renderDwg(file, resultsEl) {
     const wrap = el('div', { class: 'anr-dwg-wrap' });
     wrap.innerHTML = svg.replace(/<script[\s\S]*?<\/script>/gi, '');
     dcard.appendChild(wrap);
-    resultsEl.appendChild(dcard);
+    resultsEl.insertBefore(dcard, resultsEl.firstChild);
   } else {
     resultsEl.appendChild(el('div', { class: 'anr-info' }, 'This DWG was parsed, but no drawable geometry could be rendered.'));
   }

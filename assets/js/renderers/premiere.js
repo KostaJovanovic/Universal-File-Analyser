@@ -350,7 +350,8 @@ export async function renderPremiere(file, resultsEl) {
   // ---- Sequences: one timeline card each (busiest first) ----
   const MAX_CARDS = 40;
   const seqs = data.sequences.slice().sort((a, b) => b.clipCount - a.clipCount);
-  for (const s of seqs.slice(0, MAX_CARDS)) resultsEl.appendChild(buildSequenceTimeline(s));
+  const _renderAnchor = resultsEl.firstChild;
+  for (const s of seqs.slice(0, MAX_CARDS)) resultsEl.insertBefore(buildSequenceTimeline(s), _renderAnchor);
   if (seqs.length > MAX_CARDS) {
     resultsEl.appendChild(el('div', { class: 'anr-card' },
       el('p', { class: 'anr-hint', style: 'margin:0' }, `… and ${seqs.length - MAX_CARDS} more sequences not shown.`)));

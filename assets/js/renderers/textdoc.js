@@ -239,7 +239,7 @@ export async function renderTextDoc(file, container, kind, ext) {
     container.appendChild(info);
 
     if (pages.length && pageTexts.some((t) => t.trim())) {
-      container.appendChild(pagedPreviewCard(pages, { title: 'Page previews', label: pageLabel }));
+      container.insertBefore(pagedPreviewCard(pages, { title: 'Page previews', label: pageLabel }), container.firstChild);
       container.appendChild(pagedTextCard(pageTexts, { label: pageLabel }));
     } else {
       container.appendChild(el('div', { class: 'anr-card' }, [

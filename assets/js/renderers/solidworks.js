@@ -188,7 +188,7 @@ export async function renderSolidworks(file, resultsEl) {
     // A reconstructed BMP that didn't decode shouldn't leave a broken-image icon.
     img.addEventListener('error', () => { URL.revokeObjectURL(url); pv.remove(); }, { once: true });
     pv.appendChild(img);
-    resultsEl.appendChild(pv);
+    resultsEl.insertBefore(pv, resultsEl.firstChild);
   }
 
   appendTail(file, resultsEl, false);

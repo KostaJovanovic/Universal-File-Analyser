@@ -194,7 +194,7 @@ export async function renderIpcNetlist(file, resultsEl) {
     mapCard.appendChild(el('p', { class: 'anr-hint' }, 'Every test point, coloured by net. Squares are pads, rings are vias. Hover a point for its net and reference.'));
     const host = el('div', { class: 'anr-ipc-maphost' }, [map]);
     mapCard.appendChild(host);
-    resultsEl.appendChild(mapCard);
+    resultsEl.insertBefore(mapCard, resultsEl.firstChild);
   }
 
   // --- nets table (signal nets, by pin count) ---

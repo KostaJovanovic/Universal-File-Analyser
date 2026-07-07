@@ -208,7 +208,7 @@ export async function renderEml(file, container) {
     info.appendChild(el('h3', {}, 'Email message'));
     info.appendChild(buildReadout([['File', file.name], ['Size', fmtBytes(file.size)]]));
     container.appendChild(info);
-    container.appendChild(messageCard(text));
+    container.insertBefore(messageCard(text), container.firstChild);
     if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
   } catch (e) {
     container.innerHTML = '';
@@ -239,7 +239,7 @@ export async function renderMbox(file, container) {
     let shown = 0;
     const BATCH = 10;
     const host = el('div');
-    container.appendChild(host);
+    container.insertBefore(host, container.firstChild);
     const btnRow = el('div', { class: 'anr-btn-row' });
     const moreBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show more messages');
     btnRow.appendChild(moreBtn);

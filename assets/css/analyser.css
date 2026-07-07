@@ -1393,7 +1393,71 @@ body.anr-has-file .nav-search { display: flex; }
 /* ---- Export clip (G-code viewer) ---- */
 /* Settings rows in the Export clip popup: a mono label column, then the preset /
    toggle buttons. Reuses .anr-btn + is-active for the segmented choices. */
-.anr-clip-card { max-width: 400px; }
+/* Never taller than the viewport (keeps the modal's 24px top/bottom padding); the
+   sections stay stacked one under the other, and it is not scrollable - it fits by
+   reshaping instead: wider (two-across rows) on a wide-short screen, and tighter
+   spacing on a phone (below). */
+/* Compound selector so this beats the generic ".anr-modal-card { max-width: 360px }"
+   further down the file (equal specificity there would otherwise win on source order,
+   which is why the popup width never changed). */
+.anr-modal-card.anr-clip-card { position: relative; max-width: 400px; max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); }
+/* Corner close button. Hidden on desktop (Cancel + backdrop + Esc close there);
+   only appears in the mobile fullscreen layout below. Sharp-cornered, no border. */
+.anr-clip-x {
+  display: none;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+.anr-clip-x:hover { color: var(--fg); }
+/* When the screen is short (and wide enough), the card gets WIDER and the rows
+   inside each section sit two-across, so it is shorter and still fits without
+   scrolling. Sections stay stacked - only the rows within them flow sideways. */
+@media (max-height: 780px) and (min-width: 720px) {
+  .anr-modal-card.anr-clip-card { max-width: 680px; }
+  .anr-clip-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; align-items: start; }
+  .anr-clip-rows > * { min-width: 0; }
+}
+/* On a phone the panel goes fullscreen: the overlay padding is dropped so the card
+   fills the whole viewport (no border, edge to edge), a corner X appears to close it,
+   and the vertical spacing is tightened so the whole control set fits. The card can
+   scroll only if a very small screen still overflows after tightening - a safety net,
+   normally invisible. */
+@media (max-width: 719px) {
+  /* Two classes so this beats the generic ".anr-modal { padding: 24px }" further down
+     the file (a single-class rule there would otherwise win on source order). */
+  .anr-modal.anr-modal--clip { padding: 0; }
+  .anr-modal-card.anr-clip-card {
+    max-width: none;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 44px 16px 20px;   /* extra top room clears the corner X */
+  }
+  .anr-clip-x { display: flex; }
+  .anr-clip-card .anr-modal-kicker { margin-bottom: 6px; }
+  .anr-clip-card .anr-modal-title { margin-bottom: 12px; }
+  .anr-clip-card .anr-clip-sec { margin: 9px 0 6px; padding-bottom: 4px; }
+  .anr-clip-card .anr-clip-sec:first-of-type { margin-top: 2px; }
+  .anr-clip-card .anr-clip-row { margin-bottom: 6px; }
+  .anr-clip-card .anr-clip-opt { padding: 5px 9px; }
+  .anr-clip-card .anr-clip-foot { margin-top: 10px; padding-top: 10px; }
+}
 .anr-clip-row {
   display: flex;
   align-items: center;
@@ -1410,6 +1474,29 @@ body.anr-has-file .nav-search { display: flex; }
 }
 .anr-clip-opts { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
 .anr-clip-opt { padding: 6px 10px; }
+/* Custom time / lines-per-second fields: a bordered mono number input with a muted
+   unit label, sharp-cornered to match the rest of the panel. */
+.anr-clip-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--muted);
+}
+.anr-clip-num {
+  width: 72px;
+  padding: 6px 8px;
+  border: var(--bd-hairline);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+}
+.anr-clip-num:focus { outline: none; border-color: var(--fg); }
+/* The two custom fields (seconds + lines/s) sit side by side, never wrapping apart. */
+.anr-clip-opts--fields { flex-wrap: nowrap; gap: 10px; }
 /* Quiet section divider grouping the rows (Frame / Output / Camera): a short mono
    caps word underlined by a hairline, sitting flush-left with the row labels. */
 .anr-clip-sec {

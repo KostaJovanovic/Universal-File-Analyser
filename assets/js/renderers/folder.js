@@ -573,6 +573,6 @@ export function renderFolder(files, resultsEl) {
       fileSize: (v) => v.size,
       copyPath: (_key, leaf) => leaf && leaf.path,
       onFileClick: onTreeFileClick
-    }, onFileClick);
+    }, onFileClick, { treemapFirst: true });
   }));
 }

@@ -332,6 +332,7 @@ export async function renderGeo(file, resultsEl) {
   }
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
+  const _renderAnchor = resultsEl.firstChild;
 
   // ---- Elevation profile card ----
   try {
@@ -340,7 +341,7 @@ export async function renderGeo(file, resultsEl) {
       const [eh, ehelp] = h3help('Elevation profile', 'Elevation (Y) against distance travelled (X), drawn on a plain canvas. Ascent/descent totals are in the summary above.');
       elevCard.appendChild(eh); elevCard.appendChild(ehelp);
       elevCard.appendChild(elevationProfileCanvas(ts.profile));
-      resultsEl.appendChild(elevCard);
+      resultsEl.insertBefore(elevCard, _renderAnchor);
     }
   } catch (e) { /* never let the chart break parsing/map */ }
 
@@ -382,7 +383,7 @@ export async function renderGeo(file, resultsEl) {
   const mapEl = el('div', { class: 'anr-geo-map' });
   mapEl.appendChild(el('p', { class: 'anr-hint' }, 'Loading map…'));
   mapCard.appendChild(mapEl);
-  resultsEl.appendChild(mapCard);
+  resultsEl.insertBefore(mapCard, _renderAnchor);
 
   try { await loadCss(LEAFLET_CSS); await loadScript(LEAFLET_JS); }
   catch (e) { mapEl.innerHTML = ''; mapEl.appendChild(errorCard('Map library failed to load. Offline?')); return; }
