@@ -299,7 +299,7 @@ function buildViewer(geo, opts = {}) {
   const uReal = gl.getUniformLocation(prog, 'uReal');
   gl.enable(gl.DEPTH_TEST);
 
-  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, color: [0.55, 0.62, 0.95], spin: true, ortho: false, wire: false, real: false, bg: [0.06, 0.06, 0.06], msaa, ssaa: true, upZ: zUp };
+  const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, color: [0.55, 0.62, 0.95], spin: true, ortho: false, wire: false, real: false, bg: [0, 0, 0], msaa, ssaa: true, upZ: zUp };
   let dirty = true;
   // Spin can be turned off two ways - the button, or simply interacting with the
   // canvas (clicking/dragging stops it). Route every change through setSpin so any

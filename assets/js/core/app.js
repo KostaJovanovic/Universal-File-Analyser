@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 185;
+const COMMIT_COUNT = 186;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -3780,8 +3780,7 @@ window._anrReadableText = isReadableText;
 
   // ----- Clear storage (localStorage / sessionStorage / IndexedDB + the
   //        downloaded offline tiers; keeps the dark-mode preference and the
-  //        Asteroids high score). Leaves the SW app-shell cache alone - wiping
-  //        the scripts/assets and reloading is the "Clear scripts" button's job. -----
+  //        Asteroids high score). Leaves the SW app-shell cache alone. -----
   const clearBtn = document.getElementById('offlineClear');
   if (clearBtn) {
     clearBtn.addEventListener('click', async () => {
@@ -3804,8 +3803,8 @@ window._anrReadableText = isReadableText;
         }
       } catch (_) {}
       // Delete the downloaded offline tiers (their own Cache Storage bucket). The
-      // SW app-shell cache is a separate bucket and stays - only "Clear scripts"
-      // wipes that. Without this the tier files survive and detectCachedTier()
+      // SW app-shell cache is a separate bucket and stays. Without this the tier
+      // files survive and detectCachedTier()
       // self-heals the "Cached" badge on the next load, so the clear looked inert.
       try { await caches.delete('analyser-offline'); } catch (_) {}
       // The 'anr-offline' record and the cached tier files are both gone now, so
@@ -3823,27 +3822,6 @@ window._anrReadableText = isReadableText;
       renderHistoryPanel();   // history lived in localStorage - now wiped
       clearBtn.textContent = 'Storage cleared ✓';
       setTimeout(() => { clearBtn.textContent = 'Clear storage'; }, 3000);
-    });
-  }
-
-  // ----- Clear scripts (delete every Cache Storage bucket - offline tiers + the
-  //        SW app shell - unregister the service worker, then reload so the
-  //        freshest scripts/assets load without a manual browser cache clear). -----
-  const clearScriptsBtn = document.getElementById('offlineClearScripts');
-  if (clearScriptsBtn) {
-    clearScriptsBtn.addEventListener('click', async () => {
-      clearScriptsBtn.textContent = 'Clearing…';
-      try {
-        const keys = await caches.keys();
-        await Promise.all(keys.map(k => caches.delete(k)));
-      } catch (_) {}
-      try {
-        if (navigator.serviceWorker) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map(r => r.unregister()));
-        }
-      } catch (_) {}
-      location.reload();
     });
   }
 

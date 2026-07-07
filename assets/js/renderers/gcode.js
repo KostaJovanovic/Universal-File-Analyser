@@ -1048,7 +1048,7 @@ function buildViewer(data, opts = {}) {
 
   // mode: 0 = feature type, 1 = height, 2 = speed. vis: per-feature-type 1/0.
   // shown: how many extrusion segments to draw (in print order) - the progress slider.
-  const state = { yaw: -0.78, pitch: 0.6, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: 'none', flatten: false, bg: [0.06, 0.06, 0.06], clip: 1, mode: (data.mode === 'print' && data.multicolour) ? 3 : (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, showBed: !!bedGrid, showLegend: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), filVis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false,
+  const state = { yaw: -0.78, pitch: 0.6, dist: 2.6, panX: 0, panY: 0, spin: true, ortho: false, head: false, msaa, ssaa: true, minWidth: 'none', flatten: false, bg: [0, 0, 0], clip: 1, mode: (data.mode === 'print' && data.multicolour) ? 3 : (data.hasTypes || (data.cnc && data.cnc.toolColors.length > 1)) ? 0 : 1, showTravel: false, showBed: !!bedGrid, showLegend: false, vis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), filVis: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1]), shown: segN, partial: 0, fitted: false,
     // Travel-aware playback: travShown = full travel segments to draw; playKind marks
     // whether the in-progress (partially drawn) move is an extrusion (1) or a travel (2),
     // so the head can glide along travels too; playFrac is the fraction into it.
@@ -1060,7 +1060,7 @@ function buildViewer(data, opts = {}) {
     // restX/Y/Z carry the head's resting tool point (RAW mm; drawImpl normalises) for when
     // it sits at a move boundary and isn't mid-glide - travel-aware, so it doesn't snap back
     // to the last *extrusion* endpoint when the tool actually rests at a travel endpoint.
-    follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, headLive: false, headToolRank: 1, headToolNum: 0, headToolRaw: 0, toolMarkers: true, isoTool: false, real: false, restX: 0, restY: 0, restZ: 0, restValid: false, pauseText: '' };
+    follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, headLive: false, headToolRank: 1, headToolNum: 0, headToolRaw: 0, toolMarkers: true, isoTool: false, isoAlpha: 0.22, real: false, restX: 0, restY: 0, restZ: 0, restValid: false, pauseText: '' };
   let viewW = 600, viewH = 420;   // CSS px, for screen-space size in the shader
   let dirty = true;
   const spinListeners = [];
@@ -1371,7 +1371,7 @@ function buildViewer(data, opts = {}) {
         gl.uniform1f(uIsoMode, 1);                                  // pass 1: current tool, full brightness, opaque
         bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
         drawPartial();
-        gl.uniform1f(uIsoMode, 2); gl.uniform1f(uAlpha, 0.22);      // pass 2: other tools, translucent (depth writes stay on)
+        gl.uniform1f(uIsoMode, 2); gl.uniform1f(uAlpha, state.isoAlpha);  // pass 2: other tools, translucent (depth writes stay on; isoAlpha ramps to 1 for the tail fade-back)
         gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
         gl.disable(gl.BLEND); gl.uniform1f(uAlpha, 1);
@@ -2579,7 +2579,7 @@ export async function renderGcode(file, resultsEl, opts) {
           // spin is restored through setSpin (not the state assign) so its listeners
           // repaint the Pause/Resume spin button.
           const savedSpin = s0.spin;
-          const saved = { yaw: s0.yaw, pitch: s0.pitch, dist: s0.dist, panX: s0.panX, panY: s0.panY, follow: s0.follow, head: s0.head, fitted: s0.fitted };
+          const saved = { yaw: s0.yaw, pitch: s0.pitch, dist: s0.dist, panX: s0.panX, panY: s0.panY, follow: s0.follow, head: s0.head, fitted: s0.fitted, isoAlpha: s0.isoAlpha };
           for (const m of SCENE_MIRROR) saved[m.st] = s0[m.st];   // snapshot the mirrored flags so export reverts them
           const savedPos = playPos;
           // Progress chip over the canvas; Cancel aborts cleanly and restores the view.
@@ -2731,11 +2731,18 @@ export async function renderGcode(file, resultsEl, opts) {
               const mainEnd = introF + N;   // first tail frame index
               applyGlobal(gi);
               // Once the build is finished and the clip is just holding + spinning on the
-              // completed part (the CLIP_TAIL_S tail, i >= mainEnd), drop "Dim other tools" so
-              // the whole model shows fully lit for the beauty spin. Checked every tail
-              // frame so a mid-render arm() (MSAA swap) re-enabling it can't stick.
-              // Reverted with the rest of the scene flags via `saved` after the render.
-              if (i >= mainEnd && viewer.state.isoTool) viewer.state.isoTool = false;
+              // completed part (the CLIP_TAIL_S tail, i >= mainEnd), bring "Dim other tools"
+              // back to full brightness so the whole model shows fully lit for the beauty
+              // spin - but ease it in, ramping the dimmed tools' alpha from 0.22 up to 1
+              // over the first tail second (smooth fade-back) instead of a hard snap. Once
+              // the fade completes, drop isoTool entirely so the remaining tail draws in the
+              // single fully-lit pass; checked every tail frame so a mid-render arm() (MSAA
+              // swap) re-enabling dim can't stick. Reverted via `saved` after the render.
+              if (i >= mainEnd && viewer.state.isoTool) {
+                const fadeP = Math.min(1, (i - mainEnd) / Math.max(1, fps));   // 0..1 over the first tail second
+                if (fadeP >= 1) { viewer.state.isoTool = false; viewer.state.isoAlpha = 0.22; }
+                else viewer.state.isoAlpha = 0.22 + (1 - 0.22) * (fadeP * fadeP * (3 - 2 * fadeP));   // smoothstep
+              }
               // Deterministic orbit at the live spin's feel (0.18 rad/s of clip time),
               // running on the frame clock so it carries on through the tail.
               if (clipCfg.orbit) { viewer.state.yaw = yaw0 + (i / fps) * 0.18; viewer.markDirty(); }

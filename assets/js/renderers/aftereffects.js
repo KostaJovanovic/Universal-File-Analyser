@@ -304,6 +304,11 @@ function buildCompTimeline(comp) {
   let dragging = false, startX = 0, startScroll = 0;
   scroller.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'touch') return;
+    // Ignore presses on the native horizontal scrollbar (the strip below the
+    // content area) so grabbing it scrolls normally instead of starting a pan,
+    // which would capture the pointer and steal the scrollbar drag.
+    const rect = scroller.getBoundingClientRect();
+    if (scroller.offsetHeight > scroller.clientHeight && e.clientY - rect.top >= scroller.clientHeight) return;
     dragging = true; startX = e.clientX; startScroll = scroller.scrollLeft;
     scroller.style.cursor = 'grabbing';
     try { scroller.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }

@@ -626,16 +626,21 @@ export async function renderPdf(file, resultsEl) {
       // selecting text on the layer). CSS `zoom` scales canvas + text layer
       // together while keeping selection live; the stage scrolls to pan.
       let zoomed = false;
-      overlay._resetZoom = () => { zoomed = false; pagebox.style.zoom = ''; };
+      overlay._resetZoom = () => { zoomed = false; pagebox.style.zoom = ''; overlay._trimHScroll && overlay._trimHScroll(); };
       overlay._toggleZoom = (clientX, clientY) => {
         zoomed = !zoomed;
-        if (!zoomed) { pagebox.style.zoom = ''; return; }
+        if (!zoomed) { pagebox.style.zoom = ''; overlay._trimHScroll && overlay._trimHScroll(); overlay._updatePanCursor && overlay._updatePanCursor(); return; }
+        // Zooming in can add real horizontal overflow, so re-enable the axis
+        // before positioning the scroll.
+        stage.style.overflowX = 'auto';
         const rect = pagebox.getBoundingClientRect();
         const cx = stage.scrollLeft + (clientX - rect.left);
         const cy = stage.scrollTop + (clientY - rect.top);
         pagebox.style.zoom = String(PDF_ZOOM);
         stage.scrollLeft = cx * PDF_ZOOM - stage.clientWidth / 2;
         stage.scrollTop = cy * PDF_ZOOM - stage.clientHeight / 2;
+        overlay._trimHScroll && overlay._trimHScroll();
+        overlay._updatePanCursor && overlay._updatePanCursor();
       };
       stage.addEventListener('dblclick', (e) => { e.preventDefault(); overlay._toggleZoom(e.clientX, e.clientY); });
       let lastTap = 0, lastX = 0, lastY = 0;
@@ -648,6 +653,49 @@ export async function renderPdf(file, resultsEl) {
           lastTap = 0;
         } else { lastTap = now; lastX = e.clientX; lastY = e.clientY; }
       });
+
+      // Grab-to-pan: when the page overflows the stage (zoomed in, or just a
+      // large page), dragging with the mouse moves it like a hand tool. Only
+      // engages while there's something to scroll, so an un-zoomed page that
+      // fits keeps its normal drag-to-select-text behaviour; touch keeps its
+      // native scroll/selection.
+      const canPanX = () => stage.scrollWidth - stage.clientWidth > 1;
+      const canPanY = () => stage.scrollHeight - stage.clientHeight > 1;
+      const canPan = () => canPanX() || canPanY();
+      overlay._updatePanCursor = () => { stage.classList.toggle('is-grabbable', canPan()); };
+      // Sub-pixel rounding can leave the page ~1px wider than the stage, which
+      // renders a pointless horizontal scrollbar. Hide the horizontal axis when
+      // the overflow is trivially small; keep it scrollable for real overflow
+      // (zoomed-in or genuinely wide pages).
+      overlay._trimHScroll = () => {
+        stage.style.overflowX = stage.scrollWidth - stage.clientWidth > 3 ? 'auto' : 'hidden';
+      };
+      let panId = null, panX = 0, panY = 0, panL = 0, panT = 0, panAllowX = false, panAllowY = false;
+      stage.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'touch' || e.button !== 0 || !canPan()) return;
+        panId = e.pointerId;
+        panX = e.clientX; panY = e.clientY;
+        panL = stage.scrollLeft; panT = stage.scrollTop;
+        // Only pan an axis that actually overflows, so a page that fits
+        // horizontally can't be dragged sideways (and vice versa).
+        panAllowX = canPanX(); panAllowY = canPanY();
+        stage.classList.add('is-panning');
+        stage.setPointerCapture(panId);
+        e.preventDefault();   // suppress text selection while dragging to pan
+      });
+      stage.addEventListener('pointermove', (e) => {
+        if (panId === null || e.pointerId !== panId) return;
+        if (panAllowX) stage.scrollLeft = panL - (e.clientX - panX);
+        if (panAllowY) stage.scrollTop = panT - (e.clientY - panY);
+      });
+      const endPan = (e) => {
+        if (panId === null || e.pointerId !== panId) return;
+        try { stage.releasePointerCapture(panId); } catch (_) {}
+        panId = null;
+        stage.classList.remove('is-panning');
+      };
+      stage.addEventListener('pointerup', endPan);
+      stage.addEventListener('pointercancel', endPan);
 
       document.body.appendChild(overlay);
     }
@@ -710,6 +758,7 @@ export async function renderPdf(file, resultsEl) {
         pagebox.style.height = cssH + 'px';
         await pg.render({ canvasContext: cv.getContext('2d'), viewport: sv }).promise;
         await buildTextLayer(pg, cssScale, cssW, cssH);
+        requestAnimationFrame(() => { overlay._trimHScroll && overlay._trimHScroll(); overlay._updatePanCursor && overlay._updatePanCursor(); });
       } catch (_) {
         meta.textContent = 'Page ' + num + ' - could not render';
       }
@@ -792,7 +841,15 @@ export async function renderPdf(file, resultsEl) {
     try {
       const page = await pdf.getPage(pageNum);
       const vp = page.getViewport({ scale: 1 });
-      const scale = 200 / vp.width;
+      // Fit the whole page inside an A4-proportioned box (200px wide, A4-tall):
+      // some PDFs carry a single enormously tall page (long receipts, stitched
+      // scans) whose fixed-width thumbnail would run thousands of px down the
+      // card. Scaling to fit shrinks such a page to fit the box so all of it
+      // shows, instead of a giant strip; normal pages are unaffected (they hit
+      // the width limit first).
+      const A4_RATIO = 297 / 210;   // A4 portrait, height : width
+      const boxW = 200, boxH = boxW * A4_RATIO;
+      const scale = Math.min(boxW / vp.width, boxH / vp.height);
       const scaled = page.getViewport({ scale });
       const canvas = el('canvas', {
         width: String(Math.floor(scaled.width)),
@@ -897,10 +954,14 @@ export async function renderPdf(file, resultsEl) {
   const thumbAllBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show all');
 
   function updateThumbBtns() {
-    if (thumbsRendered >= pdf.numPages) {
+    const remaining = pdf.numPages - thumbsRendered;
+    if (remaining <= 0) {
       thumbBtnRow.hidden = true;
     } else {
       thumbBtnRow.hidden = false;
+      // With fewer than 3 pages left, "Show next 3 pages" would just do what
+      // "Show all" does - hide it and leave the single "Show all" button.
+      thumbMoreBtn.hidden = remaining < 3;
       thumbMoreBtn.textContent = `Show next 3 pages (${thumbsRendered}/${pdf.numPages})`;
     }
   }

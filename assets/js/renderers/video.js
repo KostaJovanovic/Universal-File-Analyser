@@ -1816,6 +1816,15 @@ async function detectIsobmffTracks(file) {
             const levelIdc = view.getUint8(d + 3);
             if (H264_PROFILES[profileIdc]) v.profile = H264_PROFILES[profileIdc];
             if (levelIdc) v.level = (levelIdc / 10).toFixed(1).replace(/\.0$/, '');
+            // profile_idc alone is definitive for the 4:2:2 / 4:4:4 High profiles,
+            // and browsers ship no decoder for either. Sony XAVC S-I / All-Intra
+            // avcC boxes (High 4:2:2, profile 122) don't reliably carry the
+            // optional chroma extension parsed below, so set chroma from the
+            // profile up front - otherwise these files fall through the "can't
+            // play" gate and only paint a black player. (High 4:2:2 Intra = 122,
+            // High 4:4:4 Predictive = 244.)
+            if (profileIdc === 122) v.chroma = '4:2:2';
+            else if (profileIdc === 244) v.chroma = '4:4:4';
             // Bit depth / chroma live in the avcC extension that High-10, High
             // 4:2:2 and High 4:4:4 profiles append after the SPS/PPS NAL arrays.
             // Walk past those arrays (bounded by the box) to reach it.
@@ -1839,7 +1848,9 @@ async function detectIsobmffTracks(file) {
                   const chromaIdc = b0 & 0x03;
                   const depthLuma = (b1 & 0x07) + 8;
                   const depthChroma = (b2 & 0x07) + 8;
-                  if (CHROMA_FORMATS[chromaIdc] !== undefined) v.chroma = CHROMA_FORMATS[chromaIdc];
+                  // Don't let a stray-but-valid-looking extension override the
+                  // profile-derived chroma (122/244 are fixed at 4:2:2 / 4:4:4).
+                  if (v.chroma === undefined && CHROMA_FORMATS[chromaIdc] !== undefined) v.chroma = CHROMA_FORMATS[chromaIdc];
                   if (depthLuma >= 8 && depthLuma <= 16) v.bitDepth = Math.max(depthLuma, depthChroma);
                 }
               }
