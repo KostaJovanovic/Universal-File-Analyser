@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 183;
+const COMMIT_COUNT = 184;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1728,6 +1728,14 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
+  { range: '5.08 - 5.11', notes: [
+    'The home page becomes a single "drop any file" zone, and multi-channel sound can be analysed one channel at a time.',
+    'The G-code viewer gains a press-and-hold zoom pad, a scroll-zoom toggle and a tidier fullscreen.',
+    'A G-code build can be recorded as an MP4 video - choose its length, speed, aspect, quality and camera moves - and downloaded to keep or share.',
+    'Exported clips now play and send everywhere, including WhatsApp, and the export panel goes fullscreen on phones.',
+    'Every viewer now leads with the actual render, preview or file tree, with the technical details below.',
+    'The After Effects project timeline is rebuilt: layers sit at their true positions, take their real label colours and type glyphs, and a frame-snapping scrubber shows the timecode under the cursor.',
+  ] },
   { range: '5.05 - 5.07', notes: [
     'Turn any photo into sound: it is read as a spectrogram and resynthesised, with a choice of engine, an adjustable pitch range and a length up to three minutes.',
     'A real spectrogram image can be inverted back into the sound it depicts, then run through the full Sound analysis with a WAV download.',

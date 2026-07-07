@@ -260,9 +260,9 @@ export async function renderPsd(file, resultsEl) {
           const layerCount = flattenLayers(psd.children, 0, []).length;
           resultsEl.appendChild(metaCard(file, header, layerCount));
           if (psd.canvas && psd.canvas.width) {
-            resultsEl.appendChild(canvasPreviewCard(psd.canvas, 'Composite image', base));
+            resultsEl.insertBefore(canvasPreviewCard(psd.canvas, 'Composite image', base), resultsEl.firstChild);
           } else if (header && header.thumb) {
-            resultsEl.appendChild(thumbPreviewCard(header.thumb, 'Embedded preview', base));
+            resultsEl.insertBefore(thumbPreviewCard(header.thumb, 'Embedded preview', base), resultsEl.firstChild);
           } else {
             resultsEl.appendChild(el('div', { class: 'anr-info' },
               'This file has no embedded composite (it was saved without "Maximize Compatibility"), so the layers below are shown instead.'));
@@ -284,7 +284,7 @@ export async function renderPsd(file, resultsEl) {
   }
   resultsEl.appendChild(metaCard(file, header, null));
   if (header.thumb) {
-    resultsEl.appendChild(thumbPreviewCard(header.thumb, 'Embedded preview', base));
+    resultsEl.insertBefore(thumbPreviewCard(header.thumb, 'Embedded preview', base), resultsEl.firstChild);
     const why = [];
     if (header.mode !== 3 && header.mode !== 1) why.push((COLOR_MODES[header.mode] || 'this colour mode'));
     if (header.depth !== 8) why.push(header.depth + '-bit');

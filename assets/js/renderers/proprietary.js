@@ -4149,7 +4149,7 @@ export async function renderProprietary(file, container, extOverride) {
         btnRow.appendChild(mkBtn('Mobile', 'mobile'));
         previewDet.appendChild(btnRow);
         previewDet.appendChild(stage);
-        card.appendChild(previewDet);
+        card.insertBefore(previewDet, tbl);   // rendered preview leads, above the metadata table
 
         // Fit on load (twice - late web-fonts/images can grow the page), and whenever
         // the stage is resized (window resize, fullscreen, details toggling open).

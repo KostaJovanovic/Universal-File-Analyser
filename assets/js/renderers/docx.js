@@ -520,7 +520,7 @@ export async function renderDocx(file, container) {
     const rendered = renderDocumentXml(docXml, imageMap);
     const pages = paginateFlow(rendered);
     const pageTexts = pages.map((p) => p.textContent);
-    container.appendChild(pagedPreviewCard(pages, { title: 'Page previews', label: 'Page' }));
+    container.insertBefore(pagedPreviewCard(pages, { title: 'Page previews', label: 'Page' }), container.firstChild);
 
     if (pageTexts.some((t) => t.trim())) {
       container.appendChild(pagedTextCard(pageTexts, { label: 'Page' }));

@@ -66,7 +66,7 @@ export async function renderDjvu(file, resultsEl) {
   view.appendChild(el('div', { class: 'anr-djvu-bar' }, [prev, status, next]));
   const canvas = el('canvas', { class: 'anr-djvu-canvas' });
   view.appendChild(canvas);
-  resultsEl.appendChild(view);
+  resultsEl.insertBefore(view, resultsEl.firstChild);
 
   let cur = 0, busy = false;
   async function show(n) {

@@ -764,7 +764,7 @@ function renderSch(file, reader, resultsEl, ext) {
     const dcard = el('div', { class: 'anr-card' });
     dcard.appendChild(el('h3', {}, 'Schematic'));
     dcard.appendChild(schView(parsed).wrap);
-    resultsEl.appendChild(dcard);
+    resultsEl.insertBefore(dcard, resultsEl.firstChild);
   }
 }
 
@@ -809,7 +809,7 @@ function renderPcbLib(file, reader, resultsEl) {
     const dcard = el('div', { class: 'anr-card' });
     dcard.appendChild(el('h3', {}, 'Footprint'));
     dcard.appendChild(pcbView(prims, layers, null).wrap);
-    resultsEl.appendChild(dcard);
+    resultsEl.insertBefore(dcard, resultsEl.firstChild);
   } else {
     resultsEl.appendChild(el('div', { class: 'anr-info' }, 'No footprint geometry could be decoded from this library.'));
   }
@@ -876,7 +876,7 @@ function renderPcbDoc(file, reader, resultsEl) {
   } else {
     dcard.appendChild(el('div', { class: 'anr-info' }, 'No board outline or geometry could be decoded from this document.'));
   }
-  resultsEl.appendChild(dcard);
+  resultsEl.insertBefore(dcard, resultsEl.firstChild);
 }
 
 // ---- combined project view (folder drop) ----------------------------------

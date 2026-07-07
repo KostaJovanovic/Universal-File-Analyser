@@ -402,7 +402,7 @@ export async function renderSpiceRaw(file, resultsEl) {
     const plotCard = el('div', { class: 'anr-card' });
     plotCard.appendChild(el('h3', {}, 'Waveforms'));
     plotCard.appendChild(buildPlot(parsed));
-    resultsEl.appendChild(plotCard);
+    resultsEl.insertBefore(plotCard, resultsEl.firstChild);
   }
 
   resultsEl.appendChild(integrityCard(file));

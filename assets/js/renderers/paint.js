@@ -51,7 +51,7 @@ function appendPreview(resultsEl, bytes, ext, heading) {
     if (window._anrHandleFile) window._anrHandleFile(new File([bytes], 'preview.' + ext, { type: mime }), { nested: true });
   });
   pcard.appendChild(analyse);
-  resultsEl.appendChild(pcard);
+  resultsEl.insertBefore(pcard, resultsEl.firstChild);
 }
 
 async function renderKra(file, zip, resultsEl) {

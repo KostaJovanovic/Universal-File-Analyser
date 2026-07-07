@@ -521,7 +521,8 @@ export async function renderDavinci(file, resultsEl) {
 
   // ---- Timelines: busiest first ----
   const sorted = timelines.slice().sort((a, b) => b.clipCount - a.clipCount);
-  sorted.forEach((tl, i) => resultsEl.appendChild(buildTimelineCard(tl, tlNameBySeq.get(tl.seqId) || (timelines.length > 1 ? 'Timeline ' + (i + 1) : 'Timeline'))));
+  const _renderAnchor = resultsEl.firstChild;
+  sorted.forEach((tl, i) => resultsEl.insertBefore(buildTimelineCard(tl, tlNameBySeq.get(tl.seqId) || (timelines.length > 1 ? 'Timeline ' + (i + 1) : 'Timeline')), _renderAnchor));
 
   // ---- Colour grades & nodes ----
   const graded = [];

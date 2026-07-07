@@ -1361,19 +1361,21 @@ function buildViewer(data, opts = {}) {
         bindInstances(partBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, 1);
       };
       // "Dim other tools": draw the current tool's beads solid (pass 1), then every other
-      // tool's beads OPAQUE but darkened toward the background (pass 2). Darkening (not
-      // translucency) keeps depth writes on, so the faded beads occlude each other
-      // normally instead of stacking their alpha along the view ray - which is what made
-      // dense regions and the silhouette bloom into a glow. They still read clearly as
-      // "everything but this tool, right now", just cleanly recessed.
+      // tool's beads TRANSLUCENT (pass 2) so you can see through them to the active tool.
+      // Depth writes stay ON during the translucent pass, so per pixel only the nearest
+      // faded layer shows instead of many stacking their alpha along the view ray - that
+      // stacking is what made dense regions and the silhouette bloom into a glow. Result:
+      // see-through, but without the bloom.
       if (state.isoTool && multiTool) {
         gl.uniform1f(uIsoTool, state.headToolRaw | 0);
-        gl.uniform1f(uIsoMode, 1);                                  // pass 1: current tool, full brightness
+        gl.uniform1f(uIsoMode, 1);                                  // pass 1: current tool, full brightness, opaque
         bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
         drawPartial();
-        gl.uniform1f(uIsoMode, 2); gl.uniform1f(uDim, 0.22);        // pass 2: other tools, opaque + dimmed
+        gl.uniform1f(uIsoMode, 2); gl.uniform1f(uAlpha, 0.22);      // pass 2: other tools, translucent (depth writes stay on)
+        gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
-        gl.uniform1f(uIsoMode, 0); gl.uniform1f(uDim, 1);
+        gl.disable(gl.BLEND); gl.uniform1f(uAlpha, 1);
+        gl.uniform1f(uIsoMode, 0);
       } else {
         bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
         drawPartial();
@@ -2434,12 +2436,74 @@ export async function renderGcode(file, resultsEl, opts) {
           if (start >= 0 && start < n) nals.push(buf.subarray(start, n));
           return nals;
         };
+        // Some encoders (Firefox / Windows Media Foundation) emit parameter-set NALs
+        // with their one-byte NAL header DUPLICATED - an SPS comes through as
+        // "67 67 64 00 ..." instead of "67 64 00 ...", a PPS as "68 68 ..." instead of
+        // "68 ...". That shifts profile_idc to a bogus value; Firefox's own decoder
+        // shrugs it off, but strict parsers (WhatsApp / Android MediaCodec) reject the
+        // whole file ("can't be opened"). Drop the duplicate when the first two bytes
+        // are an identical, valid SPS(7)/PPS(8) header; leave clean NALs untouched.
+        const dedupeNalHeader = (nal) => {
+          const t = nal[0] & 31;
+          return (nal.length >= 2 && nal[0] === nal[1] && (t === 7 || t === 8)) ? nal.subarray(1) : nal;
+        };
         // AVCDecoderConfigurationRecord from one SPS + one PPS (all this encoder emits).
-        const buildAvcC = (sps, pps) => new Uint8Array([
-          1, sps[1], sps[2], sps[3], 0xff, 0xe1,
-          sps.length >> 8, sps.length & 0xff, ...sps,
-          1, pps.length >> 8, pps.length & 0xff, ...pps,
-        ]);
+        const buildAvcC = (spsRaw, ppsRaw) => {
+          const sps = dedupeNalHeader(spsRaw), pps = dedupeNalHeader(ppsRaw);
+          return new Uint8Array([
+            1, sps[1], sps[2], sps[3], 0xff, 0xe1,
+            sps.length >> 8, sps.length & 0xff, ...sps,
+            1, pps.length >> 8, pps.length & 0xff, ...pps,
+          ]);
+        };
+        // Re-pack an encoder-supplied avcC into a conformant one: de-duplicate each
+        // parameter set's NAL header (above) and restore the reserved bits (Media
+        // Foundation also writes 0x03/0x01 where the spec wants 0xff/0xe1). Returns the
+        // original bytes if it can't be parsed, so a good avcC is never made worse.
+        const sanitizeAvcC = (desc) => {
+          try {
+            const b = desc instanceof Uint8Array ? desc : new Uint8Array(desc);
+            if (b.length < 7 || b[0] !== 1) return desc;
+            let o = 6;
+            const read = (n) => { const list = []; for (let i = 0; i < n; i++) { const len = (b[o] << 8) | b[o + 1]; o += 2; list.push(dedupeNalHeader(b.subarray(o, o + len))); o += len; } return list; };
+            const spsList = read(b[5] & 0x1f);
+            const ppsList = read(b[o++]);
+            if (!spsList.length || !ppsList.length) return desc;
+            const s0 = spsList[0];
+            const out = [1, s0[1], s0[2], s0[3], 0xff, 0xe0 | (spsList.length & 0x1f)];
+            for (const s of spsList) out.push(s.length >> 8, s.length & 0xff, ...s);
+            out.push(ppsList.length & 0xff);
+            for (const p of ppsList) out.push(p.length >> 8, p.length & 0xff, ...p);
+            return new Uint8Array(out);
+          } catch (_) { return desc; }
+        };
+        // Direct-path (already length-prefixed / AVCC) sample cleanup: drop in-band
+        // parameter sets (7/8 - they belong in the avcC) and access-unit delimiters (9).
+        // Media Foundation (Firefox on Windows) inlines all three into every sample,
+        // producing a non-conformant avc1 track that strict players (WhatsApp) refuse to
+        // load even once the avcC is fixed. Keeps SEI (6) and the VCL slices; returns the
+        // buffer untouched if nothing needs dropping (Chrome) or it can't be parsed.
+        const stripInbandNals = (buf) => {
+          const keep = [];
+          let i = 0, total = 0, dropped = false;
+          while (i + 4 <= buf.length) {
+            const len = ((buf[i] << 24) | (buf[i + 1] << 16) | (buf[i + 2] << 8) | buf[i + 3]) >>> 0;
+            i += 4;
+            if (len === 0 || i + len > buf.length) return buf;   // malformed - leave as-is
+            const t = buf[i] & 31;
+            if (t === 7 || t === 8 || t === 9) dropped = true;
+            else { keep.push(buf.subarray(i, i + len)); total += 4 + len; }
+            i += len;
+          }
+          if (!dropped || !keep.length) return buf;
+          const out = new Uint8Array(total);
+          let o = 0;
+          for (const nal of keep) {
+            out[o++] = (nal.length >>> 24) & 255; out[o++] = (nal.length >>> 16) & 255; out[o++] = (nal.length >>> 8) & 255; out[o++] = nal.length & 255;
+            out.set(nal, o); o += nal.length;
+          }
+          return out;
+        };
         // Annex B frame -> MP4 sample: drop the in-band parameter sets (7/8, they live
         // in the avcC) and access-unit delimiters (9), length-prefix what remains.
         const annexbToAvcc = (buf) => {
@@ -2454,6 +2518,13 @@ export async function renderGcode(file, resultsEl, opts) {
           }
           return out;
         };
+
+        // The clip is deliberately VIDEO-ONLY. An earlier attempt added a silent AAC
+        // track to satisfy players thought to require audio, but the true cause of
+        // WhatsApp's rejection was the malformed High-profile header (fixed by
+        // sanitizeAvcC + the Baseline preference above); a hand-built silent AAC track
+        // is in fact what WhatsApp Web then refused to send. A clean video-only MP4
+        // uploads fine, so no audio track is muxed.
 
         // Stamp overlay chips onto a composited frame. The site tag (bottom-right) is
         // always drawn - it is the clip's watermark and stays on every export. The
@@ -2539,13 +2610,18 @@ export async function renderGcode(file, resultsEl, opts) {
             const comp = el('canvas'); comp.width = W; comp.height = H;
             const ctx = comp.getContext('2d');
             ctx.imageSmoothingQuality = 'high';   // the GL canvas is supersampled; this is the downscale
-            // Pick the H.264 config: the highest profile the encoder claims to support
-            // at the level this pixel rate needs (High -> Main -> Constrained Baseline).
+            // Pick the H.264 config: the MOST COMPATIBLE profile the encoder supports at
+            // the level this pixel rate needs (Constrained Baseline -> Main -> High). We
+            // deliberately avoid High even when it is available: WhatsApp Web/Desktop
+            // re-encodes every upload through a cut-down bundled transcoder that can't
+            // decode High profile, so a High-profile clip "can't be sent" there even
+            // though it plays fine everywhere else. Baseline/Main cost negligible quality
+            // on a thin-line render and are universally decodable.
             // contentHint 'detail' asks the encoder to preserve spatial detail - the
             // render is all thin lines - and is ignored where unsupported.
             const base = { width: W, height: H, bitrate: clipRate(W, H), framerate: fps, contentHint: 'detail' };
             let cfgEnc = null;
-            for (const prof of ['avc1.6400', 'avc1.4d40', 'avc1.42e0']) {
+            for (const prof of ['avc1.42e0', 'avc1.4d40', 'avc1.6400']) {
               const cand = { ...base, codec: prof + clipLevel(W, H), avc: { format: 'avc' } };
               const sup = await VideoEncoder.isConfigSupported(cand).catch(() => null);
               if (sup && sup.supported) { cfgEnc = cand; break; }
@@ -2696,14 +2772,19 @@ export async function renderGcode(file, resultsEl, opts) {
                   // (some encoders only attach it once, at flush).
                   let meta;
                   if (!haveCfg) {
-                    meta = {
-                      decoderConfig: annexb
-                        ? { codec: cfgEnc.codec, description: buildAvcC(sps, pps) }
-                        : (m && m.decoderConfig && m.decoderConfig.description) ? m.decoderConfig : probeDesc,
-                    };
+                    if (annexb) {
+                      meta = { decoderConfig: { codec: cfgEnc.codec, description: buildAvcC(sps, pps) } };
+                    } else {
+                      // The streaming chunk's own decoderConfig, else the probe's copy
+                      // (some encoders only attach it once, at flush). Sanitised, because
+                      // Media Foundation hands back a malformed avcC (duplicated NAL
+                      // headers) that strict players like WhatsApp reject.
+                      const raw = (m && m.decoderConfig && m.decoderConfig.description) ? m.decoderConfig : probeDesc;
+                      meta = { decoderConfig: { ...raw, description: sanitizeAvcC(raw.description) } };
+                    }
                     haveCfg = true;
                   }
-                  muxer.addVideoChunkRaw(annexb ? annexbToAvcc(d) : d, c.type, ts, du, meta);
+                  muxer.addVideoChunkRaw(annexb ? annexbToAvcc(d) : stripInbandNals(d), c.type, ts, du, meta);
                 } else {
                   muxer.addVideoChunkRaw(d, c.type, ts, du, m);
                 }
@@ -2803,6 +2884,21 @@ export async function renderGcode(file, resultsEl, opts) {
             // toggles sit flush under it.
             return el('div', { class: 'anr-clip-row' }, [box]);
           };
+          // Clip length can be set three ways, all feeding clipCfg.dur: time presets
+          // (Length), lines-per-second presets (Speed), or the custom time / lines-per-
+          // second fields. "Lines" = the G-code move count the build steps through (G),
+          // so lines/s is just G / duration and the animation reveals them uniformly.
+          const DUR_MIN = 0.5, DUR_MAX = 600;
+          const setDur = (d) => { if (isFinite(d) && d > 0) clipCfg.dur = Math.min(DUR_MAX, Math.max(DUR_MIN, d)); };
+          // A labelled number field. get() supplies the shown value; editing commits via
+          // set() then repaints (so the paired field updates). The value is left alone
+          // while the field has focus, so mid-typing isn't overwritten.
+          const numField = (unit, get, set, step) => {
+            const inp = el('input', { type: 'number', class: 'anr-clip-num', min: '1', step: step || '1' });
+            inp.addEventListener('change', () => { const v = parseFloat(inp.value); if (isFinite(v) && v > 0) set(v); repaint(); });
+            paints.push(() => { if (document.activeElement !== inp) inp.value = String(get()); });
+            return el('label', { class: 'anr-clip-field' }, [inp, el('span', {}, unit)]);
+          };
           const secHead = (t) => el('div', { class: 'anr-clip-sec' }, t);
           const est = el('p', { class: 'anr-clip-est' });
           paints.push(() => {
@@ -2812,15 +2908,31 @@ export async function renderGcode(file, resultsEl, opts) {
           });
           const cancelBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, 'Cancel');
           const okBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-ok' }, 'Render');
+          // Corner close button - shown only on mobile, where the panel goes fullscreen
+          // (see CSS). Wired to close() below, once it exists.
+          const closeX = el('button', { type: 'button', class: 'anr-clip-x', 'aria-label': 'Close' }, '×');
           const card = el('div', { class: 'anr-modal-card anr-clip-card' }, [
+            closeX,
             el('p', { class: 'anr-modal-kicker' }, 'Export clip'),
             el('p', { class: 'anr-modal-title' }, 'A short MP4 of the whole build.'),
             secHead('Frame'),
-            segRow('Length', [[5, '5s'], [10, '10s'], [20, '20s'], [30, '30s']], () => clipCfg.dur, (v) => { clipCfg.dur = v; }),
-            segRow('Aspect', [['16:9', '16:9'], ['9:16', '9:16'], ['1:1', '1:1']], () => clipCfg.aspect, (v) => { clipCfg.aspect = v; }),
+            el('div', { class: 'anr-clip-rows' }, [
+              segRow('Duration', [[5, '5s'], [10, '10s'], [20, '20s'], [30, '30s']], () => clipCfg.dur, (v) => { clipCfg.dur = v; }),
+              segRow('Speed', [[1000, '1k/s'], [5000, '5k/s'], [10000, '10k/s']], () => Math.round(G / clipCfg.dur), (v) => setDur(G / v)),
+              el('div', { class: 'anr-clip-row' }, [
+                el('span', { class: 'anr-clip-lab' }, 'Custom'),
+                el('div', { class: 'anr-clip-opts anr-clip-opts--fields' }, [
+                  numField('s', () => Math.round(clipCfg.dur * 10) / 10, (v) => setDur(v), '0.1'),
+                  numField('lines/s', () => Math.round(G / clipCfg.dur), (v) => setDur(G / v), '1'),
+                ]),
+              ]),
+              segRow('Aspect', [['16:9', '16:9'], ['9:16', '9:16'], ['1:1', '1:1']], () => clipCfg.aspect, (v) => { clipCfg.aspect = v; }),
+            ]),
             secHead('Output'),
-            segRow('Quality', [[720, '720p'], [1080, '1080p']], () => clipCfg.size, (v) => { clipCfg.size = v; }),
-            segRow('Rate', [[30, '30 fps'], [60, '60 fps']], () => clipCfg.fps, (v) => { clipCfg.fps = v; }),
+            el('div', { class: 'anr-clip-rows' }, [
+              segRow('Quality', [[720, '720p'], [1080, '1080p']], () => clipCfg.size, (v) => { clipCfg.size = v; }),
+              segRow('Rate', [[30, '30 fps'], [60, '60 fps']], () => clipCfg.fps, (v) => { clipCfg.fps = v; }),
+            ]),
             secHead('Camera'),
             togRow([
               ['reset', 'Reset view', 'Start the recording from the default home angle instead of the current view'],
@@ -2837,7 +2949,7 @@ export async function renderGcode(file, resultsEl, opts) {
             ]),
             el('div', { class: 'anr-clip-foot' }, [est, el('div', { class: 'anr-modal-actions' }, [cancelBtn, okBtn])]),
           ]);
-          const overlay = el('div', { class: 'anr-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Export clip' }, card);
+          const overlay = el('div', { class: 'anr-modal anr-modal--clip', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Export clip' }, card);
           (document.fullscreenElement || document.body).appendChild(overlay);
           repaint();
           let settled = false;
@@ -2850,6 +2962,7 @@ export async function renderGcode(file, resultsEl, opts) {
           };
           const onKey = (e) => { if (e.key === 'Escape') close(); };
           cancelBtn.addEventListener('click', close);
+          closeX.addEventListener('click', close);
           overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
           document.addEventListener('keydown', onKey);
           okBtn.addEventListener('click', () => { close(); renderClip(); });

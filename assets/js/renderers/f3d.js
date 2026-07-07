@@ -136,7 +136,7 @@ export async function renderF3d(file, resultsEl) {
         });
         img.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
         pv.appendChild(img);
-        resultsEl.appendChild(pv);
+        resultsEl.insertBefore(pv, resultsEl.firstChild);
       }
     } catch (_) { /* no preview - the readout still stands */ }
   }

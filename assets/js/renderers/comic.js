@@ -192,7 +192,7 @@ export async function renderComic(file, resultsEl, extOverride) {
   thumbCard.appendChild(headRow);
   const thumbContainer = el('div', { style: 'display:flex;flex-wrap:wrap;gap:12px;justify-content:flex-start;margin-top:12px;' });
   thumbCard.appendChild(thumbContainer);
-  resultsEl.appendChild(thumbCard);
+  resultsEl.insertBefore(thumbCard, resultsEl.firstChild);
 
   const THUMB_LIMIT = 12;
   const shown = Math.min(THUMB_LIMIT, pages.length);

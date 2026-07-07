@@ -379,9 +379,10 @@ export async function renderArchive(file, resultsEl, opts = {}) {
   resultsEl.appendChild(infoCard);
 
   // --- Category breakdown (Overview + contents-slot + File types) ---
-  // Rendered before the integrity/safety/forensics cards so the contents
-  // visualisation (the treemap, which renderViewToggle drops into the slot this
-  // leaves between Overview and File types) sits above the Integrity section.
+  // Rendered before the integrity/safety/forensics cards. renderViewToggle
+  // (below, with treemapFirst) hoists the treemap to the very top of the result
+  // so the visual render leads; the file tree stays in the slot this leaves
+  // between Overview and File types. All of it sits above the Integrity section.
   const items = normalizeArchive(entries);
   renderBreakdownCards(items, resultsEl);
 
@@ -592,7 +593,7 @@ export async function renderArchive(file, resultsEl, opts = {}) {
     fileSize: (v) => (v && v.uncompSize) || 0,
     copyPath: (_key, entry) => entry && entry.name,
     onFileClick: onTreeFileClick
-  }, onFileClick);
+  }, onFileClick, { treemapFirst: true });
 
   // --- Text file previews ---
   const textExts = new Set(['txt', 'md', 'json', 'xml', 'csv', 'tsv', 'html', 'htm',
@@ -756,7 +757,7 @@ function renderHandleTree(handle, fileEntries, file, resultsEl, opts) {
     fileSize: (v) => (v && v.size) || 0,
     copyPath: (_key, entry) => entry && entry.name,
     onFileClick: onTreeFileClick,
-  }, onFileClick);
+  }, onFileClick, { treemapFirst: true });
 }
 
 // ---------- ar / static & import library (.a / .lib) ----------

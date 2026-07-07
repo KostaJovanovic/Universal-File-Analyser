@@ -189,7 +189,7 @@ export async function renderNotebook(file, container) {
   moreBtn.addEventListener('click', () => reveal(shown + BATCH));
   allBtn.addEventListener('click', () => reveal(cells.length));
   reveal(Math.min(cells.length, BATCH));
-  container.appendChild(card);
+  container.insertBefore(card, container.firstChild);
 
   if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
 }

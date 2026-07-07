@@ -1314,7 +1314,7 @@ function renderSchDoc(file, node, resultsEl) {
   const dcard = el('div', { class: 'anr-card' });
   dcard.appendChild(el('h3', {}, 'Schematic'));
   dcard.appendChild(schView(parsed).wrap);
-  resultsEl.appendChild(dcard);
+  resultsEl.insertBefore(dcard, resultsEl.firstChild);
 
   const bom = bomFromInstances(parsed.instances);
   if (bom.length) resultsEl.appendChild(bomCard(bom, null, null));
@@ -1346,7 +1346,7 @@ function renderPcbDoc(file, node, resultsEl) {
   const dcard = el('div', { class: 'anr-card' });
   dcard.appendChild(el('h3', {}, 'Board'));
   dcard.appendChild(boardView(pcb).wrap);
-  resultsEl.appendChild(dcard);
+  resultsEl.insertBefore(dcard, resultsEl.firstChild);
 }
 
 function renderMod(file, node, resultsEl) {
@@ -1365,7 +1365,7 @@ function renderMod(file, node, resultsEl) {
   const dcard = el('div', { class: 'anr-card' });
   dcard.appendChild(el('h3', {}, 'Footprint'));
   dcard.appendChild(pcbView({ prims: fp.prims, pads: fp.pads, tracks: [], vias: [], footprints: [], zones: 0, layersUsed: layers }).wrap);
-  resultsEl.appendChild(dcard);
+  resultsEl.insertBefore(dcard, resultsEl.firstChild);
 }
 
 function renderSymLib(file, node, resultsEl) {
@@ -1396,7 +1396,7 @@ function renderSymLib(file, node, resultsEl) {
   };
   sel.addEventListener('change', () => drawSym(sel.value));
   drawSym(syms[0][1]);
-  resultsEl.appendChild(card);
+  resultsEl.insertBefore(card, resultsEl.firstChild);
 }
 
 function renderProjectJson(file, text, resultsEl) {

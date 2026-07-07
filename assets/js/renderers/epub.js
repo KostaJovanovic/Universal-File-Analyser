@@ -311,7 +311,7 @@ export async function renderEpub(file, resultsEl) {
   readerCard.appendChild(nav);
   const content = el('div', { class: 'anr-epub-viewport' });
   readerCard.appendChild(content);
-  resultsEl.appendChild(readerCard);
+  resultsEl.insertBefore(readerCard, resultsEl.firstChild);
 
   let current = 0;
   async function showChapter(i) {

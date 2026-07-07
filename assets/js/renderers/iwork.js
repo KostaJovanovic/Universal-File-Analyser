@@ -91,16 +91,18 @@ export async function renderIwork(file, resultsEl) {
   // ---- Preview: prefer an embedded Preview.pdf, then the largest preview image ----
   const pdfEntry = largestMatch(zip, /preview\.pdf$/i) || largestMatch(zip, /\.pdf$/i);
   if (pdfEntry) {
-    resultsEl.appendChild(el('p', { class: 'anr-subhead' }, 'Document preview'));
     const host = el('div', {});
-    resultsEl.appendChild(host);
+    const subhead = el('p', { class: 'anr-subhead' }, 'Document preview');
+    // The preview leads the result: label + host go to the very top, in order.
+    resultsEl.insertBefore(host, resultsEl.firstChild);
+    resultsEl.insertBefore(subhead, host);
     try {
       const bytes = await zip.bytes(pdfEntry.name);
       if (!bytes) throw new Error('preview unreadable');
       const previewFile = new File([bytes], file.name.replace(/\.[^.]+$/, '') + ' (preview).pdf', { type: 'application/pdf' });
       await renderPdf(previewFile, host);
       return;
-    } catch (_) { host.remove(); /* fall through to image / no-preview */ }
+    } catch (_) { host.remove(); subhead.remove(); /* fall through to image / no-preview */ }
   }
 
   const imgEntry = largestMatch(zip, /(preview|thumbnail)[^/]*\.(jpe?g|png|tiff?)$/i);
@@ -118,7 +120,7 @@ export async function renderIwork(file, resultsEl) {
         if (window._anrHandleFile) window._anrHandleFile(new File([bytes], 'iwork-preview.' + e, { type: mime }), { nested: true });
       });
       pcard.appendChild(analyse);
-      resultsEl.appendChild(pcard);
+      resultsEl.insertBefore(pcard, resultsEl.firstChild);
       return;
     }
   }

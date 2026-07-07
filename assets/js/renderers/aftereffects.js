@@ -10,10 +10,14 @@
        rational u32@44 / scale (seconds); width = u16@140, height = u16@142.
      - idta (item):        type = u16@0 (1 folder, 4 comp, 7 footage), id = u32@16.
      - ldta (layer):       quality = u16@4; three (value, scale) rationals at
-       offsets 12 / 20 / 28 give startTime / inPoint / outPoint in seconds, each
+       offsets 12 / 20 / 28 give startTime / sourceIn / sourceOut in seconds, each
        value divided by ITS OWN denominator stored in the next u32 (16 / 24 / 32) -
        these are per-layer (a stretched / time-remapped layer carries a larger
-       scale than the comp's), not the comp's u32@8; attribute bits at 37..39;
+       scale than the comp's), not the comp's u32@8. startTime is the comp time of
+       the source's frame 0; sourceIn / sourceOut are the trimmed range measured
+       from that frame 0, so the bar on the COMP timeline runs startTime+sourceIn
+       .. startTime+sourceOut (this offset is what staggers a sequenced layer -
+       without it every trimmed clip collapses onto t=0). Attribute bits at 37..39;
        source item id = u32@40; the layer name follows as a "Utf8".
    The authoring app + version live in an XMP packet near the end of the file
    (xmp:CreatorTool, the xmpMM history's softwareAgent entries, and the
@@ -25,8 +29,29 @@ import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/ut
 const SCALE = 30720;                       // default ticks-per-second; the real value is per-comp (cdta u32@8)
 const MAX_READ = 256 * 1024 * 1024;        // guard: don't buffer absurdly large projects whole
 // AE's fixed 3D-view pseudo-layers, stored in every comp - not real timeline layers.
-const VIEW_NAMES = new Set(['Default', 'Front', 'Left', 'Top', 'Back', 'Right',
-  'Active Camera', 'Custom View 1', 'Custom View 2', 'Custom View 3']);
+const VIEW_NAMES = new Set(['Default', 'Front', 'Left', 'Top', 'Back', 'Right', 'Bottom',
+  'Active Camera', 'Custom View 1', 'Custom View 2', 'Custom View 3', 'Markers']);
+
+// After Effects stores only a label-colour INDEX per layer (ldta @61); the
+// index->RGB mapping is an app preference, not in the file, so we paint with AE's
+// default 16-colour label palette. Index 0 = None (fall back to a type colour).
+const AE_LABEL_COLOURS = [null,
+  '#e5433d', '#e0e04a', '#7ecece', '#f1a4c8', '#b6a4d8', '#e6b48f', '#9ad6ac', '#6d9bd1',
+  '#54a054', '#9a6fc0', '#e39a4f', '#9c6a4f', '#dd5cb2', '#4dc4d6', '#c3ae8a', '#3f7d54'];
+const AE_LABEL_NAMES = [null,
+  'Red', 'Yellow', 'Aqua', 'Pink', 'Lavender', 'Peach', 'Sea Foam', 'Blue',
+  'Green', 'Purple', 'Orange', 'Brown', 'Fuchsia', 'Cyan', 'Sandstone', 'Dark Green'];
+// Fallback fill when a layer carries no label (index 0), keyed by layer type.
+const typeColour = (l) => (l.audio ? '#3ba776' : l.isComp ? '#8a6fd6' : l.src === 0 ? '#7f8896' : '#3b82c4');
+const layerColour = (l) => AE_LABEL_COLOURS[l.labelIdx] || typeColour(l);
+const AUDIO_EXT = /\.(mp3|wav|aac|m4a|aif|aiff|flac|ogg|opus|wma|mka)$/i;
+const VIDEO_EXT = /\.(mp4|mov|avi|mkv|webm|m4v|mpg|mpeg|wmv|flv|m2ts|mts|mxf|prores|r3d|braw)$/i;
+// A short glyph marking each layer kind, mirroring After Effects' source-type icons.
+const TYPE_GLYPH = { text: 'T', shape: '◆', camera: '◉', light: '☼', audio: '♪',
+  image: '▣', video: '►', precomp: '⧉', solid: '■' };
+const TYPE_NAME = { text: 'text', shape: 'shape', camera: 'camera', light: 'light',
+  audio: 'audio', image: 'image', video: 'video', precomp: 'pre-comp', solid: 'solid', footage: 'footage' };
+const typeGlyph = (l) => TYPE_GLYPH[l.ltype] || '';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
 
@@ -72,18 +97,31 @@ function parseAep(buf) {
         const comp = { name: c.pn, fps: scale / divisor, scale, durTicks: u32(ds + 44),
           w: u16(ds + 140), h: u16(ds + 142), layers: [] };
         if (c.lastType === 0x04 && c.lastId != null) compIds.add(c.lastId);
-        comps.push(comp); c.cur = comp;
+        comps.push(comp); c.cur = comp; c.curLayer = null;
       } else if (t === 'ldta') {
         const a = [buf[ds + 37], buf[ds + 38], buf[ds + 39]];
         const sc = (c.cur && c.cur.scale) || SCALE;
         const dn = (off) => u32(ds + off) || sc;   // each rational's own denominator (per-layer time scale)
+        const labelIdx = buf[ds + 61];            // AE label-colour index (1..16; 0 = None)
         const L = {
           start: i32(ds + 12) / dn(16), in: i32(ds + 20) / dn(24), out: i32(ds + 28) / dn(32),
-          threeD: !!(a[1] & 4), audio: !!(a[2] & 2), src: u32(ds + 40),
+          threeD: !!(a[1] & 4), src: u32(ds + 40),
+          labelIdx: labelIdx <= 16 ? labelIdx : 0,
           name: null, fld: cstr(ds + 64, 31),    // legacy fixed-field layer name
         };
+        // in/out are source-local (measured from source frame 0); the layer's
+        // place on the comp timeline is offset by startTime.
+        L.tIn = L.start + L.in; L.tOut = L.start + L.out;
         if (c.cur) c.cur.layers.push(L);
-        c.eL = L;
+        c.eL = L; c.curLayer = L;
+      } else if (t === 'tdmn' && c.curLayer) {
+        // The layer's property groups reveal its kind: a text / shape / camera /
+        // light layer carries a tell-tale match-name; footage layers carry none.
+        const mn = cstr(ds, sz);
+        if (mn === 'ADBE Text Properties') c.curLayer.isText = true;
+        else if (mn === 'ADBE Root Vectors Group') c.curLayer.isShape = true;
+        else if (mn === 'ADBE Camera Options Group') c.curLayer.isCamera = true;
+        else if (mn === 'ADBE Light Options Group') c.curLayer.isLight = true;
       }
       if (t === 'LIST' || t === 'RIFX') walk(ds + 4, ds + sz, c);
       o = ds + sz + (sz & 1);                 // chunks are padded to an even length
@@ -99,13 +137,18 @@ function parseAep(buf) {
     // value is missing do we fall back to the longest sane layer.
     const headerDur = comp.durTicks > 0 ? comp.durTicks / comp.scale : 0;
     comp.dur = headerDur > 0.01 ? headerDur
-      : Math.max(0.01, ...comp.real.map((l) => l.out).filter((x) => x > 0.01 && x < 1e5));
+      : Math.max(0.01, ...comp.real.map((l) => l.tOut).filter((x) => x > 0.01 && x < 1e5));
     // Name priority: renamed layer (Utf8) -> legacy ldta name -> source file /
     // comp name -> numbered fallback. The source resolves footage to its filename
     // and pre-comps to the composition name.
     comp.real.forEach((l, i) => {
       l.label = l.name || l.fld || idName[l.src] || ('Layer ' + (i + 1));
       l.isComp = compIds.has(l.src);
+      // AE's per-layer audio bit is always on; identify audio by the source's extension instead.
+      l.audio = AUDIO_EXT.test(l.label);
+      l.ltype = l.audio ? 'audio' : l.isText ? 'text' : l.isShape ? 'shape'
+        : l.isCamera ? 'camera' : l.isLight ? 'light' : l.isComp ? 'precomp'
+        : l.src === 0 ? 'solid' : VIDEO_EXT.test(l.label) ? 'video' : 'image';
     });
   }
   return { comps, footage };
@@ -141,8 +184,11 @@ function aepLabelsSvg(real, H) {
   real.forEach((l, i) => {
     const y = TOP + i * LH;
     s += `<rect x="0" y="${y}" width="${LABEL_W}" height="${LH}" fill="${i % 2 ? 'rgba(128,128,128,.10)' : 'rgba(128,128,128,.04)'}"/>`;
-    const full = (l.label || 'Layer') + (l.threeD ? '  (3D layer)' : '');
-    s += `<text x="${LABEL_W - 7}" y="${y + LH / 2 + 4}" text-anchor="end" fill="currentColor" font-size="11" opacity=".85"><title>${esc(full)}</title>${esc((l.label || 'Layer').slice(0, 30))}${l.threeD ? ' ◳' : ''}</text>`;
+    s += `<rect x="5" y="${y + LH / 2 - 5}" width="10" height="10" fill="${layerColour(l)}"/>`;   // AE label-colour swatch
+    const g = typeGlyph(l);
+    if (g) s += `<text x="20" y="${y + LH / 2 + 4}" fill="currentColor" font-size="10" opacity=".7" font-weight="600">${g}</text>`;
+    const full = (l.label || 'Layer') + '  (' + (TYPE_NAME[l.ltype] || 'layer') + (l.threeD ? ', 3D' : '') + ')';
+    s += `<text x="${LABEL_W - 7}" y="${y + LH / 2 + 4}" text-anchor="end" fill="currentColor" font-size="11" opacity=".85"><title>${esc(full)}</title>${esc((l.label || 'Layer').slice(0, 28))}${l.threeD ? ' ◳' : ''}</text>`;
   });
   return `<svg viewBox="0 0 ${LABEL_W} ${H}" width="${LABEL_W}" height="${H}" style="display:block">${s}</svg>`;
 }
@@ -164,12 +210,17 @@ function aepTrackSvg(real, dur, H, trackW, pps) {
   }
   real.forEach((l, i) => {
     const y = TOP + i * LH;
-    const oo = Math.min(Math.max(l.out, 0), dur);   // clamp runaway / unset out-points to the comp end
-    const ii = Math.min(Math.max(l.in, 0), dur);
-    const col = l.audio ? '#3ba776' : l.isComp ? '#8a6fd6' : l.src === 0 ? '#7f8896' : '#3b82c4';
+    const oo = Math.min(Math.max(l.tOut, 0), dur);   // clamp runaway / unset out-points to the comp end
+    const ii = Math.min(Math.max(l.tIn, 0), dur);
+    const col = layerColour(l);
     const bx = x(ii), bw = Math.max(2, x(oo) - x(ii));
-    bars += `<rect x="${bx}" y="${y + 4}" width="${bw}" height="${LH - 8}" rx="3" fill="${col}"${l.threeD ? ' stroke="#e0a23a" stroke-width="1.3"' : ''}><title>${esc(l.label || 'Layer')} · ${fmtTime(ii)}–${fmtTime(oo)}</title></rect>`;
-    if (bw > 42) bars += `<text x="${bx + 5}" y="${y + LH / 2 + 4}" fill="#fff" font-size="9.5" opacity=".9" pointer-events="none">${fmtTime(oo - ii)}</text>`;
+    const lname = l.labelIdx ? ' · ' + AE_LABEL_NAMES[l.labelIdx] : '';
+    const typeTip = ' · ' + (TYPE_NAME[l.ltype] || 'layer') + (l.threeD ? ', 3D' : '');
+    bars += `<rect x="${bx}" y="${y + 4}" width="${bw}" height="${LH - 8}" fill="${col}"${l.threeD ? ' stroke="#e0a23a" stroke-width="1.3"' : ''}><title>${esc(l.label || 'Layer')} · ${fmtTime(ii)}–${fmtTime(oo)}${lname}${typeTip}</title></rect>`;
+    // A type glyph (T text, ◆ shape, ♪ audio…) sits at the bar start; 3D layers keep the amber outline above.
+    const g = typeGlyph(l);
+    if (g && bw > 14) bars += `<text x="${bx + 5}" y="${y + LH / 2 + 4}" fill="#fff" font-size="10" opacity=".95" pointer-events="none" font-weight="600">${g}</text>`;
+    if (bw > 42) bars += `<text x="${bx + (g ? 17 : 5)}" y="${y + LH / 2 + 4}" fill="#fff" font-size="9.5" opacity=".9" pointer-events="none">${fmtTime(oo - ii)}</text>`;
   });
   return `<svg viewBox="0 0 ${trackW} ${H}" width="${trackW}" height="${H}" style="display:block">${stripes}${grid}${bars}</svg>`;
 }
@@ -197,21 +248,40 @@ function buildCompTimeline(comp) {
     el('span', { class: 'anr-hint', style: 'margin-left:6px' }, 'ctrl/⌘ + scroll to zoom, drag to pan'),
   ]));
 
-  // Layout: frozen labels | scrollable track.
+  // Layout: frozen labels | scrollable track. The track holds the SVG plus a
+  // hover playhead (a frame-snapped vertical line + a time/frame readout).
   const labels = el('div', { html: aepLabelsSvg(real, H), style: `flex:0 0 ${LABEL_W}px;border-right:1px solid rgba(128,128,128,.25)` });
-  const track = el('div', {});
+  const lineH = TOP + real.length * LH;
+  const svgHolder = el('div', {});
+  const playline = el('div', { style: `position:absolute;top:0;width:1px;height:${lineH}px;background:currentColor;opacity:.5;pointer-events:none;display:none;z-index:2` });
+  const playbox = el('div', { style: 'position:absolute;top:2px;transform:translateX(-50%);pointer-events:none;display:none;z-index:3;background:rgba(20,20,22,.92);color:#fff;font:600 10px/1.5 var(--font-mono,ui-monospace,monospace);padding:0 6px;white-space:nowrap;border:1px solid rgba(255,255,255,.28)' });
+  const track = el('div', { style: 'position:relative' }, [svgHolder, playline, playbox]);
   const scroller = el('div', { style: 'overflow-x:auto;overflow-y:hidden;flex:1 1 auto;cursor:grab;touch-action:pan-y', class: 'anr-aep-scroller' });
   scroller.appendChild(track);
-  card.appendChild(el('div', { style: 'display:flex;align-items:flex-start;border:1px solid rgba(128,128,128,.25);border-radius:8px;overflow:hidden' }, [labels, scroller]));
+  card.appendChild(el('div', { style: 'display:flex;align-items:flex-start;border:1px solid rgba(128,128,128,.25);overflow:hidden' }, [labels, scroller]));
 
   const basePps = () => Math.max(1, (scroller.clientWidth || 660) - 6) / dur;   // fit whole comp at zoom 1
   const ppsNow = () => basePps() * zoom;
   function render() {
     const pps = ppsNow();
     const trackW = Math.max(scroller.clientWidth || 660, Math.ceil(dur * pps) + 12);
-    track.innerHTML = aepTrackSvg(real, dur, H, trackW, pps);
+    svgHolder.innerHTML = aepTrackSvg(real, dur, H, trackW, pps);
     pct.textContent = Math.round(zoom * 100) + '%';
   }
+  // Hover playhead: snap the cursor to the nearest frame and show its timecode + frame.
+  const fpsN = comp.fps && isFinite(comp.fps) && comp.fps > 0 ? comp.fps : 30;
+  const fpsR = Math.max(1, Math.round(fpsN));
+  function movePlayhead(clientX) {
+    const pps = ppsNow();
+    const t = Math.max(0, Math.min(dur, (clientX - track.getBoundingClientRect().left) / pps));
+    const frame = Math.round(t * fpsN);
+    const sx = (frame / fpsN) * pps;
+    const ff = frame % fpsR, secs = Math.floor(frame / fpsR), mm = Math.floor(secs / 60), ss = secs % 60;
+    playbox.textContent = `${mm}:${String(ss).padStart(2, '0')}:${String(ff).padStart(2, '0')}  f${frame}`;
+    playline.style.left = playbox.style.left = sx + 'px';
+    playline.style.display = playbox.style.display = 'block';
+  }
+  const hidePlayhead = () => { playline.style.display = playbox.style.display = 'none'; };
   function setZoom(z, anchorClientX) {
     const oldPps = ppsNow();
     const rect = scroller.getBoundingClientRect();
@@ -238,7 +308,11 @@ function buildCompTimeline(comp) {
     scroller.style.cursor = 'grabbing';
     try { scroller.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
   });
-  scroller.addEventListener('pointermove', (e) => { if (dragging) scroller.scrollLeft = startScroll - (e.clientX - startX); });
+  scroller.addEventListener('pointermove', (e) => {
+    if (dragging) scroller.scrollLeft = startScroll - (e.clientX - startX);
+    if (e.pointerType !== 'touch') movePlayhead(e.clientX);
+  });
+  scroller.addEventListener('pointerleave', hidePlayhead);
   const endDrag = (e) => { dragging = false; scroller.style.cursor = 'grab'; try { scroller.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ } };
   scroller.addEventListener('pointerup', endDrag);
   scroller.addEventListener('pointercancel', endDrag);
@@ -306,21 +380,25 @@ export async function renderAep(file, resultsEl) {
 
   // ---- Compositions: one timeline card each (most layers first) ----
   const comps = data.comps.slice().sort((a, b) => b.real.length - a.real.length);
+  const _renderAnchor = resultsEl.firstChild;
   for (const c of comps) {
     if (!c.real.length) continue;
-    resultsEl.appendChild(buildCompTimeline(c));
+    resultsEl.insertBefore(buildCompTimeline(c), _renderAnchor);
   }
 
   // ---- Legend ----
+  const usedLabels = [...new Set(data.comps.flatMap((c) => (c.real || []).map((l) => l.labelIdx)).filter(Boolean))].sort((a, b) => a - b);
+  const swatches = usedLabels.map((i) =>
+    `<span style="display:inline-block;width:10px;height:10px;background:${AE_LABEL_COLOURS[i]};vertical-align:middle;margin:0 5px 0 10px"></span>${AE_LABEL_NAMES[i]}`).join('');
   resultsEl.appendChild(el('div', { class: 'anr-card' }, [
     el('h3', {}, 'Legend'),
     el('p', { class: 'anr-hint', html:
-      'Each bar is a layer, positioned by its in and out point on the composition timeline. '
-      + '<span style="color:#3b82c4">Footage</span>, '
-      + '<span style="color:#8a6fd6">pre-comp</span>, '
-      + '<span style="color:#3ba776">audio</span>, '
-      + '<span style="color:#7f8896">shape / null / text</span>. '
-      + 'A ◳ marker and amber outline mark 3D layers. Each timeline zooms with ctrl/⌘ + scroll (or the zoom buttons) and pans by dragging. '
+      'Each bar is a layer, positioned by its in and out point on the composition timeline and coloured by its After Effects label. '
+      + (swatches ? 'Labels used:' + swatches + '. ' : '')
+      + 'A glyph on each bar marks its kind: <b>T</b> text, ◆ shape, ▣ image, ► video, ♪ audio, ⧉ pre-comp, ■ solid, ◉ camera, ☼ light. '
+      + 'An amber outline and a ◳ marker additionally denote 3D layers. '
+      + 'Colours use After Effects’ default label palette - the file stores only the label index, so a customised palette in your preferences will look different. '
+      + 'Each timeline zooms with ctrl/⌘ + scroll (or the zoom buttons) and pans by dragging. '
       + 'Timings are decoded from the file; keyframes and effects-over-time are not drawn.' }),
   ]));
 

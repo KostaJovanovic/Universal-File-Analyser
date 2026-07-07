@@ -150,9 +150,12 @@ export function renderBreakdownCards(items, resultsEl, extraSummaryRows) {
 
 // ---------- view toggle (treemap / tree) ----------
 
-export function renderViewToggle(container, items, treeObj, treeOpts, onFileClick) {
+export function renderViewToggle(container, items, treeObj, treeOpts, onFileClick, opts) {
   // The Contents cards land at the anchor slot (between Overview and File types)
   // when renderBreakdownCards left one; otherwise they append to the end.
+  // When opts.treemapFirst is set (top-level archive/folder views), the treemap
+  // is instead hoisted to the very front of the container so the visual render
+  // leads the whole result; the file tree still lands in its slot.
   const slot = container.querySelector('.anr-contents-slot');
   const place = (node) => { if (slot && slot.parentNode === container) container.insertBefore(node, slot); else container.appendChild(node); };
 
@@ -286,6 +289,11 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
   }
 
   mount();
-  place(card);       // treemap first
-  place(treeCard);   // file tree under it
+  if (opts && opts.treemapFirst) {
+    container.insertBefore(card, container.firstChild);   // treemap leads the whole result
+    place(treeCard);                                      // file tree stays in its slot (between Overview and File types)
+  } else {
+    place(card);       // treemap first
+    place(treeCard);   // file tree under it
+  }
 }
