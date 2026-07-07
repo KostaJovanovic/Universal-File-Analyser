@@ -208,6 +208,20 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">5.12</p>
+          <p class="patch-name">Band Stop</p>
+          <p class="patch-date">7 July 2026, 07:41</p>
+          <ul class="patch-list">
+            <li><strong>The sound workbench gets sharper - mute frequencies you pick straight on the spectrogram, watch every image-to-sound setting reshape the picture live, and see below 20 Hz for the first time - while a recorded G-code clip now spends its time on the real build instead of the machine setting up.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Mute the frequencies you choose.</strong> The <a href="/about#where">Sound analysis</a> spectrogram gains an <strong>Isolate</strong> mode - drag across the spectrogram, or type an exact low and high frequency, to pick one or more bands, and each one is muted from playback and shaded on the view. So you can lift out a hum, a whistle or a whole range and hear what is left. Bands that overlap block cleanly now, with no sound leaking through the seams.</li>
+            <li><strong>Keep scrubbing while you isolate.</strong> You can still move the playhead - grab it, or tap the spectrogram to seek - while marking out frequency bands, so picking ranges and listening no longer fight each other.</li>
+            <li><span class="patch-tag">New</span><strong>See what your picture will sound like.</strong> In <a href="/about#where">Image to sound</a>, every setting that shapes the sound now redraws the picture live - invert, the colour channel it reads, the colour scheme, the dB scale and gamma all repaint the preview as you change them, so you can read the loudness map before you render. A new <strong>[?]</strong> explains each control, an <strong>Analyse WAV</strong> button runs the full sound analysis without playing, and the Invert and dB switches now match the rest of the controls.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The spectrogram reaches below 20 Hz.</strong> The sound spectrogram now extends down to 10 Hz, so very low bass and infrasound that used to drop off the bottom of the chart are visible - in the file view and the live spectrograms alike.</li>
+            <li><span class="patch-tag">New</span><strong>A G-code clip that gets to the point.</strong> A recorded <a href="/about#ext-gcode">G-code</a> build clip now rushes its first few setup moves past in the opening second, so the rest of the clip is spent watching the real object draw itself rather than the machine homing and priming. The label and site mark shown on the clip are a little larger and easier to read too.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">5.11</p>
           <p class="patch-name">Render First</p>
           <p class="patch-date">7 July 2026, 03:40</p>
@@ -235,6 +249,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">5.09</p>
           <p class="patch-name">Close Up</p>
@@ -245,9 +262,6 @@
             <li><span class="patch-tag is-fix">Fix</span><strong>Fullscreen keeps the controls in reach.</strong> In fullscreen the viewer now starts with the canvas filling the screen and the controls collapsed to a slim bar, with a <strong>More controls</strong> button to expand them - and the zoom and exit buttons always ride on top of that bar instead of hiding behind it.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">5.08</p>

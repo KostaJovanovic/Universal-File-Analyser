@@ -31,7 +31,7 @@
  * Everything stays on-device: File API in, Web Audio out, nothing uploaded.
  */
 
-import { el, downloadBlob, asciiBar } from '../core/util.js';
+import { el, downloadBlob, asciiBar, h3help } from '../core/util.js';
 import { fft, colormaps } from './spectrogram.js';
 import { renderAudio } from './audio.js';
 
@@ -422,6 +422,25 @@ function makeToggle(options, value) {
   return wrap;
 }
 
+// Extensive [?] copy for the section header (the site's standard h3help dropdown),
+// walking through every control in plain language. Spaced hyphens, no em-dashes.
+const SETTINGS_HELP =
+  'Analyser reads your picture as a spectrogram: left to right is time, bottom to top is pitch, and how bright a spot is sets how loud that pitch sounds at that moment. Everything runs on your own device.<br><br>' +
+  '<strong>Mode</strong> Arbitrary image treats any picture as a sound recipe; Real spectrogram turns an actual spectrogram plot back into the sound it depicts.<br>' +
+  '<strong>Method</strong> Oscillator bank stacks one sine tone per pitch row (robust on any picture); Griffin-Lim reconstructs a waveform whose spectrogram matches the image (more faithful for real spectrograms, a little heavier).<br>' +
+  '<strong>Invert</strong> OFF means bright is loud; ON flips it so dark is loud and bright is quiet - handy for a spectrogram drawn dark on a light background.<br>' +
+  '<strong>Axis</strong> How pitch is spread up the picture. LOG matches how we hear, spacing octaves evenly; LINEAR spaces frequencies evenly in hertz.<br>' +
+  '<strong>Min / Max</strong> The lowest and highest pitch the picture spans, in hertz. The bottom row plays at Min, the top row at Max, and everything between is stretched across that range.<br>' +
+  '<strong>Length</strong> How long the rendered sound lasts. Click the number to type an exact value past the slider.<br>' +
+  '<strong>Rate</strong> Audio sample rate. Higher reaches higher pitches but makes a larger file.<br>' +
+  '<strong>FFT</strong> The analysis block size. Larger sharpens pitch detail but blurs timing; smaller does the reverse.<br>' +
+  '<strong>Window</strong> The analysis window shape used by Griffin-Lim. Hann suits most sounds; Rect is sharpest but noisier.<br>' +
+  '<strong>GL iters</strong> How many refinement passes Griffin-Lim runs. More is cleaner and closer to the target, but slower. No effect on the Oscillator bank.<br>' +
+  '<strong>Gamma</strong> Bends the brightness-to-loudness curve. Below 1 lifts faint detail into audible sound; above 1 pushes quiet areas further down. The preview updates live.<br>' +
+  '<strong>Left / Right</strong> Which colour channel each ear listens to - luminance, or a single red, green or blue channel. Set Right to None for mono, or a different channel for a stereo split.<br>' +
+  '<strong>Colours</strong> Real spectrogram mode only: the colour scheme the source plot was drawn with, so Analyser can decode its colours back into loudness.<br>' +
+  '<strong>dB scale</strong> Real spectrogram mode only: read brightness as decibels, the way most spectrograms are drawn, rather than as a plain linear level.';
+
 /**
  * Mount the sonifier UI into `mountEl` for an already-decoded image.
  *
@@ -431,7 +450,9 @@ function makeToggle(options, value) {
 export async function renderSonify(file, mountEl, opts = {}) {
   mountEl.innerHTML = '';
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Image to sound'));
+  const [headH, headHelp] = h3help('Image to sound', SETTINGS_HELP);
+  card.appendChild(headH);
+  card.appendChild(headHelp);
   card.appendChild(el('p', { class: 'anr-hint' },
     'Reads this picture as a spectrogram and resynthesises sound from it - x is time, y is frequency, brightness is loudness. Runs entirely on your device.'));
   mountEl.appendChild(card);
@@ -452,28 +473,68 @@ export async function renderSonify(file, mountEl, opts = {}) {
   const viewWrap = el('div', { style: 'position:relative;max-width:640px;margin:0 0 16px;background:var(--media-bg);border:var(--bd-hairline);' }, [viewCv, cursor]);
   card.appendChild(viewWrap);
 
-  // The Gamma slider shapes brightness -> amplitude in the synthesis (toMag). Mirror
-  // that curve on the working image so dragging Gamma previews, in real time, the
-  // tonal response the render will hear. Preview into a separate buffer - the
-  // synthesis reads the pristine `imageData` and applies gamma itself, so baking it
-  // into those pixels would double-apply it.
+  // The synthesis reads each pixel as a loudness (toMag: pick a channel or decode a
+  // colourmap, optionally invert, then gamma- or dB-shape it). Mirror that WHOLE
+  // mapping onto the working image, so every control that changes what the render
+  // hears - channel, invert, gamma, mode, colourmap, dB scale - previews live, the
+  // way Gamma alone used to. Two display modes:
+  //   - reading luminance from an ordinary image, keep the colour photo and just
+  //     apply invert + gamma per channel (recognisable; matches the old preview);
+  //   - reading a single channel, or decoding a real spectrogram, each pixel becomes
+  //     one loudness value, shown as the grayscale "this is what you hear" map.
+  // Preview into a separate buffer - the synthesis reads the pristine `imageData` and
+  // applies the mapping itself, so baking it into those pixels would double-apply it.
   const viewCtx = viewCv.getContext('2d');
   const basePixels = new Uint8ClampedArray(imageData.data);
   const displayData = viewCtx.createImageData(workW, workH);
   const gammaLut = new Uint8ClampedArray(256);
+  // Reverse-colourmap preview: the exact inverter runs a 256-step nearest search per
+  // pixel (too slow to drag), so bake it once into a coarse RGB cube keyed by the top
+  // bits of each channel and look that up per pixel. Rebuilt only on colourmap change;
+  // grayscale short-circuits to plain luma.
+  const CUBE = 32;
+  let cubeName = null, cubeLut = null;
+  function cubeValue(r, g, b) {
+    const name = cmapSel.value;
+    if (name === 'grayscale' || !colormaps[name]) return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    if (cubeName !== name) {
+      cubeName = name; cubeLut = new Float32Array(CUBE * CUBE * CUBE);
+      const inv = makeColormapInverter(name);
+      for (let ri = 0; ri < CUBE; ri++) for (let gi = 0; gi < CUBE; gi++) for (let bi = 0; bi < CUBE; bi++)
+        cubeLut[(ri * CUBE + gi) * CUBE + bi] = inv(ri * 255 / (CUBE - 1), gi * 255 / (CUBE - 1), bi * 255 / (CUBE - 1));
+    }
+    const ri = (r * (CUBE - 1) / 255) | 0, gi = (g * (CUBE - 1) / 255) | 0, bi = (b * (CUBE - 1) / 255) | 0;
+    return cubeLut[(ri * CUBE + gi) * CUBE + bi];
+  }
   function redrawImage() {
+    const spectro = modeSel.value === 'spectro';
+    const invert = invTog._value === 'on';
     const g = +gammaSld._input.value;
-    const dst = displayData.data;
-    if (g === 1) {
-      dst.set(basePixels);
-    } else {
-      for (let i = 0; i < 256; i++) gammaLut[i] = Math.round(Math.pow(i / 255, g) * 255);
-      for (let i = 0; i < basePixels.length; i += 4) {
-        dst[i]     = gammaLut[basePixels[i]];
-        dst[i + 1] = gammaLut[basePixels[i + 1]];
-        dst[i + 2] = gammaLut[basePixels[i + 2]];
-        dst[i + 3] = basePixels[i + 3];
+    const left = leftSel.value;
+    const dbInvert = dbTog._value === 'db';
+    const dst = displayData.data, src = basePixels;
+    const colour = !spectro && left === 'luma';   // keep the colour photo when reading luminance
+    if (colour) for (let i = 0; i < 256; i++) gammaLut[i] = Math.round(Math.pow(i / 255, g) * 255);
+    const ceilAmp = Math.pow(10, DEFAULTS.dbCeil / 20);
+    for (let i = 0; i < src.length; i += 4) {
+      if (colour) {
+        let R = src[i], G = src[i + 1], B = src[i + 2];
+        if (invert) { R = 255 - R; G = 255 - G; B = 255 - B; }
+        dst[i] = gammaLut[R]; dst[i + 1] = gammaLut[G]; dst[i + 2] = gammaLut[B]; dst[i + 3] = src[i + 3];
+        continue;
       }
+      const r = src[i], gc = src[i + 1], b = src[i + 2];
+      let t = spectro ? cubeValue(r, gc, b)
+        : left === 'r' ? r / 255
+          : left === 'g' ? gc / 255
+            : left === 'b' ? b / 255
+              : (0.299 * r + 0.587 * gc + 0.114 * b) / 255;
+      if (invert) t = 1 - t;
+      let d;
+      if (spectro && dbInvert) { const db = DEFAULTS.dbFloor + t * (DEFAULTS.dbCeil - DEFAULTS.dbFloor); d = Math.pow(10, db / 20) / ceilAmp; }
+      else d = g !== 1 ? Math.pow(t, g) : t;
+      const gray = Math.round((d < 0 ? 0 : d > 1 ? 1 : d) * 255);
+      dst[i] = gray; dst[i + 1] = gray; dst[i + 2] = gray; dst[i + 3] = src[i + 3];
     }
     viewCtx.putImageData(displayData, 0, 0);
   }
@@ -495,22 +556,29 @@ export async function renderSonify(file, mountEl, opts = {}) {
   const leftSel  = mkSelect([['luma', 'Luminance'], ['r', 'Red'], ['g', 'Green'], ['b', 'Blue']], DEFAULTS.leftSrc);
   const rightSel = mkSelect([['none', 'None (mono)'], ['luma', 'Luminance'], ['r', 'Red'], ['g', 'Green'], ['b', 'Blue']], DEFAULTS.rightSrc);
   const cmapSel  = mkSelect([['grayscale', 'Grey'], ['viridis', 'Viridis'], ['magma', 'Magma'], ['inferno', 'Inferno']], DEFAULTS.colormap);
-  const dbChk    = el('input', { type: 'checkbox' }); dbChk.checked = DEFAULTS.dbInvert;
-  const invChk   = el('input', { type: 'checkbox' }); invChk.checked = DEFAULTS.invert;
+  const dbTog    = makeToggle([['lin', 'LINEAR'], ['db', 'dB']], DEFAULTS.dbInvert ? 'db' : 'lin');
+  const invTog   = makeToggle([['off', 'OFF'], ['on', 'ON']], DEFAULTS.invert ? 'on' : 'off');
+
+  // Every control that changes how the picture is read as loudness repaints the
+  // preview live, the same way Gamma does (wired above). Toggle clicks bubble to the
+  // wrapper after their own handler has updated _value, so the redraw sees the change.
+  for (const c of [modeSel, leftSel, cmapSel]) c.addEventListener('change', redrawImage);
+  for (const t of [invTog, dbTog]) t.addEventListener('click', redrawImage);
+  redrawImage();
 
   const advanced = el('details', { class: 'anr-spec-advanced' }, [
     el('summary', {}, 'Advanced'),
     el('div', { class: 'anr-control-group-items' }, [
       ctl('Rate', srSel), ctl('FFT', fftSel), ctl('Window', winSel),
       glSld, gammaSld, ctl('Left', leftSel), ctl('Right', rightSel),
-      ctl('Colours', cmapSel), ctl('dB scale', dbChk)
+      ctl('Colours', cmapSel), ctl('dB scale', dbTog)
     ])
   ]);
 
   // The stock .anr-controls drops its bottom border to butt against a canvas;
   // here it stands alone above the action row, so close the box.
   const controls = el('div', { class: 'anr-controls', style: 'border-bottom:var(--bd-hairline);' }, [
-    group('Synthesis', [ctl('Mode', modeSel), ctl('Method', methodSel), ctl('Invert', invChk)]),
+    group('Synthesis', [ctl('Mode', modeSel), ctl('Method', methodSel), ctl('Invert', invTog)]),
     group('Frequency', [ctl('Axis', scaleTog), minSld, maxSld]),
     group('Time', [durSld]),
     advanced
@@ -518,10 +586,11 @@ export async function renderSonify(file, mountEl, opts = {}) {
   card.appendChild(controls);
 
   // ---- actions ----
-  const renderBtn = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Render & play');
-  const wavBtn    = el('button', { type: 'button', class: 'anr-btn' }, 'Download WAV');
-  const status    = el('span', { class: 'anr-spec-hint', style: 'align-self:center;' }, '');
-  card.appendChild(el('div', { class: 'anr-btn-row' }, [renderBtn, wavBtn, status]));
+  const renderBtn  = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Render & play');
+  const analyseBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse WAV');
+  const wavBtn     = el('button', { type: 'button', class: 'anr-btn' }, 'Download WAV');
+  const status     = el('span', { class: 'anr-spec-hint', style: 'align-self:center;' }, '');
+  card.appendChild(el('div', { class: 'anr-btn-row' }, [renderBtn, analyseBtn, wavBtn, status]));
 
   // ---- render progress (the site's standard ASCII bar) ----
   const progBar   = asciiBar({ fit: true });
@@ -552,9 +621,9 @@ export async function renderSonify(file, mountEl, opts = {}) {
       mode: modeSel.value, method: methodSel.value, duration, sampleRate, fftSize, hop, frames,
       minHz: +minSld._input.value, maxHz: +maxSld._input.value, scale: scaleTog._value,
       window: winSel.value, glIters: +glSld._input.value, gamma: +gammaSld._input.value,
-      invert: invChk.checked,
+      invert: invTog._value === 'on',
       leftSrc: leftSel.value, rightSrc: rightSel.value, colormap: cmapSel.value,
-      dbInvert: dbChk.checked, dbFloor: DEFAULTS.dbFloor, dbCeil: DEFAULTS.dbCeil
+      dbInvert: dbTog._value === 'db', dbFloor: DEFAULTS.dbFloor, dbCeil: DEFAULTS.dbCeil
     };
   }
 
@@ -620,7 +689,7 @@ export async function renderSonify(file, mountEl, opts = {}) {
 
   async function doRender(play) {
     const o = readOpts();
-    renderBtn.disabled = true; wavBtn.disabled = true;
+    renderBtn.disabled = true; wavBtn.disabled = true; analyseBtn.disabled = true;
     status.textContent = 'Rendering...';
     progBar.set(0);
     progWrap.style.display = 'block';
@@ -665,13 +734,20 @@ export async function renderSonify(file, mountEl, opts = {}) {
     } catch (err) {
       status.textContent = 'Render failed: ' + (err && err.message ? err.message : err);
     } finally {
-      renderBtn.disabled = false; wavBtn.disabled = false;
+      renderBtn.disabled = false; wavBtn.disabled = false; analyseBtn.disabled = false;
       progBar.stop();
       progWrap.style.display = 'none';
     }
   }
 
   renderBtn.addEventListener('click', () => doRender(true));
+  // Render (or re-render) and run the full Sound analysis without auto-playing - the
+  // analyse-only twin of Render & play. If it is already rendered, just rebuild the
+  // analysis from the existing channels instead of resynthesising.
+  analyseBtn.addEventListener('click', async () => {
+    if (!lastChannels) { await doRender(false); return; }
+    await buildOutput();
+  });
   wavBtn.addEventListener('click', async () => {
     if (!lastChannels) await doRender(false);
     if (!lastChannels) return;

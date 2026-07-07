@@ -400,7 +400,7 @@ export const colormaps = {
  *     colormap  - 'viridis' | 'magma' | 'inferno' | 'grayscale' | 'phosphor'
  *     dbFloor   - clamp values below this to colormap min  (default -90)
  *     dbCeil    - clamp values above this to colormap max  (default -10)
- *     minHz     - bottom of frequency axis                 (default 20)
+ *     minHz     - bottom of frequency axis                 (default 10)
  *     maxHz     - top of frequency axis                    (default sampleRate/2)
  *   }
  *
@@ -421,7 +421,7 @@ export function renderSpectrogram(canvas, spec, opts = {}) {
   const cmapName  = opts.colormap  || 'viridis';
   const dbFloor   = opts.dbFloor   != null ? opts.dbFloor : -90;
   const dbCeil    = opts.dbCeil    != null ? opts.dbCeil  : -10;
-  const minHz     = opts.minHz     != null ? opts.minHz   : 20;
+  const minHz     = opts.minHz     != null ? opts.minHz   : 10;
   const maxHz     = opts.maxHz     != null ? opts.maxHz   : sampleRate / 2;
   const cmap      = colormaps[cmapName] || colormaps.viridis;
 
@@ -443,7 +443,7 @@ export function renderSpectrogram(canvas, spec, opts = {}) {
   // Precompute per-y bin index (one per pixel row, top = high freq)
   const binForY = new Float32Array(h);
   if (scale === 'log') {
-    const logMin = Math.log10(Math.max(20, minHz));
+    const logMin = Math.log10(Math.max(1, minHz));
     const logMax = Math.log10(Math.max(logMin + 0.001, maxHz));
     for (let y = 0; y < h; y++) {
       const frac = 1 - y / (h - 1); // 0 at bottom, 1 at top

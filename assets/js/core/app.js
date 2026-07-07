@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 184;
+const COMMIT_COUNT = 185;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1728,13 +1728,16 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
-  { range: '5.08 - 5.11', notes: [
+  { range: '5.08 - 5.12', notes: [
     'The home page becomes a single "drop any file" zone, and multi-channel sound can be analysed one channel at a time.',
     'The G-code viewer gains a press-and-hold zoom pad, a scroll-zoom toggle and a tidier fullscreen.',
     'A G-code build can be recorded as an MP4 video - choose its length, speed, aspect, quality and camera moves - and downloaded to keep or share.',
     'Exported clips now play and send everywhere, including WhatsApp, and the export panel goes fullscreen on phones.',
     'Every viewer now leads with the actual render, preview or file tree, with the technical details below.',
     'The After Effects project timeline is rebuilt: layers sit at their true positions, take their real label colours and type glyphs, and a frame-snapping scrubber shows the timecode under the cursor.',
+    'The Sound spectrogram gains an Isolate mode: drag across it or type an exact range to mute those frequency bands from playback and shade them on the view, with the playhead still scrubbable.',
+    'Image to sound previews every setting live on the picture (with a [?] guide and an Analyse WAV button), and the spectrogram now reaches below 20 Hz.',
+    'A recorded G-code clip rushes its setup moves past in the opening second, so the clip spends its time on the real build.',
   ] },
   { range: '5.05 - 5.07', notes: [
     'Turn any photo into sound: it is read as a spectrogram and resynthesised, with a choice of engine, an adjustable pitch range and a length up to three minutes.',

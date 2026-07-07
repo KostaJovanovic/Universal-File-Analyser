@@ -2400,6 +2400,12 @@ export async function renderGcode(file, resultsEl, opts) {
           { cfg: 'dim', st: 'isoTool', get: (s) => !!s.isoTool, put: (c) => !!c && hasMultiTool },
         ];
         const CLIP_TAIL_S = 3;   // hold on the finished build this long after the print completes
+        // Fixed lead-in: rush the first CLIP_INTRO_MOVES moves through in CLIP_INTRO_S so the
+        // setup boilerplate (home, heat, prime, skirt) doesn't eat the clip's time budget - the
+        // real build then plays over clipCfg.dur. Only applied when there's more than the lead-in
+        // worth of moves; a short file just plays normally. So a "10s" clip is 1s + 10s + 3s.
+        const CLIP_INTRO_S = 1, CLIP_INTRO_MOVES = 5;
+        const clipHasIntro = () => G > CLIP_INTRO_MOVES;
         const clipDims = () => {
           const s = clipCfg.size;
           return clipCfg.aspect === '16:9' ? [Math.round(s * 16 / 9), s]
@@ -2533,7 +2539,7 @@ export async function renderGcode(file, resultsEl, opts) {
         // treatment (like the pause tag) so it reads on any canvas.
         const drawClipOverlay = (ctx, W, H, t, withInfo) => {
           const s = viewer.state;
-          const fpx = Math.max(11, Math.round(Math.min(W, H) * 0.021));
+          const fpx = Math.max(15, Math.round(Math.min(W, H) * 0.028));
           const pad = Math.round(fpx * 0.6), m = Math.round(fpx * 0.9), chipH = fpx + pad * 2;
           ctx.font = '500 ' + fpx + 'px "Geist Mono", ui-monospace, Consolas, monospace';
           ctx.textBaseline = 'middle';
@@ -2562,9 +2568,13 @@ export async function renderGcode(file, resultsEl, opts) {
           playBtn.disabled = true; progSlider.disabled = true;   // they'd fight the frame loop
           const [W, H] = clipDims();
           const fps = clipCfg.fps, N = Math.max(1, Math.round(clipCfg.dur * fps));
+          // Lead-in: rush the first CLIP_INTRO_MOVES moves through in CLIP_INTRO_S (see above).
+          // introF frames cover moves 0..g0; the main N frames cover g0..G; then the tail holds.
+          const introF = clipHasIntro() ? Math.round(CLIP_INTRO_S * fps) : 0;
+          const g0 = clipHasIntro() ? CLIP_INTRO_MOVES : 0;
           // Hold on the finished build for 3s after the print completes (the orbit
           // keeps turning), so the clip doesn't cut on the final layer.
-          const NF = N + CLIP_TAIL_S * fps;
+          const NF = introF + N + CLIP_TAIL_S * fps;
           const s0 = viewer.state;
           // spin is restored through setSpin (not the state assign) so its listeners
           // repaint the Pause/Resume spin button.
@@ -2711,14 +2721,21 @@ export async function renderGcode(file, resultsEl, opts) {
               if (cancelled || encErr) break;
               if (!viewer.wrap.isConnected) { cancelled = true; break; }
               if (viewer.canvas !== curCanvas) arm();
-              const t = Math.min(1, i / N);   // clamps at 1 through the hold tail
-              applyGlobal(t * G);
+              // Piecewise timeline: rush moves 0..g0 through the introF lead-in frames, then
+              // play g0..G over the main N frames, then hold at G through the tail. `t` (the
+              // overlay's build-progress fraction) tracks the true move position, not the frame.
+              let gi;
+              if (i < introF) gi = introF ? (i / introF) * g0 : 0;
+              else gi = g0 + Math.min(1, (i - introF) / N) * (G - g0);
+              const t = G ? gi / G : 1;
+              const mainEnd = introF + N;   // first tail frame index
+              applyGlobal(gi);
               // Once the build is finished and the clip is just holding + spinning on the
-              // completed part (the CLIP_TAIL_S tail, i >= N), drop "Dim other tools" so
+              // completed part (the CLIP_TAIL_S tail, i >= mainEnd), drop "Dim other tools" so
               // the whole model shows fully lit for the beauty spin. Checked every tail
               // frame so a mid-render arm() (MSAA swap) re-enabling it can't stick.
               // Reverted with the rest of the scene flags via `saved` after the render.
-              if (i >= N && viewer.state.isoTool) viewer.state.isoTool = false;
+              if (i >= mainEnd && viewer.state.isoTool) viewer.state.isoTool = false;
               // Deterministic orbit at the live spin's feel (0.18 rad/s of clip time),
               // running on the frame clock so it carries on through the tail.
               if (clipCfg.orbit) { viewer.state.yaw = yaw0 + (i / fps) * 0.18; viewer.markDirty(); }
@@ -2903,7 +2920,7 @@ export async function renderGcode(file, resultsEl, opts) {
           const est = el('p', { class: 'anr-clip-est' });
           paints.push(() => {
             const [W, H] = clipDims();
-            const mb = clipRate(W, H) * (clipCfg.dur + CLIP_TAIL_S) / 8 / 1e6;
+            const mb = clipRate(W, H) * (clipCfg.dur + CLIP_TAIL_S + (clipHasIntro() ? CLIP_INTRO_S : 0)) / 8 / 1e6;
             est.textContent = W + '×' + H + ' · ' + clipCfg.fps + ' fps · ~' + (mb < 9.5 ? mb.toFixed(1) : Math.round(mb)) + ' MB';
           });
           const cancelBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, 'Cancel');

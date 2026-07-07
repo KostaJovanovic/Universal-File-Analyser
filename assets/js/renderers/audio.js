@@ -241,7 +241,7 @@ function renderWaveform(canvas, samples) {
 
 function buildFreqAxis(axisEl, sampleRate, scale) {
   axisEl.innerHTML = '';
-  const minHz = scale === 'log' ? 20 : 0;
+  const minHz = scale === 'log' ? 10 : 0;
   const maxHz = sampleRate / 2;
   const ticks = frequencyTicks(minHz, maxHz, scale);
 
@@ -565,6 +565,18 @@ function attachFullscreen(card, fsBtn, allowFs, sig, onChange) {
 export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   const card = el('div', { class: 'anr-card anr-spec-card anr-spec-fillable' });
 
+  // Isolate-frequencies state. Declared up here because the pan/seek guards below
+  // and recompute's band repositioning reference it; the tool itself is wired up
+  // in the isolate block near the end of this function.
+  const NYQ = sampleRate / 2;
+  // Bottom of the log frequency axis, in Hz. Below the old 20 Hz floor so sub-20 Hz
+  // (infrasound / very low bass) is actually shown; render, axis labels and the
+  // isolate-band overlays all key off this so they can't drift. Linear scale floors
+  // at 0. Kept in sync with buildFreqAxis's own literal.
+  const SPEC_LOG_MIN = 10;
+  const isoBands = [];   // { lo, hi, el, row, fromIn, toIn }
+  let isoActive = false;
+
   const [specH, specHelp] = h3help('Spectrogram',
     '<strong>Axis</strong> Log maps frequencies logarithmically (closer to human hearing). Linear spaces them evenly.<br>' +
     '<strong>Mode</strong> STFT is the standard windowed FFT. Reassigned sharpens both the time and frequency axes at once by moving each cell’s energy to its true centre - thin ridges instead of blurred blobs - using the same FFT (3× the compute).<br>' +
@@ -636,6 +648,11 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   // toggles on/off via closeLive(), so the Live button is a true toggle.
   const actions = [ctl('', saveBtn)];
   if (fsBtn) actions.push(ctl('', fsBtn));
+  // Isolate frequencies (band-stop) - only offered when driving file playback.
+  const isoBtn = opts.audioEl
+    ? el('button', { type: 'button', class: 'anr-btn' }, [sIco('<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 4h5M9 4h4M1 10h4M8 10h5"/><circle cx="7.5" cy="4" r="1.6" fill="currentColor" stroke="none"/><circle cx="6.5" cy="10" r="1.6" fill="currentColor" stroke="none"/></svg>'), 'Isolate'])
+    : null;
+  if (isoBtn) actions.unshift(ctl('', isoBtn));   // Isolate sits leftmost in the Actions row
   if (opts.capture) {
     const recBtn  = el('button', { type: 'button', class: 'anr-btn' }, [sIco('<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" fill="currentColor"/></svg>'), 'Record']);
     const liveBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Live spectrogram');
@@ -714,6 +731,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     opts.audioEl.addEventListener('pause', () => updateLine(true));
     opts.audioEl.addEventListener('seeked', () => updateLine(opts.audioEl.paused));
     canvas.addEventListener('click', (e) => {
+      if (isoActive) return;                         // isolate mode owns clicks/drags on the canvas
       if (panMoved) { panMoved = false; return; }   // a drag-pan ended here, not a seek
       const rect = canvas.getBoundingClientRect();
       const frac = (e.clientX - rect.left) / rect.width;
@@ -739,6 +757,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     let pid = null, startX = 0, startScroll = 0;
     const THRESH = 4;
     scrollEl.addEventListener('pointerdown', (e) => {
+      if (isoActive) return;                         // isolate mode captures the drag itself
       if (e.button !== 0 || e.pointerType === 'touch') return;
       if (e.target.closest && e.target.closest('.anr-playhead')) return;
       pid = e.pointerId; startX = e.clientX; startScroll = scrollEl.scrollLeft;
@@ -868,12 +887,13 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       cached = { fftSize: state.fftSize, winName: state.winName, mode: state.mode, spec, stats: specStats(spec) };
     }
     sizeCanvas();
-    renderSpectrogram(canvas, cached.spec, { scale: state.scale, colormap: state.cmap, dbFloor: state.dbFloor });
+    renderSpectrogram(canvas, cached.spec, { scale: state.scale, colormap: state.cmap, dbFloor: state.dbFloor, minHz: state.scale === 'log' ? SPEC_LOG_MIN : 0 });
     const duration = samples.length / sampleRate;
     buildFreqAxis(axisY, sampleRate, state.scale);
     buildTimeAxis(axisX, duration);
     buildSpecStats(stats, cached.stats, state.fftSize, sampleRate, loud);
     scrollbar.update();
+    positionBands();
     const ms = (performance.now() - t0).toFixed(0);
     status.textContent = `${cached.spec.frames} frames × ${cached.spec.bins} bins | ${canvas.width}×${canvas.height} px | ${ms} ms`;
   }
@@ -881,7 +901,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   // Cheap path for changes that only affect pixels, not geometry or the spectrum
   // (sensitivity, colour). No FFT recompute, no canvas resize, no stats re-scan.
   function renderOnly() {
-    renderSpectrogram(canvas, cached.spec, { scale: state.scale, colormap: state.cmap, dbFloor: state.dbFloor });
+    renderSpectrogram(canvas, cached.spec, { scale: state.scale, colormap: state.cmap, dbFloor: state.dbFloor, minHz: state.scale === 'log' ? SPEC_LOG_MIN : 0 });
     buildSpecStats(stats, cached.stats, state.fftSize, sampleRate, loud);
   }
 
@@ -950,10 +970,227 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       const h = parseInt(hVal, 10) || 320;
       const out = el('canvas');
       out.width = w; out.height = h;
-      renderSpectrogram(out, cached.spec, { scale: state.scale, colormap: state.cmap, dbFloor: state.dbFloor });
+      renderSpectrogram(out, cached.spec, { scale: state.scale, colormap: state.cmap, dbFloor: state.dbFloor, minHz: state.scale === 'log' ? SPEC_LOG_MIN : 0 });
       specSavePng(out, opts.basename);
     });
   });
+
+  // ---- Isolate frequencies (band-stop) ----
+  // Frequency <-> vertical-fraction mapping, mirroring renderSpectrogram's y-axis
+  // (20 Hz .. Nyquist, log or linear). frac is 0 at the bottom, 1 at the top.
+  function freqToFrac(hz) {
+    hz = Math.max(1, Math.min(NYQ, hz));
+    if (state.scale === 'log') {
+      const lo = Math.log10(SPEC_LOG_MIN), hi = Math.log10(Math.max(SPEC_LOG_MIN + 1, NYQ));
+      return Math.max(0, Math.min(1, (Math.log10(Math.max(SPEC_LOG_MIN, hz)) - lo) / (hi - lo)));
+    }
+    return Math.max(0, Math.min(1, hz / NYQ));
+  }
+  function fracToFreq(frac) {
+    frac = Math.max(0, Math.min(1, frac));
+    if (state.scale === 'log') {
+      const lo = Math.log10(SPEC_LOG_MIN), hi = Math.log10(Math.max(SPEC_LOG_MIN + 1, NYQ));
+      return Math.pow(10, lo + frac * (hi - lo));
+    }
+    return frac * NYQ;
+  }
+  // Reposition every band overlay to its Hz range. Called from recompute, so the
+  // overlays track the axis when the scale / height / zoom changes.
+  function positionBands() {
+    for (const b of isoBands) {
+      const fa = freqToFrac(Math.min(b.lo, b.hi));
+      const fb = freqToFrac(Math.max(b.lo, b.hi));
+      b.el.style.top = ((1 - fb) * 100) + '%';
+      b.el.style.height = Math.max(0, (fb - fa) * 100) + '%';
+    }
+  }
+
+  // The interactive tool filters live playback, so it only wires up when the panel
+  // is driving a file (opts.audioEl). Without one, the helpers above stay harmless
+  // no-ops (isoBands never gets entries).
+  if (opts.audioEl && isoBtn) {
+    const clampHz = (v) => Math.max(1, Math.min(Math.round(NYQ), Math.round(+v || 0)));
+
+    // Overlay layer over the canvas (pointer-events off - the drag handler lives on
+    // canvasWrap). Hidden until isolate is switched on.
+    const bandLayer = el('div', { class: 'anr-spec-bandlayer', style: 'display:none;' });
+    canvasWrap.appendChild(bandLayer);
+
+    // --- control panel (band list + numeric editing) ---
+    const bandList = el('div', { class: 'anr-iso-list' });
+    const addBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, '+ Add band');
+    const clearBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Clear');
+    const isoPanel = el('div', { class: 'anr-iso-panel is-hidden' }, [
+      el('p', { class: 'anr-hint anr-iso-hint' },
+        'Drag up or down on the spectrogram to disable a frequency band, or type its exact edges below. Disabled bands are cut from playback and shaded on the spectrogram.'),
+      bandList,
+      el('div', { class: 'anr-iso-actions' }, [addBtn, clearBtn]),
+    ]);
+    actionsBar.insertAdjacentElement('afterend', isoPanel);
+
+    // --- Web Audio band-stop graph ---
+    // Route the <audio> element through the context once, then (re)build a chain of
+    // per-band stops. A band [lo,hi] is rejected by summing a lowpass at lo (keeps
+    // everything below) with a highpass at hi (keeps everything above); chaining the
+    // stops rejects the union of every band.
+    let audioSrc = null, filterNodes = [];
+    function ensureAudioSource() {
+      if (audioSrc) return audioSrc;
+      const c = ctx();
+      try {
+        audioSrc = opts.audioEl._anrMediaSrc || c.createMediaElementSource(opts.audioEl);
+        opts.audioEl._anrMediaSrc = audioSrc;
+      } catch (_) { audioSrc = null; return null; }
+      // Once routed through the graph the element only reaches the speakers via
+      // ctx.destination, so the context has to be running.
+      const resume = () => { if (c.state === 'suspended') c.resume().catch(() => {}); };
+      opts.audioEl.addEventListener('play', resume);
+      resume();
+      return audioSrc;
+    }
+    function rebuildGraph() {
+      if (!audioSrc) return;
+      const c = ctx();
+      try { audioSrc.disconnect(); } catch (_) {}
+      for (const n of filterNodes) { try { n.disconnect(); } catch (_) {} }
+      filterNodes = [];
+      if (!isoActive || !isoBands.length) { audioSrc.connect(c.destination); return; }
+
+      // Merge overlapping / touching bands into disjoint intervals first. Overlaps
+      // then become one continuous stop instead of several separate stages that
+      // each reject only shallowly (and can partly reconstruct each other), which
+      // is why slightly-overlapping bands used to leak.
+      const ivs = isoBands
+        .map((b) => [Math.max(10, Math.min(b.lo, b.hi)), Math.min(NYQ - 1, Math.max(b.lo, b.hi))])
+        .filter(([lo, hi]) => hi > lo)
+        .sort((a, b) => a[0] - b[0]);
+      const merged = [];
+      for (const iv of ivs) {
+        const last = merged[merged.length - 1];
+        if (last && iv[0] <= last[1]) last[1] = Math.max(last[1], iv[1]);
+        else merged.push(iv.slice());
+      }
+
+      // Each interval is band-stopped by summing "keep everything below lo" with
+      // "keep everything above hi". Both paths are 4th-order (two Butterworth
+      // biquads) so the reject is deep and near-rectangular even for a narrow band,
+      // not the ~6 dB dent a single biquad gives.
+      const Q = Math.SQRT1_2;
+      const stage = (type, freq) => {
+        const f = c.createBiquadFilter();
+        f.type = type; f.frequency.value = freq; f.Q.value = Q;
+        filterNodes.push(f);
+        return f;
+      };
+      let prev = audioSrc;
+      for (const [lo, hi] of merged) {
+        const sum = c.createGain();
+        filterNodes.push(sum);
+        const lp1 = stage('lowpass', lo),  lp2 = stage('lowpass', lo);
+        prev.connect(lp1); lp1.connect(lp2); lp2.connect(sum);
+        const hp1 = stage('highpass', hi), hp2 = stage('highpass', hi);
+        prev.connect(hp1); hp1.connect(hp2); hp2.connect(sum);
+        prev = sum;
+      }
+      prev.connect(c.destination);
+    }
+
+    // --- band model ---
+    function removeBand(b) {
+      const i = isoBands.indexOf(b);
+      if (i < 0) return;
+      isoBands.splice(i, 1);
+      if (b.el) b.el.remove();
+      if (b.row) b.row.remove();
+      rebuildGraph();
+    }
+    function addBandRow(b) {
+      const mk = (val) => el('input', { type: 'number', class: 'anr-iso-num', min: '1', max: String(Math.round(NYQ)), step: '1', value: String(Math.round(val)) });
+      const fromIn = mk(b.lo), toIn = mk(b.hi);
+      const rm = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Remove band' }, '×');
+      const onEdit = () => { b.lo = clampHz(fromIn.value); b.hi = clampHz(toIn.value); positionBands(); rebuildGraph(); };
+      fromIn.addEventListener('change', onEdit);
+      toIn.addEventListener('change', onEdit);
+      rm.addEventListener('click', () => removeBand(b));
+      b.fromIn = fromIn; b.toIn = toIn;
+      b.row = el('div', { class: 'anr-iso-band' }, [
+        fromIn, el('span', { class: 'anr-iso-sep' }, 'to'), toIn,
+        el('span', { class: 'anr-iso-unit' }, 'Hz'), rm,
+      ]);
+      bandList.appendChild(b.row);
+    }
+    function addBand(lo, hi) {
+      lo = clampHz(lo); hi = clampHz(hi);
+      if (Math.abs(hi - lo) < 1) return;
+      const b = { lo: Math.min(lo, hi), hi: Math.max(lo, hi), el: el('div', { class: 'anr-spec-band' }) };
+      bandLayer.appendChild(b.el);
+      isoBands.push(b);
+      addBandRow(b);
+      positionBands();
+      rebuildGraph();
+    }
+    addBtn.addEventListener('click', () => addBand(Math.round(fracToFreq(0.42)), Math.round(fracToFreq(0.6))));
+    clearBtn.addEventListener('click', () => { for (const b of isoBands.slice()) removeBand(b); });
+
+    // --- drag-to-select a band on the spectrogram (isolate mode only) ---
+    const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+    let selEl = null, selPid = null, selStart = 0;
+    const fracAt = (clientY) => {
+      const r = canvasWrap.getBoundingClientRect();
+      return clamp01(1 - (clientY - r.top) / r.height);
+    };
+    const drawSel = (f0, f1) => {
+      if (!selEl) return;
+      const hi = Math.max(f0, f1), lo = Math.min(f0, f1);
+      selEl.style.top = ((1 - hi) * 100) + '%';
+      selEl.style.height = ((hi - lo) * 100) + '%';
+    };
+    canvasWrap.addEventListener('pointerdown', (e) => {
+      if (!isoActive || e.button !== 0) return;
+      // Leave the playhead to its own grab-scrub handler so it stays draggable here.
+      if (e.target.closest && e.target.closest('.anr-playhead')) return;
+      selPid = e.pointerId;
+      selStart = fracAt(e.clientY);
+      selEl = el('div', { class: 'anr-spec-bandsel' });
+      bandLayer.appendChild(selEl);
+      drawSel(selStart, selStart);
+      try { canvasWrap.setPointerCapture(selPid); } catch (_) {}
+      e.preventDefault(); e.stopPropagation();
+    });
+    canvasWrap.addEventListener('pointermove', (e) => {
+      if (selPid === null || e.pointerId !== selPid) return;
+      drawSel(selStart, fracAt(e.clientY));
+      e.preventDefault();
+    });
+    const endSel = (e) => {
+      if (selPid === null || (e && e.pointerId !== selPid)) return;
+      const end = fracAt(e.clientY);
+      try { canvasWrap.releasePointerCapture(selPid); } catch (_) {}
+      selPid = null;
+      if (selEl) { selEl.remove(); selEl = null; }
+      if (Math.abs(end - selStart) > 0.01) {
+        addBand(fracToFreq(Math.min(selStart, end)), fracToFreq(Math.max(selStart, end)));
+      } else if (e) {
+        // A tap with no vertical drag: seek to the clicked time, like a normal click.
+        const r = canvas.getBoundingClientRect();
+        const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        opts.audioEl.currentTime = frac * (opts.audioEl.duration || (samples.length / sampleRate));
+      }
+    };
+    canvasWrap.addEventListener('pointerup', endSel);
+    canvasWrap.addEventListener('pointercancel', endSel);
+
+    // --- toggle ---
+    isoBtn.addEventListener('click', () => {
+      isoActive = !isoActive;
+      isoBtn.classList.toggle('is-active', isoActive);
+      isoPanel.classList.toggle('is-hidden', !isoActive);
+      bandLayer.style.display = isoActive ? '' : 'none';
+      canvasWrap.classList.toggle('anr-spec-isolating', isoActive);
+      if (isoActive) ensureAudioSource();
+      rebuildGraph();
+    });
+  }
 
   // opts.signal (an AbortSignal) lets the caller tear these document/window
   // listeners down when a new file is analysed, instead of leaking the cached
@@ -1324,11 +1561,34 @@ let audioRenderAbort = null;
 // Fallback when the browser can't decode the audio (e.g. WMA, AC3, DTS, AMR,
 // undecodable MKA). There's no waveform/spectrogram, but the container info, tags,
 // lyrics, and cover art are all readable straight from the bytes.
-async function renderUndecodableAudio(file, header, resultsEl) {
+async function renderUndecodableAudio(file, header, resultsEl, playable) {
   const infoCard = el('div', { class: 'anr-card' });
   infoCard.appendChild(el('h3', {}, 'Audio file'));
   infoCard.appendChild(el('p', { class: 'anr-hint', style: 'margin: 0 0 10px;' },
-    "Your browser can't decode this format, so there's no waveform or spectrogram - but the container info, tags, and cover art below were read straight from the file."));
+    "Your browser can't decode this format for analysis, so there's no waveform or spectrogram - but the container info, tags, and cover art below were read straight from the file."));
+
+  // Native-playback fallback. Web Audio's decodeAudioData couldn't decode this
+  // file, but the platform media pipeline (a plain <audio> element) often still
+  // plays it - the two use different decoders. This asymmetry is common for AAC:
+  // Chromium/Edge and Samsung Internet frequently reject AAC in decodeAudioData
+  // (so no waveform/spectrogram) while their <audio> element plays it fine. Offer
+  // a player on the browser-playable form: for raw ADTS AAC that's the M4A-wrapped
+  // `playable`; otherwise the file itself. The card stays hidden until the element
+  // proves it can actually play, so a truly unplayable file shows no dead player.
+  try {
+    const src = playable || file;
+    const playUrl = URL.createObjectURL(src);
+    const audioEl = el('audio', { src: playUrl, class: 'is-hidden', preload: 'metadata' });
+    const playCard = el('div', { class: 'anr-card', style: 'display:none;' });
+    playCard.appendChild(el('h3', {}, 'Playback'));
+    playCard.appendChild(el('p', { class: 'anr-hint', style: 'margin: 0 0 10px;' },
+      'Your browser can play this file even though it could not analyse it.'));
+    playCard.appendChild(audioEl);
+    playCard.appendChild(makePlayer(audioEl));
+    audioEl.addEventListener('loadedmetadata', () => { playCard.style.display = ''; });
+    audioEl.addEventListener('error', () => { playCard.remove(); URL.revokeObjectURL(playUrl); });
+    resultsEl.appendChild(playCard);
+  } catch (_) { /* no playback fallback available */ }
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Name', file.name));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
@@ -1368,6 +1628,31 @@ async function renderUndecodableAudio(file, header, resultsEl) {
   resultsEl.appendChild(integrityCard(file));
 }
 
+// Decode audio the browser's Web Audio can't handle by transcoding to PCM WAV
+// with ffmpeg.wasm, then decoding that (raw PCM always decodes). Reuses the same
+// lazily-loaded ffmpeg instance the video tools use. Returns an AudioBuffer or
+// throws (so the caller can fall back to the metadata-only view). Source sample
+// rate and channel count are preserved so the spectrogram's frequency axis and
+// the channel readout stay accurate.
+async function ffmpegDecodeAudio(file, resultsEl) {
+  const note = el('div', { class: 'anr-info' },
+    "Your browser can't decode this audio directly - decoding with FFmpeg to build the waveform and spectrogram...");
+  resultsEl.appendChild(note);
+  try {
+    const { loadFFmpeg } = await import('./video.js');
+    const ff = await loadFFmpeg();
+    await ff.writeFile('adin', new Uint8Array(await file.arrayBuffer()));
+    // -vn drops any cover-art video stream; keep source rate/channels.
+    await ff.exec(['-i', 'adin', '-vn', '-c:a', 'pcm_s16le', '-f', 'wav', 'adout.wav']);
+    const data = await ff.readFile('adout.wav');
+    try { await ff.deleteFile('adin'); await ff.deleteFile('adout.wav'); } catch (_) {}
+    const wav = new Blob([data.buffer || data], { type: 'audio/wav' });
+    return await ctx().decodeAudioData(await wav.arrayBuffer());
+  } finally {
+    note.remove();
+  }
+}
+
 // --- Render uploaded / recorded audio results ---
 export async function renderAudio(file, resultsEl, opts = {}) {
   if (audioRenderAbort) audioRenderAbort.abort();
@@ -1399,9 +1684,19 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     try {
       audioBuffer = await decodeFile(file);
     } catch (e) {
-      resultsEl.innerHTML = '';
-      await renderUndecodableAudio(file, header, resultsEl);
-      return;
+      // Web Audio's decodeAudioData rejected it. This happens for whole codec
+      // families a given browser lacks - AAC in Chromium/Edge and Samsung Internet,
+      // and commonly WMA, AC-3, DTS, AMR and friends everywhere. Fall back to
+      // decoding via ffmpeg.wasm (a full decoder set) to PCM, which recovers the
+      // full waveform/spectrogram/loudness for any of them instead of dropping to
+      // a metadata-only view. Codec-agnostic: whatever failed above lands here.
+      try {
+        audioBuffer = await ffmpegDecodeAudio(file, resultsEl);
+      } catch (e2) {
+        resultsEl.innerHTML = '';
+        await renderUndecodableAudio(file, header, resultsEl, playbackFile);
+        return;
+      }
     }
   }
 
@@ -1687,7 +1982,7 @@ function streamSpectrogram(ac, source, mountEl) {
   const nyq = ac.sampleRate / 2;
   const dbFloor = -100, dbCeil = -10, range = dbCeil - dbFloor;
   const drawW = 1;
-  const logMin = Math.log10(20), logMax = Math.log10(nyq);
+  const logMin = Math.log10(10), logMax = Math.log10(nyq);   // 10 Hz floor to match buildFreqAxis (shows sub-20 Hz)
 
   function tick() {
     if (stopped) return;
@@ -2020,7 +2315,7 @@ async function startLive(resultsEl, liveBtn) {
     for (let y = 0; y < h; y++) {
       let binF;
       if (state.scale === 'log') {
-        const logMin = Math.log10(20);
+        const logMin = Math.log10(10);   // 10 Hz floor to match buildFreqAxis (shows sub-20 Hz)
         const logMax = Math.log10(nyq);
         const frac = 1 - y / (h - 1);
         const hz = Math.pow(10, logMin + frac * (logMax - logMin));
