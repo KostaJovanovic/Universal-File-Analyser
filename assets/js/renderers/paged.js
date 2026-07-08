@@ -140,19 +140,36 @@ export function openDocLightbox(pages, startIndex, label) {
 
     // --- Zoom (double-click / double-tap), leaving single tap+drag for text
     // selection. Uses the CSS `zoom` property so layout (and the scroll area)
-    // scales while text stays selectable; the stage scrolls to pan. ---
+    // scales while text stays selectable; the stage scrolls to pan.
+    // Firefox lacks CSS `zoom` before v126, so fall back to `transform: scale()`
+    // with a top-left origin - it scales the sheet as a layer (text stays
+    // selectable, it just doesn't re-flow) and adds the same scaled overflow to
+    // the stage, so the pan math is unchanged. Supported browsers keep `zoom`. ---
+    const hasCssZoom = !!(window.CSS && CSS.supports && CSS.supports('zoom', '2'));
+    const applyScale = (sheet, factor) => {
+      if (!sheet) return;
+      if (!factor || factor === 1) {
+        if (hasCssZoom) sheet.style.zoom = '';
+        else { sheet.style.transform = ''; sheet.style.transformOrigin = ''; }
+      } else if (hasCssZoom) {
+        sheet.style.zoom = String(factor);
+      } else {
+        sheet.style.transformOrigin = '0 0';
+        sheet.style.transform = `scale(${factor})`;
+      }
+    };
     let zoomed = false;
-    overlay._resetZoom = () => { zoomed = false; const s = stage.firstElementChild; if (s) s.style.zoom = ''; };
+    overlay._resetZoom = () => { zoomed = false; applyScale(stage.firstElementChild, 1); };
     function toggleZoom(clientX, clientY) {
       const sheet = stage.firstElementChild;
       if (!sheet) return;
       zoomed = !zoomed;
-      if (!zoomed) { sheet.style.zoom = ''; return; }
+      if (!zoomed) { applyScale(sheet, 1); return; }
       // Content point under the cursor (pre-zoom), so we can re-centre on it.
       const rect = sheet.getBoundingClientRect();
       const cx = (stage.scrollLeft + (clientX - rect.left));
       const cy = (stage.scrollTop + (clientY - rect.top));
-      sheet.style.zoom = String(DOC_ZOOM);
+      applyScale(sheet, DOC_ZOOM);
       stage.scrollLeft = cx * DOC_ZOOM - stage.clientWidth / 2;
       stage.scrollTop = cy * DOC_ZOOM - stage.clientHeight / 2;
       overlay._zoomBtn && (overlay._zoomBtn.textContent = 'Reset zoom');

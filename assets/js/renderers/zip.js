@@ -5,6 +5,52 @@
 
 import { loadScript } from '../core/util.js';
 
+// fflate (vendored ES module) is the pure-JS raw-DEFLATE fallback for the
+// method-8 path below, used when DecompressionStream is missing (Safari < 16.4,
+// Firefox < 113) or throws on 'deflate-raw' (Chromium 80-102 / old Android
+// WebView). Lazy-loaded on first use so it never costs anything on modern
+// browsers that take the native path.
+const FFLATE_URL = new URL('../../vendor/fflate.js', import.meta.url).href;
+let fflateLib = null;
+async function loadFflate() {
+  if (fflateLib) return fflateLib;
+  fflateLib = await import(FFLATE_URL);
+  return fflateLib;
+}
+
+// Inflate raw DEFLATE (ZIP method 8). Prefers the native DecompressionStream,
+// falling back to fflate. Returns bytes, or null if every path fails.
+async function inflateRaw(raw) {
+  if (typeof DecompressionStream !== 'undefined') {
+    try {
+      const ds = new DecompressionStream('deflate-raw');
+      const writer = ds.writable.getWriter();
+      writer.write(raw);
+      writer.close();
+      const reader = ds.readable.getReader();
+      const chunks = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      const total = chunks.reduce((s, c) => s + c.length, 0);
+      const out = new Uint8Array(total);
+      let off = 0;
+      for (const c of chunks) { out.set(c, off); off += c.length; }
+      return out;
+    } catch (_) {
+      // 'deflate-raw' unsupported on this build - fall through to fflate.
+    }
+  }
+  try {
+    const { inflateSync } = await loadFflate();
+    return inflateSync(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
 // Zstandard (ZIP method 93) - Autodesk Fusion 360 .f3d packs every member this
 // way. Decompressed lazily via the vendored fzstd UMD library, loaded on first
 // use. Returns the bytes, or null on any failure so callers degrade gracefully.
@@ -51,24 +97,7 @@ export async function readZipEntries(file, maxBytes = 32 * 1024 * 1024) {
 export async function inflateToBytes(buf, entry) {
   const raw = buf.slice(entry.dataStart, entry.dataStart + entry.compSize);
   if (entry.method === 0) return raw;
-  if (entry.method === 8 && typeof DecompressionStream !== 'undefined') {
-    const ds = new DecompressionStream('deflate-raw');
-    const writer = ds.writable.getWriter();
-    writer.write(raw);
-    writer.close();
-    const reader = ds.readable.getReader();
-    const chunks = [];
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-    const total = chunks.reduce((s, c) => s + c.length, 0);
-    const out = new Uint8Array(total);
-    let off = 0;
-    for (const c of chunks) { out.set(c, off); off += c.length; }
-    return out;
-  }
+  if (entry.method === 8) return inflateRaw(raw);
   if (entry.method === 93) return zstdInflate(raw);
   return null;
 }

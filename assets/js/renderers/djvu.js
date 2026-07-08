@@ -5,7 +5,7 @@
    pages to ImageData and paint them to a canvas, with prev/next paging. Decoding
    a scanned page can take a moment, so the pager is disabled while a page renders. */
 
-import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard, loadScript } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard, loadScript, isLowMemoryDevice } from '../core/util.js';
 
 const DJVU_URL = 'assets/vendor/djvu/djvu.js';
 
@@ -18,6 +18,16 @@ export async function renderDjvu(file, resultsEl) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading DjVu document "${file.name}"…`));
+
+  // The whole document is read into memory and decoded page-by-page in a WASM
+  // heap; a large scanned DjVu can crash the tab on a phone. Bail gracefully on
+  // memory-constrained devices.
+  const DJVU_MOBILE_LIMIT = 200 * 1024 * 1024;
+  if (isLowMemoryDevice() && file.size > DJVU_MOBILE_LIMIT) {
+    resultsEl.innerHTML = '';
+    resultsEl.appendChild(errorCard(`This DjVu document is ${fmtBytes(file.size)}, too large to open on a mobile device without running out of memory. Try it on a desktop browser.`));
+    return;
+  }
 
   const DjVu = await loadDjVu();
   if (!DjVu) {

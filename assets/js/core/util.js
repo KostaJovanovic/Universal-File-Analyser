@@ -661,6 +661,20 @@ export async function sha256Hex(file) {
   return hex(await crypto.subtle.digest('SHA-256', buf));
 }
 
+// Heuristic for "is this a memory-constrained device (phone/tablet) where pulling
+// a very large file fully into memory or a WASM heap risks an OOM tab crash?".
+// Coarse pointer catches phones/tablets; deviceMemory (Chromium only) lets a
+// high-RAM tablet through. Deliberately conservative - a desktop (even a
+// touchscreen laptop, which reports deviceMemory >= 8) is never gated, so this
+// only ever short-circuits the clearly-mobile case that would otherwise crash.
+export function isLowMemoryDevice() {
+  const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  if (!coarse) return false;
+  const dm = navigator.deviceMemory;
+  if (dm && dm >= 8) return false;
+  return true;
+}
+
 // SubtleCrypto covers SHA-1/256/384/512 but not MD5. subtleHex hashes an already
 // in-memory ArrayBuffer (so a multi-hash pass reads the file just once).
 async function subtleHex(algo, buf) {
@@ -715,16 +729,40 @@ export function md5Hex(bytes) {
   return hex(out);
 }
 
-// MD5 + SHA-1 + SHA-512 over one in-memory read, returned as [label, hex] pairs.
-// Used by the "Show more hashes" affordance in sha256Row().
+// CRC-32 (IEEE 802.3, polynomial 0xEDB88320) - the same checksum ZIP, PNG and
+// gzip embed, and what SFV/.sfv checksum files key on. Fast and non-cryptographic
+// (not collision-resistant), so it lives alongside the real hashes for matching
+// checksum files, not for tamper-evidence. Operates on a Uint8Array; returns 8
+// lowercase hex digits. Table built once on first use.
+let _crc32Table = null;
+export function crc32Hex(bytes) {
+  if (!_crc32Table) {
+    _crc32Table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      _crc32Table[n] = c >>> 0;
+    }
+  }
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ _crc32Table[(crc ^ bytes[i]) & 0xFF];
+  return ((crc ^ 0xFFFFFFFF) >>> 0).toString(16).padStart(8, '0');
+}
+
+// CRC-32 + MD5 + SHA-1 + SHA-512 over one in-memory read, returned as
+// [label, hex, description?] tuples. Used by the "Show more hashes" affordance in
+// sha256Row(). CRC-32 carries its own description since it isn't a hash.
 export async function extraHashRows(file) {
   const buf = await file.arrayBuffer();
   const [sha1, sha512] = await Promise.all([
     subtleHex('SHA-1', buf),
     subtleHex('SHA-512', buf),
   ]);
-  const md5 = md5Hex(new Uint8Array(buf));
+  const bytes = new Uint8Array(buf);
+  const md5 = md5Hex(bytes);
+  const crc = crc32Hex(bytes);
   return [
+    ['CRC-32', crc, 'CRC-32 is a fast, non-cryptographic checksum - the same one ZIP, PNG and gzip embed, and what SFV checksum files store. It reliably catches accidental corruption, but unlike the hashes below it is not collision-resistant, so it is not proof against deliberate tampering.'],
     ['MD5', md5],
     ['SHA-1', sha1 || 'unavailable'],
     ['SHA-512', sha512 || 'unavailable'],
@@ -748,7 +786,7 @@ export function sha256Row(file) {
     const tbody = hashRow.parentNode;
     if (!tbody) return;
     const cell = el('td', { colspan: '2', style: 'padding-top:4px;' });
-    const btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Show MD5 / SHA-1 / SHA-512');
+    const btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Show CRC-32 / MD5 / SHA-1 / SHA-512');
     cell.appendChild(btn);
     const ctrlRow = el('tr', { class: 'anr-morehash-row' }, cell);
     hashRow.after(ctrlRow);
@@ -760,8 +798,8 @@ export function sha256Row(file) {
       extraHashRows(file).then(rows => {
         bar.stop();
         let anchor = ctrlRow;
-        rows.forEach(([label, value]) => {
-          const tr = rowHelp(label, value, label + ' is a cryptographic fingerprint of the file’s exact bytes, for matching against forensic databases and checksum files.');
+        rows.forEach(([label, value, desc]) => {
+          const tr = rowHelp(label, value, desc || (label + ' is a cryptographic fingerprint of the file’s exact bytes, for matching against forensic databases and checksum files.'));
           const vtd = tr.querySelector('td');
           if (vtd) vtd.style.wordBreak = 'break-all';
           anchor.after(tr);
