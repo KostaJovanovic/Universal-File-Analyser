@@ -2406,7 +2406,7 @@ export async function renderGcode(file, resultsEl, opts) {
         // mirror live viewer-state flags (ortho / showBed / showTravel / isoTool) and are
         // re-seeded from the viewer each time the popup opens, so the export defaults to
         // whatever the user set in the normal viewer but can be overridden here.
-        const clipCfg = { dur: 10, aspect: '16:9', size: 720, fps: 60, reset: true, orbit: true, follow: false, overlay: true, persp: true, bed: true, travel: false, dim: false };
+        const clipCfg = { dur: 10, aspect: '16:9', size: 720, fps: 60, quality: 0.18, reset: true, orbit: true, follow: false, overlay: true, persp: true, bed: true, travel: false, dim: false };
         // Single definition of the four toggles that mirror viewer state. `cfg` is the
         // clipCfg key, `st` the viewer.state flag; `get` reads state -> clip value (to
         // seed the popup), `put` writes clip value -> state (on export). Some invert
@@ -2434,7 +2434,11 @@ export async function renderGcode(file, resultsEl, opts) {
         // Bitrate scales with the pixel rate (~0.1 bit per pixel), and the H.264
         // level (the last two hex digits of the codec string) steps up with the same
         // rate so 1080p60 doesn't exceed what a Level 4.0 decoder accepts.
-        const clipRate = (W, H) => Math.round(W * H * clipCfg.fps * 0.1);
+        // Bits per pixel-second, chosen by the Quality row. The render is thin lines
+        // edge-to-edge (high-frequency detail everywhere), so it needs a healthier
+        // bitrate than typical footage to stay crisp - hence the default sits at
+        // 'High' (0.18), not the old flat 0.1.
+        const clipRate = (W, H) => Math.round(W * H * clipCfg.fps * clipCfg.quality);
         const clipLevel = (W, H) => {
           const r = W * H * clipCfg.fps;
           return r > 1920 * 1080 * 30 ? '2a' : r > 1280 * 720 * 60 ? '28' : r > 1280 * 720 * 30 ? '20' : '1f';
@@ -2973,8 +2977,11 @@ export async function renderGcode(file, resultsEl, opts) {
             ]),
             secHead('Output'),
             el('div', { class: 'anr-clip-rows' }, [
-              segRow('Quality', [[720, '720p'], [1080, '1080p']], () => clipCfg.size, (v) => { clipCfg.size = v; }),
+              segRow('Resolution', [[720, '720p'], [1080, '1080p']], () => clipCfg.size, (v) => { clipCfg.size = v; }),
               segRow('Rate', [[30, '30 fps'], [60, '60 fps']], () => clipCfg.fps, (v) => { clipCfg.fps = v; }),
+              // Bitrate, as bits per pixel-second. Thin-line renders want more than
+              // ordinary footage; High is the sensible default, Max for archival crispness.
+              segRow('Quality', [[0.12, 'Standard'], [0.18, 'High'], [0.28, 'Max']], () => clipCfg.quality, (v) => { clipCfg.quality = v; }),
             ]),
             secHead('Camera'),
             togRow([
