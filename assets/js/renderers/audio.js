@@ -835,9 +835,10 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   function sizeCanvas() {
     const baseW = availableWidth();
     // Cap the bitmap width: browsers silently refuse to paint a canvas wider than
-    // their max dimension (~32k px), so at high zoom on a wide window we clamp
-    // rather than render blank.
-    const w = Math.min(30000, Math.max(200, Math.round(baseW * state.zoom)));
+    // their max dimension, so at high zoom on a wide window we clamp rather than
+    // render blank. Chromium's per-dimension limit is 16384 (Firefox 32767,
+    // iOS Safari lower via total area), so 16384 is the safe cross-browser cap.
+    const w = Math.min(16384, Math.max(200, Math.round(baseW * state.zoom)));
     canvas.width = w;
     canvas.style.width = w + 'px';
     axisX.style.width = w + 'px';

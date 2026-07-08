@@ -1063,6 +1063,7 @@ function buildViewer(data, opts = {}) {
     follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, headLive: false, headToolRank: 1, headToolNum: 0, headToolRaw: 0, toolMarkers: true, isoTool: false, isoAlpha: 0.22, real: false, restX: 0, restY: 0, restZ: 0, restValid: false, pauseText: '' };
   let viewW = 600, viewH = 420;   // CSS px, for screen-space size in the shader
   let dirty = true;
+  let disposed = false;
   const spinListeners = [];
   function setSpin(v) { if (state.spin === v) return; state.spin = v; dirty = true; for (const cb of spinListeners) cb(v); }
 
@@ -1536,9 +1537,24 @@ function buildViewer(data, opts = {}) {
     pauseTag.style.display = '';
   }
   function loop() {
+    if (disposed) return;
+    // Free the WebGL context once the card leaves the DOM (new file / SPA nav)
+    // rather than leaving it live against the browser's ~16-context cap, which
+    // would blank later viewers.
+    if (!wrap.isConnected) { dispose(); return; }
     if (state.spin) { state.yaw += 0.003; dirty = true; }
     if (dirty) { draw(); dirty = false; }
-    if (wrap.isConnected) requestAnimationFrame(loop);
+    requestAnimationFrame(loop);
+  }
+
+  // Tear down the viewer: stop the loop, detach window listeners, drop the GL
+  // context. Idempotent; called on MSAA rebuild and on DOM removal (loop()).
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    window.removeEventListener('mousemove', onWinMove);
+    window.removeEventListener('mouseup', up);
+    try { const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); } catch (_) { /* ignore */ }
   }
 
   // Orbit / pan / zoom.
@@ -1554,7 +1570,9 @@ function buildViewer(data, opts = {}) {
   const up = () => { dragging = false; panning = false; };
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   canvas.addEventListener('mousedown', (e) => down(e.clientX, e.clientY, e.button === 2 || e.shiftKey));
-  window.addEventListener('mousemove', (e) => move(e.clientX, e.clientY));
+  // Named so dispose() can detach them (they live on window, past the canvas).
+  const onWinMove = (e) => move(e.clientX, e.clientY);
+  window.addEventListener('mousemove', onWinMove);
   window.addEventListener('mouseup', up);
   let twoFinger = false, pinchDist = 0, pcx = 0, pcy = 0;
   canvas.addEventListener('touchstart', (e) => {
@@ -1764,7 +1782,7 @@ function buildViewer(data, opts = {}) {
     // Clip-export hooks: a synchronous draw, the live canvas (rebuilt on the MSAA
     // swap, so exporters must re-read it) and the export-resolution lock. Framing
     // at the export aspect goes through fit(), which reads the locked canvas size.
-    draw, canvas, setExportSize,
+    draw, canvas, setExportSize, dispose,
     resize, setSpin, onSpinChange: (cb) => spinListeners.push(cb), resetView,
     start: () => { resize(); if (!state.fitted) { state.dist = fitDist(0.9); state.fitted = true; } requestAnimationFrame(loop); }, markDirty: () => { dirty = true; },
     fit: (fill) => { state.dist = fitDist(fill === undefined ? 0.9 : fill); state.fitted = true; dirty = true; },
@@ -1845,6 +1863,7 @@ export async function renderGcode(file, resultsEl, opts) {
         viewer = next;
         Object.assign(viewer.state, keep, { msaa: on });
         old.wrap.replaceWith(viewer.wrap);
+        old.dispose();                                // free the old GL context + its listeners
         viewer.onSpinChange(updateSpinLabel);
         if (viewer.topLeft) viewer.topLeft.appendChild(qWrap);   // re-park Quality in the rebuilt overlay
         viewer.start();

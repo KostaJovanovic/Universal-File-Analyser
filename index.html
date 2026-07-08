@@ -26,6 +26,11 @@
   <link rel="icon" href="assets/img/favicon.png" type="image/png">
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/img/icon.png">
+  <!-- iOS ignores manifest.json below 16.4, so these drive Add to Home Screen there:
+       launch standalone (no Safari chrome), match the dark UI, name the icon. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Analyser">
   <link rel="manifest" href="manifest.json">
   <script type="application/ld+json">
   {

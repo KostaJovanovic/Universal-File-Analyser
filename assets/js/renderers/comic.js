@@ -6,7 +6,7 @@
    comic doesn't build hundreds of object URLs up front. CBZ is a ZIP, CBT a TAR,
    and CBR/CB7 go through the lazy libarchive (unrar/7z) WASM loader. */
 
-import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, attachZoomPan, openOverlayBack } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, attachZoomPan, openOverlayBack, isLowMemoryDevice } from '../core/util.js';
 import { openZip } from './zip.js';
 
 const IMG_RE = /\.(jpe?g|png|gif|webp|avif|bmp|jxl)$/i;
@@ -80,6 +80,17 @@ export async function renderComic(file, resultsEl, extOverride) {
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Opening "${file.name}"…`));
   const ext = extOverride || (file.name.split('.').pop() || '').toLowerCase();
+
+  // A comic archive is read whole into memory (or a WASM heap for cbr/cb7), and
+  // these run to hundreds of MB - a reliable tab-crash on a phone. Bail with a
+  // clear notice on memory-constrained devices rather than taking the tab down.
+  const COMIC_MOBILE_LIMIT = 250 * 1024 * 1024;
+  if (isLowMemoryDevice() && file.size > COMIC_MOBILE_LIMIT) {
+    resultsEl.innerHTML = '';
+    resultsEl.appendChild(errorCard(`This comic is ${fmtBytes(file.size)}, too large to open on a mobile device without running out of memory. Try it on a desktop browser.`));
+    resultsEl.appendChild(integrityCard(file));
+    return;
+  }
 
   let data;
   try {

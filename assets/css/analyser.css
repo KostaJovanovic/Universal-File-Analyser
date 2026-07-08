@@ -6760,6 +6760,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   color: var(--on-dark);
   background: rgba(0, 0, 0, 0.62);
   border: 1px solid var(--border-on-dark);
+  -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
 .anr-video-analysing::before {
@@ -7450,6 +7451,7 @@ a.stats-ext-link:hover { color: var(--accent); text-decoration: none; }
   overflow: clip;
   opacity: 1;
   line-height: 1;
+  -webkit-text-size-adjust: none;
   text-size-adjust: none;
   forced-color-adjust: none;
   transform-origin: 0 0;

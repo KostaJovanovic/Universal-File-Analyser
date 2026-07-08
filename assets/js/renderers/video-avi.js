@@ -7,6 +7,14 @@
 
 import { roundFps } from '../core/util.js';
 
+// Shared, lazily-created AudioContext used only as a createBuffer factory. A
+// fresh one per file would exhaust iOS Safari's ~4-context cap across a session.
+let _aviAudioCtx = null;
+function aviAudioCtx() {
+  if (!_aviAudioCtx) _aviAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return _aviAudioCtx;
+}
+
 // Read just the AVI header chunks (avih/strh/strf) from the first 8 KB. Returns
 // { width, height, fps, duration, totalFrames, codec, audioCodec, audioFormat }
 // or null if the file isn't an AVI / has no video stream.
@@ -113,8 +121,8 @@ export async function extractAviData(file, aviInfo) {
     const frameSize = bytesPerSample * fmt.channels;
     const totalFrames = Math.floor(totalSize / frameSize);
     if (totalFrames > 0) {
-      const ac = new (window.AudioContext || window.webkitAudioContext)();
-      const audioBuf = ac.createBuffer(fmt.channels, totalFrames, fmt.sampleRate);
+      const sr = (fmt.sampleRate >= 3000 && fmt.sampleRate <= 384000) ? fmt.sampleRate : 44100;
+      const audioBuf = aviAudioCtx().createBuffer(fmt.channels, totalFrames, sr);
       const pcmView = new DataView(pcm.buffer);
       for (let ch = 0; ch < fmt.channels; ch++) {
         const chData = audioBuf.getChannelData(ch);

@@ -338,6 +338,24 @@ export function killFFmpeg() {
   if (ffmpegInstance) { try { ffmpegInstance.terminate(); } catch (_) {} ffmpegInstance = null; }
 }
 
+// Whether this browser can actually DECODE HEVC/H.265 in an MP4. Safari can, and
+// Chromium can when the OS/hardware provides a decoder; Firefox cannot at all.
+// canPlayType returns '' (falsy) when it can't, 'maybe'/'probably' when it can.
+// Used to decide whether a raw HEVC stream can be stream-copied into MP4 (fast,
+// lossless) or must be re-encoded to H.264 so it will actually play rather than
+// producing a valid-but-black player. Cached; probes a throwaway <video>.
+let _hevcPlayable = null;
+function canPlayHevc() {
+  if (_hevcPlayable !== null) return _hevcPlayable;
+  let ok = false;
+  try {
+    const v = document.createElement('video');
+    ok = !!(v.canPlayType('video/mp4; codecs="hvc1"') || v.canPlayType('video/mp4; codecs="hev1"'));
+  } catch (_) { ok = false; }
+  _hevcPlayable = ok;
+  return ok;
+}
+
 export async function loadFFmpeg(onProgress) {
   if (ffmpegInstance && ffmpegInstance.loaded) return ffmpegInstance;
   if (ffmpegInstance) killFFmpeg();   // half-loaded / terminated leftover
@@ -381,7 +399,9 @@ async function ffmpegExtractAudio(file, container) {
   await ff.deleteFile('output.wav');
   wrap.remove();
   const wavBlob = new Blob([data.buffer || data], { type: 'audio/wav' });
-  const ac = new (window.AudioContext || window.webkitAudioContext)();
+  // Reuse the shared context - iOS Safari caps concurrent AudioContexts (~4), so
+  // a fresh-and-never-closed one per decode exhausts them across a session.
+  const ac = getAudioCtx();
   const buf = await wavBlob.arrayBuffer();
   return await ac.decodeAudioData(buf);
 }
@@ -692,22 +712,34 @@ async function ffmpegRemuxToMp4(file, signal, rawKind) {
       cleanup = async () => { try { await ff.deleteFile(inName); } catch (_) {} };
     }
 
-    try {
-      await ff.exec(['-fflags', '+genpts', '-f', demuxer, '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName]);
-    } catch (_) { /* exec may resolve with a non-zero code instead of throwing */ }
-    let data = null;
-    try { data = await ff.readFile(outName); } catch (_) { data = null; }
-    if (!data || !data.length) {
-      // Stream-copy can fail on streams whose in-band SPS/PPS FFmpeg won't lift into
-      // an MP4 sample-description as-is. Re-encode as a last resort so the clip still
-      // opens; lossy, but better than a stream that won't play at all.
+    // Re-encode to H.264 - the last-resort path, also used up front for HEVC that
+    // this browser can't decode. Lossy, but it makes the clip play.
+    const reencode = async () => {
       try { await ff.deleteFile(outName); } catch (_) {}
       try {
         await ff.exec(['-fflags', '+genpts', '-f', demuxer, '-i', inName,
           '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
           '-movflags', '+faststart', outName]);
       } catch (_) {}
+      try { return await ff.readFile(outName); } catch (_) { return null; }
+    };
+    let data = null;
+    // A raw HEVC stream copies into a valid hvc1 MP4 that Firefox (and Chromium
+    // without a HEVC decoder) still can't play - the copy "succeeds" so the old
+    // empty-output fallback never fired, leaving a black player. When the browser
+    // can't decode HEVC, re-encode to H.264 up front instead.
+    if (demuxer === 'hevc' && !canPlayHevc()) {
+      data = await reencode();
+    } else {
+      try {
+        await ff.exec(['-fflags', '+genpts', '-f', demuxer, '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName]);
+      } catch (_) { /* exec may resolve with a non-zero code instead of throwing */ }
       try { data = await ff.readFile(outName); } catch (_) { data = null; }
+      if (!data || !data.length) {
+        // Stream-copy can also fail on streams whose in-band SPS/PPS FFmpeg won't
+        // lift into an MP4 sample-description as-is. Re-encode as a last resort.
+        data = await reencode();
+      }
     }
     try { await ff.deleteFile(outName); } catch (_) {}
     if (!data || !data.length) return { blob: null, log };
@@ -914,7 +946,14 @@ async function remuxRawSegment(file, start, end, paramSets, h265, signal, loader
     chunk.set(paramSets, 0);
     chunk.set(body, paramSets.length);
     await ff.writeFile(inName, chunk);
-    try { await ff.exec(['-fflags', '+genpts', '-f', demuxer, '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName]); } catch (_) {}
+    // HEVC segments stream-copy fine but a browser without a HEVC decoder (Firefox,
+    // Chromium without hardware support) plays them black. Re-encode those segments
+    // to H.264 - slower per part, but the only way the segmented player shows video.
+    if (h265 && !canPlayHevc()) {
+      try { await ff.exec(['-fflags', '+genpts', '-f', demuxer, '-i', inName, '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', outName]); } catch (_) {}
+    } else {
+      try { await ff.exec(['-fflags', '+genpts', '-f', demuxer, '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName]); } catch (_) {}
+    }
     let data = null;
     try { data = await ff.readFile(outName); } catch (_) { data = null; }
     if (data && data.length) blob = new Blob([data.buffer || data], { type: 'video/mp4' });
@@ -1325,8 +1364,12 @@ function extractPcmFromMp4(arrayBuffer) {
     if (allSamples.length === 0) continue;
 
     const totalFrames = Math.floor(allSamples.length / channels);
-    const ac = new OfflineAudioContext(channels, totalFrames, sampleRate);
-    const audioBuf = ac.createBuffer(channels, totalFrames, sampleRate);
+    // Build the buffer via the shared context (createBuffer accepts any rate,
+    // regardless of the context's own). Avoids a per-file OfflineAudioContext -
+    // which needs a webkit fallback on old Safari and throws RangeError on an
+    // out-of-range rate - and guards a mis-parsed/zero rate that would still throw.
+    const sr = (sampleRate >= 3000 && sampleRate <= 384000) ? sampleRate : 44100;
+    const audioBuf = getAudioCtx().createBuffer(channels, totalFrames, sr);
     for (let ch = 0; ch < channels; ch++) {
       const chData = audioBuf.getChannelData(ch);
       for (let i = 0; i < totalFrames; i++) {

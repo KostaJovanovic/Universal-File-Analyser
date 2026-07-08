@@ -208,6 +208,37 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">5.14</p>
+          <p class="patch-name">Cross Check</p>
+          <p class="patch-date">8 July 2026, 02:38</p>
+          <ul class="patch-list">
+            <li><strong>A wide compatibility pass so more of the workbench works outside Chrome - Office, e-book and comic files open on older browsers, PDF and document zoom works in Firefox, and the 3D and G-code viewers stop blanking out - plus a CRC-32 checksum on every file.</strong></li>
+            <li><span class="patch-tag">New</span><strong>CRC-32 on every file.</strong> The integrity panel&rsquo;s <strong>Show more hashes</strong> now adds a <strong>CRC-32</strong> checksum - the same one ZIP, PNG and gzip use, and what <code>.sfv</code> files store - beside MD5, SHA-1 and SHA-512, for matching against checksum files.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Office, e-book and comic files open on older browsers.</strong> Word, Excel, PowerPoint, ODF, <a href="/about#ext-epub">EPUB</a> and comic archives now open on older Safari, Firefox and Chrome that lacked the built-in unzipper Analyser relied on - it falls back to a bundled one instead of failing to open.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Zoom works in Firefox.</strong> Double-click and double-tap zoom in the <a href="/about#ext-pdf">PDF</a> and document viewers now works in Firefox, which does not support the zoom method the other browsers use.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The 3D and G-code viewers stop going blank.</strong> Opening several <a href="/about#ext-gcode">G-code</a> or 3D models in a row, or toggling their quality, no longer exhausts the browser&rsquo;s graphics contexts and leaves a later viewer blank - each viewer releases its context when you move on.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Some HEVC video plays in Firefox.</strong> A raw or recovered <a href="/about#ext-hevc">HEVC/H.265</a> clip is now re-encoded when the browser cannot decode it - Firefox has no HEVC support - so it plays instead of showing black.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Gentler on phones.</strong> A very large comic, <a href="/about#ext-djvu">DjVu</a> scan or database now shows a clear notice on a phone instead of trying to open it and crashing the tab; big spectrograms and JPEG 2000 images also stop rendering blank at their size limits.</li>
+            <li><strong>Safari and iOS groundwork.</strong> The frosted-glass labels, PDF text selection, home-screen install and audio playback all pick up Safari-specific fixes under the hood.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">5.13</p>
+          <p class="patch-name">Now Playing</p>
+          <p class="patch-date">8 July 2026, 01:49</p>
+          <ul class="patch-list">
+            <li><strong>Files your browser refuses to play on its own now play anyway - an unusual camera video is offered as a one-tap conversion instead of a black screen, and audio it cannot decode is rebuilt so it is no longer silent - alongside a batch of viewer fixes.</strong></li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Video the browser cannot decode gets a way in.</strong> A clip in a professional camera format - such as Sony 4:2:2 <a href="/about#ext-mp4">footage</a> from an FX30 - is now recognised as one the browser cannot play and offered as a <strong>Convert to H.264</strong> button that turns it into a standard 8-bit video on your own device, instead of loading a black player.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Audio it cannot decode is no longer silent.</strong> When the browser lacks the decoder for a sound file - some AAC, and many older or exotic codecs - Analyser already rebuilds the waveform; now it plays that rebuilt sound too, so files that used to load without any audio actually play.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Tidier PDF previews.</strong> A wildly long <a href="/about#ext-pdf">PDF</a> page no longer stretches down the screen - each page preview is capped to a page shape and scaled to fit - and the &ldquo;show more pages&rdquo; button hides once there are none left.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Drag a PDF page to move it.</strong> With a page open you can now grab it and pan with the cursor, and a page that already fits no longer scrolls sideways for no reason.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>G-code tools fade back in.</strong> At the end of a recorded <a href="/about#ext-gcode">G-code</a> clip, tools that were dimmed to highlight the active one now ease smoothly back to full strength instead of snapping.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Grab the After Effects timeline scrollbar.</strong> The scrollbar under a long <a href="/about#ext-aep">After Effects</a> timeline can now be dragged directly, instead of the timeline sliding along underneath your grab.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">5.12</p>
           <p class="patch-name">Band Stop</p>
           <p class="patch-date">7 July 2026, 07:41</p>
@@ -220,6 +251,9 @@
             <li><span class="patch-tag">New</span><strong>A G-code clip that gets to the point.</strong> A recorded <a href="/about#ext-gcode">G-code</a> build clip now rushes its first few setup moves past in the opening second, so the rest of the clip is spent watching the real object draw itself rather than the machine homing and priming. The label and site mark shown on the clip are a little larger and easier to read too.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">5.11</p>
@@ -248,9 +282,6 @@
             <li><span class="patch-tag is-fix">Fix</span><strong>A cleaner &ldquo;dim other tools&rdquo;.</strong> On a multi-tool print, fading every tool except the one currently printing no longer makes dense areas and the outline bloom into a glow - the faded tools recede cleanly instead.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">5.09</p>

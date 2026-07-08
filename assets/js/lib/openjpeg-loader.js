@@ -78,6 +78,11 @@ export async function decodeJ2K(bytes) {
     const components = info.componentCount | 0;
     const bitDepth = info.bitsPerSample | 0;
     if (!width || !height || width > 65535 || height > 65535) return null;
+    // Guard total pixels, not just each dimension: a huge JP2 (e.g. 20000x20000)
+    // would allocate a multi-GB RGBA buffer below and exceeds the browser's
+    // canvas-area limit anyway (blank on Chromium above 2^28 px), so bail to the
+    // identification-only path instead of OOM-crashing the tab.
+    if (width * height > 0x10000000) return null;   // 2^28 px (~268 Mpx)
     if (components < 1 || components > 4) return null;
 
     const decoded = decoder.getDecodedBuffer();

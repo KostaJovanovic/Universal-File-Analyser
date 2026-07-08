@@ -301,6 +301,7 @@ function buildViewer(geo, opts = {}) {
 
   const state = { yaw: 0.6, pitch: 0.5, dist: 2.6, panX: 0, panY: 0, color: [0.55, 0.62, 0.95], spin: true, ortho: false, wire: false, real: false, bg: [0, 0, 0], msaa, ssaa: true, upZ: zUp };
   let dirty = true;
+  let disposed = false;
   // Spin can be turned off two ways - the button, or simply interacting with the
   // canvas (clicking/dragging stops it). Route every change through setSpin so any
   // listener (e.g. the button label) stays in sync no matter what triggered it.
@@ -353,9 +354,15 @@ function buildViewer(geo, opts = {}) {
   }
 
   function loop() {
+    if (disposed) return;
+    // Once the viewer's card leaves the DOM (new file opened, SPA nav away),
+    // free its WebGL context instead of just stopping the loop - browsers cap
+    // the number of live contexts (~16 on Chromium) and orphaned ones make
+    // later viewers render blank until GC eventually reclaims them.
+    if (!wrap.isConnected) { dispose(); return; }
     if (state.spin) { state.yaw += 0.003; dirty = true; }
     if (dirty) { draw(); dirty = false; }
-    if (wrap.isConnected) requestAnimationFrame(loop);
+    requestAnimationFrame(loop);
   }
 
   // Orbit (left-drag), pan (right-drag or Shift+drag), zoom (wheel). Touch: one
@@ -377,7 +384,10 @@ function buildViewer(geo, opts = {}) {
   const up = () => { dragging = false; panning = false; };
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   canvas.addEventListener('mousedown', (e) => down(e.clientX, e.clientY, e.button === 2 || e.shiftKey));
-  window.addEventListener('mousemove', (e) => move(e.clientX, e.clientY));
+  // Named so dispose() can detach them - these live on window, so they outlive
+  // the canvas unless explicitly removed.
+  const onWinMove = (e) => move(e.clientX, e.clientY);
+  window.addEventListener('mousemove', onWinMove);
   window.addEventListener('mouseup', up);
   // Touch: one finger orbits; two fingers pan + pinch-zoom.
   let twoFinger = false, pinchDist = 0, pcx = 0, pcy = 0;
@@ -436,8 +446,21 @@ function buildViewer(geo, opts = {}) {
   }
   canvas._anrSnapshot = snapshot;
 
+  // Tear the viewer down: stop the loop, detach the window-level listeners, and
+  // explicitly drop the WebGL context so it doesn't count against the browser's
+  // live-context cap. Called on MSAA rebuild and automatically when the card
+  // leaves the DOM (see loop()). Idempotent.
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    window.removeEventListener('mousemove', onWinMove);
+    window.removeEventListener('mouseup', up);
+    window.removeEventListener('resize', resize);
+    try { const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); } catch (_) { /* ignore */ }
+  }
+
   const api = {
-    wrap, ok: true, state, resize, setSpin, snapshot,
+    wrap, ok: true, state, resize, setSpin, snapshot, dispose,
     onSpinChange: (cb) => spinListeners.push(cb),
     start: () => { resize(); requestAnimationFrame(loop); },
     markDirty: () => { dirty = true; },
@@ -478,6 +501,7 @@ export function buildViewerCard(geo, title = '3D model', opts = {}) {
       const old = viewer; viewer = next;
       Object.assign(viewer.state, keep, { msaa: on });
       old.wrap.replaceWith(viewer.wrap);
+      old.dispose();                               // free the old GL context + its listeners
       viewer.onSpinChange(updateSpin);
       viewer.start();
       window.addEventListener('resize', viewer.resize);

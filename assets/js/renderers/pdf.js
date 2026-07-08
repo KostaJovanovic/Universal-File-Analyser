@@ -625,18 +625,34 @@ export async function renderPdf(file, resultsEl) {
       // Zoom on double-click / double-tap (single tap+drag stays free for
       // selecting text on the layer). CSS `zoom` scales canvas + text layer
       // together while keeping selection live; the stage scrolls to pan.
+      // Firefox only supports CSS `zoom` from v126, so fall back to an equivalent
+      // `transform: scale()` with a top-left origin - it contributes the same
+      // scaled overflow to the stage's scroll area, so the pan/scroll math below
+      // is unchanged. Supported browsers keep the identical `zoom` path.
+      const hasCssZoom = !!(window.CSS && CSS.supports && CSS.supports('zoom', '2'));
+      const applyScale = (factor) => {
+        if (!factor || factor === 1) {
+          if (hasCssZoom) pagebox.style.zoom = '';
+          else { pagebox.style.transform = ''; pagebox.style.transformOrigin = ''; }
+        } else if (hasCssZoom) {
+          pagebox.style.zoom = String(factor);
+        } else {
+          pagebox.style.transformOrigin = '0 0';
+          pagebox.style.transform = `scale(${factor})`;
+        }
+      };
       let zoomed = false;
-      overlay._resetZoom = () => { zoomed = false; pagebox.style.zoom = ''; overlay._trimHScroll && overlay._trimHScroll(); };
+      overlay._resetZoom = () => { zoomed = false; applyScale(1); overlay._trimHScroll && overlay._trimHScroll(); };
       overlay._toggleZoom = (clientX, clientY) => {
         zoomed = !zoomed;
-        if (!zoomed) { pagebox.style.zoom = ''; overlay._trimHScroll && overlay._trimHScroll(); overlay._updatePanCursor && overlay._updatePanCursor(); return; }
+        if (!zoomed) { applyScale(1); overlay._trimHScroll && overlay._trimHScroll(); overlay._updatePanCursor && overlay._updatePanCursor(); return; }
         // Zooming in can add real horizontal overflow, so re-enable the axis
         // before positioning the scroll.
         stage.style.overflowX = 'auto';
         const rect = pagebox.getBoundingClientRect();
         const cx = stage.scrollLeft + (clientX - rect.left);
         const cy = stage.scrollTop + (clientY - rect.top);
-        pagebox.style.zoom = String(PDF_ZOOM);
+        applyScale(PDF_ZOOM);
         stage.scrollLeft = cx * PDF_ZOOM - stage.clientWidth / 2;
         stage.scrollTop = cy * PDF_ZOOM - stage.clientHeight / 2;
         overlay._trimHScroll && overlay._trimHScroll();
