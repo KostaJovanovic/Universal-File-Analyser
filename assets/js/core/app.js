@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 187;
+const COMMIT_COUNT = 188;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1728,12 +1728,13 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
 const PATCH_DIGEST = [
-  { range: '5.13 - 5.14', notes: [
+  { range: '5.13 - 5.15', notes: [
     'Files the browser cannot play or read on its own now get through: an unusual camera video is offered as a one-tap conversion, and audio it cannot decode is rebuilt so it plays instead of loading silent.',
     'Overlong PDF page previews are capped to a page shape and an open page can be dragged to pan, the G-code clip fades its dimmed tools back in, and the After Effects timeline scrollbar can be grabbed.',
     'Every file now shows a CRC-32 checksum alongside its other fingerprints.',
     'A wide compatibility pass: Office, e-book and comic archives open on older Safari, Firefox and Chrome, PDF and document zoom works in Firefox, some HEVC video plays there too, and the 3D and G-code viewers no longer blank out after opening several models.',
     'Very large comics, DjVu scans and databases now warn on a phone instead of crashing the tab.',
+    'A recorded G-code clip exports at a higher bitrate by default, with a new Standard/High/Max quality choice so the thin toolpath lines stay crisp.',
   ] },
   { range: '5.08 - 5.12', notes: [
     'The home page becomes a single "drop any file" zone, and multi-channel sound can be analysed one channel at a time.',

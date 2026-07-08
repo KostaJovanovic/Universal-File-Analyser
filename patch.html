@@ -208,6 +208,16 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">5.15</p>
+          <p class="patch-name">Sharp Lines</p>
+          <p class="patch-date">8 July 2026, 02:51</p>
+          <ul class="patch-list">
+            <li><strong>A recorded G-code build clip now looks sharper - it exports at a higher bitrate by default, with a new quality choice for when you want even more.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Choose the clip quality.</strong> The <a href="/about#ext-gcode">G-code</a> <strong>Export clip</strong> panel gains a <strong>Quality</strong> setting - <strong>Standard</strong>, <strong>High</strong> or <strong>Max</strong> - so the thin toolpath lines stay crisp instead of turning soft, with the estimated file size updating as you choose. It now defaults to the higher setting, and the old &ldquo;Quality&rdquo; control that actually set the resolution is renamed <strong>Resolution</strong>.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">5.14</p>
           <p class="patch-name">Cross Check</p>
           <p class="patch-date">8 July 2026, 02:38</p>
@@ -238,6 +248,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">5.12</p>
           <p class="patch-name">Band Stop</p>
@@ -251,9 +264,6 @@
             <li><span class="patch-tag">New</span><strong>A G-code clip that gets to the point.</strong> A recorded <a href="/about#ext-gcode">G-code</a> build clip now rushes its first few setup moves past in the opening second, so the rest of the clip is spent watching the real object draw itself rather than the machine homing and priming. The label and site mark shown on the clip are a little larger and easier to read too.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">5.11</p>
