@@ -19,6 +19,8 @@
   /* Composite border shorthand - the single most repeated literal in this file.
      Resolves the nested var(--hairline), so it flips with the theme. */
   --bd-hairline: 1px solid var(--hairline);
+  /* Same shorthand over the slightly stronger --rule colour (both flip with the theme). */
+  --bd-rule: 1px solid var(--rule);
   --surface:   #f4f4f4;
   --accent:    #e60023;
   --accent-fg: #ffffff;
@@ -1161,7 +1163,7 @@ body.anr-has-file .nav-search { display: flex; }
     gap: 18px;
     padding: 5px 0;
     border: 0;
-    border-bottom: 1px solid var(--rule);
+    border-bottom: var(--bd-rule);
     white-space: normal;
     word-break: normal;
     overflow-wrap: anywhere;
@@ -2081,7 +2083,7 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 .anr-preview {
   background: var(--surface);
   padding: 16px;
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   text-align: center;
 }
 .anr-preview img {
@@ -2102,7 +2104,7 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   text-align: left;
   padding: 9px 12px 9px 0;
   vertical-align: top;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: var(--bd-rule);
   word-break: break-all;
   overflow-wrap: anywhere;
 }
@@ -2823,7 +2825,7 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   line-height: 1.7;
   letter-spacing: 0.02em;
   padding: 12px 0 16px;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: var(--bd-rule);
   margin-bottom: 14px;
 }
 .anr-info-panel strong {
@@ -2977,7 +2979,7 @@ audio { width: 100%; }
   z-index: 1200;
   width: min(360px, calc(100vw - 32px));
   background: var(--bg);
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   box-shadow: var(--shadow-popover);
   padding: 12px 14px;
   opacity: 0;
@@ -3030,7 +3032,7 @@ audio { width: 100%; }
   z-index: 1200;
   width: min(380px, calc(100vw - 32px));
   background: var(--bg);
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   box-shadow: var(--shadow-popover);
   padding: 12px 14px;
   opacity: 0;
@@ -3050,7 +3052,7 @@ audio { width: 100%; }
   z-index: 1200;
   width: min(320px, calc(100vw - 32px));
   background: var(--bg);
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   box-shadow: var(--shadow-popover);
   padding: 12px 14px;
   opacity: 0;
@@ -3299,7 +3301,7 @@ audio { width: 100%; }
 .anr-cloud-warning ul { line-height: 1.55; }
 .anr-info {
   background: var(--surface);
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   color: var(--fg);
   padding: 14px 18px;
   margin: 16px 0;
@@ -3380,7 +3382,7 @@ details[open] summary::after { content: "\2212"; }
   padding: 0;
 }
 .about-defs > div {
-  border-top: 1px solid rgba(255,255,255,0.15);
+  border-top: 1px solid var(--border-on-dark);
   padding: 12px 0;
 }
 .about-defs dt {
@@ -3410,7 +3412,7 @@ details[open] summary::after { content: "\2212"; }
   gap: 8px;
   color: var(--white-a80);
   background: transparent;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid var(--border-on-dark);
   padding: 6px 14px;
   letter-spacing: 0.08em;
 }
@@ -3432,7 +3434,7 @@ details[open] summary::after { content: "\2212"; }
 .offline-bottom-row:has(.about-details[open]) { grid-template-columns: repeat(2, 1fr); }
 
 .offline-section {
-  border-top: 1px solid rgba(255,255,255,0.15);
+  border-top: 1px solid var(--border-on-dark);
   padding-top: 24px;
   margin-bottom: 24px;
 }
@@ -3560,7 +3562,7 @@ details[open] summary::after { content: "\2212"; }
   flex-direction: column;
   gap: 4px;
   padding: 14px 16px;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid var(--border-on-dark);
   background: transparent;
   color: var(--white-a80);
   cursor: pointer;
@@ -3595,7 +3597,7 @@ details[open] summary::after { content: "\2212"; }
 }
 .offline-btn:hover { border-color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.05); }
 .offline-btn.is-done { border-color: var(--accent); }
-.offline-btn.is-done.is-fading { border-color: rgba(255,255,255,0.15); transition: border-color 1s ease; }
+.offline-btn.is-done.is-fading { border-color: var(--border-on-dark); transition: border-color 1s ease; }
 .offline-btn.is-active { border-color: rgba(255,255,255,0.6); }
 /* A lower tier already covered by a higher cached one: greyed and non-interactive
    (its files are in the cache anyway, so there's nothing to download). */
@@ -3676,7 +3678,7 @@ details[open] summary::after { content: "\2212"; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   background: transparent;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid var(--border-on-dark);
   cursor: pointer;
   padding: 6px 14px;
   transition: border-color var(--dur-base) ease, color var(--dur-base) ease;
@@ -3697,7 +3699,7 @@ details[open] summary::after { content: "\2212"; }
 :root[data-theme="dark"] .about-details summary:hover { border-color: var(--hairline-strong); }
 
 .footer-bottom {
-  border-top: 1px solid rgba(255,255,255,0.15);
+  border-top: 1px solid var(--border-on-dark);
   padding-top: 24px;
 }
 .footer-bottom .footer-meta { color: var(--white-a40); }
@@ -3725,7 +3727,7 @@ details[open] summary::after { content: "\2212"; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid var(--border-on-dark);
   padding: 6px 14px;
   text-decoration: none;
   transition: border-color var(--dur-base) ease, color var(--dur-base) ease;
@@ -3790,7 +3792,7 @@ details[open] summary::after { content: "\2212"; }
   padding: 0;
 }
 .about-caps > div {
-  border-top: 1px solid var(--rule);
+  border-top: var(--bd-rule);
   padding: 12px 0;
 }
 .about-caps dt {
@@ -3830,7 +3832,7 @@ details[open] summary::after { content: "\2212"; }
    Did-you-know - so /formats/<ext> reads as several complete mini-pages stacked,
    one per filetype, instead of two rows sharing a single card. */
 .fmt-variant-card {
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   padding: 16px 22px 20px;
   margin-top: 22px;
 }
@@ -5094,7 +5096,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
     grid-template-columns: 1fr 1fr;
     column-gap: 14px;
     padding: 9px 0;
-    border-bottom: 1px solid var(--rule);
+    border-bottom: var(--bd-rule);
   }
   .anr-readout.anr-cmp tr:last-child { border-bottom: none; }
   .anr-readout.anr-cmp th,
@@ -6219,7 +6221,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-tree-children {
   margin-left: 11px;
   padding-left: 12px;
-  border-left: 1px solid var(--rule);
+  border-left: var(--bd-rule);
 }
 .anr-tree-file {
   display: flex;
@@ -6288,7 +6290,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   font-family: var(--font-mono); font-size: var(--t-tiny);
   letter-spacing: 0.05em;
   padding: 0 0 8px; margin-bottom: 8px;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: var(--bd-rule);
   display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
 }
 .anr-treemap-breadcrumb button {
@@ -6305,7 +6307,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   font-family: var(--font-mono); font-size: var(--t-tiny);
   color: var(--muted); letter-spacing: 0.03em;
   padding: 8px 0 0; margin-top: 8px;
-  border-top: 1px solid var(--rule);
+  border-top: var(--bd-rule);
   word-break: break-all;
 }
 .anr-treemap-content { margin-top: 14px; }
@@ -6538,7 +6540,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-xlsx-table-wrap { overflow: auto; max-height: 540px; border: var(--bd-hairline); }
 .anr-xlsx-table { border-collapse: collapse; font-size: 12px; font-family: var(--font-mono); }
 .anr-xlsx-table th, .anr-xlsx-table td {
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   padding: 3px 8px;
   text-align: left;
   white-space: nowrap;
@@ -6552,7 +6554,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 /* EPUB reader */
 .anr-epub-nav { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
 .anr-epub-viewport {
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   padding: 24px;
   max-height: 600px;
   overflow: auto;
@@ -6606,9 +6608,9 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-pptx-title p { margin: 0 0 0.4cqw; }
 .anr-pptx-body { font-size: clamp(8px, 1.6cqw, 15px); line-height: 1.5; }
 .anr-pptx-body p { margin: 0 0 0.6cqw; }
-.anr-pptx-img { max-width: 60%; height: auto; margin: 1cqw 0; border: 1px solid var(--rule); }
+.anr-pptx-img { max-width: 60%; height: auto; margin: 1cqw 0; border: var(--bd-rule); }
 /* Apple iWork embedded preview image (Pages/Numbers/Keynote). */
-.anr-iwork-preview { display: block; max-width: 100%; height: auto; margin: 10px 0; border: 1px solid var(--rule); }
+.anr-iwork-preview { display: block; max-width: 100%; height: auto; margin: 10px 0; border: var(--bd-rule); }
 /* PSD layer tree: one row per layer, indented for groups, with a small canvas
    thumbnail. Hidden layers are dimmed. */
 .anr-psd-layers { margin-top: 8px; display: flex; flex-direction: column; gap: 1px; }
@@ -6621,7 +6623,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-psd-layer.anr-psd-flagged { background: rgba(var(--accent-rgb), 0.08); box-shadow: inset 2px 0 0 var(--accent); }
 .anr-psd-meta { flex: 1 1 auto; }
 .anr-psd-export { flex: 0 0 auto; margin-left: auto; }
-.anr-psd-thumb { flex: 0 0 30px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--rule); background: repeating-conic-gradient(#bbb 0% 25%, #fff 0% 50%) 50% / 10px 10px; color: var(--muted); font-size: 12px; }
+.anr-psd-thumb { flex: 0 0 30px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: var(--bd-rule); background: repeating-conic-gradient(#bbb 0% 25%, #fff 0% 50%) 50% / 10px 10px; color: var(--muted); font-size: 12px; }
 .anr-psd-thumb canvas { display: block; max-width: 28px; max-height: 28px; }
 .anr-psd-meta { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
 .anr-psd-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -6634,7 +6636,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-font-script-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .anr-font-script-row .anr-font-line { margin: 2px 0; flex: 1 1 240px; min-width: 0; }
 .anr-font-script-label { flex: 0 0 84px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-.anr-font-axes { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
+.anr-font-axes { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 14px; padding-bottom: 12px; border-bottom: var(--bd-rule); }
 .anr-font-axes-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
 .anr-font-axes-title { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .anr-font-playall { font-size: 11px; padding: 3px 10px; }
@@ -6651,15 +6653,15 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   .anr-font-axis-name { grid-column: 1 / -1; }
 }
 .anr-font-glyphs { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fill, 44px); gap: 4px; }
-.anr-font-glyph { width: 44px; height: 44px; border: 1px solid var(--rule); border-radius: 3px; background: var(--card, transparent); }
+.anr-font-glyph { width: 44px; height: 44px; border: var(--bd-rule); border-radius: 3px; background: var(--card, transparent); }
 /* DjVu page viewer: pager bar + rendered page canvas. */
 .anr-djvu-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .anr-djvu-status { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
-.anr-djvu-canvas { display: block; max-width: 100%; height: auto; border: 1px solid var(--rule); background: #fff; }
+.anr-djvu-canvas { display: block; max-width: 100%; height: auto; border: var(--bd-rule); background: #fff; }
 /* MOBI/AZW3 e-book reader: sandboxed section frame. */
-.anr-ebook-frame { width: 100%; height: 600px; border: 1px solid var(--rule); background: #fff; }
+.anr-ebook-frame { width: 100%; height: 600px; border: var(--bd-rule); background: #fff; }
 /* DWG drawing: rendered SVG on a white field so black CAD strokes stay visible. */
-.anr-dwg-wrap { overflow: auto; max-height: 640px; border: 1px solid var(--rule); background: #fff; padding: 8px; }
+.anr-dwg-wrap { overflow: auto; max-height: 640px; border: var(--bd-rule); background: #fff; padding: 8px; }
 .anr-dwg-wrap svg { max-width: 100%; height: auto; display: block; }
 
 /* ----- Altium schematic / PCB viewer ----- */
@@ -7122,8 +7124,8 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-md-body > :last-child { margin-bottom: 0; }
 
 .anr-md-h { font-family: var(--font-sans); font-weight: 600; line-height: 1.25; margin: 1.6em 0 0.6em; }
-.anr-md-h1 { font-size: 1.8em; padding-bottom: 0.3em; border-bottom: 1px solid var(--rule); }
-.anr-md-h2 { font-size: 1.45em; padding-bottom: 0.25em; border-bottom: 1px solid var(--rule); }
+.anr-md-h1 { font-size: 1.8em; padding-bottom: 0.3em; border-bottom: var(--bd-rule); }
+.anr-md-h2 { font-size: 1.45em; padding-bottom: 0.25em; border-bottom: var(--bd-rule); }
 .anr-md-h3 { font-size: 1.2em; }
 .anr-md-h4 { font-size: 1.05em; }
 .anr-md-h5 { font-size: 0.95em; }
@@ -7152,13 +7154,13 @@ li.anr-md-task input { margin-right: 0.5em; vertical-align: middle; }
 }
 .anr-md-quote > :last-child { margin-bottom: 0; }
 
-.anr-md-hr { border: none; border-top: 1px solid var(--rule); margin: 1.8em 0; }
+.anr-md-hr { border: none; border-top: var(--bd-rule); margin: 1.8em 0; }
 
 .anr-md-icode {
   font-family: var(--font-mono);
   font-size: 0.88em;
   background: var(--surface);
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   border-radius: var(--radius);
   padding: 0.1em 0.35em;
 }
@@ -7172,7 +7174,7 @@ li.anr-md-task input { margin-right: 0.5em; vertical-align: middle; }
   letter-spacing: 0.08em;
   color: var(--muted);
   background: var(--surface);
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   border-top: none; border-right: none;
   padding: 2px 8px;
 }
@@ -7181,18 +7183,18 @@ li.anr-md-task input { margin-right: 0.5em; vertical-align: middle; }
   font-size: var(--t-small);
   line-height: 1.5;
   background: var(--surface);
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   padding: 14px 16px;
   margin: 0;
   overflow: auto;
 }
 .anr-md-code code { background: none; border: none; padding: 0; font-size: inherit; }
 
-.anr-md-img { max-width: 100%; height: auto; display: block; margin: 1em 0; border: 1px solid var(--rule); }
+.anr-md-img { max-width: 100%; height: auto; display: block; margin: 1em 0; border: var(--bd-rule); }
 
 .anr-md-tablewrap { overflow-x: auto; margin: 0 0 1em; }
 .anr-md-table { border-collapse: collapse; font-size: var(--t-small); width: auto; }
-.anr-md-table th, .anr-md-table td { border: 1px solid var(--rule); padding: 6px 12px; text-align: left; }
+.anr-md-table th, .anr-md-table td { border: var(--bd-rule); padding: 6px 12px; text-align: left; }
 .anr-md-table th { background: var(--surface); font-weight: 600; }
 .anr-md-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface) 55%, transparent); }
 
@@ -7217,7 +7219,7 @@ li.anr-md-task input { margin-right: 0.5em; vertical-align: middle; }
   margin: 28px 0 40px;
 }
 .stats-total-card {
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   padding: 22px 24px;
   display: flex;
   flex-direction: column;
@@ -7240,7 +7242,7 @@ li.anr-md-task input { margin-right: 0.5em; vertical-align: middle; }
 
 /* ---- Trend graph (visitors + files over time) ---- */
 .stats-trends-card {
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   padding: 22px 24px;
   margin: 36px 0 0;
 }
@@ -7254,7 +7256,7 @@ li.anr-md-task input { margin-right: 0.5em; vertical-align: middle; }
 }
 .stats-trends-title { font-size: var(--t-h3); margin: 0; }
 /* Segmented per-day / cumulative switch. */
-.stats-trends-modes { display: inline-flex; border: 1px solid var(--rule); }
+.stats-trends-modes { display: inline-flex; border: var(--bd-rule); }
 .stats-trends-mode {
   font: inherit;
   font-size: var(--t-small);
@@ -7265,7 +7267,7 @@ li.anr-md-task input { margin-right: 0.5em; vertical-align: middle; }
   cursor: pointer;
   transition: color var(--dur-snappy) ease, background var(--dur-snappy) ease;
 }
-.stats-trends-mode + .stats-trends-mode { border-left: 1px solid var(--rule); }
+.stats-trends-mode + .stats-trends-mode { border-left: var(--bd-rule); }
 .stats-trends-mode:hover { color: var(--fg); }
 .stats-trends-mode.is-on { background: var(--accent); color: var(--accent-fg); }
 
@@ -7367,7 +7369,7 @@ li.anr-md-task input { margin-right: 0.5em; vertical-align: middle; }
 .stats-status {
   font-size: var(--t-small);
   color: var(--muted);
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   padding: 12px 16px;
   margin: 20px 0;
 }
@@ -7428,7 +7430,7 @@ a.stats-ext-link:hover { color: var(--accent); text-decoration: none; }
 /* Asteroids easter-egg leaderboard card under the stats body. */
 .stats-scores-card {
   margin-top: 36px;
-  border: 1px solid var(--rule);
+  border: var(--bd-rule);
   padding: 22px 24px;
 }
 .stats-scores-head { font-size: var(--t-h3); margin: 0 0 14px; }
@@ -7745,14 +7747,14 @@ a.stats-ext-link:hover { color: var(--accent); text-decoration: none; }
 .anr-nb-out { margin-top: 8px; padding: 8px 14px; border-left: 2px solid var(--rule); color: var(--muted); }
 .anr-nb-out--result { color: var(--fg); }
 .anr-nb-out--err { color: var(--accent); border-left-color: var(--accent); }
-.anr-nb-img { max-width: 100%; height: auto; margin-top: 8px; border: 1px solid var(--rule); }
+.anr-nb-img { max-width: 100%; height: auto; margin-top: 8px; border: var(--bd-rule); }
 .anr-nb-md { line-height: 1.6; }
 .anr-nb-md h1, .anr-nb-md h2, .anr-nb-md h3 { margin: 0.5em 0 0.3em; }
 .anr-nb-mdcode { background: var(--surface); padding: 12px 14px; border-radius: 4px; font-family: var(--font-mono); font-size: 12.5px; white-space: pre-wrap; }
 
 /* ---------- Email ---------- */
 .anr-email-html {
-  border: 1px solid var(--rule); padding: 16px; border-radius: 4px;
+  border: var(--bd-rule); padding: 16px; border-radius: 4px;
   max-height: 640px; overflow: auto; background: var(--bg);
   user-select: text; -webkit-user-select: text;
 }
@@ -7765,7 +7767,7 @@ a.stats-ext-link:hover { color: var(--accent); text-decoration: none; }
   border-bottom: var(--bd-hairline); padding: 6px 8px;
   text-transform: uppercase; letter-spacing: 0.08em; font-size: var(--t-tiny);
 }
-.anr-har-table td { padding: 5px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.anr-har-table td { padding: 5px 8px; border-bottom: var(--bd-rule); vertical-align: top; }
 .anr-har-num { text-align: right; white-space: nowrap; }
 .anr-har-url { word-break: break-all; max-width: 0; }
 .anr-har-2xx { color: #1a8a3a; }
@@ -7774,7 +7776,7 @@ a.stats-ext-link:hover { color: var(--accent); text-decoration: none; }
 
 /* ---------- JSON value tree ---------- */
 .anr-json-tree { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.7; user-select: text; -webkit-user-select: text; }
-.anr-json-children { padding-left: 18px; border-left: 1px solid var(--rule); margin-left: 4px; }
+.anr-json-children { padding-left: 18px; border-left: var(--bd-rule); margin-left: 4px; }
 .anr-json-sum { cursor: pointer; list-style: none; }
 .anr-json-sum::-webkit-details-marker { display: none; }
 .anr-json-sum::before { content: "\25B8"; color: var(--muted); display: inline-block; width: 1em; transition: transform var(--dur-snappy) ease; }
@@ -7798,7 +7800,7 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
 
 /* ---------- Diagram preview (draw.io / DXF) ---------- */
 .anr-diagram-stage {
-  border: 1px solid var(--rule); border-radius: 4px; background: var(--bg);
+  border: var(--bd-rule); border-radius: 4px; background: var(--bg);
   max-height: 70vh; overflow: auto; padding: 12px;
 }
 .anr-diagram-svg { display: block; width: 100%; height: auto; max-height: 68vh; }

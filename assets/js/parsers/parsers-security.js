@@ -13,7 +13,7 @@
 import { el, row, fmtBytes, preBlock, fmtDate } from '../core/util.js';
 import { Reader, ascii, findBytes, latin1, utf8, fmtGuid, filetimeToDate } from '../core/binutil.js';
 import { parsePlist } from '../lib/plist.js';
-import { openZip, inflateToText } from '../renderers/zip.js';
+import { openZip } from '../renderers/zip.js';
 
 // ---------- small helpers ----------
 
@@ -880,7 +880,7 @@ async function parseSaz(file) {
   const hosts = new Set();
   // Sample up to 400 request files to tally method + host.
   for (const e of requests.slice(0, 400)) {
-    const t = await inflateToText(z.buf, e);
+    const t = await z.text(e.name);
     if (!t) continue;
     const m = t.match(/^([A-Z]+)\s+(\S+)/);
     if (m) {
@@ -891,7 +891,7 @@ async function parseSaz(file) {
     if (h) hosts.add(h);
   }
   for (const e of z.match(/raw\/\d+_s\.txt$/i).slice(0, 400)) {
-    const t = await inflateToText(z.buf, e);
+    const t = await z.text(e.name);
     if (!t) continue;
     const m = t.match(/^HTTP\/[\d.]+\s+(\d{3})/);
     if (m) statuses[m[1]] = (statuses[m[1]] || 0) + 1;
@@ -1025,7 +1025,7 @@ async function parseAff4(file) {
   }
   const turtleEntry = z.match(/information\.turtle$/i)[0];
   if (turtleEntry) {
-    const ttl = await inflateToText(z.buf, turtleEntry);
+    const ttl = await z.text(turtleEntry.name);
     if (ttl) {
       const tool = (ttl.match(/aff4:Tool>?\s*"([^"]+)"/i) || ttl.match(/tool[^"]*"([^"]+)"/i) || [])[1];
       if (tool) out['Acquisition tool'] = tool;
