@@ -1311,7 +1311,8 @@ function renderHistogram(canvas, hist) {
   }
 }
 
-// Tiny color quantizer: bin into 32-color cube buckets, sort by population, merge near duplicates.
+// Tiny color quantizer: bin into an 8-level-per-channel cube (512 buckets, STEP 32),
+// sort by population, merge near duplicates.
 function dominantColors(imgData, n = 8) {
   const d = imgData.data;
   const STEP = 32;
@@ -3215,7 +3216,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
 
   // ---- Palette ----
   const palCard = el('div', { class: 'anr-card' });
-  const [palH, palHelp] = h3help('Dominant colours', 'Extracted by quantizing every pixel into a 32-level-per-channel RGB cube, counting how many pixels fall in each cell, then merging near-duplicates - the 8 most populated colours are shown. Click a swatch to copy its hex value.');
+  const [palH, palHelp] = h3help('Dominant colours', 'Extracted by quantizing every pixel into an 8-level-per-channel RGB cube (512 cells), counting how many pixels fall in each cell, then merging near-duplicates - the 8 most populated colours are shown. Click a swatch to copy its hex value.');
   palCard.appendChild(palH); palCard.appendChild(palHelp);
   const palDiv = el('div', { class: 'anr-palette' });
   const totalPx = pixData.width * pixData.height;

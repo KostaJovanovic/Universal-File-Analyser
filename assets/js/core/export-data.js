@@ -1,8 +1,13 @@
 /* Analyser - export the on-page analysis.
-   The "Export data" button (left of "Analyse next file?") opens a small chooser:
+   The "Export data" button (left of "Analyse next file?") opens a small chooser
+   with four formats:
      - Complete report (HTML): a single self-contained .html file with every
        metadata table inline AND the visuals (spectrogram, histogram, previews,
        maps) embedded as base64 images. Opens in any browser, works offline.
+     - PDF (print): opens that same complete report in a new tab and launches the
+       browser's print dialog (choose "Save as PDF").
+     - Machine-readable (JSON): every field, table and text block, typed and
+       grouped by section.
      - Plain text (CSV): a flat Section/Group/Field/Value sheet of all the
        textual data. Text blobs (hex dumps, extracted text) are capped; images
        can't live in a CSV, so each is noted as a placeholder row.
@@ -154,7 +159,7 @@ function collectSections() {
 }
 
 // Ready the page so the scrape captures everything, then enrich it. Run BEFORE
-// collectSections(). Three steps:
+// collectSections(). Two steps:
 //   1. Expand every collapsed card and open every <details>, so content that was
 //      hidden (its visuals would otherwise read back blank / be skipped) is live.
 //   2. For video, force the contact sheet to generate if it hasn't been already

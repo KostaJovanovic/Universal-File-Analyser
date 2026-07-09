@@ -102,7 +102,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>A MathWorks MATLAB / GNU Octave MAT-file - a binary container of variables, arrays and matrices (Level 5, or the HDF5-based v7.3). Analyser identifies it and reads the header.</dd></div>
             <div><dt>How to tell it apart</dt><dd>A MAT-file begins with the ASCII text MATLAB.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>A modern MATLAB v7.3 .mat file is secretly an HDF5 container - the same scientific data format used across NASA Earth-science missions and countless research datasets.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>A modern MATLAB v7.3 .mat file is secretly an HDF5 container - the same scientific data format used across NASA Earth-science missions and countless research datasets.</li><li>The v7.3 format was introduced specifically so a single variable could exceed 2 GB, a size the older MAT-file format simply could not store.</li><li>Because a v7.3 file is really HDF5, tools such as Python's h5py can read a .mat with no MATLAB licence at all.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block fmt-variant-card">
@@ -110,7 +110,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>A Unity engine material asset - a YAML document describing a shader and its properties. Analyser splits the object stream and reads the material.</dd></div>
             <div><dt>How to tell it apart</dt><dd>A Unity material is text beginning with %YAML.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>A Unity .mat is plain YAML text, so material changes diff and merge in Git just like source code.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>A Unity .mat is plain YAML text, so material changes diff and merge in Git just like source code.</li><li>Unity's YAML is a custom high-performance subset of the full YAML specification, not a general YAML parser, tuned for loading game assets quickly.</li><li>A .mat points at its shader and textures by GUID, an id Unity resolves through the hidden .meta file it keeps beside every asset.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block">

@@ -152,11 +152,17 @@ function capabilityBlocks(e, isFull) {
 function variantCards(variants, key) {
   const facts = (VARIANT_FACTS && VARIANT_FACTS[key]) || {};
   return variants.map((v) => {
-    const fact = facts[v.name];
+    // A variant's fact entry may be a single string or an array of facts; an
+    // array renders as the same bullet list the single-format pages use.
+    const raw = facts[v.name];
+    const list = Array.isArray(raw) ? raw.filter(Boolean) : (raw ? [raw] : []);
+    const factBody = list.length > 1
+      ? `<ul class="dyk-list">${list.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
+      : (list.length ? esc(list[0]) : '');
     const rows = [
       `<div><dt>What it is</dt><dd>${esc(v.desc)}</dd></div>`,
       v.tell ? `<div><dt>How to tell it apart</dt><dd>${esc(v.tell)}</dd></div>` : '',
-      fact ? `<div class="didyouknow"><dt>Did you know</dt><dd>${esc(fact)}</dd></div>` : '',
+      factBody ? `<div class="didyouknow"><dt>Did you know</dt><dd>${factBody}</dd></div>` : '',
     ].filter(Boolean).join('\n            ');
     return `<div class="about-block fmt-variant-card">
           <h3 class="fmt-variant-title">${esc(v.name)}</h3>

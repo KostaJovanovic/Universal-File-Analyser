@@ -420,7 +420,7 @@ function buildViewer(geo, opts = {}) {
   }, { passive: false });
 
   // Render one off-axis isometric frame, framed so the model's bounding sphere
-  // fills ~80% of the canvas (10% margins all round), and read it back as a PNG
+  // fills ~96% of the narrower field of view (2% margins), and read it back as a PNG
   // data URL. Used by the data export (the canvas exposes it as _anrSnapshot).
   // Saves and restores the live view state, so the interactive preview is
   // unaffected beyond a single redraw.

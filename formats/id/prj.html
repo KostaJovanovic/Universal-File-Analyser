@@ -102,7 +102,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>An Esri .prj projection file - the coordinate reference system in WKT, stored beside a shapefile. Analyser reads the CRS.</dd></div>
             <div><dt>How to tell it apart</dt><dd>An Esri .prj is one line of WKT beginning with GEOGCS or PROJCS.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>A shapefile's .prj holds one line of Well-Known Text naming the coordinate system, so software knows whether your numbers are degrees or metres.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>A shapefile's .prj holds one line of Well-Known Text naming the coordinate system, so software knows whether your numbers are degrees or metres.</li><li>If the .prj is missing, GIS software cannot tell which coordinate system the shapefile uses, a frequent cause of layers landing in the wrong place on the map.</li><li>The Well-Known Text it carries is an Open Geospatial Consortium standard, so the same projection definition moves cleanly between Esri, PostGIS, GDAL and other tools.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block fmt-variant-card">
@@ -110,7 +110,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>A project file for one of many applications - the extension is reused widely. Analyser opens it as text where it can.</dd></div>
             <div><dt>How to tell it apart</dt><dd>Anything that is not WKT is treated as a generic text project.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>Dozens of unrelated apps grabbed .prj for 'project file', which is why the same extension can mean a map projection or a sound-editor session.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Dozens of unrelated apps grabbed .prj for 'project file', which is why the same extension can mean a map projection or a sound-editor session.</li><li>Microcontroller toolchains such as CodeVisionAVR store their build settings in a .prj that has nothing to do with any map.</li><li>Because the extension states only 'project' and nothing about the contents, the sole reliable way to identify one is the application that made it or its internal header.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block">

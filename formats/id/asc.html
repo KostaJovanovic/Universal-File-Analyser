@@ -102,7 +102,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>An Esri ASCII raster grid - a small header (ncols, nrows, cellsize) followed by a grid of elevation or raster values. Analyser reads the grid header and bounds.</dd></div>
             <div><dt>How to tell it apart</dt><dd>An Esri grid starts with the word ncols.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>The Esri ASCII grid is so simple - a tiny header then a wall of numbers - that it became the lowest-common-denominator way to swap elevation and raster data.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>The Esri ASCII grid is so simple - a tiny header then a wall of numbers - that it became the lowest-common-denominator way to swap elevation and raster data.</li><li>Writing every cell out as text makes the grid far bigger and slower to read than its binary equivalent, so it is used for exchange rather than everyday storage.</li><li>GDAL knows the format as its AAIGrid driver, which is how QGIS and countless other GIS tools open the plain-text grid directly.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block fmt-variant-card">
@@ -110,7 +110,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>An ASCII-armored OpenPGP block - a Base64-wrapped key, message or signature. Analyser reads the armor type and walks the packet structure.</dd></div>
             <div><dt>How to tell it apart</dt><dd>PGP armor starts with -----BEGIN PGP.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>ASCII armor wraps a binary key in Base64 so it survives being pasted into email, and the trailing line starting with = is a checksum that catches copy-paste corruption.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>ASCII armor wraps a binary key in Base64 so it survives being pasted into email, and the trailing line starting with = is a checksum that catches copy-paste corruption.</li><li>That final checksum is a 24-bit CRC defined by the OpenPGP standard (RFC 4880), and it guards only against accidental corruption, never against deliberate tampering.</li><li>PGP itself was written by Phil Zimmermann in 1991, and its spread as strong crypto triggered a US criminal export investigation that was finally dropped in 1996.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block fmt-variant-card">
@@ -118,7 +118,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>A plain ASCII text file. Analyser opens it as text.</dd></div>
             <div><dt>How to tell it apart</dt><dd>Anything else with a .asc extension is treated as plain text.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>ASCII fixed the English alphabet into 7 bits in 1963, and modern UTF-8's first 128 characters still match it exactly.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>ASCII fixed the English alphabet into 7 bits in 1963, and modern UTF-8's first 128 characters still match it exactly.</li><li>ASCII spends 33 of its codes on non-printing control characters such as carriage return and escape, a legacy of the teleprinters it was first designed to drive.</li><li>Bob Bemer, nicknamed the father of ASCII, pushed for the backslash and escape characters and later became an early campaigner about the Year 2000 date problem.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block">

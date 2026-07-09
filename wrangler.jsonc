@@ -29,7 +29,7 @@
     // system (env.ASSETS.fetch), preserving clean URLs + the SPA fallback.
     "binding": "ASSETS",
     // Default html_handling ("auto-trailing-slash"): clean URLs are canonical.
-    // /about serves about.html, and /about.html 307-redirects to /about (same
+    // /about serves about.html, and /about.html 308-redirects to /about (same
     // for /patch and /index.html -> /). Every link, canonical URL, the sitemap
     // and the service-worker precache use the clean form to match, and the local
     // dev server (serve.py) mirrors this exact routing. not_found_handling sends

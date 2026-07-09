@@ -1,7 +1,8 @@
 /* Analyser - shared ZIP reader
-   Minimal reader for ZIP-based formats (xlsx, epub, pptx). Walks local file
-   headers sequentially and inflates entries on demand with DecompressionStream.
-   Used by xlsx.js, epub.js, and pptx.js. */
+   Minimal reader for ZIP-based formats. Walks local file headers sequentially and
+   inflates entries on demand with DecompressionStream. Widely shared: imported by
+   many renderers (xlsx, epub, pptx, docx, odf, iwork, comic, textdoc, paint, f3d,
+   lottie, proprietary, ...) and several parsers-*.js chunks. */
 
 import { loadScript } from '../core/util.js';
 

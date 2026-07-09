@@ -492,9 +492,11 @@ button.nav-link {
   .header-btn { padding: 3px 6px; letter-spacing: 0.05em; }
 }
 
-/* Canonical responsive breakpoints (CSS @media can't read custom properties, so
-   these literals ARE the contract): 420px = small phone, 700px = phone, 900px =
-   tablet / single-column. Header and sections both collapse at 900px. */
+/* Principal responsive breakpoints (CSS @media can't read custom properties, so
+   these literals recur throughout): 480px = small phone, 700px = phone, 900px =
+   tablet / single-column. Header and sections both collapse at 900px. Other
+   one-off widths (540/560/600/640/719/760px) appear where a specific component
+   needs them. */
 @media (max-width: 900px) {
   /* MOBILE / TABLET ONLY (<=900px). Restructure the header into a 5-column grid
      and reorder it: the version moves up onto the kicker (red text) row, top-right;

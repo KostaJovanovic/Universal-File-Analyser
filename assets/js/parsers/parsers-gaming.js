@@ -1572,8 +1572,8 @@ async function parseXdelta(file) {
   if (!(head[0] === 0xD6 && head[1] === 0xC3 && head[2] === 0xC4)) return null;
   return {
     'Format': 'xdelta3 patch (VCDIFF)',
-    'VCDIFF version': head[4],
-    'Header indicator': '0x' + head[5].toString(16),
+    'VCDIFF version': head[3],
+    'Header indicator': '0x' + head[4].toString(16),
     'Note': 'RFC 3284 VCDIFF binary delta (commonly an xdelta3 ROM patch); apply with the source file.',
   };
 }

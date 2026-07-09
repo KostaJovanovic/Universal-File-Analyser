@@ -102,7 +102,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>An Adobe / IRIDAS / DaVinci Resolve colour look-up table. Analyser visualises exactly what it does - the tone-response curve, a before/after chart and an interactive 3D scatter of the colour cube - and reads its title, grid size and domain.</dd></div>
             <div><dt>How to tell it apart</dt><dd>A LUT names LUT_3D_SIZE or LUT_1D_SIZE in its header text.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>The same .cube LUT a colourist builds in DaVinci Resolve loads unchanged into Photoshop, Premiere and OBS, because it is just a text table of input-to-output colours.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>The same .cube LUT a colourist builds in DaVinci Resolve loads unchanged into Photoshop, Premiere and OBS, because it is just a text table of input-to-output colours.</li><li>A .cube can be either a 1D LUT - a single tone curve - or a full 3D colour cube, and the LUT_1D_SIZE or LUT_3D_SIZE line at the top declares which.</li><li>The .cube format was created by IRIDAS, the grading company Adobe bought in 2011, which is why Adobe and DaVinci Resolve both read it.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block fmt-variant-card">
@@ -110,7 +110,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>A Gaussian CUBE file - a regular 3D grid of electron density or molecular-orbital values written by Gaussian and other quantum-chemistry packages. Analyser identifies it and reads the atom and grid dimensions.</dd></div>
             <div><dt>How to tell it apart</dt><dd>A Gaussian cube starts with two comment lines, then an atom count and origin coordinates.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>A Gaussian cube stores a value at every point of a 3D grid, so one molecule's electron density can run to tens of millions of numbers.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>A Gaussian cube stores a value at every point of a 3D grid, so one molecule's electron density can run to tens of millions of numbers.</li><li>Every value in a Gaussian cube is in atomic units, so distances are given in Bohr radii of about 0.529 angstroms rather than the more familiar angstrom.</li><li>The format comes from Gaussian, the quantum-chemistry program John Pople began in 1970 and which helped earn him the 1998 Nobel Prize in Chemistry.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block">

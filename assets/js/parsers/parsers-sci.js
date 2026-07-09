@@ -1340,8 +1340,8 @@ async function parseAb1(file) {
   const version = dv.getUint16(4, false);  // big-endian throughout
   // Root directory entry sits at offset 6: name(4) number(i32) elemtype(i16)
   // elemsize(i16) numelements(i32) datasize(i32) dataoffset(i32) ...
-  const dirEntries = dv.getInt32(6 + 8, false);
-  const dirOffset = dv.getInt32(6 + 16, false);
+  const dirEntries = dv.getInt32(6 + 12, false);
+  const dirOffset = dv.getInt32(6 + 20, false);
   const out = { 'Format': 'ABIF sequencing trace (AB1)' };
   out['Version'] = (version / 100).toFixed(2);
   out['Directory entries'] = dirEntries;

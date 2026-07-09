@@ -102,7 +102,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>An MPEG-2 Transport Stream - the 188-byte-packet container used for digital broadcast (DVB/ATSC), Blu-ray and AVCHD camcorder video. Analyser reads the container, codec, resolution and streams and plays it back.</dd></div>
             <div><dt>How to tell it apart</dt><dd>A transport stream is binary and repeats the 0x47 sync byte every 188 bytes; TypeScript is UTF-8 text.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>Transport streams chop video into fixed 188-byte packets so a glitch only ever loses one tiny packet, which is why digital TV and Blu-ray still rely on them.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Transport streams chop video into fixed 188-byte packets so a glitch only ever loses one tiny packet, which is why digital TV and Blu-ray still rely on them.</li><li>The odd 188-byte packet size was chosen so exactly four of them fit the 47-byte payload of an ATM AAL-1 telecoms cell, back when broadcast video was expected to travel over ATM networks.</li><li>Two .ts files can be joined by plain byte concatenation, which is exactly why HLS streaming slices a video into a stream of small .ts segments.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block fmt-variant-card">
@@ -110,7 +110,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>Microsoft TypeScript source - JavaScript with static types, compiled by tsc. Analyser opens it as text with a source preview, line count and metadata.</dd></div>
             <div><dt>How to tell it apart</dt><dd>TypeScript is human-readable text.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>TypeScript was designed at Microsoft by Anders Hejlsberg, who had earlier created Turbo Pascal, Delphi and C#.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>TypeScript was designed at Microsoft by Anders Hejlsberg, who had earlier created Turbo Pascal, Delphi and C#.</li><li>TypeScript was first shown publicly in October 2012 as version 0.8, after two years of internal development at Microsoft.</li><li>Every TypeScript type is erased at compile time, so a .ts file always compiles down to plain JavaScript that adds nothing at runtime.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block">

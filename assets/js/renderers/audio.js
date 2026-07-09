@@ -978,7 +978,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
 
   // ---- Isolate frequencies (band-stop) ----
   // Frequency <-> vertical-fraction mapping, mirroring renderSpectrogram's y-axis
-  // (20 Hz .. Nyquist, log or linear). frac is 0 at the bottom, 1 at the top.
+  // (SPEC_LOG_MIN 10 Hz floor .. Nyquist, log or linear). frac is 0 at the bottom,
+  // 1 at the top.
   function freqToFrac(hz) {
     hz = Math.max(1, Math.min(NYQ, hz));
     if (state.scale === 'log') {
