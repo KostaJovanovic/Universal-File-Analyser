@@ -16,3 +16,4 @@ stats-backup/
 
 # Standalone minimal build - destined to be its own repo
 minimal/
+nul
