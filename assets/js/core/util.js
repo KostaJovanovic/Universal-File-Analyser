@@ -912,14 +912,7 @@ export function buildFileTree(obj, opts) {
             copyBtn.addEventListener('click', (e) => {
               e.stopPropagation();
               const done = () => { copyBtn.textContent = '✓'; setTimeout(() => { copyBtn.textContent = '⧉'; }, 1000); };
-              if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(path).then(done).catch(() => {});
-              } else {
-                const ta = document.createElement('textarea');
-                ta.value = path; document.body.appendChild(ta); ta.select();
-                try { document.execCommand('copy'); done(); } catch (_) {}
-                ta.remove();
-              }
+              copyText(path).then((ok) => { if (ok) done(); });
             });
             fileDiv.appendChild(copyBtn);
           }

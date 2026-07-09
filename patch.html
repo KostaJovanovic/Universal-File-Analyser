@@ -208,6 +208,19 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">5.16 - 5.19</p>
+          <p class="patch-name">Side by Side</p>
+          <p class="patch-date">9 July 2026, 12:06</p>
+          <ul class="patch-list">
+            <li><strong>A new /compare page lines up two files side by side, field by field - plus a smoother G-code &ldquo;dim other tools&rdquo; transition and a fact-checking pass across the format guide pages.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Compare two files side by side.</strong> The new <a href="/compare">Compare</a> page takes two dropped files - two photos, two documents, two archives, anything - and runs each through the full analysis, merging the results into one table per section so every field, hash and date lines up next to its counterpart, with a <strong>Show differences</strong> toggle to narrow the view to only what changed. Every compared file gets its full fingerprint card even when its own viewer would not normally build one, and a loading indicator shows while both files analyse.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The dimmed tools ease in and out.</strong> On a multi-tool <a href="/about#ext-gcode">G-code</a> build, switching which tool is highlighted no longer snaps the others between full and faded brightness - they now cross-fade smoothly, and every tool eases back to full once playback finishes.</li>
+            <li><strong>A steadier default playback speed.</strong> A G-code build now defaults to a fixed 30-second run through the whole job rather than real time, so a print with long pauses or slow feedrates does not leave the preview crawling; real-time playback honouring the file&rsquo;s own feedrates is still there as a choice.</li>
+            <li><strong>Maintenance.</strong> The <a href="/formats">per-format guide pages</a> had a fact-checking pass - dozens of wrong dates, attributions and self-contradicting facts were corrected, duplicate facts reworded, and every file type, including every variant of an ambiguous extension, now carries at least three verified &ldquo;Did you know&rdquo; facts.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">5.15</p>
           <p class="patch-name">Sharp Lines</p>
           <p class="patch-date">8 July 2026, 02:51</p>
@@ -233,6 +246,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">5.13</p>
           <p class="patch-name">Now Playing</p>
@@ -247,9 +263,6 @@
             <li><span class="patch-tag is-fix">Fix</span><strong>Grab the After Effects timeline scrollbar.</strong> The scrollbar under a long <a href="/about#ext-aep">After Effects</a> timeline can now be dragged directly, instead of the timeline sliding along underneath your grab.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">5.12</p>

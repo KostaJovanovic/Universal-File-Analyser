@@ -38,7 +38,7 @@ export const EXT_PAGES = {
   jpg:  { name: 'JPEG image', blurb: 'JPEG is the most widely used photo format, using lossy compression to keep files small. It is the default for most cameras, phones and the web.', fact: 'The JPEG standard was published in 1992 and is still the default photo format on virtually every camera and phone.' },
   jpeg: { name: 'JPEG image', blurb: 'JPEG is the most widely used photo format, using lossy compression to keep files small. It is the default for most cameras, phones and the web.', fact: 'No JPEG can be larger than 65,535 pixels on a side, because the format stores image width and height as 16-bit numbers.' },
   jif:  { name: 'JPEG image (JIF)', blurb: 'JIF is the JPEG Interchange Format, the bare image stream defined by the JPEG standard itself - files with this extension are ordinary JPEG images, now usually seen as .jpg or .jfif.', fact: 'JIF was the original 1992 JPEG interchange naming, quickly superseded by JFIF and the familiar .jpg.' },
-  jfif: { name: 'JPEG image (JFIF)', blurb: 'JFIF (JPEG File Interchange Format) is a standard JPEG image variant, functionally the same as a .jpg file.', fact: 'JFIF was defined in 1992 to standardise exactly how JPEG image data is stored in a file.' },
+  jfif: { name: 'JPEG image (JFIF)', blurb: 'JFIF (JPEG File Interchange Format) is a standard JPEG image variant, functionally the same as a .jpg file.', fact: 'JFIF was created in 1991 to standardise exactly how JPEG image data is stored in a file, with the long-lived version 1.02 following in 1992.' },
   png:  { name: 'PNG image', blurb: 'PNG is a lossless image format with full alpha transparency, ideal for graphics, screenshots and logos.', fact: 'PNG was created in 1996 as a free replacement for GIF, after a patent dispute over the LZW compression GIF used.' },
   gif:  { name: 'GIF image', blurb: 'GIF is an 8-bit (256-colour) image format best known for short looping animations.', fact: 'GIF was introduced by CompuServe in 1987; its looping animations later became a staple of internet culture.' },
   webp: { name: 'WebP image', blurb: 'WebP is a modern Google image format offering both lossy and lossless compression, smaller than JPEG or PNG at similar quality.', fact: 'Google released WebP in 2010, derived from its VP8 video codec.' },
@@ -119,7 +119,7 @@ export const EXT_PAGES = {
   m2ts: { name: 'AVCHD video (M2TS)', blurb: 'M2TS is the AVCHD/Blu-ray transport-stream video format used by camcorders.' },
   ts:   { name: 'Transport stream / TypeScript', blurb: 'TS has two unrelated uses: an MPEG-2 transport-stream video file (broadcast and recordings), and TypeScript source code. Analyser tells them apart by their contents.', fact: 'Confusingly, .ts is both an MPEG transport stream (from 1995) and TypeScript code (from 2012).' },
   vob:  { name: 'DVD video', blurb: 'VOB is the video format used on DVD-Video discs.', fact: 'VOB is the container on every DVD-Video disc, a format launched in 1996.' },
-  ogv:  { name: 'Ogg video', blurb: 'OGV is the Ogg video format, an open container usually holding Theora video.', fact: 'OGV uses the royalty-free Theora codec, released by Xiph.Org in 2004.' },
+  ogv:  { name: 'Ogg video', blurb: 'OGV is the Ogg video format, an open container usually holding Theora video.', fact: 'OGV uses the royalty-free Theora codec, whose bitstream format Xiph.Org froze in 2004.' },
   h264: { name: 'H.264 stream', blurb: 'H.264 (AVC) is the most widely used video codec; a raw .h264 file is an unwrapped elementary stream.', fact: 'H.264 was standardised in 2003 and is still the most widely used video codec in the world.' },
   '264':{ name: 'H.264 stream', blurb: 'A .264 file is a raw H.264 (AVC) video elementary stream, without a container.', fact: 'The number in .264 comes from the ITU-T’s H-series of standards: it is the direct descendant of H.261, the 1988 videoconferencing codec that established the basic design still used by video compression today.' },
   avc:  { name: 'H.264 / AVC stream', blurb: 'AVC is another name for the H.264 video codec; a raw .avc file is an unwrapped elementary stream.', fact: 'In 2013 Cisco open-sourced its AVC codec as OpenH264 and offered to pay the patent royalties on its binaries itself, which is how Firefox was able to add H.264 support for WebRTC video calls.' },
@@ -154,7 +154,7 @@ export const EXT_PAGES = {
   dotx: { name: 'Word template', blurb: 'DOTX is a Microsoft Word template - the same zipped XML package as DOCX, used as the starting point for new documents.', fact: 'A DOTX provides the starting layout and styles for new Word documents.' },
   dotm: { name: 'Word macro-enabled template', blurb: 'DOTM is a macro-enabled Microsoft Word template - a DOTX template that may also contain VBA macros.', fact: 'DOTM is a Word template allowed to contain automation macros.' },
   xlsm: { name: 'Excel macro-enabled workbook', blurb: 'XLSM is a macro-enabled Microsoft Excel workbook - the same zipped XML package as XLSX, but allowed to carry VBA macros.' },
-  xlsb: { name: 'Excel binary workbook', blurb: 'XLSB is the binary version of a Microsoft Excel workbook, storing cells in the compact BIFF12 record format instead of XLSX’s XML. It opens and recalculates faster and makes smaller files, so it is popular for very large spreadsheets.', fact: 'XLSB arrived with Excel 2007 alongside XLSX; the two hold the same data, but the binary XLSB opens noticeably faster on big workbooks.' },
+  xlsb: { name: 'Excel binary workbook', blurb: 'XLSB is the binary version of a Microsoft Excel workbook, storing cells in the compact BIFF12 record format instead of XLSX’s XML. It opens and saves faster and makes smaller files, so it is popular for very large spreadsheets.', fact: 'XLSB arrived with Excel 2007 alongside XLSX; the two hold the same data, but the binary XLSB opens noticeably faster on big workbooks.' },
   xltx: { name: 'Excel template', blurb: 'XLTX is a Microsoft Excel template - the same zipped XML package as XLSX, used as the starting point for new workbooks.' },
   xltm: { name: 'Excel macro-enabled template', blurb: 'XLTM is a macro-enabled Microsoft Excel template - an XLTX template that may also contain VBA macros.' },
   pptm: { name: 'PowerPoint macro-enabled presentation', blurb: 'PPTM is a macro-enabled Microsoft PowerPoint presentation - the same zipped XML package as PPTX, but allowed to carry VBA macros.' },
@@ -192,7 +192,7 @@ export const EXT_PAGES = {
   // ---- More source, shader, style & build files ----
   mm:     { name: 'Objective-C++ source', blurb: 'MM is an Objective-C++ source file - C++ code that can also call Objective-C, used on Apple platforms to bridge portable C++ with macOS and iOS frameworks.', fact: 'The .mm extension tells Apple’s Clang compiler to build the file as Objective-C++, so one file can freely mix C++ classes with Objective-C objects and Cocoa calls.' },
   hmm:    { name: 'Objective-C++ header', blurb: 'HMM is a header paired with an Objective-C++ (.mm) implementation - it declares the interface that mixed C++ and Objective-C code shares.', fact: 'It is not a standard extension but a project convention (used in OrcaSlicer’s Retina helper, for example) marking a header whose implementation is Objective-C++.' },
-  fs:     { name: 'GLSL fragment shader', blurb: 'FS is a GLSL fragment shader - a small GPU program that computes the colour of every pixel a 3D surface covers.', fact: 'Fragment shaders run once per pixel, so a single full-screen effect can mean millions of invocations of the same .fs program every frame.' },
+  fs:     { name: 'GLSL fragment shader', blurb: 'FS is either an F# source file or a GLSL fragment shader - a small GPU program that computes the colour of every pixel a 3D surface covers.', fact: 'Fragment shaders run once per pixel, so a single full-screen effect can mean millions of invocations of the same .fs program every frame.' },
   vs:     { name: 'GLSL vertex shader', blurb: 'VS is a GLSL vertex shader - a GPU program that transforms each vertex of a 3D model into its final position on screen.', fact: 'The vertex shader runs once per vertex and hands its results to the fragment shader, which then fills in the pixels in between.' },
   gs:     { name: 'GLSL geometry shader', blurb: 'GS is a GLSL geometry shader - an optional GPU stage that can create or discard whole primitives such as points, lines and triangles on the fly.', fact: 'A geometry shader can output more vertices than it receives, generating geometry like fur or particles directly on the GPU; it was added to OpenGL in version 3.2 (2009).' },
   jam:    { name: 'Boost.Jam build script', blurb: 'JAM is a Boost.Build (b2) build script - makefile-like rules describing how to compile a project, used most famously by the Boost C++ libraries.', fact: 'Boost.Build grew out of Perforce Jam, a 1990s build tool whose name stands for "just another make".' },
@@ -271,7 +271,7 @@ export const EXT_PAGES = {
   lrcat:      { name: 'Lightroom catalog', blurb: 'LRcat is the Adobe Lightroom catalog database that tracks all your photos and edits. Created by Lightroom Classic.', fact: 'The Lightroom catalog is actually a SQLite database under the hood.' },
   acv:        { name: 'Photoshop Curves preset', blurb: 'ACV stores a Photoshop Curves adjustment. Created and opened by Adobe Photoshop.', fact: 'Photoshop has let users save and load adjustment presets like this since the 1990s.' },
   aco:        { name: 'Photoshop swatches', blurb: 'ACO is a Photoshop colour-swatch palette. Created and opened by Adobe Photoshop.', fact: 'An ACO file lets artists share a chosen set of colours between Photoshop projects.' },
-  asl:        { name: 'Photoshop layer styles', blurb: 'ASL stores reusable Photoshop layer styles. Created and opened by Adobe Photoshop.', fact: 'Layer styles were introduced in Photoshop 6 in 2000.' },
+  asl:        { name: 'Photoshop layer styles', blurb: 'ASL stores reusable Photoshop layer styles. Created and opened by Adobe Photoshop.', fact: 'Layer effects debuted in Photoshop 5 in 1998, and Photoshop 6 in 2000 expanded them into savable layer styles - the .asl file.' },
   abr:        { name: 'Photoshop brushes', blurb: 'ABR is a Photoshop brush-preset file. Created and opened by Adobe Photoshop.', fact: 'Custom, shareable brushes have been a Photoshop hallmark since the 1990s.' },
   grd:        { name: 'Photoshop gradients', blurb: 'GRD stores Photoshop gradient presets. Created and opened by Adobe Photoshop.', fact: 'GRD files let artists share gradient sets between Photoshop installations.' },
   pat:        { name: 'Photoshop patterns', blurb: 'PAT is a Photoshop pattern-preset file. Created and opened by Adobe Photoshop.' },
@@ -354,7 +354,7 @@ export const EXT_PAGES = {
   gz:  { name: 'GZip archive', blurb: 'GZ is a file compressed with gzip, common on the web and on Linux.', fact: 'GZip was created in 1992 as a free, patent-unencumbered replacement for the older Unix compress.' },
   bz2: { name: 'BZip2 archive', blurb: 'BZ2 is a file compressed with bzip2, offering tighter compression than gzip.', fact: 'BZip2 arrived in 1996 and squeezes files smaller than gzip, though more slowly.' },
   xz:  { name: 'XZ archive', blurb: 'XZ is a file compressed with the high-ratio LZMA algorithm, common for Linux packages.', fact: 'XZ was released in 2009 and uses the same LZMA compression as 7-Zip.' },
-  zst: { name: 'Zstandard archive', blurb: 'ZST is a file compressed with Zstandard, prized for being fast and efficient.', fact: 'Zstandard was created by Facebook in 2016 and is now used everywhere from Linux to game engines.' },
+  zst: { name: 'Zstandard archive', blurb: 'ZST is a file compressed with Zstandard, prized for being fast and efficient.', fact: 'Zstandard was created by Yann Collet at Facebook, with the stable 1.0 released in 2016, and is now used everywhere from Linux to game engines.' },
   tgz: { name: 'Gzipped TAR archive', blurb: 'TGZ is a TAR archive compressed with gzip, the classic way to bundle files on Unix.', fact: 'TGZ simply pairs the 1979 TAR format with 1992’s gzip compression.' },
 
   // ---- Fonts ----
@@ -402,7 +402,7 @@ export const EXT_PAGES = {
 
   // ---- Disk images ----
   iso:   { name: 'ISO disc image', blurb: 'An ISO is an exact image of an optical disc, used to burn or mount CDs and DVDs.', fact: 'ISO files are named after the ISO 9660 CD filesystem standard from 1988.' },
-  img:   { name: 'Raw disk image', blurb: 'IMG is a raw, sector-by-sector copy of a disk, card or floppy. Written by tools like dd and Win32 Disk Imager.', fact: 'An IMG is a bit-for-bit copy, so it can recreate a drive exactly, partitions and all.' },
+  img:   { name: 'Raw disk image', blurb: 'IMG is a raw, sector-by-sector copy of a disk, card or floppy. Written by tools like dd and Win32 Disk Imager.', fact: 'An IMG has no compression or metadata of its own, so its size on disc equals the full capacity of the drive it copied.' },
   vhd:   { name: 'Virtual hard disk', blurb: 'VHD is a Microsoft virtual hard disk used by virtual machines. Created by Hyper-V and Virtual PC.' },
   vhdx:  { name: 'Virtual hard disk (VHDX)', blurb: 'VHDX is Microsoft’s newer virtual hard disk, supporting much larger sizes. Created by Hyper-V.', fact: 'VHDX is the Hyper-V virtual-disk format introduced with Windows Server 2012, supporting far larger disks than VHD.' },
   vmdk:  { name: 'VMware virtual disk', blurb: 'VMDK is VMware’s virtual hard disk format. Created and opened by VMware.', fact: 'VMDK is the virtual-disk format of VMware, the company that popularised x86 virtualisation.' },
@@ -430,7 +430,7 @@ export const EXT_PAGES = {
   // ---- Config ----
   toml:       { name: 'TOML config', blurb: 'TOML is a clear, minimal configuration-file format popular in modern software, especially Rust.', fact: 'TOML was created in 2013 by GitHub co-founder Tom Preston-Werner - the name means "Tom’s Obvious, Minimal Language".' },
   ini:        { name: 'INI config', blurb: 'INI is a simple key-and-section settings file, long used on Windows.', fact: 'The INI file goes back to early Windows in the 1980s as its original settings format.' },
-  env:        { name: 'Environment file', blurb: 'A .env file stores environment variables and secrets for an application.', fact: '.env files were popularised by the Twelve-Factor App method for keeping config out of code.' },
+  env:        { name: 'Environment file', blurb: 'A .env file stores environment variables and secrets for an application.', fact: '.env files grew out of the Twelve-Factor App idea of keeping config in environment variables, via tools like Foreman and dotenv.' },
   conf:       { name: 'Config file', blurb: 'A .conf file holds plain-text settings, common on Unix and Linux servers.', fact: 'Many classic services, from Apache to SSH, keep their settings in .conf files.' },
   cfg:        { name: 'Config file', blurb: 'A .cfg file stores configuration settings for all kinds of programs and games.', fact: 'The .cfg extension is used everywhere from games to system tools for saved settings.' },
   properties: { name: 'Java properties', blurb: 'A .properties file stores key-value settings, mainly in Java applications.', fact: 'Java has used .properties files for configuration and translations since the 1990s.' },
@@ -446,7 +446,7 @@ export const EXT_PAGES = {
 
   // ---- Video editing ----
   veg: { name: 'VEGAS Pro project', blurb: 'VEG is a project from VEGAS Pro, a video editor. Created and opened by VEGAS Pro (now from MAGIX).', fact: 'VEGAS Pro began at Sonic Foundry, then passed to Sony and now MAGIX.' },
-  vf:  { name: 'VEGAS project', blurb: 'VF is a project file used by VEGAS Pro. Created and opened by VEGAS Pro.', fact: 'The .vf extension is short for Vegas Film and belongs to VEGAS Movie Studio, the consumer edition - VEGAS Pro can open its projects, but Movie Studio cannot open .veg files in return.' },
+  vf:  { name: 'VEGAS project', blurb: 'VF is a project file used by VEGAS Pro. Created and opened by VEGAS Pro.', fact: 'The .vf extension belongs to VEGAS Movie Studio, the consumer edition - VEGAS Pro can open its projects, but Movie Studio cannot open .veg files in return.' },
   drp: { name: 'DaVinci Resolve project', blurb: 'DRP is a project from DaVinci Resolve, the pro editing and colour-grading suite. Created by Blackmagic Design.', fact: 'DaVinci Resolve grew from a high-end colour-grading system into a full editor that Blackmagic offers free.' },
   drt: { name: 'DaVinci Resolve timeline', blurb: 'DRT is a timeline exported from DaVinci Resolve. Created and opened by DaVinci Resolve.', fact: 'Two of Resolve’s built-in pages began as entirely separate products: Blackmagic bought the Fusion VFX tool from eyeon in 2014 and audio specialist Fairlight in 2016, then folded both into Resolve.' },
   unity: { name: 'Unity scene', blurb: 'UNITY is a scene file from the Unity game engine - a YAML stream of every object in the scene and its components. Created and opened by the Unity editor.', fact: 'Unity stores scenes as text YAML specifically so they can be diffed and merged in version control like Git.' },
@@ -454,7 +454,6 @@ export const EXT_PAGES = {
   asset: { name: 'Unity asset', blurb: 'ASSET is a serialised Unity asset or settings object, stored as YAML. Created and opened by the Unity editor.', fact: 'Unity keeps engine-wide settings (audio, physics, input) as .asset files in a ProjectSettings folder.' },
   controller: { name: 'Unity Animator Controller', blurb: 'CONTROLLER is a Unity Animator Controller - the state machine that drives an object’s animations, with layers, states and transitions. Created and opened by Unity.', fact: 'The Animator Controller is a visual state machine: states are animation clips and the arrows between them are transition conditions.' },
   anim: { name: 'Unity animation clip', blurb: 'ANIM is a Unity animation clip - keyframed curves for an object’s properties over time, stored as YAML. Created and opened by Unity.', fact: 'A clip can animate almost any property, from position and colour to which sprite is shown, each on its own timed curve.' },
-  mat: { name: 'Unity material', blurb: 'MAT is a Unity material - a shader plus the textures and parameter values that decide how a surface looks. Created and opened by Unity. (Note: MATLAB also uses .mat for binary data, which Analyser identifies separately.)', fact: 'A material is just a configured shader: the shader is the program, the material is one set of settings fed into it.' },
   meta: { name: 'Unity meta file', blurb: 'META is the sidecar Unity writes next to every asset - a YAML record holding the asset’s stable GUID and its import settings. Created and opened by the Unity editor.', fact: 'Deleting a .meta file makes Unity re-import the asset with a brand-new GUID, which is why every reference to it breaks.' },
   physicsmaterial2d: { name: 'Unity 2D physics material', blurb: 'PHYSICSMATERIAL2D is a Unity 2D physics material - the friction and bounciness applied to 2D colliders. Created and opened by Unity.', fact: 'A bounciness of 1 makes an object rebound with all its energy intact; 0 makes it stop dead on impact.' },
   physicmaterial: { name: 'Unity physics material', blurb: 'PHYSICMATERIAL is a Unity 3D physics material - the static/dynamic friction and bounciness applied to 3D colliders. Created and opened by Unity.', fact: 'The 3D extension drops the "s" - .physicMaterial - while the 2D one keeps it as .physicsMaterial2D.' },
@@ -466,7 +465,7 @@ export const EXT_PAGES = {
   slnx: { name: 'Visual Studio solution (XML)', blurb: 'SLNX is the newer XML form of a Visual Studio solution - a terse <Solution> tree of projects, folders and build configurations. Introduced with Visual Studio 2022 and the dotnet sln tooling as a cleaner replacement for the classic text .sln.', fact: 'The XML .slnx drops the opaque GUIDs of the old .sln, so merge conflicts on a solution file are finally readable.' },
   userprefs: { name: 'MonoDevelop user preferences', blurb: 'USERPREFS is an XML file storing a developer’s per-solution IDE state - open documents, cursor positions and breakpoints - for MonoDevelop / Unity’s old script editor.', fact: 'Because it only holds personal editor state, .userprefs is one of the files projects usually exclude from version control.' },
   wfp: { name: 'Filmora project', blurb: 'WFP is a project from Wondershare Filmora, a consumer video editor. Created and opened by Filmora.', fact: 'Filmora is aimed at everyday creators who want easy editing without a steep learning curve.' },
-  wsp: { name: 'Filmora project', blurb: 'WSP is a project file used by Wondershare Filmora. Created and opened by Filmora.', fact: 'Filmora began in 2010 as Video Studio Express, became Wondershare Vivideo in 2011 (later Wondershare Video Editor), and took the Filmora name in a 2015 rebrand.' },
+  wsp: { name: 'Filmora project', blurb: 'WSP is a project file used by Wondershare Filmora. Created and opened by Filmora.', fact: 'Filmora grew out of Wondershare’s earlier consumer video editors and took the Filmora name in a 2015 rebrand.' },
 
   // ---- CNC / 3D print ----
   gcode: { name: 'G-code', blurb: 'G-code is the instruction language that tells 3D printers and CNC machines how to move. Produced by slicers like Cura and PrusaSlicer.', fact: 'G-code dates back to the 1950s, when it was created at MIT for the first numerically controlled machine tools.' },
@@ -552,7 +551,7 @@ export const EXT_PAGES = {
   cop:  { name: 'Capture One settings', blurb: 'COP is a Capture One settings file accompanying a raw photo. Created by Capture One.', fact: 'For years Capture One shipped special brand-specific editions for Sony, Fujifilm and Nikon cameras, before retiring them between 2022 and 2024.' },
   dop:  { name: 'DxO PhotoLab sidecar', blurb: 'DOP is a DxO PhotoLab edit sidecar for a raw photo. Created by DxO PhotoLab.', fact: 'DxO PhotoLab is known for its strong lens corrections and noise reduction.' },
   nksc: { name: 'Nikon NX Studio sidecar', blurb: 'NKSC is a Nikon NX Studio edit sidecar for a raw photo. Created by Nikon NX Studio.', fact: 'Nikon’s NX Studio stores its raw adjustments in NKSC sidecar files.' },
-  r3d:  { name: 'REDCODE raw video', blurb: 'R3D is REDCODE raw cinema footage from RED digital cinema cameras.', fact: 'RED’s R3D format brought raw video to digital cinema cameras in the mid-2000s.' },
+  r3d:  { name: 'REDCODE raw video', blurb: 'R3D is REDCODE raw cinema footage from RED digital cinema cameras.', fact: 'RED’s R3D format brought raw video to digital cinema cameras when the RED ONE shipped in 2007.' },
   braw: { name: 'Blackmagic RAW', blurb: 'BRAW is Blackmagic RAW cinema footage. Created by Blackmagic Design cameras.', fact: 'Blackmagic RAW launched in 2018 as an efficient raw codec for Blackmagic cinema cameras.' },
   crm:  { name: 'Canon Cinema RAW Light', blurb: 'CRM is Canon Cinema RAW Light video. Recorded by Canon cinema and mirrorless cameras.' },
   ari:  { name: 'ARRIRAW frame', blurb: 'ARI is an ARRIRAW frame from ARRI digital cinema cameras.', fact: 'ARRI’s Alexa cameras and ARRIRAW are a mainstay of Hollywood production.' },
@@ -560,7 +559,7 @@ export const EXT_PAGES = {
   fpf:  { name: 'FLIR thermal image', blurb: 'FPF is a FLIR thermal-imaging file, storing temperature data as an image.', fact: 'FLIR thermal cameras record per-pixel temperatures, not just colours.' },
   eip:  { name: 'Capture One package', blurb: 'EIP is a Capture One Enhanced Image Package bundling a raw file with its edits. Created by Capture One.' },
   bay:  { name: 'Casio raw photo', blurb: 'BAY is a camera raw photo format associated with Casio cameras.' },
-  pxn:  { name: 'Logitech raw photo', blurb: 'PXN is a raw photo format from certain Logitech and webcam-style cameras.', fact: 'PXN is an uncommon raw format from a handful of older cameras.' },
+  pxn:  { name: 'Logitech raw photo', blurb: 'PXN is a raw photo format from the Logitech Fotoman Pixtura, an early consumer digital still camera.', fact: 'PXN is an uncommon raw format from a handful of older cameras.' },
   rwz:  { name: 'Rawzor raw photo', blurb: 'RWZ is a camera raw photo compressed by the Rawzor tool.', fact: 'Rawzor losslessly compressed camera raw files to save storage space.' },
 
   // ---- Archives (packages) ----
@@ -582,8 +581,8 @@ export const EXT_PAGES = {
   deb:    { name: 'Debian package', blurb: 'DEB is a Debian or Ubuntu software package. Installed with apt or dpkg.', fact: 'The .deb package has been the heart of Debian Linux since 1993.' },
   rpm:    { name: 'RPM package', blurb: 'RPM is a Red Hat or Fedora software package. Installed with rpm or dnf.', fact: 'RPM (Red Hat Package Manager) dates from 1995 and is used across Red Hat-family Linux.' },
   gem:    { name: 'RubyGem', blurb: 'GEM is a RubyGems package for the Ruby programming language.', fact: 'RubyGems became Ruby’s standard package system in the mid-2000s.' },
-  cab:    { name: 'Windows Cabinet', blurb: 'CAB is a Microsoft Cabinet archive, used inside Windows installers and updates.', fact: 'Microsoft’s CAB format has bundled Windows installation files since the early 1990s.' },
-  ace:    { name: 'ACE archive', blurb: 'ACE is a compressed archive from the WinACE tool, once a WinRAR rival.', fact: 'ACE was popular in the late 1990s but faded after serious security flaws were found.' },
+  cab:    { name: 'Windows Cabinet', blurb: 'CAB is a Microsoft Cabinet archive, used inside Windows installers and updates.', fact: 'Microsoft’s CAB format has bundled Windows installation files since the mid-1990s, starting with the Windows 95 era.' },
+  ace:    { name: 'ACE archive', blurb: 'ACE is a compressed archive from the WinACE tool, once a WinRAR rival.', fact: 'ACE was popular in the late 1990s but lost out to RAR and ZIP, and a 2019 security flaw in its extraction library ended most remaining support.' },
   arj:    { name: 'ARJ archive', blurb: 'ARJ is a DOS-era compressed archive format.', fact: 'ARJ ("Archived by Robert Jung") was a popular DOS archiver in the early 1990s.' },
   lzh:    { name: 'LHA archive', blurb: 'LZH is an archive from the LHarc/LHA tool, especially popular in Japan.', fact: 'LHA was a dominant archiver in 1990s Japan, used on the Amiga and PC.' },
   lha:    { name: 'LHA archive', blurb: 'LHA is a compressed archive from the LHarc tool, especially popular in Japan.', fact: 'The tool behind .lha was briefly called just LH, but was renamed LHA when MS-DOS 5.0 arrived with a built-in LH (load high) command of the same name.' },
@@ -611,7 +610,7 @@ export const EXT_PAGES = {
 
   // ---- Security / keys / certs ----
   key:      { name: 'Cryptographic key', blurb: 'A .key file holds a cryptographic private or public key, used to secure connections and sign data.', fact: 'Keep private .key files secret - anyone holding one can impersonate you.' },
-  pub:      { name: 'Public key', blurb: 'A .pub file is a public key, such as an SSH key you share with servers.', fact: 'Public keys are safe to share; they pair with a private key you keep hidden.' },
+  pub:      { name: 'Public key', blurb: 'A .pub file is most often a Microsoft Publisher document, but in a security context it is a public key - such as an SSH key - that you can safely share with servers.', fact: 'Public keys are safe to share; they pair with a private key you keep hidden.' },
   p8:       { name: 'PKCS#8 private key', blurb: 'P8 is a PKCS#8 private key, used by Apple developer services among others.', fact: 'PKCS#8 is a standard wrapper for storing a private key of any algorithm.' },
   csr:      { name: 'Certificate request', blurb: 'CSR is a Certificate Signing Request sent to a certificate authority.', fact: 'A CSR is how you ask a certificate authority to issue your HTTPS certificate.' },
   crl:      { name: 'Certificate revocation list', blurb: 'CRL is a list of certificates that should no longer be trusted.', fact: 'A CRL lets software reject certificates that were revoked before they expired.' },
@@ -639,7 +638,7 @@ export const EXT_PAGES = {
   gb:      { name: 'Game Boy ROM', blurb: 'GB is a Nintendo Game Boy game ROM, run on emulators.', fact: 'The Game Boy launched in 1989 and, together with the Game Boy Color, sold over 100 million units worldwide.' },
   gbc:     { name: 'Game Boy Color ROM', blurb: 'GBC is a Game Boy Color game ROM, run on emulators.', fact: 'The Game Boy Color arrived in 1998, adding colour to the handheld line.' },
   gba:     { name: 'Game Boy Advance ROM', blurb: 'GBA is a Game Boy Advance game ROM, run on emulators.', fact: 'The Game Boy Advance launched in 2001 with 32-bit power in a handheld.' },
-  sfc:     { name: 'Super Famicom ROM', blurb: 'SFC is a Super Nintendo (Super Famicom) game ROM, run on emulators.', fact: 'The Super Nintendo arrived in 1990 and is fondly remembered for its 16-bit classics.' },
+  sfc:     { name: 'Super Famicom ROM', blurb: 'SFC is a Super Nintendo (Super Famicom) game ROM, run on emulators.', fact: 'The console launched in Japan in 1990 as the Super Famicom and reached the West as the Super Nintendo a year later.' },
   smc:     { name: 'SNES ROM', blurb: 'SMC is a Super Nintendo game ROM, named after the Super Magicom copier.', fact: 'The SMC name comes from the Super Magicom, a 1990s device for copying SNES cartridges.' },
   nds:     { name: 'Nintendo DS ROM', blurb: 'NDS is a Nintendo DS game ROM, run on emulators.', fact: 'The dual-screen Nintendo DS launched in 2004 and became one of the best-selling consoles ever.' },
   dsi:     { name: 'Nintendo DSi ROM', blurb: 'DSI is a Nintendo DSi game ROM, for the camera-equipped DS revision.', fact: 'The DSi, released in 2008, added cameras and a download store to the DS line.' },
@@ -827,13 +826,13 @@ export const EXT_PAGES = {
   hdp:      { name: 'HD Photo (JPEG XR)', blurb: 'HDP is a Microsoft HD Photo image, an early form of JPEG XR.', fact: 'HD Photo was Microsoft’s attempt at a better-than-JPEG image format.' },
   eps:      { name: 'Encapsulated PostScript', blurb: 'EPS is a vector graphic in PostScript, long used in print and design.', fact: 'EPS was the workhorse vector format for print design before PDF took over.' },
   ps:       { name: 'PostScript', blurb: 'PS is a PostScript document, a page-description language for printers. Created by Adobe.', fact: 'Adobe’s PostScript, launched in 1984, sparked the desktop-publishing revolution.' },
-  wmf:      { name: 'Windows Metafile', blurb: 'WMF is a Windows vector graphic, used for clip art and Office drawings.', fact: 'WMF has carried Windows vector clip art since the late 1980s.', factApprox: true },
+  wmf:      { name: 'Windows Metafile', blurb: 'WMF is a Windows vector graphic, used for clip art and Office drawings.', fact: 'WMF has carried Windows vector clip art since Windows 3.0 arrived in 1990.' },
   emf:      { name: 'Enhanced Metafile', blurb: 'EMF is the 32-bit successor to WMF for Windows vector graphics.', fact: 'EMF replaced the older WMF format to handle richer Windows graphics.' },
   emz:      { name: 'Compressed Enhanced Metafile', blurb: 'EMZ is a compressed (gzipped) Windows Enhanced Metafile vector graphic.', fact: 'EMZ is just an EMF vector image squeezed with gzip.' },
   icns:     { name: 'Apple icon', blurb: 'ICNS holds an app icon at many sizes for macOS. Created by Apple.', fact: 'macOS apps store their icon, from tiny to huge, in a single ICNS file.' },
   cur:      { name: 'Windows cursor', blurb: 'CUR is a Windows mouse-cursor image, with a defined hotspot.', fact: 'A CUR file is like an icon but marks the exact pixel the cursor points with.' },
   ani:      { name: 'Animated cursor', blurb: 'ANI is an animated Windows mouse cursor.', fact: 'ANI files gave Windows its spinning and waving animated cursors.' },
-  mng:      { name: 'Animated PNG (MNG)', blurb: 'MNG is an animation format, the multi-image cousin of PNG.', fact: 'MNG aimed to be PNG’s animated sibling but lost out to GIF and later APNG.' },
+  mng:      { name: 'MNG animation (PNG family)', blurb: 'MNG is an animation format, the multi-image cousin of PNG.', fact: 'MNG aimed to be PNG’s animated sibling but lost out to GIF and later APNG.' },
   lottie:   { name: 'Lottie animation', blurb: 'A Lottie file is a small JSON-based vector animation that plays on web and mobile. Created by Airbnb.', fact: 'Airbnb released Lottie in 2017 to ship smooth vector animations as tiny files.' },
 
   // ---- 3D models & scenes ----
@@ -852,7 +851,7 @@ export const EXT_PAGES = {
   mdl:    { name: 'Quake/Half-Life model', blurb: 'MDL is a 3D model format used by the Quake and Half-Life engines.', fact: 'The MDL format carried the characters of id and Valve’s early shooters.' },
 
   // ---- 3D scans, point clouds & BIM ----
-  vrm:      { name: 'VRM avatar', blurb: 'VRM is a 3D avatar format built on glTF, widely used for VTubers and VR. Created by the VRM Consortium.', fact: 'VRM was introduced in 2018 to give VTubers and VR apps a shared avatar standard.' },
+  vrm:      { name: 'VRM avatar', blurb: 'VRM is a 3D avatar format built on glTF, widely used for VTubers and VR. Created by the VRM Consortium.', fact: 'VRM was introduced by Dwango in 2018 and is now stewarded by the VRM Consortium, giving VTubers and VR apps a shared avatar standard.' },
   jt:       { name: 'JT 3D model', blurb: 'JT is a lightweight 3D format for sharing and reviewing CAD models. Created by Siemens.', fact: 'JT became an ISO standard in 2012 for exchanging 3D product data across the industry.' },
   las:      { name: 'LiDAR point cloud', blurb: 'LAS stores LiDAR point clouds from laser scanning and aerial surveys.', fact: 'The LAS format, standardised by ASPRS in 2003, is the industry standard for LiDAR data.' },
   laz:      { name: 'Compressed LiDAR', blurb: 'LAZ is a losslessly compressed LAS LiDAR point cloud.', fact: 'LAZ shrinks bulky LAS point clouds to a fraction of their size with no data loss.' },
@@ -915,10 +914,10 @@ export const EXT_PAGES = {
   w64:  { name: 'Sony Wave64', blurb: 'W64 (Wave64) lifts WAV’s 4 GB size limit. Created by Sonic Foundry for Sound Forge and later maintained by Sony.', fact: 'Wave64 let Sound Forge record audio well beyond the old WAV size limit.' },
   au:   { name: 'Sun audio', blurb: 'AU is the Sun/NeXT audio format, one of the oldest digital sound formats.', fact: 'The AU format comes from Sun Microsystems in the late 1980s.', factApprox: true },
   snd:  { name: 'NeXT/Sun sound', blurb: 'SND is the NeXT and Sun sound format, a close sibling of AU.', fact: 'SND and AU share a heritage in early Unix workstation audio.' },
-  voc:  { name: 'Creative Voice', blurb: 'VOC is the Creative Voice format from Sound Blaster sound cards.', fact: 'VOC was the native sound format of Creative’s Sound Blaster cards in the early 1990s.', factApprox: true },
+  voc:  { name: 'Creative Voice', blurb: 'VOC is the Creative Voice format from Sound Blaster sound cards.', fact: 'VOC was the native sound format of Creative’s Sound Blaster cards from 1989.' },
   bwf:  { name: 'Broadcast Wave', blurb: 'BWF (Broadcast Wave) adds production metadata and timecode to WAV, standard in pro audio.', fact: 'Broadcast Wave lets recordings carry timecode so they can be synced in editing.' },
   spx:  { name: 'Speex audio', blurb: 'SPX is a Speex file, an open voice codec from the Xiph.Org foundation.', fact: 'Speex was a free speech codec, later superseded by the more capable Opus.' },
-  awb:  { name: 'AMR Wideband', blurb: 'AWB holds AMR Wideband speech, used for HD voice calls.', fact: 'AMR-WB brought wider, clearer speech to mobile HD voice calls.' },
+  awb:  { name: 'AMR Wideband', blurb: 'AWB holds AMR Wideband speech, used for HD voice calls.', fact: 'AMR-WB was standardised in 2001 and is also known as ITU-T Recommendation G.722.2.' },
   qcp:  { name: 'Qualcomm PureVoice', blurb: 'QCP holds Qualcomm PureVoice audio, recorded by older CDMA phones.', fact: 'QCP was the voice-recording format of many early Qualcomm-based phones.' },
   '3ga':{ name: '3GPP audio', blurb: '3GA holds audio in the 3GPP container, often from Samsung voice recorders.', fact: '3GA is essentially a 3GP file holding only an audio track.' },
   m4r:  { name: 'iPhone ringtone', blurb: 'M4R is the AAC ringtone format for the iPhone. Created by Apple.', fact: 'An M4R is just an AAC audio clip renamed to mark it as an iPhone ringtone.' },
@@ -964,7 +963,7 @@ export const EXT_PAGES = {
   m3u8: { name: 'UTF-8 playlist / HLS', blurb: 'M3U8 is a UTF-8 playlist, also the backbone of HLS adaptive streaming. Used by Apple.', fact: 'Apple’s HLS streaming, built on M3U8 playlists, carries much of the web’s live video.' },
 
   // ---- Playlists & streaming manifests ----
-  m3u:  { name: 'M3U playlist', blurb: 'M3U is the simple text playlist understood by nearly every media player.', fact: 'M3U began in the Winamp era and is still the most common playlist format.' },
+  m3u:  { name: 'M3U playlist', blurb: 'M3U is the simple text playlist understood by nearly every media player.', fact: 'M3U began with Fraunhofer’s WinPlay3 MP3 player, was made ubiquitous by Winamp, and is still the most common playlist format.' },
   mpd:  { name: 'MPEG-DASH manifest', blurb: 'An MPD manifest drives MPEG-DASH adaptive streaming.', fact: 'MPEG-DASH is the open standard alternative to Apple’s HLS streaming.' },
   ism:  { name: 'Smooth Streaming manifest', blurb: 'ISM describes a Microsoft Smooth Streaming presentation.', fact: 'Smooth Streaming was Microsoft’s adaptive-bitrate technology for Silverlight and beyond.' },
   ismc: { name: 'Smooth Streaming client manifest', blurb: 'ISMC is the client manifest for a Microsoft Smooth Streaming stream.' },
@@ -1029,7 +1028,7 @@ export const EXT_PAGES = {
   fodp:   { name: 'Flat ODF Presentation', blurb: 'FODP is an OpenDocument presentation stored as a single flat XML file rather than a zipped package.', fact: 'FODP keeps an entire slideshow in one readable XML file, so you can open it in any text editor.' },
   fodg:   { name: 'Flat ODF Graphics', blurb: 'FODG is an OpenDocument graphics/drawing stored as a single flat XML file rather than a zipped package.', fact: 'FODG keeps a whole drawing in one readable XML file rather than a zipped package.' },
   vsdx:   { name: 'Visio drawing', blurb: 'VSDX is the modern Microsoft Visio diagram format.', fact: 'VSDX is what Visio saves flowcharts and diagrams as today.' },
-  tex:    { name: 'TeX source', blurb: 'TEX is a TeX or LaTeX typesetting source file. Created by Donald Knuth.', fact: 'Knuth created TeX in 1978, and it still typesets most of the world’s scientific papers.' },
+  tex:    { name: 'TeX source', blurb: 'TEX is a TeX or LaTeX typesetting source file. Created by Donald Knuth.', fact: 'Knuth created TeX in 1978, and it still typesets most of the world’s mathematics and physics papers.' },
   latex:  { name: 'LaTeX document', blurb: 'LATEX is a LaTeX document, the system that typesets academic and mathematical writing.', fact: 'LaTeX, built on TeX in the 1980s, is the standard for scientific publishing.' },
   bib:    { name: 'BibTeX bibliography', blurb: 'BIB holds BibTeX references that LaTeX turns into a formatted bibliography.', fact: 'A .bib file is the reference database that feeds citations into a LaTeX paper.' },
   rst:    { name: 'reStructuredText', blurb: 'RST is reStructuredText, the markup behind much Python documentation.', fact: 'reStructuredText is the markup language of the Sphinx documentation system.' },
@@ -1098,7 +1097,7 @@ export const EXT_PAGES = {
   tlz:     { name: 'LZMA tarball', blurb: 'TLZ is a tar archive compressed with LZMA.', fact: 'TLZ is shorthand for a tar.lzma compressed archive.' },
   tbz:     { name: 'bzip2 tarball', blurb: 'TBZ is a tar archive compressed with bzip2.', fact: 'TBZ is shorthand for a tar.bz2 compressed archive.' },
   tz:      { name: 'Compressed tarball', blurb: 'TZ is a tar archive compressed with Unix compress.', fact: 'TZ is the old shorthand for a tar.Z archive.' },
-  lib:     { name: 'Static / import library', blurb: 'A .lib file is a Microsoft library produced by the Visual Studio / MSVC toolchain - either a static library packed with compiled object code, or a DLL import library holding the stubs a program links against to call into a .dll. It bundles COFF object files in the same container Unix uses for its .a archives.', fact: 'A .lib file is Microsoft’s take on the Unix "ar" archive format, which dates back to 1971 - both begin with the very same eight bytes, "!<arch>" then a newline.' },
+  lib:     { name: 'Static / import library', blurb: 'A .lib file is a Microsoft library produced by the Visual Studio / MSVC toolchain - either a static library packed with compiled object code, or a DLL import library holding the stubs a program links against to call into a .dll. It bundles COFF object files in the same container Unix uses for its .a archives.', fact: 'A .lib file is Microsoft’s take on the Unix "ar" archive, a tool dating back to 1971 - both use the common ar format whose first eight bytes are "!<arch>" then a newline.' },
 
   // ---- 3D & CAD (advanced) ----
   drc:     { name: 'Draco mesh', blurb: 'DRC is a Draco-compressed 3D mesh or point cloud. Created by Google.', fact: 'Draco shrinks 3D models so they load quickly over the web.' },
@@ -1186,7 +1185,7 @@ export const EXT_PAGES = {
   rvdata2: { name: 'RPG Maker VX Ace data', blurb: 'RVDATA2 holds game data for RPG Maker VX Ace, stored as Ruby objects.', fact: 'RPG Maker lets people build role-playing games with little or no coding.' },
   rxdata:  { name: 'RPG Maker XP data', blurb: 'RXDATA holds game data for RPG Maker XP.', fact: 'RXDATA stores the maps and database of an RPG Maker XP game.' },
   pyxel:   { name: 'Pyxel Edit document', blurb: 'A Pyxel file is a pixel-art and tileset document from Pyxel Edit.', fact: 'Pyxel Edit is a popular tool for drawing pixel-art tiles and animations.' },
-  ldtk:    { name: 'LDtk level', blurb: 'LDtk is a modern 2D level-editor project. Created by the maker of Dead Cells.' },
+  ldtk:    { name: 'LDtk level', blurb: 'LDtk is a modern 2D level-editor project. Created by a lead designer of Dead Cells.' },
   tic:     { name: 'TIC-80 cartridge', blurb: 'TIC is a cartridge for the TIC-80 fantasy console.', fact: 'TIC-80 is a tiny make-believe retro console for building and sharing little games.' },
   xdelta:  { name: 'xdelta patch', blurb: 'XDELTA is a binary patch in VCDIFF format, often used to patch game ROMs.', fact: 'xdelta turns the difference between two files into a small patch.' },
   basis:   { name: 'Basis Universal texture', blurb: 'BASIS is a Basis Universal compressed texture for games and the web.', fact: 'Basis Universal textures can be transcoded to whatever format a GPU prefers.' },
@@ -1283,7 +1282,7 @@ export const EXT_PAGES = {
   vtr:    { name: 'VTK rectilinear grid', blurb: 'VTR is a VTK XML rectilinear-grid file for scientific visualisation.', fact: 'VTR stores values on a rectangular grid with uneven spacing.' },
   net:    { name: 'SPICE netlist', blurb: 'A .net file is a circuit netlist, often for SPICE simulation.', fact: 'A netlist lists a circuit’s parts and how they connect.' },
   msh:    { name: 'Gmsh mesh', blurb: 'MSH is a finite-element mesh from the Gmsh tool, used in simulation.', fact: 'Gmsh carves a shape into small elements so physics can be simulated on it.' },
-  inp:    { name: 'FEA input deck', blurb: 'INP is a finite-element input deck for Abaqus or Nastran.', fact: 'An INP deck tells engineering solvers the model, loads and materials to analyse.' },
+  inp:    { name: 'FEA input deck', blurb: 'INP is a finite-element input deck for Abaqus or the compatible CalculiX solver.', fact: 'An INP deck tells engineering solvers the model, loads and materials to analyse.' },
   cdb:    { name: 'ANSYS model database', blurb: 'CDB is an ANSYS APDL model database for engineering analysis.', fact: 'CDB stores a meshed model for the ANSYS simulation software.' },
   wfm:    { name: 'Oscilloscope waveform', blurb: 'WFM is a captured waveform from a digital oscilloscope.', fact: 'A WFM saves the exact trace an oscilloscope measured for later study.' },
 
@@ -1400,8 +1399,8 @@ export const EXT_PAGES = {
 
   // ---- Niche / rare formats ----
   abc:    { name: 'Alembic cache', blurb: 'ABC is an Alembic file - an interchange format that bakes animated 3D geometry into a cache, so complex scenes can move between programs without their rigs.', fact: 'Alembic, created by Sony Pictures Imageworks and ILM, stores the result of animation rather than the setup - like recording the performance, not the puppet.' },
-  afl:    { name: 'Adobe Flash', blurb: 'AFL is a file associated with Adobe Flash, the once-ubiquitous web animation and interactive-media platform that browsers retired at the end of 2020.', fact: 'Flash defined an era of web games and animation before HTML5 and security worries brought about its official end-of-life.' },
-  arx:    { name: 'ARRIRAW', blurb: 'ARX holds ARRIRAW - the uncompressed raw sensor data from ARRI digital cinema cameras, prized for its image quality in film and high-end TV.', fact: 'ARRIRAW keeps every photosite’s value straight off the sensor, giving colourists the widest possible latitude to grade a shot in post.' },
+  afl:    { name: 'Adobe Flash', blurb: 'AFL is an uncommon extension with no single dominant owner - Analyser identifies it from its bytes rather than assuming a particular application.', fact: 'Flash defined an era of web games and animation before HTML5 and security worries brought about its official end-of-life.' },
+  arx:    { name: 'ARRIRAW', blurb: 'ARX is used here for ARRIRAW camera data, though the extension is better known as an AutoCAD ObjectARX runtime module - Analyser inspects the bytes to tell them apart.', fact: 'ARRIRAW keeps every photosite’s value straight off the sensor, giving colourists the widest possible latitude to grade a shot in post.' },
   bie:    { name: 'JBIG codestream', blurb: 'BIE is a raw JBIG codestream - the bare bi-level image data from the JBIG fax/document codec, without any file wrapper.', fact: 'The .bie name comes from the JBIG reference encoder, which wrote its compressed output to a plain bi-level image stream.' },
   binwalk: { name: 'Firmware dump', blurb: 'A binwalk file is typically a raw firmware image - a dump of a device’s flash memory that the Binwalk tool scans to extract the filesystems and code inside.', fact: 'Binwalk slides known magic-byte signatures across a firmware blob, revealing the hidden bootloaders, kernels and filesystems packed inside.' },
   cgr:    { name: 'CATIA Graphics', blurb: 'CGR is a CATIA Graphical Representation - a lightweight, view-only version of a CATIA 3D model that shows the shape without the full parametric data.', fact: 'CGR files let huge CATIA assemblies be opened and reviewed quickly, because they carry only the visible geometry, not the engineering history.' },
@@ -1505,7 +1504,7 @@ export const VARIANT_FACTS = {
       "Because a v7.3 file is really HDF5, tools such as Python's h5py can read a .mat with no MATLAB licence at all.",
     ],
     'Unity material': [
-      "A Unity .mat is plain YAML text, so material changes diff and merge in Git just like source code.",
+      "With Unity's default Force Text serialisation a .mat is plain YAML, so material changes diff and merge in Git just like source code.",
       "Unity's YAML is a custom high-performance subset of the full YAML specification, not a general YAML parser, tuned for loading game assets quickly.",
       "A .mat points at its shader and textures by GUID, an id Unity resolves through the hidden .meta file it keeps beside every asset.",
     ],
@@ -1707,7 +1706,7 @@ export const VARIANT_FACTS = {
       "Windows programs load these baked-in resources at runtime by numeric ID, which is how one executable can carry its interface in several languages.",
     ],
     'Unix rc / runcom config': [
-      "The 'rc' in .bashrc and /etc/rc means 'run commands', a name inherited from a 1965 MIT system.",
+      "The 'rc' in .bashrc and /etc/rc means 'run commands', a name inherited from runcom on MIT's early-1960s CTSS system.",
       "Louis Pouzin, who also coined the word 'shell' for a command interpreter, created runcom on MIT's CTSS in the early 1960s as the ancestor of every .*rc file since.",
       "Unix later borrowed the name for 'rc', an actual shell written by Tom Duff at Bell Labs to replace the Bourne shell's clumsier syntax.",
     ],
@@ -1719,7 +1718,7 @@ export const VARIANT_FACTS = {
       "F#'s asynchronous workflows, shipped around 2007, directly inspired the async/await keywords later adopted by C# and many other languages.",
     ],
     'GPU fragment shader': [
-      "A fragment shader runs once per pixel, potentially millions of times per frame, which is why even a tiny .fs file can bring a GPU to its knees.",
+      "Because .fs is only a naming convention, the same shader code also circulates as .frag files or embedded strings inside programs.",
       "OpenGL calls it a 'fragment' rather than 'pixel' shader because it runs on candidate fragments that depth or stencil tests may still discard before any pixel is drawn.",
       "Direct3D calls the very same stage a 'pixel shader', one of several naming splits between Microsoft's HLSL and the OpenGL GLSL world.",
     ],

@@ -110,7 +110,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>A GLSL / HLSL fragment (pixel) shader. Analyser opens it as source.</dd></div>
             <div><dt>How to tell it apart</dt><dd>Both are text; Analyser opens .fs as source.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>A fragment shader runs once per pixel, potentially millions of times per frame, which is why even a tiny .fs file can bring a GPU to its knees.</li><li>OpenGL calls it a 'fragment' rather than 'pixel' shader because it runs on candidate fragments that depth or stencil tests may still discard before any pixel is drawn.</li><li>Direct3D calls the very same stage a 'pixel shader', one of several naming splits between Microsoft's HLSL and the OpenGL GLSL world.</li></ul></dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Because .fs is only a naming convention, the same shader code also circulates as .frag files or embedded strings inside programs.</li><li>OpenGL calls it a 'fragment' rather than 'pixel' shader because it runs on candidate fragments that depth or stencil tests may still discard before any pixel is drawn.</li><li>Direct3D calls the very same stage a 'pixel shader', one of several naming splits between Microsoft's HLSL and the OpenGL GLSL world.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block">
