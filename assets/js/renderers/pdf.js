@@ -123,7 +123,7 @@ function scanRawPdf(bytes) {
 }
 
 // ---------- main render ----------
-export async function renderPdf(file, resultsEl) {
+export async function renderPdf(file, resultsEl, opts = {}) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Loading PDF library…`));
@@ -961,7 +961,9 @@ export async function renderPdf(file, resultsEl) {
     } catch (_) {}
   }
 
-  const initialPages = Math.min(pdf.numPages, 4);
+  // Default first 4 pages; the compare view passes previewPages:1 so each file
+  // shows just one page up front (the rest are behind "Show all").
+  const initialPages = Math.min(pdf.numPages, Math.max(1, opts.previewPages || 4));
   for (let i = 1; i <= initialPages; i++) await renderThumb(i);
   thumbsRendered = initialPages;
 

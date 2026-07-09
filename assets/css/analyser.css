@@ -381,13 +381,15 @@ body:not(:has(.site-nav)) .site-header::after { margin-top: clamp(28px, 4vw, 48p
    "Privacy", so "valjdakosta" sits indented to match the changelog header. */
 .site-mark--changelog .site-byline-link,
 .site-mark--privacy .site-byline-link,
-.site-mark--samples .site-byline-link {
+.site-mark--samples .site-byline-link,
+.site-mark--compare .site-byline-link {
   position: relative;
   top: 0.37em;
 }
 .site-mark--changelog .site-byline,
 .site-mark--privacy .site-byline,
-.site-mark--samples .site-byline { padding-bottom: 0.37em; }
+.site-mark--samples .site-byline,
+.site-mark--compare .site-byline { padding-bottom: 0.37em; }
 
 .site-sub {
   font-size: clamp(15px, 1.6vw, 18px);
@@ -4922,6 +4924,217 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   .quickdrop-zone .anr-dropzone-inner { padding: 18px 10px; }
   .quickdrop-zone .anr-dropzone-inner strong { font-size: 14px; }
   .quickdrop-zone .anr-drop-icon { font-size: 20px; margin-bottom: 4px; }
+}
+
+/* ----------------------------------------------------------------------------
+   COMPARE - the "Compare" CTA on the home page + the /compare page input layout
+   ----------------------------------------------------------------------------
+   Home page: a compact square sits to the right of the hero dropzone (in the
+   right sixth the nav-aligned hero leaves free), reusing the .anr-dropzone box +
+   accent-on-hover glow, and links to /compare. The /compare page (compare.html)
+   then shows two "any file" dropzones (A/B) + a Back / Compare row; app.js wires
+   the zones, and renderers/compare.js merges the two analyses. */
+
+/* Row wrapping the hero dropzone + the Compare CTA - only shown in hero mode
+   (mirrors .quickdrop-hero). It spans the hero's nav-aligned box PLUS the right
+   sixth, so the square lands where the hero's 2/3 width used to leave a gap. */
+.quickdrop-hero-row { display: none; }
+.quickdrop--hero .quickdrop-hero-row {
+  display: flex;
+  align-items: flex-start;   /* top edge collinear with the dropzone's top */
+  gap: 14px;
+  width: 83.3333%;
+  margin: 0 0 0 16.6667%;
+}
+/* Keep the hero at its original nav-aligned 2/3 width (80% of the 83.33% row =
+   66.67% of the page) so it stays visually centred; the compact Compare square
+   sits in the right sixth the hero leaves free. */
+.quickdrop-hero-row .quickdrop-hero.anr-dropzone { width: auto; flex: 0 0 80%; margin: 0; min-width: 0; }
+
+/* The Compare square: same dropzone chrome (bordered box, accent-on-hover
+   border) as a real dropzone, but a small fixed square that sits at the top of
+   the row - not stretched to the dropzone's full height. */
+.quickdrop-compare-cta {
+  flex: 0 0 auto;
+  margin: 0;                  /* base .anr-dropzone has margin-top:24px - zero it
+                                 so the square's top lines up with the dropzone */
+  width: clamp(58px, 7.2vw, 80px);
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  text-align: center;
+  text-decoration: none;
+  padding: 6px;
+}
+.quickdrop-compare-cta strong { color: var(--fg); font-size: clamp(11px, 1vw, 13px); }
+
+@media (max-width: 700px) {
+  /* Full width, and stack: the hero spans the row, the Compare square drops below
+     it aligned to the RIGHT edge (side-by-side would squeeze the square off-screen
+     on a narrow phone). */
+  .quickdrop--hero .quickdrop-hero-row {
+    width: 100%;
+    margin-left: 0;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  .quickdrop-hero-row .quickdrop-hero.anr-dropzone { flex: 0 0 auto; width: 100%; }
+}
+
+/* /compare page: intro copy above the two dropzones. */
+.compare-intro { margin-bottom: var(--gap); }
+.compare-intro-head {
+  font-family: var(--font-mono);
+  font-size: clamp(20px, 3vw, 28px);
+  margin: 0 0 8px;
+}
+.compare-intro-lede { color: var(--muted); max-width: 62ch; margin: 0; }
+
+/* /compare page: the two "any file" dropzones (A/B) + the Back / Compare row. */
+.quickdrop-compare-zones {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap);
+}
+.quickdrop-compare-run { justify-content: center; gap: 12px; margin-top: var(--gap); }
+.quickdrop-compare-zones .quickdrop-zone .anr-dropzone-inner [data-cmp-name] { color: var(--muted); }
+.quickdrop-compare-zones .quickdrop-zone.is-set .anr-dropzone-inner [data-cmp-name] { color: var(--accent); }
+@media (max-width: 560px) {
+  .quickdrop-compare-zones { grid-template-columns: 1fr; }
+}
+
+/* Compare RESULTS: a thin identity strip + a Show-differences toggle, then one
+   merged analysis - each field's label once on the left with file A's and file
+   B's values beside it (Field | A | B). Content that isn't a readout table
+   (previews, players, hex, histograms) drops to a side-by-side A | B split. */
+.anr-cmp-strip { margin-bottom: 12px; }
+.anr-cmp-strip.anr-cmp-same { border-color: var(--accent); }
+/* The "Show differences" toggle sticks to the top of the viewport while the long
+   merged comparison scrolls, so it stays reachable. A background band + hairline
+   keep it legible over the content passing beneath. No negative side margins - on
+   mobile they overran the content box and forced a slight horizontal scroll under
+   the pinned bar; the band spans the padded content column instead. */
+.anr-cmp-controls {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0 0 var(--gap);
+  padding: 12px 0;
+  background: var(--bg);
+  border-bottom: var(--bd-hairline);
+}
+
+/* Off-screen staging: each file is rendered here (laid out, so canvases/players
+   work), then its real cells are moved into the merged view. */
+.anr-cmp-staging { position: absolute; left: -99999px; top: 0; width: 960px; }
+
+/* Column legend (blank | A - name | B - name), aligned to the table columns. */
+.anr-cmp-legend {
+  display: grid;
+  grid-template-columns: 26% 37% 37%;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+  border-bottom: var(--bd-hairline);
+}
+.anr-cmp-legend span { word-break: break-all; padding-right: 12px; }
+
+/* Titled sections (Photo / Sound / Video), mirroring the normal single-file page
+   but stacked in the single-column compare flow. The generic File bucket has no
+   section chrome, exactly like #unknownResults on the normal page. */
+.anr-cmp-section { margin-top: 44px; }
+.anr-cmp-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding-bottom: 12px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--fg);
+}
+.anr-cmp-section-head .section-num { font-size: var(--t-h1); line-height: 1; }
+.anr-cmp-section-head .section-kicker { margin-top: 0; }
+
+/* The merged Field | A | B readout: fixed columns so every card lines up and
+   long values wrap inside their column instead of overflowing the page. The A|B
+   boundary sits at 63% (26% field column + 37% A column); the legend and the
+   side-by-side splits align to the same 63% line so left/right stay consistent. */
+.anr-readout.anr-cmp { table-layout: fixed; width: 100%; }
+.anr-readout.anr-cmp th { width: 26%; }
+.anr-readout.anr-cmp td { width: 37%; }
+/* B column: a little left padding so its values clear the divider line at 63%. */
+.anr-readout.anr-cmp td:nth-child(3) { padding-left: 13px; }
+/* Recursed sub-groups (a browse-as-archive tree, a video's sub-analysis) merge
+   inline in the same flow - no extra chrome, they inherit the 63% divider. */
+.anr-cmp-subgroup { margin: 0; }
+/* Long unbreakable values (hashes, IDs) must wrap inside their fixed-width column,
+   never spill into the neighbouring file's cell. overflow-wrap:anywhere breaks a
+   64/128-char hex where needed while leaving normal words intact; the child rule
+   catches values the renderer wrapped in a <code>/<span>. */
+.anr-readout.anr-cmp th,
+.anr-readout.anr-cmp td,
+.anr-readout.anr-cmp td * { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+.anr-readout.anr-cmp td > * { max-width: 100%; }
+.anr-cmp-absent { color: var(--muted); }
+
+/* Mobile: the three-column Field | A | B table is too cramped (labels and values
+   wrap to a sliver). Reflow each row so the grey field label sits on top, full
+   width, and the two file values sit below it split 50/50 across the screen. */
+@media (max-width: 600px) {
+  .anr-readout.anr-cmp tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 14px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .anr-readout.anr-cmp tr:last-child { border-bottom: none; }
+  .anr-readout.anr-cmp th,
+  .anr-readout.anr-cmp td {
+    width: auto;
+    padding: 1px 0;
+    border-bottom: none;
+  }
+  .anr-readout.anr-cmp th { grid-column: 1 / -1; margin-bottom: 3px; }
+  .anr-readout.anr-cmp td:nth-child(3) { padding-left: 0; }   /* no divider on mobile */
+}
+
+/* "Show differences": fade every row where A and B match, so the differing rows
+   stand out. Nothing is removed. */
+.anr-diff-only .anr-readout.anr-cmp tr:not(.is-diff) { opacity: 0.3; }
+
+/* Side-by-side split for non-table content (image previews, players, hex, etc.).
+   Column geometry MATCHES the merged table - an empty 26% gutter, then A and B at
+   37% each - so the A|B break sits on the same 63% divider as the tables (no more
+   "random" 50% break). min-width:0 + overflow-x:auto keep each side's wide content
+   (progress bars, hex, long lines) inside its own column, not bleeding across. */
+.anr-cmp-split { display: grid; grid-template-columns: 26% 37% 37%; gap: 0; margin-top: 12px; }
+.anr-cmp-col { min-width: 0; overflow-x: auto; }
+.anr-cmp-col > * { max-width: 100%; }
+.anr-cmp-gutter { min-width: 0; }
+.anr-cmp-split .anr-cmp-col:nth-child(2) { padding-right: 12px; }   /* A clears the line */
+.anr-cmp-split .anr-cmp-col:nth-child(3) { padding-left: 13px; }    /* B clears the line */
+.anr-cmp-col-tag {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+/* Local sub-slots a video render creates for its frame/audio drill-downs. */
+.anr-cmp-subslot:empty { display: none; }
+@media (max-width: 760px) {
+  .anr-cmp-split { grid-template-columns: 1fr; }
+  .anr-cmp-gutter { display: none; }
+  .anr-cmp-split .anr-cmp-col:nth-child(2),
+  .anr-cmp-split .anr-cmp-col:nth-child(3) { padding-left: 0; padding-right: 0; }
 }
 
 /* ---------- PAGE-WIDE DROP OVERLAY (until first file) ---------- */

@@ -2544,9 +2544,18 @@ function buildReverseAnimationCard(file, decoded, resultsEl, signal, opts = {}) 
 let photoRenderAbort = null;
 
 export async function renderPhoto(file, resultsEl, opts = {}) {
-  if (photoRenderAbort) photoRenderAbort.abort();
-  photoRenderAbort = new AbortController();
-  const renderSignal = photoRenderAbort.signal;
+  // Inline renders (e.g. the compare view's side-by-side panels) must NOT touch
+  // the shared abort controller - otherwise a second render would cancel the
+  // first's in-flight async (EXIF/OCR/histogram). They get their own isolated
+  // controller instead; only the main single-file flow uses the module-level one.
+  let renderSignal;
+  if (opts.inline) {
+    renderSignal = new AbortController().signal;
+  } else {
+    if (photoRenderAbort) photoRenderAbort.abort();
+    photoRenderAbort = new AbortController();
+    renderSignal = photoRenderAbort.signal;
+  }
   // Inline mode (e.g. embedded cover art analysed inside the audio section):
   // the preview, histogram, and OCR normally target fixed photo-section slots
   // (#photoPreview / #photoHistSlot / #photoOcrSlot). When rendering inline,

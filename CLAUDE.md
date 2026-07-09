@@ -268,9 +268,10 @@ on every main page, so it is single-sourced, not copy-pasted.
   `git add`) stamps it into every page between `<!-- FOOTER:START -->` /
   `<!-- FOOTER:END -->` markers. **Never hand-edit between those markers** - the next
   `save.bat` overwrites it. Re-runnable and idempotent.
-- **Scope:** `index`, `about`, `patch`, `stats`, `privacy`, `formats` (the `PAGES`
-  array in the generator). The per-format `/formats/<ext>` pages are deliberately
-  excluded (they keep their own minimal footer).
+- **Scope:** the `PAGES` array in the generator — `index`, `about`, `patch`,
+  `stats`, `privacy`, `formats`, `samples`, `compare`, `atari`. The per-format
+  `/formats/<ext>` pages are deliberately excluded (they keep their own minimal
+  footer).
 - **What stays per-page:** everything *outside* the markers - crucially each page's
   own `<div class="footer-row footer-bottom">` (its `&larr; Main page` return button
   and page-specific links). The generator never touches it. So the offline block is
@@ -290,10 +291,12 @@ it is single-sourced, not copy-pasted.
   page between `<!-- HEAD:START -->` / `<!-- HEAD:END -->` markers.
 - **Generator:** `tools/stamp-head.mjs`, run by `save.bat` on every commit before
   `git add` (idempotent, re-runnable). **Never hand-edit between the markers.**
-- **Scope:** same `PAGES` as the footer (`index`, `about`, `patch`, `stats`,
-  `privacy`, `formats`). The per-format `/formats/<ext>` pages instead import
-  `THEME_SCRIPT` directly in `prerender-format-pages.mjs`, so the theme snippet
-  lives in exactly one place across all emitters.
+- **Scope:** almost the same `PAGES` as the footer (`index`, `about`, `patch`,
+  `stats`, `privacy`, `formats`, `samples`, `compare`) — but with `test.html`
+  instead of `atari.html` (test needs the theme bootstrap but keeps its own demo
+  footer; atari keeps its own head). The per-format `/formats/<ext>` pages
+  instead import `THEME_SCRIPT` directly in `prerender-format-pages.mjs`, so the
+  theme snippet lives in exactly one place across all emitters.
 - The theme `<script>` must stay byte-stable - it runs before paint to apply the
   saved/preferred theme without a flash, and is UX-sensitive.
 
@@ -336,6 +339,23 @@ Pages use `assets/js/core/navigate.js` for View Transitions API-based SPA naviga
 
 If you add new window-level event listeners, put them inside the `if (!boot._once)` guard to prevent duplicates.
 
+## The /compare page
+
+`compare.html` (served at `/compare`) analyses two files side by side. Its two
+dropzones (A/B) are wired in `boot()` in app.js — the wiring guards on
+`#cmpDropA`, so it stays inert on every other page, and the *global* page-wide
+drop handler skips the compare page so only the A/B zones accept files there.
+`renderers/compare.js` runs each file through the real `classifyFile()`/`ROUTES`
+renderer into an off-screen staging container, then **moves** (not clones) the
+readout cells into merged `Field | A | B` tables — so tooltips and deferred
+async fills (e.g. the SHA-256 cell) keep working. Rows whose values differ are
+tagged `.is-diff`, which powers the "Show differences" toggle; non-readout card
+content (previews, players, hex dumps) falls back to a side-by-side A | B split.
+Media renderers are invoked with `{ inline: true }` so they don't target the
+main page's fixed sections (`#photoPreview`, `#videoPreview`, ...). It is a full
+main page: listed in `sw.js` `SHELL`, `sitemap.xml`, and both stamp-head and
+stamp-footer `PAGES`.
+
 ## File structure
 
 ```
@@ -345,6 +365,8 @@ patch.html          — public changelog (one .patch-entry per commit)
 privacy.html        — privacy page (single-sourced footer)
 stats.html          — public analytics page (reads the Worker's stats API)
 samples.html        — generated /samples gallery (driven by samples/ dir)
+compare.html        — /compare page: two dropzones, side-by-side analysis of two
+                      files (see "The /compare page")
 atari.html          — Asteroids easter-egg game page (loads assets/js/games/)
 formats.html        — generated /formats hub (see Generated SEO pages)
 formats/            — generated /formats/<ext> pages (wiped + rebuilt per commit)
@@ -411,18 +433,23 @@ assets/
       svg.js · illustrator.js · psd.js · paint.js · diagram.js · lut.js · font.js
         — vector/raster design files, colour LUTs, font specimens
       stl.js · model3d.js · gcode.js · unity.js — 3D viewers + G-code toolpath + Unity assets
-      dwg.js · model3d.js · solidworks.js — CAD (DWG 2D drawing; STEP/IGES/BREP
+      dwg.js · model3d.js · solidworks.js · f3d.js — CAD (DWG 2D drawing; STEP/IGES/BREP
         via OpenCASCADE; SolidWorks .sldprt/.sldasm/.slddrw - OLE2 preview+metadata
-        for older files, identify-only for modern encrypted ones)
+        for older files, identify-only for modern encrypted ones; f3d.js reads
+        Autodesk Fusion 360 .f3d/.f3z packages - a Zstd ZIP whose BREP geometry is
+        proprietary, so it reports the manifest/contents rather than rendering)
       altium.js · kicad.js · spice.js · ipcnet.js — EDA/electronics (PCB projects, SPICE netlists, IPC netlists)
       aftereffects.js · premiere.js · davinci.js · vegas.js · sony-rtmd.js · timeline.js
         — NLE/VFX project files (AE/Premiere/Resolve/VEGAS) + EDL/FCPXML/OTIO timelines
       midi.js · subtitles.js · lrc.js — MIDI score, SRT/VTT/ASS subs, LRC lyrics
       csv.js · gcsv.js · dataview.js · gitobject.js · email.js — tabular/IMU/data/git/email
       gif-encode.js · gif-frames.js · webp-frames.js — animated-image frame tooling
+      lottie.js — Lottie/Bodymovin JSON vector animation player (also dotLottie
+        .lottie ZIPs and Telegram .tgs gzip stickers), via the vendored lottie-web
       archive.js · zip.js · folder.js · treemap.js · folder-archive-shared.js · comic.js
         — archive/folder browsing + treemap breakdown + comic (CBZ/CBR) reader
       vssolution.js · geo.js — VS solution manifests, GPX/KML/GeoJSON maps
+      compare.js    — the /compare side-by-side view (see "The /compare page")
       unknown.js    — hex dump and basic identification (the 'unknown' fallback)
       proprietary.js — 200+ format identification by magic bytes (lazy chunk dispatch);
                       proprietary-formats.js holds the large FORMATS reference table

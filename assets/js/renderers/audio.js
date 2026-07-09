@@ -1656,9 +1656,17 @@ async function ffmpegDecodeAudio(file, resultsEl) {
 
 // --- Render uploaded / recorded audio results ---
 export async function renderAudio(file, resultsEl, opts = {}) {
-  if (audioRenderAbort) audioRenderAbort.abort();
-  audioRenderAbort = new AbortController();
-  const renderSignal = audioRenderAbort.signal;
+  // Inline renders (the compare view's side-by-side panels) use an isolated abort
+  // controller so two analyses don't cancel each other's in-flight work; only the
+  // main single-file flow uses the shared module-level one.
+  let renderSignal;
+  if (opts.inline) {
+    renderSignal = new AbortController().signal;
+  } else {
+    if (audioRenderAbort) audioRenderAbort.abort();
+    audioRenderAbort = new AbortController();
+    renderSignal = audioRenderAbort.signal;
+  }
 
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';

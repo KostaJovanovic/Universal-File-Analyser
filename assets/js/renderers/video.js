@@ -21,6 +21,27 @@ function isIOS() {
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
+// Render context - lets the same renderer run normally (targets the fixed photo/
+// audio/video section slots, syncs players, scrolls to the photo section) OR run
+// "inline" for the compare view's side-by-side panels, where every target is a
+// local slot inside the panel and cross-player sync is off so two videos don't
+// steal each other's transport/audio. `videoCtx` is set at the top of renderVideo
+// and CAPTURED synchronously by each helper/handler at build time, so deferred
+// button clicks use the context of their own render even after a second render
+// swaps the module-level value. It resets to the default on every renderVideo call.
+const DEFAULT_VCTX = {
+  inline: false,
+  photoTarget: () => document.getElementById('photoResults'),
+  audioTarget: () => document.getElementById('audioResults'),
+  previewTarget: () => document.getElementById('videoPreview'),
+  afterPhoto: () => { const sec = document.getElementById('photo'); if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+  photoOpts: (base) => base,
+  sync: (playerEl) => registerSyncedVideo(playerEl),
+  companion: (c) => setAudioCompanion(c),
+};
+let videoCtx = DEFAULT_VCTX;
+const curVctx = () => videoCtx;
+
 // Apply the right playback affordance to a visible <video>: native controls on
 // iOS, click-to-toggle play/pause elsewhere (the makePlayer scrubber does the rest).
 function applyVideoControls(playerEl) {
@@ -30,8 +51,9 @@ function applyVideoControls(playerEl) {
     playerEl.style.cursor = 'pointer';
     playerEl.addEventListener('click', () => { if (playerEl.paused) playerEl.play(); else playerEl.pause(); });
   }
-  // Keep every player of this clip (main player, gyro mini-player, ...) in sync.
-  registerSyncedVideo(playerEl);
+  // Keep every player of this clip (main player, gyro mini-player, ...) in sync -
+  // but not in inline/compare mode, where each panel's players stay independent.
+  curVctx().sync(playerEl);
 }
 
 // A generated contact-sheet image. Click opens it full-size in the shared
@@ -60,6 +82,7 @@ function scrollToPhoto() {
 // update asynchronously). Returns { wrap, refresh }; call refresh() when fps
 // becomes known so the frame field of the timecode is accurate.
 function buildFrameControls(playerEl, getFps, file) {
+  const ctx = curVctx();   // capture at build time for the deferred Analyse-frame handler
   const fps = () => { const f = getFps(); return (f && isFinite(f) && f > 0) ? f : 30; };
   const pad = (n) => String(n).padStart(2, '0');
   function parts(t) {
@@ -152,8 +175,8 @@ function buildFrameControls(playerEl, getFps, file) {
     try {
       const blob = await new Promise((r) => cv.toBlob(r, 'image/png'));
       const frameFile = new File([blob], `frame_${playerEl.currentTime.toFixed(3)}s.png`, { type: 'image/png' });
-      const pr = document.getElementById('photoResults');
-      if (pr) { renderPhoto(frameFile, pr); scrollToPhoto(); }
+      const pr = ctx.photoTarget();
+      if (pr) { renderPhoto(frameFile, pr, ctx.photoOpts(undefined)); ctx.afterPhoto(); }
     } catch (_) {}
     analyseBtn.disabled = false; analyseBtn.textContent = 'Analyse frame';
   } }, 'Analyse frame');
@@ -219,6 +242,7 @@ function audioDownloadRow(wavUrl, file) {
 // an "Analyse audio" prompt card into the Sound section; the supplied routine
 // only fires when the user clicks it. Returns nothing - purely a UI mount.
 function mountAudioAnalyseButton(audioResultsEl, run) {
+  const ctx = curVctx();
   audioResultsEl.hidden = false;
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Audio track'));
@@ -232,8 +256,12 @@ function mountAudioAnalyseButton(audioResultsEl, run) {
     // Scroll to the top of the whole Sound section (heading + lede), not the
     // results container, which sits below them - landing on the container alone
     // scrolls past the heading and looks like it jumped to the section's middle.
-    (audioResultsEl.closest('.section') || audioResultsEl)
-      .scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Skipped inline (the compare view), where the analysis renders in place and
+    // an autoscroll would yank the page around under the central button.
+    if (!ctx.inline) {
+      (audioResultsEl.closest('.section') || audioResultsEl)
+        .scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     // Show the bottom loading popup while the (heavy) decode + spectrogram runs.
     const loader = window._anrLoader;
     if (loader) loader.show('Analysing audio…');
@@ -245,6 +273,7 @@ function mountAudioAnalyseButton(audioResultsEl, run) {
 // into the Photo section automatically. This drops an "Analyse photo" prompt card
 // there; the current frame is only analysed when the user clicks.
 function mountPhotoAnalyseButton(photoResultsEl, run) {
+  const ctx = curVctx();
   photoResultsEl.hidden = false;
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Frame analysis'));
@@ -255,7 +284,7 @@ function mountPhotoAnalyseButton(photoResultsEl, run) {
   photoResultsEl.appendChild(card);
   btn.addEventListener('click', () => {
     card.remove();
-    scrollToPhoto();
+    ctx.afterPhoto();
     Promise.resolve(run()).catch(() => {});
   });
 }
@@ -1469,6 +1498,7 @@ async function sniffMp4AudioCodec(file) {
 // Best-effort and fully in the background: silent on any failure. Skipped above a
 // size cap (the whole file must be read into memory to extract PCM).
 async function attachPcmAudioCompanion(file, playerCard, signal) {
+  const ctx = curVctx();   // capture now: this runs fire-and-forget, resolving after renderVideo returns
   const COMPANION_MAX_BYTES = 2 * 1024 * 1024 * 1024;   // 2 GB: cap the in-memory decode
   try {
     if (!file || file.size > COMPANION_MAX_BYTES) return;
@@ -1484,8 +1514,8 @@ async function attachPcmAudioCompanion(file, playerCard, signal) {
     const companion = el('audio', { src: wavUrl, preload: 'auto' });
     companion.style.display = 'none';
     playerCard.appendChild(companion);
-    setAudioCompanion(companion);
-    if (signal) signal.addEventListener('abort', () => { try { setAudioCompanion(null); URL.revokeObjectURL(wavUrl); } catch (_) {} });
+    ctx.companion(companion);
+    if (signal) signal.addEventListener('abort', () => { try { ctx.companion(null); URL.revokeObjectURL(wavUrl); } catch (_) {} });
   } catch (_) { /* best-effort: no companion, video just stays mute */ }
 }
 
@@ -2185,6 +2215,7 @@ async function renderMoovlessRecovery(file, header, det, resultsEl, signal) {
 // play and how to make it playable. Degrades gracefully for non-ISOBMFF files
 // (shows name / size / container only).
 async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
+  const ctx = curVctx();
   let tracks = null;
   try { tracks = await detectIsobmffTracks(file); } catch (_) {}
   const v = tracks && tracks.video;
@@ -2316,9 +2347,9 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
       const basename = (file.name || 'video').replace(/\.[^/.]+$/, '');
       const frameFile = new File([frame.blob], basename + '_frame.jpg', { type: 'image/jpeg' });
       const analyseBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
-        const pr = revealPhotoSection();
-        renderPhoto(frameFile, pr, { sourceNote: 'First frame extracted from ' + file.name + ' (the video itself can’t be decoded in the browser).' });
-        scrollToPhoto();
+        const pr = ctx.inline ? ctx.photoTarget() : revealPhotoSection();
+        renderPhoto(frameFile, pr, ctx.photoOpts({ sourceNote: 'First frame extracted from ' + file.name + ' (the video itself can’t be decoded in the browser).' }));
+        ctx.afterPhoto();
       } }, 'Analyse in Photo section');
       prevCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [analyseBtn]));
     } catch (_) {
@@ -2512,6 +2543,7 @@ function seekAndPaint(video, t) {
 // on-demand frame grab into the photo section, and a SHA-256. Returns true if
 // the player loaded (so the caller skips the error), false otherwise.
 async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) {
+  const ctx = curVctx();
   const playerCard = el('div', { class: 'anr-card', style: 'position:relative;' });
   playerCard.appendChild(el('h3', {}, 'Player'));
   const playerEl = el('video', { src: url, playsinline: '' });
@@ -2709,7 +2741,7 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
   }
 
   // Audio extraction (into Sound section) - gated behind an "Analyse audio" button.
-  const audioResultsEl = document.getElementById('audioResults');
+  const audioResultsEl = ctx.audioTarget();
   if (audioResultsEl) mountAudioAnalyseButton(audioResultsEl, async () => {
     audioResultsEl.hidden = false;
     const audioCard = el('div', { class: 'anr-card' });
@@ -2778,9 +2810,34 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
 let videoRenderAbort = null;
 
 export async function renderVideo(file, resultsEl, opts = {}) {
-  if (videoRenderAbort) videoRenderAbort.abort();
-  videoRenderAbort = new AbortController();
-  const renderSignal = videoRenderAbort.signal;
+  // Inline mode (compare view's side-by-side panels): isolate the abort controller
+  // so two videos don't cancel each other, and route every cross-section target to
+  // a local slot inside this panel with player-sync/companion off. See DEFAULT_VCTX.
+  const inline = !!opts.inline;
+  let renderSignal;
+  if (inline) {
+    renderSignal = new AbortController().signal;
+  } else {
+    if (videoRenderAbort) videoRenderAbort.abort();
+    videoRenderAbort = new AbortController();
+    renderSignal = videoRenderAbort.signal;
+  }
+  const localSlots = {};
+  // Tag each sub-slot with its kind so the compare view can file the extracted
+  // audio under the Sound section and the grabbed frame under the Photo section,
+  // matching the normal single-file layout.
+  const localSlot = (key) => localSlots[key] || (localSlots[key] = resultsEl.appendChild(el('div', { class: 'anr-results anr-cmp-subslot anr-cmp-sub-' + key })));
+  const vctx = inline ? {
+    inline: true,
+    photoTarget: () => localSlot('photo'),
+    audioTarget: () => localSlot('audio'),
+    previewTarget: () => localSlot('preview'),
+    afterPhoto: () => {},
+    photoOpts: (base) => Object.assign({ inline: true }, base),
+    sync: () => {},
+    companion: () => {},
+  } : DEFAULT_VCTX;
+  videoCtx = vctx;   // helpers/handlers capture this synchronously at build time
 
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
@@ -3097,10 +3154,10 @@ export async function renderVideo(file, resultsEl, opts = {}) {
         const analyseBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
           const blob = new Blob([frames[currentFrame]], { type: 'image/jpeg' });
           const frameFile = new File([blob], `frame_${currentFrame}.jpg`, { type: 'image/jpeg' });
-          const photoResults = document.getElementById('photoResults');
+          const photoResults = vctx.photoTarget();
           if (photoResults) {
-            renderPhoto(frameFile, photoResults);
-            scrollToPhoto();
+            renderPhoto(frameFile, photoResults, vctx.photoOpts(undefined));
+            vctx.afterPhoto();
           }
         }}, 'Analyse frame');
         // Frame grab: download the current JPEG frame as-is.
@@ -3312,13 +3369,13 @@ export async function renderVideo(file, resultsEl, opts = {}) {
         // Current frame - gated behind an "Analyse photo" button. The frame is read
         // at click time from wherever the frame viewer is parked (currentFrame), not
         // fixed at frame 0.
-        const photoResultsEl = document.getElementById('photoResults');
+        const photoResultsEl = vctx.photoTarget();
         if (photoResultsEl) {
           mountPhotoAnalyseButton(photoResultsEl, () => {
             const idx = Math.max(0, Math.min(currentFrame | 0, frames.length - 1));
             const blob = new Blob([frames[idx]], { type: 'image/jpeg' });
             const frameFile = new File([blob], `frame_${idx}.jpg`, { type: 'image/jpeg' });
-            renderPhoto(frameFile, photoResultsEl, { sourceNote: 'Frame ' + idx + ' of ' + (file.name || 'the video') + '.' });
+            renderPhoto(frameFile, photoResultsEl, vctx.photoOpts({ sourceNote: 'Frame ' + idx + ' of ' + (file.name || 'the video') + '.' }));
           });
         }
       }
@@ -3327,7 +3384,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       resultsEl.appendChild(infoCard);
 
       // Audio from direct PCM extraction - gated behind an "Analyse audio" button.
-      const audioResultsEl = document.getElementById('audioResults');
+      const audioResultsEl = vctx.audioTarget();
       if (audioResultsEl && aviData && aviData.audioBuffer) mountAudioAnalyseButton(audioResultsEl, () => {
         audioResultsEl.hidden = false;
         const audioBuf = aviData.audioBuffer;
@@ -3412,7 +3469,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // A small synced player of the same clip: click to play, and it stays locked to
   // the main Player and the gyro mini-player via registerSyncedVideo (in
   // applyVideoControls). The poster shows frame 0 before it plays.
-  const previewSlot = document.getElementById('videoPreview');
+  const previewSlot = vctx.previewTarget();
   if (previewSlot && (posterUrl || vw)) {
     previewSlot.innerHTML = '';
     const thumb = el('div', { class: 'section-meta-preview' });
@@ -3433,7 +3490,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // the "Analyse photo" button while the visible player is still parked at the
   // start with no decoded frame to grab. The button itself is mounted after the
   // player is built (below), and prefers the player's CURRENT frame at click time.
-  const photoResultsEl = document.getElementById('photoResults');
+  const photoResultsEl = vctx.photoTarget();
   let firstFrameFile = null;
   if (photoResultsEl && vw && vh) {
     const fcv = document.createElement('canvas');
@@ -3499,12 +3556,12 @@ export async function renderVideo(file, resultsEl, opts = {}) {
           cv.getContext('2d').drawImage(playerEl, 0, 0, cv.width, cv.height);
           cv.toBlob(blob => {
             const f = blob ? new File([blob], `frame_${t.toFixed(3)}s.png`, { type: 'image/png' }) : firstFrameFile;
-            if (f) renderPhoto(f, photoResultsEl, { sourceNote: 'Frame captured at ' + t.toFixed(3) + 's from ' + (file.name || 'the video') + '.' });
+            if (f) renderPhoto(f, photoResultsEl, vctx.photoOpts({ sourceNote: 'Frame captured at ' + t.toFixed(3) + 's from ' + (file.name || 'the video') + '.' }));
           }, 'image/png');
           return;
         } catch (_) { /* tainted/undecoded - fall through to frame 0 */ }
       }
-      if (firstFrameFile) renderPhoto(firstFrameFile, photoResultsEl, { sourceNote: 'First frame of ' + (file.name || 'the video') + '.' });
+      if (firstFrameFile) renderPhoto(firstFrameFile, photoResultsEl, vctx.photoOpts({ sourceNote: 'First frame of ' + (file.name || 'the video') + '.' }));
     });
   }
 
@@ -3799,7 +3856,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // Gated behind an "Analyse audio" button so a full decode + spectrogram only
   // runs when the user asks for it, not automatically on every video.
   // (Skipped for raw H.264/H.265, which is a video-only elementary stream.)
-  const audioResultsEl = document.getElementById('audioResults');
+  const audioResultsEl = vctx.audioTarget();
   if (audioResultsEl && !opts.noAudio) mountAudioAnalyseButton(audioResultsEl, async () => {
     audioResultsEl.hidden = false;
 

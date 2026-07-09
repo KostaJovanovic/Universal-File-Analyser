@@ -1,7 +1,7 @@
 ﻿/* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v188';
+const VERSION = 'analyser-v189';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -18,6 +18,7 @@ const SHELL = [
   './stats',
   './privacy',
   './samples',
+  './compare',
   './manifest.json',
   './assets/css/analyser.css',
   './assets/css/fonts.css',
@@ -80,6 +81,7 @@ const SHELL = [
   './assets/js/renderers/comic.js',
   './assets/js/renderers/gitobject.js',
   './assets/js/renderers/unknown.js',
+  './assets/js/renderers/compare.js',
   './assets/js/renderers/proprietary.js',
   './assets/js/renderers/proprietary-formats.js',
   './assets/js/core/binutil.js',

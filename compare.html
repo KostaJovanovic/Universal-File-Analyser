@@ -3,79 +3,38 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Analyser - Online File Viewer, G-code Visualiser & 3D Model Viewer</title>
-  <meta name="description" content="Analyser is a free online file viewer, G-code visualiser and 3D model viewer: reconstruct 3D prints and CNC toolpaths from G-code, open STL/OBJ/STEP/3MF/glTF models, and read EXIF, spectrograms, frames and metadata for 1353+ file types in-browser. No upload, nothing leaves your device.">
-  <link rel="canonical" href="https://lab.valjdakosta.com/">
+  <title>Compare two files - Analyser</title>
+  <meta name="description" content="Compare two files side by side in your browser: drop or pick two files and Analyser lines up their full analyses - metadata, dimensions, hashes and more - with a Show differences toggle. No upload, nothing leaves your device.">
+  <link rel="canonical" href="https://lab.valjdakosta.com/compare">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
-  <meta property="og:title" content="Analyser - Online File Viewer, G-code Visualiser & 3D Model Viewer">
-  <meta property="og:description" content="Analyser is a free online file viewer, G-code visualiser and 3D model viewer: reconstruct 3D prints and CNC toolpaths from G-code, open STL/OBJ/STEP/3MF/glTF models, and read EXIF, spectrograms, frames and metadata for 1353+ file types in-browser. No upload, nothing leaves your device.">
-  <meta property="og:url" content="https://lab.valjdakosta.com/">
+  <meta property="og:title" content="Compare two files - Analyser">
+  <meta property="og:description" content="Compare two files side by side in your browser: drop or pick two files and Analyser lines up their full analyses with a Show differences toggle. No upload, nothing leaves your device.">
+  <meta property="og:url" content="https://lab.valjdakosta.com/compare">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Analyser - Online File Viewer, G-code Visualiser & 3D Model Viewer">
-  <meta name="twitter:description" content="Analyser is a free online file viewer, G-code visualiser and 3D model viewer: reconstruct 3D prints and CNC toolpaths from G-code, open STL/OBJ/STEP/3MF/glTF models, and read EXIF, spectrograms, frames and metadata for 1353+ file types in-browser. No upload, nothing leaves your device.">
+  <meta name="twitter:title" content="Compare two files - Analyser">
+  <meta name="twitter:description" content="Compare two files side by side in your browser: drop or pick two files and Analyser lines up their full analyses with a Show differences toggle. No upload, nothing leaves your device.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta name="twitter:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <link rel="icon" href="assets/img/favicon.png" type="image/png">
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/img/icon.png">
-  <!-- iOS ignores manifest.json below 16.4, so these drive Add to Home Screen there:
-       launch standalone (no Safari chrome), match the dark UI, name the icon. -->
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Analyser">
   <link rel="manifest" href="manifest.json">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "WebApplication",
-    "name": "Analyser",
-    "alternateName": "Online File Analyser",
-    "url": "https://lab.valjdakosta.com/",
-    "description": "A free online file viewer, G-code visualiser and 3D model viewer: reconstruct 3D prints and CNC toolpaths from G-code, open STL/OBJ/STEP/3MF/glTF 3D models, and view EXIF, spectrograms, video frames and metadata for 1353+ file types, entirely in your browser. No ads, no telemetry, no upload - everything stays on your device.",
-    "applicationCategory": "MultimediaApplication",
-    "operatingSystem": "Any (web browser)",
-    "browserRequirements": "Requires JavaScript.",
-    "image": "https://lab.valjdakosta.com/assets/img/banner.jpg",
-    "screenshot": "https://lab.valjdakosta.com/assets/img/banner.jpg",
-    "isAccessibleForFree": true,
-    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-    "author": { "@type": "Person", "name": "valjdakosta", "url": "https://valjdakosta.com/" },
-    "publisher": { "@type": "Organization", "name": "valjdakosta", "url": "https://valjdakosta.com/" },
-    "featureList": [
-      "G-code visualiser for 3D prints and CNC toolpaths",
-      "Interactive 3D model viewer (STL, OBJ, PLY, STEP, 3MF, glTF)",
-      "EXIF and metadata extraction",
-      "Audio spectrogram and waveform visualisation",
-      "Video frame and codec analysis",
-      "PDF, archive, and document inspection",
-      "Identification of 1353+ file formats",
-      "Works offline as a Progressive Web App"
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Analyser", "item": "https://lab.valjdakosta.com/" },
+      { "@type": "ListItem", "position": 2, "name": "Compare", "item": "https://lab.valjdakosta.com/compare" }
     ]
-  }
-  </script>
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    "name": "Analyser",
-    "alternateName": "Analyser - file metadata and forensics",
-    "url": "https://lab.valjdakosta.com/",
-    "potentialAction": {
-      "@type": "SearchAction",
-      "target": {
-        "@type": "EntryPoint",
-        "urlTemplate": "https://lab.valjdakosta.com/?q={search_term_string}"
-      },
-      "query-input": "required name=search_term_string"
-    }
   }
   </script>
   <!-- HEAD:START - generated by tools/stamp-head.mjs from tools/prerender-common.mjs THEME_SCRIPT; do not hand-edit between the markers -->
@@ -85,28 +44,20 @@
   <!-- HEAD:END -->
 </head>
 <body>
-<noscript><div class="noscript-warning" role="alert"><strong>JavaScript is off.</strong> Analyser runs entirely in your browser, so nothing on this page works without it - you cannot open or analyse any file. Please enable JavaScript and reload.</div></noscript>
-
-<div id="pageDrop" class="page-drop" hidden aria-hidden="true">
-  <div class="page-drop-inner">
-    <span class="page-drop-icon" aria-hidden="true">+</span>
-    <strong>Drop anywhere</strong>
-    <p>Photo, sound, video, or anything else. I&rsquo;ll figure it out</p>
-  </div>
-</div>
+<noscript><div class="noscript-warning" role="alert"><strong>JavaScript is off.</strong> Analyser runs entirely in your browser, so nothing on this page works without it - you cannot open or compare any file. Please enable JavaScript and reload.</div></noscript>
 
 <header class="site-header">
   <div class="grid">
-    <div class="site-mark">
-      <span class="site-kicker">A 01 - 03</span>
-      <h1 class="site-title">Analyser</h1>
-      <p class="site-byline">by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
-      <p class="site-sub">Photos, sound, video, PDFs, documents, archives - and almost any other file. Fully local; nothing you drop ever leaves your browser.</p>
+    <div class="site-mark site-mark--compare">
+      <span class="site-kicker">A - COMPARE</span>
+      <h1 class="site-title">Compare</h1>
+      <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
+      <p class="site-sub">Drop two files and read their full analyses side by side. Fully local; nothing you drop ever leaves your browser.</p>
       <nav class="site-mark-nav" aria-label="Pages">
+        <a href="/" class="header-btn">Home</a>
         <a href="/about" class="header-btn">About</a>
         <a href="/patch" class="header-btn">Patches</a>
         <a href="/formats" class="header-btn">Formats</a>
-        <a href="/stats" class="header-btn">Stats</a>
         <a href="/samples" class="header-btn">Samples</a>
         <button type="button" class="header-btn header-btn-share"><svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>Share</button>
       </nav>
@@ -124,179 +75,40 @@
   </div>
 </header>
 
-<nav class="site-nav" aria-label="Primary">
-  <a href="#photo" class="nav-link"><span class="nav-num">01</span><span>Photo</span></a>
-  <a href="#audio" class="nav-link"><span class="nav-num">02</span><span>Sound</span></a>
-  <a href="#video" class="nav-link"><span class="nav-num">03</span><span>Video</span></a>
-  <div class="nav-search" id="navSearchWrap">
-    <button type="button" class="nav-search-btn" id="navSearchBtn" aria-label="Search"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6.5" cy="6.5" r="5"/><line x1="10" y1="10" x2="14" y2="14"/></svg></button>
-    <input type="text" id="navSearch" class="nav-search-input" placeholder="Search" autocomplete="off" spellcheck="false">
-  </div>
-</nav>
+<main class="site-main compare-page">
 
-<main class="site-main">
-
-  <!-- QUICKDROP LAYOUT SWITCH - two layouts live here at once; the
-       `quickdrop--hero` class on <section> picks which one shows (CSS toggles
-       their display): WITH it -> the single "any file" hero zone
-       (.quickdrop-hero); WITHOUT it -> the original three cards (.quickdrop-grid).
-       Both stay wired in app.js, so switching is just adding/removing that one
-       class - nothing else to touch. -->
-  <section class="quickdrop quickdrop--hero" aria-label="Pick a file to analyse">
-    <div class="quickdrop-grid">
-      <div class="anr-dropzone quickdrop-zone" id="photoDrop" data-kind="photo">
-        <label class="anr-dropzone-inner" for="photoInput">
+  <section class="quickdrop" aria-label="Pick two files to compare">
+    <!-- Two "any file" dropzones (A and B). Each captures one File (wired in
+         app.js's boot - wireCompareZone); it does NOT go through handleFile. The
+         comparison runs automatically once both are in, into #unknownResults. -->
+    <div class="quickdrop-compare-zones">
+      <div class="anr-dropzone quickdrop-zone" id="cmpDropA" data-cmp="a">
+        <label class="anr-dropzone-inner" for="cmpInputA">
           <span class="anr-drop-icon" aria-hidden="true">+</span>
-          <strong><span class="drop-word">Drop</span><span class="tap-word">Pick</span> a photo or video</strong>
-          <input type="file" accept="image/*,video/*,.jpg,.jpeg,.jpe,.jfif,.png,.gif,.webp,.heic,.heif,.bmp,.tif,.tiff,.avif,.jxl,.ico,.raw,.arw,.cr2,.cr3,.nef,.dng,.raf,.rw2,.orf,.pef,.sr2,.srw,.x3f,.thm,.mp4,.m4v,.mov,.avi,.mkv,.webm,.wmv,.flv,.3gp,.mpg,.mpeg,.mts" id="photoInput" hidden>
-          <p class="anr-hint">JPEG &middot; HEIC &middot; PNG &middot; RAW &middot; MP4 &middot; MOV &middot; MKV &middot; WEBM &middot; AVI &middot; Folders</p>
+          <strong><span class="drop-word">Drop</span><span class="tap-word">Pick</span> file A</strong>
+          <input type="file" id="cmpInputA" hidden>
+          <p class="anr-hint" data-cmp-name="a">No file chosen yet</p>
         </label>
       </div>
-
-      <div class="anr-dropzone quickdrop-zone" id="audioDrop" data-kind="audio">
-        <label class="anr-dropzone-inner" for="audioInput">
+      <div class="anr-dropzone quickdrop-zone" id="cmpDropB" data-cmp="b">
+        <label class="anr-dropzone-inner" for="cmpInputB">
           <span class="anr-drop-icon" aria-hidden="true">+</span>
-          <strong><span class="drop-word">Drop</span><span class="tap-word">Pick</span> a sound</strong>
-          <input type="file" accept="audio/*,.mp3,.wav,.m4a,.flac,.ogg,.opus,.aac,.wma,.aiff,.amr,.mp2,.mid,.midi" id="audioInput" hidden>
-          <p class="anr-hint">MP3 &middot; WAV &middot; M4A &middot; FLAC &middot; OGG &middot; OPUS &middot; Folders</p>
+          <strong><span class="drop-word">Drop</span><span class="tap-word">Pick</span> file B</strong>
+          <input type="file" id="cmpInputB" hidden>
+          <p class="anr-hint" data-cmp-name="b">No file chosen yet</p>
         </label>
-        <div class="anr-audio-modes">
-          <button type="button" id="audioRecord" class="anr-btn"><span class="anr-rec-dot" aria-hidden="true"></span> Record</button>
-          <button type="button" id="audioLive"   class="anr-btn">Live spectrogram</button>
-        </div>
-      </div>
-
-      <div class="anr-dropzone quickdrop-zone" id="videoDrop" data-kind="video" style="position:relative">
-        <label class="anr-dropzone-inner" for="videoInput">
-          <span class="anr-drop-icon" aria-hidden="true">+</span>
-          <strong><span class="drop-word">Drop</span><span class="tap-word">Pick</span> any file or folder</strong>
-          <input type="file" id="videoInput" hidden>
-          <p class="anr-hint">PDF &middot; ZIP &middot; CSV &middot; SVG &middot; Folders &middot; <button type="button" class="fmt-count-link" data-fmt-open data-fmt-count data-fmt-count-tpl="{n}+ formats">1353+ formats</button></p>
-          <p class="anr-drop-warn">Analysis may be limited for some formats</p>
-        </label>
-        <button type="button" class="fmt-help-btn" id="fmtHelpBtn" data-fmt-open aria-label="Supported formats">Info</button>
       </div>
     </div>
-
-    <!-- NEW: single "any file" hero dropzone. Shown when the section carries
-         `quickdrop--hero` (the .quickdrop-grid above is hidden then). One drop
-         target + one any-file picker route through handleFile like the classic
-         video zone; Record / Live spectrogram reuse the audio pipeline. To its
-         right sits a compact "Compare" square (same dropzone look + hover glow)
-         that links to the dedicated /compare page (compare.html). -->
-    <div class="quickdrop-hero-row">
-      <div class="quickdrop-hero anr-dropzone" id="heroDrop" data-kind="any">
-        <label class="anr-dropzone-inner" for="heroInput">
-          <span class="anr-drop-icon" aria-hidden="true">+</span>
-          <strong><span class="drop-word">Drop</span><span class="tap-word">Pick</span> any file or folder</strong>
-          <input type="file" id="heroInput" hidden>
-          <p class="anr-hint">Photos &middot; Sound &middot; Video &middot; PDF &middot; ZIP &middot; Folders &middot; <span data-fmt-count data-fmt-count-tpl="{n}+ formats">1353+ formats</span></p>
-          <p class="anr-drop-warn">Analysis may be limited for some formats</p>
-        </label>
-        <div class="quickdrop-hero-actions">
-          <button type="button" id="heroRecord" class="anr-btn"><span class="anr-rec-dot" aria-hidden="true"></span> Record sound</button>
-          <button type="button" id="heroLive" class="anr-btn">Live spectrogram</button>
-          <button type="button" id="heroInfo" class="anr-btn" data-fmt-open>Info</button>
-        </div>
-      </div>
-      <a href="/compare" class="anr-dropzone quickdrop-compare-cta" id="compareCta" aria-label="Compare two files">
-        <strong>Compare</strong>
-      </a>
+    <div class="anr-btn-row quickdrop-compare-run">
+      <a href="/" class="anr-btn quickdrop-compare-back">&larr; Main page</a>
     </div>
   </section>
-
-  <div class="analyse-actions">
-    <button type="button" id="exportData" class="export-data" hidden>Export data</button>
-    <button type="button" id="analyseNext" class="analyse-next" hidden>Analyse next file?</button>
-  </div>
-  <button type="button" id="scrollToData" class="scroll-to-data" hidden aria-label="Scroll to the analysis"></button>
-
-  <div id="fmtOverlay" class="fmt-overlay" hidden>
-    <div class="fmt-overlay-inner">
-      <div class="fmt-overlay-header">
-        <h2>Supported formats <span class="fmt-overlay-count" data-fmt-count="bare">1353</span></h2>
-        <button type="button" class="fmt-overlay-close" id="fmtOverlayClose" aria-label="Close">&times;</button>
-      </div>
-      <input type="text" class="fmt-overlay-search" id="fmtSearch" placeholder="Search formats..." autocomplete="off" spellcheck="false">
-      <!-- Category chips + the format list are generated from assets/js/core/formats.js by app.js. -->
-      <div class="fmt-chips" id="fmtChips" role="tablist" aria-label="Filter formats by category"></div>
-      <div class="fmt-status">
-        <span class="fmt-result-count" id="fmtResultCount"></span>
-        <button type="button" class="fmt-toggle-all" id="fmtToggleAll">Expand all</button>
-      </div>
-      <div class="fmt-overlay-body" id="fmtBody"></div>
-    </div>
-  </div>
-
-  <button type="button" id="anrBackBar" class="anr-back-bar" hidden><span class="anr-back-arrow" aria-hidden="true">&larr;</span> Back to <span class="anr-back-label"></span></button>
 
   <div id="unknownResults" class="anr-results anr-unknown-results" hidden></div>
-
-  <section id="photo" class="section">
-    <div class="grid">
-      <aside class="section-meta">
-        <span class="section-num">01</span>
-        <span class="section-kicker">Photo</span>
-        <div id="photoPreview"  class="section-meta-slot section-meta-preview-slot"></div>
-        <div id="photoHistSlot" class="section-meta-slot"></div>
-        <div id="photoOcrSlot"  class="section-meta-slot"></div>
-      </aside>
-      <div class="section-content">
-        <h2 class="section-head">See every byte of metadata a camera left behind.</h2>
-        <p class="section-lede">EXIF, IPTC, XMP, ICC. Dimensions, exact aspect ratio, RGB histogram, dominant palette, GPS map, on-device OCR.</p>
-
-        <div id="photoResults" class="anr-results" hidden></div>
-      </div>
-    </div>
-  </section>
-
-  <section id="audio" class="section">
-    <div class="grid">
-      <aside class="section-meta">
-        <span class="section-num">02</span>
-        <span class="section-kicker">Sound</span>
-      </aside>
-      <div class="section-content">
-        <h2 class="section-head">Inspect the spectrum of any audio source.</h2>
-        <p class="section-lede">Open a file, record from the mic, or visualise it live. Linear or logarithmic axis, adjustable FFT size and window, choice of colourmap, save as PNG, fullscreen.</p>
-
-        <div id="audioResults" class="anr-results" hidden></div>
-      </div>
-    </div>
-  </section>
-
-  <section id="video" class="section">
-    <div class="grid">
-      <aside class="section-meta">
-        <span class="section-num">03</span>
-        <span class="section-kicker">Video</span>
-        <div id="videoPreview" class="section-meta-slot section-meta-preview-slot"></div>
-      </aside>
-      <div class="section-content">
-        <h2 class="section-head">Decode every frame and frequency in a video.</h2>
-        <p class="section-lede">Container and codec detection, resolution, frame rate, bitrate. Capture any frame for full photo analysis. Extract the audio track for waveform and spectrogram.</p>
-
-        <div id="videoResults" class="anr-results" hidden></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Post-analysis link to the analysed extension's own /formats guide page.
-       Filled + revealed by handleFile() in app.js; hidden while no file is
-       loaded or the extension has no catalog page. -->
-  <a id="formatGuideCta" class="analyse-next format-guide-cta" href="/formats" hidden>About this file type</a>
 
 </main>
 
 <footer id="about" class="site-footer site-footer--about">
-  <section class="recent-history" id="recentHistory" hidden aria-label="Recently analysed files">
-    <div class="recent-history-head">
-      <h2>Recently analysed</h2>
-      <button type="button" id="recentClear" class="recent-clear">Clear</button>
-    </div>
-    <ul class="recent-list" id="recentList"></ul>
-    <p class="anr-hint recent-note">Kept only on this device. The files themselves are never stored, so they cannot be re-opened automatically - this is just a record of what you analysed.</p>
-  </section>
   <!-- FOOTER:START - generated by tools/stamp-footer.mjs from tools/partials/footer-shared.html; do not hand-edit between the markers -->
   <div class="footer-about-heading">
     <p class="footer-mark">Everything runs in your browser.</p>
@@ -380,24 +192,19 @@
   </div>
   <!-- FOOTER:END -->
   <div class="footer-row footer-bottom">
+    <a href="/" class="footer-nav-btn">&larr; Main page</a>
     <p class="footer-meta"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
-    <p class="footer-meta"><a href="/formats">Supported file types</a> &middot; <a href="/stats">Stats</a> &middot; <a href="/privacy">Privacy</a></p>
+    <p class="footer-meta"><a href="/about">About</a> &middot; <a href="/formats">Supported file types</a></p>
     <!-- No address in the source: the mailto is assembled in JS only after a
          Cloudflare Turnstile challenge passes (see wireFooterContact in app.js). -->
     <p class="footer-meta footer-contact-line">Contact: <button type="button" class="footer-contact">Email me!</button></p>
   </div>
 </footer>
 
-<noscript>
-  <div class="anr-error" style="margin: 24px;">This page needs JavaScript to read your files.</div>
-</noscript>
-
-<script src="assets/js/core/navigate.js"></script><script type="module" src="assets/js/core/app.js"></script>
+<script src="assets/js/core/navigate.js"></script>
+<script type="module" src="assets/js/core/app.js"></script>
 <script>
   if ('serviceWorker' in navigator) {
-    // Auto-reload once when an updated service worker takes control, so a new
-    // deploy's HTML/CSS/JS appear without a manual hard-refresh. Guarded on an
-    // existing controller so the very first install doesn't trigger a reload.
     if (navigator.serviceWorker.controller) {
       var anrRefreshing = false;
       navigator.serviceWorker.addEventListener('controllerchange', function () {
@@ -407,9 +214,6 @@
       });
     }
     window.addEventListener('load', function () {
-      // updateViaCache:'none' stops the browser serving sw.js from its own HTTP
-      // cache, so a newly-deployed service worker is always detected; update()
-      // forces an immediate check instead of waiting for the next navigation.
       navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
         .then(function (reg) { reg.update(); })
         .catch(function (e) { console.warn('SW failed:', e); });
