@@ -41,7 +41,8 @@
       "Bash(gh search *)",
       "Bash(rtk find *)",
       "Bash(echo \"--- first 64 bytes hex ---\")",
-      "Bash(xxd -l 64 '/c/Users/kosta/Downloads/Telegram Desktop/pucketanje 1.aac')"
+      "Bash(xxd -l 64 '/c/Users/kosta/Downloads/Telegram Desktop/pucketanje 1.aac')",
+      "PowerShell(.\\\\save.bat save)"
     ]
   },
   "spinnerTipsEnabled": false
