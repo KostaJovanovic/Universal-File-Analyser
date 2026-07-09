@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 189;
+const COMMIT_COUNT = 190;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -83,7 +83,7 @@ import { renderMarkdown } from '../renderers/markdown.js';
 import { renderComic } from '../renderers/comic.js';
 import { renderGitObject, sniffGitObject } from '../renderers/gitobject.js';
 import { initSearch } from './search.js';
-import { fileExt, el, row, fmtBytes, probeReadable, cloudFileWarning, openOverlayBack } from './util.js';
+import { fileExt, el, row, fmtBytes, probeReadable, cloudFileWarning, openOverlayBack, integrityCard } from './util.js';
 import { walkItems, renderFolder } from '../renderers/folder.js';
 import { setupHeaderFx, setupSectionFx, setupFooterFx, setupFmtHeaderFx } from './effects.js';
 import { showSuggestPopup, hideSuggestPopup, scheduleShareNudge, hideShareNudge, wireShareButtons, wireFooterContact, updateNetStatus } from './popups.js';
@@ -989,6 +989,10 @@ async function renderFileExtras(file, container, kind) {
     const sniff = await sniffFileType(file);
     const sig = await signatureCheck(file, sniff);
     if (sig) container.insertBefore(signatureCard(sig), container.firstChild);
+    // Guarantee an Integrity card (mirrors handleFile) so every compared file - even
+    // an archive/APK whose renderer builds none - has its fingerprint, and so the
+    // "Integrity above all else" hoist always has a card to lift.
+    if (!findIntegrityCard(container)) container.appendChild(integrityCard(file));
     const trail = await trailingDataCheck(file, sniff);
     if (trail) {
       const tCard = trailingCard(trail, file);
@@ -2547,6 +2551,15 @@ function boot() {
         resultEl.hidden = false;
         resultEl.insertBefore(signatureCard(sigCheck), resultEl.firstChild);
       }
+      // Every file gets an Integrity card. Most renderers build their own (SHA-256 +
+      // the on-demand hash extras); those that don't - archives/APKs, folders, a few
+      // identify-only views - get a standard one appended here so the file's
+      // fingerprint is always available. The guard keeps renderers that already have
+      // one from getting a duplicate.
+      if (resultEl && !findIntegrityCard(resultEl)) {
+        resultEl.hidden = false;
+        resultEl.appendChild(integrityCard(file));
+      }
       // Data appended past the file's logical end (polyglot / smuggled content).
       // Slotted in just above the Integrity card (the renderer has finished, so it
       // is in the DOM by now); falls back to the end when there is no integrity card.
@@ -2701,10 +2714,16 @@ window._anrReadableText = isReadableText;
       try { const k = await resolveKind(f); recordAnalysed(fileExt(f.name), k !== 'unknown'); }
       catch (_) { recordAnalysed(fileExt(f.name), false); }
     }
+    // Drive the shared bottom loading popup while both files analyse and merge - the
+    // compare render can be slow (two full analyses, WASM loads, hashing), so the
+    // same bar the single-file drop shows should be visible here too.
+    window._anrLoader.show('Comparing both files…');
     try {
       await renderCompare(_cmpA, _cmpB, ur, { classify: resolveKind, routes: ROUTES, ensureExifr, renderExtras: renderFileExtras });
     } catch (e) {
       ur.appendChild(el('div', { class: 'anr-error' }, 'Comparison failed: ' + (e && e.message ? e.message : e)));
+    } finally {
+      window._anrLoader.hide();
     }
     requestAnimationFrame(() => ur.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
