@@ -241,7 +241,13 @@ export function pagedPreviewCard(pages, opts = {}) {
   const label = opts.label || 'Page';
   const batch = opts.batch || 12;
   const initial = opts.initial || Math.min(pages.length, 12);
-  const THUMB_W = 200;
+  // Thumbnail width. On phones shrink it so at least two previews sit side by side
+  // per row (two tiles + the grid's 16px gap must clear the viewport, less a rough
+  // allowance for the card/results padding); capped at 200 and floored so it never
+  // gets uselessly tiny. Everything downstream (inner scale, height cap, box width)
+  // derives from this, so the tile stays self-consistent at any width.
+  const vw = (typeof window !== 'undefined' && window.innerWidth) || 1024;
+  const THUMB_W = vw <= 560 ? Math.max(132, Math.floor((vw - 48 - 16) / 2)) : 200;
 
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, title));
@@ -274,7 +280,10 @@ export function pagedPreviewCard(pages, opts = {}) {
     grid.appendChild(fig);
     // Scale the full-width sheet down to a thumbnail (like the PDF page grid),
     // sizing the clip box from the laid-out page height - capped so a tall
-    // spreadsheet stays a compact tile.
+    // spreadsheet stays a compact tile. Width is driven here (not just CSS) so the
+    // responsive THUMB_W above stays in step with the inner scale.
+    fig.style.width = THUMB_W + 'px';
+    box.style.width = THUMB_W + 'px';
     const scale = THUMB_W / PAGE_W;
     inner.style.transform = 'scale(' + scale + ')';
     const h = pages[i].offsetHeight || PAGE_H;

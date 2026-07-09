@@ -81,6 +81,10 @@ export function hideSuggestPopup() {
   _suggestActive = false;
 }
 export function showSuggestPopup(ext) {
+  // Suppressed while the compare view renders each file off-screen: an unrecognised
+  // file there must not pop the single-file "suggest this format" nudge (it belongs
+  // to the normal one-file analyse flow, and would fire once per compared file).
+  if (window._anrSuppressSuggest) return;
   _suggestActive = true;
   const clean = (ext || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
   const label = clean ? ('.' + clean.toUpperCase()) : 'this file type';

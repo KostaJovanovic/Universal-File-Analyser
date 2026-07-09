@@ -951,11 +951,14 @@ function buildViewer(data, opts = {}) {
         vVis = uVis[int(aType + 0.5)] * uFilVis[int(aTool + 0.5)];
       } }`;
   const fsInst = `precision mediump float; varying float vT, vVis, vTool; varying vec3 vN, vColor, vEyeN, vEyeP;
-    uniform float uClip, uAlpha, uIsoMode, uIsoTool, uReal, uDim;
+    uniform float uClip, uAlpha, uIsoMode, uIsoTool, uIsoTool2, uReal, uDim;
     void main(){ if(vT > uClip) discard; if(vVis < 0.5) discard;
-      // Isolate pass: 1 = draw only the current tool, 2 = draw only the others.
+      // Isolate pass: 1 = draw only uIsoTool, 2 = draw everything EXCEPT uIsoTool and
+      // uIsoTool2 (the second exclusion lets a tool-change crossfade draw the outgoing
+      // and incoming tools in their own ramped passes without them showing here too).
       if(uIsoMode > 0.5){ bool cur = abs(vTool - uIsoTool) < 0.5;
-        if(uIsoMode < 1.5){ if(!cur) discard; } else { if(cur) discard; } }
+        if(uIsoMode < 1.5){ if(!cur) discard; }
+        else { if(cur || abs(vTool - uIsoTool2) < 0.5) discard; } }
       if(uReal > 0.5){
         // Realistic view: OrcaSlicer-style two fixed (eye-space) lights, Blinn-Phong
         // with a glossy filament sheen so beads read as deposited plastic.
@@ -1060,7 +1063,16 @@ function buildViewer(data, opts = {}) {
     // restX/Y/Z carry the head's resting tool point (RAW mm; drawImpl normalises) for when
     // it sits at a move boundary and isn't mid-glide - travel-aware, so it doesn't snap back
     // to the last *extrusion* endpoint when the tool actually rests at a travel endpoint.
-    follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, headLive: false, headToolRank: 1, headToolNum: 0, headToolRaw: 0, toolMarkers: true, isoTool: false, isoAlpha: 0.22, real: false, restX: 0, restY: 0, restZ: 0, restValid: false, pauseText: '' };
+    follow: 0, headX: 0, headY: 0, headZ: 0, headValid: false, headLive: false, headToolRank: 1, headToolNum: 0, headToolRaw: 0, toolMarkers: true, isoTool: false, isoAlpha: 0.22, real: false, restX: 0, restY: 0, restZ: 0, restValid: false, pauseText: '',
+    // "Dim other tools" crossfade: when the head switches tools, the outgoing tool eases
+    // from solid to translucent and the incoming one the other way, over ISO_FADE_S rather
+    // than snapping. isoCurTool = tool now solid, isoFadeTool = the one fading out,
+    // isoFadeT = 0..1 progress (1 = settled, no fade in flight).
+    // isoNoFade suppresses the crossfade for the deterministic clip export (which drives
+    // draw() directly, so isoFadeT would never advance and a fade would freeze mid-blend).
+    // isoEndRelease: set when playback runs to completion - eases every dimmed tool back to
+    // full (isoEndT 0->1) so the finished build shows normally; cleared on play/scrub.
+    isoCurTool: null, isoFadeTool: null, isoFadeT: 1, isoNoFade: false, isoEndT: 0, isoEndRelease: false };
   let viewW = 600, viewH = 420;   // CSS px, for screen-space size in the shader
   let dirty = true;
   let disposed = false;
@@ -1097,7 +1109,7 @@ function buildViewer(data, opts = {}) {
     const L = (n) => gl.getAttribLocation(prog, n);
     const aEnd = L('aEnd'), aSr = L('aSr'), aSu = L('aSu'), aA = L('aA'), aB = L('aB'), aHW = L('aHW'), aHH = L('aHH'), aFeed = L('aFeed'), aType = L('aType'), aTool = L('aTool');
     const U = (n) => gl.getUniformLocation(prog, n);
-    const uMVP = U('uMVP'), uModel = U('uModel'), uMV = U('uMV'), uReal = U('uReal'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uFilVis = U('uFilVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan'), uTypeBias = U('uTypeBias'), uIsoMode = U('uIsoMode'), uIsoTool = U('uIsoTool'), uIsoUseType = U('uIsoUseType'), uDim = U('uDim');
+    const uMVP = U('uMVP'), uModel = U('uModel'), uMV = U('uMV'), uReal = U('uReal'), uViewport = U('uViewport'), uYmin = U('uYmin'), uYspan = U('uYspan'), uFmin = U('uFmin'), uFspan = U('uFspan'), uClip = U('uClip'), uMode = U('uMode'), uTravel = U('uTravel'), uVis = U('uVis'), uFilVis = U('uFilVis'), uMinW = U('uMinW'), uMinPx = U('uMinPx'), uFlat = U('uFlat'), uAlpha = U('uAlpha'), uFilCols = U('uFilCols'), uWmin = U('uWmin'), uWspan = U('uWspan'), uTypeBias = U('uTypeBias'), uIsoMode = U('uIsoMode'), uIsoTool = U('uIsoTool'), uIsoTool2 = U('uIsoTool2'), uIsoUseType = U('uIsoUseType'), uDim = U('uDim');
 
     const bindTemplate = () => {
       gl.bindBuffer(gl.ARRAY_BUFFER, tplBuf);
@@ -1278,6 +1290,14 @@ function buildViewer(data, opts = {}) {
         const segIdx = Math.max(0, Math.min(shown, segN - 1));
         const raw = instData[segIdx * STR + toolOff] | 0;
         state.headToolRaw = raw;   // for the "Dim other tools" isolate pass (toggle-independent)
+        // Arm a crossfade whenever the isolated tool changes: remember the tool we were
+        // solid on as the one to fade out, and reset progress. Only while iso is on and
+        // after the first tool is established (isoCurTool != null), so turning iso on or
+        // the initial frame doesn't fade in from nothing.
+        if (state.isoTool) {
+          if (state.isoNoFade || state.isoCurTool == null) { state.isoCurTool = raw; state.isoFadeTool = null; state.isoFadeT = 1; }
+          else if (raw !== state.isoCurTool) { state.isoFadeTool = state.isoCurTool; state.isoCurTool = raw; state.isoFadeT = 0; }
+        }
         if (state.toolMarkers) { state.headToolRank = rankMap.get(raw) || 1; state.headToolNum = rawToNum(raw); }
         else { state.headToolRank = 1; state.headToolNum = 0; }
       } else { state.headToolRank = 1; state.headToolNum = 0; state.headToolRaw = 0; }
@@ -1294,6 +1314,7 @@ function buildViewer(data, opts = {}) {
       gl.uniform1f(uMinW, state.minWidth === 'all' ? 1 : 0); gl.uniform1f(uMinPx, 1.3); gl.uniform1f(uFlat, state.flatten ? 1 : 0);
       gl.uniform1f(uAlpha, 1); gl.uniform1f(uDim, 1);
       gl.uniform1f(uIsoUseType, isCNC ? 1 : 0); gl.uniform1f(uIsoMode, 0);
+      gl.uniform1f(uIsoTool2, -1);   // no second exclusion unless a crossfade sets one
       gl.uniform1f(uWmin, wHalfMin); gl.uniform1f(uWspan, wSpan);
       if (uFilCols) gl.uniform3fv(uFilCols, filCols);
       if (uVis) gl.uniform1fv(uVis, state.vis);
@@ -1367,15 +1388,42 @@ function buildViewer(data, opts = {}) {
       // faded layer shows instead of many stacking their alpha along the view ray - that
       // stacking is what made dense regions and the silhouette bloom into a glow. Result:
       // see-through, but without the bloom.
-      if (state.isoTool && multiTool) {
-        gl.uniform1f(uIsoTool, state.headToolRaw | 0);
-        gl.uniform1f(uIsoMode, 1);                                  // pass 1: current tool, full brightness, opaque
-        bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
-        drawPartial();
-        gl.uniform1f(uIsoMode, 2); gl.uniform1f(uAlpha, state.isoAlpha);  // pass 2: other tools, translucent (depth writes stay on; isoAlpha ramps to 1 for the tail fade-back)
-        gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-        bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
-        gl.disable(gl.BLEND); gl.uniform1f(uAlpha, 1);
+      if (state.isoTool && multiTool && state.isoEndT < 1) {
+        // As the build completes, the dimmed tools ease back to full (isoEndT 0->1) so the
+        // finished model reads normally; othersA is their live translucency. At isoEndT>=1
+        // this branch is skipped entirely and everything draws solid (the else path).
+        const endS = state.isoEndT > 0 ? state.isoEndT * state.isoEndT * (3 - 2 * state.isoEndT) : 0;
+        const othersA = state.isoAlpha + (1 - state.isoAlpha) * endS;
+        const fading = state.isoFadeT < 1 && state.isoFadeTool != null && state.isoFadeTool !== state.headToolRaw;
+        if (fading) {
+          // Tool-change crossfade. The tool just switched to snaps straight to solid (100%
+          // opacity); only the OUTGOING tool eases down, smoothstepping from solid to
+          // othersA over the fade. Every other tool holds at othersA throughout.
+          const t = state.isoFadeT, s = t * t * (3 - 2 * t);
+          const aOut = 1 - (1 - othersA) * s;       // outgoing: 1 -> othersA
+          // Incoming (now-current) tool: opaque, drawn in the normal solid pass first.
+          gl.uniform1f(uIsoTool, state.headToolRaw | 0);
+          gl.uniform1f(uIsoMode, 1);
+          bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
+          drawPartial();
+          gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          // Everything except the two crossfading tools, held translucent.
+          gl.uniform1f(uIsoMode, 2); gl.uniform1f(uIsoTool2, state.isoFadeTool | 0); gl.uniform1f(uAlpha, othersA);
+          bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
+          // Outgoing tool easing from solid down to translucent.
+          gl.uniform1f(uIsoMode, 1); gl.uniform1f(uIsoTool, state.isoFadeTool | 0); gl.uniform1f(uAlpha, aOut);
+          bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
+          gl.disable(gl.BLEND); gl.uniform1f(uAlpha, 1); gl.uniform1f(uIsoTool2, -1);
+        } else {
+          gl.uniform1f(uIsoTool, state.headToolRaw | 0);
+          gl.uniform1f(uIsoMode, 1);                                  // pass 1: current tool, full brightness, opaque
+          bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
+          drawPartial();
+          gl.uniform1f(uIsoMode, 2); gl.uniform1f(uAlpha, othersA);   // pass 2: other tools, translucent (depth writes stay on; othersA ramps to 1 for the end fade-back)
+          gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
+          gl.disable(gl.BLEND); gl.uniform1f(uAlpha, 1);
+        }
         gl.uniform1f(uIsoMode, 0);
       } else {
         bindInstances(segBuf); inst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 24, shown);
@@ -1536,13 +1584,24 @@ function buildViewer(data, opts = {}) {
     pauseTag.style.top = (sy - 14) + 'px';   // a touch above the tip, clear of the marker
     pauseTag.style.display = '';
   }
-  function loop() {
+  let isoFadeLast = 0;   // wall-clock stamp for advancing the tool-change crossfade
+  const ISO_FADE_S = 0.5;  // "Dim other tools" tool-change crossfade duration
+  function loop(now) {
     if (disposed) return;
     // Free the WebGL context once the card leaves the DOM (new file / SPA nav)
     // rather than leaving it live against the browser's ~16-context cap, which
     // would blank later viewers.
     if (!wrap.isConnected) { dispose(); return; }
     if (state.spin) { state.yaw += 0.003; dirty = true; }
+    // Advance the "Dim other tools" fades by real elapsed time so their speed is
+    // frame-rate independent and continues even when playback itself is paused.
+    const dt = isoFadeLast ? (now - isoFadeLast) / 1000 : 0;
+    if (state.isoFadeT < 1) { state.isoFadeT = Math.min(1, state.isoFadeT + dt / ISO_FADE_S); dirty = true; }
+    // End-of-build fade-back: ease dimmed tools to full when playback completes, snap
+    // back to 0 the moment a scrub / replay re-arms the isolate.
+    if (state.isoEndRelease) { if (state.isoEndT < 1) { state.isoEndT = Math.min(1, state.isoEndT + dt / ISO_FADE_S); dirty = true; } }
+    else if (state.isoEndT !== 0) { state.isoEndT = 0; dirty = true; }
+    isoFadeLast = now || 0;
     if (dirty) { draw(); dirty = false; }
     requestAnimationFrame(loop);
   }
@@ -2111,10 +2170,9 @@ export async function renderGcode(file, resultsEl, opts) {
       // Playback rate in moves/s. A "length" preset scales to the file (G / seconds) so any
       // job finishes in that many seconds; a "lines/s" preset is a fixed rate.
       const lpsForLen = (sec) => Math.max(1, G / sec);
-      // Real-time is the default so playback honours feedrates and dwell / wait holds out
-      // of the box; files with no feedrate data (realTotal === 0) fall back to a fixed
-      // length preset below.
-      let playLps = lpsForLen(20), realtime = true;
+      // Default playback is a fixed 30s run of the whole job (set via choose() below);
+      // real time (honouring feedrates + dwell holds) stays available as a preset.
+      let playLps = lpsForLen(30), realtime = false;
 
       // Apply a fractional global position `gi` (in moves): reveal the ext + travel
       // segments done so far and set the in-progress (partial) move - ext or travel - so
@@ -2158,7 +2216,7 @@ export async function renderGcode(file, resultsEl, opts) {
       };
       let playPos = G, playElapsed = realTotal;
       // Scrub: snap to a whole move (no partial), so dragging only ever shows complete moves.
-      const scrubTo = (gi) => { playPos = Math.max(0, Math.min(G, Math.round(gi))); playElapsed = gTime[Math.min(G, playPos)]; applyGlobal(playPos); };
+      const scrubTo = (gi) => { playPos = Math.max(0, Math.min(G, Math.round(gi))); playElapsed = gTime[Math.min(G, playPos)]; viewer.state.isoEndRelease = false; applyGlobal(playPos); };
 
       let playing = false, playRAF = 0, lastTs = 0, firstPlay = true;
       function stopPlay() { if (!playing) return; playing = false; playBtn.textContent = 'Play'; viewer.state.head = false; viewer.markDirty(); if (playRAF) cancelAnimationFrame(playRAF); playRAF = 0; }
@@ -2171,7 +2229,7 @@ export async function renderGcode(file, resultsEl, opts) {
           // Advance by wall-clock against the real per-move timeline (extrusions AND
           // travels), interpolating within whichever move the clock currently sits in.
           playElapsed += dt;
-          if (playElapsed >= realTotal) { playPos = G; applyGlobal(G); stopPlay(); return; }
+          if (playElapsed >= realTotal) { playPos = G; applyGlobal(G); viewer.state.isoEndRelease = true; stopPlay(); return; }
           let g = Math.max(0, Math.min(G - 1, Math.floor(playPos)));
           while (g < G && gTime[g + 1] <= playElapsed) g++;
           while (g > 0 && gTime[g] > playElapsed) g--;
@@ -2180,7 +2238,7 @@ export async function renderGcode(file, resultsEl, opts) {
           applyGlobal(playPos);
         } else {
           playPos += playLps * dt;
-          if (playPos >= G) { playPos = G; applyGlobal(G); stopPlay(); return; }
+          if (playPos >= G) { playPos = G; applyGlobal(G); viewer.state.isoEndRelease = true; stopPlay(); return; }
           applyGlobal(playPos);
         }
         playRAF = requestAnimationFrame(stepPlay);
@@ -2195,6 +2253,7 @@ export async function renderGcode(file, resultsEl, opts) {
         // continue from where it is.
         if (firstPlay) { firstPlay = false; viewer.resetView(); if (viewer.hasTravel) setTravel(true); }
         if (playPos >= G) scrubTo(0);   // replay from the start
+        viewer.state.isoEndRelease = false;   // a fresh play run re-dims to the isolate
         playing = true; lastTs = 0; playBtn.textContent = 'Pause'; viewer.state.head = true; viewer.markDirty();
         const g = Math.min(G, Math.floor(playPos)), dur = g < G ? gTime[g + 1] - gTime[g] : 0;
         playElapsed = gTime[g] + (playPos - g) * dur;   // sync the real-time clock to the resume point
@@ -2244,7 +2303,7 @@ export async function renderGcode(file, resultsEl, opts) {
         const b = el('button', { type: 'button', class: 'anr-btn anr-spd-opt' }, s + 's');
         b.addEventListener('click', () => { choose(lpsForLen(s), 'whole job in ' + s + 's', b); closeSpd(); });
         allPresetBtns.push(b); lenCol.appendChild(b);
-        if (s === 20) defBtn = b;
+        if (s === 30) defBtn = b;
       }
       // Real time: play each move at its true duration. Show the total so it's clear
       // how long that is before committing to it.
@@ -2288,10 +2347,10 @@ export async function renderGcode(file, resultsEl, opts) {
       document.addEventListener('click', (e) => { if (!spdWrap.contains(e.target) && !spdPanel.contains(e.target)) closeSpd(); });
       document.addEventListener('fullscreenchange', () => closeSpd());   // dock back when entering/leaving fullscreen
       spdWrap.appendChild(spdBtn); spdWrap.appendChild(spdPanel);
-      // Default to real time (honours feedrates + pauses); fall back to a fixed length
-      // preset when the file carries no feedrate data to time against.
-      if (realTotal > 0) chooseReal(rtBtn);
-      else choose(playLps, 'whole job in 20s', defBtn);
+      // Default the whole job to a fixed 30s playback (real time stays available as a
+      // preset, and the real-time button is still selectable when the file carries
+      // feedrate data). defBtn is the 30s length preset.
+      choose(lpsForLen(30), 'whole job in 30s', defBtn);
 
       progSlider.addEventListener('input', () => { stopPlay(); scrubTo(G * (+progSlider.value) / 1000); });
 
@@ -2380,6 +2439,11 @@ export async function renderGcode(file, resultsEl, opts) {
       isoBtn.addEventListener('click', () => {
         const on = !viewer.state.isoTool;
         viewer.state.isoTool = on;
+        // Snap (no crossfade) when the toggle itself flips - re-baseline the tracked tool
+        // to whatever is at the head so it settles instantly; the crossfade only smooths
+        // tool changes that happen while iso is already on.
+        viewer.state.isoCurTool = on ? (viewer.state.headToolRaw | 0) : null;
+        viewer.state.isoFadeTool = null; viewer.state.isoFadeT = 1;
         isoBtn.classList.toggle('is-active', on);
         viewer.markDirty();
       });
@@ -2406,7 +2470,7 @@ export async function renderGcode(file, resultsEl, opts) {
         // mirror live viewer-state flags (ortho / showBed / showTravel / isoTool) and are
         // re-seeded from the viewer each time the popup opens, so the export defaults to
         // whatever the user set in the normal viewer but can be overridden here.
-        const clipCfg = { dur: 10, aspect: '16:9', size: 720, fps: 60, quality: 0.18, reset: true, orbit: true, follow: false, overlay: true, persp: true, bed: true, travel: false, dim: false };
+        const clipCfg = { dur: 10, aspect: '16:9', size: 1080, fps: 60, quality: 0.18, reset: true, orbit: true, follow: false, overlay: true, persp: true, bed: true, travel: false, dim: false };
         // Single definition of the four toggles that mirror viewer state. `cfg` is the
         // clipCfg key, `st` the viewer.state flag; `get` reads state -> clip value (to
         // seed the popup), `put` writes clip value -> state (on export). Some invert
@@ -2587,6 +2651,7 @@ export async function renderGcode(file, resultsEl, opts) {
         async function renderClip() {
           if (clipBusy || !viewer.ok) return;
           clipBusy = true; clipBtn.disabled = true;
+          viewer.state.isoNoFade = true;   // deterministic frames: no per-frame tool-change crossfade
           stopPlay();
           playBtn.disabled = true; progSlider.disabled = true;   // they'd fight the frame loop
           const [W, H] = clipDims();
@@ -2890,6 +2955,8 @@ export async function renderGcode(file, resultsEl, opts) {
             v.setExportSize(0, 0);
             Object.assign(v.state, saved);
             v.setSpin(savedSpin);
+            v.state.isoNoFade = false;   // re-enable live tool-change crossfades
+            v.state.isoFadeT = 1; v.state.isoFadeTool = null; v.state.isoCurTool = v.state.isoTool ? (v.state.headToolRaw | 0) : null;
             scrubTo(savedPos);
             playBtn.disabled = false; progSlider.disabled = false;
             clipBusy = false; clipBtn.disabled = false;

@@ -20,9 +20,24 @@ Most "file inspector" sites work by uploading your file to a server, which is ex
 
 ## What it can open
 
-Analyser recognises **~1,000 file types**. The depth varies by format: photos, audio, video, documents, 3D models, archives, maps and databases get full viewers and deep analysis, while hundreds of proprietary formats are identified by magic bytes with their header metadata decoded. Anything still unknown gets a hex dump and best-effort identification.
+Analyser recognises **over 1,350 file types**. The depth varies by format: photos, audio, video, documents, 3D models, archives, maps and databases get full viewers and deep analysis, while hundreds of proprietary formats are identified by magic bytes with their header metadata decoded. Anything still unknown gets a hex dump and best-effort identification.
 
-The full, searchable list is at [lab.valjdakosta.com/formats](https://lab.valjdakosta.com/formats), with a guide page for every supported extension.
+The full, searchable list is at [lab.valjdakosta.com/formats](https://lab.valjdakosta.com/formats), with a guide page for every supported extension. There is also a [compare page](https://lab.valjdakosta.com/compare) that runs two files through the same analysis side by side and highlights every field where they differ, and a [samples gallery](https://lab.valjdakosta.com/samples) of example files to try.
+
+## Beyond identification
+
+Identifying a file is just the entry point. Some of the deeper tools built in:
+
+- **File recovery** - repair truncated or corrupt JPEG/PNG files, rebuild a damaged JPEG header using a reference photo from the same camera, carve embedded images out of any blob, and salvage unfinalised MP4/MOV recordings with no index by extracting the raw H.264/H.265 stream (with a reference clip as donor if needed).
+- **Photos** - EXIF and GPS readout, histograms, OCR, QR-code detection, HEIC and camera-RAW conversion, and a "sonify" mode that turns the image into sound.
+- **Audio** - waveform and spectrogram views (down into the sub-20 Hz range), codec and loudness analysis, frequency isolation and reversed playback.
+- **Video** - per-frame and stream analysis with scrubbing synced between the player and the readouts.
+- **3D, CAD and manufacturing** - STL and STEP/IGES viewers, DWG drawings, SolidWorks and Fusion 360 packages, and a G-code toolpath simulator that can export shareable video clips of the print.
+- **Creative project files** - After Effects, Premiere, DaVinci Resolve and VEGAS projects, EDL/FCPXML/OTIO timelines, PSD and Illustrator files, colour LUTs, font specimens, Lottie animations, MIDI scores, subtitles and lyrics.
+- **Electronics** - PCB projects, schematics, SPICE and IPC netlists.
+- **Forensics and data** - CRC-32, MD5, SHA-1, SHA-256 and SHA-512 hashes, a network-indicator (OSINT) card that pulls URLs, IPs, domains and emails out of any file into click-to-open lookup links (nothing is contacted automatically), plus viewers for SQLite databases, git objects, emails and disk images, and a JSON export of the full analysis.
+- **Folders and archives** - browse ZIP, 7z, RAR and whole dropped folders with a treemap size breakdown; comics (CBZ/CBR), e-books (EPUB/MOBI), DjVu scans and Jupyter notebooks get proper readers.
+- **Geodata** - GPX tracks, KML and GeoJSON plotted on a map, rendered locally.
 
 ## Privacy
 
@@ -58,7 +73,7 @@ Deployment is just static assets on Cloudflare; every push to `main` ships.
 server.bat
 ```
 
-This starts a local instance on localhost:3000 and opens it in a browser. It keeps 100% of the functionality since everything was built to be server-independant. The printed network URL also works for phone testing on the same Wi-Fi.
+This starts a local instance on localhost:3000 and opens it in a browser. It keeps 100% of the functionality since everything was built to be server-independent. The printed network URL also works for phone testing on the same Wi-Fi.
 
 There is nothing to install and nothing to build; editing a file and refreshing is the whole dev loop.
 
@@ -75,7 +90,7 @@ There is nothing to install and nothing to build; editing a file and refreshing 
 
 ## Versioning
 
-Every commit is its own version (currently in the 2.x era), stamped automatically at commit time. The full history, one entry per commit, is on the [changelog](https://lab.valjdakosta.com/patch).
+Every commit is its own version (currently in the 5.x era), stamped automatically at commit time. The full history, one entry per commit, is on the [changelog](https://lab.valjdakosta.com/patch).
 
 ## Credits
 

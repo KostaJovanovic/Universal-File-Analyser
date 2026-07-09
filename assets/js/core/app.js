@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 188;
+const COMMIT_COUNT = 189;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -34,6 +34,7 @@ import { renderSvg } from '../renderers/svg.js';
 import { renderLottie } from '../renderers/lottie.js';
 import { renderCsv } from '../renderers/csv.js';
 import { renderUnknown } from '../renderers/unknown.js';
+import { renderCompare } from '../renderers/compare.js';
 import { renderProprietary, isProprietaryExt, extractPeIcon } from '../renderers/proprietary.js';
 import { renderDocx } from '../renderers/docx.js';
 import { renderXlsx } from '../renderers/xlsx.js';
@@ -942,6 +943,71 @@ function envSecretWarning(file) {
     'secret inside it now.',
   ]));
   return box;
+}
+
+// The full routing resolution handleFile performs, minus the DOM work: start from
+// classifyFile (extension/MIME), then the same byte-sniffing reroutes - the SPICE
+// .raw disambiguation, the ambiguous-extension VARIANT_REROUTE, and (crucially)
+// resolveByContent for 'unknown'/'extensionless', which is what turns a PDF/ZIP/
+// image with no recognised extension into its real kind. classifyFile alone
+// returns 'unknown' for a .pdf, so anything that routes without this (e.g. the
+// compare view) would fall to the hex-dump renderer. Async; returns a kind key.
+async function resolveKind(file) {
+  let kind = classifyFile(file);
+  if (kind === 'photo' && fileExt(file.name) === 'raw') {
+    try { if (await sniffSpiceRaw(file)) kind = 'spice'; } catch (_) {}
+  }
+  const vr = VARIANT_REROUTE[fileExt(file.name)];
+  if (vr) {
+    try {
+      const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
+      let txt = ''; for (let i = 0; i < head.length; i++) txt += String.fromCharCode(head[i]);
+      const vname = detectVariant(fileExt(file.name), head, txt);
+      if (vname && vname !== vr.primary) kind = vr.to;
+    } catch (_) {}
+  }
+  if (kind === 'unknown' || kind === 'extensionless') {
+    try {
+      const r = await resolveByContent(file);
+      if (r.kind && r.kind !== 'unknown') kind = r.kind;
+    } catch (_) {}
+  }
+  return kind;
+}
+
+// The per-file "extras" handleFile renders AROUND the core renderer: the dotenv
+// secrets warning, the signature-vs-extension and trailing-data forensic cards,
+// and the browse-as-archive tree for files that are physically a zip/rar/7z (APK,
+// JAR, DOCX, ...). Factored out so the compare view renders the same depth as a
+// normal single-file analysis. Renders into `container`; `kind` gates the archive
+// embed exactly as handleFile does (skip media, the dedicated ZIP view, Fusion360).
+async function renderFileExtras(file, container, kind) {
+  if (!container) return;
+  const media = kind === 'photo' || kind === 'audio' || kind === 'video';
+  try {
+    if (isEnvFile(file.name)) container.insertBefore(envSecretWarning(file), container.firstChild);
+    const sniff = await sniffFileType(file);
+    const sig = await signatureCheck(file, sniff);
+    if (sig) container.insertBefore(signatureCard(sig), container.firstChild);
+    const trail = await trailingDataCheck(file, sniff);
+    if (trail) {
+      const tCard = trailingCard(trail, file);
+      const integ = findIntegrityCard(container);
+      if (integ) container.insertBefore(tCard, integ); else container.appendChild(tCard);
+    }
+    if (sniff && !media && kind !== 'zip' && kind !== 'f3d') {
+      let embed = null;
+      if (sniff.ext === 'zip') embed = { mode: 'zip', label: 'ZIP' };
+      else if (sniff.ext === 'rar') embed = { mode: 'libarchive', label: 'RAR' };
+      else if (sniff.ext === '7z') embed = { mode: 'libarchive', label: '7-Zip' };
+      else if (sniff.ext === 'a') embed = { mode: 'ar', label: 'Library' };
+      else if (['tar', 'gz', 'xz', 'zst', 'bz2', 'lz4', 'lzma', 'z'].includes(sniff.ext)) {
+        const NICE = { gz: 'GZIP', zst: 'Zstandard', bz2: 'BZIP2', lzma: 'LZMA', z: 'compress (.Z)' };
+        embed = { mode: 'compressed', label: NICE[sniff.ext] || sniff.ext.toUpperCase() };
+      }
+      if (embed) await renderArchiveEmbedded(file, container, embed);
+    }
+  } catch (_) { /* extras are best-effort - never break the core analysis */ }
 }
 
 // kind → how to route it. `results` names the container (the three media kinds
@@ -2568,6 +2634,81 @@ window._anrReadableText = isReadableText;
   }
   wireExportButton();
 
+  // ----- Compare two files (the /compare page) -----
+  // compare.html carries two dropzones (A/B). Each captures one File WITHOUT going
+  // through handleFile; the comparison then runs AUTOMATICALLY as soon as both are
+  // in (no button), rendering both full analyses merged field-by-field into
+  // #unknownResults via renderers/compare.js. All of this stays inert on any page
+  // without the compare zones (the wiring guards on them).
+  let _cmpA = null, _cmpB = null, _cmpBusy = false, _cmpAgain = false;
+  // Auto-run once both files are present - and again if either is swapped while a
+  // comparison is still rendering. Runs are serialised so two never interleave in
+  // the shared results container.
+  const maybeCompare = () => {
+    if (!(_cmpA && _cmpB)) return;
+    if (_cmpBusy) { _cmpAgain = true; return; }
+    runCompare();
+  };
+  async function runCompare() {
+    _cmpBusy = true; _cmpAgain = false;
+    try { await handleCompare(); }
+    finally { _cmpBusy = false; if (_cmpAgain && _cmpA && _cmpB) runCompare(); }
+  }
+
+  const wireCompareZone = (dropEl, inputEl, onSet) => {
+    if (!dropEl || !inputEl || dropEl._cmpWired) return;
+    dropEl._cmpWired = true;
+    const nameSlot = dropEl.querySelector('[data-cmp-name]');
+    const set = (file) => {
+      if (!file) return;
+      onSet(file);
+      if (nameSlot) nameSlot.textContent = file.name + ' (' + fmtBytes(file.size) + ')';
+      dropEl.classList.add('is-set');
+    };
+    inputEl.addEventListener('change', () => { if (inputEl.files && inputEl.files[0]) set(inputEl.files[0]); });
+    dropEl.addEventListener('dragover', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault(); e.stopPropagation();   // keep it off the page-wide drop handler
+      dropEl.classList.add('is-dragover');
+    });
+    dropEl.addEventListener('dragleave', () => dropEl.classList.remove('is-dragover'));
+    dropEl.addEventListener('drop', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault(); e.stopPropagation();    // do NOT fall through to handleFile
+      dropEl.classList.remove('is-dragover');
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) set(f);
+    });
+  };
+  wireCompareZone($('cmpDropA'), $('cmpInputA'), (f) => { _cmpA = f; maybeCompare(); });
+  wireCompareZone($('cmpDropB'), $('cmpInputB'), (f) => { _cmpB = f; maybeCompare(); });
+
+  async function handleCompare() {
+    if (!_cmpA || !_cmpB) return;
+    const ur = $('unknownResults');
+    if (!ur) return;
+    // The compare page has no media sections to reset, so skip the full
+    // clearResultsUI/enterLoadedUI transition (which assumes the home layout) -
+    // just refresh the results container and let the dropzones stay in place so
+    // the user can swap a file and compare again.
+    ur.innerHTML = '';
+    ur.hidden = false;
+    // Count BOTH files toward the anonymous analysed tally (extension-only), one
+    // increment each - a comparison analyses two files, so it counts as two, the
+    // same recordAnalysed() the single-file path uses. `supported` mirrors
+    // handleFile: resolved kind !== 'unknown'.
+    for (const f of [_cmpA, _cmpB]) {
+      try { const k = await resolveKind(f); recordAnalysed(fileExt(f.name), k !== 'unknown'); }
+      catch (_) { recordAnalysed(fileExt(f.name), false); }
+    }
+    try {
+      await renderCompare(_cmpA, _cmpB, ur, { classify: resolveKind, routes: ROUTES, ensureExifr, renderExtras: renderFileExtras });
+    } catch (e) {
+      ur.appendChild(el('div', { class: 'anr-error' }, 'Comparison failed: ' + (e && e.message ? e.message : e)));
+    }
+    requestAnimationFrame(() => ur.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
+
   if ($('photoDrop')) initPhoto({
     dropEl:    $('photoDrop'),
     inputEl:   $('photoInput'),
@@ -2761,9 +2902,16 @@ window._anrReadableText = isReadableText;
   // ----- Page-level drag/drop (window listeners added once) -----
   if (!boot._once) {
     let dragCounter = 0;
+    // The /compare page: its two zones (A/B) are the real targets, so the
+    // page-level drop handling is skipped entirely - no full-page overlay to
+    // obscure them, and a stray drop outside the zones is swallowed rather than
+    // routed into the single-file analyse pipeline (which this page has no
+    // sections for). Each zone lights its own .is-dragover instead.
+    const onComparePage = () => !!document.getElementById('cmpDropA');
     window.addEventListener('dragenter', (e) => {
       if (!hasFiles(e)) return;
       dragCounter++;
+      if (onComparePage()) return;
       const drop = $('pageDrop');
       if (drop) drop.hidden = false;
     });
@@ -2779,6 +2927,10 @@ window._anrReadableText = isReadableText;
       if (!hasFiles(e)) return;
       e.preventDefault();
       dragCounter = 0;
+      // On /compare, only the A/B zones (which stopPropagation) should accept a
+      // drop - swallow anything that lands on the page background so it doesn't
+      // fall through to the analyse pipeline.
+      if (onComparePage()) return;
       const drop = $('pageDrop');
       if (drop) drop.hidden = true;
 
