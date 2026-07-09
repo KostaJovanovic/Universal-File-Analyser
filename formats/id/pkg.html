@@ -102,7 +102,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>Apple's flat installer package - a XAR archive. Analyser lists the payload members, the checksum algorithm and the bundle version.</dd></div>
             <div><dt>How to tell it apart</dt><dd>A macOS installer begins with the ASCII magic xar!.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>Apple's flat .pkg is really a XAR archive with an XML table of contents, which let an entire installer become one signable, downloadable file.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Apple's flat .pkg is really a XAR archive with an XML table of contents, which let an entire installer become one signable, downloadable file.</li><li>The flat single-file .pkg arrived with Mac OS X 10.5 Leopard in 2007, replacing the older folder-style bundle packages.</li><li>A .pkg can run pre- and post-install scripts as root, which is exactly why an unsigned installer package is a classic macOS malware vector.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block fmt-variant-card">
@@ -110,7 +110,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>A Bungie Tiger-engine asset package from Destiny and Destiny 2 - audio, models, textures and strings in a proprietary entry/block table. Analyser reads the package id, header version, build date and platform from the header.</dd></div>
             <div><dt>How to tell it apart</dt><dd>A Tiger package starts with the bytes 35 00 02 00 and carries its package id at offset 0x10 (the hex id in the filename).</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>Destiny 2 ships its assets in hundreds of these Tiger-engine packages; the four hex digits in each filename (like 02b8) are the package id stored at offset 0x10 inside.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>Destiny 2 ships its assets in hundreds of these Tiger-engine packages; the four hex digits in each filename (like 02b8) are the package id stored at offset 0x10 inside.</li><li>Because Bungie ships no official mod tools, fans reverse-engineered the Tiger .pkg format to pull out Destiny's models, textures and music, producing extractors like DestinyUnpacker.</li><li>Each package header carries a build date, so the .pkg files can be traced back to the exact game patch that shipped them.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block">

@@ -102,7 +102,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>A compiled object file - relocatable machine code emitted by a C/C++ compiler (COFF on Windows, ELF on Unix) and linked into an executable. Analyser identifies it from its header.</dd></div>
             <div><dt>How to tell it apart</dt><dd>An object file is binary - ELF starts with 7F E L F, COFF with a machine-type word.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>An object file holds machine code with the jump addresses left blank; the linker fills them in when it stitches the objects into an executable.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>An object file holds machine code with the jump addresses left blank; the linker fills them in when it stitches the objects into an executable.</li><li>The two dominant object formats are ELF, introduced with Unix System V Release 4 and now standard on Linux and BSD, and Microsoft's COFF-based format on Windows.</li><li>An object file cannot run on its own - it is an intermediate step, which is why a compiler emits one .obj per source file before the linker combines them.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block fmt-variant-card">
@@ -110,7 +110,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>A Wavefront OBJ 3D model - text geometry (vertices, faces, normals) usually paired with a .mtl material library. Analyser opens it in the interactive WebGL 3D viewer.</dd></div>
             <div><dt>How to tell it apart</dt><dd>A Wavefront model is text starting with v, vn or f lines.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>The OBJ format comes from 1980s Wavefront Advanced Visualizer software, and its plain-text simplicity is exactly why it became the universal 3D interchange format.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>The OBJ format comes from 1980s Wavefront Advanced Visualizer software, and its plain-text simplicity is exactly why it became the universal 3D interchange format.</li><li>OBJ indices are 1-based rather than 0-based, so the very first vertex is referred to as 1 - a frequent source of off-by-one bugs when writing importers.</li><li>OBJ stores only geometry and material references, with no way to record animation, lights, cameras or a scene hierarchy, which is why richer formats like glTF and FBX exist alongside it.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block">

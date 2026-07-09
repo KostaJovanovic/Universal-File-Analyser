@@ -102,7 +102,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>A JavaScript / CSS source map - JSON that maps minified code back to its original sources for debugging. Analyser opens it as structured JSON with an expandable value tree.</dd></div>
             <div><dt>How to tell it apart</dt><dd>A source map is JSON beginning with a brace.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>A source map lets browser dev-tools show your original TypeScript or Sass while the browser runs minified code, using a compact Base64 VLQ encoding to map positions.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>A source map lets browser dev-tools show your original TypeScript or Sass while the browser runs minified code, using a compact Base64 VLQ encoding to map positions.</li><li>A browser only fetches the .map when its developer tools are open, finding it through a //# sourceMappingURL comment left at the foot of the minified file.</li><li>The scheme grew out of Google's Closure Compiler and Inspector work around 2009, with version 3 slashing file sizes by switching to VLQ-encoded position deltas.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block fmt-variant-card">
@@ -110,7 +110,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>A Quake / Source-engine level map - the text brush geometry a level editor (Radiant, Hammer) compiles into a BSP. Analyser opens it as source.</dd></div>
             <div><dt>How to tell it apart</dt><dd>A level map is plain text describing brush entities.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>A Quake .map stores a level as convex 3D 'brushes' that the compiler carves out of solid space, an approach id Software pioneered in 1996.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>A Quake .map stores a level as convex 3D 'brushes' - solid blocks the compiler seals and slices into a BSP tree - an approach id Software introduced with Quake in 1996.</li><li>Turning a .map into a playable level runs three tools in turn - BSP, VIS and light - to carve the geometry, precompute what is visible from where, and bake in the lighting.</li><li>Because every brush must be convex, mappers build concave rooms by clipping or combining several brushes, a constraint that shaped the blocky look of 1990s shooter levels.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block fmt-variant-card">
@@ -118,7 +118,7 @@
           <dl class="about-caps">
             <div><dt>What it is</dt><dd>A linker map file - a text report of symbol addresses and section sizes produced by a compiler toolchain. Analyser opens it as source.</dd></div>
             <div><dt>How to tell it apart</dt><dd>A linker map is plain text laid out as an address/symbol table.</dd></div>
-            <div class="didyouknow"><dt>Did you know</dt><dd>A linker map is often the only record of exactly where each function landed in memory, which is why crash-dump analysis leans on it so heavily.</dd></div>
+            <div class="didyouknow"><dt>Did you know</dt><dd><ul class="dyk-list"><li>A linker map is often the only record of exactly where each function landed in memory, which is why crash-dump analysis leans on it so heavily.</li><li>Embedded developers pore over the .map to see how many bytes of flash and RAM each module eats, since a microcontroller's memory budget is tiny and fixed.</li><li>A linker writes one only on request - GCC with -Map, Microsoft's linker with /MAP - because the report is a build diagnostic the finished program never needs.</li></ul></dd></div>
           </dl>
         </div>
         <div class="about-block">

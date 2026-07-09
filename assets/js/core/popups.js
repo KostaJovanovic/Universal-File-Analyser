@@ -563,8 +563,8 @@ function applyNetStatus(online) {
 // Reflect live connectivity in the header "Status" line. The app is always
 // local-only (nothing is uploaded), but mail / Turnstile need the network, so the
 // status surfaces online vs offline. A clear offline signal short-circuits the
-// probe; otherwise we confirm real reachability. Re-run on boot, on the
-// online/offline events, on tab focus, and on a modest interval (wired in boot).
+// probe; otherwise we confirm real reachability. Called once per boot - there is
+// no interval, focus, visibility or online/offline re-probe (see app.js boot()).
 let _netProbeBusy = false;
 export async function updateNetStatus() {
   if (!navigator.onLine) { applyNetStatus(false); return; }

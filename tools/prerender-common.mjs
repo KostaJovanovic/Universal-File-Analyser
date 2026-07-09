@@ -8,8 +8,9 @@ export const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
 export const escAttr = (s) => esc(s).replace(/"/g, '&quot;');
 
 // The before-first-paint bootstrap script. Path-independent, so it is the
-// single source for every page: stamp-head.mjs stamps it into the 7 hand-authored
-// pages and prerender-format-pages.mjs emits it into every generated guide page.
+// single source for every page: stamp-head.mjs stamps it into the hand-authored
+// pages in its PAGES list (currently 9) and prerender-format-pages.mjs emits it
+// into every generated guide page.
 // It must run last in <head> (after the stylesheet links) to avoid a flash, and
 // before paint to apply the saved/preferred theme AND the "Clear view" low-vision
 // accessibility preference (data-a11y, a permanent anr-a11y key with no expiry) -

@@ -2,8 +2,8 @@
    paint theme bootstrap script - into every main page from one source.
    ============================================================================
    WHY: that tail is byte-identical on every page, and the theme <script> in
-   particular was hand-copied across all 6 pages AND a 7th time inside
-   prerender-format-pages.mjs. A UX/security-sensitive snippet duplicated 7+ ways
+   particular used to be hand-copied across every page AND again inside
+   prerender-format-pages.mjs. A UX/security-sensitive snippet duplicated that many ways
    is a change-it-in-7-places hazard. The script now lives once, as THEME_SCRIPT
    in tools/prerender-common.mjs; this script stamps it (with the stylesheet
    links) into the hand pages, and the generator imports the same const.
@@ -23,9 +23,10 @@ import { THEME_SCRIPT } from './prerender-common.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-// Same "main pages only" scope as stamp-footer, plus test.html (the hidden UI
-// style-guide sheet - it needs the theme bootstrap but keeps its own minimal
-// footer, so it is NOT in stamp-footer's PAGES); the per-format /formats/<ext>
+// stamp-footer's scope MINUS atari.html (it keeps its own hand-authored head)
+// PLUS test.html (the hidden UI style-guide sheet - it needs the theme bootstrap
+// but keeps its own minimal footer, so it is NOT in stamp-footer's PAGES); the
+// per-format /formats/<ext>
 // pages get THEME_SCRIPT directly from prerender-format-pages.mjs instead.
 const PAGES = ['index.html', 'about.html', 'patch.html', 'stats.html', 'privacy.html', 'formats.html', 'samples.html', 'compare.html', 'test.html'];
 

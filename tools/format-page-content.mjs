@@ -37,7 +37,7 @@ export const EXT_PAGES = {
   // ---- Photos ----
   jpg:  { name: 'JPEG image', blurb: 'JPEG is the most widely used photo format, using lossy compression to keep files small. It is the default for most cameras, phones and the web.', fact: 'The JPEG standard was published in 1992 and is still the default photo format on virtually every camera and phone.' },
   jpeg: { name: 'JPEG image', blurb: 'JPEG is the most widely used photo format, using lossy compression to keep files small. It is the default for most cameras, phones and the web.', fact: 'No JPEG can be larger than 65,535 pixels on a side, because the format stores image width and height as 16-bit numbers.' },
-  jif:  { name: 'JPEG image (JIF)', blurb: 'JIF is the original JPEG File Interchange name - an early variant of the JPEG image format, now usually seen as .jpg or .jfif.', fact: 'JIF was the original 1992 JPEG interchange naming, quickly superseded by JFIF and the familiar .jpg.' },
+  jif:  { name: 'JPEG image (JIF)', blurb: 'JIF is the JPEG Interchange Format, the bare image stream defined by the JPEG standard itself - files with this extension are ordinary JPEG images, now usually seen as .jpg or .jfif.', fact: 'JIF was the original 1992 JPEG interchange naming, quickly superseded by JFIF and the familiar .jpg.' },
   jfif: { name: 'JPEG image (JFIF)', blurb: 'JFIF (JPEG File Interchange Format) is a standard JPEG image variant, functionally the same as a .jpg file.', fact: 'JFIF was defined in 1992 to standardise exactly how JPEG image data is stored in a file.' },
   png:  { name: 'PNG image', blurb: 'PNG is a lossless image format with full alpha transparency, ideal for graphics, screenshots and logos.', fact: 'PNG was created in 1996 as a free replacement for GIF, after a patent dispute over the LZW compression GIF used.' },
   gif:  { name: 'GIF image', blurb: 'GIF is an 8-bit (256-colour) image format best known for short looping animations.', fact: 'GIF was introduced by CompuServe in 1987; its looping animations later became a staple of internet culture.' },
@@ -64,7 +64,7 @@ export const EXT_PAGES = {
   x3f:  { name: 'Sigma RAW', blurb: 'X3F is Sigma’s camera RAW format, produced by its Foveon X3 sensors. Opened in Sigma Photo Pro.', fact: 'X3F stores data from Sigma’s unusual three-layer Foveon sensor, which captures colour very differently to ordinary sensors.' },
   '3fr':{ name: 'Hasselblad RAW', blurb: '3FR is Hasselblad’s camera RAW format. Opened in Hasselblad Phocus.', fact: '3FR comes from Hasselblad’s medium-format cameras and digital backs.' },
   iiq:  { name: 'Phase One RAW', blurb: 'IIQ is Phase One’s medium-format camera RAW format (Intelligent Image Quality). Opened in Capture One.', fact: 'IIQ holds the very high resolution raw files from Phase One’s medium-format backs.' },
-  mrw:  { name: 'Minolta RAW', blurb: 'MRW is Minolta’s camera RAW format. Opened in Adobe Lightroom.', fact: 'MRW dates from Minolta’s DSLRs, before Sony took over the camera line in 2006.' },
+  mrw:  { name: 'Minolta RAW', blurb: 'MRW is Minolta’s camera RAW format. Opened in Adobe Lightroom.', fact: 'MRW dates from Minolta’s DiMAGE bridge cameras of 2001 and was later used by its Dynax and Maxxum DSLRs, before Sony took over the camera line in 2006.' },
   nrw:  { name: 'Nikon RAW (NRW)', blurb: 'NRW is a Nikon camera RAW format used by some Coolpix compacts. Opened in Nikon NX Studio or Adobe Lightroom.' },
   rwl:  { name: 'Leica RAW', blurb: 'RWL is Leica’s camera RAW format. Opened in Adobe Lightroom.', fact: 'RWL is the raw format used by several Leica cameras.' },
   crw:  { name: 'Canon RAW (CRW)', blurb: 'CRW is Canon’s original camera RAW format, predating CR2. Opened in Canon Digital Photo Professional.' },
@@ -130,13 +130,13 @@ export const EXT_PAGES = {
   // ---- Editing timelines ----
   edl:    { name: 'Edit Decision List', blurb: 'EDL (Edit Decision List) is a plain-text video-editing format listing cuts and timecodes. Read by DaVinci Resolve, Premiere Pro and most editors.', fact: 'EDLs date back to the 1970s, when they controlled tape-based video editing machines.' },
   fcpxml: { name: 'Final Cut Pro XML', blurb: 'FCPXML is Apple’s Final Cut Pro project interchange format - an XML description of an edit. Created by Final Cut Pro.', fact: 'FCPXML is the interchange format for Final Cut Pro X, introduced by Apple in 2011.' },
-  otio:   { name: 'OpenTimelineIO', blurb: 'OTIO (OpenTimelineIO) is an open editing-timeline interchange format used across film and VFX tools.', fact: 'OpenTimelineIO was created at Pixar and open-sourced in 2018.' },
+  otio:   { name: 'OpenTimelineIO', blurb: 'OTIO (OpenTimelineIO) is an open editing-timeline interchange format used across film and VFX tools.', fact: 'OpenTimelineIO was created at Pixar and open-sourced in 2017.' },
 
   // ---- Subtitles ----
   srt: { name: 'SubRip subtitles', blurb: 'SRT (SubRip) is the most common subtitle format - a simple text file of timed captions. Read by VLC and virtually every media player.', fact: 'The SRT format comes from the SubRip subtitle-ripping tool released around 2000.' },
   vtt: { name: 'WebVTT subtitles', blurb: 'WebVTT (VTT) is the web-standard subtitle format used by HTML5 video.', fact: 'WebVTT was created in 2010 as the captions standard for HTML5 video.' },
   ass: { name: 'ASS subtitles', blurb: 'ASS (Advanced SubStation Alpha) is a styled subtitle format supporting fonts, colours and positioning. Edited with Aegisub.', fact: 'ASS grew out of the anime fansubbing scene in the early 2000s, extending the older SSA format.' },
-  ssa: { name: 'SSA subtitles', blurb: 'SSA (SubStation Alpha) is a styled subtitle format, the predecessor of ASS.', fact: 'SSA was created by the SubStation Alpha editor in 1998 and was later extended into ASS.' },
+  ssa: { name: 'SSA subtitles', blurb: 'SSA (SubStation Alpha) is a styled subtitle format, the predecessor of ASS.', fact: 'SSA was created in 1996 by the SubStation Alpha subtitling tool and was later extended into ASS.' },
 
   // ---- Documents ----
   pdf:  { name: 'PDF document', blurb: 'PDF (Portable Document Format) is a fixed-layout document format for sharing and printing. Created and read by Adobe Acrobat, browsers and countless apps.', fact: 'Adobe co-founder John Warnock created PDF in 1993; it became an open ISO standard in 2008.' },
@@ -151,14 +151,14 @@ export const EXT_PAGES = {
   xls:  { name: 'Excel 97-2003 spreadsheet', blurb: 'XLS is the legacy binary Microsoft Excel format used before Office 2007, storing cells in BIFF records inside an OLE2 compound file.', fact: 'The BIFF8 .xls format was Excel’s default from 1997 until XLSX replaced it in Office 2007.' },
   ppt:  { name: 'PowerPoint 97-2003 presentation', blurb: 'PPT is the legacy binary Microsoft PowerPoint format used before Office 2007, stored as records inside an OLE2 compound file.', fact: 'The binary .ppt format was PowerPoint’s default until PPTX replaced it with Office 2007.' },
   docm: { name: 'Word macro-enabled document', blurb: 'DOCM is a macro-enabled Microsoft Word document - the same zipped XML package as DOCX, but allowed to carry VBA macros.', fact: 'Office uses the M suffix (DOCM/XLSM/PPTM) to mark macro-enabled files so they are not silently trusted.' },
-  dotx: { name: 'Word template', blurb: 'DOTX is a Microsoft Word template - the same zipped XML package as DOCX, used as the starting point for new documents.' },
-  dotm: { name: 'Word macro-enabled template', blurb: 'DOTM is a macro-enabled Microsoft Word template - a DOTX template that may also contain VBA macros.' },
+  dotx: { name: 'Word template', blurb: 'DOTX is a Microsoft Word template - the same zipped XML package as DOCX, used as the starting point for new documents.', fact: 'A DOTX provides the starting layout and styles for new Word documents.' },
+  dotm: { name: 'Word macro-enabled template', blurb: 'DOTM is a macro-enabled Microsoft Word template - a DOTX template that may also contain VBA macros.', fact: 'DOTM is a Word template allowed to contain automation macros.' },
   xlsm: { name: 'Excel macro-enabled workbook', blurb: 'XLSM is a macro-enabled Microsoft Excel workbook - the same zipped XML package as XLSX, but allowed to carry VBA macros.' },
   xlsb: { name: 'Excel binary workbook', blurb: 'XLSB is the binary version of a Microsoft Excel workbook, storing cells in the compact BIFF12 record format instead of XLSX’s XML. It opens and recalculates faster and makes smaller files, so it is popular for very large spreadsheets.', fact: 'XLSB arrived with Excel 2007 alongside XLSX; the two hold the same data, but the binary XLSB opens noticeably faster on big workbooks.' },
   xltx: { name: 'Excel template', blurb: 'XLTX is a Microsoft Excel template - the same zipped XML package as XLSX, used as the starting point for new workbooks.' },
   xltm: { name: 'Excel macro-enabled template', blurb: 'XLTM is a macro-enabled Microsoft Excel template - an XLTX template that may also contain VBA macros.' },
   pptm: { name: 'PowerPoint macro-enabled presentation', blurb: 'PPTM is a macro-enabled Microsoft PowerPoint presentation - the same zipped XML package as PPTX, but allowed to carry VBA macros.' },
-  ppsx: { name: 'PowerPoint slideshow', blurb: 'PPSX is a PowerPoint slideshow - the same zipped XML package as PPTX, set to open straight into the presentation.' },
+  ppsx: { name: 'PowerPoint slideshow', blurb: 'PPSX is a PowerPoint slideshow - the same zipped XML package as PPTX, set to open straight into the presentation.', fact: 'PPSX is PowerPoint’s show-only format, which arrived with Office 2007’s XML files.' },
   ppsm: { name: 'PowerPoint macro-enabled slideshow', blurb: 'PPSM is a macro-enabled PowerPoint slideshow - a PPSX that may also contain VBA macros.' },
   potx: { name: 'PowerPoint template', blurb: 'POTX is a Microsoft PowerPoint template - the same zipped XML package as PPTX, used as the starting point for new presentations.' },
   potm: { name: 'PowerPoint macro-enabled template', blurb: 'POTM is a macro-enabled Microsoft PowerPoint template - a POTX that may also contain VBA macros.' },
@@ -166,7 +166,7 @@ export const EXT_PAGES = {
   ots:  { name: 'OpenDocument spreadsheet template', blurb: 'OTS is an OpenDocument spreadsheet template - the same package as ODS, used as the basis for new spreadsheets.' },
   otp:  { name: 'OpenDocument presentation template', blurb: 'OTP is an OpenDocument presentation template - the same package as ODP, used as the basis for new presentations.' },
   odg:  { name: 'OpenDocument graphics', blurb: 'ODG is the OpenDocument graphics format used by LibreOffice Draw and OpenOffice for vector drawings and diagrams - a zipped XML package.', fact: 'ODG shares the OpenDocument container with ODT, ODS and ODP; its body is an office:drawing of draw:page shapes.' },
-  otg:  { name: 'OpenDocument graphics template', blurb: 'OTG is an OpenDocument graphics template - the same package as ODG, used as the basis for new drawings.' },
+  otg:  { name: 'OpenDocument graphics template', blurb: 'OTG is an OpenDocument graphics template - the same package as ODG, used as the basis for new drawings.', fact: 'OTG is the OpenDocument template behind LibreOffice Draw graphics.' },
 
   // ---- Data ----
   csv:  { name: 'CSV table', blurb: 'CSV is a plain-text table format storing rows of comma-separated values. Opened in Excel, Google Sheets and any text editor.', fact: 'CSV has been used since the earliest days of computing but was only formally documented in 2005, as RFC 4180.' },
@@ -228,7 +228,7 @@ export const EXT_PAGES = {
   sldasm: { name: 'SolidWorks assembly', blurb: 'SLDASM is a SolidWorks assembly: a set of parts positioned and mated together rather than a single body. Analyser reads the preview and metadata from older OLE2 files and identifies the newer encrypted ones. Export to STEP for the 3D viewer.', fact: 'An assembly usually references its parts as separate .sldprt files rather than storing their geometry inside itself.' },
   slddrw: { name: 'SolidWorks drawing', blurb: 'SLDDRW is a SolidWorks drawing - the dimensioned 2D production sheets (views, sections, title block) generated from a part or assembly. Analyser reads the saved preview and metadata from older OLE2 files and identifies the newer encrypted ones.', fact: 'A drawing stays linked to its model, so changing the part updates the drawing views automatically.' },
   '3mf':{ name: '3MF 3D print', blurb: '3MF is a modern 3D-printing format - a zipped package that is richer than STL.', fact: 'The 3MF Consortium, backed by Microsoft, released the format in 2015 to fix STL’s long-standing shortcomings.' },
-  amf:  { name: 'AMF 3D print', blurb: 'AMF (Additive Manufacturing Format) is an XML-based 3D-printing format supporting colour and materials.', fact: 'AMF was published as an ISO/ASTM standard in 2011 as an STL successor, though 3MF has since overtaken it.' },
+  amf:  { name: 'AMF 3D print', blurb: 'AMF (Additive Manufacturing Format) is an XML-based 3D-printing format supporting colour and materials.', fact: 'AMF was first published as an ASTM standard (F2915) in 2011 as an STL successor, though 3MF has since overtaken it.' },
 
   // ---- Archives ----
   zip:  { name: 'ZIP archive', blurb: 'ZIP is the most common archive format, bundling and compressing multiple files into one. Built into Windows, macOS and tools like 7-Zip.', fact: 'Phil Katz created ZIP in 1989 for his PKZIP tool, and it remains the world’s default archive format.' },
@@ -243,14 +243,6 @@ export const EXT_PAGES = {
   // ==========================================================================
 
   // ---- Documents (legacy + open document) ----
-  doc:     { name: 'Word document (legacy)', blurb: 'DOC is the classic Microsoft Word document format. Created and opened by Microsoft Word.', fact: 'DOC was Word’s format from 1983 until DOCX replaced it in 2007.' },
-  xls:     { name: 'Excel spreadsheet (legacy)', blurb: 'XLS is the classic Microsoft Excel spreadsheet format. Created and opened by Microsoft Excel.', fact: 'XLS was Excel’s binary format until XLSX replaced it in 2007.' },
-  ppt:     { name: 'PowerPoint (legacy)', blurb: 'PPT is the classic Microsoft PowerPoint presentation format. Created and opened by Microsoft PowerPoint.', fact: 'PPT was PowerPoint’s format until PPTX replaced it in 2007.' },
-  ppsx:    { name: 'PowerPoint slideshow', blurb: 'PPSX is a PowerPoint file that opens straight into the slideshow, rather than the editor. Created by Microsoft PowerPoint.', fact: 'PPSX is PowerPoint’s show-only format, which arrived with Office 2007’s XML files.' },
-  odt:     { name: 'OpenDocument text', blurb: 'ODT is the OpenDocument word-processing format. Created and opened by LibreOffice Writer and OpenOffice.', fact: 'ODT is the OpenDocument text format used by LibreOffice Writer and OpenOffice, ratified as a standard in 2006.' },
-  ods:     { name: 'OpenDocument spreadsheet', blurb: 'ODS is the OpenDocument spreadsheet format. Created and opened by LibreOffice Calc.', fact: 'ODS is the OpenDocument spreadsheet used by LibreOffice Calc, ratified as a standard in 2006.' },
-  odp:     { name: 'OpenDocument presentation', blurb: 'ODP is the OpenDocument presentation format. Created and opened by LibreOffice Impress.', fact: 'ODP is the OpenDocument presentation used by LibreOffice Impress, ratified as a standard in 2006.' },
-  odg:     { name: 'OpenDocument drawing', blurb: 'ODG is the OpenDocument drawing format. Created and opened by LibreOffice Draw.', fact: 'ODG is the OpenDocument drawing used by LibreOffice Draw, ratified as a standard in 2006.' },
   rtf:     { name: 'Rich Text Format', blurb: 'RTF is a portable rich-text document format. Opened by WordPad, Microsoft Word and most word processors.', fact: 'Microsoft created RTF in 1987, and it still opens in WordPad, Word and almost every word processor.' },
   pages:   { name: 'Apple Pages document', blurb: 'A Pages file is a document from Apple’s word processor. Created and opened by Apple Pages.', fact: 'Pages launched in 2005 as part of Apple’s iWork suite.' },
   numbers: { name: 'Apple Numbers spreadsheet', blurb: 'A Numbers file is a spreadsheet from Apple’s iWork suite. Created and opened by Apple Numbers.', fact: 'Numbers was introduced by Apple in 2007.' },
@@ -259,15 +251,13 @@ export const EXT_PAGES = {
   // ---- Adobe ----
   psd:        { name: 'Photoshop document', blurb: 'PSD is Adobe Photoshop’s native layered image format. Created and opened by Adobe Photoshop.', fact: 'PSD is Photoshop’s native format; Photoshop first shipped in 1990 and effectively created the digital-imaging industry.' },
   psb:        { name: 'Photoshop big document', blurb: 'PSB is Photoshop’s large-document format for huge images. Created and opened by Adobe Photoshop.', fact: 'PSB was added in Photoshop CS (2003) to handle files beyond 30,000 pixels or 2 GB.' },
-  ai:         { name: 'Adobe Illustrator artwork', blurb: 'AI is Adobe Illustrator’s native vector artwork format. Created and opened by Adobe Illustrator.', fact: 'Illustrator launched in 1987 and was one of the first apps designed for Apple’s Macintosh.' },
+  ai:         { name: 'Adobe Illustrator artwork', blurb: 'AI is Adobe Illustrator’s native vector artwork format. Created and opened by Adobe Illustrator.', fact: 'Illustrator launched in 1987 as Adobe’s first desktop application and one of the first PostScript-based drawing tools.' },
   aep:        { name: 'After Effects project', blurb: 'AEP is Adobe After Effects’ native project file, holding the compositions, layers, effects and references to the footage used in a motion-graphics or VFX project. Created and opened by Adobe After Effects.', fact: 'An AEP is a RIFX (big-endian RIFF) file whose form type is the playful four characters "Egg!".' },
   aet:        { name: 'After Effects template', blurb: 'AET is an Adobe After Effects project template - the same RIFX project structure as an AEP, saved as a reusable starting point. Created and opened by Adobe After Effects.', fact: 'AET templates open as a fresh untitled project, so an artist can ship a reusable comp setup without the original being overwritten.' },
   indd:       { name: 'InDesign document', blurb: 'INDD is an Adobe InDesign page-layout document. Created and opened by Adobe InDesign.', fact: 'InDesign launched in 1999 as Adobe’s replacement for PageMaker.' },
   indt:       { name: 'InDesign template', blurb: 'INDT is an Adobe InDesign template, used to start new documents. Created and opened by Adobe InDesign.', fact: 'InDesign 2.0, released in January 2002, was the first desktop-publishing application to run natively on Mac OS X.' },
   idml:       { name: 'InDesign Markup', blurb: 'IDML is InDesign’s XML-based interchange format, used to move layouts between versions. Created by Adobe InDesign.', fact: 'IDML is Adobe InDesign’s interchange format, which replaced the older INX around 2008.' },
-  aep:        { name: 'After Effects project', blurb: 'AEP is an Adobe After Effects project file. Created and opened by Adobe After Effects.', fact: 'After Effects began in 1993 and is the standard tool for motion graphics and VFX compositing.' },
   aepx:       { name: 'After Effects project (XML)', blurb: 'AEPX is the XML form of an After Effects project. Created and opened by Adobe After Effects.', fact: 'The XML project format behind .aepx arrived with After Effects CS4 in 2008, aimed at automation workflows where scripts edit project details without ever launching the application.' },
-  aet:        { name: 'After Effects template', blurb: 'AET is an Adobe After Effects project template. Created and opened by Adobe After Effects.', fact: 'Five of After Effects’ original developers received an Academy Scientific and Engineering Award in 2019, recognising the program’s design and its role in film title work and screen graphics.' },
   prproj:     { name: 'Premiere Pro project', blurb: 'PRPROJ is an Adobe Premiere Pro video-editing project. Created and opened by Adobe Premiere Pro.', fact: 'Adobe Premiere first appeared in 1991, one of the earliest software video editors.' },
   prel:       { name: 'Premiere Elements project', blurb: 'PREL is an Adobe Premiere Elements project - the consumer version of Premiere Pro. Created and opened by Premiere Elements.', fact: 'Premiere Elements is the simplified, home-user edition of Adobe’s Premiere video editor.' },
   gcsv:       { name: 'Gyroflow IMU log', blurb: 'GCSV is Gyroflow’s generic IMU-log format, holding the per-sample gyroscope and accelerometer readings used to stabilise video footage. Created and read by Gyroflow.', fact: 'Gyroflow is an open-source video stabiliser that uses a camera’s gyro data, and the .gcsv format lets any device feed it motion data.' },
@@ -317,14 +307,9 @@ export const EXT_PAGES = {
   kicad_pro:  { name: 'KiCad project', blurb: 'A .kicad_pro is a KiCad project file - the JSON settings that tie a schematic and board together, with the design rules and net classes. Created and opened by KiCad.', fact: 'Since KiCad 6 the project file is JSON, holding the net classes, design rules and layer presets the schematic and board share.' },
   kicad_prl:  { name: 'KiCad local settings', blurb: 'A .kicad_prl is KiCad per-user local project settings - the saved view, selection and tool state that is not shared in version control. Created and opened by KiCad.', fact: 'KiCad splits project data in two: the shared .kicad_pro and the per-user .kicad_prl that holds your local UI state.' },
   ipc:        { name: 'IPC-D-356 netlist', blurb: 'An .ipc file is an IPC-D-356A bare-board fabrication and electrical-test netlist - a list of every test point on a PCB, the net it belongs to, the component pin or via and its position. Exported by PCB tools such as KiCad and Altium for the fab house.', fact: 'The fab house loads an IPC-356 netlist into a flying-probe or bed-of-nails tester to check the bare board for shorts and opens before any parts are fitted.' },
-  sldprt:     { name: 'SolidWorks part', blurb: 'SLDPRT is a single-part 3D model from SolidWorks. Created and opened by SolidWorks.', fact: 'SolidWorks launched in 1995 and made 3D mechanical CAD affordable on Windows PCs.' },
-  sldasm:     { name: 'SolidWorks assembly', blurb: 'SLDASM is a SolidWorks assembly of several parts. Created and opened by SolidWorks.', fact: 'Parts in a .sldasm are held together with mates - geometric relations such as coincident, concentric and parallel that also define how the mechanism can move.' },
-  slddrw:     { name: 'SolidWorks drawing', blurb: 'SLDDRW is a 2D engineering drawing from SolidWorks. Created and opened by SolidWorks.', fact: 'Dassault Systèmes, the French company behind CATIA, bought SolidWorks in 1997 for about 310 million dollars in stock.' },
   sldreg:     { name: 'SolidWorks settings backup', blurb: 'SLDREG is a settings backup exported by the SolidWorks Settings Wizard - a Windows registry export of your SolidWorks preferences. Created and opened by SolidWorks.', fact: 'A .sldreg is really a plain REGEDIT4 registry file, so Analyser reads the saved SOLIDWORKS release, the settings groups and every backed-up registry key straight from the text.' },
   svap:       { name: 'SOLIDWORKS Visualize appearance', blurb: 'SVAP is an appearance (material) for SOLIDWORKS Visualize, the ray-traced rendering tool - a ZIP package holding the material definition and its textures. Created and opened by SOLIDWORKS Visualize.', fact: 'Visualize began life as Bunkspeed, a standalone product Dassault Systèmes acquired and folded into the SOLIDWORKS family.' },
   svpj:       { name: 'SOLIDWORKS Visualize project', blurb: 'SVPJ is a project file for SOLIDWORKS Visualize, bundling the scene, models, appearances and camera setup as a ZIP package. Created and opened by SOLIDWORKS Visualize.', fact: 'Visualize uses the model only as geometry - lighting, materials and cameras live in the .svpj, so the same part can be rendered many different ways.' },
-  f3d:        { name: 'Fusion 360 design', blurb: 'F3D is a design file from Autodesk Fusion 360. Created and opened by Fusion 360.', fact: 'Fusion 360 launched in 2013 as a cloud-based, all-in-one CAD/CAM tool.' },
-  f3z:        { name: 'Fusion 360 archive', blurb: 'F3Z is a Fusion 360 archive bundling a design with everything it references. Created by Fusion 360.', fact: 'Autodesk offers Fusion 360 free for personal hobbyist use, which has made its files a fixture of the maker and 3D-printing community.' },
   ipt:        { name: 'Inventor part', blurb: 'IPT is a single-part 3D model from Autodesk Inventor. Created and opened by Inventor.', fact: 'Autodesk launched Inventor in 1999 as its parametric mechanical-design tool.' },
   iam:        { name: 'Inventor assembly', blurb: 'IAM is an Autodesk Inventor assembly of several parts. Created and opened by Inventor.', fact: 'Inventor models its geometry with ShapeManager, Autodesk’s own kernel forked from the ACIS modeller in 2001.' },
   idw:        { name: 'Inventor drawing', blurb: 'IDW is a 2D drawing from Autodesk Inventor. Created and opened by Inventor.', fact: 'Drawings in Inventor can follow several national drafting standards, including ISO, ANSI, DIN, GOST and JIS, selectable per document.' },
@@ -344,7 +329,6 @@ export const EXT_PAGES = {
   asm:        { name: 'CAD assembly file', blurb: 'ASM is an assembly file used by CAD systems such as PTC Creo and Solid Edge.', fact: 'Like .prt, the .asm extension is shared by several different CAD programs.' },
   brd:        { name: 'PCB layout (EAGLE)', blurb: 'BRD is a printed-circuit-board layout, most associated with EAGLE. Created and opened by Autodesk EAGLE.', fact: 'EAGLE was a hugely popular PCB tool, especially among hobbyists, before Autodesk acquired it in 2016.' },
   sch:        { name: 'Circuit schematic', blurb: 'SCH is a circuit schematic from EAGLE or another electronics-design tool.', fact: 'A schematic captures a circuit’s wiring before it becomes a physical board layout.' },
-  kicad_pcb:  { name: 'KiCad board', blurb: 'A .kicad_pcb file is a printed-circuit-board layout from KiCad. Created and opened by KiCad.', fact: 'KiCad is a free, open-source PCB suite backed by CERN, widely used in open hardware.' },
   gh:         { name: 'Grasshopper definition', blurb: 'GH is a Grasshopper visual-programming definition for Rhino. Created and opened by Grasshopper in Rhino.', fact: 'Grasshopper lets designers build geometry with visual node graphs instead of code.' },
   ghx:        { name: 'Grasshopper definition (XML)', blurb: 'GHX is the XML form of a Grasshopper definition. Created and opened by Grasshopper in Rhino.', fact: 'After a decade as a free add-on download, Grasshopper became a built-in part of Rhino with the release of Rhino 6 in 2018.' },
 
@@ -545,7 +529,6 @@ export const EXT_PAGES = {
   safetensors:  { name: 'Safetensors weights', blurb: 'Safetensors stores AI model weights safely and quickly. Created by Hugging Face.', fact: 'Hugging Face introduced Safetensors in 2022 to load model weights fast and avoid the security risks of Python pickles.' },
   gguf:         { name: 'GGUF model', blurb: 'GGUF stores quantised large-language-model weights for local inference. Used by llama.cpp.', fact: 'GGUF was introduced in 2023 by the llama.cpp project to run language models on ordinary computers.' },
   map:          { name: 'Source map', blurb: 'A .map file links minified web code back to its readable source for debugging.', fact: 'Source maps let browser dev tools show original code even when a site ships minified files.' },
-  sln:          { name: 'Visual Studio solution', blurb: 'SLN is a Microsoft Visual Studio solution grouping related projects. Opened by Visual Studio.', fact: 'The .sln file ties together all the projects that make up a Visual Studio solution.' },
   csproj:       { name: 'C# project', blurb: 'CSPROJ is a C# project file for Visual Studio and the .NET build system.', fact: 'A .csproj lists the files, settings and dependencies the .NET build needs.' },
   vbproj:       { name: 'Visual Basic project', blurb: 'VBPROJ is a Visual Basic .NET project file for Visual Studio.', fact: 'A .vbproj is the Visual Basic counterpart of the C# .csproj project file.' },
   fsproj:       { name: 'F# project', blurb: 'FSPROJ is an F# project file for Visual Studio and .NET.', fact: 'A .fsproj is the F# counterpart of the .NET project file.' },
@@ -584,7 +567,6 @@ export const EXT_PAGES = {
   lz4:    { name: 'LZ4 stream', blurb: 'LZ4 is an extremely fast compression format, used where speed matters more than ratio. Analyser decompresses it in the browser so you can open the file inside.', fact: 'LZ4, released in 2011, powers fast compression in databases, filesystems and game engines.' },
   lzma:   { name: 'LZMA stream', blurb: 'LZMA is a high-ratio compression format, the algorithm behind 7-Zip and XZ. Analyser decompresses the legacy .lzma stream in the browser so you can open the file inside.', fact: 'LZMA was developed by Igor Pavlov for 7-Zip in the late 1990s.' },
   z:      { name: 'compress (.Z) archive', blurb: 'Z is a file squeezed with classic Unix compress, the LZW tool that predates gzip. Analyser decompresses it in the browser so you can open the file inside.', fact: 'Unix compress and its .Z files date to 1984; patent worries over its LZW algorithm spurred the creation of gzip.' },
-  z:      { name: 'Unix compress', blurb: 'A .Z file is compressed with the classic Unix compress tool.', fact: 'Unix compress and its .Z files date from 1984 but were largely replaced by gzip.' },
   cpio:   { name: 'cpio archive', blurb: 'CPIO is a Unix archive stream, used in Linux boot images and RPM packages.', fact: 'cpio is one of the oldest Unix archivers and still lives inside Linux initramfs images.' },
   a:      { name: 'Static library (ar)', blurb: 'A .a file is a Unix static library - an ar archive of compiled object files.', fact: 'The ar archiver is among the oldest Unix tools, used to bundle compiled code into libraries.' },
   whl:    { name: 'Python wheel', blurb: 'WHL is a Python wheel, a ready-to-install package. Installed with pip.', fact: 'The wheel format, standardised in 2012, made installing Python packages much faster.' },
@@ -598,7 +580,7 @@ export const EXT_PAGES = {
   apkg:   { name: 'Anki deck', blurb: 'APKG is an Anki flashcard deck. Opened by the Anki study app.', fact: 'Anki is a popular spaced-repetition flashcard app, and an APKG bundles a shareable deck.' },
   conda:  { name: 'Conda package', blurb: 'CONDA is a package for the conda environment manager, common in data science.', fact: 'Conda packages scientific Python and other tools together with all their dependencies.' },
   deb:    { name: 'Debian package', blurb: 'DEB is a Debian or Ubuntu software package. Installed with apt or dpkg.', fact: 'The .deb package has been the heart of Debian Linux since 1993.' },
-  rpm:    { name: 'RPM package', blurb: 'RPM is a Red Hat or Fedora software package. Installed with rpm or dnf.', fact: 'RPM (Red Hat Package Manager) dates from 1997 and is used across Red Hat-family Linux.' },
+  rpm:    { name: 'RPM package', blurb: 'RPM is a Red Hat or Fedora software package. Installed with rpm or dnf.', fact: 'RPM (Red Hat Package Manager) dates from 1995 and is used across Red Hat-family Linux.' },
   gem:    { name: 'RubyGem', blurb: 'GEM is a RubyGems package for the Ruby programming language.', fact: 'RubyGems became Ruby’s standard package system in the mid-2000s.' },
   cab:    { name: 'Windows Cabinet', blurb: 'CAB is a Microsoft Cabinet archive, used inside Windows installers and updates.', fact: 'Microsoft’s CAB format has bundled Windows installation files since the early 1990s.' },
   ace:    { name: 'ACE archive', blurb: 'ACE is a compressed archive from the WinACE tool, once a WinRAR rival.', fact: 'ACE was popular in the late 1990s but faded after serious security flaws were found.' },
@@ -750,7 +732,7 @@ export const EXT_PAGES = {
   tcx:   { name: 'Garmin Training Center', blurb: 'TCX is a Garmin Training Center XML workout file with route and heart-rate data.', fact: 'TCX was Garmin’s XML workout format before the more compact FIT took over.' },
   fits:  { name: 'Astronomy image (FITS)', blurb: 'FITS is the Flexible Image Transport System, the standard format for astronomical data.', fact: 'FITS has stored telescope images and data since 1981 and is still used by NASA today.' },
   fts:   { name: 'Astronomy image (FITS)', blurb: 'FTS is a Flexible Image Transport System file holding astronomical imaging or data.', fact: 'FITS has been astronomy’s data standard since 1981.' },
-  fasta: { name: 'FASTA sequence', blurb: 'FASTA stores DNA, RNA or protein sequences as plain text, central to bioinformatics.', fact: 'The FASTA format dates from a 1985 sequence-search program of the same name.' },
+  fasta: { name: 'FASTA sequence', blurb: 'FASTA stores DNA, RNA or protein sequences as plain text, central to bioinformatics.', fact: 'FASTA takes its name from the sequence-search programs Pearson and Lipman built in the mid-1980s, starting with FASTP in 1985.' },
   fa:    { name: 'FASTA sequence', blurb: 'FA is a FASTA file of DNA, RNA or protein sequences.', fact: 'FASTA is the simplest and most common way to store biological sequences.' },
   fna:   { name: 'FASTA nucleotides', blurb: 'FNA is a FASTA file specifically holding nucleotide (DNA/RNA) sequences.' },
   faa:   { name: 'FASTA proteins', blurb: 'FAA is a FASTA file holding amino-acid (protein) sequences.', fact: 'The .faa suffix marks a FASTA file as protein sequences.' },
@@ -930,7 +912,7 @@ export const EXT_PAGES = {
   caf:  { name: 'Core Audio Format', blurb: 'CAF is Apple’s Core Audio Format, able to hold very large audio files. Created by Apple.', fact: 'CAF lifts the size limits of WAV and AIFF for long, high-resolution recordings.' },
   rf64: { name: 'RF64 broadcast WAV', blurb: 'RF64 extends WAV past its 4 GB limit for long broadcast recordings.', fact: 'RF64 was created so broadcasters could record audio longer than WAV’s 4 GB ceiling.' },
   bw64: { name: 'Broadcast Wave 64-bit', blurb: 'BW64 is an ITU broadcast-WAV format for audio files larger than 4 GB.', fact: 'BW64 carries large broadcast audio along with rich production metadata.' },
-  w64:  { name: 'Sony Wave64', blurb: 'W64 (Wave64) lifts WAV’s 4 GB size limit. Created by Sony for Sound Forge.', fact: 'Wave64 let Sound Forge record audio well beyond the old WAV size limit.' },
+  w64:  { name: 'Sony Wave64', blurb: 'W64 (Wave64) lifts WAV’s 4 GB size limit. Created by Sonic Foundry for Sound Forge and later maintained by Sony.', fact: 'Wave64 let Sound Forge record audio well beyond the old WAV size limit.' },
   au:   { name: 'Sun audio', blurb: 'AU is the Sun/NeXT audio format, one of the oldest digital sound formats.', fact: 'The AU format comes from Sun Microsystems in the late 1980s.', factApprox: true },
   snd:  { name: 'NeXT/Sun sound', blurb: 'SND is the NeXT and Sun sound format, a close sibling of AU.', fact: 'SND and AU share a heritage in early Unix workstation audio.' },
   voc:  { name: 'Creative Voice', blurb: 'VOC is the Creative Voice format from Sound Blaster sound cards.', fact: 'VOC was the native sound format of Creative’s Sound Blaster cards in the early 1990s.', factApprox: true },
@@ -1046,9 +1028,6 @@ export const EXT_PAGES = {
   fods:   { name: 'Flat ODF Spreadsheet', blurb: 'FODS is an OpenDocument spreadsheet stored as flat XML.', fact: 'FODS is a spreadsheet saved as one plain XML file rather than a zipped package.' },
   fodp:   { name: 'Flat ODF Presentation', blurb: 'FODP is an OpenDocument presentation stored as a single flat XML file rather than a zipped package.', fact: 'FODP keeps an entire slideshow in one readable XML file, so you can open it in any text editor.' },
   fodg:   { name: 'Flat ODF Graphics', blurb: 'FODG is an OpenDocument graphics/drawing stored as a single flat XML file rather than a zipped package.', fact: 'FODG keeps a whole drawing in one readable XML file rather than a zipped package.' },
-  ott:    { name: 'ODF text template', blurb: 'OTT is the OpenDocument template for word-processor documents.' },
-  dotx:   { name: 'Word template', blurb: 'DOTX is the modern Microsoft Word template format.', fact: 'A DOTX provides the starting layout and styles for new Word documents.' },
-  dotm:   { name: 'Word macro template', blurb: 'DOTM is a Microsoft Word template that can carry macros.', fact: 'DOTM is a Word template allowed to contain automation macros.' },
   vsdx:   { name: 'Visio drawing', blurb: 'VSDX is the modern Microsoft Visio diagram format.', fact: 'VSDX is what Visio saves flowcharts and diagrams as today.' },
   tex:    { name: 'TeX source', blurb: 'TEX is a TeX or LaTeX typesetting source file. Created by Donald Knuth.', fact: 'Knuth created TeX in 1978, and it still typesets most of the world’s scientific papers.' },
   latex:  { name: 'LaTeX document', blurb: 'LATEX is a LaTeX document, the system that typesets academic and mathematical writing.', fact: 'LaTeX, built on TeX in the 1980s, is the standard for scientific publishing.' },
@@ -1239,7 +1218,6 @@ export const EXT_PAGES = {
   book:    { name: 'FrameMaker book', blurb: 'A .book file ties together the chapters of an Adobe FrameMaker book.' },
   awt:     { name: 'AbiWord template', blurb: 'AWT is a template for the free AbiWord word processor.', fact: 'AWT gives new AbiWord documents a ready-made starting layout.' },
   sxd:     { name: 'StarOffice Draw', blurb: 'SXD is a StarOffice/OpenOffice Draw vector graphic.', fact: 'SXD was the drawing format of the OpenOffice 1 era.' },
-  otg:     { name: 'ODF graphics template', blurb: 'OTG is an OpenDocument template for vector drawings.', fact: 'OTG is the OpenDocument template behind LibreOffice Draw graphics.' },
   pm6:     { name: 'PageMaker 6 layout', blurb: 'PM6 is an Adobe PageMaker 6 desktop-publishing layout.', fact: 'PageMaker 6 was a mainstay of 1990s desktop publishing.' },
   p65:     { name: 'PageMaker 6.5 layout', blurb: 'P65 is an Adobe PageMaker 6.5 layout.', fact: 'P65 came from PageMaker 6.5, near the end of the program’s life.' },
   pt6:     { name: 'PageMaker template', blurb: 'PT6 is an Adobe PageMaker 6 template.', fact: 'PT6 provided reusable layouts for PageMaker documents.' },
@@ -1332,7 +1310,7 @@ export const EXT_PAGES = {
   'db-shm': { name: 'SQLite shared-memory index (.db sidecar)', blurb: 'A .db-shm file is the shared-memory WAL index for a SQLite database stored as .db, coordinating concurrent access to its write-ahead log. Same format as .sqlite-shm.', fact: 'Both WAL sidecars (-wal and -shm) exist only while a database uses WAL journalling mode, and disappear on a clean shutdown.' },
 
   // ---- Developer / data - additions ----
-  capnp: { name: 'Cap’n Proto schema', blurb: 'A .capnp file is a Cap’n Proto schema - it defines the message types for Cap’n Proto, a fast data-interchange and RPC format created by one of the original authors of Protocol Buffers.', fact: 'Cap’n Proto’s trick is that there is no encoding or decoding step - its wire format matches the in-memory layout, so reading a message is essentially free, the basis for its joking “infinitely faster than Protobuf” claim that the nautical “Cap’n” name plays on.' },
+  capnp: { name: 'Cap’n Proto schema', blurb: 'A .capnp file is a Cap’n Proto schema - it defines the message types for Cap’n Proto, a fast data-interchange and RPC format created by one of the original authors of Protocol Buffers.', fact: 'Cap’n Proto’s trick is that there is no encoding or decoding step - its wire format matches the in-memory layout, so reading a message is essentially free, the basis for its joking claim of being infinitely faster than Protobuf, while the Cap’n name itself is a cereal pun on “cerealisation protocol”.' },
 
   // ---- Audio (more) - additions ----
   umx:     { name: 'Unreal Music Package', blurb: 'UMX is an Unreal Engine music package - tracker-module music wrapped in the Unreal package format, used by the original Unreal and Unreal Tournament.', fact: 'A UMX is really a tracker module (often .it or .s3m) inside an Unreal package, so the game’s soundtrack was played back by the same engine that loaded its maps.' },
@@ -1361,7 +1339,7 @@ export const EXT_PAGES = {
   vst:   { name: 'Truevision TGA', blurb: 'VST is a Truevision raster image - a TGA-format picture named after the Truevision Vista graphics board.', fact: 'The Truevision format kept one design but four extensions (.tga, .icb, .vda, .vst), each tied to a different card in the line-up.' },
 
   // ---- Game assets - additions ----
-  aseprite:  { name: 'Aseprite sprite', blurb: 'ASEPRITE is the native project file of Aseprite, a popular pixel-art and animation editor, storing layers, frames, tags and the palette.', fact: 'The format keeps every animation frame, layer and tag, so a finished .aseprite is both the artwork and its full edit history in one file.' },
+  aseprite:  { name: 'Aseprite sprite', blurb: 'ASEPRITE is the native project file of Aseprite, a popular pixel-art and animation editor, storing layers, frames, tags and the palette.', fact: 'The format keeps every animation frame, layer and tag, so a finished .aseprite stays fully editable rather than flattened into a single image.' },
   sc2replay: { name: 'StarCraft II replay', blurb: 'SC2REPLAY records a StarCraft II match - an MPQ archive holding every player action so the game can replay the whole match deterministically.', fact: 'A replay stores commands, not video, so a few hundred kilobytes can reconstruct an hour-long match move for move by re-running the engine.' },
   rpa:       { name: 'Ren’Py archive', blurb: 'RPA is a Ren’Py archive - the bundle a visual novel made with the Ren’Py engine uses to pack its scripts, images, music and voices.', fact: 'Ren’Py, the engine behind countless visual novels, packs a finished game’s assets into .rpa files much as a ZIP would.' },
   rgssad:    { name: 'RPG Maker archive', blurb: 'RGSSAD is the encrypted asset archive for games made with RPG Maker XP and VX, holding the graphics, audio and scripts behind a simple cipher.', fact: 'The contents are scrambled with a fixed starting key that advances per byte, a light protection that mainly stops casual copying.' },
@@ -1403,7 +1381,7 @@ export const EXT_PAGES = {
 
   // ---- Archives - additions ----
   txz:  { name: 'XZ-compressed tarball', blurb: 'TXZ is a tar archive compressed with XZ - shorthand for a .tar.xz, common for distributing Linux software and source code.', fact: 'XZ uses the LZMA2 algorithm to squeeze tarballs smaller than gzip or bzip2, at the cost of more time and memory to compress.' },
-  tzst: { name: 'Zstandard tarball', blurb: 'TZST is a tar archive compressed with Zstandard - shorthand for a .tar.zst, increasingly used by Linux package managers for its speed.', fact: 'Arch Linux switched its packages to .tzst because Zstandard decompresses far faster than XZ while staying nearly as small.' },
+  tzst: { name: 'Zstandard tarball', blurb: 'TZST is a tar archive compressed with Zstandard - shorthand for a .tar.zst, increasingly used by Linux package managers for its speed.', fact: 'Arch Linux switched its packages from XZ to Zstandard (.pkg.tar.zst) because it decompresses far faster while staying nearly as small.' },
 
   // ---- Web / code - additions ----
   htm:  { name: 'HTML document', blurb: 'HTM is a web page written in HTML - identical to .html, just using the three-letter extension that older Windows systems required.', fact: 'The .htm spelling is a relic of MS-DOS, which only allowed three-letter extensions, so early Windows web tools dropped the "l".' },
@@ -1461,97 +1439,289 @@ export const EXT_PAGES = {
 // no entry here simply renders its card without a Did-you-know.
 export const VARIANT_FACTS = {
   ts: {
-    'MPEG transport stream': "Transport streams chop video into fixed 188-byte packets so a glitch only ever loses one tiny packet, which is why digital TV and Blu-ray still rely on them.",
-    'TypeScript source': "TypeScript was designed at Microsoft by Anders Hejlsberg, who had earlier created Turbo Pascal, Delphi and C#.",
+    'MPEG transport stream': [
+      "Transport streams chop video into fixed 188-byte packets so a glitch only ever loses one tiny packet, which is why digital TV and Blu-ray still rely on them.",
+      "The odd 188-byte packet size was chosen so exactly four of them fit the 47-byte payload of an ATM AAL-1 telecoms cell, back when broadcast video was expected to travel over ATM networks.",
+      "Two .ts files can be joined by plain byte concatenation, which is exactly why HLS streaming slices a video into a stream of small .ts segments.",
+    ],
+    'TypeScript source': [
+      "TypeScript was designed at Microsoft by Anders Hejlsberg, who had earlier created Turbo Pascal, Delphi and C#.",
+      "TypeScript was first shown publicly in October 2012 as version 0.8, after two years of internal development at Microsoft.",
+      "Every TypeScript type is erased at compile time, so a .ts file always compiles down to plain JavaScript that adds nothing at runtime.",
+    ],
   },
   key: {
-    'Apple Keynote presentation': "Keynote began as private software built for Steve Jobs's own stage presentations before Apple released it to the public in 2003.",
-    'PEM cryptographic key': "PEM stands for Privacy-Enhanced Mail, a 1990s email scheme that flopped - but its Base64 -----BEGIN----- wrapper became the universal way to store keys and certificates.",
+    'Apple Keynote presentation': [
+      "Keynote began as private software built for Steve Jobs's own stage presentations before Apple released it to the public in 2003.",
+      "Keynote 1.0 launched on 7 January 2003 as a standalone app costing 99 US dollars, and only became free with new Apple devices from 2013.",
+      "Inside the ZIP package, a modern Keynote stores its data as IWA files encoded with Google's Protocol Buffers rather than plain XML.",
+    ],
+    'PEM cryptographic key': [
+      "PEM stands for Privacy-Enhanced Mail, a 1990s email scheme that flopped - but its Base64 -----BEGIN----- wrapper became the universal way to store keys and certificates.",
+      "PEM comes from a set of 1993 IETF standards (RFC 1421 onwards) that were largely abandoned in favour of PGP and S/MIME, leaving only the text wrapper behind.",
+      "The Base64 between the BEGIN and END lines is just DER-encoded ASN.1 binary re-wrapped as ASCII so it survives being pasted into email or a config file.",
+    ],
   },
   cube: {
-    'Colour LUT': "The same .cube LUT a colourist builds in DaVinci Resolve loads unchanged into Photoshop, Premiere and OBS, because it is just a text table of input-to-output colours.",
-    'Gaussian volumetric grid': "A Gaussian cube stores a value at every point of a 3D grid, so one molecule's electron density can run to tens of millions of numbers.",
+    'Colour LUT': [
+      "The same .cube LUT a colourist builds in DaVinci Resolve loads unchanged into Photoshop, Premiere and OBS, because it is just a text table of input-to-output colours.",
+      "A .cube can be either a 1D LUT - a single tone curve - or a full 3D colour cube, and the LUT_1D_SIZE or LUT_3D_SIZE line at the top declares which.",
+      "The .cube format was created by IRIDAS, the grading company Adobe bought in 2011, which is why Adobe and DaVinci Resolve both read it.",
+    ],
+    'Gaussian volumetric grid': [
+      "A Gaussian cube stores a value at every point of a 3D grid, so one molecule's electron density can run to tens of millions of numbers.",
+      "Every value in a Gaussian cube is in atomic units, so distances are given in Bohr radii of about 0.529 angstroms rather than the more familiar angstrom.",
+      "The format comes from Gaussian, the quantum-chemistry program John Pople began in 1970 and which helped earn him the 1998 Nobel Prize in Chemistry.",
+    ],
   },
   pkg: {
-    'macOS Installer Package': "Apple's flat .pkg is really a XAR archive with an XML table of contents, which let an entire installer become one signable, downloadable file.",
-    'Destiny package (Bungie Tiger engine)': "Destiny 2 ships its assets in hundreds of these Tiger-engine packages; the four hex digits in each filename (like 02b8) are the package id stored at offset 0x10 inside.",
+    'macOS Installer Package': [
+      "Apple's flat .pkg is really a XAR archive with an XML table of contents, which let an entire installer become one signable, downloadable file.",
+      "The flat single-file .pkg arrived with Mac OS X 10.5 Leopard in 2007, replacing the older folder-style bundle packages.",
+      "A .pkg can run pre- and post-install scripts as root, which is exactly why an unsigned installer package is a classic macOS malware vector.",
+    ],
+    'Destiny package (Bungie Tiger engine)': [
+      "Destiny 2 ships its assets in hundreds of these Tiger-engine packages; the four hex digits in each filename (like 02b8) are the package id stored at offset 0x10 inside.",
+      "Because Bungie ships no official mod tools, fans reverse-engineered the Tiger .pkg format to pull out Destiny's models, textures and music, producing extractors like DestinyUnpacker.",
+      "Each package header carries a build date, so the .pkg files can be traced back to the exact game patch that shipped them.",
+    ],
   },
   cdp: {
-    'CDP4 (COMET) model': "CDP4 / COMET is the European Space Agency's concurrent-design platform, used to design spacecraft with dozens of engineers editing one model at once.",
-    'Criterium DecisionPlus model': "Criterium DecisionPlus ranks choices with the Analytic Hierarchy Process, a 1970s method for turning gut-feel comparisons into hard numbers.",
+    'CDP4 (COMET) model': [
+      "CDP4 / COMET is the European Space Agency's concurrent-design platform, used to design spacecraft with dozens of engineers editing one model at once.",
+      "CDP4 implements the ECSS-E-TM-10-25 engineering data model, the European space industry's standard for exchanging systems-engineering data.",
+      "It descends from ESA's Concurrent Design Facility approach, where a whole team grades a mission concept together in a single room in a matter of days.",
+    ],
+    'Criterium DecisionPlus model': [
+      "Criterium DecisionPlus ranks choices with the Analytic Hierarchy Process, a 1970s method for turning gut-feel comparisons into hard numbers.",
+      "The Analytic Hierarchy Process it uses was invented by Thomas Saaty in the early 1970s, and Saaty himself is credited with developing the software.",
+      "Criterium DecisionPlus, made by InfoHarvest, combines that AHP method with SMART, a simpler weighted-scoring technique, in the same model.",
+    ],
   },
   mat: {
-    'MATLAB MAT-file': "A modern MATLAB v7.3 .mat file is secretly an HDF5 container - the same scientific data format used across NASA Earth-science missions and countless research datasets.",
-    'Unity material': "A Unity .mat is plain YAML text, so material changes diff and merge in Git just like source code.",
+    'MATLAB MAT-file': [
+      "A modern MATLAB v7.3 .mat file is secretly an HDF5 container - the same scientific data format used across NASA Earth-science missions and countless research datasets.",
+      "The v7.3 format was introduced specifically so a single variable could exceed 2 GB, a size the older MAT-file format simply could not store.",
+      "Because a v7.3 file is really HDF5, tools such as Python's h5py can read a .mat with no MATLAB licence at all.",
+    ],
+    'Unity material': [
+      "A Unity .mat is plain YAML text, so material changes diff and merge in Git just like source code.",
+      "Unity's YAML is a custom high-performance subset of the full YAML specification, not a general YAML parser, tuned for loading game assets quickly.",
+      "A .mat points at its shader and textures by GUID, an id Unity resolves through the hidden .meta file it keeps beside every asset.",
+    ],
   },
   nsf: {
-    'NES Sound Format': "An NSF holds the actual 6502 machine code from the game's sound engine, so playing one means emulating the NES processor and audio chip in real time.",
-    'Lotus Notes database': "Lotus Notes .nsf files store documents, mail and whole apps together, and some corporate ones have been in continuous use since the early 1990s.",
+    'NES Sound Format': [
+      "An NSF holds the actual 6502 machine code from the game's sound engine, so playing one means emulating the NES processor and audio chip in real time.",
+      "The format was designed by Kevin Horton, who first called it NESM and built it to play back on a custom hardware device of his own.",
+      "The extended NSFe variant, devised by the developer Disch for his NotSo Fatso player, adds the track names, timing and fade-outs the original header lacked.",
+    ],
+    'Lotus Notes database': [
+      "Lotus Notes .nsf files store documents, mail and whole apps together, and some corporate ones have been in continuous use since the early 1990s.",
+      "Lotus Notes was built by Ray Ozzie's Iris Associates and first released in 1989, and the NSF extension stands for Notes Storage Facility.",
+      "IBM bought Lotus in 1995 and then sold Notes and Domino to India's HCL in a deal completed in 2019, so one .nsf has outlived two owners.",
+    ],
   },
   dts: {
-    'Device Tree Source': "The device tree was invented so a single Linux kernel binary could boot wildly different ARM boards just by loading a different hardware description.",
-    'DTS audio': "DTS made its cinema debut on Jurassic Park in 1993, played from a CD-ROM kept in sync with the film by timecode printed along the reel.",
+    'Device Tree Source': [
+      "The device tree was invented so a single Linux kernel binary could boot wildly different ARM boards just by loading a different hardware description.",
+      "The device-tree idea comes from Sun's Open Firmware, standardised as IEEE 1275 in 1994 and later adopted by Apple and IBM PowerPC machines.",
+      "A .dts is compiled by dtc, the device tree compiler, into a compact binary .dtb blob that the bootloader hands to the kernel.",
+    ],
+    'DTS audio': [
+      "DTS made its cinema debut on Jurassic Park in 1993, played from a CD-ROM kept in sync with the film by timecode printed along the reel.",
+      "DTS was founded in 1993 by audio engineer and Caltech graduate Terry Beard, expressly to challenge Dolby in the cinema.",
+      "DTS deliberately compresses less than Dolby Digital, carrying up to 1.5 Mbps against Dolby's 448 to 640 kbps, on the argument that more data means better sound.",
+    ],
   },
   nc: {
-    'NetCDF dataset': "NetCDF was built by Unidata for atmospheric science, and today almost every climate model and weather dataset in the world is distributed in it.",
-    'CNC G-code': "G-code dates to the late 1950s at MIT and barely changed - the same G0/G1 move commands drive a $200 3D printer and a million-dollar mill alike.",
+    'NetCDF dataset': [
+      "NetCDF was built by Unidata for atmospheric science, and today almost every climate model and weather dataset in the world is distributed in it.",
+      "NetCDF was written in 1988 by Glenn Davis and colleagues at Unidata, part of the US university consortium UCAR.",
+      "The classic format's 32-bit offsets originally capped a file at about 2 GB, which is why a 64-bit-offset variant and the HDF5-based NetCDF-4 were later added.",
+    ],
+    'CNC G-code': [
+      "G-code dates to the late 1950s at MIT and barely changed - the same G0/G1 move commands drive a 200-dollar 3D printer and a million-dollar mill alike.",
+      "It was standardised by the US Electronic Industries Alliance as RS-274, whose RS-274-D revision landed around 1979, and is known internationally as ISO 6983.",
+      "The G in G-code means geometric or preparatory commands, while the paired M-codes handle machine functions like switching the spindle or coolant on and off.",
+    ],
   },
   sav: {
-    'SPSS dataset': "SPSS launched in 1968 as one of the first statistics packages for social scientists, and its .sav still tags every variable with its survey question and value labels.",
-    'Game save file': "There is no standard .sav format - each game invents its own, which is why save editors are written per-game and a hex view is often the only way in.",
+    'SPSS dataset': [
+      "SPSS launched in 1968 as one of the first statistics packages for social scientists, and its .sav still tags every variable with its survey question and value labels.",
+      "SPSS - the Statistical Package for the Social Sciences - was written in 1968 by three graduate students, Norman Nie, Dale Bent and Tex Hull.",
+      "IBM bought SPSS in 2009 for about 1.2 billion US dollars and rebranded it IBM SPSS Statistics, though the .sav files it writes stayed compatible.",
+    ],
+    'Game save file': [
+      "There is no standard .sav format - each game invents its own, which is why save editors are written per-game and a hex view is often the only way in.",
+      "Emulators use a .sav to hold the contents of a cartridge's battery-backed SRAM, the same chip 1980s games such as The Legend of Zelda used to remember your progress after the power went off.",
+      "A .sav (a persistent in-game save) is not the same as a save-state, which snapshots the emulator's whole RAM and CPU registers at one instant, so some emulators keep both.",
+    ],
   },
   obj: {
-    'Compiled object file': "An object file holds machine code with the jump addresses left blank; the linker fills them in when it stitches the objects into an executable.",
-    'Wavefront 3D model': "The OBJ format comes from 1980s Wavefront Advanced Visualizer software, and its plain-text simplicity is exactly why it became the universal 3D interchange format.",
+    'Compiled object file': [
+      "An object file holds machine code with the jump addresses left blank; the linker fills them in when it stitches the objects into an executable.",
+      "The two dominant object formats are ELF, introduced with Unix System V Release 4 and now standard on Linux and BSD, and Microsoft's COFF-based format on Windows.",
+      "An object file cannot run on its own - it is an intermediate step, which is why a compiler emits one .obj per source file before the linker combines them.",
+    ],
+    'Wavefront 3D model': [
+      "The OBJ format comes from 1980s Wavefront Advanced Visualizer software, and its plain-text simplicity is exactly why it became the universal 3D interchange format.",
+      "OBJ indices are 1-based rather than 0-based, so the very first vertex is referred to as 1 - a frequent source of off-by-one bugs when writing importers.",
+      "OBJ stores only geometry and material references, with no way to record animation, lights, cameras or a scene hierarchy, which is why richer formats like glTF and FBX exist alongside it.",
+    ],
   },
   mod: {
-    'Camcorder video': "JVC Everio hard-disk camcorders saved clips as .mod MPEG-2 files; renaming one to .mpg is often enough to make an ordinary player open it.",
-    'Tracker module': "The Amiga MOD format bundles its instrument samples inside the song, so a 1990s tracker tune sounds identical on any machine decades later.",
+    'Camcorder video': [
+      "JVC Everio hard-disk camcorders saved clips as .mod MPEG-2 files; renaming one to .mpg is often enough to make an ordinary player open it.",
+      "Each .mod clip is shadowed by a hidden .moi companion file that holds the recording date, timecode and aspect ratio the video stream itself leaves out.",
+      "JVC was not alone - Panasonic and Canon hard-disk and SD camcorders of the mid-2000s also wrote .mod, before the industry settled on AVCHD's .mts.",
+    ],
+    'Tracker module': [
+      "The Amiga MOD format bundles its instrument samples inside the song, so a 1990s tracker tune sounds identical on any machine decades later.",
+      "The four-letter tag at offset 1080 that marks a 31-sample module, M.K., is widely held to stand for the demoscene coders Mahoney and Kaktus who popularised the extended format.",
+      "A MOD sets each note's pitch with an Amiga hardware sample 'period' value rather than a named note or frequency, a quirk that ties the format to the machine it was born on.",
+    ],
   },
   map: {
-    'Source map': "A source map lets browser dev-tools show your original TypeScript or Sass while the browser runs minified code, using a compact Base64 VLQ encoding to map positions.",
-    'Game level map': "A Quake .map stores a level as convex 3D 'brushes' that the compiler carves out of solid space, an approach id Software pioneered in 1996.",
-    'Linker map': "A linker map is often the only record of exactly where each function landed in memory, which is why crash-dump analysis leans on it so heavily.",
+    'Source map': [
+      "A source map lets browser dev-tools show your original TypeScript or Sass while the browser runs minified code, using a compact Base64 VLQ encoding to map positions.",
+      "A browser only fetches the .map when its developer tools are open, finding it through a //# sourceMappingURL comment left at the foot of the minified file.",
+      "The scheme grew out of Google's Closure Compiler and Inspector work around 2009, with version 3 slashing file sizes by switching to VLQ-encoded position deltas.",
+    ],
+    'Game level map': [
+      "A Quake .map stores a level as convex 3D 'brushes' - solid blocks the compiler seals and slices into a BSP tree - an approach id Software introduced with Quake in 1996.",
+      "Turning a .map into a playable level runs three tools in turn - BSP, VIS and light - to carve the geometry, precompute what is visible from where, and bake in the lighting.",
+      "Because every brush must be convex, mappers build concave rooms by clipping or combining several brushes, a constraint that shaped the blocky look of 1990s shooter levels.",
+    ],
+    'Linker map': [
+      "A linker map is often the only record of exactly where each function landed in memory, which is why crash-dump analysis leans on it so heavily.",
+      "Embedded developers pore over the .map to see how many bytes of flash and RAM each module eats, since a microcontroller's memory budget is tiny and fixed.",
+      "A linker writes one only on request - GCC with -Map, Microsoft's linker with /MAP - because the report is a build diagnostic the finished program never needs.",
+    ],
   },
   asc: {
-    'Esri ASCII grid': "The Esri ASCII grid is so simple - a tiny header then a wall of numbers - that it became the lowest-common-denominator way to swap elevation and raster data.",
-    'PGP armored data': "ASCII armor wraps a binary key in Base64 so it survives being pasted into email, and the trailing line starting with = is a checksum that catches copy-paste corruption.",
-    'Plain ASCII text': "ASCII fixed the English alphabet into 7 bits in 1963, and modern UTF-8's first 128 characters still match it exactly.",
+    'Esri ASCII grid': [
+      "The Esri ASCII grid is so simple - a tiny header then a wall of numbers - that it became the lowest-common-denominator way to swap elevation and raster data.",
+      "Writing every cell out as text makes the grid far bigger and slower to read than its binary equivalent, so it is used for exchange rather than everyday storage.",
+      "GDAL knows the format as its AAIGrid driver, which is how QGIS and countless other GIS tools open the plain-text grid directly.",
+    ],
+    'PGP armored data': [
+      "ASCII armor wraps a binary key in Base64 so it survives being pasted into email, and the trailing line starting with = is a checksum that catches copy-paste corruption.",
+      "That final checksum is a 24-bit CRC defined by the OpenPGP standard (RFC 4880), and it guards only against accidental corruption, never against deliberate tampering.",
+      "PGP itself was written by Phil Zimmermann in 1991, and its spread as strong crypto triggered a US criminal export investigation that was finally dropped in 1996.",
+    ],
+    'Plain ASCII text': [
+      "ASCII fixed the English alphabet into 7 bits in 1963, and modern UTF-8's first 128 characters still match it exactly.",
+      "ASCII spends 33 of its codes on non-printing control characters such as carriage return and escape, a legacy of the teleprinters it was first designed to drive.",
+      "Bob Bemer, nicknamed the father of ASCII, pushed for the backslash and escape characters and later became an early campaigner about the Year 2000 date problem.",
+    ],
   },
   md: {
-    'Sega Mega Drive ROM': "Mega Drive cartridges carry the word SEGA near the start of the ROM, which the console checked for as a crude licensing lock.",
-    'Markdown document': "Markdown was created in 2004 by John Gruber to read as plain text first, which is why a README.md still looks fine even where nothing renders it.",
+    'Sega Mega Drive ROM': [
+      "Mega Drive cartridges carry the word SEGA near the start of the ROM, which the console checked for as a crude licensing lock.",
+      "That trademark check, the Trademark Security System added to later consoles, was central to Sega v Accolade, the 1992 US ruling that made reverse-engineering for compatibility legal.",
+      "The console runs on a 16-bit Motorola 68000, the same processor family found in the original Apple Macintosh and the Commodore Amiga.",
+    ],
+    'Markdown document': [
+      "Markdown was created in 2004 by John Gruber to read as plain text first, which is why a README.md still looks fine even where nothing renders it.",
+      "Gruber developed the original syntax with Aaron Swartz, the programmer and activist who also co-authored RSS and helped create Reddit.",
+      "Because the early spec left many edge cases undefined, developers created CommonMark in 2014 to pin Markdown down to a single unambiguous standard.",
+    ],
   },
   cdf: {
-    'NetCDF dataset': "The CDF in a NetCDF file's first bytes stands for Common Data Form, an early self-describing-data idea that is now everywhere in science.",
-    'Wolfram CDF': "A Wolfram CDF can embed live, interactive Mathematica computations that a reader manipulates without owning Mathematica.",
+    'NetCDF dataset': [
+      "The CDF in a NetCDF file's first bytes stands for Common Data Form, an early self-describing-data idea that is now everywhere in science.",
+      "Climate scientists layer the CF (Climate and Forecast) conventions on top of NetCDF so each variable carries standard names, units and grid information.",
+      "Since version 4, NetCDF can store its data inside HDF5, gaining compression and datasets far larger than the classic format's limits.",
+    ],
+    'Wolfram CDF': [
+      "A Wolfram CDF can embed live, interactive Mathematica computations that a reader manipulates without owning Mathematica.",
+      "Wolfram launched the Computable Document Format in July 2011 alongside a free CDF Player, so documents with live calculations could reach readers who had no Mathematica licence.",
+      "It was the delivery format behind the Wolfram Demonstrations Project's thousands of interactive visualisations, though Wolfram now lists CDF as a legacy format superseded by its notebooks.",
+    ],
   },
   gem: {
-    'RubyGems package': "Every `gem install` pulls down one of these .gem files - a TAR holding the code plus a YAML gemspec listing its dependencies.",
-    'GEM image / metafile': "GEM was Digital Research's 1985 graphical desktop; an Apple lawsuit forced changes that helped doom it, but its image format lived on across the Atari ST.",
+    'RubyGems package': [
+      "Every `gem install` pulls down one of these .gem files - a TAR holding the code plus a YAML gemspec listing its dependencies.",
+      "RubyGems was first released in 2004 by Jim Weirich, Chad Fowler and others, and from Ruby 1.9 in 2007 it shipped inside the language itself, making a package manager part of the standard install.",
+      "Bundler, released in 2010, layered a lockfile on top of RubyGems so a project could pin every gem to an exact version and reproduce its dependency tree precisely.",
+    ],
+    'GEM image / metafile': [
+      "GEM was Digital Research's 1985 graphical desktop; an Apple lawsuit forced changes that helped doom it, but its image format lived on across the Atari ST.",
+      "GEM stands for Graphics Environment Manager, and a .gem is usually a vector metafile of drawing commands, distinct from the companion .img raster format.",
+      "Caldera released the GEM source code under the GPL in April 1999, reviving it decades on as the community FreeGEM and OpenGEM projects.",
+    ],
   },
   g: {
-    'BRL-CAD geometry': "BRL-CAD has been developed by the US Army Research Laboratory since 1979, making it one of the oldest continuously maintained CAD systems in the world.",
-    'G-code': "The same G-code language drives 3D printers and CNC mills, but a printer reads each move as extrusion where a mill reads it as cutting.",
+    'BRL-CAD geometry': [
+      "BRL-CAD has been developed by the US Army Research Laboratory since 1979, making it one of the oldest continuously maintained CAD systems in the world.",
+      "BRL-CAD models solids with constructive solid geometry, building complex shapes by adding and subtracting primitives such as spheres, cones and boxes.",
+      "Built originally to model vehicles for the Army's ballistic and weapons-effectiveness analysis, BRL-CAD was released as open source in 2004.",
+    ],
+    'G-code': [
+      "The same G-code language drives 3D printers and CNC mills, but a printer reads each move as extrusion where a mill reads it as cutting.",
+      "G-code was standardised by the Electronic Industries Alliance as RS-274 in the 1960s, having grown out of numerical-control research at MIT.",
+      "Alongside the G (geometry) commands, the language uses M (miscellaneous) codes for machine actions like switching the spindle or coolant on and off.",
+    ],
   },
   prj: {
-    'Esri projection (WKT)': "A shapefile's .prj holds one line of Well-Known Text naming the coordinate system, so software knows whether your numbers are degrees or metres.",
-    'Generic project file': "Dozens of unrelated apps grabbed .prj for 'project file', which is why the same extension can mean a map projection or a sound-editor session.",
+    'Esri projection (WKT)': [
+      "A shapefile's .prj holds one line of Well-Known Text naming the coordinate system, so software knows whether your numbers are degrees or metres.",
+      "If the .prj is missing, GIS software cannot tell which coordinate system the shapefile uses, a frequent cause of layers landing in the wrong place on the map.",
+      "The Well-Known Text it carries is an Open Geospatial Consortium standard, so the same projection definition moves cleanly between Esri, PostGIS, GDAL and other tools.",
+    ],
+    'Generic project file': [
+      "Dozens of unrelated apps grabbed .prj for 'project file', which is why the same extension can mean a map projection or a sound-editor session.",
+      "Microcontroller toolchains such as CodeVisionAVR store their build settings in a .prj that has nothing to do with any map.",
+      "Because the extension states only 'project' and nothing about the contents, the sole reliable way to identify one is the application that made it or its internal header.",
+    ],
   },
   r: {
-    'R source': "The R language is named after the first initials of its creators, statisticians Ross Ihaka and Robert Gentleman.",
-    'REBOL / Rez resource': "Classic Mac apps kept their icons, menus and dialogs in a 'resource fork' compiled from Rez text, an idea decades ahead of its time.",
+    'R source': [
+      "The R language is named after the first initials of its creators, statisticians Ross Ihaka and Robert Gentleman.",
+      "R was written at the University of Auckland in New Zealand and released as free software under the GNU GPL in the mid-1990s.",
+      "R's distinctive assignment arrow, <-, was inherited from the S language, which took it from APL keyboards that carried a dedicated left-arrow key.",
+    ],
+    'REBOL / Rez resource': [
+      "Classic Mac apps kept their icons, menus and dialogs in a 'resource fork' compiled from Rez text, an idea decades ahead of its time.",
+      "REBOL was designed by Carl Sassenrath, the architect of the Amiga's multitasking operating-system kernel, and its name stands for Relative Expression Based Object Language.",
+      "Apple's Rez had a companion tool, DeRez, that turned a compiled resource fork back into editable text - a rare round-trip decompiler for its day.",
+    ],
   },
   scr: {
-    'Windows screensaver': "A Windows .scr is just an .exe under a different extension, which is exactly why screensavers were once a favourite way to smuggle in malware.",
-    'Script file': "Several tools repurpose .scr for plain-text scripts, so the only reliable way to tell one from a screensaver is the MZ executable header.",
+    'Windows screensaver': [
+      "A Windows .scr is just an .exe under a different extension, which is exactly why screensavers were once a favourite way to smuggle in malware.",
+      "Screensavers were invented to stop static images burning permanently into CRT and plasma phosphor screens, a hazard modern LCD panels no longer face.",
+      "Berkeley Systems' After Dark popularised them in 1989, and its flying-toasters animation grew so iconic it ended up fought over in court.",
+    ],
+    'Script file': [
+      "Several tools repurpose .scr for plain-text scripts, so the only reliable way to tell one from a screensaver is the MZ executable header.",
+      "AutoCAD uses .scr for a script of commands run in sequence by its SCRIPT command, letting a designer automate repetitive drawing and plotting tasks from a text file.",
+      "In an AutoCAD script every blank space counts as pressing Enter, and any line beginning with a semicolon is ignored as a comment.",
+    ],
   },
   rc: {
-    'Windows resource script': "A Windows .rc is compiled into the binary .res that bakes a program's icons, menus and version info into its .exe.",
-    'Unix rc / runcom config': "The 'rc' in .bashrc and /etc/rc means 'run commands', a name inherited from a 1965 MIT system.",
+    'Windows resource script': [
+      "A Windows .rc is compiled into the binary .res that bakes a program's icons, menus and version info into its .exe.",
+      "A resource script is fed through the C preprocessor first, so it can use #include and #define just like C source before the resource compiler builds the .res.",
+      "Windows programs load these baked-in resources at runtime by numeric ID, which is how one executable can carry its interface in several languages.",
+    ],
+    'Unix rc / runcom config': [
+      "The 'rc' in .bashrc and /etc/rc means 'run commands', a name inherited from a 1965 MIT system.",
+      "Louis Pouzin, who also coined the word 'shell' for a command interpreter, created runcom on MIT's CTSS in the early 1960s as the ancestor of every .*rc file since.",
+      "Unix later borrowed the name for 'rc', an actual shell written by Tom Duff at Bell Labs to replace the Bourne shell's clumsier syntax.",
+    ],
   },
   fs: {
-    'F# source': "F# brought OCaml-style functional programming to .NET; its name nods both to 'functional' and to the ML language family it descends from.",
-    'GPU fragment shader': "A fragment shader runs once per pixel, potentially millions of times per frame, which is why even a tiny .fs file can bring a GPU to its knees.",
+    'F# source': [
+      "F# brought OCaml-style functional programming to .NET; its name nods both to 'functional' and to the ML language family it descends from.",
+      "F# was designed by Don Syme at Microsoft Research in Cambridge, whose earlier work bringing generics to .NET also shaped C#.",
+      "F#'s asynchronous workflows, shipped around 2007, directly inspired the async/await keywords later adopted by C# and many other languages.",
+    ],
+    'GPU fragment shader': [
+      "A fragment shader runs once per pixel, potentially millions of times per frame, which is why even a tiny .fs file can bring a GPU to its knees.",
+      "OpenGL calls it a 'fragment' rather than 'pixel' shader because it runs on candidate fragments that depth or stencil tests may still discard before any pixel is drawn.",
+      "Direct3D calls the very same stage a 'pixel shader', one of several naming splits between Microsoft's HLSL and the OpenGL GLSL world.",
+    ],
   },
 };

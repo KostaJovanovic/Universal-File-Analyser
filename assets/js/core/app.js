@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 191;
+const COMMIT_COUNT = 192;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -91,7 +91,7 @@ import { wireExportButton } from './export-data.js';
 import {
   PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, CSV_EXTS, SVG_EXTS,
   renderFmtOverlay, renderAboutFormats, formatCount,
-  CATEGORIES, categoryCounts, catalogGrouped,
+  CATEGORIES, catalogGrouped,
   formatPageHref, hasFormatPage, detectVariant
 } from './formats.js';
 
@@ -1129,7 +1129,7 @@ function recordAnalysed(ext, supported) {
 // ---------- analysis history (on-device, metadata only) ----------
 // A small "Recently analysed" list persisted in localStorage: name/size/type/
 // time only - never the file bytes, so it can't re-open files and nothing leaves
-// the device. Capped to the last 10 entries and pruned after a week.
+// the device. Capped to the last 20 entries and pruned after a week.
 const HISTORY_KEY = 'anr-history';
 const HISTORY_MAX = 20;
 const HISTORY_TTL = 7 * 24 * 60 * 60 * 1000;
@@ -1792,11 +1792,11 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
 
 
 // Changelog "tl;dr" digest - the whole history condensed into release groups of
-// five (the 1.0 and 2.0 milestones kept on their own), each with a few short notes
+// five (every X.0 milestone kept on its own via milestone:true), each with a few short notes
 // on what was new, no specifics unless they really matter. The tl;dr button
 // (setupPatchTldr) hides the full entry list and shows this instead. Newest first.
 // When you add a patch: extend the newest group's notes, or - once that group holds
-// five versions - start a new group above it (and never fold 1.0 or 2.0 into a range).
+// five versions - start a new group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
   { range: '5.13 - 5.15', notes: [
     'Files the browser cannot play or read on its own now get through: an unusual camera video is offered as a one-tap conversion, and audio it cannot decode is rebuilt so it plays instead of loading silent.',
@@ -3279,13 +3279,13 @@ window._anrReadableText = isReadableText;
   // Header "Status" line reflects live connectivity (header is swapped too).
   updateNetStatus();
 
-  // Anonymous visitor count, shown above Status in the header of every main page.
+  // Files-analysed total, shown above Status in the header of every main page.
   // The markup ships a "..." placeholder so the badge is visible before JS runs;
   // recordVisit() pings the stats Worker once per page load (cached across SPA
-  // navigations, one visit per IP / 3 days) and swaps the live files-analysed
-  // total into the header badge once it arrives. The visit is still counted
-  // server-side; the header just shows the analysed count. Offline or on the
-  // mock-less dev server it simply stays "...".
+  // navigations, and it also records an anonymous visit - one per IP / 3 days),
+  // then swaps the live files-analysed total into the header badge once it
+  // arrives. The badge shows the analysed count, not the visit count. Offline or
+  // on the mock-less dev server it simply stays "...".
   if ($('analysedCount')) {
     recordVisit().then((t) => {
       if (!t || typeof t.files !== 'number') return;

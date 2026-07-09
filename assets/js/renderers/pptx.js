@@ -94,8 +94,15 @@ export async function renderPptx(file, resultsEl) {
       if (rels[rid]) {
         const path = resolveRel('ppt/presentation.xml', rels[rid]);
         slideOrder.push(path);
-        // sld @show='0' marks the slide as hidden during a slideshow.
-        if (sid.getAttribute('show') === '0') hiddenSlides.add(path);
+        // p:sld @show='0' on the slide part marks it hidden during a slideshow
+        // (the attribute lives on the slide root, not the p:sldId list entry).
+        if (zip.has(path)) {
+          try {
+            const sld = parseXml(await zip.text(path));
+            const root = sld.getElementsByTagName('p:sld')[0] || sld.documentElement;
+            if (root && root.getAttribute('show') === '0') hiddenSlides.add(path);
+          } catch (_) { /* unreadable slide part - treat as visible */ }
+        }
       }
     }
   }
