@@ -117,8 +117,7 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
 
 // iOS Safari makes mediaEl.volume read-only (only the hardware buttons change
 // volume), so a drag slider there is a dead control - we hide it and keep just the
-// mute toggle (mediaEl.muted IS honoured). A CSS media query also hides the slider
-// on narrow screens; the mute button stays everywhere.
+// mute toggle (mediaEl.muted IS honoured) everywhere else.
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
@@ -130,24 +129,96 @@ const ICON_LO = SPK + '<path fill="none" stroke="currentColor" stroke-width="2" 
 const ICON_MUTE = SPK + '<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>';
 
 // All players share ONE volume/mute level, so changing it on any clip changes it
-// everywhere at once - and it persists across files and sessions via localStorage.
-// Every live player registers below; a change is applied to every registered media
-// element and each player's UI follows. Disconnected players are pruned so the
-// registry can't grow unbounded as files are analysed.
+// everywhere at once. Every live player registers below; a change is applied to
+// every registered media element and each player's UI follows. Disconnected
+// players are pruned so the registry can't grow unbounded as files are analysed.
 const VOL_KEY = 'anr-volume';
-// Only the volume LEVEL is remembered across sessions - never the mute flag. A
-// persisted mute (or a persisted volume of 0) is a silent footgun: it survives
-// cache/script clears and silences every video on every future file with no
-// obvious cause, which is exactly the "no sound anywhere" trap. So we always boot
-// UN-muted, and a stored 0 is treated as unset (restored to full) rather than
-// loading the page permanently silent.
+// Volume goes past the native 0-100% ceiling, up to 225%, for clips that are
+// just recorded too quiet - but 100% (unity gain, no boost applied) is always
+// the default a fresh player starts at.
+const MAX_VOL = 2.25;
+// The level is NOT remembered across page loads: every fresh load starts at exactly
+// 100% (unity). A boost is a per-clip fix for one quiet recording, and a persisted
+// mute/level is the classic "no sound anywhere" footgun (it survives cache/script
+// clears and silences every future file with no obvious cause) - so neither the
+// level nor the mute flag persists. The level is still shared LIVE across every
+// player on the page within a session (sharedVol + the registry below); it just
+// doesn't survive a refresh.
 let sharedVol = 1, sharedMuted = false, lastNonZero = 1;
-try {
-  const raw = localStorage.getItem(VOL_KEY);
-  const o = raw ? JSON.parse(raw) : null;
-  if (o && typeof o.v === 'number' && o.v > 0) { sharedVol = Math.min(1, o.v); lastNonZero = sharedVol; }
-} catch (_) {}
+// Drop any level saved by earlier builds so a stale value can't leak back in.
+try { localStorage.removeItem(VOL_KEY); } catch (_) {}
 const volPlayers = new Set();   // { mediaEl, wrap, sync }
+
+// A native <audio>/<video> element's own .volume is hard-capped at 1.0, so going
+// past 100% needs a Web Audio GainNode inserted after it. But an element may have
+// only ONE MediaElementSource for its whole life, so every effect that taps a
+// player - this volume boost AND the spectrogram's frequency-isolation graph in
+// audio.js - has to hang off the SAME source, or the second one to call
+// createMediaElementSource throws and silently dies (that was the "isolate
+// stopped working once volume shipped" bug).
+//
+// playerAudioNode builds `source -> boostGain -> destination` once and caches it
+// on the element. Both features share the returned object: boost drives
+// boostGain.gain; isolation connects FROM boostGain, reworking only its OUTPUT and
+// never touching the source -> boostGain link. One shared context serves both.
+let sharedCtx = null;
+export function playerAudioCtx() {
+  if (!sharedCtx) sharedCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return sharedCtx;
+}
+// Returns { ctx, source, boostGain } for mediaEl, or null if it can't be routed
+// (already claimed by another context, cross-origin-tainted, etc.).
+export function playerAudioNode(mediaEl) {
+  if (mediaEl._anrAudioNode) return mediaEl._anrAudioNode;
+  try {
+    const ctx = playerAudioCtx();
+    const source = ctx.createMediaElementSource(mediaEl);
+    const boostGain = ctx.createGain();
+    // A brick-wall limiter sits after the makeup gain. Without it, boosting a clip
+    // that's already near full scale just multiplies the peaks past 0 dBFS and they
+    // clip into distortion - louder numbers, barely louder sound. The limiter tames
+    // those peaks so the boost raises the AVERAGE level toward the ceiling instead,
+    // which is what actually reads as louder. Near-transparent at unity (a 0 dBFS
+    // peak sits right at the threshold, ~no reduction); it only bites once the boost
+    // pushes signal above the ceiling. Everything downstream (the isolation graph in
+    // audio.js) connects INTO this limiter, so it's always the last stage.
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = 0;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.25;
+    source.connect(boostGain);
+    boostGain.connect(limiter);
+    limiter.connect(ctx.destination);
+    // The element now reaches the speakers only through Web Audio, which bypasses
+    // its native .volume - so fold the current shared level into the gain and pin
+    // native volume to unity (driving both at once would attenuate twice).
+    boostGain.gain.value = sharedVol;
+    try { mediaEl.volume = 1; } catch (_) {}
+    // A routed element needs a running context; browsers start it suspended until
+    // a gesture, so resume on first play (and now, if a gesture already happened).
+    const resume = () => { if (ctx.state === 'suspended') ctx.resume().catch(() => {}); };
+    mediaEl.addEventListener('play', resume);
+    resume();
+    const node = { ctx, source, boostGain, limiter };
+    mediaEl._anrAudioNode = node;
+    return node;
+  } catch (_) {
+    return null;
+  }
+}
+// Apply a 0-MAX_VOL level to an element. Below 100% with no graph yet, the cheap
+// native .volume is enough; going past 100% - or an element already routed through
+// the graph by isolation - drives the boost gain instead, native pinned to 1.
+function applyVolumeTo(mediaEl, level) {
+  let node = mediaEl._anrAudioNode;
+  if (!node && level > 1) node = playerAudioNode(mediaEl);
+  try {
+    if (node) { mediaEl.volume = 1; node.boostGain.gain.value = level; }
+    else mediaEl.volume = Math.min(1, level);
+  } catch (_) {}
+}
 // Register a media element with the shared-volume system. Both makeVolume (UI
 // players) and the noVolume path (section-03 mini) funnel through here.
 function registerVolPlayer(mediaEl, wrap, sync) {
@@ -163,11 +234,11 @@ function applyShared() {
   // loudspeaker for clips with an undecodable audio codec - it always follows the
   // shared level/mute.
   const comp = getAudioCompanion();
-  if (comp) { try { comp.volume = sharedVol; comp.muted = sharedMuted; } catch (_) {} }
+  if (comp) { try { applyVolumeTo(comp, sharedVol); comp.muted = sharedMuted; } catch (_) {} }
   for (const p of volPlayers) {
     if (!p.wrap.isConnected) { volPlayers.delete(p); continue; }
     try {
-      p.mediaEl.volume = sharedVol;
+      applyVolumeTo(p.mediaEl, sharedVol);
       if (isSynced(p.mediaEl)) {
         // Exclusive audio: only the audio owner may sound; every other synced
         // player stays muted so the page never plays the same clip twice over
@@ -184,59 +255,125 @@ function applyShared() {
 // When the audio owner changes (user pressed a different player), re-apply the
 // shared level/mute so the new owner adopts it and the rest go quiet.
 onAudioOwner(() => applyShared());
+
+// Anything that wants to react to the shared LEVEL changing (e.g. the spectrogram
+// mirroring a boost into its display sensitivity) subscribes here. The callback
+// gets the current level (0..MAX_VOL) and mute flag; returns an unsubscribe fn.
+const volListeners = new Set();
+export function onSharedVolume(cb) { volListeners.add(cb); return () => volListeners.delete(cb); }
+export function sharedVolume() { return sharedVol; }
+
 function setShared(v, m) {
-  sharedVol = Math.max(0, Math.min(1, v));
+  sharedVol = Math.max(0, Math.min(MAX_VOL, v));
   if (sharedVol > 0) lastNonZero = sharedVol;
   sharedMuted = !!m;
-  // Persist only the level - never the mute flag (see the load block above).
-  try { localStorage.setItem(VOL_KEY, JSON.stringify({ v: sharedVol })); } catch (_) {}
+  // Deliberately not persisted - see the load block above (every load starts 100%).
   applyShared();
+  for (const cb of volListeners) { try { cb(sharedVol, sharedMuted); } catch (_) {} }
 }
 
-// A mute button + draggable volume bar. All instances drive/reflect the shared
-// state above. Mirrors the seek track's press/drag pattern (listeners attached on
-// press, removed on release).
+// A mute button that reveals a popup with a vertical volume slider (0-225%,
+// default 100%) on hover or click. All instances drive/reflect the shared state
+// above. The track mirrors the seek track's press/drag pattern (listeners
+// attached on press, removed on release), just along the Y axis and scaled to
+// MAX_VOL instead of 0-1.
 function makeVolume(mediaEl) {
   const muteBtn = el('button', { type: 'button', class: 'anr-player-mute', 'aria-label': 'Mute', html: ICON_HI });
+  const pctEl = el('div', { class: 'anr-player-volpct' }, '100%');
   const volFill = el('div', { class: 'anr-player-volfill' });
-  const volTrack = el('div', { class: 'anr-player-voltrack', role: 'slider', 'aria-label': 'Volume' }, [volFill]);
-  const wrap = el('div', { class: 'anr-player-vol' }, IS_IOS ? [muteBtn] : [muteBtn, volTrack]);
+  const volTrack = el('div', {
+    class: 'anr-player-voltrack', role: 'slider', 'aria-orientation': 'vertical', 'aria-label': 'Volume',
+    'aria-valuemin': '0', 'aria-valuemax': String(Math.round(MAX_VOL * 100)), 'aria-valuenow': '100',
+  }, [volFill]);
+  const volCard = el('div', { class: 'anr-player-volcard' }, [pctEl, volTrack]);
+  const volPop = el('div', { class: 'anr-player-volpop' }, [volCard]);
+  const wrap = el('div', { class: 'anr-player-vol' }, IS_IOS ? [muteBtn] : [muteBtn, volPop]);
 
   function sync() {
     const v = sharedMuted ? 0 : sharedVol;
-    volFill.style.width = (v * 100) + '%';
+    const frac = Math.min(1, v / MAX_VOL);
+    volFill.style.height = (frac * 100) + '%';
+    volFill.classList.toggle('is-boosted', v > 1);
+    pctEl.textContent = Math.round(v * 100) + '%';
+    volTrack.setAttribute('aria-valuenow', String(Math.round(v * 100)));
     muteBtn.innerHTML = v === 0 ? ICON_MUTE : (v < 0.5 ? ICON_LO : ICON_HI);
     muteBtn.setAttribute('aria-label', (sharedMuted || sharedVol === 0) ? 'Unmute' : 'Mute');
   }
+
+  // Opening the popup differs by input:
+  //  - Pointers that can hover (desktop mouse): hover opens, mouseleave closes.
+  //  - Touch (no hover): the button's tap drives it. The FIRST tap (popup closed)
+  //    only reveals the slider - muting on the way to the slider would be a nasty
+  //    surprise - and a tap while it's already open falls through to the mute
+  //    toggle. On desktop hover has already opened it, so a click always lands on
+  //    that mute path. Net rule: a click mutes only when the popup is already open.
+  // Only real hover-capable pointers get the mouseenter/leave handlers; attaching
+  // them on touch would fire on the synthesized mouseenter a tap emits and pre-open
+  // the popup, breaking the first-tap-reveals behaviour.
+  let hovering = false, dragging = false;
+  const canHover = !IS_IOS && !!(window.matchMedia && window.matchMedia('(hover: hover)').matches);
+  function open() { wrap.classList.add('is-open'); }
+  function close() { if (!dragging) wrap.classList.remove('is-open'); }
+  const isOpen = () => wrap.classList.contains('is-open');
+  if (!IS_IOS) {
+    if (canHover) {
+      wrap.addEventListener('mouseenter', () => { hovering = true; open(); });
+      wrap.addEventListener('mouseleave', () => { hovering = false; close(); });
+    }
+    // An outside tap/click dismisses an open popup (the main way to close on touch).
+    function onDocPointerDown(e) {
+      if (!wrap.isConnected) { document.removeEventListener('pointerdown', onDocPointerDown); return; }
+      if (!wrap.contains(e.target)) close();
+    }
+    document.addEventListener('pointerdown', onDocPointerDown);
+  }
+
   muteBtn.addEventListener('click', () => {
+    if (!IS_IOS && !isOpen()) { open(); return; }   // touch first tap: reveal only
     if (!sharedMuted && sharedVol > 0) setShared(sharedVol, true);   // mute
     else if (sharedMuted) setShared(sharedVol, false);              // unmute, keep level
     else setShared(lastNonZero, false);                            // was 0 -> restore
+    open();
   });
 
-  let dragging = false;
-  function setVol(clientX) {
+  function setVol(clientY) {
     const rect = volTrack.getBoundingClientRect();
-    setShared(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)), false);
+    const frac = Math.max(0, Math.min(1, (rect.bottom - clientY) / rect.height));
+    let v = frac * MAX_VOL;
+    if (Math.abs(v - 1) <= 0.06) v = 1;   // detent at the 100% slit (see the ::after tick)
+    setShared(v, false);
   }
-  function onMove(e) { if (dragging) setVol(e.clientX); }
-  function onUp() { dragging = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); }
+  function onMove(e) { if (dragging) setVol(e.clientY); }
+  function onUp() {
+    dragging = false;
+    window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp);
+    if (!hovering) close();
+  }
   volTrack.addEventListener('mousedown', (e) => {
-    dragging = true; setVol(e.clientX); e.preventDefault();
+    dragging = true; setVol(e.clientY); e.preventDefault();
     window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
   });
-  function onTMove(e) { if (dragging && e.touches[0]) { setVol(e.touches[0].clientX); e.preventDefault(); } }
-  function onTEnd() { dragging = false; window.removeEventListener('touchmove', onTMove); window.removeEventListener('touchend', onTEnd); }
+  function onTMove(e) { if (dragging && e.touches[0]) { setVol(e.touches[0].clientY); e.preventDefault(); } }
+  function onTEnd() {
+    dragging = false;
+    window.removeEventListener('touchmove', onTMove); window.removeEventListener('touchend', onTEnd);
+    // Stay open after a touch drag so the level can be fine-tuned with more drags;
+    // an outside tap dismisses it.
+  }
   volTrack.addEventListener('touchstart', (e) => {
-    dragging = true; setVol(e.touches[0].clientX); e.preventDefault();
+    dragging = true; setVol(e.touches[0].clientY); e.preventDefault();
     window.addEventListener('touchmove', onTMove, { passive: false }); window.addEventListener('touchend', onTEnd);
   }, { passive: false });
 
   // Reflect a change made outside our UI (e.g. native iOS/desktop controls) back
   // into the shared state. The epsilon guard stops a feedback loop with applyShared.
+  // A boosted element's .volume is deliberately pinned at 1 by applyVolumeTo, so
+  // it's not a real external change - skip straight to a re-sync instead of
+  // reading it back as if the user had dragged to 100%.
   // For a synced video we ignore the muted flag: muting there is owned by the
   // exclusive-audio layer (a muted follower must NOT drag the shared mute down).
   mediaEl.addEventListener('volumechange', () => {
+    if (mediaEl._anrAudioNode) { sync(); return; }
     const muteChanged = !isSynced(mediaEl) && mediaEl.muted !== sharedMuted;
     if (Math.abs(mediaEl.volume - sharedVol) > 0.001 || muteChanged) setShared(mediaEl.volume, isSynced(mediaEl) ? sharedMuted : mediaEl.muted);
     else sync();
@@ -246,7 +383,8 @@ function makeVolume(mediaEl) {
   // Adopt the shared level now. Synced videos keep the muted state they were built
   // with (main unmuted, gyro/mini muted) until the user picks an audio owner; a
   // plain audio player just takes the shared mute directly.
-  try { mediaEl.volume = sharedVol; if (!isSynced(mediaEl)) mediaEl.muted = sharedMuted; } catch (_) {}
+  applyVolumeTo(mediaEl, sharedVol);
+  try { if (!isSynced(mediaEl)) mediaEl.muted = sharedMuted; } catch (_) {}
   sync();
   return wrap;
 }

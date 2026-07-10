@@ -464,7 +464,7 @@ function page(key, e, depth) {
 
 <header class="site-header">
   <div class="grid">
-    <div class="site-mark">
+    <div class="site-mark site-mark--format">
       <span class="site-kicker">${esc(kicker)}</span>
       <h1 class="site-title">.${esc(d)}</h1>
       <p class="site-byline"><a href="/" style="color:inherit;text-decoration:none">Analyser</a> by <a href="https://link.valjdakosta.com/" class="site-byline-link" target="_blank" rel="noopener">valjdakosta</a></p>
@@ -472,8 +472,11 @@ function page(key, e, depth) {
       <nav class="site-mark-nav" aria-label="Pages">
         <a href="/" class="header-btn">Home</a>
         <a href="/about" class="header-btn">About</a>
+        <a href="/patch" class="header-btn">Patches</a>
         <a href="/formats" class="header-btn">Formats</a>
         <a href="/stats" class="header-btn">Stats</a>
+        <a href="/samples" class="header-btn">Samples</a>
+        <a href="${escAttr(hrefOf(key))}" class="header-btn" aria-current="page">.${esc(d)}</a>
         <button type="button" class="header-btn header-btn-share">${SHARE_SVG}Share</button>
       </nav>
     </div>

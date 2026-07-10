@@ -237,8 +237,10 @@
           <div class="tst-sub">.anr-btn.anr-btn--cta - the prominent red call to action</div>
           <button type="button" class="anr-btn anr-btn--cta">Analyse audio</button>
 
-          <div class="tst-sub">Header chips out of context: the Samples accent (href-driven), the Share chip with its icon, and .dark-toggle</div>
+          <div class="tst-sub">Header chips out of context: a plain chip, the current-page active fill (aria-current="page"), the Samples accent (href-driven), the Share chip with its icon, and .dark-toggle</div>
           <div class="tst-row">
+            <a href="/about" class="header-btn">About</a>
+            <a href="/about" class="header-btn" aria-current="page">Current</a>
             <a href="/samples" class="header-btn">Samples</a>
             <button type="button" class="header-btn header-btn-share"><svg class="header-btn-ico" viewBox="0 0 50 50" fill="currentColor" aria-hidden="true" focusable="false"><path d="M15 30c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 20c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M35 40c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8c-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3-1.3-3-3-3z"/><path d="M19.007 25.885l12.88 6.44-.895 1.788-12.88-6.44z"/><path d="M30.993 15.885l.894 1.79-12.88 6.438-.894-1.79z"/></svg>Share</button>
             <button type="button" class="dark-toggle">Dark mode</button>
@@ -684,7 +686,7 @@
       <div class="offline-bottom-row">
         <button type="button" class="offline-install">Install as app</button>
         <button type="button" class="offline-clear">Clear storage</button>
-        <details class="about-details"><summary>Dependencies</summary><p class="footer-meta">exifr, pdf.js, ffmpeg.wasm and friends.</p></details>
+        <details class="about-details"><summary>Dependencies</summary><dl class="about-defs"><div><dt>Metadata</dt><dd><a href="https://github.com/MikeKovarik/exifr" target="_blank" rel="noopener">exifr</a> <a class="dep-lic" href="https://github.com/MikeKovarik/exifr/blob/HEAD/LICENSE" target="_blank" rel="noopener">licence</a>. Each dependency carries a small bracketed licence link.</dd></div></dl></details>
       </div>
     </div>
   </div>

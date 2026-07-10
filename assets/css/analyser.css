@@ -392,6 +392,20 @@ body:not(:has(.site-nav)) .site-header::after { margin-top: clamp(28px, 4vw, 48p
 .site-mark--privacy .site-byline,
 .site-mark--samples .site-byline,
 .site-mark--compare .site-byline { padding-bottom: 0.37em; }
+/* That byline padding-bottom (clearance for the nudged "valjdakosta" underline)
+   also pushes the grey description - and the nav chip row below it - down by the
+   same 0.37em, so on these headers the nav sat lower than on the plain ones
+   (Home/About/Formats/Stats). Pull the description back up by exactly that padding
+   (0.37em of the byline, whose font is var(--t-mega) * 0.29) so the nav aligns
+   across every page; the nav follows the description, keeping their 24px gap.
+   Desktop only: at <=900px the header is a fixed-row grid, so the padding never
+   shifted the nav there and .site-sub keeps its own mobile margin. */
+@media (min-width: 901px) {
+  .site-mark--changelog .site-sub,
+  .site-mark--privacy .site-sub,
+  .site-mark--samples .site-sub,
+  .site-mark--compare .site-sub { margin-top: calc(20px - var(--t-mega) * 0.29 * 0.37); }
+}
 
 .site-sub {
   font-size: clamp(15px, 1.6vw, 18px);
@@ -400,6 +414,14 @@ body:not(:has(.site-nav)) .site-header::after { margin-top: clamp(28px, 4vw, 48p
   max-width: 50ch;
   line-height: 1.45;
 }
+
+/* Per-format pages (/formats/<ext>) carry a one-line description (the format
+   name, e.g. "MP3 audio") where every other page carries the standard two-line
+   tagline. That shorter block pulled the nav chip row up, so it no longer lined
+   up with the rest of the site. Reserve the tagline's height (two lines at the
+   50ch max-width - wrap count is font-size-independent since text and container
+   both scale with the font) so the nav drops to the same baseline everywhere. */
+.site-mark--format .site-sub { min-height: calc(1.45em * 2); }
 
 /* Cross-page buttons (About / Patch notes) sitting under the header text.
    Outlined mono pills matching the footer nav button; filled when current. */
@@ -438,6 +460,15 @@ button.header-btn { cursor: pointer; line-height: 1; }
    eye to the live demos; hover fills red to match the site's accent language. */
 .header-btn[href="/samples"] { color: var(--accent); border-color: var(--accent); }
 .header-btn[href="/samples"]:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
+/* Current-page nav chip: a persistent "you are here" fill (the inverted hover
+   state, made permanent) so the button for the page you're on always reads as
+   active. Keyed off aria-current, so the markup stays semantic and no extra
+   class is needed. Every page carries the same full chip row - only the active
+   one differs - which is what keeps the nav stable page to page. */
+.header-btn[aria-current="page"] { background: var(--fg); color: var(--bg); cursor: default; }
+.header-btn[href="/samples"][aria-current="page"],
+.header-btn[href="/samples"][aria-current="page"]:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 
 /* The "I'm feeling lucky" cell in the per-format .site-nav bar is a <button>;
    strip the native chrome so it sits in the grid exactly like the <a> nav-links
@@ -486,8 +517,8 @@ button.nav-link {
   flex: none;
 }
 
-/* On small phones the header chip row (now five: About/Patches/Formats/Stats/
-   Share) is tight - shave the gap and chip padding so the Share button stays on
+/* On small phones the header chip row (Home/About/Patches/Formats/Stats/Samples
+   + Share) is tight - shave the gap and chip padding so the Share button stays on
    the same row instead of dropping to a second one. */
 @media (max-width: 480px) {
   .site-mark-nav { gap: 6px; }
@@ -2559,6 +2590,8 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   gap: 10px;
 }
 .anr-iso-panel.is-hidden { display: none; }
+.anr-iso-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.anr-iso-presets:empty { display: none; }
 .anr-iso-hint { margin: 0; }
 .anr-iso-list { display: flex; flex-direction: column; gap: 6px; }
 .anr-iso-list:empty { display: none; }
@@ -2580,7 +2613,7 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 }
 .anr-iso-sep,
 .anr-iso-unit { color: var(--muted); }
-.anr-iso-actions { display: flex; gap: 8px; }
+.anr-iso-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* Segmented control groups (View / Resolution / Actions) - a captioned cluster
    with a hairline divider on its left edge. align-self:stretch makes the divider
@@ -2675,6 +2708,28 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   color: var(--fg);
   font-family: var(--font-mono);
   font-size: var(--t-small);
+}
+/* A range slider wrapped with a 100% "slit" marker over its track. The wrap stands
+   in for the bare <input> in the control's flex layout (same 120px footprint). */
+.anr-control .anr-range-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 120px;
+  vertical-align: middle;
+}
+.anr-control .anr-range-wrap input[type="range"] { width: 100%; }
+/* The slit itself: a short vertical tick at the 100% position (left set inline).
+   Non-interactive - clicks fall through to the slider, which snaps to exactly 100%
+   near it - so it never blocks grabbing the thumb when it rests at the default. */
+.anr-range-tick {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 10px;
+  background: var(--muted);
+  pointer-events: none;
 }
 
 /* Font preview card (nested in the identification card): give it clear breathing
@@ -2902,39 +2957,92 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   min-width: 80px;
   text-align: right;
 }
-/* Volume: a mute toggle + a thin draggable bar styled like the seek track. */
+/* Volume: a mute toggle that reveals a popup (hover or click) with a vertical
+   draggable bar, 0-225% - default 100% is unity gain, no boost applied. */
 .anr-player-vol {
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.anr-player-voltrack {
-  width: 64px;
-  height: 32px;
   position: relative;
   display: flex;
   align-items: center;
+}
+/* The popup's own box includes a 10px padding-bottom "bridge" down to the
+   button, so the gap is still part of its (and the wrap's) hoverable area -
+   without it, the mouse crosses uncovered space on the way up and the
+   wrap's mouseleave fires before the cursor ever reaches the popup. */
+.anr-player-volpop {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  padding-bottom: 10px;
+  transform: translateX(-50%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) ease;
+  z-index: 30;
+}
+.anr-player-vol.is-open .anr-player-volpop {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+.anr-player-volcard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 12px;
+  background: var(--surface);
+  border: var(--bd-hairline);
+  box-shadow: var(--shadow-popover);
+}
+.anr-player-volpct {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.anr-player-voltrack {
+  width: 28px;
+  height: 96px;
+  position: relative;
   cursor: pointer;
+  touch-action: none;   /* a vertical drag sets volume, never scrolls the page */
 }
 .anr-player-voltrack::before {
   content: '';
   position: absolute;
-  left: 0; right: 0;
-  height: 3px;
+  top: 0; bottom: 0;
+  left: 50%;
+  width: 3px;
+  transform: translateX(-50%);
   background: var(--rule);
 }
-.anr-player-volfill {
-  height: 3px;
-  background: var(--accent);
-  width: 100%;
-  pointer-events: none;
-  position: relative;
-  z-index: 1;
+/* 100% reference tick - the default/unity level, at 100/225 up the track. */
+.anr-player-voltrack::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 44.44%;
+  width: 12px;
+  height: 1px;
+  transform: translateX(-50%);
+  background: var(--muted);
 }
-/* Tight screens: keep the mute toggle, drop the slider (use hardware volume). */
-@media (max-width: 480px) {
-  .anr-player-voltrack { display: none; }
+.anr-player-volfill {
+  width: 3px;
+  height: 0%;
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent);
+  pointer-events: none;
+}
+/* Past 100%: the fill switches to the same amber used for "Partial" tags
+   elsewhere, a quiet cue that this clip is being amplified beyond its source. */
+.anr-player-volfill.is-boosted {
+  background: var(--partial);
 }
 
 /* ---------- TRANSPORT ---------- */
@@ -3398,6 +3506,21 @@ details[open] summary::after { content: "\2212"; }
   font-size: var(--t-small);
   color: var(--white-a80);
 }
+/* Small, secondary "licence" link after each dependency. Bracketed to match the
+   site's monospace [?] idiom; muted so it reads as an aside next to the dep name.
+   The footer forces plain <a> to --fg in dark mode, so both themes are set below. */
+.about-defs .dep-lic {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--white-a40);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.about-defs .dep-lic::before { content: "["; }
+.about-defs .dep-lic::after { content: "]"; }
+.about-defs .dep-lic:hover { color: var(--accent); }
+:root[data-theme="dark"] .site-footer--about a.dep-lic { color: var(--white-a40); }
+:root[data-theme="dark"] .site-footer--about a.dep-lic:hover { color: var(--accent); }
 .about-details {
   border-top: none;
   padding: 0;
@@ -7049,6 +7172,9 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   .anr-spec-card .anr-control:has(.anr-toggle),
   .anr-spec-card .anr-control:has(input[type="range"]) { grid-column: 1 / -1; }
   .anr-spec-card .anr-control:has(input[type="range"]) input[type="range"] { width: 100%; }
+  /* The range wrap stands in for the bare slider, so it takes the same full-width
+     flex treatment (the slit inside stays pinned to its 100% position). */
+  .anr-spec-card .anr-control .anr-range-wrap { flex: 1 1 auto; width: auto; min-width: 0; }
   .anr-spec-card .anr-control .anr-btn {
     display: flex;
     align-items: center;
