@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 198;
+const COMMIT_COUNT = 199;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -354,6 +354,21 @@ function boot() {
   // Reset the result containers, preview slots, and nav/section state back to
   // the pre-load layout. Shared by a fresh load and by cancelLoad().
   function clearResultsUI() {
+    // Stop any still-playing media before we detach it below. innerHTML = ''
+    // removes an <audio>/<video> node but a *detached* HTMLMediaElement keeps
+    // playing - and most players on the site (music, video, reversed, sonified,
+    // the muted-video PCM companion) ultimately sound through one - so without
+    // this the previous file's audio carries on over a newly imported file.
+    document.querySelectorAll('audio, video').forEach((m) => { try { m.pause(); } catch (_) {} });
+    // Playback that runs through raw Web Audio instead of a media element (the AI
+    // vocal/instrumental blend plays buffer sources straight to the destination)
+    // isn't stopped by pausing elements, so each such player registers a stopper
+    // here. Run them all, then clear - the incoming file's renderer re-registers.
+    if (window._anrMediaStoppers) {
+      for (const stop of window._anrMediaStoppers) { try { stop(); } catch (_) {} }
+      window._anrMediaStoppers.clear();
+    }
+
     photoResults.innerHTML = ''; photoResults.hidden = true;
     audioResults.innerHTML = ''; audioResults.hidden = true;
     videoResults.innerHTML = ''; videoResults.hidden = true;
@@ -1508,6 +1523,7 @@ window._anrReadableText = isReadableText;
     // build never loads it; withGlobalTauri exposes window.__TAURI__ in the shell.
     if (window.__TAURI__ || window.__TAURI_INTERNALS__) {
       import('./native-update.js').then((m) => m.initNativeUpdater()).catch(() => {});
+      import('./native-drop.js').then((m) => m.initNativeDrop()).catch(() => {});
     }
 
     boot._once = true;

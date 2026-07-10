@@ -3,7 +3,7 @@
    Extracted from app.js as a pure move; setupStatsPage() is called once from
    boot() and is a no-op on every page but /stats. */
 
-import { el } from './util.js';
+import { el, API_ORIGIN } from './util.js';
 import { setupSectionFx } from './effects.js';
 import { hasFormatPage, formatPageHref } from './formats.js';
 
@@ -24,7 +24,7 @@ export async function setupStatsPage() {
 
   let data = null;
   try {
-    const resp = await fetch('/api/stats', { headers: { accept: 'application/json' } });
+    const resp = await fetch(API_ORIGIN + '/api/stats', { headers: { accept: 'application/json' } });
     if (!resp.ok) throw new Error('bad status');
     data = await resp.json();
   } catch (_) { data = null; }

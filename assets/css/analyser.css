@@ -1375,8 +1375,11 @@ body.anr-has-file .nav-search { display: flex; }
 }
 /* Bottom-right camera-control stack (the view cube owns bottom-left): the manual
    zoom pad, the scroll-zoom toggle, then the fullscreen button at the corner. One
-   positioned column so the three read as a set and stack with a consistent gap. */
-.anr-gcode-cambtns {
+   positioned column so the three read as a set and stack with a consistent gap.
+   Shared by every interactive 3D viewer (the G-code toolpath and the STL/STEP/3MF
+   mesh viewer) via the neutral .anr-cam* class set; the .anr-gcode-* names are kept
+   as aliases so nothing that still references them breaks. */
+.anr-cam, .anr-gcode-cambtns {
   position: absolute;
   right: 12px;
   bottom: 12px;
@@ -1386,14 +1389,15 @@ body.anr-has-file .nav-search { display: flex; }
   align-items: flex-end;
   gap: 8px;
 }
-.anr-gcode-cambtns .anr-btn { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
+.anr-cam .anr-btn, .anr-gcode-cambtns .anr-btn { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
 /* The two wide text buttons match each other's width; the square zoom pad stays
    flush to the right edge above them. The scroll-zoom toggle is a stock .anr-btn
    toggle: white when off, accent-red (.is-active) while on. */
+.anr-cam-zoombtn, .anr-cam-fsbtn,
 .anr-gcode-zoombtn, .anr-gcode-fsbtn { align-self: stretch; text-align: center; }
 /* Manual zoom pad: a + stacked over a -, hold to zoom continuously. */
-.anr-gcode-zoompad { display: flex; flex-direction: column; gap: 8px; }
-.anr-gcode-zbtn {
+.anr-cam-pad, .anr-gcode-zoompad { display: flex; flex-direction: column; gap: 8px; }
+.anr-cam-zbtn, .anr-gcode-zbtn {
   width: 34px;
   height: 34px;
   padding: 0;
@@ -1407,7 +1411,10 @@ body.anr-has-file .nav-search { display: flex; }
 /* Mobile browsers (notably iOS Safari) don't support element fullscreen, and there
    is no wheel to gate - hide those two on a small canvas, but keep the manual zoom
    pad, which is the only precise zoom aid touch users get besides pinch. */
-@media (max-width: 700px) { .anr-gcode-fsbtn, .anr-gcode-zoombtn { display: none; } }
+@media (max-width: 700px) {
+  .anr-cam-fsbtn, .anr-cam-zoombtn,
+  .anr-gcode-fsbtn, .anr-gcode-zoombtn { display: none; }
+}
 
 /* Colour panel, overlaid top-right of the viewer: the colour-mode selector with the
    legend / key for the active mode directly beneath it. The canvas always clears to a
@@ -2628,19 +2635,32 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
    canvas height is the flex remainder, a taller row would shrink the canvas
    (settings appeared to randomly grow/shrink the spectrogram). */
 .anr-spec-card:fullscreen .anr-spec-stats,
-.anr-spec-card:-webkit-full-screen .anr-spec-stats {
-  color: var(--muted-on-dark);
-  grid-auto-flow: column;
-  grid-auto-columns: max-content;
-  grid-template-columns: none;
-  overflow: hidden;
+.anr-spec-card:-webkit-full-screen .anr-spec-stats { overflow: hidden; }
+/* The findings table collapses to a single horizontal line in fullscreen. */
+.anr-spec-card:fullscreen .anr-spec-stats .anr-readout,
+.anr-spec-card:-webkit-full-screen .anr-spec-stats .anr-readout { display: block; }
+.anr-spec-card:fullscreen .anr-spec-stats tbody,
+.anr-spec-card:-webkit-full-screen .anr-spec-stats tbody {
+  display: flex; flex-wrap: nowrap; gap: 4px 18px; align-items: baseline;
 }
+.anr-spec-card:fullscreen .anr-spec-stats tr,
+.anr-spec-card:-webkit-full-screen .anr-spec-stats tr {
+  display: inline-flex; gap: 6px; align-items: baseline;
+}
+.anr-spec-card:fullscreen .anr-spec-stats th,
+.anr-spec-card:-webkit-full-screen .anr-spec-stats th,
+.anr-spec-card:fullscreen .anr-spec-stats td,
+.anr-spec-card:-webkit-full-screen .anr-spec-stats td {
+  border: none; padding: 0; white-space: nowrap;
+}
+.anr-spec-card:fullscreen .anr-spec-stats th,
+.anr-spec-card:-webkit-full-screen .anr-spec-stats th { color: var(--muted-on-dark); }
+.anr-spec-card:fullscreen .anr-spec-stats td,
+.anr-spec-card:-webkit-full-screen .anr-spec-stats td { color: var(--on-dark); }
 .anr-spec-card:fullscreen .anr-spec-hint,
 .anr-spec-card:-webkit-full-screen .anr-spec-hint {
   white-space: nowrap; overflow: hidden;
 }
-.anr-spec-card:fullscreen .anr-spec-stat-val,
-.anr-spec-card:-webkit-full-screen .anr-spec-stat-val { color: var(--on-dark); }
 
 /* ---------- CONTROLS ROW ---------- */
 .anr-controls {
@@ -2764,6 +2784,11 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 .anr-iso-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .anr-iso-presets:empty { display: none; }
 .anr-iso-preset-clear { margin-left: auto; }   /* floats Clear to the row's right */
+/* Vertical divider between the AI separator button and the EQ presets. */
+.anr-iso-seg-div { color: var(--muted); opacity: 0.5; user-select: none; }
+/* Rough EQ presets sit to the left of the real AI separator, wrapping gracefully
+   when the row runs out of width. */
+.anr-iso-ai-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .anr-iso-hint { margin: 0; }
 .anr-iso-list { display: flex; flex-direction: column; gap: 6px; }
 .anr-iso-list:empty { display: none; }
@@ -3020,9 +3045,21 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   border-top: var(--bd-hairline);
   padding-top: 10px;
+}
+.anr-spec-stats-headleft { display: flex; align-items: center; gap: 12px; }
+/* Frame/bin/px/ms readout folded into the header (right, muted) instead of a
+   stray line under the grid - one tidy block. Wraps under on a narrow card. */
+.anr-spec-status {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--muted);
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 .anr-spec-stats-title {
   font-family: var(--font-mono);
@@ -3034,27 +3071,23 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 }
 /* The [?] in this header is a flex item, so neutralise .anr-info-btn's float. */
 .anr-spec-stats-head .anr-info-btn { float: none; }
-.anr-spec-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-  gap: 14px 20px;
-  margin: 14px 0 0;
-}
-.anr-spec-stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.anr-spec-stat-label {
+/* Holds the standard .anr-readout findings table; just a top margin here. */
+.anr-spec-stats { margin: 12px 0 0; }
+.anr-spec-stats .anr-readout { margin: 0; }
+
+/* Channel picker: a lean control strip above the spectrogram - a mono uppercase
+   label + [?] with the peak/RMS readout riding right, then the Mix/L/R buttons. */
+/* The Channel card uses the standard .anr-card h3 heading (via h3help) like its
+   sibling cards; only the peak/RMS readout beneath the buttons needs styling -
+   a muted mono line matching the spectrogram status readout. */
+.anr-chan-readout {
+  display: block;
   font-family: var(--font-mono);
   font-size: var(--t-tiny);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
   color: var(--muted);
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
 }
-.anr-spec-stat-val {
-  font-family: var(--font-mono);
-  font-size: var(--t-body);
-  color: var(--fg);
-  line-height: 1.3;
-}
-.anr-spec-stat-sub { color: var(--muted); font-size: var(--t-small); white-space: nowrap; }
 
 .anr-toggle { display: inline-flex; border: var(--bd-hairline); }
 .anr-toggle button {
@@ -3108,6 +3141,10 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   line-height: inherit;
 }
 .anr-info-btn:hover { color: var(--accent); }
+/* In a section heading the [?] sits right after the title text, not floated out
+   to the far right edge of the header. */
+.anr-card h3 > .anr-info-btn,
+.anr-iso-seclabel > .anr-info-btn { float: none; margin-left: 8px; }
 /* Label + [?] grouped on the left of a flex `summary` (which is space-between, so
    only the open/close marker sits at the right edge). */
 .anr-summary-label { display: inline-flex; align-items: center; gap: 8px; }
@@ -3261,6 +3298,19 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+}
+/* The 10px padding-bottom bridges the card down to the button's TOP; this reaches
+   the rest of the way DOWN over the whole 32px mute button (as wide as the card),
+   so sliding from the card onto the button never crosses uncovered space and the
+   wrap's mouseleave can't fire mid-move. Inherits the popup's pointer-events, so
+   it's only live while open. */
+.anr-player-volpop::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 34px;
 }
 .anr-player-volcard {
   display: flex;
@@ -6955,7 +7005,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 
 /* Scroll-zoom toggle (wheelZoomToggle in util.js), overlaid bottom-right of
    every viewer that zooms on a plain wheel scroll (STL 3D, LUT cubes, PCB 2D/3D
-   boards; the G-code viewer uses its own .anr-gcode-cambtns stack instead).
+   boards; the interactive 3D viewers use the shared .anr-cam stack instead).
    Sharp-cornered like every other control on the site;
    dark-translucent so it reads on both the dark WebGL canvas and the cream PCB
    stage. Hidden on small screens (no wheel on touch - pinch still zooms) and

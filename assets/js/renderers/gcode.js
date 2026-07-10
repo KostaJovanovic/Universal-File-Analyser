@@ -1662,7 +1662,7 @@ function buildViewer(data, opts = {}) {
   // user opts in. Gate the wheel handler on wheelOn BEFORE preventDefault, so a
   // disabled viewer lets the wheel scroll the page through it.
   let wheelOn = false;
-  const wheelZoomBtn = el('button', { type: 'button', class: 'anr-btn anr-gcode-zoombtn', 'aria-pressed': 'false' });
+  const wheelZoomBtn = el('button', { type: 'button', class: 'anr-btn anr-cam-zoombtn', 'aria-pressed': 'false' });
   const paintWheel = () => {
     wheelZoomBtn.textContent = wheelOn ? 'Scroll zoom on' : 'Scroll zoom off';
     wheelZoomBtn.title = wheelOn ? 'Scrolling over the viewer zooms it. Click to let the wheel scroll the page instead.'
@@ -1701,7 +1701,7 @@ function buildViewer(data, opts = {}) {
   // Fullscreen toggle anchored in the viewport's bottom-right corner (the view cube
   // lives bottom-left). Built into the viewer itself so it persists across the MSAA
   // rebuild and always sits over the canvas.
-  const fsBtn = el('button', { type: 'button', class: 'anr-btn anr-gcode-fsbtn', title: 'Toggle fullscreen', 'aria-label': 'Toggle fullscreen' }, 'Fullscreen');
+  const fsBtn = el('button', { type: 'button', class: 'anr-btn anr-cam-fsbtn', title: 'Toggle fullscreen', 'aria-label': 'Toggle fullscreen' }, 'Fullscreen');
   fsBtn.addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else if (wrap.requestFullscreen) wrap.requestFullscreen(); });
   wrap.addEventListener('fullscreenchange', () => { fsBtn.textContent = document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen'; });
 
@@ -1721,15 +1721,15 @@ function buildViewer(data, opts = {}) {
     btn.addEventListener('pointercancel', stop);
     btn.addEventListener('lostpointercapture', stop);
   }
-  const zoomInBtn = el('button', { type: 'button', class: 'anr-btn anr-gcode-zbtn', title: 'Zoom in (hold)', 'aria-label': 'Zoom in' }, '+');
-  const zoomOutBtn = el('button', { type: 'button', class: 'anr-btn anr-gcode-zbtn', title: 'Zoom out (hold)', 'aria-label': 'Zoom out' }, '−');
+  const zoomInBtn = el('button', { type: 'button', class: 'anr-btn anr-cam-zbtn', title: 'Zoom in (hold)', 'aria-label': 'Zoom in' }, '+');
+  const zoomOutBtn = el('button', { type: 'button', class: 'anr-btn anr-cam-zbtn', title: 'Zoom out (hold)', 'aria-label': 'Zoom out' }, '−');
   holdZoom(zoomInBtn, 0.94);
   holdZoom(zoomOutBtn, 1.06);
-  const zoomPad = el('div', { class: 'anr-gcode-zoompad' }, [zoomInBtn, zoomOutBtn]);
+  const zoomPad = el('div', { class: 'anr-cam-pad' }, [zoomInBtn, zoomOutBtn]);
 
   // Bottom-right camera stack (the view cube sits bottom-left): zoom pad on top,
   // then the scroll-zoom toggle, then fullscreen anchored at the corner.
-  wrap.appendChild(el('div', { class: 'anr-gcode-cambtns' }, [zoomPad, wheelZoomBtn, fsBtn]));
+  wrap.appendChild(el('div', { class: 'anr-cam' }, [zoomPad, wheelZoomBtn, fsBtn]));
 
   // Colour panel, top-right: a colour-mode selector with the legend / key for the
   // active mode directly beneath it. Built into the viewer so it survives the MSAA
@@ -3155,7 +3155,7 @@ export async function renderGcode(file, resultsEl, opts) {
       // offset tracking the toolbar's live height (the bar grows and shrinks with
       // More/Fewer controls, legend rows, window size).
       const liftCamBtns = () => {
-        const cam = viewer && viewer.wrap.querySelector('.anr-gcode-cambtns');
+        const cam = viewer && viewer.wrap.querySelector('.anr-cam');
         if (!cam) return;
         const fs = document.fullscreenElement === viewer.wrap && toolbar.parentNode === viewer.wrap;
         cam.style.bottom = fs ? (toolbar.offsetHeight + 12) + 'px' : '';

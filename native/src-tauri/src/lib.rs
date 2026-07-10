@@ -46,6 +46,8 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(desktop)]
     {
         use tauri_plugin_updater::UpdaterExt;
+        use tauri::Emitter;
+        use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
         if let Some(update) = app
             .updater()
             .map_err(|e| e.to_string())?
@@ -53,8 +55,24 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
             .await
             .map_err(|e| e.to_string())?
         {
+            // Stream real download progress to the frontend so it can show a
+            // progress bar. on_chunk is a Fn, so the running total lives in an
+            // atomic; each chunk emits (bytesSoFar, contentLengthOrNull) and the
+            // finish callback flips the UI to the brief "installing" phase.
+            let downloaded = Arc::new(AtomicU64::new(0));
+            let progress_app = app.clone();
+            let progress_acc = downloaded.clone();
+            let finish_app = app.clone();
             update
-                .download_and_install(|_chunk, _total| {}, || {})
+                .download_and_install(
+                    move |chunk, total| {
+                        let done = progress_acc.fetch_add(chunk as u64, Ordering::Relaxed) + chunk as u64;
+                        let _ = progress_app.emit("update://progress", (done, total));
+                    },
+                    move || {
+                        let _ = finish_app.emit("update://finished", ());
+                    },
+                )
                 .await
                 .map_err(|e| e.to_string())?;
             app.restart();
@@ -66,6 +84,19 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
         let _ = app;
         Ok(())
     }
+}
+
+// Read a file off disk and return its raw bytes to the frontend. Used by the
+// native drag-drop path: WebView2 delivers OS file drops as paths (not File
+// objects), so the JS reads them back through here and rebuilds File objects for
+// the normal analysis pipeline. Returns an efficient raw byte Response (an
+// ArrayBuffer on the JS side) - not a JSON number array - so large files (audio,
+// video, disk images) don't balloon crossing the IPC bridge.
+#[tauri::command]
+fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+    std::fs::read(&path)
+        .map(tauri::ipc::Response::new)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -80,7 +111,7 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
     builder
-        .invoke_handler(tauri::generate_handler![check_for_update, install_update])
+        .invoke_handler(tauri::generate_handler![check_for_update, install_update, read_file_bytes])
         .run(tauri::generate_context!())
         .expect("error while running the Analyser shell");
 }

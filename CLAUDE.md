@@ -123,6 +123,40 @@ main page's fixed sections (`#photoPreview`, `#videoPreview`, ...). It is a full
 main page: listed in `sw.js` `SHELL`, `sitemap.xml`, and both stamp-head and
 stamp-footer `PAGES`.
 
+## Native app (Tauri shell)
+
+`native/` wraps the **exact same website source** in a Tauri 2 shell for desktop
+(and eventual mobile) - there is **no separate frontend**. The repo root stays
+dependency-free; all npm/Cargo deps live under `native/` so Cloudflare's
+root-anchored build never sees a `package.json`.
+
+- **How the frontend is assembled**: `native/build-dist.mjs` copies the repo root
+  into `native/dist/` (Tauri's `frontendDist`), excluding dev-only dirs/files
+  (its exclude list mirrors `.assetsignore` plus native-only drops - `sw.js`,
+  robots/sitemaps/llms.txt). It then **vendors the big CDN-streamed WASM**
+  (ffmpeg core, onnxruntime-web + the Kim Vocal 2 model, OpenCASCADE) into
+  `dist/assets/vendor/`, cached in `native/.native-cache/`, so the app is fully
+  offline and strict-CSP-clean. Keep the pinned URLs/versions in `VENDOR` in
+  lockstep with the renderer constants (`video.js` `FFMPEG_CORE_BASE`,
+  `mdx-model.js` `ORT_VERSION`/`MDX_MODEL.url`, `occt-loader.js` `OCCT_VERSION`).
+- **Commands** (run from `native/`): `npm run dev` (`tauri dev` - loads the live
+  `serve.py` dev server via `devUrl`, no dist build needed), `npm run build`
+  (`tauri build` - runs `build-dist.mjs` first via `beforeBuildCommand`),
+  `node build-dist.mjs [--no-vendor]` (assemble dist manually; `--no-vendor`
+  skips the WASM download for a fast copy).
+- **Rust is near-empty by design** (`src-tauri/src/lib.rs`): the only native
+  logic is the desktop auto-updater bridge - two commands (`check_for_update`,
+  `install_update`) the frontend calls via `assets/js/core/native-update.js`,
+  pointed at GitHub Releases `latest.json`. Everything else (disabling the
+  service worker, clean-URL nav) is JS-side, gated on `window.__TAURI__` /
+  `window.__TAURI_INTERNALS__` so the web build is unaffected.
+- **Tracked vs generated**: `native/package.json` and `native/src-tauri/` source
+  are committed; `native/dist/`, `native/.native-cache/`, `node_modules/`,
+  `src-tauri/target/`, and `src-tauri/gen/` are gitignored.
+- Renderers that need a local WASM copy check the Tauri context before reaching
+  for the CDN - grep `__TAURI__` / native-shell checks in `video.js`,
+  `occt-loader.js`, `mdx-model.js`, `history.js`, `navigate.js`, `app.js`.
+
 ## File structure
 
 ```
@@ -142,6 +176,10 @@ tools/              — Node generator scripts (dev-only, in .assetsignore)
 worker/             — Cloudflare Worker: anonymous analysed-count stats API
                       (index.js + schema.sql + disperse-unsupported.sql). The only
                       server-side code; the analyser itself stays browser-only.
+native/             — Tauri 2 native shell (see "Native app"): build-dist.mjs
+                      assembles native/dist from the repo root; src-tauri/ holds
+                      the minimal Rust (auto-updater bridge). Deps stay here so
+                      the root stays dependency-free.
 README.md           — public GitHub readme (visitor-facing overview; this
                       file is the real working guidance)
 sw.js               — service worker (precache SHELL + cache epoch VERSION)

@@ -5,7 +5,7 @@
    only - never the bytes. Extracted from app.js as a pure move; the exports are
    called from boot() and handleFile(). */
 
-import { el, fmtBytes, row } from './util.js';
+import { el, fmtBytes, row, API_ORIGIN } from './util.js';
 
 // ---------- anonymous usage counters ----------
 // The only network calls this otherwise fully-local tool ever makes. They send
@@ -21,20 +21,8 @@ import { el, fmtBytes, row } from './util.js';
 // the same two fields the live ping sends, never bytes or filenames. This is the
 // only place the native desktop/mobile apps and the website share for analytics,
 // so the offline queue benefits every platform.
-// Where the ping goes. On the web it is same-origin (relative). A *production*
-// native build loads from the Tauri asset protocol (tauri.localhost / tauri:),
-// which has no /api server, so it must target the live site instead. In `tauri
-// dev` the page is served from http://localhost:3000 (serve.py, which mocks
-// /api), so we deliberately keep it relative there - dev testing never touches
-// the production counters.
-const API_ORIGIN = (() => {
-  try {
-    if (typeof location !== 'undefined' && (location.protocol === 'tauri:' || location.hostname === 'tauri.localhost')) {
-      return 'https://lab.valjdakosta.com';
-    }
-  } catch (_) {}
-  return '';
-})();
+// Same-origin on the web; the live site under the native shell (see API_ORIGIN
+// in util.js). This is the only place a file's extension leaves the device.
 const ANALYSED_EP = API_ORIGIN + '/api/analysed';
 const ANALYTICS_QUEUE_KEY = 'anr-analytics-queue';
 const ANALYTICS_QUEUE_MAX = 500;    // ~15 KB cap; oldest dropped past this

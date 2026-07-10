@@ -3,7 +3,7 @@
    spin), and reports geometry statistics (triangles, bounding box, surface area,
    volume). Self-contained - no external 3D library. */
 
-import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube, wheelZoomToggle } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube } from '../core/util.js';
 
 // ---------- STL parsing ----------
 // Returns { format, positions:Float32Array, normals:Float32Array, count,
@@ -410,14 +410,66 @@ function buildViewer(geo, opts = {}) {
     } else if (!twoFinger && e.touches[0]) { move(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
   }, { passive: false });
   canvas.addEventListener('touchend', (e) => { if (!e.touches.length) { up(); twoFinger = false; } });
-  const wheelZoom = wheelZoomToggle();
-  wrap.appendChild(wheelZoom.el);
-  canvas.addEventListener('wheel', (e) => {
-    if (!wheelZoom.enabled()) return;   // let the wheel scroll the page instead
-    e.preventDefault();
-    state.dist = Math.max(0.04, Math.min(150,state.dist * (1 + Math.sign(e.deltaY) * 0.1)));
-    dirty = true;
-  }, { passive: false });
+  // Shared zoom step for the wheel and the manual +/- pad (identical to the G-code
+  // viewer): factor < 1 moves the camera in, > 1 out, clamped to the orbit range.
+  function zoomBy(factor) { state.dist = Math.max(0.04, Math.min(150, state.dist * factor)); dirty = true; }
+
+  // Canvas-anchored camera stack, laid out exactly like the G-code viewer: the
+  // manual zoom pad on top, the scroll-zoom toggle, then the fullscreen button at
+  // the bottom-right corner (the view cube owns bottom-left). Built into the viewer
+  // so it survives the MSAA rebuild (which swaps the canvas) and shows in fullscreen.
+
+  // Scroll-zoom toggle - OFF by default so the wheel scrolls the page until the
+  // user opts in. Gate the wheel handler on wheelOn BEFORE preventDefault, so a
+  // disabled viewer lets the wheel scroll the page through it.
+  let wheelOn = false;
+  const wheelZoomBtn = el('button', { type: 'button', class: 'anr-btn anr-cam-zoombtn', 'aria-pressed': 'false' });
+  const paintWheel = () => {
+    wheelZoomBtn.textContent = wheelOn ? 'Scroll zoom on' : 'Scroll zoom off';
+    wheelZoomBtn.title = wheelOn ? 'Scrolling over the viewer zooms it. Click to let the wheel scroll the page instead.'
+                                 : 'Scrolling over the viewer moves the page. Click to zoom with the scroll wheel again.';
+    wheelZoomBtn.setAttribute('aria-pressed', wheelOn ? 'true' : 'false');
+    wheelZoomBtn.classList.toggle('is-active', wheelOn);   // red while on, like every toggle
+  };
+  wheelZoomBtn.addEventListener('click', (e) => { e.stopPropagation(); wheelOn = !wheelOn; paintWheel(); });
+  wheelZoomBtn.addEventListener('pointerdown', (e) => e.stopPropagation());   // a press must not also start an orbit
+  paintWheel();
+  canvas.addEventListener('wheel', (e) => { if (!wheelOn) return; e.preventDefault(); zoomBy(1 + Math.sign(e.deltaY) * 0.1); }, { passive: false });
+
+  // Manual zoom pad (+ over -): a press-and-hold repeats the zoom step on a timer,
+  // so you can ride the camera in or out without spamming clicks. Pointer capture
+  // keeps it zooming even if the finger/cursor drifts off the button mid-hold.
+  function holdZoom(btn, factor) {
+    let timer = null;
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+      zoomBy(factor);                                   // one step immediately on press
+      stop(); timer = setInterval(() => zoomBy(factor), 60);
+    });
+    btn.addEventListener('pointerup', stop);
+    btn.addEventListener('pointercancel', stop);
+    btn.addEventListener('lostpointercapture', stop);
+  }
+  const zoomInBtn = el('button', { type: 'button', class: 'anr-btn anr-cam-zbtn', title: 'Zoom in (hold)', 'aria-label': 'Zoom in' }, '+');
+  const zoomOutBtn = el('button', { type: 'button', class: 'anr-btn anr-cam-zbtn', title: 'Zoom out (hold)', 'aria-label': 'Zoom out' }, '−');
+  holdZoom(zoomInBtn, 0.94);
+  holdZoom(zoomOutBtn, 1.06);
+  const zoomPad = el('div', { class: 'anr-cam-pad' }, [zoomInBtn, zoomOutBtn]);
+
+  // Fullscreen toggle anchored at the corner - the shared camera-stack twin of the
+  // one in the G-code viewer (the card's toolbar no longer carries a separate one).
+  const camFsBtn = el('button', { type: 'button', class: 'anr-btn anr-cam-fsbtn', title: 'Toggle fullscreen', 'aria-label': 'Toggle fullscreen' }, 'Fullscreen');
+  camFsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (wrap.requestFullscreen) wrap.requestFullscreen();
+  });
+  wrap.addEventListener('fullscreenchange', () => { camFsBtn.textContent = document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen'; setTimeout(resize, 50); });
+
+  // Bottom-right camera stack: zoom pad on top, scroll-zoom toggle, fullscreen.
+  wrap.appendChild(el('div', { class: 'anr-cam' }, [zoomPad, wheelZoomBtn, camFsBtn]));
 
   // Render one off-axis isometric frame, framed so the model's bounding sphere
   // fills ~96% of the narrower field of view (2% margins), and read it back as a PNG
@@ -578,19 +630,15 @@ export function buildViewerCard(geo, title = '3D model', opts = {}) {
       viewer.state.color = [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255];
       viewer.markDirty();
     });
-    const fsBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Fullscreen');
-    fsBtn.addEventListener('click', () => {
-      if (document.fullscreenElement) document.exitFullscreen();
-      else if (viewer.wrap.requestFullscreen) viewer.wrap.requestFullscreen();
-    });
-    viewer.wrap.addEventListener('fullscreenchange', () => setTimeout(viewer.resize, 50));
+    // Fullscreen now lives in the canvas-anchored camera stack (built in
+    // buildViewer, matching the G-code viewer), so the toolbar no longer carries
+    // its own fullscreen button.
     controls.appendChild(spinBtn);
     controls.appendChild(resetBtn);
     controls.appendChild(projBtn);
     controls.appendChild(wireBtn);
     controls.appendChild(upBtn);
     controls.appendChild(qWrap);
-    controls.appendChild(fsBtn);
     // The colour picker sets the single uniform colour; hide it when the model
     // carries its own per-vertex colours or a texture (they override it anyway).
     if (!(geo.colors || geo.textureImage)) controls.appendChild(colorInput);

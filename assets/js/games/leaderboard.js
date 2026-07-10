@@ -7,6 +7,7 @@
 import { NAME_KEY, SUBMIT_KEY, DAY_MS, MIN_MS, MAX_PER_DAY, POWERUP_DEF, STARTWAVE_KEY } from './config.js';
 import { g, maxStartWave } from './state.js';
 import { restart } from './world.js';
+import { API_ORIGIN } from '../core/util.js';
 
 export function clearEndPanel() {
   if (g.endPanel) { g.endPanel.remove(); g.endPanel = null; }
@@ -113,7 +114,7 @@ function showLeaderboardView(top, mineName) {
 // Fetch the current top 5 into g.leaderboard (drawn in the left margin).
 export async function loadLeaderboard() {
   try {
-    const resp = await fetch('/api/leaderboard', { headers: { accept: 'application/json' } });
+    const resp = await fetch(API_ORIGIN + '/api/leaderboard', { headers: { accept: 'application/json' } });
     const data = await resp.json().catch(() => ({}));
     if (data && Array.isArray(data.top)) g.leaderboard = data.top;
   } catch (_) {}
@@ -130,7 +131,7 @@ async function submitScore(name, msgEl, submitBtn) {
   if (submitBtn) submitBtn.disabled = true;
   if (msgEl) { msgEl.className = 'anr-score-msg'; msgEl.textContent = 'Sending...'; }
   try {
-    const resp = await fetch('/api/score', {
+    const resp = await fetch(API_ORIGIN + '/api/score', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name, score: g.score, wave: g.wave, cause: g.cause })
     });
