@@ -3821,16 +3821,19 @@ details[open] summary::after { content: "\2212"; }
 .about-details summary::after { color: var(--white-a40); font-size: var(--t-tiny); line-height: 1; }
 .about-details[open] summary { margin-bottom: 16px; }
 .about-details .about-defs { margin: 0; }
-/* Dependencies now lives in the Install/Clear button row. Drop its margin, and
-   when opened let it take a full-width line of its own so the definition grid
-   isn't squeezed into the narrow flex item. */
-.offline-bottom-row .about-details { margin: 0; display: flex; flex-direction: column; }
+/* Dependencies is the 3rd button in the Install/Clear row and must never resize
+   or move when toggled. display:contents promotes its <summary> and <dl> to
+   direct grid items: the summary auto-flows into the 3rd cell (fixed-width, like
+   the two buttons beside it) and stays put in both states, while the definitions
+   open as a full-width panel on the next row instead of stretching the button. */
+.offline-bottom-row .about-details { display: contents; }
 .offline-bottom-row .about-details summary { justify-content: center; box-sizing: border-box; width: 100%; }
-/* Closed: also stretch to the row height so it matches the other two buttons. */
-.offline-bottom-row .about-details:not([open]) summary { flex: 1 1 auto; }
-/* Open: span the full row; the remaining two buttons split it in half (below). */
-.offline-bottom-row .about-details[open] { grid-column: 1 / -1; }
-.offline-bottom-row:has(.about-details[open]) { grid-template-columns: repeat(2, 1fr); }
+/* Open: the list spans the whole row underneath; the button above is unchanged.
+   (Closed, the <dl> drops out of the grid entirely, leaving a clean 3-up row.) */
+.offline-bottom-row .about-details .about-defs { grid-column: 1 / -1; }
+.offline-bottom-row .about-details:not([open]) .about-defs { display: none; }
+/* No summary bottom-margin inside the row - it would unbalance the button height. */
+.offline-bottom-row .about-details[open] summary { margin-bottom: 0; }
 
 .offline-section {
   border-top: 1px solid var(--border-on-dark);
@@ -6183,6 +6186,15 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 /* Declutter: drop the drifting grid backdrop entirely (it is both motion and
    visual noise behind the text). */
 :root[data-a11y="on"] body::before { display: none; }
+/* Separation: pull the page a clear step off the card colour. The framed panels
+   (.section-meta / .section-content) already paint var(--bg) with a hairline;
+   tinting the page behind them lifts them off the backdrop so they read as
+   distinct cards (low vision benefits from the extra boundary). Deeper than the
+   default var(--surface) wash, by request: light - page #e4e4e4, card #fff;
+   dark - page #232323, card #0a0a0a. (:root IS <html>, so the tint goes on :root
+   directly - a "html" descendant selector would match nothing.) */
+:root[data-a11y="on"] { background: #e4e4e4; }
+:root[data-theme="dark"][data-a11y="on"] { background: #232323; }
 /* The chip shows its on-state with an accent fill, like a pressed control. */
 #a11yToggle[aria-pressed="true"] {
   background: var(--accent);
@@ -8552,6 +8564,26 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
 .sample-chip:focus-visible .sample-thumb { color: var(--accent); }
 .sample-chip:active { transform: translateY(-1px); }
 .sample-chip.is-loading { opacity: 0.55; pointer-events: none; }
+
+/* "More" reveal: the extra chips are dropped from the grid until the More button
+   is clicked (app.js adds .is-expanded to the gallery), then they fade/slide in.
+   No animation fill so hover transforms still work once the reveal finishes. */
+.sample-chip--extra { display: none; }
+/* The .sample-chip display:flex would otherwise beat the hidden attribute's
+   UA display:none, so re-assert it - this is how the More button disappears once
+   it's clicked (app.js sets .hidden on it). */
+.sample-chip[hidden] { display: none; }
+.sample-gallery.is-expanded .sample-chip--extra {
+  display: flex;
+  animation: sample-more-reveal 0.32s ease;
+}
+@keyframes sample-more-reveal {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sample-gallery.is-expanded .sample-chip--extra { animation: none; }
+}
 
 /* Cursor-following info popup, shown while hovering a sample chip (wired in
    app.js). Fixed-positioned and pointer-events:none so it never blocks the chip

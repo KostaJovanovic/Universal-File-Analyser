@@ -12,14 +12,18 @@ import { el } from './util.js';
 // Swiss-style confirmation modal. Resolves true on confirm, false on
 // cancel/backdrop-dismiss. Used as the mobile "did you mean to upload?" guard
 // so a stray tap on a dropzone doesn't immediately pop the native file picker.
-export function anrConfirm(title, okLabel) {
+// opts (all optional): { kicker } overrides the 'Upload' eyebrow, { cancelLabel }
+// the Cancel text, { hideCancel } drops the cancel button (a one-button notice,
+// e.g. the native updater's "up to date" message).
+export function anrConfirm(title, okLabel, opts) {
+  opts = opts || {};
   return new Promise((resolve) => {
-    const cancelBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, 'Cancel');
+    const cancelBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, opts.cancelLabel || 'Cancel');
     const okBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-ok' }, okLabel || 'Choose file');
     const card = el('div', { class: 'anr-modal-card' }, [
-      el('p', { class: 'anr-modal-kicker' }, 'Upload'),
+      el('p', { class: 'anr-modal-kicker' }, opts.kicker || 'Upload'),
       el('p', { class: 'anr-modal-title' }, title),
-      el('div', { class: 'anr-modal-actions' }, [cancelBtn, okBtn])
+      el('div', { class: 'anr-modal-actions' }, opts.hideCancel ? [okBtn] : [cancelBtn, okBtn])
     ]);
     const overlay = el('div', { class: 'anr-modal' }, card);
     document.body.appendChild(overlay);

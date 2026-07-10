@@ -76,7 +76,7 @@ function humanSize(bytes) {
   return `${n < 10 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
 }
 
-function chip(name, bytes) {
+function chip(name, bytes, extra = false) {
   const ext = extOf(name);
   const info = extInfo.get(ext) || { label: ext ? ext.toUpperCase() : 'File', desc: '', depth: 'id', catKey: 'system', catLabel: 'System', catOrder: 999 };
   const caption = SAMPLE_PAGES[name] || info.desc || '';
@@ -116,8 +116,20 @@ function chip(name, bytes) {
   const depthTag = (dm && info.depth !== 'full')
     ? `<span class="sample-depth ${dm.cls}" title="${escAttr(dm.title)}">${dm.label}</span>`
     : '';
-  return `        <button type="button" class="sample-chip" data-sample="${escAttr(href)}" data-name="${escAttr(name)}" data-cat="${escAttr(info.catKey)}" data-label="${escAttr(info.label)}" data-ext="${escAttr(tile)}" data-size="${escAttr(size)}" data-desc="${escAttr(shortDesc)}" aria-label="${escAttr(aria)}">${depthTag}<span class="sample-thumb${sizeMod}" aria-hidden="true">${esc(tile)}</span><span class="sample-name"><span>${esc(display)}</span></span></button>`;
+  // Extra chips (everything past the primary set) start hidden behind the "More"
+  // button - the .sample-chip--extra class keeps them out of the grid until
+  // app.js expands the gallery.
+  const extraCls = extra ? ' sample-chip--extra' : '';
+  return `        <button type="button" class="sample-chip${extraCls}" data-sample="${escAttr(href)}" data-name="${escAttr(name)}" data-cat="${escAttr(info.catKey)}" data-label="${escAttr(info.label)}" data-ext="${escAttr(tile)}" data-size="${escAttr(size)}" data-desc="${escAttr(shortDesc)}" aria-label="${escAttr(aria)}">${depthTag}<span class="sample-thumb${sizeMod}" aria-hidden="true">${esc(tile)}</span><span class="sample-name"><span>${esc(display)}</span></span></button>`;
 }
+
+// The primary chips are always visible, in this exact order; every other sample
+// hides behind the "More" button. Keyed by lowercase extension.
+const PRIMARY_EXTS = ['jpg', 'mp3', 'mp4', 'tap', 'cube', 'obj', 'kicad_pcb'];
+
+// The "More" chip - a normal-looking chip (a + tile over a "More" label) that
+// app.js turns into a one-way reveal of the hidden extras.
+const MORE_CHIP = '        <button type="button" class="sample-chip sample-chip--more" id="sampleMore" aria-expanded="false" aria-label="Show more samples"><span class="sample-thumb" aria-hidden="true">+</span><span class="sample-name"><span>More</span></span></button>';
 
 // Gather files (skip dotfiles and _-prefixed meta files, and any sub-directories).
 let files = [];
@@ -144,12 +156,28 @@ let block;
 if (files.length) {
   // One flat gallery - no per-category grouping or headings. Within each bucket,
   // sort alphabetically by extension (filename as the tie-breaker).
-  const chips = files
-    .sort((a, b) => bucketOf(a) - bucketOf(b)
-      || extOf(a).localeCompare(extOf(b))
-      || a.localeCompare(b, undefined, { sensitivity: 'base' }))
-    .map((n) => chip(n, statSync(join(SAMPLES_DIR, n)).size))
-    .join('\n');
+  const sorted = files.sort((a, b) => bucketOf(a) - bucketOf(b)
+    || extOf(a).localeCompare(extOf(b))
+    || a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  const sizeOf = (n) => statSync(join(SAMPLES_DIR, n)).size;
+  // Split into the always-shown primary set (in PRIMARY_EXTS order) and the rest,
+  // which sit behind the "More" button. If nothing qualifies as primary, fall
+  // back to a plain flat gallery (no button).
+  const primary = sorted
+    .filter((n) => PRIMARY_EXTS.includes(extOf(n)))
+    .sort((a, b) => PRIMARY_EXTS.indexOf(extOf(a)) - PRIMARY_EXTS.indexOf(extOf(b))
+      || a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  const extras = sorted.filter((n) => !PRIMARY_EXTS.includes(extOf(n)));
+  let chips;
+  if (primary.length && extras.length) {
+    chips = [
+      ...primary.map((n) => chip(n, sizeOf(n))),
+      MORE_CHIP,
+      ...extras.map((n) => chip(n, sizeOf(n), true)),
+    ].join('\n');
+  } else {
+    chips = sorted.map((n) => chip(n, sizeOf(n))).join('\n');
+  }
   block = `        <div class="sample-gallery">
 ${chips}
         </div>`;

@@ -324,7 +324,14 @@ function makeBlobURL(data, type) {
 // and reads its `default` export. The UMD build has no default export (it only
 // assigns module.exports/AMD), so a module worker gets `undefined` and throws
 // "failed to import ffmpeg-core.js". The ESM build has `export default`, so it works.
-const FFMPEG_CORE_BASE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
+// Production native build (Tauri asset protocol): the ~31 MB core is vendored into
+// the bundle by tools/build-dist.mjs and loaded locally, so video/audio ffmpeg
+// paths work offline. Web + `tauri dev` keep using the CDN (the core is over
+// Cloudflare's 25 MiB asset cap, which is the only reason it isn't bundled there).
+const NATIVE_SHELL = typeof location !== 'undefined' && (location.protocol === 'tauri:' || location.hostname === 'tauri.localhost');
+const FFMPEG_CORE_BASE = NATIVE_SHELL
+  ? '/assets/vendor/ffmpeg-core'
+  : 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
 let ffmpegInstance = null;
 let _ffLoaderEl = null;
 

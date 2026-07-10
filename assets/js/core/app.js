@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 196;
+const COMMIT_COUNT = 197;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1116,7 +1116,7 @@ window._anrReadableText = isReadableText;
     if (samplePop) samplePop.classList.remove('is-on');
   };
 
-  document.querySelectorAll('.sample-chip').forEach((card) => {
+  document.querySelectorAll('.sample-chip:not(.sample-chip--more)').forEach((card) => {
     if (card._anrWired) return;
     card._anrWired = true;
     card.addEventListener('pointerenter', (e) => {
@@ -1183,6 +1183,23 @@ window._anrReadableText = isReadableText;
       }
     });
   });
+
+  // ----- "More" chip: one-way reveal of the rest of the sample gallery -----
+  // Adds .is-expanded to the gallery (unhides + fades in the .sample-chip--extra
+  // chips), moves focus to the first revealed chip for keyboard users, then
+  // removes itself - there's no collapse back.
+  const sampleMore = $('sampleMore');
+  if (sampleMore && !sampleMore._anrWired) {
+    sampleMore._anrWired = true;
+    sampleMore.addEventListener('click', () => {
+      const gallery = sampleMore.closest('.sample-gallery');
+      if (gallery) gallery.classList.add('is-expanded');
+      sampleMore.setAttribute('aria-expanded', 'true');
+      sampleMore.hidden = true;
+      const firstExtra = gallery && gallery.querySelector('.sample-chip--extra');
+      if (firstExtra) firstExtra.focus();
+    });
+  }
 
   // ----- Page-level drag/drop (window listeners added once) -----
   if (!boot._once) {
@@ -1485,6 +1502,13 @@ window._anrReadableText = isReadableText;
         document.body.appendChild(a); a.click(); a.remove();
       }
     });
+
+    // Native shell only: wire the auto-updater (a silent check on launch plus the
+    // manual window.anrCheckForUpdates() entry point). Dynamic-imported so the web
+    // build never loads it; withGlobalTauri exposes window.__TAURI__ in the shell.
+    if (window.__TAURI__ || window.__TAURI_INTERNALS__) {
+      import('./native-update.js').then((m) => m.initNativeUpdater()).catch(() => {});
+    }
 
     boot._once = true;
   } // end one-time guard

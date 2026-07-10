@@ -16,7 +16,19 @@
    ONNX runtime is jsDelivr-hosted, pinned to ORT_VERSION. */
 
 export const ORT_VERSION = '1.20.1';
-export const ORT_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@' + ORT_VERSION + '/dist/';
+
+// In a *production* native build (Tauri asset protocol) the runtime + model are
+// vendored into the bundle by tools/build-dist.mjs and loaded locally, so the app
+// works offline with no CDN round-trip and stays strict-CSP-clean. On the web -
+// and in `tauri dev` (served from localhost) - they load from the CDN, because the
+// 30 MB-class files exceed Cloudflare's 25 MiB per-asset cap. `location` is the
+// worker's own location here (this module is imported by mdx-worker.js), which
+// carries the same origin. See research/SPIKE-WEBKIT-RESULTS.md.
+const NATIVE_SHELL = typeof location !== 'undefined' && (location.protocol === 'tauri:' || location.hostname === 'tauri.localhost');
+
+export const ORT_BASE = NATIVE_SHELL
+  ? '/assets/vendor/onnxruntime/'
+  : 'https://cdn.jsdelivr.net/npm/onnxruntime-web@' + ORT_VERSION + '/dist/';
 
 // The WebGPU-capable ESM entry (the "jsep" build). The worker requests
 // ['webgpu', 'wasm'], so inference runs on the GPU where it's available
@@ -35,7 +47,10 @@ export const MDX_MODEL = {
   name: 'Kim Vocal 2',
   // HuggingFace mirror (CORS-enabled). If this ever 404s, any repo hosting the
   // same Kim_Vocal_2.onnx works - only the URL changes, the geometry below is fixed.
-  url: 'https://huggingface.co/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx',
+  // The native build vendors it locally (see NATIVE_SHELL above) for offline use.
+  url: NATIVE_SHELL
+    ? '/assets/vendor/models/Kim_Vocal_2.onnx'
+    : 'https://huggingface.co/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx',
   bytes: 66759214,            // ~63.7 MB, for the size-warning popup
   nFft: 7680,
   dimF: 3072,                 // model input keeps the lowest 3072 freq bins

@@ -16,3 +16,15 @@ nul
 
 # Local docs work-order / planning note - not shipped, not tracked
 DOCS_PLAN.md
+
+# --- Native app (Tauri shell) - everything lives under native/ ---
+# Only the generated/heavy parts are ignored; native/package.json + the src-tauri
+# source ARE tracked (they sit under native/, so the root-anchored Cloudflare build
+# never sees a package.json and can't be nudged into `npm install` on push).
+native/node_modules/
+# Assembled frontend bundle + cached CDN WASM downloads (rebuilt by build-dist.mjs).
+native/dist/
+native/.native-cache/
+# Rust build artifacts + generated mobile scaffolds (also in native/src-tauri/.gitignore).
+native/src-tauri/target/
+native/src-tauri/gen/
