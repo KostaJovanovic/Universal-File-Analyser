@@ -34,25 +34,34 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
   // applies when it becomes the audio owner) - it just has no volume UI.
   const vol = opts.noVolume ? null : makeVolume(mediaEl);
   const container = el('div', { class: 'anr-player' }, [playBtn, trackEl, timeEl, vol]);
+  // When a controller is attached (see container._anrTransport below), this
+  // transport stops driving its own <audio> and instead delegates play/pause and
+  // scrubbing to that controller, with the controller pushing the fill/time/glyph
+  // back via update(). The spectrogram's blend slider uses this so the play button
+  // under the spectrogram drives the separated-stem playback, in sync.
+  let controller = null;
   // A volume-less synced player still needs to track the shared level/mute, so
   // register it directly (makeVolume already registers the ones that have a UI).
   if (opts.noVolume) registerVolPlayer(mediaEl, container, () => {});
 
   playBtn.addEventListener('click', () => {
+    if (controller) { controller.toggle(); return; }
     // Once playback has ended the button is a replay control: restart from 0.
     if (mediaEl.ended) { mediaEl.currentTime = 0; mediaEl.play(); }
     else if (mediaEl.paused) mediaEl.play();
     else mediaEl.pause();
   });
   mediaEl.addEventListener('play', () => {
+    if (controller) return;   // the controller owns the glyph/clock while attached
     playBtn.textContent = '❚❚'; playBtn.classList.remove('is-replay');
     playBtn.setAttribute('aria-label', 'Pause');
     tick();
   });
   // On a natural end some browsers fire 'pause' too; don't let it overwrite the
   // replay glyph (guard on mediaEl.ended, which is already true by then).
-  mediaEl.addEventListener('pause', () => { if (!mediaEl.ended) { playBtn.textContent = '▶'; playBtn.setAttribute('aria-label', 'Play'); } });
+  mediaEl.addEventListener('pause', () => { if (!controller && !mediaEl.ended) { playBtn.textContent = '▶'; playBtn.setAttribute('aria-label', 'Play'); } });
   mediaEl.addEventListener('ended', () => {
+    if (controller) return;
     playBtn.textContent = '↻'; playBtn.classList.add('is-replay');
     playBtn.setAttribute('aria-label', 'Replay from start');
   });
@@ -62,6 +71,7 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
     const rect = trackEl.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     fillEl.style.width = (frac * 100) + '%';
+    if (controller) { controller.seek(frac); return; }
     const d = dur();
     // Set currentTime directly. The browser coalesces rapid seeks during a drag;
     // an explicit seeking-gate could get stuck (a no-op seek never fires 'seeked',
@@ -101,6 +111,7 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
   }, { passive: false });
 
   function tick() {
+    if (controller) return;   // while delegated, the controller pushes UI via update()
     const d = dur();
     const pct = d > 0 ? (mediaEl.currentTime / d) * 100 : 0;
     fillEl.style.width = pct + '%';
@@ -111,6 +122,29 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
   mediaEl.addEventListener('loadedmetadata', tick);
   mediaEl.addEventListener('durationchange', tick);
   tick();
+
+  // Transport delegation hooks. attach() hands play/pause + scrubbing to an external
+  // controller ({ toggle(), seek(frac) }) and freezes the media-driven UI; update()
+  // lets that controller push the fill/time/glyph; detach() restores normal <audio>
+  // driving. The spectrogram blend uses this so the under-spectrogram play button
+  // controls the separated-stem playback and every scrubber stays in sync.
+  container._anrTransport = {
+    attach(ctl) { controller = ctl; },
+    detach() {
+      controller = null;
+      playBtn.classList.toggle('is-replay', mediaEl.ended);
+      playBtn.textContent = mediaEl.ended ? '↻' : (mediaEl.paused ? '▶' : '❚❚');
+      playBtn.setAttribute('aria-label', mediaEl.ended ? 'Replay from start' : (mediaEl.paused ? 'Play' : 'Pause'));
+      tick();
+    },
+    update(frac, curSec, durSec, playing) {
+      fillEl.style.width = (Math.max(0, Math.min(1, frac)) * 100) + '%';
+      timeEl.textContent = fmt(curSec) + ' / ' + fmt(durSec);
+      playBtn.classList.remove('is-replay');
+      playBtn.textContent = playing ? '❚❚' : '▶';
+      playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    },
+  };
 
   return container;
 }

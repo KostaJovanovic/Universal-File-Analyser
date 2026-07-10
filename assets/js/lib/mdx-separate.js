@@ -1,0 +1,116 @@
+/* Analyser - MDX-Net separation pipeline (pure DSP, model call injected).
+
+   Mirrors the reference UVR / python-audio-separator MDX "demix" exactly:
+     - work at 44.1 kHz, stereo (mono is duplicated to two channels);
+     - pad `trim` (= n_fft/2) of silence each side and to a whole number of
+       gen_size steps;
+     - slide a chunk_size = hop*(dim_t-1) window every gen_size samples;
+     - STFT each chunk per channel, crop to the lowest dim_f bins, pack into the
+       model's [1, 4, dim_f, dim_t] tensor (4 = 2 channels x real/imag, laid out
+       as [ch0re, ch0im, ch1re, ch1im]);
+     - run the model -> predicted vocal spectrogram (same shape);
+     - zero-pad the cropped bins back to n_bins, ISTFT, keep the middle gen_size
+       (overlap-discard), concatenate;
+     - multiply by the model's magnitude compensation; the instrumental is just
+       original - vocal.
+
+   The ONNX inference is passed in as runModel(inputF32, [1,4,dim_f,dim_t]) =>
+   Float32Array, so this module has no browser/ORT dependency and is unit-tested
+   in Node (scratchpad/test-separate.mjs) with an identity model. */
+
+import { makeStftEngine } from './mdx-stft.js';
+
+export const MDX_SR = 44100;   // MDX-Net models are trained at 44.1 kHz
+
+export async function separateVocals({ channels, model, runModel, onProgress }) {
+  const { nFft, hop, dimF, dimT, compensate } = model;
+  const eng = makeStftEngine(nFft, hop);
+  const nBins = eng.nBins;
+  const trim = nFft >> 1;                 // n_fft/2
+  const chunkSize = hop * (dimT - 1);     // samples per model window
+  const genSize = chunkSize - 2 * trim;   // usable (kept) samples per window
+
+  // Model needs exactly two channels; duplicate mono, drop extra channels.
+  let ch = channels;
+  if (ch.length === 1) ch = [ch[0], ch[0]];
+  else if (ch.length > 2) ch = [ch[0], ch[1]];
+  const nSample = ch[0].length;
+
+  const numChunks = Math.max(1, Math.ceil(nSample / genSize));
+  const paddedLen = trim + numChunks * genSize + trim;   // covers every chunk window
+  // Build the padded stereo signal once per channel.
+  const padded = ch.map((data) => {
+    const p = new Float32Array(paddedLen);
+    p.set(data.subarray(0, nSample), trim);
+    return p;
+  });
+
+  const vocal = [new Float32Array(numChunks * genSize), new Float32Array(numChunks * genSize)];
+  const dims = [1, 4, dimF, dimT];
+  const input = new Float32Array(4 * dimF * dimT);
+  const chunk = new Float64Array(chunkSize);
+
+  for (let i = 0; i < numChunks; i++) {
+    input.fill(0);
+    // Per channel: STFT the chunk, crop to dim_f, pack real/imag planes.
+    const specs = [];
+    for (let cc = 0; cc < 2; cc++) {
+      const start = i * genSize;
+      for (let s = 0; s < chunkSize; s++) chunk[s] = padded[cc][start + s];
+      const S = eng.stft(chunk);                // { re, im, frames } , frames === dimT
+      specs.push(S);
+      const frames = Math.min(S.frames, dimT);
+      const reBase = (cc * 2) * dimF * dimT;     // real plane for this channel
+      const imBase = (cc * 2 + 1) * dimF * dimT; // imag plane
+      for (let t = 0; t < frames; t++) {
+        const sb = t * nBins;
+        for (let f = 0; f < dimF; f++) {
+          input[reBase + f * dimT + t] = S.re[sb + f];
+          input[imBase + f * dimT + t] = S.im[sb + f];
+        }
+      }
+    }
+
+    // Run the model -> predicted vocal spectrogram (same [1,4,dimF,dimT] layout).
+    const out = await runModel(input, dims);
+
+    // ISTFT each channel back to the time domain, keep the middle gen_size.
+    for (let cc = 0; cc < 2; cc++) {
+      const frames = Math.min(specs[cc].frames, dimT);
+      const preRe = new Float32Array(frames * nBins);
+      const preIm = new Float32Array(frames * nBins);
+      const reBase = (cc * 2) * dimF * dimT;
+      const imBase = (cc * 2 + 1) * dimF * dimT;
+      for (let t = 0; t < frames; t++) {
+        const sb = t * nBins;
+        for (let f = 0; f < dimF; f++) {   // bins dimF..nBins stay zero (model drops them)
+          preRe[sb + f] = out[reBase + f * dimT + t];
+          preIm[sb + f] = out[imBase + f * dimT + t];
+        }
+      }
+      const rec = eng.istft(preRe, preIm, frames, chunkSize);
+      const dst = vocal[cc];
+      const outStart = i * genSize;
+      for (let s = 0; s < genSize; s++) dst[outStart + s] = rec[trim + s];
+    }
+
+    if (onProgress) onProgress((i + 1) / numChunks);
+  }
+
+  // Trim to the original length, apply magnitude compensation, derive instrumental.
+  const outVocal = [], outInstr = [];
+  const comp = compensate || 1;
+  for (let cc = 0; cc < 2; cc++) {
+    const v = new Float32Array(nSample);
+    const inst = new Float32Array(nSample);
+    const src = ch[cc];
+    for (let s = 0; s < nSample; s++) {
+      const vs = vocal[cc][s] * comp;
+      v[s] = vs;
+      inst[s] = src[s] - vs;
+    }
+    outVocal.push(v);
+    outInstr.push(inst);
+  }
+  return { vocals: outVocal, instrumental: outInstr, sampleRate: MDX_SR };
+}

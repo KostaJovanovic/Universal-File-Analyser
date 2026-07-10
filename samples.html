@@ -212,27 +212,27 @@
     </div>
     <div class="offline-body" id="offlineBody">
     <div class="offline-help-panel">
-      <div><strong>Essentials</strong> <span>50 MB</span><br>The whole app - open and inspect any file, fully offline</div>
-      <div><strong>Everything</strong> <span>120 MB</span><br>Adds reading text in images, PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos, archives, EPS/PostScript graphics, AutoCAD drawings, STEP/IGES CAD models and the sample file gallery</div>
-      <div><strong>Complete</strong> <span>345 MB</span><br>Adds reading text in 30+ languages</div>
+      <div><strong>Essentials</strong> <span>50 MB</span><br>The whole app - open, inspect and analyse any file, fully offline</div>
+      <div><strong>Everything</strong> <span>120 MB</span><br>Everything most people need offline: reading text in images and PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos, archives, EPS/PostScript graphics, AutoCAD and CAD drawings, and the sample gallery</div>
+      <div><strong>Complete</strong> <span>345 MB</span><br>Opens a popup to add optional extras on top of Everything: reading text in 30+ languages, and on-device AI vocal separation - pick either or both</div>
     </div>
     <div class="offline-options">
       <button type="button" class="offline-btn" data-tier="essentials">
         <span class="offline-tier">Essentials</span>
-        <span class="offline-desc">The whole app - open and inspect any file, fully offline</span>
+        <span class="offline-desc">The whole app - open, inspect and analyse any file, fully offline</span>
         <span class="offline-size">50 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
       <button type="button" class="offline-btn" data-tier="everything">
         <span class="offline-rec"><svg class="offline-rec-crown" viewBox="0 0 24 18" fill="currentColor" aria-hidden="true"><path d="M2 16V6l6 4 4-6 4 6 6-4v10z"/></svg><span class="offline-rec-text">recommended</span></span>
         <span class="offline-tier">Everything</span>
-        <span class="offline-desc">Adds reading text in images, PDFs, photo-location maps, QR scanning, iPhone (HEIC) photos, archives, EPS/PostScript graphics, AutoCAD and CAD drawings, plus the sample gallery</span>
+        <span class="offline-desc">Everything most people need offline: text in images and PDFs, maps, QR scanning, HEIC photos, archives, PostScript, CAD drawings and the sample gallery</span>
         <span class="offline-size">120 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
-      <button type="button" class="offline-btn" data-tier="complete">
+      <button type="button" class="offline-btn" data-tier="complete" aria-haspopup="dialog">
         <span class="offline-tier">Complete</span>
-        <span class="offline-desc">Adds reading text in 30+ languages</span>
+        <span class="offline-desc">Optional extras on top of Everything - reading text in 30+ languages, and on-device AI vocal separation. Pick in a popup.</span>
         <span class="offline-size">345 MB</span>
         <div class="offline-bar" hidden><div class="offline-bar-fill"></div></div>
       </button>
@@ -261,6 +261,7 @@
       <div><dt>PDF</dt><dd><a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a> <a class="dep-lic" href="https://github.com/mozilla/pdf.js/blob/master/LICENSE" target="_blank" rel="noopener">licence</a> by Mozilla. Renders PDF pages, extracts text, and supports OCR scanning of image-only pages via Tesseract. Loaded only for PDF files.</dd></div>
       <div><dt>E-books</dt><dd><a href="https://github.com/johnfactotum/foliate-js" target="_blank" rel="noopener">foliate-js</a> <a class="dep-lic" href="https://github.com/johnfactotum/foliate-js/blob/HEAD/LICENSE" target="_blank" rel="noopener">licence</a> reads Kindle / Mobipocket (<code>.mobi</code>, <code>.azw</code>, <code>.azw3</code> / KF8) e-books; <a href="https://github.com/RussCoder/djvujs" target="_blank" rel="noopener">DjVu.js</a> <a class="dep-lic" href="https://github.com/RussCoder/djvujs/blob/master/LICENSE.md" target="_blank" rel="noopener">licence</a> decodes <code>.djvu</code> scanned-document pages. Loaded only when needed.</dd></div>
       <div><dt>Audio</dt><dd>Native Web Audio API plus a hand-written radix-2 FFT for spectrogram and analysis. BPM read from ID3/MP4 tags when available, estimated via onset detection otherwise.</dd></div>
+      <div><dt>AI vocal separation</dt><dd><a href="https://github.com/microsoft/onnxruntime" target="_blank" rel="noopener">ONNX Runtime Web</a> <a class="dep-lic" href="https://github.com/microsoft/onnxruntime/blob/main/LICENSE" target="_blank" rel="noopener">licence</a> by Microsoft runs the neural network in the browser, on the GPU via WebGPU where available and WASM otherwise. The model is <a href="https://github.com/Anjok07/ultimatevocalremovergui" target="_blank" rel="noopener">Ultimate Vocal Remover</a>&rsquo;s MDX-Net &ldquo;Kim Vocal 2&rdquo; <a class="dep-lic" href="https://github.com/Anjok07/ultimatevocalremovergui/blob/master/LICENSE" target="_blank" rel="noopener">licence</a>. Splits a track into separate vocal and instrumental stems entirely on your device - nothing is uploaded. ~85 MB, in the Complete download.</dd></div>
       <div><dt>Video</dt><dd>HTML5 video for playback. Frame rate parsed from MP4 container metadata with FFmpeg fallback. Automatic scene detection with confidence scoring. iOS visible-player fallback.</dd></div>
       <div><dt>Databases</dt><dd><a href="https://github.com/sql-js/sql.js" target="_blank" rel="noopener">sql.js</a> <a class="dep-lic" href="https://github.com/sql-js/sql.js/blob/HEAD/LICENSE" target="_blank" rel="noopener">licence</a>. SQLite compiled to WASM - lists tables, schema and row counts from <code>.sqlite</code> / <code>.db</code> files. <a href="https://github.com/andipaetzold/mdb-reader" target="_blank" rel="noopener">mdb-reader</a> <a class="dep-lic" href="https://github.com/andipaetzold/mdb-reader/blob/HEAD/LICENSE" target="_blank" rel="noopener">licence</a> reads Microsoft Access <code>.mdb</code> / <code>.accdb</code> tables and rows.</dd></div>
       <div><dt>3D / CAD</dt><dd><a href="https://github.com/kovacsv/occt-import-js" target="_blank" rel="noopener">occt-import-js</a> <a class="dep-lic" href="https://github.com/kovacsv/occt-import-js/blob/master/LICENSE.md" target="_blank" rel="noopener">licence</a> (<a href="https://dev.opencascade.org/" target="_blank" rel="noopener">OpenCASCADE</a> <a class="dep-lic" href="https://dev.opencascade.org/resources/licensing" target="_blank" rel="noopener">licence</a>). Tessellates STEP, IGES and BREP CAD solids to meshes for the in-browser 3D viewer. ~9 MB, in the Everything download (or loaded on demand).</dd></div>

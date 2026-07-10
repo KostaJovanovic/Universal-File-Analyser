@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 194;
+const COMMIT_COUNT = 195;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -13,7 +13,7 @@ const COMMIT_COUNT = 194;
 // commit 151 reads "4.0", commit 173 reads "5.0". To crown a future 6.0, append its
 // commit number here (keep the list sorted ascending, and mirror the RELEASES
 // constant in save.bat).
-const RELEASE_COMMITS = [29, 60, 100, 151, 173];
+const RELEASE_COMMITS = [29, 60, 100, 151, 173, 195];
 
 function analyserVersion(n, releases) {
   let major = 0, base = 0;
@@ -25,63 +25,15 @@ function analyserVersion(n, releases) {
   return major + '.' + (minor === 0 ? '0' : String(minor).padStart(2, '0'));
 }
 
-import { initPhoto, renderPhoto } from '../renderers/photo.js';
-import { initAudio, renderAudio } from '../renderers/audio.js';
-import { initVideo, renderVideo } from '../renderers/video.js';
-import { renderPdf } from '../renderers/pdf.js';
+// photo/audio/video are the heaviest renderers and pull the largest dependency
+// chains (spectrogram, codecs, frame tools, recovery, ...). They are imported
+// DYNAMICALLY - their routes via lazy() below, their dropzone init via import() in
+// boot() - so that whole subtree stays out of the initial critical module graph and
+// the page becomes interactive sooner. See the media-init block in boot().
 import { renderArchive, renderArchiveEmbedded } from '../renderers/archive.js';
-import { renderSvg } from '../renderers/svg.js';
-import { renderLottie } from '../renderers/lottie.js';
-import { renderCsv } from '../renderers/csv.js';
 import { renderUnknown } from '../renderers/unknown.js';
-import { renderCompare } from '../renderers/compare.js';
 import { renderProprietary, extractPeIcon } from '../renderers/proprietary.js';
-import { renderDocx } from '../renderers/docx.js';
-import { renderXlsx } from '../renderers/xlsx.js';
-import { renderXlsb } from '../renderers/xlsb.js';
-import { renderEpub } from '../renderers/epub.js';
-import { renderPptx } from '../renderers/pptx.js';
-import { renderOdt, renderOds, renderOdp, renderOdg } from '../renderers/odf.js';
-import { renderDoc, renderXls, renderPpt } from '../renderers/legacy-office.js';
-import { renderRtf, renderAbw, renderFb2, renderHwpx, renderMhtml, renderMarkup } from '../renderers/textdoc.js';
-import { renderNotebook } from '../renderers/notebook.js';
-import { renderEml, renderMbox } from '../renderers/email.js';
-import { renderHar, renderJsonData, renderNfo } from '../renderers/dataview.js';
-import { renderDrawio, renderDxf } from '../renderers/diagram.js';
-import { renderIwork } from '../renderers/iwork.js';
-import { renderPaint } from '../renderers/paint.js';
-import { renderPsd } from '../renderers/psd.js';
-import { renderFont } from '../renderers/font.js';
-import { renderDjvu } from '../renderers/djvu.js';
-import { renderMdb } from '../renderers/mdb.js';
-import { renderMobi } from '../renderers/mobi.js';
-import { renderDwg } from '../renderers/dwg.js';
-import { renderAltium } from '../renderers/altium.js';
-import { renderKicad } from '../renderers/kicad.js';
 import { renderSpiceRaw, sniffSpiceRaw } from '../renderers/spice.js';
-import { renderIpcNetlist } from '../renderers/ipcnet.js';
-import { renderAep } from '../renderers/aftereffects.js';
-import { renderPremiere } from '../renderers/premiere.js';
-import { renderDavinci } from '../renderers/davinci.js';
-import { renderVegas } from '../renderers/vegas.js';
-import { renderUnity } from '../renderers/unity.js';
-import { renderVsSolution } from '../renderers/vssolution.js';
-import { renderLut } from '../renderers/lut.js';
-import { renderGcsv } from '../renderers/gcsv.js';
-import { renderAi } from '../renderers/illustrator.js';
-import { renderStl } from '../renderers/stl.js';
-import { renderModel3d } from '../renderers/model3d.js';
-import { renderF3d } from '../renderers/f3d.js';
-import { renderSolidworks } from '../renderers/solidworks.js';
-import { renderGcode } from '../renderers/gcode.js';
-import { renderTimeline } from '../renderers/timeline.js';
-import { renderLrc } from '../renderers/lrc.js';
-import { renderMidi } from '../renderers/midi.js';
-import { renderSubtitles } from '../renderers/subtitles.js';
-import { renderGeo } from '../renderers/geo.js';
-import { renderMarkdown } from '../renderers/markdown.js';
-import { renderComic } from '../renderers/comic.js';
-import { renderGitObject } from '../renderers/gitobject.js';
 import { initSearch } from './search.js';
 import { fileExt, el, row, fmtBytes, probeReadable, cloudFileWarning, integrityCard } from './util.js';
 import { walkItems, renderFolder } from '../renderers/folder.js';
@@ -247,80 +199,87 @@ async function renderFileExtras(file, container, kind) {
 // draws into; it defaults to 'unknown' (the generic #unknownResults block) in the
 // dispatch, so only photo/audio/video - which target their own sections and light
 // up their own nav links - need the full config. Everything else is just a render fn.
+// Lazily import a renderer module on first dispatch and call its export, so the
+// long-tail viewers (office, CAD, EDA, NLE, 3D, e-book, ...) are NOT in the initial
+// module graph - only the file type actually dropped is fetched. The hot-path
+// renderers (photo/audio/video/archive/proprietary/unknown/folder/compare) stay
+// statically imported above. import() of an already-cached module is instant offline.
+const lazy = (p, name) => (...args) => import(p).then((m) => m[name](...args));
+
 const ROUTES = {
-  photo:       { render: renderPhoto, results: 'photo', nav: ['#photo'],                     analysed: ['photo'] },
-  audio:       { render: renderAudio, results: 'audio', nav: ['#audio'],                     analysed: ['audio'] },
-  video:       { render: renderVideo, results: 'video', nav: ['#video', '#audio', '#photo'], analysed: ['video', 'photo'] },
-  docx:        { render: renderDocx },
-  xlsx:        { render: renderXlsx },
-  xlsb:        { render: renderXlsb },
-  epub:        { render: renderEpub },
-  pptx:        { render: renderPptx },
-  odt:         { render: renderOdt },
-  ods:         { render: renderOds },
-  odp:         { render: renderOdp },
-  odg:         { render: renderOdg },
-  doc:         { render: renderDoc },
-  xls:         { render: renderXls },
-  ppt:         { render: renderPpt },
-  rtf:         { render: renderRtf },
-  abw:         { render: renderAbw },
-  fb2:         { render: renderFb2 },
-  hwpx:        { render: renderHwpx },
-  mhtml:       { render: renderMhtml },
-  markup:      { render: renderMarkup },
-  notebook:    { render: renderNotebook },
-  har:         { render: renderHar },
-  jsondata:    { render: renderJsonData },
-  nfo:         { render: renderNfo },
-  eml:         { render: renderEml },
-  mbox:        { render: renderMbox },
-  drawio:      { render: renderDrawio },
-  dxf:         { render: renderDxf },
-  dwg:         { render: renderDwg },
-  altium:      { render: renderAltium },
-  kicad:       { render: renderKicad },
+  photo:       { render: lazy('../renderers/photo.js', 'renderPhoto'), results: 'photo', nav: ['#photo'],                     analysed: ['photo'] },
+  audio:       { render: lazy('../renderers/audio.js', 'renderAudio'), results: 'audio', nav: ['#audio'],                     analysed: ['audio'] },
+  video:       { render: lazy('../renderers/video.js', 'renderVideo'), results: 'video', nav: ['#video', '#audio', '#photo'], analysed: ['video', 'photo'] },
+  docx:        { render: lazy('../renderers/docx.js', 'renderDocx') },
+  xlsx:        { render: lazy('../renderers/xlsx.js', 'renderXlsx') },
+  xlsb:        { render: lazy('../renderers/xlsb.js', 'renderXlsb') },
+  epub:        { render: lazy('../renderers/epub.js', 'renderEpub') },
+  pptx:        { render: lazy('../renderers/pptx.js', 'renderPptx') },
+  odt:         { render: lazy('../renderers/odf.js', 'renderOdt') },
+  ods:         { render: lazy('../renderers/odf.js', 'renderOds') },
+  odp:         { render: lazy('../renderers/odf.js', 'renderOdp') },
+  odg:         { render: lazy('../renderers/odf.js', 'renderOdg') },
+  doc:         { render: lazy('../renderers/legacy-office.js', 'renderDoc') },
+  xls:         { render: lazy('../renderers/legacy-office.js', 'renderXls') },
+  ppt:         { render: lazy('../renderers/legacy-office.js', 'renderPpt') },
+  rtf:         { render: lazy('../renderers/textdoc.js', 'renderRtf') },
+  abw:         { render: lazy('../renderers/textdoc.js', 'renderAbw') },
+  fb2:         { render: lazy('../renderers/textdoc.js', 'renderFb2') },
+  hwpx:        { render: lazy('../renderers/textdoc.js', 'renderHwpx') },
+  mhtml:       { render: lazy('../renderers/textdoc.js', 'renderMhtml') },
+  markup:      { render: lazy('../renderers/textdoc.js', 'renderMarkup') },
+  notebook:    { render: lazy('../renderers/notebook.js', 'renderNotebook') },
+  har:         { render: lazy('../renderers/dataview.js', 'renderHar') },
+  jsondata:    { render: lazy('../renderers/dataview.js', 'renderJsonData') },
+  nfo:         { render: lazy('../renderers/dataview.js', 'renderNfo') },
+  eml:         { render: lazy('../renderers/email.js', 'renderEml') },
+  mbox:        { render: lazy('../renderers/email.js', 'renderMbox') },
+  drawio:      { render: lazy('../renderers/diagram.js', 'renderDrawio') },
+  dxf:         { render: lazy('../renderers/diagram.js', 'renderDxf') },
+  dwg:         { render: lazy('../renderers/dwg.js', 'renderDwg') },
+  altium:      { render: lazy('../renderers/altium.js', 'renderAltium') },
+  kicad:       { render: lazy('../renderers/kicad.js', 'renderKicad') },
   spice:       { render: renderSpiceRaw },
-  ipcnet:      { render: renderIpcNetlist },
-  aep:         { render: renderAep },
-  premiere:    { render: renderPremiere },
-  davinci:     { render: renderDavinci },
-  vegas:       { render: renderVegas },
-  unity:       { render: renderUnity },
-  vssolution:  { render: renderVsSolution },
-  lut:         { render: renderLut },
-  gcsv:        { render: renderGcsv },
-  iwork:       { render: renderIwork },
-  stl:         { render: renderStl },
-  model3d:     { render: renderModel3d },
-  f3d:         { render: renderF3d },
-  solidworks:  { render: renderSolidworks },
-  gcode:       { render: renderGcode },
-  timeline:    { render: renderTimeline },
-  lrc:         { render: renderLrc },
-  midi:        { render: renderMidi },
-  subtitles:   { render: renderSubtitles },
-  geo:         { render: renderGeo },
-  markdown:    { render: renderMarkdown },
-  comic:       { render: renderComic },
-  paint:       { render: renderPaint },
-  psd:         { render: renderPsd },
-  ai:          { render: renderAi },
-  font:        { render: renderFont },
-  djvu:        { render: renderDjvu },
-  mdb:         { render: renderMdb },
-  mobi:        { render: renderMobi },
-  pdf:         { render: renderPdf },
+  ipcnet:      { render: lazy('../renderers/ipcnet.js', 'renderIpcNetlist') },
+  aep:         { render: lazy('../renderers/aftereffects.js', 'renderAep') },
+  premiere:    { render: lazy('../renderers/premiere.js', 'renderPremiere') },
+  davinci:     { render: lazy('../renderers/davinci.js', 'renderDavinci') },
+  vegas:       { render: lazy('../renderers/vegas.js', 'renderVegas') },
+  unity:       { render: lazy('../renderers/unity.js', 'renderUnity') },
+  vssolution:  { render: lazy('../renderers/vssolution.js', 'renderVsSolution') },
+  lut:         { render: lazy('../renderers/lut.js', 'renderLut') },
+  gcsv:        { render: lazy('../renderers/gcsv.js', 'renderGcsv') },
+  iwork:       { render: lazy('../renderers/iwork.js', 'renderIwork') },
+  stl:         { render: lazy('../renderers/stl.js', 'renderStl') },
+  model3d:     { render: lazy('../renderers/model3d.js', 'renderModel3d') },
+  f3d:         { render: lazy('../renderers/f3d.js', 'renderF3d') },
+  solidworks:  { render: lazy('../renderers/solidworks.js', 'renderSolidworks') },
+  gcode:       { render: lazy('../renderers/gcode.js', 'renderGcode') },
+  timeline:    { render: lazy('../renderers/timeline.js', 'renderTimeline') },
+  lrc:         { render: lazy('../renderers/lrc.js', 'renderLrc') },
+  midi:        { render: lazy('../renderers/midi.js', 'renderMidi') },
+  subtitles:   { render: lazy('../renderers/subtitles.js', 'renderSubtitles') },
+  geo:         { render: lazy('../renderers/geo.js', 'renderGeo') },
+  markdown:    { render: lazy('../renderers/markdown.js', 'renderMarkdown') },
+  comic:       { render: lazy('../renderers/comic.js', 'renderComic') },
+  paint:       { render: lazy('../renderers/paint.js', 'renderPaint') },
+  psd:         { render: lazy('../renderers/psd.js', 'renderPsd') },
+  ai:          { render: lazy('../renderers/illustrator.js', 'renderAi') },
+  font:        { render: lazy('../renderers/font.js', 'renderFont') },
+  djvu:        { render: lazy('../renderers/djvu.js', 'renderDjvu') },
+  mdb:         { render: lazy('../renderers/mdb.js', 'renderMdb') },
+  mobi:        { render: lazy('../renderers/mobi.js', 'renderMobi') },
+  pdf:         { render: lazy('../renderers/pdf.js', 'renderPdf') },
   zip:         { render: renderArchive },
-  svg:         { render: renderSvg },
-  lottie:      { render: renderLottie },
-  csv:         { render: renderCsv },
+  svg:         { render: lazy('../renderers/svg.js', 'renderSvg') },
+  lottie:      { render: lazy('../renderers/lottie.js', 'renderLottie') },
+  csv:         { render: lazy('../renderers/csv.js', 'renderCsv') },
   proprietary: { render: renderProprietary },
   // Licence / marker text files open exactly like a .txt - the Plain Text view in
   // proprietary.js (metadata, line count, source preview + the "Open full" reader),
   // not the paginated markup page-sheets.
   plaintext:   { render: (f, r) => renderProprietary(f, r, 'txt') },
-  'git-object':{ render: renderGitObject },
+  'git-object':{ render: lazy('../renderers/gitobject.js', 'renderGitObject') },
   unknown:     { render: renderUnknown },
   // Extensionless files: same inspector as 'unknown' but framed as an expected
   // category (shown as text, hex fallback for binary) rather than "unrecognised".
@@ -369,6 +328,16 @@ function ensureExifr() {
 }
 
 function boot() {
+
+  // Fade out the boot splash (index.html only) now that the app's JS is running.
+  // Runs first so a later setup error can't leave the page covered; the element is
+  // removed after the fade so it can't trap clicks, and it's a harmless no-op on
+  // other pages and on SPA re-boots (it's gone after the first dismiss).
+  const splashEl = document.getElementById('splash');
+  if (splashEl) {
+    requestAnimationFrame(() => splashEl.classList.add('is-done'));
+    splashEl.addEventListener('transitionend', () => splashEl.remove(), { once: true });
+  }
 
   const photoResults   = $('photoResults');
   const audioResults   = $('audioResults');
@@ -775,20 +744,32 @@ function boot() {
       : null;
     let userTookScroll = false;
     let stopScrollWatch = () => {};
+    // Our own smooth scrollIntoView also fires 'scroll', so bracket each
+    // programmatic scroll with a short window; any 'scroll' outside it is the user.
+    let progScrollUntil = 0;
+    const doAutoScroll = () => {
+      progScrollUntil = performance.now() + 1200;
+      autoScrollSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
     if (autoScrollSec) {
       const onUserScroll = () => { userTookScroll = true; };
-      // A programmatic smooth scroll fires 'scroll' but NOT these, so they cleanly
-      // detect the user taking over (wheel / touch-drag / arrow & page keys).
+      // wheel / touch-drag / arrow & page keys are always the user.
       window.addEventListener('wheel', onUserScroll, { passive: true });
       window.addEventListener('touchmove', onUserScroll, { passive: true });
       window.addEventListener('keydown', onUserScroll);
+      // Also catch scrollbar drags / momentum (which fire only 'scroll'), as long
+      // as they land outside a programmatic-scroll window - this covers scrolling
+      // away during a slow audio decode before the section is even ready.
+      const onScroll = () => { if (performance.now() > progScrollUntil) userTookScroll = true; };
+      window.addEventListener('scroll', onScroll, { passive: true });
       stopScrollWatch = () => {
         window.removeEventListener('wheel', onUserScroll);
         window.removeEventListener('touchmove', onUserScroll);
         window.removeEventListener('keydown', onUserScroll);
+        window.removeEventListener('scroll', onScroll);
       };
       requestAnimationFrame(() => {
-        if (!userTookScroll) autoScrollSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (!userTookScroll) doAutoScroll();
       });
     }
 
@@ -805,6 +786,7 @@ function boot() {
         if (token.cancelled || _currentToken !== token) return;
         photoResults.hidden = false;
         markAnalysed('photo');
+        const { renderPhoto } = await import('../renderers/photo.js');
         renderPhoto(iconFile, photoResults,
           { sourceNote: (isScr ? 'Screensaver icon extracted from ' : 'Application icon extracted from ')
             + (file.name || (isScr ? 'the screensaver' : 'the executable')) + '.' });
@@ -1007,6 +989,7 @@ window._anrReadableText = isReadableText;
     // same bar the single-file drop shows should be visible here too.
     window._anrLoader.show('Comparing both files…');
     try {
+      const { renderCompare } = await import('../renderers/compare.js');
       await renderCompare(_cmpA, _cmpB, ur, { classify: resolveKind, routes: ROUTES, ensureExifr, renderExtras: renderFileExtras });
     } catch (e) {
       ur.appendChild(el('div', { class: 'anr-error' }, 'Comparison failed: ' + (e && e.message ? e.message : e)));
@@ -1016,46 +999,41 @@ window._anrReadableText = isReadableText;
     requestAnimationFrame(() => ur.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
-  if ($('photoDrop')) initPhoto({
-    dropEl:    $('photoDrop'),
-    inputEl:   $('photoInput'),
-    resultsEl: photoResults,
-    onFile:    handleFile
-  });
-
-  if ($('audioDrop')) initAudio({
-    dropEl:    $('audioDrop'),
-    inputEl:   $('audioInput'),
-    recordBtn: $('audioRecord'),
-    liveBtn:   $('audioLive'),
-    resultsEl: audioResults,
-    onFile:    handleFile
-  });
-
-  if ($('videoDrop')) initVideo({
-    dropEl:    $('videoDrop'),
-    inputEl:   $('videoInput'),
-    resultsEl: videoResults,
-    onFile:    handleFile
-  });
-
-  // Single "any file" hero dropzone (the quickdrop--hero layout). Its drop +
-  // picker route through handleFile exactly like the classic video zone; its
-  // Record / Live spectrogram buttons reuse the audio pipeline (no drop/input of
-  // their own). Both the classic grid and the hero stay in the DOM - CSS shows
-  // one at a time - so wiring both is harmless: the hidden one can't be clicked.
-  if ($('heroDrop')) initVideo({
-    dropEl:    $('heroDrop'),
-    inputEl:   $('heroInput'),
-    resultsEl: videoResults,
-    onFile:    handleFile
-  });
-  if ($('heroRecord') || $('heroLive')) initAudio({
-    recordBtn: $('heroRecord'),
-    liveBtn:   $('heroLive'),
-    resultsEl: audioResults,
-    onFile:    handleFile
-  });
+  // Wire the photo/audio/video dropzones by DYNAMICALLY importing their (heavy)
+  // renderer modules, so their subtree loads in parallel without blocking the
+  // initial critical graph. Until each import resolves the zones are unwired, but a
+  // file dropped on one still bubbles to the window drop handler below (which calls
+  // handleFile), so there is no dead window; once wired, each zone stopPropagation's
+  // its own drops. import() is served from cache after the first visit, so on a warm
+  // load the zones are wired within a frame or two. The hero layout (single "any
+  // file" zone + Record / Live buttons) and the classic grid both live in the DOM
+  // (CSS shows one), so wiring both is harmless - the hidden one can't be clicked.
+  if ($('photoDrop')) {
+    import('../renderers/photo.js').then(({ initPhoto }) => initPhoto({
+      dropEl: $('photoDrop'), inputEl: $('photoInput'), resultsEl: photoResults, onFile: handleFile,
+    }));
+  }
+  if ($('audioDrop') || $('heroRecord') || $('heroLive')) {
+    import('../renderers/audio.js').then(({ initAudio }) => {
+      if ($('audioDrop')) initAudio({
+        dropEl: $('audioDrop'), inputEl: $('audioInput'), recordBtn: $('audioRecord'),
+        liveBtn: $('audioLive'), resultsEl: audioResults, onFile: handleFile,
+      });
+      if ($('heroRecord') || $('heroLive')) initAudio({
+        recordBtn: $('heroRecord'), liveBtn: $('heroLive'), resultsEl: audioResults, onFile: handleFile,
+      });
+    });
+  }
+  if ($('videoDrop') || $('heroDrop')) {
+    import('../renderers/video.js').then(({ initVideo }) => {
+      if ($('videoDrop')) initVideo({
+        dropEl: $('videoDrop'), inputEl: $('videoInput'), resultsEl: videoResults, onFile: handleFile,
+      });
+      if ($('heroDrop')) initVideo({
+        dropEl: $('heroDrop'), inputEl: $('heroInput'), resultsEl: videoResults, onFile: handleFile,
+      });
+    });
+  }
 
   // ----- Mobile: tap a section card to upload (with confirm) -----
   // On touch devices, tapping a section's description card (its number +

@@ -12,6 +12,13 @@ import { el } from './util.js';
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
+  { range: '6.0', milestone: true, notes: [
+    'Sixth milestone: Analyser pulls a song apart, entirely on your device.',
+    'A neural network (the MDX-Net "Kim Vocal 2" model) runs in the browser to split any track into separate vocal and instrumental stems - nothing is uploaded, and each stem gets its own player, spectrogram and WAV download.',
+    'A Vocals-to-Instrumental slider under the spectrogram fades between the two while the picture morphs in real time to the exact mix, and the play control follows your chosen blend with every scrubber in step.',
+    'A brief branded loading screen greets a cold start and fades away the moment the app is ready.',
+    'The Complete offline download opens a chooser: the OCR language packs and the AI separation model are now separate optional downloads on top of Everything, so you can grab just what you need.',
+  ] },
   { range: '5.16 - 5.21', notes: [
     'A new /compare page runs two dropped files through the full analysis and lines up every field, hash and date side by side, with a Show differences toggle.',
     'Audio and video players can push a too-quiet clip past 100%, up to 225%, with a limiter to keep the boost clean; the level resets to 100% on every fresh visit.',

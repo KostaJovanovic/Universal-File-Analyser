@@ -163,16 +163,32 @@ assets/
   vendor/           — third-party libraries (exifr, ffmpeg, imagemagick, ...)
   js/
     core/
-      app.js        — entry point, file classification (classifyFile/ROUTES),
-                      handleFile pipeline, boot()
+      app.js        — entry point: ROUTES table, resolveKind()/handleFile
+                      analysis pipeline, boot(). COMMIT_COUNT lives here.
+      classify.js   — classifyFile(file): name/extension/MIME → a ROUTES kind
+                      (no byte sniffing). Exposed as window._anrClassify.
+      file-sniff.js — content-based sniffing: what a file ACTUALLY is from its
+                      leading bytes; drives handleFile reroutes and the folder scan
+      forensics.js  — forensic integrity cards (signature mismatch, trailing data)
+                      built on the file-sniff.js result
       formats.js    — central format catalog (sets + display tables + catalogGrouped())
+      format-overlay.js — renders the catalog into the help overlay / about / hub,
+                      stamps [data-fmt-count], wires the format search + deep-links
       search.js     — metadata search
       navigate.js   — SPA router (View Transitions API)
       effects.js    — page atmosphere/glow/transition effects
+      overlays.js   — transient chrome shared by the drop pipeline (confirm modal,
+                      drop loader bar, type-suggestion nudge, link-leave confirm)
       popups.js     — modal, suggestion + share-nudge popups
       osint.js      — network-indicator (OSINT) extraction: pulls URLs/IPs/domains/
                       emails from a file's text into a card of click-to-open lookup
                       links (nothing sent automatically — the no-upload promise holds)
+      history.js    — anonymous analysed-count stats ping (the only network call)
+                      + on-device "Recently analysed" localStorage history (metadata only)
+      offline-tiers.js — "Download for offline use" footer: cumulative cache tiers,
+                      PWA install prompt, clear-storage button
+      stats-page.js — the /stats page (totals, per-ext table, leaderboard, trend chart)
+      patch-tldr.js — the /patch "tl;dr" release-group digest toggle
       export-data.js — "export analysis data" (JSON/hash) builder
       video-sync.js — shared video↔analysis scrubbing/sync helpers
       util.js       — shared DOM helpers (el, fileExt, …) and formatters
@@ -226,6 +242,9 @@ assets/
                       disk, osmisc) + parser-util.js shared helpers
     lib/            — shared binary + WASM loader helpers: plist · cfbf · nrbf ·
                       sqlite · sevenzip · legacy-decompress · *-loader (libarchive,
-                      xz, lzma, occt, ghostscript, openjpeg)
+                      xz, lzma, occt, ghostscript, openjpeg). Also the MDX-Net
+                      on-device vocal-separation subsystem (mdx-client/-model/
+                      -separate/-stft/-worker.js) that powers audio.js's isolate
+                      panel and the spectrogram vocal/instrumental blend slider.
     games/          — Asteroids easter-egg game (loaded by atari.html only)
 ```
