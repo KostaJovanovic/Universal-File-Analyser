@@ -10,7 +10,7 @@
    whatever canvas metadata the package carries. GIMP .xcf is NOT a ZIP and has
    no embedded preview, so it stays identification-only. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, blobImg } from '../core/util.js';
 import { openZip } from './zip.js';
 import { parsePlist } from '../lib/plist.js';
 
@@ -45,7 +45,7 @@ function appendPreview(resultsEl, bytes, ext, heading) {
   const blob = new Blob([bytes], { type: mime });
   const pcard = el('div', { class: 'anr-card' });
   pcard.appendChild(el('h3', {}, heading || 'Preview'));
-  pcard.appendChild(el('img', { src: URL.createObjectURL(blob), alt: 'Artwork preview', class: 'anr-iwork-preview' }));
+  pcard.appendChild(blobImg(blob, { alt: 'Artwork preview', class: 'anr-iwork-preview' }));
   const analyse = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse this image');
   analyse.addEventListener('click', () => {
     if (window._anrHandleFile) window._anrHandleFile(new File([bytes], 'preview.' + ext, { type: mime }), { nested: true });

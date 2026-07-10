@@ -25,7 +25,20 @@ function sanitizeSvg(doc) {
   if (fo.length) findings.push(fo.length + ' <foreignObject> (embedded HTML)');
   fo.forEach((n) => n.remove());
 
-  let handlers = 0, jsLinks = 0, extRefs = 0;
+  // Inline <style> is NOT scoped to the SVG when injected inline - its rules
+  // apply document-wide (CSS injection / UI-redress) and can pull remote fonts
+  // and images via url()/@import. SMIL animation (<animate>/<set>/...) can also
+  // rewrite an href to javascript: at runtime, bypassing the static-attribute
+  // scan below. Remove both element classes outright.
+  const styles = doc.querySelectorAll('style');
+  if (styles.length) findings.push(styles.length + ' <style> element' + (styles.length > 1 ? 's' : '') + ' (document-wide CSS)');
+  styles.forEach((n) => n.remove());
+
+  const smil = doc.querySelectorAll('animate, animateTransform, animateMotion, set');
+  if (smil.length) findings.push(smil.length + ' SMIL animation element' + (smil.length > 1 ? 's' : ''));
+  smil.forEach((n) => n.remove());
+
+  let handlers = 0, jsLinks = 0, extRefs = 0, cssRefs = 0;
   for (const node of doc.querySelectorAll('*')) {
     for (const attr of Array.from(node.attributes)) {
       const name = attr.name.toLowerCase();
@@ -35,16 +48,35 @@ function sanitizeSvg(doc) {
         if (/^javascript:/i.test(val)) { node.removeAttribute(attr.name); jsLinks++; }
         else if (/^(https?:)?\/\//i.test(val) || /^data:text\/html/i.test(val)) { node.removeAttribute(attr.name); extRefs++; }
       }
+      // Any attribute (style="", fill="url(...)", filter="url(...)", …) that
+      // references a remote resource via CSS url() or @import - strip it.
+      else if (/(?:url\s*\(|@import)/i.test(val) && /(?:url\s*\(\s*['"]?\s*(?:https?:)?\/\/|@import\s+['"]?\s*(?:https?:)?\/\/)/i.test(val)) {
+        node.removeAttribute(attr.name); cssRefs++;
+      }
     }
   }
   if (handlers) findings.push(handlers + ' inline event handler' + (handlers > 1 ? 's' : '') + ' (on*)');
   if (jsLinks) findings.push(jsLinks + ' javascript: link' + (jsLinks > 1 ? 's' : ''));
   if (extRefs) findings.push(extRefs + ' external/remote reference' + (extRefs > 1 ? 's' : ''));
+  if (cssRefs) findings.push(cssRefs + ' remote CSS url() reference' + (cssRefs > 1 ? 's' : ''));
 
   let safe;
   try { safe = new XMLSerializer().serializeToString(root); }
   catch (_) { safe = null; }
   return { findings, safe };
+}
+
+// Sanitise a raw SVG markup string and return safe serialised markup (or null
+// if there's no <svg> root / it won't parse). Shared entry point for other
+// renderers that inject parser-produced SVG (e.g. dwg.js) so they get the same
+// element/attribute allow-list as the SVG viewer instead of a bespoke regex.
+export function sanitizeSvgMarkup(markup) {
+  try {
+    const doc = new DOMParser().parseFromString(String(markup || ''), 'image/svg+xml');
+    if (doc.querySelector('parsererror')) return null;
+    const { safe } = sanitizeSvg(doc);
+    return safe;
+  } catch (_) { return null; }
 }
 
 // Which program exported this SVG - read from the generator comment or version

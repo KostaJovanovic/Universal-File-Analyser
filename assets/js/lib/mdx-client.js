@@ -15,6 +15,10 @@ function getWorker() {
   if (!worker) worker = new Worker(new URL('./mdx-worker.js', import.meta.url), { type: 'module' });
   return worker;
 }
+// Monotonic id so replies from the shared worker can be matched to their request.
+// Two overlapping separations would otherwise each consume the other's progress/
+// done/error messages and both resolve with the first job's result.
+let _jobSeq = 0;
 
 // Resample to 44.1 kHz (stereo, or mono if that's all there is) via an
 // OfflineAudioContext, returning detachable Float32Array channels.
@@ -47,10 +51,11 @@ async function toModelChannels(audioBuffer) {
 export async function separateStems(audioBuffer, { onProgress, signal, modelId } = {}) {
   const { channels, sampleRate } = await toModelChannels(audioBuffer);
   const w = getWorker();
+  const jobId = ++_jobSeq;
   return new Promise((resolve, reject) => {
     const onMsg = (e) => {
       const m = e.data;
-      if (!m) return;
+      if (!m || m.jobId !== jobId) return;   // ignore replies belonging to another job
       if (m.type === 'progress') { if (onProgress) onProgress(m.phase, m.frac); }
       else if (m.type === 'done') { cleanup(); resolve(m); }
       else if (m.type === 'error') { cleanup(); reject(new Error(m.message || 'separation failed')); }
@@ -70,6 +75,6 @@ export async function separateStems(audioBuffer, { onProgress, signal, modelId }
       signal.addEventListener('abort', onAbort);
     }
     w.addEventListener('message', onMsg);
-    w.postMessage({ type: 'separate', channels, sampleRate, modelId }, channels.map((c) => c.buffer));
+    w.postMessage({ type: 'separate', channels, sampleRate, modelId, jobId }, channels.map((c) => c.buffer));
   });
 }

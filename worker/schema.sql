@@ -52,6 +52,10 @@ CREATE TABLE IF NOT EXISTS scores (
 );
 CREATE INDEX IF NOT EXISTS idx_scores_score ON scores(score DESC);
 CREATE INDEX IF NOT EXISTS idx_scores_iphash ON scores(iphash);
+-- One row per identity (iphash + name), so a score submit is a single atomic
+-- upsert (keep the player's best) instead of a racy select-then-delete-insert.
+-- Multiple NULL iphash rows are still allowed (SQLite treats NULLs as distinct).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_scores_identity ON scores(iphash, name);
 -- If the table predates a column, add it once (ignore "duplicate column"). The
 -- worker also self-migrates wave/cause on the next score submit, so these are
 -- only needed if you want them present before any new score is posted:

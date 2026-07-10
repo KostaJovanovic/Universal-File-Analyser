@@ -46,7 +46,7 @@ export class Reader {
 
   // Number from a 64-bit unsigned. Converted to a JS Number, which loses exactness
   // above 2^53 - fine for file sizes / sample counts where that doesn't matter.
-  u64num() { const v = this.u64(); return v <= 9007199254740991n ? Number(v) : Number(v); }
+  u64num() { return Number(this.u64()); }
 
   bytes_(n) { const b = this.bytes.subarray(this.pos, this.pos + n); this.pos += n; return b; }
   ascii(n)  { const s = ascii(this.bytes, this.pos, n); this.pos += n; return s; }

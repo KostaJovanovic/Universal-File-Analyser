@@ -79,7 +79,10 @@ function decodeBody(body, encoding, charset) {
 }
 
 // Walk the MIME tree. Returns { html, text, attachments:[{name,type,size}] }.
-function walkMime(head, body, acc) {
+function walkMime(head, body, acc, depth = 0) {
+  // Cap nesting: a crafted message with deeply nested multipart/* parts would
+  // otherwise recurse without bound (and re-split the whole body at each level).
+  if (depth > 24) return;
   const hdrs = parseHeaders(head);
   const ctype = (h1(hdrs, 'content-type') || 'text/plain').toLowerCase();
   const cte = h1(hdrs, 'content-transfer-encoding');
@@ -93,7 +96,7 @@ function walkMime(head, body, acc) {
       p = p.replace(/^\r?\n/, '');
       if (!p || p.startsWith('--')) continue;
       const sub = splitHeaderBody(p);
-      walkMime(sub.head, sub.body, acc);
+      walkMime(sub.head, sub.body, acc, depth + 1);
     }
     return;
   }
@@ -118,7 +121,15 @@ function sanitizeHtml(html) {
     for (const attr of [...node.attributes]) {
       const name = attr.name.toLowerCase();
       if (name.startsWith('on')) node.removeAttribute(attr.name);
-      else if ((name === 'href' || name === 'src') && /^\s*javascript:/i.test(attr.value)) node.removeAttribute(attr.name);
+      else if (name === 'href') {
+        // The browser's URL parser strips ASCII whitespace/control chars from a
+        // scheme before executing it, so `java&#9;script:` (tab in the middle)
+        // slips past a simple /^\s*javascript:/ test. Normalise the same way,
+        // then allow-list the scheme (relative/anchor URLs have no scheme).
+        const cleaned = String(attr.value).replace(/[\x00-\x20]+/g, '');
+        const m = /^([a-z][a-z0-9+.-]*):/i.exec(cleaned);
+        if (m && !/^(https?|mailto)$/i.test(m[1])) node.removeAttribute(attr.name);
+      }
       else if (name === 'src' || name === 'srcset' || name === 'background') node.removeAttribute(attr.name);
       else if (name === 'style' && /url\s*\(/i.test(attr.value)) node.removeAttribute(attr.name);
     }

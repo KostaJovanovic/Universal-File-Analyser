@@ -75,9 +75,18 @@ function parseComicInfo(xml) {
   return out;
 }
 
+// Page object URLs from the previous comic. They persist in a per-render cache for
+// the reader's lifetime, so free the last comic's set when a new one is opened.
+const _comicPageUrls = new Set();
+function revokeComicPageUrls() {
+  for (const u of _comicPageUrls) { try { URL.revokeObjectURL(u); } catch (_) {} }
+  _comicPageUrls.clear();
+}
+
 export async function renderComic(file, resultsEl, extOverride) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
+  revokeComicPageUrls();   // free the previous comic's page object URLs
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Opening "${file.name}"…`));
   const ext = extOverride || (file.name.split('.').pop() || '').toLowerCase();
 
@@ -118,6 +127,7 @@ export async function renderComic(file, resultsEl, extOverride) {
     const bytes = await pages[i].getBytes();
     const url = URL.createObjectURL(new Blob([bytes]));
     urlCache.set(i, url);
+    _comicPageUrls.add(url);
     return url;
   }
 

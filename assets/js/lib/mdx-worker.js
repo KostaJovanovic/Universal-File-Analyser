@@ -118,15 +118,18 @@ async function runModel(input, dims) {
 self.onmessage = async (e) => {
   const msg = e.data;
   if (!msg || msg.type !== 'separate') return;
+  // Echo the caller's jobId on every reply so the client can ignore messages
+  // from a different (e.g. overlapping) job on this shared worker.
+  const jobId = msg.jobId;
   try {
     const model = MDX_MODELS[msg.modelId] || MDX_MODEL;
-    await ensureModel(model, (frac) => self.postMessage({ type: 'progress', phase: 'model', frac }));
-    self.postMessage({ type: 'progress', phase: 'infer', frac: 0 });
+    await ensureModel(model, (frac) => self.postMessage({ type: 'progress', phase: 'model', frac, jobId }));
+    self.postMessage({ type: 'progress', phase: 'infer', frac: 0, jobId });
     const result = await separateVocals({
       channels: msg.channels,
       model,
       runModel,
-      onProgress: (frac) => self.postMessage({ type: 'progress', phase: 'infer', frac }),
+      onProgress: (frac) => self.postMessage({ type: 'progress', phase: 'infer', frac, jobId }),
     });
     const transfer = [];
     for (const a of result.vocals) transfer.push(a.buffer);
@@ -137,8 +140,9 @@ self.onmessage = async (e) => {
       instrumental: result.instrumental,
       sampleRate: result.sampleRate,
       stem: model.stem,
+      jobId,
     }, transfer);
   } catch (err) {
-    self.postMessage({ type: 'error', message: (err && err.message) || String(err) });
+    self.postMessage({ type: 'error', message: (err && err.message) || String(err), jobId });
   }
 };

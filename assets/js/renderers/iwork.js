@@ -8,7 +8,7 @@
    the PDF viewer) or, failing that, the largest preview/thumbnail image. Files
    saved without a preview fall back to a metadata-only readout. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, blobImg } from '../core/util.js';
 import { openZip } from './zip.js';
 import { renderPdf } from './pdf.js';
 import { parsePlist } from '../lib/plist.js';
@@ -114,7 +114,7 @@ export async function renderIwork(file, resultsEl) {
       const blob = new Blob([bytes], { type: mime });
       const pcard = el('div', { class: 'anr-card' });
       pcard.appendChild(el('h3', {}, 'Preview'));
-      pcard.appendChild(el('img', { src: URL.createObjectURL(blob), alt: 'Document preview', class: 'anr-iwork-preview' }));
+      pcard.appendChild(blobImg(blob, { alt: 'Document preview', class: 'anr-iwork-preview' }));
       const analyse = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse this image');
       analyse.addEventListener('click', () => {
         if (window._anrHandleFile) window._anrHandleFile(new File([bytes], 'iwork-preview.' + e, { type: mime }), { nested: true });

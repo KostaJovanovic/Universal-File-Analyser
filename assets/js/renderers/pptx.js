@@ -2,7 +2,7 @@
    Reads .pptx (Office Open XML presentation) and renders each slide as a card
    with its text (title + body) and any embedded images, in presentation order. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, openOverlayBack } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, openOverlayBack, blobImg } from '../core/util.js';
 import { openZip } from './zip.js';
 
 const EMU_PER_PX = 9525; // 914400 EMU/inch ÷ 96 px/inch
@@ -240,7 +240,10 @@ export async function renderPptx(file, resultsEl) {
           const type = r.getAttribute('Type') || '';
           const target = r.getAttribute('Target') || '';
           const isExt = (r.getAttribute('TargetMode') || '') === 'External';
-          if (/hyperlink/i.test(type) && (isExt || /^https?:/i.test(target)) && target) externalLinks.push(target);
+          // Only collect http/https/mailto targets. A relationship can carry
+          // TargetMode="External" with a javascript:/data: scheme, which would
+          // become a live href in the "View links" list below.
+          if (/hyperlink/i.test(type) && (isExt || /^https?:/i.test(target)) && /^(https?:|mailto:)/i.test(target)) externalLinks.push(target);
         }
         for (const blip of doc.getElementsByTagName('a:blip')) {
           const embed = blip.getAttribute('r:embed') || blip.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'embed');
@@ -251,7 +254,7 @@ export async function renderPptx(file, resultsEl) {
               const ext = (imgPath.match(/\.(\w+)$/) || [, 'png'])[1];
               const mime = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
               const blob = new Blob([bytes], { type: mime });
-              const img = el('img', { src: URL.createObjectURL(blob), class: 'anr-pptx-img', title: 'Open the slide, then click to analyse as a photo', style: 'cursor: pointer;' });
+              const img = blobImg(blob, { class: 'anr-pptx-img', title: 'Open the slide, then click to analyse as a photo', style: 'cursor: pointer;' });
               img.addEventListener('click', (e) => {
                 // In a thumbnail, let the click bubble up to open the lightbox;
                 // only analyse the image once the slide is open in the lightbox.

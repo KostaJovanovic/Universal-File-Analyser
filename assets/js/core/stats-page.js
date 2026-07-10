@@ -215,6 +215,11 @@ const _fmtDay = (s, opts) => {
 
 // The two series the chart can show. `key` matches data-series in the legend.
 const _TREND_SERIES = ['visitors', 'files'];
+// Module-scoped so it survives an SPA navigation that swaps <main> (and with it
+// #statsTrendsChart). Storing the dedup handle on the chart element instead
+// would orphan the old window 'resize' listener, since the new element carries
+// no reference to it. See renderStatsTrends().
+let _trendResizeHandler = null;
 
 // Per-mode {visitors, files} arrays: each day's count, or the running total.
 // In cumulative mode `baseline` seeds the running total with the all-time count
@@ -357,7 +362,7 @@ function renderStatsTrends(daily, totals) {
   // the viewport crosses the narrow/wide breakpoint (e.g. a phone rotates) - cheap
   // and rare. Same-category resizes need nothing: the SVG already scales fluidly.
   // Replace any handler from a previous render so SPA re-navigation can't stack them.
-  if (chartEl._trendResize) window.removeEventListener('resize', chartEl._trendResize);
+  if (_trendResizeHandler) window.removeEventListener('resize', _trendResizeHandler);
   let resizeRaf = 0;
   const onResize = () => {
     if (resizeRaf) return;
@@ -373,7 +378,7 @@ function renderStatsTrends(daily, totals) {
       for (const k of _TREND_SERIES) chart.setShown(k, visible[k]);
     });
   };
-  chartEl._trendResize = onResize;
+  _trendResizeHandler = onResize;
   window.addEventListener('resize', onResize);
 }
 

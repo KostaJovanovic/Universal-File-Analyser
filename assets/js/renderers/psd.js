@@ -17,7 +17,7 @@
    ag-psd does not support CMYK / Lab / 16-bit / PSB and re-composites nothing, so
    for those we rely on path 1's embedded thumbnail rather than failing. */
 
-import { el, row, rowHelp, h3help, fmtBytes, sha256Row, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, sha256Row, integrityCard, errorCard, blobImg } from '../core/util.js';
 import { loadScript } from '../core/util.js';
 
 const AGPSD_URL = 'assets/vendor/ag-psd/bundle.js';
@@ -107,7 +107,7 @@ function thumbPreviewCard(jpegBytes, heading, fileBase) {
   const blob = new Blob([jpegBytes], { type: 'image/jpeg' });
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, heading));
-  card.appendChild(el('img', { src: URL.createObjectURL(blob), alt: 'Embedded preview', class: 'anr-iwork-preview' }));
+  card.appendChild(blobImg(blob, { alt: 'Embedded preview', class: 'anr-iwork-preview' }));
   const analyse = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse this image');
   analyse.addEventListener('click', () => {
     if (window._anrHandleFile) window._anrHandleFile(new File([jpegBytes], (fileBase || 'preview') + '.jpg', { type: 'image/jpeg' }), { nested: true });

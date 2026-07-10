@@ -59,7 +59,8 @@ function trackStats(tracks) {
       prev = p;
     }
   }
-  const agg = (arr) => arr.length ? { avg: arr.reduce((a, b) => a + b, 0) / arr.length, max: Math.max(...arr) } : null;
+  // reduce, not Math.max(...spread): a long track has too many points to spread as args.
+  const agg = (arr) => arr.length ? { avg: arr.reduce((a, b) => a + b, 0) / arr.length, max: arr.reduce((m, v) => (v > m ? v : m), -Infinity) } : null;
   return { ascent, descent, profile, hasTime, movingTime, movingDist, totalDist,
            hr: agg(hr), cad: agg(cad), temp: agg(temp) };
 }
@@ -71,7 +72,7 @@ function elevationProfileCanvas(profile) {
   cv.style.width = '100%'; cv.style.height = 'auto'; cv.style.maxWidth = W + 'px';
   const ctx = cv.getContext('2d');
   const eles = profile.map((p) => p.ele);
-  let minE = Math.min(...eles), maxE = Math.max(...eles);
+  let minE = eles.reduce((m, v) => (v < m ? v : m), Infinity), maxE = eles.reduce((m, v) => (v > m ? v : m), -Infinity);
   if (minE === maxE) { minE -= 1; maxE += 1; }
   const maxD = profile[profile.length - 1].dist || 1;
   const x = (d) => padL + (d / maxD) * (W - padL - padR);
@@ -393,7 +394,10 @@ export async function renderGeo(file, resultsEl) {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
   for (const line of g.lines) if (line.length > 1) L.polyline(line, { color: '#445f74', weight: 3 }).addTo(map);
   // Cap markers so a huge waypoint set doesn't lock up the page.
-  for (const m of g.markers.slice(0, 500)) L.marker([m.lat, m.lon]).addTo(map).bindPopup(m.name || (m.lat.toFixed(5) + ', ' + m.lon.toFixed(5)));
+  // Pass a DOM node (not a string) to bindPopup: the string overload sets the
+  // popup content via innerHTML, which would execute markup in an untrusted
+  // KML/GPX/GeoJSON <name>.
+  for (const m of g.markers.slice(0, 500)) L.marker([m.lat, m.lon]).addTo(map).bindPopup(el('div', {}, m.name || (m.lat.toFixed(5) + ', ' + m.lon.toFixed(5))));
   map.fitBounds([[minLat, minLon], [maxLat, maxLon]], { padding: [20, 20], maxZoom: 16 });
   setTimeout(() => map.invalidateSize(), 60);
 }

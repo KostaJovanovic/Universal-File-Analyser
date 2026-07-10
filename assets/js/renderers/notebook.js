@@ -12,7 +12,11 @@
 import { el, row, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '../core/util.js';
 
 function esc(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Escape quotes too: mdInline() emits already-esc()'d text into href="..."
+  // attributes, so an unescaped " would let a crafted markdown link break out
+  // of the attribute and inject an event handler.
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 // Strip ANSI colour escapes (common in stream output and tracebacks).
 function stripAnsi(s) {

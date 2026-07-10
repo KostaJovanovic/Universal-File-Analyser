@@ -12,6 +12,12 @@ import { el } from './util.js';
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
+  { range: '6.06 - 6.07', notes: [
+    'A broad robustness and safety pass: a corrupt or crafted file can no longer freeze a tab, and previews of documents, e-mail, presentations, drawings, maps, diagrams and vector images are kept strictly inert.',
+    'Dropping several files at once now analyses just the first; a viewer that hits an error shows a clear message with the fingerprint still available; and very large archives or G-code files bow out gracefully instead of risking a crash.',
+    'The offline download and the anonymous analysed-count now survive updates and reloads reliably, and previews across many formats release their memory once hidden.',
+    'The desktop app now only reads the file you actually drop onto it, and the Asteroids high-score board is marked as just for fun (scores are unverified).',
+  ] },
   { range: '6.01 - 6.05', notes: [
     'Analyser is now a desktop app for Windows, macOS and Linux - the same on-device engine, installable and auto-updating, downloadable from GitHub Releases.',
     'AI vocal separation adds a lighter phone-friendly model (the default on mobile), a model prompt to choose Standard or Lite on every run, an on/off toggle, and keeps the downloaded model for a day.',

@@ -17,6 +17,15 @@ import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard, loadScript } 
 
 const OPENTYPE_URL = 'assets/vendor/opentype/opentype.min.js';
 let _faceSeq = 0;
+// FontFaces added to document.fonts are global and outlive resultsEl.innerHTML=''
+// - each analysed font (and every collection-member switch) would otherwise
+// accumulate one more live face forever. Track them and drop the previous
+// render's set when a new font is analysed.
+const _addedFaces = new Set();
+function clearAddedFaces() {
+  for (const f of _addedFaces) { try { document.fonts.delete(f); } catch (_) {} }
+  _addedFaces.clear();
+}
 
 async function loadOpentype() {
   if (!window.opentype) { try { await loadScript(OPENTYPE_URL); } catch (_) {} }
@@ -306,6 +315,7 @@ function fontMetaCard(font, axes) {
 export async function renderFont(file, resultsEl) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
+  clearAddedFaces();   // drop the previous font's live FontFaces before loading this one
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading font "${file.name}"…`));
 
   let buf;
@@ -381,6 +391,7 @@ export async function renderFont(file, resultsEl) {
       const face = new FontFace(family, e.bytes.slice().buffer);
       await face.load();
       document.fonts.add(face);
+      _addedFaces.add(face);
       faceOk = true;
     } catch (_) { faceOk = false; }
     if (faceOk) specimenWrap.appendChild(specimenCard(family, axes, e.font));

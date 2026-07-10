@@ -306,7 +306,9 @@ async function buildJson(sections) {
       title: sec.title,
       blocks: sec.blocks.map((b) => {
         if (b.type === 'kv') {
-          const fields = {};
+          // Null-prototype map: a row literally labelled __proto__ would otherwise
+          // make `label in fields` always true (inherited) and re-prototype the object.
+          const fields = Object.create(null);
           for (const [label, value] of b.rows) {
             // Preserve every row even when two share a label: collapse duplicates
             // into an array rather than silently overwriting.

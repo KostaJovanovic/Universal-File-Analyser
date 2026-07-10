@@ -207,7 +207,10 @@ export async function renderTextDoc(file, container, kind, ext) {
       const text = await extractHwpx(file);
       pages = paginateText(text);
     } else if (kind === 'mhtml') {
-      const raw = await file.text();
+      // Cap the slice read: an adversarial multi-hundred-MB .mht would otherwise
+      // be buffered whole and then regex-scanned on the main thread.
+      const MHTML_CAP = 150_000_000;
+      const raw = await (file.size > MHTML_CAP ? file.slice(0, MHTML_CAP) : file).text();
       const html = extractMhtmlHtml(raw);
       if (html == null) { container.innerHTML = ''; container.appendChild(errorCard('Could not find an HTML part in this MHTML archive.')); return; }
       pages = paginateFlow(sanitizeHtml(html));

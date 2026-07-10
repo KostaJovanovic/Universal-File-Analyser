@@ -56,9 +56,22 @@ function parseBinaryPlist(bytes) {
   const offsets = [];
   for (let i = 0; i < numObjects; i++) offsets.push(readBE(offTableOff + i * offsetSize, offsetSize));
 
-  const seen = new Set();
+  // Cycle guard + memoisation. bplist allows the same object to be referenced
+  // many times (shared/interned values) - that is a DAG, not a cycle - so we
+  // memoise completed results by index to stop billion-laughs-style exponential
+  // re-expansion, and track in-progress indices to break true reference cycles.
+  const memo = new Map();
+  const inProgress = new Set();
   function obj(index) {
-    if (index >= offsets.length || seen.has(index)) return null;
+    if (index >= offsets.length || inProgress.has(index)) return null;
+    if (memo.has(index)) return memo.get(index);
+    inProgress.add(index);
+    const result = build(index);
+    inProgress.delete(index);
+    memo.set(index, result);
+    return result;
+  }
+  function build(index) {
     let p = offsets[index];
     const marker = bytes[p++];
     const type = marker >> 4, info = marker & 0x0f;
@@ -78,12 +91,14 @@ function parseBinaryPlist(bytes) {
       case 0x5: { const n = count(); return new TextDecoder('ascii').decode(bytes.subarray(p, p + n)); } // ASCII
       case 0x6: { const n = count(); return new TextDecoder('utf-16be').decode(bytes.subarray(p, p + n * 2)); } // UTF-16
       case 0xa: case 0xc: {                                                     // array / set
-        const n = count(); const arr = [];
+        let n = count(); const arr = [];
+        if (p + n * objRefSize > bytes.length) n = Math.max(0, Math.floor((bytes.length - p) / objRefSize)); // clamp to buffer
         for (let i = 0; i < n; i++) arr.push(obj(readBE(p + i * objRefSize, objRefSize)));
         return arr;
       }
       case 0xd: {                                                              // dict
-        const n = count(); const o = {};
+        let n = count(); const o = {};
+        if (p + 2 * n * objRefSize > bytes.length) n = Math.max(0, Math.floor((bytes.length - p) / (2 * objRefSize))); // clamp to buffer
         for (let i = 0; i < n; i++) {
           const k = obj(readBE(p + i * objRefSize, objRefSize));
           const v = obj(readBE(p + (n + i) * objRefSize, objRefSize));
