@@ -427,8 +427,8 @@ function walkNbt(b) {
         const elemType = r.u8(); const n = r.u32();
         record(name, NBT_TYPES[elemType] + '[' + n + ']');
         depth++;
-        if (depth < 24) for (let i = 0; i < n; i++) readPayload(elemType, '');
-        else for (let i = 0; i < n; i++) skipPayload(elemType);
+        if (depth < 24) for (let i = 0; i < n && !r.eof && visited <= 20000; i++) readPayload(elemType, '');
+        else for (let i = 0; i < n && !r.eof && visited <= 20000; i++) skipPayload(elemType);
         depth--;
         break;
       }
@@ -450,13 +450,15 @@ function walkNbt(b) {
     }
   }
   function skipPayload(type) {
+    visited++;
+    if (visited > 20000) throw new Error('cap');
     switch (type) {
       case 1: r.skip(1); break; case 2: r.skip(2); break; case 3: case 5: r.skip(4); break;
       case 4: case 6: r.skip(8); break;
       case 7: r.skip(r.u32()); break;
       case 8: r.skip(r.u16()); break;
-      case 9: { const et = r.u8(); const n = r.u32(); for (let i = 0; i < n; i++) skipPayload(et); break; }
-      case 10: { for (;;) { const t = r.u8(); if (t === 0) break; r.skip(r.u16()); skipPayload(t); } break; }
+      case 9: { const et = r.u8(); const n = r.u32(); for (let i = 0; i < n && !r.eof && visited <= 20000; i++) skipPayload(et); break; }
+      case 10: { for (; !r.eof && visited <= 20000;) { const t = r.u8(); if (t === 0) break; r.skip(r.u16()); skipPayload(t); } break; }
       case 11: r.skip(r.u32() * 4); break; case 12: r.skip(r.u32() * 8); break;
       default: throw new Error('badtype');
     }

@@ -11,11 +11,29 @@
 // navigation, disabling the service worker - is handled JS-side, gated on
 // window.__TAURI__. Native superpowers come later (research/NATIVE-APP-PLAN.md 7/7b).
 
+use std::collections::HashSet;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use tauri::Manager;
+
 #[derive(serde::Serialize)]
 struct UpdateInfo {
     version: String,
     notes: Option<String>,
 }
+
+// Paths the OS has dropped onto our window and that the frontend is therefore
+// allowed to read back through read_file_bytes. Populated ONLY by the trusted
+// drag-drop window event below - never by anything the webview says - and each
+// grant is consumed on first read. This is what stops a frontend script (e.g. via
+// an XSS in some renderer) from reading arbitrary local files by path: it can only
+// read a file the user physically dropped onto the app.
+#[derive(Default)]
+struct DropAllowlist(Mutex<HashSet<PathBuf>>);
+
+// Safety ceiling for a single read. The app streams whole files into memory (audio,
+// video, disk images), so this is generous - it only rejects the absurd.
+const MAX_READ_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 
 // Check GitHub Releases for a newer version. Returns Some(info) when one exists,
 // None when already current. Desktop-only: the updater plugin has no mobile build.
@@ -92,9 +110,35 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
 // the normal analysis pipeline. Returns an efficient raw byte Response (an
 // ArrayBuffer on the JS side) - not a JSON number array - so large files (audio,
 // video, disk images) don't balloon crossing the IPC bridge.
+//
+// Authorisation: the requested path is canonicalised and must be present in the
+// DropAllowlist (a path the OS dropped onto our window). The grant is consumed on
+// use, so each drop authorises exactly one read of that file. A path the frontend
+// invents - or a symlink resolving outside the dropped set - is rejected. This
+// keeps a renderer-injection bug from turning into local-file disclosure.
 #[tauri::command]
-fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
-    std::fs::read(&path)
+fn read_file_bytes(
+    path: String,
+    allow: tauri::State<'_, DropAllowlist>,
+) -> Result<tauri::ipc::Response, String> {
+    // Canonicalise (resolves symlinks + relative segments) so the check can't be
+    // fooled by an alternate spelling of an allowed path, and so a dropped symlink
+    // is compared as its real target.
+    let requested = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
+    {
+        let mut set = allow.0.lock().map_err(|_| "allowlist lock poisoned".to_string())?;
+        if !set.remove(&requested) {
+            return Err("path not authorised".into());
+        }
+    }
+    let meta = std::fs::metadata(&requested).map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("not a regular file".into());
+    }
+    if meta.len() > MAX_READ_BYTES {
+        return Err("file too large".into());
+    }
+    std::fs::read(&requested)
         .map(tauri::ipc::Response::new)
         .map_err(|e| e.to_string())
 }
@@ -111,6 +155,24 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
     builder
+        .manage(DropAllowlist::default())
+        // Trusted source of authorised paths: the OS drag-drop onto our window.
+        // Each new drop supersedes the previous grants (the app analyses one file
+        // at a time), so the allowlist only ever holds the current drop's paths.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                if let Some(state) = window.try_state::<DropAllowlist>() {
+                    if let Ok(mut set) = state.0.lock() {
+                        set.clear();
+                        for p in paths {
+                            if let Ok(canon) = std::fs::canonicalize(p) {
+                                set.insert(canon);
+                            }
+                        }
+                    }
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![check_for_update, install_update, read_file_bytes])
         .run(tauri::generate_context!())
         .expect("error while running the Analyser shell");

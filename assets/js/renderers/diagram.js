@@ -55,8 +55,10 @@ function num(v) { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; }
 function labelOf(cell) {
   let v = cell.getAttribute('value') || '';
   if (!v) return '';
-  // Cells with html=1 carry HTML; strip to text.
-  if (/[<&]/.test(v)) { const tmp = document.createElement('div'); tmp.innerHTML = v; v = tmp.textContent || ''; }
+  // Cells with html=1 carry HTML; strip to text. Use DOMParser, not a detached
+  // div's innerHTML: assigning innerHTML eagerly starts resource loads, so an
+  // <img src=x onerror=...> in an untrusted mxCell value would fire during parse.
+  if (/[<&]/.test(v)) { v = new DOMParser().parseFromString(v, 'text/html').body.textContent || ''; }
   return v.replace(/\s+/g, ' ').trim();
 }
 

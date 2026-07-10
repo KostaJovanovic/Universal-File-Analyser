@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 201;
+const COMMIT_COUNT = 202;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -35,7 +35,7 @@ import { renderUnknown } from '../renderers/unknown.js';
 import { renderProprietary, extractPeIcon } from '../renderers/proprietary.js';
 import { renderSpiceRaw, sniffSpiceRaw } from '../renderers/spice.js';
 import { initSearch } from './search.js';
-import { fileExt, el, row, fmtBytes, probeReadable, cloudFileWarning, integrityCard } from './util.js';
+import { fileExt, el, row, fmtBytes, probeReadable, cloudFileWarning, integrityCard, errorCard } from './util.js';
 import { walkItems, renderFolder } from '../renderers/folder.js';
 import { setupHeaderFx, setupSectionFx, setupFooterFx } from './effects.js';
 import { setupStatsPage } from './stats-page.js';
@@ -812,7 +812,15 @@ function boot() {
     // wasn't async). Errors still dismiss it so it can't get stuck on screen.
     // If this load was cancelled (or superseded by a newer one) leave the loader
     // alone - cancelLoad already cleared the UI, and a newer load owns the popup.
-    Promise.resolve(renderPromise).catch(() => {}).finally(() => {
+    let renderFailed = false;
+    Promise.resolve(renderPromise).catch((err) => {
+      // A renderer that rejects (unexpected parse exception, failed lazy import)
+      // must not masquerade as a completed analysis. Record it so the finally
+      // below shows a visible error card and skips the share nudge, instead of
+      // silently producing a hash-only card that looks like success.
+      renderFailed = true;
+      console.error('Renderer failed for', file && file.name, err);
+    }).finally(() => {
       if (token.cancelled) {
         // A cancelled renderer may have appended output after cancelLoad cleared
         // the UI. Scrub it - but only if no newer load has since taken over
@@ -823,6 +831,12 @@ function boot() {
       }
       if (_currentToken !== token) { stopScrollWatch(); return; }   // superseded
       hideDropLoader();
+      // If the renderer threw, lead the analysis with a plain error card so the
+      // failure is visible (the Integrity card below still gives the fingerprint).
+      if (renderFailed && resultEl) {
+        resultEl.hidden = false;
+        resultEl.insertBefore(errorCard('This file could not be fully analysed - the viewer for its type hit an unexpected error. Its fingerprint is still shown below.'), resultEl.firstChild);
+      }
       // Loud, unmissable warning for dotenv secrets files - prepended above the
       // analysis so it's the first thing seen, whatever the renderer produced.
       if (resultEl && isEnvFile(file.name)) {
@@ -903,7 +917,7 @@ function boot() {
       // Never nudge for a sandboxed /samples demo run - those aren't the visitor's
       // own analysis worth sharing. (scheduleShareNudge also guards on the page, but
       // this flag is the ground truth and holds even if the page check is bypassed.)
-      if (!suggestion && !unreadable && !isSample) scheduleShareNudge(analysed);
+      if (!suggestion && !unreadable && !isSample && !renderFailed) scheduleShareNudge(analysed);
     });
   }
   _handleFile = handleFile;
@@ -1318,22 +1332,22 @@ window._anrReadableText = isReadableText;
       }
       if (_handleFile) {
         const list = Array.from(files);
-        // Pair a RAW/photo with its same-named .xmp develop-settings sidecar (as
-        // written by Photoshop / Lightroom / Camera Raw) so the develop settings
-        // show alongside the photo. A matched .xmp is consumed; everything else
-        // analyses on its own.
         const baseOf = (n) => n.replace(/\.[^.]+$/, '').toLowerCase();
         const extOf = (n) => (n.split('.').pop() || '').toLowerCase();
-        const xmpByBase = new Map();
-        for (const f of list) if (extOf(f.name) === 'xmp') xmpByBase.set(baseOf(f.name), f);
-        const consumed = new Set();
-        for (const f of list) {
-          if (extOf(f.name) === 'xmp') continue;
-          const xmp = PHOTO_EXTS.has(extOf(f.name)) ? xmpByBase.get(baseOf(f.name)) : null;
-          if (xmp) { consumed.add(xmp); _handleFile(f, { sidecarXmp: xmp }); }
-          else _handleFile(f);
+        // Analyse a SINGLE file. Dropping several at once used to start a
+        // concurrent analysis per file, and they rendered on top of one another
+        // into the same result panels (interleaved, unreadable output). This is a
+        // single-file tool, so take just the first file and ignore the rest.
+        // Exception: a RAW/photo still picks up its same-named .xmp develop-settings
+        // sidecar (Photoshop / Lightroom / Camera Raw) so the settings show with it.
+        const primary = list.find((f) => extOf(f.name) !== 'xmp') || list[0];
+        if (primary) {
+          const xmp = PHOTO_EXTS.has(extOf(primary.name))
+            ? list.find((f) => extOf(f.name) === 'xmp' && baseOf(f.name) === baseOf(primary.name))
+            : null;
+          if (xmp) _handleFile(primary, { sidecarXmp: xmp });
+          else _handleFile(primary);
         }
-        for (const f of list) if (extOf(f.name) === 'xmp' && !consumed.has(f)) _handleFile(f);
       }
     });
 
@@ -1377,9 +1391,14 @@ window._anrReadableText = isReadableText;
         // no :ts companion either and must be exempted the same way. anr-a11y is the
         // "Clear view" accessibility pref - deliberately permanent (an accessibility
         // choice must not silently expire), so it too carries no :ts and is exempt.
+        // anr-analytics-queue (offline-durable analysed-count queue, history.js),
+        // anr-offline / anr-offline-feat (offline cache-tier version records,
+        // offline-tiers.js) also carry no :ts and are managed by their own modules -
+        // sweeping them silently defeats the offline-analytics and offline-tier features.
         if (!k || !k.startsWith('anr-') || k.endsWith(':ts')
             || k === 'anr-asteroids-hi' || k === 'anr-asteroids-bestwave'
-            || k === 'anr-history' || k === 'anr-a11y') continue;
+            || k === 'anr-history' || k === 'anr-a11y'
+            || k === 'anr-analytics-queue' || k === 'anr-offline' || k === 'anr-offline-feat') continue;
         var ts = parseInt(localStorage.getItem(k + ':ts'), 10);
         if (!ts || now - ts > ANR_TTL) {
           localStorage.removeItem(k);

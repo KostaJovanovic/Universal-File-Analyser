@@ -482,7 +482,12 @@ function decodePcx(b, h) {
   const { bpp, planes, bytesPerLine, width, height } = h;
   // Decode RLE scanlines: total bytes per row = bytesPerLine * planes.
   const totalPerRow = bytesPerLine * planes;
-  const rows = new Uint8Array(totalPerRow * height);
+  // bytesPerLine/planes/height are file-controlled and independent of the
+  // width*height pixel cap checked below, so a crafted header could size this
+  // intermediate buffer at 1-2 GB before that guard runs. Bound it first.
+  const rowBytes = totalPerRow * height;
+  if (!(rowBytes > 0) || rowBytes > 256_000_000) return null;
+  const rows = new Uint8Array(rowBytes);
   let si = 128, di = 0;
   const end = di + rows.length;
   while (di < end && si < b.length) {

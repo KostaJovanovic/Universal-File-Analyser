@@ -2,7 +2,7 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v201';
+const VERSION = 'analyser-v202';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -255,15 +255,27 @@ self.addEventListener('fetch', (e) => {
   // load (~200 files); through the service worker that overhead is what made a warm
   // load crawl on Chromium/Edge while staying instant on Firefox. Only a cache MISS
   // touches the network, and the fresh response is cached under the current version.
+  //
+  // IMPORTANT: check the CURRENT version cache explicitly first, not caches.match(),
+  // which searches every named cache in creation order. The persistent
+  // 'analyser-offline' tier (survives version bumps) stores application URLs from an
+  // older build; a bare caches.match() could return that older app.js/module before
+  // the newly-precached VERSION copy, pinning opted-in offline users on a stale build
+  // whose own refresh logic then can't detect that it is stale. Only fall back to the
+  // other surviving caches (offline tiers, mdx model) on a VERSION miss - those hold
+  // large vendor/model files the version cache doesn't carry.
   e.respondWith(
-    caches.match(req).then((cached) => {
+    caches.open(VERSION).then((current) => current.match(req)).then((cached) => {
       if (cached) return cached;
-      return fetch(req).then((res) => {
-        if (res && (res.status === 200 || res.type === 'opaque')) {
-          const copy = res.clone();
-          caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
-        }
-        return res;
+      return caches.match(req).then((fallback) => {
+        if (fallback) return fallback;
+        return fetch(req).then((res) => {
+          if (res && (res.status === 200 || res.type === 'opaque')) {
+            const copy = res.clone();
+            caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
+          }
+          return res;
+        });
       });
     })
   );

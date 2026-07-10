@@ -622,8 +622,8 @@ async function parseMsgpack(file) {
     const name = mpTypeName(c);
     counts[name] = (counts[name] || 0) + 1;
     if (c <= 0x7f || c >= 0xe0) return;                                   // fixint
-    if (c >= 0x80 && c <= 0x8f) { const len = c & 0x0f; for (let i = 0; i < len; i++) { val(); val(); } return; }
-    if (c >= 0x90 && c <= 0x9f) { const len = c & 0x0f; for (let i = 0; i < len; i++) val(); return; }
+    if (c >= 0x80 && c <= 0x8f) { const len = c & 0x0f; for (let i = 0; i < len && !r.eof && n <= 20000; i++) { val(); val(); } return; }
+    if (c >= 0x90 && c <= 0x9f) { const len = c & 0x0f; for (let i = 0; i < len && !r.eof && n <= 20000; i++) val(); return; }
     if (c >= 0xa0 && c <= 0xbf) { r.skip(c & 0x1f); return; }             // fixstr
     switch (c) {
       case 0xc0: case 0xc2: case 0xc3: return;
@@ -637,10 +637,10 @@ async function parseMsgpack(file) {
       case 0xd9: r.skip(r.u8()); return;
       case 0xda: r.skip(r.u16()); return;
       case 0xdb: r.skip(r.u32()); return;
-      case 0xdc: { const len = r.u16(); for (let i = 0; i < len; i++) val(); return; }
-      case 0xdd: { const len = r.u32(); for (let i = 0; i < len; i++) val(); return; }
-      case 0xde: { const len = r.u16(); for (let i = 0; i < len; i++) { val(); val(); } return; }
-      case 0xdf: { const len = r.u32(); for (let i = 0; i < len; i++) { val(); val(); } return; }
+      case 0xdc: { const len = r.u16(); for (let i = 0; i < len && !r.eof && n <= 20000; i++) val(); return; }
+      case 0xdd: { const len = r.u32(); for (let i = 0; i < len && !r.eof && n <= 20000; i++) val(); return; }
+      case 0xde: { const len = r.u16(); for (let i = 0; i < len && !r.eof && n <= 20000; i++) { val(); val(); } return; }
+      case 0xdf: { const len = r.u32(); for (let i = 0; i < len && !r.eof && n <= 20000; i++) { val(); val(); } return; }
       case 0xd4: r.skip(2); return; case 0xd5: r.skip(3); return;
       case 0xd6: r.skip(5); return; case 0xd7: r.skip(9); return; case 0xd8: r.skip(17); return;
       case 0xc7: { const len = r.u8(); r.skip(1 + len); return; }
@@ -685,9 +685,9 @@ async function parseCbor(file) {
     if (major === 7) { if (ai === 24) r.skip(1); else if (ai === 25) r.skip(2); else if (ai === 26) r.skip(4); else if (ai === 27) r.skip(8); return; }
     const len = argLen(ai);
     if (major === 0 || major === 1) return;
-    if (major === 2 || major === 3) { if (len >= 0) r.skip(len); else while (!r.eof && r.bytes[r.pos] !== 0xff) val(); if (len < 0) r.skip(1); return; }
-    if (major === 4) { if (len >= 0) for (let i = 0; i < len; i++) val(); else { while (!r.eof && r.bytes[r.pos] !== 0xff) val(); r.skip(1); } return; }
-    if (major === 5) { if (len >= 0) for (let i = 0; i < len; i++) { val(); val(); } else { while (!r.eof && r.bytes[r.pos] !== 0xff) { val(); val(); } r.skip(1); } return; }
+    if (major === 2 || major === 3) { if (len >= 0) r.skip(len); else while (!r.eof && n <= 20000 && r.bytes[r.pos] !== 0xff) val(); if (len < 0) r.skip(1); return; }
+    if (major === 4) { if (len >= 0) for (let i = 0; i < len && !r.eof && n <= 20000; i++) val(); else { while (!r.eof && n <= 20000 && r.bytes[r.pos] !== 0xff) val(); r.skip(1); } return; }
+    if (major === 5) { if (len >= 0) for (let i = 0; i < len && !r.eof && n <= 20000; i++) { val(); val(); } else { while (!r.eof && n <= 20000 && r.bytes[r.pos] !== 0xff) { val(); val(); } r.skip(1); } return; }
     if (major === 6) { tags[len] = (tags[len] || 0) + 1; val(); return; }
   }
   try { val(); } catch (_) {}

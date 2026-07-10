@@ -1570,10 +1570,11 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       // ~1.5M cells - fast enough (no per-cell sqrt) to redraw while dragging.
       if (L < 4096) return null;   // too short to be worth a blend view
       // The DRAG path recombines precomputed complex bins (cheap, no re-FFT) on a
-      // frame-capped grid, so live scrubbing stays smooth; fftSize is capped for
+      // frame-capped grid, so live morphing stays smooth; fftSize is capped for
       // that. The SETTLED path (below) re-runs the real spectrogram pipeline at the
-      // full current FFT/window/mode, so the blend view honours those controls just
-      // like the file's own spectrogram does.
+      // full current FFT/window/mode, so the resting view honours those controls
+      // just like the file's own spectrogram - but bounded to the canvas width so a
+      // long track's re-FFT can't freeze the main thread.
       const FRAME_CAP = 1500;
       function dragStftOpts() {
         const fftSize = Math.min((state.fftSize | 0) || 2048, 2048);
@@ -1642,7 +1643,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       }
       blendApplyIso = applyBlendIso;
       applyBlendIso();   // wire it up now (straight through unless isolate is already on)
-      let vSrc = null, iSrc = null, playing = false, startCtx = 0, offset = 0, raf = 0;
+      let vSrc = null, iSrc = null, playing = false, startCtx = 0, offset = 0, raf = 0, armed = false;
 
       function applyGains(ramp) {
         const { a, b } = gainsFor(sliderS()); const t = ac.currentTime;
@@ -1679,7 +1680,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         }
       }
       function play() {
-        if (playing || !A) return;
+        if (playing || !armed) return;
         if (opts.audioEl && !opts.audioEl.paused) opts.audioEl.pause();  // one transport at a time
         if (ac.state === 'suspended' && ac.resume) ac.resume();
         playing = true;
@@ -1721,7 +1722,17 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       function paintSettled() {
         const { a, b } = gainsFor(sliderS());
         const mix = mixStems(a, b);
-        const params = { fftSize: state.fftSize, hopSize: Math.floor(state.fftSize / 4), window: state.winName };
+        // renderSpectrogram samples ONE column per output pixel, so computing more
+        // time frames than the canvas is wide is pure wasted STFT work - and doing
+        // the full-length mix at hop = fftSize/4 froze the main thread for hundreds
+        // of ms on long tracks (the lag right after changing FFT / window / mode, or
+        // releasing the slider). Keep the full fftSize (frequency detail), window and
+        // mode; only widen the hop so the frame count tracks the display width, the
+        // same trick the drag grid already uses. The resting image is unchanged.
+        const fftSize = (state.fftSize | 0) || 2048;
+        const targetFrames = Math.max(FRAME_CAP, canvas.width || FRAME_CAP);
+        const hopSize = Math.max(Math.floor(fftSize / 4), Math.ceil((L - fftSize) / Math.max(1, targetFrames - 1)));
+        const params = { fftSize, hopSize, window: state.winName };
         blendSpec = state.mode === 'reassigned'
           ? computeReassignedSpectrogram(mix, sr, params)
           : computeSpectrogram(mix, sr, params);
@@ -1745,10 +1756,12 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       slider.addEventListener('input', () => {
         const v = Number(slider.value);
         if (Math.abs(v) <= 6 && v !== 0) slider.value = '0';   // click detent -> exact centre
-        updateTag(); applyGains(true); requestPaint();
+        updateTag(); applyGains(true); requestPaint();   // morph the picture + crossfade the audio live
       });
-      // On release, settle to the full-pipeline image so the resting view is exact.
-      slider.addEventListener('change', () => { applyGains(false); paintSettled(); });
+      // On release, snap the audio gain and paint one final recombine at the exact
+      // resting value - still the cheap path, NO re-FFT. The full-pipeline re-FFT
+      // (paintSettled) is reserved for FFT / window / mode changes only (reanalyse).
+      slider.addEventListener('change', () => { applyGains(false); requestPaint(); });
 
       const block = el('div', { class: 'anr-blend' }, [
         el('div', { class: 'anr-blend-head' }, [
@@ -1763,15 +1776,15 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       ]);
 
       // Heavy analysis deferred (two rAFs) so the block paints first, then the
-      // complex STFTs compute, the controls arm, and the blend REPLACES the file's
+      // spectrogram computes, the controls arm, and the blend REPLACES the file's
       // spectrogram on the main canvas (at centre = the normal mix).
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        playBtn.disabled = false;
+        playBtn.disabled = false; armed = true;
         // The blend now owns the spectrogram AND the under-spectrogram transport:
         // its play button plays the separated blend and every scrubber follows.
         blendActive = true; blendSeek = seekFrac; blendPause = pause;
         blendReanalyse = reanalyse;   // let FFT/window/mode changes re-run the blend view
-        reanalyse();   // compute the drag STFTs + hand the main spectrogram to the blend
+        reanalyse();   // paint the main spectrogram at the settled (normal-mix) blend
         if (specTransport && specTransport._anrTransport) {
           specTransport._anrTransport.attach({ toggle: () => (playing ? pause() : play()), seek: seekFrac });
         }
@@ -1790,7 +1803,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         for (const n of blendFilters) { try { n.disconnect(); } catch (_) {} }
         blendFilters = [];
         for (const n of [gV, gI, master]) { try { n.disconnect(); } catch (_) {} }
-        A = B = out = null; vBuf = iBuf = null;
+        armed = false; A = B = out = null; vBuf = iBuf = null;
       };
       return block;
     }
@@ -2525,6 +2538,11 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     try { playbackSrc = new Blob([encodeWav(audioBuffer)], { type: 'audio/wav' }); } catch (_) {}
   }
   const audioUrl = URL.createObjectURL(playbackSrc);
+  // Revoke the URL when the analysis is torn down (next drop / SPA navigation both
+  // run the media stoppers), otherwise repeatedly analysing large audio pins each
+  // backing blob for the page's lifetime.
+  (window._anrMediaStoppers = window._anrMediaStoppers || new Set())
+    .add(() => { try { URL.revokeObjectURL(audioUrl); } catch (_) {} });
   const audioEl = el('audio', { src: audioUrl, class: 'is-hidden' });
   infoCard.appendChild(audioEl);
   infoCard.appendChild(makePlayer(audioEl, audioBuffer.duration));

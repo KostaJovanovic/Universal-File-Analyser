@@ -108,6 +108,18 @@ async function ensureScoreColumns(env) {
   for (const col of ['wave INTEGER', 'cause TEXT']) {
     try { await env.DB.prepare('ALTER TABLE scores ADD COLUMN ' + col).run(); } catch (_) { /* already present */ }
   }
+  // One row per identity (iphash + name). Dedup any legacy duplicates (keep the
+  // most recent, which the old "store only your best" logic made the best), then
+  // enforce it with a unique index so a score submit can be a single atomic upsert
+  // instead of a racy select-then-delete-insert. Best-effort: if it can't be
+  // created, handleScore falls back to the previous non-atomic path.
+  try {
+    await env.DB.prepare(
+      'DELETE FROM scores WHERE iphash IS NOT NULL AND id NOT IN '
+      + '(SELECT MAX(id) FROM scores WHERE iphash IS NOT NULL GROUP BY iphash, name)',
+    ).run();
+    await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_scores_identity ON scores(iphash, name)').run();
+  } catch (_) { /* index optional */ }
 }
 
 // Normalise the "final blow" tag: a file extension like '.pdf' or the literal
@@ -180,19 +192,20 @@ async function handleVisit(request, env) {
   const ipHash = await clientIpHash(request, env);
   const now = Math.floor(Date.now() / 1000);
 
-  const seen = await env.DB.prepare('SELECT last FROM visitor_seen WHERE ip_hash = ?')
-    .bind(ipHash).first();
-
-  let counted = false;
-  if (!seen || (now - seen.last) >= VISIT_WINDOW) {
-    counted = true;
-    await env.DB.batch([
-      env.DB.prepare(
-        'INSERT INTO visitor_seen (ip_hash, last) VALUES (?, ?) '
-        + 'ON CONFLICT(ip_hash) DO UPDATE SET last = excluded.last',
-      ).bind(ipHash, now),
-      env.DB.prepare(BUMP_VISITORS),
-    ]);
+  // Atomic "new-or-expired visitor?" test. A separate SELECT-then-decide let two
+  // concurrent first-time requests for one IP both read "no row" and both bump the
+  // total. Instead do the state transition in a single upsert: insert the row, or
+  // update `last` only when the visit window has elapsed. SQLite reports one
+  // changed row exactly when a fresh insert or a window-elapsed update happened,
+  // so meta.changes is the definitive "count this visit" signal - and because the
+  // write is serialised, only the first of two racers sees changes === 1.
+  const upd = await env.DB.prepare(
+    'INSERT INTO visitor_seen (ip_hash, last) VALUES (?1, ?2) '
+    + 'ON CONFLICT(ip_hash) DO UPDATE SET last = ?2 WHERE ?2 - visitor_seen.last >= ?3',
+  ).bind(ipHash, now, VISIT_WINDOW).run();
+  const counted = !!(upd.meta && upd.meta.changes === 1);
+  if (counted) {
+    await env.DB.prepare(BUMP_VISITORS).run();
     // Add to today's per-day bucket. Best-effort and isolated from the core
     // count above so a daily-table hiccup never costs us the visit.
     try {
@@ -300,19 +313,32 @@ async function handleScore(request, env) {
   const wave = Number.isFinite(waveN) && waveN >= 0 && waveN <= 100000 ? waveN : null;
   const cause = cleanCause(body.cause);
   await ensureScoreColumns(env);
-  // One entry per identity (hashed IP + chosen name), and only the player's best:
-  // look up the current row for this identity and replace it only when the new
-  // score beats it. A lower or equal resubmit leaves the board untouched, so
-  // repeats never pile up rows and never knock down a higher score.
-  const prev = await env.DB
-    .prepare('SELECT score FROM scores WHERE iphash = ? AND name = ? ORDER BY score DESC LIMIT 1')
-    .bind(ipHash, name).first();
-  if (!prev || score > Number(prev.score)) {
-    await env.DB.batch([
-      env.DB.prepare('DELETE FROM scores WHERE iphash = ? AND name = ?').bind(ipHash, name),
-      env.DB.prepare('INSERT INTO scores (name, score, ts, iphash, wave, cause) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(name, score, Math.floor(Date.now() / 1000), ipHash, wave, cause),
-    ]);
+  const ts = Math.floor(Date.now() / 1000);
+  // One entry per identity (hashed IP + chosen name), and only the player's best.
+  // Atomic upsert: insert, or on identity conflict overwrite ONLY when the new
+  // score beats the stored one. A single statement, so two concurrent submits for
+  // the same identity can't both slip a row in (the previous select-then-write
+  // could). NOTE: the board is deliberately casual - scores are client-submitted
+  // and not verified server-side; the rate limit just stops flooding.
+  try {
+    await env.DB.prepare(
+      'INSERT INTO scores (name, score, ts, iphash, wave, cause) VALUES (?1, ?2, ?3, ?4, ?5, ?6) '
+      + 'ON CONFLICT(iphash, name) DO UPDATE SET score = excluded.score, ts = excluded.ts, '
+      + 'wave = excluded.wave, cause = excluded.cause WHERE excluded.score > scores.score',
+    ).bind(name, score, ts, ipHash, wave, cause).run();
+  } catch (_) {
+    // No unique index yet (migration not applied) - fall back to the older
+    // non-atomic best-only replace so scoring still works.
+    const prev = await env.DB
+      .prepare('SELECT score FROM scores WHERE iphash = ? AND name = ? ORDER BY score DESC LIMIT 1')
+      .bind(ipHash, name).first();
+    if (!prev || score > Number(prev.score)) {
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM scores WHERE iphash = ? AND name = ?').bind(ipHash, name),
+        env.DB.prepare('INSERT INTO scores (name, score, ts, iphash, wave, cause) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(name, score, ts, ipHash, wave, cause),
+      ]);
+    }
   }
   return json({ ok: true, top: await topScores(env) });
 }

@@ -1865,6 +1865,16 @@ export async function renderGcode(file, resultsEl, opts) {
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reconstructing the print from "${file.name}"…`));
 
+  // The whole file is read into a JS string and parsed synchronously on the main
+  // thread; an adversarial multi-GB text would exhaust memory / freeze the tab
+  // before the segment cap ever applies. Decline above a generous ceiling.
+  const MAX_GCODE_BYTES = 600_000_000;
+  if (file.size > MAX_GCODE_BYTES) {
+    resultsEl.innerHTML = '';
+    resultsEl.appendChild(errorCard('This G-code file is ' + fmtBytes(file.size) + ' - too large to reconstruct in the browser. The file was not opened.'));
+    return;
+  }
+
   let text;
   try { text = await file.text(); }
   catch (e) { resultsEl.innerHTML = ''; resultsEl.appendChild(errorCard('Could not read file: ' + (e && e.message))); return; }

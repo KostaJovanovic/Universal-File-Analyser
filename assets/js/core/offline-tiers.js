@@ -703,18 +703,31 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
 
   // ----- PWA install prompt -----
   const installBtn = document.getElementById('offlineInstall');
-  let deferredPrompt = null;
-  window.addEventListener('beforeinstallprompt', e => {
-    e.preventDefault();
-    deferredPrompt = e;
-  });
+  // The beforeinstallprompt/appinstalled listeners are window-level, but
+  // setupOfflineTiers() re-runs on every SPA navigation - so wire them once (they
+  // resolve the current button by id at fire time) instead of stacking a new pair
+  // per navigation. deferredPrompt is stashed on the function object so the click
+  // handler below and a later navigation's handler share the same captured event.
+  if (!setupOfflineTiers._winWired) {
+    setupOfflineTiers._winWired = true;
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      setupOfflineTiers._deferredPrompt = e;
+    });
+    window.addEventListener('appinstalled', () => {
+      const b = document.getElementById('offlineInstall');
+      if (b) b.textContent = 'Installed ✓';
+      setupOfflineTiers._deferredPrompt = null;
+    });
+  }
   if (installBtn) {
     installBtn.addEventListener('click', async () => {
+      const deferredPrompt = setupOfflineTiers._deferredPrompt;
       if (deferredPrompt) {
         deferredPrompt.prompt();
         const result = await deferredPrompt.userChoice;
         if (result.outcome === 'accepted') installBtn.textContent = 'Installed ✓';
-        deferredPrompt = null;
+        setupOfflineTiers._deferredPrompt = null;
         return;
       }
       installBtn.textContent = installHint();
@@ -727,10 +740,6 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       }, 5000);
     });
   }
-  window.addEventListener('appinstalled', () => {
-    if (installBtn) installBtn.textContent = 'Installed ✓';
-    deferredPrompt = null;
-  });
 
   // ----- Clear storage (localStorage / sessionStorage / IndexedDB + the
   //        downloaded offline tiers; keeps the dark-mode preference and the

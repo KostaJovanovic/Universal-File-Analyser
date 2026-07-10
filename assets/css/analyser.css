@@ -7999,6 +7999,7 @@ a.stats-ext-link:hover { color: var(--accent); text-decoration: none; }
   padding: 22px 24px;
 }
 .stats-scores-head { font-size: var(--t-h3); margin: 0 0 14px; }
+.stats-scores-note { margin: -6px 0 14px; color: var(--muted); font-size: var(--t-small); }
 .stats-scores-list {
   list-style: none;
   margin: 0;

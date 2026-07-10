@@ -87,7 +87,18 @@
 
     var oldMain = document.querySelector('.site-main');
     var newMain = doc.querySelector('.site-main');
-    if (oldMain && newMain) oldMain.replaceWith(newMain);
+    if (oldMain && newMain) {
+      // Stop media before detaching: a detached <audio>/<video> keeps playing,
+      // and Web Audio players (AI blend, sonify) sound through no element at all,
+      // so navigating away from an analysis would otherwise leave audio running
+      // with no visible player. Mirror clearResultsUI()'s teardown.
+      try { oldMain.querySelectorAll('audio, video').forEach(function (m) { try { m.pause(); } catch (_) {} }); } catch (_) {}
+      if (window._anrMediaStoppers) {
+        for (var stop of window._anrMediaStoppers) { try { stop(); } catch (_) {} }
+        window._anrMediaStoppers.clear();
+      }
+      oldMain.replaceWith(newMain);
+    }
 
     var oldFooter = document.querySelector('.site-footer');
     var newFooter = doc.querySelector('.site-footer');

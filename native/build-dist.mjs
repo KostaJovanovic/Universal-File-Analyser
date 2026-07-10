@@ -45,7 +45,7 @@ const EXCLUDE_DIRS = new Set([
   '.git', '.github', '.claude', '.wrangler',
   'native',                                       // the Tauri shell itself (this folder)
   'node_modules', 'dist', 'src-tauri', '.native-cache',
-  'tools', 'worker', 'research', 'stats-backup', 'minimal',
+  'tools', 'worker', 'research', 'research2', 'stats-backup', 'minimal',
 ]);
 
 // Top-level files never shipped to the native app.

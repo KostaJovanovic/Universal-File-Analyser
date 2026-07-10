@@ -7,7 +7,7 @@
    iframe (no scripts), with images resolved. KF8's HUFF/CDIC decompression can
    be slow, so the pager is disabled while a section loads. */
 
-import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard, blobImg } from '../core/util.js';
 
 const FFLATE_URL = new URL('../../vendor/fflate.js', import.meta.url).href;
 const MOBI_URL = new URL('../../vendor/foliate/mobi.js', import.meta.url).href;
@@ -68,7 +68,7 @@ export async function renderMobi(file, resultsEl) {
     if (cover) {
       const pcard = el('div', { class: 'anr-card' });
       pcard.appendChild(el('h3', {}, 'Cover'));
-      pcard.appendChild(el('img', { src: URL.createObjectURL(cover), alt: 'Cover', class: 'anr-iwork-preview' }));
+      pcard.appendChild(blobImg(cover, { alt: 'Cover', class: 'anr-iwork-preview' }));
       resultsEl.insertBefore(pcard, _renderAnchor);
     }
   } catch (_) { /* no cover */ }

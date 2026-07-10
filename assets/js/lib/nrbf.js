@@ -153,7 +153,10 @@ export function parseNrbf(bytes) {
 
     // Read the member values for a class given its layout, into an object.
     function readClassValues(meta, id) {
-      const obj = {};
+      // Null-prototype accumulator: member names come from the untrusted .NET
+      // stream, so a member literally named __proto__ must not be able to change
+      // this object's prototype (prototype pollution).
+      const obj = Object.create(null);
       register(id, obj);
       for (const m of meta.members) {
         const v = readMemberValue(m);

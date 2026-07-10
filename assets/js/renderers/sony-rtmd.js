@@ -402,6 +402,12 @@ export function buildImuTimeline(d, file) {
   let transportFill = null;
   if (file) {
     const url = URL.createObjectURL(file);
+    // Revoke when the analysis is torn down (next drop / SPA navigation both run
+    // the media stoppers) so the video's backing blob isn't pinned for the page's
+    // lifetime. A <video> needs its URL for the whole playback, so this can't just
+    // revoke on load the way a still preview does.
+    (window._anrMediaStoppers = window._anrMediaStoppers || new Set())
+      .add(() => { try { URL.revokeObjectURL(url); } catch (_) {} });
     // Bare <video> + the site's own makePlayer transport (no native browser
     // controls), so it matches the main Player rather than looking foreign.
     video = el('video', { src: url, playsinline: '', preload: 'metadata', class: 'anr-imu-video' });

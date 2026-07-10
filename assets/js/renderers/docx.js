@@ -204,6 +204,15 @@ function renderDocumentXml(xmlStr, imageMap) {
 // Build a map of relationship-id → blob URL for every embedded raster image
 // referenced by the document. Relationship targets in word/_rels/document.xml.rels
 // are relative to word/.
+// Object URLs minted for embedded images. They are global and used later as <img>
+// srcs elsewhere in the render, so they can't be revoked on load; track them and
+// free the previous document's set when a new document is opened.
+const _docxImageUrls = new Set();
+function revokeDocxImageUrls() {
+  for (const u of _docxImageUrls) { try { URL.revokeObjectURL(u); } catch (_) {} }
+  _docxImageUrls.clear();
+}
+
 async function buildImageMap(zip) {
   const map = {};
   if (!zip.has('word/_rels/document.xml.rels')) return map;
@@ -225,7 +234,9 @@ async function buildImageMap(zip) {
       const bytes = await zip.bytes(path);
       if (bytes) {
         const ext = (path.match(/\.(\w+)$/) || [, 'png'])[1].toLowerCase();
-        map[id] = URL.createObjectURL(new Blob([bytes], { type: 'image/' + (ext === 'jpg' ? 'jpeg' : ext) }));
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'image/' + (ext === 'jpg' ? 'jpeg' : ext) }));
+        _docxImageUrls.add(url);
+        map[id] = url;
       }
     } catch (_) { /* skip unreadable entry */ }
   }
@@ -397,7 +408,9 @@ async function buildCollabCard(zip) {
             const type = r.getAttribute('Type') || '';
             const target = r.getAttribute('Target') || '';
             const ext = (r.getAttribute('TargetMode') || '') === 'External';
-            if (/hyperlink/i.test(type) && (ext || /^https?:/i.test(target)) && target) links.push(target);
+            // Allow-list the scheme: an External relationship can carry a
+            // javascript:/data: target that would become a live href below.
+            if (/hyperlink/i.test(type) && (ext || /^https?:/i.test(target)) && /^(https?:|mailto:)/i.test(target)) links.push(target);
           }
           if (links.length) {
             tbl.appendChild(row('External links', links.length));
@@ -474,6 +487,7 @@ async function buildCollabCard(zip) {
 export async function renderDocx(file, container) {
   container.hidden = false;
   container.innerHTML = '';
+  revokeDocxImageUrls();   // free the previous document's embedded-image object URLs
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading document…'));
 
   try {

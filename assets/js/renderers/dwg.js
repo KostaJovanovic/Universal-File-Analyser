@@ -6,6 +6,7 @@
    same idea as the DXF viewer, but for the binary format. Nothing is uploaded. */
 
 import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard } from '../core/util.js';
+import { sanitizeSvgMarkup } from './svg.js';
 
 const DIST_URL = new URL('../../vendor/libredwg/dist/libredwg-web.js', import.meta.url).href;
 const WASM_DIR = new URL('../../vendor/libredwg/wasm', import.meta.url).href;
@@ -73,11 +74,16 @@ export async function renderDwg(file, resultsEl) {
   resultsEl.appendChild(card);
 
   // ---- Drawing ----
-  if (svg && /<svg[\s>]/i.test(svg)) {
+  // The SVG is emitted by LibreDWG from an untrusted DWG. Run it through the
+  // same strict allow-list sanitiser as the SVG viewer (strips <script>, on*,
+  // <foreignObject>, <style>, SMIL, external/remote refs) rather than a
+  // <script>-only regex that leaves event handlers and remote refs intact.
+  const safeSvg = svg && /<svg[\s>]/i.test(svg) ? sanitizeSvgMarkup(svg) : null;
+  if (safeSvg) {
     const dcard = el('div', { class: 'anr-card' });
     dcard.appendChild(el('h3', {}, 'Drawing'));
     const wrap = el('div', { class: 'anr-dwg-wrap' });
-    wrap.innerHTML = svg.replace(/<script[\s\S]*?<\/script>/gi, '');
+    wrap.innerHTML = safeSvg;
     dcard.appendChild(wrap);
     resultsEl.insertBefore(dcard, resultsEl.firstChild);
   } else {

@@ -250,13 +250,14 @@ export const IDENTIFICATION = [...IDENTIFICATION_CORE, ...IDENTIFICATION_EXTENDE
 //               { hexAt: [0x100, '53 45 47 41'] }  byte sequence at an offset
 //               { textStarts: '-----BEGIN' } trimmed text begins with (case-insens.)
 //               { textIncludes: ['LUT_3D_SIZE','LUT_1D_SIZE'] }  any substring present
+//               { tsSync: true }             MPEG-TS 0x47 sync at offsets 0/188/376
 //               { default: true }            fallback when nothing else matched
 export const EXT_VARIANTS = {
   // ---- Tier 1: clear collisions ----
   ts: {
     summary: 'The .ts extension names two unrelated things: TypeScript source code and an MPEG transport stream video.',
     variants: [
-      { name: 'MPEG transport stream', desc: 'An MPEG-2 Transport Stream - the 188-byte-packet container used for digital broadcast (DVB/ATSC), Blu-ray and AVCHD camcorder video. Analyser reads the container, codec, resolution and streams and plays it back.', tell: 'A transport stream is binary and repeats the 0x47 sync byte every 188 bytes; TypeScript is UTF-8 text.', detect: { hex: '47' } },
+      { name: 'MPEG transport stream', desc: 'An MPEG-2 Transport Stream - the 188-byte-packet container used for digital broadcast (DVB/ATSC), Blu-ray and AVCHD camcorder video. Analyser reads the container, codec, resolution and streams and plays it back.', tell: 'A transport stream is binary and repeats the 0x47 sync byte every 188 bytes; TypeScript is UTF-8 text.', detect: { tsSync: true } },
       { name: 'TypeScript source', desc: 'Microsoft TypeScript source - JavaScript with static types, compiled by tsc. Analyser opens it as text with a source preview, line count and metadata.', tell: 'TypeScript is human-readable text.', detect: { default: true } },
     ],
   },
@@ -438,6 +439,10 @@ export function detectVariant(ext, bytes, text, opts) {
     for (let i = 0; i < want.length; i++) if (b[off + i] !== want[i]) return false;
     return true;
   };
+  // MPEG-TS carries the 0x47 sync byte at the start of every 188-byte packet. Check
+  // three in a row (offsets 0, 188, 376) so a text file that merely starts with 'G'
+  // (0x47) is not mistaken for a transport stream.
+  const tsSync = () => b.length > 376 && b[0] === 0x47 && b[188] === 0x47 && b[376] === 0x47;
   const head = text != null ? text.slice(0, 4096).replace(/^﻿/, '').trimStart().toLowerCase() : null;
   let fallback = null;
   for (const v of entry.variants) {
@@ -447,6 +452,7 @@ export function detectVariant(ext, bytes, text, opts) {
     if (d.magic && asc(0, d.magic.length) === d.magic) return v.name;
     if (d.hex && hexAt(0, d.hex)) return v.name;
     if (d.hexAt && hexAt(d.hexAt[0], d.hexAt[1])) return v.name;
+    if (d.tsSync && tsSync()) return v.name;
     if (head != null && d.textStarts && [].concat(d.textStarts).some((p) => head.startsWith(p.toLowerCase()))) return v.name;
     if (head != null && d.textIncludes && [].concat(d.textIncludes).some((p) => head.includes(p.toLowerCase()))) return v.name;
   }

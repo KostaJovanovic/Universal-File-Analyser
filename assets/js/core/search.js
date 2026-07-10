@@ -7,6 +7,12 @@ export function initSearch() {
   const searchWrap = document.getElementById('navSearchWrap');
   const searchBtn = document.getElementById('navSearchBtn');
   if (searchInput && searchWrap && searchBtn) {
+    // initSearch() re-runs on every SPA navigation. The mobile overlay is
+    // appended to the persistent <body> and the sizeSearch resize handler to
+    // window, so both survive a nav and would accumulate one copy per page.
+    // Tear down the previous run's before creating this one's.
+    document.querySelectorAll('.search-overlay').forEach((n) => n.remove());
+    if (initSearch._resize) { window.removeEventListener('resize', initSearch._resize); initSearch._resize = null; }
     const nav = searchWrap.closest('nav');
     let debounceTimer = null;
     let matches = [];
@@ -34,6 +40,7 @@ export function initSearch() {
       nextBtn.style.width = h;
     }
     sizeSearch();
+    initSearch._resize = sizeSearch;
     window.addEventListener('resize', sizeSearch);
 
     // Mobile: overlay

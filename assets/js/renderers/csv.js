@@ -331,7 +331,9 @@ export async function renderCsv(file, resultsEl) {
   // Quote-aware parse of the whole text (handles fields spanning newlines).
   const allRows = parseCsv(text, delimiter);
   const totalRows = allRows.length;
-  const colCount = allRows.length > 0 ? Math.max(...allRows.map((r) => r.length)) : 0;
+  // Reduce, not Math.max(...spread): a CSV with hundreds of thousands of rows
+  // would blow the call-stack arg limit when spread as function arguments.
+  const colCount = allRows.reduce((mx, r) => (r.length > mx ? r.length : mx), 0);
 
   const hasHeader = totalRows > 1; // assume first row is a header
 

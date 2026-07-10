@@ -98,6 +98,15 @@ function collectStyles(doc, into) {
 
 // ---------- images ----------
 
+// Object URLs minted for embedded Pictures/* images. They are global and would
+// otherwise leak one Blob per image on every re-render (a document can hold many),
+// so track them and revoke the previous document's set when a new one is opened.
+const _odfImageUrls = new Set();
+function revokeOdfImageUrls() {
+  for (const u of _odfImageUrls) { try { URL.revokeObjectURL(u); } catch (_) {} }
+  _odfImageUrls.clear();
+}
+
 async function buildImageMap(zip) {
   const map = {};
   for (const e of zip.entries) {
@@ -108,7 +117,9 @@ async function buildImageMap(zip) {
       if (!bytes) continue;
       const ext = (e.name.match(/\.(\w+)$/) || [, 'png'])[1].toLowerCase();
       const mime = ext === 'jpg' ? 'image/jpeg' : (ext === 'svg' ? 'image/svg+xml' : 'image/' + ext);
-      map[e.name] = URL.createObjectURL(new Blob([bytes], { type: mime }));
+      const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+      _odfImageUrls.add(url);
+      map[e.name] = url;
     } catch (_) { /* skip */ }
   }
   return map;
@@ -370,6 +381,7 @@ function renderSlidePage(drawPage, styles, imageMap, index) {
 export async function renderOdf(file, container, kind) {
   container.hidden = false;
   container.innerHTML = '';
+  revokeOdfImageUrls();   // free the previous document's embedded-image object URLs
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading document…'));
 
   try {

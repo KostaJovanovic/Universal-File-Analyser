@@ -11,7 +11,7 @@ function fmtTime(sec) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
-  const ss = s.toFixed(s < 10 ? 2 : 2).padStart(5, '0');
+  const ss = s.toFixed(2).padStart(5, '0');
   return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + ss;
 }
 

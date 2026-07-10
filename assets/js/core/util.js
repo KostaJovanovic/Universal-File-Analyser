@@ -566,9 +566,23 @@ export function attachViewCube(viewer) {
     lx = x; ly = y; viewer.markDirty();
   };
   const en = () => { drag = false; };
+  const onWinMove = (e) => mv(e.clientX, e.clientY);
+  const onWinUp = en;
   box.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); dn(e.clientX, e.clientY); });
-  window.addEventListener('mousemove', (e) => mv(e.clientX, e.clientY));
-  window.addEventListener('mouseup', en);
+  window.addEventListener('mousemove', onWinMove);
+  window.addEventListener('mouseup', onWinUp);
+  // These are window-level, so they outlive the viewer unless removed. Every
+  // STL/model/G-code viewer attaches a cube; without this each one leaks a
+  // permanent mousemove/mouseup handler across re-renders and SPA navigation.
+  // Drop them once the cube is detached from the DOM.
+  const cubeCleanup = new MutationObserver(() => {
+    if (!box.isConnected) {
+      window.removeEventListener('mousemove', onWinMove);
+      window.removeEventListener('mouseup', onWinUp);
+      cubeCleanup.disconnect();
+    }
+  });
+  cubeCleanup.observe(document.documentElement, { childList: true, subtree: true });
   box.addEventListener('touchstart', (e) => { e.stopPropagation(); if (e.touches[0]) dn(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
   box.addEventListener('touchmove', (e) => { if (e.touches[0]) { mv(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
   box.addEventListener('touchend', en);
@@ -613,6 +627,20 @@ export function downloadBlob(filename, blob) {
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+}
+
+// Create an <img> from a Blob (or an existing object-URL string) whose object URL
+// is revoked as soon as the browser has decoded it (load) or given up (error), so
+// a preview image doesn't pin its backing Blob for the page's lifetime. Extra
+// attributes (alt, class, ...) pass through to el(). One revoke policy for the many
+// ad-hoc "createObjectURL into an <img> and never revoke" copies across renderers.
+export function blobImg(blob, attrs = {}) {
+  const url = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
+  const img = el('img', { ...attrs, src: url });
+  const done = () => { try { URL.revokeObjectURL(url); } catch (_) {} };
+  img.addEventListener('load', done, { once: true });
+  img.addEventListener('error', done, { once: true });
+  return img;
 }
 
 // Read up to `n` bytes from a File starting at `off`. Returns a Uint8Array
@@ -820,7 +848,7 @@ export function sha256Row(file) {
           anchor = tr;
         });
         ctrlRow.remove();
-      });
+      }).catch(() => { bar.stop(); cell.textContent = 'unavailable'; });
     }, { once: true });
   }
 
@@ -834,7 +862,7 @@ export function sha256Row(file) {
       td.textContent = h || 'unavailable';
       td.style.wordBreak = 'break-all';
       if (h) appendMoreHashesControl();
-    });
+    }).catch(() => { bar.stop(); td.textContent = 'unavailable'; });
   }
 
   if (file && file.size > SHA256_AUTO_LIMIT) {

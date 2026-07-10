@@ -8,7 +8,7 @@
    handleFile callback in via setReanalyse() (mirrors its own _handleFile
    forward-reference, avoiding a circular import). */
 
-import { fileExt, el, row } from './util.js';
+import { fileExt, el, row, downloadBlob } from './util.js';
 import { sniffFileType } from './file-sniff.js';
 
 // Re-analyse callback (app.js's handleFile), injected via setReanalyse() so this
@@ -253,7 +253,11 @@ export function trailingCard(info, file) {
     const slice = () => file.slice(info.logicalEnd);
     const base = (file.name || 'file').replace(/\.[^.]*$/, '') || 'file';
     const dlName = base + '.appended.' + (info.sniffExt || 'bin');
-    const dl = el('a', { class: 'anr-btn anr-btn-sm', href: URL.createObjectURL(slice()), download: dlName }, 'Extract appended data');
+    // Create the object URL lazily on click (via downloadBlob, which revokes it
+    // after) instead of eagerly: an eager createObjectURL pins a Blob slice of
+    // every polyglot file for the page's lifetime whether or not it's downloaded.
+    const dl = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Extract appended data');
+    dl.addEventListener('click', () => downloadBlob(dlName, slice()));
     const btns = [dl];
     if (info.sniffKind) {
       const an = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' },

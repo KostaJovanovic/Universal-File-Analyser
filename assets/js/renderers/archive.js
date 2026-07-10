@@ -42,10 +42,18 @@ function parseZipEntries(buf) {
   const cdSize   = view.getUint32(eocdOffset + 12, true);
   const entryCount = view.getUint16(eocdOffset + 10, true);
 
+  // A malformed EOCD can point cdOffset/cdSize outside the buffer. Clamp the
+  // central-directory window to what actually exists so the per-header reads
+  // below can't run a DataView getter past the end (which throws).
+  if (cdOffset >= bytes.length) return entries;
+  const cdEnd = Math.min(cdOffset + cdSize, bytes.length);
+
   let pos = cdOffset;
   const decoder = new TextDecoder();
 
-  for (let i = 0; i < entryCount && pos < cdOffset + cdSize; i++) {
+  // Each central-directory header is a fixed 46-byte record plus variable
+  // name/extra/comment fields; require the fixed part to fit before reading it.
+  for (let i = 0; i < entryCount && pos + 46 <= cdEnd; i++) {
     if (view.getUint32(pos, true) !== 0x02014b50) break;
 
     const versionMadeBy = view.getUint16(pos + 4, true);
@@ -327,6 +335,19 @@ export async function renderArchive(file, resultsEl, opts = {}) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading ZIP archive "${file.name}"…`));
+
+  // A ZIP is read whole into an ArrayBuffer here; a multi-GB archive would
+  // allocate several copies and crash the tab before any inspection. Above a
+  // ceiling, decline rather than attempt the allocation. (In-browser ArrayBuffers
+  // are impractical near this size anyway.)
+  const MAX_ARCHIVE_BYTES = 1_500_000_000;
+  if (file.size > MAX_ARCHIVE_BYTES) {
+    resultsEl.innerHTML = '';
+    resultsEl.appendChild(errorCard(
+      'This archive is ' + fmtBytes(file.size) + ' - too large to browse in the browser without exhausting memory. '
+      + 'The file was not opened.'));
+    return;
+  }
 
   let buf;
   try {
