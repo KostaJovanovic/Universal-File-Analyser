@@ -591,7 +591,7 @@
         <h2 class="section-head" id="viewer">Viewer chrome.</h2>
         <p class="section-lede">Overlays that live on the always-dark media surfaces (they keep fixed dark styling in both themes). The scroll-zoom toggle and the fullscreen button hide below 700px wide.</p>
         <div class="about-block">
-          <div class="tst-sub">G-code 3D viewer stage: view cube (static replica of the attachViewCube DOM) bottom-left; the .anr-gcode-cambtns stack bottom-right - manual zoom pad (hold to zoom), scroll-zoom toggle (off by default) and fullscreen button</div>
+          <div class="tst-sub">Shared 3D viewer camera stack (.anr-cam - used by the G-code toolpath viewer and the STL/STEP/3MF mesh viewer): view cube (static replica of the attachViewCube DOM) bottom-left; the .anr-cam stack bottom-right - manual zoom pad (hold to zoom), scroll-zoom toggle (off by default) and fullscreen button</div>
           <div class="tst-stage tst-stage--dark tst-stage--rel" style="height:230px">
             <div class="anr-viewcube" title="View cube (static replica)">
               <div class="anr-viewcube-cube" style="transform:rotateX(-20deg) rotateY(-32deg)">
@@ -603,13 +603,13 @@
                 <div class="anr-viewcube-face" style="transform:rotateY(0deg) rotateX(-90deg) translateZ(27px)">Bot</div>
               </div>
             </div>
-            <div class="anr-gcode-cambtns">
-              <div class="anr-gcode-zoompad">
-                <button type="button" class="anr-btn anr-gcode-zbtn" aria-label="Zoom in">+</button>
-                <button type="button" class="anr-btn anr-gcode-zbtn" aria-label="Zoom out">−</button>
+            <div class="anr-cam">
+              <div class="anr-cam-pad">
+                <button type="button" class="anr-btn anr-cam-zbtn" aria-label="Zoom in">+</button>
+                <button type="button" class="anr-btn anr-cam-zbtn" aria-label="Zoom out">−</button>
               </div>
-              <button type="button" class="anr-btn anr-gcode-zoombtn" aria-pressed="false">Scroll zoom off</button>
-              <button type="button" class="anr-btn anr-gcode-fsbtn">Fullscreen</button>
+              <button type="button" class="anr-btn anr-cam-zoombtn" aria-pressed="false">Scroll zoom off</button>
+              <button type="button" class="anr-btn anr-cam-fsbtn">Fullscreen</button>
             </div>
           </div>
 

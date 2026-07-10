@@ -1,6 +1,20 @@
 /* Analyser - shared utilities
    DOM helpers and small formatters used by every module. */
 
+// Origin to prefix onto /api/... calls. Empty (same-origin) on the web and in
+// `tauri dev` (served from localhost, where serve.py mocks /api). In a *production*
+// native build the page loads from the Tauri asset protocol (tauri.localhost /
+// tauri:), which has no local server, so API calls target the live site instead -
+// that's what makes the stats page, visitor badge and analytics work in the app.
+export const API_ORIGIN = (() => {
+  try {
+    if (typeof location !== 'undefined' && (location.protocol === 'tauri:' || location.hostname === 'tauri.localhost')) {
+      return 'https://lab.valjdakosta.com';
+    }
+  } catch (_) {}
+  return '';
+})();
+
 export function el(tag, attrs = {}, children = []) {
   const e = document.createElement(tag);
   for (const k in attrs) {

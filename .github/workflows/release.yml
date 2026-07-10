@@ -1,21 +1,28 @@
 # Build + publish a cross-platform native release on every push to main.
 #
 # What it does per push:
-#   * stamps the app version to 0.1.<run-number> (unique + monotonic, so the
-#     updater always sees the newest push as "newer"),
+#   * derives the app version from the WEBSITE's versioning source of truth
+#     (COMMIT_COUNT / RELEASE_COMMITS in assets/js/core/app.js) via
+#     tools/native-version.mjs, so desktop/mobile releases carry the same version
+#     the site shows. The site renders "6.03"; semver needs MAJOR.MINOR.PATCH with
+#     no leading zeros, so that maps to "6.0.3" (same digits, valid, monotonic).
 #   * builds signed installers for Windows, macOS (Apple Silicon + Intel) and
-#     Linux via tauri-action,
-#   * publishes them to a GitHub Release tagged v0.1.<run-number>, together with
-#     the signed `latest.json` the in-app auto-updater reads.
+#     Linux via tauri-action, plus a sideloadable Android APK,
+#   * publishes them to a GitHub Release tagged v<version>, together with the
+#     signed `latest.json` the in-app desktop auto-updater reads.
 #
 # Manual prerequisites (one time): add repo secrets TAURI_SIGNING_PRIVATE_KEY and
 # TAURI_SIGNING_PRIVATE_KEY_PASSWORD (the minisign key that matches the pubkey in
 # native/src-tauri/tauri.conf.json). See research/NATIVE-APP-PLAN.md.
 #
-# Cost note: this runs a full 4-target matrix on EVERY main push. To cut CI
-# minutes, either narrow the trigger (e.g. add `paths:` to only build when
-# `native/**` or `assets/**` change) or switch to tag-triggered releases
-# (`on: push: tags: ['v*']`).
+# Version uniqueness: the version tracks COMMIT_COUNT, which save.bat bumps on every
+# commit, so each pushed commit is a distinct, increasing version. Re-running the
+# workflow on the same commit (workflow_dispatch) re-uses the tag and updates that
+# release rather than making a new one.
+#
+# Cost note: this runs a full matrix on EVERY main push. To cut CI minutes, either
+# narrow the trigger (add `paths:` to build only when `native/**` or `assets/**`
+# change) or switch to tag-triggered releases (`on: push: tags: ['v*']`).
 
 name: release
 
@@ -34,7 +41,23 @@ permissions:
   contents: write
 
 jobs:
+  # Compute the version once, from the website's source of truth, and share it
+  # with every build + labelling job so they all agree.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        shell: bash
+        run: |
+          v="$(node tools/native-version.mjs)"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "app version = $v"
+
   release:
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -90,11 +113,13 @@ jobs:
         working-directory: native
         run: npm ci
 
-      - name: Stamp version to 0.1.<run-number>
+      - name: Stamp version to match the website
         shell: bash
         working-directory: native
+        env:
+          APP_VERSION: ${{ needs.version.outputs.version }}
         run: |
-          node -e "const p='src-tauri/tauri.conf.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(p));j.version='0.1.${{ github.run_number }}';fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');console.log('version =',j.version)"
+          node -e "const p='src-tauri/tauri.conf.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(p));j.version=process.env.APP_VERSION;fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');console.log('version =',j.version)"
 
       - name: Build, sign, and publish release
         uses: tauri-apps/tauri-action@v0
@@ -112,3 +137,122 @@ jobs:
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
+
+  # Build a sideloadable Android APK and attach it to the same release. Uses a
+  # debug-signed APK (signed with the standard Android debug keystore) so it
+  # installs from "unknown sources" with no keystore secret to manage; switch to
+  # a release-signed APK later if you publish to a store. Runs after the desktop
+  # release exists so it can upload straight into it.
+  android:
+    needs: [version, release]
+    runs-on: ubuntu-latest
+    env:
+      APP_VERSION: ${{ needs.version.outputs.version }}
+      NDK_VERSION: '26.3.11579264'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          sdkmanager --install "ndk;${NDK_VERSION}"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/src-tauri -> target
+
+      - name: Cache vendored WASM
+        uses: actions/cache@v4
+        with:
+          path: native/.native-cache
+          key: native-wasm-${{ hashFiles('native/build-dist.mjs') }}
+
+      - name: Install Tauri CLI
+        working-directory: native
+        run: npm ci
+
+      - name: Stamp version to match the website
+        shell: bash
+        working-directory: native
+        run: |
+          node -e "const p='src-tauri/tauri.conf.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(p));j.version=process.env.APP_VERSION;fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');console.log('version =',j.version)"
+
+      - name: Initialise the Android project
+        working-directory: native
+        run: npm run tauri android init -- --ci
+
+      - name: Build Android APK (debug-signed, sideloadable)
+        working-directory: native
+        run: npm run tauri android build -- --apk --debug
+
+      - name: Upload APK to the release
+        shell: bash
+        working-directory: native
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          apk="$(find src-tauri/gen/android -name '*universal*.apk' | head -n1)"
+          if [ -z "$apk" ]; then apk="$(find src-tauri/gen/android -name '*.apk' | head -n1)"; fi
+          if [ -z "$apk" ]; then echo 'No APK produced' >&2; exit 1; fi
+          out="Analyser-${APP_VERSION}-android.apk"
+          cp "$apk" "$out"
+          gh release upload "v${APP_VERSION}" "$out" --clobber -R "${GITHUB_REPOSITORY}"
+
+  # Rename the standalone desktop installers to a clear <product>-<version>-<platform>-<arch>
+  # scheme so the release page is easy to read. Runs once, after all platforms have
+  # uploaded (single job = no races). It deliberately touches ONLY .msi/.dmg/.deb/.rpm
+  # - the updater artifacts (-setup.exe, .AppImage, .app.tar.gz) and latest.json are
+  # left untouched, because the signed manifest references them by exact filename and
+  # renaming would break auto-update. The Android APK is already uploaded named, so it
+  # is skipped here too. Non-fatal: a hiccup here never fails the release.
+  label-installers:
+    needs: [version, release]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Label standalone installers by platform + arch
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: v${{ needs.version.outputs.version }}
+          VER: ${{ needs.version.outputs.version }}
+        run: |
+          assets=$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | [.id, .name] | @tsv')
+          while IFS=$'\t' read -r id name; do
+            ext="${name##*.}"
+            case "$ext" in
+              msi) plat=windows ;;
+              dmg) plat=macos ;;
+              deb|rpm) plat=linux ;;
+              *) continue ;;
+            esac
+            case "$name" in
+              *aarch64*|*arm64*) arch=arm64 ;;
+              *) arch=x64 ;;
+            esac
+            newname="Analyser-$VER-$plat-$arch.$ext"
+            if [ "$name" != "$newname" ]; then
+              gh api -X PATCH "repos/$REPO/releases/assets/$id" -f name="$newname" \
+                && echo "renamed $name -> $newname" || echo "skip $name"
+            fi
+          done <<< "$assets"
