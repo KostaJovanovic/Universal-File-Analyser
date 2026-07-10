@@ -9,11 +9,40 @@
    Everything heavy (ORT runtime + model) is fetched from the URLs the Complete
    offline tier caches, so once downloaded the whole thing works offline. */
 
-import { ORT_BASE, ORT_ENTRY, MDX_MODEL } from './mdx-model.js';
+import { ORT_BASE, ORT_ENTRY, MDX_MODELS, MDX_MODEL } from './mdx-model.js';
 import { separateVocals } from './mdx-separate.js';
 
-let ortMod = null;    // the onnxruntime-web module namespace
-let session = null;   // the InferenceSession (kept warm across runs)
+let ortMod = null;        // the onnxruntime-web module namespace
+let session = null;       // the InferenceSession (kept warm across runs)
+let loadedModelId = null; // which model `session` holds, so a model switch re-inits
+
+// Persist the downloaded model in our own Cache Storage bucket. Unlike the HTTP
+// disk cache (which a hard refresh bypasses, forcing a re-download), a Cache
+// Storage entry survives reloads; we keep it for a day, then re-fetch so an
+// updated upstream model is eventually picked up. The bucket is in sw.js's
+// KEEP_CACHES so a service-worker update doesn't wipe it.
+const MDX_CACHE = 'analyser-mdx';
+const MDX_TTL_MS = 24 * 60 * 60 * 1000;   // 1 day
+
+async function cachedModel(url) {
+  try {
+    const cache = await caches.open(MDX_CACHE);
+    const resp = await cache.match(url);
+    if (!resp) return null;
+    const at = Number(resp.headers.get('x-cached-at')) || 0;
+    if (!at || Date.now() - at > MDX_TTL_MS) { await cache.delete(url); return null; }
+    return new Uint8Array(await resp.arrayBuffer());
+  } catch (_) { return null; }
+}
+
+async function storeModel(url, bytes) {
+  try {
+    const cache = await caches.open(MDX_CACHE);
+    // The Response constructor copies the bytes, so `bytes` stays usable for the
+    // session; the timestamp header drives the one-day expiry above.
+    await cache.put(url, new Response(bytes, { headers: { 'x-cached-at': String(Date.now()) } }));
+  } catch (_) {}
+}
 
 // Stream the model into memory with progress, so the 60 MB+ download drives a
 // real bar instead of a dead spinner. Falls back to a plain arrayBuffer() if the
@@ -42,8 +71,7 @@ async function fetchWithProgress(url, approxTotal, onProg) {
   return out;
 }
 
-async function ensureModel(onDownload) {
-  if (session) return;
+async function ensureModel(model, onDownload) {
   if (!ortMod) {
     ortMod = await import(/* @vite-ignore */ ORT_ENTRY);
     ortMod.env.wasm.wasmPaths = ORT_BASE;
@@ -52,10 +80,22 @@ async function ensureModel(onDownload) {
     ortMod.env.wasm.proxy = false;
     try { ortMod.env.logLevel = 'error'; } catch (_) {}
   }
-  const bytes = await fetchWithProgress(MDX_MODEL.url, MDX_MODEL.bytes, onDownload);
+  // Already warm with the requested model - reuse it. A different model (the user
+  // switched tier) drops the old session and loads the new one.
+  if (session && loadedModelId === model.id) return;
+  if (session) { try { session.release && session.release(); } catch (_) {} session = null; loadedModelId = null; }
+  // Reuse the day-cached copy when present (fills the progress bar instantly),
+  // otherwise download it and store it for next time.
+  let bytes = await cachedModel(model.url);
+  if (bytes) { if (onDownload) onDownload(1); }
+  else {
+    bytes = await fetchWithProgress(model.url, model.bytes, onDownload);
+    await storeModel(model.url, bytes);
+  }
   // Prefer the GPU (WebGPU) where available - typically many times faster - and
   // fall back to single-threaded WASM automatically on browsers without it.
   session = await ortMod.InferenceSession.create(bytes, { executionProviders: ['webgpu', 'wasm'] });
+  loadedModelId = model.id;
 }
 
 // One model pass over a packed [1,4,dim_f,dim_t] tensor -> predicted vocal
@@ -79,11 +119,12 @@ self.onmessage = async (e) => {
   const msg = e.data;
   if (!msg || msg.type !== 'separate') return;
   try {
-    await ensureModel((frac) => self.postMessage({ type: 'progress', phase: 'model', frac }));
+    const model = MDX_MODELS[msg.modelId] || MDX_MODEL;
+    await ensureModel(model, (frac) => self.postMessage({ type: 'progress', phase: 'model', frac }));
     self.postMessage({ type: 'progress', phase: 'infer', frac: 0 });
     const result = await separateVocals({
       channels: msg.channels,
-      model: MDX_MODEL,
+      model,
       runModel,
       onProgress: (frac) => self.postMessage({ type: 'progress', phase: 'infer', frac }),
     });
@@ -95,7 +136,7 @@ self.onmessage = async (e) => {
       vocals: result.vocals,
       instrumental: result.instrumental,
       sampleRate: result.sampleRate,
-      stem: MDX_MODEL.stem,
+      stem: model.stem,
     }, transfer);
   } catch (err) {
     self.postMessage({ type: 'error', message: (err && err.message) || String(err) });

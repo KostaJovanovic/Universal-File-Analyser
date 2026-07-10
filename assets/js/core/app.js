@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 199;
+const COMMIT_COUNT = 200;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1725,8 +1725,11 @@ window._anrReadableText = isReadableText;
 
   // ----- Collapsible analysis cards -----
   // One delegated listener (added once) toggles a card open/closed when its title
-  // (a direct-child <h3>) is clicked. Cards render open; .is-collapsed hides the
-  // body via CSS. Clicks on interactive controls in a title don't toggle.
+  // (a direct-child <h3>) is clicked. Only cards opted in with .anr-collapsible
+  // toggle - in practice the ones that render closed by default (e.g. the archive
+  // "Text file previews" card), so users can open them. Every other card is a
+  // static, always-open section. .is-collapsed hides the body via CSS. Clicks on
+  // interactive controls in a title don't toggle.
   if (!boot._cardToggleWired) {
     boot._cardToggleWired = true;
     document.addEventListener('click', (e) => {
@@ -1734,7 +1737,9 @@ window._anrReadableText = isReadableText;
       const h3 = e.target.closest('h3');
       if (!h3) return;
       const card = h3.parentElement;
-      if (card && card.classList.contains('anr-card')) card.classList.toggle('is-collapsed');
+      if (card && card.classList.contains('anr-card') && card.classList.contains('anr-collapsible')) {
+        card.classList.toggle('is-collapsed');
+      }
     });
   }
 

@@ -41,10 +41,10 @@ async function toModelChannels(audioBuffer) {
 /**
  * Separate an AudioBuffer into vocal + instrumental stems using the MDX-Net model.
  * @param {AudioBuffer} audioBuffer
- * @param {{ onProgress?: (phase:'model'|'infer', frac:number)=>void, signal?: AbortSignal }} [opts]
+ * @param {{ onProgress?: (phase:'model'|'infer', frac:number)=>void, signal?: AbortSignal, modelId?: string }} [opts]
  * @returns {Promise<{ vocals: Float32Array[], instrumental: Float32Array[], sampleRate: number, stem: string }>}
  */
-export async function separateStems(audioBuffer, { onProgress, signal } = {}) {
+export async function separateStems(audioBuffer, { onProgress, signal, modelId } = {}) {
   const { channels, sampleRate } = await toModelChannels(audioBuffer);
   const w = getWorker();
   return new Promise((resolve, reject) => {
@@ -70,6 +70,6 @@ export async function separateStems(audioBuffer, { onProgress, signal } = {}) {
       signal.addEventListener('abort', onAbort);
     }
     w.addEventListener('message', onMsg);
-    w.postMessage({ type: 'separate', channels, sampleRate }, channels.map((c) => c.buffer));
+    w.postMessage({ type: 'separate', channels, sampleRate, modelId }, channels.map((c) => c.buffer));
   });
 }

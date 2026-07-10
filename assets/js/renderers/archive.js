@@ -608,9 +608,10 @@ export async function renderArchive(file, resultsEl, opts = {}) {
 
   if (previewable.length > 0) {
     // Collapsed by default (.is-collapsed): the previews are a secondary detail
-    // behind the file tree, so they start closed; the shared card-toggle in
-    // app.js opens them when the "Text file previews" title is clicked.
-    const prevCard = el('div', { class: 'anr-card is-collapsed' });
+    // behind the file tree, so they start closed. .anr-collapsible opts this card
+    // into the shared card-toggle in app.js (which is otherwise disabled), so its
+    // "Text file previews" title opens and re-closes it.
+    const prevCard = el('div', { class: 'anr-card is-collapsed anr-collapsible' });
     prevCard.appendChild(el('h3', {}, 'Text file previews'));
     prevCard.appendChild(el('p', {
       class: 'anr-hint',

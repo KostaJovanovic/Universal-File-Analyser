@@ -2,7 +2,7 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v199';
+const VERSION = 'analyser-v200';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -218,7 +218,9 @@ self.addEventListener('install', (e) => {
 // or every deploy (and, in dev, every SW re-activation) would silently wipe the
 // downloads the user chose to keep. Its files are refreshed in place by the
 // version-aware re-download in offline-tiers.js, not by this cleanup.
-const KEEP_CACHES = [VERSION, 'analyser-offline'];
+// 'analyser-mdx' - the day-cached AI separation model (see mdx-worker.js) - also
+// survives, so a service-worker update doesn't force a multi-MB model re-download.
+const KEEP_CACHES = [VERSION, 'analyser-offline', 'analyser-mdx'];
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(

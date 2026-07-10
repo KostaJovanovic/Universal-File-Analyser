@@ -208,6 +208,40 @@
                - let the newest version here disagree with app.js.
              ===================================================================== -->
 
+        <div class="patch-entry">
+          <p class="patch-version">6.01 - 6.05</p>
+          <p class="patch-name">Off the Web</p>
+          <p class="patch-date">10 July 2026, 19:31</p>
+          <ul class="patch-list">
+            <li><strong>AI vocal separation gets much stronger and easier to use, Analyser arrives as a full desktop app, and a run of fixes lands across the workbench.</strong></li>
+          </ul>
+
+          <p class="patch-subhead">In the browser</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>A lighter model for phones.</strong> The <a href="/about#where">Sound analysis</a> spectrogram&rsquo;s <strong>Separate vocals (AI)</strong> tool now offers two models: <strong>Standard</strong> - the cleanest separation, about 85 MB - and <strong>Lite</strong>, about half the download and lighter to run, for phones and slower machines. The narrow mobile layout picks <strong>Lite</strong> by default. Both run entirely on your device.</li>
+            <li><span class="patch-tag">New</span><strong>Choose the model each time.</strong> Clicking <strong>Separate vocals (AI)</strong> now opens a short prompt to confirm - and switch between <strong>Standard</strong> and <strong>Lite</strong> - before anything runs, with the prompt updating live as you change your pick. The button is a plain on/off toggle: click it again to clear the separated parts and return to the original track.</li>
+            <li><span class="patch-tag">New</span><strong>Isolate now shapes the separated parts.</strong> The spectrogram&rsquo;s <strong>Isolate</strong> presets and manual frequency bands now apply to the AI vocal/instrumental <strong>blend</strong> as well - previously the separated parts played straight through, ignoring your filters - and the blend plays on its own audio path, so it starts cleanly instead of over the original track.</li>
+            <li><span class="patch-tag">New</span><strong>The blended view honours your spectrogram settings.</strong> As you drag the <strong>Vocals - Instrumental</strong> slider the picture updates smoothly, and the moment you settle it - or change the <strong>FFT</strong>, <strong>window</strong> or mode - the blended spectrogram is recomputed at those exact settings, so it stays as truthful as the file&rsquo;s own.</li>
+            <li><span class="patch-tag">New</span><strong>Full camera controls for 3D models.</strong> The <a href="/about#ext-stl">3D model</a> viewer gains the same on-canvas camera stack as the <a href="/about#ext-gcode">G-code</a> preview: a press-and-hold <strong>+ / -</strong> zoom pad, a <strong>scroll-to-zoom</strong> toggle - off by default, so the wheel still scrolls the page until you turn it on - and a <strong>fullscreen</strong> button, all of which stay put in fullscreen.</li>
+            <li><span class="patch-tag">New</span><strong>A tidier samples gallery.</strong> The <a href="/samples">samples</a> page now leads with a small curated set of example files and tucks the rest behind a <strong>+ More</strong> reveal, so it is less overwhelming on first load - especially on a phone - with the full set one tap away.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>The AI model is kept for a day.</strong> Once downloaded, the chosen model is stored for 24 hours, so reloading the page - even a hard refresh - no longer re-downloads it.</li>
+            <li><strong>Your count survives going offline.</strong> The single anonymous &ldquo;a file was analysed&rdquo; tick now banks itself when you have no connection and sends once you are back online, so the <a href="/stats">running total</a> stays accurate even when you work on a plane. Nothing about the file is ever sent - only its extension and whether it was supported, never the name, size or contents.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A new file silences the last one.</strong> Analysing a new file now stops any sound still playing from the previous one - including the AI blend, a reversed clip or a sonified image, which play through the audio engine directly and used to carry on underneath.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Clearer headings and readouts.</strong> The small <code>[?]</code> hints in section headers now sit next to their heading instead of drifting to the middle, and the spectrogram&rsquo;s <strong>Analysis</strong> figures - peak, detected range, cutoff, dynamic range and resolution - moved into the <strong>File info</strong> card as a standard readout table, each with its own <code>[?]</code>. The multi-channel picker also sits directly above the spectrogram it drives.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The volume popup stays put.</strong> On the audio and video players, sliding from the volume button up to the slider no longer snaps the popup shut before you reach it.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The offline picker closes cleanly.</strong> The <strong>Download for offline use</strong> feature chooser no longer leaves an invisible layer behind after you close it - on some phone browsers that layer kept quietly swallowing taps until you reloaded the page.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Sharper accessibility and a steadier footer.</strong> With high-contrast mode on, the page background now sits a clear step off the card colour so panels read as distinct cards, and opening the footer&rsquo;s open-source <strong>dependencies</strong> list no longer nudges the Install and Clear buttons around.</li>
+            <li><strong>A tidier Isolate row.</strong> The <strong>Isolate</strong> button now matches the other controls instead of carrying a red outline, with a divider before <strong>Save PNG</strong>, and the model prompt was redrawn to sit with the rest of the site.</li>
+          </ul>
+
+          <hr class="patch-rule">
+
+          <p class="patch-subhead">Desktop app</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Analyser is now a desktop app.</strong> As well as the website, Analyser is now a native desktop app for <strong>Windows</strong>, <strong>macOS</strong> (Apple Silicon and Intel) and <strong>Linux</strong>, built from the exact same code and running the same on-device engine - nothing is uploaded there either. It installs like any normal app, works fully offline (the AI, video and 3D engines are bundled in) and updates itself in the background. Downloads are on the <a href="https://github.com/KostaJovanovic/lab/releases">GitHub releases page</a>.</li>
+          </ul>
+        </div>
+
         <div class="patch-entry patch-milestone">
           <p class="patch-version">6.0</p>
           <p class="patch-name">Unmix</p>
@@ -241,6 +275,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">5.15</p>
           <p class="patch-name">Sharp Lines</p>
@@ -250,9 +287,6 @@
             <li><span class="patch-tag">New</span><strong>Choose the clip quality.</strong> The <a href="/about#ext-gcode">G-code</a> <strong>Export clip</strong> panel gains a <strong>Quality</strong> setting - <strong>Standard</strong>, <strong>High</strong> or <strong>Max</strong> - so the thin toolpath lines stay crisp instead of turning soft, with the estimated file size updating as you choose. It now defaults to the higher setting, and the old &ldquo;Quality&rdquo; control that actually set the resolution is renamed <strong>Resolution</strong>.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">5.14</p>
