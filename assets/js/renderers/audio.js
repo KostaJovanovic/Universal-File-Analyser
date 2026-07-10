@@ -12,7 +12,7 @@ import {
   detectPitch, detectBPM, computeStereoStats
 } from './audio-analysis.js';
 import { peekContainer, adtsToM4a, readTagBPM, extractCoverArt, readAudioTags } from './audio-codec.js';
-import { makePlayer } from './audio-player.js';
+import { makePlayer, playerAudioNode, onSharedVolume, sharedVolume } from './audio-player.js';
 import { encodeWav } from './video-avi.js';
 import { buildReverseAudioCard } from './media-reverse.js';
 
@@ -576,6 +576,9 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   const SPEC_LOG_MIN = 10;
   const isoBands = [];   // { lo, hi, el, row, fromIn, toIn }
   let isoActive = false;
+  // 'bands' = the frequency band-stop tool (manual bands + solo presets, which are
+  // just complement cuts). 'karaoke' = centre-cancel vocal removal (stereo L-R).
+  let isoMode = 'bands';
 
   const [specH, specHelp] = h3help('Spectrogram',
     '<strong>Axis</strong> Log maps frequencies logarithmically (closer to human hearing). Linear spaces them evenly.<br>' +
@@ -613,9 +616,14 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   // rest; the slider ranges 0%..300% (-60 dB .. -150 dB).
   const sensIn  = el('input', { type: 'range', min: '0', max: '300', value: '100', step: '1' });
   const sensOut = el('span', { class: 'anr-range-readout' }, '100%');
+  // A slit marks the 100% default (at 100/300 = 33.33% of the track). It's purely
+  // visual - clicks fall through to the slider, which snaps to exactly 100% near it
+  // (see the input handler) - so the mark and a click-to-reset come for free.
+  const sensTick = el('div', { class: 'anr-range-tick', style: 'left:33.333%', 'aria-hidden': 'true' });
+  const sensWrap = el('div', { class: 'anr-range-wrap' }, [sensIn, sensTick]);
   // Clickable label resets the slider to its 100% default.
   const sensLabel = el('label', { class: 'anr-resettable', title: 'Click to reset to 100%' }, 'Sensitivity');
-  const sensCtl = el('div', { class: 'anr-control' }, [sensLabel, sensIn, sensOut]);
+  const sensCtl = el('div', { class: 'anr-control' }, [sensLabel, sensWrap, sensOut]);
 
   // Fullscreen is desktop-only: mobile browsers can't fullscreen an arbitrary
   // element reliably, so we drop the button and its handlers on touch devices.
@@ -902,6 +910,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   // Cheap path for changes that only affect pixels, not geometry or the spectrum
   // (sensitivity, colour). No FFT recompute, no canvas resize, no stats re-scan.
   function renderOnly() {
+    if (!cached) return;   // first paint hasn't computed the spectrum yet (recompute will)
     renderSpectrogram(canvas, cached.spec, { scale: state.scale, colormap: state.cmap, dbFloor: state.dbFloor, minHz: state.scale === 'log' ? SPEC_LOG_MIN : 0 });
     buildSpecStats(stats, cached.stats, state.fftSize, sampleRate, loud);
   }
@@ -945,18 +954,46 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   // every input event stalls the drag. Update the cheap bits (state + readout)
   // immediately so the thumb tracks the pointer, and coalesce the redraw to at
   // most one per animation frame.
-  let sensRaf = 0;
-  sensIn.addEventListener('input', () => {
-    const v = parseInt(sensIn.value, 10);
+  let sensRaf = 0, sensManual = false;
+  function applySensitivity(v) {
+    v = Math.max(0, Math.min(300, Math.round(v)));
+    sensIn.value = String(v);
     state.dbFloor = -60 - (v / 100) * 30;   // 0% -> -60 dB, 100% -> -90 dB, 300% -> -150 dB
     sensOut.textContent = v + '%';
     if (sensRaf) return;                    // a repaint is already queued for the next frame
     sensRaf = requestAnimationFrame(() => { sensRaf = 0; renderOnly(); });
+  }
+  sensIn.addEventListener('input', (e) => {
+    // A genuine drag hands control to the user - stop auto-following the volume.
+    // Programmatic value changes (the volume mirror below) dispatch nothing, so
+    // isTrusted cleanly separates the two.
+    if (e.isTrusted) sensManual = true;
+    let v = parseInt(sensIn.value, 10);
+    // Detent at the 100% slit: a user drag/click landing within a few percent of
+    // 100 snaps to exactly 100 (so clicking the slit resets cleanly). The volume
+    // mirror sets exact values and isn't trusted, so it's never snapped.
+    if (e.isTrusted && Math.abs(v - 100) <= 6) v = 100;
+    applySensitivity(v);
   });
   sensLabel.addEventListener('click', () => {
-    sensIn.value = '100';
-    sensIn.dispatchEvent(new Event('input'));  // reuse the input handler to reset state + repaint
+    sensManual = true;                      // an explicit reset is the user taking over too
+    applySensitivity(100);
   });
+
+  // Mirror a volume BOOST into the sensitivity: pushing the level from 100% to 225%
+  // drags the display sensitivity along the same 100..225 range, so a boosted-quiet
+  // clip's spectrogram brightens to match what you now hear. Only while the user
+  // hasn't set sensitivity by hand, and only for the boosted range (a level below
+  // 100% leaves sensitivity at its 100% floor). Skipped when this panel isn't
+  // driving live audio (no volume control to follow).
+  if (opts.audioEl) {
+    const mirror = (level) => { if (!sensManual) applySensitivity(Math.max(100, Math.min(225, Math.round(level * 100)))); };
+    mirror(sharedVolume());                 // adopt an already-boosted level on mount
+    const unsub = onSharedVolume((level) => {
+      if (!sensIn.isConnected) { unsub(); return; }   // panel gone - drop the subscription
+      mirror(level);
+    });
+  }
 
   saveBtn.addEventListener('click', () => {
     const heightOpts = ['240', '320', '420', '560', '720', '900'];
@@ -1018,50 +1055,47 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     const bandLayer = el('div', { class: 'anr-spec-bandlayer', style: 'display:none;' });
     canvasWrap.appendChild(bandLayer);
 
-    // --- control panel (band list + numeric editing) ---
+    // --- control panel (presets + band list + numeric editing) ---
     const bandList = el('div', { class: 'anr-iso-list' });
     const addBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, '+ Add band');
     const clearBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Clear');
+    const exportBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Download WAV');
+    // Preset bar + its state, filled in the presets block below (kept empty here so
+    // it can be a child of the panel before the band helpers exist).
+    const presetBar = el('div', { class: 'anr-iso-presets' });
+    const presetBtns = {};
+    let activePreset = null, applyingPreset = false;
     const isoPanel = el('div', { class: 'anr-iso-panel is-hidden' }, [
+      presetBar,
       el('p', { class: 'anr-hint anr-iso-hint' },
-        'Drag up or down on the spectrogram to disable a frequency band, or type its exact edges below. Disabled bands are cut from playback and shaded on the spectrogram.'),
+        'Presets keep only a rough frequency range - instruments overlap, so this only approximates a stem. Or drag up/down on the spectrogram to cut a band, type exact edges below, and download the result as a WAV.'),
       bandList,
-      el('div', { class: 'anr-iso-actions' }, [addBtn, clearBtn]),
+      el('div', { class: 'anr-iso-actions' }, [addBtn, clearBtn, exportBtn]),
     ]);
     actionsBar.insertAdjacentElement('afterend', isoPanel);
 
     // --- Web Audio band-stop graph ---
-    // Route the <audio> element through the context once, then (re)build a chain of
-    // per-band stops. A band [lo,hi] is rejected by summing a lowpass at lo (keeps
-    // everything below) with a highpass at hi (keeps everything above); chaining the
-    // stops rejects the union of every band.
-    let audioSrc = null, filterNodes = [];
+    // Route the <audio> element through the shared player graph once, then (re)build
+    // a chain of per-band stops. A band [lo,hi] is rejected by summing a lowpass at
+    // lo (keeps everything below) with a highpass at hi (keeps everything above);
+    // chaining the stops rejects the union of every band.
+    //
+    // We tap the SHARED source/boost node from audio-player.js rather than calling
+    // createMediaElementSource ourselves: an element gets only one source for its
+    // lifetime, so the volume boost and this isolation graph must hang off the same
+    // one. audioNode.boostGain is our input tap - we own its OUTPUT (the connection
+    // to the filters/destination) but never touch source -> boostGain, so the volume
+    // boost keeps working while isolation is active.
+    let audioNode = null, filterNodes = [];
     function ensureAudioSource() {
-      if (audioSrc) return audioSrc;
-      const c = ctx();
-      try {
-        audioSrc = opts.audioEl._anrMediaSrc || c.createMediaElementSource(opts.audioEl);
-        opts.audioEl._anrMediaSrc = audioSrc;
-      } catch (_) { audioSrc = null; return null; }
-      // Once routed through the graph the element only reaches the speakers via
-      // ctx.destination, so the context has to be running.
-      const resume = () => { if (c.state === 'suspended') c.resume().catch(() => {}); };
-      opts.audioEl.addEventListener('play', resume);
-      resume();
-      return audioSrc;
+      if (audioNode) return audioNode;
+      audioNode = playerAudioNode(opts.audioEl);   // { ctx, source, boostGain, limiter } or null
+      return audioNode;
     }
-    function rebuildGraph() {
-      if (!audioSrc) return;
-      const c = ctx();
-      try { audioSrc.disconnect(); } catch (_) {}
-      for (const n of filterNodes) { try { n.disconnect(); } catch (_) {} }
-      filterNodes = [];
-      if (!isoActive || !isoBands.length) { audioSrc.connect(c.destination); return; }
-
-      // Merge overlapping / touching bands into disjoint intervals first. Overlaps
-      // then become one continuous stop instead of several separate stages that
-      // each reject only shallowly (and can partly reconstruct each other), which
-      // is why slightly-overlapping bands used to leak.
+    // Merge the disabled bands into disjoint, sorted intervals. Overlaps become one
+    // continuous stop instead of several shallow stages that can partly reconstruct
+    // each other (why slightly-overlapping bands used to leak).
+    function computeMerged() {
       const ivs = isoBands
         .map((b) => [Math.max(10, Math.min(b.lo, b.hi)), Math.min(NYQ - 1, Math.max(b.lo, b.hi))])
         .filter(([lo, hi]) => hi > lo)
@@ -1072,45 +1106,82 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         if (last && iv[0] <= last[1]) last[1] = Math.max(last[1], iv[1]);
         else merged.push(iv.slice());
       }
-
-      // Each interval is band-stopped by summing "keep everything below lo" with
-      // "keep everything above hi". Both paths are 4th-order (two Butterworth
-      // biquads) so the reject is deep and near-rectangular even for a narrow band,
-      // not the ~6 dB dent a single biquad gives.
+      return merged;
+    }
+    // Build the band-stop chain for `merged` from `input` in context `c`; returns the
+    // output node, and pushes every created node into `track` (live teardown only -
+    // omitted for one-shot offline renders, whose nodes die with the context). Each
+    // interval sums "keep below lo" with "keep above hi", both 4th-order (two
+    // Butterworth biquads) so the reject is deep and near-rectangular.
+    function buildStops(c, input, merged, track) {
       const Q = Math.SQRT1_2;
       const stage = (type, freq) => {
         const f = c.createBiquadFilter();
         f.type = type; f.frequency.value = freq; f.Q.value = Q;
-        filterNodes.push(f);
+        if (track) track.push(f);
         return f;
       };
-      let prev = audioSrc;
+      let prev = input;
       for (const [lo, hi] of merged) {
         const sum = c.createGain();
-        filterNodes.push(sum);
+        if (track) track.push(sum);
         const lp1 = stage('lowpass', lo),  lp2 = stage('lowpass', lo);
         prev.connect(lp1); lp1.connect(lp2); lp2.connect(sum);
         const hp1 = stage('highpass', hi), hp2 = stage('highpass', hi);
         prev.connect(hp1); hp1.connect(hp2); hp2.connect(sum);
         prev = sum;
       }
-      prev.connect(c.destination);
+      return prev;
+    }
+    // Karaoke centre-cancel: mono L-R, which drops anything panned dead-centre -
+    // typically the lead vocal. Needs a stereo input; the output is mono.
+    function buildKaraoke(c, input, track) {
+      const splitter = c.createChannelSplitter(2);
+      const inv = c.createGain(); inv.gain.value = -1;
+      const sum = c.createGain();
+      if (track) track.push(splitter, inv, sum);
+      input.connect(splitter);
+      splitter.connect(sum, 0);   // L  -> sum
+      splitter.connect(inv, 1);   // R  -> invert
+      inv.connect(sum);           // -R -> sum
+      return sum;
+    }
+    function rebuildGraph() {
+      if (!audioNode) return;
+      const c = audioNode.ctx;
+      const tap = audioNode.boostGain;   // input tap, after the makeup gain
+      const sink = audioNode.limiter;    // everything lands here; limiter -> destination is permanent
+      try { tap.disconnect(); } catch (_) {}
+      for (const n of filterNodes) { try { n.disconnect(); } catch (_) {} }
+      filterNodes = [];
+      if (!isoActive) { tap.connect(sink); return; }
+      if (isoMode === 'karaoke') { buildKaraoke(c, tap, filterNodes).connect(sink); return; }
+      const merged = computeMerged();
+      if (!merged.length) { tap.connect(sink); return; }
+      buildStops(c, tap, merged, filterNodes).connect(sink);
     }
 
     // --- band model ---
+    // Any manual band edit (not one made while applying a preset) drops the active
+    // preset highlight, since the config no longer matches that preset.
+    function clearPresetHighlight() {
+      for (const k in presetBtns) presetBtns[k].classList.remove('is-active');
+      activePreset = null;
+    }
     function removeBand(b) {
       const i = isoBands.indexOf(b);
       if (i < 0) return;
       isoBands.splice(i, 1);
       if (b.el) b.el.remove();
       if (b.row) b.row.remove();
+      if (!applyingPreset) clearPresetHighlight();
       rebuildGraph();
     }
     function addBandRow(b) {
       const mk = (val) => el('input', { type: 'number', class: 'anr-iso-num', min: '1', max: String(Math.round(NYQ)), step: '1', value: String(Math.round(val)) });
       const fromIn = mk(b.lo), toIn = mk(b.hi);
       const rm = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Remove band' }, '×');
-      const onEdit = () => { b.lo = clampHz(fromIn.value); b.hi = clampHz(toIn.value); positionBands(); rebuildGraph(); };
+      const onEdit = () => { b.lo = clampHz(fromIn.value); b.hi = clampHz(toIn.value); positionBands(); clearPresetHighlight(); rebuildGraph(); };
       fromIn.addEventListener('change', onEdit);
       toIn.addEventListener('change', onEdit);
       rm.addEventListener('click', () => removeBand(b));
@@ -1124,6 +1195,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     function addBand(lo, hi) {
       lo = clampHz(lo); hi = clampHz(hi);
       if (Math.abs(hi - lo) < 1) return;
+      // Editing bands is a band-stop operation, so any manual add leaves karaoke mode.
+      if (!applyingPreset) isoMode = 'bands';
       const b = { lo: Math.min(lo, hi), hi: Math.max(lo, hi), el: el('div', { class: 'anr-spec-band' }) };
       bandLayer.appendChild(b.el);
       isoBands.push(b);
@@ -1131,8 +1204,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       positionBands();
       rebuildGraph();
     }
-    addBtn.addEventListener('click', () => addBand(Math.round(fracToFreq(0.42)), Math.round(fracToFreq(0.6))));
-    clearBtn.addEventListener('click', () => { for (const b of isoBands.slice()) removeBand(b); });
+    addBtn.addEventListener('click', () => { addBand(Math.round(fracToFreq(0.42)), Math.round(fracToFreq(0.6))); clearPresetHighlight(); });
+    clearBtn.addEventListener('click', () => { for (const b of isoBands.slice()) removeBand(b); isoMode = 'bands'; clearPresetHighlight(); rebuildGraph(); });
 
     // --- drag-to-select a band on the spectrogram (isolate mode only) ---
     const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -1172,6 +1245,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       if (selEl) { selEl.remove(); selEl = null; }
       if (Math.abs(end - selStart) > 0.01) {
         addBand(fracToFreq(Math.min(selStart, end)), fracToFreq(Math.max(selStart, end)));
+        clearPresetHighlight();
       } else if (e) {
         // A tap with no vertical drag: seek to the clicked time, like a normal click.
         const r = canvas.getBoundingClientRect();
@@ -1183,14 +1257,101 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     canvasWrap.addEventListener('pointercancel', endSel);
 
     // --- toggle ---
-    isoBtn.addEventListener('click', () => {
-      isoActive = !isoActive;
+    function setIsoActive(on) {
+      isoActive = on;
       isoBtn.classList.toggle('is-active', isoActive);
       isoPanel.classList.toggle('is-hidden', !isoActive);
       bandLayer.style.display = isoActive ? '' : 'none';
       canvasWrap.classList.toggle('anr-spec-isolating', isoActive);
       if (isoActive) ensureAudioSource();
       rebuildGraph();
+    }
+    isoBtn.addEventListener('click', () => setIsoActive(!isoActive));
+
+    // --- presets: rough one-tap solos, like a stem player ---
+    // EQ presets SOLO a range by cutting its complement (reusing the band-stop
+    // graph): "keep 300-3400" is just "cut 1-300 and 3400-Nyquist". They only
+    // approximate - instruments overlap in frequency - but need no downloads.
+    // "Remove vocals" is the karaoke centre-cancel and needs a stereo source.
+    const NYQi = Math.round(NYQ);
+    const stereo = !!(opts.audioBuffer && opts.audioBuffer.numberOfChannels >= 2);
+    function soloRange(lo, hi) {
+      applyingPreset = true;
+      isoMode = 'bands';
+      for (const b of isoBands.slice()) removeBand(b);
+      if (lo > 1) addBand(1, lo);
+      if (hi < NYQi) addBand(hi, NYQi);
+      applyingPreset = false;
+    }
+    function setKaraoke() {
+      applyingPreset = true;
+      for (const b of isoBands.slice()) removeBand(b);
+      applyingPreset = false;
+      isoMode = 'karaoke';
+      rebuildGraph();
+    }
+    const PRESETS = [
+      { key: 'vocals',  label: 'Vocals',        run: () => soloRange(300, 3400) },
+      { key: 'bass',    label: 'Bass',          run: () => soloRange(1, 250) },
+      { key: 'drums',   label: 'Drums',         run: () => soloRange(3000, NYQi) },
+      { key: 'novocal', label: 'Remove vocals', stereoOnly: true, run: setKaraoke },
+    ];
+    for (const p of PRESETS) {
+      if (p.stereoOnly && !stereo) continue;
+      const b = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, p.label);
+      presetBtns[p.key] = b;
+      b.addEventListener('click', () => {
+        if (!isoActive) setIsoActive(true);
+        p.run();
+        clearPresetHighlight();
+        b.classList.add('is-active');
+        activePreset = p.key;
+      });
+      presetBar.appendChild(b);
+    }
+
+    // --- export the current isolate result as a WAV ---
+    // Re-render the whole clip offline through the SAME processing that's live now,
+    // from the original decoded buffer (mono analysis signal as a fallback), so the
+    // download is exactly what you hear.
+    function sourceBuffer() {
+      if (opts.audioBuffer) return opts.audioBuffer;
+      const b = ctx().createBuffer(1, samples.length, sampleRate);
+      if (b.copyToChannel) b.copyToChannel(samples, 0); else b.getChannelData(0).set(samples);
+      return b;
+    }
+    async function renderIsolated() {
+      const buffer = sourceBuffer();
+      const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      const karaoke = isoActive && isoMode === 'karaoke' && buffer.numberOfChannels >= 2;
+      const off = new OAC(karaoke ? 1 : buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+      const srcNode = off.createBufferSource();
+      srcNode.buffer = buffer;
+      let out = srcNode;
+      if (karaoke) out = buildKaraoke(off, srcNode);
+      else if (isoActive && isoMode === 'bands') {
+        const merged = computeMerged();
+        if (merged.length) out = buildStops(off, srcNode, merged);
+      }
+      out.connect(off.destination);
+      srcNode.start();
+      return off.startRendering();
+    }
+    let exporting = false;
+    exportBtn.addEventListener('click', async () => {
+      if (exporting) return;
+      exporting = true;
+      const orig = exportBtn.textContent;
+      exportBtn.disabled = true; exportBtn.textContent = 'Rendering…';
+      try {
+        const blob = encodeWav(await renderIsolated());
+        downloadBlob((opts.basename || 'audio') + '_isolated.wav', blob);
+        exportBtn.textContent = orig;
+      } catch (_) {
+        exportBtn.textContent = 'Export failed';
+        setTimeout(() => { exportBtn.textContent = orig; }, 1400);
+      }
+      exportBtn.disabled = false; exporting = false;
     });
   }
 
@@ -1842,7 +2003,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     // in the standard inline loader (as elsewhere) until the new panel first paints.
     let loader = null;
     if (showLoader) { loader = inlineLoader('Analysing ' + chans[idx].full + '…'); specSlot.appendChild(loader); }
-    curSpecPanel = makeSpectrogramPanel(sig, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, capture: true });
+    curSpecPanel = makeSpectrogramPanel(sig, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, capture: true, audioBuffer });
     if (loader) curSpecPanel.style.visibility = 'hidden';   // keep the blank canvas out of view behind the bar
     specSlot.appendChild(curSpecPanel);
     waveSlot.innerHTML = '';

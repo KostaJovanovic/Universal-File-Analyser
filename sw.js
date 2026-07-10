@@ -1,7 +1,7 @@
 ﻿/* Analyser - service worker
    Precache the app shell; stale-while-revalidate the rest. */
 
-const VERSION = 'analyser-v193';
+const VERSION = 'analyser-v194';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -32,6 +32,13 @@ const SHELL = [
   './assets/js/core/search.js',
   './assets/js/core/stats-page.js',
   './assets/js/core/history.js',
+  './assets/js/core/file-sniff.js',
+  './assets/js/core/forensics.js',
+  './assets/js/core/overlays.js',
+  './assets/js/core/patch-tldr.js',
+  './assets/js/core/offline-tiers.js',
+  './assets/js/core/format-overlay.js',
+  './assets/js/core/classify.js',
   './assets/js/renderers/photo.js',
   './assets/js/renderers/lottie.js',
   './assets/js/renderers/photo-convert.js',
@@ -199,10 +206,18 @@ self.addEventListener('install', (e) => {
   );
 });
 
+// Caches to keep on activate. The versioned app shell (VERSION) is dropped and
+// rebuilt each release, but 'analyser-offline' - the user's explicitly downloaded
+// offline tiers (Essentials/Everything/Complete) - must SURVIVE a version bump,
+// or every deploy (and, in dev, every SW re-activation) would silently wipe the
+// downloads the user chose to keep. Its files are refreshed in place by the
+// version-aware re-download in offline-tiers.js, not by this cleanup.
+const KEEP_CACHES = [VERSION, 'analyser-offline'];
+
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => !KEEP_CACHES.includes(k)).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
