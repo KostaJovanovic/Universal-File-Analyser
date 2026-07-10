@@ -43,24 +43,61 @@ export const ORT_FILES = [
   ORT_BASE + 'ort-wasm-simd-threaded.jsep.wasm',
 ];
 
-export const MDX_MODEL = {
-  name: 'Kim Vocal 2',
-  // HuggingFace mirror (CORS-enabled). If this ever 404s, any repo hosting the
-  // same Kim_Vocal_2.onnx works - only the URL changes, the geometry below is fixed.
-  // The native build vendors it locally (see NATIVE_SHELL above) for offline use.
-  url: NATIVE_SHELL
-    ? '/assets/vendor/models/Kim_Vocal_2.onnx'
-    : 'https://huggingface.co/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx',
-  bytes: 66759214,            // ~63.7 MB, for the size-warning popup
-  nFft: 7680,
-  dimF: 3072,                 // model input keeps the lowest 3072 freq bins
-  dimT: 256,                  // 2^8 frames per segment
-  hop: 1024,
-  compensate: 1.009,          // UVR magnitude compensation for this model
-  stem: 'Vocals',
+// Two selectable models, a quality/size trade-off. Both are Vocals-primary
+// MDX-Net separators from the same CORS-enabled HuggingFace mirror, so the
+// pipeline (mdx-separate.js) drives either straight from these geometry fields -
+// and the STFT core (mdx-stft.js) already handles both n_fft 7680 and 6144.
+//   - standard (Kim Vocal 2): the cleaner, heavier default.
+//   - lite (UVR-MDX-NET 1): ~half the download and the smaller 6144/2048
+//     geometry, so it needs less memory + compute per chunk - meant for phones
+//     and slower machines, at a small cost in separation quality.
+// The native build vendors each locally (see NATIVE_SHELL) for offline use; keep
+// build-dist.mjs's VENDOR list in step with these filenames.
+export const MDX_MODELS = {
+  standard: {
+    id: 'standard',
+    name: 'Kim Vocal 2',
+    label: 'Standard',       // shown in the picker + model prompt
+    // Per-model blurb shown in the Separate prompt so each tier explains itself.
+    blurb: 'the cleanest separation, a little heavier to download and run',
+    url: NATIVE_SHELL
+      ? '/assets/vendor/models/Kim_Vocal_2.onnx'
+      : 'https://huggingface.co/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx',
+    bytes: 66759214,          // ~63.7 MB, for the size-warning popup
+    tierMb: 85,               // model + ORT runtime, shown in the download prompt
+    nFft: 7680,
+    dimF: 3072,               // model input keeps the lowest 3072 freq bins
+    dimT: 256,                // 2^8 frames per segment
+    hop: 1024,
+    compensate: 1.009,        // UVR magnitude compensation for this model
+    stem: 'Vocals',
+  },
+  lite: {
+    id: 'lite',
+    name: 'UVR-MDX-NET 1',
+    label: 'Lite',
+    blurb: 'smaller and quicker and easier on memory - a good fit for phones and slower machines, at a small cost in separation quality',
+    url: NATIVE_SHELL
+      ? '/assets/vendor/models/UVR_MDXNET_1_9703.onnx'
+      : 'https://huggingface.co/seanghay/uvr_models/resolve/main/UVR_MDXNET_1_9703.onnx',
+    bytes: 29704436,          // ~28.3 MB
+    tierMb: 50,               // model ~28 + ORT runtime ~21
+    nFft: 6144,
+    dimF: 2048,
+    dimT: 256,
+    hop: 1024,
+    compensate: 1.035,        // UVR magnitude compensation for the classic MDX-NET
+    stem: 'Vocals',
+  },
 };
 
-// Everything the Complete tier must cache for offline AI separation.
+// Default model. The offline tier and any caller that doesn't pick explicitly
+// use this; the worker resolves the chosen id against MDX_MODELS.
+export const MDX_MODEL = MDX_MODELS.standard;
+
+// Everything the Complete offline tier must cache for offline AI separation. Only
+// the default (standard) model is pre-cached; the lite model downloads on demand
+// on the web and is vendored into the native bundle.
 export const MDX_OFFLINE_URLS = [...ORT_FILES, MDX_MODEL.url];
 
 // Approx download footprint of the AI feature, in MB (WebGPU/jsep runtime wasm

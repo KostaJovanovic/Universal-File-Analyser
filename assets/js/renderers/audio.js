@@ -16,6 +16,9 @@ import { peekContainer, adtsToM4a, readTagBPM, extractCoverArt, readAudioTags } 
 import { makePlayer, playerAudioNode, onSharedVolume, sharedVolume } from './audio-player.js';
 import { encodeWav } from './video-avi.js';
 import { buildReverseAudioCard } from './media-reverse.js';
+// Constants only (no WASM/worker) - safe to load eagerly; the picker and the
+// download prompt read tier sizes from here. The heavy client is still lazy.
+import { MDX_MODELS } from '../lib/mdx-model.js';
 
 // Re-exported so existing importers (e.g. video.js) can keep importing the
 // transport from this module.
@@ -350,50 +353,47 @@ function fmtClock(s) {
   return m + ':' + (sec < 10 ? '0' : '') + sec.toFixed(1);
 }
 
-// Per-metric explanations for the stats block's [?] info panel.
-const SPEC_STATS_HELP =
-  '<strong>Peak</strong> When the audio is loudest &mdash; the timestamp of the loudest moment and its level (RMS over a 50&nbsp;ms window, in dBFS).<br>' +
-  '<strong>Detected</strong> The band that actually carries energy &mdash; the lowest to highest frequency staying within ' + SIGNAL_DB + '&nbsp;dB of the peak.<br>' +
-  '<strong>Cutoff</strong> The highest frequency present. A hard ceiling well below 20&nbsp;kHz is the tell-tale lowpass of lossy encoding (MP3 / AAC), and its height hints at the bitrate. Accurate to &plusmn;half an FFT bin &mdash; raise FFT to refine.<br>' +
-  '<strong>Dyn. range</strong> The gap between the peak and the noise floor (the 10th-percentile bin). Larger means cleaner with more headroom; small means noisy or heavily compressed.<br>' +
-  '<strong>Resolution</strong> The current analysis grid &mdash; hertz per frequency bin and milliseconds per time frame. Set by FFT size: finer in one axis is always coarser in the other.';
+// Per-metric explanations, one per row - each shown behind the row label's own
+// [?] tip (the site's standard rowHelp idiom), the same as every other readout.
+const SPEC_STAT_HELP = {
+  peak: 'When the audio is loudest - the timestamp of the loudest moment and its level (RMS over a 50 ms window, in dBFS).',
+  detected: 'The band that actually carries energy - the lowest to highest frequency staying within ' + SIGNAL_DB + ' dB of the peak.',
+  cutoff: 'The highest frequency present. A hard ceiling well below 20 kHz is the tell-tale lowpass of lossy encoding (MP3 / AAC), and its height hints at the bitrate. Accurate to plus or minus half an FFT bin - raise FFT to refine.',
+  dynRange: 'The gap between the peak and the noise floor (the 10th-percentile bin). Larger means cleaner with more headroom; small means noisy or heavily compressed.',
+  resolution: 'The current analysis grid - hertz per frequency bin and milliseconds per time frame. Set by FFT size: finer in one axis is always coarser in the other.',
+};
 
-// Build the stats header (caption + [?] info toggle) once. The grid of values
-// below it is (re)filled by buildSpecStats on every recompute.
-function specStatsHelp() {
-  const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'What do these mean?' }, '[?]');
-  const panel = el('div', { class: 'anr-info-panel is-hidden', html: SPEC_STATS_HELP });
-  const head = el('div', { class: 'anr-spec-stats-head' }, [
+// Build the stats header (just the caption; each row carries its own [?] tip).
+// The values below it are (re)filled by buildSpecStats on every recompute.
+function specStatsHead() {
+  return el('div', { class: 'anr-spec-stats-head' }, [
     el('div', { class: 'anr-spec-stats-headleft' }, [
       el('span', { class: 'anr-spec-stats-title' }, 'Analysis'),
-      btn,
     ]),
   ]);
-  wireInfoToggle(btn, panel);
-  return [head, panel];
 }
 
 function buildSpecStats(statsEl, st, fftSize, sampleRate, loud) {
   const hzBin = sampleRate / fftSize;
   const msHop = Math.floor(fftSize / 4) / sampleRate * 1000;
   // Rendered as the site's standard label|value findings table (.anr-readout),
-  // so it matches every other readout on the page. Units/tolerances trail the
-  // value in the same cell, the way the other tables fold in their qualifiers.
+  // so it matches every other readout on the page - each row's label carries a
+  // [?] tip (rowHelp) instead of one combined explanation above the table.
   const rows = [
     ['Peak', loud
       ? fmtClock(loud.time) + (isFinite(loud.db) ? '  ' + loud.db.toFixed(1) + ' dBFS' : '')
-      : '-'],
-    ['Detected range', st.lowHz == null ? '-' : formatHz(st.lowHz) + '–' + formatHz(st.highHz) + ' Hz'],
+      : '-', SPEC_STAT_HELP.peak],
+    ['Detected range', st.lowHz == null ? '-' : formatHz(st.lowHz) + '–' + formatHz(st.highHz) + ' Hz', SPEC_STAT_HELP.detected],
     // Exact high-frequency cutoff (the lossy-encode lowpass edge for compressed
     // audio). Resolution is one FFT bin (hzBin), so ±hzBin/2 - raise FFT to refine.
     ['Cutoff', st.highHz == null ? '-'
-      : Math.round(st.highHz).toLocaleString() + ' Hz  ±' + Math.round(hzBin / 2)],
-    ['Dynamic range', st.dynRange == null ? '-' : st.dynRange.toFixed(0) + ' dB'],
-    ['Resolution', formatHz(hzBin) + ' Hz/bin  ·  ' + msHop.toFixed(0) + ' ms/frame'],
+      : Math.round(st.highHz).toLocaleString() + ' Hz  ±' + Math.round(hzBin / 2), SPEC_STAT_HELP.cutoff],
+    ['Dynamic range', st.dynRange == null ? '-' : st.dynRange.toFixed(0) + ' dB', SPEC_STAT_HELP.dynRange],
+    ['Resolution', formatHz(hzBin) + ' Hz/bin  ·  ' + msHop.toFixed(0) + ' ms/frame', SPEC_STAT_HELP.resolution],
   ];
   statsEl.innerHTML = '';
   const tbl = el('table', { class: 'anr-readout' });
-  for (const [lbl, val] of rows) tbl.appendChild(row(lbl, val));
+  for (const [lbl, val, help] of rows) tbl.appendChild(rowHelp(lbl, val, help));
   statsEl.appendChild(tbl);
 }
 
@@ -668,7 +668,11 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   const isoBtn = opts.audioEl
     ? el('button', { type: 'button', class: 'anr-btn anr-iso-toggle' }, [sIco('<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 4h5M9 4h4M1 10h4M8 10h5"/><circle cx="7.5" cy="4" r="1.6" fill="currentColor" stroke="none"/><circle cx="6.5" cy="10" r="1.6" fill="currentColor" stroke="none"/></svg>'), 'Isolate'])
     : null;
-  if (isoBtn) actions.unshift(ctl('', isoBtn));   // Isolate sits leftmost in the Actions row
+  if (isoBtn) {
+    actions.unshift(ctl('', isoBtn));   // Isolate sits leftmost in the Actions row
+    // Divider between the Isolate tool and the plain Save PNG / Fullscreen actions.
+    actions.splice(1, 0, el('span', { class: 'anr-spec-actdiv', 'aria-hidden': 'true' }, '|'));
+  }
   if (opts.capture) {
     const recBtn  = el('button', { type: 'button', class: 'anr-btn' }, [sIco('<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" fill="currentColor"/></svg>'), 'Record']);
     const liveBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Live spectrogram');
@@ -858,13 +862,13 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   // The frame/bin/px/ms readout rides in the Analysis header (muted, right) rather
   // than as a stray line under the grid, so the block reads as one tidy unit.
   const status = el('span', { class: 'anr-spec-status' }, 'computing…');
-  const [statsHead, statsInfo] = specStatsHelp();
+  const statsHead = specStatsHead();
   statsHead.appendChild(status);
   // The "Analysis" block normally rides at the foot of this card, but the file
   // renderer hands us an external mount (opts.statsMount) so it can live in the
   // File info card instead. It still updates live from recompute()/renderOnly()
   // - the mount is cleared and refilled here (a channel switch recreates us).
-  const statsBlock = el('div', { class: 'anr-spec-statsblock' }, [statsHead, statsInfo, stats]);
+  const statsBlock = el('div', { class: 'anr-spec-statsblock' }, [statsHead, stats]);
   if (opts.statsMount) { opts.statsMount.innerHTML = ''; opts.statsMount.appendChild(statsBlock); }
   else card.appendChild(statsBlock);
 
@@ -1136,19 +1140,52 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     const aiBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm anr-iso-ai' }, 'Separate vocals (AI)');
     const aiStatus = el('div', { class: 'anr-iso-aistatus', hidden: true });
     const aiStems = el('div', { class: 'anr-iso-stems' });
-    // Explanation tucked behind a [?] next to the "Separate (AI)" label (site's
+    // Explanation tucked behind a [?] next to the "Separate" label (site's
     // standard info-toggle idiom, same as h3help) so the section stays compact.
-    const aiHelpBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'About AI separation' }, '[?]');
+    // The section holds both approaches now (EQ presets + the AI model), so the
+    // help covers both rather than just the AI part.
+    const aiHelpBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'About separating parts' }, '[?]');
     const aiHelpPanel = el('div', { class: 'anr-info-panel is-hidden', html:
-      'This uses a real AI model to split the track into separate vocal and instrumental stems - a true separation, not a frequency cut. It runs entirely on your device and nothing is uploaded. The first run downloads the model once, then works offline.' });
+      'Two ways to pull a part out of the mix. The <strong>presets</strong> (Vocals, Bass, Drums, Remove vocals) are one-tap EQ filters - they keep or cut frequency ranges, so they are instant but rough and leave some bleed. <strong>Separate vocals (AI)</strong> runs a real AI model that splits the track into true vocal and instrumental stems - far cleaner, and a genuine separation rather than a frequency cut. Pick the model to suit your device: <strong>Standard</strong> is the cleanest, <strong>Lite</strong> is about half the download and lighter to run, for phones. The AI runs entirely on your device and nothing is uploaded; the first run downloads the chosen model once, then works offline.' });
     wireInfoToggle(aiHelpBtn, aiHelpPanel);
-    const aiLabel = el('span', { class: 'anr-iso-seclabel' }, 'Separate (AI)');
+    const aiLabel = el('span', { class: 'anr-iso-seclabel' }, 'Separate');
     aiLabel.appendChild(aiHelpBtn);
     // One row: the AI separator on the far left, a divider, then the rough EQ
     // presets (Vocals/Bass/Drums/Remove vocals). Clear is appended later and
     // pushed to the far right. Both sides are one-tap "give me just the X" tools.
     const aiSep = el('span', { class: 'anr-iso-seg-div', 'aria-hidden': 'true' }, '|');
     const aiRow = el('div', { class: 'anr-iso-ai-row' }, [aiBtn, aiSep, presetBar]);
+    // Which AI model the Separate button uses. "standard" (Kim Vocal 2) is the
+    // cleaner, heavier default; "lite" (UVR-MDX-NET 1) is roughly half the download
+    // and lighter to run - meant for phones / slower machines. The models are
+    // defined in mdx-model.js (MDX_MODELS); the picker just tracks the chosen id.
+    // Default to the lighter Lite model on the narrow (mobile) layout, where it is the
+    // better fit; the wider desktop layout defaults to the cleaner Standard model.
+    const preferLite = !!(window.matchMedia && window.matchMedia('(max-width: 700px)').matches);
+    let aiModelId = preferLite ? 'lite' : 'standard';
+    const aiModelBtns = {};
+    const aiModelSeg = el('div', { class: 'anr-btn-row anr-iso-modelseg' });
+    [
+      ['standard', 'Standard', 'Kim Vocal 2 - cleaner separation, about 85 MB to download once'],
+      ['lite', 'Lite (mobile)', 'UVR-MDX-NET 1 - smaller and lighter for phones, about 50 MB. Slightly rougher.'],
+    ].forEach(([id, label, title]) => {
+      const b = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' + (id === aiModelId ? ' is-active' : ''), title }, label);
+      b.addEventListener('click', () => {
+        if (aiRunning || aiModelId === id) return;
+        aiModelId = id;
+        for (const x of Object.values(aiModelBtns)) x.classList.remove('is-active');
+        b.classList.add('is-active');
+        // If the model prompt is open, re-render it for the newly-chosen model so its
+        // title, blurb, size and button all update in real time.
+        if (aiConfirmRender) aiConfirmRender();
+      });
+      aiModelBtns[id] = b; aiModelSeg.appendChild(b);
+    });
+    // Hidden until the user clicks Separate vocals (AI), which reveals it.
+    const aiModelRow = el('div', { class: 'anr-iso-modelrow', hidden: true }, [
+      el('span', { class: 'anr-iso-modellabel' }, 'AI model'),
+      aiModelSeg,
+    ]);
     // Two labelled tiers: the EQ isolation tools (presets + manual bands + WAV
     // export) on top, then the on-device AI stem separator as its own block.
     const isoPanel = el('div', { class: 'anr-iso-panel is-hidden' }, [
@@ -1166,6 +1203,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         aiLabel,
         aiHelpPanel,
         aiRow,
+        aiModelRow,
         aiStatus,
         aiStems,
       ]),
@@ -1494,6 +1532,12 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // and produces two playable/downloadable stems. Everything heavy (runtime +
     // model) is lazy-loaded on first click and cached for offline use.
     let aiRunning = false, aiUrls = [], blendCleanup = null;
+    // Separate button is a toggle: clicking it reveals the model picker and opens the
+    // model prompt (download-or-start), and clicking it again once a separation is
+    // showing clears it. aiOn tracks whether results are showing. aiConfirming marks
+    // the prompt open; aiConfirmRender re-renders it for the current model (called by
+    // the picker so switching Standard/Lite updates the prompt in real time).
+    let aiOn = false, aiConfirming = false, aiConfirmRender = null;
     function revokeAiUrls() { for (const u of aiUrls) { try { URL.revokeObjectURL(u); } catch (_) {} } aiUrls = []; }
 
     function stemBuffer(channels, sr) {
@@ -1824,66 +1868,112 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       aiStatus.appendChild(el('span', { class: 'anr-iso-aimsg' }, text));
       if (typeof frac === 'number') { aiStatus.appendChild(aiBar); aiBar.set(frac); }
     }
-    // One-off size warning, skipped once the model is already cached offline.
-    function confirmDownload(mb) {
+    // One-off size prompt, skipped once the chosen model is already cached. The
+    // model picker stays live while this is up (aiConfirmSizeEl), so the user can
+    // switch tier here and the size - and what actually downloads - follows.
+    // The model prompt shown on every Separate click. When the chosen model still
+    // needs fetching it is a download notice (size shown, "Download and continue");
+    // once it is already downloaded it is a plain start confirmation ("Start
+    // separation"). Either way the model picker stays live above it (aiConfirmSizeEl),
+    // so switching tier here updates the size and what actually runs.
+    function confirmDownload() {
       return new Promise((resolve) => {
+        aiConfirming = true;
         // The prompt drops the description ([?] + panel) while it's up, but the
-        // Separate button stays visible (disabled by the caller) - it must never
-        // disappear on click.
+        // Separate button and the model picker stay visible.
         aiHelpBtn.hidden = true; aiHelpPanel.classList.add('is-hidden');
         aiStatus.hidden = false; aiStatus.textContent = '';
-        const yes = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Download and continue');
+        const box = el('div', { class: 'anr-iso-confirm' });
+        const yes = el('button', { type: 'button', class: 'anr-btn anr-btn-sm anr-iso-confirm-yes' }, '');
         const no = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Cancel');
-        const done = (v) => { aiStatus.textContent = ''; aiStatus.hidden = true; aiHelpBtn.hidden = false; resolve(v); };
+        const done = (v) => { aiConfirming = false; aiConfirmRender = null; aiStatus.textContent = ''; aiStatus.hidden = true; aiHelpBtn.hidden = false; resolve(v); };
         yes.addEventListener('click', () => done(true));
         no.addEventListener('click', () => done(false));
-        aiStatus.appendChild(el('div', { class: 'anr-iso-confirm' }, [
-          el('p', {}, 'This downloads the AI model and runtime (about ' + mb + ' MB) once, then keeps it for offline use. It runs on your device - nothing is uploaded. Continue?'),
-          el('div', { class: 'anr-iso-confirm-btns' }, [yes, no]),
-        ]));
+        // Rebuild the box for whichever model is selected right now. Called on open and
+        // again by the picker on every model switch, so the title, blurb, size and
+        // button track the selection live. A model already downloaded shows a plain
+        // start confirmation; one still to fetch shows the download notice + size.
+        async function render() {
+          const model = MDX_MODELS[aiModelId] || MDX_MODELS.standard;
+          const tier = model.label || 'Standard';
+          const blurb = model.blurb || '';
+          const needsDownload = !(await modelReady(model));
+          yes.textContent = needsDownload ? 'Download and continue' : 'Start separation';
+          const sizeEl = el('span', { class: 'anr-iso-confirm-size' }, 'about ' + model.tierMb + ' MB');
+          // Each tier explains itself (model.blurb), so the prompt text differs per model.
+          const body = needsDownload
+            ? el('p', {}, ['The first run fetches the ', el('strong', {}, tier), ' model (', blurb, ') and its runtime (', sizeEl, '), then keeps them for offline use. Everything runs on your device - nothing is uploaded.'])
+            : el('p', {}, ['Splits this track into separate vocal and instrumental parts with the ', el('strong', {}, tier), ' model - ', blurb, '. Everything runs on your device - nothing is uploaded.']);
+          box.textContent = '';
+          box.appendChild(el('div', { class: 'anr-iso-confirm-title' }, needsDownload ? 'Download AI model' : 'Separate vocals'));
+          box.appendChild(body);
+          box.appendChild(el('div', { class: 'anr-iso-confirm-btns' }, [yes, no]));
+        }
+        aiConfirmRender = render;
+        aiStatus.appendChild(box);
+        render();
       });
+    }
+    // Toggle OFF: tear down a shown separation and return to the original track.
+    function clearSeparation() {
+      revokeAiUrls();
+      if (blendCleanup) { try { blendCleanup(); } catch (_) {} blendCleanup = null; }
+      aiStems.textContent = '';
+      blendMount.textContent = '';
+      aiStatus.hidden = true; aiStatus.textContent = '';
+      aiHelpBtn.hidden = false;   // bring the [?] description back
+      aiBtn.classList.remove('is-active');
+      aiModelRow.hidden = true;   // re-hide the picker; the next cycle re-reveals it
+      aiOn = false;
     }
     // "Already downloaded" = present in ANY cache (the offline tier bucket OR the
     // service-worker's own cache, where a prior AI run's fetch lands), or a prior
     // successful run flagged it. caches.match searches every cache, unlike a single
     // caches.open('analyser-offline'), which is why the popup used to keep showing.
-    async function modelReady(url) {
-      try { if (await caches.match(url)) return true; } catch (_) {}
-      try { return localStorage.getItem('anr-mdx-ready') === '1'; } catch (_) { return false; }
+    // "Already downloaded" for the SELECTED model (each is cached + flagged on its
+    // own key, so switching models re-warns for the one not yet fetched).
+    async function modelReady(model) {
+      try { if (await caches.match(model.url)) return true; } catch (_) {}
+      try { return localStorage.getItem('anr-mdx-ready-' + model.id) === '1'; } catch (_) { return false; }
     }
     aiBtn.addEventListener('click', async () => {
-      if (aiRunning) return;
-      aiRunning = true; aiBtn.disabled = true;
+      if (aiRunning || aiConfirming) return;
+      // Toggle OFF: a separation is showing -> clear it and revert to the original.
+      if (aiOn) { clearSeparation(); return; }
+      // Reveal the model picker and ALWAYS open the model prompt, so the user confirms
+      // (and can change) the model every time - whether or not it's already downloaded.
+      aiModelRow.hidden = false;
+      aiBtn.disabled = true;
+      const ok = await confirmDownload();   // model changeable in the prompt (live re-render)
+      if (!ok) { aiModelRow.hidden = true; aiBtn.disabled = false; return; }   // cancelled -> idle
+      const model = MDX_MODELS[aiModelId] || MDX_MODELS.standard;   // whatever was selected in the prompt
+      aiOn = true; aiBtn.classList.add('is-active');
       const orig = aiBtn.textContent;
       try {
-        const [{ separateStems }, { MDX_MODEL, MDX_TIER_MB }] = await Promise.all([
-          import('../lib/mdx-client.js'),
-          import('../lib/mdx-model.js'),
-        ]);
-        if (!(await modelReady(MDX_MODEL.url))) {
-          const ok = await confirmDownload(MDX_TIER_MB);
-          if (!ok) { aiBtn.disabled = false; aiRunning = false; return; }
-        }
+        const { separateStems } = await import('../lib/mdx-client.js');
         aiBtn.textContent = 'Separating…';
+        aiRunning = true;
         setAiStatus('Preparing…', 0);
         const result = await separateStems(sourceBuffer(), {
+          modelId: aiModelId,
           onProgress: (phase, frac) => {
             const pct = Math.round(frac * 100);
             setAiStatus(phase === 'model' ? 'Downloading model… ' + pct + '%' : 'Separating… ' + pct + '%', frac);
           },
           signal: opts.signal,
         });
-        // Remember the model is downloaded so the size warning never reappears.
-        try { localStorage.setItem('anr-mdx-ready', '1'); } catch (_) {}
+        // Remember this model is downloaded so its size warning never reappears.
+        try { localStorage.setItem('anr-mdx-ready-' + model.id, '1'); } catch (_) {}
         aiStatus.hidden = true; aiStatus.textContent = '';
         renderStems(result);
+        // Stays ON (button is-active, results shown) until the next click clears it.
       } catch (err) {
+        // Back to idle; the picker stays shown so the next click re-opens the prompt.
+        aiOn = false; aiBtn.classList.remove('is-active');
         if (err && err.name === 'AbortError') { aiStatus.hidden = true; aiStatus.textContent = ''; }
         else setAiStatus('Separation failed: ' + ((err && err.message) || 'unknown error') + '. Check your connection and try again.');
       }
-      // Always restore the button, whatever path we took (including the one-time
-      // download prompt, which hides it while the confirm stands in) - it must
-      // never be left hidden after a click so the run can be repeated.
+      // Restore the button label/enabled state; it must never be left hidden.
       aiBtn.textContent = orig; aiBtn.disabled = false; aiBtn.hidden = false; aiRunning = false;
     });
     if (opts.signal) opts.signal.addEventListener('abort', revokeAiUrls);

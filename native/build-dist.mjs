@@ -80,7 +80,10 @@ const VENDOR = [
     'occt-import-js.wasm': `${OCCT}/occt-import-js.wasm`,
   } },
   { dir: 'models', files: {
-    'Kim_Vocal_2.onnx': 'https://huggingface.co/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx',
+    // Both vocal-separation model tiers (see MDX_MODELS in mdx-model.js): the
+    // Standard default plus the smaller Lite model, so either works offline.
+    'Kim_Vocal_2.onnx':      'https://huggingface.co/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx',
+    'UVR_MDXNET_1_9703.onnx': 'https://huggingface.co/seanghay/uvr_models/resolve/main/UVR_MDXNET_1_9703.onnx',
   } },
 ];
 

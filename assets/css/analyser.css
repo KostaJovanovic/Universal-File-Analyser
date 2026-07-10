@@ -2220,19 +2220,23 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   padding-bottom: 8px;
   border-bottom: var(--bd-hairline);
 }
-/* Collapsible analysis cards. Every card title (a direct-child <h3>) toggles its
-   own body open/closed; cards render open, so the expanded view is unchanged save
-   for the +/- disclosure glyph used everywhere else on the site (details summary).
-   JS adds .is-collapsed on click. Open = minus, collapsed = plus. */
+/* Collapsible analysis cards. Only cards explicitly marked .anr-collapsible
+   toggle their body open/closed via their direct-child <h3> - those carry the
+   +/- disclosure glyph, pointer cursor and hover accent. Every other .anr-card
+   is a static, always-open section: no toggle, no glyph (the heading keeps its
+   flex layout so a trailing [?] still sits correctly). JS adds .is-collapsed on
+   click. Open = minus, collapsed = plus. */
 .anr-card > h3 {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+}
+.anr-card.anr-collapsible > h3 {
   cursor: pointer;
   user-select: none;
 }
-.anr-card > h3::after {
+.anr-card.anr-collapsible > h3::after {
   content: "\2212";                  /* minus = open */
   font-family: var(--font-mono);
   font-size: 16px;
@@ -2241,10 +2245,10 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   flex: none;
   transition: color var(--dur-snappy) ease;
 }
-.anr-card > h3:hover { color: var(--accent); }
-.anr-card > h3:hover::after { color: var(--accent); }
+.anr-card.anr-collapsible > h3:hover { color: var(--accent); }
+.anr-card.anr-collapsible > h3:hover::after { color: var(--accent); }
 .anr-card.is-collapsed > h3 { margin-bottom: 0; }
-.anr-card.is-collapsed > h3::after { content: "+"; }   /* plus = closed */
+.anr-card.anr-collapsible.is-collapsed > h3::after { content: "+"; }   /* plus = closed */
 /* !important so it wins over inline display (e.g. the video player carries an
    inline display:block, which would otherwise keep it visible when collapsed -
    hiding the controls around it but not the player itself). */
@@ -2786,6 +2790,8 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 .anr-iso-preset-clear { margin-left: auto; }   /* floats Clear to the row's right */
 /* Vertical divider between the AI separator button and the EQ presets. */
 .anr-iso-seg-div { color: var(--muted); opacity: 0.5; user-select: none; }
+/* Same divider in the spectrogram Actions row (between Isolate and Save PNG). */
+.anr-spec-actdiv { color: var(--muted); opacity: 0.5; user-select: none; align-self: center; }
 /* Rough EQ presets sit to the left of the real AI separator, wrapping gracefully
    when the row runs out of width. */
 .anr-iso-ai-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -2820,10 +2826,8 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
    would centre its text and box it against the dividers). */
 .anr-iso-ai { align-self: flex-start; }
 
-/* The Isolate toggle wears an accent border so it stands out in the Actions row
-   as the gateway to the whole isolate/separate panel. (When toggled on it fills
-   accent via .is-active.) */
-.anr-iso-toggle { border-color: var(--accent); }
+/* The Isolate toggle looks like every other Actions-row button (no accent border);
+   when toggled on it uses the standard .anr-btn.is-active fill. */
 
 /* AI vocal separation: status + determinate progress bar, the one-off size
    warning, and the resulting stem rows (label + native player + download). */
@@ -2836,16 +2840,45 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 }
 .anr-iso-aistatus[hidden] { display: none; }
 .anr-iso-aimsg { color: var(--muted); }
+/* One-off "download the model" prompt. A calm surface panel with a hairline
+   border (not the old loud full-accent box); the accent lives only on the primary
+   Download button, where it reads as a call to action rather than an alarm. */
 .anr-iso-confirm {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--accent);
-  background: var(--bg);
+  padding: 14px 16px;
+  border: var(--bd-hairline);
+  background: var(--surface);
 }
-.anr-iso-confirm p { margin: 0; color: var(--fg); }
-.anr-iso-confirm-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.anr-iso-confirm-title {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg);
+  font-weight: 500;
+}
+.anr-iso-confirm-size { color: var(--muted); }
+.anr-iso-confirm p { margin: 0; color: var(--muted); line-height: 1.5; }
+.anr-iso-confirm-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+/* Primary action carries the accent (border + text) and fills accent on hover -
+   the one place the accent is used here, so it reads as the call to action. */
+.anr-iso-confirm-yes { border-color: var(--accent); color: var(--accent); }
+.anr-iso-confirm-yes:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* AI model tier picker (Standard / Lite) - a mono label + a small segmented row,
+   matching the Channel picker's control strip. */
+.anr-iso-modelrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.anr-iso-modelrow[hidden] { display: none; }   /* class display:flex would beat the UA [hidden] rule */
+.anr-iso-modellabel {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.anr-iso-modelseg { display: flex; gap: 6px; flex-wrap: wrap; }
 .anr-iso-stems { display: flex; flex-direction: column; gap: 14px; }
 .anr-iso-stems:empty { display: none; }
 .anr-iso-stem { display: flex; flex-direction: column; gap: 8px; }
@@ -3129,7 +3162,8 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 
 /* ---------- INFO BUTTON / PANEL ---------- */
 .anr-info-btn {
-  float: right;
+  /* Sits inline right after its section title/label, never floated to the far
+     edge of the header (the per-context rules below add the small left gap). */
   font-family: var(--font-mono);
   font-size: var(--t-tiny);
   letter-spacing: 0.08em;
@@ -3141,10 +3175,13 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   line-height: inherit;
 }
 .anr-info-btn:hover { color: var(--accent); }
-/* In a section heading the [?] sits right after the title text, not floated out
-   to the far right edge of the header. */
-.anr-card h3 > .anr-info-btn,
-.anr-iso-seclabel > .anr-info-btn { float: none; margin-left: 8px; }
+/* Card headings are flex + space-between (to park the collapse +/- glyph at the
+   right edge), so a bare [?] flex item would strand in the middle. margin-right:
+   auto makes it hug the title on the left and pushes the ::after glyph to the
+   edge; the h3's own gap supplies the spacing after the title. */
+.anr-card > h3 > .anr-info-btn { margin-right: auto; }
+/* The isolate seclabel is a plain inline span, so the [?] just needs a small gap. */
+.anr-iso-seclabel > .anr-info-btn { margin-left: 8px; }
 /* Label + [?] grouped on the left of a flex `summary` (which is space-between, so
    only the open/close marker sits at the right edge). */
 .anr-summary-label { display: inline-flex; align-items: center; gap: 8px; }
@@ -4357,6 +4394,22 @@ details[open] summary::after { content: "\2212"; }
   line-height: 1.6;
 }
 .patch-list li { padding: 1px 0; }
+
+/* A combined multi-version entry can split its notes into labelled sections (e.g.
+   browser vs desktop app) with a small mono subhead and a hairline rule between them. */
+.patch-subhead {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 14px 0 6px;
+}
+.patch-rule {
+  border: none;
+  border-top: var(--bd-hairline);
+  margin: 16px 0 0;
+}
 
 /* Each patch carries a short codename, shown between the version and the date. */
 .patch-name {

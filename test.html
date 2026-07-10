@@ -364,7 +364,7 @@
     <div class="grid">
       <div class="section-content">
         <h2 class="section-head" id="cards">Cards &amp; rows.</h2>
-        <p class="section-lede">The analysis card is the workhorse: an .anr-card whose direct-child h3 collapses it (JS-wired, renders open), filled with table.anr-readout label/value rows.</p>
+        <p class="section-lede">The analysis card is the workhorse: an .anr-card filled with table.anr-readout label/value rows. Cards are static, always-open sections by default; a card opted in with .anr-collapsible gets a JS-wired direct-child h3 that toggles it (with a +/- glyph) and is the pattern used for sections that render closed by default.</p>
         <div class="about-block">
           <div class="tst-sub">.anr-card + readout rows, a .anr-readout-section group heading and a [?] tooltip label</div>
           <div class="anr-card">
@@ -388,6 +388,12 @@
               <tr><th>Size</th><td>2.4 MB (2,514,332 bytes)</td></tr>
               <tr><th>SHA-256</th><td><code>2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824</code></td></tr>
             </table>
+          </div>
+
+          <div class="tst-sub">.anr-card.anr-collapsible.is-collapsed - the opt-in collapsible variant, shown closed (click the title to open; the glyph reads + when closed, - when open)</div>
+          <div class="anr-card anr-collapsible is-collapsed">
+            <h3>Text file previews</h3>
+            <p class="anr-hint">Secondary detail that renders closed by default, so it stays out of the way until opened.</p>
           </div>
 
           <div class="tst-sub">Scrollable mono block (pre.anr-code.anr-pre-scroll)</div>

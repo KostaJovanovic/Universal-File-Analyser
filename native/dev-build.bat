@@ -1,15 +1,14 @@
 @echo off
 REM ---------------------------------------------------------------------------
-REM  native/dev-build.bat - fast FAITHFUL native rebuild for troubleshooting.
+REM  native/dev-build.bat - rebuild the native binary. Needed ONLY when you
+REM  changed Rust (src-tauri) or tauri.conf.json.
 REM
-REM  Runs the TRUE native shell (tauri:// origin, vendored WASM, production CSP)
-REM  - the parts `npm run dev` cannot reproduce (it serves the web build from
-REM  serve.py). This refreshes dist/ (vendored WASM reused from .native-cache),
-REM  does an incremental DEBUG build, and launches the exe with devtools (F12).
-REM  ~15-25s, vs minutes for a full `tauri build` installer.
-REM
-REM  For UI / IPC / drag-drop / updater logic, prefer `npm run dev` (hot reload);
-REM  reach for this when you specifically need vendored-WASM or CSP fidelity.
+REM  The exe serves dist/ live from disk, so frontend (JS/HTML/CSS) edits do NOT
+REM  need this - use dev-refresh.bat + Ctrl+R for those (~2s, no rebuild). Reach
+REM  for this script only when the compiled binary itself must change: it kills
+REM  the running app (Windows locks the exe), refreshes dist/, does a DEBUG
+REM  cargo build (~13s when Rust changed, ~1s otherwise), and relaunches with
+REM  devtools (F12).
 REM ---------------------------------------------------------------------------
 setlocal
 cd /d "%~dp0"

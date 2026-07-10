@@ -12,6 +12,13 @@ import { el } from './util.js';
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
+  { range: '6.01 - 6.05', notes: [
+    'Analyser is now a desktop app for Windows, macOS and Linux - the same on-device engine, installable and auto-updating, downloadable from GitHub Releases.',
+    'AI vocal separation adds a lighter phone-friendly model (the default on mobile), a model prompt to choose Standard or Lite on every run, an on/off toggle, and keeps the downloaded model for a day.',
+    'The vocal/instrumental blend now plays through the Isolate filters and redraws at your exact FFT/window settings, so the blended spectrogram is as truthful as the original.',
+    'The 3D model viewer gains the G-code viewer\'s camera controls: a press-and-hold zoom pad, a scroll-to-zoom toggle and a fullscreen button.',
+    'Your anonymous "a file was analysed" count now survives going offline; the samples page tidies its list behind a "+ More" reveal; and fixes land for the offline picker\'s invisible tap-blocking layer, high-contrast readability and the volume popup closing too soon.',
+  ] },
   { range: '6.0', milestone: true, notes: [
     'Sixth milestone: Analyser pulls a song apart, entirely on your device.',
     'A neural network (the MDX-Net "Kim Vocal 2" model) runs in the browser to split any track into separate vocal and instrumental stems - nothing is uploaded, and each stem gets its own player, spectrogram and WAV download.',

@@ -344,20 +344,32 @@ function makeVolume(mediaEl) {
   // Only real hover-capable pointers get the mouseenter/leave handlers; attaching
   // them on touch would fire on the synthesized mouseenter a tap emits and pre-open
   // the popup, breaking the first-tap-reveals behaviour.
-  let hovering = false, dragging = false;
+  let hovering = false, dragging = false, closeTimer = null;
   const canHover = !IS_IOS && !!(window.matchMedia && window.matchMedia('(hover: hover)').matches);
-  function open() { wrap.classList.add('is-open'); }
-  function close() { if (!dragging) wrap.classList.remove('is-open'); }
+  function open() { if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; } wrap.classList.add('is-open'); }
+  function closeNow() { if (!dragging) wrap.classList.remove('is-open'); }
+  // Close on a short delay, not instantly. The card floats above the mute button
+  // with a seam between them; the moment the cursor crosses that seam the browser
+  // reports a mouseleave on the wrap even though the card is where the cursor is
+  // heading, which used to snap the popup shut "one pixel above the button" before
+  // you could reach the slider. Deferring the close by a beat lets the re-entering
+  // mouseenter (onto the button, the bridge or the card) cancel it, so the popup
+  // only actually collapses once the cursor has genuinely left the whole control.
+  function close() {
+    if (closeTimer) clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => { closeTimer = null; closeNow(); }, 180);
+  }
   const isOpen = () => wrap.classList.contains('is-open');
   if (!IS_IOS) {
     if (canHover) {
       wrap.addEventListener('mouseenter', () => { hovering = true; open(); });
       wrap.addEventListener('mouseleave', () => { hovering = false; close(); });
     }
-    // An outside tap/click dismisses an open popup (the main way to close on touch).
+    // An outside tap/click dismisses an open popup at once (the main way to close on
+    // touch) - the intent there is unambiguous, so no grace delay.
     function onDocPointerDown(e) {
       if (!wrap.isConnected) { document.removeEventListener('pointerdown', onDocPointerDown); return; }
-      if (!wrap.contains(e.target)) close();
+      if (!wrap.contains(e.target)) closeNow();
     }
     document.addEventListener('pointerdown', onDocPointerDown);
   }
