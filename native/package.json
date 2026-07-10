@@ -4,6 +4,7 @@
   "private": true,
   "description": "Tauri shell for the Analyser native app (desktop + mobile). The website itself, in the repo root, stays dependency-free.",
   "scripts": {
+    "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
     "dist": "node build-dist.mjs"
