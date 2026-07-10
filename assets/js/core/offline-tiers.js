@@ -569,6 +569,11 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
     if (!featPopup) return;
     featPopup.classList.remove('is-open');
     document.removeEventListener('keydown', featPopup._onKey);
+    // The overlay is reused (not rebuilt), so after the fade take it out of layout
+    // entirely - display:none has no hitbox on any browser, unlike a transparent
+    // fixed box which can keep swallowing taps (seen on Samsung Internet).
+    clearTimeout(featPopup._hideT);
+    featPopup._hideT = setTimeout(() => { featPopup.style.display = 'none'; }, 220);
   }
   function buildFeaturePopup() {
     if (featPopup) return;
@@ -605,6 +610,9 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   function openFeaturePopup() {
     buildFeaturePopup();
     refreshFeatureButtons();
+    clearTimeout(featPopup._hideT);
+    featPopup.style.display = '';   // undo the closed display:none before fading in
+    document.removeEventListener('keydown', featPopup._onKey);
     document.addEventListener('keydown', featPopup._onKey);
     requestAnimationFrame(() => featPopup.classList.add('is-open'));
   }
