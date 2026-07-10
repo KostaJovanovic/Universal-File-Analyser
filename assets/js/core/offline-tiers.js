@@ -12,6 +12,7 @@
 
 import { el } from './util.js';
 import { renderHistoryPanel } from './history.js';
+import { MDX_OFFLINE_URLS, MDX_TIER_MB } from '../lib/mdx-model.js';
 
 // Browser/platform-specific "how to install" hint, shown on the install button
 // when the native install prompt is not available (iOS, Safari, Firefox, or a
@@ -62,13 +63,13 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   // and used by the post-clear reset) derive from it, and the "+N MB more" upgrade
   // deltas in refreshTierButtons() use the numbers directly. One place to edit.
   const TIER_ORDER = ['essentials', 'everything', 'complete'];
-  const TIER_MB = { essentials: 50, everything: 120, complete: 345 };
+  const TIER_MB = { essentials: 50, everything: 120, complete: 345 + MDX_TIER_MB };
   const TIER_SIZES = {};
   TIER_ORDER.forEach((t) => { TIER_SIZES[t] = '~' + TIER_MB[t] + ' MB'; });
 
   const TIERS = {
     essentials: [
-      './', './about', './patch', './manifest.json', './assets/css/analyser.css', './assets/css/fonts.css',
+      './', './about', './patch', './compare', './manifest.json', './assets/css/analyser.css', './assets/css/fonts.css',
       './assets/js/core/app.js', './assets/js/core/formats.js', './assets/js/core/util.js', './assets/js/core/search.js',
       './assets/js/core/stats-page.js', './assets/js/core/history.js', './assets/js/core/file-sniff.js', './assets/js/core/forensics.js', './assets/js/core/overlays.js', './assets/js/core/patch-tldr.js', './assets/js/core/offline-tiers.js', './assets/js/core/format-overlay.js', './assets/js/core/classify.js',
       './assets/js/renderers/photo.js', './assets/js/renderers/audio.js', './assets/js/renderers/audio-analysis.js',
@@ -108,13 +109,17 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       './assets/js/renderers/iwork.js', './assets/js/renderers/timeline.js', './assets/js/renderers/gitobject.js',
       './assets/js/renderers/paged.js', './assets/js/renderers/proprietary-formats.js', './assets/js/renderers/tiff.js',
       './assets/js/renderers/mpo.js', './assets/js/renderers/ico.js', './assets/js/renderers/embedded-images.js',
-      './assets/js/renderers/gif-encode.js', './assets/js/renderers/webp-frames.js', './assets/js/renderers/media-reverse.js',
+      './assets/js/renderers/gif-encode.js', './assets/js/renderers/webp-frames.js', './assets/js/renderers/media-reverse.js', './assets/js/renderers/compare.js',
       // Editing-project / engine viewers + the video gyro-metadata helper, kept in
       // step with the service-worker SHELL so Essentials remains the whole app.
       './assets/js/core/video-sync.js', './assets/js/renderers/premiere.js', './assets/js/renderers/davinci.js',
       './assets/js/renderers/vegas.js', './assets/js/renderers/sony-rtmd.js', './assets/js/renderers/gcsv.js',
       './assets/js/renderers/unity.js', './assets/js/renderers/vssolution.js',
       './assets/js/lib/legacy-decompress.js', './assets/js/lib/lzma-loader.js', './assets/js/lib/nrbf.js', './assets/js/lib/occt-loader.js',
+      // AI vocal-separation modules (same-origin app code; the heavy ONNX runtime
+      // + model URLs they pull live in the Complete tier below).
+      './assets/js/lib/mdx-model.js', './assets/js/lib/mdx-stft.js', './assets/js/lib/mdx-separate.js',
+      './assets/js/lib/mdx-client.js', './assets/js/lib/mdx-worker.js',
       './assets/js/core/effects.js', './assets/js/core/popups.js', './assets/js/core/export-data.js',
       './assets/img/favicon.svg', './assets/img/icon.png', './assets/img/icon-192.png', './assets/img/icon-512.png',
       './assets/vendor/exifr.umd.js',
@@ -224,16 +229,31 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       './samples/spreadsheet.csv', './samples/video.mp4', './samples/webpage.html',
       './samples/Fraunces.ttf'
     ],
-    // The "Complete" tier is OCR languages only: English ships in "Everything", and
-    // every other language is pulled from the CDN (not hosted in the repo). They all
-    // land in the offline cache, so "Complete" gives every language offline.
-    complete: [
-      'spa', 'fra', 'deu', 'ita', 'por', 'rus', 'chi_sim', 'jpn',
-      'srp', 'srp_latn', 'hrv', 'ell', 'ara', 'chi_tra', 'kor', 'heb', 'tur',
-      'ukr', 'pol', 'ron', 'hun', 'ces', 'slk', 'slv', 'bul', 'mkd', 'nld',
-      'swe', 'nor', 'fin', 'dan'
-    ].map(c => 'https://tessdata.projectnaptha.com/4.0.0/' + c + '.traineddata.gz')
+    // The "Complete" tier is split into optional feature packs (FEATURES below),
+    // each downloadable on its own from the Complete popup and added on top of the
+    // Everything download. The tier itself stays the union of every pack, still
+    // used for cumulative-cache detection and the daily version auto-refresh.
+    complete: []
   };
+  // OCR language packs (English ships in "Everything"; the rest stream from the
+  // CDN, not the repo) and the AI vocal-separation runtime + model - the two
+  // optional packs the Complete popup offers, each added on top of Everything.
+  const LANG_CODES = [
+    'spa', 'fra', 'deu', 'ita', 'por', 'rus', 'chi_sim', 'jpn',
+    'srp', 'srp_latn', 'hrv', 'ell', 'ara', 'chi_tra', 'kor', 'heb', 'tur',
+    'ukr', 'pol', 'ron', 'hun', 'ces', 'slk', 'slv', 'bul', 'mkd', 'nld',
+    'swe', 'nor', 'fin', 'dan',
+  ];
+  const LANG_URLS = LANG_CODES.map(c => 'https://tessdata.projectnaptha.com/4.0.0/' + c + '.traineddata.gz');
+  const FEATURE_ORDER = ['languages', 'ai'];
+  const FEATURES = {
+    languages: { label: 'Languages', desc: 'Read text (OCR) in 30+ languages, not just English.', mb: TIER_MB.complete - TIER_MB.everything - MDX_TIER_MB, urls: LANG_URLS },
+    ai: { label: 'AI vocal separation', desc: 'Split a song into separate vocal and instrumental stems, on your device.', mb: MDX_TIER_MB, urls: MDX_OFFLINE_URLS },
+  };
+  TIERS.complete = LANG_URLS.concat(MDX_OFFLINE_URLS);
+  // Built lazily the first time the Complete popup opens.
+  let featPopup = null;
+  const featButtons = {};
 
   // Shared note under the download buttons (created on first use), used to report
   // any files that failed to download. Pass '' to clear it.
@@ -262,6 +282,15 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   }
   function writeOfflineState(state) {
     try { localStorage.setItem('anr-offline', JSON.stringify(state)); } catch (_) {}
+  }
+  // Which optional Complete-popup packs (languages / ai) are cached, at what app
+  // version. Separate from the tier record so a pack can be held on its own.
+  function readFeatState() {
+    try { return JSON.parse(localStorage.getItem('anr-offline-feat') || '{}') || {}; }
+    catch (_) { return {}; }
+  }
+  function writeFeatState(state) {
+    try { localStorage.setItem('anr-offline-feat', JSON.stringify(state)); } catch (_) {}
   }
 
   // Probe the offline cache for the highest tier actually present, by checking a
@@ -352,7 +381,14 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
         if (sizeEl) sizeEl.textContent = cachedIdx >= 0 ? '+~' + (TIER_MB[tier] - cachedMb) + ' MB' : TIER_SIZES[tier];
       }
     });
+    refreshCompleteButton();
   }
+
+  // Live AbortControllers for in-progress tier downloads, so "Clear storage" can
+  // stop them before wiping the cache they are writing into - otherwise a running
+  // download keeps repopulating the just-cleared cache and records the tier as
+  // cached again, making the clear look inert.
+  const activeDownloads = new Set();
 
   // Download (or, with force, re-download) every file in a tier into the
   // 'analyser-offline' cache, driving the button's progress bar. Records the
@@ -360,10 +396,12 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   // download clears the record (so the button offers a retry), but the automatic
   // version-refresh (auto) leaves the existing cached record untouched - a flaky
   // network must not downgrade a tier the user already has fully cached.
-  async function downloadTier(btn, { force = false, auto = false } = {}) {
-    if (btn.classList.contains('is-active')) return false;
-    const tier = btn.dataset.tier;
-    const urls = tierUrls(tier);
+  // Core cache loop shared by tier and feature-pack downloads: fetch every URL
+  // into the 'analyser-offline' cache, driving the button's progress bar. Returns
+  // the outcome so the caller records the right state (a tier vs a pack) itself.
+  async function runCacheLoop(btn, urls, force) {
+    const abort = new AbortController();
+    activeDownloads.add(abort);
 
     btn.classList.add('is-active');
     btn.classList.remove('is-done', 'is-fading');
@@ -391,6 +429,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
     let done = 0, failed = 0;
     const failedUrls = [];
     for (const url of urls) {
+      if (abort.signal.aborted) break;   // Clear storage cancelled us mid-run
       let ok = false;
       try {
         // force re-fetches even cached entries (used by the daily version
@@ -399,8 +438,8 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
         if (exists) {
           ok = true;
         } else {
-          const resp = await fetch(url, { mode: url.startsWith('http') ? 'cors' : 'same-origin' })
-            .catch(() => fetch(url, { mode: 'no-cors' }));
+          const resp = await fetch(url, { mode: url.startsWith('http') ? 'cors' : 'same-origin', signal: abort.signal })
+            .catch(() => fetch(url, { mode: 'no-cors', signal: abort.signal }));
           // Opaque (cross-origin no-cors) responses report ok=false but are
           // still cacheable; only a same-origin non-ok counts as a real failure.
           if (resp && (resp.type === 'opaque' || resp.ok)) {
@@ -415,37 +454,159 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       sizeEl.textContent = done + ' / ' + urls.length;
     }
 
+    activeDownloads.delete(abort);
     btn.classList.remove('is-active');
-    setBar(1);
+    return { aborted: abort.signal.aborted, failed, failedUrls, total: urls.length, setBar, sizeEl };
+  }
+
+  // Name the files that failed so a single bad URL (offline asset, blocked CDN) is
+  // identifiable rather than just a count. Basenames, capped so a mass failure
+  // doesn't flood the status line. Leaves the button enabled for a retry.
+  function reportDownloadFailure(r) {
+    r.sizeEl.textContent = 'Try again';
+    const shortName = (u) => { try { return decodeURIComponent(u.split('?')[0].split('/').pop()) || u; } catch (_) { return u; } };
+    const names = r.failedUrls.map(shortName);
+    const shown = names.slice(0, 8).join(', ') + (names.length > 8 ? ', +' + (names.length - 8) + ' more' : '');
+    setOfflineStatus(r.failed + ' of ' + r.total + ' file' + (r.total === 1 ? '' : 's') +
+      ' failed to download (' + shown + '). You may be offline or a server was unreachable - try again to finish.');
+  }
+
+  // Download (or, with force, re-download) a cumulative tier into the offline cache.
+  async function downloadTier(btn, { force = false, auto = false } = {}) {
+    if (btn.classList.contains('is-active')) return false;
+    const tier = btn.dataset.tier;
+    const r = await runCacheLoop(btn, tierUrls(tier), force);
+    if (r.aborted) return false;   // Clear storage cancelled us: it resets the UI itself
+    r.setBar(1);
     const state = readOfflineState();
-    if (failed > 0) {
-      // Automatic version-refresh: a transient failure (a flaky network on the
-      // post-update auto-reload) must NOT tear down a tier the user already has
-      // cached. Keep the saved record and repaint the "Cached" badge at its stored
-      // version - the existing files stay fully usable - and let the next load retry.
+    if (r.failed > 0) {
+      // Automatic version-refresh must NOT tear down a tier the user already has
+      // fully cached over a transient network failure - keep the record and retry
+      // next load. A user-initiated attempt drops the record so it offers a retry.
       if (auto) { refreshTierButtons(); return false; }
-      // Leave the button enabled (no is-done) so the user can retry the rest,
-      // and drop any stale "cached" record for this tier.
-      sizeEl.textContent = 'Try again';
-      // Name the files that failed so a single bad URL (offline asset, blocked CDN)
-      // is identifiable rather than just a count. Show basenames, capped so a mass
-      // failure doesn't flood the status line.
-      const shortName = (u) => { try { return decodeURIComponent(u.split('?')[0].split('/').pop()) || u; } catch (_) { return u; } };
-      const names = failedUrls.map(shortName);
-      const shown = names.slice(0, 8).join(', ') + (names.length > 8 ? ', +' + (names.length - 8) + ' more' : '');
-      setOfflineStatus(failed + ' of ' + urls.length + ' file' + (urls.length === 1 ? '' : 's') +
-        ' failed to download (' + shown + '). You may be offline or a server was unreachable - try again to finish.');
+      reportDownloadFailure(r);
       delete state[tier];
       writeOfflineState(state);
       return false;
     }
-    sizeEl.textContent = 'Cached';
+    r.sizeEl.textContent = 'Cached';
     state[tier] = COMMIT_COUNT;
     writeOfflineState(state);
     // Refresh ALL buttons: this one gets its badge, lower tiers grey out as "Included",
     // higher tiers switch to the "+N MB more" upgrade delta.
     refreshTierButtons();
     return true;
+  }
+
+  // Download one optional feature pack (Languages / AI) from the Complete popup,
+  // on top of the Everything base (already-cached base files come free from the
+  // loop's cache.match). Completing both packs crowns the "Complete" tier.
+  async function downloadFeature(btn, key) {
+    if (btn.classList.contains('is-active')) return false;
+    const feat = FEATURES[key];
+    if (!feat) return false;
+    const r = await runCacheLoop(btn, tierUrls('everything').concat(feat.urls), false);
+    if (r.aborted) return false;
+    r.setBar(1);
+    if (r.failed > 0) { reportDownloadFailure(r); return false; }
+    r.sizeEl.textContent = 'Cached';
+    // The Everything base is cached now too - record it, this pack, and the whole
+    // Complete tier once both packs are in.
+    const state = readOfflineState();
+    state.essentials = COMMIT_COUNT;
+    state.everything = COMMIT_COUNT;
+    const feats = readFeatState();
+    feats[key] = COMMIT_COUNT;
+    writeFeatState(feats);
+    if (FEATURE_ORDER.every(k => feats[k] != null)) state.complete = COMMIT_COUNT;
+    writeOfflineState(state);
+    refreshTierButtons();
+    refreshFeatureButtons();
+    return true;
+  }
+
+  // Paint each feature button in the popup from the saved pack state.
+  function refreshFeatureButtons() {
+    const feats = readFeatState();
+    FEATURE_ORDER.forEach((key) => {
+      const btn = featButtons[key];
+      if (!btn || btn.classList.contains('is-active')) return;
+      const sizeEl = btn.querySelector('.offline-size');
+      const bar = btn.querySelector('.offline-bar');
+      if (feats[key] != null) {
+        if (sizeEl) sizeEl.textContent = 'Cached';
+        markCached(btn, feats[key]);
+      } else {
+        cachedBadge(btn).hidden = true;
+        btn.classList.remove('is-done', 'is-fading', 'is-included');
+        if (bar) bar.hidden = true;
+        if (sizeEl) sizeEl.textContent = '~' + FEATURES[key].mb + ' MB';
+      }
+    });
+  }
+
+  // The Complete button opens the feature popup rather than downloading directly.
+  // refreshTierButtons paints it as a tier (Cached / +N MB); when only one of the
+  // two packs is cached, show the pack count so the partial state reads at a glance.
+  function refreshCompleteButton() {
+    const btn = document.querySelector('.offline-options .offline-btn[data-tier="complete"]');
+    if (!btn || btn.classList.contains('is-active')) return;
+    const state = readOfflineState();
+    if (state.complete != null) return;   // fully cached: keep the "Cached" badge
+    const feats = readFeatState();
+    const have = FEATURE_ORDER.filter(k => feats[k] != null).length;
+    if (!have) return;                     // nothing yet: keep the size / upgrade label
+    const sizeEl = btn.querySelector('.offline-size');
+    if (sizeEl) sizeEl.textContent = have + ' of ' + FEATURE_ORDER.length + ' packs';
+    btn.classList.remove('is-done', 'is-fading', 'is-included');
+    cachedBadge(btn).hidden = true;
+  }
+
+  // The Complete popup: two optional packs on top of Everything, each a real
+  // offline-btn (progress + Cached badge). Built once, on first open. Reuses the
+  // .anr-modal overlay pattern (Escape / backdrop close, one at a time).
+  function closeFeaturePopup() {
+    if (!featPopup) return;
+    featPopup.classList.remove('is-open');
+    document.removeEventListener('keydown', featPopup._onKey);
+  }
+  function buildFeaturePopup() {
+    if (featPopup) return;
+    const closeBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, 'Close');
+    const list = el('div', { class: 'offline-feat-list' });
+    FEATURE_ORDER.forEach((key) => {
+      const f = FEATURES[key];
+      const btn = el('button', { type: 'button', class: 'offline-btn offline-feat-btn', 'data-feature': key }, [
+        el('span', { class: 'offline-tier' }, f.label),
+        el('span', { class: 'offline-desc' }, f.desc),
+        el('span', { class: 'offline-size' }, '~' + f.mb + ' MB'),
+        el('div', { class: 'offline-bar', hidden: true }, el('div', { class: 'offline-bar-fill' })),
+      ]);
+      btn.addEventListener('click', () => {
+        if (btn.classList.contains('is-active') || btn.classList.contains('is-done')) return;
+        downloadFeature(btn, key);
+      });
+      featButtons[key] = btn;
+      list.appendChild(btn);
+    });
+    const card = el('div', { class: 'anr-modal-card offline-feat-card' }, [
+      el('p', { class: 'anr-modal-kicker' }, 'Complete'),
+      el('p', { class: 'anr-modal-title' }, 'Extra downloads'),
+      el('p', { class: 'offline-feat-note' }, 'Optional packs, added on top of the Everything download. Pick what you need - each one works fully offline once cached.'),
+      list,
+      el('div', { class: 'anr-modal-actions' }, [closeBtn]),
+    ]);
+    featPopup = el('div', { class: 'anr-modal offline-feat-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Extra downloads' }, card);
+    document.body.appendChild(featPopup);
+    featPopup._onKey = (e) => { if (e.key === 'Escape') closeFeaturePopup(); };
+    closeBtn.addEventListener('click', closeFeaturePopup);
+    featPopup.addEventListener('click', (e) => { if (e.target === featPopup) closeFeaturePopup(); });
+  }
+  function openFeaturePopup() {
+    buildFeaturePopup();
+    refreshFeatureButtons();
+    document.addEventListener('keydown', featPopup._onKey);
+    requestAnimationFrame(() => featPopup.classList.add('is-open'));
   }
 
   // The help-panel legend always shows the absolute per-tier totals (it describes the
@@ -460,7 +621,15 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   // for upgrades), so let refreshTierButtons own them - it reads the saved state.
   refreshTierButtons();
 
-  document.querySelectorAll('.offline-btn').forEach(btn => {
+  document.querySelectorAll('.offline-options .offline-btn').forEach(btn => {
+    // The Complete tier opens the feature-pack popup instead of downloading directly.
+    if (btn.dataset.tier === 'complete') {
+      btn.addEventListener('click', () => {
+        if (btn.classList.contains('is-active')) return;
+        openFeaturePopup();
+      });
+      return;
+    }
     btn.addEventListener('click', () => {
       if (btn.classList.contains('is-active') || btn.classList.contains('is-done')) return;
       downloadTier(btn, { force: false });
@@ -562,6 +731,11 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   if (clearBtn) {
     clearBtn.addEventListener('click', async () => {
       clearBtn.textContent = 'Clearing…';
+      // Stop any in-progress tier download first: abort cancels its in-flight fetch
+      // and the loop check bails out, so it can't keep writing into the cache we are
+      // about to delete or record the tier as cached after the wipe.
+      for (const ac of activeDownloads) { try { ac.abort(); } catch (_) {} }
+      activeDownloads.clear();
       // Preserve the kept keys, wipe localStorage + sessionStorage, restore them.
       const KEEP = ['anr-theme', 'anr-theme:ts', 'anr-asteroids-hi', 'anr-asteroids-bestwave'];
       const kept = {};
@@ -594,6 +768,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
         if (badge) badge.hidden = true;
       });
       refreshTierButtons();
+      refreshFeatureButtons();   // the anr-offline-feat record went with localStorage.clear()
       offlineUserToggled = false;
       applyDefaultOfflineCollapse();
       renderHistoryPanel();   // history lived in localStorage - now wiped

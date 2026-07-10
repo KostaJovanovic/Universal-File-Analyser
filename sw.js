@@ -1,7 +1,8 @@
 ﻿/* Analyser - service worker
-   Precache the app shell; stale-while-revalidate the rest. */
+   Precache the app shell; serve everything cache-first (version-epoched cache, so
+   a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v194';
+const VERSION = 'analyser-v195';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -104,6 +105,11 @@ const SHELL = [
   './assets/js/lib/legacy-decompress.js',
   './assets/js/lib/nrbf.js',
   './assets/js/lib/ghostscript-loader.js',
+  './assets/js/lib/mdx-model.js',
+  './assets/js/lib/mdx-stft.js',
+  './assets/js/lib/mdx-separate.js',
+  './assets/js/lib/mdx-client.js',
+  './assets/js/lib/mdx-worker.js',
   './assets/js/parsers/parsers-dev.js',
   './assets/js/parsers/parsers-archive.js',
   './assets/js/parsers/parsers-email.js',
@@ -239,16 +245,24 @@ self.addEventListener('fetch', (e) => {
   // which the /stats page handles) instead of being served a stale cached copy.
   if (url.pathname.startsWith('/api/')) return;
 
+  // Cache-FIRST, not stale-while-revalidate: a cache hit is returned without any
+  // background network fetch. The cache is version-epoched (VERSION bumps every
+  // deploy; activate drops the old cache and install precaches the new SHELL), so a
+  // cached entry is always the current build's - there is nothing to revalidate.
+  // The old always-on revalidation fired a network request for EVERY asset on every
+  // load (~200 files); through the service worker that overhead is what made a warm
+  // load crawl on Chromium/Edge while staying instant on Firefox. Only a cache MISS
+  // touches the network, and the fresh response is cached under the current version.
   e.respondWith(
     caches.match(req).then((cached) => {
-      const fetched = fetch(req).then((res) => {
+      if (cached) return cached;
+      return fetch(req).then((res) => {
         if (res && (res.status === 200 || res.type === 'opaque')) {
           const copy = res.clone();
           caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
         }
         return res;
-      }).catch(() => cached);
-      return cached || fetched;
+      });
     })
   );
 });

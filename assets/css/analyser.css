@@ -133,6 +133,139 @@ body::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cline x1='0' y1='24' x2='15' y2='24' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='33' y1='24' x2='48' y2='24' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='24' y1='0' x2='24' y2='15' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='24' y1='33' x2='24' y2='48' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='19' y1='24' x2='29' y2='24' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='24' y1='19' x2='24' y2='29' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3C/svg%3E");
 }
 
+/* ---------- BOOT SPLASH ----------
+   Covers the page until the app's JS runs boot() (app.js adds .is-done, then
+   removes the node after the fade). Themed through the tokens so it flips with
+   data-theme. Every animation here is a compositor-only transform/opacity so it
+   keeps moving even while the heavy module graph parses on the main thread - an
+   rAF loop would stall. Echoes the site's signature ASCII bracket-bar loader and
+   the wordmark, with a forensic scan line sweeping the letters. */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  opacity: 1;
+  transition: opacity 0.5s ease;
+}
+.splash.is-done { opacity: 0; pointer-events: none; }
+/* Skip the splash on Firefox (grid/scan animation snaps there); flag set in <head>. */
+:root[data-ff="1"] .splash { display: none; }
+/* Same faint drifting grid as body::before (which the splash covers), so the boot
+   screen shares the page's backdrop. Dark variant + reduced-motion handled below. */
+.splash::before {
+  content: '';
+  position: absolute;
+  inset: -72px;
+  z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cline x1='0' y1='24' x2='15' y2='24' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='33' y1='24' x2='48' y2='24' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='24' y1='0' x2='24' y2='15' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='24' y1='33' x2='24' y2='48' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='19' y1='24' x2='29' y2='24' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3Cline x1='24' y1='19' x2='24' y2='29' stroke='%23000' stroke-opacity='0.07' stroke-width='0.75'/%3E%3C/svg%3E");
+  background-size: 72px 72px;
+  animation: bg-drift 24s linear infinite;
+  will-change: transform;
+  pointer-events: none;
+}
+:root[data-theme="dark"] .splash::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cline x1='0' y1='24' x2='15' y2='24' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='33' y1='24' x2='48' y2='24' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='24' y1='0' x2='24' y2='15' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='24' y1='33' x2='24' y2='48' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='19' y1='24' x2='29' y2='24' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3Cline x1='24' y1='19' x2='24' y2='29' stroke='%23fff' stroke-opacity='0.12' stroke-width='0.75'/%3E%3C/svg%3E");
+}
+.splash-inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  padding: 0 var(--pad-x);
+}
+.splash-kicker {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* Wordmark, clipped so the scan line can only travel within the letters. font-size
+   is set here (not just on the child) so the em padding scales with the wordmark -
+   the bottom padding has to clear the "y" descender or overflow:hidden crops it. */
+.splash-word {
+  position: relative;
+  overflow: hidden;
+  font-size: var(--t-huge);
+  padding: 0.08em 0.05em 0.22em;
+}
+.splash-word-text {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: var(--t-huge);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 0.9;
+  color: var(--fg);
+  /* Hidden until the Font Loading API confirms Geist is ready (script in
+     index.html adds .is-fontready), so the wordmark never flashes the fallback
+     font and swaps to Geist mid-splash. */
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.splash.is-fontready .splash-word-text { opacity: 1; }
+/* Accent "scanner" line sweeping top-to-bottom over the wordmark. font-size ties
+   the sweep distance to the wordmark height, so it tracks the responsive type. */
+.splash-scan {
+  position: absolute;
+  left: -4%;
+  right: -4%;
+  top: 0;
+  font-size: var(--t-huge);
+  height: 0.1em;
+  background: var(--accent);
+  box-shadow: 0 0 14px 1px rgb(var(--accent-rgb) / 0.7);
+  will-change: transform, opacity;
+  animation: splash-scan 2.1s cubic-bezier(0.9, 0, 0.1, 1) infinite;
+}
+@keyframes splash-scan {
+  0%   { transform: translateY(-0.1em); opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translateY(1.05em); opacity: 0; }
+}
+/* The site's signature loader: a solid block of accent slashes bouncing between
+   brackets ([////   ]). Reuses the anr-css-bar-bounce keyframes. */
+.splash-bar {
+  display: flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.splash-bar-track {
+  position: relative;
+  width: min(220px, 62vw);
+  height: 1.2em;
+  overflow: hidden;
+  margin: 0 8px;
+}
+.splash-bar-win {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 25%;
+  white-space: pre;
+  overflow: hidden;
+  color: var(--accent);
+  will-change: transform;
+  animation: anr-css-bar-bounce 1.9s steps(16, jump-none) infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash-scan { animation: none; opacity: 0.85; }
+  .splash-bar-win { animation: none; }
+}
+
 /* No-JavaScript warning. Analyser is a browser-only app driven entirely by
    JavaScript, so with it disabled nothing works - this full-bleed accent banner
    makes that obvious. Only ever rendered inside <noscript>. */
@@ -2578,20 +2711,59 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   border-top: 1px dashed var(--accent);
   border-bottom: 1px dashed var(--accent);
 }
+/* Karaoke (Remove vocals) is a stereo centre-cancel with no single band, but the
+   removed energy that matters is the vocal, so we draw the deadzone over the vocal
+   range (top/height set in JS) using the same "cut" treatment as a band. */
+.anr-spec-karaoke {
+  position: absolute;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(230, 0, 35, 0.16) 0, rgba(230, 0, 35, 0.16) 6px,
+    rgba(0, 0, 0, 0.28) 6px, rgba(0, 0, 0, 0.28) 12px);
+  border-top: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+  backdrop-filter: saturate(0.12) brightness(0.55);
+  -webkit-backdrop-filter: saturate(0.12) brightness(0.55);
+}
 .anr-spec-canvas-wrap.anr-spec-isolating { touch-action: none; }
 .anr-spec-isolating .anr-spec-canvas { cursor: ns-resize; }
 
 /* Control panel under the actions row: band list + numeric editing. */
 .anr-iso-panel {
-  border-bottom: var(--bd-hairline);
+  /* No border-bottom: the Analysis header right below supplies its own
+     border-top, so a bottom border here would double it up. */
   padding: 10px 0 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
 }
 .anr-iso-panel.is-hidden { display: none; }
-.anr-iso-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Two labelled tiers: EQ isolation (presets + manual bands) and the AI
+   separator. Each tier stacks its own controls; the AI tier is fenced off with
+   a hairline so it doesn't read as more of the same EQ chips. */
+.anr-iso-sec { display: flex; flex-direction: column; gap: 9px; }
+.anr-iso-sec-ai {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: var(--bd-hairline);
+}
+.anr-iso-seclabel {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* Subtle within-tier divider between the one-click presets and the manual band
+   tools - lighter than the section hairline so the bigger break still reads. */
+.anr-iso-rule { height: 1px; background: var(--hairline); opacity: 0.45; }
+.anr-iso-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .anr-iso-presets:empty { display: none; }
+.anr-iso-preset-clear { margin-left: auto; }   /* floats Clear to the row's right */
 .anr-iso-hint { margin: 0; }
 .anr-iso-list { display: flex; flex-direction: column; gap: 6px; }
 .anr-iso-list:empty { display: none; }
@@ -2613,7 +2785,111 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 }
 .anr-iso-sep,
 .anr-iso-unit { color: var(--muted); }
-.anr-iso-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.anr-iso-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.anr-iso-draghint { color: var(--muted); font-size: var(--t-small); }
+.anr-iso-export { margin-left: auto; }   /* Download WAV floats right, opposite + Custom band */
+
+/* The AI separator is a plain white button (default .anr-btn look). It sits in
+   its own labelled "Separate" tier, so it doesn't need colour to stand apart -
+   and align-self stops the flex column from stretching it edge to edge (which
+   would centre its text and box it against the dividers). */
+.anr-iso-ai { align-self: flex-start; }
+
+/* The Isolate toggle wears an accent border so it stands out in the Actions row
+   as the gateway to the whole isolate/separate panel. (When toggled on it fills
+   accent via .is-active.) */
+.anr-iso-toggle { border-color: var(--accent); }
+
+/* AI vocal separation: status + determinate progress bar, the one-off size
+   warning, and the resulting stem rows (label + native player + download). */
+.anr-iso-aistatus {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+}
+.anr-iso-aistatus[hidden] { display: none; }
+.anr-iso-aimsg { color: var(--muted); }
+.anr-iso-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+}
+.anr-iso-confirm p { margin: 0; color: var(--fg); }
+.anr-iso-confirm-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.anr-iso-stems { display: flex; flex-direction: column; gap: 14px; }
+.anr-iso-stems:empty { display: none; }
+.anr-iso-stem { display: flex; flex-direction: column; gap: 8px; }
+.anr-iso-stem-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.anr-iso-stem-label {
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  color: var(--fg);
+  min-width: 84px;
+}
+/* Let the shared custom player take the free space in the row. */
+.anr-iso-stem-head .anr-player { flex: 1 1 260px; min-width: 0; }
+.anr-iso-stem-spec[hidden] { display: none; }
+.anr-iso-stem-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: var(--bd-hairline);
+  image-rendering: pixelated;
+}
+
+/* ---- Blend playground: vocals <-> instrumental slider that morphs the MAIN
+   spectrogram (no canvas of its own) and crossfades the two stems. ---- */
+/* Mount between the scrubber and the actions row; only takes up space once the
+   blend slider lands in it (after AI separation). */
+.anr-blend-mount:not(:empty) { margin-top: 12px; }
+.anr-blend { display: flex; flex-direction: column; gap: 10px; }
+.anr-blend-head { display: flex; align-items: baseline; gap: 10px; }
+.anr-blend-tag {
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.anr-blend-note { margin: 0; }
+.anr-blend-transport { display: flex; align-items: center; gap: 12px; }
+.anr-blend-time {
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.anr-blend-sliderrow { display: flex; align-items: center; gap: 12px; }
+.anr-blend-end {
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* The slider wrap holds the centre tick (position:relative anchor) and fills the
+   row; unlike the sensitivity slider's wrap it isn't fixed to 120px. */
+.anr-blend-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.anr-blend-slider { flex: 1 1 auto; width: 100%; min-width: 0; }
+/* Centre slit lights up when the pointer is over its snap zone (class toggled in
+   renderBlend, since the tick is pointer-events:none and can't :hover itself). */
+.anr-blend-wrap .anr-range-tick { transition: height .12s ease, background-color .12s ease; }
+.anr-blend-wrap.is-mid-hover { cursor: pointer; }
+.anr-blend-wrap.is-mid-hover .anr-range-tick { height: 16px; background: var(--accent); }
 
 /* Segmented control groups (View / Resolution / Actions) - a captioned cluster
    with a hairline divider on its left edge. align-self:stretch makes the divider
@@ -6050,6 +6326,54 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-modal-cancel:hover { background: var(--surface); }
 .anr-modal-ok { background: var(--fg); color: var(--bg); }
 .anr-modal-ok:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
+/* ---------- COMPLETE-TIER FEATURE POPUP ----------
+   The Complete download opens this picker instead of downloading directly: two
+   optional packs (Languages, AI vocal separation), each a real .offline-btn with
+   its own progress bar + Cached badge, added on top of the Everything download.
+   The card is dark to match the footer's always-dark offline band, so the reused
+   .offline-btn colours (white-on-dark) read correctly in both light and dark. */
+.offline-feat-card {
+  max-width: 460px;
+  background: var(--media-bg);
+  border: 1px solid var(--hairline-on-dark);
+  color: var(--on-dark);
+}
+/* This popup is built once and reused (toggled via .is-open), unlike the modals
+   that are created fresh and removed on close - so when closed it lingers in the
+   DOM. Make the closed overlay inert (it's a fixed, full-screen box) or its
+   opacity:0 self silently swallows every click across the whole page. visibility
+   is delayed so the 0.18s opacity fade-out still plays. */
+.offline-feat-modal:not(.is-open) {
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 0.18s ease, visibility 0s linear 0.18s;
+}
+.offline-feat-card .anr-modal-kicker { color: var(--muted-on-dark); }
+.offline-feat-card .anr-modal-title { color: var(--on-dark); margin-bottom: 14px; }
+.offline-feat-note {
+  margin: 0 0 20px;
+  font-family: var(--font-sans);
+  font-size: var(--t-small);
+  line-height: 1.45;
+  color: var(--white-a80);
+}
+.offline-feat-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 22px; }
+.offline-feat-list .offline-btn { width: 100%; }
+/* Keep each pack's description visible in the popup even on mobile - the footer
+   grid hides .offline-desc there for space, but a modal has room (higher
+   specificity beats the media-query rule, no !important needed). */
+.offline-feat-list .offline-desc { display: block; }
+.offline-feat-card .anr-modal-cancel {
+  background: transparent;
+  color: var(--white-a80);
+  border-color: var(--border-on-dark);
+}
+.offline-feat-card .anr-modal-cancel:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-on-dark-strong);
+  color: var(--on-dark);
+}
 
 /* Export chooser (see export-data.js showChooser): two stacked, left-aligned
    options - a strong title over a small grey description - above the Cancel

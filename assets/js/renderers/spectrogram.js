@@ -328,6 +328,82 @@ export function computeReassignedSpectrogram(samples, sampleRate, options = {}) 
   return { frames, bins, sampleRate, fftSize: N, hopSize, data, dbMin, dbMax };
 }
 
+// ---------- COMPLEX STFT (real-time stem crossfade) ----------
+/**
+ * Like computeSpectrogram, but keeps the raw complex bins (re/im) instead of
+ * collapsing each to a dB magnitude.
+ *
+ * The point: the STFT is LINEAR. Two signals analysed on the *same* grid
+ * (same fftSize / hop / window / length) can be linearly recombined bin by bin,
+ * and the magnitude of that recombination is the EXACT spectrogram of the
+ * recombined time-domain signal - no second FFT needed. For MDX stems this is
+ * especially clean because vocals + instrumental === original by construction,
+ * so at the "normal" mix the recombined magnitude is exactly |original|.
+ *
+ * That is what powers the vocal<->instrumental blend slider: analyse both stems
+ * once (here), then on every slider move just recombine + take magnitude
+ * (combineStftToDb) - cheap enough to redraw in real time.
+ *
+ *   returns { frames, bins, sampleRate, fftSize, hopSize, re, im, norm }
+ *     re / im : row-major Float32Array(frames*bins); cell (f,b) at f*bins + b
+ *     norm    : window-sum normalization (magnitude = hypot(re,im) * norm * 2)
+ */
+export function computeStftComplex(samples, sampleRate, options = {}) {
+  const fftSize = options.fftSize || 2048;
+  const hopSize = options.hopSize || Math.floor(fftSize / 4);
+  const winName = options.window  || 'hann';
+  const win     = (windows[winName] || windows.hann)(fftSize);
+
+  if (samples.length < fftSize) {
+    return { frames: 0, bins: 0, sampleRate, fftSize, hopSize, re: new Float32Array(0), im: new Float32Array(0), norm: 1 };
+  }
+
+  const bins   = fftSize / 2;
+  const frames = 1 + Math.floor((samples.length - fftSize) / hopSize);
+  const re     = new Float32Array(frames * bins);
+  const im     = new Float32Array(frames * bins);
+
+  let winSum = 0;
+  for (let i = 0; i < fftSize; i++) winSum += win[i];
+  const norm = 1 / Math.max(winSum, 1e-9);
+
+  const fr = new Float32Array(fftSize);
+  const fi = new Float32Array(fftSize);
+
+  for (let f = 0; f < frames; f++) {
+    const start = f * hopSize;
+    for (let i = 0; i < fftSize; i++) { fr[i] = samples[start + i] * win[i]; fi[i] = 0; }
+    fft(fr, fi);
+    const row = f * bins;
+    for (let b = 0; b < bins; b++) { re[row + b] = fr[b]; im[row + b] = fi[b]; }
+  }
+  return { frames, bins, sampleRate, fftSize, hopSize, re, im, norm };
+}
+
+/**
+ * Recombine two complex STFTs (a, b - same grid from computeStftComplex) with
+ * per-stem gains into a dB spectrogram, written into `out` (a reused
+ * Float32Array(frames*bins), so a slider drag allocates nothing). Returns a
+ * { frames, bins, sampleRate, data } spec ready for renderSpectrogram.
+ */
+export function combineStftToDb(a, b, gainA, gainB, out) {
+  // Guard against any grid mismatch between the two stems: iterate only the
+  // cells both actually have (a length overrun would read `undefined` -> NaN ->
+  // an all-black image). frames is derived from what was filled.
+  const n = Math.min(a.re.length, b.re.length, out.length);
+  // Work in power: 20*log10(|z|*k) == 10*log10(|z|^2 * k^2), which drops the
+  // per-cell sqrt (this loop runs on every slider move, so it matters).
+  const k2 = (a.norm * 2) * (a.norm * 2);
+  const are = a.re, aim = a.im, bre = b.re, bim = b.im;
+  for (let i = 0; i < n; i++) {
+    const rr = gainA * are[i] + gainB * bre[i];
+    const ii = gainA * aim[i] + gainB * bim[i];
+    out[i] = 10 * Math.log10((rr * rr + ii * ii) * k2 + 1e-20);
+  }
+  const frames = a.bins ? Math.floor(n / a.bins) : 0;
+  return { frames, bins: a.bins, sampleRate: a.sampleRate, data: out };
+}
+
 // ---------- COLORMAPS ----------
 // Each returns [r,g,b] for t in [0,1]
 function lerp(a, b, t) { return a + (b - a) * t; }
