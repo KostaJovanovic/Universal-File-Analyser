@@ -27,3 +27,9 @@ worker/
 
 # Repo docs (not part of the app)
 README.md
+
+# Native app (Tauri shell) - lives entirely in native/, never served by the
+# website. One line keeps all of it (node_modules, src-tauri + its multi-GB build
+# artifacts, dist, the WASM cache) off lab.valjdakosta.com and clear of the 25 MiB cap.
+native/
+.github/

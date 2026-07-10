@@ -1329,6 +1329,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         // A tap with no vertical drag: seek to the clicked time, like a normal click.
         const r = canvas.getBoundingClientRect();
         const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        if (blendActive && blendSeek) { blendSeek(frac); return; }  // blend owns the transport - move its playhead
         opts.audioEl.currentTime = frac * (opts.audioEl.duration || (samples.length / sampleRate));
       }
     };

@@ -11,17 +11,114 @@ import { el, fmtBytes, row } from './util.js';
 // The only network calls this otherwise fully-local tool ever makes. They send
 // NOTHING about your file's contents or name - just the lowercase extension
 // string ("jpg") and an increment - to the stats Worker (worker/index.js). Every
-// call is fire-and-forget and swallowed, so a failure (offline, blocked, or local
-// `server.bat` with no real API) never touches analysis. Details on /privacy.
+// call is best-effort and swallowed, so a failure never touches analysis.
+// Details on /privacy.
+//
+// Offline-durable: if a ping can't be delivered (offline, blocked, throttled, or
+// a local `server.bat` with no real API) the event is queued in localStorage and
+// re-sent the next time we're online - so a file analysed on a plane still gets
+// counted once connectivity returns. The queue holds only { ext, supported } -
+// the same two fields the live ping sends, never bytes or filenames. This is the
+// only place the native desktop/mobile apps and the website share for analytics,
+// so the offline queue benefits every platform.
+// Where the ping goes. On the web it is same-origin (relative). A *production*
+// native build loads from the Tauri asset protocol (tauri.localhost / tauri:),
+// which has no /api server, so it must target the live site instead. In `tauri
+// dev` the page is served from http://localhost:3000 (serve.py, which mocks
+// /api), so we deliberately keep it relative there - dev testing never touches
+// the production counters.
+const API_ORIGIN = (() => {
+  try {
+    if (typeof location !== 'undefined' && (location.protocol === 'tauri:' || location.hostname === 'tauri.localhost')) {
+      return 'https://lab.valjdakosta.com';
+    }
+  } catch (_) {}
+  return '';
+})();
+const ANALYSED_EP = API_ORIGIN + '/api/analysed';
+const ANALYTICS_QUEUE_KEY = 'anr-analytics-queue';
+const ANALYTICS_QUEUE_MAX = 500;    // ~15 KB cap; oldest dropped past this
+
+function readAnalyticsQueue() {
+  try {
+    const a = JSON.parse(localStorage.getItem(ANALYTICS_QUEUE_KEY) || '[]');
+    return Array.isArray(a) ? a : [];
+  } catch (_) { return []; }
+}
+
+function writeAnalyticsQueue(list) {
+  try {
+    // Keep the most recent items if we somehow overflow the cap.
+    localStorage.setItem(ANALYTICS_QUEUE_KEY, JSON.stringify(list.slice(-ANALYTICS_QUEUE_MAX)));
+  } catch (_) { /* storage full / disabled - analytics is best-effort */ }
+}
+
+function enqueueAnalysed(ext, supported) {
+  const q = readAnalyticsQueue();
+  q.push({ ext: ext || '', supported: !!supported });
+  writeAnalyticsQueue(q);
+}
+
+// POST one event. Resolves true only if the server actually recorded it (2xx and
+// not rate-limited); false means "try again later" (offline, blocked, throttled).
+function postAnalysed(ext, supported) {
+  return fetch(ANALYSED_EP, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ext: ext || '', supported: !!supported }),
+    keepalive: true,
+  }).then((resp) => {
+    if (!resp || !resp.ok) return false;
+    return resp.json().then((d) => !(d && d.throttled)).catch(() => true);
+  }).catch(() => false);
+}
+
+// Drain the backlog oldest-first. Stops at the first item the server won't accept
+// (offline / throttled) and leaves the rest queued for the next attempt, so we
+// never hammer a rate-limited or unreachable endpoint. Re-reads the queue each
+// pass so events enqueued mid-flush aren't lost.
+let _flushingAnalytics = false;
+export function flushAnalyticsQueue() {
+  if (_flushingAnalytics) return;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  if (!readAnalyticsQueue().length) return;
+  _flushingAnalytics = true;
+  (async () => {
+    try {
+      for (;;) {
+        const cur = readAnalyticsQueue();
+        if (!cur.length) break;
+        const ok = await postAnalysed(cur[0].ext, cur[0].supported);
+        if (!ok) break;                 // retry the rest next time
+        const after = readAnalyticsQueue();
+        after.shift();
+        writeAnalyticsQueue(after);
+      }
+    } finally { _flushingAnalytics = false; }
+  })();
+}
+
 export function recordAnalysed(ext, supported) {
   try {
-    fetch('/api/analysed', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ext: ext || '', supported: !!supported }),
-      keepalive: true,
-    }).catch(() => {});
-  } catch (_) {}
+    // Offline: skip the doomed request and bank it straight away.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      enqueueAnalysed(ext, supported);
+      return;
+    }
+    postAnalysed(ext, supported).then((ok) => {
+      if (ok) flushAnalyticsQueue();     // delivered - opportunistically drain backlog
+      else enqueueAnalysed(ext, supported);
+    });
+  } catch (_) { enqueueAnalysed(ext, supported); }
+}
+
+// Re-send anything banked while offline: as soon as connectivity returns, and
+// once shortly after load (deferred so it never competes with first paint).
+// Module-level so it binds exactly once - ES modules are singletons across SPA
+// navigations, so this doesn't need the boot() _once guard.
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', flushAnalyticsQueue);
+  setTimeout(() => { try { flushAnalyticsQueue(); } catch (_) {} }, 0);
 }
 
 // ---------- analysis history (on-device, metadata only) ----------
@@ -117,7 +214,7 @@ let _visitTotals = null;
 export async function recordVisit() {
   if (_visitTotals) return _visitTotals;
   try {
-    const resp = await fetch('/api/visit', {
+    const resp = await fetch(API_ORIGIN + '/api/visit', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: '{}',
