@@ -329,9 +329,11 @@ input:not([type="range"]):focus-visible,
 
 /* On displays wider than the 1440px content column there's empty margin on
    either side, which makes the page edges read as "floating". These two fixed
-   hairlines sit at the column's left/right edges and run the full height, from
-   the (sticky) navbar down, marking where the site ends. Only rendered once the
-   viewport is wider than the content, so narrower screens are unaffected. */
+   panels fill that outer margin with the page background - so the drifting grid
+   backdrop only shows WITHIN the column, never outside it - and draw the column's
+   left/right edge as a hairline on their inner border, running the full height
+   from the (sticky) navbar down. Only rendered once the viewport is wider than the
+   content, so narrower screens (grid fills the whole page) are unaffected. */
 @media (min-width: 1441px) {
   html::before,
   html::after {
@@ -339,13 +341,13 @@ input:not([type="range"]):focus-visible,
     position: fixed;
     top: 0;
     bottom: 0;
-    width: 1px;
-    background: var(--hairline);
+    width: calc(50% - 720px);
+    background: var(--bg);
     z-index: 25;
     pointer-events: none;
   }
-  html::before { left: calc(50% - 720px); }
-  html::after { right: calc(50% - 720px); }
+  html::before { left: 0; border-right: 1px solid var(--hairline); }
+  html::after { right: 0; border-left: 1px solid var(--hairline); }
 }
 
 /* ---------- HEADER ---------- */
@@ -7621,6 +7623,39 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
     flex: 1 1 auto;
     width: 100%;
   }
+  /* Actions row: the "|" separator (a bare grid cell here) is noise on the stacked
+     mobile grid - hide it, and give Isolate its own full-width row above the plain
+     Save PNG / Fullscreen actions so it reads as the primary tool. */
+  .anr-spec-card .anr-spec-actdiv { display: none; }
+  .anr-spec-card .anr-control:has(.anr-iso-toggle) { grid-column: 1 / -1; }
+
+  /* ---- Separate / Isolate panel: stack cleanly on a phone ---- */
+  /* On desktop the AI separator + EQ presets share one wrapping row
+     ([Separate vocals (AI)] | [Vocals][Bass][Drums][Remove vocals]   [Clear]).
+     On a narrow screen that orphans the "|", wraps the presets untidily and
+     floats Clear onto its own line - so stack the row into full-width blocks. */
+  .anr-iso-ai-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .anr-iso-seg-div { display: none; }                 /* divider is meaningless once stacked */
+  .anr-iso-ai { align-self: stretch; width: 100%; }   /* Separate button spans the row */
+  /* The four EQ presets sit in a tidy 2-up grid, each filling its cell. */
+  .anr-iso-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .anr-iso-presets .anr-btn { width: 100%; }
+  /* Clear (a sibling of the presets) drops its desktop right-float and becomes its
+     own full-width row beneath the grid. */
+  .anr-iso-preset-clear { margin-left: 0; width: 100%; }
+  /* AI model picker: label on its own line, the two tiers as a full-width 2-up. */
+  .anr-iso-modelrow { flex-direction: column; align-items: stretch; gap: 8px; }
+  .anr-iso-modelseg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .anr-iso-modelseg .anr-btn { width: 100%; }
+
+  /* AI stem result rows (Vocals / Instrumental): on desktop the label, scrubber
+     and Analyse / Download WAV sit inline on one row. On a phone that squeezes the
+     scrubber and wraps the buttons untidily - so stack them: label on its own line,
+     a full-width scrubber under it, then Analyse / Download WAV as a full-width
+     2-up (same as the preset grid). */
+  .anr-iso-stem-head .anr-iso-stem-label { flex: 0 0 100%; min-width: 0; }
+  .anr-iso-stem-head .anr-player { flex: 0 0 100%; margin-bottom: 0; }
+  .anr-iso-stem-head > .anr-btn { flex: 1 1 0; min-width: 0; }
 }
 
 /* ---------- GRABBABLE PLAYHEAD + SPECTROGRAM TRANSPORT ---------- */

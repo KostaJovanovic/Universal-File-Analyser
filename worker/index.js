@@ -23,9 +23,23 @@
 
 const VISIT_WINDOW = 3 * 24 * 60 * 60; // seconds - one counted visit per IP / 3 days
 
+// CORS: the website calls /api/* same-origin (no CORS needed), but the native app
+// loads from the Tauri asset origin (tauri://localhost / http://tauri.localhost)
+// and calls this API cross-origin - so every API response must carry these or the
+// browser drops it. The API is anonymous (no cookies/auth), so a wildcard origin is
+// safe. content-type: application/json on the POSTs makes them non-simple requests,
+// so browsers send a preflight OPTIONS first - handled in fetch() below.
+const CORS_HEADERS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, OPTIONS',
+  'access-control-allow-headers': 'content-type, accept',
+  'access-control-max-age': '86400',
+};
+
 const JSON_HEADERS = {
   'content-type': 'application/json; charset=utf-8',
   'cache-control': 'no-store',
+  ...CORS_HEADERS,
 };
 
 function json(data, status = 200) {
@@ -357,6 +371,9 @@ export default {
     // hand it straight back to the assets system, which applies the same
     // clean-URL + single-page-application fallback as a Worker-less deploy.
     if (!path.startsWith('/api/')) return env.ASSETS.fetch(request);
+
+    // CORS preflight for the native app's cross-origin POSTs (content-type: json).
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
 
     try {
       if (path === '/api/visit' && request.method === 'POST') return await handleVisit(request, env);
