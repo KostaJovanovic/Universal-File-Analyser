@@ -301,7 +301,11 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
     try {
       const cache = await caches.open('analyser-offline');
       const has = async (url) => !!(url && await cache.match(new Request(url)));
-      if (await has(TIERS.complete[TIERS.complete.length - 1])) return 'complete';
+      // Complete's sentinel is the AI model, which "Clear storage" can deliberately
+      // spare on its own; require an Everything-tier file too, so a lone kept model
+      // is not misread as a full Complete cache.
+      if (await has(TIERS.complete[TIERS.complete.length - 1])
+          && await has(TIERS.everything[TIERS.everything.length - 1])) return 'complete';
       if (await has(TIERS.everything[TIERS.everything.length - 1])) return 'everything';
       if (await has(TIERS.essentials[TIERS.essentials.length - 1])) return 'essentials';
     } catch (_) {}
@@ -753,6 +757,11 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       // about to delete or record the tier as cached after the wipe.
       for (const ac of activeDownloads) { try { ac.abort(); } catch (_) {} }
       activeDownloads.clear();
+      // If the user has downloaded any offline tier or feature pack, keep the AI
+      // vocal-separation files (the model + its ORT runtime) through the wipe -
+      // they are large and slow to refetch, and offline separation needs both.
+      // Read the record BEFORE localStorage.clear() below wipes it.
+      const keepAiModels = Object.keys(readOfflineState()).length > 0 || Object.keys(readFeatState()).length > 0;
       // Preserve the kept keys, wipe localStorage + sessionStorage, restore them.
       const KEEP = ['anr-theme', 'anr-theme:ts', 'anr-asteroids-hi', 'anr-asteroids-bestwave'];
       const kept = {};
@@ -772,9 +781,22 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       } catch (_) {}
       // Delete the downloaded offline tiers (their own Cache Storage bucket). The
       // SW app-shell cache is a separate bucket and stays. Without this the tier
-      // files survive and detectCachedTier()
-      // self-heals the "Cached" badge on the next load, so the clear looked inert.
-      try { await caches.delete('analyser-offline'); } catch (_) {}
+      // files survive and detectCachedTier() self-heals the "Cached" badge on the
+      // next load, so the clear looked inert.
+      // When a tier/pack is selected, spare the AI vocal-separation files (see
+      // keepAiModels above) so offline separation keeps working; everything else
+      // in the bucket still goes. detectCachedTier is hardened so a lone spared
+      // model isn't misread as a full Complete cache.
+      try {
+        if (keepAiModels) {
+          const cache = await caches.open('analyser-offline');
+          const keep = new Set(MDX_OFFLINE_URLS.map((u) => new URL(u, location.href).href));
+          const reqs = await cache.keys();
+          await Promise.all(reqs.map((r) => keep.has(new URL(r.url, location.href).href) ? Promise.resolve() : cache.delete(r)));
+        } else {
+          await caches.delete('analyser-offline');
+        }
+      } catch (_) {}
       // The 'anr-offline' record and the cached tier files are both gone now, so
       // repaint the tier buttons to un-cached.
       document.querySelectorAll('.offline-btn').forEach(b => {

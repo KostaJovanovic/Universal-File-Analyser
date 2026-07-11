@@ -3,12 +3,14 @@
    of truth (COMMIT_COUNT / RELEASE_COMMITS in assets/js/core/app.js), so desktop
    releases carry the SAME version the site shows.
 
-   The site renders major"."zero-padded-position - e.g. "6.0", "6.01", "6.03".
+   The site renders major"."zero-padded-position - e.g. "6.0", "6.01", "6.10".
    Tauri/Cargo need a strict semver MAJOR.MINOR.PATCH with no leading zeros, so
-   the site's "6.03" can't be used verbatim. We map it to `major.0.position`, so
-   "6.0" -> 6.0.0, "6.03" -> 6.0.3: the same digits, a valid semver, and still
-   monotonically increasing across every push and every release-era bump - which
-   is exactly what the in-app auto-updater's "is this newer?" check relies on.
+   the site's "6.10" can't be used verbatim. We map it to `major.position.0`, so
+   "6.0" -> 6.0.0, "6.10" -> 6.10.0: the position sits in the MINOR slot so it
+   reads like the site (only a trailing ".0" is added to satisfy semver), and it
+   stays monotonically increasing across every push and every release-era bump -
+   which is exactly what the in-app auto-updater's "is this newer?" check relies
+   on (6.11.0 > 6.0.10, so apps on the old scheme still see the next build).
 
    Prints the semver to stdout (no trailing newline), so CI can capture it with
    `echo "version=$(node tools/native-version.mjs)" >> "$GITHUB_OUTPUT"`. */
@@ -39,4 +41,4 @@ let major = 0, base = 0;
 for (const r of releases) { if (n >= r) { major += 1; base = r; } else break; }
 const position = major === 0 ? n : n - base;   // pre-1.0: position is the raw commit count
 
-process.stdout.write(`${major}.0.${position}`);
+process.stdout.write(`${major}.${position}.0`);

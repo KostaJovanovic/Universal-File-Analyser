@@ -4,8 +4,9 @@
 #   * derives the app version from the WEBSITE's versioning source of truth
 #     (COMMIT_COUNT / RELEASE_COMMITS in web/assets/js/core/app.js) via
 #     tools/native-version.mjs, so desktop/mobile releases carry the same version
-#     the site shows. The site renders "6.03"; semver needs MAJOR.MINOR.PATCH with
-#     no leading zeros, so that maps to "6.0.3" (same digits, valid, monotonic).
+#     the site shows. The site renders "6.10"; semver needs MAJOR.MINOR.PATCH with
+#     no leading zeros, so that maps to "6.10.0" (position in the minor slot, a
+#     trailing .0 added; valid, monotonic - see tools/native-version.mjs).
 #   * builds signed installers for Windows, macOS (Apple Silicon + Intel) and
 #     Linux via tauri-action, plus a sideloadable Android APK,
 #   * publishes them to a GitHub Release tagged v<version>, together with the
@@ -26,9 +27,12 @@
 
 name: release
 
+# PAUSED: native releases are not built on push for now. Re-enable by
+# uncommenting the `push` trigger below. Until then the workflow only runs when
+# started manually (Actions tab -> release -> Run workflow).
 on:
-  push:
-    branches: [main]
+  # push:
+  #   branches: [main]
   workflow_dispatch: {}
 
 # One release build at a time per branch; a newer push cancels an in-flight one
@@ -217,41 +221,73 @@ jobs:
           cp "$apk" "$out"
           gh release upload "v${APP_VERSION}" "$out" --clobber -R "${GITHUB_REPOSITORY}"
 
-  # Rename the standalone desktop installers to a clear Analyser_<Platform>_V<version>_<arch>
-  # scheme so the release page is easy to read. Runs once, after all platforms have
-  # uploaded (single job = no races). It deliberately touches ONLY .dmg/.deb/.rpm
-  # - the updater artifacts (-setup.exe, .AppImage, .app.tar.gz) and latest.json are
-  # left untouched, because the signed manifest references them by exact filename and
-  # renaming would break auto-update. The Android APK is already uploaded named, so it
-  # is skipped here too. Non-fatal: a hiccup here never fails the release.
-  label-installers:
+  # Tidy the release so it carries only what a user needs, cleanly named. Runs once,
+  # after every platform has uploaded (single job = no races); non-fatal, so a hiccup
+  # here never fails the release. Three passes:
+  #   1. Delete every standalone *.sig - the updater reads each signature INLINE from
+  #      latest.json, so the loose .sig files are pure redundancy on the release page.
+  #   2. Rename the desktop installers to Analyser_<Platform>_V<version>_<arch>, and
+  #      label the two macOS auto-update payloads *_auto-update.app.tar.gz so nobody
+  #      downloads them instead of the .dmg.
+  #   3. Reconcile latest.json: every payload the updater fetches (the two
+  #      .app.tar.gz, plus deb/rpm) was just renamed, so rewrite its URL in the
+  #      manifest to match. Without this the auto-updater would 404. The .dmg is
+  #      install-only and never appears in latest.json, so renaming it is free.
+  # The Android APK is already uploaded with its final name, so it's left alone.
+  tidy-release:
     needs: [version, release]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Label standalone installers by platform + arch
+      - name: Drop signatures, friendly-name installers, reconcile updater manifest
         continue-on-error: true
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           TAG: v${{ needs.version.outputs.version }}
           VER: ${{ needs.version.outputs.version }}
         run: |
-          assets=$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | [.id, .name] | @tsv')
+          set -u
+          list() { gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | [.id, .name] | @tsv'; }
+
+          # 1. Delete every standalone signature (redundant; sigs live inline in latest.json).
           while IFS=$'\t' read -r id name; do
-            ext="${name##*.}"
-            case "$ext" in
-              dmg) plat=Mac ;;
-              deb|rpm) plat=Linux ;;
+            case "$name" in
+              *.sig) gh api -X DELETE "repos/$REPO/releases/assets/$id" \
+                       && echo "deleted $name" || echo "delete-fail $name" ;;
+            esac
+          done <<< "$(list)"
+
+          # 2. Rename installers + macOS updater payloads. Record each rename in RENAMES
+          #    so the identical old->new map can be replayed into latest.json in step 3.
+          declare -A RENAMES
+          while IFS=$'\t' read -r id name; do
+            case "$name" in
+              *aarch64.app.tar.gz)                new="Analyser_Mac_V${VER}_arm64_auto-update.app.tar.gz" ;;
+              *x64.app.tar.gz|*x86_64.app.tar.gz) new="Analyser_Mac_V${VER}_x64_auto-update.app.tar.gz" ;;
+              *aarch64.dmg|*arm64.dmg)            new="Analyser_Mac_V${VER}_arm64.dmg" ;;
+              *x64.dmg|*x86_64.dmg)               new="Analyser_Mac_V${VER}_x64.dmg" ;;
+              *amd64.deb|*x86_64.deb)             new="Analyser_Linux_V${VER}_x64.deb" ;;
+              *x86_64.rpm|*amd64.rpm)             new="Analyser_Linux_V${VER}_x64.rpm" ;;
               *) continue ;;
             esac
-            case "$name" in
-              *aarch64*|*arm64*) arch=arm64 ;;
-              *) arch=x64 ;;
-            esac
-            newname="Analyser_${plat}_V${VER}_${arch}.${ext}"
-            if [ "$name" != "$newname" ]; then
-              gh api -X PATCH "repos/$REPO/releases/assets/$id" -f name="$newname" \
-                && echo "renamed $name -> $newname" || echo "skip $name"
+            [ "$name" = "$new" ] && continue
+            # Overwrite-safe: clear any stale asset already holding the target name (a
+            # rebuilt tag) so the rename can't fail with 422 already_exists.
+            stale=$(gh api "repos/$REPO/releases/tags/$TAG" --jq ".assets[] | select(.name==\"$new\") | .id")
+            [ -n "$stale" ] && gh api -X DELETE "repos/$REPO/releases/assets/$stale" && echo "cleared stale $new"
+            if gh api -X PATCH "repos/$REPO/releases/assets/$id" -f name="$new" >/dev/null; then
+              echo "renamed $name -> $new"; RENAMES["$name"]="$new"
+            else
+              echo "rename-fail $name"
             fi
-          done <<< "$assets"
+          done <<< "$(list)"
+
+          # 3. Point latest.json at the renamed payloads so auto-update keeps resolving.
+          if [ ${#RENAMES[@]} -gt 0 ] && gh release download "$TAG" -p latest.json --dir . --clobber -R "$REPO"; then
+            for old in "${!RENAMES[@]}"; do
+              sed -i "s#/${old}#/${RENAMES[$old]}#g" latest.json
+            done
+            gh release upload "$TAG" latest.json --clobber -R "$REPO" && echo "reconciled latest.json"
+          fi
