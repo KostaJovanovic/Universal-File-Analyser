@@ -209,6 +209,25 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">6.12 - 6.13</p>
+          <p class="patch-name">Keyring</p>
+          <p class="patch-date">11 July 2026, 21:30</p>
+          <ul class="patch-list">
+            <li><strong>Analyser now reads inside Java KeyStores, and the desktop and mobile apps get lighter - pulling the big AI and extra-language downloads only when you use them, just like the website - while Clear storage now keeps everything you have already downloaded.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Read inside a Java KeyStore.</strong> Opening a <a href="/about#ext-jks">.jks or .keystore</a> file now lists what it holds - each entry&rsquo;s name, whether it stores a private key or a trusted certificate, and when it was created - and decodes every certificate inside it: who it was issued to and by, how long it stays valid, and its SHA-256 fingerprint, the same detail the <code>keytool</code> tool prints. Today&rsquo;s keystores, which are really in PKCS#12 form even when named <code>.jks</code>, are read too. Nothing is uploaded and the private keys stay encrypted.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Clear storage keeps your downloads.</strong> <strong>Clear storage</strong> now clears your history and on-device app data only - it no longer deletes anything you saved for offline use, or that came bundled with the app, so nothing has to be downloaded again.</li>
+          </ul>
+
+          <hr class="patch-rule">
+
+          <p class="patch-subhead">Desktop and mobile apps</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-faster">Faster</span><strong>Smaller apps that download extras on demand.</strong> The <strong>Windows</strong>, <strong>macOS</strong>, <strong>Linux</strong> and <strong>Android</strong> apps now fetch the large <strong>AI vocal separation</strong> model and the <strong>30+ language</strong> text-recognition packs only when you first use them - exactly as the website does - rather than carrying them inside. The apps are much smaller to download and install, the Android one especially, and everyday analysis plus the video, audio and 3D engines still work fully offline out of the box.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Reading text in other languages works in the apps.</strong> Recognising text (OCR) in languages beyond English now works in the desktop and mobile apps, not only on the website.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">6.08 - 6.11</p>
           <p class="patch-name">Even Keel</p>
           <p class="patch-date">11 July 2026, 18:03</p>
@@ -254,6 +273,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry patch-milestone">
           <p class="patch-version">6.0 - 6.05</p>
           <p class="patch-name">Unmix</p>
@@ -292,9 +314,6 @@
             <li><span class="patch-tag">New</span><strong>Analyser is now a desktop app.</strong> As well as the website, Analyser is now a native desktop app for <strong>Windows</strong>, <strong>macOS</strong> (Apple Silicon and Intel) and <strong>Linux</strong>, built from the exact same code and running the same on-device engine - nothing is uploaded there either. It installs like any normal app, works fully offline (the AI, video and 3D engines are bundled in) and updates itself in the background. Downloads are on the <a href="https://github.com/KostaJovanovic/lab/releases">GitHub releases page</a>.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">5.16 - 5.21</p>

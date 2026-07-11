@@ -15,8 +15,16 @@ REM move the repo back under a spaced path, point CARGO_TARGET_DIR at a
 REM space-free location for Android only - MSVC's desktop linker is unaffected.)
 REM
 REM Usage (from anywhere):
-REM   native-android.bat            -> debug APK (default)
-REM   native-android.bat release    -> release APK
+REM   native-android.bat            -> release APK, arm64 only (stripped + small)
+REM
+REM Always a release build: debug APKs ship unstripped Rust .so files (150-250MB
+REM each) and are never meant for distribution. The [profile.release] in
+REM src-tauri\Cargo.toml (strip + lto + opt-level=s) keeps the native libs small.
+REM
+REM Single ABI (aarch64 / arm64-v8a) - virtually every Android device since ~2017
+REM is arm64, and a universal APK would otherwise carry 4 copies of the native lib
+REM (arm64 + armv7 + x86 + x86_64). Drop `--target aarch64` below for a universal
+REM APK if you genuinely need 32-bit / x86 emulator support.
 REM
 REM Output: build\android\ (final APK, copied from gen\android after the build)
 REM ---------------------------------------------------------------------------
@@ -37,12 +45,8 @@ set "CARGO_TARGET_DIR=%~dp0build\android"
 REM Build from the native/ dir (this script lives in the repo root, one level up).
 cd /d "%~dp0native"
 
-REM Default to a debug APK; "release" as the first arg switches to a release build.
-set "PROFILE=--debug"
-if /I "%~1"=="release" set "PROFILE="
-
-echo Building Android APK ( %PROFILE% ) with CARGO_TARGET_DIR=%CARGO_TARGET_DIR% ...
-call npm run tauri android build -- --apk %PROFILE%
+echo Building release Android APK (arm64) with CARGO_TARGET_DIR=%CARGO_TARGET_DIR% ...
+call npm run tauri android build -- --apk --target aarch64
 set "RC=%ERRORLEVEL%"
 
 if "%RC%"=="0" (
