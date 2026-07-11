@@ -2480,7 +2480,7 @@ export async function renderGcode(file, resultsEl, opts) {
         // mirror live viewer-state flags (ortho / showBed / showTravel / isoTool) and are
         // re-seeded from the viewer each time the popup opens, so the export defaults to
         // whatever the user set in the normal viewer but can be overridden here.
-        const clipCfg = { dur: 10, aspect: '16:9', size: 1080, fps: 60, quality: 0.18, reset: true, orbit: true, follow: false, overlay: true, persp: true, bed: true, travel: false, dim: false };
+        const clipCfg = { dur: 10, aspect: '16:9', size: 1080, fps: 30, quality: 0.12, reset: true, orbit: true, follow: false, overlay: true, persp: true, bed: true, travel: false, dim: false };
         // Single definition of the four toggles that mirror viewer state. `cfg` is the
         // clipCfg key, `st` the viewer.state flag; `get` reads state -> clip value (to
         // seed the popup), `put` writes clip value -> state (on export). Some invert
@@ -3057,7 +3057,8 @@ export async function renderGcode(file, resultsEl, opts) {
               segRow('Resolution', [[720, '720p'], [1080, '1080p']], () => clipCfg.size, (v) => { clipCfg.size = v; }),
               segRow('Rate', [[30, '30 fps'], [60, '60 fps']], () => clipCfg.fps, (v) => { clipCfg.fps = v; }),
               // Bitrate, as bits per pixel-second. Thin-line renders want more than
-              // ordinary footage; High is the sensible default, Max for archival crispness.
+              // ordinary footage; Standard is the default, High and Max trade file size
+              // for extra crispness on the thin toolpath lines.
               segRow('Quality', [[0.12, 'Standard'], [0.18, 'High'], [0.28, 'Max']], () => clipCfg.quality, (v) => { clipCfg.quality = v; }),
             ]),
             secHead('Camera'),

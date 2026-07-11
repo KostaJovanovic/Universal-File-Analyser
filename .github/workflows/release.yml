@@ -217,9 +217,9 @@ jobs:
           cp "$apk" "$out"
           gh release upload "v${APP_VERSION}" "$out" --clobber -R "${GITHUB_REPOSITORY}"
 
-  # Rename the standalone desktop installers to a clear <product>-<version>-<platform>-<arch>
+  # Rename the standalone desktop installers to a clear Analyser_<Platform>_V<version>_<arch>
   # scheme so the release page is easy to read. Runs once, after all platforms have
-  # uploaded (single job = no races). It deliberately touches ONLY .msi/.dmg/.deb/.rpm
+  # uploaded (single job = no races). It deliberately touches ONLY .dmg/.deb/.rpm
   # - the updater artifacts (-setup.exe, .AppImage, .app.tar.gz) and latest.json are
   # left untouched, because the signed manifest references them by exact filename and
   # renaming would break auto-update. The Android APK is already uploaded named, so it
@@ -241,16 +241,15 @@ jobs:
           while IFS=$'\t' read -r id name; do
             ext="${name##*.}"
             case "$ext" in
-              msi) plat=windows ;;
-              dmg) plat=macos ;;
-              deb|rpm) plat=linux ;;
+              dmg) plat=Mac ;;
+              deb|rpm) plat=Linux ;;
               *) continue ;;
             esac
             case "$name" in
               *aarch64*|*arm64*) arch=arm64 ;;
               *) arch=x64 ;;
             esac
-            newname="Analyser-$VER-$plat-$arch.$ext"
+            newname="Analyser_${plat}_V${VER}_${arch}.${ext}"
             if [ "$name" != "$newname" ]; then
               gh api -X PATCH "repos/$REPO/releases/assets/$id" -f name="$newname" \
                 && echo "renamed $name -> $newname" || echo "skip $name"
