@@ -12,6 +12,10 @@ import { el } from './util.js';
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
+  { range: '6.14 - 6.16', notes: [
+    'Analyser is a pure website again: the desktop and mobile app experiment has been retired and every trace of it stripped back out of the code, leaving the project lean and browser-only once more.',
+    'The open-source repository gains a proper welcome - a contributing guide, a security policy for reporting issues privately, a code of conduct, and issue and pull-request templates - for anyone reading or building on the code. Nothing changes in the app itself.',
+  ] },
   { range: '6.12 - 6.13', notes: [
     'Java KeyStores (.jks / .keystore) now open up: Analyser lists each entry - its name, whether it holds a private key or a trusted certificate, and when it was created - and decodes every certificate inside (issued to and by, validity and SHA-256 fingerprint), including today\'s PKCS#12-based keystores.',
     'The desktop and mobile apps get smaller: the AI vocal-separation model and the 30+ OCR language packs now download on first use, like the website, instead of being carried inside - the Android app especially, with everyday analysis and the video, audio and 3D engines still fully offline.',
