@@ -20,22 +20,3 @@ nul
 
 # Local docs work-order / planning note - not shipped, not tracked
 DOCS_PLAN.md
-
-# --- Native app (Tauri shell) - everything lives under native/ ---
-# Only the generated/heavy parts are ignored; native/package.json + the src-tauri
-# source ARE tracked (they sit under native/, so the root-anchored Cloudflare build
-# never sees a package.json and can't be nudged into `npm install` on push).
-native/node_modules/
-# Assembled frontend bundle + cached CDN WASM downloads (rebuilt by build-dist.mjs).
-native/dist/
-native/.native-cache/
-# Rust build artifacts + generated mobile scaffolds (also in native/src-tauri/.gitignore).
-native/src-tauri/target/
-native/src-tauri/gen/
-
-# --- Local native build sink (root build/ folder) ---
-# native-dev/native-build/native-android.bat redirect all local build output here
-# (build\desktop, build\android) via a local-only CARGO_TARGET_DIR, so `del build`
-# reclaims everything in one shot. CI keeps the default target dir - it never sees
-# this. Never committed.
-/build/

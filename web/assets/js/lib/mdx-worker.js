@@ -17,7 +17,7 @@ let session = null;       // the InferenceSession (kept warm across runs)
 let loadedModelId = null; // which model `session` holds, so a model switch re-inits
 
 // True on any WebKit engine (iOS Safari/Chrome/Edge - all WebKit under the hood -
-// plus desktop Safari and the Tauri WKWebView shell). ORT's WebGPU (jsep) backend
+// plus desktop Safari). ORT's WebGPU (jsep) backend
 // is unstable on WebKit: iOS 18 Safari now exposes navigator.gpu, so ORT tries to
 // init WebGPU and hard-crashes the GPU/tab process the instant separation starts.
 // We force the single-threaded WASM path there - which is what mdx-model.js's

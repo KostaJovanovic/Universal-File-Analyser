@@ -18,11 +18,9 @@ import { el, fmtBytes, row, API_ORIGIN } from './util.js';
 // a local `server.bat` with no real API) the event is queued in localStorage and
 // re-sent the next time we're online - so a file analysed on a plane still gets
 // counted once connectivity returns. The queue holds only { ext, supported } -
-// the same two fields the live ping sends, never bytes or filenames. This is the
-// only place the native desktop/mobile apps and the website share for analytics,
-// so the offline queue benefits every platform.
-// Same-origin on the web; the live site under the native shell (see API_ORIGIN
-// in util.js). This is the only place a file's extension leaves the device.
+// the same two fields the live ping sends, never bytes or filenames.
+// Always same-origin (see API_ORIGIN in util.js). This is the only place a
+// file's extension leaves the device.
 const ANALYSED_EP = API_ORIGIN + '/api/analysed';
 const ANALYTICS_QUEUE_KEY = 'anr-analytics-queue';
 const ANALYTICS_QUEUE_MAX = 500;    // ~15 KB cap; oldest dropped past this

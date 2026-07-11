@@ -3,58 +3,9 @@
    anr:navigate event so boot() re-runs, with no full reload. */
 
 (function () {
-  // Detect the Tauri native shell once. Under it the OS asset protocol serves
-  // files literally - there is no Cloudflare/serve.py rewriting /about ->
-  // about.html - and a service worker would only add a stale-cache layer that
-  // fights the native updater. Both are handled here, before the rest of the page
-  // scripts run. Everything below is a no-op on the web build (window.__TAURI__
-  // is undefined), so the site behaves exactly as before in a browser.
-  var IS_TAURI = typeof window !== 'undefined' && !!(window.__TAURI__ || window.__TAURI_INTERNALS__);
-
-  if (IS_TAURI && typeof navigator !== 'undefined' && navigator.serviceWorker) {
-    // This classic script runs before every page's inline
-    // `navigator.serviceWorker.register('sw.js', ...)` block, so turn registration
-    // into a successful no-op. The native bundle also omits sw.js entirely
-    // (tools/build-dist.mjs), making this belt-and-braces: it just keeps the
-    // console clean instead of logging a failed registration on every page.
-    try {
-      navigator.serviceWorker.register = function () {
-        return Promise.resolve({ update: function () {}, unregister: function () { return Promise.resolve(true); } });
-      };
-    } catch (_) { /* read-only in some engines - the absent sw.js still stops it */ }
-  }
-
-  // Map an internal, extensionless path to its real .html file under the shell
-  // (/about -> /about.html; '/' and paths that already have an extension are left
-  // alone). No-op on the web, where clean URLs resolve server-side.
-  function toShellPath(pathname) {
-    if (!IS_TAURI) return pathname;
-    if (pathname === '/' || /\.[a-z0-9]+$/i.test(pathname)) return pathname;
-    return pathname.replace(/\/+$/, '') + '.html';
-  }
-
   if (!document.startViewTransition) {
     // No View Transitions API (older WebKit): the SPA swap below is unavailable,
-    // so links fall back to full navigations. On the web the server resolves a
-    // clean /about; under the shell that would 404, so intercept internal clicks
-    // and point them at the real .html file. Inert on the web build.
-    if (IS_TAURI) {
-      document.addEventListener('click', function (e) {
-        if (e.defaultPrevented) return;
-        var link = e.target.closest('a[href]');
-        if (!link) return;
-        var href = link.getAttribute('href');
-        if (!href) return;
-        if (link.target === '_blank' || link.hasAttribute('download')) return;
-        if (href.startsWith('#') || href.startsWith('http') || href.startsWith('mailto:')) return;
-        var u = new URL(href, location.href);
-        var mapped = toShellPath(u.pathname);
-        if (mapped === u.pathname) return;
-        u.pathname = mapped;
-        e.preventDefault();
-        location.href = u.href;
-      });
-    }
+    // so links fall back to full navigations (the browser's default <a> behaviour).
     return;
   }
 
@@ -153,14 +104,9 @@
 
     // Canonical URLs are clean (no .html): /about, /patch, / . Normalise any
     // stray .html link to that form so the address bar and history stay clean
-    // and a reload hits the same URL the server serves. Under the Tauri shell it
-    // is the reverse - there is no server rewrite, so map to the real .html file.
+    // and a reload hits the same URL the server serves.
     var u = new URL(href, location.href);
-    if (IS_TAURI) {
-      u.pathname = toShellPath(u.pathname);
-    } else {
-      u.pathname = u.pathname.replace(/\/index\.html(?=$)/, '/').replace(/\.html(?=$)/, '');
-    }
+    u.pathname = u.pathname.replace(/\/index\.html(?=$)/, '/').replace(/\.html(?=$)/, '');
     var url = u.href;
     if (url === location.href) return;
 
