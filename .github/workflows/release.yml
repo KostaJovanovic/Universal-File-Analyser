@@ -27,9 +27,10 @@
 
 name: release
 
+# Automatic per-push release builds are turned OFF. Releases now build only when
+# manually triggered (Actions tab -> "release" -> Run workflow, or `gh workflow
+# run release`). To re-enable per-push builds, restore the `push` trigger below.
 on:
-  push:
-    branches: [main]
   workflow_dispatch: {}
 
 # One release build at a time per branch; a newer push cancels an in-flight one

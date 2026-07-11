@@ -45,5 +45,6 @@
       "PowerShell(.\\\\save.bat save)"
     ]
   },
-  "spinnerTipsEnabled": false
+  "spinnerTipsEnabled": false,
+  "outputStyle": "Proactive"
 }
