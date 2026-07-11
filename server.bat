@@ -4,24 +4,10 @@ cd /d "%~dp0"
 
 set PORT=3000
 
-rem Reuse the port ONLY if our clean-URL server is already there: it answers
-rem GET /about with 200. A foreign server (VS Code Live Server, python -m http.server)
-rem returns 404 for /about - opening it is exactly why /about and /patch "don't work".
-set CODE=000
-for /f %%c in ('curl -s -o nul -w "%%{http_code}" "http://localhost:%PORT%/about" 2^>nul') do set CODE=%%c
-if "%CODE%"=="200" (
-  start "" "http://localhost:%PORT%"
-  exit /b
-)
-if not "%CODE%"=="000" (
-  echo.
-  echo   Port %PORT% is in use by a server that does NOT do clean URLs
-  echo   ^(GET /about returned %CODE%, expected 200^) - it 404s /about and /patch.
-  echo   Close that server ^(its terminal, or VS Code Live Server^), then run this again.
-  echo.
-  pause
-  exit /b
-)
+rem Kill whatever is still holding the port so every launch is a fresh instance
+rem (a previous server.bat, or any other listener on %PORT%). Uses PowerShell so
+rem it handles both IPv4 and IPv6 listeners without brittle netstat parsing.
+powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | Where-Object { $_ -ne 0 } | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }" 1>nul 2>nul
 
 rem Find local IP for phone access
 set LOCAL_IP=
@@ -36,7 +22,7 @@ echo ============================================
 echo   Local:   http://localhost:%PORT%
 echo   Network: http://%LOCAL_IP%:%PORT%
 echo.
-echo   On your phone, open the Network URL.
+echo   Scan the QR below to open it on your phone.
 echo   Phone must be on the same Wi-Fi.
 echo ============================================
 echo.
@@ -44,5 +30,6 @@ echo.
 start "" "http://localhost:%PORT%"
 rem serve.py mirrors the production Cloudflare routing (clean URLs + .html
 rem redirects + SPA fallback), so local dev matches lab.valjdakosta.com exactly.
-python serve.py %PORT%
+rem It prints a scannable QR for the Network URL at startup (LOCAL_IP passed in).
+python serve.py %PORT% %LOCAL_IP%
 pause

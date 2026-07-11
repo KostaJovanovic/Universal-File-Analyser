@@ -16,6 +16,23 @@ let ortMod = null;        // the onnxruntime-web module namespace
 let session = null;       // the InferenceSession (kept warm across runs)
 let loadedModelId = null; // which model `session` holds, so a model switch re-inits
 
+// True on any WebKit engine (iOS Safari/Chrome/Edge - all WebKit under the hood -
+// plus desktop Safari and the Tauri WKWebView shell). ORT's WebGPU (jsep) backend
+// is unstable on WebKit: iOS 18 Safari now exposes navigator.gpu, so ORT tries to
+// init WebGPU and hard-crashes the GPU/tab process the instant separation starts.
+// We force the single-threaded WASM path there - which is what mdx-model.js's
+// header already documents as the intended Safari behaviour. Chrome/Edge keep the
+// fast GPU path. Firefox never exposes navigator.gpu, so ORT falls to WASM anyway.
+function isWebKit() {
+  try {
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+    const iOS = /iP(hone|ad|od)/.test(ua)
+      || (/Macintosh/.test(ua) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
+    const appleWebKit = /AppleWebKit/.test(ua) && !/Chrom(e|ium)|Android/.test(ua);
+    return iOS || appleWebKit;
+  } catch (_) { return false; }
+}
+
 // Persist the downloaded model in our own Cache Storage bucket. Unlike the HTTP
 // disk cache (which a hard refresh bypasses, forcing a re-download), a Cache
 // Storage entry survives reloads; we keep it for a day, then re-fetch so an
@@ -93,8 +110,11 @@ async function ensureModel(model, onDownload) {
     await storeModel(model.url, bytes);
   }
   // Prefer the GPU (WebGPU) where available - typically many times faster - and
-  // fall back to single-threaded WASM automatically on browsers without it.
-  session = await ortMod.InferenceSession.create(bytes, { executionProviders: ['webgpu', 'wasm'] });
+  // fall back to single-threaded WASM automatically on browsers without it. On
+  // WebKit (iOS/Safari), skip WebGPU entirely: ORT's jsep backend crashes the tab
+  // there (see isWebKit above), so we only ever offer the stable WASM path.
+  const executionProviders = isWebKit() ? ['wasm'] : ['webgpu', 'wasm'];
+  session = await ortMod.InferenceSession.create(bytes, { executionProviders });
   loadedModelId = model.id;
 }
 

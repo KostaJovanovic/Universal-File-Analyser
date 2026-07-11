@@ -32,3 +32,10 @@ native/.native-cache/
 # Rust build artifacts + generated mobile scaffolds (also in native/src-tauri/.gitignore).
 native/src-tauri/target/
 native/src-tauri/gen/
+
+# --- Local native build sink (root build/ folder) ---
+# native-dev/native-build/native-android.bat redirect all local build output here
+# (build\desktop, build\android) via a local-only CARGO_TARGET_DIR, so `del build`
+# reclaims everything in one shot. CI keeps the default target dir - it never sees
+# this. Never committed.
+/build/

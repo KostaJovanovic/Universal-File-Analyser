@@ -2,20 +2,23 @@
 REM ---------------------------------------------------------------------------
 REM Local Android APK build for the Tauri native shell.
 REM
-REM Why this script exists: the repo lives under "...\Projekti\file analyser\",
-REM and that SPACE breaks the NDK's clang.cmd linker wrapper (it double-quotes
-REM %1 in `if "%1" == "-cc1"`, so the space splits the rustc response-file arg and
-REM the link fails with `...linker-arguments"" was unexpected at this time`). The
-REM fix is to build to a space-free CARGO_TARGET_DIR. That override is scoped to
-REM this script only - it is NOT persisted globally, because it would needlessly
-REM redirect the desktop build's target dir too. The desktop Windows build is
-REM unaffected by the space (MSVC's linker handles it fine).
+REM Rust intermediates and the final APK both land in the root build\ folder
+REM (build\android), so `del build` reclaims every local build at once. This
+REM CARGO_TARGET_DIR override is local-only; CI keeps the default target dir.
+REM
+REM (Historical note: the repo used to live under a path with a SPACE, which
+REM broke the NDK's clang.cmd linker wrapper - it double-quotes %1 in
+REM `if "%1" == "-cc1"`, so the space split the rustc response-file arg and the
+REM link failed with `...linker-arguments"" was unexpected at this time`. The
+REM path is now space-free, so the old C:\anrtgt workaround is gone. If you ever
+REM move the repo back under a spaced path, point CARGO_TARGET_DIR at a
+REM space-free location for Android only - MSVC's desktop linker is unaffected.)
 REM
 REM Usage (from anywhere):
 REM   native-android.bat            -> debug APK (default)
 REM   native-android.bat release    -> release APK
 REM
-REM Output: native\src-tauri\gen\android\app\build\outputs\apk\universal\<profile>\
+REM Output: build\android\ (final APK, copied from gen\android after the build)
 REM ---------------------------------------------------------------------------
 setlocal
 
@@ -28,8 +31,8 @@ set "NDK_HOME=C:\Android\sdk\ndk\26.3.11579264"
 set "ANDROID_NDK_ROOT=%NDK_HOME%"
 set "PATH=%USERPROFILE%\.cargo\bin;%ANDROID_HOME%\platform-tools;%PATH%"
 
-REM The actual fix: keep the linker response file off the spaced project path.
-set "CARGO_TARGET_DIR=C:\anrtgt"
+REM Redirect Rust intermediates into the root build\ folder (build\android).
+set "CARGO_TARGET_DIR=%~dp0build\android"
 
 REM Build from the native/ dir (this script lives in the repo root, one level up).
 cd /d "%~dp0native"
@@ -44,7 +47,10 @@ set "RC=%ERRORLEVEL%"
 
 if "%RC%"=="0" (
   echo.
-  echo Done. APK under src-tauri\gen\android\app\build\outputs\apk\universal\
+  echo Copying final APK into build\android\ ...
+  if not exist "%~dp0build\android" mkdir "%~dp0build\android"
+  for /r "src-tauri\gen\android\app\build\outputs\apk" %%F in (*.apk) do copy /Y "%%F" "%~dp0build\android\" >nul
+  echo Done. APK in build\android\
 ) else (
   echo.
   echo Build FAILED with exit code %RC%.
