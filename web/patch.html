@@ -209,6 +209,28 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">6.08 - 6.11</p>
+          <p class="patch-name">Even Keel</p>
+          <p class="patch-date">11 July 2026, 18:03</p>
+          <ul class="patch-list">
+            <li><strong>A reliability and mobile-polish pass on the AI vocal separation - it now runs on iPhone and Safari instead of crashing, keeps working after you clear storage, and its controls fit a phone - alongside a large tidy-up behind the scenes.</strong></li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Vocal separation works on iPhone and Safari.</strong> Starting a <a href="/about#where">Separate vocals (AI)</a> run on an Apple device used to be able to crash the tab; on those browsers Analyser now takes the steady, well-supported path instead - a little slower, but it runs cleanly to the end. Chrome and Edge keep the fast graphics-card path.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The separation controls fit a phone.</strong> The spectrogram&rsquo;s <strong>Isolate</strong> and <strong>Separate</strong> panel - the frequency presets, the <strong>Standard</strong> / <strong>Lite</strong> model picker and the vocal and instrumental result rows - now stack into clean full-width blocks on a narrow screen, instead of crowding into one cramped row.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Clearing storage keeps the AI model.</strong> If you have any offline download saved, <strong>Clear storage</strong> now spares the large AI vocal-separation model so offline separation keeps working - everything else is still cleared as before, and the <strong>Cached</strong> badge no longer misreads a spared model as a full offline copy.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A tidier page edge on wide screens.</strong> On a very wide display the drifting grid backdrop is now kept within the content column, with the page background filling the margins to a clean hairline either side, instead of the grid bleeding out past the edges.</li>
+            <li><strong>A lighter G-code clip by default.</strong> A recorded <a href="/about#ext-gcode">G-code</a> clip now exports at the <strong>Standard</strong> quality and 30 frames a second by default - a smaller file that still keeps the thin toolpath lines crisp - with <strong>High</strong> and <strong>Max</strong> a tap away when you want more.</li>
+            <li><strong>Maintenance - a large internal reorganisation.</strong> The whole site was moved into one folder and the build and packaging scripts were consolidated. Nothing changes for you; it keeps the project tidy as the website and the desktop app grow side by side.</li>
+          </ul>
+
+          <hr class="patch-rule">
+
+          <p class="patch-subhead">Desktop app</p>
+          <ul class="patch-list">
+            <li><strong>The desktop app joins the count.</strong> The <strong>Windows</strong>, <strong>macOS</strong> and <strong>Linux</strong> app now adds to the anonymous &ldquo;a file was analysed&rdquo; <a href="/stats">running total</a>, the same single tick the website sends. Nothing about the file is ever sent - only its extension and whether it was supported, never the name, size or contents.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">6.06 - 6.07</p>
           <p class="patch-name">Guard Rails</p>
           <p class="patch-date">10 July 2026, 23:53</p>
@@ -271,6 +293,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">5.16 - 5.21</p>
           <p class="patch-name">Side by Side</p>
@@ -288,9 +313,6 @@
             <li><strong>Maintenance.</strong> The <a href="/formats">per-format guide pages</a> had a fact-checking pass - dozens of wrong dates, attributions and self-contradicting facts corrected, duplicate facts reworded, and every file type, including every variant of an ambiguous extension, now carrying at least three verified &ldquo;Did you know&rdquo; facts - and they gain the full page navigation the rest of the site has. A large part of the app&rsquo;s core was also split into smaller modules behind the scenes.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">5.15</p>

@@ -12,6 +12,12 @@ import { el } from './util.js';
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
+  { range: '6.08 - 6.11', notes: [
+    'AI vocal separation now runs on iPhone and Safari instead of crashing the tab - it takes the steady, well-supported path there, while Chrome and Edge keep the fast graphics-card path.',
+    'The spectrogram Isolate/Separate controls now stack cleanly on a phone, and Clear storage spares the large AI model if you have an offline download saved, so offline separation keeps working.',
+    'A tidier page edge on very wide screens, a lighter default for recorded G-code clips (Standard quality, 30fps, with High and Max a tap away), and the desktop app now adds to the anonymous analysed-count.',
+    'Behind the scenes: a large internal reorganisation of the site and its build scripts, with nothing changed for you.',
+  ] },
   { range: '6.06 - 6.07', notes: [
     'A broad robustness and safety pass: a corrupt or crafted file can no longer freeze a tab, and previews of documents, e-mail, presentations, drawings, maps, diagrams and vector images are kept strictly inert.',
     'Dropping several files at once now analyses just the first; a viewer that hits an error shows a clear message with the fingerprint still available; and very large archives or G-code files bow out gracefully instead of risking a crash.',
