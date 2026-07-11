@@ -3,13 +3,14 @@ name: add-file-format
 description: How to add support for a new file type/extension to Analyser (formats.js catalog, proprietary.js parser, EXT_VARIANTS, new renderer, dropzone/patch-note polish). Use when adding, extending, or fixing recognition of a file extension.
 ---
 
-**`assets/js/core/formats.js` is the single source of truth for supported file
-types.** The format overlay (index.html), the "All supported file types" tables
+**`web/assets/js/core/formats.js` is the single source of truth for supported
+file types.** (The website lives under `web/`; all asset paths below are relative
+to it.) The format overlay (index.html), the "All supported file types" tables
 (about.html), the overlay search, and the `classifyFile()` routing in app.js are
 all driven from it — edit one file and they all update.
 
 ## 1. The catalog (formats.js) — almost always the only file you touch
-File: `assets/js/core/formats.js`
+File: `web/assets/js/core/formats.js`
 
 - **Routing**: add the lowercase extension to the right classification set —
   `PHOTO_EXTS`, `AUDIO_EXTS`, `VIDEO_EXTS`, `CSV_EXTS`, or `SVG_EXTS`. These drive
@@ -42,7 +43,7 @@ That's it for the common cases (a new photo/audio/video extension, or a new
 identification-only format that also needs a parser — see step 2).
 
 ## 2. Header parser for identification-only formats (proprietary.js)
-File: `assets/js/renderers/proprietary.js`
+File: `web/assets/js/renderers/proprietary.js`
 
 - Add an entry to the `FORMATS` object: key is the lowercase extension, value is
   `{ app, icon, magic?, parse?, zip? }`. `magic` matches header bytes; `parse`
@@ -74,11 +75,11 @@ textIncludes, default }`). Drop-time wiring uses `detectVariant`:
 
 ## 3. New top-level category (rare)
 If the format isn't photo/audio/video/csv/svg and needs its own renderer:
-- Create a module (e.g. `assets/js/renderers/newtype.js`), export
+- Create a module (e.g. `web/assets/js/renderers/newtype.js`), export
   `renderNewtype(file, resultsEl)`.
 - Import it in app.js and add a branch in `classifyFile()` and `handleFile()`.
   See how `csv`, `svg`, `pdf`, `zip`, `proprietary` are wired.
-- Add the new module to the `SHELL` array in `sw.js` for offline caching.
+- Add the new module to the `SHELL` array in `web/sw.js` for offline caching.
 
 ## 4. Optional polish (only if the format is common)
 - **Dropzone hints** (`index.html`, quickdrop section): the three dropzones list

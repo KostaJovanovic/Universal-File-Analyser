@@ -66,12 +66,12 @@ rem non-ASCII char (e.g. the ellipsis in "Reading file..." became "...â€¦...
 rem little more on every commit. Read and write UTF-8 explicitly so it round-trips.
 rem \d* (not \d+) so a previously-blanked "const COMMIT_COUNT = ;" still matches
 rem and self-heals - with \d+ a blank value can never be repaired by this script.
-powershell -Command "(Get-Content 'assets/js/core/app.js' -Encoding UTF8) -replace 'const COMMIT_COUNT = \d*;', 'const COMMIT_COUNT = %NEXT_COUNT%;' | Set-Content 'assets/js/core/app.js' -Encoding utf8"
+powershell -Command "(Get-Content 'web/assets/js/core/app.js' -Encoding UTF8) -replace 'const COMMIT_COUNT = \d*;', 'const COMMIT_COUNT = %NEXT_COUNT%;' | Set-Content 'web/assets/js/core/app.js' -Encoding utf8"
 
 rem Bump the service-worker cache epoch too, so every commit ships fresh JS/CSS
 rem instead of leaving cached clients on a stale shell (stale-while-revalidate
 rem otherwise keeps serving the old code until VERSION changes).
-powershell -Command "(Get-Content 'sw.js' -Encoding UTF8) -replace 'const VERSION = ''analyser-v\d+'';', 'const VERSION = ''analyser-v%NEXT_COUNT%'';' | Set-Content 'sw.js' -Encoding utf8"
+powershell -Command "(Get-Content 'web/sw.js' -Encoding UTF8) -replace 'const VERSION = ''analyser-v\d+'';', 'const VERSION = ''analyser-v%NEXT_COUNT%'';' | Set-Content 'web/sw.js' -Encoding utf8"
 
 rem Rebuild the /samples gallery from the files in the samples/ directory, so the
 rem clickable example cards always match the folder. Run first, before every other

@@ -27,9 +27,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const WEB = join(ROOT, 'web');   // the website source; the worker SQL output stays under ROOT
 const OUT = join(ROOT, 'worker', 'disperse-unsupported.sql');
 
-const fmts = await import(pathToFileURL(join(ROOT, 'assets/js/core/formats.js')).href);
+const fmts = await import(pathToFileURL(join(WEB, 'assets/js/core/formats.js')).href);
 
 // Same normalisation the Worker applies before storing an extension key, so the
 // IN-list matches the actual ext_stats primary keys. Anything that cleans to ''

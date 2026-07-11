@@ -218,16 +218,27 @@ function mergePanels(aBlocks, bBlocks, mount) {
 const HASH_AUTO_LIMIT = 50 * 1024 * 1024;
 const CRC_DESC = 'CRC-32 is a fast, non-cryptographic checksum - the same one ZIP, PNG and gzip embed, and what SFV checksum files store. It reliably catches accidental corruption, but unlike the hashes below it is not collision-resistant, so it is not proof against deliberate tampering.';
 async function crc32Of(file) { return crc32Hex(new Uint8Array(await file.arrayBuffer())); }
-async function appendHashExtras(mergedRoot, fileA, fileB) {
-  let table = null;
+async function appendHashExtras(mergedRoot, fileA, fileB, shaMatch) {
+  let table = null, shaRow = null;
   for (const t of mergedRoot.querySelectorAll('table.anr-readout.anr-cmp')) {
     for (const tr of t.rows) {
       const th = tr.querySelector('th');
-      if (th && /^sha-?256\b/i.test(th.textContent.trim())) { table = t; break; }
+      if (th && /^sha-?256\b/i.test(th.textContent.trim())) { table = t; shaRow = tr; break; }
     }
     if (table) break;
   }
   if (!table) return;
+  // The SHA-256 row is built during the merge, but its A/B value cells fill in
+  // asynchronously - so its .is-diff tag was decided from possibly-empty cells and
+  // can be wrong (identical files mis-tagged as differing, or vice versa). Override
+  // it with the authoritative comparison once it resolves, so "Show differences"
+  // fades a matching SHA-256 row and keeps a genuinely differing one lit.
+  if (shaRow && shaMatch) {
+    shaMatch.then((m) => {
+      if (m === 'match') shaRow.classList.remove('is-diff');
+      else if (m === 'differ') shaRow.classList.add('is-diff');
+    });
+  }
   const heavyOk = fileA.size <= HASH_AUTO_LIMIT && fileB.size <= HASH_AUTO_LIMIT;
   try {
     let ra, rb;
@@ -310,10 +321,15 @@ export async function renderCompare(fileA, fileB, resultsEl, deps = {}) {
     diffBtn.textContent = on ? 'Show everything' : 'Show differences';
   });
   resultsEl.appendChild(el('div', { class: 'anr-btn-row anr-cmp-controls' }, [diffBtn]));
-  Promise.all([sha256Hex(fileA), sha256Hex(fileB)]).then(
+  // The authoritative full-file SHA-256 comparison, shared by the identity strip
+  // AND the Integrity SHA-256 row re-tag in appendHashExtras: that row's value
+  // cells fill in asynchronously, so its merge-time diff check can race (one side
+  // hashed, the other still pending) and mis-tag two identical files as differing.
+  const shaMatch = Promise.all([sha256Hex(fileA), sha256Hex(fileB)]).then(
     ([ha, hb]) => (ha && hb ? (ha === hb ? 'match' : 'differ') : 'error'),
     () => 'error'
-  ).then((sha) => {
+  );
+  shaMatch.then((sha) => {
     strip.textContent = stripText(fileA, fileB, kindA, kindB, sha);
     strip.classList.toggle('anr-cmp-same', sha === 'match');
   });
@@ -409,6 +425,7 @@ export async function renderCompare(fileA, fileB, resultsEl, deps = {}) {
   stagingA.remove();
   stagingB.remove();
 
-  // Fill in the full hash set (CRC-32/MD5/SHA-1/SHA-512) for the Integrity card.
-  appendHashExtras(merged, fileA, fileB);
+  // Fill in the full hash set (CRC-32/MD5/SHA-1/SHA-512) for the Integrity card,
+  // and authoritatively re-tag the deferred SHA-256 row now the real result is known.
+  appendHashExtras(merged, fileA, fileB, shaMatch);
 }

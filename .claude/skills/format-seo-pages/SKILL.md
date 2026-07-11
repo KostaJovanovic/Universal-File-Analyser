@@ -12,7 +12,11 @@ see below — before `git add`). They are the site's SEO surface for "what is a
 regions/files — edit the source and re-run the generator.** Preview locally with
 `server.bat` then visit `/formats`, `/formats/<ext>`, or `/samples`.
 
-**Single source of truth:** `assets/js/core/formats.js`. It exports
+The website lives under `web/`, so every generated page and asset path below is
+inside `web/` (the generators reference it via a `WEB = join(ROOT, 'web')`
+constant; `tools/` + `worker/` paths stay under the repo root).
+
+**Single source of truth:** `web/assets/js/core/formats.js`. It exports
 `catalogGrouped()` (a DOM-free view of the catalog) which both format generators
 read, so the pages can never drift from the overlay / about list.
 
@@ -82,10 +86,11 @@ read, so the pages can never drift from the overlay / about list.
    `/formats`) — correct for how the site is served (dev server + Cloudflare,
    both from root). They will NOT style/script when opened as a bare `file://`
    (and ES-module `app.js` can't load over `file://` anyway), so always preview
-   via `server.bat`, not by double-clicking the file. `tools/` is in
-   `.assetsignore` (dev-only, never served); `formats/` and `sitemap-formats.xml`
-   **are** served. Don't add the per-format pages to `sw.js` `SHELL` (too many;
-   they cache on visit).
+   via `server.bat`, not by double-clicking the file. `tools/` sits in the repo
+   root, outside the `web/` assets directory, so it is never served; the
+   generated `web/formats/` pages and `web/sitemap-formats.xml` **are** served.
+   Don't add the per-format pages to `sw.js` `SHELL` (too many; they cache on
+   visit).
 
 (`save.bat`'s full generator order on each commit: prerender-samples →
 prerender-formats → prerender-format-pages → stamp-counts → stamp-footer →

@@ -24,7 +24,7 @@
   "compatibility_date": "2026-06-03",
   "observability": { "enabled": true },
   "assets": {
-    "directory": ".",
+    "directory": "web",
     // Named binding so the Worker can hand non-/api requests back to the assets
     // system (env.ASSETS.fetch), preserving clean URLs + the SPA fallback.
     "binding": "ASSETS",

@@ -222,10 +222,10 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       './assets/js/renderers/gcode.js',
       // The /samples gallery files (~18 MB) so the demo gallery works fully
       // offline. Keep this list in step with the samples/ directory.
-      './samples/3D model.obj', './samples/3D models.3mf', './samples/3D printer.gcode',
-      './samples/After effects.aep', './samples/CNC mill.tap', './samples/Cave14.ogg',
-      './samples/LUT file.cube', './samples/PCB design.kicad_pcb', './samples/archive.zip',
-      './samples/audio.mp3', './samples/image.jpg', './samples/pdf file.pdf',
+      './samples/3D-model.obj', './samples/3D-models.3mf', './samples/3D-printer.gcode',
+      './samples/After-effects.aep', './samples/CNC-mill.tap', './samples/Cave14.ogg',
+      './samples/LUT-file.cube', './samples/PCB-design.kicad_pcb', './samples/archive.zip',
+      './samples/audio.mp3', './samples/image.jpg', './samples/pdf_file.pdf',
       './samples/spreadsheet.csv', './samples/video.mp4', './samples/webpage.html',
       './samples/Fraunces.ttf'
     ],

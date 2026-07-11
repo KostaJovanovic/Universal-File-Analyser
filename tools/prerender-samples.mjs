@@ -21,15 +21,16 @@ import { dirname, join } from 'node:path';
 import { esc, escAttr, DEPTH_BADGE } from './prerender-common.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const PAGE = join(ROOT, 'samples.html');
-const SAMPLES_DIR = join(ROOT, 'samples');
+const WEB = join(ROOT, 'web');   // the website source; the content sidecars stay under tools/
+const PAGE = join(WEB, 'samples.html');
+const SAMPLES_DIR = join(WEB, 'samples');
 
 const START = '<!-- SAMPLES:START -->';
 const END = '<!-- SAMPLES:END -->';
 
 // pathToFileURL: a bare Windows path (C:\…) is not a valid ESM specifier.
 const { catalogGrouped, EXT_VARIANTS } = await import(
-  pathToFileURL(join(ROOT, 'assets/js/core/formats.js')).href
+  pathToFileURL(join(WEB, 'assets/js/core/formats.js')).href
 );
 
 // Optional caption overrides, keyed by filename. Tolerate the file being absent.

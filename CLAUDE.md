@@ -130,10 +130,10 @@ stamp-footer `PAGES`.
 dependency-free; all npm/Cargo deps live under `native/` so Cloudflare's
 root-anchored build never sees a `package.json`.
 
-- **How the frontend is assembled**: `native/build-dist.mjs` copies the repo root
-  into `native/dist/` (Tauri's `frontendDist`), excluding dev-only dirs/files
-  (its exclude list mirrors `.assetsignore` plus native-only drops - `sw.js`,
-  robots/sitemaps/llms.txt). It then **vendors the big CDN-streamed WASM**
+- **How the frontend is assembled**: `native/build-dist.mjs` copies the `web/`
+  folder (the website source) into `native/dist/` (Tauri's `frontendDist`),
+  excluding the few native-only files (`sw.js`, robots/sitemaps/llms.txt). It
+  then **vendors the big CDN-streamed WASM**
   (ffmpeg core, onnxruntime-web + the Kim Vocal 2 model, OpenCASCADE) into
   `dist/assets/vendor/`, cached in `native/.native-cache/`, so the app is fully
   offline and strict-CSP-clean. Keep the pinned URLs/versions in `VENDOR` in
@@ -160,38 +160,54 @@ root-anchored build never sees a `package.json`.
 ## File structure
 
 ```
-index.html          — main page (the drop/analyse app)
-about.html          — about/info page (format tables, #ext-/#fmt- anchors)
-patch.html          — public changelog (one .patch-entry per commit)
-privacy.html        — privacy page (single-sourced footer)
-stats.html          — public analytics page (reads the Worker's stats API)
-samples.html        — generated /samples gallery (driven by samples/ dir)
-compare.html        — /compare page: two dropzones, side-by-side analysis of two
-                      files (see "The /compare page")
-atari.html          — Asteroids easter-egg game page (loads assets/js/games/)
-formats.html        — generated /formats hub (see Generated SEO pages)
-formats/            — generated /formats/<ext> pages (wiped + rebuilt per commit)
-samples/            — example files that drive the /samples gallery
-tools/              — Node generator scripts (dev-only, in .assetsignore)
+REPO ROOT           — deploy config, dev/app scripts, and the folders below.
+                      The website itself lives entirely in web/.
+save.bat            — commit + version bump + push (the only way to commit; bumps
+                      COMMIT_COUNT in web/assets/js/core/app.js and the cache epoch
+                      in web/sw.js)
+server.bat          — launch serve.py on :3000 (opens browser)
+serve.py            — local dev server mirroring Cloudflare clean-URL routing
+                      (its document root is web/)
+native-dev.bat      — rebuild the native binary (cds into native/; needs Rust)
+native-refresh.bat  — instant native frontend refresh (cds into native/)
+native-android.bat  — local Android APK build (cds into native/)
+wrangler.jsonc      — Cloudflare static-asset deploy config (assets.directory = "web")
+README.md           — public GitHub readme (visitor-facing overview; this
+                      file is the real working guidance)
+tools/              — Node generator scripts (dev-only, never served). They read
+                      website files via a WEB = join(ROOT, 'web') constant, while
+                      tools/ + worker/ + stats-backup/ paths stay under the root.
 worker/             — Cloudflare Worker: anonymous analysed-count stats API
                       (index.js + schema.sql + disperse-unsupported.sql). The only
                       server-side code; the analyser itself stays browser-only.
 native/             — Tauri 2 native shell (see "Native app"): build-dist.mjs
-                      assembles native/dist from the repo root; src-tauri/ holds
-                      the minimal Rust (auto-updater bridge). Deps stay here so
-                      the root stays dependency-free.
-README.md           — public GitHub readme (visitor-facing overview; this
-                      file is the real working guidance)
-sw.js               — service worker (precache SHELL + cache epoch VERSION)
-manifest.json       — PWA manifest (format count stamped by stamp-counts.mjs)
-robots.txt          — points crawlers at sitemap.xml + sitemap-formats.xml
-sitemap.xml         — main sitemap (lastmod refreshed by stamp-counts.mjs)
-sitemap-formats.xml — per-format-page sitemap (written by prerender-format-pages.mjs)
-llms.txt            — machine-readable site summary for LLM crawlers
-serve.py            — local dev server mirroring Cloudflare clean-URL routing
-server.bat          — launch serve.py on :3000 (opens browser)
-save.bat            — commit + version bump + push (the only way to commit)
-wrangler.jsonc      — Cloudflare static-asset deploy config
+                      assembles native/dist from web/; src-tauri/ holds the minimal
+                      Rust (auto-updater bridge). Deps stay here so the root stays
+                      dependency-free.
+
+web/                — THE WEBSITE, served at "/" by Cloudflare (assets.directory).
+                      Everything from here down lives inside web/:
+  index.html          — main page (the drop/analyse app)
+  about.html          — about/info page (format tables, #ext-/#fmt- anchors)
+  patch.html          — public changelog (one .patch-entry per commit)
+  privacy.html        — privacy page (single-sourced footer)
+  stats.html          — public analytics page (reads the Worker's stats API)
+  samples.html        — generated /samples gallery (driven by samples/ dir)
+  compare.html        — /compare page: two dropzones, side-by-side analysis of two
+                        files (see "The /compare page")
+  atari.html          — Asteroids easter-egg game page (loads assets/js/games/)
+  formats.html        — generated /formats hub (see Generated SEO pages)
+  formats/            — generated /formats/<ext> pages (wiped + rebuilt per commit)
+  samples/            — example files that drive the /samples gallery
+  sw.js               — service worker (precache SHELL + cache epoch VERSION)
+  manifest.json       — PWA manifest (format count stamped by stamp-counts.mjs)
+  robots.txt          — points crawlers at sitemap.xml + sitemap-formats.xml
+  sitemap.xml         — main sitemap (lastmod refreshed by stamp-counts.mjs)
+  sitemap-formats.xml — per-format-page sitemap (written by prerender-format-pages.mjs)
+  llms.txt            — machine-readable site summary for LLM crawlers
+  assets/             — css / fonts / img / vendor + all the app JS; detailed below
+
+web/assets/ in detail (the app's CSS, fonts, images, third-party libs, and JS):
 assets/
   css/
     analyser.css    — all styles

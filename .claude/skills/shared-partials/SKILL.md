@@ -3,6 +3,10 @@ name: shared-partials
 description: How Analyser single-sources the footer's offline-use block and the head's stylesheet+theme-bootstrap tail across every main page. Use when editing the footer, the <head> tail, tools/stamp-footer.mjs, tools/stamp-head.mjs, or tools/partials/footer-shared.html.
 ---
 
+The main pages live under `web/` (e.g. `web/index.html`); the generators and the
+`tools/partials/` source stay in the repo root and reach the pages via a
+`WEB = join(ROOT, 'web')` constant.
+
 ## Single-sourced footer
 
 The footer's **shared block** - the "Everything runs in your browser" heading plus

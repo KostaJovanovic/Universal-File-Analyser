@@ -39,7 +39,8 @@ import { dirname, join } from 'node:path';
 import { esc, escAttr, buildFullKeys, makeHrefOf, THEME_SCRIPT, DEPTH_BADGE } from './prerender-common.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OUTDIR = join(ROOT, 'formats');
+const WEB = join(ROOT, 'web');   // the website source; content sidecars stay under tools/
+const OUTDIR = join(WEB, 'formats');
 const SITE = 'https://lab.valjdakosta.com';
 
 // Build date, YYYY-MM-DD (local) - stamped as <lastmod> on every per-format URL so
@@ -48,7 +49,7 @@ const SITE = 'https://lab.valjdakosta.com';
 const _d = new Date();
 const TODAY = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`;
 
-const { catalogGrouped, EXT_VARIANTS } = await import(pathToFileURL(join(ROOT, 'assets/js/core/formats.js')).href);
+const { catalogGrouped, EXT_VARIANTS } = await import(pathToFileURL(join(WEB, 'assets/js/core/formats.js')).href);
 const { EXT_PAGES, VARIANT_FACTS } = await import(pathToFileURL(join(ROOT, 'tools/format-page-content.mjs')).href);
 // Extra "Did you know" bullets, keyed by lowercase ext -> [fact, ...]. A
 // generated-input sidecar (built in batches) so the 1000+ primary entries in
@@ -590,7 +591,7 @@ ${[
 ].join('\n')}
 </urlset>
 `;
-writeFileSync(join(ROOT, 'sitemap-formats.xml'), sitemap);
+writeFileSync(join(WEB, 'sitemap-formats.xml'), sitemap);
 
 const total = 1 + fullKeysSorted.length + idKeysSorted.length;
 console.log(`prerender-format-pages: ${fullKeysSorted.length} full pages -> formats/, ${idKeysSorted.length} id pages -> formats/id/, ${total} urls -> sitemap-formats.xml`);
