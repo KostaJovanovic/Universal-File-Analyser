@@ -7,12 +7,7 @@
 import { loadScript } from '../core/util.js';
 
 const OCCT_VERSION = '0.0.23';
-// Production native build (Tauri asset protocol): load the vendored kernel from
-// the bundle (offline, CSP-clean). Web + `tauri dev`: the CDN. See build-dist.mjs.
-const NATIVE_SHELL = typeof location !== 'undefined' && (location.protocol === 'tauri:' || location.hostname === 'tauri.localhost');
-const OCCT_BASE = NATIVE_SHELL
-  ? '/assets/vendor/occt/'
-  : `https://cdn.jsdelivr.net/npm/occt-import-js@${OCCT_VERSION}/dist/`;
+const OCCT_BASE = `https://cdn.jsdelivr.net/npm/occt-import-js@${OCCT_VERSION}/dist/`;
 
 let _occtPromise = null;
 

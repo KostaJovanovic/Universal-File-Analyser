@@ -123,47 +123,6 @@ main page's fixed sections (`#photoPreview`, `#videoPreview`, ...). It is a full
 main page: listed in `sw.js` `SHELL`, `sitemap.xml`, and both stamp-head and
 stamp-footer `PAGES`.
 
-## Native app (Tauri shell)
-
-`native/` wraps the **exact same website source** in a Tauri 2 shell for desktop
-(and eventual mobile) - there is **no separate frontend**. The repo root stays
-dependency-free; all npm/Cargo deps live under `native/` so Cloudflare's
-root-anchored build never sees a `package.json`.
-
-- **How the frontend is assembled**: `native/build-dist.mjs` copies the `web/`
-  folder (the website source) into `native/dist/` (Tauri's `frontendDist`),
-  excluding the few native-only files (`sw.js`, robots/sitemaps/llms.txt). It
-  then **vendors the heavy "Everything"-tier CDN WASM** (ffmpeg core + the
-  OpenCASCADE kernel) into `dist/assets/vendor/`, cached in `native/.native-cache/`,
-  so video/audio and STEP/IGES CAD work offline out of the box. Keep the pinned
-  URLs/versions in `VENDOR` in lockstep with the renderer constants (`video.js`
-  `FFMPEG_CORE_BASE`, `occt-loader.js` `OCCT_VERSION`). The **"Complete"-tier packs
-  are deliberately NOT bundled** - the AI vocal-separation runtime + model
-  (onnxruntime-web + Kim Vocal 2, `mdx-model.js`) and the 30+ non-English OCR
-  language packs download on demand the first time the feature is used, exactly
-  like on the web. The strict CSP in `tauri.conf.json` whitelists their hosts
-  (`cdn.jsdelivr.net`, `huggingface.co`/`*.hf.co`, `tessdata.projectnaptha.com`);
-  keep that `connect-src`/`script-src` in step when a renderer adds a new CDN.
-- **Commands** (run from `native/`): `npm run dev` (`tauri dev` - loads the live
-  `serve.py` dev server via `devUrl`, no dist build needed), `npm run build`
-  (`tauri build` - runs `build-dist.mjs` first via `beforeBuildCommand`),
-  `node build-dist.mjs [--no-vendor]` (assemble dist manually; `--no-vendor`
-  skips the WASM download for a fast copy).
-- **Rust is near-empty by design** (`src-tauri/src/lib.rs`): the only native
-  logic is the desktop auto-updater bridge - two commands (`check_for_update`,
-  `install_update`) the frontend calls via `assets/js/core/native-update.js`,
-  pointed at GitHub Releases `latest.json`. Everything else (disabling the
-  service worker, clean-URL nav) is JS-side, gated on `window.__TAURI__` /
-  `window.__TAURI_INTERNALS__` so the web build is unaffected.
-- **Tracked vs generated**: `native/package.json` and `native/src-tauri/` source
-  are committed; `native/dist/`, `native/.native-cache/`, `node_modules/`,
-  `src-tauri/target/`, and `src-tauri/gen/` are gitignored.
-- Renderers that use a bundled WASM copy check the Tauri context before reaching
-  for the CDN - grep `NATIVE_SHELL` in `video.js` (ffmpeg) and `occt-loader.js`
-  (OCCT); other `__TAURI__` / native-shell checks live in `history.js`,
-  `navigate.js`, `app.js`. (`mdx-model.js` no longer branches - the AI runtime +
-  model always stream from the CDN, on web and native alike.)
-
 ## File structure
 
 ```
@@ -175,9 +134,6 @@ save.bat            — commit + version bump + push (the only way to commit; bu
 server.bat          — launch serve.py on :3000 (opens browser)
 serve.py            — local dev server mirroring Cloudflare clean-URL routing
                       (its document root is web/)
-native-dev.bat      — rebuild the native binary (cds into native/; needs Rust)
-native-refresh.bat  — instant native frontend refresh (cds into native/)
-native-android.bat  — local Android APK build (cds into native/)
 wrangler.jsonc      — Cloudflare static-asset deploy config (assets.directory = "web")
 README.md           — public GitHub readme (visitor-facing overview; this
                       file is the real working guidance)
@@ -187,10 +143,6 @@ tools/              — Node generator scripts (dev-only, never served). They re
 worker/             — Cloudflare Worker: anonymous analysed-count stats API
                       (index.js + schema.sql + disperse-unsupported.sql). The only
                       server-side code; the analyser itself stays browser-only.
-native/             — Tauri 2 native shell (see "Native app"): build-dist.mjs
-                      assembles native/dist from web/; src-tauri/ holds the minimal
-                      Rust (auto-updater bridge). Deps stay here so the root stays
-                      dependency-free.
 
 web/                — THE WEBSITE, served at "/" by Cloudflare (assets.directory).
                       Everything from here down lives inside web/:
