@@ -40,6 +40,22 @@ Internal references are all either root-absolute clean URLs (`/about`,
 changes their disk location but **not their public URL**, and no page/link/import
 needs rewriting. This is the linchpin; verify it holds (step 6.0) before trusting it.
 
+**Verified URL references (all unaffected, because the domain-root URL is unchanged):**
+- **Service worker**: registered as `navigator.serviceWorker.register('sw.js',
+  { updateViaCache: 'none' })` on every main page (index/about/patch/compare/
+  formats/privacy/...), SHELL precache uses `./` paths. From a root-served page
+  `'sw.js'` -> `/sw.js`, scope `/`; `web/sw.js` is still served at `/sw.js`, so it
+  is identical before/after. Existing installs survive; the next `save.bat`
+  VERSION bump re-caches. (Move-independent pre-existing quirk: a relative
+  `'sw.js'` from a `/formats/<ext>` page would scope to `/formats/` - the move
+  changes nothing here.)
+- **manifest.json**: `scope`/`start_url` are `"./"`, icons relative
+  (`assets/img/...`); served at the same `/manifest.json` -> resolve to `/` and
+  `/assets/...` unchanged.
+- Page `<script src>` / `<link href>`, canonical + OG URLs, CSS `url(...)`, JS
+  `import`, `fetch('/api/...')`: all absolute-`/` or relative-within-the-tree ->
+  unchanged.
+
 ## 3. Target layout
 
 ```
@@ -112,6 +128,25 @@ moves together), fix it. This validates the section 2 assumption.
 - `main: "worker/index.js"` stays (root-relative, worker stays in root).
 - Everything else (d1, ratelimit, not_found_handling) unchanged.
 
+### 6.1b Cloudflare (dashboard) - almost certainly NO change
+The deploy is config-as-code, so the `assets.directory` edit in 6.1 is the only
+deploy-facing change and it lives in the repo. Unaffected (no dashboard edit):
+custom domain / DNS / routes (`lab.valjdakosta.com`), the `/api` Worker, the D1
+database, the `IP_SALT` secret, and the ratelimit binding - all bound to the
+Worker, independent of where static files sit. Clean URLs + SPA fallback live in
+the `assets` block and follow the new directory automatically.
+Just CONFIRM two things before relying on it:
+1. This is **Cloudflare Workers (Static Assets)** - driven by `wrangler.jsonc`
+   (the `main` worker + `d1_databases` + `unsafe` ratelimit binding confirm it),
+   so the directory change ships on push with no dashboard edit. If it were ever
+   Cloudflare **Pages**, there is a dashboard "Build output directory" to switch
+   from `/` to `web` - but this config is not Pages-shaped.
+2. No dashboard **build/deploy override**: Settings -> Build should run the default
+   `wrangler deploy` from the repo root. A custom "Root directory" or a deploy
+   command with an explicit `--assets <path>` would override wrangler.jsonc and
+   need updating. Default = nothing to change.
+Proven safe by the branch **preview deploy** (step 7.7) before touching `main`.
+
 ### 6.2 `.assetsignore`
 - With `directory: "web"`, all the non-website stuff is already outside `web/`
   and no longer needs listing. Reduce this file to (at most) anything inside
@@ -133,20 +168,30 @@ moves together), fix it. This validates the section 2 assumption.
 - `server.bat` needs no change (still runs `python serve.py`), because serve.py
   stays in root.
 
-### 6.5 `tools/*.mjs` (output roots)
-Each generator resolves a `ROOT` near its top (e.g. `join(__dirname, '..')`).
-Repoint the ones that WRITE website files to `web/` (e.g.
-`join(__dirname, '..', 'web')`), or introduce a shared `WEB` constant in
-`tools/prerender-common.mjs` and import it:
-- writes website files -> repoint: `prerender-samples.mjs`, `prerender-formats.mjs`,
-  `prerender-format-pages.mjs`, `stamp-counts.mjs`, `stamp-footer.mjs`,
-  `stamp-head.mjs`, `prerender-testpage.mjs`, `disperse-unsupported.mjs`.
-- reads `assets/js/core/formats.js` etc. as input -> also under `web/` now; update
-  the read paths too (these tools both read from and write to the site tree).
-- unaffected: `backup-stats.mjs` (writes `stats-backup/` in root), plus data/helpers
-  `format-page-content.mjs`, `dyk-extra.json`, `sample-content.mjs`,
-  `prerender-common.mjs`, `native-version.mjs`.
-- `tools/partials/` (footer-shared.html, head partials) stay in `tools/`.
+### 6.5 `tools/*.mjs` (path roots) - use a `WEB` constant, do NOT just repoint ROOT
+Every generator sets `ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')`
+(= repo root) and then references a **mix** of paths - some that MOVE to `web/`
+and some that STAY in root - so a blanket `ROOT -> web/` repoint WOULD BREAK the
+staying ones. Verified examples:
+- MOVES to `web/`: `join(ROOT, 'assets/js/core/formats.js')` (input;
+  disperse-unsupported.mjs:32, prerender-format-pages.mjs:51, others),
+  `join(ROOT, 'formats')` (output OUTDIR; prerender-format-pages.mjs:42 and its
+  `formats/id` rebuild), plus the `.html` pages, `samples/`, `manifest.json`,
+  `sitemap*.xml`.
+- STAYS in root: `join(ROOT, 'tools/format-page-content.mjs')` and
+  `join(ROOT, 'tools/dyk-extra.json')` (prerender-format-pages.mjs:52,59),
+  `join(ROOT, 'worker', 'disperse-unsupported.sql')` (disperse-unsupported.mjs:30),
+  `tools/partials/*`, and `backup-stats.mjs`'s `stats-backup/` output.
+
+FIX: keep `ROOT` = repo root, add `const WEB = join(ROOT, 'web')` (ideally in
+`tools/prerender-common.mjs` and import it), and change ONLY the website paths to
+`join(WEB, ...)`. Tools to touch: `prerender-samples`, `prerender-formats`,
+`prerender-format-pages`, `stamp-counts`, `stamp-footer`, `stamp-head`,
+`prerender-testpage`, `disperse-unsupported` (repoint its `formats.js` read; its
+`worker/...sql` write STAYS), and `native-version.mjs` (`join(root,
+'assets/js/core/app.js')` -> `join(root, 'web', 'assets/js/core/app.js')`).
+Leave `backup-stats.mjs`, `tools/partials/`, `format-page-content.mjs`,
+`dyk-extra.json`, `sample-content.mjs` untouched.
 
 ### 6.6 `native/build-dist.mjs`
 - Today: `ROOT = join(NATIVE_DIR, '..')` (repo root) and a large EXCLUDE_DIRS /
