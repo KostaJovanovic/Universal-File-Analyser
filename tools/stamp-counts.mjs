@@ -23,9 +23,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const WEB = join(ROOT, 'web');   // the website source; tools/ + worker/ stay under ROOT
 
 const { formatCount } = await import(
-  pathToFileURL(join(ROOT, 'assets/js/core/formats.js')).href
+  pathToFileURL(join(WEB, 'assets/js/core/formats.js')).href
 );
 const n = formatCount();
 
@@ -63,7 +64,9 @@ const JOBS = [
 
 let changed = 0;
 for (const [rel, passes] of JOBS) {
-  const file = join(ROOT, rel);
+  // Every job is a website file (-> web/) except the shared footer partial, which
+  // lives under tools/ in the repo root.
+  const file = join(rel.startsWith('tools/') ? ROOT : WEB, rel);
   let src;
   try {
     src = readFileSync(file, 'utf8');

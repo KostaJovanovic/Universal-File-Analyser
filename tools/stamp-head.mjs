@@ -22,6 +22,7 @@ import { dirname, join } from 'node:path';
 import { THEME_SCRIPT } from './prerender-common.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const WEB = join(ROOT, 'web');   // the website source (pages live under web/)
 
 // stamp-footer's scope MINUS atari.html (it keeps its own hand-authored head)
 // PLUS test.html (the hidden UI style-guide sheet - it needs the theme bootstrap
@@ -38,7 +39,7 @@ const block = `${START}\n  <link rel="stylesheet" href="assets/css/fonts.css">\n
 let changed = 0;
 const missing = [];
 for (const name of PAGES) {
-  const file = join(ROOT, name);
+  const file = join(WEB, name);
   const html = readFileSync(file, 'utf8');
   if (!RE.test(html)) { missing.push(name); continue; }
   // Function replacer so $-sequences in the block are never interpreted.

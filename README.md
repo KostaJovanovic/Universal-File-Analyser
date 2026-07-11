@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/img/banner.jpg" alt="Analyser banner" width="640">
+<img src="web/assets/img/banner.jpg" alt="Analyser banner" width="640">
 
 # Analyser
 
@@ -79,14 +79,15 @@ There is nothing to install and nothing to build; editing a file and refreshing 
 
 ## Project layout
 
-- `index.html` - the drop-and-analyse app
-- `assets/js/core/formats.js` - the single source of truth for every supported file type
-- `assets/js/renderers/` - one module per top-level type (photo, audio, video, PDF, 3D, ...)
-- `assets/js/parsers/` - lazy per-domain metadata parsers for the long tail of formats
-- `assets/js/lib/` - shared binary helpers and WASM loaders
-- `assets/vendor/` - third-party libraries, served locally so the app stays offline-capable
-- `tools/` - Node scripts that pre-render the `/formats` SEO pages from the catalog
-- `sw.js` - the service worker behind the offline support
+- `web/` - the entire website (served at the domain root); everything below lives here
+- `web/index.html` - the drop-and-analyse app
+- `web/assets/js/core/formats.js` - the single source of truth for every supported file type
+- `web/assets/js/renderers/` - one module per top-level type (photo, audio, video, PDF, 3D, ...)
+- `web/assets/js/parsers/` - lazy per-domain metadata parsers for the long tail of formats
+- `web/assets/js/lib/` - shared binary helpers and WASM loaders
+- `web/assets/vendor/` - third-party libraries, served locally so the app stays offline-capable
+- `tools/` - Node scripts (in the repo root) that pre-render the `/formats` SEO pages from the catalog
+- `web/sw.js` - the service worker behind the offline support
 
 ## Versioning
 

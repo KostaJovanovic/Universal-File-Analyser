@@ -22,12 +22,13 @@ import { dirname, join } from 'node:path';
 import { esc, escAttr, buildFullKeys, makeHrefOf, DEPTH_BADGE } from './prerender-common.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const PAGE = join(ROOT, 'formats.html');
+const WEB = join(ROOT, 'web');   // the website source (formats.html + catalog live under web/)
+const PAGE = join(WEB, 'formats.html');
 const SITE = 'https://lab.valjdakosta.com';
 
 // pathToFileURL: a bare Windows path (C:\…) is not a valid ESM specifier.
 const { catalogGrouped, formatCount } = await import(
-  pathToFileURL(join(ROOT, 'assets/js/core/formats.js')).href
+  pathToFileURL(join(WEB, 'assets/js/core/formats.js')).href
 );
 
 // Which extensions live in at least one full-analysis row. Their landing pages

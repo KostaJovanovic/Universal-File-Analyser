@@ -2,7 +2,7 @@
 #
 # What it does per push:
 #   * derives the app version from the WEBSITE's versioning source of truth
-#     (COMMIT_COUNT / RELEASE_COMMITS in assets/js/core/app.js) via
+#     (COMMIT_COUNT / RELEASE_COMMITS in web/assets/js/core/app.js) via
 #     tools/native-version.mjs, so desktop/mobile releases carry the same version
 #     the site shows. The site renders "6.03"; semver needs MAJOR.MINOR.PATCH with
 #     no leading zeros, so that maps to "6.0.3" (same digits, valid, monotonic).
@@ -21,7 +21,7 @@
 # release rather than making a new one.
 #
 # Cost note: this runs a full matrix on EVERY main push. To cut CI minutes, either
-# narrow the trigger (add `paths:` to build only when `native/**` or `assets/**`
+# narrow the trigger (add `paths:` to build only when `native/**` or `web/**`
 # change) or switch to tag-triggered releases (`on: push: tags: ['v*']`).
 
 name: release

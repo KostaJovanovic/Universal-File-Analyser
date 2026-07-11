@@ -2,21 +2,20 @@
 //
 // Analyser has no framework build (editing a file is the dev loop), but Tauri's
 // `frontendDist` wants one clean folder. This lives in native/ and reads the
-// website source from the parent (the repo root), copying it into native/dist/,
-// excluding dev-only dirs and files, then vendors the handful of big WASM
+// website source from ../web, copying it into native/dist/, excluding the few
+// native-only files, then vendors the handful of big WASM
 // subsystems the web build streams from a CDN so the native app is fully offline
 // and strict-CSP-clean. It is wired as `beforeBuildCommand` in
 // native/src-tauri/tauri.conf.json, so `tauri build` runs it automatically;
 // `tauri dev` does not need it (it loads the live serve.py dev server via devUrl).
 //
-// The exclude list mirrors .assetsignore (the Cloudflare deploy's source of truth)
-// plus a few native-only exclusions:
+// Because the source is now the self-contained web/ folder, the only exclusions
+// left are the native-only drops that live INSIDE web/:
 //   * sw.js            - the service worker is disabled in the shell (navigate.js
 //                        also no-ops registration); shipping it would only add a
 //                        stale-cache layer that fights the native updater.
 //   * robots/sitemaps/ - crawler-only; meaningless in an offline app.
 //     llms.txt
-//   * node_modules, src-tauri, dist, tools, worker, research, ... - not runtime.
 //
 // Vendored WASM (see VENDOR below): ffmpeg core, onnxruntime-web + the Kim Vocal 2
 // model, and the OpenCASCADE kernel. The web build streams these from jsDelivr /
@@ -35,25 +34,19 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 const NATIVE_DIR = dirname(fileURLToPath(import.meta.url)); // .../native (this folder)
-const ROOT = join(NATIVE_DIR, '..');                        // repo root = the website source
+const ROOT = join(NATIVE_DIR, '..', 'web');                 // ../web = the website source
 const DIST = join(NATIVE_DIR, 'dist');                      // native/dist (Tauri frontendDist)
 const CACHE = join(NATIVE_DIR, '.native-cache');            // gitignored; survives dist wipes
 const NO_VENDOR = process.argv.includes('--no-vendor');
 
-// Top-level directories never shipped to the native app.
-const EXCLUDE_DIRS = new Set([
-  '.git', '.github', '.claude', '.wrangler',
-  'native',                                       // the Tauri shell itself (this folder)
-  'node_modules', 'dist', 'src-tauri', '.native-cache',
-  'tools', 'worker', 'research', 'research2', 'stats-backup', 'minimal',
-]);
+// The website source is now the self-contained web/ folder (ROOT above), so all
+// the dev-only dirs/files that used to sit beside it in the repo root are already
+// outside the copy - no need to list them. Only the native-only drops that live
+// INSIDE web/ remain to be excluded.
+const EXCLUDE_DIRS = new Set([]);
 
-// Top-level files never shipped to the native app.
+// Website files that must NOT ship in the native app.
 const EXCLUDE_FILES = new Set([
-  '.assetsignore', '.gitattributes', '.gitignore', '.editorconfig',
-  'CLAUDE.md', 'README.md', 'DOCS_PLAN.md', 'LICENSE', 'nul',
-  'package.json', 'package-lock.json',
-  'serve.py', 'wrangler.jsonc',
   'sw.js',                                         // service worker disabled in the shell
   'robots.txt', 'sitemap.xml', 'sitemap-formats.xml', 'llms.txt', // crawler-only
 ]);

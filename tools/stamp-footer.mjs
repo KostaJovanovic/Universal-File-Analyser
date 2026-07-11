@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const WEB = join(ROOT, 'web');   // the website source; the footer partial stays under tools/
 
 // Pages that carry the full footer. The per-format /formats/<ext> pages are
 // deliberately excluded - hundreds of thin SEO pages keep their own minimal
@@ -43,7 +44,7 @@ const block = `${START}\n${shared}\n  ${END}`;
 let changed = 0;
 const missing = [];
 for (const name of PAGES) {
-  const file = join(ROOT, name);
+  const file = join(WEB, name);
   const html = readFileSync(file, 'utf8');
   if (!RE.test(html)) { missing.push(name); continue; }
   // Function replacer so $-sequences in the block are never interpreted.

@@ -12,10 +12,10 @@ REM redirect the desktop build's target dir too. The desktop Windows build is
 REM unaffected by the space (MSVC's linker handles it fine).
 REM
 REM Usage (from anywhere):
-REM   native\android-build.bat            -> debug APK (default)
-REM   native\android-build.bat release    -> release APK
+REM   native-android.bat            -> debug APK (default)
+REM   native-android.bat release    -> release APK
 REM
-REM Output: src-tauri\gen\android\app\build\outputs\apk\universal\<profile>\
+REM Output: native\src-tauri\gen\android\app\build\outputs\apk\universal\<profile>\
 REM ---------------------------------------------------------------------------
 setlocal
 
@@ -31,8 +31,8 @@ set "PATH=%USERPROFILE%\.cargo\bin;%ANDROID_HOME%\platform-tools;%PATH%"
 REM The actual fix: keep the linker response file off the spaced project path.
 set "CARGO_TARGET_DIR=C:\anrtgt"
 
-REM Build from the native/ dir (this script lives there).
-cd /d "%~dp0"
+REM Build from the native/ dir (this script lives in the repo root, one level up).
+cd /d "%~dp0native"
 
 REM Default to a debug APK; "release" as the first arg switches to a release build.
 set "PROFILE=--debug"

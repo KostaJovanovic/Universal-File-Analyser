@@ -1,17 +1,18 @@
 @echo off
 REM ---------------------------------------------------------------------------
-REM  native/dev-build.bat - rebuild the native binary. Needed ONLY when you
+REM  native-dev.bat - rebuild the native binary. Needed ONLY when you
 REM  changed Rust (src-tauri) or tauri.conf.json.
 REM
-REM  The exe serves dist/ live from disk, so frontend (JS/HTML/CSS) edits do NOT
-REM  need this - use dev-refresh.bat + Ctrl+R for those (~2s, no rebuild). Reach
-REM  for this script only when the compiled binary itself must change: it kills
-REM  the running app (Windows locks the exe), refreshes dist/, does a DEBUG
-REM  cargo build (~13s when Rust changed, ~1s otherwise), and relaunches with
+REM  Lives in the repo root but runs inside native/ (cd below). The exe serves
+REM  dist/ live from disk, so frontend (JS/HTML/CSS) edits do NOT need this - use
+REM  native-refresh.bat + Ctrl+R for those (~2s, no rebuild). Reach for this
+REM  script only when the compiled binary itself must change: it kills the
+REM  running app (Windows locks the exe), refreshes dist/, does a DEBUG cargo
+REM  build (~13s when Rust changed, ~1s otherwise), and relaunches with
 REM  devtools (F12).
 REM ---------------------------------------------------------------------------
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0native"
 set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
 
 echo [1/4] Closing any running app (Windows locks the exe during build)...

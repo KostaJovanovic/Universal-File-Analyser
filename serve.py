@@ -86,7 +86,10 @@ MOCK_STATS = {
 }
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
-ROOT = os.path.dirname(os.path.abspath(__file__))
+# The website now lives under web/ (serve.py stays in the repo root but its
+# document root is web/, so clean-URL routing mirrors the Cloudflare deploy,
+# which serves the contents of web/ at "/").
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
 
 
 class CleanURLHandler(SimpleHTTPRequestHandler):
