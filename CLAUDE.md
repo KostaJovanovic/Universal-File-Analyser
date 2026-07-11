@@ -133,12 +133,17 @@ root-anchored build never sees a `package.json`.
 - **How the frontend is assembled**: `native/build-dist.mjs` copies the `web/`
   folder (the website source) into `native/dist/` (Tauri's `frontendDist`),
   excluding the few native-only files (`sw.js`, robots/sitemaps/llms.txt). It
-  then **vendors the big CDN-streamed WASM**
-  (ffmpeg core, onnxruntime-web + the Kim Vocal 2 model, OpenCASCADE) into
-  `dist/assets/vendor/`, cached in `native/.native-cache/`, so the app is fully
-  offline and strict-CSP-clean. Keep the pinned URLs/versions in `VENDOR` in
-  lockstep with the renderer constants (`video.js` `FFMPEG_CORE_BASE`,
-  `mdx-model.js` `ORT_VERSION`/`MDX_MODEL.url`, `occt-loader.js` `OCCT_VERSION`).
+  then **vendors the heavy "Everything"-tier CDN WASM** (ffmpeg core + the
+  OpenCASCADE kernel) into `dist/assets/vendor/`, cached in `native/.native-cache/`,
+  so video/audio and STEP/IGES CAD work offline out of the box. Keep the pinned
+  URLs/versions in `VENDOR` in lockstep with the renderer constants (`video.js`
+  `FFMPEG_CORE_BASE`, `occt-loader.js` `OCCT_VERSION`). The **"Complete"-tier packs
+  are deliberately NOT bundled** - the AI vocal-separation runtime + model
+  (onnxruntime-web + Kim Vocal 2, `mdx-model.js`) and the 30+ non-English OCR
+  language packs download on demand the first time the feature is used, exactly
+  like on the web. The strict CSP in `tauri.conf.json` whitelists their hosts
+  (`cdn.jsdelivr.net`, `huggingface.co`/`*.hf.co`, `tessdata.projectnaptha.com`);
+  keep that `connect-src`/`script-src` in step when a renderer adds a new CDN.
 - **Commands** (run from `native/`): `npm run dev` (`tauri dev` - loads the live
   `serve.py` dev server via `devUrl`, no dist build needed), `npm run build`
   (`tauri build` - runs `build-dist.mjs` first via `beforeBuildCommand`),
@@ -153,9 +158,11 @@ root-anchored build never sees a `package.json`.
 - **Tracked vs generated**: `native/package.json` and `native/src-tauri/` source
   are committed; `native/dist/`, `native/.native-cache/`, `node_modules/`,
   `src-tauri/target/`, and `src-tauri/gen/` are gitignored.
-- Renderers that need a local WASM copy check the Tauri context before reaching
-  for the CDN - grep `__TAURI__` / native-shell checks in `video.js`,
-  `occt-loader.js`, `mdx-model.js`, `history.js`, `navigate.js`, `app.js`.
+- Renderers that use a bundled WASM copy check the Tauri context before reaching
+  for the CDN - grep `NATIVE_SHELL` in `video.js` (ffmpeg) and `occt-loader.js`
+  (OCCT); other `__TAURI__` / native-shell checks live in `history.js`,
+  `navigate.js`, `app.js`. (`mdx-model.js` no longer branches - the AI runtime +
+  model always stream from the CDN, on web and native alike.)
 
 ## File structure
 

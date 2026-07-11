@@ -239,25 +239,143 @@ async function parseWireguard(file, ext) {
 }
 
 // ---------- Java KeyStore: .jks / .keystore / .jceks ----------
-function parseJks(head) {
-  if (head.length < 8) return null;
-  const r = new Reader(head);          // big-endian
+// The relevant attribute OIDs for a certificate's subject/issuer Distinguished Name.
+const X509_DN_ATTR = { '2.5.4.3': 'CN', '2.5.4.10': 'O', '2.5.4.11': 'OU', '2.5.4.6': 'C', '2.5.4.7': 'L', '2.5.4.8': 'ST', '1.2.840.113549.1.9.1': 'E' };
+
+// Decode a DER Name (RDNSequence) node into a short "CN=.., O=.." string.
+function derName(b, nameNode) {
+  const parts = [];
+  try {
+    for (const rdn of derChildren(b, nameNode.content, nameNode.end)) {        // SET OF
+      for (const atv of derChildren(b, rdn.content, rdn.end)) {                // SEQUENCE {OID, value}
+        const kids = [...derChildren(b, atv.content, atv.end)];
+        if (kids.length < 2 || kids[0].tag !== 0x06) continue;
+        const key = X509_DN_ATTR[derOid(b, kids[0])];
+        if (key) parts.push(key + '=' + utf8(b.subarray(kids[1].content, kids[1].end)));
+      }
+    }
+  } catch (_) {}
+  return parts.join(', ');
+}
+
+// Decode a DER UTCTime (0x17) / GeneralizedTime (0x18) node to a Date, or null.
+function derTime(b, n) {
+  try {
+    const s = ascii(b, n.content, n.len);
+    let year, rest;
+    if (n.tag === 0x17) { const yy = parseInt(s.slice(0, 2), 10); year = yy >= 50 ? 1900 + yy : 2000 + yy; rest = s.slice(2); }
+    else if (n.tag === 0x18) { year = parseInt(s.slice(0, 4), 10); rest = s.slice(4); }
+    else return null;
+    return new Date(Date.UTC(year, parseInt(rest.slice(0, 2), 10) - 1, parseInt(rest.slice(2, 4), 10),
+      parseInt(rest.slice(4, 6), 10) || 0, parseInt(rest.slice(6, 8), 10) || 0, parseInt(rest.slice(8, 10), 10) || 0));
+  } catch (_) { return null; }
+}
+
+// Best-effort subject/issuer/validity from an X.509 certificate DER (RFC 5280).
+function x509Summary(der) {
+  try {
+    const cert = derRead(der, 0);                                             // Certificate ::= SEQUENCE
+    const tbs = [...derChildren(der, cert.content, cert.end)][0];             // tbsCertificate
+    const k = [...derChildren(der, tbs.content, tbs.end)];
+    let i = (k[0] && k[0].cls === 2 && k[0].tag === 0) ? 1 : 0;               // optional [0] version
+    // k[i]=serial, +1=sigAlg, +2=issuer, +3=validity, +4=subject
+    const val = [...derChildren(der, k[i + 3].content, k[i + 3].end)];
+    return { issuer: derName(der, k[i + 2]), subject: derName(der, k[i + 4]), notBefore: derTime(der, val[0]), notAfter: derTime(der, val[1]) };
+  } catch (_) { return null; }
+}
+
+// SHA-256 of bytes -> uppercase colon-separated hex (the fingerprint keytool prints).
+async function sha256hex(bytes) {
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(buf)].map((x) => x.toString(16).padStart(2, '0').toUpperCase()).join(':');
+  } catch (_) { return null; }
+}
+
+// Read the keystore structure (Oracle JKS / JCEKS): every entry's alias, kind
+// (private-key vs trusted-cert), creation date and certificate chain. The private
+// keys are password-encrypted and are NOT decrypted; the certificates are
+// plaintext, so we decode each X.509 (subject, issuer, validity) and compute its
+// SHA-256 fingerprint - the same detail `keytool -list -v` shows, no password needed.
+async function parseJks(file) {
+  const bytes = new Uint8Array(await file.slice(0, Math.min(file.size, 16_000_000)).arrayBuffer());
+  if (bytes.length < 12) return null;
+  const r = new Reader(bytes);          // big-endian
   const magic = r.u32();
-  let type;
-  if (magic === 0xFEEDFEED) type = 'JKS';
-  else if (magic === 0xCECECECE) type = 'JCEKS';
-  else return null;
-  const version = r.u32();
-  const out = {
-    'Format': 'Java KeyStore',
-    'Keystore type': type,
-    'Version': version,
-  };
-  if (head.length >= 12) {
-    const count = r.u32();
-    if (count >= 0 && count < 1_000_000) out['Aliases (entries)'] = count;
+  if (magic !== 0xFEEDFEED && magic !== 0xCECECECE) {
+    // Since Java 9, `keytool` writes PKCS#12 by default - even when the file is
+    // named .jks - so a modern "keystore" is really a DER SEQUENCE (starts 0x30),
+    // not the FEEDFEED magic. Hand those to the PKCS#12 reader and label them so
+    // it's clear why the internals look different.
+    if (bytes[0] === 0x30) {
+      const res = await parseP12(file);
+      if (res) {
+        res['Format'] = 'Java KeyStore (PKCS#12)';
+        res['Note'] = 'PKCS#12 format - keytool’s default keystore type since Java 9, even for a .jks name.' + (res['Note'] ? ' ' + res['Note'] : '');
+        return res;
+      }
+    }
+    return null;
   }
-  out['Note'] = 'Password-protected store of keys/certificates (Oracle JKS / JCEKS)';
+  const type = magic === 0xFEEDFEED ? 'JKS' : 'JCEKS';
+  const version = r.u32();
+  const count = r.u32();
+
+  const out = { 'Format': 'Java KeyStore', 'Keystore type': type, 'Version': version };
+
+  const entries = [];
+  let keys = 0, trusted = 0, truncated = false;
+  if (count >= 0 && count < 1_000_000) {
+    try {
+      for (let i = 0; i < count; i++) {
+        const tag = r.u32();
+        const alias = utf8(r.bytes_(r.u16()));   // Java modified UTF-8 (ASCII-compatible)
+        const created = r.u64num();              // ms since epoch
+        const e = { alias, created, kind: null, certs: [] };
+        if (tag === 1) {                          // KEY entry: encrypted key + cert chain
+          e.kind = 'PrivateKeyEntry'; keys++;
+          r.bytes_(r.u32());                       // protected (encrypted) key blob - skipped
+          const chain = r.u32();
+          for (let j = 0; j < chain; j++) { r.bytes_(r.u16()); e.certs.push(r.bytes_(r.u32())); }
+        } else if (tag === 2) {                    // TRUSTED CERT entry
+          e.kind = 'TrustedCertEntry'; trusted++;
+          if (version === 2) r.bytes_(r.u16());    // cert type string (e.g. "X.509")
+          e.certs.push(r.bytes_(r.u32()));
+        } else { break; }                          // unknown tag: stop cleanly
+        entries.push(e);
+      }
+    } catch (_) { truncated = true; }
+  }
+
+  out['Aliases (entries)'] = count < 1_000_000 ? count : '?';
+  if (keys) out['Private-key entries'] = keys;
+  if (trusted) out['Trusted-cert entries'] = trusted;
+
+  // Per-entry listing with decoded certificates + fingerprints.
+  const now = new Date();
+  const lines = [];
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    lines.push('[' + (i + 1) + '] ' + (e.alias || '(no alias)'));
+    lines.push('    ' + (e.kind || 'entry') + ' - created ' + (e.created ? fmtDate(new Date(e.created)) : 'unknown date'));
+    for (const der of e.certs) {
+      const x = x509Summary(der);
+      if (x) {
+        if (x.subject) lines.push('    Subject: ' + x.subject);
+        if (x.issuer)  lines.push('    Issuer:  ' + x.issuer + (x.subject && x.subject === x.issuer ? ' (self-signed)' : ''));
+        if (x.notBefore && x.notAfter) lines.push('    Valid:   ' + fmtDate(x.notBefore) + '  to  ' + fmtDate(x.notAfter) + (x.notAfter < now ? '  (EXPIRED)' : ''));
+      }
+      const fp = await sha256hex(der);
+      if (fp) lines.push('    SHA-256: ' + fp);
+    }
+    lines.push('');
+  }
+  if (lines.length) out._sections = [{ title: 'Entries (' + entries.length + ')', node: preBlock(lines.join('\n').trimEnd()), open: true }];
+  if (truncated) out['Note'] = 'File appears truncated - listed the entries that could be read.';
+
+  out['⚠ Warning'] = keys
+    ? 'Contains password-encrypted PRIVATE keys - keep the file and its password secret.'
+    : 'Certificate store (public certificates only, no private keys detected).';
   return out;
 }
 
@@ -1221,9 +1339,9 @@ export const PARSERS = {
   conf: (c) => parseWireguard(c.file, c.ext),
 
   // Java KeyStore
-  jks:      (c) => parseJks(c.head),
-  keystore: (c) => parseJks(c.head),
-  jceks:    (c) => parseJks(c.head),
+  jks:      (c) => parseJks(c.file),
+  keystore: (c) => parseJks(c.file),
+  jceks:    (c) => parseJks(c.file),
 
   // OpenSSH key databases (extension-less, handled if ext matches)
   known_hosts:     (c) => parseSshKeyDb(c.file, c.ext),

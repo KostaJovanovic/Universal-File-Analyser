@@ -17,18 +17,11 @@
 
 export const ORT_VERSION = '1.20.1';
 
-// In a *production* native build (Tauri asset protocol) the runtime + model are
-// vendored into the bundle by tools/build-dist.mjs and loaded locally, so the app
-// works offline with no CDN round-trip and stays strict-CSP-clean. On the web -
-// and in `tauri dev` (served from localhost) - they load from the CDN, because the
-// 30 MB-class files exceed Cloudflare's 25 MiB per-asset cap. `location` is the
-// worker's own location here (this module is imported by mdx-worker.js), which
-// carries the same origin. See research/SPIKE-WEBKIT-RESULTS.md.
-const NATIVE_SHELL = typeof location !== 'undefined' && (location.protocol === 'tauri:' || location.hostname === 'tauri.localhost');
-
-export const ORT_BASE = NATIVE_SHELL
-  ? '/assets/vendor/onnxruntime/'
-  : 'https://cdn.jsdelivr.net/npm/onnxruntime-web@' + ORT_VERSION + '/dist/';
+// The runtime + model stream from the CDN on demand - on the web and in the native
+// shell alike (the native app loads the heavy WASM/models on demand just like the
+// website, rather than bundling them; see build-dist.mjs). Keep ORT_VERSION + the
+// model URLs below in step with build-dist.mjs's ORT constant.
+export const ORT_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@' + ORT_VERSION + '/dist/';
 
 // The WebGPU-capable ESM entry (the "jsep" build). The worker requests
 // ['webgpu', 'wasm'], so inference runs on the GPU where it's available
@@ -51,8 +44,6 @@ export const ORT_FILES = [
 //   - lite (UVR-MDX-NET 1): ~half the download and the smaller 6144/2048
 //     geometry, so it needs less memory + compute per chunk - meant for phones
 //     and slower machines, at a small cost in separation quality.
-// The native build vendors each locally (see NATIVE_SHELL) for offline use; keep
-// build-dist.mjs's VENDOR list in step with these filenames.
 export const MDX_MODELS = {
   standard: {
     id: 'standard',
@@ -60,9 +51,7 @@ export const MDX_MODELS = {
     label: 'Standard',       // shown in the picker + model prompt
     // Per-model blurb shown in the Separate prompt so each tier explains itself.
     blurb: 'the cleanest separation, a little heavier to download and run',
-    url: NATIVE_SHELL
-      ? '/assets/vendor/models/Kim_Vocal_2.onnx'
-      : 'https://huggingface.co/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx',
+    url: 'https://huggingface.co/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx',
     bytes: 66759214,          // ~63.7 MB, for the size-warning popup
     tierMb: 85,               // model + ORT runtime, shown in the download prompt
     nFft: 7680,
@@ -77,9 +66,7 @@ export const MDX_MODELS = {
     name: 'UVR-MDX-NET 1',
     label: 'Lite',
     blurb: 'smaller and quicker and easier on memory - a good fit for phones and slower machines, at a small cost in separation quality',
-    url: NATIVE_SHELL
-      ? '/assets/vendor/models/UVR_MDXNET_1_9703.onnx'
-      : 'https://huggingface.co/seanghay/uvr_models/resolve/main/UVR_MDXNET_1_9703.onnx',
+    url: 'https://huggingface.co/seanghay/uvr_models/resolve/main/UVR_MDXNET_1_9703.onnx',
     bytes: 29704436,          // ~28.3 MB
     tierMb: 50,               // model ~28 + ORT runtime ~21
     nFft: 6144,

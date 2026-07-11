@@ -745,31 +745,31 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
     });
   }
 
-  // ----- Clear storage (localStorage / sessionStorage / IndexedDB + the
-  //        downloaded offline tiers; keeps the dark-mode preference and the
-  //        Asteroids high score). Leaves the SW app-shell cache alone. -----
+  // ----- Clear data (analysis history + session/local state and IndexedDB).
+  //        Deliberately spares everything the user has downloaded for offline use,
+  //        on every platform: the preloaded/bundled app content (native builds ship
+  //        the whole Everything tier as static files) AND any optional Complete
+  //        packs (AI model, extra OCR languages) they fetched. The 'analyser-offline'
+  //        Cache Storage bucket and its download records are left untouched, so
+  //        nothing ever has to be re-downloaded; the SW app-shell cache stays too.
+  //        Keeps the dark-mode preference and the Asteroids high score. -----
   const clearBtn = document.getElementById('offlineClear');
   if (clearBtn) {
     clearBtn.addEventListener('click', async () => {
       clearBtn.textContent = 'Clearing…';
-      // Stop any in-progress tier download first: abort cancels its in-flight fetch
-      // and the loop check bails out, so it can't keep writing into the cache we are
-      // about to delete or record the tier as cached after the wipe.
-      for (const ac of activeDownloads) { try { ac.abort(); } catch (_) {} }
-      activeDownloads.clear();
-      // If the user has downloaded any offline tier or feature pack, keep the AI
-      // vocal-separation files (the model + its ORT runtime) through the wipe -
-      // they are large and slow to refetch, and offline separation needs both.
-      // Read the record BEFORE localStorage.clear() below wipes it.
-      const keepAiModels = Object.keys(readOfflineState()).length > 0 || Object.keys(readFeatState()).length > 0;
       // Preserve the kept keys, wipe localStorage + sessionStorage, restore them.
-      const KEEP = ['anr-theme', 'anr-theme:ts', 'anr-asteroids-hi', 'anr-asteroids-bestwave'];
+      // The offline download records ('anr-offline' / 'anr-offline-feat') are kept
+      // alongside the theme + game scores, so the "Cached" badges stay accurate
+      // against the offline cache we deliberately leave in place.
+      const KEEP = ['anr-theme', 'anr-theme:ts', 'anr-asteroids-hi', 'anr-asteroids-bestwave', 'anr-offline', 'anr-offline-feat'];
       const kept = {};
       for (const k of KEEP) { const v = localStorage.getItem(k); if (v !== null) kept[k] = v; }
       try { localStorage.clear(); } catch (_) {}
       try { sessionStorage.clear(); } catch (_) {}
       for (const k in kept) { try { localStorage.setItem(k, kept[k]); } catch (_) {} }
-      // Drop any IndexedDB databases.
+      // Drop any IndexedDB databases (analysis-side state). Never the downloaded
+      // assets - those live in the 'analyser-offline' Cache Storage bucket, which
+      // we do not touch.
       try {
         if (indexedDB.databases) {
           const dbs = await indexedDB.databases();
@@ -779,39 +779,12 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
           })));
         }
       } catch (_) {}
-      // Delete the downloaded offline tiers (their own Cache Storage bucket). The
-      // SW app-shell cache is a separate bucket and stays. Without this the tier
-      // files survive and detectCachedTier() self-heals the "Cached" badge on the
-      // next load, so the clear looked inert.
-      // When a tier/pack is selected, spare the AI vocal-separation files (see
-      // keepAiModels above) so offline separation keeps working; everything else
-      // in the bucket still goes. detectCachedTier is hardened so a lone spared
-      // model isn't misread as a full Complete cache.
-      try {
-        if (keepAiModels) {
-          const cache = await caches.open('analyser-offline');
-          const keep = new Set(MDX_OFFLINE_URLS.map((u) => new URL(u, location.href).href));
-          const reqs = await cache.keys();
-          await Promise.all(reqs.map((r) => keep.has(new URL(r.url, location.href).href) ? Promise.resolve() : cache.delete(r)));
-        } else {
-          await caches.delete('analyser-offline');
-        }
-      } catch (_) {}
-      // The 'anr-offline' record and the cached tier files are both gone now, so
-      // repaint the tier buttons to un-cached.
-      document.querySelectorAll('.offline-btn').forEach(b => {
-        b.classList.remove('is-done', 'is-active', 'is-fading', 'is-included');
-        const bar = b.querySelector('.offline-bar');
-        if (bar) bar.hidden = true;
-        const badge = b.querySelector('.offline-cached');
-        if (badge) badge.hidden = true;
-      });
+      // Downloads and their records survived, so the tier/pack badges just repaint
+      // as they were.
       refreshTierButtons();
-      refreshFeatureButtons();   // the anr-offline-feat record went with localStorage.clear()
-      offlineUserToggled = false;
-      applyDefaultOfflineCollapse();
+      refreshFeatureButtons();
       renderHistoryPanel();   // history lived in localStorage - now wiped
-      clearBtn.textContent = 'Storage cleared ✓';
+      clearBtn.textContent = 'Data cleared ✓';
       setTimeout(() => { clearBtn.textContent = 'Clear storage'; }, 3000);
     });
   }

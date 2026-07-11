@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost blob: data: https://lab.valjdakosta.com; frame-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'",
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost blob: data: https://lab.valjdakosta.com https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co https://tessdata.projectnaptha.com; frame-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'",
       "dangerousDisableAssetCspModification": true
     },
     "withGlobalTauri": true

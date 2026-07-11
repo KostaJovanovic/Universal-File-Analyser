@@ -12,6 +12,11 @@ import { el } from './util.js';
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
+  { range: '6.12 - 6.13', notes: [
+    'Java KeyStores (.jks / .keystore) now open up: Analyser lists each entry - its name, whether it holds a private key or a trusted certificate, and when it was created - and decodes every certificate inside (issued to and by, validity and SHA-256 fingerprint), including today\'s PKCS#12-based keystores.',
+    'The desktop and mobile apps get smaller: the AI vocal-separation model and the 30+ OCR language packs now download on first use, like the website, instead of being carried inside - the Android app especially, with everyday analysis and the video, audio and 3D engines still fully offline.',
+    'Clear storage now clears only your history and app data, keeping everything you have downloaded or that came bundled; and reading text in other languages now works in the apps, not just the website.',
+  ] },
   { range: '6.08 - 6.11', notes: [
     'AI vocal separation now runs on iPhone and Safari instead of crashing the tab - it takes the steady, well-supported path there, while Chrome and Edge keep the fast graphics-card path.',
     'The spectrogram Isolate/Separate controls now stack cleanly on a phone, and Clear storage spares the large AI model if you have an offline download saved, so offline separation keeps working.',

@@ -17,12 +17,20 @@
 //   * robots/sitemaps/ - crawler-only; meaningless in an offline app.
 //     llms.txt
 //
-// Vendored WASM (see VENDOR below): ffmpeg core, onnxruntime-web + the Kim Vocal 2
-// model, and the OpenCASCADE kernel. The web build streams these from jsDelivr /
-// HuggingFace only because they exceed Cloudflare's 25 MiB per-asset cap; the
+// Vendored WASM (see VENDOR below): the ffmpeg core and the OpenCASCADE kernel -
+// the heavy pieces of the "Everything" offline tier, so video/audio and STEP/IGES
+// CAD work offline out of the box on every native build. The web streams these
+// from jsDelivr only because they exceed Cloudflare's 25 MiB per-asset cap; the
 // native bundle has no cap, so we download them once (cached under .native-cache/)
-// and the renderers pick the local copy when running under the Tauri asset
-// protocol (see the NATIVE_SHELL checks in video.js / mdx-model.js / occt-loader.js).
+// and the renderers pick the local copy under the Tauri asset protocol (see the
+// NATIVE_SHELL checks in video.js / occt-loader.js).
+//
+// Deliberately NOT vendored: the "Complete" tier's optional packs - the AI
+// vocal-separation runtime + model (onnxruntime-web + Kim Vocal 2, from mdx-model.js)
+// and the 30+ non-English OCR language packs. Like on the website, those download
+// on demand the first time the feature is used (the app's strict CSP whitelists
+// their hosts - see the connect-src in src-tauri/tauri.conf.json). English OCR and
+// every other viewer library are already copied in from web/assets/vendor/.
 //
 // Run manually (from native/):  node build-dist.mjs            (copy + vendor)
 //                               node build-dist.mjs --no-vendor (copy only, fast)
@@ -53,30 +61,17 @@ const EXCLUDE_FILES = new Set([
 
 // The CDN subsystems to bundle. dir -> the local folder under dist/assets/vendor/;
 // files -> { localName: sourceUrl }. Keep the URLs/versions in lockstep with the
-// constants in the renderers (video.js FFMPEG_CORE_BASE, mdx-model.js ORT_VERSION
-// + MDX_MODEL.url, occt-loader.js OCCT_VERSION).
+// constants in the renderers (video.js FFMPEG_CORE_BASE, occt-loader.js OCCT_VERSION).
 const FF = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
-const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist';
 const OCCT = 'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist';
 const VENDOR = [
   { dir: 'ffmpeg-core', files: {
     'ffmpeg-core.js':   `${FF}/ffmpeg-core.js`,
     'ffmpeg-core.wasm': `${FF}/ffmpeg-core.wasm`,
   } },
-  { dir: 'onnxruntime', files: {
-    'ort.webgpu.min.mjs':                `${ORT}/ort.webgpu.min.mjs`,
-    'ort-wasm-simd-threaded.jsep.mjs':   `${ORT}/ort-wasm-simd-threaded.jsep.mjs`,
-    'ort-wasm-simd-threaded.jsep.wasm':  `${ORT}/ort-wasm-simd-threaded.jsep.wasm`,
-  } },
   { dir: 'occt', files: {
     'occt-import-js.js':   `${OCCT}/occt-import-js.js`,
     'occt-import-js.wasm': `${OCCT}/occt-import-js.wasm`,
-  } },
-  { dir: 'models', files: {
-    // Both vocal-separation model tiers (see MDX_MODELS in mdx-model.js): the
-    // Standard default plus the smaller Lite model, so either works offline.
-    'Kim_Vocal_2.onnx':      'https://huggingface.co/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx',
-    'UVR_MDXNET_1_9703.onnx': 'https://huggingface.co/seanghay/uvr_models/resolve/main/UVR_MDXNET_1_9703.onnx',
   } },
 ];
 
