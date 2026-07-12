@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 212;
+const COMMIT_COUNT = 213;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -515,6 +515,9 @@ function boot() {
     // never count it in the public stats and never log it to the local history -
     // samples are a demo, kept completely separate from real user analyses.
     const isSample = !!(opts && opts.sample);
+    // Replaying an already-counted analysis after an SPA round trip back to home
+    // (see window._anrRestore below) - must not re-count stats/history or re-nudge.
+    const isRestore = !!(opts && opts.restore);
     if (!nested) resetNav();   // a fresh top-level drop ends any drill-down breadcrumb
     hideTypeSuggestion();
     hideSuggestPopup();   // clear any "suggest this format" nudge from a prior file
@@ -654,7 +657,7 @@ function boot() {
     // Sandboxed samples are excluded from both the public tally and the local
     // history - the /api/analysed POST is the only thing that bumps the global
     // files_total and per-extension counts, so this single gate fully isolates them.
-    if (!isSample) {
+    if (!isSample && !isRestore) {
       recordAnalysed(fileExt(file.name), kind !== 'unknown');
       // On-device "Recently analysed" snapshot (metadata only, never the bytes).
       recordHistory({ name: file.name, size: file.size, ext: fileExt(file.name), kind, when: Date.now() });
@@ -898,6 +901,16 @@ function boot() {
       // Keep a handle on the analysed File so the data export can compute a hash
       // (e.g. the video SHA-256) on demand without re-reading from disk.
       window._anrLastFile = file;
+      // Enough to replay this exact analysis on a later SPA return to home. Force the
+      // resolved `kind` so the replay routes straight to the same renderer with no
+      // re-sniff/type-suggestion popup. Not persisted anywhere - lives in memory and
+      // survives SPA nav (same document); a full reload clears it, by design. Only for
+      // a genuine top-level render that actually produced a result (not nested/failed).
+      // Samples overwrite this too (the most-recently-analysed file wins, gallery
+      // included) - see research/PERSIST-ANALYSED-FILE-SPA.md for the alternative.
+      if (!nested && !renderFailed) {
+        window._anrRestore = { file, kind, ext: extOverride || analysed.ext, sidecarXmp, sample: isSample };
+      }
       // Reveal the "About .EXT files" link above the footer, deep-linking to the
       // analysed extension's own /formats guide page. A forced re-analyse (sniff
       // popup) passes the true extension; otherwise use the file's own. Stays
@@ -917,7 +930,7 @@ function boot() {
       // Never nudge for a sandboxed /samples demo run - those aren't the visitor's
       // own analysis worth sharing. (scheduleShareNudge also guards on the page, but
       // this flag is the ground truth and holds even if the page check is bypassed.)
-      if (!suggestion && !unreadable && !isSample && !renderFailed) scheduleShareNudge(analysed);
+      if (!suggestion && !unreadable && !isSample && !renderFailed && !isRestore) scheduleShareNudge(analysed);
     });
   }
   _handleFile = handleFile;
@@ -1037,70 +1050,77 @@ window._anrReadableText = isReadableText;
   // load the zones are wired within a frame or two. The hero layout (single "any
   // file" zone + Record / Live buttons) and the classic grid both live in the DOM
   // (CSS shows one), so wiring both is harmless - the hidden one can't be clicked.
-  if ($('photoDrop')) {
-    import('../renderers/photo.js').then(({ initPhoto }) => initPhoto({
-      dropEl: $('photoDrop'), inputEl: $('photoInput'), resultsEl: photoResults, onFile: handleFile,
-    }));
-  }
-  if ($('audioDrop') || $('heroRecord') || $('heroLive')) {
-    import('../renderers/audio.js').then(({ initAudio }) => {
-      if ($('audioDrop')) initAudio({
-        dropEl: $('audioDrop'), inputEl: $('audioInput'), recordBtn: $('audioRecord'),
-        liveBtn: $('audioLive'), resultsEl: audioResults, onFile: handleFile,
+  // Skipped when navigate.js just reinserted a preserved home main (window.
+  // _anrHomeRestored): those nodes are the exact same ones from before the SPA
+  // round trip and are already wired - redoing it here would double-bind every
+  // listener below (initPhoto/initAudio/initVideo have no _wired guard of their
+  // own, unlike most of the rest of this file).
+  if (!window._anrHomeRestored) {
+    if ($('photoDrop')) {
+      import('../renderers/photo.js').then(({ initPhoto }) => initPhoto({
+        dropEl: $('photoDrop'), inputEl: $('photoInput'), resultsEl: photoResults, onFile: handleFile,
+      }));
+    }
+    if ($('audioDrop') || $('heroRecord') || $('heroLive')) {
+      import('../renderers/audio.js').then(({ initAudio }) => {
+        if ($('audioDrop')) initAudio({
+          dropEl: $('audioDrop'), inputEl: $('audioInput'), recordBtn: $('audioRecord'),
+          liveBtn: $('audioLive'), resultsEl: audioResults, onFile: handleFile,
+        });
+        if ($('heroRecord') || $('heroLive')) initAudio({
+          recordBtn: $('heroRecord'), liveBtn: $('heroLive'), resultsEl: audioResults, onFile: handleFile,
+        });
       });
-      if ($('heroRecord') || $('heroLive')) initAudio({
-        recordBtn: $('heroRecord'), liveBtn: $('heroLive'), resultsEl: audioResults, onFile: handleFile,
+    }
+    if ($('videoDrop') || $('heroDrop')) {
+      import('../renderers/video.js').then(({ initVideo }) => {
+        if ($('videoDrop')) initVideo({
+          dropEl: $('videoDrop'), inputEl: $('videoInput'), resultsEl: videoResults, onFile: handleFile,
+        });
+        if ($('heroDrop')) initVideo({
+          dropEl: $('heroDrop'), inputEl: $('heroInput'), resultsEl: videoResults, onFile: handleFile,
+        });
       });
-    });
-  }
-  if ($('videoDrop') || $('heroDrop')) {
-    import('../renderers/video.js').then(({ initVideo }) => {
-      if ($('videoDrop')) initVideo({
-        dropEl: $('videoDrop'), inputEl: $('videoInput'), resultsEl: videoResults, onFile: handleFile,
-      });
-      if ($('heroDrop')) initVideo({
-        dropEl: $('heroDrop'), inputEl: $('heroInput'), resultsEl: videoResults, onFile: handleFile,
-      });
-    });
-  }
+    }
 
-  // ----- Mobile: tap a section card to upload (with confirm) -----
-  // On touch devices, tapping a section's description card (its number +
-  // heading + lede, or the heading once it's been moved up after analysis)
-  // offers to open a file picker for that section's type. A Swiss-style modal
-  // confirms first so a stray tap while scrolling doesn't pop the picker. The
-  // top dropzones are deliberately left alone (instant on tap).
-  // The photo dropzone handles both photos and videos, so the photo and video
-  // sections share photoInput (image/* + video/*).
-  if (window.matchMedia('(pointer: coarse)').matches) {
-    const sectionUploads = [
-      { id: 'photo', input: 'photoInput', prompt: 'Open a photo or video to analyse?' },
-      { id: 'audio', input: 'audioInput', prompt: 'Open a sound file to analyse?' },
-      { id: 'video', input: 'photoInput', prompt: 'Open a photo or video to analyse?' }
-    ];
-    for (const s of sectionUploads) {
-      const section = $(s.id);
-      const input = $(s.input);
-      if (!section || !input) continue;
+    // ----- Mobile: tap a section card to upload (with confirm) -----
+    // On touch devices, tapping a section's description card (its number +
+    // heading + lede, or the heading once it's been moved up after analysis)
+    // offers to open a file picker for that section's type. A Swiss-style modal
+    // confirms first so a stray tap while scrolling doesn't pop the picker. The
+    // top dropzones are deliberately left alone (instant on tap).
+    // The photo dropzone handles both photos and videos, so the photo and video
+    // sections share photoInput (image/* + video/*).
+    if (window.matchMedia('(pointer: coarse)').matches) {
+      const sectionUploads = [
+        { id: 'photo', input: 'photoInput', prompt: 'Open a photo or video to analyse?' },
+        { id: 'audio', input: 'audioInput', prompt: 'Open a sound file to analyse?' },
+        { id: 'video', input: 'photoInput', prompt: 'Open a photo or video to analyse?' }
+      ];
+      for (const s of sectionUploads) {
+        const section = $(s.id);
+        const input = $(s.input);
+        if (!section || !input) continue;
 
-      // Mirror the heading into the numbered meta card. It stays hidden until
-      // the section has analysed a file (see the .section-meta-head CSS), then
-      // takes the place of the original head + lede on mobile. Created once.
-      const meta = section.querySelector('.section-meta');
-      const head = section.querySelector('.section-head');
-      if (meta && head && !meta.querySelector('.section-meta-head')) {
-        const clone = el('p', { class: 'section-meta-head' }, head.textContent);
-        const kicker = meta.querySelector('.section-kicker');
-        if (kicker) kicker.after(clone); else meta.appendChild(clone);
+        // Mirror the heading into the numbered meta card. It stays hidden until
+        // the section has analysed a file (see the .section-meta-head CSS), then
+        // takes the place of the original head + lede on mobile. Created once.
+        const meta = section.querySelector('.section-meta');
+        const head = section.querySelector('.section-head');
+        if (meta && head && !meta.querySelector('.section-meta-head')) {
+          const clone = el('p', { class: 'section-meta-head' }, head.textContent);
+          const kicker = meta.querySelector('.section-kicker');
+          if (kicker) kicker.after(clone); else meta.appendChild(clone);
+        }
+
+        // Only the description text opens the picker - never the results/controls
+        // below it, which stay interactive.
+        section.addEventListener('click', (e) => {
+          if (!e.target.closest('.section-head, .section-lede, .section-meta-head, .section-num, .section-kicker')) return;
+          anrConfirm(s.prompt).then((ok) => { if (ok) input.click(); });
+        });
+        section.classList.add('is-tappable');
       }
-
-      // Only the description text opens the picker - never the results/controls
-      // below it, which stay interactive.
-      section.addEventListener('click', (e) => {
-        if (!e.target.closest('.section-head, .section-lede, .section-meta-head, .section-num, .section-kicker')) return;
-        anrConfirm(s.prompt).then((ok) => { if (ok) input.click(); });
-      });
-      section.classList.add('is-tappable');
     }
   }
 
@@ -1548,6 +1568,22 @@ window._anrReadableText = isReadableText;
     handleFile(window._anrPendingFile);
     delete window._anrPendingFile;
   }
+  // Fallback: replay the most-recently-analysed top-level file after an SPA round
+  // trip (home -> About/Samples/etc -> home) when navigate.js couldn't preserve the
+  // rendered DOM (the samples round trip - a sample analysed inline on /samples has
+  // no home main to preserve - or no analysis was ever on home this session). The
+  // File object survives in memory across the in-place page swap, so this just
+  // re-runs the same route. Home-only (by pathname, not container presence -
+  // /samples shares these same result containers), yields to a preserved main
+  // (window._anrHomeRestored - see navigate.js swap()) which already put the
+  // analysis back verbatim, and yields to an explicit pending file above.
+  // Deliberately not persisted to any storage (survives navigation only, not a
+  // reload) - see research/PERSIST-ANALYSED-FILE-SPA.md.
+  const isHome = location.pathname === '/' || location.pathname === '/index.html';
+  if (isHome && !window._anrHomeRestored && !firstFileLoaded && window._anrRestore && photoResults) {
+    const r = window._anrRestore;
+    handleFile(r.file, { kind: r.kind, ext: r.ext, sidecarXmp: r.sidecarXmp, sample: r.sample, restore: true });
+  }
   if (window._anrPendingFolder && unknownResults) {
     resetNav();
     renderFolder(window._anrPendingFolder, unknownResults);
@@ -1614,7 +1650,8 @@ window._anrReadableText = isReadableText;
   // "Recently analysed" panel (main page only). Paint it, and wire its Clear button.
   renderHistoryPanel();
   const recentClear = $('recentClear');
-  if (recentClear) {
+  if (recentClear && !recentClear._wired) {
+    recentClear._wired = true;
     recentClear.addEventListener('click', () => {
       clearHistory();
       renderHistoryPanel();
@@ -1781,6 +1818,11 @@ window._anrReadableText = isReadableText;
 
   // ----- Search -----
   initSearch();
+
+  // Consumed for this boot only - navigate.js's swap() sets it fresh each time it
+  // reinserts a preserved home main, so it must not leak into the next, unrelated
+  // navigation's wiring decisions.
+  delete window._anrHomeRestored;
 }
 
 if (document.readyState === 'loading') {
