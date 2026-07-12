@@ -1223,6 +1223,10 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // to the filters/destination) but never touch source -> boostGain, so the volume
     // boost keeps working while isolation is active.
     let audioNode = null, filterNodes = [];
+    // Channel-solo selection for PLAYBACK (from the Channel picker): null = normal
+    // stereo (Mix), else the source channel index to solo. The panel is rebuilt per
+    // channel switch, so this is fixed for the panel's life.
+    const soloChannel = (opts.soloChannel == null) ? null : (opts.soloChannel | 0);
     function ensureAudioSource() {
       if (audioNode) return audioNode;
       audioNode = playerAudioNode(opts.audioEl);   // { ctx, source, boostGain, limiter } or null
@@ -1292,6 +1296,20 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       inv.connect(sum);           // -R -> sum
       return sum;
     }
+    // Solo one source channel (0 = L, 1 = R, 2 = C, ...): route only that channel to
+    // BOTH outputs so you actually hear it, centred. Drives the Channel picker's
+    // L/R/etc. buttons - selecting a single channel now plays just that channel.
+    function buildChannelSolo(c, input, channel, track) {
+      const nch = (opts.audioBuffer && opts.audioBuffer.numberOfChannels) || 2;
+      const ch = Math.max(0, Math.min(nch - 1, channel));
+      const splitter = c.createChannelSplitter(nch);
+      const merger = c.createChannelMerger(2);
+      if (track) track.push(splitter, merger);
+      input.connect(splitter);
+      splitter.connect(merger, ch, 0);   // chosen channel -> L out
+      splitter.connect(merger, ch, 1);   // chosen channel -> R out
+      return merger;
+    }
     function rebuildGraph() {
       // The AI blend plays through its own AudioContext (buildKaraoke/buildStops on
       // that graph), so mirror every isolate change onto it too - BEFORE the
@@ -1310,11 +1328,23 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       // Vocal-band deadzone indicator for karaoke mode; positionBands() places it.
       karaokeOverlay.style.display = (isoActive && isoMode === 'karaoke') ? '' : 'none';
       if (isoActive && isoMode === 'karaoke') positionBands();
-      if (!isoActive) { tap.connect(sink); return; }
-      if (isoMode === 'karaoke') { buildKaraoke(c, tap, filterNodes).connect(sink); return; }
+      // Channel solo first, so any frequency isolation below runs on the soloed
+      // channel. When no channel is soloed this is a no-op (stage stays the tap).
+      let stage = tap;
+      if (soloChannel != null) stage = buildChannelSolo(c, stage, soloChannel, filterNodes);
+      if (!isoActive) { stage.connect(sink); return; }
+      if (isoMode === 'karaoke') { buildKaraoke(c, stage, filterNodes).connect(sink); return; }
       const merged = computeMerged();
-      if (!merged.length) { tap.connect(sink); return; }
-      buildStops(c, tap, merged, filterNodes).connect(sink);
+      if (!merged.length) { stage.connect(sink); return; }
+      buildStops(c, stage, merged, filterNodes).connect(sink);
+    }
+    // Route through Web Audio when a channel is soloed now, or when the element is
+    // already routed (a prior solo / volume boost / isolate created the shared node) -
+    // so this freshly-rebuilt panel owns the correct graph (and a switch back to Mix
+    // reverts to plain stereo). Native playback is left untouched otherwise.
+    if (soloChannel != null || (opts.audioEl && opts.audioEl._anrAudioNode)) {
+      ensureAudioSource();
+      rebuildGraph();
     }
 
     // --- band model ---
@@ -1560,7 +1590,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // and only RECOMBINE precomputed complex bins per slider move - no re-FFT -
     // so it stays truthful (exact magnitude of the blended audio) yet cheap.
     function gainsFor(s) { return { a: 1 - Math.max(0, s), b: 1 + Math.min(0, s) }; }
-    function renderBlend(result) {
+    function renderBlend(result, resume) {
       const sr = result.sampleRate;
       const L = result.vocals[0].length;
       const dur = L / sr;
@@ -1587,6 +1617,40 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         const m = new Float32Array(L);
         for (let i = 0; i < L; i++) m[i] = a * vMono[i] + b * iMono[i];
         return m;
+      }
+
+      // Feed the Stereo analysis card the current blend mix (stems are always stereo
+      // - see mdx-separate). Correlation/mid/side are accumulated allocation-free over
+      // a strided subsample (<=40k points, plenty for these metrics), which doubles as
+      // the vectorscope's L/R buffer - so a slider drag stays cheap on long tracks.
+      function pushBlendStereo() {
+        const sink = opts.stereoSink;
+        if (!sink || !sink.update) return;   // mono file: no stereo card to update
+        const v0 = result.vocals[0], v1 = result.vocals[1] || result.vocals[0];
+        const i0 = result.instrumental[0], i1 = result.instrumental[1] || result.instrumental[0];
+        const n = Math.min(v0.length, v1.length, i0.length, i1.length);
+        if (!n) return;
+        const { a, b } = gainsFor(sliderS());
+        const stride = Math.max(1, Math.floor(n / 40000));
+        const sL = new Float32Array(Math.ceil(n / stride));
+        const sR = new Float32Array(sL.length);
+        let sumLR = 0, sumLL = 0, sumRR = 0, sumMid = 0, sumSide = 0, cnt = 0, si = 0;
+        for (let i = 0; i < n; i += stride) {
+          const l = a * v0[i] + b * i0[i];
+          const r = a * v1[i] + b * i1[i];
+          sL[si] = l; sR[si] = r; si++;
+          sumLR += l * r; sumLL += l * l; sumRR += r * r;
+          const mid = (l + r) * 0.5, side = (l - r) * 0.5;
+          sumMid += mid * mid; sumSide += side * side; cnt++;
+        }
+        const denom = Math.sqrt(sumLL * sumRR);
+        const correlation = denom > 1e-12 ? sumLR / denom : 0;
+        sink.update({
+          correlation,
+          width: 1 - Math.abs(correlation),
+          midLevel: Math.sqrt(sumMid / cnt),
+          sideLevel: Math.sqrt(sumSide / cnt),
+        }, sL.subarray(0, si), sR.subarray(0, si));
       }
 
       // Slider: -100 (vocals) .. 0 (normal) .. +100 (instrumental). A centre tick
@@ -1714,6 +1778,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         const { a, b } = gainsFor(sliderS());
         blendSpec = combineStftToDb(A, B, a, b, out);
         renderOnly();
+        pushBlendStereo();   // keep the stereo readout in step with the blend (same rAF)
       }
       function requestPaint() { if (!pend) { pend = true; requestAnimationFrame(paintDrag); } }
       // Settled path (arm, slider release, control change): run the REAL spectrogram
@@ -1789,7 +1854,11 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
           specTransport._anrTransport.attach({ toggle: () => (playing ? pause() : play()), seek: seekFrac });
         }
         updateTag();   // Analysing… -> Normal mix
-        moveHead();    // sync the under-spectrogram transport to the blend clock (0:00)
+        pushBlendStereo();   // point the stereo readout at the (normal-mix) blend
+        // If the track was still playing when the model finished, pick the blend up
+        // from the same spot (and keep playing) instead of resetting to 0:00.
+        if (resume && dur) { offset = Math.max(0, Math.min(dur, resume.at)); play(); }
+        else moveHead();   // sync the under-spectrogram transport to the blend clock (0:00)
       }));
 
       blendCleanup = () => {
@@ -1797,6 +1866,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         blendActive = false; blendSeek = null; blendPause = null;
         blendApplyIso = null; blendReanalyse = null;
         blendSpec = null;
+        if (opts.stereoSink && opts.stereoSink.reset) { try { opts.stereoSink.reset(); } catch (_) {} }   // revert the stereo readout to the file
         if (specTransport && specTransport._anrTransport) { try { specTransport._anrTransport.detach(); } catch (_) {} }
         try { renderOnly(); } catch (_) {}   // restore the file's own spectrogram
         try { unsubVol(); } catch (_) {}
@@ -1810,6 +1880,12 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
 
     function renderStems(result) {
       revokeAiUrls();
+      // If the track was playing while the model ran, note where the playhead was so
+      // the new blend can resume from there (rather than jumping back to 0:00).
+      let resume = null;
+      if (opts.audioEl && !opts.audioEl.paused && isFinite(opts.audioEl.currentTime)) {
+        resume = { at: opts.audioEl.currentTime };
+      }
       // Separation finished: stop whatever is currently playing (the file's own
       // player and any prior blend) so the new blend view starts from silence
       // instead of the original track carrying on underneath it.
@@ -1822,7 +1898,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       aiHelpPanel.classList.add('is-hidden');
       aiStems.textContent = '';
       blendMount.textContent = '';
-      const blend = renderBlend(result);
+      const blend = renderBlend(result, resume);
       if (blend) blendMount.appendChild(blend);
       const base = opts.basename || 'audio';
       const dur = result.vocals[0].length / result.sampleRate;
@@ -2077,8 +2153,9 @@ function buildCoverArtCard(art, file) {
 }
 
 export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
+  const sr = audioBuffer.sampleRate;
   const waveCard = el('div', { class: 'anr-card' });
-  const [waveH, waveHelp] = h3help('Waveform', 'Amplitude over time. Click and drag to select a region, then zoom in or export the selection as a WAV file. The white playhead line shows the current playback position.');
+  const [waveH, waveHelp] = h3help('Waveform', 'Amplitude over time. Click and drag to select a region - then drag its edges to fine-tune, drag the middle to move it, or type exact start/end times. Zoom in or export the selection as a WAV file. The white playhead line shows the current playback position; drag it, or use the transport below, to scrub.');
   waveCard.appendChild(waveH); waveCard.appendChild(waveHelp);
   const waveCanvas = el('canvas', { class: 'anr-waveform' });
   waveCanvas.width = 1024; waveCanvas.height = 80;
@@ -2086,8 +2163,7 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
   renderWaveform(waveCanvas, mono);
 
   // --- Interactive waveform: region selection, zoom, WAV export ---
-  let selStart = null, selEnd = null;
-  let isSelecting = false;
+  let selStart = null, selEnd = null;   // sample indices (unordered mid-drag)
   let zoomStart = 0, zoomEnd = mono.length;
 
   // Overlay canvas for selection highlight
@@ -2128,7 +2204,10 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
   }
   audioEl.addEventListener('play', () => requestAnimationFrame(tickWaveLoop));
   audioEl.addEventListener('pause', () => tickWaveLine(true));
-  audioEl.addEventListener('seeked', () => tickWaveLine(audioEl.paused));
+  // Snap (no ease) on seek: dragging the transport fires a stream of coalesced
+  // 'seeked' events, and the 0.28s CSS glide on each one stacks into visible lag.
+  // A single click-seek snapping is a fair trade for a responsive scrub.
+  audioEl.addEventListener('seeked', () => tickWaveLine(false));
 
   // Grab the playhead line and drag to scrub (respects the current zoom window).
   attachScrub(waveLine, (clientX) => {
@@ -2139,17 +2218,33 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
     tickWaveLine();
   });
 
-  // Selection info + buttons container (shown when selection exists)
+  // Full transport (play/pause + seek + time) directly below the canvas, wired to
+  // the same <audio> the rest of the card drives - so the waveform can run playback
+  // on its own without scrolling back up to the main player.
+  waveCard.appendChild(el('div', { class: 'anr-spec-transport' }, [makePlayer(audioEl, audioBuffer.duration)]));
+
+  // Selection controls (shown when a selection exists): editable start/end times,
+  // a stats readout, then zoom / export.
   const selInfo = el('div', { class: 'anr-controls anr-sel-controls is-hidden' });
+  const startInput = el('input', { type: 'text', class: 'anr-sel-time', spellcheck: 'false', autocomplete: 'off', 'aria-label': 'Selection start time' });
+  const endInput = el('input', { type: 'text', class: 'anr-sel-time', spellcheck: 'false', autocomplete: 'off', 'aria-label': 'Selection end time' });
+  const times = el('span', { class: 'anr-sel-times' }, [
+    el('label', {}, ['Start', startInput]),
+    el('label', {}, ['End', endInput]),
+  ]);
   const selLabel = el('span', { class: 'anr-sel-label' }, '');
   const zoomBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Zoom');
-  const resetZoomBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm is-hidden' }, 'Reset zoom');
   const exportBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Export WAV');
-  selInfo.appendChild(selLabel);
-  selInfo.appendChild(zoomBtn);
-  selInfo.appendChild(resetZoomBtn);
-  selInfo.appendChild(exportBtn);
+  selInfo.append(times, selLabel, zoomBtn, exportBtn);
   waveCard.appendChild(selInfo);
+
+  // Zoom bar in its OWN row so "Reset zoom" stays reachable after a zoom - zooming
+  // clears the selection, which hides the selInfo row the button used to live in.
+  // Shown only while zoomed, with a label of the visible window.
+  const zoomLabel = el('span', { class: 'anr-sel-label' }, '');
+  const resetZoomBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Reset zoom');
+  const zoomBar = el('div', { class: 'anr-controls anr-sel-controls is-hidden' }, [zoomLabel, resetZoomBtn]);
+  waveCard.appendChild(zoomBar);
 
   function drawOverlay() {
     const octx = overlayCanvas.getContext('2d');
@@ -2165,6 +2260,35 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
     octx.strokeRect(x1, 0, x2 - x1, overlayCanvas.height);
   }
 
+  // m:ss.mmm for the time fields; parse accepts that, plain seconds, or ss.mmm.
+  function fmtSelTime(sec) {
+    if (!isFinite(sec) || sec < 0) sec = 0;
+    const m = Math.floor(sec / 60);
+    const s = sec - m * 60;
+    return m + ':' + (s < 10 ? '0' : '') + s.toFixed(3);
+  }
+  function parseSelTime(str) {
+    str = String(str).trim();
+    if (!str) return null;
+    let sec;
+    if (str.indexOf(':') >= 0) {
+      const p = str.split(':');
+      const m = parseFloat(p[0]), s = parseFloat(p[1]);
+      if (!isFinite(m) || !isFinite(s)) return null;
+      sec = m * 60 + s;
+    } else {
+      sec = parseFloat(str);
+    }
+    return isFinite(sec) ? sec : null;
+  }
+  // Push the current selection into the time fields, unless one is being edited.
+  function refreshTimeInputs() {
+    if (selStart == null || selEnd == null) return;
+    const s = Math.min(selStart, selEnd), e = Math.max(selStart, selEnd);
+    if (document.activeElement !== startInput) startInput.value = fmtSelTime(s / sr);
+    if (document.activeElement !== endInput) endInput.value = fmtSelTime(e / sr);
+  }
+
   function updateSelInfo() {
     if (selStart == null || selEnd == null || selStart === selEnd) {
       selInfo.classList.add('is-hidden');
@@ -2174,50 +2298,109 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
     const s = Math.min(selStart, selEnd);
     const e = Math.max(selStart, selEnd);
     const selSamples = mono.subarray(s, e);
-    const dur = (e - s) / audioBuffer.sampleRate;
+    const dur = (e - s) / sr;
     const selStats = computeStats(selSamples);
-    selLabel.textContent = 'Selection: ' + dur.toFixed(3) + ' s, '
+    selLabel.textContent = dur.toFixed(3) + ' s, '
       + (e - s).toLocaleString() + ' samples | Peak: '
       + selStats.peak.toFixed(3) + ' (' + selStats.peakDb.toFixed(1) + ' dBFS) | RMS: '
       + selStats.rms.toFixed(3) + ' (' + selStats.rmsDb.toFixed(1) + ' dBFS)';
+    refreshTimeInputs();
   }
+
+  // Type an exact start/end - clamped to the clip and re-ordered if reversed.
+  function commitTimeInputs() {
+    const sSec = parseSelTime(startInput.value), eSec = parseSelTime(endInput.value);
+    if (sSec == null || eSec == null) { refreshTimeInputs(); return; }
+    let s = Math.max(0, Math.min(mono.length, Math.round(sSec * sr)));
+    let e = Math.max(0, Math.min(mono.length, Math.round(eSec * sr)));
+    if (s > e) { const t = s; s = e; e = t; }
+    if (s === e) { refreshTimeInputs(); return; }
+    selStart = s; selEnd = e;
+    drawOverlay(); updateSelInfo();
+  }
+  startInput.addEventListener('change', commitTimeInputs);
+  endInput.addEventListener('change', commitTimeInputs);
+  [startInput, endInput].forEach((inp) => inp.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { commitTimeInputs(); inp.blur(); }
+  }));
 
   function xToSample(x) {
     const rect = waveCanvas.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
-    const visLen = zoomEnd - zoomStart;
-    return Math.round(zoomStart + frac * visLen);
+    return Math.round(zoomStart + frac * (zoomEnd - zoomStart));
+  }
+  function sampleToX(smp) {
+    const rect = waveCanvas.getBoundingClientRect();
+    return ((smp - zoomStart) / (zoomEnd - zoomStart)) * rect.width;
   }
 
-  // Finish a selection on release; the window listener is added on mousedown
-  // and removed here so it doesn't persist across files.
-  function onSelectMouseUp() {
-    window.removeEventListener('mouseup', onSelectMouseUp);
-    if (!isSelecting) return;
-    isSelecting = false;
-    if (selStart != null && selEnd != null && selStart !== selEnd) {
-      // Normalize order
-      if (selStart > selEnd) { const tmp = selStart; selStart = selEnd; selEnd = tmp; }
-      updateSelInfo();
+  // Which part of an existing selection a press at clientX lands on: an edge (to
+  // resize), the interior (to move the whole region), or neither (start a new one).
+  const EDGE_PX = 6;
+  function hitMode(clientX) {
+    if (selStart == null || selEnd == null || selStart === selEnd) return 'new';
+    const rect = waveCanvas.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const xs = sampleToX(Math.min(selStart, selEnd));
+    const xe = sampleToX(Math.max(selStart, selEnd));
+    if (Math.abs(px - xs) <= EDGE_PX) return 'left';
+    if (Math.abs(px - xe) <= EDGE_PX) return 'right';
+    if (px > xs && px < xe) return 'move';
+    return 'new';
+  }
+
+  let dragMode = null, moveAnchor = 0, moveWidth = 0;
+  // Selection drag. Move/up listeners live on WINDOW (not the canvas) so a fast drag
+  // that races off the edges keeps updating and finishes cleanly - the old
+  // canvas-only mousemove dropped events the moment the pointer left the canvas.
+  function onSelMove(e) {
+    if (!dragMode) return;
+    const smp = xToSample(e.clientX);
+    if (dragMode === 'new') selEnd = smp;
+    else if (dragMode === 'left') selStart = Math.min(smp, selEnd - 1);
+    else if (dragMode === 'right') selEnd = Math.max(smp, selStart + 1);
+    else if (dragMode === 'move') {
+      let ns = Math.max(0, Math.min(mono.length - moveWidth, smp - moveAnchor));
+      selStart = ns; selEnd = ns + moveWidth;
     }
-    drawOverlay();
+    drawOverlay(); updateSelInfo();
+  }
+  function onSelUp() {
+    window.removeEventListener('mousemove', onSelMove);
+    window.removeEventListener('mouseup', onSelUp);
+    const mode = dragMode;
+    dragMode = null;
+    if (mode == null) return;
+    if (selStart != null && selEnd != null && selStart > selEnd) { const t = selStart; selStart = selEnd; selEnd = t; }
+    // A bare click (new drag with no width) leaves nothing selected.
+    if (mode === 'new' && selStart === selEnd) { selStart = selEnd = null; }
+    drawOverlay(); updateSelInfo();
   }
 
   waveCanvas.style.cursor = 'crosshair';
   waveCanvas.addEventListener('mousedown', (e) => {
-    isSelecting = true;
-    selStart = xToSample(e.clientX);
-    selEnd = selStart;
-    drawOverlay();
-    updateSelInfo();
+    const mode = hitMode(e.clientX);
+    const smp = xToSample(e.clientX);
+    if (mode === 'new') {
+      selStart = smp; selEnd = smp;
+    } else {
+      // Normalize the existing selection so the grabbed edge/body drags predictably.
+      const s = Math.min(selStart, selEnd), en = Math.max(selStart, selEnd);
+      selStart = s; selEnd = en;
+      if (mode === 'move') { moveAnchor = smp - s; moveWidth = en - s; }
+    }
+    dragMode = mode;
+    drawOverlay(); updateSelInfo();
     e.preventDefault();
-    window.addEventListener('mouseup', onSelectMouseUp);
+    window.addEventListener('mousemove', onSelMove);
+    window.addEventListener('mouseup', onSelUp);
   });
 
+  // Hover cursor hints what a press will do (resize edges / move / new selection).
   waveCanvas.addEventListener('mousemove', (e) => {
-    if (!isSelecting) return;
-    selEnd = xToSample(e.clientX);
-    drawOverlay();
+    if (dragMode) return;
+    const m = hitMode(e.clientX);
+    waveCanvas.style.cursor = (m === 'left' || m === 'right') ? 'ew-resize' : (m === 'move' ? 'move' : 'crosshair');
   });
 
   function redrawWaveform() {
@@ -2238,7 +2421,8 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
     selEnd = null;
     redrawWaveform();
     updateSelInfo();
-    resetZoomBtn.classList.remove('is-hidden');
+    zoomLabel.textContent = 'Zoomed to ' + fmtSelTime(zoomStart / sr) + ' - ' + fmtSelTime(zoomEnd / sr);
+    zoomBar.classList.remove('is-hidden');
   });
 
   resetZoomBtn.addEventListener('click', () => {
@@ -2248,7 +2432,7 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
     selEnd = null;
     redrawWaveform();
     updateSelInfo();
-    resetZoomBtn.classList.add('is-hidden');
+    zoomBar.classList.add('is-hidden');
   });
 
   exportBtn.addEventListener('click', () => {
@@ -2648,15 +2832,31 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   const specSlot = el('div');
   const waveSlot = el('div');
   let curSpecPanel = null;
+  // Filled in below when the Stereo analysis card is built (stereo files only). The
+  // AI-separation blend, which lives inside the spectrogram panel, pushes its live
+  // mix here so the stereo readout tracks the blend; reset() reverts to the file.
+  const stereoSink = { update: null, reset: null };
 
   function renderSignalViews(idx, showLoader) {
+    // A user channel switch (showLoader) rebuilds the spectrogram + waveform and
+    // their transports; stop playback first so it doesn't carry on under the new
+    // views (and the fresh transports show a clean paused state). showLoader is
+    // false only for the initial render, where nothing is playing yet. The rebuild
+    // also drops any active separation, so revert the stereo readout to the file.
+    if (showLoader) {
+      try { audioEl.pause(); } catch (_) {}
+      if (stereoSink.reset) stereoSink.reset();
+    }
     const sig = chans[idx].data;
+    // chans[0] is the Mix downmix (normal stereo playback); chans[i>=1] is source
+    // channel i-1 - selecting it solos that channel for playback too, not just the view.
+    const soloChannel = idx >= 1 ? idx - 1 : null;
     specSlot.innerHTML = '';
     // On a channel switch the spectrogram recomputes on a deferred timeout, so drop
     // in the standard inline loader (as elsewhere) until the new panel first paints.
     let loader = null;
     if (showLoader) { loader = inlineLoader('Analysing ' + chans[idx].full + '…'); specSlot.appendChild(loader); }
-    curSpecPanel = makeSpectrogramPanel(sig, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, capture: true, audioBuffer, statsMount: specStatsMount });
+    curSpecPanel = makeSpectrogramPanel(sig, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, capture: true, audioBuffer, statsMount: specStatsMount, stereoSink, soloChannel });
     if (loader) curSpecPanel.style.visibility = 'hidden';   // keep the blank canvas out of view behind the bar
     specSlot.appendChild(curSpecPanel);
     waveSlot.innerHTML = '';
@@ -2669,12 +2869,11 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     }
   }
 
-  let chanCard = null;
+  // The Mix/L/R channel selector that drives the spectrogram + waveform. It used to
+  // live in its own card above the spectrogram; it now folds into the Stereo analysis
+  // card at the bottom (built below), so keep references to drop it in there.
+  let chanHead = null, chanHelpPanel = null, chanSeg = null, chanStat = null;
   if (chans.length > 1) {
-    // Standard card heading (same h3help idiom as the Spectrogram/Waveform/
-    // Histogram cards it sits among), then the Mix/L/R segmented buttons and a
-    // muted per-channel peak/RMS readout line beneath them.
-    chanCard = el('div', { class: 'anr-card anr-chan-card' });
     const [chanH, chanHelp] = h3help('Channel',
       'This file has ' + audioBuffer.numberOfChannels + ' channels. Choose which one feeds the spectrogram and waveform - <strong>Mix</strong> is every channel averaged together, or isolate a single speaker (Left, Right, Centre, LFE, surrounds) to inspect it on its own. Per-channel peak and RMS update with your choice. Speaker names follow the file\'s declared layout, so treat them as a best-effort label.');
     const stat = el('span', { class: 'anr-chan-readout' });
@@ -2691,7 +2890,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
       btns.push(b); seg.appendChild(b);
     });
     setActive(0);
-    chanCard.append(chanH, chanHelp, seg, stat);
+    chanHead = chanH; chanHelpPanel = chanHelp; chanSeg = seg; chanStat = stat;
   }
 
   // ---- Spectrogram (leads the analysis, above the file-info card) ----
@@ -2700,9 +2899,6 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // being the default and is kept for the image-sonify caller; the placement is
   // now the same either way.)
   resultsEl.insertBefore(specSlot, infoCard);
-
-  // Channel picker (multi-channel files) sits directly ABOVE the spectrogram it drives.
-  if (chanCard) resultsEl.insertBefore(chanCard, specSlot);
 
   // ---- Embedded cover art (filled in asynchronously so it doesn't block) ----
   const coverSlot = el('div');
@@ -2740,38 +2936,60 @@ export async function renderAudio(file, resultsEl, opts = {}) {
 
   // ---- Stereo Width / Vectorscope card (stereo files only) ----
   if (audioBuffer.numberOfChannels >= 2) {
-    const left  = audioBuffer.getChannelData(0);
-    const right = audioBuffer.getChannelData(1);
-    const stereo = computeStereoStats(left, right);
+    const origLeft  = audioBuffer.getChannelData(0);
+    const origRight = audioBuffer.getChannelData(1);
 
     const stereoCard = el('div', { class: 'anr-card' });
-    const [stH, stHelp] = h3help('Stereo analysis', '<strong>Phase correlation</strong> measures how similar the left and right channels are. +1 = identical (mono), 0 = unrelated, negative = out of phase (can cause cancellation on mono speakers).<br><strong>Stereo width</strong> is derived from correlation. Higher = wider stereo image.<br><strong>Mid/Side</strong> splits the signal into centre (mid) and difference (side) components.<br>The <strong>vectorscope</strong> plots left vs right samples. A vertical line = mono; a circle = wide stereo; a horizontal line = out of phase.');
+    const [stH, stHelp] = h3help('Stereo analysis', '<strong>Phase correlation</strong> measures how similar the left and right channels are. +1 = identical (mono), 0 = unrelated, negative = out of phase (can cause cancellation on mono speakers).<br><strong>Stereo width</strong> is derived from correlation. Higher = wider stereo image.<br><strong>Mid/Side</strong> splits the signal into centre (mid) and difference (side) components.<br>The <strong>vectorscope</strong> plots left vs right samples. A vertical line = mono; a circle = wide stereo; a horizontal line = out of phase.<br>These describe the file&#39;s Left/Right pair, so they do not change with the Channel selection below (which only drives the spectrogram + waveform). After AI vocal separation they track the current blend mix instead.');
     stereoCard.appendChild(stH); stereoCard.appendChild(stHelp);
+    // Muted source line: shows when the readout reflects the separation blend rather
+    // than the file itself (hidden by default = the file's own Left/Right).
+    const stereoSrc = el('div', { class: 'anr-sel-label', style: 'margin:0 0 10px;', hidden: true });
+    stereoCard.appendChild(stereoSrc);
 
+    // Build the value rows once and keep handles so updates just rewrite the cells
+    // (no per-frame DOM churn while the blend slider drags).
+    const corrRow = rowHelp('Phase correlation', '', 'Left/right channel similarity. +1 = identical (mono), 0 = unrelated, negative = out of phase (problematic on mono speakers).');
+    const widthRow = rowHelp('Stereo width', '', 'Spatial separation between channels. 0 = mono, 1 = maximum stereo spread.');
+    const midRow = rowHelp('Mid level', '', 'Center (mono) component: (L+R)/2. Carries vocals, bass, and center-panned elements.');
+    const sideRow = rowHelp('Side level', '', 'Difference (stereo) component: (L−R)/2. Carries reverb, panned instruments, and spatial content.');
+    const ratioRow = rowHelp('Side / Mid ratio', '', 'Ratio of side to mid energy. Below 0.5 = center-heavy mix, above 1.0 = very wide/spatial mix.');
     const stereoTbl = el('table', { class: 'anr-readout' });
-    const corrPct  = (stereo.correlation * 100).toFixed(1);
-    const corrHint = stereo.correlation > 0.8 ? 'mono-like'
-                   : stereo.correlation < -0.2 ? 'out of phase'
-                   : stereo.correlation < 0.3 ? 'wide' : 'normal';
-    stereoTbl.appendChild(rowHelp('Phase correlation', stereo.correlation.toFixed(3) + '  (' + corrPct + '%, ' + corrHint + ')',
-      'Left/right channel similarity. +1 = identical (mono), 0 = unrelated, negative = out of phase (problematic on mono speakers).'));
-    stereoTbl.appendChild(rowHelp('Stereo width', stereo.width.toFixed(3),
-      'Spatial separation between channels. 0 = mono, 1 = maximum stereo spread.'));
-    stereoTbl.appendChild(rowHelp('Mid level', stereo.midLevel.toFixed(4),
-      'Center (mono) component: (L+R)/2. Carries vocals, bass, and center-panned elements.'));
-    stereoTbl.appendChild(rowHelp('Side level', stereo.sideLevel.toFixed(4),
-      'Difference (stereo) component: (L−R)/2. Carries reverb, panned instruments, and spatial content.'));
-    const msRatio = stereo.midLevel > 1e-12
-      ? (stereo.sideLevel / stereo.midLevel).toFixed(3)
-      : '-';
-    stereoTbl.appendChild(rowHelp('Side / Mid ratio', msRatio,
-      'Ratio of side to mid energy. Below 0.5 = center-heavy mix, above 1.0 = very wide/spatial mix.'));
+    stereoTbl.append(corrRow, widthRow, midRow, sideRow, ratioRow);
     stereoCard.appendChild(stereoTbl);
+    const cell = (tr) => tr.lastElementChild;
 
     // Vectorscope canvas
     const vsCanvas = el('canvas', { width: '200', height: '200', style: 'display:block; margin:8px auto 0;' });
     stereoCard.appendChild(vsCanvas);
-    renderVectorscope(vsCanvas, left, right);
+
+    // Paint the readout + scope from a stats object and an L/R pair (which may be a
+    // subsampled blend). `note` (non-empty) flags a blend source line.
+    function paintStereo(stats, left, right, note) {
+      const corrPct  = (stats.correlation * 100).toFixed(1);
+      const corrHint = stats.correlation > 0.8 ? 'mono-like'
+                     : stats.correlation < -0.2 ? 'out of phase'
+                     : stats.correlation < 0.3 ? 'wide' : 'normal';
+      cell(corrRow).textContent = stats.correlation.toFixed(3) + '  (' + corrPct + '%, ' + corrHint + ')';
+      cell(widthRow).textContent = stats.width.toFixed(3);
+      cell(midRow).textContent = stats.midLevel.toFixed(4);
+      cell(sideRow).textContent = stats.sideLevel.toFixed(4);
+      cell(ratioRow).textContent = stats.midLevel > 1e-12 ? (stats.sideLevel / stats.midLevel).toFixed(3) : '-';
+      renderVectorscope(vsCanvas, left, right);
+      if (note) { stereoSrc.textContent = note; stereoSrc.hidden = false; }
+      else stereoSrc.hidden = true;
+    }
+    // Initial paint = the file's own Left/Right.
+    paintStereo(computeStereoStats(origLeft, origRight), origLeft, origRight, null);
+    // Wire the sink the separation blend pushes to. update() takes a precomputed
+    // stats object + a (subsampled) L/R for the scope; reset() restores the file.
+    stereoSink.update = (stats, left, right) => paintStereo(stats, left, right, 'Reflecting the current vocal-instrumental blend');
+    stereoSink.reset = () => paintStereo(computeStereoStats(origLeft, origRight), origLeft, origRight, null);
+
+    // Channel selector (Mix/L/R) folded in here as a sub-section - it drives the
+    // spectrogram + waveform higher up the page. The 'Channel' h3 gives the same
+    // visual break between it and the stereo stats above.
+    if (chanSeg) stereoCard.append(chanHead, chanHelpPanel, chanSeg, chanStat);
 
     resultsEl.appendChild(stereoCard);
   }

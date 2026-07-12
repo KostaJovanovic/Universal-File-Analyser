@@ -7504,9 +7504,42 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   pointer-events: none;
   background: transparent;
 }
-.anr-sel-controls { gap: 8px; margin-top: 6px; }
+/* Standalone control strip (unlike the stacked spectrogram .anr-controls, which
+   omit their bottom border to butt against the next row) - restore the bottom
+   hairline so it reads as a closed box. */
+.anr-sel-controls { gap: 8px 14px; margin-top: 6px; align-items: center; border-bottom: var(--bd-hairline); }
 .anr-sel-label { font-size: 0.85em; opacity: 0.8; }
 .anr-btn-sm { font-size: 0.82em; padding: 3px 10px; }
+/* Editable start/end time fields for the waveform selection - a mono uppercase
+   label + a sharp-cornered text box, matching the .anr-control input treatment. */
+.anr-sel-times { display: inline-flex; align-items: center; gap: 12px; }
+.anr-sel-times label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.anr-sel-time {
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  padding: 4px 6px;
+  /* content-box so the ch width is pure text room (the global border-box reset
+     would otherwise eat it into the padding and clip the clock). 9ch fits
+     mm:ss.mmm up to two-digit minutes. */
+  box-sizing: content-box;
+  width: 9ch;
+  text-align: right;
+  border: var(--bd-hairline);
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 0;
+  font-variant-numeric: tabular-nums;
+}
+.anr-sel-time:focus-visible { outline: none; border-color: var(--accent); }
 
 /* Hidden video probe for off-screen frame capture. Kept renderable (NOT
    display:none) and in the DOM so the browser gives it a decode surface. iOS
