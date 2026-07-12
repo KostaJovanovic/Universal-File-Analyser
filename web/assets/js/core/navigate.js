@@ -14,7 +14,9 @@
   // value, so popstate can tell a same-page scroll from a real page change.
   var currentPath = location.pathname;
 
-  function swap(doc) {
+  function isHomePath(path) { return path === '/' || path === '/index.html'; }
+
+  function swap(doc, arrivingHome) {
     document.title = doc.title;
 
     // Swap the whole site-mark (kicker + title + byline + sub) so per-page
@@ -42,13 +44,35 @@
       // Stop media before detaching: a detached <audio>/<video> keeps playing,
       // and Web Audio players (AI blend, sonify) sound through no element at all,
       // so navigating away from an analysis would otherwise leave audio running
-      // with no visible player. Mirror clearResultsUI()'s teardown.
+      // with no visible player. Mirror clearResultsUI()'s teardown. This still
+      // applies even when the main below gets preserved rather than discarded -
+      // a preserved analysis must go silent while off-page too (pausing keeps
+      // currentTime, so position survives).
       try { oldMain.querySelectorAll('audio, video').forEach(function (m) { try { m.pause(); } catch (_) {} }); } catch (_) {}
       if (window._anrMediaStoppers) {
         for (var stop of window._anrMediaStoppers) { try { stop(); } catch (_) {} }
         window._anrMediaStoppers.clear();
       }
-      oldMain.replaceWith(newMain);
+      // Leaving home with an analysis on screen (anr-has-file body class, set by
+      // app.js's handleFile/enterLoadedUI): stash the live main instead of letting
+      // it go to garbage collection, so a later return to home can reinsert it
+      // verbatim - DOM, event listeners, media currentTime, resolved async cells -
+      // with no re-analysis. JS memory (this window.* global) survives the SPA
+      // swap even though the node itself is about to be detached below.
+      if (isHomePath(currentPath) && document.body.classList.contains('anr-has-file')) {
+        window._anrHomeMain = oldMain;
+      }
+      // Arriving home with a previously-stashed main: reuse it instead of the
+      // freshly-parsed (empty) home main, so the preserved analysis reappears
+      // exactly as left. app.js's boot() sees window._anrHomeRestored and skips
+      // re-wiring the (already-wired) preserved nodes.
+      if (arrivingHome && window._anrHomeMain) {
+        oldMain.replaceWith(window._anrHomeMain);
+        window._anrHomeMain = null;   // consumed; a fresh analysis re-arms it
+        window._anrHomeRestored = true;
+      } else {
+        oldMain.replaceWith(newMain);
+      }
     }
 
     var oldFooter = document.querySelector('.site-footer');
@@ -64,12 +88,13 @@
   }
 
   function navigateTo(url, push) {
+    var arrivingHome = isHomePath(new URL(url, location.href).pathname);
     fetch(url)
       .then(function (r) { return r.text(); })
       .then(function (html) {
         var doc = new DOMParser().parseFromString(html, 'text/html');
         document.startViewTransition(function () {
-          swap(doc);
+          swap(doc, arrivingHome);
           currentPath = new URL(url).pathname;
           if (push) history.pushState({ anrNav: 1 }, '', url);
           // The swapped-in page inherits the old scroll offset, so reset it:

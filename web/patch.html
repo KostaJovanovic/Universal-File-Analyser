@@ -209,6 +209,20 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">6.17</p>
+          <p class="patch-name">Fine Cut</p>
+          <p class="patch-date">12 July 2026, 02:57</p>
+          <ul class="patch-list">
+            <li><strong>The waveform selection becomes a proper editing tool - drag its edges or its middle, or type exact times - and the Stereo analysis card now follows the AI vocal-instrumental blend live.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Fine-tune a selection by hand.</strong> A <a href="/about#where">waveform</a> selection is no longer just click-and-drag: grab either edge to resize it, grab the middle to move it, or type exact <strong>Start</strong> and <strong>End</strong> times straight into the fields beside it.</li>
+            <li><span class="patch-tag">New</span><strong>A transport under the waveform.</strong> Play, pause and scrub directly beneath the waveform card, without scrolling back up to the main player.</li>
+            <li><span class="patch-tag">New</span><strong>Picking a channel plays it too.</strong> Choosing <strong>Left</strong>, <strong>Right</strong> or another channel in the Channel picker now solos that channel in playback as well as in the spectrogram and waveform, instead of only changing what you see.</li>
+            <li><span class="patch-tag">New</span><strong>Stereo analysis follows the AI blend.</strong> While separating vocals, the <strong>Stereo analysis</strong> card&rsquo;s correlation, width and vectorscope now track your current <strong>Vocals - Instrumental</strong> mix live, reverting to the file&rsquo;s own left/right the moment separation is cleared. If the track was playing when separation finished, it now picks up from the same spot instead of restarting.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Reset zoom stays put.</strong> The waveform&rsquo;s <strong>Reset zoom</strong> button now sits in its own row, so it stays reachable after zooming clears the selection instead of disappearing with it.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">6.14 - 6.16</p>
           <p class="patch-name">Homecoming</p>
           <p class="patch-date">11 July 2026</p>
@@ -239,28 +253,6 @@
         </div>
 
         <div class="patch-entry">
-          <p class="patch-version">6.08 - 6.11</p>
-          <p class="patch-name">Even Keel</p>
-          <p class="patch-date">11 July 2026, 18:03</p>
-          <ul class="patch-list">
-            <li><strong>A reliability and mobile-polish pass on the AI vocal separation - it now runs on iPhone and Safari instead of crashing, keeps working after you clear storage, and its controls fit a phone - alongside a large tidy-up behind the scenes.</strong></li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Vocal separation works on iPhone and Safari.</strong> Starting a <a href="/about#where">Separate vocals (AI)</a> run on an Apple device used to be able to crash the tab; on those browsers Analyser now takes the steady, well-supported path instead - a little slower, but it runs cleanly to the end. Chrome and Edge keep the fast graphics-card path.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>The separation controls fit a phone.</strong> The spectrogram&rsquo;s <strong>Isolate</strong> and <strong>Separate</strong> panel - the frequency presets, the <strong>Standard</strong> / <strong>Lite</strong> model picker and the vocal and instrumental result rows - now stack into clean full-width blocks on a narrow screen, instead of crowding into one cramped row.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Clearing storage keeps the AI model.</strong> If you have any offline download saved, <strong>Clear storage</strong> now spares the large AI vocal-separation model so offline separation keeps working - everything else is still cleared as before, and the <strong>Cached</strong> badge no longer misreads a spared model as a full offline copy.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>A tidier page edge on wide screens.</strong> On a very wide display the drifting grid backdrop is now kept within the content column, with the page background filling the margins to a clean hairline either side, instead of the grid bleeding out past the edges.</li>
-            <li><strong>A lighter G-code clip by default.</strong> A recorded <a href="/about#ext-gcode">G-code</a> clip now exports at the <strong>Standard</strong> quality and 30 frames a second by default - a smaller file that still keeps the thin toolpath lines crisp - with <strong>High</strong> and <strong>Max</strong> a tap away when you want more.</li>
-            <li><strong>Maintenance - a large internal reorganisation.</strong> The whole site was moved into one folder and the build and packaging scripts were consolidated. Nothing changes for you; it keeps the project tidy as the website and the desktop app grow side by side.</li>
-          </ul>
-
-          <hr class="patch-rule">
-
-          <p class="patch-subhead">Desktop app</p>
-          <ul class="patch-list">
-            <li><strong>The desktop app joins the count.</strong> The <strong>Windows</strong>, <strong>macOS</strong> and <strong>Linux</strong> app now adds to the anonymous &ldquo;a file was analysed&rdquo; <a href="/stats">running total</a>, the same single tick the website sends. Nothing about the file is ever sent - only its extension and whether it was supported, never the name, size or contents.</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
           <p class="patch-version">6.06 - 6.07</p>
           <p class="patch-name">Guard Rails</p>
           <p class="patch-date">10 July 2026, 23:53</p>
@@ -286,6 +278,28 @@
 
         <details class="about-formats">
           <summary>Older updates</summary>
+
+        <div class="patch-entry">
+          <p class="patch-version">6.08 - 6.11</p>
+          <p class="patch-name">Even Keel</p>
+          <p class="patch-date">11 July 2026, 18:03</p>
+          <ul class="patch-list">
+            <li><strong>A reliability and mobile-polish pass on the AI vocal separation - it now runs on iPhone and Safari instead of crashing, keeps working after you clear storage, and its controls fit a phone - alongside a large tidy-up behind the scenes.</strong></li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Vocal separation works on iPhone and Safari.</strong> Starting a <a href="/about#where">Separate vocals (AI)</a> run on an Apple device used to be able to crash the tab; on those browsers Analyser now takes the steady, well-supported path instead - a little slower, but it runs cleanly to the end. Chrome and Edge keep the fast graphics-card path.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The separation controls fit a phone.</strong> The spectrogram&rsquo;s <strong>Isolate</strong> and <strong>Separate</strong> panel - the frequency presets, the <strong>Standard</strong> / <strong>Lite</strong> model picker and the vocal and instrumental result rows - now stack into clean full-width blocks on a narrow screen, instead of crowding into one cramped row.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Clearing storage keeps the AI model.</strong> If you have any offline download saved, <strong>Clear storage</strong> now spares the large AI vocal-separation model so offline separation keeps working - everything else is still cleared as before, and the <strong>Cached</strong> badge no longer misreads a spared model as a full offline copy.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A tidier page edge on wide screens.</strong> On a very wide display the drifting grid backdrop is now kept within the content column, with the page background filling the margins to a clean hairline either side, instead of the grid bleeding out past the edges.</li>
+            <li><strong>A lighter G-code clip by default.</strong> A recorded <a href="/about#ext-gcode">G-code</a> clip now exports at the <strong>Standard</strong> quality and 30 frames a second by default - a smaller file that still keeps the thin toolpath lines crisp - with <strong>High</strong> and <strong>Max</strong> a tap away when you want more.</li>
+            <li><strong>Maintenance - a large internal reorganisation.</strong> The whole site was moved into one folder and the build and packaging scripts were consolidated. Nothing changes for you; it keeps the project tidy as the website and the desktop app grow side by side.</li>
+          </ul>
+
+          <hr class="patch-rule">
+
+          <p class="patch-subhead">Desktop app</p>
+          <ul class="patch-list">
+            <li><strong>The desktop app joins the count.</strong> The <strong>Windows</strong>, <strong>macOS</strong> and <strong>Linux</strong> app now adds to the anonymous &ldquo;a file was analysed&rdquo; <a href="/stats">running total</a>, the same single tick the website sends. Nothing about the file is ever sent - only its extension and whether it was supported, never the name, size or contents.</li>
+          </ul>
+        </div>
 
         <div class="patch-entry patch-milestone">
           <p class="patch-version">6.0 - 6.05</p>
