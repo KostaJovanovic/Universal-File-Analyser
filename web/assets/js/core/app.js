@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 213;
+const COMMIT_COUNT = 214;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1552,6 +1552,10 @@ window._anrReadableText = isReadableText;
       konamiPos = (k === KONAMI[konamiPos]) ? konamiPos + 1 : (k === KONAMI[0] ? 1 : 0);
       if (konamiPos === KONAMI.length) {
         konamiPos = 0;
+        // While the game itself is running it tracks its own Konami code (to reveal the
+        // sandbox) - without this guard, entering it there also re-triggers this listener
+        // and navigates to /atari mid-game, tearing the running game down.
+        if (window._anrAsteroidsActive) return;
         const a = document.createElement('a'); a.href = '/atari';
         document.body.appendChild(a); a.click(); a.remove();
       }

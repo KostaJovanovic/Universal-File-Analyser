@@ -209,6 +209,31 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">6.19</p>
+          <p class="patch-name">Workbench</p>
+          <p class="patch-date">13 July 2026</p>
+          <ul class="patch-list">
+            <li><strong>A full analysis workbench now sits beneath every <a href="/about#ext-csv">CSV</a>, <a href="/about#ext-xlsx">Excel</a> and OpenDocument spreadsheet - sort, filter, search and reshape the data live, summarise it into groups, and build a chart, all without anything leaving your browser.</strong></li>
+            <li><span class="patch-tag">New</span><strong>A live data grid.</strong> Click a column header to sort by it, filter any column (a range for numbers, a text match for everything else), search across every column at once, and show, hide or reorder columns. Click a cell to read its full value, or drag to select a rectangle, a whole row or a whole column.</li>
+            <li><span class="patch-tag">New</span><strong>Split one column into many.</strong> Some files pack several fields into a single delimited column - the workbench can split it on an auto-detected (or chosen) delimiter, splitting its header name too, with <strong>Undo split</strong> to put it back.</li>
+            <li><span class="patch-tag">New</span><strong>Summarise into groups.</strong> Pick a column to group by and a calculation - count, sum, average, minimum, maximum or median - and the rows roll up into per-group totals live as you choose.</li>
+            <li><span class="patch-tag">New</span><strong>Build a chart.</strong> Line, bar, scatter, histogram, pie, area, box plot or heatmap, drawn straight from the grid or from whatever you have selected, with quick suggested-chart buttons and a hover tooltip on every point, bar and slice.</li>
+            <li><span class="patch-tag">New</span><strong>Take it with you.</strong> Save the chart as a PNG, the current stats as JSON, or the filtered and sorted rows as CSV.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Asteroids no longer exits itself.</strong> Entering the Konami code while a run was already under way used to reload straight back to the game&rsquo;s own page, tearing down the run in progress; it is now ignored until the game ends.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">6.18</p>
+          <p class="patch-name">Left Off</p>
+          <p class="patch-date">12 July 2026, 04:15</p>
+          <ul class="patch-list">
+            <li><strong>Leaving the home page no longer loses what you were looking at - browse away and come back and your analysed file, its player and every result are exactly as you left them.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Come home to the same file.</strong> Analyse something on the home page, then visit <a href="/about">About</a>, <a href="/samples">Samples</a> or another page and come back - the file, its player and every result reappear exactly as left, instead of the empty dropzone. Dropping a new file still replaces it as normal.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">6.17</p>
           <p class="patch-name">Fine Cut</p>
           <p class="patch-date">12 July 2026, 02:57</p>
@@ -221,6 +246,9 @@
             <li><span class="patch-tag is-fix">Fix</span><strong>Reset zoom stays put.</strong> The waveform&rsquo;s <strong>Reset zoom</strong> button now sits in its own row, so it stays reachable after zooming clears the selection instead of disappearing with it.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">6.14 - 6.16</p>
@@ -253,6 +281,28 @@
         </div>
 
         <div class="patch-entry">
+          <p class="patch-version">6.08 - 6.11</p>
+          <p class="patch-name">Even Keel</p>
+          <p class="patch-date">11 July 2026, 18:03</p>
+          <ul class="patch-list">
+            <li><strong>A reliability and mobile-polish pass on the AI vocal separation - it now runs on iPhone and Safari instead of crashing, keeps working after you clear storage, and its controls fit a phone - alongside a large tidy-up behind the scenes.</strong></li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Vocal separation works on iPhone and Safari.</strong> Starting a <a href="/about#where">Separate vocals (AI)</a> run on an Apple device used to be able to crash the tab; on those browsers Analyser now takes the steady, well-supported path instead - a little slower, but it runs cleanly to the end. Chrome and Edge keep the fast graphics-card path.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The separation controls fit a phone.</strong> The spectrogram&rsquo;s <strong>Isolate</strong> and <strong>Separate</strong> panel - the frequency presets, the <strong>Standard</strong> / <strong>Lite</strong> model picker and the vocal and instrumental result rows - now stack into clean full-width blocks on a narrow screen, instead of crowding into one cramped row.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Clearing storage keeps the AI model.</strong> If you have any offline download saved, <strong>Clear storage</strong> now spares the large AI vocal-separation model so offline separation keeps working - everything else is still cleared as before, and the <strong>Cached</strong> badge no longer misreads a spared model as a full offline copy.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A tidier page edge on wide screens.</strong> On a very wide display the drifting grid backdrop is now kept within the content column, with the page background filling the margins to a clean hairline either side, instead of the grid bleeding out past the edges.</li>
+            <li><strong>A lighter G-code clip by default.</strong> A recorded <a href="/about#ext-gcode">G-code</a> clip now exports at the <strong>Standard</strong> quality and 30 frames a second by default - a smaller file that still keeps the thin toolpath lines crisp - with <strong>High</strong> and <strong>Max</strong> a tap away when you want more.</li>
+            <li><strong>Maintenance - a large internal reorganisation.</strong> The whole site was moved into one folder and the build and packaging scripts were consolidated. Nothing changes for you; it keeps the project tidy as the website and the desktop app grow side by side.</li>
+          </ul>
+
+          <hr class="patch-rule">
+
+          <p class="patch-subhead">Desktop app</p>
+          <ul class="patch-list">
+            <li><strong>The desktop app joins the count.</strong> The <strong>Windows</strong>, <strong>macOS</strong> and <strong>Linux</strong> app now adds to the anonymous &ldquo;a file was analysed&rdquo; <a href="/stats">running total</a>, the same single tick the website sends. Nothing about the file is ever sent - only its extension and whether it was supported, never the name, size or contents.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">6.06 - 6.07</p>
           <p class="patch-name">Guard Rails</p>
           <p class="patch-date">10 July 2026, 23:53</p>
@@ -273,31 +323,6 @@
           <p class="patch-subhead">Desktop app</p>
           <ul class="patch-list">
             <li><span class="patch-tag is-fix">Fix</span><strong>The desktop app only reads what you drop.</strong> The <strong>Windows</strong>, <strong>macOS</strong> and <strong>Linux</strong> app now reads only the exact file you drag onto it, never any other file by path - so the desktop version holds the same tight boundary as the website.</li>
-          </ul>
-        </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
-
-        <div class="patch-entry">
-          <p class="patch-version">6.08 - 6.11</p>
-          <p class="patch-name">Even Keel</p>
-          <p class="patch-date">11 July 2026, 18:03</p>
-          <ul class="patch-list">
-            <li><strong>A reliability and mobile-polish pass on the AI vocal separation - it now runs on iPhone and Safari instead of crashing, keeps working after you clear storage, and its controls fit a phone - alongside a large tidy-up behind the scenes.</strong></li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Vocal separation works on iPhone and Safari.</strong> Starting a <a href="/about#where">Separate vocals (AI)</a> run on an Apple device used to be able to crash the tab; on those browsers Analyser now takes the steady, well-supported path instead - a little slower, but it runs cleanly to the end. Chrome and Edge keep the fast graphics-card path.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>The separation controls fit a phone.</strong> The spectrogram&rsquo;s <strong>Isolate</strong> and <strong>Separate</strong> panel - the frequency presets, the <strong>Standard</strong> / <strong>Lite</strong> model picker and the vocal and instrumental result rows - now stack into clean full-width blocks on a narrow screen, instead of crowding into one cramped row.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Clearing storage keeps the AI model.</strong> If you have any offline download saved, <strong>Clear storage</strong> now spares the large AI vocal-separation model so offline separation keeps working - everything else is still cleared as before, and the <strong>Cached</strong> badge no longer misreads a spared model as a full offline copy.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>A tidier page edge on wide screens.</strong> On a very wide display the drifting grid backdrop is now kept within the content column, with the page background filling the margins to a clean hairline either side, instead of the grid bleeding out past the edges.</li>
-            <li><strong>A lighter G-code clip by default.</strong> A recorded <a href="/about#ext-gcode">G-code</a> clip now exports at the <strong>Standard</strong> quality and 30 frames a second by default - a smaller file that still keeps the thin toolpath lines crisp - with <strong>High</strong> and <strong>Max</strong> a tap away when you want more.</li>
-            <li><strong>Maintenance - a large internal reorganisation.</strong> The whole site was moved into one folder and the build and packaging scripts were consolidated. Nothing changes for you; it keeps the project tidy as the website and the desktop app grow side by side.</li>
-          </ul>
-
-          <hr class="patch-rule">
-
-          <p class="patch-subhead">Desktop app</p>
-          <ul class="patch-list">
-            <li><strong>The desktop app joins the count.</strong> The <strong>Windows</strong>, <strong>macOS</strong> and <strong>Linux</strong> app now adds to the anonymous &ldquo;a file was analysed&rdquo; <a href="/stats">running total</a>, the same single tick the website sends. Nothing about the file is ever sent - only its extension and whether it was supported, never the name, size or contents.</li>
           </ul>
         </div>
 

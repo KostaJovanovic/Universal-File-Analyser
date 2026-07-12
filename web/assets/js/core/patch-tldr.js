@@ -12,9 +12,15 @@ import { el } from './util.js';
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
-  { range: '6.14 - 6.16', notes: [
+  { range: '6.19', notes: [
+    'A full analysis workbench now sits beneath every CSV, Excel and OpenDocument spreadsheet: a live, virtualised grid with sort, filter, search, column show/hide/reorder and column splitting, a group-by summary, and a chart builder (line, bar, scatter, histogram, pie, area, box and heatmap) with PNG/JSON/CSV export.',
+    'A small fix: entering the Konami code mid-run of Asteroids no longer reloads back to the game\'s own page and tears down the run in progress.',
+  ] },
+  { range: '6.14 - 6.18', notes: [
     'Analyser is a pure website again: the desktop and mobile app experiment has been retired and every trace of it stripped back out of the code, leaving the project lean and browser-only once more.',
     'The open-source repository gains a proper welcome - a contributing guide, a security policy for reporting issues privately, a code of conduct, and issue and pull-request templates - for anyone reading or building on the code. Nothing changes in the app itself.',
+    'A waveform selection becomes a proper editing tool - drag either edge to resize it or the middle to move it, or type exact start and end times - with its own play/scrub transport underneath, and picking a channel now solos it in playback too. The Stereo analysis card also follows the AI vocal/instrumental blend live.',
+    'Leaving the home page and coming back - after a trip to About, Samples or another page - now restores the exact file, player and results you had open, instead of resetting to the empty dropzone.',
   ] },
   { range: '6.12 - 6.13', notes: [
     'Java KeyStores (.jks / .keystore) now open up: Analyser lists each entry - its name, whether it holds a private key or a trusted certificate, and when it was created - and decodes every certificate inside (issued to and by, validity and SHA-256 fingerprint), including today\'s PKCS#12-based keystores.',

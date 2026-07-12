@@ -47,6 +47,48 @@ export async function renderXlsb(file, resultsEl) {
   resultsEl.innerHTML = '';
 
   const names = wb.SheetNames || [];
+
+  // ---- Sheet tabs + table (same UI as .xlsx; leads the analysis - it's the
+  // primary way to work with the data). ----
+  if (names.length) {
+    const sheetCard = el('div', { class: 'anr-card' });
+    sheetCard.appendChild(el('h3', {}, 'Sheets'));
+    const tabRow = el('div', { class: 'anr-xlsx-tabs' });
+    const tableWrap = el('div', { class: 'anr-xlsx-table-wrap' });
+    sheetCard.appendChild(tabRow);
+    sheetCard.appendChild(tableWrap);
+    resultsEl.appendChild(sheetCard);
+
+    let tkHandle = null;
+    const renderSheet = (idx) => {
+      if (tkHandle) { tkHandle.destroy(); tkHandle = null; }
+      [...tabRow.children].forEach((c, i) => c.classList.toggle('is-active', i === idx));
+      tableWrap.innerHTML = '';
+      const ws = wb.Sheets[names[idx]];
+      if (!ws || !ws['!ref']) { tableWrap.appendChild(el('p', { class: 'anr-hint' }, 'This sheet is empty.')); return; }
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      const maxCol = range.e.c;
+      const sheetRows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: true });
+      const wbHeaders = Array.from({ length: maxCol + 1 }, (_, c) => {
+        const v = (sheetRows[0] || [])[c];
+        return v == null || v === '' ? colName(c) : String(v);
+      });
+      const wbRows = sheetRows.slice(1).map((r) => Array.from({ length: maxCol + 1 }, (_, c) => (r[c] == null ? '' : String(r[c]))));
+      const tkHost = el('div');
+      tableWrap.appendChild(tkHost);
+      import('./tablekit.js').then(({ mountTableKit }) => {
+        tkHandle = mountTableKit(tkHost, { headers: wbHeaders, rows: wbRows, totalRows: wbRows.length }, { sheetName: names[idx] });
+      }).catch(() => { /* workbench is additive - ignore load failure */ });
+    };
+
+    names.forEach((name, i) => {
+      const tab = el('button', { type: 'button', class: 'anr-xlsx-tab' + (i === 0 ? ' is-active' : '') }, name || ('Sheet' + (i + 1)));
+      tab.addEventListener('click', () => renderSheet(i));
+      tabRow.appendChild(tab);
+    });
+    renderSheet(0);
+  }
+
   // ---- Metadata ----
   const metaCard = el('div', { class: 'anr-card' });
   metaCard.appendChild(el('h3', {}, 'Excel binary workbook'));
@@ -64,54 +106,5 @@ export async function renderXlsb(file, resultsEl) {
   metaCard.appendChild(metaTbl);
   resultsEl.appendChild(metaCard);
 
-  if (!names.length) { resultsEl.appendChild(integrityCard(file)); return; }
-
-  // ---- Sheet tabs + table (same UI as .xlsx) ----
-  const sheetCard = el('div', { class: 'anr-card' });
-  sheetCard.appendChild(el('h3', {}, 'Sheets'));
-  const tabRow = el('div', { class: 'anr-xlsx-tabs' });
-  const tableWrap = el('div', { class: 'anr-xlsx-table-wrap' });
-  sheetCard.appendChild(tabRow);
-  sheetCard.appendChild(tableWrap);
-  resultsEl.appendChild(sheetCard);
-
-  const ROW_CAP = 200, COL_CAP = 50;
-
-  function renderSheet(idx) {
-    [...tabRow.children].forEach((c, i) => c.classList.toggle('is-active', i === idx));
-    tableWrap.innerHTML = '';
-    const ws = wb.Sheets[names[idx]];
-    if (!ws || !ws['!ref']) { tableWrap.appendChild(el('p', { class: 'anr-hint' }, 'This sheet is empty.')); return; }
-    const range = XLSX.utils.decode_range(ws['!ref']);
-    const maxRow = range.e.r, maxCol = range.e.c;
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: true });
-    const showRows = Math.min(maxRow, ROW_CAP);
-    const showCols = Math.min(maxCol, COL_CAP);
-
-    const table = el('table', { class: 'anr-xlsx-table' });
-    const thead = el('tr', {}, [el('th', { class: 'anr-xlsx-corner' }, '')]);
-    for (let c = 0; c <= showCols; c++) thead.appendChild(el('th', {}, colName(c)));
-    table.appendChild(thead);
-    for (let r = 0; r <= showRows; r++) {
-      const tr = el('tr', {}, [el('th', { class: 'anr-xlsx-rownum' }, String(r + 1))]);
-      const rowArr = rows[r] || [];
-      for (let c = 0; c <= showCols; c++) {
-        const v = rowArr[c];
-        tr.appendChild(el('td', {}, v == null ? '' : String(v)));
-      }
-      table.appendChild(tr);
-    }
-    tableWrap.appendChild(table);
-    if (maxRow > ROW_CAP || maxCol > COL_CAP) {
-      tableWrap.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px;' },
-        `Showing the first ${Math.min(maxRow, ROW_CAP) + 1} rows × ${Math.min(maxCol, COL_CAP) + 1} columns of ${maxRow + 1} × ${maxCol + 1}.`));
-    }
-  }
-
-  names.forEach((name, i) => {
-    const tab = el('button', { type: 'button', class: 'anr-xlsx-tab' + (i === 0 ? ' is-active' : '') }, name || ('Sheet' + (i + 1)));
-    tab.addEventListener('click', () => renderSheet(i));
-    tabRow.appendChild(tab);
-  });
-  renderSheet(0);
+  if (!names.length) resultsEl.appendChild(integrityCard(file));
 }

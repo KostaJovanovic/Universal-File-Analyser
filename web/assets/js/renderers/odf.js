@@ -350,6 +350,32 @@ function renderSheetPage(tableEl) {
   return page;
 }
 
+// Materialise a table:table into a plain { headers, rows } grid for the
+// table-analysis workbench - the same repeat-expansion as renderSheetPage's
+// visual preview, but with much larger caps since the grid virtualises rows.
+function extractSheetGrid(tableEl) {
+  const MAX_COLS = 2000, MAX_ROWS = 200000;
+  const grid = [];
+  for (const tr of childEls(tableEl, 'table', 'table-row')) {
+    const rowRep = Math.min(parseInt(attrNS(tr, 'table', 'number-rows-repeated'), 10) || 1, MAX_ROWS);
+    const cells = [];
+    for (const tc of childEls(tr, 'table', 'table-cell')) {
+      const rep = Math.min(parseInt(attrNS(tc, 'table', 'number-columns-repeated'), 10) || 1, MAX_COLS);
+      const txt = cellText(tc);
+      for (let i = 0; i < rep && cells.length < MAX_COLS; i++) cells.push(txt);
+    }
+    while (cells.length && !cells[cells.length - 1]) cells.pop();
+    for (let r = 0; r < rowRep && grid.length < MAX_ROWS; r++) grid.push(cells.slice());
+  }
+  while (grid.length && grid[grid.length - 1].every((c) => !c)) grid.pop();
+  if (!grid.length) return null;
+  const cols = grid.reduce((m, r) => Math.max(m, r.length), 0);
+  const pad = (r) => Array.from({ length: cols }, (_, c) => r[c] || '');
+  const headers = pad(grid[0]);
+  const rows = grid.slice(1).map(pad);
+  return { headers, rows, totalRows: rows.length };
+}
+
 // ---------- ODP: presentation ----------
 
 function renderSlidePage(drawPage, styles, imageMap, index) {
@@ -378,8 +404,17 @@ function renderSlidePage(drawPage, styles, imageMap, index) {
 
 // ---------- main render ----------
 
+// Workbench mounts (.ods only) from the previous render - torn down before the
+// container is cleared so their ResizeObservers/listeners don't leak.
+let _odfTkHandles = [];
+function destroyOdfTableKits() {
+  for (const h of _odfTkHandles) { try { h.destroy(); } catch (_) { /* ignore */ } }
+  _odfTkHandles = [];
+}
+
 export async function renderOdf(file, container, kind) {
   container.hidden = false;
+  destroyOdfTableKits();
   container.innerHTML = '';
   revokeOdfImageUrls();   // free the previous document's embedded-image object URLs
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading document…'));
@@ -427,12 +462,13 @@ export async function renderOdf(file, container, kind) {
 
     // OpenOffice 1.x puts content directly under office:body (no inner wrapper),
     // so fall back to the body itself when the wrapper is absent.
+    let odsTables = [];
     if (kind === 'ods') {
       kindLabel = 'OpenDocument Spreadsheet';
       pageLabel = 'Sheet';
       const sheet = firstNS(body, 'office', 'spreadsheet') || body;
-      const tables = sheet ? childEls(sheet, 'table', 'table') : [];
-      pages = tables.map(renderSheetPage);
+      odsTables = sheet ? childEls(sheet, 'table', 'table') : [];
+      pages = odsTables.map(renderSheetPage);
     } else if (kind === 'odp') {
       kindLabel = 'OpenDocument Presentation';
       pageLabel = 'Slide';
@@ -453,11 +489,31 @@ export async function renderOdf(file, container, kind) {
 
     const pageTexts = pages.map((p) => p.textContent);
 
-    container.appendChild(infoCard(file, kindLabel, meta));
+    // Table-analysis workbench - one per sheet, leads the analysis (it's the
+    // primary way to work with the data). Host placeholders are inserted at
+    // the very top synchronously; the workbench itself mounts into them once
+    // tablekit.js loads.
+    if (kind === 'ods' && odsTables.length) {
+      const wbWrap = el('div');
+      container.appendChild(wbWrap);
+      import('./tablekit.js').then(({ mountTableKit }) => {
+        odsTables.forEach((tableEl, i) => {
+          const grid = extractSheetGrid(tableEl);
+          if (!grid) return;
+          const tkHost = el('div');
+          wbWrap.appendChild(tkHost);
+          const name = attrNS(tableEl, 'table', 'name') || ('Sheet ' + (i + 1));
+          _odfTkHandles.push(mountTableKit(tkHost, grid, { sheetName: name }));
+        });
+      }).catch(() => { /* workbench is additive - ignore load failure */ });
+    }
+
+    const infoCardEl = infoCard(file, kindLabel, meta);
+    container.appendChild(infoCardEl);
     container.insertBefore(pagedPreviewCard(pages, {
       title: 'Page previews',
       label: pageLabel,
-    }), container.firstChild);
+    }), infoCardEl);
     if (pageTexts.some((t) => t.trim())) {
       container.appendChild(pagedTextCard(pageTexts, { label: pageLabel }));
     }
