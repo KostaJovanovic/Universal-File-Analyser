@@ -2,8 +2,9 @@
    Detects the delimiter, parses quoted fields, infers per-column types,
    reports numeric statistics, and previews the first 100 rows. */
 
-import { el, row, rowHelp, fmtBytes, fileExt, errorCard, integrityCard, showCellPopup } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, fileExt, errorCard, integrityCard } from '../core/util.js';
 import { looksLikeGyroCsv, renderGyroCsv } from './gcsv.js';
+import { percentile } from '../lib/table-stats.js';
 
 // Quote-aware CSV/TSV parser. Walks the whole text in a single pass so a
 // quoted field may contain the delimiter, CR/LF newlines, or escaped ""
@@ -56,17 +57,6 @@ function delimiterLabel(d) {
   if (d === ';') return 'Semicolon';
   if (d === '|') return 'Pipe';
   return JSON.stringify(d);
-}
-
-// Percentile from an ASCENDING-sorted numeric array (linear interpolation).
-function percentile(sorted, p) {
-  if (sorted.length === 0) return NaN;
-  if (sorted.length === 1) return sorted[0];
-  const idx = (sorted.length - 1) * p;
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) return sorted[lo];
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
 }
 
 // Trim trailing zeros from a fixed-precision number for compact display.
@@ -337,6 +327,18 @@ export async function renderCsv(file, resultsEl) {
 
   const hasHeader = totalRows > 1; // assume first row is a header
 
+  // --- Workbench: virtualised grid, stats, group-by, charts, export (leads
+  // the analysis - it's the primary way to work with the data). ---
+  const wbHeaders = hasHeader && allRows.length > 0
+    ? allRows[0]
+    : Array.from({ length: colCount }, (_, c) => `Col ${c + 1}`);
+  const wbRows = allRows.slice(hasHeader ? 1 : 0);
+  const tkHost = el('div');
+  resultsEl.appendChild(tkHost);
+  import('./tablekit.js').then(({ mountTableKit }) => {
+    mountTableKit(tkHost, { headers: wbHeaders, rows: wbRows, totalRows: wbRows.length });
+  }).catch(() => { /* workbench is additive - ignore load failure */ });
+
   // --- Stats card ---
   const statsCard = el('div', { class: 'anr-card' });
   statsCard.appendChild(el('h3', {}, 'CSV / TSV file'));
@@ -429,72 +431,5 @@ export async function renderCsv(file, resultsEl) {
   }
 
   resultsEl.appendChild(statsCard);
-
-  // --- Data table card ---
-  const tableCard = el('div', { class: 'anr-card' });
-  tableCard.appendChild(el('h3', {}, 'Data'));
-
-  const tableWrap = el('div', { class: 'anr-table-wrap' });
-  const table = el('table', { class: 'anr-readout anr-table-data' });
-
-  // A clipped cell whose full value pops up centred when clicked (so long text
-  // that the table truncates is still readable). Built for both <td> and <th>.
-  const headerNames = hasHeader && allRows.length > 0 ? allRows[0] : [];
-  const cellLabel = (c) => headerNames[c] || `Column ${c + 1}`;
-  const makeCell = (tag, value, attrs, label) => {
-    const cell = el(tag, { ...attrs, class: (attrs.class ? attrs.class + ' ' : '') + 'anr-cell-click', title: 'Click to view the full value' }, value);
-    cell.addEventListener('click', () => showCellPopup(value, label));
-    return cell;
-  };
-
-  // Header row
-  if (hasHeader && allRows.length > 0) {
-    const thead = el('thead', {});
-    const headerRow = el('tr', {});
-    allRows[0].forEach((h, c) => {
-      headerRow.appendChild(makeCell('th', h, { class: 'anr-table-sticky' }, cellLabel(c)));
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-  }
-
-  const tbody = el('tbody', {});
-  table.appendChild(tbody);
-  tableWrap.appendChild(table);
-  tableCard.appendChild(tableWrap);
-
-  // Reveal data rows in batches - a big file can hold far more than fits on screen,
-  // so start with 100 and let the user pull in more (or all) on demand.
-  const dataStart = hasHeader ? 1 : 0;
-  const dataTotal = totalRows - dataStart;
-  const btnRow = el('div', { class: 'anr-btn-row' });
-  const moreBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show more rows');
-  const allBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show all rows');
-  btnRow.appendChild(moreBtn);
-  btnRow.appendChild(allBtn);
-  tableCard.appendChild(btnRow);
-
-  const ROW_BATCH = 100;
-  let shownRows = 0;
-  function revealRows(upTo) {
-    for (; shownRows < upTo && shownRows < dataTotal; shownRows++) {
-      const src = allRows[dataStart + shownRows];
-      const tr = el('tr', {});
-      src.forEach((cell, c) => tr.appendChild(makeCell('td', cell, {}, cellLabel(c))));
-      tbody.appendChild(tr);
-    }
-    if (shownRows >= dataTotal) {
-      btnRow.hidden = true;
-    } else {
-      btnRow.hidden = false;
-      moreBtn.textContent = `Show more rows (${shownRows.toLocaleString()} / ${dataTotal.toLocaleString()})`;
-    }
-  }
-  moreBtn.addEventListener('click', () => revealRows(shownRows + ROW_BATCH));
-  allBtn.addEventListener('click', () => revealRows(dataTotal));
-  revealRows(Math.min(dataTotal, ROW_BATCH));
-
-  resultsEl.appendChild(tableCard);
-
   resultsEl.appendChild(integrityCard(file));
 }

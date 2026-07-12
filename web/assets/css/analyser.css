@@ -7115,6 +7115,246 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-xlsx-table th { background: var(--surface); position: sticky; top: 0; font-weight: 600; }
 .anr-xlsx-rownum, .anr-xlsx-corner { background: var(--surface); position: sticky; left: 0; color: var(--muted); }
 
+/* ---------- TABLE-ANALYSIS WORKBENCH (tablekit.js) ---------- */
+/* The [?] help toggle beside the "Workbench" title reuses the shared
+   .anr-info-btn / .anr-info-panel pattern (see h3help in util.js). */
+.anr-tk-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 10px; }
+.anr-tk-search {
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  padding: 6px 10px;
+  background: var(--bg);
+  color: var(--fg);
+  border: var(--bd-hairline);
+  min-width: 220px;
+  flex: 1 1 220px;
+}
+.anr-tk-status { margin-left: auto; white-space: nowrap; display: inline-flex; align-items: center; }
+/* These menus are <details>, so they'd otherwise inherit the global details
+   chrome (a border-top rule, a big top margin, and a +/- glyph) - which drew a
+   line above the buttons and bumped them onto their own row. Reset it so the
+   summary reads as a plain toolbar button, inline with the search box. */
+.anr-tk-colsmenu { position: relative; border-top: none; margin: 0; padding: 0; align-self: stretch; }
+/* Fill the toolbar line height so the button matches the (taller) search field
+   beside it, with the label vertically centred. */
+.anr-tk-colsmenu > summary { list-style: none; cursor: pointer; text-transform: none; letter-spacing: normal; display: inline-flex; align-items: center; height: 100%; box-sizing: border-box; }
+.anr-tk-colsmenu > summary::-webkit-details-marker { display: none; }
+.anr-tk-colsmenu > summary::after { content: none; }
+.anr-tk-colslist {
+  position: absolute;
+  top: 100%; left: 0;
+  z-index: 30;
+  margin-top: 4px;
+  padding: 8px;
+  background: var(--bg);
+  border: var(--bd-hairline);
+  min-width: 220px;
+  /* Never spill past the viewport edges. */
+  max-width: calc(100vw - 24px);
+  max-height: min(300px, 60vh);
+  overflow: auto;
+  box-sizing: border-box;
+}
+.anr-tk-colrow { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: var(--t-small); }
+.anr-tk-colrow span { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anr-tk-colrow button { padding: 1px 6px; }
+/* Split-column dropdown: labelled rows inside the shared .anr-tk-colslist panel.
+   Right-anchored (the Split button sits towards the right of the toolbar, so a
+   left-anchored panel would spill off the right edge). */
+.anr-tk-splitmenu .anr-tk-colslist { left: auto; right: 0; }
+.anr-tk-splitbody { min-width: 240px; }
+.anr-tk-splitrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 8px; font-size: var(--t-small); }
+.anr-tk-splitrow select { flex: 1 1 auto; min-width: 0; }
+.anr-tk-splitmenu .anr-btn-row { margin: 8px 0 0; }
+
+/* One scrolling container, one table - see the comment in tablekit.js's
+   buildGrid(). The header (position:sticky; top:0) and row-number column
+   (position:sticky; left:0) pin against this container; because header and
+   body are the same table they can't desync (no scrollbar-offset gap). */
+.anr-tk-scroll { position: relative; overflow: auto; max-height: 410px; border: var(--bd-hairline); margin: 0 0 12px; }
+/* table-layout: fixed + an explicit <colgroup> keeps column widths stable
+   regardless of which rows the virtualised body currently holds. The table
+   also gets an explicit pixel width (set in JS) so it can be wider than the
+   viewport - enabling horizontal scroll - instead of being shrunk to fit the
+   container as table-layout:fixed with an auto width would do. */
+.anr-tk-table { border-collapse: collapse; font-size: 12px; font-family: var(--font-mono); table-layout: fixed; }
+.anr-tk-table th, .anr-tk-table td {
+  border: var(--bd-rule);
+  padding: 3px 8px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: 28px;
+  box-sizing: border-box;
+}
+/* Leading/trailing virtualisation spacer rows - bare height, no chrome. */
+.anr-tk-spacerrow td { border: none; padding: 0; }
+.anr-tk-th { position: relative; background: var(--surface); font-weight: 600; cursor: pointer; }
+.anr-tk-sticky-row { position: sticky; top: 0; z-index: 2; }
+.anr-tk-sticky-col { position: sticky; left: 0; z-index: 1; }
+.anr-tk-corner { z-index: 3; }
+.anr-tk-rownum, .anr-tk-corner { background: var(--surface); color: var(--muted); }
+.anr-tk-th.has-filter { color: var(--accent); }
+.anr-tk-thlabel { display: inline-block; padding-right: 4px; }
+.anr-tk-filterbtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 2px;
+}
+.anr-tk-filterbtn:hover { color: var(--fg); }
+.anr-tk-filterpop {
+  position: absolute;
+  top: 100%; left: 0;
+  z-index: 20;
+  background: var(--bg);
+  border: var(--bd-hairline);
+  padding: 8px;
+  white-space: nowrap;
+  font-weight: 400;
+  cursor: default;
+}
+.anr-tk-filterpop.is-hidden { display: none; }
+.anr-tk-filterinput {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 4px 6px;
+  background: var(--bg);
+  color: var(--fg);
+  border: var(--bd-hairline);
+  width: 90px;
+  margin: 0 4px 6px 0;
+}
+.anr-tk-cell { user-select: none; }
+.anr-tk-cell.is-selected { background: rgba(var(--accent-rgb, 230, 0, 35), 0.18); }
+.anr-tk-rownum { cursor: pointer; }
+/* Header / row-number cell shown as the anchor of a whole-column / whole-row
+   selection - a firmer accent tint than the cells so the header/gutter reads
+   as the header of the selection. */
+.anr-tk-th.is-selected, .anr-tk-rownum.is-selected {
+  background: rgba(var(--accent-rgb, 230, 0, 35), 0.28);
+  color: var(--fg);
+}
+
+.anr-tk-statsbar {
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  color: var(--fg);
+  padding: 8px 0;
+  border-top: var(--bd-hairline);
+  border-bottom: var(--bd-hairline);
+  margin: 0 0 12px;
+}
+.anr-tk-statline strong { color: var(--muted); font-weight: 500; }
+
+.anr-tk-gbrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 16px; font-size: var(--t-small); }
+/* "of [value]" greyed when the calculation is Count (value unused). */
+.anr-tk-gbrow .is-dim { opacity: 0.4; }
+.anr-tk-gbrow select:disabled { opacity: 0.4; cursor: not-allowed; }
+/* The [?] panel for the summary control breaks onto its own full-width line. */
+.anr-tk-gbrow .anr-info-panel { flex-basis: 100%; margin: 10px 0 0; }
+.anr-tk-gbresult { flex-basis: 100%; margin-top: 8px; }
+/* Summary result: a scrollable framed table with a pinned header, so a long
+   list of groups scrolls in place instead of growing the page. */
+.anr-tk-gbscroll { max-height: 260px; overflow: auto; border: var(--bd-hairline); }
+.anr-tk-gbtable { width: 100%; margin: 0; }
+.anr-tk-gbtable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  text-align: left;
+}
+
+/* Chart builder. Live-redraw: no "build" button. A row of labelled fields
+   (type buttons + only the pickers the current type consumes) sits above the
+   canvas, with suggestions surfaced inline above them. */
+.anr-tk-chart { margin: 0 0 16px; }
+.anr-tk-suggrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0 0 12px; }
+.anr-tk-suggrow .anr-btn-row { margin: 0; }
+/* Each setting on its own row: Chart type, then one row per picker the active
+   type uses (X axis / Values / Options ...). More readable than a packed row. */
+.anr-tk-chart-controls { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; margin: 0 0 12px; }
+.anr-tk-datafields { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; width: 100%; }
+/* [?] help panel: one entry per line rather than a run-on paragraph. */
+.anr-tk-help-item { display: block; margin-top: 7px; }
+.anr-tk-help-item:first-child { margin-top: 0; }
+/* One labelled control: a small caption over its input. */
+.anr-tk-field { display: flex; flex-direction: column; gap: 5px; }
+.anr-tk-fieldlabel {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.anr-tk-typerow { margin: 0; }
+.anr-tk-ylist { display: flex; flex-wrap: wrap; gap: 10px 14px; width: 100%; padding-top: 3px; }
+.anr-tk-ycheck { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t-small); cursor: pointer; }
+/* Square Swiss checkboxes for the value list + column-hide list, matching the
+   OCR-language box (hairline square, accent fill + thin tick when ticked). */
+.anr-tk-ycheck input,
+.anr-tk-colrow input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  border: var(--bd-hairline);
+  background: var(--bg);
+  border-radius: 0;
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+.anr-tk-ycheck input::before,
+.anr-tk-colrow input[type="checkbox"]::before {
+  content: '';
+  width: 3px;
+  height: 7px;
+  margin-top: -1px;
+  border: solid var(--accent-fg, #fff);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform var(--dur-fast) ease;
+}
+.anr-tk-ycheck input:hover,
+.anr-tk-colrow input[type="checkbox"]:hover { border-color: var(--fg); }
+.anr-tk-ycheck input:checked,
+.anr-tk-colrow input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+.anr-tk-ycheck input:checked::before,
+.anr-tk-colrow input[type="checkbox"]:checked::before { transform: rotate(45deg) scale(1); }
+.anr-tk-bins { width: 90px; }
+.anr-tk-charthost { width: 100%; height: 320px; margin-top: 12px; border: var(--bd-hairline); }
+.anr-tk-canvas { width: 100%; height: 100%; display: block; }
+.anr-tk-chart-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 8px; }
+.anr-tk-chart-caption { margin: 0; }
+
+/* ---- Workbench on narrow / touch screens ---- */
+@media (max-width: 700px) {
+  /* Toolbar: search gets its own full-width row; the row-count status flows
+     onto its own line instead of being stranded far right. */
+  .anr-tk-search { flex-basis: 100%; min-width: 0; }
+  .anr-tk-status { margin-left: 0; flex-basis: 100%; white-space: normal; }
+  /* 16px on inputs/selects stops iOS zooming the page in on focus, and gives
+     bigger tap targets. */
+  .anr-tk-card input, .anr-tk-card select { font-size: 16px; }
+  /* The filter gear is a tiny tap target at 10px - enlarge it for touch. */
+  .anr-tk-filterbtn { font-size: 14px; padding: 4px 6px; }
+  .anr-tk-filterpop { max-width: calc(100vw - 24px); box-sizing: border-box; white-space: normal; }
+  /* Let the grid and chart take a sensible share of a short screen. */
+  .anr-tk-scroll { max-height: 60vh; }
+  .anr-tk-charthost { height: 260px; }
+  /* Dropdown panels: no fixed min-widths that could exceed a small viewport. */
+  .anr-tk-colslist, .anr-tk-splitbody { min-width: 0; }
+}
+
 /* EPUB reader */
 .anr-epub-nav { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
 .anr-epub-viewport {

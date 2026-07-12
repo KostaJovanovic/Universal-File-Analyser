@@ -82,6 +82,7 @@ function showLayoutHint() {
 export function launchAsteroids() {
   if (active) return;
   active = true;
+  window._anrAsteroidsActive = true;   // tells app.js's site-wide Konami listener to stand down
 
   initState();   // (re)populate every per-run field with its launch default + persisted values
 
@@ -508,6 +509,7 @@ export function launchAsteroids() {
   function teardown() {
     if (!active) return;
     active = false;
+    window._anrAsteroidsActive = false;
     cancelAnimationFrame(raf);
     if (keyHandlers) {
       window.removeEventListener('keydown', keyHandlers.onKeyDown, true);
