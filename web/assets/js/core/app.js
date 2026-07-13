@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 220;
+const COMMIT_COUNT = 222;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -188,6 +188,14 @@ async function renderFileExtras(file, container, kind) {
       const embed = pickArchiveEmbed(sniff.ext);
       if (embed) await renderArchiveEmbedded(file, container, embed);
     }
+    // Shared forensic timestamp timeline (all file types) - hidden unless the file
+    // carries two or more timestamps or a provably inconsistent one. Lazy so its
+    // zip.js dependency stays off the critical module graph.
+    try {
+      const { forensicTimelineCard } = await import('../renderers/timeline-forensic.js');
+      const tlCard = await forensicTimelineCard(file);
+      if (tlCard) container.appendChild(tlCard);
+    } catch (_) { /* timeline is best-effort */ }
   } catch (_) { /* extras are best-effort - never break the core analysis */ }
 }
 

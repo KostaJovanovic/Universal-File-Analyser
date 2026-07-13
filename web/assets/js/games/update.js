@@ -5,7 +5,8 @@
    within-a-frame refs via a destructure; written scalars (and the boss, which a sub-call
    can clear mid-frame) go through `g.`. */
 
-import { RIPPLE_DUR, ULTRASOUND_TICK, SPAWN_INVULN, LIGHTNING_HALF, TAU, POWERUP_DEF, rand } from './config.js';
+import { RIPPLE_DUR, ULTRASOUND_TICK, SPAWN_INVULN, LIGHTNING_HALF, TAU, POWERUP_DEF, rand,
+  TIMEWARP_SCALE, SING_REACH, SING_PULL, SING_CORE, SING_SHIP_PULL, SING_BOSS_DPS } from './config.js';
 import { g, immortal, ultrasoundRadius, lightningRange } from './state.js';
 import { hardEdges, wrap, edgeBounceShip, edgeReflect, rayToRim, wrapDelta } from './geometry.js';
 import { resetShip, spawnWave, destroyAsteroid, loseLife, applyPowerup, burst } from './world.js';
@@ -51,7 +52,10 @@ export function update(dt) {
   // Timed weapon power-ups revert to the normal cannon when they run out.
   if (g.weaponTimer > 0 && !g.sbInfinite && !g.gunsOff) { g.weaponTimer -= dt; if (g.weaponTimer <= 0) { g.weapon = 'normal'; g.weaponTimer = 0; g.homingLeft = 0; } }
   if (g.shield > 0 && !g.sbInfinite) g.shield -= dt;
+  if (g.timeWarp > 0 && !g.sbInfinite) g.timeWarp -= dt;   // bullet-time buff winds down
   if (g.ramHitCd > 0) g.ramHitCd -= dt;
+  // Time Warp: enemies + asteroids run on this slowed clock; the ship/its shots keep real dt.
+  const wt = g.timeWarp > 0 ? TIMEWARP_SCALE : 1, wdt = dt * wt;
   if (g.megaMsgT > 0) g.megaMsgT -= dt;   // narrator box counts down
   // Decay power-up drop heat so recently-dropped types gradually become likely again.
   for (const t in g.dropHeat) g.dropHeat[t] *= Math.exp(-0.06 * dt);
@@ -105,7 +109,7 @@ export function update(dt) {
         if (dx || dy) {
           const desired = Math.atan2(dy, dx);
           let d = desired - ship.angle; d = Math.atan2(Math.sin(d), Math.cos(d));
-          const max = 4.6 * dt; ship.angle += Math.max(-max, Math.min(max, d));
+          const max = 6.9 * dt; ship.angle += Math.max(-max, Math.min(max, d));   // 1.5x the base rotate rate - WASD/arrow steering turns snappier
           let rem = desired - ship.angle; rem = Math.atan2(Math.sin(rem), Math.cos(rem));
           if (Math.abs(rem) < 0.15) input.thrust = true;   // reached the heading -> engines on
         } else {
@@ -240,9 +244,9 @@ export function update(dt) {
   }
 
   for (const a of asteroids) {
-    a.x += a.vx * dt; a.y += a.vy * dt; a.angleR += a.spin * dt;
+    a.x += a.vx * wdt; a.y += a.vy * wdt; a.angleR += a.spin * wdt;   // wdt: slowed under Time Warp
     if (hard) edgeReflect(a); else wrap(a);   // ping-pong off the solid walls during the mega fight
-    if (a.grace > 0) a.grace -= dt;   // count down the spawn-grace (no hitbox)
+    if (a.grace > 0) a.grace -= dt;   // count down the spawn-grace (no hitbox) - on the real clock
   }
 
   // Bullet -> asteroid. Asteroids still in spawn-grace have no hitbox.
@@ -284,10 +288,11 @@ export function update(dt) {
     }
   }
 
-  updateUfos(dt);       // move/fade the roaming UFOs and check their lethal contact
-  updateMissiles(dt);   // home + detonate any homing missiles in flight
-  updateDrones(dt);     // move/fire the drone wingmen and check their contacts
-  updateBoss(dt);       // move the boss, check its lethal contact, handle its death
+  updateUfos(wdt);      // move/fade the roaming UFOs and check their lethal contact (slowed under Time Warp)
+  updateMissiles(dt);   // home + detonate any homing missiles in flight (player asset - real time)
+  updateDrones(dt);     // move/fire the drone wingmen and check their contacts (player asset - real time)
+  updateBoss(wdt);      // move the boss, check its lethal contact, handle its death (slowed under Time Warp)
+  updateSingularities(dt);   // black holes drag asteroids/UFOs into their core and crush them
 
   // Asteroid -> ship. With the ram up the ship is unharmed and smashes head-on hits;
   // otherwise a hit costs a life (skipped while dead, immune, shielded, or in grace).
@@ -309,6 +314,49 @@ export function update(dt) {
       }
       if (ship.invuln <= 0 && g.shield <= 0 && !immortal()) { g.cause = a.label; loseLife(); }
       break;
+    }
+  }
+}
+
+// Singularity black holes: each drags nearby asteroids and reward UFOs toward its core and
+// crushes whatever reaches it, and lightly chips a boss's vulnerable nodes (floored at 1 hp,
+// like the nuke, so it can never land the killing blow). The ship is unaffected.
+function updateSingularities(dt) {
+  const S = g.S, sings = g.singularities;
+  if (!sings.length) return;
+  const reach = SING_REACH * S, core = SING_CORE * S, c = POWERUP_DEF.singularity.color;
+  for (let si = sings.length - 1; si >= 0; si--) {
+    const s = sings[si];
+    s.life -= dt;
+    if (s.life <= 0) { burst(s.x, s.y, c, { count: 16, speed: 150, life: 0.5, lines: true }); sings.splice(si, 1); continue; }
+    s.x += s.vx * dt; s.y += s.vy * dt; wrap(s);   // wander slowly across the field
+    // Tug the ship toward the core if it strays into range - never crushes or harms it.
+    if (!g.ship.dead && !g.gameOver) {
+      const [dx, dy] = wrapDelta(g.ship.x, g.ship.y, s.x, s.y);
+      const d = Math.hypot(dx, dy) || 1;
+      if (d < reach) { const pull = SING_SHIP_PULL * S * dt * (1.15 - d / reach); g.ship.vx += (dx / d) * pull; g.ship.vy += (dy / d) * pull; }
+    }
+    for (let ai = g.asteroids.length - 1; ai >= 0; ai--) {
+      const a = g.asteroids[ai];
+      if (a.grace > 0) continue;
+      const [dx, dy] = wrapDelta(a.x, a.y, s.x, s.y);   // vector from the rock toward the core
+      const d = Math.hypot(dx, dy) || 1;
+      if (d < core) { burst(a.x, a.y, c, { count: 6, speed: 90, life: 0.35 }); destroyAsteroid(ai); continue; }
+      if (d < reach) { const pull = SING_PULL * S * dt * (1.15 - d / reach); a.x += (dx / d) * pull; a.y += (dy / d) * pull; }
+    }
+    for (let ui = g.ufos.length - 1; ui >= 0; ui--) {
+      const u = g.ufos[ui];
+      if (u.kind !== 'reward' || u.appear < 1) continue;   // ambient escorts are indestructible - leave them
+      const [dx, dy] = wrapDelta(u.x, u.y, s.x, s.y);
+      const d = Math.hypot(dx, dy) || 1;
+      if (d < core) { damageUfo(ui, u.hp); continue; }
+      if (d < reach) { const pull = SING_PULL * S * dt * (1.15 - d / reach); u.x += (dx / d) * pull; u.y += (dy / d) * pull; }
+    }
+    if (g.boss) for (const n of g.boss.nodes) {
+      if (!bossNodeVulnerable(g.boss, n) || !isFinite(n.maxhp) || n.hp <= 1) continue;
+      const [nx, ny] = bossNodePos(g.boss, n);
+      const [dx, dy] = wrapDelta(nx, ny, s.x, s.y);
+      if (dx * dx + dy * dy <= reach * reach) n.hp = Math.max(1, n.hp - SING_BOSS_DPS * dt);
     }
   }
 }

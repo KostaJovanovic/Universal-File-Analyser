@@ -18,6 +18,9 @@ import { buildIcoImagesCard } from './ico.js';
 import { buildMpoImagesCard } from './mpo.js';
 import { buildTiffPagesCard } from './tiff.js';
 import { diagnoseImage, repairJpeg, repairPng, decodePngPartial, extractJpegTables, spliceJpegHeader, carveImages, repairHeifContainer } from './photo-recover.js';
+import { attachImageScrub } from './scrub.js';
+import { buildC2paCard } from './c2pa.js';
+import { buildAiSignalsCard } from './ai-signals.js';
 
 // ---------- Browser-undecodable images ----------
 // Some image formats a web browser has no decoder for, so an <img> can't paint
@@ -3061,9 +3064,26 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
       for (const [k, v] of sec.rows) t.appendChild(row(k, v));
       exifCard.appendChild(t);
     }
+    if (!inline) attachImageScrub(file, exifCard);
     resultsEl.appendChild(exifCard);
   } else {
     resultsEl.appendChild(el('div', { class: 'anr-info' }, 'No EXIF / IPTC / XMP / ICC metadata found.'));
+  }
+
+  // ---- Content Credentials (C2PA) ----
+  if (!inline) {
+    try {
+      const c2paCard = await buildC2paCard(file);
+      if (c2paCard && !renderSignal.aborted) resultsEl.appendChild(c2paCard);
+    } catch (_) { /* no C2PA / unparsable - show nothing */ }
+  }
+
+  // ---- AI-generation signals ----
+  if (!inline) {
+    try {
+      const aiCard = await buildAiSignalsCard(file, exif);
+      if (aiCard && !renderSignal.aborted) resultsEl.appendChild(aiCard);
+    } catch (_) { /* no AI indicators - show nothing */ }
   }
 
   // ---- EXIF thumbnail proportion check ----

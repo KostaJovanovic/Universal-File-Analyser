@@ -98,10 +98,15 @@ export function fireWeapon() {
   spawnBullet(ship.angle, 540 * S, 0.9, false); g.fireCd = 0.18;                 // normal
 }
 
+// Every fourth missile off the rail is flagged boss-averse: during a boss fight it steers
+// at anything but the boss while another target is on the field, so the swarm never pours
+// itself entirely into the boss and ignores the rocks around the ship.
+let missileSeq = 0;
 export function spawnMissileFrom(x, y, angle) {
   if (g.missiles.length >= 64) return;
   const c = Math.cos(angle), s = Math.sin(angle);
-  g.missiles.push({ x: x + c * 14 * g.S, y: y + s * 14 * g.S, angle, life: 3.5 });
+  const avoidBoss = (missileSeq++ % 4) === 3;
+  g.missiles.push({ x: x + c * 14 * g.S, y: y + s * 14 * g.S, angle, life: 3.5, target: null, avoidBoss });
 }
 export function spawnMissile(angle) { spawnMissileFrom(g.ship.x, g.ship.y, angle); }
 
@@ -133,19 +138,97 @@ export function nearestSeekTarget(x, y) {
   return best;
 }
 
-// Missiles travel slowly but turn toward their nearest target each frame, so they curve
+// --- Homing missile target assignment ----------------------------------------
+// A missile claims one target and keeps it until that target is eliminated. Each
+// frame the free (unclaimed) missiles are handed out greedily - closest pairs claim
+// first - and every target is filled to death before any doubling up: an asteroid
+// needs one missile, a reward UFO or boss node needs its remaining HP. Only once all
+// targets are saturated do surplus missiles double up (nearest), so a big burst is
+// never wasted and never dogpiles a single rock it could have spread across.
+
+// Is this claimed target still a valid thing to fly at?
+function targetAlive(t) {
+  if (!t) return false;
+  if (g.asteroids.includes(t)) return t.grace <= 0;
+  if (g.ufos.includes(t)) return t.kind === 'reward' && t.appear >= 1 && t.hp > 0;
+  const boss = g.boss;
+  if (boss && boss.nodes.includes(t)) return bossNodeVulnerable(boss, t) && !(boss.type === 'megastructure' && t.kind === 'core');
+  return false;
+}
+
+// Current position of a target (boss nodes ride the boss body, so recompute).
+function targetPos(t) {
+  const boss = g.boss;
+  if (boss && boss.nodes.includes(t)) return bossNodePos(boss, t);
+  return [t.x, t.y];
+}
+
+// Every valid target with the missile count it wants (fill-to-death) and its position.
+function collectTargets() {
+  const out = [];
+  for (const a of g.asteroids) { if (a.grace > 0) continue; out.push({ obj: a, need: 1, x: a.x, y: a.y, boss: false }); }
+  for (const u of g.ufos) { if (u.kind !== 'reward' || u.appear < 1 || u.hp <= 0) continue; out.push({ obj: u, need: Math.max(1, Math.ceil(u.hp)), x: u.x, y: u.y, boss: false }); }
+  const boss = g.boss;
+  if (boss) for (const n of boss.nodes) {
+    if (!bossNodeVulnerable(boss, n)) continue;
+    if (boss.type === 'megastructure' && n.kind === 'core') continue;   // core is ram-only
+    const [nx, ny] = bossNodePos(boss, n);
+    out.push({ obj: n, need: Math.max(1, Math.ceil(n.hp)), x: nx, y: ny, boss: true });
+  }
+  return out;
+}
+
+// Release missiles whose target died, then assign the freed ones greedily.
+function retargetMissiles() {
+  const { missiles } = g;
+  if (!missiles.length) return;
+  for (const m of missiles) if (m.target && !targetAlive(m.target)) m.target = null;
+  const free = missiles.filter((m) => !m.target);
+  if (!free.length) return;
+  const targets = collectTargets();
+  if (!targets.length) return;   // nothing to lock onto - free missiles keep their heading
+  // A boss-averse missile ignores the boss whenever a non-boss target is on the field.
+  const nonBossExists = targets.some((t) => !t.boss);
+  const eligible = (m, t) => !(m.avoidBoss && t.boss && nonBossExists);
+  // Remaining capacity per target = its need minus the missiles already committed to it.
+  const cap = new Map();
+  for (const t of targets) cap.set(t.obj, t.need);
+  for (const m of missiles) if (m.target && cap.has(m.target)) cap.set(m.target, cap.get(m.target) - 1);
+  // Greedy fill: sort every (free missile, eligible target-with-capacity) pair by distance, closest claims first.
+  const pairs = [];
+  for (const m of free) for (const t of targets) {
+    if (cap.get(t.obj) <= 0 || !eligible(m, t)) continue;
+    const [dx, dy] = wrapDelta(m.x, m.y, t.x, t.y);
+    pairs.push({ m, obj: t.obj, d: dx * dx + dy * dy });
+  }
+  pairs.sort((p, q) => p.d - q.d);
+  for (const p of pairs) {
+    if (p.m.target || cap.get(p.obj) <= 0) continue;
+    p.m.target = p.obj; cap.set(p.obj, cap.get(p.obj) - 1);
+  }
+  // Overflow: every eligible target is saturated but missiles remain - they double up on the nearest.
+  for (const m of free) {
+    if (m.target) continue;
+    let best = null, bd = Infinity;
+    for (const t of targets) { if (!eligible(m, t)) continue; const [dx, dy] = wrapDelta(m.x, m.y, t.x, t.y); const d = dx * dx + dy * dy; if (d < bd) { bd = d; best = t.obj; } }
+    m.target = best;
+  }
+}
+
+// Missiles travel slowly but turn toward their claimed target each frame, so they curve
 // in; they detonate on the first thing they touch.
 export function updateMissiles(dt) {
   const { cx, cy, HW, HH, S, missiles, asteroids, ufos, boss } = g;
   const spd = 300 * S, turn = 8 * dt;
   const homingColor = POWERUP_DEF.homing.color;
+  retargetMissiles();
   for (let i = missiles.length - 1; i >= 0; i--) {
     const m = missiles[i];
     m.life -= dt;
     if (m.life <= 0) { burst(m.x, m.y, homingColor, { count: 6, speed: 80, life: 0.3 }); missiles.splice(i, 1); continue; }
-    const tgt = nearestSeekTarget(m.x, m.y);
-    if (tgt) {
-      const [tdx, tdy] = wrapDelta(m.x, m.y, tgt.x, tgt.y);   // steer the short way round the seam
+    if (m.target && targetAlive(m.target)) {
+      const [tx, ty] = targetPos(m.target);
+      const [tdx, tdy] = wrapDelta(m.x, m.y, tx, ty);   // steer the short way round the seam
       let d = Math.atan2(tdy, tdx) - m.angle;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       m.angle += Math.max(-turn, Math.min(turn, d));

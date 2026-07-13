@@ -381,7 +381,7 @@ export function updateSnake(b, dt) {
   let hp = 0, max = 0;
   for (let i = 1; i < b.nodes.length; i++) { const n = b.nodes[i]; max += n.maxhp; if (!n.dead) hp += Math.max(0, n.hp); }
   let prey = null;
-  if (max > 0 && hp <= max * 0.5) {
+  if (max > 0 && hp <= max * 0.5 && b.eatCd <= 0) {   // no hunting while digesting - it only seeks prey it can actually eat
     let bd = Infinity;
     for (const a of g.asteroids) {
       if (a.grace > 0) continue;

@@ -8,7 +8,7 @@ import { DRONE_MAX, DRONE_SLOTS, DRONE_WEAPONS, POWERUP_DEF, rand, pick } from '
 import { g, immortal } from './state.js';
 import { burst, destroyAsteroid } from './world.js';
 import { damageUfo } from './ufos.js';
-import { wrapDelta } from './geometry.js';
+import { wrapDelta, wrap } from './geometry.js';
 import { spawnBulletAt, spawnMissileFrom, nearestSeekTarget } from './weapons.js';
 
 export function makeDrone(forcedWeapon) {
@@ -54,12 +54,22 @@ export function updateDrones(dt) {
   const { ship, S, drones, ufos, asteroids } = g;
   const ca = Math.cos(ship.angle), sa = Math.sin(ship.angle);
   const k = Math.min(1, dt * 6), dr = 12 * S;
+  // Shared stagger so no two wingmen launch a homing missile on the same tick: one launch
+  // holds the gate for a beat, and any other homing drone that comes due waits it out.
+  if (g.droneHomingLock > 0) g.droneHomingLock -= dt;
+  // Reach a squad of 3+ and the wingmen become permanent - no timer expiry, kept until killed.
+  // The flag sticks per-drone, so survivors stay permanent even if the count later drops.
+  if (drones.length >= 3) for (const d of drones) d.perm = true;
   for (let di = drones.length - 1; di >= 0; di--) {
     const d = drones[di];
-    if (!g.sbInfinite) { d.timer -= dt; if (d.timer <= 0) { drones.splice(di, 1); continue; } }
+    if (!g.sbInfinite && !d.perm) { d.timer -= dt; if (d.timer <= 0) { drones.splice(di, 1); continue; } }
     const [ox, oy] = DRONE_SLOTS[di % DRONE_SLOTS.length];
     const slotX = ship.x + (ox * ca - oy * sa) * S, slotY = ship.y + (ox * sa + oy * ca) * S;
-    d.x += (slotX - d.x) * k; d.y += (slotY - d.y) * k;
+    // Ease toward the formation slot the short way round the toroidal seam, then wrap back
+    // in, so a wingman follows the ship straight through a border instead of flying the long
+    // way across the whole field when the ship wraps.
+    const [sdx, sdy] = wrapDelta(d.x, d.y, slotX, slotY);
+    d.x += sdx * k; d.y += sdy * k; wrap(d);
     // Fire the wingman's own weapon at the nearest threat. Homing reaches across the
     // field; the bullet weapons only engage inside ~the scope radius.
     d.fireCd -= dt;
@@ -71,7 +81,13 @@ export function updateDrones(dt) {
           const [tdx, tdy] = wrapDelta(d.x, d.y, tgt.x, tgt.y);   // aim/range the short way round the seam
           if (d.weapon === 'homing' || Math.hypot(tdx, tdy) < 520 * S) {
             const ang = Math.atan2(tdy, tdx);
-            d.angle = ang; d.fireCd = droneFire(d, ang); fired = true;
+            d.angle = ang;
+            if (d.weapon === 'homing' && g.droneHomingLock > 0) {
+              fired = true;   // aimed and ready, but another wingman just launched - retry next tick (fireCd stays due)
+            } else {
+              d.fireCd = droneFire(d, ang); fired = true;
+              if (d.weapon === 'homing') g.droneHomingLock = 0.1;   // hold the gate so the next one staggers
+            }
           }
         }
       }

@@ -6,7 +6,7 @@
 
 import {
   LINE, MONO, POWERUP_DEF, TAU, SPAWN_INVULN, WAVE_GRACE, WRECK_FADE,
-  NUKE_TOTAL, NUKE_WHITE, NUKE_FADE, BOSS_COLOR
+  NUKE_TOTAL, NUKE_WHITE, NUKE_FADE, BOSS_COLOR, SING_CORE
 } from './config.js';
 import { g, ultrasoundRadius, laserWidth } from './state.js';
 import { withWrap, hardEdges, rayToRim } from './geometry.js';
@@ -244,6 +244,17 @@ function drawDroneIcon(s) {
   ctx.closePath(); ctx.stroke();
 }
 
+// Singularity: concentric rings collapsing to a solid core. Uses the current fillStyle colour.
+function drawSingularityIcon(s) {
+  const ctx = g.ctx;
+  ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(0, 0, s * 0.62, 0, TAU); ctx.stroke();
+  ctx.globalAlpha *= 0.55;
+  ctx.beginPath(); ctx.arc(0, 0, s * 0.4, 0, TAU); ctx.stroke();
+  ctx.globalAlpha /= 0.55;
+  ctx.beginPath(); ctx.arc(0, 0, s * 0.17, 0, TAU); ctx.fill();
+}
+
 function drawPowerupAt(p, x, y) {
   if (p.life < 3 && (Math.floor(p.life * 8) & 1)) return;   // blink as it nears expiry
   const ctx = g.ctx, clock = g.clock;
@@ -258,6 +269,8 @@ function drawPowerupAt(p, x, y) {
     drawTrefoil(s);
   } else if (p.type === 'drone') {
     drawDroneIcon(s);
+  } else if (p.type === 'singularity') {
+    drawSingularityIcon(s);
   } else {
     // Scale the glyph to the box (which tracks S) - a fixed px size overflows tiny boxes on
     // small screens and the letters end up overlapping their borders.
@@ -397,6 +410,30 @@ function drawMissiles() {
   }
 }
 
+// Singularity black holes: a dark core, a bright accretion ring, and a few sweeping arcs
+// that spin as it churns. The whole thing ramps in and collapses out over its lifetime.
+function drawSingularities() {
+  if (!g.singularities.length) return;
+  const ctx = g.ctx, S = g.S, c = POWERUP_DEF.singularity.color, base = SING_CORE * S;
+  for (const s of g.singularities) {
+    const env = Math.min(1, (s.max - s.life) / 0.3, s.life / 0.4);   // ramp in 0.3s, collapse out 0.4s
+    if (env <= 0) continue;
+    const rr = base * (0.55 + 0.45 * env), rot = g.clock * 3.2;
+    withWrap(s.x, s.y, rr * 2.2, (x, y) => {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = '#05010a'; ctx.globalAlpha = 0.92 * env;
+      ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.fill();
+      ctx.strokeStyle = c; ctx.shadowColor = c; ctx.shadowBlur = 8;
+      ctx.globalAlpha = env; ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.arc(0, 0, rr * 1.45, 0, TAU); ctx.stroke();
+      ctx.shadowBlur = 0; ctx.lineWidth = 1.4; ctx.globalAlpha = 0.7 * env;
+      for (let i = 0; i < 3; i++) { const a0 = rot + i * TAU / 3; ctx.beginPath(); ctx.arc(0, 0, rr * 2.05, a0, a0 + 0.85); ctx.stroke(); }
+      ctx.restore();
+    });
+  }
+}
+
 // The drone wingmen: small gold darts trailing the ship, each pointing where it shoots.
 function drawDrones() {
   if (!g.drones.length) return;
@@ -523,6 +560,30 @@ function drawWeaponTimer() {
   ctx.restore();
 }
 
+// Active buff (Time Warp) shown under the weapon-timer line - it is independent of the
+// weapon slot, so it can share the screen with a weapon countdown.
+function drawBuffTimers() {
+  if (g.timeWarp <= 0 || g.ship.dead || g.gameOver || g.nuke > 0) return;
+  const ctx = g.ctx, ship = g.ship, def = POWERUP_DEF.timewarp;
+  const y = ship.y + 26 + (g.weapon !== 'normal' ? 15 : 0);   // sit below the weapon line if one is up
+  ctx.save();
+  ctx.globalAlpha = 0.9; ctx.font = F12; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillStyle = def.color;
+  ctx.fillText(def.label + ' · ' + (g.sbInfinite ? '∞' : g.timeWarp.toFixed(1) + 's'), ship.x, y);
+  ctx.restore();
+}
+
+// A faint icy wash over the scope while Time Warp is up, to sell the slowed clock.
+function drawTimeWarpTint() {
+  if (g.timeWarp <= 0) return;
+  const ctx = g.ctx, { cx, cy, HW, HH } = g;
+  ctx.save();
+  ctx.globalAlpha = 0.06 * Math.min(1, g.timeWarp / 0.6);   // fade out over the last 0.6s
+  ctx.fillStyle = POWERUP_DEF.timewarp.color;
+  ctx.fillRect(cx - HW, cy - HH, HW * 2, HH * 2);
+  ctx.restore();
+}
+
 // Nuclear flash: drives the top-most DOM layer's opacity. "Reduce flashing" flips it black.
 function nukeFlash() {
   let a = 0;
@@ -612,6 +673,7 @@ export function render() {
   }
   for (const u of g.ufos) drawUfo(u);
   drawBoss();
+  drawSingularities();   // black holes sit behind the rocks, which then vanish into their cores
   for (const a of g.asteroids) drawAsteroid(a);
   for (const p of g.powerups) drawPowerup(p);
   // Bullets: sniper rounds are a touch larger and accent-tinted; others are dots. Batched
@@ -627,6 +689,7 @@ export function render() {
   drawParticles();
   drawWreck();
   drawDrones();
+  drawTimeWarpTint();   // icy wash over the field while bullet-time is active
   if (!g.gameOver && !g.hideShip) drawShip();
   ctx.restore();
 
@@ -642,6 +705,7 @@ export function render() {
     if (graceLeft > 0) waveBanner(graceLeft);
   }
   drawWeaponTimer();
+  drawBuffTimers();
   if (!g.splash) hud();
   drawBossBar();
   if (g.megaMsgT > 0 && boss && !boss.dying) drawMegaMessage();
