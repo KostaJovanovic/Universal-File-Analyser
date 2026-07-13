@@ -106,10 +106,10 @@ The only network call the site ever makes on its own is a single anonymous "file
 
 ## Style
 
-You have probably never seen a file analysis website this stylish. It follows a [swiss design](https://en.wikipedia.org/wiki/Swiss_Style_(design)) inspired layout, colour palette and set of fonts which I am very happy with. I made sure to sacrifice no functionality or readability for the sake of being cool, and hopefully succeeded in that too. Sharp corners, mono type, no clutter - and, because every good tool deserves one, a hidden [Asteroids](https://lab.valjdakosta.com/atari) game where the asteroids are supported file formats.
+You have probably never seen a file analysis website this stylish. It follows a [swiss design](https://en.wikipedia.org/wiki/Swiss_Style_(design)) inspired layout, colour palette and set of fonts which I am very happy with. I made sure to sacrifice no functionality or readability for the sake of being cool, and hopefully succeeded in that too. Sharp corners, mono type, no clutter. And a... hidden game?
 
 <div align="center">
-<img src="tools/readme-assets/asteroids.jpg" alt="The hidden Asteroids easter-egg game" width="640">
+<img src="tools/readme-assets/game.jpg" alt="p" width="640">
 </div>
 
 ## Under the hood
