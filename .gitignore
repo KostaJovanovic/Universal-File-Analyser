@@ -23,3 +23,9 @@ DOCS_PLAN.md
 
 .codex/
 
+# Claude Code local config / skills - editor tooling, not part of the site
+.claude/
+
+# README media staging - scratch working folder, not shipped
+README TEMP/
+

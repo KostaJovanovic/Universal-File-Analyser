@@ -16,7 +16,7 @@
    RUN: `node tools/stamp-head.mjs` (save.bat runs it on every commit, before
    `git add`).
    ============================================================================ */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { THEME_SCRIPT } from './prerender-common.mjs';
@@ -40,6 +40,7 @@ let changed = 0;
 const missing = [];
 for (const name of PAGES) {
   const file = join(WEB, name);
+  if (!existsSync(file)) continue;   // optional page (e.g. test.html removed) - skip, don't crash
   const html = readFileSync(file, 'utf8');
   if (!RE.test(html)) { missing.push(name); continue; }
   // Function replacer so $-sequences in the block are never interpreted.

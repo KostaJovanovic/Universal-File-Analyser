@@ -12,10 +12,11 @@ import { el } from './util.js';
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
-  { range: '6.19', notes: [
+  { range: '6.19 - 6.21', notes: [
     'A full analysis workbench now sits beneath every CSV, Excel and OpenDocument spreadsheet: a live, virtualised grid with sort, filter, search, column show/hide/reorder and column splitting, a group-by summary, and a chart builder (line, bar, scatter, histogram, pie, area, box and heatmap) with PNG/JSON/CSV export.',
     'It also recognises more date formats - including statistics-agency quarter/month notation and D/M/Y dates with dots, dashes or slashes - reading them day-first by default, automatically switching to month-first when a value proves the file is American (8/25/2024 can only be August 25th), with a manual toggle either way.',
     'A small fix: entering the Konami code mid-run of Asteroids no longer reloads back to the game\'s own page and tears down the run in progress.',
+    'The open-source code readme was rewritten and refreshed with screenshots of the app in action; nothing in the site itself changes.',
   ] },
   { range: '6.14 - 6.18', notes: [
     'Analyser is a pure website again: the desktop and mobile app experiment has been retired and every trace of it stripped back out of the code, leaving the project lean and browser-only once more.',
