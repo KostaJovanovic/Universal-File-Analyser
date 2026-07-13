@@ -7,7 +7,7 @@
 import {
   TAU, rand, pick, ARCHIVE_POOL, FILE_POOL, LINE, MONO, POWERUP_DEF, POWERUP_TYPES,
   WAVE_GRACE, MAX_POWERUPS, MAX_LIVES, SHIELD_DUR, POWERUP_LIFE, NUKE_TOTAL,
-  SPAWN_INVULN, WRECK_FADE
+  SPAWN_INVULN, WRECK_FADE, SING_DUR, SING_DRIFT
 } from './config.js';
 import { g, immortal, saveHi, saveBestWave, maxStartWave } from './state.js';
 import { fitFont, wrap } from './geometry.js';
@@ -87,7 +87,7 @@ export function spawnWave() {
 // type so it's unlikely to recur soon.
 export function choosePowerupType() {
   const weights = POWERUP_TYPES.map((t) => {
-    const base = t === 'nuke' ? 1 : 3;
+    const base = (t === 'nuke' || t === 'singularity') ? 1 : 3;   // the board-clearing instants stay rare
     return Math.max(0.05, base / (1 + (g.dropHeat[t] || 0)));
   });
   let total = 0; for (const w of weights) total += w;
@@ -116,7 +116,24 @@ export function applyPowerup(type) {
     triggerNuke();
   } else if (type === 'drone') {
     addDrone();   // random weapon; tops up the squad timer and adds one (up to DRONE_MAX)
+  } else if (type === 'timewarp') {
+    g.timeWarp = POWERUP_DEF.timewarp.dur;   // a buff, not the weapon slot - stacks with any gun
+  } else if (type === 'singularity') {
+    spawnSingularity();
   } else { g.weapon = type; g.weaponTimer = POWERUP_DEF[type].dur; g.homingLeft = 0; }
+}
+
+// Drop a black hole a little ahead of the ship on a slow random drift. The pull/crush/drift
+// simulation runs each frame in update.js (updateSingularities); this just seeds the entity.
+export function spawnSingularity() {
+  const { ship, S } = g;
+  const ahead = 60 * S, dir = rand(0, TAU), spd = SING_DRIFT * S;
+  g.singularities.push({
+    x: ship.x + Math.cos(ship.angle) * ahead,
+    y: ship.y + Math.sin(ship.angle) * ahead,
+    vx: Math.cos(dir) * spd, vy: Math.sin(dir) * spd,
+    life: SING_DUR, max: SING_DUR
+  });
 }
 
 // Detonate: wipe the board, advance a wave at a cost of one life, start the white flash.
@@ -126,6 +143,7 @@ export function triggerNuke() {
   g.asteroids.length = 0; g.bullets.length = 0; g.lasers.length = 0; g.ufos.length = 0; g.missiles.length = 0;
   // End any power-up the player was carrying - they come out of the blast clean.
   g.weapon = 'normal'; g.weaponTimer = 0; g.shield = 0; g.homingLeft = 0; g.drones.length = 0;
+  g.timeWarp = 0; g.singularities.length = 0;
   g.lightningTarget = null; g.lightningEnd = null; g.lightningMid = null; g.lightningMidTimer = 0;
   g.ripples.length = 0; g.rippleTimer = 0;
   // A nuke chips the boss too, but can't finish it off mid-cinematic (each node floored at 1 hp).
@@ -149,6 +167,7 @@ export function resetShip(invuln) {
 export function restart() {
   g.asteroids.length = 0; g.bullets.length = 0; g.particles.length = 0; g.powerups.length = 0;
   g.lasers.length = 0; g.ufos.length = 0; g.missiles.length = 0; g.drones.length = 0;
+  g.singularities.length = 0; g.timeWarp = 0;
   g.dropHeat = {}; g.boss = null;
   g.weapon = 'normal'; g.weaponTimer = 0; g.lightningTarget = null; g.shield = 0; g.homingLeft = 0;
   g.gunsOff = false; g.megaMsgT = 0; g.puSpawnOff = false; g.hideShip = false;

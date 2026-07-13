@@ -72,7 +72,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       './', './about', './patch', './compare', './manifest.json', './assets/css/analyser.css', './assets/css/fonts.css',
       './assets/js/core/app.js', './assets/js/core/formats.js', './assets/js/core/util.js', './assets/js/core/search.js',
       './assets/js/core/stats-page.js', './assets/js/core/history.js', './assets/js/core/file-sniff.js', './assets/js/core/forensics.js', './assets/js/core/overlays.js', './assets/js/core/patch-tldr.js', './assets/js/core/offline-tiers.js', './assets/js/core/format-overlay.js', './assets/js/core/classify.js',
-      './assets/js/renderers/photo.js', './assets/js/renderers/audio.js', './assets/js/renderers/audio-analysis.js',
+      './assets/js/renderers/photo.js', './assets/js/renderers/scrub.js', './assets/js/renderers/c2pa.js', './assets/js/renderers/ai-signals.js', './assets/js/renderers/timeline-forensic.js', './assets/js/renderers/audio.js', './assets/js/renderers/audio-analysis.js',
       './assets/js/renderers/audio-codec.js', './assets/js/renderers/video.js', './assets/js/renderers/spectrogram.js',
       './assets/js/renderers/pdf.js', './assets/js/renderers/archive.js', './assets/js/renderers/svg.js',
       './assets/js/renderers/csv.js', './assets/js/renderers/unknown.js', './assets/js/renderers/proprietary.js',

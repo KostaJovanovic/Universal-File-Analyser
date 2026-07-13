@@ -56,6 +56,7 @@ export function initState() {
   g.asteroids = []; g.bullets = []; g.particles = []; g.powerups = []; g.lasers = [];
   g.ufos = []; g.missiles = []; g.drones = []; g.ripples = []; g.flyers = [];
   g.stars = []; g.bossBag = []; g.leaderboard = []; g.mobileControls = [];
+  g.singularities = [];   // active black holes (Singularity power-up)
   g.boss = null; g.wreck = null;
 
   // Dynamic power-up rarity (heat per type, decays over time).
@@ -64,6 +65,7 @@ export function initState() {
   // Run state.
   g.wave = 0; g.score = 0; g.lives = 3; g.gameOver = false; g.cause = null;
   g.weapon = 'normal'; g.weaponTimer = 0; g.lightningTarget = null; g.shield = 0;
+  g.timeWarp = 0;   // buff timer (independent of the weapon slot)
 
   // Mega core endgame flags.
   g.gunsOff = false; g.megaMsgT = 0; g.puSpawnOff = false; g.hideShip = false;

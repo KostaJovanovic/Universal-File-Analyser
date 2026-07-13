@@ -74,10 +74,26 @@ export const POWERUP_DEF = {
   // formation, mirrors your gun at the nearest threat, smashes what it touches, and can
   // be destroyed.
   drone: { color: '#ffd166', letter: 'D', label: 'DRONE WINGMAN', dur: 20 },
+  // Time Warp: a buff (not the weapon slot) that freezes every asteroid, UFO and boss in
+  // place while the ship, its shots and its drones keep moving - full bullet-time stasis.
+  timewarp: { color: '#c9d1ff', letter: 'W', label: 'TIME WARP', dur: 6 },
+  // Singularity: instant. Drops a drifting black hole that drags asteroids and reward UFOs
+  // into its core and crushes them (and chips a boss); tugs the ship but never harms it.
+  singularity: { color: '#8957e5', letter: '◉', label: 'SINGULARITY' },
   // Nuclear bomb: instant, double-edged. Wipes the board and advances a wave but
   // costs a life. No `dur` - it fires once on pickup (see applyPowerup/triggerNuke).
   nuke: { color: '#ffd60a', letter: '☢', label: 'NUCLEAR' }
 };
+// Time Warp freezes enemies/asteroids to this fraction of real time while it is up (0 = full stop).
+export const TIMEWARP_SCALE = 0;
+// Singularity black-hole tuning (radii/speeds are raw units, scaled by g.S at use).
+export const SING_DUR = 10;        // black-hole lifetime
+export const SING_DRIFT = 16;      // how fast the hole wanders across the field
+export const SING_REACH = 300;     // pull influence radius
+export const SING_PULL = 430;      // inward pull at the rim, ramping up toward the core
+export const SING_CORE = 24;       // anything reaching this radius is crushed
+export const SING_SHIP_PULL = 150; // gentle tug on the ship in range (never crushes it)
+export const SING_BOSS_DPS = 5;    // chip rate on boss nodes in range (floored at 1 hp, like the nuke)
 export const POWERUP_TYPES = Object.keys(POWERUP_DEF);
 
 // ---- Drone wingmen ----
