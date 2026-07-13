@@ -102,3 +102,7 @@ The idea and need for this website was mine, originally made as a simple tool fo
 Copyright © 2026 Kosta. Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
 
 You are free to use, study, modify and share this code for any **noncommercial** purpose, as long as you keep the copyright notice. **Commercial use is not permitted** without a separate licence from me - get in touch if you want one.
+
+## Documentation
+
+For a deeper look at the codebase - architecture, the drop-to-render pipeline, every renderer module, and a full usage reference for every feature on the site - see [`docs/README.md`](docs/README.md).

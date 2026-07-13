@@ -22,7 +22,7 @@
      Pad   (2): pascal-name block + main block (layer@0 x@13 y@17 sizeX@21 sizeY@25 hole@45 shape@49 rot@52(f64))
 */
 
-import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard, wheelZoomToggle } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, errorCard, wheelZoomToggle } from '../core/util.js';
 import { openCfbf } from '../lib/cfbf.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -553,7 +553,6 @@ function metaCard(title, helpText, rows, file, extra) {
   card.appendChild(h); card.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
   for (const [k, v] of rows) if (v != null && v !== '') tbl.appendChild(row(k, String(v)));
-  tbl.appendChild(sha256Row(file));
   card.appendChild(tbl);
   if (extra) card.appendChild(extra);
   return card;

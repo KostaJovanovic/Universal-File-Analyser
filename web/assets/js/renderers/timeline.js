@@ -9,7 +9,7 @@
      { name, fps, duration, tracks: [ { kind, name, clips: [ {name, start, duration, srcIn} ] } ] }
    with every time value in seconds. */
 
-import { el, row, rowHelp, fmtBytes, sha256Row, errorCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, errorCard } from '../core/util.js';
 
 // ---------- shared helpers ----------
 
@@ -231,7 +231,6 @@ function infoCard(file, model) {
   tbl.appendChild(row('Clips', String(model.tracks.reduce((n, t) => n + t.clips.length, 0))));
   tbl.appendChild(row('File', file.name));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
-  tbl.appendChild(sha256Row(file));
   card.appendChild(tbl);
   return card;
 }

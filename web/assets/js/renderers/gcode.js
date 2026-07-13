@@ -21,7 +21,7 @@
    (tessellated), and ;WIDTH:/;HEIGHT: hints. Orbit / pan / zoom / spin, colour by
    height or feedrate, and a build-height scrubber. No external 3D library. */
 
-import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube, downloadBlob } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube, downloadBlob } from '../core/util.js';
 
 // Rendered-segment caps, scaled to the device's RAM so arc-heavy / multi-day prints
 // (millions of tessellated segments) fill in on a capable desktop without OOM-crashing
@@ -3265,7 +3265,6 @@ export async function renderGcode(file, resultsEl, opts) {
   tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
   tbl.appendChild(row('Application', 'G-code (3D printing / CNC)'));
   if (data.capped) tbl.appendChild(row('Note', `Capped at ${SEG_CAP.toLocaleString()} segments for performance; the viewer shows the first ones.`));
-  tbl.appendChild(sha256Row(file));
   card.appendChild(tbl);
 
   if (data.headerComments.length) {

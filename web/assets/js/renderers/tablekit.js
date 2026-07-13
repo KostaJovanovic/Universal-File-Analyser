@@ -6,7 +6,7 @@
    PNG/JSON/CSV export. No chart library - see drawChart(). */
 
 import { el, row, showCellPopup, downloadBlob, h3help, wireInfoToggle } from '../core/util.js';
-import { SAMPLE_CAP, inferColumnTypes, toNumber, columnValues, describe, percentile, pearson, groupBy } from '../lib/table-stats.js';
+import { SAMPLE_CAP, inferColumnTypes, toNumber, columnValues, describe, percentile, pearson, groupBy, parseDateValue, looksMonthFirst } from '../lib/table-stats.js';
 
 const ROW_H = 28;
 const OVERSCAN = 5;
@@ -539,6 +539,14 @@ export function mountTableKit(host, model, opts = {}) {
   let lastGroupByResult = null;
   let activeChartType = 'line';
   let stackedOn = false;
+  // Ambiguous D/M/Y dates (31/12/2024, 31.12.2024, ...) read day-first by
+  // default, matching the site's conventions - this toggle switches every
+  // date column's sort order and chart axis to the US month-first reading
+  // instead. Unambiguous formats (2024-12-31, 2011.06) are unaffected. Seeded
+  // from looksMonthFirst() so a file that PROVES itself month-first (a value
+  // like 8/25/2024, where 25 can only be a day) opens already reading it
+  // correctly, rather than making every American file click the toggle first.
+  let monthFirst = looksMonthFirst(initialSample, colCount, colTypes);
   let lastHits = [];
   let hoverHit = null;
   let disposers = [];
@@ -590,7 +598,25 @@ export function mountTableKit(host, model, opts = {}) {
     splitHint,
   ]));
 
-  const toolbar = el('div', { class: 'anr-tk-toolbar' }, [searchInput, colsDetails, splitDetails, statusEl]);
+  // Ambiguous D/M/Y dates (31/12/2024, 31.12.2024, ...) read day-first by
+  // default; this flips affected columns to the US month-first reading
+  // instead. Starts already reflecting monthFirst's auto-detected value (see
+  // looksMonthFirst above) - only shown once a date column actually exists
+  // (see updateDateFmtBtn, called from reinferAndReset and just below).
+  const dateFmtBtn = el('button', {
+    type: 'button', class: 'anr-btn anr-btn-sm' + (monthFirst ? ' is-active' : ''), hidden: true,
+    title: 'Ambiguous dates such as 31/12/2024 are read day first by default - switch to the US month-first reading',
+  }, monthFirst ? 'Dates: M/D/Y (US)' : 'Dates: D/M/Y');
+  dateFmtBtn.addEventListener('click', () => {
+    monthFirst = !monthFirst;
+    dateFmtBtn.textContent = monthFirst ? 'Dates: M/D/Y (US)' : 'Dates: D/M/Y';
+    dateFmtBtn.classList.toggle('is-active', monthFirst);
+    applyView();
+  });
+  function updateDateFmtBtn() { dateFmtBtn.hidden = !colTypes.includes('date'); }
+  updateDateFmtBtn();
+
+  const toolbar = el('div', { class: 'anr-tk-toolbar' }, [searchInput, colsDetails, splitDetails, dateFmtBtn, statusEl]);
   card.appendChild(toolbar);
 
   let searchTimer = null;
@@ -658,6 +684,7 @@ export function mountTableKit(host, model, opts = {}) {
     const sample = rows.length > SAMPLE_CAP ? rows.slice(0, SAMPLE_CAP) : rows;
     const t = inferColumnTypes(sample, headers.length);
     colTypes.length = 0; t.forEach((x) => colTypes.push(x));
+    updateDateFmtBtn();
     view.colOrder = headers.map((_, i) => i);
     view.hidden = new Set();
     view.sort = { col: -1, dir: 0 };
@@ -1253,7 +1280,7 @@ export function mountTableKit(host, model, opts = {}) {
     const xKey = (r) => {
       const raw = r[xCol];
       if (xType === 'number') { const n = toNumber(raw); return isNaN(n) ? null : n; }
-      if (xType === 'date') { const t = Date.parse(raw); return isNaN(t) ? null : t; }
+      if (xType === 'date') { const t = parseDateValue(raw, monthFirst); return isNaN(t) ? null : t; }
       return raw == null ? '' : String(raw);
     };
     const ordered = sample.slice().sort((a, b) => {
@@ -1514,7 +1541,7 @@ export function mountTableKit(host, model, opts = {}) {
         const raw = (rows[i][c] || '').trim();
         if (raw === '') return null;
         if (type === 'number') { const n = toNumber(raw); return isNaN(n) ? null : n; }
-        if (type === 'date') { const t = Date.parse(raw); return isNaN(t) ? null : t; }
+        if (type === 'date') { const t = parseDateValue(raw, monthFirst); return isNaN(t) ? null : t; }
         return raw;
       };
       idx.sort((a, b) => {

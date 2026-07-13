@@ -3,7 +3,7 @@
    and magic bytes. Extracts whatever metadata is accessible without
    full format parsers. */
 
-import { el, row, rowHelp, fmtBytes, sha256Row, preBlock } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, preBlock } from '../core/util.js';
 import { findBytes, utf16, utf8, ascii } from '../core/binutil.js';
 import { openZip } from './zip.js';
 import { FORMATS } from './proprietary-formats.js';
@@ -4074,9 +4074,6 @@ export async function renderProprietary(file, container, extOverride) {
     card.appendChild(det);
   }
 
-  const hashRow = sha256Row(file);
-  tbl.appendChild(hashRow);
-
   // Readable text block (e.g. RTF stripped of control words)
   if (extra && extra._readableText) {
     const det = el('details', { style: 'margin-top: 14px;', open: '' });
@@ -4092,7 +4089,7 @@ export async function renderProprietary(file, container, extOverride) {
     try {
       const fullText = await file.text();
       const lines = fullText.split('\n');
-      tbl.insertBefore(row('Lines', lines.length.toLocaleString()), hashRow);
+      tbl.appendChild(row('Lines', lines.length.toLocaleString()));
 
       // HTML: sandboxed rendered preview.
       if (fmt.parse === 'html') {

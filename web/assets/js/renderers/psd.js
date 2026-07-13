@@ -17,7 +17,7 @@
    ag-psd does not support CMYK / Lab / 16-bit / PSB and re-composites nothing, so
    for those we rely on path 1's embedded thumbnail rather than failing. */
 
-import { el, row, rowHelp, h3help, fmtBytes, sha256Row, integrityCard, errorCard, blobImg } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, blobImg } from '../core/util.js';
 import { loadScript } from '../core/util.js';
 
 const AGPSD_URL = 'assets/vendor/ag-psd/bundle.js';
@@ -226,7 +226,6 @@ function metaCard(file, header, layerCount) {
     if (header.channels) tbl.appendChild(row('Channels', String(header.channels)));
   }
   if (layerCount != null) tbl.appendChild(row('Layers', String(layerCount)));
-  tbl.appendChild(sha256Row(file));
   card.appendChild(tbl);
   return card;
 }
