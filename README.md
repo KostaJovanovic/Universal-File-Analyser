@@ -42,7 +42,7 @@ Waveform and spectrogram views (down into the sub-20 Hz range), codec and loudne
 <div align="center">
 
 
-https://github.com/user-attachments/assets/914b4ede-150e-4aee-87e7-34240d574625
+https://github.com/user-attachments/assets/a9226e4a-90d0-45d2-8c82-d65578e2b3e8
 
 
 <em>On-device AI vocal separation - the model runs entirely in the browser, nothing is uploaded.</em>
