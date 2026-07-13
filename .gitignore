@@ -21,4 +21,5 @@ nul
 # Local docs work-order / planning note - not shipped, not tracked
 DOCS_PLAN.md
 
-graphify-out/
+.codex/
+

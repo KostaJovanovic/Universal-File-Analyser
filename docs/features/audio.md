@@ -1,0 +1,184 @@
+# Audio
+
+Playback, waveform/spectrogram analysis, codec and loudness metrics,
+frequency isolation, AI vocal separation, reversed playback, microphone
+recording, and live spectrogram - everything the site does with sound.
+Source: `audio.js`, `audio-analysis.js`, `audio-codec.js`,
+`audio-player.js`, `spectrogram.js`, `media-reverse.js`.
+
+### File info, waveform and channel readout
+
+**What it does.** Decodes the audio (Web Audio `decodeAudioData`) and shows
+file info, container/codec details, per-channel peak/RMS, and a waveform.
+
+**How to reach it.** Drop any recognised audio file. Built in
+`web/assets/js/renderers/audio.js`.
+
+**How to use it.** For multi-channel audio (`audio.js`'s channel selector),
+choose **Mix** (every channel averaged) or an individual channel (Left,
+Right, Centre, LFE, surrounds - named per the file's declared speaker
+layout, best-effort) to drive the spectrogram and waveform; per-channel peak
+and RMS update with the choice. `describeChannels()`/`channelLabels()`
+recognise mono through 9.1.6 Atmos layouts.
+
+### Spectrogram
+
+**What it does.** An interactive time/frequency/loudness plot of the audio,
+computed with a hand-written FFT (`spectrogram.js`'s `fft()`, no audio
+library dependency).
+
+**How to reach it.** Automatic below the waveform for any decoded audio.
+
+**How to use it.** Linear or logarithmic frequency axis, adjustable FFT size
+and window function, choice of colourmap, **Save PNG** to export the canvas,
+**Fullscreen** to expand it. `computeReassignedSpectrogram()` offers a
+sharper reassigned-spectrogram mode; `computeStftComplex()`/
+`combineStftToDb()` support blending two signals' spectra (used by the AI
+separation blend slider below).
+
+**Notes / limits.** Reaches down into the sub-20Hz range per the repo root
+`README.md`.
+
+### Codec / loudness / pitch / tempo analysis
+
+**What it does.** Peak/RMS level stats, spectral centroid, LUFS integrated
+loudness, pitch detection (YIN algorithm), BPM/tempo detection, and stereo
+correlation metrics - all pure computation in `audio-analysis.js` over the
+decoded sample buffer.
+
+**How to reach it.** Automatic - shown in the audio info readout.
+
+**How to use it.** BPM is read from ID3/MP4 tags when available
+(`audio-codec.js`'s `readTagBPM()`), otherwise estimated via onset
+detection (`detectBPM()` in `audio-analysis.js`).
+
+**Notes / limits.** No interactive controls - a readout only.
+
+### Playback transport
+
+**What it does.** A custom `<audio>` transport shared across the audio,
+video, and sonify players: play/pause/replay button, a draggable seek
+track, and a current/total time readout.
+
+**How to reach it.** Automatic wherever audio plays. Built in
+`audio-player.js`'s `makePlayer()`, re-exported by `audio.js` and reused by
+`video.js`.
+
+**How to use it.** Click the transport button to play/pause, or (once
+ended) replay from the start; drag the seek track to scrub. The volume
+button opens a popup with a vertical slider (0-225%, so audio can be
+boosted past its native level) and mute toggle - volume is shared across
+every player on the page via a small registry (`registerVolPlayer`), so
+setting it once applies everywhere.
+
+### Frequency isolation (band-stop EQ)
+
+**What it does.** An interactive parametric EQ that solos or cuts specific
+frequency bands, with one-tap presets and free-form custom bands.
+
+**How to reach it.** Click **Isolate** in the audio actions row (only
+offered when driving file playback, not live capture). Built in `audio.js`.
+
+**How to use it.** Click **+ Custom band** to add a band, drag/edit its
+range; each band gets its own **remove (x)** button. **Preset buttons**
+apply a named frequency preset as a one-tap solo (cutting everything outside
+the preset's range); **Clear** removes the active preset. Once at least one
+band exists, **Download WAV** renders and downloads the isolated result.
+
+### AI vocal separation
+
+**What it does.** Splits a track into separate vocal and instrumental stems
+using an on-device neural network (MDX-Net "Kim Vocal 2" from Ultimate
+Vocal Remover), entirely in-browser via ONNX Runtime Web.
+
+**How to reach it.** Click **Separate vocals (AI)** inside the Isolate
+panel. Built in `audio.js`, backed by the MDX-Net subsystem in
+`web/assets/js/lib/mdx-*.js` (see `docs/parsers-and-libs.md`).
+
+**How to use it.** Choose **Standard** or **Lite** (mobile-friendlier)
+model tier. First use prompts to confirm the model download
+(**Download and continue**/**Start separation** to proceed, **Cancel** to
+back out) unless already cached. Once separated, each stem gets **Play**
+(in a blend row that can mix vocal/instrumental live), **Analyse** (runs
+the stem through the full audio analyser), and **Download WAV**. A `[?]`
+info button next to "Separate" explains the approach.
+
+**Notes / limits.** Runs on GPU via WebGPU where available, WASM otherwise;
+the model (~85MB) is part of the "Complete" offline tier (see
+`docs/pwa-offline.md`). The isolate band-stop cuts are re-applied to
+separated stems in parallel (nodes can't be shared across the file
+player's audio context and the stem-blend context), so Isolate edits and AI
+separation compose rather than one bypassing the other.
+
+### Waveform selection: zoom and export
+
+**What it does.** Select a time range on the waveform to zoom into it or
+export just that range.
+
+**How to reach it.** Drag a selection on the waveform, then click **Zoom**
+or **Export WAV**. Built in `audio.js`. **Reset zoom** returns to the full
+view.
+
+### Reversed playback
+
+**What it does.** Plays and downloads the decoded audio backwards - each
+channel's samples flipped, re-encoded as WAV.
+
+**How to reach it.** Click **Reverse audio** ("Reverse" card, ↺ icon) below
+the audio analysis. Built in `media-reverse.js`'s `buildReverseAudioCard()`.
+
+**How to use it.** Click **↺ Reverse audio**; once rendered, a player
+appears with **Download reversed (WAV)** and **Analyse reversed** (feeds the
+reversed clip back through the full analysis pipeline via
+`window._anrHandleFile`).
+
+**Notes / limits.** The reverse itself is synchronous and near-instant but
+gated behind a click so it isn't computed for every file automatically.
+Reuses the AVI module's PCM-WAV encoder (`encodeWav`, from `video-avi.js`).
+Video reverse is a separate feature (FFmpeg re-encode) - see
+`docs/features/video.md`.
+
+### Microphone recording
+
+**What it does.** Records live audio from the microphone and runs it
+through the same analysis as a dropped file.
+
+**How to reach it.** Click **Record** (dropzone or the audio actions row).
+Built in `audio.js`.
+
+**How to use it.** Shows a compact live streaming spectrogram while
+recording (a lighter-weight visual than the full interactive one). Click
+**Stop** to end the take; **Download recording** saves the captured audio.
+
+### Live spectrogram (no recording)
+
+**What it does.** Visualises the microphone input live, without recording
+- a real-time spectrogram of whatever the mic hears.
+
+**How to reach it.** Click **Live spectrogram**. Built in `audio.js`.
+
+**How to use it.** Same toolbar as the file spectrogram (**Save PNG**,
+**Fullscreen**, **Record**, **Live spectrogram** toggle) plus **Pause** and
+**Analyse last Ns**, which freezes and analyses the trailing N seconds of
+the live stream. A channel picker (**Mix/L/R/etc.**) chooses which input
+channel feeds the view.
+
+### Cover art / tag extraction
+
+**What it does.** Reads ID3/MP4 tags, including embedded cover art, from
+the audio file.
+
+**How to reach it.** Automatic - built in `audio-codec.js`'s
+`extractCoverArt()`/`readAudioTags()`.
+
+**Notes / limits.** No controls - a readout/preview only.
+
+### ADTS-to-M4A wrapping
+
+**What it does.** Wraps raw AAC (ADTS) streams in a minimal M4A container
+so browsers that won't decode bare ADTS can still play the file.
+
+**How to reach it.** Automatic when the file's container/codec is sniffed
+as raw ADTS (`audio-codec.js`'s `peekContainer()`/`adtsToM4a()`).
+
+**Notes / limits.** Internal compatibility shim; no user-facing control.

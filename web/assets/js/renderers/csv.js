@@ -4,7 +4,7 @@
 
 import { el, row, rowHelp, fmtBytes, fileExt, errorCard, integrityCard } from '../core/util.js';
 import { looksLikeGyroCsv, renderGyroCsv } from './gcsv.js';
-import { percentile } from '../lib/table-stats.js';
+import { percentile, inferColumnTypes, columnValues, parseDateValue, looksMonthFirst } from '../lib/table-stats.js';
 
 // Quote-aware CSV/TSV parser. Walks the whole text in a single pass so a
 // quoted field may contain the delimiter, CR/LF newlines, or escaped ""
@@ -75,6 +75,10 @@ function buildProfile(card, ctx) {
   const SAMPLE_CAP = 50000;
   const sample = dataRows.length > SAMPLE_CAP ? dataRows.slice(0, SAMPLE_CAP) : dataRows;
   const sampled = sample.length < dataRows.length;
+  // Day-first by default, but a column that PROVES itself month-first (a
+  // value like 8/25/2024, where 25 can only be a day) reads correctly here
+  // too, matching the workbench above.
+  const monthFirst = looksMonthFirst(sample, colCount, colTypes);
 
   // ---- Per-column profiling ----
   const fillTbl = el('table', { class: 'anr-readout' });
@@ -102,7 +106,7 @@ function buildProfile(card, ctx) {
         const n = Number(val);
         if (!isNaN(n)) nums.push(n);
       } else if (colTypes[c] === 'date') {
-        const t = Date.parse(val);
+        const t = parseDateValue(val, monthFirst);
         if (!isNaN(t)) dates.push(t);
       } else {
         freq.set(val, (freq.get(val) || 0) + 1);
@@ -356,46 +360,20 @@ export async function renderCsv(file, resultsEl) {
   if (hasHeader && allRows.length > 1) {
     const headers = allRows[0];
     const dataRows = allRows.slice(1);
-    const colTypes = [];
+    const colTypes = inferColumnTypes(dataRows, colCount);
     const numericStats = [];
 
     for (let c = 0; c < colCount; c++) {
-      let numCount = 0;
-      let dateCount = 0;
-      let textCount = 0;
-      const nums = [];
-
-      for (const r of dataRows) {
-        const val = (r[c] || '').trim();
-        if (val === '') continue;
-        const n = Number(val);
-        if (!isNaN(n) && val !== '') {
-          numCount++;
-          nums.push(n);
-        } else if (/^\d{4}[-/]\d{2}[-/]\d{2}/.test(val) || /^\d{2}[-/]\d{2}[-/]\d{4}/.test(val)) {
-          dateCount++;
-        } else {
-          textCount++;
-        }
-      }
-
-      const total = numCount + dateCount + textCount;
-      let type;
-      if (total === 0) type = 'empty';
-      else if (numCount / total > 0.8) type = 'number';
-      else if (dateCount / total > 0.8) type = 'date';
-      else type = 'text';
-
-      colTypes.push(type);
-      if (type === 'number' && nums.length > 0) {
-        const min = Math.min(...nums);
-        const max = Math.max(...nums);
-        const mean = nums.reduce((s, n) => s + n, 0) / nums.length;
-        numericStats.push({
-          col: headers[c] || `Col ${c + 1}`,
-          min, max, mean: mean.toFixed(2), count: nums.length
-        });
-      }
+      if (colTypes[c] !== 'number') continue;
+      const nums = columnValues(dataRows, c, 'number');
+      if (!nums.length) continue;
+      const min = Math.min(...nums);
+      const max = Math.max(...nums);
+      const mean = nums.reduce((s, n) => s + n, 0) / nums.length;
+      numericStats.push({
+        col: headers[c] || `Col ${c + 1}`,
+        min, max, mean: mean.toFixed(2), count: nums.length
+      });
     }
 
     // Column types table

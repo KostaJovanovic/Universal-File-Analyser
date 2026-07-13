@@ -4,6 +4,82 @@
 
 export const SAMPLE_CAP = 50000;
 
+// The site's data conventions are European/British throughout, so every
+// ambiguous D/M-vs-M/D format below is read DAY FIRST - parsed by hand rather
+// than handed to Date.parse, whose non-ISO fallback assumes the opposite
+// (US month-first) convention and would silently swap day and month.
+const YYYY_DOT_MM = /^((?:19|20)\d{2})\.(0[1-9]|1[0-2])$/;              // 2011.06 - Stats NZ-style quarter/month, no day
+const YYYY_SEP_MM_DD = /^((?:19|20)\d{2})[-/](\d{2})[-/](\d{2})/;       // 2024-12-31 / 2024/12/31 - unambiguous, year first
+const DMY_SEP = /^(\d{1,2})[-/.](\d{1,2})[-/.]((?:19|20)\d{2})$/;       // 31-12-2024 / 31/12/2024 / 31.12.2024 - day first
+
+// d is a valid day-of-month (1-31) and m a valid month (1-12). Used both ways
+// round: validDay(a, b) tests the day-first reading of a field pair, and
+// validDay(b, a) tests the month-first reading of the same pair.
+function validDay(d, m) { return d >= 1 && d <= 31 && m >= 1 && m <= 12; }
+
+// A D/M/Y-shaped value is date-like if EITHER reading checks out - so a
+// genuinely American value like "8/25/2024" (invalid day-first: 25 is not a
+// month) still gets recognised as a date, not dismissed as text before
+// looksMonthFirst() below ever gets a chance to notice it proves month-first.
+function looksLikeDate(val) {
+  if (YYYY_DOT_MM.test(val) || YYYY_SEP_MM_DD.test(val)) return true;
+  const m = DMY_SEP.exec(val);
+  if (!m) return false;
+  const a = +m[1], b = +m[2];
+  return validDay(a, b) || validDay(b, a);
+}
+
+// Parse a cell already identified as 'date' into a UTC timestamp. Everything
+// recognised by looksLikeDate() is matched and built by hand (never
+// Date.parse) so every format resolves the same way regardless of separator
+// or browser; anything else falls through to Date.parse as a last resort.
+// monthFirst picks which reading of the DMY_SEP case (31/12/2024 etc, the
+// genuinely ambiguous one) to prefer - off (day-first) by default to match
+// the site's conventions, or seeded/toggled to month-first for a US file (see
+// looksMonthFirst). If the preferred reading isn't actually valid for this
+// particular value (e.g. toggled to month-first but this row only parses
+// day-first), the other reading is used instead rather than losing the date.
+export function parseDateValue(val, monthFirst) {
+  const s = (val == null ? '' : String(val)).trim();
+  let m;
+  if ((m = YYYY_DOT_MM.exec(s))) return Date.UTC(+m[1], +m[2] - 1, 1);
+  if ((m = YYYY_SEP_MM_DD.exec(s))) return Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  if ((m = DMY_SEP.exec(s))) {
+    const a = +m[1], b = +m[2], y = +m[3];
+    const dayFirstOk = validDay(a, b), monthFirstOk = validDay(b, a);
+    if (monthFirst ? monthFirstOk : dayFirstOk) {
+      return monthFirst ? Date.UTC(y, a - 1, b) : Date.UTC(y, b - 1, a);
+    }
+    if (dayFirstOk) return Date.UTC(y, b - 1, a);
+    if (monthFirstOk) return Date.UTC(y, a - 1, b);
+  }
+  const t = Date.parse(s);
+  return isNaN(t) ? NaN : t;
+}
+
+// Proof, not a guess: a D/M/Y-shaped value that parses only as month-first
+// (day-first is impossible) - e.g. "8/25/2024", where 25 can only be a day -
+// means the whole column, and by extension the file, is written month-first
+// (American). One such row anywhere in a column is enough to flip it, since a
+// file is never written with mixed conventions. Used to seed the workbench's
+// initial day-first/month-first default; columns where every row is
+// ambiguous (both fields <= 12, e.g. "3/4/2024") keep the day-first default
+// and rely on the "Dates: D/M/Y" toggle instead.
+export function looksMonthFirst(rows, colCount, colTypes) {
+  for (let c = 0; c < colCount; c++) {
+    if (colTypes[c] !== 'date') continue;
+    for (const r of rows) {
+      const val = (r[c] || '').trim();
+      if (!val) continue;
+      const m = DMY_SEP.exec(val);
+      if (!m) continue;
+      const a = +m[1], b = +m[2];
+      if (validDay(b, a) && !validDay(a, b)) return true;
+    }
+  }
+  return false;
+}
+
 // Infer a per-column type from a sample of string rows: 'number' | 'date' |
 // 'text' | 'empty'. Matches csv.js's existing >80%-majority heuristic.
 export function inferColumnTypes(rows, colCount) {
@@ -13,10 +89,12 @@ export function inferColumnTypes(rows, colCount) {
     for (const r of rows) {
       const val = (r[c] || '').trim();
       if (val === '') continue;
-      const n = Number(val);
-      if (!isNaN(n) && val !== '') numCount++;
-      else if (/^\d{4}[-/]\d{2}[-/]\d{2}/.test(val) || /^\d{2}[-/]\d{2}[-/]\d{4}/.test(val)) dateCount++;
-      else textCount++;
+      if (looksLikeDate(val)) dateCount++;
+      else {
+        const n = Number(val);
+        if (!isNaN(n) && val !== '') numCount++;
+        else textCount++;
+      }
     }
     const total = numCount + dateCount + textCount;
     let type;
@@ -46,7 +124,7 @@ export function columnValues(rows, c, type) {
       const n = Number(raw);
       if (!isNaN(n)) out.push(n);
     } else if (type === 'date') {
-      const t = Date.parse(raw);
+      const t = parseDateValue(raw);
       if (!isNaN(t)) out.push(t);
     } else {
       out.push(raw);

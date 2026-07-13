@@ -21,7 +21,7 @@
    footprint, which the project view uses for two-way cross-probing.
 */
 
-import { el, row, h3help, fmtBytes, sha256Row, errorCard, inlineLoader, wheelZoomToggle } from '../core/util.js';
+import { el, row, h3help, fmtBytes, errorCard, inlineLoader, wheelZoomToggle } from '../core/util.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const svg = (tag, attrs) => {
@@ -1241,7 +1241,6 @@ function metaCard(title, help, rows, file, extra) {
   card.appendChild(h); card.appendChild(hp);
   const tbl = el('table', { class: 'anr-readout' });
   for (const [k, val] of rows) if (val != null && val !== '') tbl.appendChild(row(k, String(val)));
-  if (file) tbl.appendChild(sha256Row(file));
   card.appendChild(tbl);
   if (extra) card.appendChild(extra);
   return card;

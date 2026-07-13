@@ -3,7 +3,7 @@
    spin), and reports geometry statistics (triangles, bounding box, surface area,
    volume). Self-contained - no external 3D library. */
 
-import { el, row, rowHelp, fmtBytes, sha256Row, errorCard, attachViewCube } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube } from '../core/util.js';
 
 // ---------- STL parsing ----------
 // Returns { format, positions:Float32Array, normals:Float32Array, count,
@@ -698,7 +698,6 @@ export function geoStatsCard(geo, file, format, unit) {
   tbl.appendChild(rowHelp('Bounding box', `${dx.toFixed(2)} × ${dy.toFixed(2)} × ${dz.toFixed(2)} ${u}`, 'The smallest axis-aligned box that encloses the model, as width × depth × height.'));
   tbl.appendChild(rowHelp('Surface area', geo.area.toFixed(2) + ' ' + u + '²', 'Combined area of every triangle in the mesh.'));
   tbl.appendChild(rowHelp('Volume', geo.volume.toFixed(2) + ' ' + u + '³ (if watertight)', 'Enclosed volume - only meaningful for a watertight (fully closed) mesh.'));
-  tbl.appendChild(sha256Row(file));
   card.appendChild(tbl);
   return card;
 }
@@ -910,7 +909,6 @@ export async function renderStl(file, resultsEl) {
   tbl.appendChild(rowHelp('Bounding box', `${dx.toFixed(2)} × ${dy.toFixed(2)} × ${dz.toFixed(2)} (units)`, 'The smallest axis-aligned box that encloses the model, as width × depth × height. STL files are unitless, so these are in whatever units the file assumes (often mm).'));
   tbl.appendChild(rowHelp('Surface area', geo.area.toFixed(2) + ' units²', 'The combined area of all triangles in the mesh, expressed in the model’s own units squared.'));
   tbl.appendChild(rowHelp('Volume', geo.volume.toFixed(2) + ' units³ (if watertight)', 'The enclosed volume in the model’s units cubed. Only meaningful if the mesh is watertight - a fully closed solid with no holes or gaps.'));
-  tbl.appendChild(sha256Row(file));
   statsCard.appendChild(tbl);
   statsCard.appendChild(el('p', { class: 'anr-hint', style: 'font-size:12px;margin-top:8px;' },
     'STL files carry no unit - dimensions are in the file’s own units (usually mm for 3D printing).'));

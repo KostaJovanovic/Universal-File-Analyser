@@ -5,7 +5,7 @@
    into an entity database and render it to an SVG, shown as a 2D preview - the
    same idea as the DXF viewer, but for the binary format. Nothing is uploaded. */
 
-import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, errorCard } from '../core/util.js';
 import { sanitizeSvgMarkup } from './svg.js';
 
 const DIST_URL = new URL('../../vendor/libredwg/dist/libredwg-web.js', import.meta.url).href;
@@ -69,7 +69,6 @@ export async function renderDwg(file, resultsEl) {
   for (const e of ents) { const t = (e && e.type) || '?'; types[t] = (types[t] || 0) + 1; }
   const topTypes = Object.entries(types).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t, n]) => t + ' ×' + n).join(', ');
   if (topTypes) tbl.appendChild(rowHelp('Entity types', topTypes, 'The most common drawing primitives found in the model space.'));
-  tbl.appendChild(sha256Row(file));
   card.appendChild(tbl);
   resultsEl.appendChild(card);
 

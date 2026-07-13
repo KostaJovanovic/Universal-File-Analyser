@@ -13,7 +13,7 @@
      both the live specimen and the glyph outlines work per font, with a picker to
      switch between them. */
 
-import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard, loadScript } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, errorCard, loadScript } from '../core/util.js';
 
 const OPENTYPE_URL = 'assets/vendor/opentype/opentype.min.js';
 let _faceSeq = 0;
@@ -357,7 +357,6 @@ export async function renderFont(file, resultsEl) {
   tbl.appendChild(rowHelp('Format', fmtLabel, isColl ? 'A font collection (TTC/OTC) packs several related fonts in one file, sharing common glyph data. Each member is unpacked and previewed individually below.' : 'The on-disk font format.'));
   tbl.appendChild(row('File', file.name));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
-  tbl.appendChild(sha256Row(file));
   card.appendChild(tbl);
   resultsEl.appendChild(card);
 

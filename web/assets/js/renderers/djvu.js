@@ -5,7 +5,7 @@
    pages to ImageData and paint them to a canvas, with prev/next paging. Decoding
    a scanned page can take a moment, so the pager is disabled while a page renders. */
 
-import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard, loadScript, isLowMemoryDevice } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, errorCard, loadScript, isLowMemoryDevice } from '../core/util.js';
 
 const DJVU_URL = 'assets/vendor/djvu/djvu.js';
 
@@ -63,7 +63,6 @@ export async function renderDjvu(file, resultsEl) {
     const s = sizes[0];
     tbl.appendChild(row('First page', s.width + ' × ' + s.height + ' px' + (s.dpi ? ' · ' + s.dpi + ' dpi' : '')));
   }
-  tbl.appendChild(sha256Row(file));
   card.appendChild(tbl);
   resultsEl.appendChild(card);
 

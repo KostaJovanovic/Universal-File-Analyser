@@ -2,7 +2,7 @@
    Magic-byte format guess, hex/ASCII dump, SHA-256, and enhanced
    previews for plain text, JSON, and XML. */
 
-import { el, row, rowHelp, fmtBytes, fileExt, sha256Row, errorCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, fileExt, errorCard } from '../core/util.js';
 import { entropyProfile } from '../core/binutil.js';
 import { buildOsintCard } from '../core/osint.js';
 import { carveImages, repairJpeg } from './photo-recover.js';
@@ -247,18 +247,17 @@ export async function renderUnknown(file, resultsEl, opts) {
   tbl.appendChild(rowHelp('Magic guess', guess, 'A best-effort file-type identification read from the first few "magic" bytes of the file. It is used when the extension is unknown, missing, or possibly wrong.'));
   card.appendChild(tbl);
 
-  // Hex dump + SHA-256. For extensionless files the content IS the point, so the
-  // text/JSON/XML preview goes first and these are appended below it (see end of
-  // the function); for unknown files they stay up top as the primary readout.
+  // Hex dump. For extensionless files the content IS the point, so the
+  // text/JSON/XML preview goes first and this is appended below it (see end of
+  // the function); for unknown files it stays up top as the primary readout.
+  // The file's SHA-256 (and the on-demand extra hashes) live in the standard
+  // Integrity card that app.js appends, so it isn't repeated here.
   const hexBlock = [
     el('div', { class: 'anr-readout-section' }, 'First 128 bytes'),
     el('pre', { class: 'anr-unknown-dump' }, 'HEX:\n' + hex + '\n\nASCII:\n' + ascii),
   ];
-  const hashTbl = el('table', { class: 'anr-readout' });
-  hashTbl.appendChild(sha256Row(file));
   if (!extensionless) {
     hexBlock.forEach((n) => card.appendChild(n));
-    card.appendChild(hashTbl);
   }
 
   // If it looks like text, JSON, or XML, show enhanced previews
@@ -453,10 +452,9 @@ export async function renderUnknown(file, resultsEl, opts) {
     } catch (_) {}
   }
 
-  // Extensionless: the text preview rendered above; drop the hex dump + hash below it.
+  // Extensionless: the text preview rendered above; drop the hex dump below it.
   if (extensionless) {
     hexBlock.forEach((n) => card.appendChild(n));
-    card.appendChild(hashTbl);
   }
 
   resultsEl.appendChild(card);

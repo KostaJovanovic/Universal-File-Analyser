@@ -14,6 +14,7 @@ import { el } from './util.js';
 const PATCH_DIGEST = [
   { range: '6.19', notes: [
     'A full analysis workbench now sits beneath every CSV, Excel and OpenDocument spreadsheet: a live, virtualised grid with sort, filter, search, column show/hide/reorder and column splitting, a group-by summary, and a chart builder (line, bar, scatter, histogram, pie, area, box and heatmap) with PNG/JSON/CSV export.',
+    'It also recognises more date formats - including statistics-agency quarter/month notation and D/M/Y dates with dots, dashes or slashes - reading them day-first by default, automatically switching to month-first when a value proves the file is American (8/25/2024 can only be August 25th), with a manual toggle either way.',
     'A small fix: entering the Konami code mid-run of Asteroids no longer reloads back to the game\'s own page and tears down the run in progress.',
   ] },
   { range: '6.14 - 6.18', notes: [
