@@ -1,9 +1,10 @@
 {
   // Explicit config so the deploy is reproducible (otherwise wrangler
   // auto-generates this on every build). Mirrors the auto-detected settings,
-  // plus not_found_handling so unknown URLs fall back to the home page instead
-  // of a 404 - this is a single-purpose tool, so any mistyped/old path just
-  // lands on the drop page.
+  // plus not_found_handling so unknown URLs serve the custom 404 page
+  // (web/404.html) with a real 404 status, instead of silently landing on the
+  // home page. Every real route (/about, /formats/<ext>, ...) is a file, so only
+  // genuinely-missing paths hit it.
   //
   // ── SETUP (one-time, for the stats Worker in worker/index.js) ───────────────
   // The site is otherwise a pure static-asset deploy; the Worker only powers the
@@ -26,15 +27,15 @@
   "assets": {
     "directory": "web",
     // Named binding so the Worker can hand non-/api requests back to the assets
-    // system (env.ASSETS.fetch), preserving clean URLs + the SPA fallback.
+    // system (env.ASSETS.fetch), preserving clean URLs + the 404 handling.
     "binding": "ASSETS",
     // Default html_handling ("auto-trailing-slash"): clean URLs are canonical.
     // /about serves about.html, and /about.html 308-redirects to /about (same
     // for /patch and /index.html -> /). Every link, canonical URL, the sitemap
     // and the service-worker precache use the clean form to match, and the local
-    // dev server (serve.py) mirrors this exact routing. not_found_handling sends
-    // any unknown path to index.html (200) so deep links and the SPA still work.
-    "not_found_handling": "single-page-application"
+    // dev server (serve.py) mirrors this exact routing. not_found_handling serves
+    // the custom 404 page (web/404.html) with a 404 status for any unknown path.
+    "not_found_handling": "404-page"
   },
   "compatibility_flags": ["nodejs_compat"],
   // D1 database backing the counters. database_id is filled in during SETUP above.

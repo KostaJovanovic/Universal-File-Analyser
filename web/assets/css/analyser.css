@@ -466,6 +466,54 @@ body:not(:has(.site-nav)) .site-header::after { margin-top: clamp(28px, 4vw, 48p
    topic headings room to breathe between them. */
 .privacy-page .section-content .section-head:not(:first-child) { margin-top: 40px; }
 
+/* 404 page: no header/footer chrome, just a single centred card that fills the
+   viewport. Sharp-cornered and hairline-bordered like every other surface. */
+.notfound-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+}
+.notfound-card {
+  width: 100%;
+  max-width: 560px;
+  background: var(--bg);
+  border: var(--bd-hairline);
+  padding: 48px 40px;
+  text-align: center;
+}
+/* The big numeral: a mono accent glyph in the site's own idiom (like the samples
+   accent chip) - no decoration, just the code. */
+.notfound-code {
+  font-family: var(--font-mono);
+  font-size: clamp(80px, 20vw, 160px);
+  /* Heavy at rest so the per-letter hover effect (setupNotFoundFx) has room to
+     thin the digits toward the cursor - Geist Mono spans 400-600. */
+  font-weight: 600;
+  letter-spacing: -0.06em;
+  line-height: 0.9;
+  color: var(--accent);
+  margin: 0 0 12px;
+}
+.notfound-card h1 {
+  font-size: var(--t-h1);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  margin: 0 0 16px;
+}
+.notfound-card p {
+  color: var(--muted);
+  line-height: 1.6;
+  max-width: 46ch;
+  margin: 0 auto 12px;
+}
+.notfound-card p:last-of-type { margin-bottom: 32px; }
+/* Go-home button reuses the .anr-btn box model but sits large and centred. */
+.notfound-card .anr-btn { font-size: var(--t-small); padding: 10px 20px; }
+
 /* Byline directly under the title. Its size is a fixed fraction of the title
    size (--t-mega), so the two scale together and the byline's right edge stays
    anchored just left of the "y" at every viewport width. */

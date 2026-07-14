@@ -9,8 +9,8 @@
   /about       -> serves about.html (200)
   /            -> serves index.html (200)
   /assets/...  -> served literally (real files with an extension)
-  /anything-else (no matching file) -> index.html (200), the SPA fallback
-     (wrangler.jsonc not_found_handling = "single-page-application")
+  /anything-else (no matching file) -> 404.html (404), the custom error page
+     (wrangler.jsonc not_found_handling = "404-page")
 
 Run: python serve.py [port]   (defaults to 3000, binds 0.0.0.0 for phone access)
 """
@@ -95,7 +95,12 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
 
 class CleanURLHandler(SimpleHTTPRequestHandler):
     def _route(self):
-        """Map the request path to a file to serve, or return None to redirect."""
+        """Map the request path to a file to serve, or return None to redirect.
+
+        Sets self._not_found when the path matches no asset and no clean-URL page,
+        in which case the returned target is the 404 page and the caller serves it
+        with a 404 status (mirrors Cloudflare not_found_handling = "404-page")."""
+        self._not_found = False
         raw = self.path.split('?', 1)[0].split('#', 1)[0]
         # Decode percent-escapes before any filesystem check: a request for
         # "/samples/analyser%20plaque.obj" must match the on-disk file with a
@@ -129,7 +134,8 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
                                               # handler unquotes it once, as normal
         if os.path.isfile(full + '.html'):
             return '/' + rel + '.html'        # clean page route: /about -> about.html
-        return '/index.html'                  # SPA fallback
+        self._not_found = True                # no match: serve the custom 404 page
+        return '/404.html'
 
     def _serve_api(self, path):
         """Mock /api/* locally; return True if handled."""
@@ -155,6 +161,21 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
         return True
 
+    def _serve_notfound(self):
+        """Serve web/404.html with a 404 status (body skipped for HEAD)."""
+        try:
+            with open(os.path.join(ROOT, '404.html'), 'rb') as f:
+                body = f.read()
+        except OSError:
+            self.send_error(404)
+            return
+        self.send_response(404)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        if self.command != 'HEAD':
+            self.wfile.write(body)
+
     def end_headers(self):
         # Local dev only: forbid heuristic caching of every static asset so edits
         # always show on a single refresh - including JS chunks pulled by import()
@@ -174,6 +195,8 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
         target = self._route()
         if target is None:
             return  # already sent the redirect
+        if self._not_found:
+            return self._serve_notfound()
         self.path = target
         return super().do_GET()
 
@@ -194,6 +217,8 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
         target = self._route()
         if target is None:
             return
+        if self._not_found:
+            return self._serve_notfound()
         self.path = target
         return super().do_HEAD()
 
