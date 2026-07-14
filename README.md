@@ -10,7 +10,7 @@ Drop in any file and it is classified, parsed and visualised on your device. Not
 
 [**Open Analyser**](https://lab.valjdakosta.com) · [Supported formats](https://lab.valjdakosta.com/formats) · [Samples](https://lab.valjdakosta.com/samples) · [About](https://lab.valjdakosta.com/about) · [Changelog](https://lab.valjdakosta.com/patch)
 
-<img src="tools/readme-assets/samples.jpg" alt="See it work, before you drop a thing - the samples gallery" width="720">
+<img src="tools/readme-assets/samples.jpg" alt="See it work, before you drop a thing, the samples gallery" width="720">
 
 </div>
 
@@ -28,9 +28,9 @@ The full, searchable list is at [lab.valjdakosta.com/formats](https://lab.valjda
 
 ## Beyond identification
 
-Identifying a file is just the entry point. The real work starts once Analyser knows what it is holding - and a lot of that is best shown rather than described.
+Identifying a file is just the entry point. The real work starts once Analyser knows what it is holding, and a lot of that is best shown rather than described.
 
-### Audio - spectrograms, isolation and on-device AI
+### Audio: spectrograms, isolation and on-device AI
 
 Waveform and spectrogram views (down into the sub-20 Hz range), codec and loudness analysis, reversed playback, and live microphone capture. The frequency-isolation panel lets you carve out bands in real time, and an in-browser AI model separates vocals from instrumentals with no server round-trip.
 
@@ -45,7 +45,7 @@ Waveform and spectrogram views (down into the sub-20 Hz range), codec and loudne
 https://github.com/user-attachments/assets/a9226e4a-90d0-45d2-8c82-d65578e2b3e8
 
 
-<em>On-device AI vocal separation - the model runs entirely in the browser, nothing is uploaded.</em>
+<em>On-device AI vocal separation: the model runs entirely in the browser, nothing is uploaded.</em>
 
 </div>
 
@@ -98,7 +98,7 @@ Browse ZIP, 7z, RAR and whole dropped folders, with a treemap that breaks down w
 - Works fully offline once installed; the service worker precaches the app shell and keeps the WASM engines after first use.
 - Private keys and secrets found inside files are flagged, not transmitted.
 
-The only network call the site ever makes on its own is a single anonymous "file analysed" ping carrying nothing but a lowercase extension string. Those counts feed the public [live-usage page](https://lab.valjdakosta.com/stats) - an honest tally of what people drop, with unrecognised types pooled into one row so their names are never shown or stored.
+The only network call the site ever makes on its own is a single anonymous "file analysed" ping carrying nothing but a lowercase extension string. Those counts feed the public [live-usage page](https://lab.valjdakosta.com/stats), an honest tally of what people drop, with unrecognised types pooled into one row so their names are never shown or stored.
 
 <div align="center">
 <img src="tools/readme-assets/stats.png" alt="The live-usage stats page" width="640">
@@ -167,8 +167,8 @@ The idea and need for this website was mine, originally made as a simple tool fo
 
 Copyright © 2026 Kosta. Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
 
-You are free to use, study, modify and share this code for any **noncommercial** purpose, as long as you keep the copyright notice. **Commercial use is not permitted** without a separate licence from me - get in touch if you want one.
+You are free to use, study, modify and share this code for any **noncommercial** purpose, as long as you keep the copyright notice. **Commercial use is not permitted** without a separate licence from me, get in touch if you want one.
 
 ## Documentation
 
-For a deeper look at the codebase - architecture, the drop-to-render pipeline, every renderer module, and a full usage reference for every feature on the site - see [`docs2/README.md`](docs2/README.md).
+For a deeper look at the codebase, architecture, the drop-to-render pipeline, every renderer module, and a full usage reference for every feature on the site, see [`lab.valjdakosta.com/docs`](documentation).
