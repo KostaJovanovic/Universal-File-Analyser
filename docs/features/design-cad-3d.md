@@ -16,6 +16,10 @@ counts, colour palette, and text content.
 **How to use it.** Click **Analyse as image** to rasterise the SVG to PNG
 and run it through the full photo analysis pipeline.
 
+```demo
+btn: Analyse as image
+```
+
 **Notes / limits.** Before rendering, `sanitizeSvg()` strips active/unsafe
 content: `<script>`, `<foreignObject>` (embedded HTML), `<style>` (inline
 CSS is unscoped when injected and can pull remote resources/inject
@@ -58,6 +62,11 @@ visibility, per-layer thumbnails).
 embedded-preview variant) to send it through the photo pipeline. Each
 listed **layer** has a **PNG** button to download that layer alone.
 
+```demo
+btn: Analyse this image
+btn: PNG
+```
+
 **Notes / limits.** ag-psd doesn't support CMYK/Lab/16-bit/PSB and
 recomposites nothing for those - Analyser falls back to the embedded
 thumbnail from path 1 rather than failing.
@@ -75,6 +84,10 @@ in either case.
 
 **How to use it.** Click **Analyse this image** on the shown preview to run
 it through the photo pipeline.
+
+```demo
+btn: Analyse this image
+```
 
 **Notes / limits.** GIMP `.xcf` is not a ZIP and has no embedded preview,
 so it stays identification-only (via `proprietary.js`), not handled here.
@@ -110,6 +123,10 @@ grade stack carrying a baked 3D LUT). Built in `lut.js`.
 **How to use it.** Click **Choose photo or video** to preview the LUT
 applied to your own image/video instead of the built-in test chart.
 
+```demo
+btn: Choose photo or video
+```
+
 **Notes / limits.** `.cube` is also used by Gaussian for volumetric DFT
 data - `lut.js` sniffs for `LUT_*_SIZE` and hands anything else back to the
 generic identifier rather than misreading it as a LUT.
@@ -132,7 +149,13 @@ Built in `font.js`.
 Korean, Chinese, Cyrillic, Greek, Thai, Devanagari, Arabic, Hebrew) and
 shows a native-language pangram-style sample for each one the font
 actually supports, rather than boxes of `.notdef` glyphs. Click **Play-all**
-to cycle through every glyph. For a font **collection** (`.ttc`/`.otc`),
+to cycle through every glyph.
+
+```demo
+btn: Play-all
+```
+
+For a font **collection** (`.ttc`/`.otc`),
 each member font is unpacked into its own standalone buffer and a
 **font-in-collection select** switches which one the specimen and glyph
 grid show.
@@ -160,6 +183,34 @@ itself is Y-up, so Z-up geometry gets a view-only -90° rotation about X to
 stand it upright); **Part chips** (for a multi-part assembly) switch
 between viewing a single part or the whole assembly.
 
+```demo
+btn: Scroll zoom on
+btn: Fullscreen
+btn: Zoom in
+btn: Zoom out
+btn: Pause spin
+btn: Quality
+btn: Reset view
+```
+
+The projection and up-axis controls are segmented toggles (the active
+option carries the accent fill); **Wireframe** is an independent on/off
+toggle:
+
+```demo
+btn active: Perspective
+btn: Orthographic
+```
+
+```demo
+btn active: Y-up
+btn: Z-up
+```
+
+```demo
+btn: Wireframe
+```
+
 ### 3MF / STEP / IGES / OBJ / PLY / glTF / FBX viewer
 
 **What it does.** A 3D model viewer covering multiple mesh and B-rep CAD
@@ -181,6 +232,10 @@ For a 3MF containing embedded sliced plates, an **Open `<plate>`** button
 per plate loads that embedded G-code into the full G-code viewer (see
 below); the 3MF's raw ZIP contents are also browsable via the shared
 archive view (`renderArchiveEmbedded`).
+
+```demo
+btn: Open plate
+```
 
 **Notes / limits.** STEP/IGES tessellation requires downloading the
 OpenCASCADE WASM kernel (~9MB) on first use, cached afterward (part of the
@@ -219,6 +274,20 @@ browsers without MP4-ready H.264 output like Firefox, rendered to WebM via
 expands/collapses the fullscreen toolbar. For very large files, **Show
 full anyway**/**Show all N lines** bypasses a line cap on the raw G-code
 listing.
+
+```demo
+btn: Play
+btn: Follow toolhead
+btn: Speed
+btn: Show legend
+btn: Tool changes
+btn: Dim other tools
+```
+
+```demo
+btn: Export clip
+btn: More controls
+```
 
 **Notes / limits.** The volumetric extrusion-width recovery and bead
 geometry approach was informed by studying OrcaSlicer's open-source

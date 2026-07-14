@@ -21,6 +21,12 @@ layout, best-effort) to drive the spectrogram and waveform; per-channel peak
 and RMS update with the choice. `describeChannels()`/`channelLabels()`
 recognise mono through 9.1.6 Atmos layouts.
 
+```demo
+btn active: Mix
+btn: Left
+btn: Right
+```
+
 ### Spectrogram
 
 **What it does.** An interactive time/frequency/loudness plot of the audio,
@@ -35,6 +41,19 @@ and window function, choice of colourmap, **Save PNG** to export the canvas,
 sharper reassigned-spectrogram mode; `computeStftComplex()`/
 `combineStftToDb()` support blending two signals' spectra (used by the AI
 separation blend slider below).
+
+```demo
+btn: Save PNG
+btn: Fullscreen
+```
+
+The frequency axis is a segmented toggle (the selected option carries the
+accent fill):
+
+```demo
+btn active: Log
+btn: Linear
+```
 
 **Notes / limits.** Reaches down into the sub-20Hz range per the repo root
 `README.md`.
@@ -85,6 +104,16 @@ apply a named frequency preset as a one-tap solo (cutting everything outside
 the preset's range); **Clear** removes the active preset. Once at least one
 band exists, **Download WAV** renders and downloads the isolated result.
 
+```demo
+btn: Isolate
+```
+
+```demo
+btn: + Custom band
+btn: Clear
+btn: Download WAV
+```
+
 ### AI vocal separation
 
 **What it does.** Splits a track into separate vocal and instrumental stems
@@ -103,6 +132,30 @@ back out) unless already cached. Once separated, each stem gets **Play**
 the stem through the full audio analyser), and **Download WAV**. A `[?]`
 info button next to "Separate" explains the approach.
 
+```demo
+btn: Separate vocals (AI)
+```
+
+Pick a model tier, then confirm the one-time model download:
+
+```demo
+btn active: Standard
+btn: Lite
+```
+
+```demo
+btn cta: Download and continue
+btn: Cancel
+```
+
+Each separated stem gets its own controls:
+
+```demo
+btn: Play
+btn: Analyse
+btn: Download WAV
+```
+
 **Notes / limits.** Runs on GPU via WebGPU where available, WASM otherwise;
 the model (~85MB) is part of the "Complete" offline tier (see
 [`pwa-offline.md`](../pwa-offline.md)). The isolate band-stop cuts are re-applied to
@@ -119,6 +172,12 @@ export just that range.
 or **Export WAV**. Built in `audio.js`. **Reset zoom** returns to the full
 view.
 
+```demo
+btn: Zoom
+btn: Export WAV
+btn: Reset zoom
+```
+
 ### Reversed playback
 
 **What it does.** Plays and downloads the decoded audio backwards - each
@@ -131,6 +190,13 @@ the audio analysis. Built in `media-reverse.js`'s `buildReverseAudioCard()`.
 appears with **Download reversed (WAV)** and **Analyse reversed** (feeds the
 reversed clip back through the full analysis pipeline via
 `window._anrHandleFile`).
+
+```demo
+card: Reverse
+  btn: ↺ Reverse audio
+  btn: Download reversed (WAV)
+  btn: Analyse reversed
+```
 
 **Notes / limits.** The reverse itself is synchronous and near-instant but
 gated behind a click so it isn't computed for every file automatically.
@@ -150,6 +216,12 @@ Built in `audio.js`.
 recording (a lighter-weight visual than the full interactive one). Click
 **Stop** to end the take; **Download recording** saves the captured audio.
 
+```demo
+btn: Record
+btn: Stop
+btn: Download recording
+```
+
 ### Live spectrogram (no recording)
 
 **What it does.** Visualises the microphone input live, without recording
@@ -162,6 +234,12 @@ recording (a lighter-weight visual than the full interactive one). Click
 **Analyse last Ns**, which freezes and analyses the trailing N seconds of
 the live stream. A channel picker (**Mix/L/R/etc.**) chooses which input
 channel feeds the view.
+
+```demo
+btn: Live spectrogram
+btn: Pause
+btn: Analyse last Ns
+```
 
 ### Cover art / tag extraction
 

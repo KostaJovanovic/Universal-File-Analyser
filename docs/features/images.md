@@ -45,7 +45,19 @@ quantisation, both computed from a canvas read of the decoded image.
 "RGB histogram" card and a colour swatch row. Built in `photo.js`
 (`getPixelData`, `dominantColors`).
 
-**How to use it.** Click the histogram to enlarge it.
+**How to use it.** Click the histogram to enlarge it. The dominant-colour
+palette renders as a row of click-to-copy swatches:
+
+```demo
+swatch: #2b2b2b
+swatch: #c8b0a0
+swatch: #7a5c3e
+swatch: #d8d2c4
+swatch: #4d6b7a
+swatch: #a83e2c
+swatch: #e6c95a
+swatch: #6f7f5c
+```
 
 ### GPS map
 
@@ -74,6 +86,17 @@ cached). Tick "Remember for this session" to skip the picker on subsequent
 OCR runs in the same page load. The "?" button swaps in an explanation of
 how Tesseract works and its limitations. Confirm with **Run OCR**, or
 **Cancel**/Escape/backdrop-click to abort.
+
+```demo
+btn: Extract text
+```
+
+The language-picker dialog confirms with its own pair of buttons:
+
+```demo
+btn cta: Run OCR
+btn: Cancel
+```
 
 **Notes / limits.** Tesseract is designed for scanned documents - clean text
 on plain backgrounds. On ordinary photos it can hallucinate text from
@@ -113,6 +136,10 @@ that's unavailable or a full-quality render is wanted, click **Demosaic RAW
 (`convertWithImageMagick`/`demosaicRaw`) fallback for genuine sensor
 demosaicing. `.x3f` (Sigma Foveon) has its own dedicated preview extractor
 (`extractX3fPreview`).
+
+```demo
+btn: Demosaic RAW (full decode)
+```
 
 **Notes / limits.** The embedded-preview fast path is what's shown by
 default for RAW files - it's the camera's own JPEG preview, not a full
@@ -157,6 +184,13 @@ Every recovered/carved result gets **Run full analysis** (re-runs the full
 photo pipeline on the salvaged picture) and **Download recovered image** (or
 per-item **Analyse**/**Download** for carved fragments).
 
+```demo
+card: Broken image - salvage
+  text: Detected **JPEG** (from signature bytes) - truncated, missing EOI marker. Salvaged the recoverable region.
+  btn cta: Run full analysis
+  btn: Download recovered image
+```
+
 **Notes / limits.** Recovery is best-effort: a cut-off region shows as
 blank rather than being invented. If nothing can be salvaged, the card
 explains why rather than showing nothing.
@@ -178,6 +212,10 @@ first, then a full ISO-BMFF box scan gated on marker text).
 video player plus, if the clip has a decodable audio track, the full audio
 analyser underneath.
 
+```demo
+btn: Analyse live photo
+```
+
 **Notes / limits.** Detection distinguishes Google Motion Photo, Samsung
 Motion Photo, and Apple Live Photo by their respective markers/MIME hints.
 
@@ -190,6 +228,10 @@ Adobe's Camera Raw Settings namespace) and shows it alongside the RAW photo.
 **How to reach it.** Click **Import XMP settings** next to a RAW photo's
 analysis, then pick the `.xmp` file. Built in `photo.js`'s
 `parseDevelopSettings()`.
+
+```demo
+btn: Import XMP settings
+```
 
 ### Animated image frame stepping (GIF/WebP)
 
@@ -206,6 +248,15 @@ thumbnail contact sheet of every frame, and can reverse the whole animation.
 the current frame through the full photo pipeline; **Generate contact
 sheet** (shown once there are 8+ frames) builds a thumbnail grid; **Reverse**
 plays/downloads the animation backwards (**Download reversed** for GIF).
+
+```demo
+btn: Prev
+btn: Next
+btn: Analyse frame
+btn: Generate contact sheet
+btn: Reverse
+btn: Download reversed
+```
 
 ### Sonify (image to sound)
 
@@ -234,6 +285,24 @@ without auto-playing; **Download WAV** saves the rendered audio. Clicking
 the source-image preview seeks the audio to that point (and the reverse:
 playback drives an accent-coloured playhead over the image).
 
+The tool is reached from a button beside the photo, and its Axis control is a
+segmented toggle (the selected option carries the accent fill):
+
+```demo
+btn: Sonify (play as spectrogram)
+```
+
+```demo
+btn active: Log
+btn: Linear
+```
+
+```demo
+btn cta: Render & play
+btn: Analyse WAV
+btn: Download WAV
+```
+
 **Notes / limits.** Purely on-device Web Audio synthesis; no libraries
 beyond the site's own hand-written FFT (shared with `spectrogram.js`).
 
@@ -254,6 +323,11 @@ genuinely are 2+ pages - a single-page TIFF shows nothing extra).
 gets its size/format/byte-count caption, a **Download** button, and (when
 wired into the main results container) an **Analyse** button that re-runs
 the full photo pipeline on that one extracted image.
+
+```demo
+btn: Analyse
+btn: Download
+```
 
 **Notes / limits.** ICO extraction rebuilds a minimal single-image icon
 blob per directory entry so the browser's native decoder paints exactly

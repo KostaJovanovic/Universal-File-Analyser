@@ -209,7 +209,7 @@
              ===================================================================== -->
 
         <div class="patch-entry">
-          <p class="patch-version">6.21 - 6.28</p>
+          <p class="patch-version">6.21 - 6.31</p>
           <p class="patch-name">Provenance</p>
           <p class="patch-date">14 July 2026</p>
           <ul class="patch-list">
@@ -218,8 +218,8 @@
             <li><span class="patch-tag">New</span><strong>Weigh up whether a picture is AI-generated.</strong> A new card gathers the tell-tale signs that an image came from - or was touched by - a generative-AI tool: generator names left in the metadata, the standard &ldquo;digital source type&rdquo; AI marker, and the hidden generation-parameter blocks that tools like <strong>Stable Diffusion</strong>, <strong>ComfyUI</strong> and <strong>Midjourney</strong> leave behind. It shows the evidence and lets you judge rather than passing a verdict - a missing signal proves nothing, since metadata is easily stripped or forged.</li>
             <li><span class="patch-tag">New</span><strong>Strip a photo&rsquo;s hidden metadata.</strong> One click removes the identifying metadata - EXIF, XMP, IPTC, comments and the GPS location inside them - from a <a href="/about#where">JPEG, PNG or WebP</a> and hands back a clean copy. It works by container surgery, not re-encoding, so the picture and its colours come out bit-for-bit identical; only the tell-tale data is gone.</li>
             <li><span class="patch-tag">New</span><strong>A file&rsquo;s dates, on one timeline.</strong> A new card collects every timestamp a file carries - the &ldquo;last modified&rdquo; your device reports, the created and modified dates written inside Office documents, a video&rsquo;s internal recording time, an image&rsquo;s saved time - lines them up in order, and flags anything that cannot be true, like a file changed before it was created or stamped in the future. It stays hidden unless a file actually has two or more dates worth comparing.</li>
-            <li><span class="patch-tag">New</span><strong>A proper documentation site.</strong> There is now a browsable <a href="/docs">documentation site</a> - a readable, searchable guide to what every part of Analyser does and how the pieces fit together, for anyone curious about how it all works. The site footer was reorganised into clearer sections at the same time.</li>
-            <li><strong>Maintenance - the open-source readme and developer notes were refreshed.</strong> The public code readme was rewritten with screenshots of the app in action, and internal documentation added alongside it. Nothing on the site itself changes; this is purely for anyone reading or building on the source.</li>
+            <li><span class="patch-tag">New</span><strong>A proper documentation site.</strong> There is now a browsable <a href="/docs">documentation site</a> - a readable, searchable guide to what every part of Analyser does and how the pieces fit together, for anyone curious about how it all works. Its feature pages show the real controls inline as live, interactive examples - the actual buttons, cards and colour swatches from the app, responding to your taps and switching just as they do on the site, in both light and dark. The site footer was reorganised into clearer sections at the same time.</li>
+            <li><strong>Maintenance - the open-source readme and developer notes were refreshed.</strong> The public code readme was rewritten with screenshots of the app in action, and internal documentation added alongside it. The internal UI style-guide sheet was restored and brought back in step with the current buttons, footer and offline panel too. Nothing on the site itself changes; this is purely for anyone reading or building on the source.</li>
           </ul>
         </div>
 
@@ -235,7 +235,6 @@
             <li><span class="patch-tag">New</span><strong>Build a chart.</strong> Line, bar, scatter, histogram, pie, area, box plot or heatmap, drawn straight from the grid or from whatever you have selected, with quick suggested-chart buttons and a hover tooltip on every point, bar and slice.</li>
             <li><span class="patch-tag">New</span><strong>Take it with you.</strong> Save the chart as a PNG, the current stats as JSON, or the filtered and sorted rows as CSV.</li>
             <li><span class="patch-tag">New</span><strong>Recognises more date formats.</strong> A column written in a statistics agency&rsquo;s quarter/month notation (<code>2011.06</code>) or a day/month/year date with dots, dashes or slashes (<code>31.12.2024</code>, <code>8/25/2024</code>) is now read as a real date - sortable and chartable - instead of being mistaken for a plain number or dismissed as text. Dates default to day first, matching the site&rsquo;s conventions, but a column that can only be American - a value like <code>8/25/2024</code>, where 25 can never be a month - is detected automatically and read month first, with a <strong>Dates: D/M/Y</strong> toggle beside the grid to switch either way by hand.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Asteroids no longer exits itself.</strong> Entering the Konami code while a run was already under way used to reload straight back to the game&rsquo;s own page, tearing down the run in progress; it is now ignored until the game ends.</li>
           </ul>
         </div>
 
@@ -1920,7 +1919,6 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Site</p>
         <a href="/compare">Compare</a>
-        <a href="/docs">Docs</a>
         <a href="/privacy">Privacy</a>
       </div>
       <div class="footer-col">
@@ -1931,6 +1929,7 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Project</p>
         <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <a href="/docs">Documentation</a>
         <!-- No address in the source: the mailto is assembled in JS only after a
              Cloudflare Turnstile challenge passes (see wireFooterContact). -->
         <button type="button" class="footer-contact">Email me!</button>

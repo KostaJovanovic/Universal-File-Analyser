@@ -4227,9 +4227,17 @@ details[open] summary::after { content: "\2212"; }
 }
 .footer-lead .footer-nav-btn { align-self: flex-start; }
 /* Reciprocal linkback button (a small GIF badge). Block so it sits on its own
-   line above the copyright; capped width and sharp corners like everything else. */
-.footer-linkback { display: block; align-self: stretch; line-height: 0; }
-.footer-linkback img { display: block; width: 100%; height: auto; }
+   line above the copyright (order swaps it ahead of the DOM-earlier .footer-
+   copyright, both here and in the mobile reorder below). Its width is set
+   inline by app.js/docs.js to match the "valjdakosta.com · 2026" line's
+   rendered width (a flex stretch can't target one specific sibling once the
+   nav columns render between them on phones); the native 88px attr is just
+   the pre-JS fallback so there's no layout jump. */
+.footer-linkback { display: block; width: 88px; line-height: 0; order: 1; }
+.footer-copyright { order: 2; }
+/* Its JS-driven width rarely lands on the gif's native 88px, so scaling would
+   otherwise smooth-blur the pixel art; keep it crisp. */
+.footer-linkback img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
 .footer-bottom .footer-meta { color: var(--white-a40); }
 .footer-bottom .footer-meta a { color: rgba(255,255,255,0.5); }
 /* The link sections, grouped together on the right of the bottom row (natural
@@ -4307,22 +4315,33 @@ body:has(.quickdrop-hero) .footer-nav-btn { display: none; }
 :root[data-theme="dark"] .footer-bottom .footer-mark { color: var(--fg); }
 :root[data-theme="dark"] .about-defs > div { border-top-color: var(--hairline); }
 :root[data-theme="dark"] .footer-bottom { border-top-color: var(--hairline); }
-/* On phones, stack the bottom row: the lead (back button + copyright) sits on
-   top, and the three link sections drop to an even two-column grid below it - so
-   they align in tidy columns instead of wrapping 2-then-1 with ragged widths. */
+/* On phones, stack the bottom row: back button on top, then the link sections
+   in an even two-column grid, then the valjdakosta.com copyright + linkback
+   gif dropped to the very bottom (see the reorder below). */
 @media (max-width: 700px) {
-  /* Plain block on phones (not the flex row): a flex item with width:100% can
-     overflow the viewport, so blocks constrain more reliably. Lead stacks on
-     top, the sections drop to an even two-column grid below. */
-  .footer-row.footer-bottom { display: block; }
-  .footer-lead { margin: 0 0 30px; }
+  /* Flex column on phones, with .footer-lead flattened via display:contents so
+     its children (back button, copyright, linkback gif) become reorderable
+     items alongside .footer-cols: back button on top, then the link sections,
+     then the valjdakosta.com line and gif dropped to the very bottom. */
+  /* gap: 0 - the base rule's 32px 64px row/column gap (for the desktop lead|cols
+     row) would otherwise still apply between every flattened item here, stacking
+     on top of their own margins and blowing out the spacing. */
+  .footer-row.footer-bottom { display: flex; flex-direction: column; align-items: flex-start; gap: 0; }
+  .footer-lead { display: contents; }
+  .footer-lead .footer-nav-btn { order: 1; }
   .footer-cols {
+    order: 2;
+    margin: 18px 0 30px;
     display: grid;
     /* minmax(0,1fr), not 1fr, so a long label ("Supported file types") wraps
        inside its cell instead of overflowing the column. */
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 26px 20px;
   }
+  /* Centred as a pair (align-self overrides the row's flex-start) so the
+     signature reads like a centred sign-off at the very bottom of the footer. */
+  .footer-linkback { order: 3; align-self: center; margin-bottom: 6px; }
+  .footer-copyright { order: 4; align-self: center; }
 }
 
 /* ---------- ABOUT PAGE ---------- */
@@ -4546,6 +4565,9 @@ body:has(.quickdrop-hero) .footer-nav-btn { display: none; }
   max-width: 70ch;
 }
 .patch-digest-list li { padding: 1px 0; }
+/* Emphasised keywords pop out of the muted digest body, same treatment as the
+   full changelog's .patch-list strong. */
+.patch-digest-list strong { color: var(--fg); font-weight: 600; }
 
 /* Little category tags: New / Fix / Faster */
 .patch-tag {

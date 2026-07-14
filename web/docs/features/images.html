@@ -65,7 +65,8 @@
 <h3 id="rgb-histogram-and-dominant-colours">RGB histogram and dominant colours<a class="h-anchor" href="#rgb-histogram-and-dominant-colours" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> A per-channel (R/G/B) tonal-distribution histogram (0 = black, 255 = white) and an 8-swatch dominant-colour palette via colour quantisation, both computed from a canvas read of the decoded image.</p>
 <p><strong>How to reach it.</strong> Automatic for any decodable photo - appears as the "RGB histogram" card and a colour swatch row. Built in <code>photo.js</code> (<code>getPixelData</code>, <code>dominantColors</code>).</p>
-<p><strong>How to use it.</strong> Click the histogram to enlarge it.</p>
+<p><strong>How to use it.</strong> Click the histogram to enlarge it. The dominant-colour palette renders as a row of click-to-copy swatches:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-palette"><div class="anr-swatch" style="background:#2b2b2b"><span>#2b2b2b</span></div><div class="anr-swatch" style="background:#c8b0a0"><span>#c8b0a0</span></div><div class="anr-swatch" style="background:#7a5c3e"><span>#7a5c3e</span></div><div class="anr-swatch" style="background:#d8d2c4"><span>#d8d2c4</span></div><div class="anr-swatch" style="background:#4d6b7a"><span>#4d6b7a</span></div><div class="anr-swatch" style="background:#a83e2c"><span>#a83e2c</span></div><div class="anr-swatch" style="background:#e6c95a"><span>#e6c95a</span></div><div class="anr-swatch" style="background:#6f7f5c"><span>#6f7f5c</span></div></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="gps-map">GPS map<a class="h-anchor" href="#gps-map" aria-label="Link to this section">#</a></h3>
@@ -78,6 +79,9 @@
 <p><strong>What it does.</strong> Scans the image for text using an on-device OCR engine and lists the recognised words/lines with confidence filtering.</p>
 <p><strong>How to reach it.</strong> Click <strong>Extract text</strong> in the photo section. Built in <code>photo.js</code> around the vendored <strong>Tesseract.js</strong>.</p>
 <p><strong>How to use it.</strong> Clicking Extract text opens a language-picker dialog (<code>pickOcrLanguage()</code>): pick from 32 languages (English is bundled and works offline; every other language streams from a CDN on first use, then is cached by the service worker - each entry shows its download size until cached). Tick "Remember for this session" to skip the picker on subsequent OCR runs in the same page load. The "?" button swaps in an explanation of how Tesseract works and its limitations. Confirm with <strong>Run OCR</strong>, or <strong>Cancel</strong>/Escape/backdrop-click to abort.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Extract text</button></div></div></div>
+<p>The language-picker dialog confirms with its own pair of buttons:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn anr-btn--cta">Run OCR</button><button type="button" class="anr-btn">Cancel</button></div></div></div>
 <p><strong>Notes / limits.</strong> Tesseract is designed for scanned documents - clean text on plain backgrounds. On ordinary photos it can hallucinate text from textures, foliage or noise; handwriting, stylised fonts, low contrast, and rotated/curved text all reduce accuracy. Best results: screenshots, signs, printed labels, document photos. Words under 60% confidence are filtered out.</p>
 </section>
 <section class="docs-card">
@@ -91,6 +95,7 @@
 <p><strong>What it does.</strong> Browsers can't decode HEIC/HEIF or most camera RAW formats directly, so Analyser converts them to a displayable form before running the normal photo analysis.</p>
 <p><strong>How to reach it.</strong> Automatic - drop a <code>.heic</code>/<code>.heif</code> or a RAW extension (<code>.arw</code>, <code>.cr2</code>, <code>.cr3</code>, <code>.nef</code>, <code>.dng</code>, <code>.raf</code>, <code>.rw2</code>, <code>.orf</code>, <code>.pef</code>, <code>.sr2</code>, <code>.srw</code>, <code>.x3f</code>, and other long-tail RAW formats). Implemented in <code>photo-convert.js</code>, called from <code>photo.js</code>.</p>
 <p><strong>How to use it.</strong> For HEIC, <code>convertHeic()</code> uses the vendored <strong>heic2any</strong>. For RAW, the fast path (<code>extractRawPreview</code>/<code>extractRawJpegs</code>) pulls the embedded JPEG preview most RAW files carry (no real decode needed); when that's unavailable or a full-quality render is wanted, click <strong>Demosaic RAW (full decode)</strong> to load the heavyweight <strong>ImageMagick-WASM</strong> (<code>convertWithImageMagick</code>/<code>demosaicRaw</code>) fallback for genuine sensor demosaicing. <code>.x3f</code> (Sigma Foveon) has its own dedicated preview extractor (<code>extractX3fPreview</code>).</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Demosaic RAW (full decode)</button></div></div></div>
 <p><strong>Notes / limits.</strong> The embedded-preview fast path is what's shown by default for RAW files - it's the camera's own JPEG preview, not a full sensor reconstruction, so it may not exactly match what a dedicated RAW developer produces. Demosaic RAW downloads ImageMagick's WASM build (~15 MB) only on click.</p>
 </section>
 <section class="docs-card">
@@ -100,6 +105,7 @@
 <p><strong>How to use it.</strong> The "Broken image - salvage" card shows the detected real format (from signature bytes, regardless of extension) and what's wrong. Strategy by format:</p>
 <ul><li><strong>JPEG</strong> - strips junk before the SOI marker and appends a missing EOI if the file is simply truncated; if the <em>header</em> itself (quantisation/Huffman tables) is damaged, prompts to <strong>Choose reference photo...</strong> - a healthy JPEG shot on the same camera/mode - and rebuilds the damaged header by borrowing its tables (<code>extractJpegTables</code>/<code>spliceJpegHeader</code>), so the scan data can then decode.</li><li><strong>PNG</strong> - recovers as many image rows as possible (<code>decodePngPartial</code>/<code>repairPng</code>) and re-encodes them as a clean PNG; any unrecovered rows are blank.</li><li><strong>HEIF/HEIC/AVIF</strong> - these formats store metadata at the front, so a tail-truncated file often keeps a decodable image once the oversized <code>mdat</code> box is clamped to the real file length (<code>repairHeifContainer</code>); HEIC output is then converted to JPEG via <code>convertHeic</code>.</li><li><strong>Unrecognised blob / wrong extension / disk fragment</strong> - carves every embedded image signature out of the data (<code>carveImages</code>) and shows each as a thumbnail grid.</li></ul>
 <p>Every recovered/carved result gets <strong>Run full analysis</strong> (re-runs the full photo pipeline on the salvaged picture) and <strong>Download recovered image</strong> (or per-item <strong>Analyse</strong>/<strong>Download</strong> for carved fragments).</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-card"><h3>Broken image - salvage</h3><p>Detected <strong>JPEG</strong> (from signature bytes) - truncated, missing EOI marker. Salvaged the recoverable region.</p><div class="anr-btn-row"><button type="button" class="anr-btn anr-btn--cta">Run full analysis</button><button type="button" class="anr-btn">Download recovered image</button></div></div></div></div>
 <p><strong>Notes / limits.</strong> Recovery is best-effort: a cut-off region shows as blank rather than being invented. If nothing can be salvaged, the card explains why rather than showing nothing.</p>
 </section>
 <section class="docs-card">
@@ -107,24 +113,31 @@
 <p><strong>What it does.</strong> Apple Live Photos, Google Motion Photo, and Samsung Motion Photo append a whole MP4/QuickTime clip after the still picture. The browser only paints the still - this locates the appended clip and plays it through the real video + audio renderers on demand.</p>
 <p><strong>How to reach it.</strong> A hidden <strong>Analyse live photo</strong> button appears beside the photo preview only if a trailing clip is detected (<code>detectLiveVideo()</code> in <code>photo.js</code>, checking XMP <code>MicroVideoOffset</code>/<code>Container:Directory</code> tags first, then a full ISO-BMFF box scan gated on marker text).</p>
 <p><strong>How to use it.</strong> Click <strong>Analyse live photo</strong>; it carves the trailer (via <code>file.slice</code>, no full in-memory copy) and renders it through the real video player plus, if the clip has a decodable audio track, the full audio analyser underneath.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Analyse live photo</button></div></div></div>
 <p><strong>Notes / limits.</strong> Detection distinguishes Google Motion Photo, Samsung Motion Photo, and Apple Live Photo by their respective markers/MIME hints.</p>
 </section>
 <section class="docs-card">
 <h3 id="raw-develop-settings-sidecar-xmp-import">RAW develop-settings sidecar (.xmp) import<a class="h-anchor" href="#raw-develop-settings-sidecar-xmp-import" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Reads a <code>.xmp</code> sidecar's non-destructive edit recipe (exposure, contrast, highlights, white balance, camera profile, and more - Adobe's Camera Raw Settings namespace) and shows it alongside the RAW photo.</p>
 <p><strong>How to reach it.</strong> Click <strong>Import XMP settings</strong> next to a RAW photo's analysis, then pick the <code>.xmp</code> file. Built in <code>photo.js</code>'s <code>parseDevelopSettings()</code>.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Import XMP settings</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="animated-image-frame-stepping-gif-webp">Animated image frame stepping (GIF/WebP)<a class="h-anchor" href="#animated-image-frame-stepping-gif-webp" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> For animated GIF/WebP dropped as a photo, steps through frame-by-frame, analyses any single frame as a standalone photo, builds a thumbnail contact sheet of every frame, and can reverse the whole animation.</p>
 <p><strong>How to reach it.</strong> Drop an animated GIF or WebP. Frame decoding is <code>gif-frames.js</code> (hand-rolled LZW decoder)/<code>webp-frames.js</code> (browser <code>ImageDecoder</code>/WebCodecs); re-encoding for the reverse feature is <code>gif-encode.js</code>.</p>
 <p><strong>How to use it.</strong> <strong>Prev/Next</strong> step through frames; <strong>Analyse frame</strong> runs the current frame through the full photo pipeline; <strong>Generate contact sheet</strong> (shown once there are 8+ frames) builds a thumbnail grid; <strong>Reverse</strong> plays/downloads the animation backwards (<strong>Download reversed</strong> for GIF).</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Prev</button><button type="button" class="anr-btn">Next</button><button type="button" class="anr-btn">Analyse frame</button><button type="button" class="anr-btn">Generate contact sheet</button><button type="button" class="anr-btn">Reverse</button><button type="button" class="anr-btn">Download reversed</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="sonify-image-to-sound">Sonify (image to sound)<a class="h-anchor" href="#sonify-image-to-sound" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Turns any picture into audio by reading it as a spectrogram: x = time, y = frequency, brightness = loudness. The inverse of the audio module's spectrogram view.</p>
 <p><strong>How to reach it.</strong> Click <strong>Sonify (play as spectrogram)</strong> on a photo (also reachable from a video frame - see <a href="/docs/features/video"><code>video.md</code></a>). Implemented in <code>sonify.js</code>, lazy-imported by <code>photo.js</code>.</p>
 <p><strong>How to use it.</strong> Two synthesis engines: <strong>Oscillator bank</strong> (one sine tone per frequency row, robust on any picture, the default) or <strong>Griffin-Lim</strong> (iteratively refines phase to better match a genuine spectrogram image, more faithful but heavier). Controls: Mode (arbitrary image vs. a real spectrogram plot), Invert (bright=loud vs. dark=loud), Axis (log/linear frequency spacing), Min/Max frequency, Length (click the readout to type an exact value past the slider's range), and an Advanced panel (sample rate, FFT size, window function, Griffin-Lim iteration count, gamma brightness curve, left/right channel source for stereo, colourmap decoding and dB scale for real-spectrogram mode). The source image preview updates live as controls change. Click <strong>Render &amp; play</strong> to synthesise and immediately play the result through the site's full Sound analysis (waveform, spectrogram, LUFS, etc. - see <a href="/docs/features/audio"><code>audio.md</code></a>); <strong>Analyse WAV</strong> does the same without auto-playing; <strong>Download WAV</strong> saves the rendered audio. Clicking the source-image preview seeks the audio to that point (and the reverse: playback drives an accent-coloured playhead over the image).</p>
+<p>The tool is reached from a button beside the photo, and its Axis control is a segmented toggle (the selected option carries the accent fill):</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Sonify (play as spectrogram)</button></div></div></div>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn is-active">Log</button><button type="button" class="anr-btn">Linear</button></div></div></div>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn anr-btn--cta">Render &amp; play</button><button type="button" class="anr-btn">Analyse WAV</button><button type="button" class="anr-btn">Download WAV</button></div></div></div>
 <p><strong>Notes / limits.</strong> Purely on-device Web Audio synthesis; no libraries beyond the site's own hand-written FFT (shared with <code>spectrogram.js</code>).</p>
 </section>
 <section class="docs-card">
@@ -132,6 +145,7 @@
 <p><strong>What it does.</strong> Several still-image formats pack more than one picture into a single file - an ICO's size ladder, an MPO stereo/multi-angle pair, a scanned multi-page TIFF - but a browser <code>&lt;img&gt;</code> only ever paints one. Each format gets its own pure-parsing extractor that hands its images to a shared "Embedded images" display card.</p>
 <p><strong>How to reach it.</strong> Automatic - drop a <code>.ico</code>/<code>.cur</code> (<code>ico.js</code>), a <code>.mpo</code> stereo/multi-picture JPEG (<code>mpo.js</code>), or a multi-page <code>.tif</code>/<code>.tiff</code> (<code>tiff.js</code>, which only spins up ImageMagick to render pages when there genuinely are 2+ pages - a single-page TIFF shows nothing extra).</p>
 <p><strong>How to use it.</strong> Every extracted image, on a transparency checkerboard, gets its size/format/byte-count caption, a <strong>Download</strong> button, and (when wired into the main results container) an <strong>Analyse</strong> button that re-runs the full photo pipeline on that one extracted image.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Analyse</button><button type="button" class="anr-btn">Download</button></div></div></div>
 <p><strong>Notes / limits.</strong> ICO extraction rebuilds a minimal single-image icon blob per directory entry so the browser's native decoder paints exactly that entry (PNG-compressed and classic BMP/DIB alike, with transparency); pure parsing, no WASM, instant and offline. MPO reads the CIPA Multi-Picture Format (MPF) index in the JPEG's APP2 segment. Multi-page TIFF first walks the IFD chain in pure JS just to learn the page count and size (cheap, no decode) before deciding whether ImageMagick rendering is worth it.</p>
 </section>
 <section class="docs-card">
@@ -160,7 +174,6 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Site</p>
         <a href="/compare">Compare</a>
-        <a href="/docs">Docs</a>
         <a href="/privacy">Privacy</a>
       </div>
       <div class="footer-col">
@@ -171,6 +184,7 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Project</p>
         <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <a href="/docs">Documentation</a>
         <!-- No address in the source: the mailto is assembled in JS only after a
              Cloudflare Turnstile challenge passes (see wireFooterContact). -->
         <button type="button" class="footer-contact">Email me!</button>

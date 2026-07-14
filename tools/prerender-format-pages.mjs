@@ -535,7 +535,6 @@ ${siteNav(key)}
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Site</p>
         <a href="/compare">Compare</a>
-        <a href="/docs">Docs</a>
         <a href="/privacy">Privacy</a>
       </div>
       <div class="footer-col">
@@ -546,6 +545,7 @@ ${siteNav(key)}
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Project</p>
         <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <a href="/docs">Documentation</a>
         <!-- No address in the source: the mailto is assembled in JS only after a
              Cloudflare Turnstile challenge passes (see wireFooterContact). -->
         <button type="button" class="footer-contact">Email me!</button>

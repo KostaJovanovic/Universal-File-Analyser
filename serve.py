@@ -552,7 +552,33 @@ def _print_startup_qr(port):
     print('  Scan the QR (same Wi-Fi) or open  %s\n' % url)
 
 
+def _die_on_console_close():
+    """Exit immediately when the console window is closed/logged off/shut down.
+
+    Without this, closing the "analyser server" window (the X button, not
+    Ctrl+C) doesn't reliably kill a ThreadingHTTPServer in time - it can be
+    left holding PORT, so the *next* server.bat launch fails to bind. That's
+    also why server.bat pre-kills whatever's still on the port; this makes
+    that workaround unnecessary in the common case by shutting down the
+    instant Windows signals the close."""
+    if os.name != 'nt':
+        return
+    import ctypes
+
+    CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT = 2, 5, 6
+
+    @ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)
+    def _handler(event):
+        if event in (CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT):
+            os._exit(0)
+        return 0
+
+    ctypes.windll.kernel32.SetConsoleCtrlHandler(_handler, True)
+    _die_on_console_close._handler = _handler  # keep the ctypes callback alive
+
+
 if __name__ == '__main__':
+    _die_on_console_close()
     _print_startup_qr(PORT)
     os.chdir(ROOT)
     # ThreadingHTTPServer (not HTTPServer): the service worker fires background

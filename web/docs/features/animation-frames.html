@@ -76,7 +76,11 @@
 <h3 id="lottie-bodymovin-dotlottie-telegram-sticker-playback">Lottie / Bodymovin / dotLottie / Telegram sticker playback<a class="h-anchor" href="#lottie-bodymovin-dotlottie-telegram-sticker-playback" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Plays JSON vector animations (Lottie/Bodymovin exports) live, with a timeline scrubber, play/pause, speed and loop controls, plus the animation's metadata (name, Bodymovin version, dimensions, frame rate, frame count, duration, layer count, asset count).</p>
 <p><strong>How to reach it.</strong> Drop a <code>.json</code> Lottie file, a <code>.lottie</code> (dotLottie - a ZIP containing <code>animations/&lt;id&gt;.json</code> plus a manifest), or a <code>.tgs</code> (Telegram sticker - gzip-compressed Lottie JSON). Built in <code>lottie.js</code> around the vendored <strong>lottie-web</strong> engine, lazy-loaded on first use and cached for offline. A plain <code>.json</code> file that looks like Lottie (detected by <code>isLottie()</code> - has <code>v</code>, numeric <code>fr</code>, numeric <code>op</code>, and a <code>layers</code> array) is also offered a "▶ Play as Lottie animation" option from the generic JSON inspector (<code>unknown.js</code>/<code>dataview.js</code>) without needing the <code>.lottie</code>/<code>.tgs</code> extension.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">▶ Play as Lottie animation</button></div></div></div>
 <p><strong>How to use it.</strong> <strong>Pause/Play</strong> toggles playback; the range slider scrubs to any frame; the <strong>speed</strong> dropdown picks 0.25x-2x; <strong>Loop</strong> toggles looping (on by default).</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Pause</button></div></div></div>
+<p><strong>Loop</strong> is an on/off toggle (on by default):</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn is-active">Loop</button></div></div></div>
 <p><strong>Notes / limits.</strong> Renders via SVG (<code>renderer: 'svg'</code> in <code>lottie.loadAnimation</code>). A malformed or non-Lottie file degrades to an error card rather than failing silently.</p>
 </section>
 
@@ -99,7 +103,6 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Site</p>
         <a href="/compare">Compare</a>
-        <a href="/docs">Docs</a>
         <a href="/privacy">Privacy</a>
       </div>
       <div class="footer-col">
@@ -110,6 +113,7 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Project</p>
         <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <a href="/docs">Documentation</a>
         <!-- No address in the source: the mailto is assembled in JS only after a
              Cloudflare Turnstile challenge passes (see wireFooterContact). -->
         <button type="button" class="footer-contact">Email me!</button>

@@ -35,6 +35,19 @@ All tokens are CSS custom properties on `:root` in
   `--radius: 0` is the sharp-corners token (see below).
 - **Elevation**: `--shadow-color`/`--shadow-popover`.
 
+The core colour tokens as live swatches - each is backed by its real CSS var,
+so this row flips when you toggle the theme in the top bar:
+
+```demo
+swatch: --bg
+swatch: --surface
+swatch: --fg
+swatch: --muted
+swatch: --hairline
+swatch: --accent
+swatch: --partial
+```
+
 Theme switching sets `data-theme="dark"` on `<html>` (bootstrapped
 before-first-paint by the inline script in each page's `HEAD:START`/
 `HEAD:END` block - see [`architecture.md`](architecture.md) and the `shared-partials`
@@ -71,6 +84,31 @@ kind of special-purpose shape.
 - Cards, tables, and readouts generally live inside `.anr-results` /
   `row()`/`rowHelp()`-built structures from `core/util.js`, styled once in
   `analyser.css` rather than per-renderer.
+
+The standard button in its default, call-to-action and disabled states (hover
+or press any of them to see the invert):
+
+```demo
+btn: Download
+btn cta: Analyse audio
+btn disabled: Run OCR
+```
+
+Its accent-filled active state, used for toggles - click to flip it:
+
+```demo
+btn active: Isolate
+```
+
+And a card - the mono, uppercase, hairline-underlined heading grouping one
+feature's controls and output:
+
+```demo
+card: RGB histogram
+  text: A titled block grouping one feature's controls and output. Sharp corners, hairline underline, tokens throughout.
+  btn: Save PNG
+  btn: Fullscreen
+```
 
 ## Light/dark theming and narrow widths
 

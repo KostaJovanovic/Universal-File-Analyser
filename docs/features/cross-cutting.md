@@ -21,6 +21,12 @@ asynchronously after hashing completes.
 **How to use it.** Click **Show CRC-32 / MD5 / SHA-1 / SHA-512** (inserted
 right below the SHA-256 row) to compute and reveal the additional hashes.
 
+```demo
+card: Integrity
+  text: **SHA-256** fills in asynchronously once hashing completes.
+  btn: Show CRC-32 / MD5 / SHA-1 / SHA-512
+```
+
 **Notes / limits.** For very large files where hashing the whole file
 up-front would be slow (notably video), the hash is instead gated behind an
 explicit **Compute SHA-256** button rather than computed automatically -
@@ -42,6 +48,14 @@ positives (a token like `bundle.min.js` isn't reported as a domain) via a
 **How to use it.** Click any lookup link (VirusTotal, urlscan, AbuseIPDB,
 Shodan) to open that service in a new tab.
 
+```demo
+card: Network indicators
+  btn: VirusTotal
+  btn: urlscan
+  btn: AbuseIPDB
+  btn: Shodan
+```
+
 **Notes / limits.** Nothing is ever sent automatically - links only open a
 third-party service when clicked, preserving the no-upload promise. Each
 indicator list is capped (300 extracted, 100 shown by default).
@@ -61,6 +75,19 @@ hold them).
 
 **How to reach it.** Click **Export data** (next to "Analyse next file?").
 Built in `export-data.js`.
+
+```demo
+btn: Export data
+```
+
+It offers four export formats:
+
+```demo
+btn: Complete report (HTML)
+btn: PDF (print)
+btn: JSON
+btn: CSV
+```
 
 **Notes / limits.** Pure read-side: it scrapes the rendered DOM
 (`.anr-card`/`.anr-readout` tables the renderers already built) rather than
@@ -97,6 +124,13 @@ Lottie-shaped structure, **▶ Play as Lottie animation** offers to play it
 (see [`animation-frames.md`](animation-frames.md)); when an embedded/carved image is
 detected inside the blob, per-image **Analyse**/**Download** buttons hand
 off to the photo pipeline via `photo-recover.js`.
+
+```demo
+btn: Show full text
+btn: ▶ Play as Lottie animation
+btn: Analyse
+btn: Download
+```
 
 ### Forensic integrity cards
 
@@ -144,6 +178,11 @@ audio"/"Analyse frame" call-to-action buttons that would normally appear
 twice) collapse to **one** central button that fires both files' actions at
 once. Click **Show differences** to fade every row where A and B match,
 leaving only the differing rows visible; click again to show everything.
+
+```demo
+btn cta: Analyse audio
+btn: Show differences
+```
 
 **Notes / limits.** The merge **moves** (not clones) the real DOM cells
 from each file's staged render into the merged table, so tooltips and

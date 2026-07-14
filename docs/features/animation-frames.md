@@ -70,9 +70,23 @@ also offered a "▶ Play as Lottie animation" option from the generic JSON
 inspector (`unknown.js`/`dataview.js`) without needing the `.lottie`/`.tgs`
 extension.
 
+```demo
+btn: ▶ Play as Lottie animation
+```
+
 **How to use it.** **Pause/Play** toggles playback; the range slider scrubs
 to any frame; the **speed** dropdown picks 0.25x-2x; **Loop** toggles
 looping (on by default).
+
+```demo
+btn: Pause
+```
+
+**Loop** is an on/off toggle (on by default):
+
+```demo
+btn active: Loop
+```
 
 **Notes / limits.** Renders via SVG (`renderer: 'svg'` in `lottie.loadAnimation`).
 A malformed or non-Lottie file degrades to an error card rather than

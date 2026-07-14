@@ -64,21 +64,25 @@
 <h3 id="frame-capture-and-analysis">Frame capture and analysis<a class="h-anchor" href="#frame-capture-and-analysis" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Steps through video frames and analyses any single frame as a full photo (EXIF-less, since it's a grabbed frame, but the same histogram/OCR/etc. pipeline).</p>
 <p><strong>How to reach it.</strong> <strong>Prev frame</strong>/<strong>Next frame</strong> step through frames; <strong>Analyse frame</strong> (also <strong>Analyse in Photo section</strong> in alternate flows) sends the current frame to the full photo analyser (<code>renderPhoto</code> via <code>photo.js</code>). Built in <code>video.js</code>.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Prev frame</button><button type="button" class="anr-btn">Next frame</button><button type="button" class="anr-btn">Analyse frame</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="sonify-a-frame">Sonify a frame<a class="h-anchor" href="#sonify-a-frame" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Turns the current video frame into sound, same as the photo sonify feature.</p>
 <p><strong>How to reach it.</strong> Click <strong>Sonify</strong> on the current frame. Lazy-imports <code>sonify.js</code> - see <a href="/docs/features/images"><code>images.md</code></a> for full control detail.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Sonify</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="contact-sheet">Contact sheet<a class="h-anchor" href="#contact-sheet" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Builds a thumbnail grid of frames sampled across the video.</p>
 <p><strong>How to reach it.</strong> Click <strong>Generate contact sheet</strong> (shown once there are enough frames, 8+). Built in <code>video.js</code>.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Generate contact sheet</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="audio-track-extraction">Audio track extraction<a class="h-anchor" href="#audio-track-extraction" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Extracts the video's audio track and runs it through the full audio analyser (waveform, spectrogram, LUFS, etc.).</p>
 <p><strong>How to reach it.</strong> <strong>Download audio (WAV)</strong> downloads the extracted track; <strong>Analyse audio</strong> runs it through <code>audio.js</code>'s full pipeline; <strong>Analyse photo</strong> (on the paired still) runs the current frame through <code>photo.js</code>. Built in <code>video.js</code>, reusing <code>audio.js</code>'s <code>makeSpectrogramPanel</code>/<code>buildHistogramCard</code>/<code>buildWaveformCard</code>.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Download audio (WAV)</button><button type="button" class="anr-btn">Analyse audio</button><button type="button" class="anr-btn">Analyse photo</button></div></div></div>
 <p><strong>Notes / limits.</strong> For codecs the browser can decode video but not audio for (or vice versa), <code>video-sync.js</code>'s "audio companion" mechanism plays a separately-extracted <code>&lt;audio&gt;</code> element in lockstep with the muted <code>&lt;video&gt;</code>, so playback stays in sync with no echo - see "Multi-player sync" below.</p>
 </section>
 <section class="docs-card">
@@ -86,41 +90,48 @@
 <p><strong>What it does.</strong> Re-encodes the video playing backwards - picture and sound - via FFmpeg, unlike audio reverse (which is instant sample-flipping, since video needs the picture itself re-encoded).</p>
 <p><strong>How to reach it.</strong> Click <strong>↺ Reverse video</strong>. Built in <code>video.js</code>.</p>
 <p><strong>How to use it.</strong> Once rendered: <strong>Analyse reversed</strong> re-runs the full pipeline on the reversed clip; <strong>Download reversed (MP4)</strong> saves it.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">↺ Reverse video</button><button type="button" class="anr-btn">Analyse reversed</button><button type="button" class="anr-btn">Download reversed (MP4)</button></div></div></div>
 <p><strong>Notes / limits.</strong> Explicitly warned as slow in the UI copy ("this isn't as straightforward as it seems... going to take a while") - a full FFmpeg re-encode, not a cheap operation.</p>
 </section>
 <section class="docs-card">
 <h3 id="scene-change-detection">Scene change detection<a class="h-anchor" href="#scene-change-detection" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Samples the video at a fixed interval and compares consecutive frames by mean per-channel pixel difference; a jump past a threshold is marked as a scene change with a thumbnail and confidence score.</p>
 <p><strong>How to reach it.</strong> Runs automatically for smaller videos; click <strong>Detect scene changes</strong> to run it manually (always required for large videos, which skip the automatic run - shown as "Skipped automatically for large videos (N MB)"). <strong>Run again (current part)</strong> re-scans just the currently loaded segment on segmented/salvaged playback. Built in <code>video.js</code>.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Detect scene changes</button><button type="button" class="anr-btn">Run again (current part)</button></div></div></div>
 <p><strong>How to use it.</strong> Click any result thumbnail or timeline marker to jump the player there.</p>
 </section>
 <section class="docs-card">
 <h3 id="segmented-playback">Segmented playback<a class="h-anchor" href="#segmented-playback" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> For very large or specially-loaded videos, plays through the content in segments rather than loading it all at once.</p>
 <p><strong>How to reach it.</strong> <strong>Prev</strong>/<strong>Next</strong> step between segments. Built in <code>video.js</code>.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Prev</button><button type="button" class="anr-btn">Next</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="integrity-sha-256">Integrity: SHA-256<a class="h-anchor" href="#integrity-sha-256" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Computes the file's full SHA-256 hash.</p>
 <p><strong>How to reach it.</strong> Click <strong>Compute SHA-256</strong> (the hash isn't computed automatically for video since it reads the whole file). Built in <code>video.js</code>.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Compute SHA-256</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="truncated-unfinalised-recording-salvage">Truncated/unfinalised recording salvage<a class="h-anchor" href="#truncated-unfinalised-recording-salvage" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Recovers playable video from a truncated/unfinalised ISOBMFF (MP4/MOV) recording whose <code>moov</code> index is missing - the classic "camera/card was interrupted before finalising" or "file copy stopped early" corruption, seen on Sony XAVC, GoPro, DJI, and phone recordings. With no <code>moov</code> there are no sample tables to index frames, but the raw encoded video is still present in the <code>mdat</code> box.</p>
 <p><strong>How to reach it.</strong> Automatic detection when a dropped MP4/MOV has no <code>moov</code> (<code>video-recover.js</code>'s <code>detectMoovlessMp4()</code>); the video section shows a <strong>Salvage video</strong> call-to-action. Built in <code>video-recover.js</code>, orchestrated by <code>video.js</code>.</p>
 <p><strong>How to use it.</strong> The video's H.264/H.265 stream is carved out of <code>mdat</code> (MP4 stores NAL units length-prefixed, interleaved with audio/metadata the recovery can't index; it walks the chain validating each NAL against the next and resyncing byte-by-byte across gaps, re-emitting each as Annex B). If the file's SPS/PPS codec setup was stored only in the (missing) <code>moov</code>'s <code>avcC</code> box rather than in-band, the "Reference clip needed" panel appears: click <strong>Choose reference clip...</strong>, pick a healthy clip shot on the same camera in the same mode (same resolution and codec), and Analyser borrows its parameter sets to make the carved stream decodable. Click <strong>Salvage video</strong> to run the recovery; the result plays through the site's raw-stream segmented player.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-card"><h3>Reference clip needed</h3><p>The SPS/PPS codec setup was stored only in the missing moov. Pick a healthy clip shot on the same camera in the same mode.</p><div class="anr-btn-row"><button type="button" class="anr-btn">Choose reference clip...</button><button type="button" class="anr-btn anr-btn--cta">Salvage video</button></div></div></div></div>
 <p><strong>Notes / limits.</strong> Verified against real Sony FX30 XAVC footage. The recovery module is pure logic (no DOM) with an abstracted byte-source reader, so it runs identically under the browser File API and a Node test harness.</p>
 </section>
 <section class="docs-card">
 <h3 id="undecodable-codec-conversion">Undecodable codec conversion<a class="h-anchor" href="#undecodable-codec-conversion" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Re-encodes a video whose codec the browser can't decode into H.264/MP4 via FFmpeg so it can be played and analysed in full.</p>
 <p><strong>How to reach it.</strong> Click <strong>Convert to H.264 and play</strong>, shown when playback fails on an unsupported codec. Built in <code>video.js</code>.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Convert to H.264 and play</button></div></div></div>
 <p><strong>Notes / limits.</strong> Lossy re-encode; can take a while for long or high-resolution clips.</p>
 </section>
 <section class="docs-card">
 <h3 id="first-frame-extraction-no-native-preview">First-frame extraction (no native preview)<a class="h-anchor" href="#first-frame-extraction-no-native-preview" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Grabs a single frame via FFmpeg for a format with no native browser preview.</p>
 <p><strong>How to reach it.</strong> Click <strong>Extract first frame</strong>, shown when there's no default preview available. Built in <code>video.js</code>.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Extract first frame</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="avi-container-parsing">AVI container parsing<a class="h-anchor" href="#avi-container-parsing" aria-label="Link to this section">#</a></h3>
@@ -154,7 +165,6 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Site</p>
         <a href="/compare">Compare</a>
-        <a href="/docs">Docs</a>
         <a href="/privacy">Privacy</a>
       </div>
       <div class="footer-col">
@@ -165,6 +175,7 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Project</p>
         <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <a href="/docs">Documentation</a>
         <!-- No address in the source: the mailto is assembled in JS only after a
              Cloudflare Turnstile challenge passes (see wireFooterContact). -->
         <button type="button" class="footer-contact">Email me!</button>
