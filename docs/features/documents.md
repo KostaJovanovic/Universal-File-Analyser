@@ -115,7 +115,7 @@ worksheet as a table with sheet tabs and document metadata.
 **How to use it.** Click a **sheet tab** to switch worksheets. Each sheet
 lazily mounts the full `tablekit.js` table/chart workbench (sort/filter/
 search/hide/reorder columns, a chart builder, PNG/JSON/CSV export) - see
-`docs/features/data-archive.md`.
+[`data-archive.md`](data-archive.md).
 
 ### XLSB (Excel Binary Workbook)
 

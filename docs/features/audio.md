@@ -93,7 +93,7 @@ Vocal Remover), entirely in-browser via ONNX Runtime Web.
 
 **How to reach it.** Click **Separate vocals (AI)** inside the Isolate
 panel. Built in `audio.js`, backed by the MDX-Net subsystem in
-`web/assets/js/lib/mdx-*.js` (see `docs/parsers-and-libs.md`).
+`web/assets/js/lib/mdx-*.js` (see [`parsers-and-libs.md`](../parsers-and-libs.md)).
 
 **How to use it.** Choose **Standard** or **Lite** (mobile-friendlier)
 model tier. First use prompts to confirm the model download
@@ -105,7 +105,7 @@ info button next to "Separate" explains the approach.
 
 **Notes / limits.** Runs on GPU via WebGPU where available, WASM otherwise;
 the model (~85MB) is part of the "Complete" offline tier (see
-`docs/pwa-offline.md`). The isolate band-stop cuts are re-applied to
+[`pwa-offline.md`](../pwa-offline.md)). The isolate band-stop cuts are re-applied to
 separated stems in parallel (nodes can't be shared across the file
 player's audio context and the stem-blend context), so Isolate edits and AI
 separation compose rather than one bypassing the other.
@@ -136,7 +136,7 @@ reversed clip back through the full analysis pipeline via
 gated behind a click so it isn't computed for every file automatically.
 Reuses the AVI module's PCM-WAV encoder (`encodeWav`, from `video-avi.js`).
 Video reverse is a separate feature (FFmpeg re-encode) - see
-`docs/features/video.md`.
+[`video.md`](video.md).
 
 ### Microphone recording
 

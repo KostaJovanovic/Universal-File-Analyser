@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PWA and offline support - Analyser docs</title>
+  <meta name="description" content="How Analyser installs as an offline-capable app: the service worker's precached shell, the cache-versioning scheme, the three cumulative &quot;download for offline use&quot; tiers, and the install flow. See als">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/pwa-offline">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="PWA and offline support - Analyser docs">
+  <meta property="og:description" content="How Analyser installs as an offline-capable app: the service worker's precached shell, the cache-versioning scheme, the three cumulative &quot;download for offline use&quot; tiers, and the install flow. See als">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/pwa-offline">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline" aria-current="page">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline" aria-current="page">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>PWA and offline support</h1>
+<p class="docs-lede">How Analyser installs as an offline-capable app: the service worker's precached shell, the cache-versioning scheme, the three cumulative "download for offline use" tiers, and the install flow. See also <a href="/docs/architecture"><code>architecture.md</code></a>'s PWA/service-worker summary for the request-handling logic.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h2"><a href="#service-worker-shell-precache">Service worker SHELL precache</a></li><li class="toc-h2"><a href="#version-cache-epoch">VERSION cache epoch</a></li><li class="toc-h2"><a href="#offline-tiers">Offline tiers</a></li><li class="toc-h2"><a href="#manifest-install-flow">Manifest / install flow</a></li></ul></details>
+    <section class="docs-card">
+<h2 id="service-worker-shell-precache">Service worker SHELL precache<a class="h-anchor" href="#service-worker-shell-precache" aria-label="Link to this section">#</a></h2>
+<p><code>web/sw.js</code> defines <code>SHELL</code>, a hand-maintained array of every core JS module, CSS file, image and top-level clean-URL page (<code>./</code>, <code>./about</code>, <code>./patch</code>, <code>./formats</code>, <code>./stats</code>, <code>./privacy</code>, <code>./samples</code>, <code>./compare</code>) that makes up the minimum installable app. On <code>install</code>, each entry is cached independently via <code>Promise.allSettled</code> (not <code>cache.addAll</code>'s all-or-nothing) so one transient miss can't fail the whole install; a missing entry is logged and can still be picked up later by the fetch handler. Cloudflare Turnstile's script is separately best-effort-precached with a <code>no-cors</code> fetch since it's cross-origin and would otherwise fail <code>addAll</code>. Local dev (<code>server.bat</code> on localhost/LAN, detected via <code>DEV</code>) skips all of this and installs as a pure network pass-through, so edits show up on a single refresh.</p>
+<p><code>SHELL</code> only covers the "Essentials"-equivalent core - it is a separate list from the offline-tiers manifests below, but the two must be kept in step manually (<code>offline-tiers.js</code>'s top comment notes this explicitly: keep <code>TIERS.essentials</code> in step with <code>SHELL</code> when adding a new core/renderer/ parser module).</p>
+</section>
+<section class="docs-card">
+<h2 id="version-cache-epoch">VERSION cache epoch<a class="h-anchor" href="#version-cache-epoch" aria-label="Link to this section">#</a></h2>
+<p><code>const VERSION = 'analyser-v' + COMMIT_COUNT</code> names the cache. Every commit bumps <code>COMMIT_COUNT</code> (via <code>save.bat</code>, see <a href="/docs/tooling"><code>tooling.md</code></a>), so every deploy gets a fresh cache name. On <code>activate</code>, any cache not in <code>KEEP_CACHES</code> (<code>[VERSION, 'analyser-offline', 'analyser-mdx']</code>) is deleted - so the previous version's shell is dropped, but the user's chosen offline-tier downloads (<code>analyser-offline</code>) and the cached vocal-separation model (<code>analyser-mdx</code>) survive across deploys untouched. Requests are served cache-first: the current <code>VERSION</code> cache is checked explicitly first (not a bare <code>caches.match()</code>, which would search every cache in creation order and could return a stale copy of an app module from the persistent <code>analyser-offline</code> tier); only a genuine miss falls back to the other surviving caches, then the network. <code>/api/*</code> requests are never cached, so <code>/stats</code> always sees live data (or fails cleanly offline).</p>
+</section>
+<section class="docs-card">
+<h2 id="offline-tiers">Offline tiers<a class="h-anchor" href="#offline-tiers" aria-label="Link to this section">#</a></h2>
+<p><code>web/assets/js/core/offline-tiers.js</code> implements the "Download for offline use" footer section shared across pages: cumulative tier manifests, per-tier download/progress/"Cached" badge logic, the collapsible section, the PWA install button, and clear-storage. <code>setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion)</code> is called once from <code>boot()</code>; it queries its own DOM by id/class, so it's a no-op on any page missing the offline markup (all main pages carry it via the shared footer partial - see the <code>shared-partials</code> skill).</p>
+<p>Three cumulative tiers (<code>TIER_ORDER = ['essentials', 'everything', 'complete']</code>), each including everything in the tier below it:</p>
+<div class="docs-table-wrap"><table><thead><tr><th>Tier</th><th>Size</th><th>Contents</th></tr></thead><tbody><tr><td><strong>Essentials</strong></td><td>~50 MB</td><td>The whole app - open, inspect and analyse any file, fully offline</td></tr><tr><td><strong>Everything</strong></td><td>~120 MB</td><td>Text in images/PDFs (OCR), photo-location maps, QR scanning, HEIC photos, archives, EPS/PostScript, CAD drawings, the sample gallery</td></tr><tr><td><strong>Complete</strong></td><td>~345 MB + the MDX model size</td><td>Opens a popup for optional extras on top of Everything: OCR in 30+ languages, and on-device AI vocal separation (either or both)</td></tr></tbody></table></div>
+<p><code>TIER_MB</code> is the single source of truth for the sizes shown on every button and in the footer's help panel; <code>complete</code>'s size additionally includes <code>MDX_TIER_MB</code> from <code>../lib/mdx-model.js</code> (see <a href="/docs/parsers-and-libs"><code>parsers-and-libs.md</code></a>). Downloaded tiers are cached under the persistent <code>analyser-offline</code> cache name (surviving service-worker version bumps, per above) and refreshed in place - not wiped - when a new version's files change.</p>
+</section>
+<section class="docs-card">
+<h2 id="manifest-install-flow">Manifest / install flow<a class="h-anchor" href="#manifest-install-flow" aria-label="Link to this section">#</a></h2>
+<p><code>web/manifest.json</code> declares the PWA: name/short_name, <code>start_url</code>/<code>scope</code> of <code>./</code>, <code>display: standalone</code>, and three icon sizes (192/512, plus a maskable 512 variant). <code>stamp-counts.mjs</code> (see <a href="/docs/tooling"><code>tooling.md</code></a>) stamps the supported-format count into the manifest's description at commit time.</p>
+<p>The install button in the offline-tiers footer listens for the browser's native <code>beforeinstallprompt</code> event (captured once, globally, guarded by <code>setupOfflineTiers._winWired</code> so it isn't re-registered on every SPA navigation) and shows the native install UI when available. On platforms that never fire that event (iOS, Safari, Firefox desktop), <code>installHint()</code> sniffs the user agent and shows a platform-specific manual instruction instead (e.g. "tap Share, then Add to Home Screen" on iOS; a note that Firefox desktop can't install web apps at all). Below 16.4, iOS also ignores <code>manifest.json</code> entirely - <code>index.html</code>'s <code>apple-mobile-web-app-*</code> meta tags and <code>apple-touch-icon</code> link exist specifically to drive Add to Home Screen on those older versions.</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/pages"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Pages</span></a><a class="docs-pn-next" href="/docs/tooling"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Tooling</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

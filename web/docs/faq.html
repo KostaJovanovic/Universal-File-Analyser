@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FAQ - Analyser docs</title>
+  <meta name="description" content="Quick answers to the questions users most often have about Analyser, mirroring (and expanding on) the FAQ published on /about. See user-guide.md and the docs/features/*.md docs for deeper detail.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/faq">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="FAQ - Analyser docs">
+  <meta property="og:description" content="Quick answers to the questions users most often have about Analyser, mirroring (and expanding on) the FAQ published on /about. See user-guide.md and the docs/features/*.md docs for deeper detail.">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/faq">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq" aria-current="page">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq" aria-current="page">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>FAQ</h1>
+<p class="docs-lede">Quick answers to the questions users most often have about Analyser, mirroring (and expanding on) the FAQ published on <code>/about</code>. See <a href="/docs/user-guide"><code>user-guide.md</code></a> and the <code>docs/features/*.md</code> docs for deeper detail.</p></header>
+    
+    <section class="docs-card docs-card--intro">
+<p><strong>Is Analyser free?</strong> Yes. Completely free, no ads, no account, no sign-up.</p>
+<p><strong>Does Analyser upload my files?</strong> No. Every file is read and analysed entirely in your browser using the File API. Nothing is uploaded to a server - the name, contents and bytes of anything you open stay on your device and are gone when you close the tab. The only network calls the site ever makes are fetching its own code/WASM engines (lazily, cached after first use) and a single anonymous "one file analysed" ping containing just a lowercase file extension (see <a href="/docs/worker"><code>worker.md</code></a>) - never the file itself.</p>
+<p><strong>Can I view a file's EXIF and metadata without uploading it?</strong> Yes. Drop a photo (or any file) and Analyser reads EXIF, GPS, camera settings and other metadata locally, with nothing sent anywhere. See <a href="/docs/features/images"><code>images.md</code></a>.</p>
+<p><strong>How do I open a file online without installing software?</strong> Open Analyser in any web browser and drag your file onto the page, or tap to pick one. It opens directly in the browser - no install, no account, no plugins.</p>
+<p><strong>What file types can Analyser open?</strong> Over 1,350 file types (the exact count is computed live from the catalog and grows over time) - photos, RAW camera files, audio, video, PDFs, Office documents, e-books, archives, 3D models and CAD, fonts, executables and many proprietary formats. See the full searchable list at <code>/formats</code>, or <a href="/docs/renderers"><code>renderers.md</code></a> for the developer-facing module map.</p>
+<p><strong>Does Analyser work without internet?</strong> Yes. It's a Progressive Web App - install it to your home screen or desktop and it works fully offline. The service worker caches the app on first visit; heavier engines (FFmpeg, ImageMagick, Tesseract, and more) are cached separately as part of the offline download tiers (see <a href="/docs/pwa-offline"><code>pwa-offline.md</code></a>).</p>
+<p><strong>Why does a WASM download happen for some files?</strong> Several of the deepest features - RAW-photo demosaicing (ImageMagick), DWG drawings (LibreDWG), STEP/IGES CAD (OpenCASCADE), JPEG 2000 (OpenJPEG), PostScript/EPS (Ghostscript), archives (libarchive), AI vocal separation (ONNX Runtime + the MDX-Net model) - are powered by WebAssembly engines too large to bundle into the initial page load. They're fetched only the first time you actually open a matching file, then cached by the service worker so every later use (including offline) is instant. See <a href="/docs/parsers-and-libs"><code>parsers-and-libs.md</code></a> and the "Under the hood" section of the repo root <code>README.md</code> for the full dependency list and approximate sizes.</p>
+<p><strong>Is it safe to open files here?</strong> Yes. Because your files never leave your browser, there's no upload to intercept and no server that stores them. Analyser also actively sanitises risky embedded content - stripping <code>&lt;script&gt;</code>, event handlers, and remote references from SVG and DWG-derived SVG previews before rendering them, and never executing scripts in HTML/MHTML/email previews - so opening an untrusted file doesn't run its embedded code. See "Forensic integrity cards" and the SVG entry in <a href="/docs/features/cross-cutting"><code>cross-cutting.md</code></a>/ <a href="/docs/features/design-cad-3d"><code>design-cad-3d.md</code></a>.</p>
+<p><strong>Can I open a .HEIC, .ARW, .PSD or .DWG file?</strong> Yes. iPhone HEIC photos, Sony ARW and other camera RAW files, Photoshop PSD documents, AutoCAD DWG drawings and many more each get their own dedicated viewer - drop the file in and it opens right in the browser. See <a href="/docs/features/images"><code>images.md</code></a> and <a href="/docs/features/design-cad-3d"><code>design-cad-3d.md</code></a>.</p>
+<p><strong>Can I recover a broken or truncated photo/video?</strong> Yes. Analyser can repair a truncated or corrupt JPEG/PNG, rebuild a damaged JPEG header using a reference photo from the same camera, carve embedded images out of any blob, and salvage an unfinalised MP4/MOV recording with no index by extracting the raw H.264/H.265 stream (with a reference clip as donor when needed). See "Broken/truncated/corrupt image recovery" in <a href="/docs/features/images"><code>images.md</code></a> and "Truncated/unfinalised recording salvage" in <a href="/docs/features/video"><code>video.md</code></a>.</p>
+<p><strong>What browsers does Analyser support?</strong> It targets modern evergreen browsers (Chrome/Edge/Firefox/Safari) using standard web APIs (File API, Web Audio, WebGL, WebAssembly, and - for a few specific features like animated-WebP frame stepping - WebCodecs). Where a feature depends on a newer API the browser lacks (e.g. the View Transitions API for SPA navigation, or <code>document.startViewTransition</code>), Analyser degrades gracefully rather than breaking - see "SPA navigation" in <a href="/docs/architecture"><code>architecture.md</code></a> for one concrete example. Exact minimum versions per API were not independently verified for this doc.</p>
+<p><strong>Where do I report a missing format or a bug?</strong> Via the footer's "Email me!" contact button (gated behind a spam check that only loads when you open it), or the format-info overlay's suggestion flow if a specific extension is missing.</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/user-guide"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">User guide</span></a><a class="docs-pn-next" href="/docs/architecture"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Architecture</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

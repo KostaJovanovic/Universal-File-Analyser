@@ -12,6 +12,12 @@ import { el } from './util.js';
 // When you add a patch: extend the newest group's notes, or - once that group holds
 // five versions - start a new group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
+  { range: '6.22 - 6.28', notes: [
+    'An image-provenance pass: when a photo carries a C2PA "Content Credentials" record, Analyser now unpacks what it claims - the signing tool, the edits, any source images, whether an AI tool was involved, and the signing certificate - reading the record rather than cryptographically verifying it, so it is provenance the file asserts, not proof.',
+    'A new card weighs whether an image was AI-generated, gathering generator names, the standard "digital source type" marker and the hidden generation-parameter blocks that tools like Stable Diffusion, ComfyUI and Midjourney leave behind - shown as evidence, not a verdict.',
+    'A one-click scrubber strips identifying metadata (EXIF, XMP, IPTC, comments and GPS) from a JPEG, PNG or WebP without re-encoding, so the picture stays bit-for-bit identical; and a new timeline card lays out every date a file carries and flags impossible ones, like a file modified before it was created.',
+    'There is now a browsable documentation site explaining what every part of Analyser does and how the pieces fit together, and the site footer was reorganised into clearer sections.',
+  ] },
   { range: '6.19 - 6.21', notes: [
     'A full analysis workbench now sits beneath every CSV, Excel and OpenDocument spreadsheet: a live, virtualised grid with sort, filter, search, column show/hide/reorder and column splitting, a group-by summary, and a chart builder (line, bar, scatter, histogram, pie, area, box and heatmap) with PNG/JSON/CSV export.',
     'It also recognises more date formats - including statistics-agency quarter/month notation and D/M/Y dates with dots, dashes or slashes - reading them day-first by default, automatically switching to month-first when a value proves the file is American (8/25/2024 can only be August 25th), with a manual toggle either way.',

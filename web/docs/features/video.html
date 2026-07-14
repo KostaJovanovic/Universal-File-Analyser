@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video - Analyser docs</title>
+  <meta name="description" content="Playback, container/codec analysis, frame-level tools, scene detection, truncated/unfinalised recording recovery, AVI handling, and reversed playback. Source: video.js, video-avi.js, video-recover.js,">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/features/video">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Video - Analyser docs">
+  <meta property="og:description" content="Playback, container/codec analysis, frame-level tools, scene detection, truncated/unfinalised recording recovery, AVI handling, and reversed playback. Source: video.js, video-avi.js, video-recover.js,">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/features/video">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video" aria-current="page">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video" aria-current="page">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Video</h1>
+<p class="docs-lede">Playback, container/codec analysis, frame-level tools, scene detection, truncated/unfinalised recording recovery, AVI handling, and reversed playback. Source: <code>video.js</code>, <code>video-avi.js</code>, <code>video-recover.js</code>, <code>web/assets/js/core/video-sync.js</code>.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h3"><a href="#playback-and-container-codec-info">Playback and container/codec info</a></li><li class="toc-h3"><a href="#frame-capture-and-analysis">Frame capture and analysis</a></li><li class="toc-h3"><a href="#sonify-a-frame">Sonify a frame</a></li><li class="toc-h3"><a href="#contact-sheet">Contact sheet</a></li><li class="toc-h3"><a href="#audio-track-extraction">Audio track extraction</a></li><li class="toc-h3"><a href="#reversed-video">Reversed video</a></li><li class="toc-h3"><a href="#scene-change-detection">Scene change detection</a></li><li class="toc-h3"><a href="#segmented-playback">Segmented playback</a></li><li class="toc-h3"><a href="#integrity-sha-256">Integrity: SHA-256</a></li><li class="toc-h3"><a href="#truncated-unfinalised-recording-salvage">Truncated/unfinalised recording salvage</a></li><li class="toc-h3"><a href="#undecodable-codec-conversion">Undecodable codec conversion</a></li><li class="toc-h3"><a href="#first-frame-extraction-no-native-preview">First-frame extraction (no native preview)</a></li><li class="toc-h3"><a href="#avi-container-parsing">AVI container parsing</a></li><li class="toc-h3"><a href="#multi-player-sync">Multi-player sync</a></li></ul></details>
+    <section class="docs-card">
+<h3 id="playback-and-container-codec-info">Playback and container/codec info<a class="h-anchor" href="#playback-and-container-codec-info" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Plays the video with a synced transport and reports container/codec, resolution, frame rate, and bitrate.</p>
+<p><strong>How to reach it.</strong> Drop any recognised video file. Built in <code>web/assets/js/renderers/video.js</code>.</p>
+<p><strong>Notes / limits.</strong> Frame rate is parsed from MP4 container metadata with an FFmpeg fallback for containers the browser can't introspect natively (per the repo root <code>README.md</code>).</p>
+</section>
+<section class="docs-card">
+<h3 id="frame-capture-and-analysis">Frame capture and analysis<a class="h-anchor" href="#frame-capture-and-analysis" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Steps through video frames and analyses any single frame as a full photo (EXIF-less, since it's a grabbed frame, but the same histogram/OCR/etc. pipeline).</p>
+<p><strong>How to reach it.</strong> <strong>Prev frame</strong>/<strong>Next frame</strong> step through frames; <strong>Analyse frame</strong> (also <strong>Analyse in Photo section</strong> in alternate flows) sends the current frame to the full photo analyser (<code>renderPhoto</code> via <code>photo.js</code>). Built in <code>video.js</code>.</p>
+</section>
+<section class="docs-card">
+<h3 id="sonify-a-frame">Sonify a frame<a class="h-anchor" href="#sonify-a-frame" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Turns the current video frame into sound, same as the photo sonify feature.</p>
+<p><strong>How to reach it.</strong> Click <strong>Sonify</strong> on the current frame. Lazy-imports <code>sonify.js</code> - see <a href="/docs/features/images"><code>images.md</code></a> for full control detail.</p>
+</section>
+<section class="docs-card">
+<h3 id="contact-sheet">Contact sheet<a class="h-anchor" href="#contact-sheet" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Builds a thumbnail grid of frames sampled across the video.</p>
+<p><strong>How to reach it.</strong> Click <strong>Generate contact sheet</strong> (shown once there are enough frames, 8+). Built in <code>video.js</code>.</p>
+</section>
+<section class="docs-card">
+<h3 id="audio-track-extraction">Audio track extraction<a class="h-anchor" href="#audio-track-extraction" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Extracts the video's audio track and runs it through the full audio analyser (waveform, spectrogram, LUFS, etc.).</p>
+<p><strong>How to reach it.</strong> <strong>Download audio (WAV)</strong> downloads the extracted track; <strong>Analyse audio</strong> runs it through <code>audio.js</code>'s full pipeline; <strong>Analyse photo</strong> (on the paired still) runs the current frame through <code>photo.js</code>. Built in <code>video.js</code>, reusing <code>audio.js</code>'s <code>makeSpectrogramPanel</code>/<code>buildHistogramCard</code>/<code>buildWaveformCard</code>.</p>
+<p><strong>Notes / limits.</strong> For codecs the browser can decode video but not audio for (or vice versa), <code>video-sync.js</code>'s "audio companion" mechanism plays a separately-extracted <code>&lt;audio&gt;</code> element in lockstep with the muted <code>&lt;video&gt;</code>, so playback stays in sync with no echo - see "Multi-player sync" below.</p>
+</section>
+<section class="docs-card">
+<h3 id="reversed-video">Reversed video<a class="h-anchor" href="#reversed-video" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Re-encodes the video playing backwards - picture and sound - via FFmpeg, unlike audio reverse (which is instant sample-flipping, since video needs the picture itself re-encoded).</p>
+<p><strong>How to reach it.</strong> Click <strong>↺ Reverse video</strong>. Built in <code>video.js</code>.</p>
+<p><strong>How to use it.</strong> Once rendered: <strong>Analyse reversed</strong> re-runs the full pipeline on the reversed clip; <strong>Download reversed (MP4)</strong> saves it.</p>
+<p><strong>Notes / limits.</strong> Explicitly warned as slow in the UI copy ("this isn't as straightforward as it seems... going to take a while") - a full FFmpeg re-encode, not a cheap operation.</p>
+</section>
+<section class="docs-card">
+<h3 id="scene-change-detection">Scene change detection<a class="h-anchor" href="#scene-change-detection" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Samples the video at a fixed interval and compares consecutive frames by mean per-channel pixel difference; a jump past a threshold is marked as a scene change with a thumbnail and confidence score.</p>
+<p><strong>How to reach it.</strong> Runs automatically for smaller videos; click <strong>Detect scene changes</strong> to run it manually (always required for large videos, which skip the automatic run - shown as "Skipped automatically for large videos (N MB)"). <strong>Run again (current part)</strong> re-scans just the currently loaded segment on segmented/salvaged playback. Built in <code>video.js</code>.</p>
+<p><strong>How to use it.</strong> Click any result thumbnail or timeline marker to jump the player there.</p>
+</section>
+<section class="docs-card">
+<h3 id="segmented-playback">Segmented playback<a class="h-anchor" href="#segmented-playback" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> For very large or specially-loaded videos, plays through the content in segments rather than loading it all at once.</p>
+<p><strong>How to reach it.</strong> <strong>Prev</strong>/<strong>Next</strong> step between segments. Built in <code>video.js</code>.</p>
+</section>
+<section class="docs-card">
+<h3 id="integrity-sha-256">Integrity: SHA-256<a class="h-anchor" href="#integrity-sha-256" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Computes the file's full SHA-256 hash.</p>
+<p><strong>How to reach it.</strong> Click <strong>Compute SHA-256</strong> (the hash isn't computed automatically for video since it reads the whole file). Built in <code>video.js</code>.</p>
+</section>
+<section class="docs-card">
+<h3 id="truncated-unfinalised-recording-salvage">Truncated/unfinalised recording salvage<a class="h-anchor" href="#truncated-unfinalised-recording-salvage" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Recovers playable video from a truncated/unfinalised ISOBMFF (MP4/MOV) recording whose <code>moov</code> index is missing - the classic "camera/card was interrupted before finalising" or "file copy stopped early" corruption, seen on Sony XAVC, GoPro, DJI, and phone recordings. With no <code>moov</code> there are no sample tables to index frames, but the raw encoded video is still present in the <code>mdat</code> box.</p>
+<p><strong>How to reach it.</strong> Automatic detection when a dropped MP4/MOV has no <code>moov</code> (<code>video-recover.js</code>'s <code>detectMoovlessMp4()</code>); the video section shows a <strong>Salvage video</strong> call-to-action. Built in <code>video-recover.js</code>, orchestrated by <code>video.js</code>.</p>
+<p><strong>How to use it.</strong> The video's H.264/H.265 stream is carved out of <code>mdat</code> (MP4 stores NAL units length-prefixed, interleaved with audio/metadata the recovery can't index; it walks the chain validating each NAL against the next and resyncing byte-by-byte across gaps, re-emitting each as Annex B). If the file's SPS/PPS codec setup was stored only in the (missing) <code>moov</code>'s <code>avcC</code> box rather than in-band, the "Reference clip needed" panel appears: click <strong>Choose reference clip...</strong>, pick a healthy clip shot on the same camera in the same mode (same resolution and codec), and Analyser borrows its parameter sets to make the carved stream decodable. Click <strong>Salvage video</strong> to run the recovery; the result plays through the site's raw-stream segmented player.</p>
+<p><strong>Notes / limits.</strong> Verified against real Sony FX30 XAVC footage. The recovery module is pure logic (no DOM) with an abstracted byte-source reader, so it runs identically under the browser File API and a Node test harness.</p>
+</section>
+<section class="docs-card">
+<h3 id="undecodable-codec-conversion">Undecodable codec conversion<a class="h-anchor" href="#undecodable-codec-conversion" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Re-encodes a video whose codec the browser can't decode into H.264/MP4 via FFmpeg so it can be played and analysed in full.</p>
+<p><strong>How to reach it.</strong> Click <strong>Convert to H.264 and play</strong>, shown when playback fails on an unsupported codec. Built in <code>video.js</code>.</p>
+<p><strong>Notes / limits.</strong> Lossy re-encode; can take a while for long or high-resolution clips.</p>
+</section>
+<section class="docs-card">
+<h3 id="first-frame-extraction-no-native-preview">First-frame extraction (no native preview)<a class="h-anchor" href="#first-frame-extraction-no-native-preview" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Grabs a single frame via FFmpeg for a format with no native browser preview.</p>
+<p><strong>How to reach it.</strong> Click <strong>Extract first frame</strong>, shown when there's no default preview available. Built in <code>video.js</code>.</p>
+</section>
+<section class="docs-card">
+<h3 id="avi-container-parsing">AVI container parsing<a class="h-anchor" href="#avi-container-parsing" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Browsers can't play most AVI files (typically Motion-JPEG video + PCM audio), so Analyser parses the RIFF container itself: reads the header for dimensions/codec/audio format, pulls the raw MJPEG frames and PCM audio out of the <code>movi</code> list, and re-wraps the PCM as a WAV the browser can play.</p>
+<p><strong>How to reach it.</strong> Automatic fallback when the native <code>&lt;video&gt;</code> path fails on an <code>.avi</code>. Built in <code>video-avi.js</code>, used by <code>video.js</code>.</p>
+<p><strong>Notes / limits.</strong> Pure parsing, no DOM or cross-module dependencies.</p>
+</section>
+<section class="docs-card">
+<h3 id="multi-player-sync">Multi-player sync<a class="h-anchor" href="#multi-player-sync" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> When an analysis shows more than one <code>&lt;video&gt;</code> of the same clip at once (the main player, a section-03 mini player, a gyro mini player), all registered players stay on the same transport: play/pause/seek one and the others follow.</p>
+<p><strong>How to reach it.</strong> Automatic wherever multiple synced players exist for one clip. Built in <code>web/assets/js/core/video-sync.js</code>.</p>
+<p><strong>Notes / limits.</strong> Exclusive audio: since every synced player decodes the clip independently, only one may be audible at a time (echo otherwise) - whichever player the user presses becomes the "audio owner" and is unmuted, muting every other synced player. Programmatic play/pause/seek propagated to followers is tagged so it doesn't echo back and cause a feedback loop. An "audio companion" <code>&lt;audio&gt;</code> element (used when the video codec is playable but its audio isn't, or vice versa) shadows the audio owner's transport rather than joining the synced-video set directly.</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/features/audio"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Audio</span></a><a class="docs-pn-next" href="/docs/features/animation-frames"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Animation and frames</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

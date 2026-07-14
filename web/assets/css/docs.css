@@ -1,0 +1,389 @@
+/* ==========================================================================
+   Docs pages (/docs, /docs/*) - layout + prose styles for the generated
+   documentation site. Loaded AFTER analyser.css, so all theme tokens
+   (--bg, --fg, --muted, --surface, --hairline, --accent, --font-mono, ...)
+   and the global header/footer classes come from there. This file only adds
+   what the docs need: the sidebar + article layout and markdown prose.
+   Generated pages are built by tools/build-docs-html.mjs from docs/*.md.
+   Same rules as everywhere else on the site: sharp corners, hairlines,
+   tokens over hardcoded values.
+   ========================================================================== */
+
+/* Docs-only tokens. docs.css loads only on /docs pages, so this :root addition
+   is scoped to them. --docs-topbar-h coordinates the sticky top bar's height
+   with the sidebar's sticky offset and the heading scroll-margin. */
+:root { --docs-topbar-h: 52px; }
+
+/* ----- Top bar: pinned to the top of the viewport, mono chrome (not the big
+   hero header the app pages use - docs pages want content near the top). ----- */
+
+.docs-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+  flex-wrap: wrap;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 12px var(--pad-x);
+  background: var(--surface);
+  border-bottom: var(--bd-hairline);
+}
+.docs-brand {
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.docs-brand a { text-decoration: none; }
+.docs-brand-mark { color: var(--fg); font-weight: 700; }
+.docs-brand-mark:hover { color: var(--accent); }
+.docs-brand-sep { color: var(--muted); }
+.docs-brand-docs { color: var(--muted); }
+.docs-topnav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* Every chip in the bar - the Home/About/Formats links and the day/night
+   toggle - shares one identical box so they line up at exactly the same
+   height (the site's .dark-toggle otherwise renders a touch taller). The
+   topbar itself is a surfaced band, so the chips drop to the page background
+   (with their hairline border) to read as crisp buttons against it. */
+.docs-topnav .header-btn,
+.docs-topnav .dark-toggle {
+  height: 26px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  background: var(--bg);
+}
+
+.docs-shell {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: calc(var(--gap) * 2);
+  padding: clamp(28px, 4vw, 48px) var(--pad-x) clamp(48px, 6vw, 80px);
+  max-width: 1440px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ----- Sidebar ----- */
+
+/* The sidebar is a surfaced card (like the content sections), not bare text on
+   the grid - a panel with the --surface fill, a hairline border and sharp
+   corners, kept sticky below the pinned top bar. */
+.docs-side {
+  position: sticky;
+  top: calc(var(--docs-topbar-h) + 20px);
+  align-self: start;
+  max-height: calc(100vh - var(--docs-topbar-h) - 40px);
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  background: var(--surface);
+  border: var(--bd-hairline);
+  padding: 16px 14px;
+  scrollbar-width: thin;
+}
+
+.docs-filter {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  color: var(--fg);
+  background: var(--bg);
+  border: var(--bd-hairline);
+  border-radius: 0;
+  padding: 6px 8px;
+  margin-bottom: 18px;
+}
+.docs-filter:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.docs-filter::placeholder { color: var(--muted); }
+
+.docs-nav-group { margin-bottom: 18px; }
+.docs-nav-label {
+  display: block;
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.docs-nav a {
+  display: block;
+  color: var(--fg);
+  text-decoration: none;
+  padding: 3px 6px;
+  margin-left: -6px;
+  line-height: 1.4;
+}
+.docs-nav a:hover { color: var(--accent); }
+.docs-nav a[aria-current="page"] {
+  background: var(--fg);
+  color: var(--bg);
+  cursor: default;
+}
+.docs-nav a.is-filtered-out { display: none; }
+.docs-nav-group.is-filtered-out { display: none; }
+
+/* Mobile drop-down clone of the sidebar (the sticky rail is hidden there). */
+.docs-mobile-nav { display: none; }
+
+/* ----- Article prose ----- */
+
+.docs-article { min-width: 0; }
+
+/* Page header: the doc title + lede, sitting on the page (not carded). */
+.docs-head { margin: 0 0 var(--gap); }
+.docs-head h1 {
+  font-size: clamp(28px, 3.4vw, 42px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 0 0 10px;
+}
+.docs-lede {
+  color: var(--muted);
+  max-width: 70ch;
+  margin: 0;
+}
+
+/* ----- Section cards: each doc section sits on a surfaced, hairline-bordered
+   card (the site's --surface token) so blocks of text read as distinct,
+   scannable panels floating on the grid - sharp corners, like everything
+   else. ----- */
+.docs-card {
+  background: var(--surface);
+  border: var(--bd-hairline);
+  padding: clamp(20px, 2.4vw, 30px) clamp(20px, 2.6vw, 34px);
+  margin: 0 0 var(--gap);
+  scroll-margin-top: calc(var(--docs-topbar-h) + 16px);
+}
+.docs-card > :first-child { margin-top: 0; }
+.docs-card > :last-child { margin-bottom: 0; }
+
+.docs-article h2 {
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 44px 0 12px;
+  padding-top: 22px;
+  border-top: var(--bd-hairline);
+}
+.docs-article h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 30px 0 8px;
+}
+.docs-article h4 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 22px 0 6px;
+}
+/* The heading that opens a card is that card's title: no top divider (the card
+   border already separates it), a hairline underline beneath it instead. */
+.docs-card > h2:first-child,
+.docs-card > h3:first-child {
+  margin: 0 0 16px;
+  padding: 0 0 10px;
+  border-top: none;
+  border-bottom: var(--bd-hairline);
+}
+/* Anchor scroll targets clear the pinned top bar. */
+.docs-article :is(h2, h3, h4) { scroll-margin-top: calc(var(--docs-topbar-h) + 16px); }
+/* Inside a surfaced card, code/pre would vanish on the same fill - drop them to
+   the page background so they read as insets. */
+.docs-card code { background: var(--bg); }
+.docs-card pre { background: var(--bg); }
+.docs-card pre code { background: none; }
+
+/* Hover anchors on headings - same quiet treatment as muted chrome. */
+.docs-article h2, .docs-article h3, .docs-article h4 { position: relative; }
+.h-anchor {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 0.8em;
+  color: var(--muted);
+  text-decoration: none;
+  margin-left: 8px;
+  opacity: 0;
+}
+h2:hover .h-anchor, h3:hover .h-anchor, h4:hover .h-anchor { opacity: 1; }
+.h-anchor:hover { color: var(--accent); }
+
+.docs-article p,
+.docs-article li {
+  line-height: 1.6;
+  max-width: 78ch;
+}
+.docs-article p { margin: 0 0 14px; }
+.docs-article ul, .docs-article ol { margin: 0 0 14px; padding-left: 22px; }
+.docs-article li { margin: 0 0 6px; }
+.docs-article li > ul, .docs-article li > ol { margin: 6px 0 0; }
+
+.docs-article code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--surface);
+  border: var(--bd-hairline);
+  border-radius: 0;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.docs-article a code { color: inherit; }
+.docs-article pre {
+  background: var(--surface);
+  border: var(--bd-hairline);
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0 0 16px;
+  max-width: 100%;
+}
+.docs-article pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  white-space: pre;
+  font-size: var(--t-small);
+  line-height: 1.5;
+}
+
+.docs-article table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 18px;
+  font-size: var(--t-small);
+}
+.docs-article th {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--fg);
+}
+.docs-article td {
+  padding: 8px 12px 8px 0;
+  border-bottom: var(--bd-hairline);
+  vertical-align: top;
+  line-height: 1.55;
+}
+.docs-article td:last-child, .docs-article th:last-child { padding-right: 0; }
+/* Wide reference tables scroll sideways instead of breaking the column. */
+.docs-table-wrap { overflow-x: auto; margin: 0 0 18px; }
+.docs-table-wrap table { margin: 0; }
+
+/* "On this page" table of contents */
+.docs-toc {
+  background: var(--surface);
+  border: var(--bd-hairline);
+  margin: 18px 0 26px;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  /* Shrink to content: collapsed it's a compact "On this page" button, and only
+     grows to fit its links when opened (never the full column width). */
+  width: -moz-fit-content;
+  width: fit-content;
+  max-width: 78ch;
+}
+.docs-toc summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: center;
+  color: var(--muted);
+  list-style: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.docs-toc summary::-webkit-details-marker { display: none; }
+.docs-toc summary::after { content: ' \25BE'; }
+.docs-toc[open] summary { border-bottom: var(--bd-hairline); }
+.docs-toc ul { list-style: none; margin: 0; padding: 10px 12px; }
+.docs-toc li { margin: 0 0 4px; }
+.docs-toc li.toc-h3 { padding-left: 16px; }
+.docs-toc a { color: var(--fg); text-decoration: none; }
+.docs-toc a:hover { color: var(--accent); }
+
+/* ----- Previous / next pager ----- */
+
+.docs-pn {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap);
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: var(--bd-hairline);
+}
+.docs-pn a {
+  display: block;
+  background: var(--surface);
+  border: var(--bd-hairline);
+  padding: 12px 14px;
+  text-decoration: none;
+  color: var(--fg);
+}
+.docs-pn a:hover { background: var(--fg); color: var(--bg); }
+.docs-pn a:hover .docs-pn-dir { color: inherit; }
+.docs-pn-next { text-align: right; grid-column: 2; }
+.docs-pn-dir {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.docs-pn-title { font-weight: 700; }
+
+/* The footer is the shared site footer (.site-footer, styled in analyser.css) -
+   same as every other page - so nothing is styled for it here. */
+
+/* ----- Narrow screens ----- */
+
+@media (max-width: 900px) {
+  /* minmax(0, 1fr) - not plain 1fr - so a long unbreakable token (nowrap inline
+     code, a wide table) can't force the column past the viewport width. */
+  .docs-shell { grid-template-columns: minmax(0, 1fr); gap: var(--gap); }
+  .docs-side { display: none; }
+  .docs-mobile-nav {
+    display: block;
+    background: var(--surface);
+    border: var(--bd-hairline);
+    font-family: var(--font-mono);
+    font-size: var(--t-small);
+  }
+  .docs-mobile-nav > summary {
+    cursor: pointer;
+    padding: 10px 12px;
+    font-size: var(--t-tiny);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    list-style: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .docs-mobile-nav > summary::-webkit-details-marker { display: none; }
+  .docs-mobile-nav > summary::after { content: ' \25BE'; }
+  .docs-mobile-nav[open] > summary { border-bottom: var(--bd-hairline); }
+  .docs-mobile-nav .docs-nav { padding: 12px; }
+  .docs-pn { grid-template-columns: 1fr; }
+  .docs-pn-next { grid-column: auto; }
+}

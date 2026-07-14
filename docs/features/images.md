@@ -214,7 +214,7 @@ spectrogram: x = time, y = frequency, brightness = loudness. The inverse of
 the audio module's spectrogram view.
 
 **How to reach it.** Click **Sonify (play as spectrogram)** on a photo (also
-reachable from a video frame - see `docs/features/video.md`). Implemented in
+reachable from a video frame - see [`video.md`](video.md)). Implemented in
 `sonify.js`, lazy-imported by `photo.js`.
 
 **How to use it.** Two synthesis engines: **Oscillator bank** (one sine
@@ -229,7 +229,7 @@ curve, left/right channel source for stereo, colourmap decoding and dB
 scale for real-spectrogram mode). The source image preview updates live as
 controls change. Click **Render & play** to synthesise and immediately play
 the result through the site's full Sound analysis (waveform, spectrogram,
-LUFS, etc. - see `docs/features/audio.md`); **Analyse WAV** does the same
+LUFS, etc. - see [`audio.md`](audio.md)); **Analyse WAV** does the same
 without auto-playing; **Download WAV** saves the rendered audio. Clicking
 the source-image preview seeks the audio to that point (and the reverse:
 playback drives an accent-coloured playhead over the image).

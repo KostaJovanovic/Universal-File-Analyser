@@ -24,7 +24,7 @@ right below the SHA-256 row) to compute and reveal the additional hashes.
 **Notes / limits.** For very large files where hashing the whole file
 up-front would be slow (notably video), the hash is instead gated behind an
 explicit **Compute SHA-256** button rather than computed automatically -
-see `docs/features/video.md`.
+see [`video.md`](video.md).
 
 ### OSINT network-indicator extraction
 
@@ -89,12 +89,12 @@ viewer: a magic-byte format guess, hex/ASCII dump, SHA-256, and enhanced
 previews for plain text, JSON and XML.
 
 **How to reach it.** Automatic for any `unknown`/`extensionless` kind (see
-`docs/pipeline.md`). Built in `unknown.js`.
+[`pipeline.md`](../pipeline.md)). Built in `unknown.js`.
 
 **How to use it.** **Show full text** reveals the complete text of a large
 text-like file (initially truncated); if the JSON inspector detects a
 Lottie-shaped structure, **▶ Play as Lottie animation** offers to play it
-(see `docs/features/animation-frames.md`); when an embedded/carved image is
+(see [`animation-frames.md`](animation-frames.md)); when an embedded/carved image is
 detected inside the blob, per-image **Analyse**/**Download** buttons hand
 off to the photo pipeline via `photo-recover.js`.
 
@@ -135,7 +135,7 @@ histograms) that can't merge cell-by-cell falls back to a side-by-side A|B
 split within its card instead.
 
 **How to reach it.** Drop two files onto the `/compare` page's A/B
-dropzones (see `docs/pages.md`). Built in `compare.js`, called with
+dropzones (see [`pages.md`](../pages.md)). Built in `compare.js`, called with
 `{ classify, routes }` from `app.js` so it reuses the real
 `classifyFile()`/`ROUTES`.
 

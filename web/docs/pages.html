@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pages - Analyser docs</title>
+  <meta name="description" content="Every top-level HTML page in web/, what it's for, and any wiring specific to it. All pages share the same generated head tail and footer (see the shared-partials skill) and are boot()-ed by the same a">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/pages">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Pages - Analyser docs">
+  <meta property="og:description" content="Every top-level HTML page in web/, what it's for, and any wiring specific to it. All pages share the same generated head tail and footer (see the shared-partials skill) and are boot()-ed by the same a">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/pages">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages" aria-current="page">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages" aria-current="page">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Pages</h1>
+<p class="docs-lede">Every top-level HTML page in <code>web/</code>, what it's for, and any wiring specific to it. All pages share the same generated head tail and footer (see the <code>shared-partials</code> skill) and are boot()-ed by the same <code>app.js</code> entry point, with per-page behaviour guarded by element presence so a page with no matching DOM is an inert no-op for that feature.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h2"><a href="#index-html">index.html (/)</a></li><li class="toc-h2"><a href="#about-html-about">about.html (/about)</a></li><li class="toc-h2"><a href="#compare-html-compare">compare.html (/compare)</a></li><li class="toc-h2"><a href="#stats-html-stats">stats.html (/stats)</a></li><li class="toc-h2"><a href="#patch-html-patch">patch.html (/patch)</a></li><li class="toc-h2"><a href="#privacy-html-privacy">privacy.html (/privacy)</a></li><li class="toc-h2"><a href="#atari-html-atari">atari.html (/atari)</a></li><li class="toc-h2"><a href="#test-html-test">test.html (/test)</a></li></ul></details>
+    <section class="docs-card">
+<h2 id="index-html">index.html (<code>/</code>)<a class="h-anchor" href="#index-html" aria-label="Link to this section">#</a></h2>
+<p>The drop-and-analyse app - the whole point of the site. Structure:</p>
+<ul><li>A boot splash (<code>#splash</code>) that fades out once <code>app.js</code>'s <code>boot()</code> runs, with a failsafe reveal if the module graph is slow.</li><li>The "quickdrop" zone: two layouts coexist in the markup, toggled by the <code>quickdrop--hero</code> class on the <code>&lt;section&gt;</code> - a three-card grid (<code>photoDrop</code>/<code>audioDrop</code>/<code>videoDrop</code>, each with its own <code>accept</code> filter) or a single "any file" hero dropzone (<code>heroDrop</code>) plus a <code>Compare</code> CTA linking to <code>/compare</code>. Both stay wired in <code>boot()</code>.</li><li>Mic recording (<code>audioRecord</code>/<code>heroRecord</code>) and live spectrogram (<code>audioLive</code>/<code>heroLive</code>) buttons alongside the audio/hero zones.</li><li>The format-info overlay (<code>#fmtOverlay</code>), generated from <code>formats.js</code>'s catalog by <code>format-overlay.js</code> - searchable, category-chip filtered.</li><li>Three result sections (<code>#photo</code>, <code>#audio</code>, <code>#video</code>), each with a <code>section-meta</code> aside (preview/histogram/OCR slots for photo, a preview slot for video) and an <code>anr-results</code> container filled by the matching renderer. A generic <code>#unknownResults</code> container above them catches every non-media kind.</li><li><code>#formatGuideCta</code> - a post-analysis link into that extension's <code>/formats/&lt;ext&gt;</code> page, filled and revealed by <code>handleFile()</code>.</li><li>The footer's "Recently analysed" panel (localStorage history) and the shared offline-tiers/dependencies footer block.</li><li><code>&lt;script src="assets/js/core/navigate.js"&gt;</code> (classic script, runs before the module graph) then <code>&lt;script type="module" src="assets/js/core/app.js"&gt;</code>, plus inline service-worker registration with auto-reload-once on <code>controllerchange</code>.</li><li>Rich SEO: Open Graph/Twitter meta, two JSON-LD blocks (<code>WebApplication</code> + <code>WebSite</code> with a <code>SearchAction</code>), and <code>modulepreload</code> hints for the hot-path core modules (deliberately excluding the long-tail renderers, which stay lazy).</li></ul>
+</section>
+<section class="docs-card">
+<h2 id="about-html-about">about.html (<code>/about</code>)<a class="h-anchor" href="#about-html-about" aria-label="Link to this section">#</a></h2>
+<p>A single scrollable page of sections (each <code>&lt;section class="section" id="..."&gt;</code> with an <code>#anchor</code>), covering: <code>#why</code> (rationale), <code>#where</code> (offline/local-first), <code>#what</code> (<code>#aboutFormats</code> - the full format catalog table, generated by <code>format-overlay.js</code>'s <code>renderAboutFormats()</code>), <code>#how</code> (usage instructions), <code>#faq</code>. Also carries its own copy of the format overlay (<code>#fmtOverlay</code>) so format search works here too.</p>
+</section>
+<section class="docs-card">
+<h2 id="compare-html-compare">compare.html (<code>/compare</code>)<a class="h-anchor" href="#compare-html-compare" aria-label="Link to this section">#</a></h2>
+<p>See "The /compare page" in the repo root <code>CLAUDE.md</code> for the full design. In brief: two "any file" dropzones (<code>#cmpDropA</code>/<code>#cmpDropB</code>), each wired by <code>wireCompareZone()</code> in <code>boot()</code> (<code>app.js:983</code>) to capture a <code>File</code> directly - <strong>not</strong> through the normal <code>handleFile</code> pipeline. Once both are set, <code>handleCompare()</code> (<code>app.js:1011</code>) runs; the actual merge logic lives in <code>renderers/compare.js</code> (see <a href="/docs/features/cross-cutting"><code>cross-cutting.md</code></a>). The page-level drag/drop overlay is suppressed here: <code>onComparePage()</code> (<code>app.js:1261</code>, detected via <code>document.getElementById('cmpDropA')</code>) makes the global <code>dragenter</code>/<code>dragover</code> handlers skip showing <code>#pageDrop</code>, so only the two named zones light up on drag, and a stray drop outside them is swallowed rather than routed into the single-file pipeline (this page has no <code>#photo</code>/<code>#audio</code>/<code>#video</code> sections for it to land in). Results render into a shared <code>#unknownResults</code> container.</p>
+</section>
+<section class="docs-card">
+<h2 id="stats-html-stats">stats.html (<code>/stats</code>)<a class="h-anchor" href="#stats-html-stats" aria-label="Link to this section">#</a></h2>
+<p>Public analytics page. <code>#statsRoot</code> holds total files-analysed and visitors counts, a per-extension breakdown table (<code>.stats-table</code> / <code>#statsExtBody</code>, with a <code>Show all</code> toggle), a trend chart (<code>#statsTrendsChart</code> with mode buttons), and a leaderboard (<code>#statsScoresList</code>). All populated by <code>setupStatsPage()</code> (<code>web/assets/js/core/stats-page.js</code>, imported and called near the end of <code>boot()</code> - <code>app.js:1668</code>), which reads the Worker's <code>/api/stats</code> endpoint. See <a href="/docs/worker"><code>worker.md</code></a>.</p>
+</section>
+<section class="docs-card">
+<h2 id="patch-html-patch">patch.html (<code>/patch</code>)<a class="h-anchor" href="#patch-html-patch" aria-label="Link to this section">#</a></h2>
+<p>The public changelog: one <code>.patch-entry</code> per commit (auto-generated content, not hand-authored per this doc's scope - see <code>save.bat</code>'s version-bump flow in <a href="/docs/tooling"><code>tooling.md</code></a>). Also carries a "tl;dr" release-group digest toggle, wired by <code>setupPatchTldr()</code> (<code>web/assets/js/core/patch-tldr.js</code>, called unconditionally in <code>boot()</code> at <code>app.js:1739</code> - a no-op on every other page).</p>
+</section>
+<section class="docs-card">
+<h2 id="privacy-html-privacy">privacy.html (<code>/privacy</code>)<a class="h-anchor" href="#privacy-html-privacy" aria-label="Link to this section">#</a></h2>
+<p>Three sections: "Your files never leave your device" (the core promise), "What the two counters do" (explaining the visit/analysed-file stats - see <a href="/docs/worker"><code>worker.md</code></a>), and "The small print, kept small" (the actual policy text). Static content page; no special JS wiring beyond the shared boot/footer.</p>
+</section>
+<section class="docs-card">
+<h2 id="atari-html-atari">atari.html (<code>/atari</code>)<a class="h-anchor" href="#atari-html-atari" aria-label="Link to this section">#</a></h2>
+<p>An unlisted Asteroids easter-egg page reusing the stats page's markup pattern (<code>#statsRoot</code>, <code>#statsScores</code> for its own leaderboard). An <code>#atariPlay</code> button, guarded by presence and a <code>_wired</code> flag against double-binding on SPA re-navigation (<code>app.js:1673-1679</code>), lazily imports <code>../games/asteroids.js</code> and calls <code>launchAsteroids()</code> only when clicked - the game code (<code>web/assets/js/games/</code>) never loads on any other page. A hidden <code>#atariReset</code> dev-only button clears cache and reloads.</p>
+</section>
+<section class="docs-card">
+<h2 id="test-html-test">test.html (<code>/test</code>)<a class="h-anchor" href="#test-html-test" aria-label="Link to this section">#</a></h2>
+<p>CLAUDE.md documents this as a deployed-but-unlisted (noindex, unlinked) style-guide reference page - every design token, font, animation, button, control, chip, card, message, popup, loader and viewer overlay the site uses, with an in-page theme toggle, its tokens/animations generated from <code>analyser.css</code> by <code>tools/prerender-testpage.mjs</code>. <strong>As of this writing the file does not exist in the working tree</strong> (verified: no <code>web/test.html</code> on disk) - could not confirm its current contents from source. Per project memory, this page is intentionally left untouched and not kept in sync with new UI components regardless of what CLAUDE.md's authoring guidance says.</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/parsers-and-libs"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Parsers and libs</span></a><a class="docs-pn-next" href="/docs/pwa-offline"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">PWA and offline</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

@@ -15,7 +15,7 @@ own delay.
 
 **How to reach it.** Automatic - drop an animated `.gif`, or it's used
 internally by `photo.js` to power the frame stepper/reverse features
-documented in `docs/features/images.md` (Prev/Next frame, Analyse frame,
+documented in [`images.md`](images.md) (Prev/Next frame, Analyse frame,
 Generate contact sheet, Reverse, Download reversed).
 
 **Notes / limits.** Pure logic (`decodeGifFrames()`), no DOM, no
@@ -31,7 +31,7 @@ encoder, whose output the decoder above can read back.
 
 **How to reach it.** Used internally by the reverse-animated-GIF feature in
 `photo.js` (see "Animated image frame stepping" in
-`docs/features/images.md`) - there is no direct UI entry point in this
+[`images.md`](images.md)) - there is no direct UI entry point in this
 module itself.
 
 **Notes / limits.** `encodeAnimatedGif()` is pure logic, no DOM.

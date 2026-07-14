@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data and archives - Analyser docs</title>
+  <meta name="description" content="CSV/tabular data and the shared table workbench, IMU logs, structured-data viewers (HAR/JSON supersets/NFO), git objects, email, archives, folders, treemap visualisation, comics, MIDI, subtitles, and ">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/features/data-archive">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Data and archives - Analyser docs">
+  <meta property="og:description" content="CSV/tabular data and the shared table workbench, IMU logs, structured-data viewers (HAR/JSON supersets/NFO), git objects, email, archives, folders, treemap visualisation, comics, MIDI, subtitles, and ">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/features/data-archive">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive" aria-current="page">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive" aria-current="page">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Data and archives</h1>
+<p class="docs-lede">CSV/tabular data and the shared table workbench, IMU logs, structured-data viewers (HAR/JSON supersets/NFO), git objects, email, archives, folders, treemap visualisation, comics, MIDI, subtitles, and lyrics. Source: <code>csv.js</code>, <code>gcsv.js</code>, <code>dataview.js</code>, <code>gitobject.js</code>, <code>email.js</code>, <code>archive.js</code>, <code>zip.js</code>, <code>folder.js</code>, <code>treemap.js</code>, <code>folder-archive-shared.js</code>, <code>comic.js</code>, <code>midi.js</code>, <code>subtitles.js</code>, <code>lrc.js</code>, <code>tablekit.js</code>, <code>web/assets/js/lib/table-stats.js</code>, <code>vssolution.js</code>.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h3"><a href="#csv-tsv-preview">CSV/TSV preview</a></li><li class="toc-h3"><a href="#table-analysis-workbench">Table analysis workbench</a></li><li class="toc-h3"><a href="#table-statistics-helpers-shared">Table statistics helpers (shared)</a></li><li class="toc-h3"><a href="#gyroflow-imu-log-viewer-gcsv">Gyroflow IMU log viewer (.gcsv)</a></li><li class="toc-h3"><a href="#structured-data-and-text-art-viewers-har-json-supersets-nfo">Structured-data and text-art viewers (HAR / JSON supersets / NFO)</a></li><li class="toc-h3"><a href="#git-object-viewer">Git object viewer</a></li><li class="toc-h3"><a href="#email-message-viewer-eml-emlx-mbox">Email message viewer (.eml/.emlx/.mbox)</a></li><li class="toc-h3"><a href="#archive-inspection-zip-and-beyond">Archive inspection (ZIP and beyond)</a></li><li class="toc-h3"><a href="#folder-overview">Folder overview</a></li><li class="toc-h3"><a href="#treemap-visualisation">Treemap visualisation</a></li><li class="toc-h3"><a href="#comic-book-archive-viewer-cbz-cbr-cbt-cb7">Comic book archive viewer (CBZ/CBR/CBT/CB7)</a></li><li class="toc-h3"><a href="#midi-standard-midi-file">MIDI (Standard MIDI File)</a></li><li class="toc-h3"><a href="#subtitle-files-srt-webvtt-ass-ssa-microdvd-subviewer">Subtitle files (SRT/WebVTT/ASS/SSA/MicroDVD/SubViewer)</a></li><li class="toc-h3"><a href="#lrc-timed-lyrics">LRC timed lyrics</a></li><li class="toc-h3"><a href="#visual-studio-solution-manifest-sln-slnx">Visual Studio solution manifest (.sln/.slnx)</a></li></ul></details>
+    <section class="docs-card">
+<h3 id="csv-tsv-preview">CSV/TSV preview<a class="h-anchor" href="#csv-tsv-preview" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Detects the delimiter, parses quoted fields, infers per-column types, reports numeric statistics, and previews the first 100 rows.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.csv</code>/<code>.tsv</code> (or any file that content-sniffs as delimiter-consistent text - see <a href="/docs/pipeline"><code>pipeline.md</code></a>). Built in <code>csv.js</code>.</p>
+<p><strong>How to use it.</strong> The preview automatically mounts the full <code>tablekit.js</code> workbench below it (see "Table analysis workbench" below) for interactive sorting/filtering/charting. A file that looks like a Gyroflow IMU log is detected and handed to <code>gcsv.js</code>'s gyro-specific view instead.</p>
+</section>
+<section class="docs-card">
+<h3 id="table-analysis-workbench">Table analysis workbench<a class="h-anchor" href="#table-analysis-workbench" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> A full data-analysis toolkit mounted below any CSV/XLSX/XLSB/ODS table: a virtualised grid (only visible rows are drawn), column sort/filter/search/hide/reorder/split, a stats bar, group-by summaries, and a chart builder covering line/bar/scatter/histogram/pie/ area/box/heatmap on one hand-drawn canvas (no chart library) with auto-suggested charts and PNG/JSON/CSV export.</p>
+<p><strong>How to reach it.</strong> Automatic wherever a table renders - <code>csv.js</code>, <code>xlsx.js</code>, <code>xlsb.js</code>, <code>odf.js</code> (ODS) all lazily mount it. Built in <code>tablekit.js</code>.</p>
+<p><strong>How to use it.</strong></p>
+<ul><li><strong>Grid</strong>: click a column header to sort (ascending, then descending, then back to original order) and select the whole column (shows its stats below - text columns report distinct counts and most-common values); click a row number to select that row; drag across cells to select a rectangle (summarised live in the stats bar).</li><li><strong>Columns</strong> menu shows/hides individual columns.</li><li><strong>Split column</strong>: pick a column and delimiter (auto-detected by default) to break one packed column into several real columns, splitting its header name too; <strong>Undo split</strong> reverts. Column <strong>Up/Down</strong> buttons reorder columns.</li><li><strong>Filter</strong>: the gear on each header opens a filter popup (<strong>Apply</strong>/ <strong>Clear</strong>) - a min/max range for numbers, a "contains" match for text; the search box filters across every column at once.</li><li><strong>Stats bar</strong>: for the current selection, reports count/sum/average/ median/min/max/standard deviation.</li><li><strong>Summarise ("For each ... show the ...")</strong>: pick a group-by column, a target number column, and an aggregate (count/sum/average/min/max/ median - count needs no number column) via the <strong>group-by key/aggregate/ value selects</strong>; rows roll up into per-group totals live. <strong>Plot as bar</strong> charts the result directly.</li><li><strong>Charts</strong>: <strong>chart-type buttons</strong> pick the type; fields update the drawing instantly; hovering a bar/point/slice shows its exact value; <strong>suggested chart buttons</strong> are one-click presets; <strong>Plot selected range</strong> charts whatever's currently selected in the grid; <strong>Stacked: on/off</strong> toggles stacked mode.</li><li><strong>Export</strong>: <strong>Export chart PNG</strong>, <strong>Export stats JSON</strong>, <strong>Export rows CSV</strong> (respects current filter/sort).</li></ul>
+<p><strong>Notes / limits.</strong> Rows are capped (<code>SAMPLE_CAP</code> in <code>table-stats.js</code>) and chart points decimated (<code>MAX_POINTS</code> in <code>tablekit.js</code>) to keep the canvas responsive on large datasets.</p>
+</section>
+<section class="docs-card">
+<h3 id="table-statistics-helpers-shared">Table statistics helpers (shared)<a class="h-anchor" href="#table-statistics-helpers-shared" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Pure, DOM-free math shared by <code>csv.js</code> and <code>tablekit.js</code>: column type inference, numeric description (mean/median/ stddev/percentiles), Pearson correlation, and grouping.</p>
+<p><strong>Notes / limits.</strong> No controls of its own - a shared library (<code>web/assets/js/lib/table-stats.js</code>). Parses ambiguous D/M-vs-M/D dates <strong>day-first</strong>, matching the site's European/British convention, rather than <code>Date.parse</code>'s US month-first fallback.</p>
+</section>
+<section class="docs-card">
+<h3 id="gyroflow-imu-log-viewer-gcsv">Gyroflow IMU log viewer (.gcsv)<a class="h-anchor" href="#gyroflow-imu-log-viewer-gcsv" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Parses Gyroflow's generic IMU-log interchange format (the same format Analyser exports from a Sony video's gyro track, see <a href="/docs/features/eda-nle"><code>eda-nle.md</code></a>'s Sony rtmd entry): a header of key,value lines (scale factors converting raw columns to real units - time to seconds, gyro to rad/s shown as deg/s, accel to g) followed by a column-header line and samples, plotted via the same gyro/accel timeline viewer <code>sony-rtmd.js</code> uses.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.gcsv</code>. Built in <code>gcsv.js</code>.</p>
+<p><strong>Notes / limits.</strong> Capped at 64MB text read; the trace is decimated to 4000 points to keep the canvas responsive.</p>
+</section>
+<section class="docs-card">
+<h3 id="structured-data-and-text-art-viewers-har-json-supersets-nfo">Structured-data and text-art viewers (HAR / JSON supersets / NFO)<a class="h-anchor" href="#structured-data-and-text-art-viewers-har-json-supersets-nfo" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Three lightweight viewers sharing only a "show what people actually care about" goal: <strong>HAR</strong> (<code>.har</code>, an HTTP Archive JSON capture) rendered as a request table (method, status, type, size, time, URL) with a summary; <strong>JSON supersets</strong> (<code>.json5</code>/<code>.jsonc</code>/<code>.hjson</code>) shown as selectable source, and, when they parse after comment/trailing-comma stripping, as an expandable collapsible value tree; <strong>NFO</strong> (<code>.nfo</code>, scene-release ASCII art) decoded from CP437 (its native code page) and shown in a monospace block.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.har</code>/<code>.json5</code>/<code>.jsonc</code>/<code>.hjson</code>/<code>.nfo</code>. Built in <code>dataview.js</code>.</p>
+<p><strong>How to use it.</strong> JSON tree nodes are <code>&lt;details&gt;</code> elements - click to expand/collapse; children are lazily built only on first expand.</p>
+</section>
+<section class="docs-card">
+<h3 id="git-object-viewer">Git object viewer<a class="h-anchor" href="#git-object-viewer" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Opens git repository objects with no server and no git binary: loose objects (<code>.git/objects/ab/cdef...</code>, zlib-compressed <code>&lt;type&gt; &lt;size&gt;\0&lt;payload&gt;</code>) inflated via the browser's native <code>DecompressionStream</code> (no library) and parsed by type (commit/tag text, tree entry listing, or a blob handed to the main analyser); pack files (<code>.pack</code>) and pack indexes (<code>.idx</code>) read for header + object count.</p>
+<p><strong>How to reach it.</strong> Drop a loose git object (detected by content - <code>sniffGitObject()</code>, called from the drop pipeline's magic-byte sniff, since loose objects are extensionless) or a <code>.pack</code>/<code>.idx</code> file. Built in <code>gitobject.js</code>.</p>
+<p><strong>How to use it.</strong> For a blob object, click <strong>Analyse blob content</strong> to re-run the git blob's sniffed content through the full analyser.</p>
+</section>
+<section class="docs-card">
+<h3 id="email-message-viewer-eml-emlx-mbox">Email message viewer (.eml/.emlx/.mbox)<a class="h-anchor" href="#email-message-viewer-eml-emlx-mbox" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Parses RFC 822/MIME messages: headers (unfolding continuation lines, decoding RFC 2047 encoded words), walks the MIME tree for a displayable body (preferring <code>text/html</code> sanitised, else <code>text/plain</code>), and lists attachments. Sender authentication (SPF/DKIM/ DMARC) is surfaced from the <code>Authentication-Results</code> header.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.eml</code>/<code>.emlx</code> (Apple Mail, which prefixes a byte-count line and appends a plist trailer) or <code>.mbox</code> (concatenates many messages, each starting with a <code>From </code> separator line). Built in <code>email.js</code>.</p>
+<p><strong>How to use it.</strong> For an <code>.mbox</code> with multiple messages, click <strong>Show more messages</strong> to reveal additional ones.</p>
+<p><strong>Notes / limits.</strong> No network fetches and no scripts ever run - the HTML body is sanitised the same way the MHTML viewer sanitises saved web pages.</p>
+</section>
+<section class="docs-card">
+<h3 id="archive-inspection-zip-and-beyond">Archive inspection (ZIP and beyond)<a class="h-anchor" href="#archive-inspection-zip-and-beyond" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Inspects ZIP archives by reading the central directory (no full extraction needed for listing), with treemap/breakdown/tree views shared with the folder viewer. Also handles RAR/7z (via lazy libarchive WASM), and raw single-stream compression (gzip, XZ, LZ4, legacy <code>.Z</code>, LZMA) via dedicated decompressors.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.zip</code>/<code>.rar</code>/<code>.7z</code>/<code>.gz</code>/<code>.xz</code>/<code>.lz4</code>/<code>.Z</code>/ <code>.lzma</code> or other recognised archive extension. Built in <code>archive.js</code>, sharing <code>folder-archive-shared.js</code> for the treemap/breakdown/tree UI.</p>
+<p><strong>How to use it.</strong> <strong>Verify entry CRCs (N files)</strong> recomputes each entry's CRC-32 and compares it to the value stored in the archive (integrity check). For a single-file-compressed archive (e.g. a bare <code>.gz</code>), <strong>Analyse <code>&lt;inner file&gt;</code></strong> opens the decompressed inner file in the full analyser. The shared <strong>Filter by type</strong> control (from <code>folder-archive-shared.js</code>) opens a popup of per-extension chips to narrow the treemap.</p>
+<p><strong>Notes / limits.</strong> ZIP parsing (<code>zip.js</code>) prefers a central-directory read with ranged fetches per entry (order-independent, never loads the whole file), falling back to a sequential local-header walk for truncated/ headerless archives - see <a href="/docs/renderers"><code>renderers.md</code></a>.</p>
+</section>
+<section class="docs-card">
+<h3 id="folder-overview">Folder overview<a class="h-anchor" href="#folder-overview" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Recursively walks a dropped folder (via <code>webkitGetAsEntry</code>) and renders a treemap + summary, sharing the same breakdown/view-toggle UI as the archive viewer.</p>
+<p><strong>How to reach it.</strong> Drop a folder onto the page. Built in <code>folder.js</code>.</p>
+<p><strong>How to use it.</strong> <strong>Copy paths (N formats)</strong> copies one sample file path per unrecognised format found in the folder, useful for reporting a gap; <strong>Show folder analysis</strong> reveals the full analysis panel; <strong>Check which files open (N)</strong> scans every file in the folder and flags any that can't actually be opened (a file only counts as "can't open" if its sole viewer path fails outright - unreadable bytes, a HEIC that won't convert, or a RAW with no usable preview or working decode; everything else - metadata, a hex dump, or a "browser can't preview this" banner - counts as openable).</p>
+<p><strong>Notes / limits.</strong> The openability scan has a 45-second timeout per file so one stuck file can't hang the whole scan.</p>
+</section>
+<section class="docs-card">
+<h3 id="treemap-visualisation">Treemap visualisation<a class="h-anchor" href="#treemap-visualisation" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> A nested, squarified treemap (WizTree-style): every file in every subfolder rendered at once, leaf rectangles sized by byte size and coloured by category, nested inside folder frames, canvas-based with hover tooltips.</p>
+<p><strong>How to reach it.</strong> Shared component powering both <code>folder.js</code>'s and <code>archive.js</code>'s size-breakdown views. Built in <code>treemap.js</code>.</p>
+<p><strong>How to use it.</strong> Click a tile to zoom into that folder, or open a file's action menu (<strong>Cancel</strong>/<strong>Copy</strong>/<strong>Analyse</strong>); the <strong>breadcrumb</strong> ("All files" / folder buttons) navigates back up the zoom stack; a tile representing many small files opens an aggregated popup list with a <strong>close (×)</strong> button, a <strong>filter-by-name</strong> search box, and a <strong>row click</strong> per file to analyse it directly.</p>
+</section>
+<section class="docs-card">
+<h3 id="comic-book-archive-viewer-cbz-cbr-cbt-cb7">Comic book archive viewer (CBZ/CBR/CBT/CB7)<a class="h-anchor" href="#comic-book-archive-viewer-cbz-cbr-cbt-cb7" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Mirrors the PDF viewer's UX: a metadata card, a page-thumbnail grid, and a click-to-open lightbox reader with prev/next (and arrow-key) navigation. Pages are image files inside the archive, extracted on demand so a 200-page comic doesn't build hundreds of object URLs up front.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.cbz</code> (a ZIP), <code>.cbt</code> (a TAR, walked by a minimal built-in reader), or <code>.cbr</code>/<code>.cb7</code> (via the lazy libarchive unrar/7z WASM loader). Built in <code>comic.js</code>.</p>
+<p><strong>How to use it.</strong> Click <strong>Read (N pages)</strong> to open the page reader/ lightbox starting from page 1.</p>
+</section>
+<section class="docs-card">
+<h3 id="midi-standard-midi-file">MIDI (Standard MIDI File)<a class="h-anchor" href="#midi-standard-midi-file" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> A hand-written SMF parser: header, tempo map, time/key signature, track names, General MIDI instruments (program changes), note counts, and duration.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.mid</code>/<code>.midi</code>. Built in <code>midi.js</code>.</p>
+<p><strong>Notes / limits.</strong> No playback - MIDI is a score, not sampled audio, and browsers can't decode it directly. No interactive controls, a readout only.</p>
+</section>
+<section class="docs-card">
+<h3 id="subtitle-files-srt-webvtt-ass-ssa-microdvd-subviewer">Subtitle files (SRT/WebVTT/ASS/SSA/MicroDVD/SubViewer)<a class="h-anchor" href="#subtitle-files-srt-webvtt-ass-ssa-microdvd-subviewer" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Parses cues into a timed list and reports counts, timing, and styling info.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.srt</code>/<code>.vtt</code>/<code>.ass</code>/<code>.ssa</code>/<code>.sub</code>. Built in <code>subtitles.js</code>.</p>
+<p><strong>Notes / limits.</strong> The <code>.sub</code> extension is overloaded - it carries text (MicroDVD frame-based or SubViewer time-based) as well as the unrelated binary VobSub bitmap subtitle format, so the module sniffs which one a given <code>.sub</code> actually is before parsing. No interactive controls, a readout only.</p>
+</section>
+<section class="docs-card">
+<h3 id="lrc-timed-lyrics">LRC timed lyrics<a class="h-anchor" href="#lrc-timed-lyrics" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Parses <code>.lrc</code> timed-lyric files: ID tags like <code>[ar:Artist]</code> and timestamped lines like <code>[00:12.34]text</code>, including multiple timestamps per line and enhanced word-level <code>&lt;00:12.34&gt;</code> tags.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.lrc</code>. Built in <code>lrc.js</code>.</p>
+<p><strong>Notes / limits.</strong> No interactive controls, a readout of metadata and timed lines.</p>
+</section>
+<section class="docs-card">
+<h3 id="visual-studio-solution-manifest-sln-slnx">Visual Studio solution manifest (.sln/.slnx)<a class="h-anchor" href="#visual-studio-solution-manifest-sln-slnx" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Parses the project list and build configurations out of a Visual Studio solution: classic <code>.sln</code> (a line-based text manifest - format-version line, <code># Visual Studio &lt;year&gt;</code> comment, one <code>Project(...) = "Name", "Path", "{GUID}"</code> line per project, and <code>Global</code>/<code>GlobalSection</code> blocks) or the newer XML <code>.slnx</code> (a terser <code>&lt;Solution&gt;</code> tree of <code>&lt;Project Path="..."&gt;</code>/<code>&lt;Folder&gt;</code>/<code>&lt;Configurations&gt;</code>), both resolved to the same readable summary. Well-known project-type GUIDs (and, for <code>.slnx</code>, project file extensions) are mapped to a friendly language/kind label (C#, C++, Python, Node.js, etc.).</p>
+<p><strong>How to reach it.</strong> Drop a <code>.sln</code>/<code>.slnx</code>. Built in <code>vssolution.js</code>.</p>
+<p><strong>Notes / limits.</strong> No interactive controls, a readout only. Common alongside Unity/MonoDevelop projects (<code>Assembly-CSharp</code>).</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/features/eda-nle"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">EDA and NLE</span></a><a class="docs-pn-next" href="/docs/features/cross-cutting"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Cross-cutting</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

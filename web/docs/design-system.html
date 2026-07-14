@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Design system - Analyser docs</title>
+  <meta name="description" content="The visual language behind Analyser's Swiss/International Typographic Style: theme tokens, the sharp-corners rule, shared component idioms, and the /test reference sheet. For anyone styling a new UI e">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/design-system">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Design system - Analyser docs">
+  <meta property="og:description" content="The visual language behind Analyser's Swiss/International Typographic Style: theme tokens, the sharp-corners rule, shared component idioms, and the /test reference sheet. For anyone styling a new UI e">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/design-system">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system" aria-current="page">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system" aria-current="page">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Design system</h1>
+<p class="docs-lede">The visual language behind Analyser's Swiss/International Typographic Style: theme tokens, the sharp-corners rule, shared component idioms, and the <code>/test</code> reference sheet. For anyone styling a new UI element - read this alongside the "Site aesthetics" section of the repo root <code>CLAUDE.md</code>, which is the authoritative source of the rules themselves; this doc maps them to where they live in <code>analyser.css</code>.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h2"><a href="#token-system">Token system</a></li><li class="toc-h2"><a href="#sharp-corners-rule">Sharp-corners rule</a></li><li class="toc-h2"><a href="#theme-variables-and-idioms">Theme variables and idioms</a></li><li class="toc-h2"><a href="#light-dark-theming-and-narrow-widths">Light/dark theming and narrow widths</a></li><li class="toc-h2"><a href="#the-test-reference-sheet">The /test reference sheet</a></li></ul></details>
+    <section class="docs-card">
+<h2 id="token-system">Token system<a class="h-anchor" href="#token-system" aria-label="Link to this section">#</a></h2>
+<p>All tokens are CSS custom properties on <code>:root</code> in <code>web/assets/css/analyser.css</code>:</p>
+<ul><li><strong>Colour</strong>: <code>--bg</code>, <code>--fg</code>, <code>--muted</code>, <code>--hairline</code>, <code>--rule</code>, <code>--surface</code>, <code>--accent</code> (<code>#e60023</code>, the red accent), <code>--accent-fg</code>, <code>--partial</code> (yellowish-orange, the "Partial" support-depth tag). Composite border shorthands <code>--bd-hairline</code> (<code>1px solid var(--hairline)</code>) and <code>--bd-rule</code> (over the slightly-stronger <code>--rule</code> colour) are the most-repeated literal in the file - both flip automatically with the theme since they resolve the underlying colour var.</li><li><strong>Always-dark media chrome</strong>: <code>--media-bg</code>, <code>--on-dark</code>, <code>--surface-on-dark</code>, <code>--hairline-on-dark</code>, <code>--hairline-strong</code>, <code>--border-on-dark-ctl</code>, <code>--muted-on-dark</code>, <code>--border-on-dark</code>, <code>--border-on-dark-strong</code>, plus <code>--white-a40</code>/<code>--white-a80</code> alpha tints. These live on always-dark surfaces (spectrogram, waveform, fullscreen overlays) and deliberately do <strong>not</strong> get a <code>[data-theme="dark"]</code> override, since they're already dark regardless of site theme.</li><li><strong>Type</strong>: <code>--font-sans</code> (Geist), <code>--font-mono</code> (Geist Mono), a fluid scale from <code>--t-micro</code> (10px) through <code>--t-mega</code> (<code>clamp(64px, 13vw, 200px)</code>).</li><li><strong>Rhythm/timing</strong>: <code>--gap</code>, <code>--pad-x</code>/<code>--pad-y</code> (fluid), <code>--lh-tight</code>/ <code>--lh-body</code>/<code>--lh-prose</code>, <code>--ls-caps</code>/<code>--ls-micro</code> (letter-spacing), and a <code>--dur-*</code> namespace (<code>--dur-fast</code> 0.12s through <code>--dur-slow</code> 0.3s) kept separate from the <code>--t-*</code> (type-size) namespace to avoid collision. <code>--radius: 0</code> is the sharp-corners token (see below).</li><li><strong>Elevation</strong>: <code>--shadow-color</code>/<code>--shadow-popover</code>.</li></ul>
+<p>Theme switching sets <code>data-theme="dark"</code> on <code>&lt;html&gt;</code> (bootstrapped before-first-paint by the inline script in each page's <code>HEAD:START</code>/ <code>HEAD:END</code> block - see <a href="/docs/architecture"><code>architecture.md</code></a> and the <code>shared-partials</code> skill) and overrides the light-mode colour tokens; component CSS should reference the tokens rather than hardcoded colours so it Just Works in both themes.</p>
+</section>
+<section class="docs-card">
+<h2 id="sharp-corners-rule">Sharp-corners rule<a class="h-anchor" href="#sharp-corners-rule" aria-label="Link to this section">#</a></h2>
+<p>CLAUDE.md states this as a hard rule: no rounded corners anywhere, <code>.anr-btn</code> sets <code>border-radius: 0</code> explicitly (<code>analyser.css:1210</code>), and new elements should follow suit. In the actual stylesheet this holds almost everywhere - buttons, controls, cards, chips - but a handful of specific, narrow exceptions exist beyond the documented "overlays on media canvases" case (view-cube 3D navigation edges/corners at <code>analyser.css:2003-2004</code>, colour-LUT swatch/frame previews, and a DaVinci Resolve colour-grade "node chip" pill at <code>analyser.css:2033</code>). These read as deliberate, localised choices for specific widget shapes (a cube, a colour swatch, a pill tag) rather than a departure from the rule for ordinary UI - when adding a new element, default to <code>border-radius: 0</code> per CLAUDE.md unless it's this same kind of special-purpose shape.</p>
+</section>
+<section class="docs-card">
+<h2 id="theme-variables-and-idioms">Theme variables and idioms<a class="h-anchor" href="#theme-variables-and-idioms" aria-label="Link to this section">#</a></h2>
+<ul><li><strong><code>.anr-btn</code></strong> (<code>analyser.css:1200</code>) - the standard button: <code>--bd-hairline</code> border, <code>--bg</code>/<code>--fg</code> colours, hover-inverts to <code>--fg</code> background. Used throughout renderers for every action button (record, live spectrogram, play/pause transports, download, export, ...).</li><li><strong><code>--bd-hairline</code>/<code>--bd-rule</code></strong> - the standard border treatment for cards, dividers and section rules.</li><li><strong><code>var(--muted)</code></strong> for secondary/help text, <strong><code>var(--font-mono)</code></strong> for numeric/code readouts, <strong><code>var(--t-small)</code></strong> for compact UI chrome (badges, hints).</li><li>Cards, tables, and readouts generally live inside <code>.anr-results</code> / <code>row()</code>/<code>rowHelp()</code>-built structures from <code>core/util.js</code>, styled once in <code>analyser.css</code> rather than per-renderer.</li></ul>
+</section>
+<section class="docs-card">
+<h2 id="light-dark-theming-and-narrow-widths">Light/dark theming and narrow widths<a class="h-anchor" href="#light-dark-theming-and-narrow-widths" aria-label="Link to this section">#</a></h2>
+<p>New UI should be checked in both themes and at narrow widths before it's considered done (per CLAUDE.md). Dark-theme overrides are scoped selectors like <code>:root[data-theme="dark"] &lt;selector&gt;</code> layered after the light-mode default, rather than a parallel dark stylesheet - so a new component typically only needs an override rule if it hardcodes a colour instead of using the token vars.</p>
+</section>
+<section class="docs-card">
+<h2 id="the-test-reference-sheet">The <code>/test</code> reference sheet<a class="h-anchor" href="#the-test-reference-sheet" aria-label="Link to this section">#</a></h2>
+<p>CLAUDE.md documents <code>web/test.html</code> (served at <code>/test</code>) as a deployed-but-unlisted (noindex, unlinked) style-guide page: every token, font, animation, button, control, chip, card, message, popup, loader and viewer overlay the site uses, with an in-page theme toggle. Its token and animation sections are meant to be generated from <code>analyser.css</code> by <code>tools/prerender-testpage.mjs</code> (run by <code>save.bat</code>, between <code>TOKENS:START</code>/ <code>TOKENS:END</code> markers - never hand-edited); the component demos are hand-authored static markup using the real classes, and CLAUDE.md's stated policy is to add/update a demo there whenever a shared UI element changes.</p>
+<p><strong>As of this writing, <code>web/test.html</code> does not exist in the working tree</strong> (confirmed: no file at that path) - so its current contents/coverage couldn't be verified from source for this doc. Per project memory, this page has been deliberately left untouched/out of scope for recent work (the user asked to "ignore the test page completely"), which likely explains the gap between CLAUDE.md's description and the file's absence. Treat CLAUDE.md's description of <code>/test</code> as the intended design, not a verified current state.</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/worker"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Worker</span></a><a class="docs-pn-next" href="/docs/features/images"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Images</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

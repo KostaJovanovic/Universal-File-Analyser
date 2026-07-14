@@ -34,7 +34,7 @@ sends the current frame to the full photo analyser (`renderPhoto` via
 photo sonify feature.
 
 **How to reach it.** Click **Sonify** on the current frame. Lazy-imports
-`sonify.js` - see `docs/features/images.md` for full control detail.
+`sonify.js` - see [`images.md`](images.md) for full control detail.
 
 ### Contact sheet
 

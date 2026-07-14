@@ -55,7 +55,7 @@ In brief: two "any file" dropzones (`#cmpDropA`/`#cmpDropB`), each wired by
 `wireCompareZone()` in `boot()` (`app.js:983`) to capture a `File` directly -
 **not** through the normal `handleFile` pipeline. Once both are set,
 `handleCompare()` (`app.js:1011`) runs; the actual merge logic lives in
-`renderers/compare.js` (see `docs/features/cross-cutting.md`). The page-level
+`renderers/compare.js` (see [`cross-cutting.md`](features/cross-cutting.md)). The page-level
 drag/drop overlay is suppressed here: `onComparePage()` (`app.js:1261`,
 detected via `document.getElementById('cmpDropA')`) makes the global
 `dragenter`/`dragover` handlers skip showing `#pageDrop`, so only the two
@@ -73,13 +73,13 @@ visitors counts, a per-extension breakdown table (`.stats-table` /
 (`#statsScoresList`). All populated by `setupStatsPage()`
 (`web/assets/js/core/stats-page.js`, imported and called near the end of
 `boot()` - `app.js:1668`), which reads the Worker's `/api/stats` endpoint.
-See `docs/worker.md`.
+See [`worker.md`](worker.md).
 
 ## patch.html (`/patch`)
 
 The public changelog: one `.patch-entry` per commit (auto-generated content,
 not hand-authored per this doc's scope - see `save.bat`'s version-bump flow
-in `docs/tooling.md`). Also carries a "tl;dr" release-group digest toggle,
+in [`tooling.md`](tooling.md)). Also carries a "tl;dr" release-group digest toggle,
 wired by `setupPatchTldr()` (`web/assets/js/core/patch-tldr.js`, called
 unconditionally in `boot()` at `app.js:1739` - a no-op on every other page).
 
@@ -87,7 +87,7 @@ unconditionally in `boot()` at `app.js:1739` - a no-op on every other page).
 
 Three sections: "Your files never leave your device" (the core promise),
 "What the two counters do" (explaining the visit/analysed-file stats - see
-`docs/worker.md`), and "The small print, kept small" (the actual policy
+[`worker.md`](worker.md)), and "The small print, kept small" (the actual policy
 text). Static content page; no special JS wiring beyond the shared
 boot/footer.
 

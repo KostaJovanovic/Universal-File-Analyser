@@ -52,9 +52,9 @@ asset):
 - `handleStats()` only ever returns **supported** extensions individually
   (top 500 by count); every unsupported extension is collapsed server-side
   into a single `(unsupported)` bucket before the response is built. This
-  matters because an unsupported extension is raw, attacker-controlled input
-  - a hostile client could otherwise get an arbitrary string (e.g. a slur
-  used as a fake extension) onto the public `/stats` page. The individual
+  matters because an unsupported extension is raw, attacker-controlled
+  input - a hostile client could otherwise get an arbitrary string (e.g. a
+  slur used as a fake extension) onto the public `/stats` page. The individual
   counts are still recorded privately in `ext_stats` for the operator to
   inspect via `wrangler d1 execute`.
 - `cleanExt()` bounds what can even be written as a primary key: lowercase
@@ -67,8 +67,8 @@ asset):
   hashed IP) throttles both `/api/analysed` and `/api/score` so a scripted
   loop can't inflate the counters or flood the leaderboard; a throttled
   request still returns 200 (`{throttled: true}`) rather than erroring.
-- Any internal failure returns a generic `{error: 'stats unavailable'}` (500)
-  - implementation details are never leaked to the client.
+- Any internal failure returns a generic `{error: 'stats unavailable'}`
+  (500) - implementation details are never leaked to the client.
 
 ## How `history.js` pings it
 
@@ -86,10 +86,10 @@ the visitor's own device and is never sent anywhere.
 ## How `stats.html` consumes it
 
 `web/assets/js/core/stats-page.js`'s `setupStatsPage()` (called from
-`boot()` - see `docs/pages.md`) fetches `/api/stats` and renders the total
+`boot()` - see [`pages.md`](pages.md)) fetches `/api/stats` and renders the total
 files/visitors counters, the per-extension breakdown table (with a "Show
 all" toggle past the visible cap), the trend chart from the `daily` series,
 and the leaderboard from `scores`. Locally (`server.bat`), there is no
 Worker or D1 - `serve.py` mocks `/api/stats` with a deterministic seeded
 45-day series and canned extension/score data so the page still renders
-during development (see `docs/tooling.md`).
+during development (see [`tooling.md`](tooling.md)).

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Architecture - Analyser docs</title>
+  <meta name="description" content="Big-picture overview of how Analyser is put together: a static, zero-backend site that classifies and analyses files entirely in the browser. This doc is for engineers orienting themselves in the code">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/architecture">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Architecture - Analyser docs">
+  <meta property="og:description" content="Big-picture overview of how Analyser is put together: a static, zero-backend site that classifies and analyses files entirely in the browser. This doc is for engineers orienting themselves in the code">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/architecture">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture" aria-current="page">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture" aria-current="page">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Architecture</h1>
+<p class="docs-lede">Big-picture overview of how Analyser is put together: a static, zero-backend site that classifies and analyses files entirely in the browser. This doc is for engineers orienting themselves in the codebase before diving into the pipeline, renderer, or page docs.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h2"><a href="#zero-backend-model">Zero-backend model</a></li><li class="toc-h2"><a href="#page-shell">Page shell</a></li><li class="toc-h2"><a href="#classification-pipeline-overview">Classification pipeline overview</a></li><li class="toc-h2"><a href="#lazy-loading-strategy">Lazy-loading strategy</a></li><li class="toc-h2"><a href="#pwa-service-worker">PWA / service worker</a></li><li class="toc-h2"><a href="#spa-navigation">SPA navigation</a></li><li class="toc-h2"><a href="#cloudflare-deploy">Cloudflare deploy</a></li></ul></details>
+    <section class="docs-card">
+<h2 id="zero-backend-model">Zero-backend model<a class="h-anchor" href="#zero-backend-model" aria-label="Link to this section">#</a></h2>
+<p>Analyser has no application server. It is plain HTML/CSS/ES-module JavaScript with no framework, no build step and no <code>node_modules</code> (see the repo root <code>CLAUDE.md</code>). Every file a user drops is read locally through the browser's File API and analysed with on-device code and lazy-loaded WebAssembly - nothing is uploaded. The only server-side code in the whole project is the Cloudflare Worker described in <a href="/docs/worker"><code>worker.md</code></a>, which powers an anonymous analysed-file counter and nothing else; it never sees file contents.</p>
+</section>
+<section class="docs-card">
+<h2 id="page-shell">Page shell<a class="h-anchor" href="#page-shell" aria-label="Link to this section">#</a></h2>
+<p>Each top-level page (<code>web/index.html</code>, <code>about.html</code>, <code>compare.html</code>, etc.) is a static HTML document sharing the same head/header/footer structure (see <a href="/docs/pages"><code>pages.md</code></a> and the <code>shared-partials</code> skill). <code>web/assets/js/core/app.js</code> is the entry point loaded on every page. Its <code>boot()</code> function (<code>web/assets/js/core/app.js:330</code>) wires up the drop zone, result containers (<code>photoResults</code>, <code>audioResults</code>, <code>videoResults</code>, <code>unknownResults</code>), the boot splash fade-out, and page-level drag/drop handling. One-time global listeners (window drag/drop, letter-hover effects) are guarded by <code>boot._once</code> (<code>web/assets/js/core/app.js:1254</code>) so they aren't re-registered on every SPA navigation, while per-navigation setup (scroll-spy, dark mode, search) runs every time <code>boot()</code> re-executes.</p>
+</section>
+<section class="docs-card">
+<h2 id="classification-pipeline-overview">Classification pipeline overview<a class="h-anchor" href="#classification-pipeline-overview" aria-label="Link to this section">#</a></h2>
+<p>Dropping a file runs it through <code>resolveKind()</code> / <code>handleFile</code> in <code>app.js</code>, which combines extension/MIME classification (<code>classify.js</code>) with content-based sniffing (<code>file-sniff.js</code>) to pick a "kind", then looks that kind up in the <code>ROUTES</code> table to find the renderer that should render it. See <a href="/docs/pipeline"><code>pipeline.md</code></a> for the full walkthrough.</p>
+</section>
+<section class="docs-card">
+<h2 id="lazy-loading-strategy">Lazy-loading strategy<a class="h-anchor" href="#lazy-loading-strategy" aria-label="Link to this section">#</a></h2>
+<p>Renderers are not statically imported for the most part. <code>app.js</code> defines a <code>lazy(path, exportName)</code> helper (<code>web/assets/js/core/app.js:207</code>):</p>
+<pre><code class="language-js">const lazy = (p, name) =&gt; (...args) =&gt; import(p).then((m) =&gt; m[name](...args));</code></pre>
+<p>Every entry in <code>ROUTES</code> wraps its renderer's exported function in <code>lazy(...)</code>, so the renderer module (and everything it imports - WASM loaders, vendored libraries) is only fetched the first time a file of that kind is analysed. The three heaviest domains - photo, audio, video - additionally have their dropzone initialisation code (<code>initPhoto</code>/<code>initAudio</code>/<code>initVideo</code>) pulled in via <code>import()</code> inside <code>boot()</code> (<code>web/assets/js/core/app.js:1060-1076</code>) rather than imported at module load, keeping them out of the page's critical module graph entirely until first use. Once fetched, a module is served from the browser cache (or the service worker's precache) on subsequent uses, including offline.</p>
+</section>
+<section class="docs-card">
+<h2 id="pwa-service-worker">PWA / service worker<a class="h-anchor" href="#pwa-service-worker" aria-label="Link to this section">#</a></h2>
+<p><code>web/sw.js</code> implements a cache-first service worker. <code>SHELL</code> is a large, hand-maintained array of every JS module, CSS file and top-level page that makes up the "app shell" - on install it is precached into a version-epoched cache (<code>analyser-v&lt;COMMIT_COUNT&gt;</code>). Requests are served from that cache first; only a miss touches the network. <code>activate</code> deletes any cache whose name isn't in <code>KEEP_CACHES</code> (the current <code>VERSION</code>, plus the persistent <code>analyser-offline</code> and <code>analyser-mdx</code> caches used by the offline-tiers and vocal-separation features), so old versioned shells are cleaned up on each deploy without disturbing user-downloaded offline content. Localhost/LAN hosts (<code>server.bat</code>) are detected via <code>DEV</code> and skip caching entirely so edits show up on a single refresh. Full detail in <a href="/docs/pwa-offline"><code>pwa-offline.md</code></a>.</p>
+</section>
+<section class="docs-card">
+<h2 id="spa-navigation">SPA navigation<a class="h-anchor" href="#spa-navigation" aria-label="Link to this section">#</a></h2>
+<p><code>web/assets/js/core/navigate.js</code> intercepts same-origin link clicks and <code>popstate</code> and swaps the page using the View Transitions API (<code>document.startViewTransition</code>) instead of a full reload: it fetches the target page's HTML, swaps the <code>.site-mark</code>, <code>.site-nav</code>, <code>.site-main</code> and <code>.site-footer</code> nodes, updates <code>history</code>, and fires an <code>anr:navigate</code> event that <code>app.js</code> listens for to re-run <code>boot()</code>. If the browser has no View Transitions API, the whole module is a no-op and links fall back to normal browser navigation. A live in-progress analysis on the home page is preserved across a "leave and come back" navigation: <code>swap()</code> stashes the current <code>.site-main</code> on <code>window._anrHomeMain</code> when leaving <code>/</code> with an <code>anr-has-file</code> body class, and reinserts it verbatim (DOM, listeners, media position) if the user navigates back home, rather than re-parsing an empty one. Media elements and Web Audio players are explicitly stopped before a page swap so audio doesn't keep playing on a detached node.</p>
+</section>
+<section class="docs-card">
+<h2 id="cloudflare-deploy">Cloudflare deploy<a class="h-anchor" href="#cloudflare-deploy" aria-label="Link to this section">#</a></h2>
+<p><code>wrangler.jsonc</code> configures a static-asset deploy: <code>assets.directory</code> is <code>web</code>, <code>not_found_handling</code> is <code>single-page-application</code> (any unmatched path falls back to serving <code>index.html</code>), and <code>html_handling</code> defaults to <code>auto-trailing-slash</code> (clean URLs are canonical - <code>/about</code> serves <code>about.html</code>, and <code>/about.html</code> 308-redirects to <code>/about</code>). The config also declares the Worker (<code>worker/index.js</code>) as <code>main</code>, plus a D1 database binding (<code>DB</code>) and a rate-limit binding (<code>ANALYSED_LIMIT</code>, 15 requests/60s per hashed IP) that back the visitor/analysed-file counters - the only non-static part of the deploy. Every push to <code>main</code> ships (see <a href="/docs/tooling"><code>tooling.md</code></a> for the commit/deploy flow via <code>save.bat</code>).</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/faq"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">FAQ</span></a><a class="docs-pn-next" href="/docs/pipeline"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Pipeline</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

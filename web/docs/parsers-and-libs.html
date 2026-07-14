@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parsers and shared libs - Analyser docs</title>
+  <meta name="description" content="How the ~200-format proprietary-file identification is split into lazy per-domain parser chunks, and the shared binary/WASM loader helpers those chunks (and renderers generally) build on. For engineer">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/parsers-and-libs">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Parsers and shared libs - Analyser docs">
+  <meta property="og:description" content="How the ~200-format proprietary-file identification is split into lazy per-domain parser chunks, and the shared binary/WASM loader helpers those chunks (and renderers generally) build on. For engineer">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/parsers-and-libs">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs" aria-current="page">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs" aria-current="page">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Parsers and shared libs</h1>
+<p class="docs-lede">How the ~200-format proprietary-file identification is split into lazy per-domain parser chunks, and the shared binary/WASM loader helpers those chunks (and renderers generally) build on. For engineers adding a new identification-only format or tracing a WASM dependency.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h2"><a href="#lazy-parser-chunk-dispatch">Lazy parser chunk dispatch</a></li><li class="toc-h2"><a href="#parser-chunks-web-assets-js-parsers">Parser chunks (web/assets/js/parsers/)</a></li><li class="toc-h2"><a href="#parser-util-js">parser-util.js</a></li><li class="toc-h2"><a href="#shared-lib-loader-helpers-web-assets-js-lib">Shared lib/loader helpers (web/assets/js/lib/)</a></li><li class="toc-h2"><a href="#vendored-wasm-third-party-libs-web-assets-vendor">Vendored WASM/third-party libs (web/assets/vendor/)</a></li></ul></details>
+    <section class="docs-card">
+<h2 id="lazy-parser-chunk-dispatch">Lazy parser chunk dispatch<a class="h-anchor" href="#lazy-parser-chunk-dispatch" aria-label="Link to this section">#</a></h2>
+<p>Every proprietary-format entry in <code>web/assets/js/renderers/proprietary-formats.js</code> (the <code>FORMATS</code> table) may declare a <code>chunk</code> name. When <code>renderProprietary()</code> (<code>web/assets/js/renderers/proprietary.js:3944</code>) opens a file whose format has one, it dynamically imports <code>../parsers/parsers-&lt;chunk&gt;.js</code> and calls that module's <code>PARSERS[ext]</code> function (<code>proprietary.js:3981</code>) - so only the metadata-parsing code for the domain actually being opened is fetched, not all ~200 formats' worth of parsers up front.</p>
+<p>Every chunk follows the same contract, documented in <code>web/assets/js/parsers/parser-util.js</code>:</p>
+<pre><code class="language-js">ParseFn = (ctx: { head: Uint8Array, file: File, ext: string })
+            =&gt; Rows | null | Promise&lt;Rows | null&gt;</code></pre>
+<p><code>Rows</code> is a plain <code>{ label: value }</code> object rendered as a readout, optionally carrying <code>_</code>-prefixed extras: <code>_sections: [{ title, node, open? }]</code> for collapsible blocks, <code>_previewNode</code> for an inline preview (a decoded <code>&lt;canvas&gt;</code>, a vCard photo, ...), <code>_app</code>, <code>_help</code>, <code>_fileList</code>, <code>_readableText</code>, <code>_font</code>. Returning <code>null</code>/falsy declines and falls through to the generic identification card. <code>parser-util.js</code>'s <code>safe()</code> wraps a parser so it can never throw into the caller.</p>
+</section>
+<section class="docs-card">
+<h2 id="parser-chunks-web-assets-js-parsers">Parser chunks (<code>web/assets/js/parsers/</code>)<a class="h-anchor" href="#parser-chunks-web-assets-js-parsers" aria-label="Link to this section">#</a></h2>
+<p>16 files - 15 per-domain <code>parsers-&lt;domain&gt;.js</code> chunks plus the shared <code>parser-util.js</code> - each dependency-free unless noted:</p>
+<div class="docs-table-wrap"><table><thead><tr><th>Chunk</th><th>Domain</th></tr></thead><tbody><tr><td><code>parsers-archive.js</code></td><td>Archives, compression, packages, installers (TAR/GZIP/cpio/ar/deb/cab/rpm, raw compressors)</td></tr><tr><td><code>parsers-audio.js</code></td><td>Lossless/hi-res audio, containers, speech, instruments, trackers, chiptunes, Audacity projects</td></tr><tr><td><code>parsers-dev.js</code></td><td>Developer / data / serialization formats</td></tr><tr><td><code>parsers-disk.js</code></td><td>Disk images, filesystems, firmware, virtualisation (VM descriptors, cue sheets, MCU images)</td></tr><tr><td><code>parsers-docs.js</code></td><td>Documents, e-books, publishing (comic-book/OPC/ODF-flat/web-archive containers)</td></tr><tr><td><code>parsers-email.js</code></td><td>Email/calendar/contacts/PIM (MIME/eml, mbox, iCalendar, vCard)</td></tr><tr><td><code>parsers-gaming.js</code></td><td>Gaming / emulation / console / game assets</td></tr><tr><td><code>parsers-geodata.js</code></td><td>Geospatial/GIS/remote-sensing headers and metadata only (the interactive map lives in <code>geo.js</code>, not here)</td></tr><tr><td><code>parsers-image.js</code></td><td>Additional still-image formats not covered by <code>photo.js</code></td></tr><tr><td><code>parsers-osmisc.js</code></td><td>OS-specific / system / misc / obscure formats</td></tr><tr><td><code>parsers-raw.js</code></td><td>Camera-RAW edit sidecars (Apple <code>.aae</code>, etc.) - the RAW images themselves go through <code>photo.js</code></td></tr><tr><td><code>parsers-sci.js</code></td><td>Science / medical / engineering / simulation formats</td></tr><tr><td><code>parsers-security.js</code></td><td>Security / crypto / keys / certs / auth / forensics (PEM/CMS by hand, SHA-256 via <code>crypto.subtle</code>, p12/kdbx/evtx/hive/dmp/e01/etl)</td></tr><tr><td><code>parsers-threed.js</code></td><td>3D/CAD/mesh/scene/point-cloud <strong>header/metadata only</strong> - no WebGL viewer (that's <code>model3d.js</code>/<code>stl.js</code>)</td></tr><tr><td><code>parsers-video.js</code></td><td>Video/streaming containers and manifests (HLS m3u8/m3u, DASH mpd, Smooth Streaming ism/ismc)</td></tr><tr><td><code>parser-util.js</code></td><td>Shared parser contract + <code>safe()</code> wrapper (not itself a domain chunk)</td></tr></tbody></table></div>
+</section>
+<section class="docs-card">
+<h2 id="parser-util-js"><code>parser-util.js</code><a class="h-anchor" href="#parser-util-js" aria-label="Link to this section">#</a></h2>
+<p>Defines the <code>ParseFn</code> contract above and <code>safe(fn)</code>, which every chunk uses to guarantee a parser failure degrades to <code>null</code> (falls back to the generic identification card) instead of throwing into <code>renderProprietary()</code>.</p>
+</section>
+<section class="docs-card">
+<h2 id="shared-lib-loader-helpers-web-assets-js-lib">Shared lib/loader helpers (<code>web/assets/js/lib/</code>)<a class="h-anchor" href="#shared-lib-loader-helpers-web-assets-js-lib" aria-label="Link to this section">#</a></h2>
+<p>17 files. Split between pure-JS format decoders and lazy WASM/CDN loaders - loaders have no top-level side effects, so the heavy dependency is only fetched the first time a matching file is actually opened, then cached (including by the service worker for offline use):</p>
+<div class="docs-table-wrap"><table><thead><tr><th>File</th><th>Role</th></tr></thead><tbody><tr><td><code>cfbf.js</code></td><td>Shared OLE2/Compound File Binary Format reader - the container behind Outlook <code>.msg</code>, pre-2007 Office, <code>.msi</code>, <code>Thumbs.db</code>, and other OLE structured-storage files; used by <code>altium.js</code>, <code>legacy-office.js</code>, <code>solidworks.js</code></td></tr><tr><td><code>plist.js</code></td><td>Apple Property List parser (XML via <code>DOMParser</code>, binary <code>bplist00</code> via a compact object-table walker) - used across webloc, mobileconfig, provisioning profiles, sprite atlases, game saves</td></tr><tr><td><code>sqlite.js</code></td><td>Lazy loader for vendored <strong>sql.js</strong> (SQLite compiled to WASM) - used for GeoPackage, MBTiles, Audacity <code>.aup3</code>, and other SQLite-backed formats</td></tr><tr><td><code>nrbf.js</code></td><td>Decodes the [MS-NRBF] .NET Binary Formatter record stream (reconstructs the .NET object graph)</td></tr><tr><td><code>legacy-decompress.js</code></td><td>Small pure-JS decoders for bare (non-tar) legacy streams libarchive can't open alone: <code>unlz4()</code> (LZ4 frame format) and <code>unlzw()</code> (Unix <code>compress</code>/.Z)</td></tr><tr><td><code>libarchive-loader.js</code></td><td>Lazy loader for vendored <strong>libarchive.js</strong> (WASM extractor, worker-based) - powers ZIP/RAR/7z/etc. extraction in <code>archive.js</code>, <code>comic.js</code>, and others</td></tr><tr><td><code>xz-loader.js</code></td><td>Lazy loader for vendored <strong>xzwasm</strong> (LZMA2 <code>.xz</code> decompression via a <code>ReadableStream</code> transform)</td></tr><tr><td><code>lzma-loader.js</code></td><td>Lazy loader for vendored <strong>js-lzma</strong> decode-only core - the legacy single-stream "LZMA alone" <code>.lzma</code> container (distinct from <code>.xz</code>)</td></tr><tr><td><code>openjpeg-loader.js</code></td><td>Lazy loader for vendored <strong>@cornerstonejs/codec-openjpeg</strong> (JPEG 2000 decode, ~360KB WASM)</td></tr><tr><td><code>ghostscript-loader.js</code></td><td>Lazy loader for vendored <strong>Ghostscript WASM</strong> (~15MB) - rasterises EPS/PostScript to a PNG preview; part of the offline "Complete" tier only</td></tr><tr><td><code>occt-loader.js</code></td><td>Lazy loader for <strong>OpenCASCADE</strong> (<code>occt-import-js</code>) fetched from a CDN - tessellates STEP/IGES B-rep CAD geometry into triangle meshes for the WebGL viewer</td></tr><tr><td><code>mdx-model.js</code></td><td>MDX-Net vocal-separation model + ONNX Runtime configuration (Kim Vocal 2 / UVR MDX-Net); single source of truth for network files the offline "Complete" tier must cache</td></tr><tr><td><code>mdx-stft.js</code></td><td>Parameterised STFT/ISTFT core for MDX-Net - pure math, no DOM, Node-testable; handles non-power-of-two FFT sizes (6144/7680) via a mixed-radix split</td></tr><tr><td><code>mdx-separate.js</code></td><td>MDX-Net separation pipeline (pure DSP, model call injected) - mirrors the reference UVR/python-audio-separator "demix" algorithm</td></tr><tr><td><code>mdx-client.js</code></td><td>Main-thread client for the MDX-Net worker - resamples audio to 44.1kHz, relays progress, returns vocal/instrumental stems</td></tr><tr><td><code>mdx-worker.js</code></td><td>The MDX-Net separation Web Worker - loads onnxruntime-web (WASM, single-threaded, no cross-origin isolation), downloads the pinned model, runs the pipeline off the main thread</td></tr><tr><td><code>table-stats.js</code></td><td>Pure, DOM-free table-statistics helpers (column typing, numeric description, grouping) shared by <code>csv.js</code> and <code>tablekit.js</code>; parses ambiguous D/M dates day-first per the site's European/British convention</td></tr></tbody></table></div>
+<p>The MDX-Net vocal-separation subsystem (<code>mdx-*.js</code>) is what powers <code>audio.js</code>'s isolate panel and <code>spectrogram.js</code>'s vocal/instrumental blend slider - see <a href="/docs/features/audio"><code>audio.md</code></a>.</p>
+</section>
+<section class="docs-card">
+<h2 id="vendored-wasm-third-party-libs-web-assets-vendor">Vendored WASM/third-party libs (<code>web/assets/vendor/</code>)<a class="h-anchor" href="#vendored-wasm-third-party-libs-web-assets-vendor" aria-label="Link to this section">#</a></h2>
+<p>Referenced by name throughout the loaders above and the renderer catalog (<a href="/docs/renderers"><code>renderers.md</code></a>): <strong>FFmpeg</strong> (video remux/frame extraction/audio decode), <strong>ImageMagick</strong> (RAW conversion), <strong>pdf.js</strong> and <strong>Ghostscript</strong> (PDF/PostScript), <strong>Tesseract</strong> (OCR), <strong>OpenCASCADE</strong> (STEP/IGES tessellation), <strong>sql.js</strong> (SQLite), <strong>libarchive</strong> and <strong>xz/lzma</strong> (archives), <strong>OpenJPEG</strong> (JPEG 2000), <strong>exifr</strong>, <strong>heic2any</strong>, <strong>jsQR</strong>, <strong>Leaflet</strong>, <strong>fflate</strong>, <strong>lottie-web</strong>, <strong>opentype.js</strong>, <strong>libredwg-web</strong>, <strong>DjVu.js</strong>, <strong>mdb-reader</strong>, <strong>foliate-js</strong>, <strong>SheetJS</strong>. Served locally (not from a CDN, with a couple of documented CDN-fetched exceptions like <code>occt-loader.js</code>) so the app stays offline-capable once cached. See the repo root <code>README.md</code>'s "Under the hood" section for the full list.</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/renderers"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Renderers</span></a><a class="docs-pn-next" href="/docs/pages"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Pages</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

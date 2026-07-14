@@ -173,12 +173,12 @@ cross-checked against ExifTool's `Sony.pm Process_rtmd`) to extract and
 plot these traces.
 
 **How to reach it.** Automatic for a Sony video with an `rtmd` track (see
-also `docs/features/video.md`, which the gyro card is embedded within).
+also [`video.md`](video.md), which the gyro card is embedded within).
 Built in `sony-rtmd.js`.
 
 **How to use it.** **Export CSV** exports the gyro/accelerometer metadata;
 **Export Gyroflow (.gcsv)** exports in Gyroflow's stabiliser-ready
-interchange format (see `gcsv.js` / `docs/features/data-archive.md`, which
+interchange format (see `gcsv.js` / [`data-archive.md`](data-archive.md), which
 reads that same format back).
 
 **Notes / limits.** Reads via byte-range slices only - never buffers the

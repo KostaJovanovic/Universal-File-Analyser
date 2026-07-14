@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documents - Analyser docs</title>
+  <meta name="description" content="PDF, paginated document rendering, DjVu scans, Office formats (modern OOXML and legacy binary), OpenDocument, iWork, e-books, notebooks, Access databases, and Markdown. Source: pdf.js, paged.js, djvu.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/features/documents">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Documents - Analyser docs">
+  <meta property="og:description" content="PDF, paginated document rendering, DjVu scans, Office formats (modern OOXML and legacy binary), OpenDocument, iWork, e-books, notebooks, Access databases, and Markdown. Source: pdf.js, paged.js, djvu.">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/features/documents">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents" aria-current="page">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents" aria-current="page">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Documents</h1>
+<p class="docs-lede">PDF, paginated document rendering, DjVu scans, Office formats (modern OOXML and legacy binary), OpenDocument, iWork, e-books, notebooks, Access databases, and Markdown. Source: <code>pdf.js</code>, <code>paged.js</code>, <code>djvu.js</code>, <code>docx.js</code>, <code>xlsx.js</code>, <code>xlsb.js</code>, <code>pptx.js</code>, <code>odf.js</code>, <code>legacy-office.js</code>, <code>textdoc.js</code>, <code>iwork.js</code>, <code>epub.js</code>, <code>mobi.js</code>, <code>mdb.js</code>, <code>notebook.js</code>, <code>markdown.js</code>.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h3"><a href="#pdf-viewer">PDF viewer</a></li><li class="toc-h3"><a href="#shared-page-preview-presentation-word-odf-spreadsheet-presentation-text">Shared page-preview presentation (Word/ODF/spreadsheet/presentation text)</a></li><li class="toc-h3"><a href="#djvu-scanned-documents">DjVu scanned documents</a></li><li class="toc-h3"><a href="#docx-word">DOCX (Word)</a></li><li class="toc-h3"><a href="#xlsx-excel-ooxml">XLSX (Excel, OOXML)</a></li><li class="toc-h3"><a href="#xlsb-excel-binary-workbook">XLSB (Excel Binary Workbook)</a></li><li class="toc-h3"><a href="#pptx-powerpoint">PPTX (PowerPoint)</a></li><li class="toc-h3"><a href="#odf-opendocument-odt-ods-odp">ODF (OpenDocument: ODT/ODS/ODP)</a></li><li class="toc-h3"><a href="#legacy-binary-office-doc-xls-ppt-97-2003">Legacy binary Office (DOC/XLS/PPT, 97-2003)</a></li><li class="toc-h3"><a href="#text-and-lightweight-markup-documents">Text and lightweight-markup documents</a></li><li class="toc-h3"><a href="#apple-iwork-pages-numbers-keynote">Apple iWork (Pages / Numbers / Keynote)</a></li><li class="toc-h3"><a href="#epub-reader">EPUB reader</a></li><li class="toc-h3"><a href="#kindle-mobipocket-e-books-mobi-azw-azw3">Kindle / Mobipocket e-books (MOBI/AZW/AZW3)</a></li><li class="toc-h3"><a href="#microsoft-access-databases-mdb-accdb">Microsoft Access databases (MDB/ACCDB)</a></li><li class="toc-h3"><a href="#jupyter-notebooks">Jupyter notebooks</a></li><li class="toc-h3"><a href="#markdown">Markdown</a></li></ul></details>
+    <section class="docs-card">
+<h3 id="pdf-viewer">PDF viewer<a class="h-anchor" href="#pdf-viewer" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> The most feature-complete document viewer on the site: metadata, forensic document-structure analysis, full text extraction, page-thumbnail previews with a full-page lightbox, embedded raster image extraction, and OCR - all via the vendored <strong>pdf.js</strong>.</p>
+<p><strong>How to reach it.</strong> Drop any <code>.pdf</code>. Built in <code>web/assets/js/renderers/pdf.js</code>.</p>
+<p><strong>How to use it.</strong></p>
+<ul><li><strong>Info card</strong>: application/name/size/page count, Title/Author/Creator/ Producer, creation/modification dates, PDF spec version, page 1 dimensions (points, inches, mm), plus a timestamp-anomaly check (future dates, modified-before-created, vs. the file's own last-modified time).</li><li><strong>Document structure &amp; security card</strong> (shown only when something is found): revision count (each save appends a <code>%%EOF</code> marker - more than one means incremental edits are preserved inside the file), linearisation ("fast web view"), trailing data after the final <code>%%EOF</code> (⚠ a polyglot/tamper tell), outline/table of contents (expandable), embedded file attachments, <strong>embedded JavaScript</strong> with a heuristic risk scan (flags network/file-access/launch/obfuscation/crypto patterns per script, and separately flags auto-run triggers like "Document open" as the riskiest kind), encryption/permissions (allowed vs. restricted actions: print/copy/modify), Keywords/Subject/PDF-A conformance from XMP, and a fonts list (embedded vs. not-embedded, a portability/authenticity tell).</li><li><strong>Text content</strong>: extracted per page with reconstructed line breaks; <strong>Copy</strong> per page; <strong>Show next 3 pages</strong>/<strong>Show all</strong> reveal more. If a page has no embedded text (image-only/scanned), a note points at OCR instead.</li><li><strong>Page previews</strong>: thumbnails for the first 4 pages (<strong>Show next 3 pages</strong>/<strong>Show all</strong> for the rest). Click a thumbnail to open a full-page lightbox with <strong>Prev</strong>/<strong>Next</strong>, <strong>Zoom</strong> (double-click/double-tap, or the toolbar button), and <strong>High-res</strong> (re-renders the current page at higher resolution for sharper zoom, at a memory/speed cost) - plus a selectable text layer overlaid on the canvas. Per-thumbnail hover actions (always visible on touch): <strong>Analyse</strong> (renders the page to an image and sends it through the full photo pipeline), <strong>OCR</strong> (Tesseract on that one page, shown in a popup overlay), <strong>PNG</strong> (downloads the page as an image).</li><li><strong>Embedded images</strong>: click <strong>Extract embedded images</strong> to pull the original raster images (logos, photos, scans) out of the PDF's content streams - distinct from the rendered page previews. Each found image gets a download link and an <strong>Analyse</strong> button (up to 300 images).</li><li><strong>OCR - Scan pages as images</strong> (collapsible): click <strong>Scan all pages</strong> to run Tesseract across every page (language picker first), with a progress bar; <strong>Show more</strong>/<strong>Show all</strong> reveal more pages of the transcript.</li></ul>
+<p><strong>Notes / limits.</strong> pdf.js is lazy-loaded. OCR and per-page rendering are CPU-heavy for large documents; the UI stages results in batches so nothing blocks on a full-document scan by default.</p>
+</section>
+<section class="docs-card">
+<h3 id="shared-page-preview-presentation-word-odf-spreadsheet-presentation-text">Shared page-preview presentation (Word/ODF/spreadsheet/presentation text)<a class="h-anchor" href="#shared-page-preview-presentation-word-odf-spreadsheet-presentation-text" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Formats that have no real page geometry of their own (Word/ODF flowing text, spreadsheets, presentations) get the same "page sheet" experience as PDF: <code>paginateFlow()</code> lays flowing content onto A4-proportioned sheets (breaking to a new sheet when one fills, never splitting a block mid-page), and <code>pagedPreviewCard()</code> builds the thumbnail grid + lightbox reader.</p>
+<p><strong>How to reach it.</strong> Not used directly - it's the shared rendering substrate for <code>docx.js</code>, <code>odf.js</code>, <code>legacy-office.js</code>, and <code>textdoc.js</code> (callers with genuine natural pages, like one-slide-per-page presentations, build their own page nodes and skip straight to <code>pagedPreviewCard</code>). Built in <code>paged.js</code>.</p>
+<p><strong>How to use it.</strong> Same controls as PDF's thumbnail/lightbox pattern: <strong>Show next N pages</strong>/<strong>Show all</strong>, per-page <strong>Copy</strong>, and <strong>Copy all text</strong>.</p>
+</section>
+<section class="docs-card">
+<h3 id="djvu-scanned-documents">DjVu scanned documents<a class="h-anchor" href="#djvu-scanned-documents" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Decodes and renders DjVu pages (a scanned-document format common for archived books/journals) to canvas, with prev/next paging.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.djvu</code>/<code>.djv</code>. Built in <code>djvu.js</code> around the vendored pure-JS <strong>DjVu.js</strong>.</p>
+<p><strong>How to use it.</strong> <strong>‹ Prev</strong>/<strong>Next ›</strong> page through the document; the pager is disabled while a page is rendering (decoding a scanned page can take a moment).</p>
+<p><strong>Notes / limits.</strong> On memory-constrained (mobile) devices, files over 200MB are rejected with a message to try a desktop browser instead - the whole document is decoded page-by-page in a WASM heap, which can crash a phone tab.</p>
+</section>
+<section class="docs-card">
+<h3 id="docx-word">DOCX (Word)<a class="h-anchor" href="#docx-word" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Reads Office Open XML Word documents and renders a simplified document view: metadata, formatted text (via the shared page-preview presentation), tables, and text extraction.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.docx</code>/<code>.docm</code>/<code>.dotx</code>/<code>.dotm</code>. Built in <code>docx.js</code>.</p>
+<p><strong>How to use it.</strong> Click any embedded inline image to send it through the full photo analyser.</p>
+</section>
+<section class="docs-card">
+<h3 id="xlsx-excel-ooxml">XLSX (Excel, OOXML)<a class="h-anchor" href="#xlsx-excel-ooxml" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Reads Office Open XML spreadsheets and renders each worksheet as a table with sheet tabs and document metadata.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.xlsx</code>/<code>.xlsm</code>/<code>.xltx</code>/<code>.xltm</code>. Built in <code>xlsx.js</code>.</p>
+<p><strong>How to use it.</strong> Click a <strong>sheet tab</strong> to switch worksheets. Each sheet lazily mounts the full <code>tablekit.js</code> table/chart workbench (sort/filter/ search/hide/reorder columns, a chart builder, PNG/JSON/CSV export) - see <a href="/docs/features/data-archive"><code>data-archive.md</code></a>.</p>
+</section>
+<section class="docs-card">
+<h3 id="xlsb-excel-binary-workbook">XLSB (Excel Binary Workbook)<a class="h-anchor" href="#xlsb-excel-binary-workbook" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> <code>.xlsb</code> stores a workbook in the binary BIFF12 record format rather than XLSX's XML, so the in-house OOXML reader can't open it - this uses the vendored <strong>SheetJS</strong> community build purely to decode it into sheets, rendered with the same table UI as <code>.xlsx</code>.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.xlsb</code>. Built in <code>xlsb.js</code>.</p>
+<p><strong>How to use it.</strong> Same sheet-tab switching and <code>tablekit.js</code> mounting as XLSX. Metadata additionally flags <strong>⚠ Contains macros (VBA project)</strong> when present.</p>
+</section>
+<section class="docs-card">
+<h3 id="pptx-powerpoint">PPTX (PowerPoint)<a class="h-anchor" href="#pptx-powerpoint" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Reads Office Open XML presentations and renders each slide as a card with its title/body text and any embedded images, in presentation order.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.pptx</code>/<code>.pptm</code>/<code>.ppsx</code>/<code>.ppsm</code>/<code>.potx</code>/<code>.potm</code>. Built in <code>pptx.js</code>.</p>
+<p><strong>How to use it.</strong> Click a slide thumbnail to open it full-size in a lightbox (<strong>×</strong> to close); click an embedded image inside a slide to analyse it as a photo.</p>
+</section>
+<section class="docs-card">
+<h3 id="odf-opendocument-odt-ods-odp">ODF (OpenDocument: ODT/ODS/ODP)<a class="h-anchor" href="#odf-opendocument-odt-ods-odp" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> OpenDocument files are ZIP packages whose payload is <code>content.xml</code> (plus <code>meta.xml</code> and a <code>Pictures/</code> folder). This converts that XML into the same shared page-preview presentation as DOCX/XLSX/PPTX, so ODT reads like the DOCX viewer, ODS like the XLSX viewer, and ODP like the PPTX viewer.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.odt</code>/<code>.ott</code>/<code>.fodt</code>/<code>.sxw</code> (text), <code>.ods</code>/ <code>.ots</code>/<code>.fods</code>/<code>.sxc</code> (spreadsheet), <code>.odp</code>/<code>.otp</code>/<code>.fodp</code>/<code>.sxi</code> (presentation), or <code>.odg</code>/<code>.otg</code>/<code>.fodg</code>/<code>.sxd</code> (graphics). Built in <code>odf.js</code>.</p>
+<p><strong>How to use it.</strong> Text documents get <code>paged.js</code>'s pagination controls; spreadsheets mount the <code>tablekit.js</code> workbench.</p>
+</section>
+<section class="docs-card">
+<h3 id="legacy-binary-office-doc-xls-ppt-97-2003">Legacy binary Office (DOC/XLS/PPT, 97-2003)<a class="h-anchor" href="#legacy-binary-office-doc-xls-ppt-97-2003" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> The pre-2007 Office formats are OLE2/Compound File containers, not ZIP+XML - there's no clean styled layout to recover the way DOCX/ODT give, so this is deliberately best-effort: it pulls the readable content out and shows it through the same page-sheet preview as the other document viewers. <code>.doc</code> reads Word text via the FIB piece table (CLX/PlcPcd), paginated as pages.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.doc</code>, <code>.xls</code>, or <code>.ppt</code>. Built in <code>legacy-office.js</code>.</p>
+<p><strong>How to use it.</strong> Same pagination controls as the other paged-document viewers; a plain hyperlink list surfaces embedded/external links the legacy document referenced.</p>
+</section>
+<section class="docs-card">
+<h3 id="text-and-lightweight-markup-documents">Text and lightweight-markup documents<a class="h-anchor" href="#text-and-lightweight-markup-documents" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> A family of formats whose content is really just text or simple XML/HTML, each shown as readable prose or selectable source: markup source (DITA, TEI, JATS, reStructuredText, AsciiDoc, Org, Textile, TeX/LaTeX, BibTeX), RTF (control words stripped to readable prose), AbiWord (<code>.abw</code>, XML), FictionBook (<code>.fb2</code>, XML e-book), HWPX, MHTML.</p>
+<p><strong>How to reach it.</strong> Drop any of the above extensions. Built in <code>textdoc.js</code>, reusing <code>paged.js</code>'s pagination controls (Show next N pages/ Show all, Copy all text, per-page Copy).</p>
+</section>
+<section class="docs-card">
+<h3 id="apple-iwork-pages-numbers-keynote">Apple iWork (Pages / Numbers / Keynote)<a class="h-anchor" href="#apple-iwork-pages-numbers-keynote" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Modern iWork files (2013+) store content as Snappy-compressed, undocumented Protocol Buffer streams in <code>Index/*.iwa</code> - there's no practical way to re-render that in the browser. Instead, Analyser shows the QuickLook preview Apple bakes into the package: an embedded <code>Preview.pdf</code> (rendered page-by-page via the PDF viewer) or, failing that, the largest preview/thumbnail image. Files saved without a preview fall back to a metadata-only readout.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.pages</code>/<code>.numbers</code>/<code>.key</code>/<code>.keynote</code>. Built in <code>iwork.js</code>.</p>
+<p><strong>How to use it.</strong> If a <code>Preview.pdf</code> exists, it's shown via the full PDF viewer (inheriting all its controls). Otherwise, if a thumbnail image exists, click <strong>Analyse this image</strong> to send it through the photo pipeline.</p>
+<p><strong>Notes / limits.</strong> <code>.key</code> collides with PEM cryptographic key files (not a ZIP); if the dropped <code>.key</code> isn't actually a ZIP package, it's handed to <code>proprietary.js</code>'s identifier instead so a real private key still gets read. Format detected as "iWork 2013+ (IWA)" vs. "iWork '09 (XML)" based on package contents.</p>
+</section>
+<section class="docs-card">
+<h3 id="epub-reader">EPUB reader<a class="h-anchor" href="#epub-reader" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Reads zipped XHTML e-books: metadata, cover, and chapter-by-chapter reading with navigation.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.epub</code>. Built in <code>epub.js</code>.</p>
+<p><strong>How to use it.</strong> <strong>← Prev</strong>/<strong>Next →</strong> page through chapters; the <strong>chapter select</strong> dropdown jumps directly to any chapter.</p>
+</section>
+<section class="docs-card">
+<h3 id="kindle-mobipocket-e-books-mobi-azw-azw3">Kindle / Mobipocket e-books (MOBI/AZW/AZW3)<a class="h-anchor" href="#kindle-mobipocket-e-books-mobi-azw-azw3" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Decodes MOBI 6 and KF8 (AZW3, and combo <code>.mobi</code>) e-books fully in the browser via the vendored <strong>foliate-js</strong>: metadata and cover, then a section-by-section reader with each section decoded to a self-contained HTML blob shown in a sandboxed (scriptless) iframe with images resolved.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.mobi</code>/<code>.azw</code>/<code>.azw3</code>. Built in <code>mobi.js</code>.</p>
+<p><strong>How to use it.</strong> <strong>‹ Prev</strong>/<strong>Next ›</strong> step through sections; the pager is disabled while a section loads (KF8's HUFF/CDIC decompression can be slow).</p>
+</section>
+<section class="docs-card">
+<h3 id="microsoft-access-databases-mdb-accdb">Microsoft Access databases (MDB/ACCDB)<a class="h-anchor" href="#microsoft-access-databases-mdb-accdb" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Opens a Jet/ACE database fully in the browser via the vendored <strong>mdb-reader</strong>: lists user tables with their columns and row counts, and shows a sample of rows from each - the same table UI as the spreadsheet viewers.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.mdb</code>/<code>.accdb</code>. Built in <code>mdb.js</code>.</p>
+<p><strong>How to use it.</strong> Click a <strong>table tab</strong> to switch tables; rows are capped at 200 shown per table (a note states the true count when truncated).</p>
+</section>
+<section class="docs-card">
+<h3 id="jupyter-notebooks">Jupyter notebooks<a class="h-anchor" href="#jupyter-notebooks" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Renders an <code>.ipynb</code> the way a reader sees it: narrative markdown cells, code cells with their <code>In[n]</code> prompt, and captured outputs (stream text, execute results, rich display data including PNG/JPEG images decoded from base64 data URIs, and errors).</p>
+<p><strong>How to reach it.</strong> Drop a <code>.ipynb</code>. Built in <code>notebook.js</code>.</p>
+<p><strong>How to use it.</strong> <strong>Show more cells</strong>/<strong>Show all</strong> reveal more of a long notebook.</p>
+</section>
+<section class="docs-card">
+<h3 id="markdown">Markdown<a class="h-anchor" href="#markdown" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Renders <code>.md</code>/<code>.markdown</code> as formatted HTML alongside document stats and the raw source, using a self-contained CommonMark-ish + GitHub-Flavoured-Markdown parser (no dependency): headings (ATX + setext), bold/italic/strikethrough, inline and fenced code, links, images, blockquotes, nested ordered/unordered lists, task lists, GFM tables, and horizontal rules.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.md</code>/<code>.markdown</code> file. Built in <code>markdown.js</code>.</p>
+<p><strong>Notes / limits.</strong> All text is HTML-escaped and raw inline HTML is rendered as literal text - the renderer never executes embedded HTML/script content, for safety when previewing an untrusted Markdown file.</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/features/animation-frames"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Animation and frames</span></a><a class="docs-pn-next" href="/docs/features/design-cad-3d"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Design, CAD and 3D</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

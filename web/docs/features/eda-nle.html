@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EDA and NLE/VFX - Analyser docs</title>
+  <meta name="description" content="Electronics design (Altium, KiCad, SPICE simulation waveforms, IPC fabrication netlists) and non-linear-editing/VFX project files (After Effects, Premiere, DaVinci Resolve, VEGAS, editing-interchange ">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/features/eda-nle">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="EDA and NLE/VFX - Analyser docs">
+  <meta property="og:description" content="Electronics design (Altium, KiCad, SPICE simulation waveforms, IPC fabrication netlists) and non-linear-editing/VFX project files (After Effects, Premiere, DaVinci Resolve, VEGAS, editing-interchange ">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/features/eda-nle">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle" aria-current="page">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle" aria-current="page">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>EDA and NLE/VFX</h1>
+<p class="docs-lede">Electronics design (Altium, KiCad, SPICE simulation waveforms, IPC fabrication netlists) and non-linear-editing/VFX project files (After Effects, Premiere, DaVinci Resolve, VEGAS, editing-interchange timelines, Sony camera gyro/IMU metadata). Source: <code>altium.js</code>, <code>kicad.js</code>, <code>spice.js</code>, <code>ipcnet.js</code>, <code>aftereffects.js</code>, <code>premiere.js</code>, <code>davinci.js</code>, <code>vegas.js</code>, <code>sony-rtmd.js</code>, <code>timeline.js</code>.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h3"><a href="#altium-designer-viewer-schematic-pcb-libraries">Altium Designer viewer (schematic + PCB + libraries)</a></li><li class="toc-h3"><a href="#kicad-viewer-schematic-pcb-libraries-project">KiCad viewer (schematic + PCB + libraries + project)</a></li><li class="toc-h3"><a href="#spice-ltspice-raw-waveform-viewer">SPICE/LTspice raw waveform viewer</a></li><li class="toc-h3"><a href="#ipc-d-356-a-fabrication-netlist-viewer">IPC-D-356(A) fabrication netlist viewer</a></li><li class="toc-h3"><a href="#adobe-after-effects-project-viewer-aep-aet">Adobe After Effects project viewer (.aep/.aet)</a></li><li class="toc-h3"><a href="#adobe-premiere-pro-project-viewer-prproj-prel">Adobe Premiere Pro project viewer (.prproj/.prel)</a></li><li class="toc-h3"><a href="#davinci-resolve-project-timeline-viewer-drp-drt">DaVinci Resolve project/timeline viewer (.drp/.drt)</a></li><li class="toc-h3"><a href="#sony-magix-vegas-pro-project-viewer-veg-vf">Sony/MAGIX VEGAS Pro project viewer (.veg/.vf)</a></li><li class="toc-h3"><a href="#editing-timeline-viewer-edl-fcpxml-otio">Editing-timeline viewer (EDL/FCPXML/OTIO)</a></li><li class="toc-h3"><a href="#sony-rtmd-gyro-imu-extraction">Sony rtmd gyro/IMU extraction</a></li></ul></details>
+    <section class="docs-card">
+<h3 id="altium-designer-viewer-schematic-pcb-libraries">Altium Designer viewer (schematic + PCB + libraries)<a class="h-anchor" href="#altium-designer-viewer-schematic-pcb-libraries" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Altium's native documents (<code>.SchDoc</code>/<code>.SchLib</code> schematics, <code>.PcbDoc</code>/<code>.PcbLib</code> boards+footprints) are OLE2 Compound Files (the same container as legacy Office) - opened with the shared <code>cfbf.js</code> reader and parsed entirely in the browser. Schematics store primitives as ASCII length-prefixed records; boards/footprints store them as binary length-prefixed records (reverse-engineered field offsets, validated against a real SamacSys footprint). The geometry is rebuilt into an interactive SVG.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.SchDoc</code>/<code>.SchLib</code>/<code>.PcbDoc</code>/<code>.PcbLib</code>/<code>.epw</code> (model wrapper)/<code>.PrjPcb</code>/<code>.PrjPcbStructure</code>/<code>.SchDocPreview</code>/ <code>.PcbDocPreview</code>. Built in <code>altium.js</code>.</p>
+<p><strong>How to use it.</strong> <strong>Fit</strong> resets the view to fit the viewport; <strong>layer chips</strong> (per PCB layer) toggle visibility; for multi-sheet schematics, <strong>tab buttons</strong> switch between sheets; in the BOM, <strong>designator buttons</strong> (per component) jump to and highlight that part on its schematic sheet.</p>
+</section>
+<section class="docs-card">
+<h3 id="kicad-viewer-schematic-pcb-libraries-project">KiCad viewer (schematic + PCB + libraries + project)<a class="h-anchor" href="#kicad-viewer-schematic-pcb-libraries-project" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> KiCad's modern documents (versions 6-9) are all S-expression text: <code>.kicad_sch</code> (schematic), <code>.kicad_pcb</code> (board), <code>.kicad_sym</code>/<code>.kicad_mod</code> (symbol/footprint libraries), plus JSON/text sidecars (<code>.kicad_pro</code>/<code>.kicad_prl</code> project settings, <code>fp-info-cache</code>, <code>.wbk</code> ngspice workbook). Everything is parsed and drawn as an interactive SVG; KiCad board space is Y-down (drawn directly), while symbol-library graphics use Y-up and are flipped when placed. The reference designator ties a schematic symbol to its board footprint, powering two-way cross-probing in the project view.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.kicad_pcb</code>/<code>.kicad_sch</code>/<code>.kicad_sym</code>/ <code>.kicad_mod</code>/<code>.kicad_pro</code>/<code>.kicad_prl</code>/<code>.wbk</code>, a <code>-bak</code> backup of any of those, or the extensionless <code>fp-lib-table</code>/<code>sym-lib-table</code>/<code>fp-info-cache</code>. Built in <code>kicad.js</code>.</p>
+<p><strong>How to use it.</strong> <strong>Fit</strong>/<strong>Reset view</strong> reset the schematic or 3D view; <strong>layer chips</strong> toggle PCB layer visibility; <strong>Flip over</strong> flips the 3D board to the other side; <strong>Quality</strong>/<strong>Supersampling</strong> are render-quality toggles; <strong>3D board</strong>/<strong>Top</strong>/<strong>Bottom</strong> switch board view mode; the <strong>symbol select</strong> dropdown previews a specific library symbol/footprint; <strong>designator buttons</strong> (per BOM row) and <strong>PCB</strong> cross-probe between the schematic and board views; <strong>tab buttons</strong> switch multi-sheet schematics.</p>
+</section>
+<section class="docs-card">
+<h3 id="spice-ltspice-raw-waveform-viewer">SPICE/LTspice raw waveform viewer<a class="h-anchor" href="#spice-ltspice-raw-waveform-viewer" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Decodes the binary or ASCII <code>.raw</code> waveform dump written by ngspice (KiCad's built-in simulator) or LTspice: a header of "Key: value" lines (ASCII for ngspice, UTF-16LE for LTspice) naming the analysis type, variables, and point count, followed by the raw sample matrix (handling LTspice's mixed double+float packing, ngspice's all-double layout, and complex AC data). A single-point result is tabulated as an operating point; multi-point data is plotted on an interactive, hoverable canvas.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.raw</code> that content-sniffs as a SPICE dump - <code>.raw</code> collides with camera RAW photos, so <code>app.js</code>'s <code>resolveKind()</code> calls <code>sniffSpiceRaw()</code> (checking for a <code>Title:</code> header, ASCII or UTF-16LE) to disambiguate before routing here. Built in <code>spice.js</code>.</p>
+<p><strong>How to use it.</strong> <strong>Legend chips</strong> (one per simulation trace) toggle that trace's visibility on the waveform chart.</p>
+</section>
+<section class="docs-card">
+<h3 id="ipc-d-356-a-fabrication-netlist-viewer">IPC-D-356(A) fabrication netlist viewer<a class="h-anchor" href="#ipc-d-356-a-fabrication-netlist-viewer" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> A <code>.ipc</code> file is the bare-board fabrication/electrical- test netlist a PCB tool (KiCad, Altium) exports for the fab house - a fixed-column text format of "P" parameter lines plus one feature record per test point. Analyser parses the records, summarises the board (nets, parts, pad/via mix), rebuilds net-to-pin connectivity, and draws a fabrication map of every test point coloured by net.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.ipc</code>. Built in <code>ipcnet.js</code>.</p>
+<p><strong>Notes / limits.</strong> No interactive controls beyond the rendered map/readout - values are converted between IPC's customary units (0.0001 inch) and mm/inches for display.</p>
+</section>
+<section class="docs-card">
+<h3 id="adobe-after-effects-project-viewer-aep-aet">Adobe After Effects project viewer (.aep/.aet)<a class="h-anchor" href="#adobe-after-effects-project-viewer-aep-aet" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> An <code>.aep</code> is a RIFX file (big-endian RIFF, form type "Egg!") storing the project as nested chunk lists - reverse-engineered (there's no public spec) to rebuild each composition's timeline: layers, per-comp time scale, and other project structure.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.aep</code>/<code>.aet</code>. Built in <code>aftereffects.js</code>.</p>
+<p><strong>How to use it.</strong> <strong>Zoom out</strong>/<strong>Zoom in</strong>/<strong>Reset</strong> control the composition preview canvas (also ctrl+scroll to zoom).</p>
+</section>
+<section class="docs-card">
+<h3 id="adobe-premiere-pro-project-viewer-prproj-prel">Adobe Premiere Pro project viewer (.prproj/.prel)<a class="h-anchor" href="#adobe-premiere-pro-project-viewer-prproj-prel" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> A <code>.prproj</code> is a gzip-compressed XML document (the "PremiereData" model) - once inflated, a graph of cross-referenced objects (ObjectID local to its class, and/or a globally unique ObjectUID) chained via ObjectRef/ObjectURef references, walked to rebuild each sequence's track/clip timeline.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.prproj</code>/<code>.prel</code>. Built in <code>premiere.js</code>.</p>
+<p><strong>How to use it.</strong> <strong>Zoom out</strong>/<strong>Zoom in</strong>/<strong>Reset</strong> control the project preview canvas.</p>
+</section>
+<section class="docs-card">
+<h3 id="davinci-resolve-project-timeline-viewer-drp-drt">DaVinci Resolve project/timeline viewer (.drp/.drt)<a class="h-anchor" href="#davinci-resolve-project-timeline-viewer-drp-drt" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> A <code>.drp</code> is a ZIP archive of XML documents exported from the Resolve project database. Key entries: <code>project.xml</code> (name, versions, dates), <code>SeqContainer/&lt;uuid&gt;.xml</code> per timeline (VideoTrackVec/AudioTrackVec - the actual track/clip layout), plus colour-grade node-chip data for each clip's node graph.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.drp</code>/<code>.drt</code>. Built in <code>davinci.js</code>.</p>
+<p><strong>How to use it.</strong> <strong>Zoom out</strong>/<strong>Zoom in</strong>/<strong>Reset</strong> control the resource/timeline preview canvas; colour-grade node chips (styled pill tags) show each clip's node graph inline.</p>
+</section>
+<section class="docs-card">
+<h3 id="sony-magix-vegas-pro-project-viewer-veg-vf">Sony/MAGIX VEGAS Pro project viewer (.veg/.vf)<a class="h-anchor" href="#sony-magix-vegas-pro-project-viewer-veg-vf" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> A <code>.veg</code> is a Sonic Foundry "RIFF GUID" container (magic lowercase <code>riff</code> + a 16-byte form GUID with classic Sonic Foundry COM class IDs), with nested chunks keyed by undocumented GUIDs - so a faithful timeline rebuild isn't reliable, but a great deal is plainly recoverable and extracted instead: the authoring app+version (an embedded AppData path), the project summary block (author/title/company/copyright/contact, stored as UTF-16LE string runs), every media generator and video FX used (by plugin id and friendly name, e.g. <code>{Svfx:...:titlesandtext}</code> -&gt; "Titles &amp; Text"), the actual title/text content (stored as RTF, decoded to plain text), and source media/template file paths.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.veg</code>/<code>.vf</code>. Built in <code>vegas.js</code>.</p>
+<p><strong>Notes / limits.</strong> Capped at 64MB defensively (<code>.veg</code> projects are normally small). No interactive controls - a structured readout.</p>
+</section>
+<section class="docs-card">
+<h3 id="editing-timeline-viewer-edl-fcpxml-otio">Editing-timeline viewer (EDL/FCPXML/OTIO)<a class="h-anchor" href="#editing-timeline-viewer-edl-fcpxml-otio" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Renders a visual timeline (tracks × time, with clip blocks) from the standard NLE interchange formats every editor (Premiere, Final Cut, DaVinci Resolve, Avid) can export: EDL (<code>.edl</code>, CMX3600 plain text), FCPXML (<code>.fcpxml</code>, Final Cut Pro X XML), and OTIO (<code>.otio</code>, OpenTimelineIO JSON). All three are normalised into one model - <code>{ name, fps, duration, tracks: [{ kind, name, clips: [{name, start, duration, srcIn}] }] }</code>, every time value in seconds - so the same viewer draws any of them.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.edl</code>/<code>.fcpxml</code>/<code>.otio</code>. Built in <code>timeline.js</code>.</p>
+<p><strong>Notes / limits.</strong> EDL timecodes support both drop-frame (<code>;</code>) and non-drop-frame (<code>:</code>) notation; FPS is inferred from the timecode format when not stated explicitly.</p>
+</section>
+<section class="docs-card">
+<h3 id="sony-rtmd-gyro-imu-extraction">Sony rtmd gyro/IMU extraction<a class="h-anchor" href="#sony-rtmd-gyro-imu-extraction" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Sony Alpha/FX/RX cameras (A7, A6700, FX3, etc.) write a timed-metadata track (sample format <code>rtmd</code>) to their MP4/MOV files: each sample (one per video frame) carries that frame's exposure/lens/GPS data plus a burst of inertial-measurement samples - the gyroscope (angular rate) and accelerometer used by Catalyst Browse and Gyroflow to stabilise footage. Analyser parses the TLV-encoded rtmd structure (reverse-engineered, cross-checked against ExifTool's <code>Sony.pm Process_rtmd</code>) to extract and plot these traces.</p>
+<p><strong>How to reach it.</strong> Automatic for a Sony video with an <code>rtmd</code> track (see also <a href="/docs/features/video"><code>video.md</code></a>, which the gyro card is embedded within). Built in <code>sony-rtmd.js</code>.</p>
+<p><strong>How to use it.</strong> <strong>Export CSV</strong> exports the gyro/accelerometer metadata; <strong>Export Gyroflow (.gcsv)</strong> exports in Gyroflow's stabiliser-ready interchange format (see <code>gcsv.js</code> / <a href="/docs/features/data-archive"><code>data-archive.md</code></a>, which reads that same format back).</p>
+<p><strong>Notes / limits.</strong> Reads via byte-range slices only - never buffers the whole video. Best-effort throughout: any parse failure returns <code>null</code> so the normal video analysis is unaffected. Accelerometer scale is ~8192 counts per g (Sony's LSB/g); the gyro stays in raw sensor counts (Gyroflow applies the camera-specific calibration to convert to deg/s). Sample reading is capped and decimated for very long recordings (<code>MAX_FRAMES</code>).</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/features/design-cad-3d"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Design, CAD and 3D</span></a><a class="docs-pn-next" href="/docs/features/data-archive"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Data and archives</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

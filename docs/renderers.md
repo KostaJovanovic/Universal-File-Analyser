@@ -3,10 +3,12 @@
 A short reference to every module in `web/assets/js/renderers/` - what file
 kind it owns, what it does, and any notable vendored/WASM dependency. Renderer
 kinds are wired into the `ROUTES` table in `web/assets/js/core/app.js` and
-lazy-loaded on first use (see `docs/architecture.md` and `docs/pipeline.md`).
-There are **79** renderer modules as of this writing. For full usage detail
-(buttons, controls, options), see the `docs/features/*.md` docs; this is the
-module-level map.
+lazy-loaded on first use (see [`architecture.md`](architecture.md) and [`pipeline.md`](pipeline.md)).
+There are **~86** modules in `renderers/` (a handful - `compare.js`,
+`folder-archive-shared.js`, `sonify.js`, `media-reverse.js`, `proprietary-formats.js`
+and similar - are shared helpers or data tables rather than top-level routed
+kinds). For full usage detail (buttons, controls, options), see the
+`features/*.md` docs; this is the module-level map.
 
 ## Images
 
@@ -137,5 +139,5 @@ module-level map.
 | `compare.js` | `/compare` two-file side-by-side view | Runs each file through its normal renderer off-screen, merges readout cells into `Field \| A \| B` tables |
 
 See `docs/features/*.md` for the user-facing usage detail behind each of
-these modules, and `docs/parsers-and-libs.md` for the lazy parser chunks and
+these modules, and [`parsers-and-libs.md`](parsers-and-libs.md) for the lazy parser chunks and
 shared binary/WASM helpers they depend on.

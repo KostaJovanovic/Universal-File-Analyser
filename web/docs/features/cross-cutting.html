@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cross-cutting features - Analyser docs</title>
+  <meta name="description" content="Features available across many or all file types, rather than owned by one format: hashing, the OSINT network-indicator card, exporting the analysis, in-page metadata search, the hex-dump fallback, fo">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/features/cross-cutting">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Cross-cutting features - Analyser docs">
+  <meta property="og:description" content="Features available across many or all file types, rather than owned by one format: hashing, the OSINT network-indicator card, exporting the analysis, in-page metadata search, the hex-dump fallback, fo">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/features/cross-cutting">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting" aria-current="page">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting" aria-current="page">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Cross-cutting features</h1>
+<p class="docs-lede">Features available across many or all file types, rather than owned by one format: hashing, the OSINT network-indicator card, exporting the analysis, in-page metadata search, the hex-dump fallback, forensic integrity cards, and the <code>/compare</code> two-file view. Source: <code>web/assets/js/core/osint.js</code>, <code>web/assets/js/core/export-data.js</code>, <code>web/assets/js/core/search.js</code>, <code>web/assets/js/core/forensics.js</code>, <code>web/assets/js/renderers/unknown.js</code>, <code>web/assets/js/renderers/compare.js</code>, plus the hash-cell helpers in <code>web/assets/js/core/util.js</code>.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h3"><a href="#file-hashing-sha-256-and-extras">File hashing (SHA-256 and extras)</a></li><li class="toc-h3"><a href="#osint-network-indicator-extraction">OSINT network-indicator extraction</a></li><li class="toc-h3"><a href="#export-analysis-data">Export analysis data</a></li><li class="toc-h3"><a href="#in-page-metadata-search">In-page metadata search</a></li><li class="toc-h3"><a href="#hex-dump-unknown-file-inspector-fallback">Hex-dump / unknown-file inspector (fallback)</a></li><li class="toc-h3"><a href="#forensic-integrity-cards">Forensic integrity cards</a></li><li class="toc-h3"><a href="#compare-two-file-side-by-side-view">/compare - two-file side-by-side view</a></li></ul></details>
+    <section class="docs-card">
+<h3 id="file-hashing-sha-256-and-extras">File hashing (SHA-256 and extras)<a class="h-anchor" href="#file-hashing-sha-256-and-extras" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Every analysis includes a SHA-256 fingerprint of the file's exact bytes, with CRC-32/MD5/SHA-1/SHA-512 available on demand.</p>
+<p><strong>How to reach it.</strong> Automatic in the Integrity card most renderers append (<code>util.js</code>'s <code>sha256Row()</code>/<code>integrityCard()</code>) - the SHA-256 value fills in asynchronously after hashing completes.</p>
+<p><strong>How to use it.</strong> Click <strong>Show CRC-32 / MD5 / SHA-1 / SHA-512</strong> (inserted right below the SHA-256 row) to compute and reveal the additional hashes.</p>
+<p><strong>Notes / limits.</strong> For very large files where hashing the whole file up-front would be slow (notably video), the hash is instead gated behind an explicit <strong>Compute SHA-256</strong> button rather than computed automatically - see <a href="/docs/features/video"><code>video.md</code></a>.</p>
+</section>
+<section class="docs-card">
+<h3 id="osint-network-indicator-extraction">OSINT network-indicator extraction<a class="h-anchor" href="#osint-network-indicator-extraction" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Pulls URLs, IP addresses, domains and email addresses out of a file's text and builds a "Network indicators" card listing them with one-click lookup links to public OSINT services (VirusTotal, urlscan, AbuseIPDB, Shodan depending on indicator type).</p>
+<p><strong>How to reach it.</strong> Automatic wherever a renderer has extractable text (built via <code>osintCard()</code>/<code>buildOsintCard()</code> in <code>osint.js</code>, e.g. from <code>unknown.js</code>). Domain extraction filters out filename-shaped false positives (a token like <code>bundle.min.js</code> isn't reported as a domain) via a <code>FILE_TLDS</code> denylist, and IPv4 matches are octet-validated.</p>
+<p><strong>How to use it.</strong> Click any lookup link (VirusTotal, urlscan, AbuseIPDB, Shodan) to open that service in a new tab.</p>
+<p><strong>Notes / limits.</strong> Nothing is ever sent automatically - links only open a third-party service when clicked, preserving the no-upload promise. Each indicator list is capped (300 extracted, 100 shown by default).</p>
+</section>
+<section class="docs-card">
+<h3 id="export-analysis-data">Export analysis data<a class="h-anchor" href="#export-analysis-data" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Exports everything currently on the page (every metadata table, plus visuals) in one of four formats: <strong>Complete report (HTML)</strong> - a single self-contained file with every table inline and visuals (spectrogram, histogram, previews, maps) embedded as base64 images, opens in any browser, works offline; <strong>PDF (print)</strong> - opens that same report in a new tab and launches the browser's print dialog ("Save as PDF"); <strong>JSON</strong> - every field/table/text block, typed and grouped by section; <strong>CSV</strong> - a flat Section/Group/Field/Value sheet (text blobs like hex dumps/OCR text are capped at 5000 chars; images become placeholder rows since a CSV can't hold them).</p>
+<p><strong>How to reach it.</strong> Click <strong>Export data</strong> (next to "Analyse next file?"). Built in <code>export-data.js</code>.</p>
+<p><strong>Notes / limits.</strong> Pure read-side: it scrapes the rendered DOM (<code>.anr-card</code>/<code>.anr-readout</code> tables the renderers already built) rather than needing per-format export logic, so it works automatically for every current and future renderer. Everything is generated locally; nothing leaves the browser.</p>
+</section>
+<section class="docs-card">
+<h3 id="in-page-metadata-search">In-page metadata search<a class="h-anchor" href="#in-page-metadata-search" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Highlights matching cards/rows across all result panels as you type, with synonym expansion and prev/next navigation between matches.</p>
+<p><strong>How to reach it.</strong> The search box in the sticky nav (desktop: inline arrows; mobile: a dedicated full-screen overlay with its own prev/next/ close controls). Built in <code>search.js</code>'s <code>initSearch()</code>.</p>
+<p><strong>Notes / limits.</strong> Re-initialises on every SPA navigation, tearing down the previous run's mobile overlay and resize listener first so neither accumulates duplicates across page swaps.</p>
+</section>
+<section class="docs-card">
+<h3 id="hex-dump-unknown-file-inspector-fallback">Hex-dump / unknown-file inspector (fallback)<a class="h-anchor" href="#hex-dump-unknown-file-inspector-fallback" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> The last-resort renderer for files with no dedicated viewer: a magic-byte format guess, hex/ASCII dump, SHA-256, and enhanced previews for plain text, JSON and XML.</p>
+<p><strong>How to reach it.</strong> Automatic for any <code>unknown</code>/<code>extensionless</code> kind (see <a href="/docs/pipeline"><code>pipeline.md</code></a>). Built in <code>unknown.js</code>.</p>
+<p><strong>How to use it.</strong> <strong>Show full text</strong> reveals the complete text of a large text-like file (initially truncated); if the JSON inspector detects a Lottie-shaped structure, <strong>▶ Play as Lottie animation</strong> offers to play it (see <a href="/docs/features/animation-frames"><code>animation-frames.md</code></a>); when an embedded/carved image is detected inside the blob, per-image <strong>Analyse</strong>/<strong>Download</strong> buttons hand off to the photo pipeline via <code>photo-recover.js</code>.</p>
+</section>
+<section class="docs-card">
+<h3 id="forensic-integrity-cards">Forensic integrity cards<a class="h-anchor" href="#forensic-integrity-cards" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Two content-vs-name checks surfaced as readout cards on any file where they're conclusive: <strong>signature mismatch</strong> (the declared extension is contradicted by the file's actual leading bytes - a renamed/disguised file or polyglot) and <strong>trailing data</strong> (content appended past a file's logical end, smuggled in). Both are built from <code>file-sniff.js</code>'s <code>sniffFileType()</code> result.</p>
+<p><strong>How to reach it.</strong> Automatic wherever conclusive - shown for a defined allow-list of extensions whose true magic bytes <code>sniffFileType()</code> can positively confirm (JPEG, PNG, PDF, ZIP-family, ISO-BMFF-family, and more); extensions not on that list get no warning, since an unconfirmed magic would risk a false positive. Built in <code>forensics.js</code>.</p>
+<p><strong>How to use it.</strong> The trailing-data card offers a button to re-analyse the appended blob as its own file (wired via <code>setReanalyse()</code>, which app.js injects with its <code>handleFile</code> callback to avoid a circular import).</p>
+<p><strong>Notes / limits.</strong> Container families that legitimately share one magic (ISO-BMFF: mp4/heic/avif/m4a/3gp; the ZIP-based Office/EPUB/OpenDocument family) are grouped so renaming within the family (e.g. <code>.m4a</code> to <code>.mp4</code>) doesn't falsely flag a mismatch. <code>findIntegrityCard()</code> locates an existing Integrity card in a container by its heading text, for callers that need to slot content near it.</p>
+</section>
+<section class="docs-card">
+<h3 id="compare-two-file-side-by-side-view">/compare - two-file side-by-side view<a class="h-anchor" href="#compare-two-file-side-by-side-view" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Runs two files through their normal full analysis (into off-screen staging containers), then merges the results into one view: shared field labels down the left, file A's and file B's values in adjacent columns (<code>Field | A | B</code>). Rows whose values differ are tagged <code>.is-diff</code>. Non-readout content (image previews, video players, hex dumps, histograms) that can't merge cell-by-cell falls back to a side-by-side A|B split within its card instead.</p>
+<p><strong>How to reach it.</strong> Drop two files onto the <code>/compare</code> page's A/B dropzones (see <a href="/docs/pages"><code>pages.md</code></a>). Built in <code>compare.js</code>, called with <code>{ classify, routes }</code> from <code>app.js</code> so it reuses the real <code>classifyFile()</code>/<code>ROUTES</code>.</p>
+<p><strong>How to use it.</strong> Interactive video/audio sub-prompts (e.g. "Analyse audio"/"Analyse frame" call-to-action buttons that would normally appear twice) collapse to <strong>one</strong> central button that fires both files' actions at once. Click <strong>Show differences</strong> to fade every row where A and B match, leaving only the differing rows visible; click again to show everything.</p>
+<p><strong>Notes / limits.</strong> The merge <strong>moves</strong> (not clones) the real DOM cells from each file's staged render into the merged table, so tooltips and deferred async fills (like the SHA-256 cell, which resolves after hashing) keep working - including a second pass that corrects a hash row's <code>.is-diff</code> tag once the async hash comparison actually resolves (its initial tag, decided from still-empty cells, can be wrong). Media renderers are invoked with <code>{ inline: true }</code> so they target the compare panel rather than the main page's fixed sections (<code>#photoPreview</code>/<code>#videoPreview</code>/etc.).</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/features/data-archive"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Data and archives</span></a><a class="docs-pn-next" href="/docs/feature-inventory"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Feature inventory</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

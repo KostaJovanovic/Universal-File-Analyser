@@ -12,14 +12,14 @@ with no framework, no build step and no `node_modules` (see the repo root
 `CLAUDE.md`). Every file a user drops is read locally through the browser's
 File API and analysed with on-device code and lazy-loaded WebAssembly - nothing
 is uploaded. The only server-side code in the whole project is the Cloudflare
-Worker described in `docs/worker.md`, which powers an anonymous
+Worker described in [`worker.md`](worker.md), which powers an anonymous
 analysed-file counter and nothing else; it never sees file contents.
 
 ## Page shell
 
 Each top-level page (`web/index.html`, `about.html`, `compare.html`, etc.) is
 a static HTML document sharing the same head/header/footer structure (see
-`docs/pages.md` and the `shared-partials` skill). `web/assets/js/core/app.js`
+[`pages.md`](pages.md) and the `shared-partials` skill). `web/assets/js/core/app.js`
 is the entry point loaded on every page. Its `boot()` function
 (`web/assets/js/core/app.js:330`) wires up the drop zone, result containers
 (`photoResults`, `audioResults`, `videoResults`, `unknownResults`), the boot
@@ -35,7 +35,7 @@ Dropping a file runs it through `resolveKind()` / `handleFile` in `app.js`,
 which combines extension/MIME classification (`classify.js`) with
 content-based sniffing (`file-sniff.js`) to pick a "kind", then looks that
 kind up in the `ROUTES` table to find the renderer that should render it. See
-`docs/pipeline.md` for the full walkthrough.
+[`pipeline.md`](pipeline.md) for the full walkthrough.
 
 ## Lazy-loading strategy
 
@@ -69,7 +69,7 @@ in `KEEP_CACHES` (the current `VERSION`, plus the persistent
 vocal-separation features), so old versioned shells are cleaned up on each
 deploy without disturbing user-downloaded offline content. Localhost/LAN
 hosts (`server.bat`) are detected via `DEV` and skip caching entirely so
-edits show up on a single refresh. Full detail in `docs/pwa-offline.md`.
+edits show up on a single refresh. Full detail in [`pwa-offline.md`](pwa-offline.md).
 
 ## SPA navigation
 
@@ -98,5 +98,5 @@ falls back to serving `index.html`), and `html_handling` defaults to
 declares the Worker (`worker/index.js`) as `main`, plus a D1 database
 binding (`DB`) and a rate-limit binding (`ANALYSED_LIMIT`, 15 requests/60s per
 hashed IP) that back the visitor/analysed-file counters - the only
-non-static part of the deploy. Every push to `main` ships (see `docs/tooling.md`
+non-static part of the deploy. Every push to `main` ships (see [`tooling.md`](tooling.md)
 for the commit/deploy flow via `save.bat`).

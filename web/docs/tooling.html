@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev tooling - Analyser docs</title>
+  <meta name="description" content="The dev loop, the local server's Cloudflare-mirroring routing, the commit/version-bump/deploy flow (save.bat), the static-generator scripts it runs, and how the version number shown in the UI is compu">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/tooling">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Dev tooling - Analyser docs">
+  <meta property="og:description" content="The dev loop, the local server's Cloudflare-mirroring routing, the commit/version-bump/deploy flow (save.bat), the static-generator scripts it runs, and how the version number shown in the UI is compu">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/tooling">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling" aria-current="page">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling" aria-current="page">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Dev tooling</h1>
+<p class="docs-lede">The dev loop, the local server's Cloudflare-mirroring routing, the commit/version-bump/deploy flow (<code>save.bat</code>), the static-generator scripts it runs, and how the version number shown in the UI is computed. For engineers who need to run the site locally or understand what a commit actually does.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h2"><a href="#dev-loop-server-bat-serve-py">Dev loop (server.bat / serve.py)</a></li><li class="toc-h2"><a href="#commit-version-bump-flow-save-bat">Commit / version-bump flow (save.bat)</a></li><li class="toc-h2"><a href="#generator-scripts-tools-mjs">Generator scripts (tools/*.mjs)</a></li><li class="toc-h2"><a href="#version-numbering">Version numbering</a></li></ul></details>
+    <section class="docs-card">
+<h2 id="dev-loop-server-bat-serve-py">Dev loop (server.bat / serve.py)<a class="h-anchor" href="#dev-loop-server-bat-serve-py" aria-label="Link to this section">#</a></h2>
+<p><code>server.bat</code> is the only supported way to run the site locally - <strong>not</strong> <code>python -m http.server</code>. It kills whatever already holds port 3000 (via a PowerShell <code>Get-NetTCPConnection</code>/<code>Stop-Process</code> one-liner, so every launch is a fresh instance), finds the machine's local IP for phone testing, opens <code>http://localhost:3000</code> in a browser, and runs <code>python serve.py 3000 &lt;LOCAL_IP&gt;</code>.</p>
+<p><code>serve.py</code> exists because a plain static file server serves files <em>literally</em> - <code>/about</code> would 404 and <code>/about.html</code> would not redirect - which is the opposite of how the production Cloudflare deploy behaves. It replicates Cloudflare's clean-URL routing:</p>
+<ul><li><code>/about.html</code> -&gt; 308 redirect to <code>/about</code> (and <code>/index.html</code> -&gt; <code>/</code>)</li><li><code>/about</code> -&gt; serves <code>about.html</code> (200)</li><li><code>/</code> -&gt; serves <code>index.html</code> (200)</li><li><code>/assets/...</code> -&gt; served literally (real files with an extension)</li><li>any other unmatched path -&gt; <code>index.html</code> (200), the SPA fallback (mirroring <code>wrangler.jsonc</code>'s <code>not_found_handling: "single-page-application"</code>)</li></ul>
+<p>It also mocks the <code>/api/*</code> stats endpoints (<code>MOCK_STATS</code>, with a deterministic seeded 45-day trend series) since there is no Worker or D1 locally - without this, <code>/api/*</code> would fall through to the SPA handler and break the visitor badge and the <code>/stats</code>/<code>/atari</code> pages. Binds <code>0.0.0.0</code> so the printed Network URL works for phone testing on the same Wi-Fi.</p>
+<p>There is no build step: editing a file and refreshing is the entire dev loop.</p>
+</section>
+<section class="docs-card">
+<h2 id="commit-version-bump-flow-save-bat">Commit / version-bump flow (save.bat)<a class="h-anchor" href="#commit-version-bump-flow-save-bat" aria-label="Link to this section">#</a></h2>
+<p><code>save.bat</code> is <strong>the only correct way to commit</strong> to this repo - never hand-edit <code>COMMIT_COUNT</code> or commit around it. Run as <code>save.bat</code> (interactive menu: Save / Commit / Push / Pull / Backup / Samples / Quit) or with an action argument (<code>save.bat save</code>, <code>save.bat commit</code> for commit-without-push, <code>save.bat --force</code> for commit + force-push). The <code>:save</code> path:</p>
+<ol><li>Computes the next commit count (<code>git rev-list --count HEAD</code> + 1) and the version label via the same major/minor logic as <code>analyserVersion()</code> in <code>app.js</code> (a <code>RELEASES</code> list in the batch file that must stay in sync with <code>RELEASE_COMMITS</code> - see "Version numbering" below).</li><li>Bumps <code>const COMMIT_COUNT = N;</code> in <code>web/assets/js/core/app.js</code> and <code>const VERSION = 'analyser-vN';</code> in <code>web/sw.js</code> via UTF-8-safe PowerShell regex replacements (explicit <code>-Encoding UTF8</code> on both read and write, otherwise Windows' ANSI code page default mangles non-ASCII characters in the file).</li><li>Runs the generator scripts, in order (each non-fatal - a failure just commits the previous generated output with a warning): rebuild <code>/samples</code> from <code>samples/</code>, prerender <code>/formats</code> from the catalog, prerender per-extension <code>/formats/&lt;ext&gt;</code> pages + <code>sitemap-formats.xml</code>, stamp the live format count into static SEO surfaces + refresh <code>sitemap.xml</code> lastmod dates, stamp the shared footer block into every main page, stamp the shared <code>&lt;head&gt;</code> tail into every main page, regenerate <code>/test</code>'s token/animation sections from <code>analyser.css</code>.</li><li>Optionally offers a local stats CSV backup (commit-only path only).</li><li><code>git add .</code>, shows <code>git status</code>, prompts for a commit message (default <code>"update"</code>), commits.</li><li>Unless commit-only: prompts to push, and on a rejected push offers to fetch+merge or force-push.</li></ol>
+</section>
+<section class="docs-card">
+<h2 id="generator-scripts-tools-mjs">Generator scripts (tools/*.mjs)<a class="h-anchor" href="#generator-scripts-tools-mjs" aria-label="Link to this section">#</a></h2>
+<p>Node scripts (dev-only, never served) that keep hand-maintained pages in sync with single sources of truth, run by <code>save.bat</code> on every commit:</p>
+<div class="docs-table-wrap"><table><thead><tr><th>Script</th><th>Purpose</th></tr></thead><tbody><tr><td><code>stamp-head.mjs</code></td><td>Stamps the shared <code>&lt;head&gt;</code> tail (stylesheet links + the before-first-paint theme bootstrap script) into every main page from one <code>THEME_SCRIPT</code> source in <code>prerender-common.mjs</code>, between each page's <code>HEAD:START</code>/<code>HEAD:END</code> markers</td></tr><tr><td><code>stamp-footer.mjs</code></td><td>Stamps the shared footer block (the "Everything runs in your browser" heading + the whole offline-download section) into every main page from <code>tools/partials/footer-shared.html</code>, between <code>FOOTER:START</code>/<code>FOOTER:END</code> markers</td></tr><tr><td><code>stamp-counts.mjs</code></td><td>Stamps the live format count into static, JS-free crawler surfaces (meta/OG/Twitter descriptions, the <code>WebApplication</code> JSON-LD <code>featureList</code>, the PWA manifest description) and refreshes <code>sitemap.xml</code> <code>&lt;lastmod&gt;</code> dates, so hand-maintained numbers can never drift from the real catalog size</td></tr><tr><td><code>prerender-formats.mjs</code></td><td>Bakes the format catalog into static <code>formats.html</code> markup (with <code>#fmt-</code>/<code>#ext-</code> deep-link anchors) so crawlers see the <code>/formats</code> hub content without running JS</td></tr><tr><td><code>prerender-format-pages.mjs</code></td><td>Emits one static landing page per extension with catalog depth <code>'full'</code> into <code>web/formats/</code>, plus <code>sitemap-formats.xml</code> - the long-tail SEO play ("how to open a .stl file")</td></tr><tr><td><code>prerender-samples.mjs</code></td><td>Rebuilds the <code>/samples</code> gallery from whatever files are in <code>samples/</code>, deriving each card's label/caption from the format catalog (with an optional override in <code>tools/sample-content.mjs</code>)</td></tr><tr><td><code>prerender-testpage.mjs</code></td><td>Regenerates only the token/animation sections of <code>/test</code> (<code>test.html</code>) from <code>analyser.css</code>, between <code>TOKENS:START</code>/<code>TOKENS:END</code> markers - the hand-authored component demos further down the page are untouched</td></tr></tbody></table></div>
+<p>See the <code>format-seo-pages</code> and <code>shared-partials</code> skills for the fuller picture of the generated-page and single-sourcing systems these scripts maintain.</p>
+</section>
+<section class="docs-card">
+<h2 id="version-numbering">Version numbering<a class="h-anchor" href="#version-numbering" aria-label="Link to this section">#</a></h2>
+<p>See the <code>version-numbering</code> skill for the full mechanism. In short: <code>COMMIT_COUNT</code> (bumped by <code>save.bat</code>) and <code>RELEASE_COMMITS</code> (a fixed list of commit numbers crowned as major-version boundaries) feed <code>analyserVersion(n, releases)</code> in <code>app.js</code>, which computes labels like <code>0.09</code> (pre-1.0), <code>1.0</code>/<code>1.01</code> (post-crowning, counter reset), up through the current <code>5.x</code> era. <code>save.bat</code>'s own <code>RELEASES</code> variable mirrors <code>RELEASE_COMMITS</code> and must be kept in sync by hand when a future commit is crowned a new major version.</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/pwa-offline"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">PWA and offline</span></a><a class="docs-pn-next" href="/docs/worker"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Worker</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>
