@@ -72,6 +72,117 @@ function splitText(container, baseWeight) {
   return spans;
 }
 
+// Splits the given targets ({ el, weight }) into per-letter spans, freezing each
+// element's box during the split so emptying its text (splitText clears
+// textContent) can't reflow the surrounding layout mid-split. Returns the flat
+// { el, base } letter list for the proximity controller.
+function splitFrozen(targets) {
+  for (const t of targets) {
+    t.el.style.width = t.el.offsetWidth + 'px';
+    t.el.style.height = t.el.offsetHeight + 'px';
+  }
+  const letters = [];
+  for (const t of targets) letters.push(...splitText(t.el, t.weight));
+  for (const t of targets) { t.el.style.width = ''; t.el.style.height = ''; }
+  return letters;
+}
+
+// The site title's "letters thin toward the cursor" controller: an intro "sweep"
+// (a virtual cursor gliding across `mark`) plus real mouse hover, run together by
+// one RAF loop - per letter we take whichever pulls it lighter (the smaller t), so
+// hovering during the sweep no longer cancels it. Shared by the header title and
+// the 404 numeral. Guarded per element via mark._anrFx.
+//   opts.radiusHover / radiusTouch - proximity falloff in px (default 120 / 80);
+//     large type needs a wider radius or the effect never reaches past one glyph.
+//   opts.sweepDelay  - ms before the intro sweep starts (default 800).
+//   opts.sweepDuration - ms for the intro sweep to cross the mark (default 3500);
+//     a short numeral wants a quicker pass or it reads as a slow lingering glow.
+//   opts.ivHolder    - object holding the touch re-sweep interval (._iv) so a
+//     rebind on a swapped-in element can clear the previous one.
+// Mouse-enter snaps straight into fixed-speed cursor tracking (no ramp); the 0.4s
+// exit settle still eases the letters back to base.
+function bindSweepFx(mark, letters, opts = {}) {
+  if (mark._anrFx) return;
+  mark._anrFx = true;
+  const ivHolder = opts.ivHolder;
+  if (ivHolder && ivHolder._iv) clearInterval(ivHolder._iv);
+
+  const RADIUS_HOVER = opts.radiusHover || 120;
+  const RADIUS_TOUCH = opts.radiusTouch || 80;
+  const SWEEP_DELAY = opts.sweepDelay != null ? opts.sweepDelay : 800;
+  const SWEEP_DURATION = opts.sweepDuration || 3500;
+
+  let mx = -9999, my = -9999, inside = false;
+  let sweep = null;                 // { t0, duration, sx, ex, cy, vx, radius } | null
+  let raf = 0, running = false, fxT = 0;
+
+  function letterWeight(l) {
+    const r = l.el.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    let t = 1;
+    if (inside) t = Math.min(t, Math.hypot(mx - cx, my - cy) / RADIUS_HOVER);
+    if (sweep)  t = Math.min(t, Math.hypot(sweep.vx - cx, sweep.cy - cy) / sweep.radius);
+    t = Math.min(1, t);
+    return Math.round(l.base * t + 300 * (1 - t));
+  }
+  function frame(ts) {
+    if (sweep) {
+      if (sweep.t0 == null) sweep.t0 = ts;
+      const p = Math.min(1, (ts - sweep.t0) / sweep.duration);
+      const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+      sweep.vx = sweep.sx + e * (sweep.ex - sweep.sx);
+      if (p >= 1) sweep = null;
+    }
+    if (inside || sweep) {
+      for (const l of letters) l.el.style.fontWeight = letterWeight(l);
+      raf = requestAnimationFrame(frame);
+    } else {
+      // Don't overwrite to base here - leave the letters at their last hover
+      // weight so settle() can ease them back over 0.4s instead of snapping.
+      running = false;
+      settle();
+    }
+  }
+  function ensureRunning() { if (!running) { running = true; raf = requestAnimationFrame(frame); } }
+  function settle() {
+    clearTimeout(fxT);
+    for (const l of letters) { l.el.style.transition = 'font-weight 0.4s ease'; l.el.style.fontWeight = l.base; }
+    fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 500);
+  }
+  function startSweep(radius) {
+    if (a11yOn()) return;
+    const rect = mark.getBoundingClientRect();
+    sweep = { t0: null, duration: SWEEP_DURATION, sx: rect.left - radius, ex: rect.right + radius,
+              cy: rect.top + rect.height / 2, vx: rect.left - radius, radius };
+    ensureRunning();
+  }
+
+  if (window.matchMedia('(hover:hover) and (pointer:fine)').matches) {
+    const activateHover = () => {
+      if (a11yOn()) return;
+      if (!inside) {
+        inside = true;
+        // No enter ramp: clear any lingering settle transition so cursor tracking
+        // starts instantly at a fixed speed (the exit settle still applies).
+        clearTimeout(fxT);
+        for (const l of letters) l.el.style.transition = '';
+      }
+      ensureRunning();
+    };
+    mark.addEventListener('mouseenter', activateHover);
+    // Also activate on mousemove: mousemove only fires while the pointer is over
+    // the mark, so this catches the case where the cursor was already inside when
+    // the page loaded (or during the intro sweep), when mouseenter never fires and
+    // hover would otherwise stay dead until you leave and re-enter.
+    mark.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; activateHover(); });
+    mark.addEventListener('mouseleave', () => { inside = false; });  // settles once the sweep also ends
+    setTimeout(() => startSweep(RADIUS_HOVER), SWEEP_DELAY);
+  } else if (window.matchMedia('(pointer: coarse)').matches) {
+    setTimeout(() => startSweep(RADIUS_TOUCH), SWEEP_DELAY);
+    if (ivHolder) ivHolder._iv = setInterval(() => startSweep(RADIUS_TOUCH), 8000);
+  }
+}
+
 // Header letter-proximity / sweep effect. Re-runs per navigation because
 // navigate.js swaps .site-mark (so the title text changes between pages); the
 // guard on the element keeps it from binding twice to the same header.
@@ -80,102 +191,8 @@ export function setupHeaderFx() {
   const title = document.querySelector('.site-title');
   const byline = document.querySelector('.site-byline');
   if (!mark || !title || !byline || mark._anrFx) return;
-  mark._anrFx = true;
-  if (setupHeaderFx._iv) clearInterval(setupHeaderFx._iv);
-
-    // letters are split via the shared module-level splitText() defined above.
-    function initLetters() {
-      title.style.width = title.offsetWidth + 'px';
-      title.style.height = title.offsetHeight + 'px';
-      byline.style.width = byline.offsetWidth + 'px';
-      byline.style.height = byline.offsetHeight + 'px';
-      const letters = [
-        ...splitText(title, 600),
-        ...splitText(byline, 700)
-      ];
-      title.style.width = '';
-      title.style.height = '';
-      byline.style.width = '';
-      byline.style.height = '';
-      return letters;
-    }
-
-    // Unified proximity controller. A single RAF loop drives both the intro
-    // "sweep" (a virtual cursor gliding across the header) and the real mouse
-    // hover. They run together: per letter we take whichever pulls it lighter
-    // (the smaller t), so hovering during the sweep no longer cancels it.
-    const RADIUS_HOVER = 120, RADIUS_TOUCH = 80;
-    const letters = initLetters();
-    let mx = -9999, my = -9999, inside = false;
-    let sweep = null;                 // { t0, duration, sx, ex, cy, vx, radius } | null
-    let raf = 0, running = false, fxT = 0;
-
-    function letterWeight(l) {
-      const r = l.el.getBoundingClientRect();
-      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      let t = 1;
-      if (inside) t = Math.min(t, Math.hypot(mx - cx, my - cy) / RADIUS_HOVER);
-      if (sweep)  t = Math.min(t, Math.hypot(sweep.vx - cx, sweep.cy - cy) / sweep.radius);
-      t = Math.min(1, t);
-      return Math.round(l.base * t + 300 * (1 - t));
-    }
-    function frame(ts) {
-      if (sweep) {
-        if (sweep.t0 == null) sweep.t0 = ts;
-        const p = Math.min(1, (ts - sweep.t0) / sweep.duration);
-        const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-        sweep.vx = sweep.sx + e * (sweep.ex - sweep.sx);
-        if (p >= 1) sweep = null;
-      }
-      if (inside || sweep) {
-        for (const l of letters) l.el.style.fontWeight = letterWeight(l);
-        raf = requestAnimationFrame(frame);
-      } else {
-        // Don't overwrite to base here - leave the letters at their last hover
-        // weight so settle() can ease them back over 0.4s instead of snapping.
-        running = false;
-        settle();
-      }
-    }
-    function ensureRunning() { if (!running) { running = true; raf = requestAnimationFrame(frame); } }
-    function settle() {
-      clearTimeout(fxT);
-      for (const l of letters) { l.el.style.transition = 'font-weight 0.4s ease'; l.el.style.fontWeight = l.base; }
-      fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 500);
-    }
-    function startSweep(radius) {
-      if (a11yOn()) return;
-      const rect = mark.getBoundingClientRect();
-      sweep = { t0: null, duration: 3500, sx: rect.left - radius, ex: rect.right + radius,
-                cy: rect.top + rect.height / 2, vx: rect.left - radius, radius };
-      ensureRunning();
-    }
-
-    if (window.matchMedia('(hover:hover) and (pointer:fine)').matches) {
-      const activateHover = () => {
-        if (a11yOn()) return;
-        if (!inside) {
-          inside = true;
-          // Ease the letters into their hover weight on entry, then drop the
-          // transition so subsequent cursor tracking stays instant (no lag).
-          clearTimeout(fxT);
-          for (const l of letters) l.el.style.transition = 'font-weight 0.18s ease';
-          fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 200);
-        }
-        ensureRunning();
-      };
-      mark.addEventListener('mouseenter', activateHover);
-      // Also activate on mousemove: mousemove only fires while the pointer is over
-      // the header, so this catches the case where the cursor was already inside
-      // when the page loaded (or during the intro sweep), when mouseenter never
-      // fires and hover would otherwise stay dead until you leave and re-enter.
-      mark.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; activateHover(); });
-      mark.addEventListener('mouseleave', () => { inside = false; });  // settles once the sweep also ends
-      setTimeout(() => startSweep(RADIUS_HOVER), 800);
-    } else if (window.matchMedia('(pointer: coarse)').matches) {
-      setTimeout(() => startSweep(RADIUS_TOUCH), 800);
-      setupHeaderFx._iv = setInterval(() => startSweep(RADIUS_TOUCH), 8000);
-    }
+  const letters = splitFrozen([{ el: title, weight: 600 }, { el: byline, weight: 700 }]);
+  bindSweepFx(mark, letters, { ivHolder: setupHeaderFx });
 }
 
 // Section-heading hover effect. Reuses the header's "letters thin toward the
@@ -279,6 +296,18 @@ export function setupFooterFx() {
   if (!window.matchMedia('(hover:hover) and (pointer:fine)').matches) return;
   const mark = document.querySelector('.footer-mark');
   if (mark) bindLetterFx(mark);
+}
+
+// 404 page: the big "404" numeral answers the cursor like the "Analyser" header
+// title - the same intro sweep + hover controller (bindSweepFx). The radius is
+// kept just above one digit's width so the thinning falls off across its
+// neighbours (a proximity gradient) rather than lightening all three at once, and
+// the sweep is quicker so it reads as a pass across a short numeral, not a glow.
+export function setupNotFoundFx() {
+  const code = document.querySelector('.notfound-code');
+  if (!code || code._anrFx) return;
+  const letters = splitFrozen([{ el: code, weight: 600 }]);
+  bindSweepFx(code, letters, { ivHolder: setupNotFoundFx, radiusHover: 160, radiusTouch: 130, sweepDuration: 1800 });
 }
 
 // Per-letter "thin toward the cursor" hover on the catalog group headers

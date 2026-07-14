@@ -132,6 +132,10 @@
     // and a reload hits the same URL the server serves.
     var u = new URL(href, location.href);
     u.pathname = u.pathname.replace(/\/index\.html(?=$)/, '/').replace(/\.html(?=$)/, '');
+    // The /docs tree renders its own shell (.docs-shell, no .site-main), so an SPA
+    // swap would find nothing to replace and leave the current page's content in
+    // place while the URL changed to /docs. Let those be full browser navigations.
+    if (u.pathname === '/docs' || u.pathname.indexOf('/docs/') === 0) return;
     var url = u.href;
     if (url === location.href) return;
 
