@@ -65,6 +65,40 @@ auto-suggested charts and PNG/JSON/CSV export.
 - **Export**: **Export chart PNG**, **Export stats JSON**, **Export rows
   CSV** (respects current filter/sort).
 
+Chart and plotting controls (the chart-type buttons are a segmented toggle):
+
+```demo
+btn active: Bar
+btn: Line
+btn: Scatter
+btn: Histogram
+btn: Pie
+```
+
+```demo
+btn: Plot as bar
+btn: Plot selected range
+```
+
+**Stacked** is an on/off toggle:
+
+```demo
+btn active: Stacked: on
+```
+
+Each column filter popup, and the workbench exports:
+
+```demo
+btn: Apply
+btn: Clear
+```
+
+```demo
+btn: Export chart PNG
+btn: Export stats JSON
+btn: Export rows CSV
+```
+
 **Notes / limits.** Rows are capped (`SAMPLE_CAP` in `table-stats.js`) and
 chart points decimated (`MAX_POINTS` in `tablekit.js`) to keep the canvas
 responsive on large datasets.
@@ -129,6 +163,10 @@ loose objects are extensionless) or a `.pack`/`.idx` file. Built in
 **How to use it.** For a blob object, click **Analyse blob content** to
 re-run the git blob's sniffed content through the full analyser.
 
+```demo
+btn: Analyse blob content
+```
+
 ### Email message viewer (.eml/.emlx/.mbox)
 
 **What it does.** Parses RFC 822/MIME messages: headers (unfolding
@@ -144,6 +182,10 @@ messages, each starting with a `From ` separator line). Built in
 
 **How to use it.** For an `.mbox` with multiple messages, click **Show more
 messages** to reveal additional ones.
+
+```demo
+btn: Show more messages
+```
 
 **Notes / limits.** No network fetches and no scripts ever run - the HTML
 body is sanitised the same way the MHTML viewer sanitises saved web pages.
@@ -167,6 +209,11 @@ check). For a single-file-compressed archive (e.g. a bare `.gz`), **Analyse
 The shared **Filter by type** control (from `folder-archive-shared.js`)
 opens a popup of per-extension chips to narrow the treemap.
 
+```demo
+btn: Verify entry CRCs (12 files)
+btn: Filter by type
+```
+
 **Notes / limits.** ZIP parsing (`zip.js`) prefers a central-directory read
 with ranged fetches per entry (order-independent, never loads the whole
 file), falling back to a sequential local-header walk for truncated/
@@ -189,6 +236,12 @@ path fails outright - unreadable bytes, a HEIC that won't convert, or a
 RAW with no usable preview or working decode; everything else - metadata,
 a hex dump, or a "browser can't preview this" banner - counts as openable).
 
+```demo
+btn: Copy paths (3 formats)
+btn: Show folder analysis
+btn: Check which files open (128)
+```
+
 **Notes / limits.** The openability scan has a 45-second timeout per file
 so one stuck file can't hang the whole scan.
 
@@ -209,6 +262,12 @@ representing many small files opens an aggregated popup list with a
 **close (×)** button, a **filter-by-name** search box, and a **row click**
 per file to analyse it directly.
 
+```demo
+btn: Analyse
+btn: Copy
+btn: Cancel
+```
+
 ### Comic book archive viewer (CBZ/CBR/CBT/CB7)
 
 **What it does.** Mirrors the PDF viewer's UX: a metadata card, a
@@ -223,6 +282,10 @@ unrar/7z WASM loader). Built in `comic.js`.
 
 **How to use it.** Click **Read (N pages)** to open the page reader/
 lightbox starting from page 1.
+
+```demo
+btn: Read (48 pages)
+```
 
 ### MIDI (Standard MIDI File)
 

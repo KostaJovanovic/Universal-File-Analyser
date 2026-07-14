@@ -60,6 +60,13 @@
 <p><strong>How to reach it.</strong> Drop any <code>.pdf</code>. Built in <code>web/assets/js/renderers/pdf.js</code>.</p>
 <p><strong>How to use it.</strong></p>
 <ul><li><strong>Info card</strong>: application/name/size/page count, Title/Author/Creator/ Producer, creation/modification dates, PDF spec version, page 1 dimensions (points, inches, mm), plus a timestamp-anomaly check (future dates, modified-before-created, vs. the file's own last-modified time).</li><li><strong>Document structure &amp; security card</strong> (shown only when something is found): revision count (each save appends a <code>%%EOF</code> marker - more than one means incremental edits are preserved inside the file), linearisation ("fast web view"), trailing data after the final <code>%%EOF</code> (⚠ a polyglot/tamper tell), outline/table of contents (expandable), embedded file attachments, <strong>embedded JavaScript</strong> with a heuristic risk scan (flags network/file-access/launch/obfuscation/crypto patterns per script, and separately flags auto-run triggers like "Document open" as the riskiest kind), encryption/permissions (allowed vs. restricted actions: print/copy/modify), Keywords/Subject/PDF-A conformance from XMP, and a fonts list (embedded vs. not-embedded, a portability/authenticity tell).</li><li><strong>Text content</strong>: extracted per page with reconstructed line breaks; <strong>Copy</strong> per page; <strong>Show next 3 pages</strong>/<strong>Show all</strong> reveal more. If a page has no embedded text (image-only/scanned), a note points at OCR instead.</li><li><strong>Page previews</strong>: thumbnails for the first 4 pages (<strong>Show next 3 pages</strong>/<strong>Show all</strong> for the rest). Click a thumbnail to open a full-page lightbox with <strong>Prev</strong>/<strong>Next</strong>, <strong>Zoom</strong> (double-click/double-tap, or the toolbar button), and <strong>High-res</strong> (re-renders the current page at higher resolution for sharper zoom, at a memory/speed cost) - plus a selectable text layer overlaid on the canvas. Per-thumbnail hover actions (always visible on touch): <strong>Analyse</strong> (renders the page to an image and sends it through the full photo pipeline), <strong>OCR</strong> (Tesseract on that one page, shown in a popup overlay), <strong>PNG</strong> (downloads the page as an image).</li><li><strong>Embedded images</strong>: click <strong>Extract embedded images</strong> to pull the original raster images (logos, photos, scans) out of the PDF's content streams - distinct from the rendered page previews. Each found image gets a download link and an <strong>Analyse</strong> button (up to 300 images).</li><li><strong>OCR - Scan pages as images</strong> (collapsible): click <strong>Scan all pages</strong> to run Tesseract across every page (language picker first), with a progress bar; <strong>Show more</strong>/<strong>Show all</strong> reveal more pages of the transcript.</li></ul>
+<p>Per-page text controls:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Copy</button><button type="button" class="anr-btn">Show next 3 pages</button><button type="button" class="anr-btn">Show all</button></div></div></div>
+<p>The full-page lightbox toolbar:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Prev</button><button type="button" class="anr-btn">Next</button><button type="button" class="anr-btn">Zoom</button><button type="button" class="anr-btn">High-res</button></div></div></div>
+<p>Per-thumbnail hover actions, plus the embedded-image and OCR entry points:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Analyse</button><button type="button" class="anr-btn">OCR</button><button type="button" class="anr-btn">PNG</button></div></div></div>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Extract embedded images</button><button type="button" class="anr-btn">Scan all pages</button></div></div></div>
 <p><strong>Notes / limits.</strong> pdf.js is lazy-loaded. OCR and per-page rendering are CPU-heavy for large documents; the UI stages results in batches so nothing blocks on a full-document scan by default.</p>
 </section>
 <section class="docs-card">
@@ -67,12 +74,14 @@
 <p><strong>What it does.</strong> Formats that have no real page geometry of their own (Word/ODF flowing text, spreadsheets, presentations) get the same "page sheet" experience as PDF: <code>paginateFlow()</code> lays flowing content onto A4-proportioned sheets (breaking to a new sheet when one fills, never splitting a block mid-page), and <code>pagedPreviewCard()</code> builds the thumbnail grid + lightbox reader.</p>
 <p><strong>How to reach it.</strong> Not used directly - it's the shared rendering substrate for <code>docx.js</code>, <code>odf.js</code>, <code>legacy-office.js</code>, and <code>textdoc.js</code> (callers with genuine natural pages, like one-slide-per-page presentations, build their own page nodes and skip straight to <code>pagedPreviewCard</code>). Built in <code>paged.js</code>.</p>
 <p><strong>How to use it.</strong> Same controls as PDF's thumbnail/lightbox pattern: <strong>Show next N pages</strong>/<strong>Show all</strong>, per-page <strong>Copy</strong>, and <strong>Copy all text</strong>.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Show next 3 pages</button><button type="button" class="anr-btn">Show all</button><button type="button" class="anr-btn">Copy all text</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="djvu-scanned-documents">DjVu scanned documents<a class="h-anchor" href="#djvu-scanned-documents" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Decodes and renders DjVu pages (a scanned-document format common for archived books/journals) to canvas, with prev/next paging.</p>
 <p><strong>How to reach it.</strong> Drop a <code>.djvu</code>/<code>.djv</code>. Built in <code>djvu.js</code> around the vendored pure-JS <strong>DjVu.js</strong>.</p>
 <p><strong>How to use it.</strong> <strong>‹ Prev</strong>/<strong>Next ›</strong> page through the document; the pager is disabled while a page is rendering (decoding a scanned page can take a moment).</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">‹ Prev</button><button type="button" class="anr-btn">Next ›</button></div></div></div>
 <p><strong>Notes / limits.</strong> On memory-constrained (mobile) devices, files over 200MB are rejected with a message to try a desktop browser instead - the whole document is decoded page-by-page in a WASM heap, which can crash a phone tab.</p>
 </section>
 <section class="docs-card">
@@ -121,6 +130,7 @@
 <p><strong>What it does.</strong> Modern iWork files (2013+) store content as Snappy-compressed, undocumented Protocol Buffer streams in <code>Index/*.iwa</code> - there's no practical way to re-render that in the browser. Instead, Analyser shows the QuickLook preview Apple bakes into the package: an embedded <code>Preview.pdf</code> (rendered page-by-page via the PDF viewer) or, failing that, the largest preview/thumbnail image. Files saved without a preview fall back to a metadata-only readout.</p>
 <p><strong>How to reach it.</strong> Drop a <code>.pages</code>/<code>.numbers</code>/<code>.key</code>/<code>.keynote</code>. Built in <code>iwork.js</code>.</p>
 <p><strong>How to use it.</strong> If a <code>Preview.pdf</code> exists, it's shown via the full PDF viewer (inheriting all its controls). Otherwise, if a thumbnail image exists, click <strong>Analyse this image</strong> to send it through the photo pipeline.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Analyse this image</button></div></div></div>
 <p><strong>Notes / limits.</strong> <code>.key</code> collides with PEM cryptographic key files (not a ZIP); if the dropped <code>.key</code> isn't actually a ZIP package, it's handed to <code>proprietary.js</code>'s identifier instead so a real private key still gets read. Format detected as "iWork 2013+ (IWA)" vs. "iWork '09 (XML)" based on package contents.</p>
 </section>
 <section class="docs-card">
@@ -128,12 +138,14 @@
 <p><strong>What it does.</strong> Reads zipped XHTML e-books: metadata, cover, and chapter-by-chapter reading with navigation.</p>
 <p><strong>How to reach it.</strong> Drop a <code>.epub</code>. Built in <code>epub.js</code>.</p>
 <p><strong>How to use it.</strong> <strong>← Prev</strong>/<strong>Next →</strong> page through chapters; the <strong>chapter select</strong> dropdown jumps directly to any chapter.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">← Prev</button><button type="button" class="anr-btn">Next →</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="kindle-mobipocket-e-books-mobi-azw-azw3">Kindle / Mobipocket e-books (MOBI/AZW/AZW3)<a class="h-anchor" href="#kindle-mobipocket-e-books-mobi-azw-azw3" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Decodes MOBI 6 and KF8 (AZW3, and combo <code>.mobi</code>) e-books fully in the browser via the vendored <strong>foliate-js</strong>: metadata and cover, then a section-by-section reader with each section decoded to a self-contained HTML blob shown in a sandboxed (scriptless) iframe with images resolved.</p>
 <p><strong>How to reach it.</strong> Drop a <code>.mobi</code>/<code>.azw</code>/<code>.azw3</code>. Built in <code>mobi.js</code>.</p>
 <p><strong>How to use it.</strong> <strong>‹ Prev</strong>/<strong>Next ›</strong> step through sections; the pager is disabled while a section loads (KF8's HUFF/CDIC decompression can be slow).</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">‹ Prev</button><button type="button" class="anr-btn">Next ›</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="microsoft-access-databases-mdb-accdb">Microsoft Access databases (MDB/ACCDB)<a class="h-anchor" href="#microsoft-access-databases-mdb-accdb" aria-label="Link to this section">#</a></h3>
@@ -146,6 +158,7 @@
 <p><strong>What it does.</strong> Renders an <code>.ipynb</code> the way a reader sees it: narrative markdown cells, code cells with their <code>In[n]</code> prompt, and captured outputs (stream text, execute results, rich display data including PNG/JPEG images decoded from base64 data URIs, and errors).</p>
 <p><strong>How to reach it.</strong> Drop a <code>.ipynb</code>. Built in <code>notebook.js</code>.</p>
 <p><strong>How to use it.</strong> <strong>Show more cells</strong>/<strong>Show all</strong> reveal more of a long notebook.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Show more cells</button><button type="button" class="anr-btn">Show all</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="markdown">Markdown<a class="h-anchor" href="#markdown" aria-label="Link to this section">#</a></h3>
@@ -173,7 +186,6 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Site</p>
         <a href="/compare">Compare</a>
-        <a href="/docs">Docs</a>
         <a href="/privacy">Privacy</a>
       </div>
       <div class="footer-col">
@@ -184,6 +196,7 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Project</p>
         <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <a href="/docs">Documentation</a>
         <!-- No address in the source: the mailto is assembled in JS only after a
              Cloudflare Turnstile challenge passes (see wireFooterContact). -->
         <button type="button" class="footer-contact">Email me!</button>

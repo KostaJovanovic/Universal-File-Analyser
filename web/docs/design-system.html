@@ -58,6 +58,8 @@
 <h2 id="token-system">Token system<a class="h-anchor" href="#token-system" aria-label="Link to this section">#</a></h2>
 <p>All tokens are CSS custom properties on <code>:root</code> in <code>web/assets/css/analyser.css</code>:</p>
 <ul><li><strong>Colour</strong>: <code>--bg</code>, <code>--fg</code>, <code>--muted</code>, <code>--hairline</code>, <code>--rule</code>, <code>--surface</code>, <code>--accent</code> (<code>#e60023</code>, the red accent), <code>--accent-fg</code>, <code>--partial</code> (yellowish-orange, the "Partial" support-depth tag). Composite border shorthands <code>--bd-hairline</code> (<code>1px solid var(--hairline)</code>) and <code>--bd-rule</code> (over the slightly-stronger <code>--rule</code> colour) are the most-repeated literal in the file - both flip automatically with the theme since they resolve the underlying colour var.</li><li><strong>Always-dark media chrome</strong>: <code>--media-bg</code>, <code>--on-dark</code>, <code>--surface-on-dark</code>, <code>--hairline-on-dark</code>, <code>--hairline-strong</code>, <code>--border-on-dark-ctl</code>, <code>--muted-on-dark</code>, <code>--border-on-dark</code>, <code>--border-on-dark-strong</code>, plus <code>--white-a40</code>/<code>--white-a80</code> alpha tints. These live on always-dark surfaces (spectrogram, waveform, fullscreen overlays) and deliberately do <strong>not</strong> get a <code>[data-theme="dark"]</code> override, since they're already dark regardless of site theme.</li><li><strong>Type</strong>: <code>--font-sans</code> (Geist), <code>--font-mono</code> (Geist Mono), a fluid scale from <code>--t-micro</code> (10px) through <code>--t-mega</code> (<code>clamp(64px, 13vw, 200px)</code>).</li><li><strong>Rhythm/timing</strong>: <code>--gap</code>, <code>--pad-x</code>/<code>--pad-y</code> (fluid), <code>--lh-tight</code>/ <code>--lh-body</code>/<code>--lh-prose</code>, <code>--ls-caps</code>/<code>--ls-micro</code> (letter-spacing), and a <code>--dur-*</code> namespace (<code>--dur-fast</code> 0.12s through <code>--dur-slow</code> 0.3s) kept separate from the <code>--t-*</code> (type-size) namespace to avoid collision. <code>--radius: 0</code> is the sharp-corners token (see below).</li><li><strong>Elevation</strong>: <code>--shadow-color</code>/<code>--shadow-popover</code>.</li></ul>
+<p>The core colour tokens as live swatches - each is backed by its real CSS var, so this row flips when you toggle the theme in the top bar:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-palette"><div class="anr-swatch" style="background:var(--bg)"><span>--bg</span></div><div class="anr-swatch" style="background:var(--surface)"><span>--surface</span></div><div class="anr-swatch" style="background:var(--fg)"><span>--fg</span></div><div class="anr-swatch" style="background:var(--muted)"><span>--muted</span></div><div class="anr-swatch" style="background:var(--hairline)"><span>--hairline</span></div><div class="anr-swatch" style="background:var(--accent)"><span>--accent</span></div><div class="anr-swatch" style="background:var(--partial)"><span>--partial</span></div></div></div></div>
 <p>Theme switching sets <code>data-theme="dark"</code> on <code>&lt;html&gt;</code> (bootstrapped before-first-paint by the inline script in each page's <code>HEAD:START</code>/ <code>HEAD:END</code> block - see <a href="/docs/architecture"><code>architecture.md</code></a> and the <code>shared-partials</code> skill) and overrides the light-mode colour tokens; component CSS should reference the tokens rather than hardcoded colours so it Just Works in both themes.</p>
 </section>
 <section class="docs-card">
@@ -67,6 +69,12 @@
 <section class="docs-card">
 <h2 id="theme-variables-and-idioms">Theme variables and idioms<a class="h-anchor" href="#theme-variables-and-idioms" aria-label="Link to this section">#</a></h2>
 <ul><li><strong><code>.anr-btn</code></strong> (<code>analyser.css:1200</code>) - the standard button: <code>--bd-hairline</code> border, <code>--bg</code>/<code>--fg</code> colours, hover-inverts to <code>--fg</code> background. Used throughout renderers for every action button (record, live spectrogram, play/pause transports, download, export, ...).</li><li><strong><code>--bd-hairline</code>/<code>--bd-rule</code></strong> - the standard border treatment for cards, dividers and section rules.</li><li><strong><code>var(--muted)</code></strong> for secondary/help text, <strong><code>var(--font-mono)</code></strong> for numeric/code readouts, <strong><code>var(--t-small)</code></strong> for compact UI chrome (badges, hints).</li><li>Cards, tables, and readouts generally live inside <code>.anr-results</code> / <code>row()</code>/<code>rowHelp()</code>-built structures from <code>core/util.js</code>, styled once in <code>analyser.css</code> rather than per-renderer.</li></ul>
+<p>The standard button in its default, call-to-action and disabled states (hover or press any of them to see the invert):</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Download</button><button type="button" class="anr-btn anr-btn--cta">Analyse audio</button><button type="button" class="anr-btn" disabled>Run OCR</button></div></div></div>
+<p>Its accent-filled active state, used for toggles - click to flip it:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn is-active">Isolate</button></div></div></div>
+<p>And a card - the mono, uppercase, hairline-underlined heading grouping one feature's controls and output:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-card"><h3>RGB histogram</h3><p>A titled block grouping one feature's controls and output. Sharp corners, hairline underline, tokens throughout.</p><div class="anr-btn-row"><button type="button" class="anr-btn">Save PNG</button><button type="button" class="anr-btn">Fullscreen</button></div></div></div></div>
 </section>
 <section class="docs-card">
 <h2 id="light-dark-theming-and-narrow-widths">Light/dark theming and narrow widths<a class="h-anchor" href="#light-dark-theming-and-narrow-widths" aria-label="Link to this section">#</a></h2>
@@ -97,7 +105,6 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Site</p>
         <a href="/compare">Compare</a>
-        <a href="/docs">Docs</a>
         <a href="/privacy">Privacy</a>
       </div>
       <div class="footer-col">
@@ -108,6 +115,7 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Project</p>
         <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <a href="/docs">Documentation</a>
         <!-- No address in the source: the mailto is assembled in JS only after a
              Cloudflare Turnstile challenge passes (see wireFooterContact). -->
         <button type="button" class="footer-contact">Email me!</button>

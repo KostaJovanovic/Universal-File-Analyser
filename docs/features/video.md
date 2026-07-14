@@ -28,6 +28,12 @@ histogram/OCR/etc. pipeline).
 sends the current frame to the full photo analyser (`renderPhoto` via
 `photo.js`). Built in `video.js`.
 
+```demo
+btn: Prev frame
+btn: Next frame
+btn: Analyse frame
+```
+
 ### Sonify a frame
 
 **What it does.** Turns the current video frame into sound, same as the
@@ -36,6 +42,10 @@ photo sonify feature.
 **How to reach it.** Click **Sonify** on the current frame. Lazy-imports
 `sonify.js` - see [`images.md`](images.md) for full control detail.
 
+```demo
+btn: Sonify
+```
+
 ### Contact sheet
 
 **What it does.** Builds a thumbnail grid of frames sampled across the
@@ -43,6 +53,10 @@ video.
 
 **How to reach it.** Click **Generate contact sheet** (shown once there are
 enough frames, 8+). Built in `video.js`.
+
+```demo
+btn: Generate contact sheet
+```
 
 ### Audio track extraction
 
@@ -54,6 +68,12 @@ track; **Analyse audio** runs it through `audio.js`'s full pipeline;
 **Analyse photo** (on the paired still) runs the current frame through
 `photo.js`. Built in `video.js`, reusing `audio.js`'s
 `makeSpectrogramPanel`/`buildHistogramCard`/`buildWaveformCard`.
+
+```demo
+btn: Download audio (WAV)
+btn: Analyse audio
+btn: Analyse photo
+```
 
 **Notes / limits.** For codecs the browser can decode video but not audio
 for (or vice versa), `video-sync.js`'s "audio companion" mechanism plays a
@@ -72,6 +92,12 @@ since video needs the picture itself re-encoded).
 **How to use it.** Once rendered: **Analyse reversed** re-runs the full
 pipeline on the reversed clip; **Download reversed (MP4)** saves it.
 
+```demo
+btn: ↺ Reverse video
+btn: Analyse reversed
+btn: Download reversed (MP4)
+```
+
 **Notes / limits.** Explicitly warned as slow in the UI copy ("this isn't
 as straightforward as it seems... going to take a while") - a full FFmpeg
 re-encode, not a cheap operation.
@@ -89,6 +115,11 @@ skip the automatic run - shown as "Skipped automatically for large videos
 (N MB)"). **Run again (current part)** re-scans just the currently loaded
 segment on segmented/salvaged playback. Built in `video.js`.
 
+```demo
+btn: Detect scene changes
+btn: Run again (current part)
+```
+
 **How to use it.** Click any result thumbnail or timeline marker to jump
 the player there.
 
@@ -100,12 +131,21 @@ the content in segments rather than loading it all at once.
 **How to reach it.** **Prev**/**Next** step between segments. Built in
 `video.js`.
 
+```demo
+btn: Prev
+btn: Next
+```
+
 ### Integrity: SHA-256
 
 **What it does.** Computes the file's full SHA-256 hash.
 
 **How to reach it.** Click **Compute SHA-256** (the hash isn't computed
 automatically for video since it reads the whole file). Built in `video.js`.
+
+```demo
+btn: Compute SHA-256
+```
 
 ### Truncated/unfinalised recording salvage
 
@@ -133,6 +173,13 @@ its parameter sets to make the carved stream decodable. Click **Salvage
 video** to run the recovery; the result plays through the site's raw-stream
 segmented player.
 
+```demo
+card: Reference clip needed
+  text: The SPS/PPS codec setup was stored only in the missing moov. Pick a healthy clip shot on the same camera in the same mode.
+  btn: Choose reference clip...
+  btn cta: Salvage video
+```
+
 **Notes / limits.** Verified against real Sony FX30 XAVC footage. The
 recovery module is pure logic (no DOM) with an abstracted byte-source
 reader, so it runs identically under the browser File API and a Node test
@@ -146,6 +193,10 @@ into H.264/MP4 via FFmpeg so it can be played and analysed in full.
 **How to reach it.** Click **Convert to H.264 and play**, shown when
 playback fails on an unsupported codec. Built in `video.js`.
 
+```demo
+btn: Convert to H.264 and play
+```
+
 **Notes / limits.** Lossy re-encode; can take a while for long or
 high-resolution clips.
 
@@ -156,6 +207,10 @@ native browser preview.
 
 **How to reach it.** Click **Extract first frame**, shown when there's no
 default preview available. Built in `video.js`.
+
+```demo
+btn: Extract first frame
+```
 
 ### AVI container parsing
 

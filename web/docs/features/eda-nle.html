@@ -59,12 +59,16 @@
 <p><strong>What it does.</strong> Altium's native documents (<code>.SchDoc</code>/<code>.SchLib</code> schematics, <code>.PcbDoc</code>/<code>.PcbLib</code> boards+footprints) are OLE2 Compound Files (the same container as legacy Office) - opened with the shared <code>cfbf.js</code> reader and parsed entirely in the browser. Schematics store primitives as ASCII length-prefixed records; boards/footprints store them as binary length-prefixed records (reverse-engineered field offsets, validated against a real SamacSys footprint). The geometry is rebuilt into an interactive SVG.</p>
 <p><strong>How to reach it.</strong> Drop a <code>.SchDoc</code>/<code>.SchLib</code>/<code>.PcbDoc</code>/<code>.PcbLib</code>/<code>.epw</code> (model wrapper)/<code>.PrjPcb</code>/<code>.PrjPcbStructure</code>/<code>.SchDocPreview</code>/ <code>.PcbDocPreview</code>. Built in <code>altium.js</code>.</p>
 <p><strong>How to use it.</strong> <strong>Fit</strong> resets the view to fit the viewport; <strong>layer chips</strong> (per PCB layer) toggle visibility; for multi-sheet schematics, <strong>tab buttons</strong> switch between sheets; in the BOM, <strong>designator buttons</strong> (per component) jump to and highlight that part on its schematic sheet.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Fit</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="kicad-viewer-schematic-pcb-libraries-project">KiCad viewer (schematic + PCB + libraries + project)<a class="h-anchor" href="#kicad-viewer-schematic-pcb-libraries-project" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> KiCad's modern documents (versions 6-9) are all S-expression text: <code>.kicad_sch</code> (schematic), <code>.kicad_pcb</code> (board), <code>.kicad_sym</code>/<code>.kicad_mod</code> (symbol/footprint libraries), plus JSON/text sidecars (<code>.kicad_pro</code>/<code>.kicad_prl</code> project settings, <code>fp-info-cache</code>, <code>.wbk</code> ngspice workbook). Everything is parsed and drawn as an interactive SVG; KiCad board space is Y-down (drawn directly), while symbol-library graphics use Y-up and are flipped when placed. The reference designator ties a schematic symbol to its board footprint, powering two-way cross-probing in the project view.</p>
 <p><strong>How to reach it.</strong> Drop a <code>.kicad_pcb</code>/<code>.kicad_sch</code>/<code>.kicad_sym</code>/ <code>.kicad_mod</code>/<code>.kicad_pro</code>/<code>.kicad_prl</code>/<code>.wbk</code>, a <code>-bak</code> backup of any of those, or the extensionless <code>fp-lib-table</code>/<code>sym-lib-table</code>/<code>fp-info-cache</code>. Built in <code>kicad.js</code>.</p>
 <p><strong>How to use it.</strong> <strong>Fit</strong>/<strong>Reset view</strong> reset the schematic or 3D view; <strong>layer chips</strong> toggle PCB layer visibility; <strong>Flip over</strong> flips the 3D board to the other side; <strong>Quality</strong>/<strong>Supersampling</strong> are render-quality toggles; <strong>3D board</strong>/<strong>Top</strong>/<strong>Bottom</strong> switch board view mode; the <strong>symbol select</strong> dropdown previews a specific library symbol/footprint; <strong>designator buttons</strong> (per BOM row) and <strong>PCB</strong> cross-probe between the schematic and board views; <strong>tab buttons</strong> switch multi-sheet schematics.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Fit</button><button type="button" class="anr-btn">Reset view</button><button type="button" class="anr-btn">Flip over</button><button type="button" class="anr-btn">Quality</button></div></div></div>
+<p>The board-view mode is a segmented toggle:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn is-active">3D board</button><button type="button" class="anr-btn">Top</button><button type="button" class="anr-btn">Bottom</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="spice-ltspice-raw-waveform-viewer">SPICE/LTspice raw waveform viewer<a class="h-anchor" href="#spice-ltspice-raw-waveform-viewer" aria-label="Link to this section">#</a></h3>
@@ -83,18 +87,21 @@
 <p><strong>What it does.</strong> An <code>.aep</code> is a RIFX file (big-endian RIFF, form type "Egg!") storing the project as nested chunk lists - reverse-engineered (there's no public spec) to rebuild each composition's timeline: layers, per-comp time scale, and other project structure.</p>
 <p><strong>How to reach it.</strong> Drop a <code>.aep</code>/<code>.aet</code>. Built in <code>aftereffects.js</code>.</p>
 <p><strong>How to use it.</strong> <strong>Zoom out</strong>/<strong>Zoom in</strong>/<strong>Reset</strong> control the composition preview canvas (also ctrl+scroll to zoom).</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Zoom out</button><button type="button" class="anr-btn">Zoom in</button><button type="button" class="anr-btn">Reset</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="adobe-premiere-pro-project-viewer-prproj-prel">Adobe Premiere Pro project viewer (.prproj/.prel)<a class="h-anchor" href="#adobe-premiere-pro-project-viewer-prproj-prel" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> A <code>.prproj</code> is a gzip-compressed XML document (the "PremiereData" model) - once inflated, a graph of cross-referenced objects (ObjectID local to its class, and/or a globally unique ObjectUID) chained via ObjectRef/ObjectURef references, walked to rebuild each sequence's track/clip timeline.</p>
 <p><strong>How to reach it.</strong> Drop a <code>.prproj</code>/<code>.prel</code>. Built in <code>premiere.js</code>.</p>
 <p><strong>How to use it.</strong> <strong>Zoom out</strong>/<strong>Zoom in</strong>/<strong>Reset</strong> control the project preview canvas.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Zoom out</button><button type="button" class="anr-btn">Zoom in</button><button type="button" class="anr-btn">Reset</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="davinci-resolve-project-timeline-viewer-drp-drt">DaVinci Resolve project/timeline viewer (.drp/.drt)<a class="h-anchor" href="#davinci-resolve-project-timeline-viewer-drp-drt" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> A <code>.drp</code> is a ZIP archive of XML documents exported from the Resolve project database. Key entries: <code>project.xml</code> (name, versions, dates), <code>SeqContainer/&lt;uuid&gt;.xml</code> per timeline (VideoTrackVec/AudioTrackVec - the actual track/clip layout), plus colour-grade node-chip data for each clip's node graph.</p>
 <p><strong>How to reach it.</strong> Drop a <code>.drp</code>/<code>.drt</code>. Built in <code>davinci.js</code>.</p>
 <p><strong>How to use it.</strong> <strong>Zoom out</strong>/<strong>Zoom in</strong>/<strong>Reset</strong> control the resource/timeline preview canvas; colour-grade node chips (styled pill tags) show each clip's node graph inline.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Zoom out</button><button type="button" class="anr-btn">Zoom in</button><button type="button" class="anr-btn">Reset</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="sony-magix-vegas-pro-project-viewer-veg-vf">Sony/MAGIX VEGAS Pro project viewer (.veg/.vf)<a class="h-anchor" href="#sony-magix-vegas-pro-project-viewer-veg-vf" aria-label="Link to this section">#</a></h3>
@@ -113,6 +120,7 @@
 <p><strong>What it does.</strong> Sony Alpha/FX/RX cameras (A7, A6700, FX3, etc.) write a timed-metadata track (sample format <code>rtmd</code>) to their MP4/MOV files: each sample (one per video frame) carries that frame's exposure/lens/GPS data plus a burst of inertial-measurement samples - the gyroscope (angular rate) and accelerometer used by Catalyst Browse and Gyroflow to stabilise footage. Analyser parses the TLV-encoded rtmd structure (reverse-engineered, cross-checked against ExifTool's <code>Sony.pm Process_rtmd</code>) to extract and plot these traces.</p>
 <p><strong>How to reach it.</strong> Automatic for a Sony video with an <code>rtmd</code> track (see also <a href="/docs/features/video"><code>video.md</code></a>, which the gyro card is embedded within). Built in <code>sony-rtmd.js</code>.</p>
 <p><strong>How to use it.</strong> <strong>Export CSV</strong> exports the gyro/accelerometer metadata; <strong>Export Gyroflow (.gcsv)</strong> exports in Gyroflow's stabiliser-ready interchange format (see <code>gcsv.js</code> / <a href="/docs/features/data-archive"><code>data-archive.md</code></a>, which reads that same format back).</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Export CSV</button><button type="button" class="anr-btn">Export Gyroflow (.gcsv)</button></div></div></div>
 <p><strong>Notes / limits.</strong> Reads via byte-range slices only - never buffers the whole video. Best-effort throughout: any parse failure returns <code>null</code> so the normal video analysis is unaffected. Accelerometer scale is ~8192 counts per g (Sony's LSB/g); the gyro stays in raw sensor counts (Gyroflow applies the camera-specific calibration to convert to deg/s). Sample reading is capped and decimated for very long recordings (<code>MAX_FRAMES</code>).</p>
 </section>
 
@@ -135,7 +143,6 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Site</p>
         <a href="/compare">Compare</a>
-        <a href="/docs">Docs</a>
         <a href="/privacy">Privacy</a>
       </div>
       <div class="footer-col">
@@ -146,6 +153,7 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Project</p>
         <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <a href="/docs">Documentation</a>
         <!-- No address in the source: the mailto is assembled in JS only after a
              Cloudflare Turnstile challenge passes (see wireFooterContact). -->
         <button type="button" class="footer-contact">Email me!</button>

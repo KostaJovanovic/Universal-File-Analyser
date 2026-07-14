@@ -66,6 +66,14 @@
 <p><strong>How to reach it.</strong> Automatic wherever a table renders - <code>csv.js</code>, <code>xlsx.js</code>, <code>xlsb.js</code>, <code>odf.js</code> (ODS) all lazily mount it. Built in <code>tablekit.js</code>.</p>
 <p><strong>How to use it.</strong></p>
 <ul><li><strong>Grid</strong>: click a column header to sort (ascending, then descending, then back to original order) and select the whole column (shows its stats below - text columns report distinct counts and most-common values); click a row number to select that row; drag across cells to select a rectangle (summarised live in the stats bar).</li><li><strong>Columns</strong> menu shows/hides individual columns.</li><li><strong>Split column</strong>: pick a column and delimiter (auto-detected by default) to break one packed column into several real columns, splitting its header name too; <strong>Undo split</strong> reverts. Column <strong>Up/Down</strong> buttons reorder columns.</li><li><strong>Filter</strong>: the gear on each header opens a filter popup (<strong>Apply</strong>/ <strong>Clear</strong>) - a min/max range for numbers, a "contains" match for text; the search box filters across every column at once.</li><li><strong>Stats bar</strong>: for the current selection, reports count/sum/average/ median/min/max/standard deviation.</li><li><strong>Summarise ("For each ... show the ...")</strong>: pick a group-by column, a target number column, and an aggregate (count/sum/average/min/max/ median - count needs no number column) via the <strong>group-by key/aggregate/ value selects</strong>; rows roll up into per-group totals live. <strong>Plot as bar</strong> charts the result directly.</li><li><strong>Charts</strong>: <strong>chart-type buttons</strong> pick the type; fields update the drawing instantly; hovering a bar/point/slice shows its exact value; <strong>suggested chart buttons</strong> are one-click presets; <strong>Plot selected range</strong> charts whatever's currently selected in the grid; <strong>Stacked: on/off</strong> toggles stacked mode.</li><li><strong>Export</strong>: <strong>Export chart PNG</strong>, <strong>Export stats JSON</strong>, <strong>Export rows CSV</strong> (respects current filter/sort).</li></ul>
+<p>Chart and plotting controls (the chart-type buttons are a segmented toggle):</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn is-active">Bar</button><button type="button" class="anr-btn">Line</button><button type="button" class="anr-btn">Scatter</button><button type="button" class="anr-btn">Histogram</button><button type="button" class="anr-btn">Pie</button></div></div></div>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Plot as bar</button><button type="button" class="anr-btn">Plot selected range</button></div></div></div>
+<p><strong>Stacked</strong> is an on/off toggle:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn is-active">Stacked: on</button></div></div></div>
+<p>Each column filter popup, and the workbench exports:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Apply</button><button type="button" class="anr-btn">Clear</button></div></div></div>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Export chart PNG</button><button type="button" class="anr-btn">Export stats JSON</button><button type="button" class="anr-btn">Export rows CSV</button></div></div></div>
 <p><strong>Notes / limits.</strong> Rows are capped (<code>SAMPLE_CAP</code> in <code>table-stats.js</code>) and chart points decimated (<code>MAX_POINTS</code> in <code>tablekit.js</code>) to keep the canvas responsive on large datasets.</p>
 </section>
 <section class="docs-card">
@@ -90,12 +98,14 @@
 <p><strong>What it does.</strong> Opens git repository objects with no server and no git binary: loose objects (<code>.git/objects/ab/cdef...</code>, zlib-compressed <code>&lt;type&gt; &lt;size&gt;\0&lt;payload&gt;</code>) inflated via the browser's native <code>DecompressionStream</code> (no library) and parsed by type (commit/tag text, tree entry listing, or a blob handed to the main analyser); pack files (<code>.pack</code>) and pack indexes (<code>.idx</code>) read for header + object count.</p>
 <p><strong>How to reach it.</strong> Drop a loose git object (detected by content - <code>sniffGitObject()</code>, called from the drop pipeline's magic-byte sniff, since loose objects are extensionless) or a <code>.pack</code>/<code>.idx</code> file. Built in <code>gitobject.js</code>.</p>
 <p><strong>How to use it.</strong> For a blob object, click <strong>Analyse blob content</strong> to re-run the git blob's sniffed content through the full analyser.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Analyse blob content</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="email-message-viewer-eml-emlx-mbox">Email message viewer (.eml/.emlx/.mbox)<a class="h-anchor" href="#email-message-viewer-eml-emlx-mbox" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Parses RFC 822/MIME messages: headers (unfolding continuation lines, decoding RFC 2047 encoded words), walks the MIME tree for a displayable body (preferring <code>text/html</code> sanitised, else <code>text/plain</code>), and lists attachments. Sender authentication (SPF/DKIM/ DMARC) is surfaced from the <code>Authentication-Results</code> header.</p>
 <p><strong>How to reach it.</strong> Drop a <code>.eml</code>/<code>.emlx</code> (Apple Mail, which prefixes a byte-count line and appends a plist trailer) or <code>.mbox</code> (concatenates many messages, each starting with a <code>From </code> separator line). Built in <code>email.js</code>.</p>
 <p><strong>How to use it.</strong> For an <code>.mbox</code> with multiple messages, click <strong>Show more messages</strong> to reveal additional ones.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Show more messages</button></div></div></div>
 <p><strong>Notes / limits.</strong> No network fetches and no scripts ever run - the HTML body is sanitised the same way the MHTML viewer sanitises saved web pages.</p>
 </section>
 <section class="docs-card">
@@ -103,6 +113,7 @@
 <p><strong>What it does.</strong> Inspects ZIP archives by reading the central directory (no full extraction needed for listing), with treemap/breakdown/tree views shared with the folder viewer. Also handles RAR/7z (via lazy libarchive WASM), and raw single-stream compression (gzip, XZ, LZ4, legacy <code>.Z</code>, LZMA) via dedicated decompressors.</p>
 <p><strong>How to reach it.</strong> Drop a <code>.zip</code>/<code>.rar</code>/<code>.7z</code>/<code>.gz</code>/<code>.xz</code>/<code>.lz4</code>/<code>.Z</code>/ <code>.lzma</code> or other recognised archive extension. Built in <code>archive.js</code>, sharing <code>folder-archive-shared.js</code> for the treemap/breakdown/tree UI.</p>
 <p><strong>How to use it.</strong> <strong>Verify entry CRCs (N files)</strong> recomputes each entry's CRC-32 and compares it to the value stored in the archive (integrity check). For a single-file-compressed archive (e.g. a bare <code>.gz</code>), <strong>Analyse <code>&lt;inner file&gt;</code></strong> opens the decompressed inner file in the full analyser. The shared <strong>Filter by type</strong> control (from <code>folder-archive-shared.js</code>) opens a popup of per-extension chips to narrow the treemap.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Verify entry CRCs (12 files)</button><button type="button" class="anr-btn">Filter by type</button></div></div></div>
 <p><strong>Notes / limits.</strong> ZIP parsing (<code>zip.js</code>) prefers a central-directory read with ranged fetches per entry (order-independent, never loads the whole file), falling back to a sequential local-header walk for truncated/ headerless archives - see <a href="/docs/renderers"><code>renderers.md</code></a>.</p>
 </section>
 <section class="docs-card">
@@ -110,6 +121,7 @@
 <p><strong>What it does.</strong> Recursively walks a dropped folder (via <code>webkitGetAsEntry</code>) and renders a treemap + summary, sharing the same breakdown/view-toggle UI as the archive viewer.</p>
 <p><strong>How to reach it.</strong> Drop a folder onto the page. Built in <code>folder.js</code>.</p>
 <p><strong>How to use it.</strong> <strong>Copy paths (N formats)</strong> copies one sample file path per unrecognised format found in the folder, useful for reporting a gap; <strong>Show folder analysis</strong> reveals the full analysis panel; <strong>Check which files open (N)</strong> scans every file in the folder and flags any that can't actually be opened (a file only counts as "can't open" if its sole viewer path fails outright - unreadable bytes, a HEIC that won't convert, or a RAW with no usable preview or working decode; everything else - metadata, a hex dump, or a "browser can't preview this" banner - counts as openable).</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Copy paths (3 formats)</button><button type="button" class="anr-btn">Show folder analysis</button><button type="button" class="anr-btn">Check which files open (128)</button></div></div></div>
 <p><strong>Notes / limits.</strong> The openability scan has a 45-second timeout per file so one stuck file can't hang the whole scan.</p>
 </section>
 <section class="docs-card">
@@ -117,12 +129,14 @@
 <p><strong>What it does.</strong> A nested, squarified treemap (WizTree-style): every file in every subfolder rendered at once, leaf rectangles sized by byte size and coloured by category, nested inside folder frames, canvas-based with hover tooltips.</p>
 <p><strong>How to reach it.</strong> Shared component powering both <code>folder.js</code>'s and <code>archive.js</code>'s size-breakdown views. Built in <code>treemap.js</code>.</p>
 <p><strong>How to use it.</strong> Click a tile to zoom into that folder, or open a file's action menu (<strong>Cancel</strong>/<strong>Copy</strong>/<strong>Analyse</strong>); the <strong>breadcrumb</strong> ("All files" / folder buttons) navigates back up the zoom stack; a tile representing many small files opens an aggregated popup list with a <strong>close (×)</strong> button, a <strong>filter-by-name</strong> search box, and a <strong>row click</strong> per file to analyse it directly.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Analyse</button><button type="button" class="anr-btn">Copy</button><button type="button" class="anr-btn">Cancel</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="comic-book-archive-viewer-cbz-cbr-cbt-cb7">Comic book archive viewer (CBZ/CBR/CBT/CB7)<a class="h-anchor" href="#comic-book-archive-viewer-cbz-cbr-cbt-cb7" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Mirrors the PDF viewer's UX: a metadata card, a page-thumbnail grid, and a click-to-open lightbox reader with prev/next (and arrow-key) navigation. Pages are image files inside the archive, extracted on demand so a 200-page comic doesn't build hundreds of object URLs up front.</p>
 <p><strong>How to reach it.</strong> Drop a <code>.cbz</code> (a ZIP), <code>.cbt</code> (a TAR, walked by a minimal built-in reader), or <code>.cbr</code>/<code>.cb7</code> (via the lazy libarchive unrar/7z WASM loader). Built in <code>comic.js</code>.</p>
 <p><strong>How to use it.</strong> Click <strong>Read (N pages)</strong> to open the page reader/ lightbox starting from page 1.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Read (48 pages)</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="midi-standard-midi-file">MIDI (Standard MIDI File)<a class="h-anchor" href="#midi-standard-midi-file" aria-label="Link to this section">#</a></h3>
@@ -168,7 +182,6 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Site</p>
         <a href="/compare">Compare</a>
-        <a href="/docs">Docs</a>
         <a href="/privacy">Privacy</a>
       </div>
       <div class="footer-col">
@@ -179,6 +192,7 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Project</p>
         <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <a href="/docs">Documentation</a>
         <!-- No address in the source: the mailto is assembled in JS only after a
              Cloudflare Turnstile challenge passes (see wireFooterContact). -->
         <button type="button" class="footer-contact">Email me!</button>

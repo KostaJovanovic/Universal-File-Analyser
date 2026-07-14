@@ -59,6 +59,7 @@
 <p><strong>What it does.</strong> Every analysis includes a SHA-256 fingerprint of the file's exact bytes, with CRC-32/MD5/SHA-1/SHA-512 available on demand.</p>
 <p><strong>How to reach it.</strong> Automatic in the Integrity card most renderers append (<code>util.js</code>'s <code>sha256Row()</code>/<code>integrityCard()</code>) - the SHA-256 value fills in asynchronously after hashing completes.</p>
 <p><strong>How to use it.</strong> Click <strong>Show CRC-32 / MD5 / SHA-1 / SHA-512</strong> (inserted right below the SHA-256 row) to compute and reveal the additional hashes.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-card"><h3>Integrity</h3><p><strong>SHA-256</strong> fills in asynchronously once hashing completes.</p><div class="anr-btn-row"><button type="button" class="anr-btn">Show CRC-32 / MD5 / SHA-1 / SHA-512</button></div></div></div></div>
 <p><strong>Notes / limits.</strong> For very large files where hashing the whole file up-front would be slow (notably video), the hash is instead gated behind an explicit <strong>Compute SHA-256</strong> button rather than computed automatically - see <a href="/docs/features/video"><code>video.md</code></a>.</p>
 </section>
 <section class="docs-card">
@@ -66,12 +67,16 @@
 <p><strong>What it does.</strong> Pulls URLs, IP addresses, domains and email addresses out of a file's text and builds a "Network indicators" card listing them with one-click lookup links to public OSINT services (VirusTotal, urlscan, AbuseIPDB, Shodan depending on indicator type).</p>
 <p><strong>How to reach it.</strong> Automatic wherever a renderer has extractable text (built via <code>osintCard()</code>/<code>buildOsintCard()</code> in <code>osint.js</code>, e.g. from <code>unknown.js</code>). Domain extraction filters out filename-shaped false positives (a token like <code>bundle.min.js</code> isn't reported as a domain) via a <code>FILE_TLDS</code> denylist, and IPv4 matches are octet-validated.</p>
 <p><strong>How to use it.</strong> Click any lookup link (VirusTotal, urlscan, AbuseIPDB, Shodan) to open that service in a new tab.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-card"><h3>Network indicators</h3><div class="anr-btn-row"><button type="button" class="anr-btn">VirusTotal</button><button type="button" class="anr-btn">urlscan</button><button type="button" class="anr-btn">AbuseIPDB</button><button type="button" class="anr-btn">Shodan</button></div></div></div></div>
 <p><strong>Notes / limits.</strong> Nothing is ever sent automatically - links only open a third-party service when clicked, preserving the no-upload promise. Each indicator list is capped (300 extracted, 100 shown by default).</p>
 </section>
 <section class="docs-card">
 <h3 id="export-analysis-data">Export analysis data<a class="h-anchor" href="#export-analysis-data" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Exports everything currently on the page (every metadata table, plus visuals) in one of four formats: <strong>Complete report (HTML)</strong> - a single self-contained file with every table inline and visuals (spectrogram, histogram, previews, maps) embedded as base64 images, opens in any browser, works offline; <strong>PDF (print)</strong> - opens that same report in a new tab and launches the browser's print dialog ("Save as PDF"); <strong>JSON</strong> - every field/table/text block, typed and grouped by section; <strong>CSV</strong> - a flat Section/Group/Field/Value sheet (text blobs like hex dumps/OCR text are capped at 5000 chars; images become placeholder rows since a CSV can't hold them).</p>
 <p><strong>How to reach it.</strong> Click <strong>Export data</strong> (next to "Analyse next file?"). Built in <code>export-data.js</code>.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Export data</button></div></div></div>
+<p>It offers four export formats:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Complete report (HTML)</button><button type="button" class="anr-btn">PDF (print)</button><button type="button" class="anr-btn">JSON</button><button type="button" class="anr-btn">CSV</button></div></div></div>
 <p><strong>Notes / limits.</strong> Pure read-side: it scrapes the rendered DOM (<code>.anr-card</code>/<code>.anr-readout</code> tables the renderers already built) rather than needing per-format export logic, so it works automatically for every current and future renderer. Everything is generated locally; nothing leaves the browser.</p>
 </section>
 <section class="docs-card">
@@ -85,6 +90,7 @@
 <p><strong>What it does.</strong> The last-resort renderer for files with no dedicated viewer: a magic-byte format guess, hex/ASCII dump, SHA-256, and enhanced previews for plain text, JSON and XML.</p>
 <p><strong>How to reach it.</strong> Automatic for any <code>unknown</code>/<code>extensionless</code> kind (see <a href="/docs/pipeline"><code>pipeline.md</code></a>). Built in <code>unknown.js</code>.</p>
 <p><strong>How to use it.</strong> <strong>Show full text</strong> reveals the complete text of a large text-like file (initially truncated); if the JSON inspector detects a Lottie-shaped structure, <strong>▶ Play as Lottie animation</strong> offers to play it (see <a href="/docs/features/animation-frames"><code>animation-frames.md</code></a>); when an embedded/carved image is detected inside the blob, per-image <strong>Analyse</strong>/<strong>Download</strong> buttons hand off to the photo pipeline via <code>photo-recover.js</code>.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Show full text</button><button type="button" class="anr-btn">▶ Play as Lottie animation</button><button type="button" class="anr-btn">Analyse</button><button type="button" class="anr-btn">Download</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="forensic-integrity-cards">Forensic integrity cards<a class="h-anchor" href="#forensic-integrity-cards" aria-label="Link to this section">#</a></h3>
@@ -98,6 +104,7 @@
 <p><strong>What it does.</strong> Runs two files through their normal full analysis (into off-screen staging containers), then merges the results into one view: shared field labels down the left, file A's and file B's values in adjacent columns (<code>Field | A | B</code>). Rows whose values differ are tagged <code>.is-diff</code>. Non-readout content (image previews, video players, hex dumps, histograms) that can't merge cell-by-cell falls back to a side-by-side A|B split within its card instead.</p>
 <p><strong>How to reach it.</strong> Drop two files onto the <code>/compare</code> page's A/B dropzones (see <a href="/docs/pages"><code>pages.md</code></a>). Built in <code>compare.js</code>, called with <code>{ classify, routes }</code> from <code>app.js</code> so it reuses the real <code>classifyFile()</code>/<code>ROUTES</code>.</p>
 <p><strong>How to use it.</strong> Interactive video/audio sub-prompts (e.g. "Analyse audio"/"Analyse frame" call-to-action buttons that would normally appear twice) collapse to <strong>one</strong> central button that fires both files' actions at once. Click <strong>Show differences</strong> to fade every row where A and B match, leaving only the differing rows visible; click again to show everything.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn anr-btn--cta">Analyse audio</button><button type="button" class="anr-btn">Show differences</button></div></div></div>
 <p><strong>Notes / limits.</strong> The merge <strong>moves</strong> (not clones) the real DOM cells from each file's staged render into the merged table, so tooltips and deferred async fills (like the SHA-256 cell, which resolves after hashing) keep working - including a second pass that corrects a hash row's <code>.is-diff</code> tag once the async hash comparison actually resolves (its initial tag, decided from still-empty cells, can be wrong). Media renderers are invoked with <code>{ inline: true }</code> so they target the compare panel rather than the main page's fixed sections (<code>#photoPreview</code>/<code>#videoPreview</code>/etc.).</p>
 </section>
 
@@ -120,7 +127,6 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Site</p>
         <a href="/compare">Compare</a>
-        <a href="/docs">Docs</a>
         <a href="/privacy">Privacy</a>
       </div>
       <div class="footer-col">
@@ -131,6 +137,7 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Project</p>
         <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <a href="/docs">Documentation</a>
         <!-- No address in the source: the mailto is assembled in JS only after a
              Cloudflare Turnstile challenge passes (see wireFooterContact). -->
         <button type="button" class="footer-contact">Email me!</button>

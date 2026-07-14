@@ -27,6 +27,10 @@ chips** (per PCB layer) toggle visibility; for multi-sheet schematics,
 **tab buttons** switch between sheets; in the BOM, **designator buttons**
 (per component) jump to and highlight that part on its schematic sheet.
 
+```demo
+btn: Fit
+```
+
 ### KiCad viewer (schematic + PCB + libraries + project)
 
 **What it does.** KiCad's modern documents (versions 6-9) are all
@@ -51,6 +55,21 @@ toggles; **3D board**/**Top**/**Bottom** switch board view mode; the
 **symbol select** dropdown previews a specific library symbol/footprint;
 **designator buttons** (per BOM row) and **PCB** cross-probe between the
 schematic and board views; **tab buttons** switch multi-sheet schematics.
+
+```demo
+btn: Fit
+btn: Reset view
+btn: Flip over
+btn: Quality
+```
+
+The board-view mode is a segmented toggle:
+
+```demo
+btn active: 3D board
+btn: Top
+btn: Bottom
+```
 
 ### SPICE/LTspice raw waveform viewer
 
@@ -98,6 +117,12 @@ per-comp time scale, and other project structure.
 **How to use it.** **Zoom out**/**Zoom in**/**Reset** control the
 composition preview canvas (also ctrl+scroll to zoom).
 
+```demo
+btn: Zoom out
+btn: Zoom in
+btn: Reset
+```
+
 ### Adobe Premiere Pro project viewer (.prproj/.prel)
 
 **What it does.** A `.prproj` is a gzip-compressed XML document (the
@@ -110,6 +135,12 @@ track/clip timeline.
 
 **How to use it.** **Zoom out**/**Zoom in**/**Reset** control the project
 preview canvas.
+
+```demo
+btn: Zoom out
+btn: Zoom in
+btn: Reset
+```
 
 ### DaVinci Resolve project/timeline viewer (.drp/.drt)
 
@@ -124,6 +155,12 @@ clip's node graph.
 **How to use it.** **Zoom out**/**Zoom in**/**Reset** control the
 resource/timeline preview canvas; colour-grade node chips (styled pill
 tags) show each clip's node graph inline.
+
+```demo
+btn: Zoom out
+btn: Zoom in
+btn: Reset
+```
 
 ### Sony/MAGIX VEGAS Pro project viewer (.veg/.vf)
 
@@ -180,6 +217,11 @@ Built in `sony-rtmd.js`.
 **Export Gyroflow (.gcsv)** exports in Gyroflow's stabiliser-ready
 interchange format (see `gcsv.js` / [`data-archive.md`](data-archive.md), which
 reads that same format back).
+
+```demo
+btn: Export CSV
+btn: Export Gyroflow (.gcsv)
+```
 
 **Notes / limits.** Reads via byte-range slices only - never buffers the
 whole video. Best-effort throughout: any parse failure returns `null` so

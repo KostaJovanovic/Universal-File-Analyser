@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 225;
+const COMMIT_COUNT = 226;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1618,6 +1618,14 @@ window._anrReadableText = isReadableText;
   setupFooterFx();
   // Footer "Email me!" Turnstile gate (footer is swapped on every navigation).
   wireFooterContact();
+  // Size the linkback gif to match the "valjdakosta.com · 2026" line above it -
+  // CSS alone can't size one flex item to a specific sibling's content width
+  // when another item (the nav columns) has to render between them on mobile.
+  (function sizeFooterLinkback() {
+    const copyright = document.querySelector('.footer-copyright');
+    const linkback = document.querySelector('.footer-linkback');
+    if (copyright && linkback) linkback.style.width = copyright.offsetWidth + 'px';
+  })();
   // Nav "Share" button (header is swapped on every navigation).
   wireShareButtons();
   // Mobile access to the Asteroids easter egg: the Konami code needs a keyboard, so

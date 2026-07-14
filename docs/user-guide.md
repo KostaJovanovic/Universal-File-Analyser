@@ -16,9 +16,20 @@ to `/compare`, where two files can be dropped side by side and their full
 analyses lined up field-by-field (see the "/compare" entry in
 [`cross-cutting.md`](features/cross-cutting.md)).
 
+The Sound zone captures audio directly:
+
+```demo
+btn: Record
+btn: Live spectrogram
+```
+
 Once a file is analysed, an **Info** button opens the full supported-format
 catalogue (searchable, filterable by category) if you want to check whether
 a type is supported before dropping it, or browse what Analyser can do.
+
+```demo
+btn: Info
+```
 
 ## Reading the readout
 
@@ -87,6 +98,11 @@ Click **Install as app** to add Analyser to your home screen/app list
 (uses the browser's native install prompt where available, or shows
 platform-specific manual instructions otherwise). **Clear storage** removes
 everything cached.
+
+```demo
+btn cta: Install as app
+btn: Clear storage
+```
 
 ## Where to go next
 

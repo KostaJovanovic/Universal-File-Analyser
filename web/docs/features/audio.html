@@ -59,12 +59,16 @@
 <p><strong>What it does.</strong> Decodes the audio (Web Audio <code>decodeAudioData</code>) and shows file info, container/codec details, per-channel peak/RMS, and a waveform.</p>
 <p><strong>How to reach it.</strong> Drop any recognised audio file. Built in <code>web/assets/js/renderers/audio.js</code>.</p>
 <p><strong>How to use it.</strong> For multi-channel audio (<code>audio.js</code>'s channel selector), choose <strong>Mix</strong> (every channel averaged) or an individual channel (Left, Right, Centre, LFE, surrounds - named per the file's declared speaker layout, best-effort) to drive the spectrogram and waveform; per-channel peak and RMS update with the choice. <code>describeChannels()</code>/<code>channelLabels()</code> recognise mono through 9.1.6 Atmos layouts.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn is-active">Mix</button><button type="button" class="anr-btn">Left</button><button type="button" class="anr-btn">Right</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="spectrogram">Spectrogram<a class="h-anchor" href="#spectrogram" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> An interactive time/frequency/loudness plot of the audio, computed with a hand-written FFT (<code>spectrogram.js</code>'s <code>fft()</code>, no audio library dependency).</p>
 <p><strong>How to reach it.</strong> Automatic below the waveform for any decoded audio.</p>
 <p><strong>How to use it.</strong> Linear or logarithmic frequency axis, adjustable FFT size and window function, choice of colourmap, <strong>Save PNG</strong> to export the canvas, <strong>Fullscreen</strong> to expand it. <code>computeReassignedSpectrogram()</code> offers a sharper reassigned-spectrogram mode; <code>computeStftComplex()</code>/ <code>combineStftToDb()</code> support blending two signals' spectra (used by the AI separation blend slider below).</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Save PNG</button><button type="button" class="anr-btn">Fullscreen</button></div></div></div>
+<p>The frequency axis is a segmented toggle (the selected option carries the accent fill):</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn is-active">Log</button><button type="button" class="anr-btn">Linear</button></div></div></div>
 <p><strong>Notes / limits.</strong> Reaches down into the sub-20Hz range per the repo root <code>README.md</code>.</p>
 </section>
 <section class="docs-card">
@@ -85,24 +89,34 @@
 <p><strong>What it does.</strong> An interactive parametric EQ that solos or cuts specific frequency bands, with one-tap presets and free-form custom bands.</p>
 <p><strong>How to reach it.</strong> Click <strong>Isolate</strong> in the audio actions row (only offered when driving file playback, not live capture). Built in <code>audio.js</code>.</p>
 <p><strong>How to use it.</strong> Click <strong>+ Custom band</strong> to add a band, drag/edit its range; each band gets its own <strong>remove (x)</strong> button. <strong>Preset buttons</strong> apply a named frequency preset as a one-tap solo (cutting everything outside the preset's range); <strong>Clear</strong> removes the active preset. Once at least one band exists, <strong>Download WAV</strong> renders and downloads the isolated result.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Isolate</button></div></div></div>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">+ Custom band</button><button type="button" class="anr-btn">Clear</button><button type="button" class="anr-btn">Download WAV</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="ai-vocal-separation">AI vocal separation<a class="h-anchor" href="#ai-vocal-separation" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Splits a track into separate vocal and instrumental stems using an on-device neural network (MDX-Net "Kim Vocal 2" from Ultimate Vocal Remover), entirely in-browser via ONNX Runtime Web.</p>
 <p><strong>How to reach it.</strong> Click <strong>Separate vocals (AI)</strong> inside the Isolate panel. Built in <code>audio.js</code>, backed by the MDX-Net subsystem in <code>web/assets/js/lib/mdx-*.js</code> (see <a href="/docs/parsers-and-libs"><code>parsers-and-libs.md</code></a>).</p>
 <p><strong>How to use it.</strong> Choose <strong>Standard</strong> or <strong>Lite</strong> (mobile-friendlier) model tier. First use prompts to confirm the model download (<strong>Download and continue</strong>/<strong>Start separation</strong> to proceed, <strong>Cancel</strong> to back out) unless already cached. Once separated, each stem gets <strong>Play</strong> (in a blend row that can mix vocal/instrumental live), <strong>Analyse</strong> (runs the stem through the full audio analyser), and <strong>Download WAV</strong>. A <code>[?]</code> info button next to "Separate" explains the approach.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Separate vocals (AI)</button></div></div></div>
+<p>Pick a model tier, then confirm the one-time model download:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn is-active">Standard</button><button type="button" class="anr-btn">Lite</button></div></div></div>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn anr-btn--cta">Download and continue</button><button type="button" class="anr-btn">Cancel</button></div></div></div>
+<p>Each separated stem gets its own controls:</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Play</button><button type="button" class="anr-btn">Analyse</button><button type="button" class="anr-btn">Download WAV</button></div></div></div>
 <p><strong>Notes / limits.</strong> Runs on GPU via WebGPU where available, WASM otherwise; the model (~85MB) is part of the "Complete" offline tier (see <a href="/docs/pwa-offline"><code>pwa-offline.md</code></a>). The isolate band-stop cuts are re-applied to separated stems in parallel (nodes can't be shared across the file player's audio context and the stem-blend context), so Isolate edits and AI separation compose rather than one bypassing the other.</p>
 </section>
 <section class="docs-card">
 <h3 id="waveform-selection-zoom-and-export">Waveform selection: zoom and export<a class="h-anchor" href="#waveform-selection-zoom-and-export" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Select a time range on the waveform to zoom into it or export just that range.</p>
 <p><strong>How to reach it.</strong> Drag a selection on the waveform, then click <strong>Zoom</strong> or <strong>Export WAV</strong>. Built in <code>audio.js</code>. <strong>Reset zoom</strong> returns to the full view.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Zoom</button><button type="button" class="anr-btn">Export WAV</button><button type="button" class="anr-btn">Reset zoom</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="reversed-playback">Reversed playback<a class="h-anchor" href="#reversed-playback" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Plays and downloads the decoded audio backwards - each channel's samples flipped, re-encoded as WAV.</p>
 <p><strong>How to reach it.</strong> Click <strong>Reverse audio</strong> ("Reverse" card, ↺ icon) below the audio analysis. Built in <code>media-reverse.js</code>'s <code>buildReverseAudioCard()</code>.</p>
 <p><strong>How to use it.</strong> Click <strong>↺ Reverse audio</strong>; once rendered, a player appears with <strong>Download reversed (WAV)</strong> and <strong>Analyse reversed</strong> (feeds the reversed clip back through the full analysis pipeline via <code>window._anrHandleFile</code>).</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-card"><h3>Reverse</h3><div class="anr-btn-row"><button type="button" class="anr-btn">↺ Reverse audio</button><button type="button" class="anr-btn">Download reversed (WAV)</button><button type="button" class="anr-btn">Analyse reversed</button></div></div></div></div>
 <p><strong>Notes / limits.</strong> The reverse itself is synchronous and near-instant but gated behind a click so it isn't computed for every file automatically. Reuses the AVI module's PCM-WAV encoder (<code>encodeWav</code>, from <code>video-avi.js</code>). Video reverse is a separate feature (FFmpeg re-encode) - see <a href="/docs/features/video"><code>video.md</code></a>.</p>
 </section>
 <section class="docs-card">
@@ -110,12 +124,14 @@
 <p><strong>What it does.</strong> Records live audio from the microphone and runs it through the same analysis as a dropped file.</p>
 <p><strong>How to reach it.</strong> Click <strong>Record</strong> (dropzone or the audio actions row). Built in <code>audio.js</code>.</p>
 <p><strong>How to use it.</strong> Shows a compact live streaming spectrogram while recording (a lighter-weight visual than the full interactive one). Click <strong>Stop</strong> to end the take; <strong>Download recording</strong> saves the captured audio.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Record</button><button type="button" class="anr-btn">Stop</button><button type="button" class="anr-btn">Download recording</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="live-spectrogram-no-recording">Live spectrogram (no recording)<a class="h-anchor" href="#live-spectrogram-no-recording" aria-label="Link to this section">#</a></h3>
 <p><strong>What it does.</strong> Visualises the microphone input live, without recording - a real-time spectrogram of whatever the mic hears.</p>
 <p><strong>How to reach it.</strong> Click <strong>Live spectrogram</strong>. Built in <code>audio.js</code>.</p>
 <p><strong>How to use it.</strong> Same toolbar as the file spectrogram (<strong>Save PNG</strong>, <strong>Fullscreen</strong>, <strong>Record</strong>, <strong>Live spectrogram</strong> toggle) plus <strong>Pause</strong> and <strong>Analyse last Ns</strong>, which freezes and analyses the trailing N seconds of the live stream. A channel picker (<strong>Mix/L/R/etc.</strong>) chooses which input channel feeds the view.</p>
+<div class="docs-demo" role="figure" aria-label="Live example from the site"><div class="docs-demo-stage"><div class="anr-btn-row"><button type="button" class="anr-btn">Live spectrogram</button><button type="button" class="anr-btn">Pause</button><button type="button" class="anr-btn">Analyse last Ns</button></div></div></div>
 </section>
 <section class="docs-card">
 <h3 id="cover-art-tag-extraction">Cover art / tag extraction<a class="h-anchor" href="#cover-art-tag-extraction" aria-label="Link to this section">#</a></h3>
@@ -149,7 +165,6 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Site</p>
         <a href="/compare">Compare</a>
-        <a href="/docs">Docs</a>
         <a href="/privacy">Privacy</a>
       </div>
       <div class="footer-col">
@@ -160,6 +175,7 @@
       <div class="footer-col">
         <p class="footer-meta footer-col-label">Project</p>
         <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <a href="/docs">Documentation</a>
         <!-- No address in the source: the mailto is assembled in JS only after a
              Cloudflare Turnstile challenge passes (see wireFooterContact). -->
         <button type="button" class="footer-contact">Email me!</button>

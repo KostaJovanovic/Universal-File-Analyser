@@ -53,6 +53,36 @@ extraction, and OCR - all via the vendored **pdf.js**.
   run Tesseract across every page (language picker first), with a progress
   bar; **Show more**/**Show all** reveal more pages of the transcript.
 
+Per-page text controls:
+
+```demo
+btn: Copy
+btn: Show next 3 pages
+btn: Show all
+```
+
+The full-page lightbox toolbar:
+
+```demo
+btn: Prev
+btn: Next
+btn: Zoom
+btn: High-res
+```
+
+Per-thumbnail hover actions, plus the embedded-image and OCR entry points:
+
+```demo
+btn: Analyse
+btn: OCR
+btn: PNG
+```
+
+```demo
+btn: Extract embedded images
+btn: Scan all pages
+```
+
 **Notes / limits.** pdf.js is lazy-loaded. OCR and per-page rendering are
 CPU-heavy for large documents; the UI stages results in batches so nothing
 blocks on a full-document scan by default.
@@ -75,6 +105,12 @@ in `paged.js`.
 **How to use it.** Same controls as PDF's thumbnail/lightbox pattern: **Show
 next N pages**/**Show all**, per-page **Copy**, and **Copy all text**.
 
+```demo
+btn: Show next 3 pages
+btn: Show all
+btn: Copy all text
+```
+
 ### DjVu scanned documents
 
 **What it does.** Decodes and renders DjVu pages (a scanned-document format
@@ -86,6 +122,11 @@ vendored pure-JS **DjVu.js**.
 **How to use it.** **‹ Prev**/**Next ›** page through the document; the
 pager is disabled while a page is rendering (decoding a scanned page can
 take a moment).
+
+```demo
+btn: ‹ Prev
+btn: Next ›
+```
 
 **Notes / limits.** On memory-constrained (mobile) devices, files over
 200MB are rejected with a message to try a desktop browser instead - the
@@ -204,6 +245,10 @@ preview fall back to a metadata-only readout.
 viewer (inheriting all its controls). Otherwise, if a thumbnail image
 exists, click **Analyse this image** to send it through the photo pipeline.
 
+```demo
+btn: Analyse this image
+```
+
 **Notes / limits.** `.key` collides with PEM cryptographic key files (not a
 ZIP); if the dropped `.key` isn't actually a ZIP package, it's handed to
 `proprietary.js`'s identifier instead so a real private key still gets
@@ -220,6 +265,11 @@ chapter-by-chapter reading with navigation.
 **How to use it.** **← Prev**/**Next →** page through chapters; the
 **chapter select** dropdown jumps directly to any chapter.
 
+```demo
+btn: ← Prev
+btn: Next →
+```
+
 ### Kindle / Mobipocket e-books (MOBI/AZW/AZW3)
 
 **What it does.** Decodes MOBI 6 and KF8 (AZW3, and combo `.mobi`) e-books
@@ -233,6 +283,11 @@ images resolved.
 **How to use it.** **‹ Prev**/**Next ›** step through sections; the pager
 is disabled while a section loads (KF8's HUFF/CDIC decompression can be
 slow).
+
+```demo
+btn: ‹ Prev
+btn: Next ›
+```
 
 ### Microsoft Access databases (MDB/ACCDB)
 
@@ -257,6 +312,11 @@ decoded from base64 data URIs, and errors).
 
 **How to use it.** **Show more cells**/**Show all** reveal more of a long
 notebook.
+
+```demo
+btn: Show more cells
+btn: Show all
+```
 
 ### Markdown
 

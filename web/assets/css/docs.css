@@ -56,7 +56,10 @@
    toggle - shares one identical box so they line up at exactly the same
    height (the site's .dark-toggle otherwise renders a touch taller). The
    topbar itself is a surfaced band, so the chips drop to the page background
-   (with their hairline border) to read as crisp buttons against it. */
+   (with their hairline border) to read as crisp buttons against it. :not(:hover)
+   on the background, not a bare selector - .header-btn:hover / .dark-toggle:hover
+   in analyser.css tie this selector's specificity, and docs.css loads after, so
+   an unconditional background here would always win and swallow the hover fill. */
 .docs-topnav .header-btn,
 .docs-topnav .dark-toggle {
   height: 26px;
@@ -64,6 +67,9 @@
   display: inline-flex;
   align-items: center;
   line-height: 1;
+}
+.docs-topnav .header-btn:not(:hover),
+.docs-topnav .dark-toggle:not(:hover) {
   background: var(--bg);
 }
 
@@ -257,6 +263,54 @@ h2:hover .h-anchor, h3:hover .h-anchor, h4:hover .h-anchor { opacity: 1; }
   font-size: var(--t-small);
   line-height: 1.5;
 }
+
+/* ----- Live component demos (```demo fences) -----
+   A framed strip that renders the site's real UI elements (.anr-btn, .anr-card,
+   .anr-palette, ... - all styled in analyser.css) inline in the prose. The strip
+   is an inset: a hairline box dropping to the page background, matching how code
+   insets read inside a --surface docs card. Sharp corners, tokens only. */
+.docs-demo {
+  border: var(--bd-hairline);
+  background: var(--bg);
+  margin: 0 0 18px;
+  max-width: 100%;
+}
+.docs-demo-stage { padding: 16px 18px; text-align: center; }
+.docs-demo-stage > :first-child { margin-top: 0; }
+.docs-demo-stage > :last-child { margin-bottom: 0; }
+/* Reset the in-app spacing the components carry for their live-page context so
+   they sit tidily stacked in the demo strip, and centre each element within it. */
+.docs-demo-stage .anr-btn-row { margin: 0; justify-content: center; }
+.docs-demo-stage .anr-btn-row + .anr-btn-row,
+.docs-demo-stage .anr-btn-row + .anr-palette,
+.docs-demo-stage .anr-palette + .anr-btn-row { margin-top: 10px; }
+.docs-demo-stage .anr-card { margin: 0; }
+.docs-demo-stage .anr-card + .anr-card { margin-top: 22px; }
+/* A card's body controls need a touch of air below its underlined heading; the
+   heading is a flex row, so centre it explicitly (text-align won't reach it). */
+.docs-demo-stage .anr-card > h3 { margin-bottom: 12px; justify-content: center; }
+.docs-demo-stage .anr-card p { margin: 0 0 12px; }
+/* On the live page the palette is a fixed repeat(8, 1fr) grid always filled
+   with 8 dominant colours; in a demo the count varies (7 theme tokens, etc.),
+   and an under-filled grid track leaves a stray empty cell (just its top border
+   line). Lay the demo swatches out with flex instead - only the swatches that
+   exist are drawn - and give them a fixed, roomy size so their hex/token
+   labels fit without truncation. */
+.docs-demo-stage .anr-palette {
+  display: flex;
+  flex-wrap: wrap;
+  width: -moz-fit-content;
+  width: fit-content;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+.docs-demo-stage .anr-swatch { width: 84px; }
+/* Press feedback: the demo buttons invert on click/tap the same way the live
+   controls invert on hover, so they feel interactive (docs.js adds the
+   toggle/segmented latching on top - visual only, no real functionality). */
+.docs-demo-stage .anr-btn:active { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.docs-demo-stage .anr-btn--cta:active { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); filter: brightness(1.1); }
 
 .docs-article table {
   border-collapse: collapse;
