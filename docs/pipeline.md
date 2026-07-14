@@ -140,7 +140,7 @@ format-specific binary parsers are split into per-domain lazy chunks
 `parsers-email.js`, `parsers-disk.js`, `parsers-osmisc.js`, `parsers-raw.js`)
 rather than one huge always-loaded module. `isProprietaryExt(ext)`
 (`proprietary.js:4224`) is simply `ext in FORMATS`, used by `classifyFile()`'s
-fallback. See `docs/parsers-and-libs.md` for the chunk/lib inventory.
+fallback. See [`parsers-and-libs.md`](parsers-and-libs.md) for the chunk/lib inventory.
 
 ## The `unknown.js` fallback
 

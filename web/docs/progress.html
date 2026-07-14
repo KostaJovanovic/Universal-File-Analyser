@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Docs build progress - Analyser docs</title>
+  <meta name="description" content="Read this first if you are resuming. Do tasks top to bottom. Tick a box only after the doc is written AND spot-checked against source. Add a one-line note.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/progress">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Docs build progress - Analyser docs">
+  <meta property="og:description" content="Read this first if you are resuming. Do tasks top to bottom. Tick a box only after the doc is written AND spot-checked against source. Add a one-line note.">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/progress">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress" aria-current="page">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress" aria-current="page">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Docs build progress</h1>
+<p class="docs-lede">Read this first if you are resuming. Do tasks top to bottom. Tick a box only after the doc is written AND spot-checked against source. Add a one-line note.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h2"><a href="#phase-a-setup">Phase A - setup</a></li><li class="toc-h2"><a href="#phase-b-architecture-docs-order-matters-each-builds-on-the-last">Phase B - architecture docs (order matters, each builds on the last)</a></li><li class="toc-h2"><a href="#phase-c-feature-inventory-the-checklist-the-feature-docs-must-satisfy">Phase C - feature inventory (the checklist the feature docs must satisfy)</a></li><li class="toc-h2"><a href="#phase-d-feature-reference-the-main-deliverable">Phase D - feature reference (the main deliverable)</a></li><li class="toc-h2"><a href="#phase-e-end-user-docs-wrap-up">Phase E - end-user docs + wrap-up</a></li></ul></details>
+    <section class="docs-card">
+<h2 id="phase-a-setup">Phase A - setup<a class="h-anchor" href="#phase-a-setup" aria-label="Link to this section">#</a></h2>
+<ul><li>[x] A1 orientation read (CLAUDE.md, README.md) - notes: read both; zero-backend browser-only forensic workbench, never commit/patch without explicit ask.</li><li>[x] A2 skeletons for every docs/ file created with headings + TODO markers - notes: all docs/<em>.md and docs/features/</em>.md skeletons created.</li></ul>
+</section>
+<section class="docs-card">
+<h2 id="phase-b-architecture-docs-order-matters-each-builds-on-the-last">Phase B - architecture docs (order matters, each builds on the last)<a class="h-anchor" href="#phase-b-architecture-docs-order-matters-each-builds-on-the-last" aria-label="Link to this section">#</a></h2>
+<ul><li>[x] B1 docs/architecture.md - notes: covers zero-backend model, boot()/page shell, lazy() loading, sw.js precache, navigate.js SPA swap, wrangler.jsonc deploy.</li><li>[x] B2 docs/pipeline.md - notes: classify.js precedence, file-sniff.js sniffFileType/resolveByContent/isReadableText, VARIANT_REROUTE, formats.js EXT_VARIANTS/detectVariant, proprietary.js chunk dispatch, unknown.js fallback.</li><li>[x] B3 docs/renderers.md - notes: catalog of all 79 renderer modules (plan said 82, actual count re-verified via glob) grouped by domain, from top-comments + imports.</li><li>[x] B4 docs/parsers-and-libs.md - notes: chunk dispatch contract, all 16 parser chunks, 17 lib/loader files including MDX-Net subsystem.</li><li>[x] B5 docs/pages.md - notes: all 8 pages covered; test.html confirmed NOT present in working tree (noted explicitly per skip-test-page memory).</li><li>[x] B6 docs/pwa-offline.md - notes: SHELL precache, VERSION epoch/KEEP_CACHES, 3 offline tiers with real sizes from offline-tiers.js, manifest.json + install flow/installHint.</li><li>[x] B7 docs/tooling.md - notes: server.bat/serve.py routing+mock stats, save.bat full flow, all 7 tools/*.mjs generators, version numbering pointer.</li><li>[x] B8 docs/worker.md - notes: all 4 D1 tables + 5 endpoints, privacy mechanisms (hashIp, unsupported-bucket collapsing, rate limits), history.js/stats-page.js client wiring, serve.py mock.</li><li>[x] B9 docs/design-system.md - notes: token system, sharp-corners rule verified against actual CSS (found narrow exceptions: viewcube, LUT swatches, DaVinci node pill), test.html confirmed absent from working tree.</li></ul>
+<p>Phase B complete.</p>
+</section>
+<section class="docs-card">
+<h2 id="phase-c-feature-inventory-the-checklist-the-feature-docs-must-satisfy">Phase C - feature inventory (the checklist the feature docs must satisfy)<a class="h-anchor" href="#phase-c-feature-inventory-the-checklist-the-feature-docs-must-satisfy" aria-label="Link to this section">#</a></h2>
+<ul><li>[x] C1 docs/FEATURE-INVENTORY.md built from ROUTES + grep of renderers - notes: ~150 control rows across all 40 anr-btn renderers + secondary renderers checked for other control types; found vssolution.js unassigned in DOCS_PLAN's table (placed under data-archive.md, noted as deviation).</li></ul>
+</section>
+<section class="docs-card">
+<h2 id="phase-d-feature-reference-the-main-deliverable">Phase D - feature reference (the main deliverable)<a class="h-anchor" href="#phase-d-feature-reference-the-main-deliverable" aria-label="Link to this section">#</a></h2>
+<ul><li>[x] D1 docs/features/images.md - notes: 13 feature entries covering photo.js (EXIF/histogram/GPS/OCR/live-photo/XMP-import/frame-stepping), photo-convert/photo-recover, sonify.js, tiff/mpo/ico/embedded-images.js.</li><li>[x] D2 docs/features/audio.md - notes: 12 entries; audio.js read in sections (3526 lines, grepped key control blocks) plus audio-analysis/audio-codec/audio-player/spectrogram/media-reverse read in full.</li><li>[x] D3 docs/features/video.md - notes: 12 entries; video.js grepped in sections (4004 lines), video-avi/video-recover/video-sync read in full. sony-rtmd.js correctly left to eda-nle.md per DOCS_PLAN assignment.</li><li>[x] D4 docs/features/animation-frames.md - notes: 4 entries, lottie.js read in full, gif-frames/gif-encode/webp-frames confirmed single-export shape.</li><li>[x] D5 docs/features/documents.md - notes: 16 entries; pdf.js read in full (1192 lines, richest doc feature - forensics, OCR, image extraction), djvu/xlsb/iwork/mobi/mdb read fully, paged.js + others from top comments/inventory.</li><li>[x] D6 docs/features/design-cad-3d.md - notes: 14 entries; illustrator/svg/unity/dwg/solidworks/f3d read fully, psd/paint/diagram/lut/font read in sections, stl/model3d/gcode (8699 total lines, 3 largest files) grepped for control context + inventory data.</li><li>[x] D7 docs/features/eda-nle.md - notes: 10 entries; ipcnet/vegas/timeline/spice read fully, altium/kicad/sony-rtmd read in sections (largest at 1152/1733/630 lines), aftereffects/premiere/davinci from top comments + inventory.</li><li>[x] D8 docs/features/data-archive.md - notes: 16 entries covering all 17 assigned files (incl. vssolution.js, the plan-unassigned renderer); tablekit.js's rich in-app help text used as primary source for workbench control descriptions.</li><li>[x] D9 docs/features/cross-cutting.md - notes: 8 entries; osint.js read fully, forensics.js/export-data.js/search.js/compare.js read in sections, hash-cell wiring found in util.js (sha256Row/integrityCard).</li></ul>
+<p>Phase D complete - all 9 feature docs written.</p>
+</section>
+<section class="docs-card">
+<h2 id="phase-e-end-user-docs-wrap-up">Phase E - end-user docs + wrap-up<a class="h-anchor" href="#phase-e-end-user-docs-wrap-up" aria-label="Link to this section">#</a></h2>
+<ul><li>[x] E1 docs/user-guide.md - notes: dropzones, readout anatomy, privacy promise, offline tiers, doc map table linking every features/*.md.</li><li>[x] E2 docs/faq.md - notes: based on about.html's real #faq section (7 Q&amp;As) plus 4 added Qs (WASM downloads, recovery, browser support, bug reports) cross-linked to feature docs.</li><li>[x] E3 docs/README.md (doc index + map) - notes: pitch + full doc map table linking all 22 docs with audience column.</li><li>[x] E4 README.md footer pointer paragraph (only edit to an existing file) - notes: added one-paragraph "Documentation" section at the end of repo root README.md, linking docs/README.md. Only pre-existing file touched in the whole job.</li><li>[x] E5 accuracy + completeness pass; every FEATURE-INVENTORY item covered - notes: all rows ticked in FEATURE-INVENTORY.md; fixed 2 verified inaccuracies in images.md (QR detection is automatic not a button; OCR language count corrected 31-&gt;32); checked format-count phrasing consistency; confirmed no stray TODO markers remain; all 22 planned doc files + PROGRESS.md exist.</li></ul>
+<p>ALL PHASES COMPLETE. Docs plan from research/DOCS_PLAN.md fully executed.</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/feature-inventory"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Feature inventory</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

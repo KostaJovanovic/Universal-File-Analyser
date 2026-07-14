@@ -37,7 +37,7 @@ All tokens are CSS custom properties on `:root` in
 
 Theme switching sets `data-theme="dark"` on `<html>` (bootstrapped
 before-first-paint by the inline script in each page's `HEAD:START`/
-`HEAD:END` block - see `docs/architecture.md` and the `shared-partials`
+`HEAD:END` block - see [`architecture.md`](architecture.md) and the `shared-partials`
 skill) and overrides the light-mode colour tokens; component CSS should
 reference the tokens rather than hardcoded colours so it Just Works in both
 themes.

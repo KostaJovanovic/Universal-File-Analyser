@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cloudflare Worker (stats API) - Analyser docs</title>
+  <meta name="description" content="The only server-side code in an otherwise zero-backend tool: an anonymous aggregate-stats API plus a small Asteroids-easter-egg leaderboard. For engineers touching /stats, /atari, or the visitor/analy">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/worker">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Cloudflare Worker (stats API) - Analyser docs">
+  <meta property="og:description" content="The only server-side code in an otherwise zero-backend tool: an anonymous aggregate-stats API plus a small Asteroids-easter-egg leaderboard. For engineers touching /stats, /atari, or the visitor/analy">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/worker">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker" aria-current="page">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker" aria-current="page">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Cloudflare Worker (stats API)</h1>
+<p class="docs-lede">The only server-side code in an otherwise zero-backend tool: an anonymous aggregate-stats API plus a small Asteroids-easter-egg leaderboard. For engineers touching <code>/stats</code>, <code>/atari</code>, or the visitor/analysed-file counters.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h2"><a href="#what-it-stores">What it stores</a></li><li class="toc-h2"><a href="#privacy-preservation">Privacy preservation</a></li><li class="toc-h2"><a href="#how-history-js-pings-it">How history.js pings it</a></li><li class="toc-h2"><a href="#how-stats-html-consumes-it">How stats.html consumes it</a></li></ul></details>
+    <section class="docs-card">
+<h2 id="what-it-stores">What it stores<a class="h-anchor" href="#what-it-stores" aria-label="Link to this section">#</a></h2>
+<p><code>worker/index.js</code> (bound as <code>main</code> in <code>wrangler.jsonc</code>) backs a D1 database (<code>worker/schema.sql</code>) with four tables:</p>
+<ul><li><strong><code>totals</code></strong> - two scalar counters, <code>files_total</code> and <code>visitors_total</code>.</li><li><strong><code>ext_stats</code></strong> - one row per extension ever dropped: <code>ext</code>, <code>supported</code> (0/1), running <code>count</code>. <code>supported</code> is <strong>monotonic</strong> (<code>MAX</code>, never reset to 0) - once any client has classified an extension as supported it stays supported even if a stale cached client later reports it as unknown, and adding support for a previously-unsupported type flips its whole accumulated count out of the "unsupported" bucket permanently.</li><li><strong><code>visitor_seen</code></strong> - <code>ip_hash -&gt; last-counted-timestamp</code>, for visit dedup only (one counted visit per hashed IP per <code>VISIT_WINDOW</code>, 3 days).</li><li><strong><code>daily</code></strong> - one row per UTC calendar day (<code>files</code>, <code>visitors</code>), feeding the <code>/stats</code> trend graph. Self-migrating (<code>ensureDaily</code>, created lazily on first use) so an existing deploy starts recording with no manual step - there's no daily back-history before the table existed, only the running <code>totals</code> scalars.</li><li><strong><code>scores</code></strong> - the Asteroids leaderboard: <code>name</code> (5 chars <code>[A-Z0-9]</code>, validated + profanity-checked server-side), <code>score</code>, <code>ts</code>, <code>iphash</code>, <code>wave</code> (how far the run got), <code>cause</code> (the fatal blow: a file extension like <code>.pdf</code>, or <code>nuke</code>). One row per identity (<code>iphash</code>+<code>name</code>, unique index), keeping only each player's best score via an atomic upsert.</li></ul>
+<p>Five endpoints, all under <code>/api/*</code> (everything else is handed straight back to <code>env.ASSETS.fetch(request)</code>, i.e. the static site, since a Worker + static-assets deploy only invokes the Worker for paths with no matching asset):</p>
+<div class="docs-table-wrap"><table><thead><tr><th>Endpoint</th><th>Method</th><th>Does</th></tr></thead><tbody><tr><td><code>/api/visit</code></td><td>POST</td><td>Counts one visit (deduped by hashed IP / 3-day window), returns live totals</td></tr><tr><td><code>/api/analysed</code></td><td>POST</td><td>Records one analysed file (<code>{ext, supported}</code>); rate-limited 15/60s per hashed IP</td></tr><tr><td><code>/api/stats</code></td><td>GET</td><td>Returns totals, the per-extension tally, the top-100 scores, and the daily trend series</td></tr><tr><td><code>/api/score</code></td><td>POST</td><td>Submits one Asteroids run; validates name/score, rate-limited like <code>/api/analysed</code></td></tr><tr><td><code>/api/leaderboard</code></td><td>GET</td><td>Returns the current top-5 scores</td></tr></tbody></table></div>
+</section>
+<section class="docs-card">
+<h2 id="privacy-preservation">Privacy preservation<a class="h-anchor" href="#privacy-preservation" aria-label="Link to this section">#</a></h2>
+<ul><li>The browser sends only a lowercase extension string and an increment - <strong>never the file's name, bytes, or contents</strong>.</li><li>Visits are deduplicated by <code>hashIp()</code>: <code>SHA-256("&lt;IP_SALT secret&gt;:&lt;IP&gt;")</code>. The raw IP is never stored; the salt (set once via <code>wrangler secret put IP_SALT</code>) makes the hash unreversible and unprecomputable without it.</li><li><code>handleStats()</code> only ever returns <strong>supported</strong> extensions individually (top 500 by count); every unsupported extension is collapsed server-side into a single <code>(unsupported)</code> bucket before the response is built. This matters because an unsupported extension is raw, attacker-controlled input - a hostile client could otherwise get an arbitrary string (e.g. a slur used as a fake extension) onto the public <code>/stats</code> page. The individual counts are still recorded privately in <code>ext_stats</code> for the operator to inspect via <code>wrangler d1 execute</code>.</li><li><code>cleanExt()</code> bounds what can even be written as a primary key: lowercase <code>a-z0-9</code> only, capped at 16 chars, collapsing to <code>'(none)'</code>/<code>'(other)'</code> otherwise - so a hostile client can't flood the table with junk rows.</li><li>Asteroids names are forced to exactly 5 <code>[A-Z0-9]</code> chars and checked against a leet-folding profanity blocklist (<code>cleanName</code>/<code>isProfane</code>) before being stored or shown on a public leaderboard.</li><li><code>ANALYSED_LIMIT</code> (configured in <code>wrangler.jsonc</code>: 15 requests/60s per hashed IP) throttles both <code>/api/analysed</code> and <code>/api/score</code> so a scripted loop can't inflate the counters or flood the leaderboard; a throttled request still returns 200 (<code>{throttled: true}</code>) rather than erroring.</li><li>Any internal failure returns a generic <code>{error: 'stats unavailable'}</code> (500) - implementation details are never leaked to the client.</li></ul>
+</section>
+<section class="docs-card">
+<h2 id="how-history-js-pings-it">How <code>history.js</code> pings it<a class="h-anchor" href="#how-history-js-pings-it" aria-label="Link to this section">#</a></h2>
+<p><code>web/assets/js/core/history.js</code> makes <code>recordAnalysed()</code> - the <strong>only</strong> network call this otherwise fully-local tool makes. It posts a lowercase extension + <code>supported</code> flag to <code>/api/analysed</code>; if the browser is offline it skips the doomed request and queues the increment locally (<code>enqueueAnalysed</code>) to send once connectivity returns. <code>recordVisit()</code> similarly POSTs to <code>/api/visit</code> once per page load and caches the resolved totals (<code>_visitTotals</code>) so repeat calls in the same session don't re-hit the network. Both are separate from the module's localStorage-only "Recently analysed" history panel, which stores file metadata (name, type, size) on the visitor's own device and is never sent anywhere.</p>
+</section>
+<section class="docs-card">
+<h2 id="how-stats-html-consumes-it">How <code>stats.html</code> consumes it<a class="h-anchor" href="#how-stats-html-consumes-it" aria-label="Link to this section">#</a></h2>
+<p><code>web/assets/js/core/stats-page.js</code>'s <code>setupStatsPage()</code> (called from <code>boot()</code> - see <a href="/docs/pages"><code>pages.md</code></a>) fetches <code>/api/stats</code> and renders the total files/visitors counters, the per-extension breakdown table (with a "Show all" toggle past the visible cap), the trend chart from the <code>daily</code> series, and the leaderboard from <code>scores</code>. Locally (<code>server.bat</code>), there is no Worker or D1 - <code>serve.py</code> mocks <code>/api/stats</code> with a deterministic seeded 45-day series and canned extension/score data so the page still renders during development (see <a href="/docs/tooling"><code>tooling.md</code></a>).</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/tooling"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Tooling</span></a><a class="docs-pn-next" href="/docs/design-system"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Design system</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

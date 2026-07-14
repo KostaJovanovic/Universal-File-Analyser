@@ -3849,11 +3849,14 @@ details[open] summary::after { content: "\2212"; }
 .site-footer--about:has(.recent-history) .footer-about-heading { order: -1; }
 .about-defs {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0 var(--gap);
   margin: 0 0 32px;
   padding: 0;
 }
+/* Three columns is a lot to fit as the footer narrows: drop to two, then one. */
+@media (max-width: 900px) { .about-defs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .about-defs { grid-template-columns: 1fr; } }
 .about-defs > div {
   border-top: 1px solid var(--border-on-dark);
   padding: 12px 0;
@@ -3916,6 +3919,13 @@ details[open] summary::after { content: "\2212"; }
    the two buttons beside it) and stays put in both states, while the definitions
    open as a full-width panel on the next row instead of stretching the button. */
 .offline-bottom-row .about-details { display: contents; }
+/* Modern Chromium wraps a <details>'s non-summary content in a ::details-content
+   box, so display:contents on .about-details alone only promotes the <summary> -
+   the <dl> stays trapped in that box and lands in a single 1/3 track. Promote the
+   content box too so the <dl> is a direct grid item again and its grid-column
+   span below takes effect. (Older engines without ::details-content ignore this
+   and the <dl> was already a direct grid item.) */
+.offline-bottom-row .about-details::details-content { display: contents; }
 .offline-bottom-row .about-details summary { justify-content: center; box-sizing: border-box; width: 100%; }
 /* Open: the list spans the whole row underneath; the button above is unchanged.
    (Closed, the <dl> drops out of the grid entirely, leaving a clean 3-up row.) */
@@ -4189,12 +4199,69 @@ details[open] summary::after { content: "\2212"; }
 :root[data-theme="dark"] .offline-clear:hover,
 :root[data-theme="dark"] .about-details summary:hover { border-color: var(--hairline-strong); }
 
+/* Footer bottom: grouped link columns (Site / Project / Contact) above a thin
+   copyright line. This replaced the old single "copyright | links | contact" row
+   so it can hold a fuller link set. By design the columns point only at
+   destinations NOT already in the header nav - the header covers Home, About,
+   Patches, Formats, Stats and Samples, so the footer lists Compare, Docs, Privacy
+   plus the off-site project links and the contact button, never repeating them. */
 .footer-bottom {
   border-top: 1px solid var(--border-on-dark);
-  padding-top: 24px;
+  padding-top: 28px;
 }
+/* Two clusters: a left lead (back-to-home button + copyright) and the grouped
+   link sections on the right. Two classes so this beats .footer-row's own
+   display:flex (defined later at equal specificity) and keeps our alignment. */
+.footer-row.footer-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 32px 64px;
+}
+.footer-lead {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 18px;
+}
+.footer-lead .footer-nav-btn { align-self: flex-start; }
+/* Reciprocal linkback button (a small GIF badge). Block so it sits on its own
+   line above the copyright; capped width and sharp corners like everything else. */
+.footer-linkback { display: block; align-self: stretch; line-height: 0; }
+.footer-linkback img { display: block; width: 100%; height: auto; }
 .footer-bottom .footer-meta { color: var(--white-a40); }
 .footer-bottom .footer-meta a { color: rgba(255,255,255,0.5); }
+/* The link sections, grouped together on the right of the bottom row (natural
+   width, not stretched edge-to-edge - that left big empty gaps). Wraps below the
+   lead block on narrow screens. */
+.footer-cols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 26px 56px;
+  margin: 0;
+}
+.footer-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+}
+.footer-col-label { margin: 0 0 3px; }
+/* Column links take the same light footer-link colour as the rest of the footer
+   (via .site-footer--about a, which flips correctly per theme); we only set the
+   type here and drop the underline so they read as a tidy list. */
+.footer-col a,
+.footer-col .footer-contact {
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+.footer-col .footer-contact { color: rgba(255,255,255,0.7); }
+.footer-col a:hover,
+.footer-col .footer-contact:hover { color: #fff; text-decoration: none; }
+.footer-copyright { margin: 0; }
 /* "Email me!" - a plain text button (no scrapeable address) that reveals the
    mailto only after a Turnstile challenge passes (see wireFooterContact). */
 .footer-contact {
@@ -4224,6 +4291,10 @@ details[open] summary::after { content: "\2212"; }
   transition: border-color var(--dur-base) ease, color var(--dur-base) ease;
 }
 .footer-nav-btn:hover { border-color: rgba(255,255,255,0.5); }
+/* The footer is single-sourced, so its "<- Main page" button lands on every page
+   including the home page itself, where it points nowhere useful. Hide it there,
+   keyed off the home-only drop hero (:has re-checks after SPA swaps). */
+body:has(.quickdrop-hero) .footer-nav-btn { display: none; }
 :root[data-theme="dark"] .footer-nav-btn { border-color: var(--hairline); }
 :root[data-theme="dark"] .footer-nav-btn:hover { border-color: var(--hairline-strong); }
 :root[data-theme="dark"] .site-footer--about {
@@ -4236,38 +4307,21 @@ details[open] summary::after { content: "\2212"; }
 :root[data-theme="dark"] .footer-bottom .footer-mark { color: var(--fg); }
 :root[data-theme="dark"] .about-defs > div { border-top-color: var(--hairline); }
 :root[data-theme="dark"] .footer-bottom { border-top-color: var(--hairline); }
-/* On phones, regroup the footer bottom row: the copyright and the "Email me!"
-   contact share one line (copyright left, contact pushed right), and the link
-   list drops to its own full-width line beneath them. On subpages the
-   cross-page button sits full-width on top of all that. */
+/* On phones, stack the bottom row: the lead (back button + copyright) sits on
+   top, and the three link sections drop to an even two-column grid below it - so
+   they align in tidy columns instead of wrapping 2-then-1 with ragged widths. */
 @media (max-width: 700px) {
-  .footer-bottom {
-    flex-wrap: wrap;
-    align-items: baseline;
-    column-gap: 12px;
-    row-gap: 12px;
-  }
-  /* Cross-page button (subpages only): full-width, on top. */
-  .footer-bottom .footer-nav-btn {
-    order: 0;
-    flex-basis: 100%;
-    text-align: center;
-  }
-  /* Copyright (first <p>) stays left; contact gets pushed to the right edge of
-     the same line via auto margin. */
-  .footer-bottom .footer-meta:first-of-type { order: 1; }
-  .footer-bottom .footer-contact-line {
-    order: 2;
-    margin-left: auto;
-  }
-  /* The middle meta line (the links) wraps to its own full-width line below,
-     its links spread edge-to-edge so they fill the width. */
-  .footer-bottom .footer-meta:not(:first-of-type):not(.footer-contact-line) {
-    order: 3;
-    flex-basis: 100%;
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
+  /* Plain block on phones (not the flex row): a flex item with width:100% can
+     overflow the viewport, so blocks constrain more reliably. Lead stacks on
+     top, the sections drop to an even two-column grid below. */
+  .footer-row.footer-bottom { display: block; }
+  .footer-lead { margin: 0 0 30px; }
+  .footer-cols {
+    display: grid;
+    /* minmax(0,1fr), not 1fr, so a long label ("Supported file types") wraps
+       inside its cell instead of overflowing the column. */
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 26px 20px;
   }
 }
 

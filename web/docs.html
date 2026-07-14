@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analyser documentation</title>
+  <meta name="description" content="Analyser is a zero-backend, browser-only forensic file workbench: drop a file and it's classified, parsed and visualised entirely on-device (File API + lazy-loaded WebAssembly), with nothing ever uplo">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Analyser documentation">
+  <meta property="og:description" content="Analyser is a zero-backend, browser-only forensic file workbench: drop a file and it's classified, parsed and visualised entirely on-device (File API + lazy-loaded WebAssembly), with nothing ever uplo">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs" aria-current="page">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs" aria-current="page">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Analyser documentation</h1>
+<p class="docs-lede">Analyser is a zero-backend, browser-only forensic file workbench: drop a file and it's classified, parsed and visualised entirely on-device (File API + lazy-loaded WebAssembly), with nothing ever uploaded. It's vanilla HTML/CSS/ES-module JavaScript - no framework, no build step, no tests - deployed as static assets to Cloudflare and installable as an offline PWA.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h2"><a href="#start-here">Start here</a></li><li class="toc-h2"><a href="#doc-map">Doc map</a></li><li class="toc-h2"><a href="#ground-rules-this-doc-set-follows">Ground rules this doc set follows</a></li></ul></details>
+    <section class="docs-card docs-card--intro">
+<p>This directory documents the site from two angles - a usage-oriented feature reference (what every control does and how to reach it) and an architecture reference (how the codebase is put together) - built by reading the source in <code>web/</code>, <code>tools/</code>, and <code>worker/</code>, and verified against it rather than written from assumption.</p>
+</section>
+<section class="docs-card">
+<h2 id="start-here">Start here<a class="h-anchor" href="#start-here" aria-label="Link to this section">#</a></h2>
+<ul><li><strong>New to the codebase?</strong> Read <a href="/docs/architecture"><code>architecture.md</code></a>, then <a href="/docs/pipeline"><code>pipeline.md</code></a>, then <a href="/docs/renderers"><code>renderers.md</code></a> in that order - each builds on the last.</li><li><strong>Using the site, or writing user-facing help content?</strong> Start at <a href="/docs/user-guide"><code>user-guide.md</code></a>, then the <a href="/docs/features/images"><code>features/</code></a> doc for whatever you're covering. <a href="/docs/faq"><code>faq.md</code></a> has quick answers to the questions people ask most.</li><li><strong>Adding a feature to a specific renderer?</strong> Find its domain in <a href="/docs/features/images"><code>features/</code></a> first to see the existing usage pattern, then its module in <a href="/docs/renderers"><code>renderers.md</code></a> and the chunk/loader map in <a href="/docs/parsers-and-libs"><code>parsers-and-libs.md</code></a> (and the repo's <code>add-file-format</code> skill). <a href="/docs/feature-inventory"><code>FEATURE-INVENTORY.md</code></a> is the working checklist the <code>features/</code> docs were built against, useful if a control seems undocumented.</li></ul>
+</section>
+<section class="docs-card">
+<h2 id="doc-map">Doc map<a class="h-anchor" href="#doc-map" aria-label="Link to this section">#</a></h2>
+<div class="docs-table-wrap"><table><thead><tr><th>Doc</th><th>Audience</th><th>Covers</th></tr></thead><tbody><tr><td><a href="/docs/architecture"><code>architecture.md</code></a></td><td>Engineers</td><td>Zero-backend model, page shell, classification pipeline overview, lazy-loading, PWA/service worker, SPA navigation, Cloudflare deploy</td></tr><tr><td><a href="/docs/pipeline"><code>pipeline.md</code></a></td><td>Engineers</td><td>The exact drop-to-render resolution order: <code>handleFile</code>, <code>classifyFile()</code>, content sniffing, <code>EXT_VARIANTS</code>, proprietary-format dispatch, the <code>unknown.js</code> fallback</td></tr><tr><td><a href="/docs/renderers"><code>renderers.md</code></a></td><td>Engineers</td><td>Catalog of the ~86 modules in <code>renderers/</code> grouped by domain - what each handles and its key dependencies</td></tr><tr><td><a href="/docs/parsers-and-libs"><code>parsers-and-libs.md</code></a></td><td>Engineers</td><td>The 15 lazy <code>parsers-&lt;domain&gt;.js</code> chunks (plus <code>parser-util.js</code>) behind <code>proprietary.js</code>, and the 17 shared binary/WASM loader helpers in <code>lib/</code></td></tr><tr><td><a href="/docs/pages"><code>pages.md</code></a></td><td>Engineers</td><td>Every top-level page (<code>/</code>, <code>/about</code>, <code>/compare</code>, <code>/stats</code>, <code>/patch</code>, <code>/privacy</code>, <code>/atari</code>, <code>/test</code>) and its special wiring</td></tr><tr><td><a href="/docs/pwa-offline"><code>pwa-offline.md</code></a></td><td>Engineers</td><td>Service-worker precache, the <code>VERSION</code> cache epoch, the three offline download tiers, the PWA manifest/install flow</td></tr><tr><td><a href="/docs/tooling"><code>tooling.md</code></a></td><td>Engineers</td><td>The dev loop (<code>server.bat</code>/<code>serve.py</code>), the <code>save.bat</code> commit/version-bump/deploy flow, the <code>tools/*.mjs</code> generator scripts, version numbering</td></tr><tr><td><a href="/docs/worker"><code>worker.md</code></a></td><td>Engineers</td><td>The Cloudflare Worker stats API - the only server-side code - and how privacy is preserved in it</td></tr><tr><td><a href="/docs/design-system"><code>design-system.md</code></a></td><td>Engineers, designers</td><td>Theme tokens, the sharp-corners rule, shared component idioms, the <code>/test</code> style-guide page</td></tr><tr><td><a href="/docs/feature-inventory"><code>FEATURE-INVENTORY.md</code></a></td><td>Maintainers</td><td>Working checklist of every user-triggerable control on the site, grouped by which <code>features/*.md</code> doc owns it</td></tr><tr><td><a href="/docs/features/images"><code>features/images.md</code></a></td><td>Everyone</td><td>Photo metadata, histogram, GPS, OCR, QR, HEIC/RAW conversion, broken-image recovery, ICO/MPO/TIFF extraction, sonify</td></tr><tr><td><a href="/docs/features/audio"><code>features/audio.md</code></a></td><td>Everyone</td><td>Playback, spectrogram, codec/loudness/pitch analysis, frequency isolation, AI vocal separation, reverse, recording</td></tr><tr><td><a href="/docs/features/video"><code>features/video.md</code></a></td><td>Everyone</td><td>Playback, frame tools, scene detection, reverse, truncated-recording salvage, AVI, multi-player sync</td></tr><tr><td><a href="/docs/features/animation-frames"><code>features/animation-frames.md</code></a></td><td>Everyone</td><td>GIF/WebP frame stepping, Lottie/dotLottie/Telegram sticker playback</td></tr><tr><td><a href="/docs/features/documents"><code>features/documents.md</code></a></td><td>Everyone</td><td>PDF, Office (modern + legacy), OpenDocument, iWork, e-books, DjVu, notebooks, Access, Markdown</td></tr><tr><td><a href="/docs/features/design-cad-3d"><code>features/design-cad-3d.md</code></a></td><td>Everyone</td><td>SVG, Illustrator, Photoshop, paint apps, diagrams, LUTs, fonts, STL/3MF/STEP viewers, G-code, Unity, DWG, SolidWorks, Fusion 360</td></tr><tr><td><a href="/docs/features/eda-nle"><code>features/eda-nle.md</code></a></td><td>Everyone</td><td>Altium/KiCad PCB design, SPICE waveforms, IPC netlists, After Effects/Premiere/Resolve/VEGAS, editing timelines, Sony gyro/IMU</td></tr><tr><td><a href="/docs/features/data-archive"><code>features/data-archive.md</code></a></td><td>Everyone</td><td>CSV table workbench, IMU logs, structured-data viewers, git objects, email, archives, folders, treemap, comics, MIDI, subtitles, lyrics, geodata</td></tr><tr><td><a href="/docs/features/cross-cutting"><code>features/cross-cutting.md</code></a></td><td>Everyone</td><td>Hashing, OSINT extraction, exporting the analysis, in-page search, forensic integrity checks, <code>/compare</code></td></tr><tr><td><a href="/docs/user-guide"><code>user-guide.md</code></a></td><td>End users</td><td>Dropping files, reading the readout, the privacy promise, offline install, a map into <code>features/</code></td></tr><tr><td><a href="/docs/faq"><code>faq.md</code></a></td><td>End users</td><td>Quick answers: uploads, formats, offline, WASM downloads, recovery, safety, browser support</td></tr><tr><td><a href="/docs/progress"><code>PROGRESS.md</code></a></td><td>Maintainers</td><td>The build ledger this doc set was assembled against</td></tr></tbody></table></div>
+</section>
+<section class="docs-card">
+<h2 id="ground-rules-this-doc-set-follows">Ground rules this doc set follows<a class="h-anchor" href="#ground-rules-this-doc-set-follows" aria-label="Link to this section">#</a></h2>
+<ul><li>Every capability claim is verified against source actually read, not assumed; unconfirmable claims are marked as such rather than invented.</li><li>Paths are relative to the repo root, so source lives at <code>web/assets/js/...</code>; code identifiers are in backticks.</li><li>Internal <code>.md</code> docs are exempt from the site's em-dash-free/British- spelling content convention, but this set follows it anyway for consistency and in case any content is later reused on a page. The authoritative project guide is the repo-root <code>CLAUDE.md</code>.</li><li>Nothing here documents the generated directories (<code>web/formats/</code>, <code>web/samples.html</code>, <code>web/formats.html</code>, <code>web/sitemap*.xml</code>) - those are rebuilt by <code>tools/*.mjs</code> on every commit; see <a href="/docs/tooling"><code>tooling.md</code></a> instead.</li></ul>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-next" href="/docs/user-guide"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">User guide</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

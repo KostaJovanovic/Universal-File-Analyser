@@ -33,7 +33,7 @@ rather than a weaker ad hoc filter.
 PDF-compatible - the artwork is a PDF stream with Illustrator's private
 data alongside it - so a modern `.ai` opens directly in the full PDF viewer
 (pages, text, embedded images, metadata, OCR, and every other PDF control -
-see `docs/features/documents.md`).
+see [`documents.md`](documents.md)).
 
 **How to reach it.** Drop a `.ai`. Built in `illustrator.js`.
 

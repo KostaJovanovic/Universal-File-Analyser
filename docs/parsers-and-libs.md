@@ -33,7 +33,8 @@ parser so it can never throw into the caller.
 
 ## Parser chunks (`web/assets/js/parsers/`)
 
-16 files, one per domain, each dependency-free unless noted:
+16 files - 15 per-domain `parsers-<domain>.js` chunks plus the shared
+`parser-util.js` - each dependency-free unless noted:
 
 | Chunk | Domain |
 |---|---|
@@ -89,12 +90,12 @@ fetched the first time a matching file is actually opened, then cached
 
 The MDX-Net vocal-separation subsystem (`mdx-*.js`) is what powers
 `audio.js`'s isolate panel and `spectrogram.js`'s vocal/instrumental blend
-slider - see `docs/features/audio.md`.
+slider - see [`audio.md`](features/audio.md).
 
 ## Vendored WASM/third-party libs (`web/assets/vendor/`)
 
 Referenced by name throughout the loaders above and the renderer catalog
-(`docs/renderers.md`): **FFmpeg** (video remux/frame extraction/audio
+([`renderers.md`](renderers.md)): **FFmpeg** (video remux/frame extraction/audio
 decode), **ImageMagick** (RAW conversion), **pdf.js** and **Ghostscript**
 (PDF/PostScript), **Tesseract** (OCR), **OpenCASCADE** (STEP/IGES
 tessellation), **sql.js** (SQLite), **libarchive** and **xz/lzma** (archives),

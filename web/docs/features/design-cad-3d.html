@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Design, CAD and 3D - Analyser docs</title>
+  <meta name="description" content="Vector/raster design formats, colour LUTs, fonts, 3D model viewers, G-code/CNC toolpath reconstruction, Unity assets, and CAD formats (DWG, STEP/IGES, SolidWorks, Fusion 360). Source: svg.js, illustra">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/features/design-cad-3d">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Design, CAD and 3D - Analyser docs">
+  <meta property="og:description" content="Vector/raster design formats, colour LUTs, fonts, 3D model viewers, G-code/CNC toolpath reconstruction, Unity assets, and CAD formats (DWG, STEP/IGES, SolidWorks, Fusion 360). Source: svg.js, illustra">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/features/design-cad-3d">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d" aria-current="page">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d" aria-current="page">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Design, CAD and 3D</h1>
+<p class="docs-lede">Vector/raster design formats, colour LUTs, fonts, 3D model viewers, G-code/CNC toolpath reconstruction, Unity assets, and CAD formats (DWG, STEP/IGES, SolidWorks, Fusion 360). Source: <code>svg.js</code>, <code>illustrator.js</code>, <code>psd.js</code>, <code>paint.js</code>, <code>diagram.js</code>, <code>lut.js</code>, <code>font.js</code>, <code>stl.js</code>, <code>model3d.js</code>, <code>gcode.js</code>, <code>unity.js</code>, <code>dwg.js</code>, <code>solidworks.js</code>, <code>f3d.js</code>.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h3"><a href="#svg-inspector">SVG inspector</a></li><li class="toc-h3"><a href="#illustrator-ai">Illustrator (.ai)</a></li><li class="toc-h3"><a href="#photoshop-psd-psb">Photoshop (PSD/PSB)</a></li><li class="toc-h3"><a href="#raster-painting-apps-krita-procreate">Raster painting apps (Krita/Procreate)</a></li><li class="toc-h3"><a href="#2d-vector-diagrams-draw-io-dxf">2D vector diagrams (draw.io/DXF)</a></li><li class="toc-h3"><a href="#colour-lut-cube-viewer-and-visualiser">Colour LUT (.cube) viewer and visualiser</a></li><li class="toc-h3"><a href="#font-specimen-viewer">Font specimen viewer</a></li><li class="toc-h3"><a href="#stl-3d-viewer">STL 3D viewer</a></li><li class="toc-h3"><a href="#3mf-step-iges-obj-ply-gltf-fbx-viewer">3MF / STEP / IGES / OBJ / PLY / glTF / FBX viewer</a></li><li class="toc-h3"><a href="#g-code-toolpath-viewer-and-3d-reconstructor">G-code toolpath viewer and 3D reconstructor</a></li><li class="toc-h3"><a href="#unity-asset-viewer">Unity asset viewer</a></li><li class="toc-h3"><a href="#autocad-dwg-viewer">AutoCAD DWG viewer</a></li><li class="toc-h3"><a href="#solidworks-reader-sldprt-sldasm-slddrw">SolidWorks reader (.sldprt/.sldasm/.slddrw)</a></li><li class="toc-h3"><a href="#autodesk-fusion-360-reader-f3d-f3z">Autodesk Fusion 360 reader (.f3d/.f3z)</a></li></ul></details>
+    <section class="docs-card">
+<h3 id="svg-inspector">SVG inspector<a class="h-anchor" href="#svg-inspector" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Renders an SVG at actual size and reports stats, element counts, colour palette, and text content.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.svg</code>. Built in <code>svg.js</code>.</p>
+<p><strong>How to use it.</strong> Click <strong>Analyse as image</strong> to rasterise the SVG to PNG and run it through the full photo analysis pipeline.</p>
+<p><strong>Notes / limits.</strong> Before rendering, <code>sanitizeSvg()</code> strips active/unsafe content: <code>&lt;script&gt;</code>, <code>&lt;foreignObject&gt;</code> (embedded HTML), <code>&lt;style&gt;</code> (inline CSS is unscoped when injected and can pull remote resources/inject document-wide styling), SMIL animation elements (can rewrite an <code>href</code> to <code>javascript:</code> at runtime), every <code>on*</code> event-handler attribute, <code>javascript:</code> links, and external/remote references (<code>http(s)://</code>, <code>data:text/html</code>, remote CSS <code>url()</code>/<code>@import</code>). Findings are reported. <code>sanitizeSvgMarkup()</code> is exported and reused by <code>dwg.js</code> so any parser-produced SVG (e.g. LibreDWG's output) gets the identical allow-list rather than a weaker ad hoc filter.</p>
+</section>
+<section class="docs-card">
+<h3 id="illustrator-ai">Illustrator (.ai)<a class="h-anchor" href="#illustrator-ai" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Since Illustrator 9 (2000), <code>.ai</code> files are PDF-compatible - the artwork is a PDF stream with Illustrator's private data alongside it - so a modern <code>.ai</code> opens directly in the full PDF viewer (pages, text, embedded images, metadata, OCR, and every other PDF control - see <a href="/docs/features/documents"><code>documents.md</code></a>).</p>
+<p><strong>How to reach it.</strong> Drop a <code>.ai</code>. Built in <code>illustrator.js</code>.</p>
+<p><strong>Notes / limits.</strong> Older EPS/PostScript-based <code>.ai</code> files aren't PDF, so they fall back to <code>proprietary.js</code>'s identifier (reads the PostScript header: creator, bounding box, etc.).</p>
+</section>
+<section class="docs-card">
+<h3 id="photoshop-psd-psb">Photoshop (PSD/PSB)<a class="h-anchor" href="#photoshop-psd-psb" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Two paths depending on what the file actually is: (1) a lightweight header read (first few MB only, memory-safe even for huge/CMYK/16-bit/PSB files) parses dimensions, colour mode, bit depth, channel count, and pulls the embedded RGB thumbnail Photoshop bakes into the image-resources block; (2) for RGB/Grayscale 8-bit PSDs under a size cap (120MB), the vendored <strong>ag-psd</strong> additionally decodes the full composite image and the complete layer tree (names, blend modes, opacity, visibility, per-layer thumbnails).</p>
+<p><strong>How to reach it.</strong> Drop a <code>.psd</code>/<code>.psb</code>. Built in <code>psd.js</code>.</p>
+<p><strong>How to use it.</strong> Click <strong>Analyse this image</strong> on the composite (or an embedded-preview variant) to send it through the photo pipeline. Each listed <strong>layer</strong> has a <strong>PNG</strong> button to download that layer alone.</p>
+<p><strong>Notes / limits.</strong> ag-psd doesn't support CMYK/Lab/16-bit/PSB and recomposites nothing for those - Analyser falls back to the embedded thumbnail from path 1 rather than failing.</p>
+</section>
+<section class="docs-card">
+<h3 id="raster-painting-apps-krita-procreate">Raster painting apps (Krita/Procreate)<a class="h-anchor" href="#raster-painting-apps-krita-procreate" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Both <code>.kra</code> (Krita) and Procreate files are ZIP packages that bake in a flattened raster preview: Krita's <code>mergedimage.png</code> (full resolution) plus <code>maindoc.xml</code> (canvas dimensions, colour space, layer count, Krita version); Procreate's <code>QuickLook/Thumbnail.png</code> (capped size) - the real per-layer artwork is private chunked data that can't be recomposed in either case.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.kra</code>/<code>.procreate</code>. Built in <code>paint.js</code>.</p>
+<p><strong>How to use it.</strong> Click <strong>Analyse this image</strong> on the shown preview to run it through the photo pipeline.</p>
+<p><strong>Notes / limits.</strong> GIMP <code>.xcf</code> is not a ZIP and has no embedded preview, so it stays identification-only (via <code>proprietary.js</code>), not handled here.</p>
+</section>
+<section class="docs-card">
+<h3 id="2d-vector-diagrams-draw-io-dxf">2D vector diagrams (draw.io/DXF)<a class="h-anchor" href="#2d-vector-diagrams-draw-io-dxf" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Two vector formats rendered as real SVG previews rather than just identified: draw.io/diagrams.net <code>.drawio</code> (decodes the <code>&lt;mxGraphModel&gt;</code>, inline or deflate+base64-compressed, and draws its boxes/ ellipses/diamonds/edges); AutoCAD DXF <code>.dxf</code> (ASCII group-code entity list - parses the <code>ENTITIES</code> section: LINE, CIRCLE, ARC, LWPOLYLINE, POLYLINE, TEXT - drawn to SVG with Y flipped so the drawing reads right-way-up).</p>
+<p><strong>How to reach it.</strong> Drop a <code>.drawio</code> or a (text/ASCII) <code>.dxf</code>. Built in <code>diagram.js</code>.</p>
+<p><strong>Notes / limits.</strong> Both degrade to a clear message (rather than an error) if the file can't be drawn - e.g. a binary DXF or an empty model - and always show raw entity/cell counts regardless.</p>
+</section>
+<section class="docs-card">
+<h3 id="colour-lut-cube-viewer-and-visualiser">Colour LUT (.cube) viewer and visualiser<a class="h-anchor" href="#colour-lut-cube-viewer-and-visualiser" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Parses an Adobe/Iridas/Resolve <code>.cube</code> plain-text colour look-up table (a 3D or 1D LUT mapping every input colour to an output colour - how a grade's "look" is baked into one file) and visualises it: the neutral tone-response curve, a before/after of memory colours and a hue/luma test chart pushed through the LUT, and an interactive 3D scatter of the colour cube it defines.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.cube</code> (or <code>.look</code>, an Adobe SpeedGrade/Iridas grade stack carrying a baked 3D LUT). Built in <code>lut.js</code>.</p>
+<p><strong>How to use it.</strong> Click <strong>Choose photo or video</strong> to preview the LUT applied to your own image/video instead of the built-in test chart.</p>
+<p><strong>Notes / limits.</strong> <code>.cube</code> is also used by Gaussian for volumetric DFT data - <code>lut.js</code> sniffs for <code>LUT_*_SIZE</code> and hands anything else back to the generic identifier rather than misreading it as a LUT.</p>
+</section>
+<section class="docs-card">
+<h3 id="font-specimen-viewer">Font specimen viewer<a class="h-anchor" href="#font-specimen-viewer" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Two complementary engines: the native <code>FontFace</code> API loads the real font bytes for a live specimen (sample text at several sizes) - the true rendering, including WOFF2 and variable fonts, with axis sliders driving <code>font-variation-settings</code> live; the vendored <strong>opentype.js</strong> parses the tables for naming/metadata, glyph count, and draws a grid of individual glyph outlines (TTF/OTF/WOFF 1.0 - WOFF2 falls back to the live specimen alone since opentype.js can't parse it).</p>
+<p><strong>How to reach it.</strong> Drop a <code>.ttf</code>/<code>.otf</code>/<code>.woff</code>/<code>.woff2</code>/<code>.ttc</code>/<code>.otc</code>. Built in <code>font.js</code>.</p>
+<p><strong>How to use it.</strong> The specimen auto-detects which scripts the font covers (by probing its cmap for representative characters across Latin, Japanese, Korean, Chinese, Cyrillic, Greek, Thai, Devanagari, Arabic, Hebrew) and shows a native-language pangram-style sample for each one the font actually supports, rather than boxes of <code>.notdef</code> glyphs. Click <strong>Play-all</strong> to cycle through every glyph. For a font <strong>collection</strong> (<code>.ttc</code>/<code>.otc</code>), each member font is unpacked into its own standalone buffer and a <strong>font-in-collection select</strong> switches which one the specimen and glyph grid show.</p>
+</section>
+<section class="docs-card">
+<h3 id="stl-3d-viewer">STL 3D viewer<a class="h-anchor" href="#stl-3d-viewer" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Parses binary and ASCII STL and renders an interactive, self-contained WebGL model (no external 3D library) with orbit/zoom/spin, reporting geometry statistics (triangles, bounding box, surface area, volume).</p>
+<p><strong>How to reach it.</strong> Drop a <code>.stl</code>. Built in <code>stl.js</code>. This viewer is also the shared engine reused by <code>model3d.js</code> for every other supported 3D mesh format.</p>
+<p><strong>How to use it.</strong> <strong>Scroll zoom on/off</strong> toggles whether the mouse wheel zooms; <strong>Fullscreen</strong> expands the viewer; <strong>Zoom in</strong>/<strong>Zoom out</strong> (hold) for camera zoom; <strong>Pause spin</strong>/<strong>Resume spin</strong> toggles auto-rotate; <strong>Quality</strong> opens an anti-aliasing/render-quality popup; <strong>Reset view</strong> returns to the default camera; <strong>Orthographic</strong>/<strong>Perspective</strong> toggles projection; <strong>Wireframe</strong> overlays mesh topology (drawn from a per-vertex barycentric coordinate); <strong>Y-up</strong>/<strong>Z-up</strong> flips which axis is "up" (most CAD/printing formats author Z-up; design/glTF formats are typically Y-up - the viewer itself is Y-up, so Z-up geometry gets a view-only -90° rotation about X to stand it upright); <strong>Part chips</strong> (for a multi-part assembly) switch between viewing a single part or the whole assembly.</p>
+</section>
+<section class="docs-card">
+<h3 id="3mf-step-iges-obj-ply-gltf-fbx-viewer">3MF / STEP / IGES / OBJ / PLY / glTF / FBX viewer<a class="h-anchor" href="#3mf-step-iges-obj-ply-gltf-fbx-viewer" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> A 3D model viewer covering multiple mesh and B-rep CAD formats, all rendered through the shared STL WebGL viewer above. 3MF (a ZIP of 3D-manufacturing XML) is parsed natively - fflate + regex/DOM - so every object/assembly on the build plate can be viewed individually, including the "production extension" (one <code>.model</code> file per part referenced by the root model). STEP/IGES/BREP (B-rep CAD) are tessellated to a mesh by the lazy-loaded <strong>OpenCASCADE WASM kernel</strong>, with the ISO-10303 header metadata shown alongside.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.3mf</code>/<code>.amf</code>/<code>.obj</code>/<code>.ply</code>/<code>.off</code>/<code>.mtl</code>/ <code>.gltf</code>/<code>.glb</code>/<code>.fbx</code>/<code>.step</code>/<code>.stp</code>/<code>.iges</code>/<code>.igs</code>/<code>.brep</code>. Built in <code>model3d.js</code>.</p>
+<p><strong>How to use it.</strong> Inherits the full STL viewer control set (Fit/Reset/ Wireframe/Quality/Zoom/Fullscreen/Y-up-Z-up/spin/part chips - see above). For a 3MF containing embedded sliced plates, an <strong>Open <code>&lt;plate&gt;</code></strong> button per plate loads that embedded G-code into the full G-code viewer (see below); the 3MF's raw ZIP contents are also browsable via the shared archive view (<code>renderArchiveEmbedded</code>).</p>
+<p><strong>Notes / limits.</strong> STEP/IGES tessellation requires downloading the OpenCASCADE WASM kernel (~9MB) on first use, cached afterward (part of the "Everything" offline tier, or loaded on demand).</p>
+</section>
+<section class="docs-card">
+<h3 id="g-code-toolpath-viewer-and-3d-reconstructor">G-code toolpath viewer and 3D reconstructor<a class="h-anchor" href="#g-code-toolpath-viewer-and-3d-reconstructor" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Parses G-code from any source - 3D-printer slicers (PrusaSlicer, SuperSlicer, OrcaSlicer, Cura, ideaMaker, Bambu Studio, Simplify3D, Slic3r) and CNC/laser CAM (GRBL, Fanuc, Haas, Mastercam, Fusion 360, LightBurn) - and rebuilds the printed object in an interactive WebGL viewer. Crucially it renders the <strong>deposited filament</strong> (volumetric extrusion-width recovery and bead geometry), not just the bare centreline toolpath.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.gcode</code>/<code>.gco</code>/<code>.g</code>/<code>.ngc</code>/<code>.nc</code>/<code>.tap</code>/<code>.cnc</code>. Built in <code>gcode.js</code>. Also reachable via <code>model3d.js</code>'s <strong>Open <code>&lt;plate&gt;</code></strong> button for G-code embedded in a sliced 3MF.</p>
+<p><strong>How to use it.</strong> Viewer camera controls mirror the STL viewer (scroll zoom toggle, fullscreen, zoom in/out, pause/resume spin, reset view, orthographic/perspective, Quality popup with Hardware MSAA/Supersampling/ minimum-line-width toggles). G-code-specific controls: <strong>Colour by</strong> (select what colours the toolpath - line type or tool), <strong>Show/Hide legend</strong> (the colour-key overlay), <strong>Travel</strong>/<strong>Rapids</strong>/<strong>Bed</strong> and per-feature/per-tool <strong>colour chips</strong> (visibility toggles), <strong>Play</strong> (plays the build animation), <strong>Follow toolhead</strong> (cycling camera-follow modes), <strong>Speed</strong> (a popup of playback-speed presets, a custom rate with a lines/s-vs-duration unit toggle, and a "Real time" option), <strong>Tool changes</strong> (toggles tool-change tick marks) and <strong>Dim other tools</strong> (fades every tool but the currently-printing one). <strong>Export clip</strong> (with <strong>Cancel</strong> and per-export option chips) renders the build animation to a downloadable MP4 clip using the browser's WebCodecs API, muxed via <strong>mp4-muxer</strong> (or, on browsers without MP4-ready H.264 output like Firefox, rendered to WebM via <strong>webm-muxer</strong> and converted to MP4 by ffmpeg.wasm). <strong>More controls</strong> expands/collapses the fullscreen toolbar. For very large files, <strong>Show full anyway</strong>/<strong>Show all N lines</strong> bypasses a line cap on the raw G-code listing.</p>
+<p><strong>Notes / limits.</strong> The volumetric extrusion-width recovery and bead geometry approach was informed by studying OrcaSlicer's open-source GCodeProcessor (not bundled or used as a dependency), per the repo root <code>README.md</code>.</p>
+</section>
+<section class="docs-card">
+<h3 id="unity-asset-viewer">Unity asset viewer<a class="h-anchor" href="#unity-asset-viewer" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Unity serialises almost everything as a small YAML dialect (a <code>%YAML 1.1</code> / <code>%TAG !u!...</code> preamble, then one document per object headed by <code>--- !u!&lt;classID&gt; &amp;&lt;fileID&gt;</code>). Rather than a full YAML parser, this splits on document headers, reads each object's class name, and pulls the handful of fields that matter per type (names, friction, sample rate, importer + GUID, etc.) - for a scene or prefab that gives a component histogram and the list of named GameObjects, effectively a lightweight scene inspector. A <code>.meta</code> file is handled separately as a single plain-YAML importer record.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.unity</code>/<code>.prefab</code>/<code>.asset</code>/<code>.controller</code>/ <code>.overridecontroller</code>/<code>.anim</code>/<code>.mat</code>/<code>.physicsmaterial2d</code>/ <code>.physicmaterial</code>/<code>.spriteatlas</code>/<code>.cubemap</code>/<code>.rendertexture</code>/<code>.mixer</code>/ <code>.guiskin</code>/<code>.fontsettings</code>/<code>.flare</code>/<code>.brush</code>/<code>.terrainlayer</code>/<code>.signal</code>/ <code>.preset</code>/<code>.mask</code>/<code>.playable</code>/<code>.lighting</code>/<code>.giparams</code>/<code>.meta</code>. Built in <code>unity.js</code>.</p>
+<p><strong>Notes / limits.</strong> Files over 48MB are not processed (identification only, per the module's <code>MAX_BYTES</code> cap).</p>
+</section>
+<section class="docs-card">
+<h3 id="autocad-dwg-viewer">AutoCAD DWG viewer<a class="h-anchor" href="#autocad-dwg-viewer" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> DWG is AutoCAD's native binary drawing format. Uses the vendored <strong>libredwg-web</strong> (LibreDWG compiled to WebAssembly, ~6MB, lazy-loaded) to parse the drawing into an entity database and render it to an SVG 2D preview - the binary-format counterpart to the DXF viewer above.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.dwg</code>/<code>.dwt</code>. Built in <code>dwg.js</code>.</p>
+<p><strong>Notes / limits.</strong> Metadata reports entity count, layer count, and the top 6 entity types by frequency (LINE, CIRCLE, LWPOLYLINE, TEXT, etc.). The emitted SVG is run through <code>svg.js</code>'s strict sanitiser (<code>sanitizeSvgMarkup()</code>) before being shown, since it originates from an untrusted file. If no drawable geometry results, a plain message is shown rather than an empty canvas.</p>
+</section>
+<section class="docs-card">
+<h3 id="solidworks-reader-sldprt-sldasm-slddrw">SolidWorks reader (.sldprt/.sldasm/.slddrw)<a class="h-anchor" href="#solidworks-reader-sldprt-sldasm-slddrw" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> Two eras, two outcomes. <strong>Older files</strong> (pre-~2015) are OLE2/Compound File documents (like legacy Office) - Analyser reads their embedded render preview (a "PreviewPNG" stream, or a CF_DIB thumbnail in the SummaryInformation property set) and standard document metadata (title, author, save dates). <strong>Modern files</strong> (~2015 onward) are encrypted end-to-end - no OLE2 header, no plaintext streams, ~8.0 bits/byte entropy throughout - so nothing can be extracted; Analyser identifies the file and says so plainly, pointing at STEP/STL export for use with the site's 3D viewer.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.sldprt</code>/<code>.sldasm</code>/<code>.slddrw</code>. Built in <code>solidworks.js</code>, using the shared <code>cfbf.js</code> OLE2 reader.</p>
+<p><strong>Notes / limits.</strong> The actual geometry is proprietary ShapeManager either way and is never reconstructed here in any era - not <code>.sldreg</code> (a registry- export text file, handled elsewhere by <code>proprietary.js</code>/parsers).</p>
+</section>
+<section class="docs-card">
+<h3 id="autodesk-fusion-360-reader-f3d-f3z">Autodesk Fusion 360 reader (.f3d/.f3z)<a class="h-anchor" href="#autodesk-fusion-360-reader-f3d-f3z" aria-label="Link to this section">#</a></h3>
+<p><strong>What it does.</strong> A Fusion 360 design is a ZIP whose members are Zstandard-compressed (ZIP method 93). It carries no open geometry - the solid model lives in Autodesk's proprietary ShapeManager BREP blobs and an undocumented OGS display mesh, neither reconstructable in the browser. What IS readable and surfaced: Fusion's own rendered thumbnail (<code>.../Previews/*.png</code>), the document descriptor (<code>Properties.dat</code> - clean JSON: type/subtype), the design manifest (<code>Manifest.dat</code>, for the Fusion document version string), and a count of solid bodies and embedded appearance assets.</p>
+<p><strong>How to reach it.</strong> Drop a <code>.f3d</code>/<code>.f3z</code>. Built in <code>f3d.js</code>.</p>
+<p><strong>Notes / limits.</strong> Identify-only for the actual geometry - shows the model thumbnail and what the file <em>is</em>, not a re-renderable 3D model.</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/features/documents"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Documents</span></a><a class="docs-pn-next" href="/docs/features/eda-nle"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">EDA and NLE</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

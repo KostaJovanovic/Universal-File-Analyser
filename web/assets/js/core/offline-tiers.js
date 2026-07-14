@@ -32,11 +32,13 @@ function installHint() {
   const isFirefox = /Firefox\//.test(ua) || /FxiOS/.test(ua);
   const isChrome = /Chrome\//.test(ua) && !isEdge && !isOpera && !isSamsung;
   const isSafari = /Safari/.test(ua) && !/Chrome|Chromium|Android/.test(ua);
+  const isWindows = /Windows/.test(ua);
 
   if (isIos) {
-    return isFirefox || /CriOS|EdgiOS|OPiOS/.test(ua)
-      ? 'On iOS, tap the Share button, then "Add to Home Screen". (Only Safari can install it on iPhone/iPad.)'
-      : 'Tap the Share button, then "Add to Home Screen".';
+    // Since iOS 16.4, third-party browsers (Chrome, Edge, Firefox, Opera) can
+    // also add a site to the Home Screen from the Share sheet - it is no longer
+    // Safari-only - so the same instruction works everywhere.
+    return 'Tap the Share button, then "Add to Home Screen".';
   }
   if (isAndroid) {
     if (isFirefox) return 'Open the menu (⋮), then "Install", or "Add to Home screen".';
@@ -48,7 +50,11 @@ function installHint() {
   if (isChrome) return 'Click the install icon at the right of the address bar, or open the menu (⋮), then "Cast, save and share", then "Install page as app".';
   if (isOpera) return 'Look for the install icon in the address bar, or open the menu, then "Install".';
   if (isSafari) return 'From the menu bar choose File, then "Add to Dock". (Needs Safari 17 or newer on macOS Sonoma.)';
-  if (isFirefox) return 'Firefox on desktop cannot install web apps. Open this page in Chrome or Edge to install it, or just bookmark it.';
+  // Firefox's "Add to Taskbar" web-app feature is Windows-only for now (macOS and
+  // Linux are planned but not shipped), so only point Windows users at the icon.
+  if (isFirefox) return isWindows
+    ? 'Click the "Add to Taskbar" icon at the right of the address bar to add it to your taskbar.'
+    : 'Firefox on macOS and Linux cannot install web apps yet. Open this page in Chrome or Edge to install it, or just bookmark it.';
   return 'Open your browser menu and look for "Install app" or "Add to Home Screen".';
 }
 

@@ -123,6 +123,13 @@ echo [gen]  test.html tokens
 node --no-warnings tools/prerender-testpage.mjs
 if errorlevel 1 echo [warn] test page gen failed - keeping existing copy
 
+rem Rebuild the browsable /docs site (web/docs.html hub + web/docs/<slug> pages)
+rem from the Markdown in docs/, so the HTML docs can't drift from the source docs.
+rem Wipes and rewrites web/docs.html + web/docs/ each run. Non-fatal.
+echo [gen]  docs site
+node --no-warnings tools/build-docs-html.mjs
+if errorlevel 1 echo [warn] docs site gen failed - keeping existing copies
+
 rem Optional read-only stats snapshot to stats-backup\ (gitignored, kept local).
 rem Pulls from the live /api/stats; non-fatal and skipped by default. The full
 rem Save (option 1 / `save` / --force) skips it entirely; only the commit-only

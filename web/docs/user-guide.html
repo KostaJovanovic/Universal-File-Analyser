@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User guide - Analyser docs</title>
+  <meta name="description" content="The front door for a first-time user of Analyser: how to drop a file, what the readout means, why it's safe, how to install it offline, and where to go for deeper feature detail. For end users, not de">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/user-guide">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="User guide - Analyser docs">
+  <meta property="og:description" content="The front door for a first-time user of Analyser: how to drop a file, what the readout means, why it's safe, how to install it offline, and where to go for deeper feature detail. For end users, not de">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/user-guide">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide" aria-current="page">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide" aria-current="page">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>User guide</h1>
+<p class="docs-lede">The front door for a first-time user of Analyser: how to drop a file, what the readout means, why it's safe, how to install it offline, and where to go for deeper feature detail. For end users, not developers - see <a href="/docs/architecture"><code>architecture.md</code></a> and <a href="/docs/renderers"><code>renderers.md</code></a> for the technical picture.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h2"><a href="#dropping-files">Dropping files</a></li><li class="toc-h2"><a href="#reading-the-readout">Reading the readout</a></li><li class="toc-h2"><a href="#the-privacy-promise">The privacy promise</a></li><li class="toc-h2"><a href="#offline-install">Offline install</a></li><li class="toc-h2"><a href="#where-to-go-next">Where to go next</a></li></ul></details>
+    <section class="docs-card">
+<h2 id="dropping-files">Dropping files<a class="h-anchor" href="#dropping-files" aria-label="Link to this section">#</a></h2>
+<p>On the home page (<code>/</code>), drop a file (or click to pick one) onto one of the dropzones - a dedicated Photo/Video zone, a Sound zone (with <strong>Record</strong> and <strong>Live spectrogram</strong> buttons for capturing audio directly), or the general "any file or folder" zone, which also accepts whole dropped folders. There is also a compact <strong>Compare</strong> square next to the main dropzone that links to <code>/compare</code>, where two files can be dropped side by side and their full analyses lined up field-by-field (see the "/compare" entry in <a href="/docs/features/cross-cutting"><code>cross-cutting.md</code></a>).</p>
+<p>Once a file is analysed, an <strong>Info</strong> button opens the full supported-format catalogue (searchable, filterable by category) if you want to check whether a type is supported before dropping it, or browse what Analyser can do.</p>
+</section>
+<section class="docs-card">
+<h2 id="reading-the-readout">Reading the readout<a class="h-anchor" href="#reading-the-readout" aria-label="Link to this section">#</a></h2>
+<p>Every analysis is built from the same recurring pieces:</p>
+<ul><li><strong>Readout tables</strong> - label/value rows for metadata (EXIF, document properties, container info, etc.). A <code>[?]</code> next to some labels opens a plain-language explanation of what that field means.</li><li><strong>Cards</strong> - a titled block grouping one feature's controls and output (e.g. "RGB histogram", "Isolate", "Document structure &amp; security").</li><li><strong>Integrity card</strong> - present on most files: a SHA-256 fingerprint (with CRC-32/MD5/SHA-1/SHA-512 available on click), plus, when conclusive, forensic flags for a signature-vs-extension mismatch or trailing data appended past the file's logical end (see <a href="/docs/features/cross-cutting"><code>cross-cutting.md</code></a>).</li><li><strong>Network indicators</strong> - if a file's text contains URLs, IPs, domains or email addresses, a card lists them with click-to-open lookup links to public OSINT services. Nothing is contacted automatically.</li></ul>
+<p>For the full catalogue of what each file type unlocks, see the <code>docs/features/</code> documents - the site groups them the same way:</p>
+<div class="docs-table-wrap"><table><thead><tr><th>Doc</th><th>Covers</th></tr></thead><tbody><tr><td><a href="/docs/features/images"><code>images.md</code></a></td><td>Photos, EXIF/GPS, histogram, OCR, HEIC/RAW conversion, broken-image recovery, ICO/MPO/TIFF multi-image extraction, image-to-sound "sonify"</td></tr><tr><td><a href="/docs/features/audio"><code>audio.md</code></a></td><td>Playback, spectrogram, codec/loudness/pitch/tempo analysis, frequency isolation, AI vocal separation, reversed playback, mic recording</td></tr><tr><td><a href="/docs/features/video"><code>video.md</code></a></td><td>Playback, frame capture, scene detection, reversed video, truncated-recording salvage, AVI handling</td></tr><tr><td><a href="/docs/features/animation-frames"><code>animation-frames.md</code></a></td><td>GIF/WebP frame stepping, Lottie/dotLottie/Telegram sticker playback</td></tr><tr><td><a href="/docs/features/documents"><code>documents.md</code></a></td><td>PDF, Office (modern and legacy), OpenDocument, iWork, e-books, notebooks, Markdown</td></tr><tr><td><a href="/docs/features/design-cad-3d"><code>design-cad-3d.md</code></a></td><td>SVG, Illustrator, Photoshop, fonts, LUTs, STL/3MF/STEP 3D viewers, G-code, DWG, SolidWorks, Fusion 360</td></tr><tr><td><a href="/docs/features/eda-nle"><code>eda-nle.md</code></a></td><td>Altium/KiCad PCB design, SPICE waveforms, IPC netlists, After Effects/Premiere/Resolve/VEGAS projects, editing timelines</td></tr><tr><td><a href="/docs/features/data-archive"><code>data-archive.md</code></a></td><td>CSV/spreadsheet table workbench, archives, folders, treemap, comics, git objects, email, MIDI, subtitles</td></tr><tr><td><a href="/docs/features/cross-cutting"><code>cross-cutting.md</code></a></td><td>Hashing, OSINT extraction, exporting the analysis, in-page search, forensic integrity checks, <code>/compare</code></td></tr></tbody></table></div>
+</section>
+<section class="docs-card">
+<h2 id="the-privacy-promise">The privacy promise<a class="h-anchor" href="#the-privacy-promise" aria-label="Link to this section">#</a></h2>
+<p>Nothing you drop is ever uploaded. Analyser reads files with the browser's File API and does every bit of parsing, decoding and rendering on your own device - open your browser's network tab while dropping a file and you'll see no request carrying its bytes. The only network activity the site ever makes is: fetching its own code/WASM engines (lazily, only for the feature you're actually using, then cached for offline use), a single anonymous "file analysed" ping with just a lowercase extension string (see <a href="/docs/worker"><code>worker.md</code></a>), and - only if a lookup link in the Network indicators card is clicked - opening a third-party OSINT service in a new tab. See <code>/privacy</code> and <a href="/docs/faq"><code>faq.md</code></a> for more detail.</p>
+<p>The footer's "Recently analysed" panel is a convenience, not a network feature: it stores file metadata (name, type, size) in your browser's <code>localStorage</code> so you can see what you looked at recently. The files themselves are never stored, so they can't be reopened automatically.</p>
+</section>
+<section class="docs-card">
+<h2 id="offline-install">Offline install<a class="h-anchor" href="#offline-install" aria-label="Link to this section">#</a></h2>
+<p>The "Download for offline use" section in the footer lets you cache Analyser as an installable, fully offline Progressive Web App, in three cumulative tiers (see <a href="/docs/pwa-offline"><code>pwa-offline.md</code></a> for exact contents and sizes):</p>
+<ul><li><strong>Essentials</strong> - the whole app, open/inspect/analyse any file offline.</li><li><strong>Everything</strong> (recommended) - adds OCR, photo-location maps, QR scanning, HEIC conversion, archives, PostScript/EPS, CAD drawings, and the samples gallery.</li><li><strong>Complete</strong> - optional extras on top of Everything: OCR in 30+ languages, and on-device AI vocal separation.</li></ul>
+<p>Click <strong>Install as app</strong> to add Analyser to your home screen/app list (uses the browser's native install prompt where available, or shows platform-specific manual instructions otherwise). <strong>Clear storage</strong> removes everything cached.</p>
+</section>
+<section class="docs-card">
+<h2 id="where-to-go-next">Where to go next<a class="h-anchor" href="#where-to-go-next" aria-label="Link to this section">#</a></h2>
+<ul><li>Browse <code>/formats</code> for the full list of 1350+ recognised file types, with a dedicated guide page for many extensions.</li><li>Try <code>/samples</code> for example files to drop without needing your own.</li><li>See <a href="/docs/faq"><code>faq.md</code></a> for quick answers to common questions.</li><li>See the <code>docs/features/*.md</code> docs above for exhaustive detail on any specific feature.</li></ul>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Overview</span></a><a class="docs-pn-next" href="/docs/faq"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">FAQ</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

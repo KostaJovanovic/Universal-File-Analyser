@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drop-to-render pipeline - Analyser docs</title>
+  <meta name="description" content="How a dropped file becomes an on-screen analysis: the exact resolution order from handleFile through classification, content sniffing, and format catalog lookups, down to the unknown.js fallback. For ">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lab.valjdakosta.com/docs/pipeline">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Analyser">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:title" content="Drop-to-render pipeline - Analyser docs">
+  <meta property="og:description" content="How a dropped file becomes an on-screen analysis: the exact resolution order from handleFile through classification, content sniffing, and format catalog lookups, down to the unknown.js fallback. For ">
+  <meta property="og:url" content="https://lab.valjdakosta.com/docs/pipeline">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="/assets/img/favicon.png" type="image/png">
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/img/icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/analyser.css">
+  <link rel="stylesheet" href="/assets/css/docs.css">
+  <script>try{var t=localStorage.getItem('anr-theme'),s=parseInt(localStorage.getItem('anr-theme:ts'),10);if(t&&(!s||Date.now()-s>604800000)){localStorage.removeItem('anr-theme');localStorage.removeItem('anr-theme:ts');t=null;}if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('anr-a11y')==='on')document.documentElement.setAttribute('data-a11y','on');}catch(e){}</script>
+</head>
+<body>
+<noscript><div class="noscript-warning" role="alert"><strong>Heads up:</strong> these docs read fine without JavaScript - only the theme toggle and sidebar filter need it.</div></noscript>
+
+<header class="docs-topbar">
+  <div class="docs-brand">
+    <a href="/" class="docs-brand-mark">Analyser</a><span class="docs-brand-sep">/</span><a href="/docs" class="docs-brand-docs">Docs</a>
+  </div>
+  <nav class="docs-topnav" aria-label="Site">
+    <a href="/" class="header-btn">Home</a>
+    <a href="/about" class="header-btn">About</a>
+    <a href="/formats" class="header-btn">Formats</a>
+    <button type="button" id="darkToggle" class="dark-toggle" aria-label="Toggle dark mode">&#9728;&#65038; DAY</button>
+  </nav>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <input type="search" id="docsFilter" class="docs-filter" placeholder="Filter pages  /" aria-label="Filter documentation pages" autocomplete="off">
+    <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline" aria-current="page">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+  </aside>
+
+  <main class="docs-article">
+    <details class="docs-mobile-nav">
+      <summary>Documentation menu</summary>
+      <nav class="docs-nav" aria-label="Documentation"><div class="docs-nav-group"><a href="/docs">Overview</a></div><div class="docs-nav-group"><span class="docs-nav-label">Start here</span><a href="/docs/user-guide">User guide</a><a href="/docs/faq">FAQ</a></div><div class="docs-nav-group"><span class="docs-nav-label">Architecture</span><a href="/docs/architecture">Architecture</a><a href="/docs/pipeline" aria-current="page">Pipeline</a><a href="/docs/renderers">Renderers</a><a href="/docs/parsers-and-libs">Parsers and libs</a></div><div class="docs-nav-group"><span class="docs-nav-label">Platform</span><a href="/docs/pages">Pages</a><a href="/docs/pwa-offline">PWA and offline</a><a href="/docs/tooling">Tooling</a><a href="/docs/worker">Worker</a><a href="/docs/design-system">Design system</a></div><div class="docs-nav-group"><span class="docs-nav-label">Feature reference</span><a href="/docs/features/images">Images</a><a href="/docs/features/audio">Audio</a><a href="/docs/features/video">Video</a><a href="/docs/features/animation-frames">Animation and frames</a><a href="/docs/features/documents">Documents</a><a href="/docs/features/design-cad-3d">Design, CAD and 3D</a><a href="/docs/features/eda-nle">EDA and NLE</a><a href="/docs/features/data-archive">Data and archives</a><a href="/docs/features/cross-cutting">Cross-cutting</a></div><div class="docs-nav-group"><span class="docs-nav-label">Reference</span><a href="/docs/feature-inventory">Feature inventory</a><a href="/docs/progress">Build log</a></div></nav>
+    </details>
+    <header class="docs-head"><h1>Drop-to-render pipeline</h1>
+<p class="docs-lede">How a dropped file becomes an on-screen analysis: the exact resolution order from <code>handleFile</code> through classification, content sniffing, and format catalog lookups, down to the <code>unknown.js</code> fallback. For engineers adding a new format or debugging misrouted files.</p></header>
+    <details class="docs-toc"><summary>On this page</summary><ul><li class="toc-h2"><a href="#overview-flow">Overview flow</a></li><li class="toc-h2"><a href="#classifyfile-name-mime-only-no-byte-reads">classifyFile() (name/MIME only, no byte reads)</a></li><li class="toc-h2"><a href="#content-based-sniffing-file-sniff-js">Content-based sniffing (file-sniff.js)</a></li><li class="toc-h2"><a href="#ambiguous-extension-reroutes">Ambiguous-extension reroutes</a></li><li class="toc-h2"><a href="#formats-js-the-central-catalog">formats.js: the central catalog</a></li><li class="toc-h2"><a href="#proprietary-format-dispatch-proprietary-js">Proprietary-format dispatch (proprietary.js)</a></li><li class="toc-h2"><a href="#the-unknown-js-fallback">The unknown.js fallback</a></li></ul></details>
+    <section class="docs-card">
+<h2 id="overview-flow">Overview flow<a class="h-anchor" href="#overview-flow" aria-label="Link to this section">#</a></h2>
+<pre><code>File dropped/selected
+  -&gt; app.js: handleFile(file)
+       -&gt; resolveKind(file)              (app.js:120)
+            -&gt; classifyFile(file)         (classify.js)  name/MIME only
+            -&gt; SPICE .raw disambiguation  (sniffSpiceRaw, for ext === 'raw')
+            -&gt; VARIANT_REROUTE check      (ambiguous extensions, e.g. .ts)
+            -&gt; resolveByContent(file)     (file-sniff.js) only if kind is
+                                           'unknown'/'extensionless'
+       -&gt; ROUTES[kind]                   (app.js) -&gt; lazy-loaded renderer
+       -&gt; renderer(file, container)      draws the result cards</code></pre>
+<p>Every stage after <code>classifyFile()</code> exists to correct or fill in a kind that extension/MIME alone got wrong or couldn't determine - a lying extension, an ambiguous one, or none at all.</p>
+</section>
+<section class="docs-card">
+<h2 id="classifyfile-name-mime-only-no-byte-reads"><code>classifyFile()</code> (name/MIME only, no byte reads)<a class="h-anchor" href="#classifyfile-name-mime-only-no-byte-reads" aria-label="Link to this section">#</a></h2>
+<p><code>web/assets/js/core/classify.js</code> exports <code>classifyFile(file)</code>, which maps a file to a <code>ROUTES</code> key purely from its <code>file.name</code> extension and <code>file.type</code> MIME string - it never reads bytes (byte sniffing is layered on top by the caller). It is a long if-chain, roughly in this precedence order:</p>
+<ol><li>SVG (MIME or <code>SVG_EXTS</code>) - checked first so it doesn't fall through to a generic image MIME.</li><li>Dozens of specific extensions mapped to dedicated renderer kinds (<code>docx</code>, <code>xlsx</code>, <code>epub</code>, <code>dwg</code>, <code>kicad_*</code>, <code>aep</code>, <code>stl</code>, <code>gcode</code>, <code>psd</code>, <code>mobi</code>, ...) - ordered deliberately so a format with a misleading vendor MIME (<code>.dwg</code> is often served as <code>image/vnd.dwg</code>, <code>.mid</code> as <code>audio/midi</code>) is caught by its extension before the generic <code>image/</code>/<code>audio/</code>/<code>video/</code> MIME fallback below would misroute it.</li><li>Generic MIME fallback: <code>image/*</code> -&gt; <code>photo</code>, <code>audio/*</code> -&gt; <code>audio</code>, <code>video/*</code> -&gt; <code>video</code>.</li><li><code>PHOTO_EXTS</code>/<code>AUDIO_EXTS</code>/<code>VIDEO_EXTS</code> (from <code>formats.js</code>) as an extension-only fallback for files with no informative MIME.</li><li><code>isProprietaryExt(ext)</code> (from <code>proprietary.js</code>'s <code>FORMATS</code> table) -&gt; <code>proprietary</code>.</li><li>Licence/marker files with no real extension (<code>LICENSE</code>, <code>COPYING</code>, <code>py.typed</code>, <code>CACHEDIR.TAG</code>) -&gt; <code>plaintext</code>.</li><li>No extension and nothing else matched -&gt; <code>extensionless</code> (treated as text with a hex fallback, not flagged "unknown").</li><li>Otherwise -&gt; <code>unknown</code>.</li></ol>
+<p><code>classifyFile</code> is also exposed as <code>window._anrClassify</code> for the folder scan and the <code>/compare</code> page.</p>
+</section>
+<section class="docs-card">
+<h2 id="content-based-sniffing-file-sniff-js">Content-based sniffing (<code>file-sniff.js</code>)<a class="h-anchor" href="#content-based-sniffing-file-sniff-js" aria-label="Link to this section">#</a></h2>
+<p><code>web/assets/js/core/file-sniff.js</code> determines what a file <em>actually</em> is from its leading bytes, independent of its name, so a lying or missing extension doesn't produce a wrong or "unknown" result. Three exports:</p>
+<ul><li><strong><code>sniffFileType(file)</code></strong> - reads the first 264 bytes and checks magic numbers for ~25 common containers (PNG, JPEG, GIF, BMP, TIFF, PSD, RIFF-based WEBP/WAVE/AVI, ISO-BMFF <code>ftyp</code> brands -&gt; HEIC/AVIF/M4A/3GP/MP4, Matroska, Ogg, ID3/MPEG audio, FLAC, ZIP, RAR, 7z, ar, SQLite, gzip, XZ, Zstandard, bzip2, LZ4, <code>.Z</code> compress, ELF, Windows EXE, PostScript/EPS, DICOM, TAR, legacy LZMA, and a trailing SVG-tag heuristic). Returns <code>{ kind, ext, label }</code> or <code>null</code>.</li><li><strong><code>resolveByContent(file)</code></strong> - the single source of truth used by both the drop path and the folder-analysability scan. It layers, in order: a handful of niche proprietary/game-format magic checks (Raise3D ideaMaker, DJI firmware, Unity manifests, Valve <code>.res</code>, Android backups, ...), an HTML/SVG text heuristic, then falls through to <code>sniffFileType()</code>'s broad magic table, then <code>sniffGitObject()</code> (loose objects/packfiles), then a CSV/TSV heuristic (consistent comma/tab counts across the first lines). Returns <code>{ kind, sniffedExt }</code>, where <code>kind</code> stays <code>'unknown'</code> if nothing matched.</li><li><strong><code>isReadableText(file)</code></strong> - true if the first 4KB has a UTF-16 BOM or is &gt;85% printable ASCII; decides whether <code>extensionless</code>/<code>unknown</code> files show as text or a hex dump. Shared with the folder scan via <code>window._anrReadableText</code>.</li></ul>
+<p><code>resolveKind()</code> in <code>app.js</code> (<code>web/assets/js/core/app.js:120</code>) only calls <code>resolveByContent</code> when <code>classifyFile</code> returned <code>'unknown'</code> or <code>'extensionless'</code> - a recognised extension is trusted and never re-sniffed.</p>
+</section>
+<section class="docs-card">
+<h2 id="ambiguous-extension-reroutes">Ambiguous-extension reroutes<a class="h-anchor" href="#ambiguous-extension-reroutes" aria-label="Link to this section">#</a></h2>
+<p>Two mechanisms in <code>app.js</code> correct a <code>classifyFile</code> result using bytes for extensions that legitimately name more than one format:</p>
+<ul><li><strong><code>VARIANT_REROUTE</code></strong> (<code>app.js:75</code>) - for extensions whose <code>classifyFile</code> route is tuned for the common variant (<code>.ts</code> -&gt; MPEG transport stream vs. TypeScript source; <code>.dts</code> -&gt; DTS audio vs. Device Tree Source; <code>.key</code> -&gt; Keynote vs. PEM key; <code>.obj</code>/<code>.nc</code>/<code>.md</code>/<code>.mat</code>/<code>.mod</code> similarly ambiguous). Each entry names the <code>primary</code> variant and a safe fallback <code>kind</code> (<code>'plaintext'</code> for a text/source variant, <code>'unknown'</code> for a binary one). <code>resolveKind()</code> reads the file's first 1024 bytes and calls <code>detectVariant()</code> (see below); if the detected variant differs from <code>primary</code>, the file is rerouted to the fallback kind.</li><li><strong>SPICE <code>.raw</code></strong> - <code>classifyFile</code> routes <code>.raw</code> to <code>photo</code> (camera RAW); <code>resolveKind()</code> separately calls <code>sniffSpiceRaw()</code> to catch SPICE simulation output sharing the same extension and reroutes to <code>'spice'</code>.</li></ul>
+</section>
+<section class="docs-card">
+<h2 id="formats-js-the-central-catalog"><code>formats.js</code>: the central catalog<a class="h-anchor" href="#formats-js-the-central-catalog" aria-label="Link to this section">#</a></h2>
+<p><code>web/assets/js/core/formats.js</code> is the single source of truth for supported file types. It exports the lowercase classification sets (<code>PHOTO_EXTS</code>, <code>AUDIO_EXTS</code>, <code>VIDEO_EXTS</code>, <code>CSV_EXTS</code>, <code>SVG_EXTS</code>, ...) that <code>classify.js</code> and other modules read to route files, plus a curated display catalog (<code>FULL_ANALYSIS</code> / <code>IDENTIFICATION</code>, consumed by <code>catalogGrouped()</code>) that drives the format overlay, the about page's format tables, and the overlay search box. Adding an extension to an existing category is usually a one-line change here; see the file's own header comment and the <code>add-file-format</code> skill for the full workflow.</p>
+<p><code>EXT_VARIANTS</code> (<code>formats.js:255</code>) is a table of ambiguous extensions with a human-readable <code>summary</code> and an optional machine <code>detect</code> rule (a magic string/hex at a byte offset, or <code>{ default: true }</code> as the fallback). <code>detectVariant(ext, bytes, text, opts)</code> (<code>formats.js:428</code>) looks up the extension, evaluates each variant's rule in order, and returns the first matching variant's name (or the default) - this is what backs both the in-app "this looks like X, not Y" readout and the <code>VARIANT_REROUTE</code> correction in <code>app.js</code> described above.</p>
+</section>
+<section class="docs-card">
+<h2 id="proprietary-format-dispatch-proprietary-js">Proprietary-format dispatch (<code>proprietary.js</code>)<a class="h-anchor" href="#proprietary-format-dispatch-proprietary-js" aria-label="Link to this section">#</a></h2>
+<p>For files classified as <code>'proprietary'</code>, <code>renderProprietary(file, container, extOverride)</code> (<code>web/assets/js/renderers/proprietary.js:3944</code>) looks the extension up in the <code>FORMATS</code> table (imported from <code>proprietary-formats.js</code>, the large reference table of 200+ formats: app name, icon, optional magic check, optional <code>chunk</code> name). If the format entry names a <code>chunk</code>, the renderer lazily imports <code>../parsers/parsers-&lt;chunk&gt;.js</code> (<code>proprietary.js:3981</code>) and calls that chunk's <code>PARSERS[ext]</code> function with the file's header bytes - so the ~200 format-specific binary parsers are split into per-domain lazy chunks (<code>parsers-audio.js</code>, <code>parsers-video.js</code>, <code>parsers-image.js</code>, <code>parsers-docs.js</code>, <code>parsers-dev.js</code>, <code>parsers-archive.js</code>, <code>parsers-gaming.js</code>, <code>parsers-threed.js</code>, <code>parsers-geodata.js</code>, <code>parsers-sci.js</code>, <code>parsers-security.js</code>, <code>parsers-email.js</code>, <code>parsers-disk.js</code>, <code>parsers-osmisc.js</code>, <code>parsers-raw.js</code>) rather than one huge always-loaded module. <code>isProprietaryExt(ext)</code> (<code>proprietary.js:4224</code>) is simply <code>ext in FORMATS</code>, used by <code>classifyFile()</code>'s fallback. See <a href="/docs/parsers-and-libs"><code>parsers-and-libs.md</code></a> for the chunk/lib inventory.</p>
+</section>
+<section class="docs-card">
+<h2 id="the-unknown-js-fallback">The <code>unknown.js</code> fallback<a class="h-anchor" href="#the-unknown-js-fallback" aria-label="Link to this section">#</a></h2>
+<p><code>web/assets/js/renderers/unknown.js</code> is the last resort for a <code>'unknown'</code> or <code>'extensionless'</code> kind (and is also reused as the generic "identify this blob" helper elsewhere, e.g. carved/recovered files). <code>guessFormat(bytes)</code> independently re-checks a similar magic-number table (PDF, PNG, JPEG, GIF, WAV/WebP/AVI via RIFF, Ogg, FLAC, ID3/MPEG audio, <code>ftyp</code>-brand MP4/MOV/M4A, ZIP, 7z, gzip, RAR, ELF, <code>MZ</code> EXE/DLL, XML, SQLite, BMP, ICO, TIFF, Matroska, Java class/Mach-O fat binary, plus a couple of 3D-printer-specific text signatures) purely to produce a human-readable label for display, then falls back to a UTF-16/printable-ASCII heuristic to decide between a text preview and a raw hex/ASCII dump. It also computes SHA-256 and offers enhanced previews for plain text, JSON and XML, and can hand off to <code>photo-recover.js</code>'s <code>carveImages</code>/<code>repairJpeg</code> when an embedded or truncated image is detected inside an otherwise-unknown blob.</p>
+</section>
+
+    <nav class="docs-pn" aria-label="Previous and next"><a class="docs-pn-prev" href="/docs/architecture"><span class="docs-pn-dir">Previous</span><span class="docs-pn-title">Architecture</span></a><a class="docs-pn-next" href="/docs/renderers"><span class="docs-pn-dir">Next</span><span class="docs-pn-title">Renderers</span></a></nav>
+  </main>
+</div>
+
+<footer id="about" class="site-footer site-footer--about">
+  <div class="footer-about-heading">
+    <p class="footer-mark">Everything runs in your browser.</p>
+    <p class="footer-meta">No upload, no analytics, no servers in the loop.</p>
+  </div>
+  <div class="footer-row footer-bottom">
+    <div class="footer-lead">
+      <a href="/" class="footer-nav-btn">&larr; Main page</a>
+      <p class="footer-meta footer-copyright"><a href="https://valjdakosta.com/">valjdakosta.com</a> &middot; 2026</p>
+      <a href="https://valjdakosta.com/" target="_blank" rel="noopener" class="footer-linkback"><img src="/assets/img/linkback.gif" alt="valjdakosta" width="88" height="31" loading="lazy"></a>
+    </div>
+    <nav class="footer-cols" aria-label="Footer">
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Site</p>
+        <a href="/compare">Compare</a>
+        <a href="/docs">Docs</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Reference</p>
+        <a href="/formats">Supported file types</a>
+        <a href="/stats">Stats</a>
+      </div>
+      <div class="footer-col">
+        <p class="footer-meta footer-col-label">Project</p>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener">Source on GitHub &#8599;</a>
+        <!-- No address in the source: the mailto is assembled in JS only after a
+             Cloudflare Turnstile challenge passes (see wireFooterContact). -->
+        <button type="button" class="footer-contact">Email me!</button>
+      </div>
+    </nav>
+  </div>
+</footer>
+
+<script type="module" src="/assets/js/core/docs.js"></script>
+</body>
+</html>

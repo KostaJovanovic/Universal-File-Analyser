@@ -15,7 +15,7 @@ per-column types, reports numeric statistics, and previews the first 100
 rows.
 
 **How to reach it.** Drop a `.csv`/`.tsv` (or any file that content-sniffs
-as delimiter-consistent text - see `docs/pipeline.md`). Built in `csv.js`.
+as delimiter-consistent text - see [`pipeline.md`](../pipeline.md)). Built in `csv.js`.
 
 **How to use it.** The preview automatically mounts the full `tablekit.js`
 workbench below it (see "Table analysis workbench" below) for interactive
@@ -84,7 +84,7 @@ stddev/percentiles), Pearson correlation, and grouping.
 
 **What it does.** Parses Gyroflow's generic IMU-log interchange format (the
 same format Analyser exports from a Sony video's gyro track, see
-`docs/features/eda-nle.md`'s Sony rtmd entry): a header of key,value lines
+[`eda-nle.md`](eda-nle.md)'s Sony rtmd entry): a header of key,value lines
 (scale factors converting raw columns to real units - time to seconds,
 gyro to rad/s shown as deg/s, accel to g) followed by a column-header line
 and samples, plotted via the same gyro/accel timeline viewer `sony-rtmd.js`
@@ -170,7 +170,7 @@ opens a popup of per-extension chips to narrow the treemap.
 **Notes / limits.** ZIP parsing (`zip.js`) prefers a central-directory read
 with ranged fetches per entry (order-independent, never loads the whole
 file), falling back to a sequential local-header walk for truncated/
-headerless archives - see `docs/renderers.md`.
+headerless archives - see [`renderers.md`](../renderers.md).
 
 ### Folder overview
 

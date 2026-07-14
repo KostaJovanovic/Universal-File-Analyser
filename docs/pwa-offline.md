@@ -3,7 +3,7 @@
 How Analyser installs as an offline-capable app: the service worker's
 precached shell, the cache-versioning scheme, the three cumulative
 "download for offline use" tiers, and the install flow. See also
-`docs/architecture.md`'s PWA/service-worker summary for the request-handling
+[`architecture.md`](architecture.md)'s PWA/service-worker summary for the request-handling
 logic.
 
 ## Service worker SHELL precache
@@ -30,7 +30,7 @@ parser module).
 ## VERSION cache epoch
 
 `const VERSION = 'analyser-v' + COMMIT_COUNT` names the cache. Every commit
-bumps `COMMIT_COUNT` (via `save.bat`, see `docs/tooling.md`), so every deploy
+bumps `COMMIT_COUNT` (via `save.bat`, see [`tooling.md`](tooling.md)), so every deploy
 gets a fresh cache name. On `activate`, any cache not in `KEEP_CACHES`
 (`[VERSION, 'analyser-offline', 'analyser-mdx']`) is deleted - so the
 previous version's shell is dropped, but the user's chosen offline-tier
@@ -65,7 +65,7 @@ Three cumulative tiers (`TIER_ORDER = ['essentials', 'everything',
 
 `TIER_MB` is the single source of truth for the sizes shown on every button
 and in the footer's help panel; `complete`'s size additionally includes
-`MDX_TIER_MB` from `../lib/mdx-model.js` (see `docs/parsers-and-libs.md`).
+`MDX_TIER_MB` from `../lib/mdx-model.js` (see [`parsers-and-libs.md`](parsers-and-libs.md)).
 Downloaded tiers are cached under the persistent `analyser-offline` cache
 name (surviving service-worker version bumps, per above) and refreshed in
 place - not wiped - when a new version's files change.
@@ -74,7 +74,7 @@ place - not wiped - when a new version's files change.
 
 `web/manifest.json` declares the PWA: name/short_name, `start_url`/`scope`
 of `./`, `display: standalone`, and three icon sizes (192/512, plus a
-maskable 512 variant). `stamp-counts.mjs` (see `docs/tooling.md`) stamps the
+maskable 512 variant). `stamp-counts.mjs` (see [`tooling.md`](tooling.md)) stamps the
 supported-format count into the manifest's description at commit time.
 
 The install button in the offline-tiers footer listens for the browser's

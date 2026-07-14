@@ -11,7 +11,7 @@ feature doc covers it. Grouped by the feature doc that owns it.
 `docs/features/*.md` file in `research/DOCS_PLAN.md`'s deliverables table
 (a gap in the plan). It has no interactive controls (pure VS-solution
 metadata display), so it is listed under `data-archive.md` here for
-consistency with its domain grouping in `docs/renderers.md`, and covered
+consistency with its domain grouping in [`renderers.md`](renderers.md), and covered
 there in Phase D.
 
 ---
