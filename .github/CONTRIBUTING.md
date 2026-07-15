@@ -7,7 +7,7 @@ Before you start, a couple of things worth knowing so your time is not wasted.
 
 ## The licence gate
 
-This project is under the [PolyForm Noncommercial License 1.0.0](../LICENSE).
+This project is under the [GNU General Public License v3.0](../LICENSE).
 By opening a pull request you agree that your contribution is licensed to the
 project under the same terms and can be redistributed under it. If you are not
 comfortable with that, please do not submit code.

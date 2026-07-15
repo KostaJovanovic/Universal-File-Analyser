@@ -165,9 +165,11 @@ The idea and need for this website was mine, originally made as a simple tool fo
 
 ## License
 
-Copyright © 2026 Kosta. Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+Copyright © 2026 Kosta. Licensed under the [GNU General Public License v3.0](LICENSE).
 
-You are free to use, study, modify and share this code for any **noncommercial** purpose, as long as you keep the copyright notice. **Commercial use is not permitted** without a separate licence from me, get in touch if you want one.
+Analyser is free software: you are free to use, study, modify and share it, for any purpose including commercially. The condition is reciprocity, if you distribute it or a modified version, you must pass on the same freedoms, releasing your source under the GPL too. It comes with no warranty.
+
+This licence covers the code I wrote. Third-party libraries under `web/assets/vendor/` remain under their own licences (Ghostscript under AGPL-3.0 and LibRaw under LGPL among them), each shipped with its licence alongside it and credited in the site footer.
 
 ## Documentation
 
