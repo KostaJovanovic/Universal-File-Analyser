@@ -32,4 +32,4 @@ Say what you actually checked:
 - [ ] I did not bump the version or edit the changelog (the maintainer handles
       that at commit time).
 - [ ] I agree my contribution is licensed under the project's
-      [PolyForm Noncommercial License 1.0.0](../LICENSE).
+      [GNU General Public License v3.0](../LICENSE).

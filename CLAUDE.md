@@ -38,6 +38,12 @@ There is no build, lint, or test pipeline — editing a file *is* the dev loop.
   `git add . && git commit && git push origin main`. `save.bat commit` commits
   without pushing; `save.bat --force` force-pushes. Don't hand-edit
   `COMMIT_COUNT` or commit around this script.
+  It also runs every generator first, in this order: `prerender-samples`,
+  `prerender-formats`, `prerender-format-pages`, `stamp-counts`, `stamp-footer`,
+  `stamp-head`, `prerender-testpage`, `build-docs-html`. Anything those scripts
+  emit is **regenerated on every commit** — edit their inputs, never their
+  output. You can run any of them standalone (`node tools/<name>.mjs`) to
+  preview locally.
 - **Deploy**: pushing to `main` ships via Cloudflare (config in
   `wrangler.jsonc`). No manual deploy step.
 
@@ -86,6 +92,39 @@ proprietary.js parsers, EXT_VARIANTS, new renderer categories, optional polish).
 See the `format-seo-pages` skill for how the generated `/formats` hub,
 per-extension `/formats/<ext>` pages, and `/samples` gallery work, plus the
 upkeep checklist for when you add/change a format.
+
+## The docs site (`/docs`) - source is `docs/*.md`, never the HTML
+
+`docs/` (repo root) is the project's own reference documentation: an
+architecture set (architecture, pipeline, renderers, parsers-and-libs, pages,
+pwa-offline, tooling, worker, design-system) and a usage-oriented `features/`
+set, mapped in `docs/README.md`. It is both the working reference *and* the
+source for a public docs site.
+
+`tools/build-docs-html.mjs` (run by save.bat) converts the Markdown to on-brand
+HTML with its own tiny converter - no npm deps:
+
+- `docs/README.md` → `web/docs.html` (served at `/docs`) - the hub is a
+  **sibling file, not `web/docs/index.html`**, matching the `/formats` clean-URL
+  pattern.
+- `docs/<name>.md` → `web/docs/<name>.html`, `docs/features/<n>.md` →
+  `web/docs/features/<n>.html`.
+
+**Both `web/docs.html` and the whole `web/docs/` directory are wiped
+(`rmSync`) and rebuilt on every commit - never hand-edit them; edit the
+Markdown in `docs/` instead.** Adding a page also means adding it to the `NAV`
+array in the generator (it drives the sidebar, prev/next pager and output
+filenames).
+
+The docs pages are deliberately self-contained: they load `assets/css/docs.css`
+plus `analyser.css`, and `assets/js/core/docs.js` (theme toggle, sidebar
+filter, footer contact) rather than the main `app.js` - no drop pipeline, no
+stats pings. They get the theme bootstrap from the generator directly, so they
+are **not** in stamp-head's or stamp-footer's `PAGES`, and not in `sw.js`
+`SHELL`. Only the `/docs` hub is listed in `sitemap.xml`.
+
+When you change how something works, update its `docs/` page in the same pass -
+it's verified-against-source documentation and drifts silently otherwise.
 
 ## Single-sourced footer and head
 
@@ -137,6 +176,12 @@ serve.py            — local dev server mirroring Cloudflare clean-URL routing
 wrangler.jsonc      — Cloudflare static-asset deploy config (assets.directory = "web")
 README.md           — public GitHub readme (visitor-facing overview; this
                       file is the real working guidance)
+AGENTS.md           — condensed agent guidance for other tools. Overlaps this
+                      file; keep the two consistent when changing conventions.
+docs/               — project reference docs (Markdown). SOURCE for the public
+                      /docs site - see "The docs site" above. Never edit the
+                      generated web/docs*.html; edit these.
+.github/            — issue/PR templates, CONTRIBUTING, SECURITY, code of conduct
 tools/              — Node generator scripts (dev-only, never served). They read
                       website files via a WEB = join(ROOT, 'web') constant, while
                       tools/ + worker/ + stats-backup/ paths stay under the root.
@@ -155,8 +200,12 @@ web/                — THE WEBSITE, served at "/" by Cloudflare (assets.directo
   compare.html        — /compare page: two dropzones, side-by-side analysis of two
                         files (see "The /compare page")
   atari.html          — Asteroids easter-egg game page (loads assets/js/games/)
+  404.html            — not-found page (in stamp-head's PAGES, not stamp-footer's)
+  test.html           — /test style-guide reference sheet (see Site aesthetics)
   formats.html        — generated /formats hub (see Generated SEO pages)
   formats/            — generated /formats/<ext> pages (wiped + rebuilt per commit)
+  docs.html           — generated /docs hub, from docs/README.md (wiped + rebuilt)
+  docs/               — generated /docs/<slug> pages, from docs/*.md (wiped + rebuilt)
   samples/            — example files that drive the /samples gallery
   sw.js               — service worker (precache SHELL + cache epoch VERSION)
   manifest.json       — PWA manifest (format count stamped by stamp-counts.mjs)
@@ -169,7 +218,8 @@ web/                — THE WEBSITE, served at "/" by Cloudflare (assets.directo
 web/assets/ in detail (the app's CSS, fonts, images, third-party libs, and JS):
 assets/
   css/
-    analyser.css    — all styles
+    analyser.css    — all styles for the app + main pages
+    docs.css        — /docs-only styles (layered on analyser.css by the docs pages)
     fonts.css       — @font-face declarations (url(../fonts/...))
   fonts/            — Geist woff2 files
   img/              — banner, favicons, app icons
@@ -202,6 +252,9 @@ assets/
                       PWA install prompt, clear-storage button
       stats-page.js — the /stats page (totals, per-ext table, leaderboard, trend chart)
       patch-tldr.js — the /patch "tl;dr" release-group digest toggle
+      docs.js       — client behaviour for the generated /docs pages (theme
+                      toggle, sidebar filter, footer contact). The docs pages
+                      don't load app.js, so this stands in for it there.
       export-data.js — "export analysis data" (JSON/hash) builder
       video-sync.js — shared video↔analysis scrubbing/sync helpers
       util.js       — shared DOM helpers (el, fileExt, …) and formatters
