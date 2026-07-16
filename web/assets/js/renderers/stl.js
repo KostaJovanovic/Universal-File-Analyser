@@ -702,6 +702,165 @@ export function geoStatsCard(geo, file, format, unit) {
   return card;
 }
 
+// ---------- mesh integrity (topological irregularities) ----------
+
+// Examine an expanded (non-indexed) triangle soup for the topological faults that
+// matter for 3D printing / CAD - non-manifold edges, open boundaries (holes),
+// degenerate and duplicate faces, and inconsistent facet winding. Corners are
+// welded by quantized position first (`step` = bbox span * ~1e-6), so meshes that
+// duplicate coincident corners (STL always does) are treated as one surface.
+// Returns a metrics object, or { tooLarge:true } for meshes above BODY_SPLIT_CAP,
+// or null for an empty mesh. Universal: every renderer's geometry carries the same
+// non-indexed `positions` buffer, so this one function covers all 3D file types.
+export function analyzeMeshIntegrity(positions, step) {
+  const nCorners = positions.length / 3;
+  const triN = nCorners / 3;
+  if (!triN) return null;
+  if (triN > BODY_SPLIT_CAP) return { tooLarge: true, triN };
+  const s = step || 1;
+
+  // Weld corners -> a compact welded-vertex id per corner.
+  const map = new Map();
+  const wid = new Int32Array(nCorners);
+  for (let i = 0; i < nCorners; i++) {
+    const k = Math.round(positions[i * 3] / s) + '|' + Math.round(positions[i * 3 + 1] / s) + '|' + Math.round(positions[i * 3 + 2] / s);
+    let id = map.get(k);
+    if (id === undefined) { id = map.size; map.set(k, id); }
+    wid[i] = id;
+  }
+  const V = map.size;
+
+  // Edge pass. Each undirected edge (lo,hi) keys a [useCount, dirSum] pair, where
+  // dirSum sums +1 for a face traversing lo->hi and -1 for hi->lo. A well-formed
+  // 2-manifold edge is used by exactly two faces in opposite directions (dirSum 0);
+  // dirSum != 0 on a 2-use edge means the two faces disagree on winding (one flipped).
+  const edges = new Map();
+  const addEdge = (a, b) => {
+    const lo = a < b ? a : b, hi = a < b ? b : a;
+    const key = lo * V + hi;
+    let e = edges.get(key);
+    if (!e) { e = [0, 0]; edges.set(key, e); }
+    e[0]++; e[1] += (a < b) ? 1 : -1;
+  };
+  // Duplicate-face detection is a string-keyed Set, so gate it to a smaller mesh to
+  // keep memory bounded; the edge/manifold checks always run up to BODY_SPLIT_CAP.
+  const dupCheck = triN <= 300000;
+  const seenTri = dupCheck ? new Set() : null;
+  let degenerate = 0, duplicate = 0;
+  for (let t = 0; t < triN; t++) {
+    const a = wid[t * 3], b = wid[t * 3 + 1], c = wid[t * 3 + 2];
+    if (a === b || b === c || a === c) { degenerate++; continue; }   // collapsed corners -> zero area
+    if (seenTri) {
+      let x = a, y = b, z = c, tmp;
+      if (x > y) { tmp = x; x = y; y = tmp; }
+      if (y > z) { tmp = y; y = z; z = tmp; }
+      if (x > y) { tmp = x; x = y; y = tmp; }
+      const tk = x + '_' + y + '_' + z;
+      if (seenTri.has(tk)) duplicate++; else seenTri.add(tk);
+    }
+    addEdge(a, b); addEdge(b, c); addEdge(c, a);
+  }
+
+  // Tally edge classes and collect boundary edges for hole-loop counting.
+  let boundaryEdges = 0, nonManifoldEdges = 0, flipped = 0;
+  const edgeCount = edges.size;
+  const boundaryKeys = [];
+  for (const [key, e] of edges) {
+    if (e[0] === 1) { boundaryEdges++; boundaryKeys.push(key); }
+    else if (e[0] === 2) { if (e[1] !== 0) flipped++; }
+    else if (e[0] > 2) nonManifoldEdges++;
+  }
+
+  // Holes = connected components of the boundary-edge graph (each open loop is one
+  // hole). Union-find over just the welded vertices that touch a boundary edge.
+  let holes = 0;
+  if (boundaryEdges && boundaryEdges <= 500000) {
+    const comp = new Map();
+    const find = (x) => { let r = x; while (comp.get(r) !== r) r = comp.get(r); while (comp.get(x) !== r) { const n = comp.get(x); comp.set(x, r); x = n; } return r; };
+    const ensure = (x) => { if (!comp.has(x)) comp.set(x, x); };
+    for (const key of boundaryKeys) {
+      const hi = key % V, lo = (key - hi) / V;
+      ensure(lo); ensure(hi);
+      const ra = find(lo), rb = find(hi);
+      if (ra !== rb) comp.set(ra, rb);
+    }
+    const roots = new Set();
+    for (const x of comp.keys()) roots.add(find(x));
+    holes = roots.size;
+  }
+
+  const faces = triN - degenerate;
+  const isClosed = faces > 0 && boundaryEdges === 0;
+  const isManifold = nonManifoldEdges === 0;
+  const isWatertight = isClosed && isManifold;
+  const consistent = flipped === 0;
+  const euler = V - edgeCount + faces;   // V - E + F
+
+  return {
+    tooLarge: false, triN, weldedVerts: V, edgeCount, faces,
+    boundaryEdges, nonManifoldEdges, degenerate, duplicate, dupCheck, flipped, holes,
+    isClosed, isManifold, isWatertight, consistent, euler,
+  };
+}
+
+// A "Mesh integrity" card: the topological verdict (watertight / manifold) plus a
+// row per detected fault and a plain-language note. Flagged with the accent border
+// (.anr-sig-flag, reused from the forensic cards) when any irregularity is found.
+// `opts.span` overrides the weld tolerance basis (defaults to the geometry's bbox
+// span). Shown by every 3D renderer beneath the geometry stats.
+export function meshIntegrityCard(geo, opts = {}) {
+  const span = (opts.span || geoSpan(geo));
+  const a = analyzeMeshIntegrity(geo.positions, span * 1e-6);
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Mesh integrity'));
+  if (!a) { card.appendChild(el('p', { class: 'anr-hint' }, 'No mesh geometry to check.')); return card; }
+  if (a.tooLarge) {
+    card.appendChild(el('p', { class: 'anr-hint' },
+      `This mesh has ${a.triN.toLocaleString()} triangles - too many to scan for topological errors quickly, so the integrity check was skipped.`));
+    return card;
+  }
+
+  const problems = a.boundaryEdges || a.nonManifoldEdges || a.degenerate || a.duplicate || a.flipped;
+  if (problems) card.classList.add('anr-sig-flag');
+
+  const tbl = el('table', { class: 'anr-readout' });
+  tbl.appendChild(rowHelp('Watertight', a.isWatertight ? 'Yes' : 'No',
+    'A watertight mesh is fully closed - every edge is shared by exactly two triangles, with no holes or gaps. Only a watertight mesh has a meaningful volume and prints reliably.'));
+  tbl.appendChild(rowHelp('Manifold', a.isManifold ? 'Yes' : 'No',
+    'A manifold mesh has clean surface topology - no edge is shared by more than two triangles. Non-manifold edges confuse slicers, boolean and CAD operations.'));
+  if (a.boundaryEdges) tbl.appendChild(rowHelp('Open edges', a.boundaryEdges.toLocaleString() + (a.holes ? ` (${a.holes.toLocaleString()} ${a.holes === 1 ? 'hole' : 'holes'})` : ''),
+    'Edges used by only one triangle. They border holes or gaps in the surface, so the mesh is not fully closed.'));
+  if (a.nonManifoldEdges) tbl.appendChild(rowHelp('Non-manifold edges', a.nonManifoldEdges.toLocaleString(),
+    'Edges shared by three or more triangles. This is topologically invalid for a surface and commonly breaks slicing, boolean and repair operations.'));
+  if (a.flipped) tbl.appendChild(rowHelp('Inconsistent winding', a.flipped.toLocaleString() + (a.flipped === 1 ? ' edge' : ' edges'),
+    'Edges where two neighbouring triangles disagree on winding, so their normals point opposite ways. Inconsistent winding causes shading artefacts and a mis-computed volume / inside-outside test.'));
+  if (a.degenerate) tbl.appendChild(rowHelp('Degenerate faces', a.degenerate.toLocaleString(),
+    'Triangles with zero area (two or more corners coincide). They carry no surface and should be removed.'));
+  if (a.duplicate) tbl.appendChild(rowHelp('Duplicate faces', a.duplicate.toLocaleString(),
+    'Triangles that repeat the same three corners as another face - redundant coincident geometry.'));
+  tbl.appendChild(rowHelp('Euler characteristic', String(a.euler),
+    'V - E + F over the welded mesh, a topological invariant. A single closed solid gives 2 (genus 0); each handle/tunnel through the body lowers it by 2.'));
+  card.appendChild(tbl);
+
+  if (!problems) {
+    card.appendChild(el('p', { class: 'anr-sig-flag-note' },
+      'This mesh is watertight and manifold - a fully closed, consistently wound solid with no detected topological errors, so its reported volume is reliable.'));
+  } else {
+    const pl = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : (many || one + 's')}`;
+    const issues = [];
+    if (a.boundaryEdges) issues.push(pl(a.boundaryEdges, 'open edge') + (a.holes ? ` across ${pl(a.holes, 'hole')}` : ''));
+    if (a.nonManifoldEdges) issues.push(pl(a.nonManifoldEdges, 'non-manifold edge'));
+    if (a.flipped) issues.push(pl(a.flipped, 'inconsistently wound edge'));
+    if (a.degenerate) issues.push(pl(a.degenerate, 'degenerate face'));
+    if (a.duplicate) issues.push(pl(a.duplicate, 'duplicate face'));
+    const list = issues.length > 1 ? issues.slice(0, -1).join(', ') + ' and ' + issues[issues.length - 1] : issues[0];
+    card.appendChild(el('p', { class: 'anr-sig-flag-note' },
+      `This mesh has ${list}. These irregularities can cause slicing failures, an unreliable volume or inside-outside test, and errors in CAD, boolean or repair tools. `
+      + 'Run a mesh-repair pass (in your slicer, or a tool such as Blender or Meshmixer) before printing or machining.'));
+  }
+  return card;
+}
+
 // ---------- multi-body detection (connected components) ----------
 
 // Above this triangle count we skip body-splitting - the union-find weld pass is
@@ -807,8 +966,10 @@ export function renderPartsViewer(file, resultsEl, { metaCard, parts, format, un
   // metadata card (if any) sits below them so the viewer leads.
   let viewCardEl = el('div');
   let statsCardEl = el('div');
+  let integCardEl = el('div');
   resultsEl.appendChild(viewCardEl);
   resultsEl.appendChild(statsCardEl);
+  resultsEl.appendChild(integCardEl);
   if (metaCard) resultsEl.appendChild(metaCard);
   const geoCache = new Map();
 
@@ -817,8 +978,10 @@ export function renderPartsViewer(file, resultsEl, { metaCard, parts, format, un
     if (chip) chip.classList.add('is-active');
     const loading = el('div', { class: 'anr-card' }, [el('div', { class: 'anr-info' }, 'Building mesh…')]);
     const blankStats = el('div');
+    const blankInteg = el('div');
     viewCardEl.replaceWith(loading); viewCardEl = loading;
     statsCardEl.replaceWith(blankStats); statsCardEl = blankStats;
+    integCardEl.replaceWith(blankInteg); integCardEl = blankInteg;
     // Yield so the "Building…" text paints before a heavy parse blocks the thread.
     await new Promise((r) => setTimeout(r, 0));
     let geo = geoCache.get(part.key);
@@ -834,6 +997,8 @@ export function renderPartsViewer(file, resultsEl, { metaCard, parts, format, un
     startViewer(viewer);
     const stats = geoStatsCard(geo, file, format, unitLabel);
     statsCardEl.replaceWith(stats); statsCardEl = stats;
+    const integ = meshIntegrityCard(geo);
+    integCardEl.replaceWith(integ); integCardEl = integ;
   }
 
   parts.forEach((part) => {
@@ -913,4 +1078,7 @@ export async function renderStl(file, resultsEl) {
   statsCard.appendChild(el('p', { class: 'anr-hint', style: 'font-size:12px;margin-top:8px;' },
     'STL files carry no unit - dimensions are in the file’s own units (usually mm for 3D printing).'));
   resultsEl.appendChild(statsCard);
+
+  // ---- Mesh integrity (non-manifold / open / degenerate faults) ----
+  resultsEl.appendChild(meshIntegrityCard(geo));
 }

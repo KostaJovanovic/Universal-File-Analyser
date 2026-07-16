@@ -10,7 +10,7 @@ import { el, row, rowHelp, h3help, fmtBytes, sha256Row, errorCard } from '../cor
 import { inflate, ascii, latin1 } from '../core/binutil.js';
 import {
   buildViewerCard, startViewer, makeResult,
-  buildGeoFromIndexed, geoStatsCard, renderPartsViewer,
+  buildGeoFromIndexed, geoStatsCard, meshIntegrityCard, renderPartsViewer,
   splitBodiesIndexed, subTris, geoSpan, bodyParts, BODY_SPLIT_CAP,
 } from './stl.js';
 import { parseStepHeader } from './proprietary.js';
@@ -848,6 +848,7 @@ async function renderMeshFile(file, resultsEl, ext) {
   resultsEl.appendChild(viewCard);
   startViewer(viewer);
   resultsEl.appendChild(geoStatsCard(geo, file, ext.toUpperCase(), 'units'));
+  resultsEl.appendChild(meshIntegrityCard(geo));
 }
 
 // OBJ viewer that honours colour. `materials` (parsed .mtl) and `texImage` (a
@@ -880,6 +881,7 @@ async function renderObjColoured(file, resultsEl, parsed, materials = null, texI
     resultsEl.appendChild(materialsSummaryCard(materials, !!texImage));
   }
   resultsEl.appendChild(geoStatsCard(geo, file, 'OBJ', 'units'));
+  resultsEl.appendChild(meshIntegrityCard(geo));
 }
 
 // Prompt + picker to supply the .mtl (and any texture images) that a lone OBJ
@@ -1155,6 +1157,7 @@ async function renderGltf(file, resultsEl, ext) {
       resultsEl.appendChild(viewCard);
       startViewer(viewer);
       resultsEl.appendChild(geoStatsCard(geo, file, ext.toUpperCase(), 'units'));
+      resultsEl.appendChild(meshIntegrityCard(geo));
     }
   } else {
     resultsEl.appendChild(el('div', { class: 'anr-info' }, mesh && mesh.unresolved
@@ -1284,6 +1287,10 @@ async function renderStepIges(file, resultsEl, ext) {
   resultsEl.appendChild(viewCard);
   startViewer(viewer);
   resultsEl.appendChild(geoStatsCard(geo, file, fmtLabel + ' (tessellated)', 'mm'));
+  // Tessellated B-rep is watertight when the source solid is, so the integrity
+  // check doubles as a sanity check on the OCCT meshing (open edges here usually
+  // just mean the tessellation tolerance left T-junctions between adjacent faces).
+  resultsEl.appendChild(meshIntegrityCard(geo));
   resultsEl.appendChild(metaCard);
 }
 
@@ -1483,4 +1490,5 @@ async function renderFbx(file, resultsEl) {
   resultsEl.appendChild(viewCard);
   startViewer(viewer);
   resultsEl.appendChild(geoStatsCard(geo, file, 'FBX', 'units'));
+  resultsEl.appendChild(meshIntegrityCard(geo));
 }

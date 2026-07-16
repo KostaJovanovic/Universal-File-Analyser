@@ -211,6 +211,37 @@ btn: Z-up
 btn: Wireframe
 ```
 
+### Mesh integrity (non-manifold / watertight check)
+
+**What it does.** Beneath the geometry stats, every 3D mesh gets a **Mesh
+integrity** card that scans the surface topology for the faults that matter
+for 3D printing and CAD: **non-manifold edges** (an edge shared by three or
+more triangles), **open/boundary edges** and the number of **holes** they
+border, **degenerate faces** (zero-area triangles), **duplicate faces**, and
+**inconsistently wound (flipped) faces** whose normals disagree with their
+neighbours. It reports whether the mesh is **watertight** and **manifold**,
+and the **Euler characteristic** (V - E + F). When any fault is found the card
+takes the accent-bordered flag treatment and explains the impact plus a
+repair suggestion.
+
+**How it works.** The check is universal - it runs on the same non-indexed
+position buffer the WebGL viewer uses, so it covers every 3D format (STL,
+OBJ/PLY/OFF, 3MF/AMF, glTF/GLB, FBX, STEP/IGES/BREP) and each split body or
+assembly part individually. Coincident triangle corners are first **welded by
+quantized position** (tolerance = bounding-box span x 1e-6), which is what
+lets it read the true surface of a triangle-soup export (many OBJ/STL files
+store every triangle with its own unshared corners - without welding, a naive
+tool sees every edge as an open boundary). Edge use-counts then classify each
+edge as boundary (1 face), manifold (2) or non-manifold (3+), and the
+per-face winding direction across shared edges flags flipped normals. Built
+in `stl.js` (`analyzeMeshIntegrity` / `meshIntegrityCard`).
+
+**Notes / limits.** The scan is skipped for meshes above ~800k triangles (the
+same cap as body-splitting) to keep the drop responsive; duplicate-face
+detection is limited to meshes under 300k triangles. Because it welds by
+distance, deliberately-separate surfaces that happen to touch within the weld
+tolerance can be reported as non-manifold.
+
 ### 3MF / STEP / IGES / OBJ / PLY / glTF / FBX viewer
 
 **What it does.** A 3D model viewer covering multiple mesh and B-rep CAD

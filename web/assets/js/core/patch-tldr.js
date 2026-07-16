@@ -15,6 +15,9 @@ import { el } from './util.js';
 // newest group's notes, or - once that group holds five versions - start a new
 // group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
+  { range: '6.32 - 6.35', notes: [
+    'Every **3D model** gets a **Mesh integrity** check - flags **non-manifold** edges, open holes, degenerate and duplicate faces, and whether it is **watertight**.',
+  ] },
   { range: '6.22 - 6.31', notes: [
     'Reads a photo\'s **C2PA Content Credentials** - the signing tool, edits, source images and any AI involvement it claims.',
     'A card weighs whether an image is **AI-generated**, from generator tags and hidden **Stable Diffusion**, **ComfyUI** and **Midjourney** parameter blocks.',

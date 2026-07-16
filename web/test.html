@@ -390,6 +390,19 @@
             </table>
           </div>
 
+          <div class="tst-sub">.anr-card.anr-sig-flag - the accent-bordered flag treatment (signature mismatch, trailing data, mesh integrity) with an .anr-sig-flag-note prose line</div>
+          <div class="anr-card anr-sig-flag">
+            <h3>Mesh integrity</h3>
+            <table class="anr-readout">
+              <tr><th>Watertight</th><td>No</td></tr>
+              <tr><th>Manifold</th><td>No</td></tr>
+              <tr><th>Non-manifold edges</th><td>8,091</td></tr>
+              <tr><th>Duplicate faces</th><td>3,802</td></tr>
+              <tr><th>Euler characteristic</th><td>22,138</td></tr>
+            </table>
+            <p class="anr-sig-flag-note">This mesh has 8,091 non-manifold edges and 3,802 duplicate faces. These irregularities can cause slicing failures, an unreliable volume or inside-outside test, and errors in CAD, boolean or repair tools. Run a mesh-repair pass (in your slicer, or a tool such as Blender or Meshmixer) before printing or machining.</p>
+          </div>
+
           <div class="tst-sub">.anr-card.anr-collapsible.is-collapsed - the opt-in collapsible variant, shown closed (click the title to open; the glyph reads + when closed, - when open)</div>
           <div class="anr-card anr-collapsible is-collapsed">
             <h3>Text file previews</h3>
