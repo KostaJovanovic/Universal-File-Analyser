@@ -209,6 +209,17 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">6.32 - 6.35</p>
+          <p class="patch-name">Watertight</p>
+          <p class="patch-date">16 July 2026</p>
+          <ul class="patch-list">
+            <li><strong>Every 3D model you drop now gets a mesh health-check - Analyser spots the flaws that stop a model printing cleanly or break it in CAD, from surfaces that are not fully sealed to edges where the geometry folds in on itself.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Check a 3D model for flaws.</strong> Beneath the shape stats for any 3D file - <a href="/about#ext-stl">STL</a>, OBJ, 3MF, STEP, glTF, FBX and the rest - a new <strong>Mesh integrity</strong> card tells you whether the model is <em>watertight</em> (a single fully sealed solid) and free of tangled &ldquo;non-manifold&rdquo; edges where three or more faces meet, then counts the open holes, zero-size faces, duplicate faces and back-to-front surfaces it finds. When something is wrong it explains what that means for printing or machining and points you at a repair - so a broken model is caught before it reaches your slicer or printer. It reads the true surface even from files that store every triangle separately, where simpler tools wrongly flag the whole model as broken.</li>
+            <li><strong>Maintenance - small interim tidy-ups, including a project readme update.</strong></li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">6.21 - 6.31</p>
           <p class="patch-name">Provenance</p>
           <p class="patch-date">14 July 2026</p>
@@ -238,6 +249,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">6.18</p>
           <p class="patch-name">Left Off</p>
@@ -247,9 +261,6 @@
             <li><span class="patch-tag">New</span><strong>Come home to the same file.</strong> Analyse something on the home page, then visit <a href="/about">About</a>, <a href="/samples">Samples</a> or another page and come back - the file, its player and every result reappear exactly as left, instead of the empty dropzone. Dropping a new file still replaces it as normal.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">6.17</p>
