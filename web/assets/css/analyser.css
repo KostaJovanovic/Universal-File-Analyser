@@ -6151,6 +6151,42 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   margin-top: 8px;
 }
 .lightbox-toolbar:empty { display: none; }
+/* Gallery action bar (Analyse / Download …) - reuses .lightbox-tool-btn chips. */
+.lightbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.lightbox-actions:empty { display: none; }
+/* Prev/next arrows for stepping through a gallery, on the left/right edges. Same
+   high-contrast chip treatment as .lightbox-close so they stay legible over any
+   image. Sharp-cornered, per the site's no-rounded-corners rule. */
+.lightbox-nav {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 64px;
+  background: var(--on-dark);
+  border: 1px solid var(--on-dark);
+  color: var(--media-bg);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.7), 0 3px 10px rgba(0, 0, 0, 0.55);
+  font-family: var(--font-mono);
+  font-size: 30px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+.lightbox-nav[hidden] { display: none; }
+.lightbox-nav:hover { background: var(--media-bg); color: var(--on-dark); border-color: var(--on-dark); }
+.lightbox-prev { left: 16px; }
+.lightbox-next { right: 16px; }
 .lightbox-tool-btn {
   background: transparent;
   border: 1px solid var(--border-on-dark-strong);
@@ -6960,6 +6996,24 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-tree-copy:hover { color: var(--accent); }
 .anr-tree-file.is-clickable:hover .anr-tree-copy { color: var(--bg); }
 .anr-tree-file.is-clickable:hover .anr-tree-copy:hover { color: var(--accent); }
+/* Hidden files (dotfiles): overlaid with diagonal grey lines at 30% opacity so
+   they read as hidden at a glance. Fixed grey (not a theme var) so the hatch stays
+   legible over both the normal row and the inverted clickable-hover state; the
+   overlay ignores pointer events so the row stays clickable and the name legible. */
+.anr-tree-file.is-hidden { position: relative; }
+.anr-tree-file.is-hidden::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(128, 128, 128, 0.3) 0,
+    rgba(128, 128, 128, 0.3) 1px,
+    transparent 1px,
+    transparent 7px
+  );
+}
 
 /* Treemap + folder/archive visuals */
 .anr-treemap-wrap { position: relative; }

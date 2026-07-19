@@ -17,7 +17,7 @@ import { encodeAnimatedGif } from './gif-encode.js';
 import { buildIcoImagesCard } from './ico.js';
 import { buildMpoImagesCard } from './mpo.js';
 import { buildTiffPagesCard } from './tiff.js';
-import { diagnoseImage, repairJpeg, repairPng, decodePngPartial, extractJpegTables, spliceJpegHeader, carveImages, repairHeifContainer } from './photo-recover.js';
+import { diagnoseImage, repairJpeg, repairPng, decodePngPartial, extractJpegTables, spliceJpegHeader, rebuildHeaderlessJpeg, carveImages, repairHeifContainer } from './photo-recover.js';
 import { attachImageScrub } from './scrub.js';
 import { buildC2paCard } from './c2pa.js';
 import { buildAiSignalsCard } from './ai-signals.js';
@@ -92,12 +92,18 @@ async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
   t.appendChild(rowHelp('Detected format', (diag.format || 'unrecognised data').toUpperCase(),
     'The real format read from the file’s signature bytes, regardless of its extension. Salvage works on the actual contents.'));
   diagCard.appendChild(t);
-  diagCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:10px 0 4px;' }, 'What’s wrong:'));
-  const ul = el('ul', { style: 'margin:0; padding-left:18px;' });
-  for (const is of (diag.issues || [])) ul.appendChild(el('li', { class: 'anr-hint', style: 'margin:2px 0;' }, is.msg));
-  diagCard.appendChild(ul);
-  diagCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:10px;' },
-    'Analyser can scoop up whatever still decodes and stitch it into a viewable image. Everything stays on your device.'));
+  // The headerless case explains the damage (and the fix) once, in the Reference
+  // photo card above - so skip the "What's wrong" restatement and the carving
+  // blurb here (there's nothing to carve; it's a full header rebuild). Other
+  // damage types keep the issue list and the salvage note.
+  if (!diag.headerless) {
+    diagCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:10px 0 4px;' }, 'What’s wrong:'));
+    const ul = el('ul', { style: 'margin:0; padding-left:18px;' });
+    for (const is of (diag.issues || [])) ul.appendChild(el('li', { class: 'anr-hint', style: 'margin:2px 0;' }, is.msg));
+    diagCard.appendChild(ul);
+    diagCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:10px;' },
+      'Analyser can scoop up whatever still decodes and stitch it into a viewable image. Everything stays on your device.'));
+  }
   resultsEl.appendChild(diagCard);
 
   const out = el('div', { class: 'anr-card' });
@@ -126,6 +132,39 @@ async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
 
   // ---- JPEG ----
   if (diag.format === 'jpeg') {
+    // Headerless scan: the whole header is gone, only entropy data survives. There's
+    // nothing to repair in-place - it only decodes once a full header (SOI..SOS) is
+    // borrowed from a healthy same-camera photo. Same picker UX as the damaged-header
+    // case below, but it rebuilds via rebuildHeaderlessJpeg (the reference's SOS too).
+    if (diag.headerless) {
+      // A headerless JPEG has no signature, so app.js prepends a red "Signature
+      // mismatch" card at the top. Lead the renderer's own output with the
+      // reference picker so it sits directly under that card - it's the one
+      // action that gets the picture back - and keep the diagnosis below it.
+      resultsEl.insertBefore(out, diagCard);
+      out.appendChild(el('h3', {}, 'Reference photo needed'));
+      out.appendChild(el('p', { class: 'anr-hint' },
+        'The JPEG header is gone - only the compressed image data survives. Pick a healthy photo from the same camera (same resolution and mode) and Analyser rebuilds a working header so this file decodes. How much of the picture returns depends on how much was lost with the header:'));
+      const inp = el('input', { type: 'file', accept: 'image/jpeg,.jpg,.jpeg', style: 'display:none' });
+      const pick = el('button', { type: 'button', class: 'anr-btn' }, 'Choose reference photo…');
+      pick.addEventListener('click', () => inp.click());
+      out.appendChild(el('div', { class: 'anr-btn-row' }, [inp, pick]));
+      const note = el('p', { class: 'anr-hint' }, '');
+      out.appendChild(note);
+      inp.addEventListener('change', async () => {
+        const ref = inp.files && inp.files[0];
+        if (!ref) return;
+        pick.textContent = ref.name;
+        note.textContent = 'Rebuilding the header from “' + ref.name + '”…';
+        let rebuilt = null;
+        try { rebuilt = rebuildHeaderlessJpeg(bytes, new Uint8Array(await ref.arrayBuffer())); } catch (_) {}
+        if (!rebuilt || !rebuilt.data) { note.textContent = 'Couldn’t read a usable header from that photo. Pick a healthy JPEG from the same camera.'; return; }
+        note.innerHTML = '';
+        const f = new File([rebuilt.data], base + '.recovered.jpg', { type: 'image/jpeg' });
+        await present(f, 'Rebuilt the missing header using “' + ref.name + '” (' + (rebuilt.width || '?') + ' × ' + (rebuilt.height || '?') + '). Any part of the picture lost with the header appears corrupted or blank.');
+      });
+      return;
+    }
     const rep = repairJpeg(bytes);
     if (rep.ok && !rep.needsReference && rep.data) {
       const f = new File([rep.data], base + '.recovered.jpg', { type: 'image/jpeg' });
@@ -1635,6 +1674,9 @@ function renderLsbPlanes(img, container) {
 // ---------- lightbox (singleton, lazy) ----------
 let lightboxEl = null;
 let lbZoom = null;
+// Current gallery navigation config ({onPrev, onNext} + action buttons), set per
+// open by openLightbox. Drives the prev/next arrows and the ArrowLeft/Right keys.
+let lbNav = null;
 let lbClose = null;   // history-aware closer while the lightbox is open
 function ensureLightbox() {
   if (lightboxEl) return lightboxEl;
@@ -1673,21 +1715,46 @@ function ensureLightbox() {
   wrap.appendChild(dot);
   const toolbar = document.createElement('div');
   toolbar.className = 'lightbox-toolbar';
+  // Extra action buttons for gallery use (e.g. Analyse / Download a carved image).
+  const actions = document.createElement('div');
+  actions.className = 'lightbox-actions';
   const meta = document.createElement('p');
   meta.className = 'lightbox-meta';
   const center = document.createElement('div');
   center.className = 'lightbox-center';
   center.appendChild(wrap);
   center.appendChild(toolbar);
+  center.appendChild(actions);
   center.appendChild(meta);
+  // Prev/next arrows for stepping through a gallery; hidden unless a nav config
+  // is supplied to openLightbox.
+  const prevBtn = document.createElement('button');
+  prevBtn.type = 'button';
+  prevBtn.className = 'lightbox-nav lightbox-prev';
+  prevBtn.setAttribute('aria-label', 'Previous');
+  prevBtn.innerHTML = '&#8249;';
+  prevBtn.hidden = true;
+  const nextBtn = document.createElement('button');
+  nextBtn.type = 'button';
+  nextBtn.className = 'lightbox-nav lightbox-next';
+  nextBtn.setAttribute('aria-label', 'Next');
+  nextBtn.innerHTML = '&#8250;';
+  nextBtn.hidden = true;
+  prevBtn.addEventListener('click', (e) => { e.stopPropagation(); if (lbNav && lbNav.onPrev) lbNav.onPrev(); });
+  nextBtn.addEventListener('click', (e) => { e.stopPropagation(); if (lbNav && lbNav.onNext) lbNav.onNext(); });
   lbZoom = attachZoomPan(wrap);
   lightboxEl.appendChild(closeBtn);
+  lightboxEl.appendChild(prevBtn);
+  lightboxEl.appendChild(nextBtn);
   lightboxEl.appendChild(center);
   lightboxEl.addEventListener('click', (e) => {
     if (e.target === lightboxEl || e.target === closeBtn) closeLightbox();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !lightboxEl.hidden) closeLightbox();
+    if (lightboxEl.hidden) return;
+    if (e.key === 'Escape') { closeLightbox(); return; }
+    if (e.key === 'ArrowLeft' && lbNav && lbNav.onPrev) { e.preventDefault(); lbNav.onPrev(); }
+    else if (e.key === 'ArrowRight' && lbNav && lbNav.onNext) { e.preventDefault(); lbNav.onNext(); }
   });
   // Re-fit the image to the viewport on resize / device rotation while the
   // lightbox is open, so it scales correctly at any window size (rAF-coalesced).
@@ -1796,7 +1863,7 @@ function computeExposureOverlay(imgEl, canvas, mode) {
   ctx.putImageData(out, 0, 0);
 }
 
-export function openLightbox(src, alt, metaText, focusOpts, showAlpha, photoTools = true) {
+export function openLightbox(src, alt, metaText, focusOpts, showAlpha, photoTools = true, nav = null) {
   const lb = ensureLightbox();
   if (lbZoom) lbZoom.reset();
   const wrap = lb.querySelector('.lightbox-img-wrap');
@@ -1822,6 +1889,25 @@ export function openLightbox(src, alt, metaText, focusOpts, showAlpha, photoTool
   mapOverlay.src = '';
   dot.hidden = true;
   lb.querySelector('.lightbox-meta').textContent = metaText || '';
+
+  // Gallery navigation: prev/next arrows, ArrowLeft/Right keys, and action buttons
+  // (Analyse / Download …). nav.checker paints the alpha checkerboard so a partly
+  // recovered image's transparent region is visible against the dark backdrop.
+  lbNav = nav || null;
+  const prevBtn = lb.querySelector('.lightbox-prev');
+  const nextBtn = lb.querySelector('.lightbox-next');
+  const actionsEl = lb.querySelector('.lightbox-actions');
+  prevBtn.hidden = !(nav && nav.onPrev);
+  nextBtn.hidden = !(nav && nav.onNext);
+  actionsEl.innerHTML = '';
+  if (nav && Array.isArray(nav.actions)) {
+    for (const a of nav.actions) {
+      const b = el('button', { type: 'button', class: 'lightbox-tool-btn' }, a.label);
+      b.addEventListener('click', (e) => { e.stopPropagation(); if (a.onClick) a.onClick(); });
+      actionsEl.appendChild(b);
+    }
+  }
+  if (nav && nav.checker) wrap.classList.add('anr-checkerboard');
 
   if (photoTools) {
   let peakingReady = false, highlightsReady = false, shadowsReady = false;
@@ -1901,7 +1987,7 @@ function hideLightbox() {
   lbClose = null;
 }
 // User-initiated close (button / Esc / backdrop): also unwinds the history entry.
-function closeLightbox() {
+export function closeLightbox() {
   if (lbClose) lbClose();
   else hideLightbox();
 }
