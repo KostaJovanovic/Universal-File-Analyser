@@ -875,6 +875,25 @@ export function integrityCard(file, extraRows = []) {
   return card;
 }
 
+// Well-known hidden/system files that DON'T start with a dot, so the dotfile
+// convention alone misses them. The File API can't read a platform hidden/system
+// attribute, so - as with dotfiles - we match by name (case-insensitive). Covers
+// the common Windows (Thumbs.db, desktop.ini, ntuser.*, *.sys) and macOS (Icon\r)
+// tell-tales that litter dropped folders.
+const SYSTEM_HIDDEN_NAMES = new Set([
+  'thumbs.db', 'ehthumbs.db', 'ehthumbs_vista.db', 'desktop.ini', 'iconcache.db',
+  'ntuser.dat', 'ntuser.ini', 'ntuser.dat.log', 'pagefile.sys', 'hiberfil.sys',
+  'swapfile.sys', 'icon\r',
+]);
+
+// Whether a file NAME reads as hidden: a leading-dot dotfile (the portable signal),
+// or a known hidden/system filename. Used to hatch these rows in the file tree.
+export function isHiddenFileName(name) {
+  if (!name) return false;
+  if (name.charAt(0) === '.') return true;
+  return SYSTEM_HIDDEN_NAMES.has(name.toLowerCase());
+}
+
 // Build a collapsible directory tree from a nested object. Directories are
 // rendered as <details>/<summary> nodes (closed by default, children rendered
 // lazily on first expand); files as plain rows. Shared by folder.js and
@@ -926,7 +945,12 @@ export function buildFileTree(obj, opts) {
         });
         frag.appendChild(details);
       } else {
-        const cls = opts.onFileClick ? 'anr-tree-file is-clickable' : 'anr-tree-file';
+        // Dotfiles and known hidden/system files (Thumbs.db, desktop.ini, ...) are
+        // marked so the CSS can hatch them over with diagonal grey lines. The File
+        // API exposes no hidden/system attribute, so name convention is all we have.
+        const hidden = isHiddenFileName(key);
+        let cls = opts.onFileClick ? 'anr-tree-file is-clickable' : 'anr-tree-file';
+        if (hidden) cls += ' is-hidden';
         const lead = el('span', { class: 'anr-tree-lead' });
         if (opts.fileAccent) {
           const color = opts.fileAccent(key, val);

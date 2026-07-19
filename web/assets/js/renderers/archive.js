@@ -729,15 +729,17 @@ async function renderLibarchive(file, resultsEl, opts) {
 
 // Render an already-opened libarchive handle as the tree + treemap + breakdown,
 // with click-to-analyse. Shared by renderLibarchive and the compressed-tarball
-// path so neither has to re-open the archive.
-function renderHandleTree(handle, fileEntries, file, resultsEl, opts) {
+// path so neither has to re-open the archive. Also reused by the disk-image
+// browser (diskimage.js), which passes its own entry list + opts.summaryRows.
+export function renderHandleTree(handle, fileEntries, file, resultsEl, opts) {
   const label = (opts && opts.label) || 'Archive';
   const items = fileEntries.map((e) => {
     const ext = extLower(e.name);
     return { path: e.name, size: e.size || 0, file: null, entry: e, category: categorizeExt(ext), ext };
   });
 
-  const summaryRows = [
+  // Callers (e.g. the disk-image browser) can supply their own Overview rows.
+  const summaryRows = (opts && opts.summaryRows) || [
     row('Application', label + ' Archive'),
     row('Name', file.name),
     row('Archive size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`),

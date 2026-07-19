@@ -1046,6 +1046,67 @@ async function parseApkg(file) {
   return out;
 }
 
+// .xapk / .apkm / .apks - Android app bundles (a ZIP wrapping one or more APKs).
+//   .xapk  (APKPure)    - manifest.json describes the package + split APKs + OBB expansions
+//   .apkm  (APKMirror)  - info.json describes the app + apk_splits
+//   .apks  (bundletool) - toc.pb (protobuf) + splits/*.apk, no JSON manifest
+// All browse as a normal ZIP (the archive tree is embedded alongside this card);
+// here we surface the app identity and the split/expansion breakdown.
+async function parseXapk(file, ext) {
+  let zip; try { zip = await openZip(file); } catch (_) { return null; }
+  const kindLabel = ext === 'apkm' ? 'APKMirror bundle (.apkm)'
+    : ext === 'apks' ? 'Android App Set (.apks, bundletool)'
+    : 'APKPure app bundle (.xapk)';
+  const out = { 'Format': 'Android app bundle - ' + kindLabel };
+
+  const manifest = jsonTry(await zipText(zip, 'manifest.json')) || {};
+  const info = jsonTry(await zipText(zip, 'info.json')) || {};
+  const m = Object.keys(manifest).length ? manifest : info;
+
+  const appName = m.name || m.app_name || m.apk_title;
+  const pkg = m.package_name;
+  const verName = m.version_name || m.release_version;
+  const verCode = m.version_code;
+  if (appName) out['App'] = appName;
+  if (pkg) out['Package'] = pkg;
+  if (verName || verCode) out['Version'] = [verName, verCode ? '(code ' + verCode + ')' : ''].filter(Boolean).join(' ');
+  const minSdk = m.min_sdk_version || m.min_api;
+  const tgtSdk = m.target_sdk_version;
+  if (minSdk) out['Min SDK'] = String(minSdk);
+  if (tgtSdk) out['Target SDK'] = String(tgtSdk);
+  if (Array.isArray(m.arches) && m.arches.length) out['ABIs'] = m.arches.join(', ');
+  if (typeof m.total_size === 'number' && m.total_size > 0) out['Declared size'] = fmtBytes(m.total_size);
+
+  // Split APKs: from the manifest when present, else every .apk member in the ZIP.
+  const splitList = Array.isArray(m.split_apks) ? m.split_apks
+    : Array.isArray(m.apk_splits) ? m.apk_splits : null;
+  const apkEntries = zip.entries.filter((e) => /\.apk$/i.test(e.name) && !/\/$/.test(e.name));
+  const apkCount = splitList ? splitList.length : apkEntries.length;
+  if (apkCount) out['APKs inside'] = apkCount + (apkCount > 1 ? ' (base + splits)' : '');
+
+  // OBB expansion files (Android/obb/... or a manifest "expansions" list).
+  const obbEntries = zip.entries.filter((e) => /\.obb$/i.test(e.name));
+  const expCount = Array.isArray(m.expansions) ? m.expansions.length : obbEntries.length;
+  if (expCount) out['OBB expansions'] = expCount;
+
+  if (Array.isArray(m.permissions) && m.permissions.length) out['Permissions'] = m.permissions.length;
+
+  // A readable split breakdown (name + size), largest useful first.
+  const rows = apkEntries.map((e) => ({ name: e.name, size: e.uncompSize, extra: 'APK' }))
+    .concat(obbEntries.map((e) => ({ name: e.name, size: e.uncompSize, extra: 'OBB' })));
+  if (rows.length) out._sections = [fileListSection('Packages (' + rows.length + ')', rows, true)];
+
+  if (Array.isArray(m.permissions) && m.permissions.length) {
+    (out._sections = out._sections || []).push({
+      title: 'Permissions (' + m.permissions.length + ')',
+      node: preBlock(m.permissions.join('\n')),
+    });
+  }
+
+  if (!appName && !pkg && !apkCount) out['Note'] = 'No manifest.json / info.json and no APK members found - browse the archive tree below.';
+  return out;
+}
+
 // .conda (zip wrapping zstd-compressed tarballs)
 async function parseConda(file) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
@@ -1404,6 +1465,9 @@ export const PARSERS = {
   appx: (c) => parseAppx(c.file),
   msix: (c) => parseAppx(c.file),
   apkg: (c) => parseApkg(c.file),
+  xapk: (c) => parseXapk(c.file, c.ext),
+  apkm: (c) => parseXapk(c.file, c.ext),
+  apks: (c) => parseXapk(c.file, c.ext),
   conda: (c) => parseConda(c.file),
   deb: (c) => parseDeb(c.file),
   rpm: (c) => parseRpm(c.file),

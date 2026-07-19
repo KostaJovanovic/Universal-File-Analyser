@@ -183,6 +183,11 @@ export function classifyFile(file) {
   // is an Adobe SpeedGrade / Iridas grade stack carrying a baked 3D LUT, read by
   // the same renderer (grade stack + the embedded LUT visualised).
   if (ext === 'cube' || ext === 'look') return 'lut';
+  // Raw disk-filesystem images: browsable like a folder/archive. renderDiskImage
+  // mounts a FAT12/16/32 volume (bare "superfloppy" or an MBR-partitioned disk)
+  // and falls back to identification for non-FAT images (ISO, ext4, NTFS, DMG,
+  // firmware blobs), so a .img is never worse off than before.
+  if (ext === 'img' || ext === 'ima' || ext === 'dsk') return 'diskimage';
   // Generic media MIME fallback - only now that every dedicated-extension route
   // above has had its say (see the note near the top of this function). A file
   // with a standard image/audio/video MIME and no recognised structured

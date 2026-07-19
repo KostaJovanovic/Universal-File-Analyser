@@ -154,17 +154,27 @@ export function repairJpeg(bytes, opts = {}) {
   };
 }
 
-// Pull the header tables (DQT, DHT, SOF, DRI, plus APP0/APP1) out of a healthy
-// reference JPEG so a damaged file's missing/garbled header can be rebuilt. Returns
-// the raw segment bytes (with their FFxx markers) in canonical order, or null.
+// Only the segments a decoder actually needs to interpret the scan: quantisation
+// tables (DQT), Huffman tables (DHT), restart interval (DRI) and the frame header
+// (SOF). Deliberately EXCLUDES APPn/JFIF/Exif (which carry the reference's own
+// thumbnail, timestamp, GPS and camera metadata) and COM, so borrowing a header
+// for recovery never grafts a foreign thumbnail or misleading metadata onto the
+// rebuilt picture.
+function isEssentialHeaderMarker(m) {
+  return m === 0xDB || m === 0xC4 || m === 0xDD || isSofMarker(m);
+}
+
+// Pull the essential header tables (DQT, DHT, SOF, DRI - NOT the Exif/APPn) out of
+// a healthy reference JPEG so a damaged file's missing/garbled header can be
+// rebuilt. Returns the raw segment bytes (with their FFxx markers) in canonical
+// order, or null.
 export function extractJpegTables(bytes) {
   const scan = scanJpeg(bytes, bytes[0] === 0xFF ? 0 : Math.max(0, findBytesIn(bytes, [0xFF, 0xD8, 0xFF], 0)));
   if (!scan || !scan.sof) return null;
   const wanted = [];
   for (const s of scan.segments) {
-    // Everything up to (not including) the SOS: DQT/DHT/SOF/DRI/APPn/COM.
-    if (s.marker === 0xDA) break;
-    wanted.push(bytes.subarray(s.off, s.off + s.len));
+    if (s.marker === 0xDA) break;                       // stop at SOS
+    if (isEssentialHeaderMarker(s.marker)) wanted.push(bytes.subarray(s.off, s.off + s.len));
   }
   if (!wanted.length) return null;
   return { segments: wanted, width: scan.sof.width, height: scan.sof.height, components: scan.sof.components };
@@ -185,6 +195,61 @@ export function spliceJpegHeader(brokenBytes, refTables) {
   const out = new Uint8Array(total); let o = 0;
   for (const p of parts) { out.set(p, o); o += p.length; }
   return out;
+}
+
+// Detect a HEADERLESS JPEG: the whole file is entropy-coded scan data with the
+// header (SOI, DQT, DHT, SOF, SOS) gone entirely - a stronger corruption than a
+// merely damaged header. The tell is that (almost) every 0xFF byte is a valid
+// JPEG escape - FF00 byte-stuffing, an FFD0..FFD7 restart, or the final FFD9 -
+// which is overwhelmingly unlikely in non-JPEG data (where 0xFF is followed by an
+// arbitrary byte). No SOI is present, so scanJpeg/repairJpeg can't touch it; it
+// only becomes decodable once a matching header is prepended (rebuildHeaderlessJpeg).
+export function looksLikeHeaderlessJpegScan(bytes) {
+  const n = bytes.length;
+  if (n < 4096) return false;
+  if (bytes[0] === 0xFF && bytes[1] === 0xD8) return false;   // has an SOI - normal repair path
+  if (findBytesIn(bytes, [0xFF, 0xD8, 0xFF], 0) >= 0) return false;   // a real header exists somewhere
+  let ff = 0, esc = 0;
+  for (let i = 0; i < n - 1; i++) {
+    if (bytes[i] !== 0xFF) continue;
+    ff++;
+    const m = bytes[i + 1];
+    if (m === 0x00 || (m >= 0xD0 && m <= 0xD7) || m === 0xD9) esc++;
+  }
+  if (ff < 64) return false;                    // too few 0xFF bytes to be a scan
+  return esc / ff > 0.9;                        // overwhelmingly stuffing/restart/EOI
+}
+
+// Rebuild a headerless JPEG by borrowing a COMPLETE header (SOI through the SOS
+// marker, i.e. up to where the reference's own scan begins) from a healthy photo
+// shot on the same camera in the same mode, then appending the surviving scan
+// data (+ EOI). Unlike spliceJpegHeader, the broken file has no SOS of its own, so
+// the reference's SOS is taken too. The result decodes when the reference matches
+// the lost header's DQT/DHT/SOF/SOS (same camera, resolution and mode); how much
+// of the picture is intact depends on how much scan data was lost with the header.
+export function rebuildHeaderlessJpeg(scanBytes, refBytes) {
+  const soi = (refBytes[0] === 0xFF && refBytes[1] === 0xD8) ? 0 : findBytesIn(refBytes, [0xFF, 0xD8, 0xFF], 0);
+  if (soi < 0) return null;
+  const rs = scanJpeg(refBytes, soi);
+  if (!rs || rs.sosAt < 0 || rs.scanStart < 0) return null;
+  // Build a MINIMAL decode header: SOI + only the essential tables/frame (DQT, DHT,
+  // DRI, SOF) + the SOS header - NOT the reference's APPn/Exif. A headerless file
+  // has lost its own metadata; grafting the reference's thumbnail, timestamp, GPS
+  // and camera settings on would misrepresent the recovered picture, so we leave it
+  // metadata-free. Then the surviving scan data (+ EOI).
+  const parts = [new Uint8Array([0xFF, 0xD8])];
+  for (const s of rs.segments) {
+    if (s.marker === 0xDA) break;                        // stop at SOS
+    if (isEssentialHeaderMarker(s.marker)) parts.push(refBytes.subarray(s.off, s.off + s.len));
+  }
+  parts.push(refBytes.subarray(rs.sosAt, rs.scanStart));  // SOS marker + params (not the reference's scan)
+  const hasEoi = scanBytes.length >= 2 && scanBytes[scanBytes.length - 2] === 0xFF && scanBytes[scanBytes.length - 1] === 0xD9;
+  parts.push(scanBytes);
+  if (!hasEoi) parts.push(new Uint8Array([0xFF, 0xD9]));
+  let total = 0; for (const p of parts) total += p.length;
+  const out = new Uint8Array(total); let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return { data: out, width: rs.sof && rs.sof.width, height: rs.sof && rs.sof.height };
 }
 
 // ---------------------------------------------------------------- PNG
@@ -364,14 +429,14 @@ export function carveImages(bytes, opts = {}) {
         i = Math.max(i + 8, end); continue;
       }
     }
-    // GIF
-    if (ascii(bytes, i, 3) === 'GIF' && (ascii(bytes, i + 3, 3) === '87a' || ascii(bytes, i + 3, 3) === '89a')) {
+    // GIF (gate on 'G' so the per-byte fast path never builds a string)
+    if (bytes[i] === 0x47 && ascii(bytes, i, 3) === 'GIF' && (ascii(bytes, i + 3, 3) === '87a' || ascii(bytes, i + 3, 3) === '89a')) {
       const w = bytes[i + 6] | (bytes[i + 7] << 8), h = bytes[i + 8] | (bytes[i + 9] << 8);
       found.push({ format: 'gif', start: i, end: n, complete: false, width: w, height: h });
       i += 6; continue;
     }
-    // WebP (RIFF....WEBP)
-    if (ascii(bytes, i, 4) === 'RIFF' && ascii(bytes, i + 8, 4) === 'WEBP') {
+    // WebP (RIFF....WEBP) - gate on 'R' for the same reason
+    if (bytes[i] === 0x52 && ascii(bytes, i, 4) === 'RIFF' && ascii(bytes, i + 8, 4) === 'WEBP') {
       const size = u32le(bytes, i + 4) + 8;
       found.push({ format: 'webp', start: i, end: Math.min(n, i + size), complete: i + size <= n });
       i += 12; continue;
@@ -448,6 +513,12 @@ export function diagnoseImage(bytes) {
   const format = sniffImageFormat(bytes);
   const issues = [];
   if (!format) {
+    // A JPEG whose header is gone entirely, leaving only entropy-coded scan data:
+    // not carveable (no signature to carve) but rebuildable from a reference header.
+    if (looksLikeHeaderlessJpegScan(bytes)) {
+      return { format: 'jpeg', headerless: true, healthy: false,
+        issues: [{ code: 'jpeg-noheader', msg: 'the JPEG header is missing - only the compressed image data survives, so a reference photo from the same camera is needed to rebuild it' }] };
+    }
     const carved = carveImages(bytes, { max: 8 });
     return { format: null, healthy: false, carved, issues: carved.length ? [{ code: 'embedded', msg: carved.length + ' embedded image(s) found in unrecognised data' }] : [{ code: 'unknown', msg: 'no recognised image signature' }] };
   }

@@ -1272,6 +1272,37 @@ function parseXcf(buf) {
   return result;
 }
 
+// ---------- Runtime Software / GetDataBack compressed disk image (.imc) ----------
+// Header "\x1aRTS COMPRESSED IMAGE V2.0\x1a" - Runtime Software's proprietary,
+// undocumented compressed sector image (GetDataBack, Captain Nemo, RTS Image
+// Converter). We can identify it and read the header's device geometry, but the
+// payload is a custom high-entropy compression with no public spec - not zlib,
+// gzip, lzma, bzip2, zstd or lz4, and not raw/sparse sectors (a scan finds no
+// intact file signatures) - so it can't be decompressed or browsed here. The
+// honest fix is to convert it back to a raw .img with the tool that made it and
+// drop that in (Analyser mounts + carves raw images).
+function parseImc(buf) {
+  if (!buf || buf.length < 48) return null;
+  if (buf[0] !== 0x1a || ascii(buf, 1, 20) !== 'RTS COMPRESSED IMAGE') return null;
+  const version = ascii(buf, 23, 3).replace(/[^\d.]+$/, '');   // "2.0"
+  const out = {
+    'Format': 'RTS Compressed Image' + (version ? ' V' + version : ''),
+    'Created with': 'Runtime Software - GetDataBack / RTS Image Converter',
+    'Compression': 'Proprietary and undocumented - the sector data cannot be decoded here',
+  };
+  // Two 32-bit sector counts follow the header string; the larger is the source
+  // device's total sector count. Report the device size when it looks sane.
+  const u32 = (o) => (buf[o] | (buf[o + 1] << 8) | (buf[o + 2] << 16) | (buf[o + 3] * 0x1000000)) >>> 0;
+  const sectors = Math.max(u32(0x1c), u32(0x28));
+  const bytes = sectors * 512;
+  if (sectors > 0 && bytes < 4 * 1024 ** 4) {   // sane (< 4 TB) drive geometry
+    const human = bytes >= 1073741824 ? (bytes / 1073741824).toFixed(2) + ' GB' : (bytes / 1048576).toFixed(0) + ' MB';
+    out['Source device'] = human + '  (' + sectors.toLocaleString() + ' sectors × 512 B)';
+  }
+  out['To browse the contents'] = 'This is a compressed image, not raw sectors. Convert it to an uncompressed raw .img in GetDataBack / RTS Image Converter (or copy the recovered files straight out), then drop the .img here - Analyser browses and carves raw images but cannot decompress this proprietary format.';
+  return out;
+}
+
 // ---------- ISO 9660 ----------
 function parseIso(buf) {
   if (buf.length < 100) return null;
@@ -3868,6 +3899,7 @@ const PARSERS = {
   glb:   c => parseGlb(c.head),
   stl:   c => parseStl(c.head),
   swf:   c => parseSwf(c.head),
+  imc:   c => parseImc(c.head),
   exe:   c => parseExe(c),
   dll:   c => parseExe(c),
   rne:   c => parseExe(c),   // Cyberpunk ships steam_api64.dll renamed to .rne

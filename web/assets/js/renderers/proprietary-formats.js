@@ -515,6 +515,9 @@ export const FORMATS = {
   appx:    { app: 'Windows App Package', icon: 'APPX', chunk: 'archive' },
   msix:    { app: 'Windows App Package', icon: 'MSIX', chunk: 'archive' },
   apkg:    { app: 'Anki Deck Package', icon: 'APKG', chunk: 'archive' },
+  xapk:    { app: 'Android App Bundle', icon: 'XAPK', zip: true, chunk: 'archive' },
+  apkm:    { app: 'APKMirror App Bundle', icon: 'APKM', zip: true, chunk: 'archive' },
+  apks:    { app: 'Android App Set', icon: 'APKS', zip: true, chunk: 'archive' },
   conda:   { app: 'Conda Package', icon: 'CONDA', chunk: 'archive' },
   deb:     { app: 'Debian Package', icon: 'DEB', chunk: 'archive' },
   rpm:     { app: 'RPM Package', icon: 'RPM', chunk: 'archive' },
@@ -728,6 +731,7 @@ export const FORMATS = {
   cue:     { app: 'Cue Sheet', icon: 'CUE', chunk: 'disk' },
   ccd:     { app: 'CloneCD Control', icon: 'CCD', chunk: 'disk' },
   nrg:     { app: 'Nero Disc Image', icon: 'NRG', chunk: 'disk' },
+  imc:     { app: 'GetDataBack Compressed Image', icon: 'IMC', magic: [0x1a, 0x52, 0x54, 0x53] },   // parsed locally (parseImc)
   mds:     { app: 'Alcohol 120% Descriptor', icon: 'MDS', chunk: 'disk' },
   mdf:     { app: 'Alcohol 120% Media', icon: 'MDF', chunk: 'disk' },
   hex:     { app: 'Intel HEX', icon: 'HEX', chunk: 'disk' },
