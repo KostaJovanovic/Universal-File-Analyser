@@ -118,6 +118,12 @@ export function hexBytes(bytes, sep = '', start = 0, len = bytes.length - start)
   for (let i = start; i < end; i++) out.push(bytes[i].toString(16).padStart(2, '0'));
   return out.join(sep);
 }
+// A 32-bit number as fixed 8-digit hex (e.g. a CRC-32 or a file offset). Replaces
+// the ad-hoc `(n >>> 0).toString(16).padStart(8, '0')` idiom. `upper` uppercases.
+export function hexU32(n, upper = false) {
+  const s = (n >>> 0).toString(16).padStart(8, '0');
+  return upper ? s.toUpperCase() : s;
+}
 
 // Like ascii() but trims surrounding whitespace - for fixed-width ASCII fields
 // padded with spaces or NULs (the padding NULs are already dropped by ascii()).

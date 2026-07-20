@@ -10,8 +10,8 @@
    the platform crypto.subtle. p12/pfx, kdbx, evtx, pf, hive, dmp, e01, etl are
    identification-only because they need real ASN.1 / proprietary binary walkers. */
 
-import { el, row, fmtBytes, preBlock, fmtDate } from '../core/util.js';
-import { Reader, ascii, findBytes, latin1, utf8, fmtGuid, filetimeToDate } from '../core/binutil.js';
+import { el, row, fmtBytes, preBlock, fmtDate, readSlice } from '../core/util.js';
+import { Reader, ascii, findBytes, latin1, utf8, fmtGuid, filetimeToDate, hexBytes } from '../core/binutil.js';
 import { parsePlist } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
 
@@ -288,7 +288,7 @@ function x509Summary(der) {
 async function sha256hex(bytes) {
   try {
     const buf = await crypto.subtle.digest('SHA-256', bytes);
-    return [...new Uint8Array(buf)].map((x) => x.toString(16).padStart(2, '0').toUpperCase()).join(':');
+    return hexBytes(new Uint8Array(buf), ':').toUpperCase();
   } catch (_) { return null; }
 }
 
@@ -298,7 +298,7 @@ async function sha256hex(bytes) {
 // plaintext, so we decode each X.509 (subject, issuer, validity) and compute its
 // SHA-256 fingerprint - the same detail `keytool -list -v` shows, no password needed.
 async function parseJks(file) {
-  const bytes = new Uint8Array(await file.slice(0, Math.min(file.size, 16_000_000)).arrayBuffer());
+  const bytes = await readSlice(file, 0, 16_000_000);
   if (bytes.length < 12) return null;
   const r = new Reader(bytes);          // big-endian
   const magic = r.u32();
@@ -425,7 +425,7 @@ async function parseMobileconfig(file) {
 
 // ---------- .mobileprovision (CMS-wrapped plist) ----------
 async function parseMobileprovision(file) {
-  const buf = new Uint8Array(await file.slice(0, Math.min(file.size, 4_000_000)).arrayBuffer());
+  const buf = await readSlice(file, 0, 4_000_000);
   const txt = latin1(buf);
   const start = txt.indexOf('<?xml');
   const end = txt.indexOf('</plist>');
@@ -680,7 +680,7 @@ async function parseP12(file) {
   // 4 KB head isn't enough. Cap generously.
   let b;
   try {
-    b = new Uint8Array(await file.slice(0, Math.min(file.size, 8_000_000)).arrayBuffer());
+    b = await readSlice(file, 0, 8_000_000);
   } catch (_) { return p12Fallback(); }
 
   try {
@@ -1220,7 +1220,7 @@ function pgpWalk(b, limit) {
 }
 
 async function parsePgp(file, ext) {
-  const head = new Uint8Array(await file.slice(0, Math.min(file.size, 1_000_000)).arrayBuffer());
+  const head = await readSlice(file, 0, 1_000_000);
   const txt = latin1(head);
   const out = {};
   let walked = null;

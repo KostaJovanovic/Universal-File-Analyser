@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Changelog - Analyser</title>
+  <title>Changelog - new file formats & viewers - Analyser</title>
   <meta name="description" content="Every update to Analyser, newest first - new file formats, viewers, bug fixes and offline improvements. Free, in-browser, nothing uploaded.">
   <link rel="canonical" href="https://lab.valjdakosta.com/patch">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
@@ -11,7 +11,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Analyser">
   <meta property="og:locale" content="en_GB">
-  <meta property="og:title" content="Changelog - Analyser">
+  <meta property="og:title" content="Changelog - new file formats & viewers - Analyser">
   <meta property="og:description" content="Every update to Analyser, newest first - new file formats, viewers, bug fixes and offline improvements. Free, in-browser, nothing uploaded.">
   <meta property="og:url" content="https://lab.valjdakosta.com/patch">
   <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
@@ -19,7 +19,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Changelog - Analyser">
+  <meta name="twitter:title" content="Changelog - new file formats & viewers - Analyser">
   <meta name="twitter:description" content="Every update to Analyser, newest first - new file formats, viewers, bug fixes and offline improvements. Free, in-browser, nothing uploaded.">
   <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
   <meta name="twitter:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
@@ -1924,7 +1924,7 @@
       <div><dt>UI font</dt><dd><a href="https://github.com/vercel/geist-font" target="_blank" rel="noopener">Geist and Geist Mono</a> <a class="dep-lic" href="https://github.com/vercel/geist-font/blob/main/LICENSE.txt" target="_blank" rel="noopener">licence</a> by Vercel are the interface and monospace typefaces, used under the SIL Open Font License.</dd></div>
       <div><dt>PDF</dt><dd><a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a> <a class="dep-lic" href="https://github.com/mozilla/pdf.js/blob/master/LICENSE" target="_blank" rel="noopener">licence</a> by Mozilla. Renders PDF pages, extracts text, and supports OCR scanning of image-only pages via Tesseract. Loaded only for PDF files.</dd></div>
       <div><dt>DWG</dt><dd><a href="https://github.com/LibreDWG/libredwg" target="_blank" rel="noopener">LibreDWG</a> <a class="dep-lic" href="https://github.com/LibreDWG/libredwg/blob/master/COPYING" target="_blank" rel="noopener">licence</a> compiled to WASM. Parses AutoCAD <code>.dwg</code> / <code>.dwt</code> drawings and renders them to SVG. ~7 MB, in the Everything download.</dd></div>
-      <div><dt>File ID</dt><dd>Built-in identification for 1357+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 1358+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Photoshop</dt><dd><a href="https://github.com/Agamnentzar/ag-psd" target="_blank" rel="noopener">ag-psd</a> <a class="dep-lic" href="https://github.com/Agamnentzar/ag-psd/blob/HEAD/LICENSE" target="_blank" rel="noopener">licence</a>. Decodes <code>.psd</code> / <code>.psb</code> documents - the composite image plus the full layer tree - in the browser. Loaded only when needed.</dd></div>
       <div><dt>PCB / EDA</dt><dd>The built-in parser reads KiCad, Altium and other EDA project files and rebuilds boards and schematics into interactive SVG in the browser. With thanks to <a href="https://www.kicad.org/" target="_blank" rel="noopener">KiCad</a>, whose open-source file format and board renderer we studied to draw footprints, tracks, zones and copper-layer geometry correctly - it is not bundled or used as a dependency.</dd></div>
       <div><dt>Fonts</dt><dd><a href="https://github.com/opentypejs/opentype.js" target="_blank" rel="noopener">opentype.js</a> <a class="dep-lic" href="https://github.com/opentypejs/opentype.js/blob/HEAD/LICENSE" target="_blank" rel="noopener">licence</a>. Reads the font tables and draws every glyph outline for <code>.ttf</code> / <code>.otf</code> / <code>.woff</code> / <code>.woff2</code> / <code>.ttc</code>. Loaded only when needed.</dd></div>

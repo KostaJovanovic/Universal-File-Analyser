@@ -13,7 +13,7 @@
    PageMaker/LIT/AZW/KFX, and CFBF-backed .pub/.hwp) stay identification-only.
    No top-level side effects. */
 
-import { el, row, fmtBytes, preBlock } from '../core/util.js';
+import { el, row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, findBytes, latin1, utf8, utf16, inflate } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 
@@ -23,7 +23,7 @@ let openCfbf;
 // ---------- small shared helpers ----------
 
 async function fileText(file, cap = 4 * 1024 * 1024) {
-  return file.slice(0, Math.min(file.size, cap)).text();
+  return readText(file, cap);
 }
 
 // Pull the first capture group of a regex from text, trimmed, or null.
@@ -931,7 +931,7 @@ async function parseDita(file, ext) {
 // ---------- Scribus document (.sla / .scd) ----------
 async function parseScribus(file, ext) {
   // .sla is XML (sometimes gzip-compressed); .scd is the legacy variant.
-  let bytes = new Uint8Array(await file.slice(0, Math.min(file.size, 16 * 1024 * 1024)).arrayBuffer());
+  let bytes = await readSlice(file, 0, 16 * 1024 * 1024);
   let text;
   if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
     const inflated = await inflate(bytes, 'gzip');

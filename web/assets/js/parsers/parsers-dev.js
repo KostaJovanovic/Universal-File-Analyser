@@ -6,7 +6,7 @@
    optionally carrying `_sections: [{title, node, open?}]` for collapsible blocks.
    Return null to fall back to the generic identification card. */
 
-import { el, row, fmtBytes, preBlock } from '../core/util.js';
+import { el, row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, findBytes } from '../core/binutil.js';
 import { parsePlist } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
@@ -157,7 +157,7 @@ async function parseDiff(file) {
 // ---------- WebAssembly binary ----------
 const WASM_SECTIONS = ['Custom', 'Type', 'Import', 'Function', 'Table', 'Memory', 'Global', 'Export', 'Start', 'Element', 'Code', 'Data', 'DataCount', 'Tag'];
 async function parseWasm(file) {
-  const b = new Uint8Array(await file.slice(0, Math.min(file.size, 262144)).arrayBuffer());
+  const b = await readSlice(file, 0, 262144);
   if (!(b[0] === 0x00 && b[1] === 0x61 && b[2] === 0x73 && b[3] === 0x6d)) return null;
   const version = b[4] | (b[5] << 8) | (b[6] << 16) | (b[7] << 24);
   const out = { 'Format': 'WebAssembly binary', 'Version': version };
@@ -281,7 +281,7 @@ async function parseSourceMap(file) {
 // ---------- SQL dump ----------
 async function parseSql(file) {
   const LIMIT = 5_000_000;
-  const text = await file.slice(0, Math.min(file.size, LIMIT)).text();
+  const text = await readText(file, LIMIT);
   const truncated = file.size > LIMIT;
   const creates = (text.match(/CREATE\s+TABLE/gi) || []).length;
   const inserts = (text.match(/INSERT\s+INTO/gi) || []).length;
@@ -509,7 +509,7 @@ async function parsePlistRows(file) {
 // ---------- Dependency lockfiles ----------
 async function parseLock(file, ext, name) {
   const LIMIT = 8_000_000;
-  const text = await file.slice(0, Math.min(file.size, LIMIT)).text();
+  const text = await readText(file, LIMIT);
   const truncated = file.size > LIMIT;
   const fname = (name || '').toLowerCase();
   let ecosystem = 'Unknown', deps = null, lockVer = null;
@@ -609,7 +609,7 @@ function mpTypeName(b) {
   return m[b] || ('fixext/0x' + b.toString(16));
 }
 async function parseMsgpack(file) {
-  const b = new Uint8Array(await file.slice(0, Math.min(file.size, 65536)).arrayBuffer());
+  const b = await readSlice(file, 0, 65536);
   if (!b.length) return null;
   const r = new Reader(b);            // MessagePack is big-endian
   const counts = {};
@@ -663,7 +663,7 @@ async function parseMsgpack(file) {
 
 // ---------- CBOR ----------
 async function parseCbor(file) {
-  const b = new Uint8Array(await file.slice(0, Math.min(file.size, 65536)).arrayBuffer());
+  const b = await readSlice(file, 0, 65536);
   if (!b.length) return null;
   const MAJOR = ['unsigned int', 'negative int', 'byte string', 'text string', 'array', 'map', 'tag', 'simple/float'];
   const r = new Reader(b);            // CBOR is big-endian
@@ -716,7 +716,7 @@ const BSON_TYPES = {
   0x10: 'int32', 0x11: 'timestamp', 0x12: 'int64', 0x13: 'decimal128', 0xff: 'min key', 0x7f: 'max key',
 };
 async function parseBson(file) {
-  const b = new Uint8Array(await file.slice(0, Math.min(file.size, 65536)).arrayBuffer());
+  const b = await readSlice(file, 0, 65536);
   if (b.length < 5) return null;
   const r = new Reader(b, true);      // BSON is little-endian
   const docLen = r.u32At(0);
@@ -799,7 +799,7 @@ function pbWalk(b, start, end, depth, lines, stats) {
   return true;
 }
 async function parsePb(file, ext) {
-  const b = new Uint8Array(await file.slice(0, Math.min(file.size, 131072)).arrayBuffer());
+  const b = await readSlice(file, 0, 131072);
   if (!b.length) return null;
   const lines = []; const stats = { fields: 0, wires: {} };
   const ok = pbWalk(b, 0, b.length, 0, lines, stats);
@@ -831,7 +831,7 @@ const PICKLE_OPS = {
   0x6f: 'OBJ', 0x69: 'INST', 0x4e: 'NONE', 0x88: 'NEWTRUE', 0x89: 'NEWFALSE',
 };
 async function parsePickle(file) {
-  const b = new Uint8Array(await file.slice(0, Math.min(file.size, 262144)).arrayBuffer());
+  const b = await readSlice(file, 0, 262144);
   if (!b.length) return null;
   let proto = 0;
   if (b[0] === 0x80) proto = b[1];                            // PROTO opcode carries the version

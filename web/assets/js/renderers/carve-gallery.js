@@ -19,8 +19,8 @@
    Styling is .anr-carve-* in analyser.css; the thumbnails are bare, with their
    Analyse / Download actions overlaid on hover (see /test for the demo). */
 
-import { el } from '../core/util.js';
-import { decodeJpegPartial } from './jpeg-salvage.js';
+import { el, downloadBlob } from '../core/util.js';
+import { decodeJpegPartial, detectCorruptCut } from './jpeg-salvage.js';
 
 // Longest edge of a gallery thumbnail, in CSS pixels. Matches the 200px cap in
 // .anr-carve-thumb so a decoded carve is never scaled down again by the browser.
@@ -48,10 +48,7 @@ function openCarve(file, salvageUrl) {
 // Save a carve. The URL is built on click and released afterwards, so a gallery
 // of 48 carves doesn't hold 48 object URLs open for the life of the page.
 function downloadCarve(file) {
-  const url = URL.createObjectURL(file);
-  const a = el('a', { href: url, download: file.name });
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  downloadBlob(file.name, file);
 }
 
 // Downscale an Image or canvas into a fresh canvas whose long edge is <= maxD.
@@ -74,7 +71,7 @@ function salvageFullCanvas(bytes) {
   const cv = document.createElement('canvas');
   cv.width = dec.width; cv.height = dec.height;
   cv.getContext('2d').putImageData(new ImageData(dec.data, dec.width, dec.height), 0, 0);
-  cv._realFrac = dec.rows / dec.height;
+  cv._realFrac = (dec.realRows != null ? dec.realRows : dec.rows) / dec.height;
   cv._thumb = !!dec.thumb;                              // the file's embedded thumbnail (full image gone)
   return cv;
 }
@@ -116,11 +113,15 @@ function decodeThumb(thumb) {
       if (!w || !h) { cleanup(); salvage(); return; }
       const cv = downscaleTo(im, THUMB_MAX);
       const ctx = cv.getContext('2d');
-      let frac = 1;
+      let frac = 1, corrupt = false;
       try { frac = emptyFraction(ctx, cv.width, cv.height); } catch (_) {}
+      // The browser draws a desynced JPEG as a real top strip over saturated colour-block
+      // noise and reports success. Keep that raster (it's what a system viewer shows) but
+      // flag it, so the cell is marked corrupt rather than passed off as a whole picture.
+      if (isJpeg && frac < 0.99) { try { corrupt = detectCorruptCut(ctx.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height) >= 0; } catch (_) {} }
       cleanup();
-      if (frac >= 0.99 && isJpeg) { salvage(); return; }   // browser drew nothing - try to salvage
-      show(cv, false, frac >= 0.5);
+      if (isJpeg && frac >= 0.99) { salvage(); return; }   // browser drew nothing - salvage a strip or the thumbnail
+      show(cv, false, frac >= 0.5 || corrupt);
       done();
     };
     im.onerror = () => { cleanup(); salvage(); };

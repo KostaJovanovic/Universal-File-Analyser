@@ -7,3 +7,4 @@ Allow: /
 
 Sitemap: https://lab.valjdakosta.com/sitemap.xml
 Sitemap: https://lab.valjdakosta.com/sitemap-formats.xml
+Sitemap: https://lab.valjdakosta.com/sitemap-docs.xml

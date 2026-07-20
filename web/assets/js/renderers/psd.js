@@ -17,7 +17,7 @@
    ag-psd does not support CMYK / Lab / 16-bit / PSB and re-composites nothing, so
    for those we rely on path 1's embedded thumbnail rather than failing. */
 
-import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, blobImg } from '../core/util.js';
+import { el, row, h3help, fmtBytes, integrityCard, errorCard, blobImg, downloadBlob } from '../core/util.js';
 import { loadScript } from '../core/util.js';
 
 const AGPSD_URL = 'assets/vendor/ag-psd/bundle.js';
@@ -140,11 +140,7 @@ function layerPngButton(layer) {
     e.stopPropagation();
     layer.canvas.toBlob((blob) => {
       if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = (layer.name || 'layer').replace(/[^\w.-]+/g, '_').slice(0, 80) + '.png';
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      downloadBlob((layer.name || 'layer').replace(/[^\w.-]+/g, '_').slice(0, 80) + '.png', blob);
     }, 'image/png');
   });
   return btn;

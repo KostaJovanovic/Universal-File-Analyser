@@ -3,7 +3,7 @@
    previews for plain text, JSON, and XML. */
 
 import { el, row, rowHelp, fmtBytes, fileExt, errorCard } from '../core/util.js';
-import { entropyProfile } from '../core/binutil.js';
+import { entropyProfile, hexBytes } from '../core/binutil.js';
 import { buildOsintCard } from '../core/osint.js';
 import { carveImages, repairJpeg, ensureJpegHuffman } from './photo-recover.js';
 import { createCarveGallery } from './carve-gallery.js';
@@ -227,7 +227,7 @@ export async function renderUnknown(file, resultsEl, opts) {
     return;
   }
 
-  const hex   = Array.from(headBytes).map((b) => b.toString(16).padStart(2, '0')).join(' ');
+  const hex   = hexBytes(headBytes, ' ');
   const ascii = Array.from(headBytes).map((b) => (b >= 0x20 && b <= 0x7E) ? String.fromCharCode(b) : '.').join('');
   const guess = guessFormat(headBytes);
 
@@ -473,30 +473,40 @@ export async function renderUnknown(file, resultsEl, opts) {
     try { await appendEntropyCard(file, resultsEl); } catch (_) {}
   }
 
-  // Carve any embedded images out of the blob (recovered disk fragments, joined
-  // dumps, mis-typed files often hide whole JPEGs/PNGs inside). The scan reads
-  // and sweeps up to 128 MB, so it is genuinely deferred rather than awaited
-  // here: its card is positioned now and filled once the page has painted.
-  const carveHost = el('div', {});
-  resultsEl.appendChild(carveHost);
-
   // An unrecognised type (no dedicated parser) - nudge the visitor to email the
   // format in so it can be supported. Skipped for extensionless files: there's no
   // "format" to support, they're just shown as text (and handleFile already offers
   // a re-open when the bytes match a known pattern).
   if (!extensionless && window._anrSuggest) window._anrSuggest.show(fileExt(file.name));
 
-  afterPaint(() => { appendEmbeddedImagesCard(file, resultsEl, carveHost).catch(() => {}); });
-}
-
-// Run `fn` once the browser has painted the work queued so far, then found an
-// idle moment. rAF callbacks fire *before* paint, so a single frame isn't enough
-// - two guarantee one has landed on screen before a long scan blocks the thread.
-function afterPaint(fn) {
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(fn, { timeout: 2000 });
-    else setTimeout(fn, 0);
-  }));
+  // Carve any embedded images out of the blob (recovered disk fragments, joined
+  // dumps, mis-typed files often hide whole JPEGs/PNGs inside). NOT automatic: the
+  // scan reads and sweeps up to 128 MB and then decodes every hit, which is heavy on
+  // a large blob (a disk image, a system backup), so it runs only on request - the
+  // same "Scan for images" control the disk-image renderer uses.
+  const carveHost = el('div', {});
+  resultsEl.appendChild(carveHost);
+  const scanCard = el('div', { class: 'anr-card' });
+  scanCard.appendChild(el('h3', {}, 'Embedded images'));
+  scanCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 12px;' },
+    'Scan this file for embedded image signatures - whole JPEGs, PNGs, GIFs, WebPs and BMPs hidden inside a recovered fragment, a joined dump or a mis-typed blob. It reads up to ' + fmtBytes(CARVE_SCAN_CAP) + ', so it can take a moment.'));
+  const scanBtn = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Scan for images');
+  scanCard.appendChild(scanBtn);
+  carveHost.appendChild(scanCard);
+  scanBtn.addEventListener('click', async () => {
+    scanCard.innerHTML = '';
+    scanCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' }, 'Scanning for embedded images…'));
+    const resultHost = el('div', {});
+    carveHost.appendChild(resultHost);
+    try { await appendEmbeddedImagesCard(file, resultsEl, resultHost); } catch (_) {}
+    if (resultHost.children.length) {
+      scanCard.remove();                                // the real gallery card was added below
+    } else {
+      scanCard.innerHTML = '';
+      scanCard.appendChild(el('h3', {}, 'Embedded images'));
+      scanCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' }, 'No embedded images were found in this file.'));
+    }
+  });
 }
 
 // Byte-entropy heatmap. Slices the file into chunks, plots each chunk's Shannon

@@ -12,8 +12,8 @@
    formats we cannot decode natively (7z/rar bodies, squashfs, snap, stuffit,
    ace, …) stay identification-only. No top-level side effects. */
 
-import { el, row, fmtBytes, preBlock, fmtDate, loadScript } from '../core/util.js';
-import { Reader, ascii, matchMagic, latin1, utf8, gunzip, inflate } from '../core/binutil.js';
+import { el, row, fmtBytes, preBlock, fmtDate, loadScript, readSlice } from '../core/util.js';
+import { Reader, ascii, matchMagic, latin1, utf8, gunzip, inflate, hexBytes } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 import { xzDecompress } from '../lib/xz-loader.js';
 
@@ -36,7 +36,7 @@ async function zstdDecompress(bytes) {
 
 // Read up to `n` bytes from the file (for parses needing more than the 4KB head).
 async function readBytes(file, n) {
-  return new Uint8Array(await file.slice(0, Math.min(file.size, n)).arrayBuffer());
+  return await readSlice(file, 0, n);
 }
 
 // Read a byte range from the file.
@@ -241,7 +241,7 @@ async function parseXz(head, file, ext) {
     }
     // Not a tar (or no members found): show the first decompressed bytes.
     const n = Math.min(decoded.length, 64);
-    const hex = Array.from(decoded.subarray(0, n)).map((b) => b.toString(16).padStart(2, '0')).join(' ');
+    const hex = hexBytes(decoded.subarray(0, n), ' ');
     out._sections = [{ title: 'First bytes (decompressed)', node: preBlock(hex) }];
   } catch (_) { /* keep header-only result */ }
   return out;
@@ -277,7 +277,7 @@ async function parseZstd(head, file, ext) {
     } else {
       // Show the first bytes of the decompressed payload for context.
       const n = Math.min(decoded.length, 64);
-      const hex = Array.from(decoded.subarray(0, n)).map((b) => b.toString(16).padStart(2, '0')).join(' ');
+      const hex = hexBytes(decoded.subarray(0, n), ' ');
       out._sections = [{ title: 'First bytes (decompressed)', node: preBlock(hex) }];
     }
   } catch (_) { /* keep header-only result */ }

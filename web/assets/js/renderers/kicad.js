@@ -848,12 +848,12 @@ function drawHole(g, h) {
   }
 }
 
-function pcbView(pcb, opts = {}) {
+function pcbView(pcb) {
   // Build a layer->colour map for the toggle chips (only layers that drew).
   const layerMap = new Map();
   for (const ly of [...pcb.layersUsed].sort()) layerMap.set(ly, layerColor(ly));
 
-  const v = buildViewer((g) => paintBoard(g, pcb), { layers: opts.noChips ? null : layerMap });
+  const v = buildViewer((g) => paintBoard(g, pcb), { layers: layerMap });
 
   const at = new Map();
   for (const fp of pcb.footprints) at.set(fp.ref.toUpperCase(), { x: fp.cx, y: fp.cy });

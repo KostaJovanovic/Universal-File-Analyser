@@ -1303,6 +1303,53 @@ function parseImc(buf) {
   return out;
 }
 
+// ---------- Active@ Disk Image / AOMEI Backupper (.adi) ----------
+// A .adi (magic "BIFH") is a compressed, sparse disk-image backup: it stores only the
+// used sectors, compressed, so it is NOT raw sectors and cannot be mounted or carved
+// here (scanning it for image signatures only finds noise inside the compressed
+// stream). Identify it, lift the UTF-16LE backup label the header carries, and point
+// the user at converting it to a raw .img to browse it.
+function parseAdi(buf) {
+  if (!buf || buf.length < 8) return null;
+  // BIFH magic = Active@ Disk Image / AOMEI compressed disk-image backup.
+  if (buf[0] === 0x42 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x48) {
+    const out = {
+      _app: 'Active@ Disk Image Backup',
+      'Format': 'Active@ Disk Image backup (BIFH)',
+      'Created with': 'Active@ Disk Image or AOMEI Backupper - a compressed disk-image backup',
+    };
+    const label = firstUtf16(buf, 8, Math.min(buf.length, 1024));
+    if (label) out['Backup label'] = label;
+    out['Compression'] = 'Proprietary - only the used sectors are stored, compressed; the sector data cannot be decoded here';
+    out['To browse the contents'] = 'This is a compressed backup, not raw sectors, so it cannot be mounted or carved here. Restore or convert it to an uncompressed raw .img (in Active@ Disk Image / AOMEI Backupper, or mount it with that tool and copy the files out), then drop the .img here - Analyser browses and carves raw images.';
+    return out;
+  }
+  // .adi is also the Amateur Data Interchange Format (ADIF) ham-radio contact log - a
+  // text file of <FIELD:len>value tags. Identify that rather than mislabel it a disk image.
+  const txt = ascii(buf, 0, Math.min(buf.length, 2048)).toLowerCase();
+  if (/<eoh>|<eor>|<adif_ver|<call:/.test(txt)) {
+    const out = { _app: 'ADIF Amateur Radio Log', 'Format': 'ADIF (Amateur Data Interchange Format) - amateur-radio contact log' };
+    const ver = /<adif_ver:\d+>([\d.]+)/.exec(txt);
+    if (ver) out['ADIF version'] = ver[1];
+    out['Shown as'] = 'A text log of QSO (contact) records - open it as text to read the entries.';
+    return out;
+  }
+  return null;   // unrecognised .adi - falls back to the catalog name (identified by extension)
+}
+
+// Longest run of ASCII-range UTF-16LE text (printable low byte + 0x00 high byte) in
+// [start, end), at least minChars long - lifts a readable label out of a binary header.
+function firstUtf16(buf, start, end, minChars = 2) {
+  let best = '', cur = '';
+  for (let i = start; i + 1 < end; i += 2) {
+    const lo = buf[i], hi = buf[i + 1];
+    if (hi === 0 && lo >= 0x20 && lo <= 0x7e) cur += String.fromCharCode(lo);
+    else { if (cur.length >= minChars && cur.length > best.length) best = cur; cur = ''; }
+  }
+  if (cur.length >= minChars && cur.length > best.length) best = cur;
+  return best || null;
+}
+
 // ---------- ISO 9660 ----------
 function parseIso(buf) {
   if (buf.length < 100) return null;
@@ -3900,6 +3947,7 @@ const PARSERS = {
   stl:   c => parseStl(c.head),
   swf:   c => parseSwf(c.head),
   imc:   c => parseImc(c.head),
+  adi:   c => parseAdi(c.head),
   exe:   c => parseExe(c),
   dll:   c => parseExe(c),
   rne:   c => parseExe(c),   // Cyberpunk ships steam_api64.dll renamed to .rne

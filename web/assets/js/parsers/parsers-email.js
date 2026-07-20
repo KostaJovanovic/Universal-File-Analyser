@@ -13,7 +13,7 @@
    or proprietary DB engine we don't ship, so they get an identification-only
    card. */
 
-import { el, row, fmtBytes, preBlock } from '../core/util.js';
+import { el, row, fmtBytes, preBlock, readSlice } from '../core/util.js';
 import { Reader, ascii, findBytes, latin1, utf8, utf16, filetimeToDate } from '../core/binutil.js';
 import { parsePlist } from '../lib/plist.js';
 import { openCfbf } from '../lib/cfbf.js';
@@ -761,7 +761,7 @@ const CMS_OID_LABEL = {
 };
 
 async function parseP7(file, ext) {
-  const head = new Uint8Array(await file.slice(0, Math.min(file.size, 256 * 1024)).arrayBuffer());
+  const head = await readSlice(file, 0, 256 * 1024);
   if (!head.length) return null;
 
   let der = head, armoured = false;
@@ -769,7 +769,7 @@ async function parseP7(file, ext) {
   const asText = latin1(head.subarray(0, 64));
   if (/-----BEGIN (PKCS7|CMS|SIGNED MESSAGE)-----/.test(asText) || asText.trimStart().startsWith('-----BEGIN')) {
     armoured = true;
-    const full = latin1(new Uint8Array(await file.slice(0, Math.min(file.size, 512 * 1024)).arrayBuffer()));
+    const full = latin1(await readSlice(file, 0, 512 * 1024));
     const m = full.match(/-----BEGIN [^-]+-----([\s\S]*?)-----END/);
     if (m) {
       try {
@@ -923,7 +923,7 @@ async function parseMbx(file) {
 }
 
 async function parseToc(file) {
-  const head = new Uint8Array(await file.slice(0, Math.min(file.size, 256 * 1024)).arrayBuffer());
+  const head = await readSlice(file, 0, 256 * 1024);
   if (!head.length) return null;
   const txt = latin1(head);
   // Eudora .toc starts with a version word then a folder name; it's mostly binary

@@ -5,8 +5,7 @@
    columns and row counts, and shows a sample of rows from each - the same
    table UI as the spreadsheet viewers. Nothing is uploaded. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
-import { loadScript } from '../core/util.js';
+import { el, row, fmtBytes, integrityCard, errorCard, loadScript } from '../core/util.js';
 
 const MDB_URL = 'assets/vendor/mdb/mdb.js';
 

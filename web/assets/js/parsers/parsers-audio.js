@@ -8,8 +8,8 @@
    Return null to fall back to the generic identification card. Dependency-free:
    only the shared toolkit. */
 
-import { el, row, fmtBytes, preBlock, readSlice } from '../core/util.js';
-import { Reader, ascii, cleanAscii, findBytes, matchMagic, startsWithAscii, latin1, utf8, gunzip } from '../core/binutil.js';
+import { el, row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
+import { Reader, ascii, cleanAscii, findBytes, matchMagic, startsWithAscii, latin1, utf8, gunzip, hexByte } from '../core/binutil.js';
 import { sqliteSummary } from '../lib/sqlite.js';
 
 // ---------- small helpers ----------
@@ -752,7 +752,7 @@ async function parseSf2(file, ext) {
 
 // ---------- SFZ ----------
 async function parseSfz(file) {
-  const text = await file.slice(0, Math.min(file.size, 1 << 20)).text();
+  const text = await readText(file, 1 << 20);
   if (!/<(region|group|global|control|master)>/i.test(text)) return null;
   const count = (re) => (text.match(re) || []).length;
   const samples = Array.from(text.matchAll(/sample=([^\r\n]+)/gi)).map((m) => m[1].trim());
@@ -835,7 +835,7 @@ async function parseGig(file) {
 
 // ---------- RTTTL / RTX (ringtone text) ----------
 async function parseRtttl(file) {
-  const text = (await file.slice(0, Math.min(file.size, 65536)).text()).trim();
+  const text = (await readText(file, 65536)).trim();
   const parts = text.split(':');
   if (parts.length < 3) return null;
   const name = parts[0].trim();
@@ -855,7 +855,7 @@ async function parseRtttl(file) {
 
 // ---------- iMelody (.imy) ----------
 async function parseImelody(file) {
-  const text = await file.slice(0, Math.min(file.size, 65536)).text();
+  const text = await readText(file, 65536);
   if (!/BEGIN:IMELODY/i.test(text)) return null;
   const grab = (k) => (text.match(new RegExp('^' + k + ':(.*)$', 'im')) || [])[1];
   const melody = (text.match(/^MELODY:(.*)$/im) || [])[1] || '';
@@ -954,7 +954,7 @@ async function parseIt(file) {
   const patNum = r.u16();
   const cwtv = r.u16();
   const cmwt = r.u16();
-  out['Created with'] = 'v' + ((cwtv >> 8) & 0x0F) + '.' + (cwtv & 0xFF).toString(16).padStart(2, '0');
+  out['Created with'] = 'v' + ((cwtv >> 8) & 0x0F) + '.' + hexByte(cwtv & 0xFF);
   out['Orders'] = ordNum;
   out['Instruments'] = insNum;
   out['Samples'] = smpNum;
@@ -1169,7 +1169,7 @@ async function parseVgm(file, ext) {
   const out = { 'Format': ext === 'vgz' ? 'VGM (gzip-compressed, .vgz)' : 'Video Game Music log (.vgm)' };
   const r = new Reader(head, true);
   r.seek(8); const version = r.u32();
-  out['Version'] = ((version >> 8) & 0xFF).toString(16) + '.' + (version & 0xFF).toString(16).padStart(2, '0');
+  out['Version'] = ((version >> 8) & 0xFF).toString(16) + '.' + hexByte(version & 0xFF);
   r.seek(4); const eofOffset = r.u32();
   r.seek(0x18); const totalSamples = r.u32();
   if (totalSamples) out['Duration'] = fmtDuration(totalSamples / 44100);
@@ -1266,7 +1266,7 @@ async function parseYm(file) {
 
 // ---------- AUP (Audacity XML project) ----------
 async function parseAup(file) {
-  const text = await file.slice(0, Math.min(file.size, 1 << 20)).text();
+  const text = await readText(file, 1 << 20);
   if (!/<project\b/i.test(text) && !/audacityproject/i.test(text)) return null;
   const out = { 'Format': 'Audacity project (.aup)' };
   const rate = (text.match(/rate="([\d.]+)"/) || [])[1];

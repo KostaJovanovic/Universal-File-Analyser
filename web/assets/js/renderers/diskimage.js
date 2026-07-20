@@ -11,10 +11,11 @@
    NTFS, DMG, firmware blob, ...) it degrades to the normal identification card,
    with the partition table shown when present. */
 
-import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, isUnreadableError, cloudFileWarning } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, isUnreadableError, cloudFileWarning, downloadBlob } from '../core/util.js';
+import { hexByte } from '../core/binutil.js';
 import { renderHandleTree } from './archive.js';
 import { carveImages, repairJpeg, ensureJpegHuffman } from './photo-recover.js';
-import { decodeJpegPartial } from './jpeg-salvage.js';
+import { decodeJpegPartial, detectCorruptCut } from './jpeg-salvage.js';
 import {
   looksLikeFatBoot, parseFatVolume, parseMbr, otherFsLabel, readFileBytes,
   FAT_PART_TYPES, PART_TYPE_NAMES, MAX_ENTRIES,
@@ -413,7 +414,7 @@ function openCarveLightboxAt(pos) {
   _carveLbUrl = blob ? url : null;
   const dims = (c.width && c.height) ? c.width + ' × ' + c.height : '';
   const meta = (pos + 1) + ' / ' + n + '  ·  ' + f.name + (dims ? '  ·  ' + dims : '')
-    + '  ·  ' + fmtBytes(f.size) + (c._thumb ? '  · embedded thumbnail (full image overwritten)' : c._salvaged ? '  · recovered (partial)' : c.recovered ? '  · reassembled' : c.complete ? '' : '  · partial');
+    + '  ·  ' + fmtBytes(f.size) + (c._thumb ? '  · embedded thumbnail (full image overwritten)' : c._corrupt ? '  · top strip real, rest corrupt' : c._salvaged ? '  · recovered (partial)' : c.recovered ? '  · reassembled' : c.complete ? '' : '  · partial');
   import('./photo.js').then(({ openLightbox, closeLightbox }) => {
     const nav = {
       onPrev: () => openCarveLightboxAt(pos - 1),
@@ -439,10 +440,7 @@ function analyseCarve(img, c, idx, file, vol) {
 // Download a carved region as a file.
 function downloadCarve(img, c, idx, vol) {
   const f = carvedFile(img, c, idx, vol);
-  const url = URL.createObjectURL(f);
-  const a = el('a', { href: url, download: f.name });
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  downloadBlob(f.name, f);
 }
 
 // A real BMP has its declared file size fitting inside the image and a known DIB
@@ -624,8 +622,8 @@ function decodeCarveToCanvas(sub, format, maxD) {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(new Blob([sub], { type: CARVE_MIME[format] || 'application/octet-stream' }));
     const im = new Image();
-    const done = (canvas, cat, salvaged, thumb) => { im.onload = im.onerror = null; im.src = ''; URL.revokeObjectURL(url); resolve({ canvas, cat, salvaged: !!salvaged, thumb: !!thumb }); };
-    const trySalvage = () => { const s = format === 'jpeg' ? salvageCanvas(sub, maxD) : null; return s ? done(s.canvas, s.cat, true, s.thumb) : done(null, 'none', false, false); };
+    const done = (canvas, cat, salvaged, thumb, corrupt) => { im.onload = im.onerror = null; im.src = ''; URL.revokeObjectURL(url); resolve({ canvas, cat, salvaged: !!salvaged, thumb: !!thumb, corrupt: !!corrupt }); };
+    const trySalvage = () => { const s = format === 'jpeg' ? salvageCanvas(sub, maxD) : null; return s ? done(s.canvas, s.cat, true, s.thumb, s.corrupt) : done(null, 'none', false, false); };
     im.onload = () => {
       const nw = im.naturalWidth || 0, nh = im.naturalHeight || 0;
       if (!nw || !nh) { trySalvage(); return; }           // loaded but nothing to draw
@@ -640,9 +638,16 @@ function decodeCarveToCanvas(sub, format, maxD) {
       const frac = emptyFraction(ctx, cw, ch);
       if (frac >= 0.99 && format === 'jpeg') {            // browser drew nothing - salvage may still recover a strip or the thumbnail
         const s = salvageCanvas(sub, maxD);
-        if (s) { done(s.canvas, s.cat, true, s.thumb); return; }
+        if (s) { done(s.canvas, s.cat, true, s.thumb, s.corrupt); return; }
       }
-      done(cv, classifyFill(frac), false, false);
+      // The browser draws a desynced JPEG as a real top strip over saturated colour-block
+      // noise and reports success. Keep that raster - it's what a system viewer shows -
+      // but flag it corrupt so the caption says the lower part is decoder noise, not real.
+      let corrupt = false;
+      if (format === 'jpeg' && frac < 0.99) {
+        try { corrupt = detectCorruptCut(ctx.getImageData(0, 0, cw, ch).data, cw, ch) >= 0; } catch (_) {}
+      }
+      done(cv, corrupt ? 'partial' : classifyFill(frac), false, false, corrupt);
     };
     im.onerror = () => trySalvage();
     im.src = url;
@@ -661,7 +666,7 @@ function salvageCanvas(sub, maxD) {
   cv.height = Math.max(1, Math.round(full.height * scale));
   cv.getContext('2d').drawImage(full, 0, 0, cv.width, cv.height);
   // A thumbnail-only recovery is 'partial' (you got a preview, not the full image).
-  return { canvas: cv, cat: (full._thumb || full._realFrac <= 0.95) ? 'partial' : 'ok', thumb: full._thumb };
+  return { canvas: cv, cat: (full._thumb || full._realFrac <= 0.95) ? 'partial' : 'ok', thumb: full._thumb, corrupt: full._corrupt };
 }
 
 // Full-resolution salvage canvas (for the lightbox), or null if nothing decoded.
@@ -674,8 +679,9 @@ function salvageFullCanvas(sub) {
   const cv = document.createElement('canvas');
   cv.width = dec.width; cv.height = dec.height;
   cv.getContext('2d').putImageData(new ImageData(dec.data, dec.width, dec.height), 0, 0);
-  cv._realFrac = dec.rows / dec.height;
+  cv._realFrac = (dec.realRows != null ? dec.realRows : dec.rows) / dec.height;
   cv._thumb = !!dec.thumb;
+  cv._corrupt = !!dec.corrupt;
   return cv;
 }
 
@@ -689,8 +695,8 @@ function renderCarveThumb(thumbEl) {
   // carveBytes reassembles a fragmented file via its FAT chain when it can, so a
   // scattered photo previews correctly here instead of as garbage.
   const sub = carveBytes(img, vol, c);
-  return decodeCarveToCanvas(sub, c.format, 200).then(({ canvas, cat, salvaged, thumb }) => {
-    c._cat = cat; c._decoded = cat !== 'none'; c.undecodable = cat === 'none'; c._salvaged = salvaged; c._thumb = thumb;
+  return decodeCarveToCanvas(sub, c.format, 200).then(({ canvas, cat, salvaged, thumb, corrupt }) => {
+    c._cat = cat; c._decoded = cat !== 'none'; c.undecodable = cat === 'none'; c._salvaged = salvaged; c._thumb = thumb; c._corrupt = corrupt;
     if (!canvas) {
       // Nothing at all decodes - keep the text placeholder, but the cell stays in
       // the gallery; nothing is removed.
@@ -699,6 +705,7 @@ function renderCarveThumb(thumbEl) {
     } else {
       if (placeholder) placeholder.replaceWith(canvas); else thumbEl.prepend(canvas);
       if (thumb) thumbEl.title = 'Embedded thumbnail - the full-size image was overwritten';
+      else if (corrupt) thumbEl.title = 'Only the top strip is the real picture - below the break the scan is corrupt (decoder noise, not the actual image)';
       else if (cat !== 'ok') thumbEl.title = 'Click to view full size (' + cat + ' - recovered data is incomplete)';
     }
   });
@@ -736,8 +743,8 @@ function classifyFill(frac) { return frac < 0.5 ? 'ok' : frac < 0.99 ? 'partial'
 function checkCarveDecodes(img, c, vol) {
   if (c._cat) return Promise.resolve(c._cat);
   const sub = carveBytes(img, vol, c);
-  return decodeCarveToCanvas(sub, c.format, 200).then(({ cat, salvaged, thumb }) => {
-    c._cat = cat; c.undecodable = cat === 'none'; c._decoded = cat !== 'none'; c._salvaged = salvaged; c._thumb = thumb;
+  return decodeCarveToCanvas(sub, c.format, 200).then(({ cat, salvaged, thumb, corrupt }) => {
+    c._cat = cat; c.undecodable = cat === 'none'; c._decoded = cat !== 'none'; c._salvaged = salvaged; c._thumb = thumb; c._corrupt = corrupt;
     return cat;
   });
 }
@@ -797,7 +804,7 @@ function partitionCard(partitions) {
   card.appendChild(el('h3', {}, 'Partitions'));
   const t = el('table', { class: 'anr-readout' });
   for (const p of partitions) {
-    const name = PART_TYPE_NAMES[p.type] || ('Type 0x' + p.type.toString(16).padStart(2, '0'));
+    const name = PART_TYPE_NAMES[p.type] || ('Type 0x' + hexByte(p.type));
     const val = name + ' · ' + fmtBytes(p.sectors * 512) + ' · start LBA ' + p.lba.toLocaleString() + (p.boot ? ' · bootable' : '');
     t.appendChild(row('Partition ' + (p.index + 1), val));
   }

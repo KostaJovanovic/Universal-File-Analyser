@@ -64,23 +64,6 @@ function layerInfo(n) {
 
 // ---- record parsing -------------------------------------------------------
 
-// Walk a stream of [u32 length][payload] records. Returns the raw payload
-// Uint8Arrays (used for both ASCII schematic records and binary PCB streams).
-function walkRecords(bytes) {
-  const out = [];
-  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  let off = 0;
-  let guard = 0;
-  while (off + 4 <= bytes.length && guard++ < 200000) {
-    const ln = dv.getUint32(off, true) >>> 0;
-    if (ln === 0) { off += 4; continue; }
-    if (off + 4 + ln > bytes.length) break;
-    out.push(bytes.subarray(off + 4, off + 4 + ln));
-    off += 4 + ln;
-  }
-  return out;
-}
-
 const dec = new TextDecoder('latin1');
 // Parse an ASCII `|KEY=VALUE|KEY=VALUE` record into a case-insensitive map.
 function parseFields(bytes) {
@@ -204,14 +187,6 @@ function parseSchematic(reader) {
 }
 
 // ---- PCB / footprint binary primitives ------------------------------------
-
-function readPrimitive(view, bytes, payOff, payLen, layerOverride) {
-  // payOff/payLen describe the record's payload (after type+len framing).
-  const i32 = (o) => view.getInt32(payOff + o, true);
-  const f64 = (o) => view.getFloat64(payOff + o, true);
-  const layer = layerOverride != null ? layerOverride : bytes[payOff];
-  return { layer, i32, f64, payLen };
-}
 
 // Parse a footprint `<name>/Data` stream: each record is [u8 type][u32 len][payload].
 // Pads (type 2) are several consecutive [u32 len][block]s; the largest block holds

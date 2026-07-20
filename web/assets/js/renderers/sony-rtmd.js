@@ -22,7 +22,7 @@
    video - and the whole thing is best-effort: any failure returns null so the
    normal video analysis is untouched. */
 
-import { el, row, rowHelp, h3help } from '../core/util.js';
+import { el, row, rowHelp, h3help, downloadBlob } from '../core/util.js';
 import { registerSyncedVideo, getAudioOwner, getAudioCompanion } from '../core/video-sync.js';
 import { makePlayer } from './audio-player.js';
 
@@ -310,10 +310,7 @@ function toGCSV(full, name) {
 }
 
 function downloadText(filename, text) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-  const a = el('a', { href: url, download: filename });
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  downloadBlob(filename, new Blob([text], { type: 'text/plain' }));
 }
 
 // ---------------------------------------------------------------------------

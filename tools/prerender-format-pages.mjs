@@ -415,7 +415,7 @@ function page(key, e, depth) {
   const openVerb = isFull ? 'It opens' : 'It is identified';
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -502,7 +502,7 @@ ${siteNav(key)}
 
 <main class="site-main about-page patch-page format-page">
   <div class="format-cta">
-    <a href="/" class="format-cta-btn" id="fmtPick">Click here to analyse any file <span aria-hidden="true">&rarr;</span></a>
+    <a href="/" class="format-cta-btn" id="fmtPick">Analyse a .${esc(d)} file <span aria-hidden="true">&rarr;</span></a>
     <input type="file" id="fmtPickInput" hidden aria-hidden="true">
   </div>
   <section class="section">
