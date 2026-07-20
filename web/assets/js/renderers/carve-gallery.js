@@ -64,7 +64,7 @@ function downscaleTo(src, maxD) {
 
 // Full-resolution salvage canvas from the fault-tolerant decoder (jpeg-salvage.js):
 // the recovered top rows over mid-grey fill. null if nothing decoded.
-function salvageFullCanvas(bytes) {
+export function salvageFullCanvas(bytes) {
   let dec;
   try { dec = decodeJpegPartial(bytes); } catch (_) { return null; }
   if (!dec || !dec.rows) return null;
@@ -73,6 +73,7 @@ function salvageFullCanvas(bytes) {
   cv.getContext('2d').putImageData(new ImageData(dec.data, dec.width, dec.height), 0, 0);
   cv._realFrac = (dec.realRows != null ? dec.realRows : dec.rows) / dec.height;
   cv._thumb = !!dec.thumb;                              // the file's embedded thumbnail (full image gone)
+  cv._corrupt = !!dec.corrupt;                          // top strip real, remainder decoder noise (the disk-image gallery reads this)
   return cv;
 }
 
@@ -134,7 +135,7 @@ function decodeThumb(thumb) {
 // JPEG leaves behind. 0 = a full picture, ~1 = nothing decoded. Used only to set a
 // tooltip hint now - nothing is hidden by it; every carve that produced a raster is
 // shown. The narrow ±2 gray band avoids catching a genuinely grey photo.
-function emptyFraction(ctx, w, h) {
+export function emptyFraction(ctx, w, h) {
   try {
     const d = ctx.getImageData(0, 0, w, h).data;
     const total = d.length / 4;
