@@ -15,7 +15,8 @@ import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, isUnreadableError
 import { hexByte } from '../core/binutil.js';
 import { renderHandleTree } from './archive.js';
 import { carveImages, repairJpeg, ensureJpegHuffman } from './photo-recover.js';
-import { decodeJpegPartial, detectCorruptCut } from './jpeg-salvage.js';
+import { detectCorruptCut } from './jpeg-salvage.js';
+import { salvageFullCanvas, emptyFraction } from './carve-gallery.js';
 import {
   looksLikeFatBoot, parseFatVolume, parseMbr, otherFsLabel, readFileBytes,
   FAT_PART_TYPES, PART_TYPE_NAMES, MAX_ENTRIES,
@@ -669,22 +670,6 @@ function salvageCanvas(sub, maxD) {
   return { canvas: cv, cat: (full._thumb || full._realFrac <= 0.95) ? 'partial' : 'ok', thumb: full._thumb, corrupt: full._corrupt };
 }
 
-// Full-resolution salvage canvas (for the lightbox), or null if nothing decoded.
-// `_thumb` marks a canvas that is the file's embedded EXIF thumbnail (its full-size
-// image was overwritten and only the header, with its thumbnail, survived).
-function salvageFullCanvas(sub) {
-  let dec;
-  try { dec = decodeJpegPartial(sub); } catch (_) { return null; }
-  if (!dec || !dec.rows) return null;
-  const cv = document.createElement('canvas');
-  cv.width = dec.width; cv.height = dec.height;
-  cv.getContext('2d').putImageData(new ImageData(dec.data, dec.width, dec.height), 0, 0);
-  cv._realFrac = (dec.realRows != null ? dec.realRows : dec.rows) / dec.height;
-  cv._thumb = !!dec.thumb;
-  cv._corrupt = !!dec.corrupt;
-  return cv;
-}
-
 // Lazily decode a carved region into a downscaled canvas. Only the placeholder is
 // swapped out - the hover-actions overlay is a sibling inside the same thumb and
 // has to survive. Returns a Promise that settles once the thumbnail has decoded (or
@@ -709,26 +694,6 @@ function renderCarveThumb(thumbEl) {
       else if (cat !== 'ok') thumbEl.title = 'Click to view full size (' + cat + ' - recovered data is incomplete)';
     }
   });
-}
-
-// Fraction of the decoded thumbnail that is the browser's "no data" fill: fully
-// transparent (untouched canvas) or the exact mid-gray 128,128,128 an incomplete
-// JPEG leaves where it couldn't reach. 0 = a full picture, ~1 = nothing decoded.
-// The narrow ±2 gray band avoids catching a genuinely grey photo. This no longer
-// hides anything - every carve that produced any raster is shown - it only labels
-// how much of it is real (see classifyFill).
-function emptyFraction(ctx, w, h) {
-  try {
-    const d = ctx.getImageData(0, 0, w, h).data;
-    const total = d.length / 4;
-    if (total < 8) return 0;
-    let fill = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      if (d[i + 3] === 0) { fill++; continue; }      // transparent = untouched
-      if (Math.abs(d[i] - 128) <= 2 && Math.abs(d[i + 1] - 128) <= 2 && Math.abs(d[i + 2] - 128) <= 2) fill++;
-    }
-    return fill / total;
-  } catch (_) { return 0; }                          // tainted/unreadable - assume it drew
 }
 
 // Name a decode by how much real content it has, for the copy-list report and the
