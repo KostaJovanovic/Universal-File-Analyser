@@ -5,7 +5,8 @@
 import { el, row, rowHelp, fmtBytes, fileExt, errorCard } from '../core/util.js';
 import { entropyProfile } from '../core/binutil.js';
 import { buildOsintCard } from '../core/osint.js';
-import { carveImages, repairJpeg } from './photo-recover.js';
+import { carveImages, repairJpeg, ensureJpegHuffman } from './photo-recover.js';
+import { createCarveGallery } from './carve-gallery.js';
 
 function esc(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -473,14 +474,29 @@ export async function renderUnknown(file, resultsEl, opts) {
   }
 
   // Carve any embedded images out of the blob (recovered disk fragments, joined
-  // dumps, mis-typed files often hide whole JPEGs/PNGs inside). Non-blocking.
-  try { await appendEmbeddedImagesCard(file, resultsEl); } catch (_) {}
+  // dumps, mis-typed files often hide whole JPEGs/PNGs inside). The scan reads
+  // and sweeps up to 128 MB, so it is genuinely deferred rather than awaited
+  // here: its card is positioned now and filled once the page has painted.
+  const carveHost = el('div', {});
+  resultsEl.appendChild(carveHost);
 
   // An unrecognised type (no dedicated parser) - nudge the visitor to email the
   // format in so it can be supported. Skipped for extensionless files: there's no
   // "format" to support, they're just shown as text (and handleFile already offers
   // a re-open when the bytes match a known pattern).
   if (!extensionless && window._anrSuggest) window._anrSuggest.show(fileExt(file.name));
+
+  afterPaint(() => { appendEmbeddedImagesCard(file, resultsEl, carveHost).catch(() => {}); });
+}
+
+// Run `fn` once the browser has painted the work queued so far, then found an
+// idle moment. rAF callbacks fire *before* paint, so a single frame isn't enough
+// - two guarantee one has landed on screen before a long scan blocks the thread.
+function afterPaint(fn) {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(fn, { timeout: 2000 });
+    else setTimeout(fn, 0);
+  }));
 }
 
 // Byte-entropy heatmap. Slices the file into chunks, plots each chunk's Shannon
@@ -550,11 +566,10 @@ async function appendEntropyCard(file, resultsEl) {
 const CARVE_SCAN_CAP = 128 * 1024 * 1024;
 const CARVE_MIME = { jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
 
-function imageDecodes(url) {
-  return new Promise((res) => { const im = new Image(); im.onload = () => res(true); im.onerror = () => res(false); im.src = url; });
-}
-
-async function appendEmbeddedImagesCard(file, resultsEl) {
+// `host` is an empty div already sitting in the right place in the results, so
+// the card can be filled in late without the page reordering under the reader.
+// `resultsEl` stays the target for the drill-in when an Analyse button is used.
+async function appendEmbeddedImagesCard(file, resultsEl, host) {
   const bytes = new Uint8Array(await file.slice(0, Math.min(file.size, CARVE_SCAN_CAP)).arrayBuffer());
   const carved = carveImages(bytes, { max: 48 });
   if (!carved.length) return;
@@ -564,27 +579,30 @@ async function appendEmbeddedImagesCard(file, resultsEl) {
   card.appendChild(el('p', { class: 'anr-hint' },
     'Found ' + carved.length + ' image' + (carved.length === 1 ? '' : 's') + ' hidden in this file'
     + (file.size > CARVE_SCAN_CAP ? ' (first ' + fmtBytes(CARVE_SCAN_CAP) + ' scanned)' : '') + '. Salvaged on your device.'));
-  const grid = el('div', { style: 'display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-top:10px;' });
+  // Bare thumbnails with their Analyse / Download actions overlaid on hover, each
+  // decoding lazily as it scrolls into view - so the cards below this one appear
+  // straight away (carve-gallery.js).
+  const gallery = createCarveGallery();
+  gallery.grid.style.marginTop = '10px';
 
   for (let k = 0; k < carved.length; k++) {
     const c = carved[k];
     let sub = bytes.subarray(c.start, c.end);
-    if (c.format === 'jpeg') { const r = repairJpeg(sub); if (r && r.data) sub = r.data; }   // close off a cut-off carve
-    const cf = new File([sub], 'carved_' + (k + 1) + '.' + c.format, { type: CARVE_MIME[c.format] || 'application/octet-stream' });
-    const url = URL.createObjectURL(cf);
-    const cell = el('div', { style: 'border:1px solid var(--hairline); padding:8px;' });
-    if (await imageDecodes(url)) {
-      cell.appendChild(el('img', { src: url, style: 'max-width:100%; display:block;' }));
-    } else {
-      cell.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 6px;' },
-        c.format.toUpperCase() + '  ' + (c.width || '?') + ' × ' + (c.height || '?') + (c.complete ? '' : ' (partial)')));
+    if (c.format === 'jpeg') {
+      const r = repairJpeg(sub); if (r && r.data) sub = r.data;   // close off a cut-off carve
+      sub = ensureJpegHuffman(sub);                               // graft standard tables onto a tableless MJPEG frame
     }
-    const an = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Analyse');
-    an.addEventListener('click', async () => { const { renderPhoto } = await import('./photo.js'); renderPhoto(cf, resultsEl, { salvaged: true, sourceFile: file }); });
-    const dl = el('a', { class: 'anr-btn anr-btn-sm', href: url, download: cf.name }, 'Download');
-    cell.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:6px; gap:6px;' }, [an, dl]));
-    grid.appendChild(cell);
+    const cf = new File([sub], 'carved_' + (k + 1) + '.' + c.format, { type: CARVE_MIME[c.format] || 'application/octet-stream' });
+    gallery.add({
+      file: cf, format: c.format, width: c.width, height: c.height, complete: c.complete,
+      // photo.js is pulled in only on click: unknown.js is the fallback for files
+      // we can't identify and shouldn't load the photo module just to list carves.
+      onAnalyse: async () => {
+        const { renderPhoto } = await import('./photo.js');
+        renderPhoto(cf, resultsEl, { salvaged: true, sourceFile: file });
+      },
+    });
   }
-  card.appendChild(grid);
-  resultsEl.appendChild(card);
+  card.appendChild(gallery.grid);
+  host.appendChild(card);
 }

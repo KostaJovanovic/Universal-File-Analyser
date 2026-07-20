@@ -209,16 +209,27 @@
              ===================================================================== -->
 
         <div class="patch-entry">
-          <p class="patch-version">6.36</p>
+          <p class="patch-version">6.36 - 6.37</p>
           <p class="patch-name">Disk Dive</p>
           <p class="patch-date">20 July 2026</p>
           <ul class="patch-list">
-            <li><strong>Open a raw disk image - a copy of an SD card, USB stick or floppy - like a folder, browse every file inside, and rescue deleted photos the disk no longer lists. Everything stays on your device.</strong></li>
+            <li><strong>Open a raw disk image - a copy of an SD card, USB stick or floppy - like a folder, browse every file inside, and rescue deleted photos the disk no longer lists, right down to a damaged photo&rsquo;s readable part or its own built-in thumbnail. Everything stays on your device.</strong></li>
+          </ul>
+          <p class="patch-subhead">6.36 &middot; The disk browser</p>
+          <ul class="patch-list">
             <li><span class="patch-tag">New</span><strong>Open a disk image like a folder.</strong> Drop a raw disk image (<strong>.img</strong>, .ima or .dsk) - a copy of an SD card, USB stick or floppy, or a whole-disk clone - and Analyser mounts its FAT12/16/32 filesystem and lays out every file in a browsable tree and treemap. Click any file to analyse it just as if it sat on your own drive, and read the volume label, cluster size and free space alongside. Virtual-machine and optical images (VHD/VHDX, VMDK, QCOW2, VDI, ISO) are identified with their partition table.</li>
             <li><span class="patch-tag">New</span><strong>Rescue deleted photos from a disk image.</strong> Analyser scans the raw sectors of a disk image and carves out every picture it can find - including deleted and orphaned photos the file list no longer points to - then shows them in a gallery you step through with the arrow keys and save. A common way to bring back photos from a formatted or corrupted memory card.</li>
             <li><span class="patch-tag">New</span><strong>Rebuild a JPEG with no header at all.</strong> Photo recovery already fixed truncated and damaged pictures; now it can bring back a JPEG whose header is completely gone, with only the raw image data left. Pick a healthy photo from the same camera and Analyser borrows its header so the file decodes again.</li>
             <li><span class="patch-tag">New</span><strong>Android app bundles.</strong> XAPK, APKM and APKS installer bundles - from APKPure, APKMirror and Google&rsquo;s bundletool - now open as browsable archives, reading the app name, package, version and permissions from the manifest and listing the base and split APKs and OBB data inside.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>The 3D-model sample shows in colour.</strong> The bundled OBJ sample now carries its colours with it, so it previews with its red lettering instead of plain grey.</li>
+          </ul>
+          <hr class="patch-rule">
+          <p class="patch-subhead">6.37 &middot; Deeper photo recovery</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>See the readable part of a damaged photo.</strong> A recovered photo whose data is cut short, torn, or partly overwritten no longer comes back blank. Analyser decodes the picture itself now and shows whatever part is still intact - usually the top of the image - with the unreadable rest left grey. This brings back pictures the browser refuses to open at all.</li>
+            <li><span class="patch-tag">New</span><strong>Recover a lost photo from its thumbnail.</strong> When a photo&rsquo;s full-size image has been overwritten but the small preview stored inside its header survived, Analyser falls back to that thumbnail - so even a picture that is otherwise gone still shows a real, recognisable image of the scene.</li>
+            <li><span class="patch-tag">New</span><strong>Scan when you choose, and see everything found.</strong> The raw-sector scan for lost photos waits for a <strong>Scan for images</strong> button instead of starting on its own, so opening a big disk image stays instant. It then shows every picture it carves - faint fragments and all - as clean thumbnails with <strong>Analyse</strong> and <strong>Download</strong> appearing on hover, and a <strong>Copy photo list</strong> button copies each photo&rsquo;s location, size and whether it came back with a preview. Each photo shows its <strong>capture date</strong> read from the picture&rsquo;s own header (it survives even for deleted files), and you can sort the gallery <strong>newest</strong>, <strong>oldest</strong> or largest first.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Recovered photos no longer flash up blank or garbled.</strong> Pictures briefly mis-read as empty during a busy scan now show, and a photo scattered in pieces across the card is reassembled into the real image instead of a jumble.</li>
           </ul>
         </div>
 

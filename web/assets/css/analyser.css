@@ -2473,6 +2473,78 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   text-align: center;
 }
 
+/* ---------- CARVED IMAGES (disk-image / blob signature scan) ----------
+   Gallery of images recovered by scanning raw bytes for image signatures. Each
+   thumbnail is bare - no card around it - with its Analyse / Download actions
+   overlaid on hover, the same treatment the PDF page previews use. */
+.anr-carve-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+.anr-carve-cell { position: relative; }
+.anr-carve-thumb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  overflow: hidden;
+  border: var(--bd-hairline);
+  background: var(--surface);
+  cursor: zoom-in;
+}
+.anr-carve-thumb canvas,
+.anr-carve-thumb img { display: block; max-width: 100%; max-height: 200px; height: auto; width: auto; }
+/* A carve that wouldn't decode shows a text placeholder instead, and has no
+   lightbox to open - so it must not claim to be clickable. */
+.anr-carve-thumb.is-plain { cursor: default; }
+/* Overlaid actions: hidden until the cell is hovered or a button inside it takes
+   keyboard focus, so the gallery reads as pictures rather than rows of buttons. */
+.anr-carve-actions {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) ease;
+}
+.anr-carve-cell:hover .anr-carve-actions,
+.anr-carve-cell:focus-within .anr-carve-actions { opacity: 1; pointer-events: auto; }
+/* Touch devices have no hover, so the actions are shown permanently there. */
+@media (hover: none), (pointer: coarse) {
+  .anr-carve-actions { opacity: 1; pointer-events: auto; }
+}
+/* Also worn by <a download> links, hence the anchor resets. */
+.anr-carve-btn {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  line-height: 1.5;
+  padding: 2px 6px;
+  border: var(--bd-hairline);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--fg);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+.anr-carve-btn:hover { background: var(--fg); color: var(--bg); }
+.anr-carve-cap {
+  margin: 6px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 /* ---------- MAP ---------- */
 .anr-map {
   width: 100%;

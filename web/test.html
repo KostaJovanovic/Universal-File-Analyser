@@ -599,6 +599,32 @@
               </tbody>
             </table>
           </div>
+
+          <div class="tst-sub">Carved-image gallery (.anr-carve-grid &gt; .anr-carve-cell - bare thumbnails, no card; hover a cell to reveal its .anr-carve-actions overlay, always visible on touch. Second cell shows .is-plain, the state for a carve that would not decode - no lightbox, so no zoom cursor. Shared by the disk-image sector scan, the photo salvage view and the unknown-file fallback)</div>
+          <div class="anr-carve-grid">
+            <div class="anr-carve-cell">
+              <div class="anr-carve-thumb" title="Click to view full size">
+                <span class="anr-hint" style="margin:0">JPEG</span>
+                <div class="anr-carve-actions">
+                  <button type="button" class="anr-carve-btn">Analyse</button>
+                  <button type="button" class="anr-carve-btn">Download</button>
+                </div>
+              </div>
+              <div class="anr-carve-cap">JPEG  2272 &times; 1704</div>
+              <div class="anr-carve-cap" style="margin-top:2px">offset 0x1a4c00 &middot; 1.2 MB</div>
+            </div>
+            <div class="anr-carve-cell">
+              <div class="anr-carve-thumb is-plain">
+                <span class="anr-hint" style="margin:0">PNG &middot; no preview</span>
+                <div class="anr-carve-actions">
+                  <button type="button" class="anr-carve-btn">Analyse</button>
+                  <a class="anr-carve-btn" href="#" download>Download</a>
+                </div>
+              </div>
+              <div class="anr-carve-cap">PNG  640 &times; 480 &middot; partial &middot; frame</div>
+              <div class="anr-carve-cap" style="margin-top:2px">offset 0x33f800 &middot; 94 KB</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

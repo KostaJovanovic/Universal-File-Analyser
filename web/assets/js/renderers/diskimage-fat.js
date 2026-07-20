@@ -41,20 +41,24 @@ export function looksLikeFatBoot(b, o) {
 }
 
 // ---------- FAT next-cluster lookup ----------
-function nextCluster(img, fatStart, type, cl) {
+// `st` is an optional { short } flag the caller passes in to learn whether a read
+// fell outside the buffer. That is how the browser can hand this parser only the
+// front of a huge image and find out whether the directory walk actually needed
+// more, instead of reading half a gigabyte up front on the off-chance.
+function nextCluster(img, fatStart, type, cl, st) {
   if (type === 'FAT12') {
     const o = fatStart + Math.floor(cl * 3 / 2);
-    if (o + 1 >= img.length) return 0x0FFFFFFF;
+    if (o + 1 >= img.length) { if (st) st.short = true; return 0x0FFFFFFF; }
     const v = img[o] | (img[o + 1] << 8);
     return (cl & 1) ? (v >> 4) : (v & 0x0FFF);
   }
   if (type === 'FAT16') {
     const o = fatStart + cl * 2;
-    if (o + 1 >= img.length) return 0x0FFFFFFF;
+    if (o + 1 >= img.length) { if (st) st.short = true; return 0x0FFFFFFF; }
     return img[o] | (img[o + 1] << 8);
   }
   const o = fatStart + cl * 4;
-  if (o + 3 >= img.length) return 0x0FFFFFFF;
+  if (o + 3 >= img.length) { if (st) st.short = true; return 0x0FFFFFFF; }
   return (img[o] | (img[o + 1] << 8) | (img[o + 2] << 16) | (img[o + 3] << 24)) & 0x0FFFFFFF;
 }
 function isEoc(type, v) {
@@ -65,7 +69,7 @@ function isEoc(type, v) {
 
 // Follow a cluster chain into an array of cluster numbers, guarding against the
 // loops and runaway chains a corrupt FAT can produce.
-function chain(img, fatStart, type, first, maxClusters) {
+function chain(img, fatStart, type, first, maxClusters, st) {
   const out = [];
   const seen = new Set();
   let cl = first;
@@ -73,7 +77,7 @@ function chain(img, fatStart, type, first, maxClusters) {
     if (seen.has(cl)) break;                    // loop in the FAT
     seen.add(cl);
     out.push(cl);
-    const nxt = nextCluster(img, fatStart, type, cl);
+    const nxt = nextCluster(img, fatStart, type, cl, st);
     if (nxt < 2 || nxt === cl || nxt === 0x0FFFFFFF) break;
     cl = nxt;
   }
@@ -162,6 +166,15 @@ export function parseFatVolume(img, partStart) {
   const clusterOffset = (cl) => partStart + (firstDataSector + (cl - 2) * spc) * bps;
   const maxClusters = countOfClusters + 2;
 
+  // Set true as soon as any read lands past the end of `img`. When the caller
+  // supplied only a prefix of the image, that is the signal to fetch more.
+  const st = { short: false };
+
+  // Everything needed to locate a file's bytes in a *different* buffer later -
+  // the browser parses the tree from a small prefix, then reads file contents out
+  // of the full image once it has it. See readFileBytes below.
+  const geom = { partStart, bps, spc, reserved, numFats, fatSize, rootEntries, firstDataSector, bytesPerCluster, fatStart, type, maxClusters };
+
   // Gather a cluster chain's raw bytes (directories are small; a cap keeps a
   // corrupt chain bounded).
   function clustersToBytes(clusters) {
@@ -169,7 +182,8 @@ export function parseFatVolume(img, partStart) {
     let off = 0;
     for (const cl of clusters) {
       const start = clusterOffset(cl);
-      if (start < 0 || start >= img.length) break;
+      if (start < 0 || start >= img.length) { st.short = true; break; }
+      if (start + bytesPerCluster > img.length) st.short = true;
       const slice = img.subarray(start, Math.min(start + bytesPerCluster, img.length));
       out.set(slice, off);
       off += bytesPerCluster;
@@ -177,31 +191,13 @@ export function parseFatVolume(img, partStart) {
     return out.subarray(0, off);
   }
 
-  // Read a file's bytes by walking its cluster chain and trimming to the recorded
-  // size. Returned lazily (only when the user opens the file).
-  function fileBytes(startCl, size) {
-    if (!size || startCl < 2) return new Uint8Array(0);
-    const need = Math.ceil(size / bytesPerCluster) + 1;
-    const clusters = chain(img, fatStart, type, startCl, Math.min(need, maxClusters));
-    const out = new Uint8Array(size);
-    let off = 0;
-    for (const cl of clusters) {
-      if (off >= size) break;
-      const start = clusterOffset(cl);
-      if (start < 0 || start >= img.length) break;
-      const n = Math.min(bytesPerCluster, size - off);
-      out.set(img.subarray(start, Math.min(start + n, img.length)), off);
-      off += n;
-    }
-    return out;
-  }
-
   // Root directory bytes: a fixed region on FAT12/16, a cluster chain on FAT32.
   let rootRaw;
   if (isFat32) {
-    rootRaw = clustersToBytes(chain(img, fatStart, type, rootCluster, maxClusters));
+    rootRaw = clustersToBytes(chain(img, fatStart, type, rootCluster, maxClusters, st));
   } else {
     const rootStart = partStart + (reserved + numFats * fatSize) * bps;
+    if (rootStart + rootEntries * 32 > img.length) st.short = true;
     rootRaw = img.subarray(rootStart, Math.min(rootStart + rootEntries * 32, img.length));
   }
 
@@ -218,26 +214,34 @@ export function parseFatVolume(img, partStart) {
       if (entries.length >= MAX_ENTRIES) { truncated = true; return; }
       fileCount++;
       const startCl = f.startCl, size = f.size, name = path ? path + '/' + f.name : f.name;
-      entries.push({ name, size, getBytes: async () => fileBytes(startCl, size) });
+      // startCl is kept on the entry so the caller can re-read the bytes from a
+      // fuller buffer later (readFileBytes); getBytes stays as the default for
+      // callers - and the Node harness - that hold the whole image already.
+      entries.push({ name, size, startCl, getBytes: async () => readFileBytes(img, geom, startCl, size) });
     }
     for (const d of dirs) {
       if (d.startCl < 2 || visitedDirs.has(d.startCl)) continue;   // loop / bad-pointer guard
       visitedDirs.add(d.startCl);
       dirCount++;
-      const sub = clustersToBytes(chain(img, fatStart, type, d.startCl, maxClusters));
+      const sub = clustersToBytes(chain(img, fatStart, type, d.startCl, maxClusters, st));
       walk(sub, path ? path + '/' + d.name : d.name, depth + 1);
     }
   }
   walk(rootRaw, '', 0);
+  // Snapshot now: the lazy getBytes closures share `st` and would otherwise keep
+  // flipping this long after the caller has decided how much to read.
+  const shortRead = st.short;
 
   // Boot-sector volume label as a fallback when there's no label directory entry.
   if (!volumeLabel) volumeLabel = trimAscii(img, partStart + (isFat32 ? 0x47 : 0x2B), 11);
   const oem = trimAscii(img, partStart + 0x03, 8);
 
   // Free space: count zero (unallocated) entries across the valid cluster range.
+  // Counted off the FAT only, which sits at the front of the volume - so this
+  // stays correct on a prefix, and flags a short read if the FAT is cut off.
   let freeClusters = 0;
   for (let cl = 2; cl < countOfClusters + 2; cl++) {
-    if (nextCluster(img, fatStart, type, cl) === 0) freeClusters++;
+    if (nextCluster(img, fatStart, type, cl, st) === 0) freeClusters++;
   }
 
   return {
@@ -246,8 +250,33 @@ export function parseFatVolume(img, partStart) {
     capacityBytes: countOfClusters * bytesPerCluster,
     freeBytes: freeClusters * bytesPerCluster,
     fileCount, dirCount, truncated,
+    // True when the walk (or the free-space count) ran past the end of `img`,
+    // i.e. the caller passed a prefix that wasn't big enough.
+    shortRead: shortRead || st.short,
+    geom,
     entries,
   };
+}
+
+// Read one file's bytes out of `img` using the geometry from parseFatVolume.
+// Split out so the tree can be parsed from a small prefix and the contents read
+// later from the full image, without re-parsing anything.
+export function readFileBytes(img, geom, startCl, size) {
+  if (!size || startCl < 2) return new Uint8Array(0);
+  const { partStart, bps, spc, firstDataSector, bytesPerCluster, fatStart, type, maxClusters } = geom;
+  const need = Math.ceil(size / bytesPerCluster) + 1;
+  const clusters = chain(img, fatStart, type, startCl, Math.min(need, maxClusters));
+  const out = new Uint8Array(size);
+  let off = 0;
+  for (const cl of clusters) {
+    if (off >= size) break;
+    const start = partStart + (firstDataSector + (cl - 2) * spc) * bps;
+    if (start < 0 || start >= img.length) break;
+    const n = Math.min(bytesPerCluster, size - off);
+    out.set(img.subarray(start, Math.min(start + n, img.length)), off);
+    off += n;
+  }
+  return out;
 }
 
 // ---------- MBR partition table ----------
