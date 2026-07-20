@@ -15,9 +15,10 @@ import { el } from './util.js';
 // newest group's notes, or - once that group holds five versions - start a new
 // group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
-  { range: '6.36', notes: [
+  { range: '6.36 - 6.37', notes: [
     'Opens a raw **disk image** (.img/.ima/.dsk) like a folder - mounts its **FAT12/16/32** filesystem, browses every file in a tree and treemap, and reads the volume label, cluster size and free space.',
     '**Carves deleted photos** straight from a disk image\'s raw sectors, recovering pictures the file list no longer points to.',
+    'A **damaged photo** that used to come back blank now shows its readable part, or, if its full image was overwritten, its embedded **thumbnail**.',
     'Photo recovery can now rebuild a **headerless JPEG** by borrowing a header from a healthy same-camera photo.',
     'Reads Android **app bundles** (XAPK, APKM, APKS) as browsable archives.',
   ] },

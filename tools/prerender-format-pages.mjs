@@ -36,7 +36,7 @@
 import { writeFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
-import { esc, escAttr, buildFullKeys, makeHrefOf, THEME_SCRIPT, DEPTH_BADGE } from './prerender-common.mjs';
+import { esc, escAttr, buildFullKeys, makeHrefOf, THEME_SCRIPT, DEPTH_BADGE, smartTrim } from './prerender-common.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');   // the website source; content sidecars stay under tools/
@@ -328,7 +328,7 @@ function page(key, e, depth) {
   const d = e.display;            // curated casing for display, e.g. WebP
   const fallback = isFull
     ? { name: '.' + d + ' file', blurb: `.${d} is a file format that Analyser can open and analyse in your browser.` }
-    : { name: '.' + d + ' file (' + e.rows[0].label + ')', blurb: `.${d} is a ${e.rows[0].label} file (${e.rows[0].catLabel}). Analyser identifies a .${d} file and reads the metadata in its header, right in your browser.` };
+    : { name: '.' + d + ' file (' + e.rows[0].label + ')', blurb: `.${d} is a file in the ${e.rows[0].label} category. Analyser identifies it and reads the metadata in its header, right in your browser.` };
   // Ambiguous extension: one page, a titled section per distinct format. The
   // curated summary becomes the lede (and meta/FAQ text), and the variant blocks
   // replace the single auto capability block.
@@ -367,6 +367,10 @@ function page(key, e, depth) {
   const desc = isFull
     ? `${meta.blurb} Open a .${d} file online in your browser with Analyser - free, private, no upload, no install. A .${d} file opener and viewer.`
     : `${meta.blurb} Identify a .${d} file online in your browser with Analyser - free, private, nothing uploaded.`;
+  // Google truncates the snippet around ~155 chars, so the meta description is
+  // trimmed on a word boundary; the untrimmed `desc` still feeds the social cards
+  // below, which display far more.
+  const metaDesc = smartTrim(desc);
   const kicker = [...new Set(e.rows.map((r) => r.catLabel))].join(' / ');
 
   const faq = {
@@ -416,7 +420,7 @@ function page(key, e, depth) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escAttr(title)}</title>
-  <meta name="description" content="${escAttr(desc)}">
+  <meta name="description" content="${escAttr(metaDesc)}">
   <link rel="canonical" href="${url}">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">

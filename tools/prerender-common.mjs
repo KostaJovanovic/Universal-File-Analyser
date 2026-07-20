@@ -7,6 +7,20 @@
 export const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 export const escAttr = (s) => esc(s).replace(/"/g, '&quot;');
 
+// Trim a meta-description string to a Google-snippet-friendly length without
+// cutting a word in half. If it already fits, it is returned unchanged; otherwise
+// it is cut to the last word boundary at or before `max`, stripped of trailing
+// punctuation/whitespace, and an ellipsis is appended. Meant for
+// <meta name="description"> only - social cards (og:/twitter:description) keep
+// the full untrimmed text, which the two generators pass in separately.
+export function smartTrim(s, max = 157) {
+  const text = String(s).trim();
+  if (text.length <= max) return text;
+  const slice = text.slice(0, max);
+  const cut = slice.slice(0, slice.lastIndexOf(' '));
+  return (cut || slice).replace(/[\s.,;:!?-]+$/, '') + '…';
+}
+
 // The before-first-paint bootstrap script. Path-independent, so it is the
 // single source for every page: stamp-head.mjs stamps it into the hand-authored
 // pages in its PAGES list (currently 9) and prerender-format-pages.mjs emits it

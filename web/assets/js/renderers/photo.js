@@ -17,7 +17,9 @@ import { encodeAnimatedGif } from './gif-encode.js';
 import { buildIcoImagesCard } from './ico.js';
 import { buildMpoImagesCard } from './mpo.js';
 import { buildTiffPagesCard } from './tiff.js';
-import { diagnoseImage, repairJpeg, repairPng, decodePngPartial, extractJpegTables, spliceJpegHeader, rebuildHeaderlessJpeg, carveImages, repairHeifContainer } from './photo-recover.js';
+import { diagnoseImage, repairJpeg, repairPng, decodePngPartial, extractJpegTables, spliceJpegHeader, rebuildHeaderlessJpeg, carveImages, repairHeifContainer, ensureJpegHuffman } from './photo-recover.js';
+import { createCarveGallery } from './carve-gallery.js';
+import { decodeJpegPartial } from './jpeg-salvage.js';
 import { attachImageScrub } from './scrub.js';
 import { buildC2paCard } from './c2pa.js';
 import { buildAiSignalsCard } from './ai-signals.js';
@@ -165,6 +167,26 @@ async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
       });
       return;
     }
+    // Tolerant decode first: a JPEG whose scan is truncated or corrupt partway is
+    // rendered as NOTHING by the browser (it refuses the whole image). The built-in
+    // fault-tolerant decoder (jpeg-salvage.js) recovers the rows that survive and
+    // re-encodes them as a clean PNG the browser will show - the same approach the
+    // PNG branch below uses. Only take over for a genuinely partial result; a full
+    // decode falls through to repairJpeg, which keeps the original EXIF and quality.
+    try {
+      const dec = decodeJpegPartial(bytes);
+      if (dec && dec.rows > 0 && (dec.thumb || dec.rows < dec.height)) {
+        const cv = rgbaToCanvas(dec.data, dec.width, dec.height);
+        const f = await canvasToPngFile(cv, base + (dec.thumb ? '.thumbnail.png' : '.recovered.png'));
+        if (f) {
+          const msg = dec.thumb
+            ? 'The full-size image could not be decoded - its data is truncated or overwritten - but the file’s embedded thumbnail survived in the header and is shown: a ' + dec.width + ' × ' + dec.height + ' preview of the picture.'
+            : 'Recovered the top ' + Math.round((dec.rows / dec.height) * 100) + '% of the picture (' + dec.rows.toLocaleString() + ' of ' + dec.height.toLocaleString() + ' rows) with the built-in tolerant decoder. The rest was truncated, corrupt or overwritten and shows as grey.';
+          await present(f, msg);
+          return;
+        }
+      }
+    } catch (_) {}
     const rep = repairJpeg(bytes);
     if (rep.ok && !rep.needsReference && rep.data) {
       const f = new File([rep.data], base + '.recovered.jpg', { type: 'image/jpeg' });
@@ -255,27 +277,26 @@ async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
   // ---- carving (unrecognised blob / wrong extension / disk fragment) ----
   const carved = (diag.carved && diag.carved.length) ? diag.carved : carveImages(bytes);
   out.appendChild(el('p', {}, 'Found ' + carved.length + ' embedded image' + (carved.length === 1 ? '' : 's') + ' in the data:'));
-  const grid = el('div', { style: 'display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-top:10px;' });
+  // Bare thumbnails with their Analyse / Download actions overlaid on hover, each
+  // decoding lazily as it scrolls into view - so the rest of the salvage report
+  // never waits on them (carve-gallery.js).
+  const gallery = createCarveGallery();
+  gallery.grid.style.marginTop = '10px';
   const MIME = { jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
   for (let k = 0; k < carved.length; k++) {
     const c = carved[k];
     let sub = bytes.subarray(c.start, c.end);
-    if (c.format === 'jpeg') { const r = repairJpeg(sub); if (r.data) sub = r.data; }   // append EOI to a cut-off carve
-    const cf = new File([sub], 'carved_' + (k + 1) + '.' + c.format, { type: MIME[c.format] || 'application/octet-stream' });
-    const cell = el('div', { style: 'border:1px solid var(--hairline); padding:8px;' });
-    const url = URL.createObjectURL(cf);
-    if (await imageDecodes(url)) {
-      cell.appendChild(el('img', { src: url, style: 'max-width:100%; display:block; cursor:zoom-in;', onclick: () => openLightbox(url, 'Carved image', 'Carved image', null, false, false) }));
-    } else {
-      cell.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 6px;' }, c.format.toUpperCase() + '  ' + (c.width || '?') + ' × ' + (c.height || '?') + (c.complete ? '' : ' (partial)')));
+    if (c.format === 'jpeg') {
+      const r = repairJpeg(sub); if (r.data) sub = r.data;   // append EOI to a cut-off carve
+      sub = ensureJpegHuffman(sub);                          // graft standard tables onto a tableless MJPEG frame
     }
-    const an = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Analyse');
-    an.addEventListener('click', () => renderPhoto(cf, resultsEl, { salvaged: true, sourceFile: file }));
-    const dl = el('a', { class: 'anr-btn anr-btn-sm', href: url, download: cf.name }, 'Download');
-    cell.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:6px; gap:6px;' }, [an, dl]));
-    grid.appendChild(cell);
+    const cf = new File([sub], 'carved_' + (k + 1) + '.' + c.format, { type: MIME[c.format] || 'application/octet-stream' });
+    gallery.add({
+      file: cf, format: c.format, width: c.width, height: c.height, complete: c.complete,
+      onAnalyse: () => renderPhoto(cf, resultsEl, { salvaged: true, sourceFile: file }),
+    });
   }
-  out.appendChild(grid);
+  out.appendChild(gallery.grid);
 }
 
 async function renderUndisplayableImage(file, ext, resultsEl, bannerNode) {
