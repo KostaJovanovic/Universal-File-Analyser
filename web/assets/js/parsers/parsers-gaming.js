@@ -7,8 +7,8 @@
    for a decoded preview. Return null to fall back to the generic identification
    card. Dependency-free: only the shared toolkit + zip reader. */
 
-import { el, row, fmtBytes, preBlock, readSlice } from '../core/util.js';
-import { Reader, ascii, cleanAscii, findBytes, matchMagic, startsWithAscii, latin1, gunzip, fmtGuid } from '../core/binutil.js';
+import { el, row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
+import { Reader, ascii, cleanAscii, findBytes, matchMagic, startsWithAscii, latin1, gunzip, fmtGuid, hexBytes, hexU32 } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 
 // ---------- small helpers ----------
@@ -28,7 +28,7 @@ function crc32(bytes, start = 0, end = bytes.length) {
   for (let i = start; i < end; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
   return (c ^ 0xFFFFFFFF) >>> 0;
 }
-const hex8 = (n) => (n >>> 0).toString(16).toUpperCase().padStart(8, '0');
+const hex8 = (n) => hexU32(n, true);
 
 // ---------- iNES / NES 2.0 ----------
 const NES_MIRROR = ['Horizontal', 'Vertical'];
@@ -738,7 +738,7 @@ async function parseVtf(file) {
 
 // ---------- Valve VMT ----------
 async function parseVmt(file) {
-  const text = (await file.slice(0, Math.min(file.size, 65536)).text());
+  const text = (await readText(file, 65536));
   const shaderMatch = text.match(/^\s*"?([A-Za-z0-9_]+)"?\s*\{/m);
   if (!shaderMatch) return null;
   const out = { 'Format': 'Valve Material (.vmt)', 'Shader': shaderMatch[1] };
@@ -797,7 +797,7 @@ async function parseKtx(file) {
 
 // ---------- Tiled XML (.tmx / .tsx) ----------
 async function parseTiledXml(file, ext) {
-  const text = await file.slice(0, Math.min(file.size, 1 << 20)).text();
+  const text = await readText(file, 1 << 20);
   if (!/<(map|tileset)\b/.test(text)) return null;
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror')) return null;
@@ -894,7 +894,7 @@ async function parseLove(file) {
 
 // ---------- PICO-8 cart (.p8) ----------
 async function parseP8(file) {
-  const text = await file.slice(0, Math.min(file.size, 1 << 20)).text();
+  const text = await readText(file, 1 << 20);
   if (!/^pico-8 cartridge/i.test(text)) return null;
   const ver = (text.match(/version (\d+)/i) || [])[1];
   const sections = ['__lua__', '__gfx__', '__gff__', '__label__', '__map__', '__sfx__', '__music__'];
@@ -1133,7 +1133,7 @@ async function parseWwise(file, ext) {
 // ---------- Spine animation (.spine/.skel/.atlas) ----------
 async function parseSpine(file, ext) {
   if (ext === 'atlas') {
-    const text = await file.slice(0, Math.min(file.size, 1 << 18)).text();
+    const text = await readText(file, 1 << 18);
     // .atlas is plain text: blank line, page image name, size:/format:, then regions.
     const lines = text.split(/\r?\n/);
     const pages = [];
@@ -1150,7 +1150,7 @@ async function parseSpine(file, ext) {
   }
   // .json export, or binary .skel.
   let text = null;
-  try { text = await file.slice(0, Math.min(file.size, 1 << 20)).text(); } catch (_) {}
+  try { text = await readText(file, 1 << 20); } catch (_) {}
   if (text) {
     try {
       const j = JSON.parse(text);
@@ -1185,7 +1185,7 @@ async function parseSpine(file, ext) {
 
 // ---------- GameMaker project (.yyp/.yy JSON, .gmx XML) ----------
 async function parseGameMaker(file, ext) {
-  const text = await file.slice(0, Math.min(file.size, 2 << 20)).text();
+  const text = await readText(file, 2 << 20);
   if (ext === 'gmx') {
     if (!/<(assets|room|object|sprite|GameMakerProject)\b/i.test(text)) return null;
     const doc = new DOMParser().parseFromString(text, 'application/xml');
@@ -1599,7 +1599,7 @@ async function parseBasis(file) {
 
 // ---------- LDtk level project (.ldtk JSON) ----------
 async function parseLdtk(file) {
-  let j; try { j = JSON.parse(await file.slice(0, Math.min(file.size, 4 << 20)).text()); } catch (_) { return null; }
+  let j; try { j = JSON.parse(await readText(file, 4 << 20)); } catch (_) { return null; }
   if (!j || (!j.__header__ && !j.levels && j.jsonVersion === undefined)) return null;
   const out = { 'Format': 'LDtk level project (.ldtk)' };
   if (j.jsonVersion) out['LDtk version'] = j.jsonVersion;
@@ -1623,7 +1623,7 @@ async function parseEmuSave(file, ext) {
     if (!/^version\s+\d/m.test(text) && !/\bemuVersion\b/.test(text)) {
       // Still likely an fm2 - read more thoroughly.
     }
-    const full = await file.slice(0, Math.min(file.size, 1 << 16)).text();
+    const full = await readText(file, 1 << 16);
     const get = (k) => (full.match(new RegExp('^' + k + '\\s+(.+)$', 'm')) || [])[1];
     const out = { 'Format': 'FCEUX movie (.fm2)' };
     if (get('version')) out['Movie version'] = get('version').trim();
@@ -1637,7 +1637,7 @@ async function parseEmuSave(file, ext) {
   }
   // DeSmuME .dsm movies are also text with a header block.
   if (ext === 'dsm') {
-    const full = await file.slice(0, Math.min(file.size, 1 << 16)).text();
+    const full = await readText(file, 1 << 16);
     if (!/version\s+\d/i.test(full) && !/rerecordCount/i.test(full)) return null;
     const get = (k) => (full.match(new RegExp('^' + k + '\\s+(.+)$', 'm')) || [])[1];
     const out = { 'Format': 'DeSmuME movie (.dsm)' };
@@ -1744,7 +1744,7 @@ async function parseRedScripts(file) {
 // add-on content (ep1.addcont_keystone). 16 bytes of opaque key material.
 async function parseAddcontKeystone(file) {
   const head = await readSlice(file, 0, Math.min(file.size, 64));
-  const hex = Array.from(head.slice(0, 16)).map((b) => b.toString(16).padStart(2, '0')).join(' ');
+  const hex = hexBytes(head.slice(0, 16), ' ');
   return {
     'Format': 'REDengine add-on content keystone (.addcont_keystone)',
     'Engine': 'REDengine 4 - Cyberpunk 2077 (Phantom Liberty / DLC)',
@@ -1762,7 +1762,7 @@ async function parseOodleDict(file) {
   return {
     'Format': 'Oodle-compressed data (REDengine)',
     'Engine': 'REDengine 4 - Cyberpunk 2077',
-    'Magic': Array.from(head.slice(0, 4)).map((b) => b.toString(16).padStart(2, '0')).join(' '),
+    'Magic': hexBytes(head.slice(0, 4), ' '),
     'Note': 'An Oodle (Kraken/Leviathan) compressed blob - here a shader/oodle dictionary shipped with a generic .bin extension. The Oodle codec is proprietary (RAD Game Tools); contents are not decompressed in-browser.',
   };
 }

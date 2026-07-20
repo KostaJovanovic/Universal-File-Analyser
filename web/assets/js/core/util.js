@@ -641,6 +641,15 @@ export async function readSlice(file, off, n) {
   return new Uint8Array(await file.slice(off, end).arrayBuffer());
 }
 
+// Read up to `cap` bytes from the head of a File as decoded text. The text twin
+// of readSlice - replaces the `await file.slice(0, Math.min(size, cap)).text()`
+// idiom hand-rolled across the parser chunks. Defaults to a 256 KB head, enough
+// for the metadata/header sniffing these parsers do without pulling a huge file
+// fully into memory.
+export async function readText(file, cap = 262144) {
+  return file.slice(0, Math.min(file.size, cap)).text();
+}
+
 // Wire a [?] info button to an inline dropdown panel (.anr-info-panel shown/hidden
 // via .is-hidden). The button label flips between [?] (closed) and [-] (open). If
 // the button sits inside a collapsed <details>, the first click also opens that

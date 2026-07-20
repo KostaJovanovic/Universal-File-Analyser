@@ -17,7 +17,7 @@
    to know about any individual format. All generation is local; nothing leaves
    the browser. */
 
-import { el, sha256Hex } from './util.js';
+import { el, sha256Hex, downloadBlob } from './util.js';
 
 // Per-cell cap for long text payloads (hex dumps, extracted strings, OCR), so a
 // huge <pre> can't bloat the export to tens of MB. Matches the "capped" choice.
@@ -237,15 +237,6 @@ async function verificationData() {
 }
 
 const VERIFY_INSTRUCTIONS = 'To confirm this report describes the original file unchanged, recompute the file\'s SHA-256 and compare it to the value above. macOS / Linux: "shasum -a 256 <file>". Windows: "certutil -hashfile <file> SHA256". A matching hash proves the file has not been altered since this report was generated.';
-
-function download(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = el('a', { href: url, download: filename });
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
 
 // ---------- CSV ----------
 function csvField(v) {
@@ -534,7 +525,7 @@ function showChooser() {
       htmlBtn.querySelector('strong').textContent = 'Building…';
       try {
         const html = await buildHtml(sections);
-        download(new Blob([html], { type: 'text/html;charset=utf-8' }), baseName() + '-analysis.html');
+        downloadBlob(baseName() + '-analysis.html', new Blob([html], { type: 'text/html;charset=utf-8' }));
       } catch (_) {}
       close();
     });
@@ -556,14 +547,14 @@ function showChooser() {
     jsonBtn.addEventListener('click', async () => {
       try {
         const json = await buildJson(sections);
-        download(new Blob([json], { type: 'application/json;charset=utf-8' }), baseName() + '-analysis.json');
+        downloadBlob(baseName() + '-analysis.json', new Blob([json], { type: 'application/json;charset=utf-8' }));
       } catch (_) {}
       close();
     });
     csvBtn.addEventListener('click', () => {
       try {
         const csv = buildCsv(sections);
-        download(new Blob([csv], { type: 'text/csv;charset=utf-8' }), baseName() + '-analysis.csv');
+        downloadBlob(baseName() + '-analysis.csv', new Blob([csv], { type: 'text/csv;charset=utf-8' }));
       } catch (_) {}
       close();
     });

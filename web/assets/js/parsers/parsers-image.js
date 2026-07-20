@@ -15,15 +15,15 @@
    (PICT, FLIF, JBIG/JBIG2, CGM, CDR) is identification-only. No top-level side
    effects. */
 
-import { el, row, fmtBytes, preBlock, loadScript } from '../core/util.js';
-import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, utf8 } from '../core/binutil.js';
+import { el, row, fmtBytes, preBlock, loadScript, readSlice, readText } from '../core/util.js';
+import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, utf8, hexByte } from '../core/binutil.js';
 
 // ---------- shared helpers ----------
 
 const MAX_EDGE = 1024;   // cap decoded preview's longest edge
 
 async function readAll(file, cap = 32 * 1024 * 1024) {
-  return new Uint8Array(await file.slice(0, Math.min(file.size, cap)).arrayBuffer());
+  return await readSlice(file, 0, cap);
 }
 
 // Build a <canvas> from an RGBA Uint8ClampedArray, scaling down so the longest
@@ -631,7 +631,7 @@ async function parseWbmp(file) {
 //                   XBM (X BitMap, C source)
 // =====================================================================
 async function parseXbm(file) {
-  const text = await file.slice(0, Math.min(file.size, 8 * 1024 * 1024)).text();
+  const text = await readText(file, 8 * 1024 * 1024);
   const wm = text.match(/#define\s+\w*_?width\s+(\d+)/i);
   const hm = text.match(/#define\s+\w*_?height\s+(\d+)/i);
   if (!wm || !hm || !/\{[\s\S]*0x[0-9a-f]/i.test(text)) return null;
@@ -675,7 +675,7 @@ async function parseXbm(file) {
 //                   XPM (X PixMap, C source)
 // =====================================================================
 async function parseXpm(file) {
-  const text = await file.slice(0, Math.min(file.size, 8 * 1024 * 1024)).text();
+  const text = await readText(file, 8 * 1024 * 1024);
   if (!/XPM/.test(text) && !/static\s+char/.test(text)) return null;
   // Collect the quoted strings forming the data array.
   const strings = [];
@@ -1335,7 +1335,7 @@ async function parseJxr(file) {
   return out;
 }
 function guidStr(b, o) {
-  const h = (i) => b[o + i].toString(16).padStart(2, '0');
+  const h = (i) => hexByte(b[o + i]);
   return (h(3) + h(2) + h(1) + h(0) + '-' + h(5) + h(4) + '-' + h(7) + h(6) + '-' + h(8) + h(9) + '-' + h(10) + h(11) + h(12) + h(13) + h(14) + h(15)).toUpperCase();
 }
 const JXR_PF = {
@@ -1637,7 +1637,7 @@ async function parseLottie(file) {
     return { 'Format': 'dotLottie (.lottie)', 'Container': 'ZIP', 'Note': 'Packaged Lottie (animation JSON + assets inside a ZIP). Identification only; open the archive to inspect.' };
   }
   let j;
-  try { j = JSON.parse(await file.slice(0, Math.min(file.size, 16 * 1024 * 1024)).text()); } catch (_) { return null; }
+  try { j = JSON.parse(await readText(file, 16 * 1024 * 1024)); } catch (_) { return null; }
   if (!j || (j.v == null && !Array.isArray(j.layers))) return null;   // not a Bodymovin doc
   const out = { 'Format': 'Lottie (Bodymovin JSON)' };
   if (j.v) out['Bodymovin version'] = j.v;

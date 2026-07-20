@@ -5,7 +5,7 @@
 
 import { makeSpectrogramPanel, makePlayer, buildHistogramCard, buildWaveformCard } from './audio.js';
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
-import { el, row, rowHelp, fmtBytes, h3help, sha256Row, integrityCard, roundFps, asciiBar } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob } from '../core/util.js';
 import { parseAviHeader, extractAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
 import { registerSyncedVideo, setAudioCompanion } from '../core/video-sync.js';
@@ -188,11 +188,7 @@ function buildFrameControls(playerEl, getFps, file) {
       // Name the grab after the timecode (HH-MM-SS-FF; ':' is illegal in filenames).
       const p = parts(playerEl.currentTime);
       const tc = `${pad(p.h)}-${pad(p.m)}-${pad(p.s)}-${pad(p.f)}`;
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = (file.name || 'video').replace(/\.[^.]+$/, '') + `_${tc}.png`;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      downloadBlob((file.name || 'video').replace(/\.[^.]+$/, '') + `_${tc}.png`, blob);
     } catch (_) {}
     grabBtn.disabled = false;
   } }, 'Frame grab');
@@ -3162,11 +3158,8 @@ export async function renderVideo(file, resultsEl, opts = {}) {
         }}, 'Analyse frame');
         // Frame grab: download the current JPEG frame as-is.
         const grabBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(new Blob([frames[currentFrame]], { type: 'image/jpeg' }));
-          a.download = (file.name || 'video').replace(/\.[^.]+$/, '') + `_frame_${currentFrame}.jpg`;
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+          downloadBlob((file.name || 'video').replace(/\.[^.]+$/, '') + `_frame_${currentFrame}.jpg`,
+            new Blob([frames[currentFrame]], { type: 'image/jpeg' }));
         }}, 'Frame grab');
 
         // Contact sheet (>= 8 frames) - built here so it shares the action row.

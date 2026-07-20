@@ -4,7 +4,7 @@
    non-destructive edits a raw developer applied. The RAW images themselves are
    handled by the photo renderer; these are the adjustment recipes. */
 
-import { el, preBlock } from '../core/util.js';
+import { el, preBlock, readSlice, readText } from '../core/util.js';
 import { parsePlist } from '../lib/plist.js';
 
 // Apple Photos .aae adjustments sidecar (XML or binary plist).
@@ -36,7 +36,7 @@ async function parsePp3(file) {
 
 // Capture One .cos settings (XML key/value tree).
 async function parseCos(file) {
-  const text = await file.slice(0, Math.min(file.size, 1_000_000)).text();
+  const text = await readText(file, 1_000_000);
   if (!/CaptureOne|<SL|<E\s+K=/.test(text)) return null;
   const adjustments = (text.match(/<E\s+K=/g) || []).length;
   const src = (text.match(/(?:RawPath|ImagePath)[^>]*>([^<]+)/) || [])[1];
@@ -47,7 +47,7 @@ async function parseCos(file) {
 
 // DxO PhotoLab .dop sidecar (Lua-table / text).
 async function parseDop(file) {
-  const text = await file.slice(0, Math.min(file.size, 1_000_000)).text();
+  const text = await readText(file, 1_000_000);
   const ver = (text.match(/Version\s*=\s*"?([\d.]+)/) || [])[1];
   const tools = Array.from(new Set(text.match(/\b(DeepPRIME|PRIME|Optics|Vignetting|Distortion|ChromaticAberration|Sharpness|Exposure|SmartLighting|ClearView|HotPixel|Moire)\b/g) || []));
   const out = { 'Format': 'DxO PhotoLab sidecar (DOP)' };
@@ -58,7 +58,7 @@ async function parseDop(file) {
 
 // Nikon NX Studio .nksc sidecar - locate an embedded XMP packet.
 async function parseNksc(file) {
-  const buf = new Uint8Array(await file.slice(0, Math.min(file.size, 524288)).arrayBuffer());
+  const buf = await readSlice(file, 0, 524288);
   const text = new TextDecoder('latin1').decode(buf);
   const out = { 'Format': 'Nikon NX Studio sidecar (NKSC)' };
   const xmp = text.match(/<x:xmpmeta[\s\S]*?<\/x:xmpmeta>/);

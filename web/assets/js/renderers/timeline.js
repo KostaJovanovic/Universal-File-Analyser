@@ -9,7 +9,7 @@
      { name, fps, duration, tracks: [ { kind, name, clips: [ {name, start, duration, srcIn} ] } ] }
    with every time value in seconds. */
 
-import { el, row, rowHelp, fmtBytes, errorCard } from '../core/util.js';
+import { el, row, fmtBytes, errorCard } from '../core/util.js';
 
 // ---------- shared helpers ----------
 

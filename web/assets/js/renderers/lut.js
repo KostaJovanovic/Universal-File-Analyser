@@ -15,10 +15,11 @@
    LUT, and an interactive 3D scatter of the colour cube it defines. */
 
 import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, attachZoomPan, openOverlayBack, wheelZoomToggle } from '../core/util.js';
+import { hexByte } from '../core/binutil.js';
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const to255 = (v) => Math.round(clamp01(v) * 255);
-const hex2 = (n) => n.toString(16).padStart(2, '0');
+const hex2 = hexByte;
 const rgbHex = (r, g, b) => '#' + hex2(to255(r)) + hex2(to255(g)) + hex2(to255(b));
 const rgbCss = (r, g, b) => `rgb(${to255(r)},${to255(g)},${to255(b)})`;
 

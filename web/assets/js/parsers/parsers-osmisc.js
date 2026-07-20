@@ -9,7 +9,7 @@
 
    Dependency-free: only the shared toolkit (util/binutil/plist) is imported. */
 
-import { el, row, fmtBytes, preBlock, fmtDate } from '../core/util.js';
+import { el, row, fmtBytes, preBlock, fmtDate, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, cp437, latin1, utf8, filetimeToDate } from '../core/binutil.js';
 import { parsePlist } from '../lib/plist.js';
 
@@ -159,7 +159,7 @@ async function parseDesktop(file) {
 
 // ---------- .nfo (CP437 scene art, or XML sidecar) ----------
 async function parseNfo(file) {
-  const bytes = new Uint8Array(await file.slice(0, Math.min(file.size, 2_000_000)).arrayBuffer());
+  const bytes = await readSlice(file, 0, 2_000_000);
   // Skip a UTF-8/UTF-16 BOM when deciding XML-vs-art.
   let i = 0;
   if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) i = 3;
@@ -211,7 +211,7 @@ async function parseService(file) {
 
 // ---------- .crash / Apple .ips crash report ----------
 async function parseCrash(file) {
-  const text = await file.slice(0, Math.min(file.size, 2_000_000)).text();
+  const text = await readText(file, 2_000_000);
   const trimmed = text.replace(/^﻿/, '').trimStart();
 
   // Apple .ips: a JSON header line, then a JSON body. Or a single JSON object.
@@ -319,7 +319,7 @@ async function parseAb(file) {
 
 // ---------- .job Windows Task Scheduler (legacy v1) ----------
 async function parseJob(file) {
-  const b = new Uint8Array(await file.slice(0, Math.min(file.size, 8192)).arrayBuffer());
+  const b = await readSlice(file, 0, 8192);
   if (b.length < 0x44) return null;
   const r = new Reader(b, true); // little-endian
   // FIXDLEN_DATA header (.job v1 format).
@@ -380,7 +380,7 @@ async function parseJob(file) {
 
 // ---------- .pol Group Policy Registry.pol ----------
 async function parsePol(file) {
-  const b = new Uint8Array(await file.slice(0, Math.min(file.size, 1_000_000)).arrayBuffer());
+  const b = await readSlice(file, 0, 1_000_000);
   // Header: "PReg" (0x67655250 LE) + version u32.
   if (!(b[0] === 0x50 && b[1] === 0x52 && b[2] === 0x65 && b[3] === 0x67)) return null;
   const r = new Reader(b, true);
@@ -407,7 +407,7 @@ async function parsePol(file) {
 // %EndFont block per font, each a set of Key:Value lines (FontType, FamilyName,
 // OutlineFileName, FileLength, WeightClass, WritingScript, native names, ...).
 async function parseFontList(file) {
-  const text = await file.slice(0, Math.min(file.size, 16_000_000)).text();
+  const text = await readText(file, 16_000_000);
   const verM = text.match(/^%!Adobe-FontList\s+([\d.]+)/);
   if (!verM) return null;                                   // not an Adobe font list
   const localeM = text.match(/^%Locale:\s*(\S+)/m);

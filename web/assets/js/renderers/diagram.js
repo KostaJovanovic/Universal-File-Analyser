@@ -15,7 +15,7 @@
    or an empty model), and always show the raw counts.
    ============================================================================ */
 
-import { el, row, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '../core/util.js';
+import { el, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 import { inflate } from '../core/binutil.js';
 
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }

@@ -121,7 +121,10 @@ plus `analyser.css`, and `assets/js/core/docs.js` (theme toggle, sidebar
 filter, footer contact) rather than the main `app.js` - no drop pipeline, no
 stats pings. They get the theme bootstrap from the generator directly, so they
 are **not** in stamp-head's or stamp-footer's `PAGES`, and not in `sw.js`
-`SHELL`. Only the `/docs` hub is listed in `sitemap.xml`.
+`SHELL`. The `/docs` hub is listed in `sitemap.xml`; the sub-pages get their own
+`sitemap-docs.xml`, emitted by `build-docs-html.mjs` (mirroring how
+`prerender-format-pages.mjs` owns `sitemap-formats.xml`) and referenced from
+`robots.txt`.
 
 When you change how something works, update its `docs/` page in the same pass -
 it's verified-against-source documentation and drifts silently otherwise.
@@ -209,10 +212,14 @@ web/                — THE WEBSITE, served at "/" by Cloudflare (assets.directo
   samples/            — example files that drive the /samples gallery
   sw.js               — service worker (precache SHELL + cache epoch VERSION)
   manifest.json       — PWA manifest (format count stamped by stamp-counts.mjs)
-  robots.txt          — points crawlers at sitemap.xml + sitemap-formats.xml
+  robots.txt          — points crawlers at sitemap.xml + sitemap-formats.xml + sitemap-docs.xml
   sitemap.xml         — main sitemap (lastmod refreshed by stamp-counts.mjs)
   sitemap-formats.xml — per-format-page sitemap (written by prerender-format-pages.mjs)
+  sitemap-docs.xml    — docs sub-page sitemap (written by build-docs-html.mjs)
   llms.txt            — machine-readable site summary for LLM crawlers
+  _headers            — Cloudflare Workers static-asset response headers (security
+                        headers site-wide + immutable caching for /assets/fonts;
+                        consumed by the deploy, never served, not applied by serve.py)
   assets/             — css / fonts / img / vendor + all the app JS; detailed below
 
 web/assets/ in detail (the app's CSS, fonts, images, third-party libs, and JS):

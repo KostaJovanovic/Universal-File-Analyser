@@ -204,7 +204,6 @@ export function initSearch() {
       // audio
       sr: ['sample rate', 'samplerate'],
       samplerate: ['sample rate', 'sr', 'hz'],
-      'samplerate': ['sample rate', 'sr'],
       hz: ['sample rate', 'frequency'],
       khz: ['sample rate'],
       ch: ['channels'],

@@ -27,7 +27,7 @@
 
    There is no public spec; this was reverse-engineered from real .drp files. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, loadScript } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, integrityCard, loadScript } from '../core/util.js';
 
 const MAX_ENTRY = 64 * 1024 * 1024;        // cap any single inflated XML we hold
 const STD_FPS = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60];

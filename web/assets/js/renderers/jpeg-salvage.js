@@ -231,9 +231,63 @@ function findEmbeddedThumb(d) {
   return null;
 }
 
+// Detect where a decoded scan silently went to garbage. A truncated/overwritten JPEG
+// often keeps producing *valid* Huffman codes past the point its bitstream desynced,
+// so the decode loop never errors - it just reconstructs nonsense: the DC predictor
+// runs away and blocks pin to saturated, wildly-coloured noise (neon cyan/magenta
+// bands), usually preceded by a stretch of flat DC-only slabs where the AC energy died.
+// The browser shows exactly this mess; here we catch it. Returns the pixel row where
+// the real picture ends (everything below is decoder garbage to be flagged), or -1 if clean.
+//
+// Two-stage so it never fires on a genuine photo: first require a *confirmed* blowout -
+// a sustained band of pixels that are channel-pinned (>=250 or <=5) AND high-chroma
+// (a real bright sky or black shadow pins channels too, but near-neutral, not neon).
+// Only once that is seen do we walk back to the desync onset: the first flat band
+// (variance collapsed) that a textured band led into. A clean image never reaches the
+// walk-back, so its flat skies/walls are never mistaken for corruption.
+export function detectCorruptCut(data, w, h, rows = h) {
+  const BAND = 8, nb = Math.ceil(rows / BAND);
+  if (nb < 3) return -1;
+  const garb = new Float64Array(nb), sd = new Float64Array(nb);
+  for (let b = 0; b < nb; b++) {
+    const y0 = b * BAND, y1 = Math.min(rows, y0 + BAND);
+    let n = 0, g = 0, sR = 0, sG = 0, sB = 0, qR = 0, qG = 0, qB = 0;
+    for (let y = y0; y < y1; y++) for (let x = 0; x < w; x++) {
+      const o = (y * w + x) * 4, R = data[o], G = data[o + 1], B = data[o + 2];
+      const mx = Math.max(R, G, B), mn = Math.min(R, G, B);
+      if ((mx >= 250 || mn <= 5) && (mx - mn) >= 110) g++;
+      sR += R; sG += G; sB += B; qR += R * R; qG += G * G; qB += B * B; n++;
+    }
+    garb[b] = g / n;
+    sd[b] = Math.sqrt(Math.max(0, ((qR / n - (sR / n) ** 2) + (qG / n - (sG / n) ** 2) + (qB / n - (sB / n) ** 2)) / 3));
+  }
+  let blow = -1;
+  for (let b = 0; b + 1 < nb; b++) if (garb[b] > 0.35 && garb[b + 1] > 0.35) { blow = b; break; }
+  if (blow < 0) return -1;
+  // Terminal-to-the-bottom guard: baseline-JPEG desync never self-heals (DC prediction
+  // is cumulative), so the garbage runs unbroken to the last row. A *real* saturated
+  // region - a sunset sky, a neon sign - sits somewhere in the frame with ordinary
+  // content below it. Require a blowout band inside the bottom quarter, so a genuine
+  // vivid photo (its saturation up top, normal ground below) is never mistaken for corruption.
+  let bottomGarb = false;
+  for (let b = Math.floor(nb * 0.75); b < nb; b++) if (garb[b] > 0.35) { bottomGarb = true; break; }
+  if (!bottomGarb) return -1;
+  let onset = blow;                                    // desync onset = first flat band a textured band led into
+  for (let b = 1; b <= blow; b++) {
+    if (sd[b] < 32) {
+      let textured = false;
+      for (let k = Math.max(0, b - 2); k < b; k++) if (sd[k] > 45) textured = true;
+      if (textured) { onset = b; break; }
+    }
+  }
+  if (onset < 1) return -1;                            // no real top strip survived - let the normal decode handle it
+  return onset * BAND;
+}
+
 // Decode as much of the baseline scan as survives. Returns RGBA + how many pixel
 // rows are real (the rest is mid-grey fill); `thumb` is set when the returned image
-// is the file's embedded thumbnail (its full-size image could not be decoded).
+// is the file's embedded thumbnail (its full-size image could not be decoded), and
+// `corrupt` when the scan desynced into garbage that was detected and greyed out.
 export function decodeJpegPartial(bytes, allowThumb = true) {
   // Last resort when the main image yields nothing (its body was overwritten but the
   // header cluster, with its EXIF thumbnail, survived): decode that thumbnail. It's
@@ -309,6 +363,16 @@ export function decodeJpegPartial(bytes, allowThumb = true) {
       }
       out[o + 3] = 255;
     }
+  }
+  // The Huffman decode may have "succeeded" well past the point the stream desynced,
+  // filling the lower picture with saturated colour-block garbage. We keep those raw
+  // pixels (that's the picture a lenient system viewer paints, and the user asked to
+  // see it) but flag it and record where the real image ends (`realRows`), so callers
+  // caption it honestly: below the break it's decoder noise, not the actual photo.
+  const cut = detectCorruptCut(out, width, height, rows);
+  if (cut >= 0 && cut < rows) {
+    if (cut === 0) { const b = bail(); if (b) return b; }   // garbage from the very top - prefer the thumbnail
+    return { width, height, data: out, rows, corrupt: true, realRows: cut };
   }
   return { width, height, data: out, rows };
 }

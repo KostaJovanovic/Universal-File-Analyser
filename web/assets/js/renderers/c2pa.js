@@ -14,7 +14,7 @@
    payloads (claim, assertions, signature) are CBOR; the signature is a COSE_Sign1
    whose x5chain header carries the signer's DER certificate(s). */
 
-import { el, row, fmtBytes, wireInfoToggle } from '../core/util.js';
+import { el, row, wireInfoToggle } from '../core/util.js';
 import { ascii, utf8 } from '../core/binutil.js';
 
 // The 12-byte suffix shared by all C2PA/JUMBF box type UUIDs; the first 4 bytes

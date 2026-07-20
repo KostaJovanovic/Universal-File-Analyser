@@ -1,0 +1,22 @@
+# Cloudflare Workers Static Assets response headers.
+# Consumed by the assets runtime (never served as a file). Local dev (serve.py)
+# does not apply these - they only take effect on the Cloudflare deploy.
+#
+# Deliberately NO Content-Security-Policy: the app lazy-loads WASM, spawns
+# blob/module workers and uses data: URIs, so a CSP needs careful per-renderer
+# testing before it can be trusted - adding a wrong one silently breaks viewers.
+#
+# Caching: only the content-stable fonts get far-future immutable caching. app.js
+# and analyser.css keep UNVERSIONED filenames and rely on the service-worker cache
+# epoch (VERSION in sw.js) for busting, so they must NOT be immutable-cached at the
+# HTTP layer or a deploy would serve stale code.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), interest-cohort=()
+  X-Frame-Options: SAMEORIGIN
+  Strict-Transport-Security: max-age=63072000; includeSubDomains
+
+/assets/fonts/*
+  Cache-Control: public, max-age=31536000, immutable

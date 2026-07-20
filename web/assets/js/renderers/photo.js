@@ -7,10 +7,10 @@
    - On-device OCR via lazy-loaded Tesseract.js with language picker
    - SHA-256 file hash */
 
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, cloudFileWarning, errorCard, attachZoomPan, openOverlayBack, timeAnomalies, timeAnomalyCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, cloudFileWarning, errorCard, attachZoomPan, openOverlayBack, timeAnomalies, timeAnomalyCard, downloadBlob } from '../core/util.js';
 import { HEIC_EXTS, RAW_EXTS } from '../core/formats.js';
 import { convertHeic, extractRawPreview, convertWithImageMagick, demosaicRaw, extractRawJpegs, extractX3fPreview } from './photo-convert.js';
-import { ascii, latin1, utf8, inflate, findBytes } from '../core/binutil.js';
+import { ascii, latin1, utf8, inflate, findBytes, hexByte, hexBytes } from '../core/binutil.js';
 import { decodeGifFrames } from './gif-frames.js';
 import { decodeWebpFrames } from './webp-frames.js';
 import { encodeAnimatedGif } from './gif-encode.js';
@@ -80,6 +80,32 @@ function rgbaToCanvas(rgba, w, h) {
 }
 function canvasToPngFile(cv, name) {
   return new Promise((res) => cv.toBlob((b) => res(b ? new File([b], name, { type: 'image/png' }) : null), 'image/png'));
+}
+
+// Cheap gate: does the browser's decode look anything other than a clean photo? A
+// corrupt JPEG never paints as a clean picture - it comes back with a grey "no data"
+// band or saturated colour-block garbage - so a perfectly clean canvas means a healthy
+// file and we can skip the (expensive) authoritative tolerant re-decode. Draw small,
+// then flag any meaningful grey fill or high-chroma saturation. False alarms only cost
+// the confirm step (which then finds nothing wrong); it never mislabels a real photo.
+function browserCanvasSuspicious(img) {
+  try {
+    const nw = img.naturalWidth || 0, nh = img.naturalHeight || 0;
+    if (!nw || !nh) return true;
+    const s = Math.min(1, 384 / Math.max(nw, nh));
+    const w = Math.max(1, Math.round(nw * s)), h = Math.max(1, Math.round(nh * s));
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data, total = w * h;
+    let grey = 0, garb = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const R = d[i], G = d[i + 1], B = d[i + 2];
+      if (d[i + 3] === 0 || (Math.abs(R - 128) <= 2 && Math.abs(G - 128) <= 2 && Math.abs(B - 128) <= 2)) grey++;
+      const mx = Math.max(R, G, B), mn = Math.min(R, G, B);
+      if ((mx >= 250 || mn <= 5) && (mx - mn) >= 110) garb++;
+    }
+    return grey / total > 0.03 || garb / total > 0.06;
+  } catch (_) { return true; }                          // tainted/unreadable - confirm to be safe
 }
 
 async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
@@ -175,6 +201,19 @@ async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
     // decode falls through to repairJpeg, which keeps the original EXIF and quality.
     try {
       const dec = decodeJpegPartial(bytes);
+      // Desync-into-garbage: the scan keeps decoding past the point it derailed, so the
+      // lower picture is saturated colour-block noise. Show that raw decode (it's what a
+      // system viewer paints) but say plainly how much is the real image and that the
+      // rest is decoder noise, not the actual photo.
+      if (dec && dec.corrupt && dec.realRows > 0) {
+        const cv = rgbaToCanvas(dec.data, dec.width, dec.height);
+        const f = await canvasToPngFile(cv, base + '.recovered.png');
+        if (f) {
+          const pct = Math.round((dec.realRows / dec.height) * 100);
+          await present(f, 'The top ' + pct + '% of this picture (' + dec.realRows.toLocaleString() + ' of ' + dec.height.toLocaleString() + ' rows) is the real image. Below the break the JPEG scan is corrupt - what shows there is colour noise the decoder produces from the dead data, not the actual photo. The lost part was overwritten and cannot be recovered.');
+          return;
+        }
+      }
       if (dec && dec.rows > 0 && (dec.thumb || dec.rows < dec.height)) {
         const cv = rgbaToCanvas(dec.data, dec.width, dec.height);
         const f = await canvasToPngFile(cv, base + (dec.thumb ? '.thumbnail.png' : '.recovered.png'));
@@ -1402,7 +1441,7 @@ function dominantColors(imgData, n = 8) {
 }
 
 function toHex(c) {
-  const h = (v) => v.toString(16).padStart(2, '0');
+  const h = hexByte;
   return '#' + h(c.r) + h(c.g) + h(c.b);
 }
 
@@ -2542,11 +2581,7 @@ function buildFrameViewerCard(file, decoded, resultsEl, signal, opts = {}) {
   const grabBtn = el('button', { type: 'button', class: 'anr-btn', onclick: async () => {
     const blob = await frameToBlob(currentFrame);
     if (!blob) return;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${base}_frame_${currentFrame + 1}.png`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    downloadBlob(`${base}_frame_${currentFrame + 1}.png`, blob);
   } }, 'Frame grab');
 
   // Contact sheet (>= 8 frames): a 4×2 grid sampled evenly across the animation.
@@ -2791,10 +2826,25 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
         (salvageDiag.format === 'jpeg' || salvageDiag.format === 'png' ||
           salvageDiag.format === 'avif' || salvageDiag.format === 'heif' ||
           (!salvageDiag.format && salvageDiag.carved && salvageDiag.carved.length));
+      // The browser may refuse a JPEG that structurally looks healthy (so diagnoseImage
+      // sees no defect) yet desyncs into garbage partway. The tolerant decoder catches
+      // that from the bytes; if it flags corruption, salvage it rather than dropping to
+      // the bare "browser can't decode" banner.
+      let decCorrupt = false;
+      if (!unreadable && !inline && !opts.salvaged && fileBytes && !canSalvage
+          && /^(jpg|jpeg|jpe|jfif)$/.test(fileExt(file.name))) {
+        try { const dd = decodeJpegPartial(fileBytes); decCorrupt = !!(dd && dd.corrupt); } catch (_) {}
+      }
       if (unreadable) {
         resultsEl.appendChild(cloudFileWarning(file));
       } else if (canSalvage) {
         return renderPhotoRecovery(file, fileBytes, salvageDiag, resultsEl, renderSignal);
+      } else if (decCorrupt) {
+        const diag = {
+          format: 'jpeg', healthy: false,
+          issues: [{ msg: 'The JPEG scan desynchronises partway - past that point it decodes to garbage. Only the rows above the break are the real picture.' }],
+        };
+        return renderPhotoRecovery(file, fileBytes, diag, resultsEl, renderSignal);
       } else if (!inline && (ext === 'tif' || ext === 'tiff')) {
         // Browsers can't decode TIFF, but a TIFF can hold many pages. Render them
         // all with ImageMagick (only if there are 2+; single-page falls through to
@@ -2835,6 +2885,30 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     }
   }
   const { img, url } = imgInfo;
+
+  // The browser can decode a corrupt JPEG "successfully" - a desynced scan is painted
+  // as a genuine top strip over garbage (or comes back near-empty), so it reaches here
+  // looking like a healthy photo. Detecting that on the *browser's* canvas is unreliable
+  // (its error concealment differs from ours), so ask the tolerant decoder directly: it
+  // reads the bytes and flags the desync deterministically, browser-independent. When it
+  // does, route to the salvage view (real top strip + greyed remainder + a note on how
+  // much is real). Guarded to the plain single-file JPEG path so a good photo is never
+  // diverted, and `corrupt` is the well-guarded signal (never trips on a real photo).
+  if (!inline && !opts.salvaged && !fullDecode && !convertedFile
+      && /^(jpg|jpeg|jpe|jfif)$/.test(fileExt(file.name)) && browserCanvasSuspicious(img)) {
+    let bytes = null, dec = null;
+    try { bytes = new Uint8Array(await file.arrayBuffer()); } catch (_) {}
+    if (renderSignal.aborted) return;
+    if (bytes) { try { dec = decodeJpegPartial(bytes); } catch (_) {} }
+    if (dec && dec.corrupt) {
+      URL.revokeObjectURL(url);
+      const diag = {
+        format: 'jpeg', healthy: false,
+        issues: [{ msg: 'The JPEG scan desynchronises partway - past that point it decodes to garbage (the browser paints it as saturated colour-block noise). Only the rows above the break are the real picture.' }],
+      };
+      return renderPhotoRecovery(file, bytes, diag, resultsEl, renderSignal);
+    }
+  }
 
   // EXIF
   let exif = null;
@@ -3082,7 +3156,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   const fpy = Math.round(focus.focusY / pixData.height * h);
   tbl.appendChild(rowHelp('Focus point', fpx + ', ' + fpy + '  (estimated)',
     'Estimated by finding the region with highest local sharpness (Laplacian variance in a sliding window across the image).'));
-  const avgHex = '#' + [colorStats.avgR, colorStats.avgG, colorStats.avgB].map((v) => v.toString(16).padStart(2, '0')).join('');
+  const avgHex = '#' + hexBytes([colorStats.avgR, colorStats.avgG, colorStats.avgB], '');
   tbl.appendChild(rowHelp('Average colour', avgHex + '  (R' + colorStats.avgR + ' G' + colorStats.avgG + ' B' + colorStats.avgB + ')',
     'The mean RGB colour of every pixel, shown as a hex swatch. Gives a quick sense of the image\'s overall tint and brightness.'));
   tbl.appendChild(rowHelp('Tonal split', colorStats.shadows + '% shadows · ' + colorStats.midtones + '% midtones · ' + colorStats.highlights + '% highlights',
@@ -3102,9 +3176,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   if (convertedFile) {
     const dlBtn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:12px;' }, 'Download as JPEG');
     dlBtn.addEventListener('click', () => {
-      const a = el('a', { href: URL.createObjectURL(convertedFile), download: convertedFile.name });
-      document.body.appendChild(a); a.click();
-      setTimeout(() => a.remove(), 500);
+      downloadBlob(convertedFile.name, convertedFile);
     });
     infoCard.appendChild(dlBtn);
   }

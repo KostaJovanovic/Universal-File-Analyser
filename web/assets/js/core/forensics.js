@@ -9,6 +9,7 @@
    forward-reference, avoiding a circular import). */
 
 import { fileExt, el, row, downloadBlob } from './util.js';
+import { hexBytes } from './binutil.js';
 import { sniffFileType } from './file-sniff.js';
 
 // Re-analyse callback (app.js's handleFile), injected via setReanalyse() so this
@@ -83,7 +84,7 @@ export async function signatureCheck(file, sniff) {
   let hex = '';
   try {
     const b = new Uint8Array(await file.slice(0, 16).arrayBuffer());
-    hex = Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join(' ');
+    hex = hexBytes(b, ' ');
   } catch (_) {}
   return { ext, label: expect.label, sniff: sniff || null, missing: !sniff, hex };
 }
@@ -216,7 +217,7 @@ export async function trailingDataCheck(file, sniff) {
   // Ignore benign zero-padding (some tools pad to a block boundary).
   const sample = new Uint8Array(await file.slice(logicalEnd, logicalEnd + Math.min(trailing, 4096)).arrayBuffer());
   if (sample.every((x) => x === 0)) return null;
-  const hex = Array.from(sample.slice(0, 16)).map((x) => x.toString(16).padStart(2, '0')).join(' ');
+  const hex = hexBytes(sample.slice(0, 16), ' ');
   const tSniff = await sniffFileType(file.slice(logicalEnd)).catch(() => null);
   return {
     logicalEnd, trailing, hex, fmtLabel: sniff.label,
