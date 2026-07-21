@@ -1,11 +1,17 @@
-/* Analyser - GIF frame decoder
+/* Analyser - GIF frame decoder (lazy)
    A browser plays an animated GIF in an <img>, but won't let you step through it
    frame by frame. So - exactly like the AVI viewer does for MJPEG - we decode the
    GIF ourselves: parse the blocks, LZW-decompress each image, and composite it
    onto a persistent canvas honouring the per-frame disposal method, transparency
-   and interlacing. Returns one fully-composited RGBA snapshot per frame, plus its
-   own delay, so photo.js can build a real transport (play / scrub / Prev / Next).
-   Pure logic - no DOM, no cross-module dependencies. */
+   and interlacing.
+
+   Rather than materialise every composited RGBA frame up front (an 800x800 x 375
+   GIF would hold ~960 MB of pixels alive at once), we parse only the frame TABLE
+   eagerly (per-frame headers + the still-compressed LZW bytes - cheap) and composite
+   each frame ON DEMAND. get(idx) replays forward from the nearest cached keyframe
+   snapshot into a bounded LRU, so backward-scrub stays cheap and only a budget's
+   worth of decoded pixels is ever retained. This is what lets a large GIF play in
+   full instead of being truncated. Pure logic - no DOM, no cross-module deps. */
 
 // GIF LZW decompressor (the standard prefix/suffix/stack variant). Decodes the
 // concatenated image sub-blocks `data` into `output` (palette indices), filling
@@ -126,12 +132,14 @@ function clearRect(canvas, W, H, ix, iy, iw, ih) {
   }
 }
 
-// Decode every frame of an animated GIF into composited RGBA snapshots.
-// Returns { width, height, frames:[{data:Uint8ClampedArray, delay /*cs*/}],
-// loop, anyTransparency, truncated } or null if the bytes aren't a GIF.
-// `maxPixels` caps total decoded pixels (width*height*frames) so a pathological
-// GIF can't exhaust memory; frames past the cap are dropped (truncated=true).
-export function decodeGifFrames(buffer, maxPixels = 120e6) {
+// Parse an animated GIF into a lazy frame SOURCE. Eagerly reads only the frame
+// table (headers + still-compressed LZW bytes per frame); frames are composited
+// on demand by get(idx). Returns
+//   { width, height, count, loop, anyTransparency, delaysMs:number[]/*ms*/,
+//     get(idx) -> Promise<Uint8ClampedArray /*RGBA*/>, close() }
+// or null if the bytes aren't a GIF. `budget` is the retained decoded-pixel cache
+// window (width*height*frames): the LRU keeps at most floor(budget/(w*h)) frames.
+export function decodeGifFrames(buffer, budget = 120e6) {
   const bytes = new Uint8Array(buffer);
   if (bytes.length < 13 || bytes[0] !== 0x47 || bytes[1] !== 0x49 || bytes[2] !== 0x46) return null;
   const dv = new DataView(buffer);
@@ -145,13 +153,11 @@ export function decodeGifFrames(buffer, maxPixels = 120e6) {
   let gct = null;
   if (gctSize) { gct = readPalette(bytes, pos, gctSize); pos += gctSize * 3; }
 
-  const frames = [];
-  let canvas = new Uint8ClampedArray(width * height * 4);   // starts fully transparent
+  // Frame table: one lightweight record per frame (no pixels decoded yet).
+  const table = [];
   let gce = { delay: 0, transparentIndex: -1, disposal: 0 };
   let loop = null;
   let anyTransparency = false;
-  let truncated = false;
-  const maxFrames = Math.max(1, Math.floor(maxPixels / (width * height)));
 
   while (pos < bytes.length) {
     const b = bytes[pos];
@@ -190,7 +196,7 @@ export function decodeGifFrames(buffer, maxPixels = 120e6) {
       if (!palette) palette = [];
 
       const minCodeSize = bytes[pos]; pos++;
-      // Concatenate the LZW data sub-blocks.
+      // Concatenate the LZW data sub-blocks (still compressed - decoded lazily).
       let dataLen = 0, scan = pos;
       while (scan < bytes.length && bytes[scan] !== 0) { dataLen += bytes[scan]; scan += bytes[scan] + 1; }
       const lzwData = new Uint8Array(dataLen);
@@ -202,22 +208,9 @@ export function decodeGifFrames(buffer, maxPixels = 120e6) {
       }
       pos = scan + 1;                                       // skip block terminator
 
-      if (frames.length >= maxFrames) { truncated = true; break; }
-
-      const indices = new Uint8Array(iw * ih);
-      lzwDecode(minCodeSize, lzwData, indices, iw * ih);
-
-      // disposal 3 ("restore to previous") needs the canvas as it was before this
-      // frame was painted, to roll back to once the frame has been shown.
-      const before = gce.disposal === 3 ? canvas.slice() : null;
-
-      drawFrame(canvas, width, height, indices, palette, ix, iy, iw, ih, interlace, gce.transparentIndex);
-      frames.push({ data: new Uint8ClampedArray(canvas), delay: gce.delay });
+      table.push({ ix, iy, iw, ih, interlace, disposal: gce.disposal, delay: gce.delay,
+        transIdx: gce.transparentIndex, minCodeSize, lzwData, palette });
       if (gce.transparentIndex >= 0) anyTransparency = true;
-
-      // Apply this frame's disposal so the NEXT frame starts from the right canvas.
-      if (gce.disposal === 2) clearRect(canvas, width, height, ix, iy, iw, ih);
-      else if (gce.disposal === 3 && before) canvas = before;
 
       gce = { delay: 0, transparentIndex: -1, disposal: 0 };
       continue;
@@ -225,6 +218,56 @@ export function decodeGifFrames(buffer, maxPixels = 120e6) {
     pos++;                                                  // unknown byte - skip
   }
 
-  if (!frames.length) return null;
-  return { width, height, frames, loop, anyTransparency, truncated };
+  const count = table.length;
+  if (!count) return null;
+
+  // ---- lazy compositing engine ----
+  const px = width * height;
+  const stride = px * 4;
+  const L = Math.max(8, Math.floor(budget / px));           // max frames retained in the LRU
+  const K = Math.max(8, Math.ceil(count / 32));             // keyframe interval (<= ~32 snapshots)
+  const lru = new Map();                                    // idx -> RGBA (insertion order = LRU)
+  const entry = new Map();                                  // keyframe idx -> canvas ENTERING that frame
+  entry.set(0, new Uint8ClampedArray(stride));             // frame 0 starts fully transparent
+
+  const lruPut = (idx, data) => {
+    if (lru.has(idx)) lru.delete(idx);
+    lru.set(idx, data);
+    if (lru.size > L) lru.delete(lru.keys().next().value);   // evict oldest
+  };
+
+  // Composite frame `idx`, replaying forward from the nearest keyframe. Caches every
+  // frame produced along the way plus keyframe snapshots at each K boundary.
+  const compose = (idx) => {
+    if (lru.has(idx)) { const d = lru.get(idx); lru.delete(idx); lru.set(idx, d); return d; }
+    let s = Math.floor(idx / K) * K;
+    while (!entry.has(s)) s -= K;                            // 0 is always present
+    let canvas = new Uint8ClampedArray(entry.get(s));       // canvas entering frame s
+    let result = null;
+    for (let k = s; k <= idx; k++) {
+      if (k % K === 0 && !entry.has(k)) entry.set(k, new Uint8ClampedArray(canvas));
+      const fr = table[k];
+      // disposal 3 ("restore to previous") needs the canvas as it was before drawing.
+      const before = fr.disposal === 3 ? new Uint8ClampedArray(canvas) : null;
+      const indices = new Uint8Array(fr.iw * fr.ih);
+      lzwDecode(fr.minCodeSize, fr.lzwData, indices, fr.iw * fr.ih);
+      drawFrame(canvas, width, height, indices, fr.palette, fr.ix, fr.iy, fr.iw, fr.ih, fr.interlace, fr.transIdx);
+      const out = new Uint8ClampedArray(canvas);            // output = canvas AFTER drawing k
+      lruPut(k, out);
+      if (k === idx) result = out;
+      // Apply disposal so the NEXT frame starts from the right canvas.
+      if (fr.disposal === 2) clearRect(canvas, width, height, fr.ix, fr.iy, fr.iw, fr.ih);
+      else if (fr.disposal === 3 && before) canvas = before;
+    }
+    return result;
+  };
+
+  const clamp = (i) => Math.max(0, Math.min(count - 1, i | 0));
+  const delaysMs = table.map((f) => { const ms = f.delay * 10; return ms < 20 ? 100 : ms; });
+
+  return {
+    width, height, count, loop, anyTransparency, delaysMs,
+    get: (idx) => Promise.resolve(compose(clamp(idx))),
+    close() { lru.clear(); entry.clear(); },
+  };
 }
