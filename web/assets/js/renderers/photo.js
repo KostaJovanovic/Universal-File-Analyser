@@ -1937,6 +1937,10 @@ export function openLightbox(src, alt, metaText, focusOpts, showAlpha, photoTool
   // sense for actual photos - hide the whole toolbar for histograms and the like.
   toolbar.hidden = !photoTools;
   wrap.classList.remove('anr-checkerboard');
+  // Forensic/carve views ask for the raw stored raster (nav.rawOrientation): ignore
+  // the EXIF orientation tag so the preview matches the reported pixel dimensions.
+  // Normal photos leave it unset and honour the tag.
+  lbImg.style.imageOrientation = (nav && nav.rawOrientation) ? 'none' : '';
   lbImg.src = src;
   lbImg.alt = alt || '';
   lbImg.onload = () => { sizeWrap(wrap, lbImg.naturalWidth, lbImg.naturalHeight); };
@@ -2642,9 +2646,11 @@ function buildFrameViewerCard(file, source, resultsEl, signal, opts = {}) {
   card.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:4px; text-align:center;' },
     [frameLabel, document.createTextNode(` · ${avgFps.toFixed(1)} fps avg`)]));
   card.appendChild(el('div', { class: 'anr-frame-grid', style: 'margin-top:10px;' }, [prevBtn, nextBtn]));
+  // Full-width action buttons, matching the Prev/Next grid: Analyse frame / Frame
+  // grab share a row; the contact-sheet button spans both columns on its own row.
   const actionBtns = [analyseBtn, grabBtn];
-  if (sheetBtn) actionBtns.push(sheetBtn);
-  card.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:10px;' }, actionBtns));
+  if (sheetBtn) { sheetBtn.style.gridColumn = '1 / -1'; actionBtns.push(sheetBtn); }
+  card.appendChild(el('div', { class: 'anr-frame-grid', style: 'margin-top:10px;' }, actionBtns));
   card.appendChild(sheetOut);
   return card;
 }

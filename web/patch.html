@@ -209,6 +209,20 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">6.38 - 6.51</p>
+          <p class="patch-name">Full Frame</p>
+          <p class="patch-date">21 July 2026</p>
+          <ul class="patch-list">
+            <li><strong>Long animated GIFs and WebPs now play all the way through - however many frames they hold - while the memory used to do it scales to your device. Alongside: a DJI recorder&rsquo;s waveform drawn from its sidecar file, a sharp-cornered visual pass, and document-preview fixes.</strong></li>
+            <li><span class="patch-tag">New</span><strong>Step through a long animation in full.</strong> A big <a href="/about#where">animated GIF or WebP</a> - one with hundreds or thousands of frames - used to stop part-way to spare memory. Now each frame is decoded the moment you scrub to it and only a rolling window is kept in memory, so an animation of any length plays and steps through completely, forwards or back, without the tab running out of memory. How many frames stay ready for instant replay now scales to your device - more on a capable computer, fewer on a phone to stay smooth.</li>
+            <li><span class="patch-tag">New</span><strong>A DJI recorder&rsquo;s waveform, drawn.</strong> Drop the <strong>.pkf</strong> overview file a DJI <strong>Mic</strong>, <strong>Osmo</strong> or drone writes beside each recording and Analyser draws its waveform - the shape of the sound, with the channel count and an estimated length - even though the file holds no audio itself. Adobe Audition&rsquo;s own <strong>.pkf</strong> peak caches are recognised too, so they are never mistaken for it.</li>
+            <li><span class="patch-tag">New</span><strong>File-size limits that fit your device.</strong> The point at which a very large <a href="/about#ext-zip">archive</a>, disk image or other big file is turned away is no longer a single fixed number - it now scales with how much memory your device has, so a capable desktop opens larger files than before while phones stay protected from running out of memory.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Long documents preview cleanly.</strong> On the <strong>See full document</strong> reading view, dark-mode text no longer vanishes against the white page, and the button that opens it now sits above the excerpt so you can reach it without scrolling past the preview rows.</li>
+            <li><strong>Maintenance - a visual tidy and internal groundwork.</strong> Every last rounded corner was squared off to match the site&rsquo;s sharp-cornered style - the 3D view cube included - and SPICE readouts took on the monospace figures used elsewhere. Behind the scenes, image-provenance reads, the circuit-board viewer, the photo-salvage helpers and every size limit were consolidated into shared code, and the frame viewer&rsquo;s action buttons now line up full-width. Nothing you do changes; the app is just lighter and more consistent.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">6.36 - 6.37</p>
           <p class="patch-name">Disk Dive</p>
           <p class="patch-date">20 July 2026</p>
@@ -244,6 +258,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">6.21 - 6.31</p>
           <p class="patch-name">Provenance</p>
@@ -258,9 +275,6 @@
             <li><strong>Maintenance - the open-source readme and developer notes were refreshed.</strong> The public code readme was rewritten with screenshots of the app in action, and internal documentation added alongside it. The internal UI style-guide sheet was restored and brought back in step with the current buttons, footer and offline panel too. Nothing on the site itself changes; this is purely for anyone reading or building on the source.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">6.19 - 6.20</p>
@@ -1924,7 +1938,7 @@
       <div><dt>UI font</dt><dd><a href="https://github.com/vercel/geist-font" target="_blank" rel="noopener">Geist and Geist Mono</a> <a class="dep-lic" href="https://github.com/vercel/geist-font/blob/main/LICENSE.txt" target="_blank" rel="noopener">licence</a> by Vercel are the interface and monospace typefaces, used under the SIL Open Font License.</dd></div>
       <div><dt>PDF</dt><dd><a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a> <a class="dep-lic" href="https://github.com/mozilla/pdf.js/blob/master/LICENSE" target="_blank" rel="noopener">licence</a> by Mozilla. Renders PDF pages, extracts text, and supports OCR scanning of image-only pages via Tesseract. Loaded only for PDF files.</dd></div>
       <div><dt>DWG</dt><dd><a href="https://github.com/LibreDWG/libredwg" target="_blank" rel="noopener">LibreDWG</a> <a class="dep-lic" href="https://github.com/LibreDWG/libredwg/blob/master/COPYING" target="_blank" rel="noopener">licence</a> compiled to WASM. Parses AutoCAD <code>.dwg</code> / <code>.dwt</code> drawings and renders them to SVG. ~7 MB, in the Everything download.</dd></div>
-      <div><dt>File ID</dt><dd>Built-in identification for 1358+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
+      <div><dt>File ID</dt><dd>Built-in identification for 1359+ file formats. Adobe, SolidWorks, Fusion 360, AutoCAD, Blender, Office, 3D mesh, executables, fonts, G-Code, log files, and more. Extracts version, author, and metadata from headers, ZIP manifests, ID3 tags, and gzipped XML projects. DOCX documents render with formatted text. AI-generation markers detected in photo metadata.</dd></div>
       <div><dt>Photoshop</dt><dd><a href="https://github.com/Agamnentzar/ag-psd" target="_blank" rel="noopener">ag-psd</a> <a class="dep-lic" href="https://github.com/Agamnentzar/ag-psd/blob/HEAD/LICENSE" target="_blank" rel="noopener">licence</a>. Decodes <code>.psd</code> / <code>.psb</code> documents - the composite image plus the full layer tree - in the browser. Loaded only when needed.</dd></div>
       <div><dt>PCB / EDA</dt><dd>The built-in parser reads KiCad, Altium and other EDA project files and rebuilds boards and schematics into interactive SVG in the browser. With thanks to <a href="https://www.kicad.org/" target="_blank" rel="noopener">KiCad</a>, whose open-source file format and board renderer we studied to draw footprints, tracks, zones and copper-layer geometry correctly - it is not bundled or used as a dependency.</dd></div>
       <div><dt>Fonts</dt><dd><a href="https://github.com/opentypejs/opentype.js" target="_blank" rel="noopener">opentype.js</a> <a class="dep-lic" href="https://github.com/opentypejs/opentype.js/blob/HEAD/LICENSE" target="_blank" rel="noopener">licence</a>. Reads the font tables and draws every glyph outline for <code>.ttf</code> / <code>.otf</code> / <code>.woff</code> / <code>.woff2</code> / <code>.ttc</code>. Loaded only when needed.</dd></div>

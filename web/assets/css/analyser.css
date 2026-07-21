@@ -8321,6 +8321,25 @@ li.anr-md-task input { margin-right: 0.5em; vertical-align: middle; }
 .anr-md-table th { background: var(--surface); font-weight: 600; }
 .anr-md-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface) 55%, transparent); }
 
+/* Markdown rendered onto the "See full document" lightbox sheet. .anr-page is a
+   fixed white paper in BOTH themes, but the markdown palette is theme-driven, so in
+   dark mode the body text keeps the off-white --fg and disappears on the white page
+   (and code/quote/table surfaces go dark). Pin everything to paper colours here. */
+.anr-page .anr-md-body { color: #111; max-width: none; }
+.anr-page .anr-md-h6 { color: #555; }
+.anr-page .anr-md-quote { color: #555; border-left-color: #cfcfcf; }
+.anr-page .anr-md-hr { border-top: 1px solid #dddddd; }
+.anr-page .anr-md-link { color: #0b5ec7; border-bottom-color: rgba(11, 94, 199, 0.35); }
+.anr-page .anr-md-link:hover { border-bottom-color: #0b5ec7; }
+.anr-page .anr-md-icode,
+.anr-page .anr-md-code,
+.anr-page .anr-md-codelang { background: #f2f2f2; color: #111; border-color: #dcdcdc; }
+.anr-page .anr-md-codelang { color: #666; }
+.anr-page .anr-md-img { border-color: #dddddd; }
+.anr-page .anr-md-table th, .anr-page .anr-md-table td { border-color: #cccccc; }
+.anr-page .anr-md-table th { background: #f2f2f2; }
+.anr-page .anr-md-table tbody tr:nth-child(even) { background: #f7f7f7; }
+
 /* ---------- Visitor badge (header) + /stats page ---------- */
 
 /* Live visitor count above the header Status line. Inherits the .site-meta dl
