@@ -2445,20 +2445,19 @@ export function revealPhotoSection() {
 // stylised transport (play / draggable scrub / time), Prev/Next stepping, and
 // Analyse frame / Frame grab / contact-sheet actions - the photo-side counterpart
 // of the AVI MJPEG viewer. Shared by animated GIF (decodeGifFrames) and animated
-// WebP (decodeWebpFrames); `signal` aborts the playback loop on teardown. `opts`:
-// { kindLabel?: 'animated GIF', delaysMs?: number[] } - WebP passes its own
-// per-frame millisecond delays so the GIF centisecond clamp isn't applied to it.
-function buildFrameViewerCard(file, decoded, resultsEl, signal, opts = {}) {
+// WebP (decodeWebpFrames), which both hand back a lazy frame SOURCE:
+//   { width, height, count, loop, anyTransparency, delaysMs, get(idx)->Promise<RGBA>, close() }
+// Frames are decoded on demand via source.get() so a long animation never holds
+// every frame in memory at once. `signal` aborts the playback loop and closes the
+// source on teardown. `opts`: { kindLabel?: 'animated GIF' }.
+function buildFrameViewerCard(file, source, resultsEl, signal, opts = {}) {
   const kindLabel = opts.kindLabel || 'animated GIF';
-  const { width, height, frames, loop, anyTransparency, truncated } = decoded;
-  const n = frames.length;
+  const { width, height, count, loop, anyTransparency, delaysMs } = source;
+  const n = count;
   const lastIdx = n - 1;
 
-  // Per-frame delay in ms. GIF stores centiseconds and gets the browser-style
-  // clamp (a 0 / very small delay renders as 100ms); other sources (WebP) pass a
-  // ready-made millisecond array in opts.delaysMs. Then the start time of each
-  // frame and the total loop duration.
-  const delaysMs = opts.delaysMs || frames.map((f) => { const ms = f.delay * 10; return ms < 20 ? 100 : ms; });
+  // Frame start times and the total loop duration, from the source's per-frame
+  // millisecond delays (GIF centiseconds are already converted+clamped upstream).
   const startTimes = new Float64Array(n);
   let acc = 0;
   for (let i = 0; i < n; i++) { startTimes[i] = acc / 1000; acc += delaysMs[i]; }
@@ -2480,7 +2479,19 @@ function buildFrameViewerCard(file, decoded, resultsEl, signal, opts = {}) {
   cv.width = width; cv.height = height;
   cv.style.cssText = 'max-width:100%; max-height:480px; height:auto; display:block;';
   const ctx = cv.getContext('2d');
-  const draw = (idx) => ctx.putImageData(new ImageData(frames[idx].data, width, height), 0, 0);
+  // Async on-demand draw. A monotonically increasing token means that if several
+  // draws are requested in quick succession (e.g. fast scrubbing), only the most
+  // recent one paints - stale decodes are dropped rather than flickering.
+  let drawToken = 0;
+  const draw = (idx) => {
+    const my = ++drawToken;
+    return source.get(idx).then((data) => {
+      if (my !== drawToken) return;
+      ctx.putImageData(new ImageData(data, width, height), 0, 0);
+    }).catch(() => {});
+  };
+  // Warm the next frame's cache so forward playback stays smooth.
+  const prefetch = (idx) => { if (idx >= 0 && idx <= lastIdx) source.get(idx).catch(() => {}); };
   const stage = el('div', {
     class: 'anr-gif-stage' + (anyTransparency ? ' anr-checkerboard' : ''),
     style: 'display:inline-block; max-width:100%; border:1px solid var(--hairline); background:'
@@ -2494,18 +2505,20 @@ function buildFrameViewerCard(file, decoded, resultsEl, signal, opts = {}) {
     idx = Math.max(0, Math.min(lastIdx, idx));
     currentFrame = idx;
     draw(idx);
+    prefetch(idx + 1);
     frameLabel.textContent = `Frame ${idx + 1} / ${n}`;
     if (onFrameShown) onFrameShown(idx);
   };
   draw(0);
 
   // Composite a frame to a standalone PNG blob, for Analyse frame / Frame grab.
-  const frameToBlob = (idx) => new Promise((res) => {
+  const frameToBlob = async (idx) => {
+    const data = await source.get(idx);
     const c = document.createElement('canvas');
     c.width = width; c.height = height;
-    c.getContext('2d').putImageData(new ImageData(frames[idx].data, width, height), 0, 0);
-    c.toBlob(res, 'image/png');
-  });
+    c.getContext('2d').putImageData(new ImageData(data, width, height), 0, 0);
+    return new Promise((res) => c.toBlob(res, 'image/png'));
+  };
   const base = (file.name || 'image').replace(/\.[^.]+$/, '');
 
   // ---- Transport (variable per-frame delay, wall-clock driven, infinite loop) ----
@@ -2566,8 +2579,9 @@ function buildFrameViewerCard(file, decoded, resultsEl, signal, opts = {}) {
     window.addEventListener('touchmove', onTMove, { passive: false }); window.addEventListener('touchend', onTEnd);
   }, { passive: false });
 
-  // Tearing down the render (new file / navigation) must kill the loop.
-  signal.addEventListener('abort', stop);
+  // Tearing down the render (new file / navigation) must kill the loop and release
+  // the source's decoder + frame cache.
+  signal.addEventListener('abort', () => { stop(); try { source.close(); } catch (_) {} });
 
   const prevBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => { stop(); showFrame(currentFrame - 1); } }, '← Prev');
   const nextBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => { stop(); showFrame(currentFrame + 1); } }, 'Next →');
@@ -2590,7 +2604,7 @@ function buildFrameViewerCard(file, decoded, resultsEl, signal, opts = {}) {
   const sheetOut = el('div');
   if (n >= 8) {
     sheetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Generate contact sheet');
-    sheetBtn.addEventListener('click', () => {
+    sheetBtn.addEventListener('click', async () => {
       sheetBtn.disabled = true; sheetBtn.textContent = 'Generating…';
       const cols = 4, rows = 2, total = cols * rows;
       const scale = 320 / Math.max(width, height);
@@ -2606,7 +2620,7 @@ function buildFrameViewerCard(file, decoded, resultsEl, signal, opts = {}) {
       const tctx = tmp.getContext('2d');
       for (let i = 0; i < total; i++) {
         const fi = Math.floor(i * (n - 1) / (total - 1));
-        tctx.putImageData(new ImageData(frames[fi].data, width, height), 0, 0);
+        tctx.putImageData(new ImageData(await source.get(fi), width, height), 0, 0);
         const c = i % cols, r = Math.floor(i / cols);
         gctx.drawImage(tmp, pad + c * (tw + pad), pad + r * (th + pad), tw, th);
       }
@@ -2622,7 +2636,7 @@ function buildFrameViewerCard(file, decoded, resultsEl, signal, opts = {}) {
   card.appendChild(el('h3', {}, 'Frames'));
   const avgFps = totalTime > 0 ? n / totalTime : 0;
   card.appendChild(el('p', { class: 'anr-hint' },
-    `${n} frames decoded · ${fmtTc(totalTime)} total` + (loop != null ? ` · loop ${loop === 0 ? '∞' : loop}` : '')));
+    `${n} frames · ${fmtTc(totalTime)} total` + (loop != null ? ` · loop ${loop === 0 ? '∞' : loop}` : '')));
   card.appendChild(stage);
   card.appendChild(playerBar);
   card.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:4px; text-align:center;' },
@@ -2631,18 +2645,16 @@ function buildFrameViewerCard(file, decoded, resultsEl, signal, opts = {}) {
   const actionBtns = [analyseBtn, grabBtn];
   if (sheetBtn) actionBtns.push(sheetBtn);
   card.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:10px;' }, actionBtns));
-  if (truncated) card.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px; color: var(--accent);' },
-    `⚠ Large animation - only the first ${n} frames were decoded to stay within memory limits.`));
   card.appendChild(sheetOut);
   return card;
 }
 
 // Reverse card for the animated GIF / WebP viewers: on demand it builds a second
-// frame viewer playing the (already-decoded) frames backwards, and a reversed-GIF
-// download encoded from those frames. Mirrors the audio/video reverse controls.
-// `decoded` is the same object the forward viewer used; `opts` carries kindLabel
-// and (for WebP) the per-frame delaysMs.
-function buildReverseAnimationCard(file, decoded, resultsEl, signal, opts = {}) {
+// frame viewer playing the frames backwards (a lazy reversed view over the same
+// source), and a reversed-GIF download encoded from those frames. Mirrors the
+// audio/video reverse controls. `source` is the same lazy frame source the forward
+// viewer used; `opts` carries kindLabel.
+function buildReverseAnimationCard(file, source, resultsEl, signal, opts = {}) {
   const kindLabel = opts.kindLabel || 'animated GIF';
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Reverse'));
@@ -2653,20 +2665,28 @@ function buildReverseAnimationCard(file, decoded, resultsEl, signal, opts = {}) 
   btn.addEventListener('click', () => {
     btn.disabled = true;
     btn.textContent = 'Reversing…';
-    // Defer so the button repaints before the (synchronous) reverse + GIF encode.
-    setTimeout(() => {
+    // Defer so the button repaints before the reverse view + GIF encode.
+    setTimeout(async () => {
       try {
-        const fwdDelaysMs = opts.delaysMs ||
-          decoded.frames.map((f) => { const ms = f.delay * 10; return ms < 20 ? 100 : ms; });
-        const frames = decoded.frames.slice().reverse();
-        const delaysMs = fwdDelaysMs.slice().reverse();
-        const reversed = { ...decoded, frames, delaysMs };
-        out.appendChild(buildFrameViewerCard(file, reversed, resultsEl, signal,
-          { kindLabel: kindLabel + ' (reversed)', delaysMs }));
+        const n = source.count;
+        const delaysMs = source.delaysMs.slice().reverse();
+        // Lazy reversed view: its frame i maps to the source's frame n-1-i, so
+        // playing it forward plays the animation backwards with no extra retention.
+        const revSource = {
+          width: source.width, height: source.height, count: n,
+          loop: source.loop, anyTransparency: source.anyTransparency, delaysMs,
+          get: (i) => source.get(n - 1 - Math.max(0, Math.min(n - 1, i | 0))),
+          close() {},   // the underlying source is owned + closed by the forward card
+        };
+        out.appendChild(buildFrameViewerCard(file, revSource, resultsEl, signal,
+          { kindLabel: kindLabel + ' (reversed)' }));
 
+        // Encoding a reversed GIF needs every frame's pixels; pull them on demand.
+        const framesData = [];
+        for (let i = 0; i < n; i++) framesData.push(await source.get(n - 1 - i));
         const delaysCs = delaysMs.map((ms) => Math.max(2, Math.round(ms / 10)));
-        const blob = encodeAnimatedGif(decoded.width, decoded.height,
-          frames.map((f) => f.data), delaysCs, decoded.loop == null ? 0 : decoded.loop);
+        const blob = encodeAnimatedGif(source.width, source.height,
+          framesData, delaysCs, source.loop == null ? 0 : source.loop);
         const url = URL.createObjectURL(blob);
         if (signal) signal.addEventListener('abort', () => { try { URL.revokeObjectURL(url); } catch (_) {} });
         const base = (file.name || 'image').replace(/\.[^.]+$/, '');
@@ -3191,20 +3211,18 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // Only in the main photo section - skipped for inline cover-art renders.
   if (!inline && (fileExt(file.name) === 'gif' || file.type === 'image/gif') && file.size <= 200 * 1024 * 1024) {
     try {
-      const decoded = decodeGifFrames(await file.arrayBuffer(), ANIM_PIXEL_BUDGET);
-      if (decoded && decoded.frames.length > 1) {
-        resultsEl.appendChild(buildFrameViewerCard(file, decoded, resultsEl, renderSignal));
-        resultsEl.appendChild(buildReverseAnimationCard(file, decoded, resultsEl, renderSignal));
+      const source = decodeGifFrames(await file.arrayBuffer(), ANIM_PIXEL_BUDGET);
+      if (source && source.count > 1) {
+        resultsEl.appendChild(buildFrameViewerCard(file, source, resultsEl, renderSignal));
+        resultsEl.appendChild(buildReverseAnimationCard(file, source, resultsEl, renderSignal));
       }
     } catch (_) { /* malformed GIF - leave the normal photo view untouched */ }
   } else if (!inline && (fileExt(file.name) === 'webp' || file.type === 'image/webp')) {
     try {
-      const decoded = await decodeWebpFrames(file, ANIM_PIXEL_BUDGET);
-      if (decoded && decoded.frames.length > 1) {
-        resultsEl.appendChild(buildFrameViewerCard(file, decoded, resultsEl, renderSignal,
-          { kindLabel: 'animated WebP', delaysMs: decoded.delaysMs }));
-        resultsEl.appendChild(buildReverseAnimationCard(file, decoded, resultsEl, renderSignal,
-          { kindLabel: 'animated WebP', delaysMs: decoded.delaysMs }));
+      const source = await decodeWebpFrames(file, ANIM_PIXEL_BUDGET);
+      if (source && source.count > 1) {
+        resultsEl.appendChild(buildFrameViewerCard(file, source, resultsEl, renderSignal, { kindLabel: 'animated WebP' }));
+        resultsEl.appendChild(buildReverseAnimationCard(file, source, resultsEl, renderSignal, { kindLabel: 'animated WebP' }));
       }
     } catch (_) { /* not animated / no ImageDecoder - leave the normal photo view */ }
   } else if (!inline && (fileExt(file.name) === 'ico' || fileExt(file.name) === 'cur' ||
