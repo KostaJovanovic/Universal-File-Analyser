@@ -5,6 +5,7 @@
 import { el, row, rowHelp, fmtBytes, buildFileTree, isUnreadableError, cloudFileWarning, errorCard, integrityCard, loadScript, asciiBar } from '../core/util.js';
 import { normalizeArchive, renderBreakdownCards, renderViewToggle, categorizeExt } from './folder-archive-shared.js';
 import { ARCHIVE_EXTS } from '../core/formats.js';
+import { WALL_INDEX } from '../core/limits.js';
 import { extractArchive } from '../lib/libarchive-loader.js';
 import { gunzip } from '../core/binutil.js';
 import { xzDecompress } from '../lib/xz-loader.js';
@@ -340,8 +341,7 @@ export async function renderArchive(file, resultsEl, opts = {}) {
   // allocate several copies and crash the tab before any inspection. Above a
   // ceiling, decline rather than attempt the allocation. (In-browser ArrayBuffers
   // are impractical near this size anyway.)
-  const MAX_ARCHIVE_BYTES = 1_500_000_000;
-  if (file.size > MAX_ARCHIVE_BYTES) {
+  if (file.size > WALL_INDEX) {
     resultsEl.innerHTML = '';
     resultsEl.appendChild(errorCard(
       'This archive is ' + fmtBytes(file.size) + ' - too large to browse in the browser without exhausting memory. '
