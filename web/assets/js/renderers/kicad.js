@@ -22,6 +22,7 @@
 */
 
 import { el, row, h3help, fmtBytes, errorCard, inlineLoader, wheelZoomToggle } from '../core/util.js';
+import { buildViewer, fitBox, grow, safeBox } from './eda-viewer.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const svg = (tag, attrs) => {
@@ -160,130 +161,12 @@ const SCH = {
   ref: '#7a3600', val: '#125a4a', noconn: '#b01020', frame: '#2a3340', gfx: '#2c4a86',
 };
 
-// Round to a "nice" 1/2/5 x 10^n step so the grid reads like graph paper at any
-// document scale (mm board, tiny footprint, or schematic units).
-function niceStep(x) {
-  if (!(x > 0)) return 1;
-  const p = Math.pow(10, Math.floor(Math.log10(x))), f = x / p;
-  return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p;
-}
-// Graph-paper grid (minor + every-5th major) behind the geometry, emulating the
-// KiCad / Altium sheet. Drawn in document space (pans/zooms with the board) with
-// non-scaling strokes so the lines stay 1px crisp at any zoom.
-function addPaperGrid(parent, bbox) {
-  const w = bbox.maxx - bbox.minx, h = bbox.maxy - bbox.miny;
-  const span = Math.max(w, h);
-  if (!(span > 0) || !Number.isFinite(span)) return;
-  const step = niceStep(span / 28), pad = step * 2;
-  const x0 = Math.floor((bbox.minx - pad) / step) * step, x1 = Math.ceil((bbox.maxx + pad) / step) * step;
-  const y0 = Math.floor((bbox.miny - pad) / step) * step, y1 = Math.ceil((bbox.maxy + pad) / step) * step;
-  if ((x1 - x0) / step > 2000 || (y1 - y0) / step > 2000) return;   // safety cap
-  const g = svg('g', { class: 'anr-eda-grid' });
-  const line = (x1_, y1_, x2_, y2_, major) => svg('line', { x1: x1_, y1: y1_, x2: x2_, y2: y2_,
-    stroke: major ? 'rgba(36,50,80,0.26)' : 'rgba(36,50,80,0.12)', 'stroke-width': major ? 0.9 : 0.5, 'vector-effect': 'non-scaling-stroke' });
-  for (let x = x0, i = Math.round(x0 / step); x <= x1 + 1e-6; x += step, i++) g.appendChild(line(x, y0, x, y1, i % 5 === 0));
-  for (let y = y0, i = Math.round(y0 / step); y <= y1 + 1e-6; y += step, i++) g.appendChild(line(x0, y, x1, y, i % 5 === 0));
-  parent.insertBefore(g, parent.firstChild);
-}
-
-// ---- generic SVG viewer (pan / zoom / fit / layer toggles) -----------------
-function buildViewer(build, opts = {}) {
-  const wrap = el('div', { class: 'anr-altium-wrap' });
-  const s = svg('svg', { class: 'anr-altium-svg' });
-  const root = svg('g', {});
-  s.appendChild(root);
-  // Positioned stage around the SVG so the scroll-zoom toggle anchors to the
-  // drawing area's bottom-right, clear of the toolbar below.
-  const stage = el('div', { class: 'anr-wheelzoom-stage' });
-  stage.appendChild(s);
-  const wheelZoom = wheelZoomToggle();
-  stage.appendChild(wheelZoom.el);
-  wrap.appendChild(stage);
-
-  const bbox = build(root);
-  addPaperGrid(root, bbox);
-  const w = Math.max(bbox.maxx - bbox.minx, 0.001), h = Math.max(bbox.maxy - bbox.miny, 0.001);
-  const pad = Math.max(w, h) * 0.06 + 0.5;
-  const vb = { x: bbox.minx - pad, y: bbox.miny - pad, w: w + pad * 2, h: h + pad * 2 };
-  const home = { ...vb };
-  const apply = () => s.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
-  apply();
-
-  // The viewBox is letterboxed (xMidYMid meet) to keep aspect, so the screen->
-  // document scale is UNIFORM on both axes. Map the cursor / drag through that
-  // single scale (and its centring offset) rather than vb.w/width and vb.h/height
-  // separately, which made one axis pan at the wrong rate.
-  const screenToUser = (r) => {
-    const scale = Math.min(r.width / vb.w, r.height / vb.h);
-    return { scale, offX: (r.width - vb.w * scale) / 2, offY: (r.height - vb.h * scale) / 2 };
-  };
-  s.addEventListener('wheel', (e) => {
-    if (!wheelZoom.enabled()) return;   // let the wheel scroll the page instead
-    e.preventDefault();
-    const r = s.getBoundingClientRect();
-    const { scale, offX, offY } = screenToUser(r);
-    const mx = vb.x + (e.clientX - r.left - offX) / scale;
-    const my = vb.y + (e.clientY - r.top - offY) / scale;
-    const k = e.deltaY < 0 ? 0.85 : 1 / 0.85;
-    vb.x = mx - (mx - vb.x) * k; vb.y = my - (my - vb.y) * k;
-    vb.w *= k; vb.h *= k; apply();
-  }, { passive: false });
-
-  let drag = null;
-  s.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; s.setPointerCapture(e.pointerId); s.classList.add('is-grabbing'); });
-  s.addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    const { scale } = screenToUser(s.getBoundingClientRect());
-    vb.x -= (e.clientX - drag.x) / scale;
-    vb.y -= (e.clientY - drag.y) / scale;
-    drag = { x: e.clientX, y: e.clientY }; apply();
-  });
-  const endDrag = () => { drag = null; s.classList.remove('is-grabbing'); };
-  s.addEventListener('pointerup', endDrag);
-  s.addEventListener('pointerleave', endDrag);
-
-  const bar = el('div', { class: 'anr-altium-bar' });
-  const fit = el('button', { class: 'anr-btn', type: 'button' }, 'Fit');
-  fit.addEventListener('click', () => { Object.assign(vb, home); apply(); });
-  bar.appendChild(fit);
-
-  if (opts.layers && opts.layers.size) {
-    const ids = [...opts.layers.keys()].sort();
-    for (const id of ids) {
-      const color = opts.layers.get(id);
-      const chip = el('button', { class: 'anr-btn anr-altium-layer is-on', type: 'button', title: id });
-      chip.appendChild(el('span', { class: 'anr-altium-swatch', style: `background:${color};color:${color}` }));
-      chip.appendChild(document.createTextNode(id));
-      chip.addEventListener('click', () => {
-        const on = chip.classList.toggle('is-on');
-        root.querySelectorAll(`[data-layer="${cssEsc(id)}"]`).forEach((nn) => { nn.style.display = on ? '' : 'none'; });
-      });
-      bar.appendChild(chip);
-    }
-  }
-  wrap.appendChild(bar);
-
-  function centerOn(cx, cy, tw) {
-    if (tw && tw > 0) { const aspect = vb.h / vb.w; vb.w = tw; vb.h = tw * aspect; }
-    vb.x = cx - vb.w / 2; vb.y = cy - vb.h / 2; apply();
-  }
-  let flashNode = null, flashTimer = null;
-  function flash(cx, cy) {
-    if (flashNode) flashNode.remove();
-    const span = Math.max(vb.w, vb.h);
-    flashNode = svg('circle', { class: 'anr-altium-ping', cx, cy, r: span * 0.05, fill: 'none', stroke: '#e8480a', 'stroke-width': span * 0.014 });
-    root.appendChild(flashNode);
-    if (flashTimer) clearTimeout(flashTimer);
-    const node = flashNode;
-    flashTimer = setTimeout(() => { if (node) node.remove(); if (flashNode === node) flashNode = null; }, 1500);
-  }
-  return { wrap, centerOn, flash, home: { ...home } };
-}
-const cssEsc = (s) => String(s).replace(/["\\]/g, '\\$&');
-
-function fitBox() { return { minx: Infinity, miny: Infinity, maxx: -Infinity, maxy: -Infinity }; }
-function grow(b, x, y) { if (x < b.minx) b.minx = x; if (y < b.miny) b.miny = y; if (x > b.maxx) b.maxx = x; if (y > b.maxy) b.maxy = y; }
-function safeBox(b) { if (!Number.isFinite(b.minx)) return { minx: -50, miny: -50, maxx: 50, maxy: 50 }; if (b.minx === b.maxx) { b.minx -= 5; b.maxx += 5; } if (b.miny === b.maxy) { b.miny -= 5; b.maxy += 5; } return b; }
+// ---- SVG viewer + geometry helpers -----------------------------------------
+// The pan / zoom / fit / layer-toggle viewer and the fitBox/grow/safeBox box
+// helpers live in the shared eda-viewer.js (identical to Altium's). KiCad passes
+// its string-keyed layer->colour map to the viewer as the normalised
+// { id, name, color } chip array, and { padAdd: 0.5, clampDim: 0.001 } to keep
+// its tighter fit padding; safeBox is called with its 5/50 pads.
 
 // Rotate (dx,dy) by deg degrees clockwise in screen space (Y down).
 function rot(dx, dy, deg) {
@@ -556,8 +439,8 @@ function schView(parsed) {
     }
     // free text
     for (const tx of parsed.texts) { const t = svg('text', { x: tx.x, y: tx.y, 'font-size': 1.6, fill: SCH.text }); t.textContent = (tx.text || '').split('\n')[0]; g.appendChild(t); grow(b, tx.x, tx.y); }
-    return safeBox(b);
-  });
+    return safeBox(b, { degenPad: 5, fallback: 50 });
+  }, { padAdd: 0.5, clampDim: 0.001 });
 
   // designator -> sheet position, for project cross-probe.
   const at = new Map();
@@ -795,7 +678,7 @@ function boardOutline(prims) {
     pts.push(...stepPts(s, rev)); pt = rev ? s.a : s.b;
   }
   if (!eq(pt, start)) return null;              // didn't close - not a usable silhouette
-  return { pts, bbox: safeBox(bb) };
+  return { pts, bbox: safeBox(bb, { degenPad: 5, fallback: 50 }) };
 }
 
 // Paint a parsed board into an SVG <g> (shared by the flat viewer and the 3D
@@ -830,7 +713,7 @@ function paintBoard(g, pcb, opts = {}) {
   }
   for (const h of holes) drawHole(host, h);      // punch holes through all copper
   for (const t of labels) host.appendChild(t);   // pad numbers sit on top of the holes
-  const box = safeBox(b);
+  const box = safeBox(b, { degenPad: 5, fallback: 50 });
   if (opts.substrate && !opts.outline) {         // no Edge.Cuts: fall back to a rectangular board
     const r = svg('rect', { x: box.minx, y: box.miny, width: box.maxx - box.minx, height: box.maxy - box.miny, fill: '#f4f0e6', stroke: 'rgba(40,60,40,0.4)', 'stroke-width': 0.18 });
     g.insertBefore(r, g.firstChild);
@@ -850,10 +733,9 @@ function drawHole(g, h) {
 
 function pcbView(pcb) {
   // Build a layer->colour map for the toggle chips (only layers that drew).
-  const layerMap = new Map();
-  for (const ly of [...pcb.layersUsed].sort()) layerMap.set(ly, layerColor(ly));
+  const layers = [...pcb.layersUsed].sort().map((ly) => ({ id: ly, name: ly, color: layerColor(ly) }));
 
-  const v = buildViewer((g) => paintBoard(g, pcb), { layers: layerMap });
+  const v = buildViewer((g) => paintBoard(g, pcb), { layers, padAdd: 0.5, clampDim: 0.001 });
 
   const at = new Map();
   for (const fp of pcb.footprints) at.set(fp.ref.toUpperCase(), { x: fp.cx, y: fp.cy });
@@ -948,7 +830,7 @@ function buildBoard3D(pcb, opts = {}) {
     const ob = (f.outline && f.outline.bbox) || f.bb;
     grow(b, ob.minx, ob.miny); grow(b, ob.maxx, ob.maxy);
   }
-  safeBox(b);
+  safeBox(b, { degenPad: 5, fallback: 50 });
   const w = b.maxx - b.minx, h = b.maxy - b.miny, pad = Math.max(w, h) * 0.03 + 1;
   const V = { x: b.minx - pad, y: b.miny - pad, w: w + pad * 2, h: h + pad * 2 };
   const vbStr = `${V.x} ${V.y} ${V.w} ${V.h}`;
