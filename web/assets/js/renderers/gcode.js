@@ -22,15 +22,16 @@
    height or feedrate, and a build-height scrubber. No external 3D library. */
 
 import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube, downloadBlob } from '../core/util.js';
+import { byTier } from '../core/limits.js';
 
 // Rendered-segment caps, scaled to the device's RAM so arc-heavy / multi-day prints
 // (millions of tessellated segments) fill in on a capable desktop without OOM-crashing
-// low-memory or mobile devices. navigator.deviceMemory is GB, browser-clamped to 8 at the
-// top and 0.25 at the bottom; absent (Safari/Firefox don't expose it) -> assume mid-range.
-// Each extrusion segment costs ~40B (CPU) + ~44B (instance) + ~44B (GPU), so 6M ~= 0.8GB.
-const DEVICE_GB = (typeof navigator !== 'undefined' && navigator.deviceMemory) || 4;
-const SEG_CAP = DEVICE_GB >= 8 ? 6000000 : DEVICE_GB >= 4 ? 3000000 : 1300000;
-const TRAVEL_CAP = DEVICE_GB >= 8 ? 2000000 : DEVICE_GB >= 4 ? 1000000 : 400000;
+// low-memory or mobile devices. The shared high/mid/low device tier (core/limits.js)
+// mirrors the former deviceMemory>=8 / >=4 / else buckets exactly (absent deviceMemory
+// on Safari/Firefox -> mid, as before). Each extrusion segment costs ~40B (CPU) + ~44B
+// (instance) + ~44B (GPU), so 6M ~= 0.8GB.
+const SEG_CAP = byTier({ high: 6000000, mid: 3000000, low: 1300000 });
+const TRAVEL_CAP = byTier({ high: 2000000, mid: 1000000, low: 400000 });
 const ARC_TOL = 0.02;             // arc chord tolerance (mm)
 const ARC_MIN_STEPS = 2, ARC_MAX_STEPS = 256;
 const DEF_DIA = 1.75;             // default filament diameter (mm)
