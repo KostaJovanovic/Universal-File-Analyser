@@ -21,7 +21,7 @@ import { diagnoseImage, repairJpeg, repairPng, decodePngPartial, extractJpegTabl
 import { createCarveGallery } from './carve-gallery.js';
 import { decodeJpegPartial } from './jpeg-salvage.js';
 import { attachImageScrub } from './scrub.js';
-import { buildC2paCard } from './c2pa.js';
+import { buildC2paCard, readC2pa } from './c2pa.js';
 import { buildAiSignalsCard } from './ai-signals.js';
 
 // ---------- Browser-undecodable images ----------
@@ -3249,18 +3249,18 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     resultsEl.appendChild(el('div', { class: 'anr-info' }, 'No EXIF / IPTC / XMP / ICC metadata found.'));
   }
 
-  // ---- Content Credentials (C2PA) ----
+  // ---- Content Credentials (C2PA) + AI-generation signals ----
+  // Both cards read the C2PA manifest; parse it once here and share it so the
+  // file isn't read (and the JUMBF/CBOR manifest parsed) twice.
   if (!inline) {
+    const c2paManifests = await readC2pa(file).catch(() => null);
     try {
-      const c2paCard = await buildC2paCard(file);
+      const c2paCard = await buildC2paCard(file, c2paManifests);
       if (c2paCard && !renderSignal.aborted) resultsEl.appendChild(c2paCard);
     } catch (_) { /* no C2PA / unparsable - show nothing */ }
-  }
 
-  // ---- AI-generation signals ----
-  if (!inline) {
     try {
-      const aiCard = await buildAiSignalsCard(file, exif);
+      const aiCard = await buildAiSignalsCard(file, exif, c2paManifests);
       if (aiCard && !renderSignal.aborted) resultsEl.appendChild(aiCard);
     } catch (_) { /* no AI indicators - show nothing */ }
   }

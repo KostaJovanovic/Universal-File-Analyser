@@ -94,7 +94,7 @@ function extractXmp(b) {
 }
 
 // ---------- collect all signals ----------
-export async function collectAiSignals(file, exif) {
+export async function collectAiSignals(file, exif, preManifests) {
   const b = new Uint8Array(await file.arrayBuffer());
   const signals = [];
 
@@ -139,7 +139,7 @@ export async function collectAiSignals(file, exif) {
 
   // 4) Cross-reference C2PA Content Credentials (corroboration only).
   try {
-    const manifests = await readC2pa(file);
+    const manifests = preManifests !== undefined ? preManifests : await readC2pa(file);
     for (const m of manifests || []) {
       if (m.ai && m.ai.length) pushUnique(signals, { label: 'Content Credentials declare an AI source', detail: 'see the C2PA card above', strong: true, c2pa: true });
       else if (m.generator && AI_TOOLS.test(m.generator)) pushUnique(signals, { label: 'Content Credentials generator is an AI tool', detail: m.generator, strong: true, c2pa: true });
@@ -152,9 +152,9 @@ export async function collectAiSignals(file, exif) {
 // ---------- card ----------
 const AI_HELP = 'These are indicators found in the file that are associated with AI image generators - editor/tool names in the metadata, the standard IPTC "AI-generated" marker, or the parameter blocks tools like Stable Diffusion embed. They are signals, not a verdict: metadata can be stripped (so a real AI image may show nothing here) or added by hand (so a match is not proof). Everything is read on your device.';
 
-export async function buildAiSignalsCard(file, exif) {
+export async function buildAiSignalsCard(file, exif, manifests) {
   let signals;
-  try { signals = await collectAiSignals(file, exif); } catch (_) { return null; }
+  try { signals = await collectAiSignals(file, exif, manifests); } catch (_) { return null; }
   if (!signals || !signals.length) return null;
 
   const card = el('div', { class: 'anr-card' });

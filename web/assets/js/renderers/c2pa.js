@@ -314,9 +314,13 @@ export async function readC2pa(file) {
 // ---------- card UI ----------
 const C2PA_HELP = 'Content Credentials (C2PA) is a provenance record some cameras and editing/AI tools embed: who or what created the image and how it was edited, sealed with a digital signature. This panel DECODES that record but does not cryptographically verify the signature, so treat it as what the file claims about itself - useful context, not proof. The data is read entirely on your device.';
 
-export async function buildC2paCard(file) {
-  let manifests;
-  try { manifests = await readC2pa(file); } catch (_) { return null; }
+// `manifests` is optional: pass an already-parsed readC2pa() result to avoid
+// re-reading and re-parsing the file (photo.js shares one read across this card
+// and the AI-signals card). Omit it and the card reads the file itself.
+export async function buildC2paCard(file, manifests) {
+  if (manifests === undefined) {
+    try { manifests = await readC2pa(file); } catch (_) { return null; }
+  }
   if (!manifests || !manifests.length) return null;
 
   const card = el('div', { class: 'anr-card' });
