@@ -57,6 +57,43 @@ entirely until first use. Once fetched, a module is served from the browser
 cache (or the service worker's precache) on subsequent uses, including
 offline.
 
+## Resource limits (device tiers)
+
+Every memory/size cap in the app is centralised in
+[`core/limits.js`](../web/assets/js/core/limits.js) rather than scattered as
+magic numbers across renderers. A single RAM-based device tier scales the caps
+that should grow with available memory:
+
+- `deviceTier()` returns `high` / `mid` / `low` from `navigator.deviceMemory`
+  (browser-clamped to 8, so 8 GB and up all read as `high`; absent on
+  Safari/Firefox, which fall to `mid`). `byTier({ high, mid, low })` picks a
+  value for the current tier. Both are memoised.
+- `isLowMemoryDevice()` (coarse pointer && `deviceTier() !== 'high'`) is the
+  separate phone/tablet OOM gate; it is re-exported from `util.js` for existing
+  callers. Tiering is deliberately RAM-only - phones are handled by this gate,
+  not by `byTier`.
+
+The caps are grouped by kind:
+
+- **Hard walls** (`WALL_INDEX`, `WALL_PARSE`) - a file over the wall is declined
+  outright with an error card. Tier-scaled.
+- **Mobile OOM guards** (`MOBILE_WALL`) - applied only when
+  `isLowMemoryDevice()`; unified down to the tightest former value so a phone is
+  never asked to decode more than before.
+- **Decompression ceilings** (`DECOMP_OUTPUT_MAX`, `DECOMP_DICT_MAX`,
+  `DECOMP_ENTRY_MAX`) - bomb protection against attacker-controlled expansion.
+  **Flat, never tiered.**
+- **Scan windows** (`SCAN_SMALL`/`MED`/`LARGE`/`XL`) - how many leading bytes a
+  first-N-byte text/entropy/carve scan reads.
+- **Animation** (`ANIM_PIXEL_BUDGET`) - total decoded-RGBA budget for animated
+  GIF/WebP (frame-count cap on the eager path; retained cache-window size on a
+  lazy frame-source). Tier-scaled.
+- **Preview/enumeration caps** (`ROW_PREVIEW`, `LIST_ENTRIES_MAX`,
+  `PREVIEW_EDGE`, `CONVERT_TIMEOUT_MS`).
+
+`limits.js` is a statically-imported `core/*.js` module, so it is listed in
+`sw.js` `SHELL` for offline precache like every other core module.
+
 ## PWA / service worker
 
 `web/sw.js` implements a cache-first service worker. `SHELL` is a large,
