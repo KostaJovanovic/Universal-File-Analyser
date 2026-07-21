@@ -17,14 +17,11 @@ import { renderHandleTree } from './archive.js';
 import { carveImages, repairJpeg, ensureJpegHuffman } from './photo-recover.js';
 import { detectCorruptCut } from './jpeg-salvage.js';
 import { salvageFullCanvas, emptyFraction } from './carve-gallery.js';
+import { WALL_INDEX } from '../core/limits.js';
 import {
   looksLikeFatBoot, parseFatVolume, parseMbr, otherFsLabel, readFileBytes,
   FAT_PART_TYPES, PART_TYPE_NAMES, MAX_ENTRIES,
 } from './diskimage-fat.js';
-
-// Mirrors renderArchive's ceiling: above this an in-browser ArrayBuffer is
-// impractical, so decline rather than crash the tab trying to allocate it.
-const MAX_IMAGE_BYTES = 1_500_000_000;
 
 // A FAT filesystem's bookkeeping - boot sector, FAT tables, directory entries -
 // lives at the front of the volume, so the whole file tree can usually be built
@@ -60,7 +57,7 @@ export async function renderDiskImage(file, resultsEl, opts = {}) {
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading disk image "${file.name}"…`));
 
-  if (file.size > MAX_IMAGE_BYTES) {
+  if (file.size > WALL_INDEX) {
     resultsEl.innerHTML = '';
     resultsEl.appendChild(errorCard(
       'This disk image is ' + fmtBytes(file.size) + ' - too large to open in the browser without exhausting memory. The file was not read.'));

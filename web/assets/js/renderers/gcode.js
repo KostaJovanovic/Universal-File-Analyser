@@ -22,7 +22,7 @@
    height or feedrate, and a build-height scrubber. No external 3D library. */
 
 import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube, downloadBlob } from '../core/util.js';
-import { byTier } from '../core/limits.js';
+import { byTier, WALL_PARSE } from '../core/limits.js';
 
 // Rendered-segment caps, scaled to the device's RAM so arc-heavy / multi-day prints
 // (millions of tessellated segments) fill in on a capable desktop without OOM-crashing
@@ -1869,8 +1869,7 @@ export async function renderGcode(file, resultsEl, opts) {
   // The whole file is read into a JS string and parsed synchronously on the main
   // thread; an adversarial multi-GB text would exhaust memory / freeze the tab
   // before the segment cap ever applies. Decline above a generous ceiling.
-  const MAX_GCODE_BYTES = 600_000_000;
-  if (file.size > MAX_GCODE_BYTES) {
+  if (file.size > WALL_PARSE) {
     resultsEl.innerHTML = '';
     resultsEl.appendChild(errorCard('This G-code file is ' + fmtBytes(file.size) + ' - too large to reconstruct in the browser. The file was not opened.'));
     return;
