@@ -17,9 +17,10 @@
    GameObjects - effectively a lightweight scene inspector. Everything is read
    on-device; nothing is uploaded. */
 
+import { SCAN_MED } from '../core/limits.js';
 import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 
-const MAX_BYTES = 48 * 1024 * 1024;
+const MAX_BYTES = SCAN_MED;
 const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
 
 // Split a Unity-YAML text into its object documents.

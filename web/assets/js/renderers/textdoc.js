@@ -16,6 +16,7 @@
 
 import { el, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '../core/util.js';
 import { buildOsintCard } from '../core/osint.js';
+import { SCAN_LARGE } from '../core/limits.js';
 import { openZip } from './zip.js';
 import { paginateText, paginateFlow, pagedPreviewCard, pagedTextCard } from './paged.js';
 
@@ -209,7 +210,7 @@ export async function renderTextDoc(file, container, kind, ext) {
     } else if (kind === 'mhtml') {
       // Cap the slice read: an adversarial multi-hundred-MB .mht would otherwise
       // be buffered whole and then regex-scanned on the main thread.
-      const MHTML_CAP = 150_000_000;
+      const MHTML_CAP = SCAN_LARGE;
       const raw = await (file.size > MHTML_CAP ? file.slice(0, MHTML_CAP) : file).text();
       const html = extractMhtmlHtml(raw);
       if (html == null) { container.innerHTML = ''; container.appendChild(errorCard('Could not find an HTML part in this MHTML archive.')); return; }

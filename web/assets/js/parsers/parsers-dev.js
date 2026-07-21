@@ -8,6 +8,7 @@
 
 import { el, row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, findBytes } from '../core/binutil.js';
+import { SCAN_SMALL } from '../core/limits.js';
 import { parsePlist } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
 
@@ -280,7 +281,7 @@ async function parseSourceMap(file) {
 
 // ---------- SQL dump ----------
 async function parseSql(file) {
-  const LIMIT = 5_000_000;
+  const LIMIT = SCAN_SMALL;
   const text = await readText(file, LIMIT);
   const truncated = file.size > LIMIT;
   const creates = (text.match(/CREATE\s+TABLE/gi) || []).length;
