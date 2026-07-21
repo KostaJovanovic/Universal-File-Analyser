@@ -3,6 +3,7 @@
 Playback, container/codec analysis, frame-level tools, scene detection,
 truncated/unfinalised recording recovery, AVI handling, and reversed
 playback. Source: `video.js`, `video-avi.js`, `video-recover.js`,
+`video-forensics.js`, `video-telemetry.js`, `sony-rtmd.js`,
 `web/assets/js/core/video-sync.js`.
 
 ### Playback and container/codec info
@@ -16,6 +17,79 @@ container/codec, resolution, frame rate, and bitrate.
 **Notes / limits.** Frame rate is parsed from MP4 container metadata with
 an FFmpeg fallback for containers the browser can't introspect natively
 (per the repo root `README.md`).
+
+### Advanced: container structure and stream forensics
+
+**What it does.** For MP4/MOV/M4V/3GP files, reads the ISOBMFF box layout
+directly - no decoding - and surfaces four collapsible panels in an
+**Advanced** card:
+
+- **Box tree** - the recursive atom tree (4CC, size, byte offset, one-line
+  gloss); container boxes expand.
+- **Tracks** - every track, not just the first video and audio: handler,
+  codec, language, duration, sample count, multi-segment edit lists, `tmcd`
+  start-timecode (with drop-frame flag), and timed-metadata streams (GoPro
+  `gpmd`, CAMM, Sony `rtmd`, Apple `mebx`).
+- **Provenance tells** - structural signs of how the file was made:
+  faststart (moov vs mdat order), ftyp major + compatible brands,
+  multi-segment edit lists, free/skip padding, multiple `mdat` boxes,
+  fragmentation (`moof`), and trailing data.
+- **Frames & bitrate** - GOP/keyframe interval, VFR-vs-CFR verdict and true
+  average frame rate, keyframe-vs-inter frame sizes, and a per-second video
+  bitrate graph - all from the sample tables (`stsz`/`stss`/`stts`/`stco`),
+  with no frames decoded.
+- **Bitstream & authenticity** - a deep parse of the actual H.264/H.265
+  stream, not just the container: the codec's own **SPS** (profile/level,
+  coded size, chroma, bit depth, progressive/interlaced, VUI colour + frame
+  rate); a **stream-vs-container consistency verdict** that flags a re-encode
+  or colour re-tag when the two disagree; the **x264/x265 encoder
+  fingerprint** carved from the first frame's unregistered SEI (exact build +
+  encode settings); **HDR** mastering-display (`mdcv`) and content-light
+  (`clli`) values plus Dolby Vision config; and detection of a **C2PA /
+  Content Credentials** manifest. Built on `analyzeBitstream()`.
+
+**How to reach it.** Automatic for any MP4/MOV-family file. The parser is
+`analyzeMp4Structure()` in `video-forensics.js` (UI-free, best-effort,
+returns nothing for non-ISOBMFF input); `video.js` builds the card. Each
+panel is collapsed by default.
+
+**Notes / limits.** The `moov` is read whole (capped) so a huge file never
+loads into memory; `mdat` is never read for structure (only a 4-byte
+timecode sample). Single identity edit lists - standard in most MP4s - are
+deliberately not flagged as edits.
+
+### Telemetry (GoPro / CAMM / container GPS)
+
+**What it does.** Reads the timed-metadata track that action cameras and
+phones record alongside the picture, and shows GPS position/speed plus
+inertial (gyroscope + accelerometer) motion:
+
+- **GoPro GPMF** (`gpmd` track) - KLV-walks the payloads for GPS5/GPS9
+  (lat/lon/altitude/speed), ACCL/GYRO (with SCAL divisors applied),
+  per-frame exposure (ISO / shutter / white balance), and TMPC temperature
+  / GPSF fix. It also lists every stream the camera logged by its own
+  `STNM` name (camera orientation, gravity, scene classification, face
+  detection, luminance, ...), so a clip with **no GPS lock** still shows its
+  full telemetry inventory rather than looking empty.
+- **CAMM** (`camm` track) - the little-endian packet format written by
+  Android phones, Insta360 and some drones (gyro, accelerometer, GPS).
+- **Container GPS** - a single ISO-6709 point from QuickTime `©xyz` or the
+  Apple `com.apple.quicktime.location.ISO6709` key, shown only when the
+  other sources and the EXIF GPS card are absent.
+
+The GPS track is drawn on a **local canvas** (start green, end red) - no map
+tiles are fetched, so the coordinates never leave the device - with an
+opt-in "open in OpenStreetMap" link. The gyro/accelerometer traces reuse
+the Sony gyro timeline (zoomable, synced to the player). This sits beside
+the Sony `rtmd` gyro card as a peer telemetry feature.
+
+**How to reach it.** Automatic for any MP4/MOV carrying a GoPro/CAMM/©xyz
+track. Built in `video-telemetry.js` (`appendTelemetryCards()`), reusing
+`sony-rtmd.js`'s `buildImuTimeline`.
+
+**Notes / limits.** Best-effort and browser-only; reads via byte-range
+slices (chunk-grouped, capped) so a long clip never buffers whole. Distance
+is the great-circle sum along the fixes; speed is the GPS velocity field.
 
 ### Frame capture and analysis
 
@@ -123,6 +197,30 @@ btn: Run again (current part)
 **How to use it.** Click any result thumbnail or timeline marker to jump
 the player there.
 
+### Content timeline (movie barcode + brightness)
+
+**What it does.** Reuses the same frame sampling as scene detection (no
+extra scrubbing) to build three reads of the video's visual content: a
+**movie barcode** that compresses each sampled frame to a single
+average-colour column for a colour-over-time fingerprint of the whole clip;
+a **brightness curve** plotting mean luma (Rec. 709) over time; and flags
+for **near-black frames** (fades, cuts, leader/trailer black) and
+**freeze/still segments** (frozen frames, held title cards, static shots).
+The readout summarises mean/range brightness, the darkest sample, and the
+black and freeze stretches.
+
+**How to reach it.** Appears just under **Scene changes** whenever scene
+detection runs (automatically for smaller videos, or after you trigger it
+manually for large ones). Click anywhere on the barcode to jump the player
+to that point. Built in `video.js` (`buildContentTimelineCard`).
+
+**Note.** Freeze detection is only as fine as the sampling interval, so it
+catches stretches longer than that, not single dropped frames. On an
+unsupported codec that was converted to an H.264 proxy for playback, the
+barcode and brightness read the decoded proxy frames (the only ones that
+can be decoded), while all container/metadata analysis stays on the
+original file.
+
 ### Segmented playback
 
 **What it does.** For very large or specially-loaded videos, plays through
@@ -188,17 +286,32 @@ harness.
 ### Undecodable codec conversion
 
 **What it does.** Re-encodes a video whose codec the browser can't decode
-into H.264/MP4 via FFmpeg so it can be played and analysed in full.
+into H.264/MP4 via FFmpeg so it can be played and analysed in full. By
+default it makes a **fast proxy** - downscaled to a 720p box, **Fastest**
+(`ultrafast`) speed, capped at 30 fps - because encode time scales with pixels x frames,
+so this is several times faster than a full-resolution re-encode (a big win
+for 4K/2.7K GoPro-style HEVC). **Turbo** is faster than libx264's own
+fastest preset: `ultrafast` is already the encoder floor, so the extra speed
+comes from the decode side - `-skip_loop_filter all` drops the in-loop
+deblocking filter while decoding the (expensive) HEVC source, plus
+`-tune zerolatency` on the encoder. Slightly blockier, no frames dropped.
 
 **How to reach it.** Click **Convert to H.264 and play**, shown when
-playback fails on an unsupported codec. Built in `video.js`.
+playback fails on an unsupported codec. The **Advanced** button reveals
+resolution / frame-rate / speed controls to override the proxy defaults
+(e.g. Full resolution, Original frame rate, or a slower/cleaner preset).
+Built in `video.js` (`ffmpegTranscodeToH264`, `opts = {maxHeight, maxFps,
+preset}`).
 
 ```demo
 btn: Convert to H.264 and play
+btn: Advanced
 ```
 
-**Notes / limits.** Lossy re-encode; can take a while for long or
-high-resolution clips.
+**Notes / limits.** Lossy re-encode, single-threaded in-browser FFmpeg. The
+scale filter caps height without ever upscaling and forces even dimensions
+for yuv420p. Long clips or Full-resolution / slower-preset settings still
+take a while.
 
 ### First-frame extraction (no native preview)
 

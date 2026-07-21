@@ -67,6 +67,36 @@
     .tst-fixwrap .anr-share-nudge,
     .tst-fixwrap .anr-drop-loader { position: static; transform: none; }
     .tst-fixwrap { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; margin: 10px 0; }
+    /* ---- Interactive layer (behaviour wired by the page script at the foot) ----
+       The sheet is live: every demo responds so you can feel the real component.
+       All additive, all on-language - no rounded corners, tokens throughout. */
+    .tst-live-note { border: var(--bd-hairline); border-left: 3px solid var(--accent); background: var(--surface); padding: 10px 14px; margin: 14px 0 0; font-size: var(--t-small); }
+    .tst-live-note kbd { font-family: var(--font-mono); font-size: var(--t-micro); border: var(--bd-hairline); background: var(--bg); padding: 1px 5px; }
+    /* Click-to-copy affordance on every token / value / swatch. */
+    .test-page code, .test-page pre.anr-code, .tst-swatch-chip { cursor: copy; }
+    .test-page code:hover { color: var(--accent); }
+    .tst-swatch-chip:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .tst-copied { outline: 2px solid var(--accent); outline-offset: 1px; }
+    /* Copy toast - inverted ink fill, the same move the buttons make on hover. */
+    .tst-toast { position: fixed; left: 50%; bottom: 24px; z-index: 9999; background: var(--fg); color: var(--bg); font-family: var(--font-mono); font-size: var(--t-tiny); text-transform: uppercase; letter-spacing: var(--ls-caps); padding: 8px 14px; border: 1px solid var(--fg); opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(8px); transition: opacity var(--dur-base) ease, transform var(--dur-base) ease; }
+    .tst-toast.is-on { opacity: 1; transform: translateX(-50%) translateY(0); }
+    /* Animation playground control bar (injected before the grid). */
+    .tst-anim-ctl { margin: 0 0 12px; }
+    .tst-anim-box { cursor: pointer; }
+    /* Scroll-spy: the current section's TOC chip fills with the accent. */
+    .tst-toc a.is-current { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+    /* View cube: grab to orbit; it idle-spins until you touch it. */
+    .test-page .anr-viewcube { cursor: grab; }
+    .test-page .anr-viewcube.is-dragging { cursor: grabbing; }
+    /* Overlay controls row (Grid / Inspect / Shortcuts). */
+    .tst-overlays { margin: 14px 0 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .tst-overlays .tst-sub { margin: 0; }
+    /* Inspect mode (press I): a following label names the component under the
+       pointer; the element gets an accent outline; click copies the class. */
+    body.tst-inspect-on, body.tst-inspect-on * { cursor: crosshair !important; }
+    .tst-inspect-label { position: fixed; z-index: 10001; pointer-events: none; display: none; font-family: var(--font-mono); font-size: var(--t-micro); background: var(--fg); color: var(--bg); padding: 2px 6px; border: 1px solid var(--fg); white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; }
+    body.tst-inspect-on .tst-inspect-label { display: block; }
+    .tst-inspect-hit { outline: 2px solid var(--accent) !important; outline-offset: 1px; }
   </style>
 </head>
 <body>
@@ -121,6 +151,14 @@
           <a href="#viewer">Viewer chrome</a>
           <a href="#footer">Footer</a>
         </nav>
+        <p class="tst-live-note">This sheet is live. Click any token, value or swatch to copy it. The buttons, tabs, chips, sliders and toggles all work - poke them. Drag the view cube to orbit it, scrub the video timecode with the frame buttons, play the real modals and popups in place, and slow the animations down to inspect the curve. Shortcuts: <kbd>T</kbd> theme &middot; <kbd>I</kbd> inspect &middot; <kbd>?</kbd> help.</p>
+        <div class="tst-overlays">
+          <span class="tst-sub">Overlays</span>
+          <div class="anr-btn-row">
+            <button type="button" class="anr-btn" id="tstInspect" aria-pressed="false">Inspect</button>
+            <button type="button" class="anr-btn" id="tstHelp">Shortcuts</button>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -390,9 +428,28 @@
             </table>
           </div>
 
-          <div class="tst-sub">.anr-card.anr-sig-flag - the accent-bordered flag treatment (signature mismatch, trailing data, mesh integrity) with an .anr-sig-flag-note prose line</div>
+          <div class="tst-sub">.anr-card.anr-sig-flag - the accent-bordered flag treatment (signature mismatch, trailing data) with an .anr-sig-flag-note prose line</div>
           <div class="anr-card anr-sig-flag">
-            <h3>Mesh integrity</h3>
+            <h3>Signature mismatch</h3>
+            <table class="anr-readout">
+              <tr><th>Claimed type</th><td>PNG image (.png)</td></tr>
+              <tr><th>Actual bytes</th><td>JPEG image</td></tr>
+            </table>
+            <p class="anr-sig-flag-note">This file is named .png but its bytes are a JPEG. A renamed or disguised file can be harmless, but it is worth knowing what it actually is.</p>
+          </div>
+
+          <div class="tst-sub">.anr-card.anr-mesh-card - a native 3D readout whose heading carries an .anr-mesh-verdict badge: neutral .is-ok for a clean solid, accent .is-flag when faults are found</div>
+          <div class="anr-card anr-mesh-card">
+            <h3>Mesh integrity <span class="anr-mesh-verdict is-ok">Watertight</span></h3>
+            <table class="anr-readout">
+              <tr><th>Watertight</th><td>Yes</td></tr>
+              <tr><th>Manifold</th><td>Yes</td></tr>
+              <tr><th>Euler characteristic</th><td>2</td></tr>
+            </table>
+            <p class="anr-sig-flag-note">This mesh is watertight and manifold - a fully closed, consistently wound solid with no detected topological errors, so its reported volume is reliable.</p>
+          </div>
+          <div class="anr-card anr-mesh-card">
+            <h3>Mesh integrity <span class="anr-mesh-verdict is-flag">Faults found</span></h3>
             <table class="anr-readout">
               <tr><th>Watertight</th><td>No</td></tr>
               <tr><th>Manifold</th><td>No</td></tr>
@@ -797,6 +854,358 @@
       paint();
     });
     paint();
+    btn.title = 'Toggle theme (press T)';
+  })();
+
+  // Interactive layer: the sheet documents live components, so make the demos
+  // behave like the real thing. Everything here is additive and page-local -
+  // no app.js, no state that leaves the page. Guarded on .test-page.
+  (function () {
+    var page = document.querySelector('.test-page');
+    if (!page) return;
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    /* ---------- Click-to-copy + toast ---------- */
+    var toast = document.createElement('div');
+    toast.className = 'tst-toast';
+    toast.setAttribute('role', 'status');
+    document.body.appendChild(toast);
+    var toastTimer;
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('is-on');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.classList.remove('is-on'); }, 1400);
+    }
+    function fallbackCopy(text) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.focus(); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+      } catch (e) {}
+    }
+    function copy(text, el) {
+      var done = function () {
+        showToast('Copied ' + text);
+        if (el) { el.classList.add('tst-copied'); setTimeout(function () { el.classList.remove('tst-copied'); }, 500); }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); });
+      } else { fallbackCopy(text); done(); }
+    }
+    page.addEventListener('click', function (e) {
+      var codeEl = e.target.closest('code, pre.anr-code');
+      if (codeEl && page.contains(codeEl)) { copy(codeEl.textContent.trim(), codeEl); return; }
+      var chip = e.target.closest('.tst-swatch-chip');
+      if (chip) {
+        var name = chip.closest('.tst-swatch') && chip.closest('.tst-swatch').querySelector('.tst-swatch-name');
+        if (name) copy(name.textContent.trim(), chip);
+      }
+    });
+
+    /* ---------- Live demo controls ---------- */
+    // Radio-style groups: exactly one active member within the container.
+    var RADIO = [
+      ['.anr-control-group-items', '.anr-btn', 'is-active'],
+      ['.anr-xlsx-tabs', '.anr-xlsx-tab', 'is-active'],
+      ['.anr-altium-tabs', '.anr-altium-tab', 'is-on'],
+      ['.anr-aa-panel', '.anr-aa-btn', 'is-on']
+    ];
+    page.addEventListener('click', function (e) {
+      // Radio groups.
+      for (var i = 0; i < RADIO.length; i++) {
+        var container = e.target.closest(RADIO[i][0]);
+        if (!container) continue;
+        var btn = e.target.closest(RADIO[i][1]);
+        if (!btn || btn.disabled) return;
+        container.querySelectorAll(RADIO[i][1]).forEach(function (b) { b.classList.remove(RADIO[i][2]); });
+        btn.classList.add(RADIO[i][2]);
+        return;
+      }
+      // Clip settings: radio when the row is captioned, multi-toggle when not.
+      var opts = e.target.closest('.anr-clip-opts');
+      if (opts) {
+        var co = e.target.closest('.anr-clip-opt');
+        if (!co || co.disabled) return;
+        var row = opts.closest('.anr-clip-row');
+        if (row && row.querySelector('.anr-clip-lab')) {
+          opts.querySelectorAll('.anr-clip-opt').forEach(function (b) { b.classList.remove('is-active'); });
+          co.classList.add('is-active');
+        } else { co.classList.toggle('is-active'); }
+        return;
+      }
+      // Independent toggles.
+      var layer = e.target.closest('.anr-altium-layer');
+      if (layer) { layer.classList.toggle('is-on'); return; }
+      var tool = e.target.closest('.anr-gcode-toolchip');
+      if (tool) { var toff = tool.classList.toggle('is-off'); tool.setAttribute('aria-pressed', String(!toff)); return; }
+      var wz = e.target.closest('.anr-wheelzoom');
+      if (wz) { var woff = wz.classList.toggle('is-off'); wz.setAttribute('aria-pressed', String(!woff)); wz.textContent = woff ? 'Scroll zoom off' : 'Scroll zoom on'; return; }
+      var cz = e.target.closest('.anr-cam-zoombtn');
+      if (cz) { var on = cz.getAttribute('aria-pressed') === 'true'; cz.setAttribute('aria-pressed', String(!on)); cz.textContent = on ? 'Scroll zoom off' : 'Scroll zoom on'; return; }
+    });
+
+    /* ---------- Live sliders ---------- */
+    var gcodeRange = page.querySelector('.anr-gcode-slider .anr-range');
+    if (gcodeRange) {
+      var gcodeOut = page.querySelector('.anr-gcode-slider-val');
+      var setMm = function () { if (gcodeOut) gcodeOut.textContent = (gcodeRange.value * 0.0177).toFixed(1) + ' mm'; };
+      gcodeRange.addEventListener('input', setMm); setMm();
+    }
+    page.querySelectorAll('.anr-control input[type=range]').forEach(function (r) {
+      var out = r.parentNode.querySelector('.anr-range-readout');
+      if (out) r.addEventListener('input', function () { out.textContent = r.value; });
+    });
+
+    /* ---------- Video timecode scrubbing ---------- */
+    var tc = page.querySelector('.anr-timecode-value');
+    var grid = page.querySelector('.anr-frame-grid');
+    if (tc && grid) {
+      var fps = 25;
+      var p = tc.textContent.trim().split(':').map(Number);
+      var frame = ((p[0] * 3600 + p[1] * 60 + p[2]) * fps) + p[3];
+      var pad = function (n) { return String(n).padStart(2, '0'); };
+      var renderTc = function () {
+        var ff = frame % fps, s = Math.floor(frame / fps);
+        tc.textContent = [pad(Math.floor(s / 3600)), pad(Math.floor(s / 60) % 60), pad(s % 60), pad(ff)].join(':');
+      };
+      grid.querySelectorAll('.anr-btn').forEach(function (b) {
+        var t = b.textContent.toLowerCase();
+        if (t.indexOf('prev') >= 0) b.addEventListener('click', function () { frame = Math.max(0, frame - 1); renderTc(); });
+        else if (t.indexOf('next') >= 0) b.addEventListener('click', function () { frame++; renderTc(); });
+      });
+    }
+
+    /* ---------- Animation playground ---------- */
+    var animGrid = page.querySelector('.tst-anim-grid');
+    if (animGrid) {
+      var boxes = Array.prototype.slice.call(animGrid.querySelectorAll('.tst-anim-box'));
+      var base = boxes.map(function (b) { return parseFloat(b.style.animationDuration) || 1.8; });
+      var bar = document.createElement('div');
+      bar.className = 'anr-control-group tst-anim-ctl';
+      bar.innerHTML = '<span class="anr-control-group-label">Motion</span>'
+        + '<div class="anr-control-group-items">'
+        + '<button type="button" class="anr-btn" data-spd="pause">Pause</button>'
+        + '<button type="button" class="anr-btn" data-spd="0.25">0.25x</button>'
+        + '<button type="button" class="anr-btn is-active" data-spd="1">1x</button>'
+        + '</div>';
+      animGrid.parentNode.insertBefore(bar, animGrid);
+      bar.addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-spd]');
+        if (!b) return;
+        bar.querySelectorAll('button').forEach(function (x) { x.classList.remove('is-active'); });
+        b.classList.add('is-active');
+        var spd = b.getAttribute('data-spd');
+        boxes.forEach(function (box, i) {
+          if (spd === 'pause') { box.style.animationPlayState = 'paused'; }
+          else { box.style.animationPlayState = ''; box.style.animationDuration = (base[i] / parseFloat(spd)) + 's'; }
+        });
+      });
+      // Click a single tile to freeze just that curve.
+      boxes.forEach(function (box) {
+        box.addEventListener('click', function () {
+          box.style.animationPlayState = box.style.animationPlayState === 'paused' ? '' : 'paused';
+        });
+      });
+    }
+
+    /* ---------- View cube: drag to orbit, idle-spin until touched ---------- */
+    var vc = page.querySelector('.anr-viewcube');
+    var cube = vc && vc.querySelector('.anr-viewcube-cube');
+    if (cube) {
+      var rx = -20, ry = -32, dragging = false, lx = 0, ly = 0, idle = true;
+      var apply = function () { cube.style.transform = 'rotateX(' + rx + 'deg) rotateY(' + ry + 'deg)'; };
+      var spin = function () { if (idle && !reduce) { ry += 0.25; apply(); } requestAnimationFrame(spin); };
+      vc.addEventListener('pointerdown', function (e) {
+        dragging = true; idle = false; lx = e.clientX; ly = e.clientY;
+        vc.classList.add('is-dragging');
+        if (vc.setPointerCapture) { try { vc.setPointerCapture(e.pointerId); } catch (err) {} }
+        e.preventDefault();
+      });
+      window.addEventListener('pointermove', function (e) {
+        if (!dragging) return;
+        ry += (e.clientX - lx) * 0.5;
+        rx = Math.max(-89, Math.min(89, rx - (e.clientY - ly) * 0.5));
+        lx = e.clientX; ly = e.clientY; apply();
+      });
+      window.addEventListener('pointerup', function () { if (dragging) { dragging = false; vc.classList.remove('is-dragging'); } });
+      if (!reduce) spin();
+    }
+
+    /* ---------- TOC scroll-spy ---------- */
+    var tocLinks = Array.prototype.slice.call(document.querySelectorAll('.tst-toc a'));
+    var tocMap = {};
+    tocLinks.forEach(function (a) { tocMap[a.getAttribute('href').slice(1)] = a; });
+    var heads = page.querySelectorAll('.section-head[id]');
+    if ('IntersectionObserver' in window && heads.length) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (!en.isIntersecting) return;
+          tocLinks.forEach(function (a) { a.classList.remove('is-current'); });
+          if (tocMap[en.target.id]) tocMap[en.target.id].classList.add('is-current');
+        });
+      }, { rootMargin: '-10% 0px -80% 0px' });
+      heads.forEach(function (h) { io.observe(h); });
+    }
+
+    /* ---------- Inspect mode: name the component under the pointer ---------- */
+    var inspectLabel = document.createElement('div');
+    inspectLabel.className = 'tst-inspect-label';
+    document.body.appendChild(inspectLabel);
+    var inspectBtn = document.getElementById('tstInspect');
+    var lastHit = null;
+    // Prefixes that mark a "real" component class worth surfacing.
+    var CLASS_RX = /^(anr-|fmt-|patch-|offline-|site-|footer-|header-|dark-|net-|section-|drop-|tap-|quickdrop|dep-)/;
+    function pickClass(el) {
+      while (el && el !== document.body) {
+        if (el.classList) {
+          var best = null;
+          for (var i = 0; i < el.classList.length; i++) {
+            var c = el.classList[i];
+            // Prefer the most specific (longest) real class on the element.
+            if (CLASS_RX.test(c) && (!best || c.length > best.length)) best = c;
+          }
+          if (best) return { el: el, cls: best };
+        }
+        el = el.parentElement;
+      }
+      return null;
+    }
+    function clearHit() { if (lastHit) { lastHit.classList.remove('tst-inspect-hit'); lastHit = null; } }
+    function onInspectMove(e) {
+      inspectLabel.style.left = Math.min(e.clientX + 14, window.innerWidth - 8) + 'px';
+      inspectLabel.style.top = (e.clientY + 16) + 'px';
+      var hit = pickClass(document.elementFromPoint(e.clientX, e.clientY));
+      if (!hit) { inspectLabel.textContent = 'no component'; clearHit(); return; }
+      inspectLabel.textContent = '.' + hit.cls;
+      if (hit.el !== lastHit) { clearHit(); lastHit = hit.el; lastHit.classList.add('tst-inspect-hit'); }
+    }
+    function onInspectClick(e) {
+      // Leave the overlay controls clickable so Inspect can be toggled back off.
+      if (e.target.closest('.tst-overlays')) return;
+      var hit = pickClass(document.elementFromPoint(e.clientX, e.clientY));
+      if (hit) { e.preventDefault(); e.stopPropagation(); copy('.' + hit.cls); }
+    }
+    function setInspect(on) {
+      document.body.classList.toggle('tst-inspect-on', on);
+      if (inspectBtn) { inspectBtn.classList.toggle('is-active', on); inspectBtn.setAttribute('aria-pressed', String(on)); }
+      if (on) { window.addEventListener('mousemove', onInspectMove); window.addEventListener('click', onInspectClick, true); }
+      else { window.removeEventListener('mousemove', onInspectMove); window.removeEventListener('click', onInspectClick, true); clearHit(); }
+    }
+    if (inspectBtn) inspectBtn.addEventListener('click', function () { setInspect(!document.body.classList.contains('tst-inspect-on')); });
+
+    /* ---------- Portal players: fire the real fixed overlays in place ----------
+       The pinned demos show the rendered markup; these buttons clone a component
+       into <body> so it plays its true entrance in its true position, then wire
+       Esc / backdrop / close buttons to dismiss it. */
+    function overlayName(el) {
+      if (el.classList.contains('anr-modal')) return el.querySelector('.anr-clip-card') ? 'Play export modal' : 'Play confirm modal';
+      if (el.classList.contains('anr-suggest-pop')) return 'Play suggest popup';
+      if (el.classList.contains('anr-share-nudge')) return 'Play share nudge';
+      if (el.classList.contains('anr-drop-loader')) return 'Play drop loader';
+      return 'Play';
+    }
+    function portalPlay(source) {
+      var clone = source.cloneNode(true);
+      clone.classList.remove('is-open');
+      document.body.appendChild(clone);
+      void clone.offsetWidth;
+      clone.classList.add('is-open');
+      var timer;
+      function close() {
+        clearTimeout(timer);
+        clone.classList.remove('is-open');
+        document.removeEventListener('keydown', onKey);
+        setTimeout(function () { if (clone.parentNode) clone.parentNode.removeChild(clone); }, 240);
+      }
+      function onKey(ev) { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } }
+      document.addEventListener('keydown', onKey);
+      clone.querySelectorAll('.anr-modal-btn, .anr-suggest-close, .anr-share-nudge-close, .anr-drop-loader-cancel, .anr-suggest-cta, .anr-share-nudge-cta').forEach(function (b) { b.addEventListener('click', close); });
+      if (clone.classList.contains('anr-modal')) clone.addEventListener('click', function (ev) { if (ev.target === clone) close(); });
+      // The transient popovers self-dismiss like they do in the app.
+      if (clone.classList.contains('anr-drop-loader')) timer = setTimeout(close, 3200);
+      return clone;
+    }
+    Array.prototype.forEach.call(page.querySelectorAll('.tst-fixwrap'), function (wrap) {
+      var comps = wrap.querySelectorAll('.anr-modal, .anr-suggest-pop, .anr-share-nudge, .anr-drop-loader');
+      if (!comps.length) return;
+      var row = document.createElement('div');
+      row.className = 'anr-btn-row';
+      row.style.margin = '0 0 10px';
+      Array.prototype.forEach.call(comps, function (comp) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'anr-btn'; b.textContent = overlayName(comp) + ' ▸';
+        b.addEventListener('click', function () { portalPlay(comp); });
+        row.appendChild(b);
+      });
+      wrap.parentNode.insertBefore(row, wrap);
+    });
+
+    /* ---------- Bring the "static here" loaders to life ---------- */
+    if (!reduce) {
+      var inlineBar = page.querySelector('.anr-inline-loader .anr-progress-bar');
+      if (inlineBar) {
+        var W = 20;
+        (function loop() {
+          requestAnimationFrame(function (ts) {
+            var n = Math.round((ts % 2500) / 2500 * W);
+            inlineBar.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(n) + '</span>' + ' '.repeat(W - n) + ']';
+            loop();
+          });
+        })();
+      }
+      var dropLabel = page.querySelector('.anr-drop-loader .anr-drop-loader-label');
+      if (dropLabel) {
+        var phases = ['Reading file...', 'Sniffing signature...', 'Classifying...', 'Parsing metadata...'];
+        var pi = 0;
+        setInterval(function () { pi = (pi + 1) % phases.length; dropLabel.textContent = phases[pi]; }, 1500);
+      }
+    }
+
+    /* ---------- Shortcuts help panel (?) ---------- */
+    function showHelp() {
+      if (document.querySelector('.tst-help-modal')) return;
+      var m = document.createElement('div');
+      m.className = 'anr-modal tst-help-modal';
+      m.innerHTML = '<div class="anr-modal-card">'
+        + '<p class="anr-modal-kicker">Style guide</p>'
+        + '<p class="anr-modal-title">Keyboard &amp; interactions</p>'
+        + '<table class="anr-readout">'
+        + '<tr><th><kbd>T</kbd></th><td>Toggle light / dark theme</td></tr>'
+        + '<tr><th><kbd>I</kbd></th><td>Inspect: name the component under the pointer (click copies its class)</td></tr>'
+        + '<tr><th><kbd>?</kbd></th><td>This panel</td></tr>'
+        + '<tr><th><kbd>Esc</kbd></th><td>Close any open overlay</td></tr>'
+        + '<tr><th>Click</th><td>Any token, value or swatch copies to the clipboard</td></tr>'
+        + '<tr><th>Drag</th><td>The view cube orbits; frame buttons scrub the timecode</td></tr>'
+        + '</table>'
+        + '<div class="anr-modal-actions"><button type="button" class="anr-modal-btn anr-modal-ok">Close</button></div>'
+        + '</div>';
+      document.body.appendChild(m);
+      void m.offsetWidth; m.classList.add('is-open');
+      function close() { m.classList.remove('is-open'); document.removeEventListener('keydown', onKey); setTimeout(function () { if (m.parentNode) m.parentNode.removeChild(m); }, 240); }
+      function onKey(ev) { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } }
+      document.addEventListener('keydown', onKey);
+      m.addEventListener('click', function (ev) { if (ev.target === m) close(); });
+      m.querySelector('.anr-modal-ok').addEventListener('click', close);
+    }
+    var helpBtn = document.getElementById('tstHelp');
+    if (helpBtn) helpBtn.addEventListener('click', showHelp);
+
+    /* ---------- Keyboard shortcuts ---------- */
+    document.addEventListener('keydown', function (e) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.target.closest('input, textarea, select')) return;
+      var k = e.key;
+      if (k === 't' || k === 'T') { var tb = document.getElementById('tstTheme'); if (tb) tb.click(); }
+      else if (k === 'i' || k === 'I') setInspect(!document.body.classList.contains('tst-inspect-on'));
+      else if (k === '?') showHelp();
+      else if (k === 'Escape') {
+        // A played overlay closes itself; only fall through to the toggles otherwise.
+        if (document.querySelector('body > .anr-modal.is-open, body > .anr-suggest-pop.is-open, body > .anr-share-nudge.is-open, body > .anr-drop-loader.is-open')) return;
+        if (document.body.classList.contains('tst-inspect-on')) setInspect(false);
+      }
+    });
   })();
 </script>
 </body>

@@ -3,8 +3,8 @@
 Playback, waveform/spectrogram analysis, codec and loudness metrics,
 frequency isolation, AI vocal separation, reversed playback, microphone
 recording, and live spectrogram - everything the site does with sound.
-Source: `audio.js`, `audio-analysis.js`, `audio-codec.js`,
-`audio-player.js`, `spectrogram.js`, `media-reverse.js`.
+Source: `audio.js`, `audio-analysis.js`, `audio-forensics.js`,
+`audio-codec.js`, `audio-player.js`, `spectrogram.js`, `media-reverse.js`.
 
 ### File info, waveform and channel readout
 
@@ -72,6 +72,66 @@ decoded sample buffer.
 detection (`detectBPM()` in `audio-analysis.js`).
 
 **Notes / limits.** No interactive controls - a readout only.
+
+### Signal health and musical key (folded into File info)
+
+**What it does.** Adds four pure-computation reads to the File info card:
+**crest factor** (peak-to-RMS, a dynamics/loudness-war gauge), **DC offset**
+(non-zero mean = capture/hardware fault), **effective bit depth** (the
+deepest bit actually carrying signal, recovered from LSB activity - exposes
+padded/upscaled "hi-res" files), and **musical key** (chroma matched against
+the Krumhansl-Schmuckler key profiles, with confidence and a runner-up).
+
+**How to reach it.** Automatic, in the File info readout. Built in
+`audio-forensics.js` (`signalHealth`, `detectKey`).
+
+**Notes / limits.** Key detection is most reliable on tonal music; the
+runner-up is often the relative major/minor. Effective bit depth compares
+against the declared depth and flags a likely padded/upscaled file.
+
+### Loudness meter (EBU R128)
+
+**What it does.** The full broadcast/streaming loudness set beyond the
+single integrated-LUFS row: **gated integrated** loudness (ITU-R BS.1770),
+**momentary** (400 ms) and **short-term** (3 s) maxima, **Loudness Range
+(LRA)**, and **true peak** (4x-oversampled dBTP, catching inter-sample overs
+that sample-peak metering misses), plus a **loudness-over-time** plot with a
+-14 LUFS streaming-target reference line.
+
+**How to reach it.** Automatic card below File info for any decoded audio.
+Built in `audio-forensics.js` (`loudnessR128`, `truePeakDb`); rendered by
+`audio.js`.
+
+**Notes / limits.** Measured on the channel-merged signal. A true peak above
+0 dBTP is flagged in the accent colour (delivery specs cap it at -1 dBTP).
+
+### Spectral forensics
+
+**What it does.** A card of spectral/tone reads derived from one long-average
+(Welch) spectrum of the whole file:
+
+- **Lossy-source check** - decides whether a file that claims to be lossless
+  (FLAC/WAV/ALAC...) was really made from an MP3/AAC, by finding the hard
+  spectral low-pass a lossy codec leaves and mapping its cutoff to a probable
+  source bitrate. A genuine lossless file reaches ~95%+ of the Nyquist limit.
+- **Mains hum / ENF** - narrowband 50 or 60 Hz energy (plus harmonics) from
+  power-line interference; reports the exact frequency and implied region -
+  the gateway to ENF forensic timestamping.
+- **Ultrasonic content** - energy and any narrowband tones above ~18 kHz
+  (tracking beacons, device-pairing tones, watermarks), when the sample rate
+  is high enough to carry them.
+- **Touch-tones (DTMF)** - phone digits decoded via Goertzel filters at the 8
+  standard row/column frequencies, with per-digit timing (shown only when
+  tones are found).
+
+**How to reach it.** Automatic card below the loudness meter. Built in
+`audio-forensics.js` (`analyzeTranscode`, `analyzeMainsHum`,
+`analyzeUltrasonic`, `detectDtmf`); rendered by `audio.js`.
+
+**Notes / limits.** The lossy-source cutoff and its bitrate mapping are
+approximate (encoders and settings vary); a "likely lossy source" verdict on
+a declared-lossless file is a strong tell, not proof. Nothing is uploaded -
+all analysis is on-device.
 
 ### Playback transport
 

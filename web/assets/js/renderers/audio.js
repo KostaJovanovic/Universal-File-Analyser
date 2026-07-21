@@ -13,6 +13,10 @@ import {
   detectPitch, detectBPM, computeStereoStats
 } from './audio-analysis.js';
 import { peekContainer, adtsToM4a, readTagBPM, extractCoverArt, readAudioTags } from './audio-codec.js';
+import {
+  longAverageSpectrum, analyzeTranscode, analyzeUltrasonic, analyzeMainsHum,
+  detectKey, loudnessR128, truePeakDb, signalHealth, detectDtmf
+} from './audio-forensics.js';
 import { makePlayer, playerAudioNode, onSharedVolume, sharedVolume } from './audio-player.js';
 import { encodeWav } from './video-avi.js';
 import { buildReverseAudioCard } from './media-reverse.js';
@@ -2637,6 +2641,37 @@ async function ffmpegDecodeAudio(file, resultsEl) {
   }
 }
 
+// Loudness-over-time plot for the EBU R128 meter (momentary LUFS series). Clamped
+// to a readable -40..0 LUFS window with a -14 LUFS streaming-target reference line.
+function drawLoudnessGraph(series, duration) {
+  const W = 640, H = 120, pad = 6;
+  const cv = el('canvas', { width: String(W), height: String(H),
+    style: 'width:100%; height:auto; display:block; border:var(--bd-hairline); background:var(--bg); margin-top:12px;' });
+  const ctx = cv.getContext('2d');
+  if (!ctx) return cv;
+  const cs = getComputedStyle(document.body);
+  const accent = (cs.getPropertyValue('--accent') || '').trim() || '#e60023';
+  const muted = (cs.getPropertyValue('--muted') || '').trim() || '#888';
+  const LO = -40, HI = 0;
+  const yOf = (l) => pad + (HI - Math.max(LO, Math.min(HI, l))) / (HI - LO) * (H - pad * 2);
+  const xOf = (t) => pad + (duration > 0 ? t / duration : 0) * (W - pad * 2);
+  // -14 LUFS reference (common streaming target).
+  ctx.strokeStyle = muted; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad, yOf(-14)); ctx.lineTo(W - pad, yOf(-14)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = muted; ctx.font = '10px monospace'; ctx.fillText('−14', W - pad - 22, yOf(-14) - 3);
+  // Momentary curve.
+  ctx.strokeStyle = accent; ctx.lineWidth = 1.2; ctx.beginPath();
+  let started = false;
+  for (const p of series) {
+    if (!isFinite(p.lufs)) { started = false; continue; }
+    const x = xOf(p.t), y = yOf(p.lufs);
+    if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  return cv;
+}
+
 // --- Render uploaded / recorded audio results ---
 export async function renderAudio(file, resultsEl, opts = {}) {
   // Inline renders (the compare view's side-by-side panels) use an isolated abort
@@ -2708,6 +2743,22 @@ export async function renderAudio(file, resultsEl, opts = {}) {
 
   const mono = getMono(audioBuffer);
   const stats = computeStats(mono);
+
+  // ---- Forensic DSP (all pure, computed once and reused across cards) ----
+  const sampleRate = audioBuffer.sampleRate;
+  const channelData = [];
+  for (let c = 0; c < audioBuffer.numberOfChannels; c++) channelData.push(audioBuffer.getChannelData(c));
+  const LOSSLESS_EXTS = new Set(['flac', 'wav', 'wave', 'alac', 'aif', 'aiff', 'aifc', 'ape', 'wv', 'tta', 'tak', 'pcm', 'caf', 'w64']);
+  const audioExt = (file.name || '').toLowerCase().split('.').pop();
+  const declaredLossless = LOSSLESS_EXTS.has(audioExt)
+    || /FLAC|WAV|AIFF|ALAC|PCM|Lossless|Monkey|WavPack/i.test((header.container || '') + ' ' + (header.codec || ''));
+  let spec = null, health = null, keyResult = null, r128 = null, tpDb = null, dtmf = null;
+  try { spec = longAverageSpectrum(mono, sampleRate); } catch (_) {}
+  try { health = signalHealth(channelData); } catch (_) {}
+  try { if (spec) keyResult = detectKey(spec); } catch (_) {}
+  try { r128 = loudnessR128(mono, sampleRate); } catch (_) {}
+  try { tpDb = truePeakDb(channelData, sampleRate); } catch (_) {}
+  try { dtmf = detectDtmf(mono, sampleRate); } catch (_) {}
 
   // ---- File info card ----
   const infoCard = el('div', { class: 'anr-card' });
@@ -2782,6 +2833,22 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     tbl.appendChild(rowHelp('Clipping', 'None',
       'Samples at or beyond the digital ceiling (0 dBFS). None detected in this file.'));
   }
+  if (health) {
+    tbl.appendChild(rowHelp('Crest factor', health.crestDb.toFixed(1) + ' dB',
+      'Peak-to-RMS ratio - a one-number read of dynamics. Loud, heavily compressed masters sit low (under ~8 dB); open, dynamic recordings sit higher (15 dB+).'));
+    const dcPct = (Math.abs(health.dcOffset) * 100);
+    tbl.appendChild(rowHelp('DC offset', Math.abs(health.dcOffset) < 1e-4
+        ? 'None (' + health.dcOffset.toExponential(1) + ')'
+        : health.dcOffset.toFixed(5) + '  (' + health.dcDb.toFixed(1) + ' dBFS, ' + dcPct.toFixed(3) + '%)',
+      'Average sample value - should be ~0. A non-zero offset points to a capture/hardware fault, wastes headroom, and can cause clicks at edits.'));
+    if (health.effectiveBits > 0) {
+      const declaredBits = header.bitDepth || null;
+      const padded = declaredBits && health.effectiveBits < declaredBits - 1;
+      tbl.appendChild(rowHelp('Effective bit depth', health.effectiveBits + ' bit'
+          + (padded ? '  (declared ' + declaredBits + ' - likely padded/upscaled)' : ''),
+        'Deepest bit that actually carries signal, recovered from least-significant-bit activity. Well below the declared depth means the file was padded or upscaled, not truly hi-res.'));
+    }
+  }
   const centroid = computeCentroid(mono, audioBuffer.sampleRate);
   if (centroid != null) {
     const label = centroid < 1500 ? 'warm' : centroid < 4000 ? 'neutral' : 'bright';
@@ -2809,6 +2876,13 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     td.appendChild(el('span', { style: 'font-size:0.8em;color:var(--muted);margin-left:4px' }, '(est)'));
   }
   tbl.appendChild(bpmRow);
+  if (keyResult) {
+    const conf = Math.round(keyResult.confidence * 100);
+    const keyRow = rowHelp('Musical key', keyResult.key + '  (' + conf + '% confidence)',
+      'Estimated key via a chroma profile matched against the Krumhansl-Schmuckler key templates. Most reliable on tonal music; the runner-up is often the relative major/minor. Pairs with the detected tempo.');
+    keyRow.querySelector('td').appendChild(el('span', { style: 'font-size:0.8em;color:var(--muted);margin-left:4px' }, '· alt ' + keyResult.alt));
+    tbl.appendChild(keyRow);
+  }
   tbl.appendChild(rowHelp('Total samples',  mono.length.toLocaleString(),
     'Total number of individual amplitude values in the (channel-merged mono) signal - roughly sample rate × duration.'));
   infoCard.appendChild(tbl);
@@ -2819,6 +2893,112 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   const specStatsMount = el('div');
   infoCard.appendChild(specStatsMount);
   resultsEl.appendChild(infoCard);
+
+  // ---- Loudness meter (EBU R128) ----
+  if (r128 && isFinite(r128.integrated)) {
+    const card = el('div', { class: 'anr-card' });
+    const [h, help] = h3help('Loudness meter (EBU R128)',
+      'The full broadcast/streaming loudness set. Integrated loudness is gated per ITU-R BS.1770; momentary (400 ms) and short-term (3 s) are the loudest windows; Loudness Range (LRA) is the spread between quiet and loud passages; True peak is the real inter-sample peak, oversampled 4x, which ordinary sample-peak metering misses. Measured on the channel-merged signal.');
+    card.appendChild(h); card.appendChild(help);
+    const lt = el('table', { class: 'anr-readout' });
+    const lufs = (v) => isFinite(v) ? v.toFixed(1) + ' LUFS' : '-';
+    lt.appendChild(rowHelp('Integrated (gated)', lufs(r128.integrated),
+      'Overall loudness across the whole file with silence gated out. Streaming targets: Spotify/YouTube −14, Apple −16, broadcast (EBU R128) −23 LUFS.'));
+    lt.appendChild(rowHelp('Momentary max', lufs(r128.momentaryMax),
+      'Loudest 400 ms window - the peak of short, punchy moments.'));
+    lt.appendChild(rowHelp('Short-term max', lufs(r128.shortTermMax),
+      'Loudest 3 s window - peak of sustained loud passages.'));
+    lt.appendChild(rowHelp('Loudness range (LRA)', r128.lra != null ? r128.lra.toFixed(1) + ' LU' : '-',
+      'Spread between the quiet and loud parts (10th-95th percentile of short-term loudness). Low LRA (under ~5 LU) means a flat, heavily compressed master; high means dynamic.'));
+    if (tpDb != null) {
+      const over = tpDb > 0;
+      const tpRow = rowHelp('True peak', tpDb.toFixed(1) + ' dBTP' + (over ? '  (over 0 - inter-sample clipping)' : ''),
+        'The real peak between samples, recovered by 4x oversampling. Values above 0 dBTP distort on playback even when no single sample reads as clipped; delivery specs cap this at −1 dBTP.');
+      if (over) tpRow.querySelector('td').style.color = 'var(--accent)';
+      lt.appendChild(tpRow);
+    }
+    card.appendChild(lt);
+    // Loudness-over-time (momentary series).
+    if (r128.series && r128.series.length > 4) card.appendChild(drawLoudnessGraph(r128.series, r128.duration));
+    resultsEl.appendChild(card);
+  }
+
+  // ---- Spectral & signal forensics ----
+  if (spec) {
+    const card = el('div', { class: 'anr-card' });
+    const [h, help] = h3help('Spectral forensics',
+      'Reads derived from a long-average spectrum of the whole file: whether a "lossless" file was really made from a lossy source, mains-hum interference, ultrasonic content, and any touch-tone (DTMF) digits.');
+    card.appendChild(h); card.appendChild(help);
+
+    // -- Lossy-transcode / fake-lossless verdict --
+    const tr = analyzeTranscode(spec, { declaredLossless });
+    card.appendChild(el('div', { class: 'anr-readout-section' }, 'Lossy-source check'));
+    const verdictLine = el('p', { class: 'anr-hint', style: 'margin:0 0 8px;'
+      + (tr.level === 'bad' ? 'color:var(--accent);' : '') }, tr.verdict);
+    card.appendChild(verdictLine);
+    const trTbl = el('table', { class: 'anr-readout' });
+    trTbl.appendChild(rowHelp('Spectral cutoff', Math.round(tr.cutoffHz).toLocaleString() + ' Hz'
+        + '  (' + Math.round(tr.fillFrac * 100) + '% of Nyquist)',
+      'The frequency where broadband energy collapses. Genuine lossless reaches ~95%+ of the Nyquist limit; a lossy codec leaves a hard low-pass well below it.'));
+    trTbl.appendChild(row('Rolloff steepness', tr.steepDbPerKHz > 0 ? tr.steepDbPerKHz.toFixed(0) + ' dB/kHz' : '-'));
+    if (tr.sourceGuess) trTbl.appendChild(rowHelp('Likely source', tr.sourceGuess,
+      'Probable original encode, inferred from where the low-pass sits. Approximate - encoders and settings vary.'));
+    card.appendChild(trTbl);
+
+    // -- Mains hum / ENF --
+    try {
+      const hum = analyzeMainsHum(spec);
+      card.appendChild(el('div', { class: 'anr-readout-section' }, 'Mains hum / ENF'));
+      const humTbl = el('table', { class: 'anr-readout' });
+      if (hum.present) {
+        humTbl.appendChild(rowHelp('Mains hum', 'Detected at ' + hum.exactHz.toFixed(2) + ' Hz  (+' + hum.fundamentalDb.toFixed(0) + ' dB)',
+          'Narrowband tonal energy at the electrical mains frequency - picked up from power lines or equipment. Its exact frequency is the basis of ENF forensic timestamping.'));
+        humTbl.appendChild(rowHelp('Implied region', hum.region,
+          'Mains runs at 50 Hz across most of the world and 60 Hz in North America and parts of Asia - a coarse geographic tell.'));
+        if (hum.harmonics.length > 1) humTbl.appendChild(row('Harmonics', hum.harmonics.map((x) => Math.round(x.hz) + ' Hz').join(', ')));
+      } else {
+        humTbl.appendChild(rowHelp('Mains hum', 'None detected',
+          'No clear 50 or 60 Hz tonal energy - either a clean recording or one that has been high-pass filtered.'));
+      }
+      card.appendChild(humTbl);
+    } catch (_) {}
+
+    // -- Ultrasonic content --
+    try {
+      const us = analyzeUltrasonic(spec);
+      card.appendChild(el('div', { class: 'anr-readout-section' }, 'Ultrasonic content'));
+      const usTbl = el('table', { class: 'anr-readout' });
+      if (!us.supported) {
+        usTbl.appendChild(rowHelp('Above 18 kHz', 'N/A at ' + (spec.sampleRate / 1000).toFixed(1) + ' kHz sample rate',
+          'The sample rate is too low to carry meaningful ultrasonic content (Nyquist below ~18.5 kHz).'));
+      } else {
+        usTbl.appendChild(rowHelp('Energy above ' + (us.startHz / 1000) + ' kHz',
+          us.ratioDb.toFixed(0) + ' dB below full band' + (us.present ? '  (present)' : '  (negligible)'),
+          'Energy in the near-ultrasonic band relative to the whole signal. Persistent content up here can be tracking beacons, device-pairing tones, or hidden watermarks - inaudible to people.'));
+        if (us.peaks.length) usTbl.appendChild(row('Ultrasonic tones',
+          us.peaks.map((p) => Math.round(p.hz).toLocaleString() + ' Hz').join(', ')));
+      }
+      card.appendChild(usTbl);
+    } catch (_) {}
+
+    // -- DTMF touch-tones --
+    if (dtmf && dtmf.digits.length) {
+      card.appendChild(el('div', { class: 'anr-readout-section' }, 'Touch-tones (DTMF)'));
+      const dt = el('table', { class: 'anr-readout' });
+      dt.appendChild(rowHelp('Dialled digits', dtmf.sequence,
+        'Phone touch-tone (DTMF) digits decoded from the audio via Goertzel filters at the 8 standard row/column frequencies - recovers numbers dialled in a recording.'));
+      dt.appendChild(row('Count', String(dtmf.digits.length)));
+      const det = el('details');
+      det.appendChild(el('summary', {}, 'Timing (' + dtmf.digits.length + ')'));
+      const dtl = el('table', { class: 'anr-readout' });
+      for (const d of dtmf.digits) dtl.appendChild(row(d.digit, formatTime(d.tStart) + ' - ' + formatTime(d.tEnd)));
+      det.appendChild(dtl);
+      card.appendChild(dt);
+      card.appendChild(det);
+    }
+
+    resultsEl.appendChild(card);
+  }
 
   // ---- Reverse playback (play / download the audio backwards) ----
   resultsEl.appendChild(buildReverseAudioCard(audioBuffer, (file.name || 'audio').replace(/\.[^/.]+$/, ''), renderSignal));

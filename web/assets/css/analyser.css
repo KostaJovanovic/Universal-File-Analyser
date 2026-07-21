@@ -2357,6 +2357,93 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 }
 .anr-readout-section:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
 
+/* ---------- BOX (ATOM) TREE ---------- */
+/* Indented, hairline-guided tree of MP4/MOV boxes in the video Advanced card.
+   Container boxes are <details> (nested), leaves are plain rows. Sharp-cornered
+   and monospace, matching the readout tables it sits beside. */
+.anr-boxtree {
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  line-height: 1.5;
+  overflow-x: auto;
+  max-height: 420px;
+  overflow-y: auto;
+  border: var(--bd-hairline);
+  padding: 8px 10px;
+}
+.anr-boxtree-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  white-space: nowrap;
+  padding: 1px 0;
+}
+.anr-boxtree-node > summary.anr-boxtree-row { cursor: pointer; list-style: none; }
+.anr-boxtree-node > summary.anr-boxtree-row::-webkit-details-marker { display: none; }
+.anr-boxtree-node > summary.anr-boxtree-row::before {
+  content: '\25B8';                       /* right-pointing triangle */
+  color: var(--muted);
+  margin-right: -4px;
+  transition: transform 0.12s ease;
+}
+.anr-boxtree-node[open] > summary.anr-boxtree-row::before { transform: rotate(90deg); }
+.anr-boxtree-leaf { padding-left: 14px; }  /* align leaf 4CCs under expandable ones */
+.anr-boxtree-fcc { color: var(--fg); font-weight: 600; }
+.anr-boxtree-meta { color: var(--muted); }
+.anr-boxtree-kids {
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: var(--bd-hairline);
+}
+
+/* ---------- CONVERT: ADVANCED SETTINGS ---------- */
+/* Resolution / frame-rate / speed panel on the "Convert to H.264" card. Hidden
+   until the Advanced button toggles it - the [hidden] override is required
+   because the display:flex class would otherwise beat the UA [hidden] rule. */
+.anr-conv-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+  margin-top: 12px;
+  padding: 12px;
+  border: var(--bd-hairline);
+}
+.anr-conv-settings[hidden] { display: none; }
+.anr-conv-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.anr-conv-setting > span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.anr-btn.is-active { background: var(--fg); color: var(--bg); }
+
+/* ---------- RAW ANALYSE-MODE TOGGLE ---------- */
+/* Top-of-column switch between the embedded-preview JPEG and the full demosaic. */
+.anr-raw-modebar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: var(--bd-hairline);
+}
+.anr-raw-modebar-label {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 2px;
+}
+
 /* ---------- HISTOGRAM / WAVEFORM ---------- */
 .anr-histogram,
 .anr-waveform {
@@ -2432,45 +2519,6 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
    modern handsets (Pro Max ~430, large Androids 412-480), leaving them at 8. */
 @media (max-width: 600px) {
   .anr-palette { grid-template-columns: repeat(4, 1fr); }
-}
-
-/* ---------- EMBEDDED IMAGES (RAW thumbnails/previews) ---------- */
-.anr-embedded-grid {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 14px;
-  margin-top: 10px;
-}
-.anr-embedded-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.anr-embedded-thumb {
-  border: var(--bd-hairline);
-  background: var(--surface);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-/* Cap to a normal preview size - the embedded JPEGs are often full-resolution,
-   which would otherwise render 1:1 and dwarf the page. */
-.anr-embedded-thumb img {
-  max-height: 220px;
-  max-width: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  cursor: zoom-in;
-  display: block;
-}
-.anr-embedded-cap {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--muted);
-  text-align: center;
 }
 
 /* ---------- CARVED IMAGES (disk-image / blob signature scan) ----------
@@ -6089,6 +6137,31 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   line-height: var(--lh-prose);
   color: var(--fg);
 }
+
+/* Mesh-integrity verdict badge. A compact status tag pinned to the right of the
+   card heading, in the site's badge language (mono, hairline, sharp - same as
+   .fmt-item-badge). Neutral ink for a clean watertight solid, accent when
+   topological faults are found - so the card reads as a native 3D readout rather
+   than borrowing the forensic .anr-sig-flag alert. */
+.anr-mesh-card > h3 {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+}
+.anr-mesh-verdict {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  padding: 2px 6px;
+  border: var(--bd-hairline);
+  color: var(--muted);
+}
+.anr-mesh-verdict.is-ok { color: var(--fg); border-color: var(--fg); }
+.anr-mesh-verdict.is-flag { color: var(--accent); border-color: var(--accent); }
 
 /* ZIP entry-timestamp histogram (archive timing forensics). A row of bars whose
    heights show how many entries fall in each time bucket, earliest -> latest. */

@@ -209,6 +209,51 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">6.53</p>
+          <p class="patch-name">Under The Hood</p>
+          <p class="patch-date">21 July 2026</p>
+          <ul class="patch-list">
+            <li><strong>A deep forensic pass across photos, video and sound - Analyser now reads the hidden internals of each. For photos: tamper tells and concealed data. For video: the container&rsquo;s structure, the camera&rsquo;s own telemetry, and the exact encoder that made it. For sound: broadcast-grade loudness, the musical key, and whether a &ldquo;lossless&rdquo; file was secretly made from an MP3. And when a video has to be converted just to play, every result now describes the <em>original</em> file, never the converted copy.</strong></li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Photos</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Spot a doctored photo.</strong> A new <strong>Advanced</strong> section brings proper image forensics to any <a href="/about#where">JPEG</a>: <strong>error-level analysis</strong> highlights areas saved at a different quality (a classic sign of a paste-in), a <strong>quantization fingerprint</strong> recovers the true save quality and whether it matches the software the file claims, and <strong>JPEG ghosts</strong> reveal regions compressed a second time. Together they help you judge whether a picture has been edited.</li>
+            <li><span class="patch-tag">New</span><strong>Find data hidden inside an image.</strong> Bit-plane and <strong>least-significant-bit</strong> analysis inspects the parts of a picture the eye cannot see, estimates the likelihood that a message or file is concealed there, and lets you browse every bit plane channel by channel.</li>
+            <li><span class="patch-tag">New</span><strong>Read a photo&rsquo;s edit history and hidden identity.</strong> Analyser now lays out the edit-history trail some files record, checks Photoshop&rsquo;s own edit marker, and gathers the identifying details a photo carries - GPS location, camera serial, owner name - into a plain <strong>privacy report</strong>. Derived <strong>optics</strong> (field of view, depth of field, exposure value) round out the metadata.</li>
+            <li><span class="patch-tag">New</span><strong>Analyse a RAW photo two ways.</strong> A camera <a href="/about#where">RAW</a> file holds both a ready-made preview and the untouched sensor data. A new switch at the top of the results lets you analyse either - the embedded <strong>preview</strong>, or the fully <strong>demosaiced</strong> image built from the raw sensor readings - so you can inspect both sides of the same shot instead of only one.</li>
+            <li><span class="patch-tag">New</span><strong>Detect codes, and pull every thumbnail.</strong> Barcodes and QR codes in a picture are now read automatically, and all the preview images buried inside a file can be extracted at once.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Video</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>See exactly how a video file is built.</strong> A new <strong>Advanced</strong> card opens up an <a href="/about#ext-mp4">MP4 or MOV</a>&rsquo;s internal structure - the full tree of its building blocks, every track it holds (video, audio, timecode and hidden data streams), and the tell-tale signs that separate a straight-from-camera file from one that has been re-saved or edited. A frame-by-frame <strong>bitrate and keyframe map</strong> is read without playing a single frame, and the true frame rate is measured properly, constant or variable.</li>
+            <li><span class="patch-tag">New</span><strong>Read a camera&rsquo;s flight recorder.</strong> Action-camera and phone footage often carries a hidden telemetry track. Analyser now decodes <strong>GoPro</strong> and <strong>CAMM</strong> data - drawing the <strong>GPS route</strong> on a local map, plotting the accelerometer and gyroscope traces, and reading exposure, temperature and every recorded sensor stream - alongside any single location stamp a video stores.</li>
+            <li><span class="patch-tag">New</span><strong>Fingerprint the encoder and check the stream.</strong> Analyser reads deep into the compressed video to recover its true profile, colour and range, cross-checks that against what the container claims - a strong tell for a re-encoded or edited file - and recovers the exact <strong>x264/x265 encoder</strong> and settings left as a fingerprint in the stream. It also reads full <strong>HDR</strong> mastering data and <strong>Dolby Vision</strong>, and flags a <strong>C2PA</strong> Content Credentials record.</li>
+            <li><span class="patch-tag">New</span><strong>A whole video at a glance.</strong> A <strong>content timeline</strong> squeezes every part of the video into a single colour &ldquo;barcode&rdquo; - a fingerprint of how it looks over time - with a brightness curve beneath it and automatic flags for black frames and frozen or still stretches. Click anywhere on the barcode to jump the player there.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Play unsupported video sooner.</strong> When a clip uses a codec the browser cannot play (much <strong>GoPro HEVC</strong>, for one) and has to be converted, Analyser now makes a fast, lightweight copy by default - 720p and quick - with an <strong>Advanced</strong> panel to set resolution, frame rate and speed, including an extra-quick <strong>Turbo</strong> mode.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Analysis always describes the original.</strong> That playable copy is now used <em>only</em> for playback - every result, from resolution and frame rate to the metadata, telemetry and stream fingerprint, is read from the original file you dropped, never the converted stand-in.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Sound</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>A broadcast-grade loudness meter.</strong> Beyond the single loudness figure, a full <strong>EBU R128</strong> readout now shows integrated, momentary and short-term loudness, the <strong>loudness range</strong> between quiet and loud passages, and the real <strong>true peak</strong> between samples that ordinary meters miss - with a loudness-over-time graph against the usual streaming target.</li>
+            <li><span class="patch-tag">New</span><strong>Catch a fake &ldquo;lossless&rdquo; file.</strong> Analyser inspects the full frequency picture of a file that claims to be lossless (<a href="/about#ext-flac">FLAC</a>, WAV, ALAC) and flags the tell-tale ceiling left behind when it was really made from an <strong>MP3 or AAC</strong>, naming the likely original quality. It also reports the file&rsquo;s <strong>effective bit depth</strong>, exposing padded or upscaled &ldquo;hi-res&rdquo; files.</li>
+            <li><span class="patch-tag">New</span><strong>Hear the key, and the hidden tones.</strong> The <strong>musical key</strong> is now estimated to sit alongside the tempo, and a set of forensic listeners flag <strong>mains hum</strong> (revealing 50 vs 60 Hz mains, a basis for recording-authenticity checks), scan for inaudible <strong>ultrasonic</strong> tones and watermarks, and decode <strong>touch-tone (DTMF)</strong> phone digits from a recording.</li>
+            <li><span class="patch-tag">New</span><strong>Signal-health checks.</strong> New <strong>crest factor</strong> (how heavily a master is compressed) and <strong>DC offset</strong> (a capture-fault tell) readings join the file info.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Elsewhere</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>A clearer 3D mesh verdict.</strong> The <strong>Mesh integrity</strong> card now shows a plain <strong>Watertight</strong> or <strong>Faults found</strong> badge in its heading, with friendlier wording for what a &ldquo;non-manifold&rdquo; edge actually means.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">6.38 - 6.51</p>
           <p class="patch-name">Full Frame</p>
           <p class="patch-date">21 July 2026</p>
@@ -247,6 +292,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">6.32 - 6.35</p>
           <p class="patch-name">Watertight</p>
@@ -257,9 +305,6 @@
             <li><strong>Maintenance - small interim tidy-ups, including a project readme update.</strong></li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">6.21 - 6.31</p>

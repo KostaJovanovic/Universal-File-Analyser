@@ -2,7 +2,7 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v247';
+const VERSION = 'analyser-v248';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -45,6 +45,7 @@ const SHELL = [
   './assets/js/renderers/lottie.js',
   './assets/js/renderers/photo-convert.js',
   './assets/js/renderers/photo-recover.js',
+  './assets/js/renderers/photo-forensics.js',
   './assets/js/renderers/jpeg-salvage.js',
   './assets/js/renderers/carve-gallery.js',
   './assets/js/renderers/scrub.js',
@@ -78,9 +79,12 @@ const SHELL = [
   './assets/js/renderers/audio-player.js',
   './assets/js/renderers/audio-analysis.js',
   './assets/js/renderers/audio-codec.js',
+  './assets/js/renderers/audio-forensics.js',
   './assets/js/renderers/video.js',
   './assets/js/renderers/video-avi.js',
   './assets/js/renderers/video-recover.js',
+  './assets/js/renderers/video-forensics.js',
+  './assets/js/renderers/video-telemetry.js',
   './assets/js/renderers/sony-rtmd.js',
   './assets/js/renderers/gcsv.js',
   './assets/js/core/video-sync.js',

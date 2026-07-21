@@ -804,15 +804,18 @@ export function analyzeMeshIntegrity(positions, step) {
 }
 
 // A "Mesh integrity" card: the topological verdict (watertight / manifold) plus a
-// row per detected fault and a plain-language note. Flagged with the accent border
-// (.anr-sig-flag, reused from the forensic cards) when any irregularity is found.
-// `opts.span` overrides the weld tolerance basis (defaults to the geometry's bbox
-// span). Shown by every 3D renderer beneath the geometry stats.
+// row per detected fault and a plain-language note. A compact verdict badge in the
+// heading (.anr-mesh-verdict) reads "Watertight" in neutral ink for a clean solid,
+// or "Faults found" in accent when any irregularity is present - a native readout
+// card, not the forensic .anr-sig-flag alert. `opts.span` overrides the weld
+// tolerance basis (defaults to the geometry's bbox span). Shown by every 3D
+// renderer beneath the geometry stats.
 export function meshIntegrityCard(geo, opts = {}) {
   const span = (opts.span || geoSpan(geo));
   const a = analyzeMeshIntegrity(geo.positions, span * 1e-6);
-  const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Mesh integrity'));
+  const card = el('div', { class: 'anr-card anr-mesh-card' });
+  const heading = el('h3', {}, 'Mesh integrity');
+  card.appendChild(heading);
   if (!a) { card.appendChild(el('p', { class: 'anr-hint' }, 'No mesh geometry to check.')); return card; }
   if (a.tooLarge) {
     card.appendChild(el('p', { class: 'anr-hint' },
@@ -821,7 +824,8 @@ export function meshIntegrityCard(geo, opts = {}) {
   }
 
   const problems = a.boundaryEdges || a.nonManifoldEdges || a.degenerate || a.duplicate || a.flipped;
-  if (problems) card.classList.add('anr-sig-flag');
+  heading.appendChild(el('span', { class: 'anr-mesh-verdict ' + (problems ? 'is-flag' : 'is-ok') },
+    problems ? 'Faults found' : 'Watertight'));
 
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(rowHelp('Watertight', a.isWatertight ? 'Yes' : 'No',
@@ -831,7 +835,7 @@ export function meshIntegrityCard(geo, opts = {}) {
   if (a.boundaryEdges) tbl.appendChild(rowHelp('Open edges', a.boundaryEdges.toLocaleString() + (a.holes ? ` (${a.holes.toLocaleString()} ${a.holes === 1 ? 'hole' : 'holes'})` : ''),
     'Edges used by only one triangle. They border holes or gaps in the surface, so the mesh is not fully closed.'));
   if (a.nonManifoldEdges) tbl.appendChild(rowHelp('Non-manifold edges', a.nonManifoldEdges.toLocaleString(),
-    'Edges shared by three or more triangles. This is topologically invalid for a surface and commonly breaks slicing, boolean and repair operations.'));
+    'A place where too many surfaces meet along the same line. On a normal solid object, exactly two surfaces meet at each edge - like two walls meeting in the corner of a room. Here a third surface joins in, which cannot happen on a real object, so the shape has no clear inside and outside. 3D printers and modelling tools get confused by this and often fail.'));
   if (a.flipped) tbl.appendChild(rowHelp('Inconsistent winding', a.flipped.toLocaleString() + (a.flipped === 1 ? ' edge' : ' edges'),
     'Edges where two neighbouring triangles disagree on winding, so their normals point opposite ways. Inconsistent winding causes shading artefacts and a mis-computed volume / inside-outside test.'));
   if (a.degenerate) tbl.appendChild(rowHelp('Degenerate faces', a.degenerate.toLocaleString(),
