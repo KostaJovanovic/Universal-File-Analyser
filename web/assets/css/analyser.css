@@ -2049,7 +2049,7 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   transition: background 0.12s ease;
 }
 .anr-viewcube-edge { width: 16px; height: 16px; border-radius: 0; }
-.anr-viewcube-corner { width: 14px; height: 14px; border-radius: 50%; }
+.anr-viewcube-corner { width: 14px; height: 14px; border-radius: 0; }
 .anr-viewcube-face.is-hot { background: var(--accent); color: var(--accent-fg, #fff); border-color: var(--accent); }
 /* When the whole face is the target, let its edge/corner patches melt into the
    accent so the face reads as one solid highlight, not a face with dots on it. */
@@ -7867,7 +7867,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-spice-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .anr-spice-chip {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 3px 10px; font-size: 12px; font-family: ui-monospace, monospace;
+  padding: 3px 10px; font-size: 12px; font-family: var(--font-mono);
   border: var(--bd-hairline); border-radius: 0; background: transparent;
   color: var(--ink, inherit); cursor: pointer; transition: opacity .12s, border-color .12s;
 }
@@ -7879,14 +7879,14 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-spice-readout {
   position: absolute; top: 8px; pointer-events: none; z-index: 2;
   background: rgba(255,255,255,0.94); border: var(--bd-hairline); border-radius: 0;
-  padding: 6px 8px; font-size: 12px; font-family: ui-monospace, monospace; color: #1a2233;
+  padding: 6px 8px; font-size: 12px; font-family: var(--font-mono); color: #1a2233;
   box-shadow: 0 4px 14px rgba(20,30,55,0.16); max-width: 60%;
 }
 .anr-spice-ro-x { font-weight: 600; margin-bottom: 3px; }
 .anr-spice-ro-row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .anr-spice-ro-name { color: #444; }
 .anr-spice-ro-val { margin-left: auto; font-weight: 600; }
-.anr-spice-op td:last-child { font-family: ui-monospace, monospace; }
+.anr-spice-op td:last-child { font-family: var(--font-mono); }
 
 /* ----- IPC-D-356 netlist viewer ----- */
 .anr-ipc-maphost { border: var(--bd-hairline); border-radius: var(--radius); background: #f4f0e6; padding: 8px; }
