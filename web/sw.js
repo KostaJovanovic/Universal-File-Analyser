@@ -28,6 +28,7 @@ const SHELL = [
   './assets/js/core/popups.js',
   './assets/js/core/export-data.js',
   './assets/js/core/util.js',
+  './assets/js/core/limits.js',
   './assets/js/core/osint.js',
   './assets/js/core/formats.js',
   './assets/js/core/search.js',

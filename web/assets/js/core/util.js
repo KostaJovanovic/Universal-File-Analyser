@@ -702,19 +702,10 @@ export async function sha256Hex(file) {
   return hex(await crypto.subtle.digest('SHA-256', buf));
 }
 
-// Heuristic for "is this a memory-constrained device (phone/tablet) where pulling
-// a very large file fully into memory or a WASM heap risks an OOM tab crash?".
-// Coarse pointer catches phones/tablets; deviceMemory (Chromium only) lets a
-// high-RAM tablet through. Deliberately conservative - a desktop (even a
-// touchscreen laptop, which reports deviceMemory >= 8) is never gated, so this
-// only ever short-circuits the clearly-mobile case that would otherwise crash.
-export function isLowMemoryDevice() {
-  const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-  if (!coarse) return false;
-  const dm = navigator.deviceMemory;
-  if (dm && dm >= 8) return false;
-  return true;
-}
+// Memory-constrained-device heuristic. Now defined alongside the rest of the
+// resource-limit policy in core/limits.js and re-exported here so existing
+// callers keep importing it from util.js unchanged.
+export { isLowMemoryDevice } from './limits.js';
 
 // SubtleCrypto covers SHA-1/256/384/512 but not MD5. subtleHex hashes an already
 // in-memory ArrayBuffer (so a multi-hash pass reads the file just once).
