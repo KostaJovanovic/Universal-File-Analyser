@@ -10,6 +10,7 @@
 
 import { fileExt, el, row, downloadBlob } from './util.js';
 import { hexBytes } from './binutil.js';
+import { SCAN_MED } from './limits.js';
 import { sniffFileType } from './file-sniff.js';
 
 // Re-analyse callback (app.js's handleFile), injected via setReanalyse() so this
@@ -117,7 +118,7 @@ export function signatureCard(info) {
 // declared-size formats (BMP, RIFF/WAV/AVI/WebP, ZIP-via-EOCD) and the chunk/
 // marker-terminated images (PNG IEND, JPEG EOI, GIF trailer). Whole-file scans
 // (PNG/JPEG/GIF) are capped so a giant image can't stall the drop.
-const TRAIL_MAX_FULL = 64 * 1024 * 1024;
+const TRAIL_MAX_FULL = SCAN_MED;
 
 // ZIP: the End Of Central Directory record is the last structure; anything after
 // it (past its own comment field) is appended. Scan the tail for the last EOCD.

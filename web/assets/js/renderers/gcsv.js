@@ -21,8 +21,9 @@
 
 import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 import { buildImuTimeline } from './sony-rtmd.js';
+import { SCAN_MED } from '../core/limits.js';
 
-const MAX_TEXT = 64 * 1024 * 1024;     // don't read absurdly large logs whole
+const MAX_TEXT = SCAN_MED;     // don't read absurdly large logs whole
 const MAX_POINTS = 4000;               // decimate the trace to keep the canvas cheap
 const RAD2DEG = 180 / Math.PI;
 

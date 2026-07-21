@@ -2,6 +2,7 @@
    Magic-byte format guess, hex/ASCII dump, SHA-256, and enhanced
    previews for plain text, JSON, and XML. */
 
+import { SCAN_MED, SCAN_LARGE } from '../core/limits.js';
 import { el, row, rowHelp, fmtBytes, fileExt, errorCard } from '../core/util.js';
 import { entropyProfile, hexBytes } from '../core/binutil.js';
 import { buildOsintCard } from '../core/osint.js';
@@ -513,7 +514,7 @@ export async function renderUnknown(file, resultsEl, opts) {
 // entropy as a coloured column (blue = low/repetitive, red = high/random), and
 // reports the mean/range with a plain-language assessment. Reads up to a cap so a
 // huge blob can't blow the heap.
-const ENTROPY_SCAN_CAP = 64 * 1024 * 1024;
+const ENTROPY_SCAN_CAP = SCAN_MED;
 async function appendEntropyCard(file, resultsEl) {
   if (file.size < 256) return;   // too small for a meaningful profile
   let bytes;
@@ -573,7 +574,7 @@ async function appendEntropyCard(file, resultsEl) {
 // append a card that previews each one with download + "analyse" buttons. Mines
 // recovered disk fragments / joined dumps / mis-typed files for whole JPEGs, PNGs,
 // GIFs, WebPs and BMPs. Reads up to a cap so a huge blob can't blow the heap.
-const CARVE_SCAN_CAP = 128 * 1024 * 1024;
+const CARVE_SCAN_CAP = SCAN_LARGE;
 const CARVE_MIME = { jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
 
 // `host` is an empty div already sitting in the right place in the results, so
