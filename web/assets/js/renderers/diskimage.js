@@ -317,20 +317,13 @@ function carvedImageGallery(readFull, file, resultsEl, vol) {
       controls.appendChild(toggle);
     }
 
-    // Copy a report of every full-size photo - offset, size, and whether it
-    // produces a preview or not - to the clipboard, so the list can be
-    // cross-referenced against the card elsewhere. Each candidate is decoded on
-    // click - most aren't decoded yet (thumbnails decode lazily on scroll) - and
-    // the verdict is cached, shared with the on-screen labels.
-    controls.appendChild(makeCopyCorruptButton(img, list, vol));
-
-    // Sort control: largest first (the default), or by EXIF capture date. Re-orders
+    // Sort control: newest first (the default), oldest, or by file size. Re-orders
     // the cells in place; the lightbox index is unaffected (it tracks _carveList,
     // not the DOM order).
     const sortSel = el('select', { class: 'anr-btn anr-btn-sm anr-select', 'aria-label': 'Sort images', style: 'margin:0;' }, [
-      el('option', { value: 'size' }, 'Largest first'),
       el('option', { value: 'newest' }, 'Newest first'),
       el('option', { value: 'oldest' }, 'Oldest first'),
+      el('option', { value: 'size' }, 'Largest first'),
     ]);
     controls.appendChild(sortSel);
 
@@ -342,8 +335,7 @@ function carvedImageGallery(readFull, file, resultsEl, vol) {
     // are pumped one at a time through a queue rather than fired all at once: a
     // single scroll can bring dozens of large photos into view together, and
     // decoding them concurrently exhausts the browser's image decoder so some come
-    // back blank and show a false "no preview". Serial decoding matches what the
-    // Copy photo list button reports.
+    // back blank and show a false "no preview".
     const queue = [];
     let pumping = false;
     const pump = async () => {
@@ -371,8 +363,8 @@ function carvedImageGallery(readFull, file, resultsEl, vol) {
     // with no EXIF date - a video frame, or a reset camera clock - sinks to the
     // bottom of a date sort). The frames toggle still finds cells by their dataset.
     const bySize = (a, b) => (b.c.end - b.c.start) - (a.c.end - a.c.start);
-    sortSel.addEventListener('change', () => {
-      const mode = sortSel.value, newest = mode === 'newest';
+    const applySort = (mode) => {
+      const newest = mode === 'newest';
       const arr = cells.slice();
       arr.sort(mode === 'size' ? bySize : (a, b) => {
         const da = a.c._date, db = b.c._date;
@@ -382,7 +374,9 @@ function carvedImageGallery(readFull, file, resultsEl, vol) {
         return bySize(a, b);
       });
       for (const { cell } of arr) grid.appendChild(cell);
-    });
+    };
+    sortSel.addEventListener('change', () => applySort(sortSel.value));
+    applySort(sortSel.value);          // newest first is the default (the first option)
   });
 }
 
@@ -418,6 +412,7 @@ function openCarveLightboxAt(pos) {
       onPrev: () => openCarveLightboxAt(pos - 1),
       onNext: () => openCarveLightboxAt(pos + 1),
       checker: true,
+      rawOrientation: true,        // show the stored raster, not the EXIF-rotated view
       actions: [
         { label: 'Analyse', onClick: () => { closeLightbox(); analyseCarve(img, c, pos, file, vol); } },
         { label: 'Download', onClick: () => downloadCarve(img, c, pos, vol) },
@@ -620,6 +615,11 @@ function decodeCarveToCanvas(sub, format, maxD) {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(new Blob([sub], { type: CARVE_MIME[format] || 'application/octet-stream' }));
     const im = new Image();
+    // Draw the raw stored raster: ignore the EXIF orientation tag so the preview
+    // matches the reported pixel dimensions (and the salvage decoder, which never
+    // rotates). A carved photo with a spurious rotate tag then shows as-stored, not
+    // silently flipped to portrait.
+    im.style.imageOrientation = 'none';
     const done = (canvas, cat, salvaged, thumb, corrupt) => { im.onload = im.onerror = null; im.src = ''; URL.revokeObjectURL(url); resolve({ canvas, cat, salvaged: !!salvaged, thumb: !!thumb, corrupt: !!corrupt }); };
     const trySalvage = () => { const s = format === 'jpeg' ? salvageCanvas(sub, maxD) : null; return s ? done(s.canvas, s.cat, true, s.thumb, s.corrupt) : done(null, 'none', false, false); };
     im.onload = () => {
@@ -693,72 +693,10 @@ function renderCarveThumb(thumbEl) {
   });
 }
 
-// Name a decode by how much real content it has, for the copy-list report and the
-// on-hover caption. Nothing is hidden - even 'empty' carves are shown as whatever
-// grey/noise they decoded to, so the gallery reflects everything the scan found.
+// Name a decode by how much real content it has, for the on-hover caption.
+// Nothing is hidden - even 'empty' carves are shown as whatever grey/noise they
+// decoded to, so the gallery reflects everything the scan found.
 function classifyFill(frac) { return frac < 0.5 ? 'ok' : frac < 0.99 ? 'partial' : 'empty'; }
-
-// Classify how much of a carve is real content - 'ok' | 'partial' | 'empty' |
-// 'none' - caching the verdict. Uses the same browser-then-salvage path the
-// thumbnail does, so the copy-list report and the on-screen thumbnails always
-// agree. A carve already classified (on scroll or a previous run) short-circuits.
-function checkCarveDecodes(img, c, vol) {
-  if (c._cat) return Promise.resolve(c._cat);
-  const sub = carveBytes(img, vol, c);
-  return decodeCarveToCanvas(sub, c.format, 200).then(({ cat, salvaged, thumb, corrupt }) => {
-    c._cat = cat; c.undecodable = cat === 'none'; c._decoded = cat !== 'none'; c._salvaged = salvaged; c._thumb = thumb; c._corrupt = corrupt;
-    return cat;
-  });
-}
-
-// A button that decodes every full-size photo (frames and thumbnails excluded)
-// and copies a report of all of them to the clipboard: offset, byte size and how
-// much of the picture is real - ok (a full image), partial (a recovered top strip
-// over undecoded fill), empty (decoded to nothing but grey/noise) or none (no
-// decodable image at all). Tab-separated so it pastes into a spreadsheet. Most
-// photos aren't decoded yet (thumbnails decode lazily on scroll), so they are
-// decoded one at a time on click with a running count; each verdict is cached on
-// the carve and shared with the on-screen thumbnails.
-function makeCopyCorruptButton(img, list, vol) {
-  const btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', style: 'margin:0; white-space:nowrap; flex-shrink:0;' }, 'Copy photo list');
-  const idle = 'Copy photo list';
-  const reset = (msg) => { btn.textContent = msg; btn.disabled = false; btn._busy = false; setTimeout(() => { if (!btn._busy) btn.textContent = idle; }, 2500); };
-  btn.addEventListener('click', async () => {
-    if (btn._busy) return;
-    btn._busy = true; btn.disabled = true;
-    // Full-size photos only: the scan also turns up thousands of tiny MJPEG video
-    // frames and EXIF thumbnails (the "N found" total), which aren't what this
-    // list is about, so they're skipped here just as the frames toggle hides them.
-    const photos = list.filter((c) => !c.frame);
-    if (!photos.length) { reset('No photos'); return; }
-    const rows = [];
-    const tally = { ok: 0, partial: 0, empty: 0, none: 0 };
-    for (let i = 0; i < photos.length; i++) {
-      btn.textContent = 'Checking ' + (i + 1) + '/' + photos.length + '…';
-      const c = photos[i];
-      const cat = await checkCarveDecodes(img, c, vol);          // eslint-disable-line no-await-in-loop
-      tally[cat] = (tally[cat] || 0) + 1;
-      rows.push('0x' + c.start.toString(16) + '\t' + (c.end - c.start) + '\t' + fmtBytes(c.end - c.start) + '\t' + cat);
-      // Let the browser reclaim the decoded bitmap before the next one, so a burst
-      // of large photos can't exhaust the image decoder (see checkCarveDecodes).
-      await new Promise((r) => setTimeout(r));                   // eslint-disable-line no-await-in-loop
-    }
-    const text = 'offset\tbytes\tsize\tcontent\n' + rows.join('\n');
-    const note = photos.length + ' photos: ' + tally.ok + ' ok, ' + tally.partial + ' partial, ' + (tally.empty + tally.none) + ' empty';
-    try {
-      await navigator.clipboard.writeText(text);
-      reset('Copied ' + note);
-    } catch (_) {
-      // Fallback for a context without the async clipboard API.
-      const ta = el('textarea', { style: 'position:fixed; opacity:0; pointer-events:none;' });
-      ta.value = text; document.body.appendChild(ta); ta.select();
-      let done = false; try { done = document.execCommand('copy'); } catch (_) {}
-      ta.remove();
-      reset(done ? 'Copied ' + note : 'Copy failed');
-    }
-  });
-  return btn;
-}
 
 // A readout card listing every MBR partition (type, offset, size, bootable).
 function partitionCard(partitions) {

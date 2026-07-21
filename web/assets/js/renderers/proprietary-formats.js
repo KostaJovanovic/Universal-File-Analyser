@@ -964,6 +964,9 @@ export const FORMATS = {
   // The Sims / Maxis package (DBPF)
   package: { app: 'The Sims Package (DBPF)', chunk: 'gaming' },
 
+  // Waveform peak / overview sidecar (parsed locally - parsePkf: draws the waveform)
+  pkf:     { app: 'DJI Waveform Peak File' },
+
   // Audio - extra codecs / trackers / chiptune (lazy chunk: parsers-audio.js)
   ape:     { app: "Monkey's Audio", chunk: 'audio' },
   wv:      { app: 'WavPack', chunk: 'audio' },

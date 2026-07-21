@@ -15,6 +15,13 @@ import { el } from './util.js';
 // newest group's notes, or - once that group holds five versions - start a new
 // group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
+  { range: '6.38 - 6.51', notes: [
+    'Long animated **GIFs** and **WebPs** now play in full, however many frames - each decoded as you scrub to it, with only a rolling window kept in memory.',
+    'How much an animation keeps ready to replay - and the size at which a very large **archive or disk image** is turned away - now scale to your device\'s memory.',
+    'Draws the waveform from a **DJI recorder\'s .pkf** overview file (Mic, Osmo, drone), and identifies Adobe Audition peak caches.',
+    'The **See full document** reading view fixes vanishing dark-mode text and moves its open button above the excerpt.',
+    'A visual tidy - every remaining **rounded corner** squared off - plus internal consolidation of provenance reads, the board viewer and all size limits.',
+  ] },
   { range: '6.36 - 6.37', notes: [
     'Opens a raw **disk image** (.img/.ima/.dsk) like a folder - mounts its **FAT12/16/32** filesystem, browses every file in a tree and treemap, and reads the volume label, cluster size and free space.',
     '**Carves deleted photos** straight from a disk image\'s raw sectors, recovering pictures the file list no longer points to.',

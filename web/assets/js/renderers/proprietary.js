@@ -1350,6 +1350,90 @@ function firstUtf16(buf, start, end, minChars = 2) {
   return best || null;
 }
 
+// ---------- DJI waveform peak file (.pkf) ----------
+// A DJI recorder (Mic, Osmo, drone) writes a .pkf next to each recording: a
+// precomputed waveform "overview" - a header then an array of 32-bit-float peak
+// values - so the app can draw the waveform without decoding the audio. It holds no
+// audio itself. Header (little-endian): magic "k$!\0" @0, total source samples @4,
+// channels @12, values-per-peak @20, peak count @24, samples-per-peak @28; the float
+// peak array follows. We identify it, read those fields, and draw the waveform.
+// (.pkf is also Adobe Audition's peak cache, a different "CDpk" format - identified
+// separately so it isn't mislabelled.)
+async function parsePkf({ file }) {
+  let buf;
+  try { buf = new Uint8Array(await file.arrayBuffer()); } catch (_) { return null; }
+  if (buf.length < 32) return null;
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.length);
+  // Adobe Audition peak cache - "CDpk" magic. Different format; identify only.
+  if (buf[0] === 0x43 && buf[1] === 0x44 && buf[2] === 0x70 && buf[3] === 0x6b) {
+    return {
+      _app: 'Adobe Audition Peak File',
+      'Format': 'Adobe Audition waveform peak cache (CDpk) - a sidecar of precomputed waveform peaks, not audio',
+      'Shown as': 'Identification only - open the matching audio file to hear or analyse the sound.',
+    };
+  }
+  // DJI-style peak file - "k$!\0" magic (6B 24 21 00).
+  if (!(buf[0] === 0x6b && buf[1] === 0x24 && buf[2] === 0x21 && buf[3] === 0x00)) return null;
+  const totalSamples = dv.getUint32(4, true);
+  const channels = dv.getUint32(12, true) || 1;
+  const peakCount = dv.getUint32(24, true);
+  const samplesPerPeak = dv.getUint32(28, true) || 128;
+  const HEADER = 56;   // (fileSize - 56) is an exact multiple of the 8-byte min/max peak pair
+  const out = {
+    _app: 'DJI Waveform Peak File',
+    'Format': 'DJI waveform peak / overview cache (magic "k$!") - the precomputed waveform a DJI recorder writes beside its audio, not the audio itself',
+    'Channels': channels === 1 ? 'Mono' : channels === 2 ? 'Stereo' : String(channels),
+  };
+  if (peakCount) out['Peaks'] = peakCount.toLocaleString() + ' (min/max pairs, ' + samplesPerPeak.toLocaleString() + ' samples each)';
+  if (totalSamples) {
+    out['Source samples'] = totalSamples.toLocaleString();
+    const secs = totalSamples / 48000;   // sample rate isn't stored; DJI records at 48 kHz
+    const mm = Math.floor(secs / 60), ss = Math.round(secs % 60);
+    out['Duration'] = '~' + mm + ':' + String(ss).padStart(2, '0') + ' (estimated at 48 kHz - the rate is not stored in this file)';
+  }
+  out['Note'] = 'This is a waveform overview, not audio. Open the matching DJI recording (same name, .wav / .mp3 / .mp4) to hear or analyse the sound.';
+  const node = drawPkfWaveform(dv, HEADER, buf.length);
+  if (node) out._previewNode = node;
+  return out;
+}
+
+// Draw the peak float array [start, byteLen) as a waveform envelope. The values
+// alternate min/max per peak, so per-column min and max over the raw floats give the
+// envelope directly - robust to the exact pair phase. Returns a wrapped <canvas>.
+function drawPkfWaveform(dv, start, byteLen) {
+  const n = Math.floor((byteLen - start) / 4);
+  if (n < 8) return null;
+  const W = 900, H = 180, mid = H / 2, pad = 3;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const css = getComputedStyle(document.documentElement);
+  const wave = (css.getPropertyValue('--accent') || '').trim() || '#39a2a2';
+  // Global peak for vertical scaling.
+  let absmax = 0;
+  for (let i = 0; i < n; i++) { const v = dv.getFloat32(start + i * 4, true); if (Number.isFinite(v)) { const a = v < 0 ? -v : v; if (a > absmax) absmax = a; } }
+  if (absmax <= 0) return null;
+  // Zero line.
+  ctx.strokeStyle = 'rgba(128,128,128,0.35)';
+  ctx.beginPath(); ctx.moveTo(0, mid + 0.5); ctx.lineTo(W, mid + 0.5); ctx.stroke();
+  // One vertical min-max bar per column.
+  ctx.strokeStyle = wave; ctx.lineWidth = 1;
+  const per = n / W;
+  for (let x = 0; x < W; x++) {
+    const i0 = Math.floor(x * per), i1 = Math.min(n, Math.floor((x + 1) * per));
+    let mn = 0, mx = 0;
+    for (let i = i0; i < i1; i++) { const v = dv.getFloat32(start + i * 4, true); if (!Number.isFinite(v)) continue; if (v < mn) mn = v; if (v > mx) mx = v; }
+    const yTop = mid - (mx / absmax) * (mid - pad);
+    const yBot = mid - (mn / absmax) * (mid - pad);
+    ctx.beginPath(); ctx.moveTo(x + 0.5, yTop); ctx.lineTo(x + 0.5, Math.max(yBot, yTop + 0.5)); ctx.stroke();
+  }
+  cv.style.cssText = 'width:100%; height:auto; display:block; border:1px solid var(--bd-hairline); background:var(--bg);';
+  const wrap = el('div', { style: 'margin-top:12px;' });
+  wrap.appendChild(el('div', { class: 'anr-readout-section' }, 'Waveform overview'));
+  wrap.appendChild(cv);
+  return wrap;
+}
+
 // ---------- ISO 9660 ----------
 function parseIso(buf) {
   if (buf.length < 100) return null;
@@ -3948,6 +4032,7 @@ const PARSERS = {
   swf:   c => parseSwf(c.head),
   imc:   c => parseImc(c.head),
   adi:   c => parseAdi(c.head),
+  pkf:   c => parsePkf(c),
   exe:   c => parseExe(c),
   dll:   c => parseExe(c),
   rne:   c => parseExe(c),   // Cyberpunk ships steam_api64.dll renamed to .rne
