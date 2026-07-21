@@ -218,7 +218,7 @@ function trackLanesSvg(tracks, dur, H, trackW, pps) {
     t.clips.forEach((c) => {
       const bx = x(c.start), bw = Math.max(2, x(c.end) - x(c.start));
       const tip = c.file + (c.inst ? ' · ' + c.inst : '') + (c.path ? '\n' + c.path : '') + ` · ${fmtTime(c.start)}–${fmtTime(c.end)}`;
-      bars += `<rect x="${bx}" y="${y + 4}" width="${bw}" height="${LH - 8}" rx="3" fill="${col}"><title>${esc(tip)}</title></rect>`;
+      bars += `<rect x="${bx}" y="${y + 4}" width="${bw}" height="${LH - 8}" fill="${col}"><title>${esc(tip)}</title></rect>`;
       if (bw > 46) bars += `<text x="${bx + 5}" y="${y + LH / 2 + 4}" fill="#fff" font-size="9.5" opacity=".95" pointer-events="none" clip-path="inset(0 0 0 0)">${esc(c.file.slice(0, Math.max(3, Math.floor(bw / 6.5))))}</text>`;
     });
   });
@@ -253,7 +253,7 @@ function buildSequenceTimeline(seq) {
   const lanes = el('div', {});
   const scroller = el('div', { style: 'overflow-x:auto;overflow-y:hidden;flex:1 1 auto;cursor:grab;touch-action:pan-y', class: 'anr-aep-scroller' });
   scroller.appendChild(lanes);
-  card.appendChild(el('div', { style: 'display:flex;align-items:flex-start;border:1px solid var(--hairline);border-radius:8px;overflow:hidden' }, [labels, scroller]));
+  card.appendChild(el('div', { style: 'display:flex;align-items:flex-start;border:1px solid var(--hairline);overflow:hidden' }, [labels, scroller]));
 
   const basePps = () => Math.max(1, (scroller.clientWidth || 660) - 6) / dur;   // fit whole sequence at zoom 1
   const ppsNow = () => basePps() * zoom;

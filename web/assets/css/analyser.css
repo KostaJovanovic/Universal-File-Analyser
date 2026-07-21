@@ -1332,7 +1332,7 @@ body.anr-has-file .nav-search { display: flex; }
   width: 12px;
   height: 12px;
   border: 1px solid var(--hairline);
-  border-radius: 2px;
+  border-radius: 0;
   flex: none;
 }
 
@@ -2048,7 +2048,7 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   backface-visibility: hidden;
   transition: background 0.12s ease;
 }
-.anr-viewcube-edge { width: 16px; height: 16px; border-radius: 3px; }
+.anr-viewcube-edge { width: 16px; height: 16px; border-radius: 0; }
 .anr-viewcube-corner { width: 14px; height: 14px; border-radius: 50%; }
 .anr-viewcube-face.is-hot { background: var(--accent); color: var(--accent-fg, #fff); border-color: var(--accent); }
 /* When the whole face is the target, let its edge/corner patches melt into the
@@ -2078,27 +2078,27 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 /* DaVinci Resolve colour-grade node chips */
 .anr-drt-nodes { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .anr-drt-node {
-  display: inline-block; padding: 2px 10px; border: var(--bd-hairline); border-radius: 999px;
+  display: inline-block; padding: 2px 10px; border: var(--bd-hairline); border-radius: 0;
   font-size: 11.5px; font-weight: 600; letter-spacing: .02em;
   background: rgba(240, 168, 48, .10);
 }
 .anr-drt-arrow { opacity: .4; font-size: 11px; margin: 0 1px; }
 /* Colour LUT (.cube) memory-colour swatches */
 .anr-lut-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
-.anr-lut-sw { border: var(--bd-hairline); border-radius: 8px; padding: 8px; }
+.anr-lut-sw { border: var(--bd-hairline); border-radius: 0; padding: 8px; }
 .anr-lut-sw-pair { display: flex; align-items: center; gap: 7px; }
-.anr-lut-chip { flex: 1 1 0; height: 30px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(128,128,128,.25); }
+.anr-lut-chip { flex: 1 1 0; height: 30px; border-radius: 0; box-shadow: inset 0 0 0 1px rgba(128,128,128,.25); }
 .anr-lut-arrow { flex: 0 0 auto; opacity: .5; font-size: 12px; }
 .anr-lut-sw-name { font-size: 12px; font-weight: 600; margin-top: 6px; }
 .anr-lut-sw-hex { font-family: var(--font-mono); font-size: 10.5px; opacity: .6; }
 .anr-lut-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-top: 6px; }
 .anr-lut-frames--single { grid-template-columns: 1fr; max-width: 720px; }
-.anr-lut-frame { border: var(--bd-hairline); border-radius: 8px; padding: 6px; }
+.anr-lut-frame { border: var(--bd-hairline); border-radius: 0; padding: 6px; }
 .anr-lut-pair { display: flex; gap: 6px; }
 .anr-lut-half { flex: 1 1 0; min-width: 0; }
 /* Fixed-aspect thumbnails so every uploaded frame is the same size (object-fit
    crops the source into the box rather than letting it resize the cell). */
-.anr-lut-thumb { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 5px; display: block; background: #0a0a0a; cursor: zoom-in; transition: filter .12s; }
+.anr-lut-thumb { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 0; display: block; background: #0a0a0a; cursor: zoom-in; transition: filter .12s; }
 .anr-lut-thumb:hover { filter: brightness(1.08); }
 .anr-lut-cap { text-align: center; font-size: 10.5px; opacity: .6; margin-top: 2px; }
 .anr-scan-list { list-style: none; margin: 0; padding: 0; }
@@ -4507,7 +4507,7 @@ body:has(.quickdrop-hero) .footer-nav-btn { display: none; }
   font-size: 0.9em;
   background: var(--rule);
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: 0;
 }
 .fact-approx { color: var(--muted); font-size: 0.85em; white-space: nowrap; }
 
@@ -6106,7 +6106,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   min-height: 2px;
   background: var(--accent);
   opacity: 0.65;
-  border-radius: 1px 1px 0 0;
+  border-radius: 0;
   transition: opacity 0.12s ease;
 }
 .anr-ziphist-bar:hover { opacity: 1; }
@@ -6371,7 +6371,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   background: #14161a;
   border: var(--bd-hairline);
   padding: 8px 10px;
-  border-radius: 4px;
+  border-radius: 0;
 }
 .anr-ass-stage .anr-lrc-time { color: #8a8f98; }
 .anr-ass-line { white-space: pre-wrap; }
@@ -7668,7 +7668,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 /* PSD layer tree: one row per layer, indented for groups, with a small canvas
    thumbnail. Hidden layers are dimmed. */
 .anr-psd-layers { margin-top: 8px; display: flex; flex-direction: column; gap: 1px; }
-.anr-psd-layer { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 4px; }
+.anr-psd-layer { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 0; }
 .anr-psd-layer:hover { background: var(--hover, rgba(127,127,127,0.08)); }
 .anr-psd-layer.is-hidden { opacity: 0.45; }
 /* Hidden/invisible layer kept visible in the tree (greyed), plus the forensic
@@ -7707,7 +7707,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   .anr-font-axis-name { grid-column: 1 / -1; }
 }
 .anr-font-glyphs { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fill, 44px); gap: 4px; }
-.anr-font-glyph { width: 44px; height: 44px; border: var(--bd-rule); border-radius: 3px; background: var(--card, transparent); }
+.anr-font-glyph { width: 44px; height: 44px; border: var(--bd-rule); border-radius: 0; background: var(--card, transparent); }
 /* DjVu page viewer: pager bar + rendered page canvas. */
 .anr-djvu-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .anr-djvu-status { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
@@ -7749,7 +7749,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-altium-layer.is-on { border-color: var(--accent); }
 .anr-altium-swatch {
   width: 11px; height: 11px;
-  border-radius: 2px;
+  border-radius: 0;
   box-shadow: 0 0 4px currentColor;
   flex: none;
 }
@@ -7868,17 +7868,17 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 .anr-spice-chip {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 3px 10px; font-size: 12px; font-family: ui-monospace, monospace;
-  border: var(--bd-hairline); border-radius: 999px; background: transparent;
+  border: var(--bd-hairline); border-radius: 0; background: transparent;
   color: var(--ink, inherit); cursor: pointer; transition: opacity .12s, border-color .12s;
 }
 .anr-spice-chip.is-off { opacity: .42; }
-.anr-spice-swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--tc, #888); flex: none; }
+.anr-spice-swatch { width: 10px; height: 10px; border-radius: 0; background: var(--tc, #888); flex: none; }
 .anr-spice-track { position: relative; border: var(--bd-hairline); border-radius: var(--radius); background: #f4f0e6; overflow: hidden; }
 .anr-spice-canvas { display: block; width: 100%; }
 .anr-spice-guide { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(20,30,55,0.55); pointer-events: none; }
 .anr-spice-readout {
   position: absolute; top: 8px; pointer-events: none; z-index: 2;
-  background: rgba(255,255,255,0.94); border: var(--bd-hairline); border-radius: 6px;
+  background: rgba(255,255,255,0.94); border: var(--bd-hairline); border-radius: 0;
   padding: 6px 8px; font-size: 12px; font-family: ui-monospace, monospace; color: #1a2233;
   box-shadow: 0 4px 14px rgba(20,30,55,0.16); max-width: 60%;
 }
@@ -7891,7 +7891,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 /* ----- IPC-D-356 netlist viewer ----- */
 .anr-ipc-maphost { border: var(--bd-hairline); border-radius: var(--radius); background: #f4f0e6; padding: 8px; }
 .anr-ipc-svg { display: block; width: 100%; max-height: 520px; }
-.anr-ipc-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; }
+.anr-ipc-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 0; vertical-align: -1px; }
 .anr-ipc-nets td.anr-ipc-conns { max-width: 420px; white-space: normal; color: var(--muted); font-size: 12px; }
 .anr-ipc-nets, .anr-ipc-comps { border-collapse: collapse; }
 .anr-ipc-nets th, .anr-ipc-nets td, .anr-ipc-comps th, .anr-ipc-comps td { text-align: left; padding: 4px 16px 4px 0; vertical-align: top; }
@@ -8867,18 +8867,18 @@ a.stats-ext-link:hover { color: var(--accent); text-decoration: none; }
   white-space: pre-wrap; word-break: break-word; margin: 0;
   user-select: text; -webkit-user-select: text;
 }
-.anr-nb-code { background: var(--surface); padding: 12px 14px; border-radius: 4px; }
+.anr-nb-code { background: var(--surface); padding: 12px 14px; border-radius: 0; }
 .anr-nb-out { margin-top: 8px; padding: 8px 14px; border-left: 2px solid var(--rule); color: var(--muted); }
 .anr-nb-out--result { color: var(--fg); }
 .anr-nb-out--err { color: var(--accent); border-left-color: var(--accent); }
 .anr-nb-img { max-width: 100%; height: auto; margin-top: 8px; border: var(--bd-rule); }
 .anr-nb-md { line-height: 1.6; }
 .anr-nb-md h1, .anr-nb-md h2, .anr-nb-md h3 { margin: 0.5em 0 0.3em; }
-.anr-nb-mdcode { background: var(--surface); padding: 12px 14px; border-radius: 4px; font-family: var(--font-mono); font-size: 12.5px; white-space: pre-wrap; }
+.anr-nb-mdcode { background: var(--surface); padding: 12px 14px; border-radius: 0; font-family: var(--font-mono); font-size: 12.5px; white-space: pre-wrap; }
 
 /* ---------- Email ---------- */
 .anr-email-html {
-  border: var(--bd-rule); padding: 16px; border-radius: 4px;
+  border: var(--bd-rule); padding: 16px; border-radius: 0;
   max-height: 640px; overflow: auto; background: var(--bg);
   user-select: text; -webkit-user-select: text;
 }
@@ -8912,19 +8912,19 @@ details[open] > .anr-json-sum::before { transform: rotate(90deg); }
 .anr-json-number { color: #2d6fd6; }
 .anr-json-boolean, .anr-json-null { color: #b07d00; }
 
-.anr-code-src { max-height: 560px; overflow: auto; background: var(--surface); padding: 14px; border-radius: 4px; }
+.anr-code-src { max-height: 560px; overflow: auto; background: var(--surface); padding: 14px; border-radius: 0; }
 
 /* ---------- NFO scene art ---------- */
 .anr-nfo-art {
   font-family: var(--font-mono); font-size: 13px; line-height: 1.2;
   white-space: pre; overflow-x: auto; tab-size: 8;
-  background: var(--surface); padding: 18px; border-radius: 4px;
+  background: var(--surface); padding: 18px; border-radius: 0;
   user-select: text; -webkit-user-select: text;
 }
 
 /* ---------- Diagram preview (draw.io / DXF) ---------- */
 .anr-diagram-stage {
-  border: var(--bd-rule); border-radius: 4px; background: var(--bg);
+  border: var(--bd-rule); border-radius: 0; background: var(--bg);
   max-height: 70vh; overflow: auto; padding: 12px;
 }
 .anr-diagram-svg { display: block; width: 100%; height: auto; max-height: 68vh; }
