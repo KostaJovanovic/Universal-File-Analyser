@@ -11,6 +11,8 @@ import { appendSonyGyroCard } from './sony-rtmd.js';
 import { registerSyncedVideo, setAudioCompanion } from '../core/video-sync.js';
 import { buildReverseAudioCard } from './media-reverse.js';
 import { detectMoovlessMp4, extractMp4ParamSets, findInbandParamSets, carveAvccToAnnexB } from './video-recover.js';
+import { analyzeMp4Structure, analyzeBitstream, BOX_GLOSS } from './video-forensics.js';
+import { appendTelemetryCards } from './video-telemetry.js';
 
 // iOS (iPhone/iPad) detection. On iOS the custom scrubber's touch handling is
 // unreliable, so we show the native <video> controls there; everywhere else the
@@ -595,7 +597,14 @@ async function ffmpegReverseVideo(file, onLoad, onEnc, signal) {
 // 4:2:2, ...) so they can be played and fully analysed. Plain streaming transcode
 // (no whole-video buffering), so memory stays flat regardless of length. Returns a
 // video/mp4 Blob, or null. `onLoad`/`onEnc` report 0..1 progress.
-async function ffmpegTranscodeToH264(file, onLoad, onEnc, signal) {
+async function ffmpegTranscodeToH264(file, onLoad, onEnc, signal, opts = {}) {
+  // Fast viewing/analysis proxy by default: downscale to a 720p box, ultrafast
+  // preset, cap 30 fps - encode time scales with pixels x frames, so this is
+  // typically several times faster than a full-resolution re-encode. The Advanced
+  // panel on the convert card overrides maxHeight / maxFps / preset.
+  const maxHeight = opts.maxHeight != null ? opts.maxHeight : 720;
+  const maxFps = opts.maxFps != null ? opts.maxFps : 30;
+  const preset = opts.preset || 'ultrafast';
   const ff = await loadFFmpeg(onLoad);
   if (signal && signal.aborted) return null;
   const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
@@ -603,16 +612,31 @@ async function ffmpegTranscodeToH264(file, onLoad, onEnc, signal) {
   try { await ff.writeFile(inName, await fetchFile(file)); } catch (_) { return null; }
   const onProg = ({ progress }) => { if (onEnc && isFinite(progress)) onEnc(Math.max(0, Math.min(1, progress))); };
   ff.on('progress', onProg);
+  // "turbo" is faster than libx264's own fastest preset (ultrafast is already the
+  // floor). The extra speed comes from the DECODE side, which for HEVC is a big
+  // share of the work: -skip_loop_filter all is an INPUT option that drops the
+  // in-loop deblocking filter while decoding the source (slightly blockier, no
+  // frames dropped). It also disables encoder lookahead. Everything else is a
+  // normal x264 preset. Input-side options must sit before -i.
+  const inOpts = [];
+  let x264preset = preset, tune = null;
+  if (preset === 'turbo') { inOpts.push('-skip_loop_filter', 'all'); x264preset = 'ultrafast'; tune = 'zerolatency'; }
+  // Shared video/rate options. The scale caps HEIGHT at maxHeight without ever
+  // upscaling (min(H,ih)) and forces even dimensions (-2 width, 2*trunc(...) height)
+  // that yuv420p / H.264 require. The comma inside min() is escaped so the
+  // filtergraph parser doesn't read it as a filter separator.
+  const vopts = ['-c:v', 'libx264', '-preset', x264preset, '-crf', '23', '-pix_fmt', 'yuv420p'];
+  if (tune) vopts.push('-tune', tune);
+  if (maxHeight > 0) vopts.push('-vf', 'scale=-2:2*trunc(min(' + maxHeight + '\\,ih)/2)');
+  if (maxFps > 0) vopts.push('-r', String(maxFps));
   const run = async (args) => {
     try { await ff.exec(args); } catch (_) {}
     try { return await ff.readFile(outName); } catch (_) { return null; }
   };
-  let data = await run(['-i', inName, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
-    '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', '-y', outName]);
+  let data = await run([...inOpts, '-i', inName, ...vopts, '-c:a', 'aac', '-movflags', '+faststart', '-y', outName]);
   if (!data || !data.length) {
     try { await ff.deleteFile(outName); } catch (_) {}
-    data = await run(['-i', inName, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
-      '-pix_fmt', 'yuv420p', '-an', '-movflags', '+faststart', '-y', outName]);
+    data = await run([...inOpts, '-i', inName, ...vopts, '-an', '-movflags', '+faststart', '-y', outName]);
   }
   ff.off('progress', onProg);
   try { await ff.deleteFile(inName); } catch (_) {}
@@ -2221,18 +2245,17 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
   const hiDepth = !!(v && v.bitDepth && v.bitDepth >= 10);
   let msg;
   if (isPro) {
-    msg = (v.codecName || 'This codec') + ' is a professional editing / master format that no web browser can decode, so it can’t be played here. The file is fine - convert it to H.264 (MP4) to view it in a browser.';
+    msg = (v.codecName || 'This codec') + ' is a professional master format no web browser can decode, so it can’t be played here.';
   } else if (hiDepth) {
     const cf = (v.chroma && v.chroma !== '4:2:0') ? ' ' + v.chroma : '';
-    msg = 'This is a ' + v.bitDepth + '-bit' + cf + ' ' + (v.codecName || 'video') + ' file - the kind Sony XAVC HS / FX-series, Canon and other cameras record. No web browser ships a decoder for high-bit-depth' + (cf ? ' 4:2:2' : '') + ' video, so it can’t be played here. The file is fine - convert it to 8-bit H.264 (MP4) to view it in a browser, or use the first-frame preview below.';
+    msg = 'This ' + v.bitDepth + '-bit' + cf + ' ' + (v.codecName || 'video') + ' file has no browser decoder, so it can’t be played here.';
   } else if (named) {
-    msg = 'Your browser has no decoder for this video’s codec (' + v.codecName + '), so it can’t be played here. The file itself is fine - converting it to H.264 (MP4) will make it playable.';
+    msg = 'Your browser has no decoder for this codec (' + v.codecName + '), so it can’t be played here.';
   } else {
-    msg = 'Your browser can’t decode this video’s codec, so it can’t be played here. The file itself may be fine - converting it to H.264 (MP4) usually makes it playable.';
+    msg = 'Your browser can’t decode this video’s codec, so it can’t be played here.';
   }
-  // Every codec that lands here is unplayable in any browser, but desktop players
-  // are not so limited - point the user at VLC, which decodes virtually anything.
-  msg += ' To play it now without converting, open it in a free desktop player like VLC (videolan.org), which handles virtually every codec.';
+  // Second sentence: point at the convert card right below and VLC as an alternative.
+  msg += ' Convert it to H.264 below to view and analyse it here, or open it in a desktop player like VLC (videolan.org).';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, msg));
 
   // File info first - it's available instantly from the header walk, with no
@@ -2266,6 +2289,15 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
   // Sony gyro / IMU metadata (rtmd track) - shown even when the codec can't play.
   await appendSonyGyroCard(file, resultsEl);
 
+  // Telemetry (GoPro GPMF / CAMM / container GPS) and the Advanced container
+  // structure card are read straight from the metadata boxes, so they work even
+  // when the browser can't decode the video codec - the common GoPro-HEVC case.
+  try { await appendTelemetryCards(file, resultsEl); } catch (_) {}
+  try {
+    const adv = await buildVideoAdvancedCard(file);
+    if (adv && !(signal && signal.aborted)) resultsEl.appendChild(adv);
+  } catch (_) {}
+
   // Convert to H.264 in-browser. The browser can't decode this codec, but FFmpeg
   // can, so re-encoding to H.264 / AAC MP4 makes the file playable AND unlocks the
   // full analysis (player, frame tools, scene detection, reverse, audio). On
@@ -2274,9 +2306,30 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
   const convName = (v && v.codecName) || (v && v.codec) || 'this codec';
   const convCard = el('div', { class: 'anr-card' });
   convCard.appendChild(el('h3', {}, 'Convert to H.264'));
-  convCard.appendChild(el('p', { class: 'anr-hint' },
-    'Re-encode this video to H.264 (MP4) with FFmpeg so it plays here and can be analysed in full. The conversion is lossy and runs in your browser - a long or high-resolution clip can take a while.'));
+
+  // Advanced settings: resolution / frame rate / encode speed. Lower values are
+  // dramatically faster (encode cost scales with pixels x frames). Hidden until
+  // the Advanced button is pressed; defaults make the fast proxy.
+  const mkSel = (options, def) => {
+    const s = el('select', { class: 'anr-select' }, options.map(([label, value]) => el('option', { value }, label)));
+    s.value = def; return s;
+  };
+  const resSel = mkSel([['Full', '0'], ['2160p (4K)', '2160'], ['1440p', '1440'], ['1080p', '1080'], ['720p', '720'], ['480p', '480']], '720');
+  const fpsSel = mkSel([['Original', '0'], ['60 fps', '60'], ['30 fps', '30'], ['24 fps', '24'], ['15 fps', '15']], '30');
+  const spdSel = mkSel([['Turbo', 'turbo'], ['Fastest', 'ultrafast'], ['Fast', 'veryfast'], ['Balanced', 'faster'], ['Better quality', 'medium']], 'ultrafast');
+  const settingCol = (label, sel) => el('label', { class: 'anr-conv-setting' }, [el('span', {}, label), sel]);
+  const convSettings = el('div', { class: 'anr-conv-settings', hidden: '' }, [
+    settingCol('Resolution', resSel), settingCol('Frame rate', fpsSel), settingCol('Speed', spdSel),
+    el('p', { class: 'anr-hint', style: 'margin:8px 0 0; flex-basis:100%;' },
+      'Lower resolution and frame rate convert much faster. "Speed" trades encode time for a slightly smaller/cleaner file.'),
+  ]);
+
   const convBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Convert to H.264 and play');
+  const advToggle = el('button', { type: 'button', class: 'anr-btn' }, 'Advanced');
+  advToggle.addEventListener('click', () => {
+    convSettings.hidden = !convSettings.hidden;
+    advToggle.classList.toggle('is-active', !convSettings.hidden);
+  });
   const convBar = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const convLabel = el('div', { class: 'anr-progress-label' }, 'loading ffmpeg');
   const convWrap = el('div', { class: 'anr-progress', style: 'display:none;' }, [convBar, convLabel]);
@@ -2290,12 +2343,17 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
   convBtn.addEventListener('click', async () => {
     convBtn.disabled = true; convBtn.textContent = 'Converting…';
     convWrap.style.display = ''; convErr.innerHTML = '';
+    const convOpts = {
+      maxHeight: parseInt(resSel.value, 10) || 0,
+      maxFps: parseInt(fpsSel.value, 10) || 0,
+      preset: spdSel.value,
+    };
     let blob = null;
     try {
       blob = await ffmpegTranscodeToH264(file,
         (p) => { convLabel.textContent = 'loading ffmpeg'; convSetBar(p); },
         (p) => { convLabel.textContent = 'converting'; convSetBar(p); },
-        signal);
+        signal, convOpts);
     } catch (_) { blob = null; }
     convWrap.style.display = 'none';
     if (signal && signal.aborted) return;
@@ -2309,10 +2367,13 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
     const mp4File = new File([blob], base + ' (H.264).mp4', { type: 'video/mp4' });
     renderVideo(mp4File, resultsEl, { remuxed: true, converted: true, sourceFile: file, sourceCodec: convName });
   });
-  convCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [convBtn]));
+  convCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [convBtn, advToggle]));
+  convCard.appendChild(convSettings);
   convCard.appendChild(convWrap);
   convCard.appendChild(convErr);
-  resultsEl.appendChild(convCard);
+  // Sit the convert card directly under the "can't decode" warning, above the
+  // File info / telemetry / Advanced cards (which were appended earlier).
+  resultsEl.insertBefore(convCard, infoCard);
 
   // Preview on demand. Decoding even a single frame from a codec the browser
   // can't play needs the ~31 MB FFmpeg WASM core and a single-threaded decode -
@@ -2408,7 +2469,11 @@ async function detectFps(file, fpsCell) {
 // `threshold` it's marked as a scene change, with a thumbnail and a confidence
 // score (how decisively it cleared the threshold). `signal` lets an in-progress
 // run bail when a new file is loaded.
-async function detectSceneChanges(video, threshold, signal) {
+// `collect`, if given an array, is filled with one { time, r, g, b, luma, diff }
+// entry per sampled frame - the raw material for the content-timeline card (movie
+// barcode + brightness/black-frame/freeze read). Computed in the same seek loop so
+// it costs no extra scrubbing.
+async function detectSceneChanges(video, threshold, signal, collect) {
   if (!isFinite(video.duration) || video.duration <= 0) return [];
 
   const dur = video.duration;
@@ -2433,18 +2498,29 @@ async function detectSceneChanges(video, threshold, signal) {
   let prevData = null;
   const changes = [];
 
+  const px = tw * th;
   for (let i = 0; i <= sampleCount; i++) {
-    if (signal && signal.aborted) return changes;
+    if (signal && signal.aborted) break;
     const t = Math.min(i * interval, dur - 0.05);
     await seekAndPaint(video, t);
 
     cmpCtx.drawImage(video, 0, 0, tw, th);
     const frame = cmpCtx.getImageData(0, 0, tw, th);
+    const d = frame.data;
 
+    // Per-sample average colour + luma - drives the content-timeline barcode and
+    // brightness curve. Cheap enough to always compute alongside the diff.
+    let sr = 0, sg = 0, sb = 0;
+    for (let j = 0; j < px; j++) {
+      const off = j * 4;
+      sr += d[off]; sg += d[off + 1]; sb += d[off + 2];
+    }
+    const ar = sr / px, ag = sg / px, ab = sb / px;
+    const luma = 0.2126 * ar + 0.7152 * ag + 0.0722 * ab;
+
+    let meanDiff = 0;
     if (prevData) {
       let sum = 0;
-      const px = tw * th;
-      const d = frame.data;
       const p = prevData.data;
       for (let j = 0; j < px; j++) {
         const off = j * 4;
@@ -2452,7 +2528,7 @@ async function detectSceneChanges(video, threshold, signal) {
         sum += Math.abs(d[off + 1] - p[off + 1]);
         sum += Math.abs(d[off + 2] - p[off + 2]);
       }
-      const meanDiff = sum / (px * 3);
+      meanDiff = sum / (px * 3);
 
       if (meanDiff > threshold) {
         thumbCtx.drawImage(video, 0, 0, tw, th);
@@ -2467,10 +2543,136 @@ async function detectSceneChanges(video, threshold, signal) {
       }
     }
 
+    if (collect) collect.push({ time: t, r: ar, g: ag, b: ab, luma, diff: prevData ? meanDiff : 0 });
+
     prevData = frame;
   }
 
   return changes;
+}
+
+// Turn the per-sample colour/luma series into a content-timeline card: a movie
+// barcode (each sample -> one colour column), a brightness curve, and black-frame
+// / freeze-segment flags. Returns null when there's nothing worth showing.
+function buildContentTimelineCard(samples, dur, playerEl) {
+  if (!samples || samples.length < 2 || !isFinite(dur) || dur <= 0) return null;
+
+  const n = samples.length;
+  const BLACK_LUMA = 12;   // near-black frame (0-255 mean luma)
+  const FREEZE_DIFF = 1.5; // consecutive frames this close count as a still/freeze
+
+  let minL = Infinity, maxL = -Infinity, sumL = 0, darkIdx = 0;
+  for (let i = 0; i < n; i++) {
+    const l = samples[i].luma;
+    sumL += l;
+    if (l < minL) { minL = l; darkIdx = i; }
+    if (l > maxL) maxL = l;
+  }
+  const meanL = sumL / n;
+
+  // Group consecutive flagged samples into [startTime, endTime] segments.
+  const groupRuns = (test) => {
+    const segs = [];
+    let run = null;
+    for (let i = 0; i < n; i++) {
+      if (test(i)) {
+        if (!run) run = { from: samples[i].time, to: samples[i].time, count: 0 };
+        run.to = samples[i].time; run.count++;
+      } else if (run) { segs.push(run); run = null; }
+    }
+    if (run) segs.push(run);
+    return segs;
+  };
+  const blackSegs = groupRuns((i) => samples[i].luma < BLACK_LUMA);
+  // Freeze needs at least a couple of near-identical consecutive frames (i>0 so a
+  // diff exists); a lone still sample isn't a freeze.
+  const freezeSegsRaw = groupRuns((i) => i > 0 && samples[i].diff < FREEZE_DIFF);
+  const freezeSegs = freezeSegsRaw.filter((s) => s.count >= 2);
+
+  const card = el('div', { class: 'anr-card' });
+  const [h, help] = h3help('Content timeline',
+    'Built from the same frame sampling as scene detection. The barcode compresses each sampled frame to a single average-colour column, giving a colour-over-time fingerprint of the whole video. Below it, the brightness curve plots mean luma, with near-black frames and frozen/still stretches flagged. Click the barcode to jump there.');
+  card.appendChild(h); card.appendChild(help);
+  card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' },
+    n + ' frames sampled across ' + formatDuration(dur) + '.'));
+
+  const cs = getComputedStyle(document.body);
+  const accent = (cs.getPropertyValue('--accent') || '').trim() || (cs.getPropertyValue('--fg') || '').trim() || '#3a7';
+
+  // -- Movie barcode: N colour columns drawn 1px tall, stretched by CSS. --
+  const bar = el('canvas', { width: String(n), height: '1',
+    style: 'width:100%; height:56px; display:block; border:var(--bd-hairline); image-rendering:auto; cursor:pointer;' });
+  const bctx = bar.getContext('2d');
+  if (bctx) {
+    const img = bctx.createImageData(n, 1);
+    for (let i = 0; i < n; i++) {
+      const o = i * 4;
+      img.data[o] = samples[i].r; img.data[o + 1] = samples[i].g;
+      img.data[o + 2] = samples[i].b; img.data[o + 3] = 255;
+    }
+    bctx.putImageData(img, 0, 0);
+  }
+  bar.title = 'Click to jump to that point';
+  bar.addEventListener('click', (e) => {
+    const rect = bar.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    if (playerEl) { try { playerEl.currentTime = frac * dur; playerEl.pause(); } catch (_) {} }
+  });
+  card.appendChild(bar);
+
+  // -- Brightness curve (mean luma over time). --
+  const GW = 640, GH = 90, pad = 4;
+  const g = el('canvas', { width: String(GW), height: String(GH),
+    style: 'width:100%; height:auto; display:block; border:var(--bd-hairline); border-top:0; background:var(--bg);' });
+  const gctx = g.getContext('2d');
+  if (gctx) {
+    // Shade black-frame stretches first, behind the curve.
+    gctx.fillStyle = 'rgba(220,60,60,0.18)';
+    for (const s of blackSegs) {
+      const x0 = pad + (s.from / dur) * (GW - pad * 2);
+      const x1 = pad + (s.to / dur) * (GW - pad * 2);
+      gctx.fillRect(x0, pad, Math.max(1, x1 - x0), GH - pad * 2);
+    }
+    gctx.strokeStyle = accent;
+    gctx.lineWidth = 1.5;
+    gctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const x = pad + (samples[i].time / dur) * (GW - pad * 2);
+      const y = GH - pad - (samples[i].luma / 255) * (GH - pad * 2);
+      if (i === 0) gctx.moveTo(x, y); else gctx.lineTo(x, y);
+    }
+    gctx.stroke();
+  }
+  card.appendChild(g);
+
+  // -- Readout. --
+  const tbl = el('table', { class: 'anr-readout', style: 'margin-top:10px;' });
+  const pct = (l) => Math.round((l / 255) * 100);
+  tbl.appendChild(rowHelp('Brightness (mean)', pct(meanL) + '%  (luma ' + meanL.toFixed(0) + '/255)',
+    'Average frame brightness across the sampled frames, as mean luma (Rec. 709). A very low value suggests a dark or underexposed video overall.'));
+  tbl.appendChild(row('Brightness range', pct(minL) + '% - ' + pct(maxL) + '%'));
+  tbl.appendChild(row('Darkest sample', formatDuration(samples[darkIdx].time) + '  (' + pct(minL) + '%)'));
+  tbl.appendChild(rowHelp('Black frames', blackSegs.length
+      ? blackSegs.length + ' stretch' + (blackSegs.length > 1 ? 'es' : '')
+      : 'none',
+    'Sampled frames whose mean luma is under ' + BLACK_LUMA + '/255 - typically fades to black, cuts between shots, or leader/trailer black.'));
+  if (blackSegs.length) tbl.appendChild(row('', segList(blackSegs, dur)));
+  tbl.appendChild(rowHelp('Freeze / still', freezeSegs.length
+      ? freezeSegs.length + ' segment' + (freezeSegs.length > 1 ? 's' : '')
+      : 'none',
+    'Runs of consecutive sampled frames that barely change - a frozen frame, a held title card, or a static shot. Granularity is the sampling interval, so only stretches longer than that show up.'));
+  if (freezeSegs.length) tbl.appendChild(row('', segList(freezeSegs, dur)));
+  card.appendChild(tbl);
+
+  return card;
+}
+
+// Compact "0:03 - 0:07 (n)" list of timeline segments, joined for a readout cell.
+function segList(segs, dur) {
+  return segs.map((s) => {
+    const a = formatDuration(s.from), b = formatDuration(s.to);
+    return (a === b ? a : a + ' - ' + b);
+  }).join(',  ');
 }
 
 // ---------- audio helpers ----------
@@ -2685,13 +2887,18 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
       }
       if (signal && signal.aborted) return;
       let changes = [];
-      try { changes = await detectSceneChanges(playerEl, 55, signal); } catch (_) {}
+      const contentSamples = [];
+      try { changes = await detectSceneChanges(playerEl, 55, signal, contentSamples); } catch (_) {}
       try { playerEl.currentTime = 0; playerEl.pause(); } catch (_) {}
       sceneBadge.remove();
       if (signal && signal.aborted) return;
       sceneOut.innerHTML = '';
       sceneOut.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:10px;' },
         changes.length ? changes.length + ' scene change' + (changes.length > 1 ? 's' : '') + ' detected' : 'No scene changes detected'));
+      try {
+        const ctCard = buildContentTimelineCard(contentSamples, dur, playerEl);
+        if (ctCard) sceneCard.after(ctCard);
+      } catch (_) {}
       if (changes.length && isFinite(dur) && dur > 0) {
         const timeline = el('div', { class: 'anr-scene-timeline' });
         for (const sc of changes) {
@@ -2799,6 +3006,276 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
   return true;
 }
 
+// ---------- Advanced: container structure / forensics (ISOBMFF) ----------
+// Card chrome for the UI-free parser in video-forensics.js. Mirrors the photo
+// Advanced card: one collapsed anr-card holding <details> panels - box tree,
+// tracks, provenance tells, and a frames/bitrate map. All read from the MP4/MOV
+// boxes with zero decoding. Returns null for non-ISOBMFF files or any failure,
+// so callers just skip it.
+
+// A collapsible <details> panel with a plain summary label (no info button) -
+// the same idiom photo.js's advPanel uses.
+function vAdvPanel(title) {
+  const det = el('details');
+  const sum = el('summary', {});
+  sum.appendChild(el('span', { class: 'anr-summary-label' }, title));
+  det.appendChild(sum);
+  const body = el('div');
+  det.appendChild(body);
+  return { det, body };
+}
+
+// Render the atom tree. Container nodes become nested <details> (the top level
+// open by default); leaves are single indented rows. Monospace, hairline-indented.
+function renderBoxTree(nodes, container, depth) {
+  for (const n of nodes) {
+    const gloss = BOX_GLOSS[n.type] || '';
+    const metaText = (gloss ? gloss + '  ·  ' : '') + fmtBytes(n.size) + '  ·  @' + n.offset.toLocaleString();
+    const fcc = el('code', { class: 'anr-boxtree-fcc' }, n.type);
+    const meta = el('span', { class: 'anr-boxtree-meta' }, metaText);
+    if (n.children && n.children.length) {
+      const det = el('details', { class: 'anr-boxtree-node' });
+      if (depth === 0) det.setAttribute('open', '');
+      det.appendChild(el('summary', { class: 'anr-boxtree-row' }, [fcc, meta]));
+      const kids = el('div', { class: 'anr-boxtree-kids' });
+      renderBoxTree(n.children, kids, depth + 1);
+      det.appendChild(kids);
+      container.appendChild(det);
+    } else {
+      container.appendChild(el('div', { class: 'anr-boxtree-row anr-boxtree-leaf' }, [fcc, meta]));
+    }
+  }
+}
+
+// A per-second bitrate bar chart on a themed canvas (peak-per-bucket when there
+// are more seconds than pixels). Static like the photo ELA canvases.
+function renderBitrateGraph(perSecKbps) {
+  const W = 640, H = 130, pad = 5;
+  const cv = el('canvas', { width: String(W), height: String(H),
+    style: 'width:100%; height:auto; display:block; border:var(--bd-hairline); background:var(--bg);' });
+  const ctx = cv.getContext('2d');
+  if (!ctx) return cv;
+  const cs = getComputedStyle(document.body);
+  const accent = (cs.getPropertyValue('--accent') || '').trim() || (cs.getPropertyValue('--fg') || '').trim() || '#3a7';
+  const n = perSecKbps.length;
+  if (!n) return cv;
+  const bars = Math.max(1, Math.min(n, W - pad * 2));
+  const step = n / bars;
+  let peak = 1;
+  for (const v of perSecKbps) if (v > peak) peak = v;
+  const bw = (W - pad * 2) / bars;
+  ctx.fillStyle = accent;
+  for (let i = 0; i < bars; i++) {
+    let v = 0;
+    for (let j = Math.floor(i * step); j < Math.floor((i + 1) * step) && j < n; j++) v = Math.max(v, perSecKbps[j]);
+    const h = (v / peak) * (H - pad * 2);
+    ctx.fillRect(pad + i * bw, H - pad - h, Math.max(1, bw - 0.5), h);
+  }
+  return cv;
+}
+
+async function buildVideoAdvancedCard(file) {
+  let s = null;
+  try { s = await analyzeMp4Structure(file); } catch (_) { return null; }
+  if (!s) return null;
+
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Advanced'));
+  card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 4px;' },
+    'Container structure and stream forensics read straight from the MP4/MOV boxes - no decoding. Each panel is collapsed by default.'));
+
+  // -- Box tree --
+  {
+    const { det, body } = vAdvPanel('Box tree (' + s.tree.length + ' top-level box' + (s.tree.length === 1 ? '' : 'es') + ')');
+    body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
+      'Every atom (box) in the file: its 4-character type, size and byte offset. Expand a container to see what it holds.'));
+    const tree = el('div', { class: 'anr-boxtree' });
+    renderBoxTree(s.tree, tree, 0);
+    body.appendChild(tree);
+    card.appendChild(det);
+  }
+
+  // -- Tracks --
+  if (s.tracks.length) {
+    const { det, body } = vAdvPanel('Tracks (' + s.tracks.length + ')');
+    body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
+      'Every track in the file, not just the first video and audio - including timecode and timed-metadata streams (GoPro, CAMM, Sony gyro).'));
+    const tt = el('table', { class: 'anr-readout' });
+    for (const t of s.tracks) {
+      const parts = [];
+      if (t.codecName) parts.push(t.codecName);
+      if (t.language && t.language !== 'und') parts.push(t.language);
+      if (isFinite(t.durationSec) && t.durationSec > 0) parts.push(formatDuration(t.durationSec));
+      if (t.sampleCount) parts.push(t.sampleCount.toLocaleString() + ' sample' + (t.sampleCount === 1 ? '' : 's'));
+      if (t.timecode) parts.push('start ' + t.timecode + (t.dropFrame ? ' (drop-frame)' : ''));
+      // A single identity edit is standard in nearly every MP4; only note edit
+      // lists that actually splice/trim (more than one segment).
+      if (t.editList && t.editList.entries > 1) parts.push('edit list (' + t.editList.entries + ' segments)');
+      let label = 'Track ' + t.index + '  ·  ' + (t.handlerName || 'Unknown');
+      if (t.enabled === false) label += '  (disabled)';
+      tt.appendChild(row(label, parts.join('  ·  ') || (t.codec || '-')));
+    }
+    body.appendChild(tt);
+    card.appendChild(det);
+  }
+
+  // -- Provenance tells --
+  {
+    const rows = [];
+    if (s.faststart !== null) {
+      rows.push(rowHelp('Faststart',
+        s.faststart ? 'Yes - moov before mdat (progressive / web-optimised)'
+          : 'No - mdat before moov (typical camera-original layout)',
+        'Faststart moves the moov index ahead of the media so playback can begin before the file fully downloads. Editors and upload tools add it; most cameras write moov last, so its absence is normal for an original.'));
+    }
+    if (s.ftyp && s.ftyp.majorBrand) {
+      const brands = (s.ftyp.brands || []).filter((b) => b && b !== s.ftyp.majorBrand);
+      rows.push(rowHelp('Brand', s.ftyp.majorBrand + (brands.length ? '  (' + brands.join(', ') + ')' : ''),
+        'The ftyp major brand and compatible brands declare which specification the file follows (e.g. mp42, isom, qt, M4V). They hint at the writing tool and target device.'));
+    }
+    if (isFinite(s.movieDurationSec) && s.movieDurationSec > 0)
+      rows.push(row('Movie duration', formatDuration(s.movieDurationSec)));
+    const edited = s.tracks.filter((t) => t.editList && t.editList.entries > 1).map((t) => 'Track ' + t.index);
+    if (edited.length)
+      rows.push(rowHelp('Edit lists', edited.join(', ') + '  (multi-segment)',
+        'A multi-segment edit list (elst) splices or trims a track timeline - a sign of editing. Single identity edits, the norm in most MP4s, are not flagged here.'));
+    if (s.mdatCount > 1)
+      rows.push(rowHelp('Media segments', s.mdatCount + ' mdat boxes',
+        'More than one media-data box usually means the file was concatenated or exported by an editor rather than recorded in a single pass.'));
+    if (s.padBytes > 0)
+      rows.push(rowHelp('Padding', fmtBytes(s.padBytes) + ' in ' + s.padCount + ' free/skip box' + (s.padCount === 1 ? '' : 'es'),
+        'Free/skip boxes are reserved space, often left by a faststart tool that relocated the moov, or slack a muxer padded the file with.'));
+    if (s.fragmented)
+      rows.push(rowHelp('Fragmented', 'Yes - moof fragments',
+        'The media is split into movie fragments (moof). This is how streamed (DASH/CMAF/HLS-fMP4) and some recorder outputs are laid out, rather than a single contiguous moov + mdat.'));
+    if (s.trailing)
+      rows.push(rowHelp('Trailing data', s.trailing.type + '  (' + fmtBytes(s.trailing.size) + ')',
+        'A box after the media data. Sometimes an editor or app marker (uuid), sometimes leftover data appended after the file was first written.'));
+    if (rows.length) {
+      const { det, body } = vAdvPanel('Provenance tells');
+      body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
+        'Structural signs of how the file was produced - camera-original, re-muxed, edited or streamed.'));
+      const pt = el('table', { class: 'anr-readout' });
+      for (const r of rows) pt.appendChild(r);
+      body.appendChild(pt);
+      card.appendChild(det);
+    }
+  }
+
+  // -- Frames & bitrate --
+  if (s.gop) {
+    const g = s.gop;
+    const { det, body } = vAdvPanel('Frames & bitrate');
+    body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
+      'Keyframe structure and data-rate over time, computed from the sample tables (sizes, sync samples and durations) - no frames are decoded.'));
+    const ft = el('table', { class: 'anr-readout' });
+    ft.appendChild(rowHelp('Frame rate',
+      g.cfr ? g.avgFps.toFixed(3).replace(/\.?0+$/, '') + ' fps (constant)'
+        : 'Variable - avg ' + g.avgFps.toFixed(2) + ' fps (' + g.minFps.toFixed(2) + ' - ' + g.maxFps.toFixed(2) + ')',
+      'Derived by summing every sample duration in the time-to-sample table. A single duration means constant frame rate (CFR); several means variable (VFR), common in screen-recordings and phone footage.'));
+    ft.appendChild(rowHelp('Keyframe interval',
+      g.allIntra ? 'All-intra (every frame a keyframe)'
+        : 'avg ' + g.avgGop.toFixed(1) + ' frames  ·  max ' + g.maxGop + '  ·  ' + g.keyCount.toLocaleString() + ' keyframes',
+      'The average and longest gap between sync (key) frames - the GOP length. Short/regular GOPs suit streaming and editing; a single keyframe or all-intra points to camera-original or intermediate codecs.'));
+    if (g.pAvg > 0)
+      ft.appendChild(rowHelp('Frame size',
+        'keyframe ~' + fmtBytes(g.iAvg) + '  ·  inter ~' + fmtBytes(g.pAvg),
+        'Average encoded size of keyframes versus inter (predicted) frames. Keyframes are typically several times larger because they carry a full image.'));
+    ft.appendChild(rowHelp('Bitrate (video)',
+      (g.avgBitrateKbps / 1000).toFixed(2) + ' Mbps avg  ·  ' + (g.peakKbps / 1000).toFixed(2) + ' Mbps peak',
+      'Average and peak video data-rate, bucketed per second from the sample sizes. This is the video track alone, unlike the total-file bitrate in File info.'));
+    body.appendChild(ft);
+    if (g.perSecKbps && g.perSecKbps.length > 1) {
+      body.appendChild(el('div', { class: 'anr-readout-section' }, 'Bitrate over time'));
+      body.appendChild(renderBitrateGraph(g.perSecKbps));
+      body.appendChild(el('p', { class: 'anr-hint', style: 'margin:6px 0 0;' },
+        'Per-second video bitrate across the clip. Peaks mark high-motion or scene-change sections.'));
+    }
+    card.appendChild(det);
+  }
+
+  // -- Bitstream & authenticity (deep SPS parse, encoder fingerprint, HDR, C2PA) --
+  let bs = null;
+  try { bs = await analyzeBitstream(file); } catch (_) {}
+  if (bs) appendBitstreamPanel(card, bs);
+
+  return card;
+}
+
+// The Advanced > "Bitstream & authenticity" panel, built from analyzeBitstream().
+function appendBitstreamPanel(card, bs) {
+  const { det, body } = vAdvPanel('Bitstream & authenticity');
+  body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
+    'Read from the actual H.264/H.265 stream, not just the container: the codec\'s own SPS, an encoder fingerprint, HDR mastering values and any Content Credentials.'));
+
+  // Stream (SPS)
+  if (bs.sps) {
+    const p = bs.sps;
+    body.appendChild(el('div', { class: 'anr-readout-section' }, 'Stream (from the codec SPS)'));
+    const st = el('table', { class: 'anr-readout' });
+    st.appendChild(rowHelp('Codec', p.codec + '  ·  ' + p.profile + '  ·  L' + p.level,
+      'Profile and level decoded from the sequence parameter set inside the bitstream itself - the ground truth for what the encoder actually wrote, independent of the container labels.'));
+    st.appendChild(row('Coded size', p.width + ' × ' + p.height + ' px'));
+    st.appendChild(row('Chroma / depth', p.chroma + '  ·  ' + p.bitDepth + '-bit'));
+    st.appendChild(rowHelp('Scan', p.progressive ? 'Progressive' : 'Interlaced',
+      'Whether the stream stores whole frames (progressive) or interlaced fields. Read from frame_mbs_only in the SPS.'));
+    if (p.colourText) st.appendChild(rowHelp('Colour (VUI)', p.colourText,
+      'Colour primaries / transfer / matrix and signal range carried in the stream\'s VUI. If this disagrees with the container colour box, the file was re-tagged.'));
+    if (p.fps) st.appendChild(row('Stream frame rate', p.fps.toFixed(3).replace(/\.?0+$/, '') + ' fps'));
+    body.appendChild(st);
+  }
+
+  // Consistency verdict
+  if (bs.consistency && bs.consistency.length) {
+    const mism = bs.consistency.filter((c) => !c.match);
+    body.appendChild(el('div', { class: 'anr-readout-section' }, 'Stream vs container'));
+    body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
+      mism.length
+        ? mism.length + ' mismatch' + (mism.length === 1 ? '' : 'es') + ' - the container was re-tagged or the video re-encoded/edited after capture.'
+        : 'Consistent - the stream\'s own dimensions, frame rate and colour match the container, as expected for a camera-original file.'));
+    const ct = el('table', { class: 'anr-readout' });
+    for (const c of bs.consistency)
+      ct.appendChild(row((c.match ? '✓ ' : '✗ ') + c.field, c.container + '  vs  ' + c.stream));
+    body.appendChild(ct);
+  }
+
+  // Encoder fingerprint
+  body.appendChild(el('div', { class: 'anr-readout-section' }, 'Encoder fingerprint'));
+  if (bs.encoder) {
+    body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 6px;' },
+      (bs.encoder.tool ? bs.encoder.tool + ' - from' : 'From') + ' an unregistered SEI message in the first frame. Pins the exact encoder build and its settings.'));
+    body.appendChild(el('pre', { style: 'white-space:pre-wrap; word-break:break-word; font-size:12px; margin:0; padding:8px; border:var(--bd-hairline); overflow:auto;' }, bs.encoder.string));
+  } else {
+    body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' },
+      'None found. Hardware and camera encoders (phones, GoPro, cameras) rarely embed one; software encoders like x264/x265 do, so its absence is itself a mild camera-original tell.'));
+  }
+
+  // HDR
+  if (bs.hdr) {
+    const h = bs.hdr;
+    body.appendChild(el('div', { class: 'anr-readout-section' }, 'HDR'));
+    const ht = el('table', { class: 'anr-readout' });
+    if (h.mdcv) ht.appendChild(rowHelp('Mastering display',
+      h.mdcv.maxLum.toFixed(0) + ' cd/m² peak  ·  ' + h.mdcv.minLum.toFixed(4) + ' cd/m² black',
+      'Mastering-display colour volume (SMPTE ST 2086): the luminance range of the display the content was graded on.'));
+    if (h.clli) ht.appendChild(rowHelp('Content light', 'MaxCLL ' + h.clli.maxCLL + '  ·  MaxFALL ' + h.clli.maxFALL,
+      'Maximum content light level and maximum frame-average light level (CEA-861.3), in cd/m².'));
+    if (h.dolbyVision) ht.appendChild(row('Dolby Vision', 'profile ' + h.dolbyVision.profile + '  ·  level ' + h.dolbyVision.level));
+    else if (h.dolbyVisionCodec) ht.appendChild(row('Dolby Vision', 'signalled by codec'));
+    body.appendChild(ht);
+  }
+
+  // C2PA
+  body.appendChild(el('div', { class: 'anr-readout-section' }, 'Content Credentials (C2PA)'));
+  body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' },
+    bs.c2pa && bs.c2pa.present
+      ? 'A C2PA / Content Credentials manifest is embedded (' + fmtBytes(bs.c2pa.size) + ')'
+        + (bs.c2pa.generator ? ', generator "' + bs.c2pa.generator + '"' : '') + '. It records the file\'s claimed origin and edit history.'
+      : 'No C2PA / Content Credentials manifest found in the container.'));
+
+  card.appendChild(det);
+}
+
 // ---------- main render ----------
 
 // Tears down the previous video's persistent listeners/observers when a new
@@ -2834,6 +3311,16 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     companion: () => {},
   } : DEFAULT_VCTX;
   videoCtx = vctx;   // helpers/handlers capture this synchronously at build time
+
+  // When we re-enter with an FFmpeg-built proxy (converted from an undecodable
+  // codec, or remuxed from a raw/TS stream), `file` is the PLAYABLE proxy but the
+  // user's real file is opts.sourceFile. Playback and pixel/frame analysis must use
+  // the proxy (the original can't be decoded), but every metadata / container /
+  // bitstream / telemetry / hash / fps read must describe the ORIGINAL - otherwise
+  // we'd report the proxy's H.264 SPS, its stripped-out GoPro track, its fps cap,
+  // etc. For a non-ISOBMFF original (raw/TS) the container analysers simply return
+  // nothing, which is correct - the proxy's structure isn't the user's file.
+  const analysisFile = opts.sourceFile || file;
 
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
@@ -3580,8 +4067,22 @@ export async function renderVideo(file, resultsEl, opts = {}) {
         : opts.sourceFile ? 'Raw ' + (opts.sourceKind || 'H.264') + ' → MP4 (remuxed)'
           : header.container + (header.brand ? '  (' + header.brand + ')' : ''))));
   appendCreatorRows(tbl, header);
-  tbl.appendChild(row('Resolution', vw && vh ? `${vw} × ${vh} px` : '-'));
-  tbl.appendChild(row('Aspect ratio', aspectRatio(vw, vh)));
+  // Codec / dimensions / rotation / HDR from the ISOBMFF moov walk of the ORIGINAL
+  // file. Best-effort and guarded so it never affects fps/preview.
+  let isoTracks = null;
+  try {
+    if (/^(MP4|M4V|QuickTime MOV|3GP|3G2)/.test(header.container || '') || /MP4 \//.test(header.container || ''))
+      isoTracks = await detectIsobmffTracks(analysisFile);
+  } catch (_) {}
+  // For a converted proxy (which may be downscaled), show the ORIGINAL stored
+  // dimensions, not the decoded proxy frame size. For a normal file keep the
+  // player's dimensions (they already reflect any rotation).
+  const origV = isoTracks && isoTracks.video;
+  const useOrigDim = analysisFile !== file && origV && origV.width;
+  const dispW = useOrigDim ? origV.width : vw;
+  const dispH = useOrigDim ? origV.height : vh;
+  tbl.appendChild(row('Resolution', dispW && dispH ? `${dispW} × ${dispH} px` : '-'));
+  tbl.appendChild(row('Aspect ratio', aspectRatio(dispW, dispH)));
   tbl.appendChild(row('Duration', isFinite(dur) ? formatDuration(dur) + (opts.sourceFile && !opts.converted ? ' (assumed 25 fps)' : '') : '-'));
   const bitrate = isFinite(dur) && dur > 0
     ? (infoFile.size * 8 / dur / 1000).toFixed(0) + ' kbps  (' + (infoFile.size * 8 / dur / 1_000_000).toFixed(2) + ' Mbps)'
@@ -3589,32 +4090,30 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   tbl.appendChild(rowHelp('Bitrate (total)', bitrate, 'Average data rate across the whole file - video, audio, and container overhead combined. Computed as file size ÷ duration, so it is an overall average, not the encoder’s target bitrate.'));
   const fpsRow = row('Frame rate', 'detecting…');
   tbl.appendChild(fpsRow);
-  if (vw && vh) {
-    const mp = ((vw * vh) / 1_000_000).toFixed(2);
+  if (dispW && dispH) {
+    const mp = ((dispW * dispH) / 1_000_000).toFixed(2);
     tbl.appendChild(rowHelp('Frame size', mp + ' MP', 'Pixels per frame in megapixels (width × height ÷ 1,000,000). A rough indicator of how much raw image data each frame holds before compression.'));
   }
-  // Codec / rotation / HDR / audio-codec from the ISOBMFF moov walk (mp4/mov/
-  // m4v/3gp). Best-effort and fully guarded so it never affects fps/preview.
-  try {
-    if (/^(MP4|M4V|QuickTime MOV|3GP|3G2)/.test(header.container || '') || /MP4 \//.test(header.container || '')) {
-      const tracks = await detectIsobmffTracks(file);
-      appendTrackRows(tbl, tracks);
-    }
-  } catch (_) {}
+  try { appendTrackRows(tbl, isoTracks); } catch (_) {}
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
 
   const fpsCell = fpsRow.querySelector('td');
-  detectFps(file, fpsCell).then((fps) => {
+  // Show the ORIGINAL file's frame rate in File info (the proxy may be fps-capped).
+  detectFps(analysisFile, fpsCell).then((fps) => {
     fpsCell.textContent = fps != null ? fps + ' fps' : 'N/A';
-    if (fps != null) { detectedFps = fps; frameControls.refresh(); }
+    if (analysisFile === file && fps != null) { detectedFps = fps; frameControls.refresh(); }
   });
+  // Frame stepping runs on the playable file, so step at ITS actual frame rate.
+  if (analysisFile !== file) {
+    detectFps(file).then((fps) => { if (fps != null) { detectedFps = fps; frameControls.refresh(); } });
+  }
 
-  // ---- Metadata via exifr ----
+  // ---- Metadata via exifr (of the original file) ----
   let exif = null;
   try {
     if (window.exifr) {
-      exif = await window.exifr.parse(file, {
+      exif = await window.exifr.parse(analysisFile, {
         tiff: true, exif: true, gps: true, xmp: true,
         mergeOutput: true, translateValues: true, translateKeys: true,
         reviveValues: true, sanitize: true, silentErrors: true
@@ -3669,8 +4168,29 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     }
   }
 
-  // Sony gyro / IMU metadata (rtmd track) - best-effort, only appears for Sony MP4/MOV.
-  await appendSonyGyroCard(file, resultsEl);
+  // Sony gyro / IMU metadata (rtmd track) - read from the ORIGINAL (a converted
+  // proxy has no rtmd track).
+  await appendSonyGyroCard(analysisFile, resultsEl);
+
+  // GoPro GPMF / CAMM telemetry (GPS track + gyro/accelerometer) or a single
+  // container GPS point - from the ORIGINAL file (FFmpeg strips the timed-metadata
+  // track from the proxy). The single-point card is suppressed when the exifr GPS
+  // card above already showed coordinates. Skipped in inline/compare.
+  if (!inline) {
+    const hasExifGps = !!(exif && exif.latitude != null && exif.longitude != null);
+    try { await appendTelemetryCards(analysisFile, resultsEl, { hasExifGps }); } catch (_) {}
+  }
+
+  // Advanced (ISOBMFF container structure + stream forensics) - box tree, full
+  // track list, provenance tells, frames/bitrate map and bitstream/authenticity.
+  // Reads the ORIGINAL file so the SPS, codec and structure describe the user's
+  // file, not the H.264 proxy. Skipped in the inline/compare panels.
+  if (!inline) {
+    try {
+      const adv = await buildVideoAdvancedCard(analysisFile);
+      if (adv && !renderSignal.aborted) resultsEl.appendChild(adv);
+    } catch (_) { /* structure parse failed - skip the Advanced card */ }
+  }
 
   // ---- Contact sheet / thumbnail grid ----
   if (vw && vh) {
@@ -3798,11 +4318,16 @@ export async function renderVideo(file, resultsEl, opts = {}) {
 
     async function detectAndRender(videoEl, removeAfter) {
       let changes = [];
-      try { changes = await detectSceneChanges(videoEl, 55, renderSignal); } catch (_) {}
+      const contentSamples = [];
+      try { changes = await detectSceneChanges(videoEl, 55, renderSignal, contentSamples); } catch (_) {}
       if (removeAfter) { try { videoEl.removeAttribute('src'); videoEl.load(); } catch (_) {} videoEl.remove(); }
       sceneBadge.remove();
       if (renderSignal.aborted) return;
       renderSceneResults(changes);
+      try {
+        const ctCard = buildContentTimelineCard(contentSamples, dur, playerEl);
+        if (ctCard) sceneCard.after(ctCard);
+      } catch (_) {}
     }
 
     // Spin up a fresh off-screen video (same trick as the probe) for on-demand runs.

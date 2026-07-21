@@ -105,17 +105,56 @@ rotated/curved text all reduce accuracy. Best results: screenshots, signs,
 printed labels, document photos. Words under 60% confidence are filtered
 out.
 
-### QR code detection
+### Barcode / QR detection
 
-**What it does.** Automatically scans every decoded photo for a QR code;
-if one is found, a "QR code detected" card shows the decoded data (and a
-clickable link if it's a URL).
+**What it does.** Automatically scans every decoded photo for 1D and 2D
+codes - QR, Data Matrix, Aztec, PDF417, EAN/UPC, Code 128/39/93, ITF and
+more - and shows a card listing each decoded value (with a clickable link
+when it's a URL).
 
 **How to reach it.** Automatic - no button, runs on every photo. Built in
-`photo.js`'s `detectQrCode()`, using the lazy-loaded vendored **jsQR**.
+`photo.js`'s `detectCodes()`: the browser's native **BarcodeDetector**
+(Chromium/Android, many formats) with the lazy-loaded vendored **jsQR** as a
+QR fallback for browsers without it.
 
-**Notes / limits.** Silent when no QR code is found (the card is simply
-never shown).
+**Notes / limits.** Silent when no code is found (the card is simply never
+shown). Firefox/Safari desktop lack BarcodeDetector, so there only QR codes
+are read (via jsQR).
+
+### Advanced forensics (ELA, quantization fingerprint, JPEG ghosts, steganalysis, privacy, edit history)
+
+**What it does.** A collapsible **Advanced** card (where LSB analysis used
+to sit) groups the deeper forensic and technical views, each as a panel
+collapsed by default:
+
+- **Forensics** (JPEG only): **Error-level analysis** (re-save + amplified
+  difference, with quality/amplify sliders and a lightbox), the
+  **quantization-table fingerprint** (effective quality recovered from the
+  DQT tables, a standard-vs-custom-tables verdict cross-referenced against
+  the claimed software, and the luminance table drawn as a grid), and
+  **JPEG ghosts** (an on-demand recompression sweep whose maps expose a
+  region spliced in from a differently-compressed source).
+- **Edit history**: the XMP `xmpMM:History` timeline (Lightroom/Photoshop
+  action log) plus the Photoshop **IPTC-digest** check that flags when the
+  caption/keyword block was changed after Photoshop last saved the file.
+- **Privacy**: a report of identifying metadata (GPS, camera/lens serials,
+  owner, unique IDs) present in the file. Stripping it is the **Remove
+  metadata** control on the Metadata card (`scrub.js`), which losslessly
+  rebuilds the file with its metadata segments removed (pixels and colour
+  profile untouched) - not duplicated here.
+- **LSB analysis**: a chi-square (Westfeld-Pfitzmann) estimate of the
+  likelihood that least-significant-bit data has been embedded, plus a
+  browser for all eight bit planes (0 = LSB to 7 = MSB) per channel.
+
+**How to reach it.** Automatic - expand the Advanced card, then a panel.
+The forensic maths lives in `photo-forensics.js`; ELA computes lazily the
+first time its panel is opened. Also derived-and-shown in the **Metadata**
+card: an **Optics** section (field of view, hyperfocal, depth of field, and
+exposure value at ISO 100 with a lighting label + a brightness-sanity note).
+
+**Notes / limits.** None of these is proof on its own - they are read
+together and alongside the metadata/thumbnail/timestamp checks. ELA, ghosts
+and the quantization fingerprint are JPEG-only.
 
 ### HEIC/HEIF and camera-RAW conversion
 
@@ -306,18 +345,25 @@ btn: Download WAV
 **Notes / limits.** Purely on-device Web Audio synthesis; no libraries
 beyond the site's own hand-written FFT (shared with `spectrogram.js`).
 
-### Multi-image container extraction (ICO, MPO, multi-page TIFF)
+### Multi-image container extraction (ICO, MPO, multi-page TIFF) and embedded thumbnails
 
 **What it does.** Several still-image formats pack more than one picture
 into a single file - an ICO's size ladder, an MPO stereo/multi-angle pair,
 a scanned multi-page TIFF - but a browser `<img>` only ever paints one. Each
 format gets its own pure-parsing extractor that hands its images to a
-shared "Embedded images" display card.
+shared "Embedded images" display card. Separately, nearly every ordinary
+camera still also caches a smaller JPEG copy of itself in its metadata (an
+EXIF/IFD1 thumbnail; a RAW packs a full preview plus a screen thumbnail);
+these are pulled out too and shown in an "Embedded thumbnails" card.
 
 **How to reach it.** Automatic - drop a `.ico`/`.cur` (`ico.js`), a `.mpo`
 stereo/multi-picture JPEG (`mpo.js`), or a multi-page `.tif`/`.tiff`
 (`tiff.js`, which only spins up ImageMagick to render pages when there
-genuinely are 2+ pages - a single-page TIFF shows nothing extra).
+genuinely are 2+ pages - a single-page TIFF shows nothing extra). The
+embedded-thumbnail extraction runs on every photo (`photo.js` calls
+`extractRawJpegs`, which walks the TIFF/EXIF IFDs of a RAW or an ordinary
+JPEG and returns just the thumbnails/previews those IFDs reference, never
+the main image); the card appears only when there's at least one.
 
 **How to use it.** Every extracted image, on a transparency checkerboard,
 gets its size/format/byte-count caption, a **Download** button, and (when

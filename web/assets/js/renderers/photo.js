@@ -18,6 +18,8 @@ import { encodeAnimatedGif } from './gif-encode.js';
 import { buildIcoImagesCard } from './ico.js';
 import { buildMpoImagesCard } from './mpo.js';
 import { buildTiffPagesCard } from './tiff.js';
+import { buildEmbeddedImagesCard } from './embedded-images.js';
+import { computeElaCanvas, analyzeJpegQuantization, computeJpegGhosts, lsbChiSquare, parseXmpHistory, checkIptcDigest } from './photo-forensics.js';
 import { diagnoseImage, repairJpeg, repairPng, decodePngPartial, extractJpegTables, spliceJpegHeader, rebuildHeaderlessJpeg, carveImages, repairHeifContainer, ensureJpegHuffman } from './photo-recover.js';
 import { createCarveGallery } from './carve-gallery.js';
 import { decodeJpegPartial } from './jpeg-salvage.js';
@@ -1200,6 +1202,97 @@ function rgbToHsl(r, g, b) {
   return Math.round(h * 360) + '°,' + Math.round(s * 100) + '%,' + Math.round(l * 100) + '%';
 }
 
+// ---------- optics (derived from EXIF exposure/lens data) ----------
+// Field of view, hyperfocal distance and depth of field, plus the exposure value
+// at ISO 100 with a plain-language lighting label - all pure arithmetic over tags
+// the camera already recorded. `meanLuma` (0-255, from the decoded pixels) drives a
+// gentle sanity note when the frame's brightness clearly contradicts the settings.
+function evDescriptor(ev) {
+  if (ev >= 15) return 'snow / sand in sun';
+  if (ev === 14) return 'bright sun';
+  if (ev === 13) return 'hazy sun';
+  if (ev === 12) return 'cloudy bright';
+  if (ev === 11) return 'overcast';
+  if (ev === 10) return 'open shade / sunset';
+  if (ev >= 8) return 'bright indoors / dim daylight';
+  if (ev >= 6) return 'well-lit indoors';
+  if (ev >= 4) return 'dim indoors';
+  if (ev >= 2) return 'dark indoors';
+  return 'night / very low light';
+}
+function opticsRows(exif, meanLuma) {
+  if (!exif) return [];
+  const num = (v) => { const n = (typeof v === 'object' && v !== null) ? NaN : parseFloat(v); return isFinite(n) ? n : NaN; };
+  const rows = [];
+  const fReal = num(exif.FocalLength);
+  const f35 = num(exif.FocalLengthIn35mmFormat);
+  const N = num(exif.FNumber != null ? exif.FNumber : exif.ApertureValue);
+  const t = num(exif.ExposureTime);
+  const iso = num(Array.isArray(exif.ISO) ? exif.ISO[0] : exif.ISO);
+  const subj = num(exif.SubjectDistance);
+  if (f35 > 0) {
+    const hfov = 2 * Math.atan(36 / (2 * f35)) * 180 / Math.PI;
+    const dfov = 2 * Math.atan(43.27 / (2 * f35)) * 180 / Math.PI;
+    rows.push(['Field of view', hfov.toFixed(0) + '° wide · ' + dfov.toFixed(0) + '° diagonal']);
+  }
+  if (fReal > 0 && N > 0 && f35 > 0) {
+    const crop = f35 / fReal;
+    const coc = 0.03 / crop;                       // circle of confusion, mm
+    const H = (fReal * fReal) / (N * coc) + fReal; // hyperfocal, mm
+    rows.push(['Hyperfocal distance', (H / 1000).toFixed(1) + ' m']);
+    if (subj > 0) {
+      const s = subj * 1000;                       // m -> mm
+      const near = (H * s) / (H + (s - fReal));
+      const far = (s < H) ? (H * s) / (H - (s - fReal)) : Infinity;
+      rows.push(['Depth of field', (isFinite(far) ? ((far - near) / 1000).toFixed(2) + ' m' : 'near ' + (near / 1000).toFixed(1) + ' m to infinity') + '  (subject ' + subj.toFixed(2) + ' m)']);
+    }
+  }
+  if (N > 0 && t > 0) {
+    let ev = Math.log2((N * N) / t);
+    if (iso > 0) ev -= Math.log2(iso / 100);
+    const evR = Math.round(ev);
+    rows.push(['Exposure value (ISO 100)', 'EV ' + evR + ' - ' + evDescriptor(evR)]);
+    const flash = exif.Flash && (typeof exif.Flash === 'object' ? exif.Flash.fired : (num(exif.Flash) & 1));
+    if (!flash && meanLuma != null) {
+      if (evR <= 5 && meanLuma > 150) rows.push(['⚠ Note', 'The frame is brighter than these low-light settings imply']);
+      else if (evR >= 14 && meanLuma < 60) rows.push(['⚠ Note', 'The frame is darker than these bright-light settings imply']);
+    }
+  }
+  return rows;
+}
+
+// A collapsible <details> panel for the Advanced card, with a plain summary label
+// (no info button). Returns { det, body }; callers fill body and append det.
+function advPanel(title) {
+  const det = el('details');
+  const sum = el('summary', {});
+  sum.appendChild(el('span', { class: 'anr-summary-label' }, title));
+  det.appendChild(sum);
+  const body = el('div');
+  det.appendChild(body);
+  return { det, body };
+}
+
+// Personally-identifying / sensitive metadata fields, for the privacy report.
+function privacyRows(exif) {
+  if (!exif) return [];
+  const rows = [];
+  const cap = (v) => { const s = String(v); return s.length > 90 ? s.slice(0, 90) + '…' : s; };
+  const push = (label, val) => { if (val != null && val !== '') rows.push([label, cap(val)]); };
+  if (Number.isFinite(exif.latitude) && Number.isFinite(exif.longitude) && !(exif.latitude === 0 && exif.longitude === 0))
+    push('GPS location', exif.latitude.toFixed(5) + ', ' + exif.longitude.toFixed(5));
+  push('Camera serial', exif.SerialNumber || exif.BodySerialNumber || exif.InternalSerialNumber || exif.CameraSerialNumber);
+  push('Lens serial', exif.LensSerialNumber);
+  push('Owner', exif.OwnerName || exif.CameraOwnerName);
+  push('Artist / author', exif.Artist || exif.XPAuthor || exif.Creator || exif['by-line']);
+  push('Copyright', exif.Copyright || exif.Rights);
+  push('Software', exif.Software || exif.ProcessingSoftware || exif.CreatorTool);
+  push('Host computer', exif.HostComputer);
+  push('Unique ID', exif.ImageUniqueID || exif.DocumentID || exif.OriginalDocumentID);
+  push('User comment', typeof exif.UserComment === 'string' ? exif.UserComment : (typeof exif.XPComment === 'string' ? exif.XPComment : null));
+  return rows;
+}
+
 // ---------- sharpness (normalised Laplacian energy) ----------
 // Raw Laplacian variance scales with scene contrast and image size, so it pins
 // almost every real photo at the top of the range and even rewards high-contrast
@@ -1341,6 +1434,36 @@ async function detectQrCode(img) {
   cv.width = w; cv.height = h;
   cv.getContext('2d').drawImage(img, 0, 0, w, h);
   return window.jsQR(cv.getContext('2d').getImageData(0, 0, w, h).data, w, h);
+}
+
+// Pretty-print a BarcodeDetector format id (e.g. 'ean_13' -> 'EAN-13').
+function fmtCodeFormat(f) {
+  const map = {
+    qr_code: 'QR code', micro_qr_code: 'Micro QR', rm_qr_code: 'rMQR',
+    aztec: 'Aztec', data_matrix: 'Data Matrix', pdf417: 'PDF417', maxi_code: 'MaxiCode',
+    ean_13: 'EAN-13', ean_8: 'EAN-8', upc_a: 'UPC-A', upc_e: 'UPC-E',
+    code_128: 'Code 128', code_39: 'Code 39', code_93: 'Code 93', codabar: 'Codabar', itf: 'ITF', dx_film_edge: 'DX film edge',
+  };
+  return map[f] || String(f || 'Barcode').replace(/_/g, ' ').toUpperCase();
+}
+
+// Detect every 1D/2D code in the image: native BarcodeDetector (many formats,
+// Chromium/Android) first, with the vendored jsQR as a QR fallback for browsers
+// without it. Returns a de-duplicated [{ format, data }].
+async function detectCodes(img) {
+  const results = [];
+  try {
+    if ('BarcodeDetector' in window) {
+      const det = new window.BarcodeDetector();
+      const found = await det.detect(img);
+      for (const f of found) if (f.rawValue) results.push({ format: f.format, data: f.rawValue });
+    }
+  } catch (_) { /* detector unsupported or failed - fall through to jsQR */ }
+  if (!results.some((r) => r.format === 'qr_code')) {
+    try { const qr = await detectQrCode(img); if (qr && qr.data) results.push({ format: 'qr_code', data: qr.data }); } catch (_) {}
+  }
+  const seen = new Set();
+  return results.filter((r) => r.data && !seen.has(r.data) && seen.add(r.data));
 }
 
 // ---------- histogram + palette ----------
@@ -1608,14 +1731,14 @@ function makeOcrCard(file, img) {
 }
 
 // ---------- LSB steganography planes ----------
-function makeLsbPlane(srcData, w, h, offset) {
+function makeLsbPlane(srcData, w, h, offset, bit = 0) {
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
   const ctx = cv.getContext('2d');
   const out = ctx.createImageData(w, h);
   const od = out.data;
   for (let i = 0; i < w * h; i++) {
-    const v = (srcData[i * 4 + offset] & 1) * 255;
+    const v = ((srcData[i * 4 + offset] >> bit) & 1) * 255;
     od[i * 4] = v; od[i * 4 + 1] = v; od[i * 4 + 2] = v; od[i * 4 + 3] = 255;
   }
   ctx.putImageData(out, 0, 0);
@@ -1645,20 +1768,40 @@ function renderLsbPlanes(img, container) {
   // the data-export-heading rather than three full-width images.
   const wrap = el('div', { class: 'anr-export-gallery', 'data-export-heading': 'LSB Analysis', style: 'display:flex; gap:12px; flex-wrap:wrap;' });
 
-  let fullSrcs = null;
-  function ensureFullRes() {
-    if (fullSrcs) return fullSrcs;
+  // Which bit plane is on show (0 = LSB, 7 = MSB). The classic steganalysis view is
+  // the LSB, but hidden data occasionally lives higher up, so all eight are browsable.
+  let currentBit = 0;
+  const bitLabel = (b) => 'bit ' + b + (b === 0 ? ' (LSB)' : (b === 7 ? ' (MSB)' : ''));
+
+  // Full-resolution planes are built lazily on lightbox open, cached per bit.
+  const fullByBit = {};
+  function ensureFullRes(bit) {
+    if (fullByBit[bit]) return fullByBit[bit];
     const fullCv = document.createElement('canvas');
     fullCv.width = img.naturalWidth; fullCv.height = img.naturalHeight;
     const fCtx = fullCv.getContext('2d', { willReadFrequently: true });
     fCtx.drawImage(img, 0, 0);
     const fullData = fCtx.getImageData(0, 0, img.naturalWidth, img.naturalHeight).data;
-    fullSrcs = channels.map(ch => {
-      const plane = makeLsbPlane(fullData, img.naturalWidth, img.naturalHeight, ch.offset);
-      return plane.toDataURL('image/png');
-    });
-    return fullSrcs;
+    fullByBit[bit] = channels.map((ch) =>
+      makeLsbPlane(fullData, img.naturalWidth, img.naturalHeight, ch.offset, bit).toDataURL('image/png'));
+    return fullByBit[bit];
   }
+
+  // ---- Chi-square steganalysis verdict (statistical LSB-replacement test) ----
+  const fmtPct = (v) => (v == null ? '-' : Math.round(v * 100) + '%');
+  try {
+    const chi = lsbChiSquare(img);
+    if (chi) {
+      const level = chi.max >= 0.95 ? 'High' : (chi.max >= 0.5 ? 'Elevated' : 'Low');
+      const vt = el('table', { class: 'anr-readout' });
+      vt.appendChild(rowHelp('LSB embedding likelihood', level + '  (' + fmtPct(chi.max) + ')',
+        'A chi-square test (Westfeld-Pfitzmann) for sequential LSB replacement. It measures how far each channel\'s pixel histogram has been pushed towards the flat "pairs of values" pattern that LSB embedding leaves behind. High is a genuine signal; it detects classic LSB replacement, not LSB matching or data hidden in the DCT/frequency domain.'));
+      vt.appendChild(row('Per channel', 'R ' + fmtPct(chi.R) + '  ·  G ' + fmtPct(chi.G) + '  ·  B ' + fmtPct(chi.B)));
+      container.appendChild(vt);
+      container.appendChild(el('p', { class: 'anr-hint', style: 'margin:6px 0 10px;' },
+        'A low value is normal - clean photos look like random noise in the LSB. An elevated result can also come from a very flat or heavily-compressed image, so read it alongside the plane views below.'));
+    }
+  } catch (_) { /* too small / undecodable - skip the verdict */ }
 
   function openLsbLightbox(startIdx) {
     const lb = ensureLightbox();
@@ -1677,10 +1820,10 @@ function renderLsbPlanes(img, container) {
     function show(i) {
       idx = i;
       const ch = channels[idx];
-      const srcs = ensureFullRes();
+      const srcs = ensureFullRes(currentBit);
       lbImg.src = srcs[idx];
       lbImg.onload = () => sizeWrap(lbWrap, img.naturalWidth, img.naturalHeight);
-      meta.textContent = 'LSB bit plane: ' + ch.label + '  (' + img.naturalWidth + ' × ' + img.naturalHeight + ')';
+      meta.textContent = ch.label + ' ' + bitLabel(currentBit) + '  (' + img.naturalWidth + ' × ' + img.naturalHeight + ')';
       prevBtn.style.visibility = idx > 0 ? 'visible' : 'hidden';
       nextBtn.style.visibility = idx < channels.length - 1 ? 'visible' : 'hidden';
       label.textContent = ch.label + ' (' + (idx + 1) + '/' + channels.length + ')';
@@ -1694,7 +1837,7 @@ function renderLsbPlanes(img, container) {
     const saveBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' }, 'Save PNG');
     saveBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const a = el('a', { href: ensureFullRes()[idx], download: 'lsb_' + channels[idx].label.toLowerCase() + '.png' });
+      const a = el('a', { href: ensureFullRes(currentBit)[idx], download: 'plane_bit' + currentBit + '_' + channels[idx].label.toLowerCase() + '.png' });
       document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 500);
     });
 
@@ -1704,32 +1847,54 @@ function renderLsbPlanes(img, container) {
     toolbar.appendChild(saveBtn);
 
     // Preview src first, full-res loaded in show()
-    const previewSrc = makeLsbPlane(srcData, w, h, channels[idx].offset).toDataURL('image/png');
+    const previewSrc = makeLsbPlane(srcData, w, h, channels[idx].offset, currentBit).toDataURL('image/png');
     lbImg.src = previewSrc;
-    meta.textContent = 'LSB bit plane: ' + channels[idx].label + '  (loading full resolution…)';
+    meta.textContent = channels[idx].label + ' ' + bitLabel(currentBit) + '  (loading full resolution…)';
     lb.hidden = false;
     document.body.style.overflow = 'hidden';
     sizeWrap(lbWrap, w, h);
     show(idx);
   }
 
-  for (let ci = 0; ci < channels.length; ci++) {
-    const ch = channels[ci];
-    const cv = makeLsbPlane(srcData, w, h, ch.offset);
-    cv.setAttribute('data-export-label', ch.label);
-    cv.style.maxWidth = '100%';
-    cv.style.imageRendering = 'pixelated';
-    cv.style.cursor = 'zoom-in';
-    const chIdx = ci;
-    cv.addEventListener('click', () => openLsbLightbox(chIdx));
-    const col = el('div', { style: 'flex:1; min-width:100px; text-align:center;' }, [
-      el('div', { style: 'font-weight:600; margin-bottom:4px; font-size:13px;' }, ch.label),
-      cv
-    ]);
-    wrap.appendChild(col);
+  // (Re)build the three channel previews at the current bit plane.
+  function renderPreviews() {
+    wrap.innerHTML = '';
+    for (let ci = 0; ci < channels.length; ci++) {
+      const ch = channels[ci];
+      const cv = makeLsbPlane(srcData, w, h, ch.offset, currentBit);
+      cv.setAttribute('data-export-label', ch.label + ' ' + bitLabel(currentBit));
+      cv.style.maxWidth = '100%';
+      cv.style.imageRendering = 'pixelated';
+      cv.style.cursor = 'zoom-in';
+      const chIdx = ci;
+      cv.addEventListener('click', () => openLsbLightbox(chIdx));
+      wrap.appendChild(el('div', { style: 'flex:1; min-width:100px; text-align:center;' }, [
+        el('div', { style: 'font-weight:600; margin-bottom:4px; font-size:13px;' }, ch.label),
+        cv,
+      ]));
+    }
   }
 
+  // Bit-plane selector (0 = LSB on the left, 7 = MSB on the right).
+  const bitBtns = [];
+  const styleBits = () => bitBtns.forEach((b, i) => {
+    b.style.cssText = 'min-width:30px; padding:3px 6px; font-size:12px;' +
+      (i === currentBit ? ' background:var(--fg); color:var(--bg);' : '');
+  });
+  const bitRow = el('div', { style: 'display:flex; flex-wrap:wrap; gap:4px; align-items:center; margin-bottom:8px;' },
+    [el('span', { class: 'anr-hint', style: 'margin-right:4px;' }, 'Bit plane')]);
+  for (let b = 0; b < 8; b++) {
+    const btn = el('button', { type: 'button', class: 'anr-btn', title: bitLabel(b) }, String(b));
+    btn.addEventListener('click', () => { currentBit = b; styleBits(); renderPreviews(); });
+    bitBtns.push(btn);
+    bitRow.appendChild(btn);
+  }
+  styleBits();
+  container.appendChild(bitRow);
+  container.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
+    'Bit 0 is the least-significant bit (where LSB steganography hides); bit 7 is the most-significant. A natural photo looks like noise in the low bits and like the picture in the high bits.'));
   container.appendChild(wrap);
+  renderPreviews();
 }
 
 // ---------- lightbox (singleton, lazy) ----------
@@ -2991,6 +3156,25 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
 
   resultsEl.innerHTML = '';
 
+  // RAW view toggle (top of the analysis column): switch every metric between the
+  // camera's embedded-preview JPEG and a full libraw demosaic of the sensor data.
+  // Both matter - the preview is the camera's own rendering, the demosaic is the
+  // real sensor - so this re-runs the whole analysis on whichever is picked. Only
+  // for a genuinely dropped RAW that produced pixels (not inline/cover-art).
+  if (!inline && !opts.sourceNote && convertedFile && RAW_EXTS.has(fileExt(file.name))) {
+    const mode = fullDecode ? 'demosaic' : 'preview';
+    const bar = el('div', { class: 'anr-raw-modebar' });
+    bar.appendChild(el('span', { class: 'anr-raw-modebar-label' }, 'Analyse'));
+    const mk = (label, m, help) => {
+      const b = el('button', { type: 'button', class: 'anr-btn' + (mode === m ? ' is-active' : ''), title: help }, label);
+      if (mode !== m) b.addEventListener('click', () => { b.disabled = true; renderPhoto(file, resultsEl, { ...opts, rawMode: m }); });
+      return b;
+    };
+    bar.appendChild(mk('RAW (embedded preview)', 'preview', 'Analyse the JPEG preview the camera embedded in the RAW, alongside the RAW metadata.'));
+    bar.appendChild(mk('Demosaiced (full decode)', 'demosaic', 'Decode the sensor data with libraw into a full RGB image and analyse that instead.'));
+    resultsEl.appendChild(bar);
+  }
+
   // When this image was extracted from another file (audio cover art, an EPUB
   // cover, a PDF page), a one-line note records where it came from.
   if (opts.sourceNote) {
@@ -3041,22 +3225,11 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     }
     fCtx.putImageData(fImg, 0, 0);
 
-    if (convertedFile && RAW_EXTS.has(fileExt(file.name))) {
-      if (fullDecode) {
-        // (no note - the demosaiced image speaks for itself)
-      } else {
-        thumb.appendChild(el('p', { class: 'anr-raw-warning' },
-          'Full sensor resolution may not be available for all camera models.'));
-        // Optional full sensor decode (libraw WASM). Heavyweight, so it loads only
-        // when asked: re-render the same file in demosaic mode.
-        const demoBtn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:8px;font-size:11px;width:100%;' },
-          'Demosaic RAW (full decode)');
-        demoBtn.addEventListener('click', () => {
-          demoBtn.disabled = true;
-          renderPhoto(file, resultsEl, { ...opts, rawMode: 'demosaic' });
-        });
-        thumb.appendChild(demoBtn);
-      }
+    if (convertedFile && RAW_EXTS.has(fileExt(file.name)) && !fullDecode) {
+      // The full-decode option now lives in the "Analyse" toggle at the top of the
+      // results; here we just note the preview's resolution caveat.
+      thumb.appendChild(el('p', { class: 'anr-raw-warning' },
+        'This is the camera\'s embedded preview - use "Demosaiced (full decode)" at the top to analyse the full sensor image.'));
     }
     previewSlot.appendChild(thumb);
 
@@ -3258,14 +3431,29 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
       && (RAW_EXTS.has(sExt) || /^jpe?g$/.test(sExt) || file.type === 'image/jpeg')) {
     try { const sc = readShutterCount(await file.arrayBuffer(), sMake); if (sc) exif.ShutterCount = sc; } catch (_) {}
   }
+  // Mean luminance of the decoded pixels, feeding the optics EV-vs-brightness note.
+  let meanLuma = null;
+  try {
+    const pd = pixData.data; let sum = 0, cnt = 0;
+    for (let i = 0; i < pd.length; i += 16) { sum += 0.299 * pd[i] + 0.587 * pd[i + 1] + 0.114 * pd[i + 2]; cnt++; }
+    if (cnt) meanLuma = sum / cnt;
+  } catch (_) {}
+  const optRows = opticsRows(exif, meanLuma);
   const sections = buildExifSections(exif);
-  if (sections.length) {
+  if (sections.length || optRows.length) {
     const exifCard = el('div', { class: 'anr-card' });
     exifCard.appendChild(el('h3', {}, 'Metadata'));
     for (const sec of sections) {
       exifCard.appendChild(el('div', { class: 'anr-readout-section' }, sec.title));
       const t = el('table', { class: 'anr-readout' });
       for (const [k, v] of sec.rows) t.appendChild(row(k, v));
+      exifCard.appendChild(t);
+    }
+    // ---- Optics (derived, not stored) ----
+    if (optRows.length) {
+      exifCard.appendChild(el('div', { class: 'anr-readout-section' }, 'Optics (derived)'));
+      const t = el('table', { class: 'anr-readout' });
+      for (const [k, v] of optRows) t.appendChild(row(k, v));
       exifCard.appendChild(t);
     }
     if (!inline) attachImageScrub(file, exifCard);
@@ -3380,6 +3568,125 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   renderHistogram(histCanvas, hist);
   resultsEl.appendChild(histBlock);
 
+  // ---- Forensics panel (JPEG only) ----
+  // The JPEG/pixel tamper tools, built as a collapsible panel and stashed in
+  // `advForensics` so it can be dropped into the shared "Advanced" card lower down
+  // (next to LSB analysis). Runs only for a genuinely-dropped JPEG (not a preview
+  // transcoded from HEIC/RAW - re-encoding an already-transcoded frame would say
+  // nothing about the original). Stacked sub-sections, like the Metadata card.
+  let advForensics = null;
+  if (!inline && !convertedFile && (/^(jpe?g|jpe|jfif)$/.test(fileExt(file.name)) || file.type === 'image/jpeg')) {
+    const fDet = el('details');
+    const fSum = el('summary', {});
+    fSum.appendChild(el('span', { class: 'anr-summary-label' }, 'Forensics'));
+    fDet.appendChild(fSum);
+    const fCard = el('div');   // panel content container (kept named fCard below)
+    fDet.appendChild(fCard);
+    fCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' },
+      'Pixel- and compression-level checks that look for signs a JPEG was edited after capture. None is proof on its own - read them together, and alongside the metadata and thumbnail checks.'));
+
+    // -- Error-level analysis --
+    fCard.appendChild(el('div', { class: 'anr-readout-section' }, 'Error-level analysis'));
+    fCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
+      'The picture is re-saved as JPEG and the difference amplified. A single untouched save gives a fairly even error field; a region pasted in from a differently-compressed source, or freshly painted, often recompresses at a different rate and stands out. Bright edges along high-contrast detail are normal - look for whole regions that differ from their surroundings.'));
+    const elaStatus = el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' }, 'Computing...');
+    fCard.appendChild(elaStatus);
+    const elaStage = el('div', { style: 'border:var(--bd-hairline); background:#000; display:flex; justify-content:center; align-items:center; min-height:80px;' });
+    fCard.appendChild(elaStage);
+    const qVal = el('span', { class: 'anr-hint', style: 'min-width:40px; text-align:right;' }, '90%');
+    const qSlider = el('input', { type: 'range', class: 'anr-range', min: '60', max: '98', step: '1', value: '90', style: 'width:100%;' });
+    const aVal = el('span', { class: 'anr-hint', style: 'min-width:40px; text-align:right;' }, '18×');
+    const aSlider = el('input', { type: 'range', class: 'anr-range', min: '5', max: '40', step: '1', value: '18', style: 'width:100%;' });
+    fCard.appendChild(el('div', { style: 'display:grid; grid-template-columns:auto 1fr auto; gap:8px 10px; align-items:center; margin-top:10px; font-family:var(--font-mono); font-size:var(--t-small);' }, [
+      el('span', { class: 'anr-hint' }, 'Quality'), qSlider, qVal,
+      el('span', { class: 'anr-hint' }, 'Amplify'), aSlider, aVal,
+    ]));
+
+    // -- Quantization fingerprint --
+    let qBytes = null;
+    try { qBytes = new Uint8Array(await file.arrayBuffer()); } catch (_) {}
+    const qz = qBytes ? analyzeJpegQuantization(qBytes) : null;
+    if (qz) {
+      fCard.appendChild(el('div', { class: 'anr-readout-section' }, 'Quantization fingerprint'));
+      const qt = el('table', { class: 'anr-readout' });
+      qt.appendChild(rowHelp('Effective quality',
+        '~' + qz.lumaQuality + '%' + (qz.chromaQuality != null ? ' luma / ~' + qz.chromaQuality + '% chroma' : ''),
+        'The JPEG quality the encoder used, recovered by matching its quantization tables against the standard tables scaled across quality 1-100.'));
+      qt.appendChild(rowHelp('Tables',
+        qz.isStandard ? 'Standard (IJG / libjpeg)' : 'Custom (camera or encoder-specific)',
+        'Standard Annex-K tables are used by most software (editors, "Save for Web", browsers, converters). Camera firmware almost always ships its own bespoke tables, so standard tables on a photo that claims a camera point to a software re-save.'));
+      fCard.appendChild(qt);
+      // Cross-reference the claimed software when the tables disagree with it.
+      const sw = exif && exif.Software ? String(exif.Software) : '';
+      let verdict = qz.isStandard
+        ? 'These are standard software tables. If this file is presented as a straight-from-camera original, that is a red flag - it has been through an editor or converter.'
+        : 'These are bespoke tables, consistent with an original camera JPEG (or a specific encoder that ships its own tables).';
+      if (sw) verdict += ' Metadata names the software as "' + sw + '".';
+      fCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:8px 0 0;' }, verdict));
+      // The luminance table itself - the literal fingerprint - as a compact grid.
+      const grid = el('div', { style: 'display:grid; grid-template-columns:repeat(8, 1fr); gap:2px; margin-top:10px; max-width:340px; font-family:var(--font-mono); font-size:11px; text-align:center;' });
+      for (let i = 0; i < 64; i++) {
+        grid.appendChild(el('div', { style: 'background:var(--surface); border:var(--bd-hairline); padding:2px 0;' }, String(qz.luma.table[i])));
+      }
+      fCard.appendChild(el('div', { class: 'anr-hint', style: 'margin-top:10px;' }, 'Luminance quantization table'));
+      fCard.appendChild(grid);
+    }
+
+    // -- JPEG ghosts (on demand - it does a full sweep of recompressions) --
+    fCard.appendChild(el('div', { class: 'anr-readout-section' }, 'JPEG ghosts'));
+    fCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
+      'Recompresses the picture across a sweep of qualities. A region carried over from a differently-compressed source settles into a dark patch - a "ghost" - in the map whose quality matches its original save, while the rest of the frame does not. Look for a localised dark blob that shows up in only some of the maps.'));
+    const ghostGrid = el('div', { style: 'display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:10px; margin-top:6px;' });
+    const ghostBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Run ghost sweep');
+    ghostBtn.addEventListener('click', async () => {
+      ghostBtn.disabled = true; ghostBtn.textContent = 'Analysing...';
+      const ghosts = await computeJpegGhosts(img).catch(() => null);
+      if (renderSignal.aborted) return;
+      if (!ghosts || !ghosts.length) { ghostBtn.textContent = 'Ghost sweep unavailable'; return; }
+      for (const g of ghosts) {
+        const url = g.canvas.toDataURL('image/png');
+        const im = el('img', { src: url, alt: 'ghost ' + g.quality, loading: 'lazy',
+          style: 'width:100%; height:auto; display:block; border:var(--bd-hairline); cursor:zoom-in;' });
+        im.addEventListener('click', () => openLightbox(url, file.name,
+          'JPEG ghost - quality ' + g.quality + '% - ' + file.name, null, false, false));
+        ghostGrid.appendChild(el('div', {}, [im,
+          el('p', { class: 'anr-hint', style: 'margin:4px 0 0; text-align:center;' }, g.quality + '%')]));
+      }
+      ghostBtn.remove();
+    });
+    fCard.appendChild(ghostBtn);
+    fCard.appendChild(ghostGrid);
+
+    advForensics = fDet;
+
+    let elaBusy = false, elaPending = false;
+    const runEla = async () => {
+      if (elaBusy) { elaPending = true; return; }
+      elaBusy = true;
+      const q = (+qSlider.value) / 100, amp = +aSlider.value;
+      const cv = await computeElaCanvas(img, { quality: q, amplify: amp }).catch(() => null);
+      elaBusy = false;
+      if (renderSignal.aborted) return;
+      if (!cv) { elaStatus.textContent = 'Error-level analysis unavailable for this image.'; return; }
+      elaStage.innerHTML = '';
+      cv.style.cssText = 'max-width:100%; height:auto; display:block; cursor:zoom-in;';
+      cv.addEventListener('click', () => openLightbox(cv.toDataURL('image/png'), file.name,
+        'Error-level analysis - ' + file.name, null, false, false));
+      elaStage.appendChild(cv);
+      const st = cv._elaStats;
+      elaStatus.textContent = st
+        ? 'Re-saved at ' + Math.round(q * 100) + '% quality, amplified ' + amp + '×. Mean error ' + st.meanErr.toFixed(1) + ', peak ' + Math.round(st.maxErr) + ' (0-255).'
+        : '';
+      if (elaPending) { elaPending = false; runEla(); }
+    };
+    qSlider.addEventListener('input', () => { qVal.textContent = qSlider.value + '%'; });
+    aSlider.addEventListener('input', () => { aVal.textContent = aSlider.value + '×'; });
+    qSlider.addEventListener('change', runEla);
+    aSlider.addEventListener('change', runEla);
+    // Compute lazily the first time the panel is expanded, not on every load.
+    fDet.addEventListener('toggle', () => { if (fDet.open && !fDet._elaRan) { fDet._elaRan = true; runEla(); } });
+  }
+
   // ---- Container structure (raw bytes the img/exifr pipeline ignores) ----
   // Best-effort and fully isolated: a parse failure must never break the rest of
   // the photo analysis, and nothing is appended when there's nothing to show.
@@ -3464,55 +3771,55 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   palCard.appendChild(palDiv);
   resultsEl.appendChild(palCard);
 
-  // ---- Embedded images (RAW only) ----
-  // A RAW file carries one or more ready-made JPEGs - the small thumbnail the
-  // camera shows on its screen plus larger preview(s). Pull each one straight from
-  // the file bytes and lay them out so every stored image is visible at its size.
-  if (RAW_EXTS.has(fileExt(file.name))) {
-    const embCard = el('div', { class: 'anr-card' });
-    const [embH, embHelp] = h3help('Embedded images',
-      'RAW files store one or more complete JPEGs alongside the sensor data - a small thumbnail for camera playback, plus larger preview(s) a viewer can show without decoding the RAW. These are extracted straight from the file bytes; the main image above is handled separately.');
-    embCard.appendChild(embH); embCard.appendChild(embHelp);
-    const embStatus = el('p', { class: 'anr-hint', style: 'margin:0;' }, 'Scanning for embedded images...');
-    embCard.appendChild(embStatus);
-    const embGrid = el('div', { class: 'anr-embedded-grid' });
-    embCard.appendChild(embGrid);
-    resultsEl.appendChild(embCard);
-    extractRawJpegs(file).then((jpegs) => {
-      let shown = 0;
-      for (const j of jpegs) {
-        const url = URL.createObjectURL(j.blob);
-        const cell = el('div', { class: 'anr-embedded-cell' });
-        const im = el('img', { src: url, alt: 'embedded image', loading: 'lazy', title: 'Click to enlarge' });
-        const cap = el('p', { class: 'anr-embedded-cap' }, fmtBytes(j.length));
-        im.addEventListener('load', () => {
-          cap.textContent = `${im.naturalWidth} × ${im.naturalHeight} · ${fmtBytes(j.length)}`;
+  // ---- Embedded images / thumbnails ----
+  // Nearly every camera still caches a smaller JPEG copy of itself inside its own
+  // metadata: an ordinary JPEG/TIFF stores an EXIF thumbnail (IFD1), and a RAW packs
+  // a full-size preview plus a screen thumbnail beside the sensor data. The browser
+  // only ever paints the main picture, so pull every stored JPEG straight from the
+  // bytes and lay them out so each is visible, downloadable and re-analysable.
+  // extractRawJpegs walks the TIFF/EXIF IFDs (RAW II/MM at 0, or the Exif block of a
+  // JPEG) and returns only the JPEGs those IFDs reference - i.e. the embedded
+  // thumbnails/previews, never the main image. Fully isolated: on failure or when
+  // there's nothing embedded, the card simply doesn't appear.
+  if (!inline) {
+    const isRaw = RAW_EXTS.has(fileExt(file.name));
+    try {
+      const jpegs = await extractRawJpegs(file);
+      if (jpegs.length && !renderSignal.aborted) {
+        const baseName = (file.name || 'image').replace(/\.[^/.]+$/, '');
+        const items = jpegs.map((j, i) => ({
+          bytes: j.length,
+          viewBlob: j.blob,
+          downloadBlob: j.blob,
+          downloadName: baseName + '_thumb_' + (i + 1) + '.jpg',
+        }));
+        const hint = isRaw
+          ? 'RAW files store one or more complete JPEGs alongside the sensor data - a small thumbnail for camera playback, plus larger preview(s) a viewer can show without decoding the RAW. These are extracted straight from the file bytes; the main image above is handled separately.'
+          : (jpegs.length === 1
+              ? 'This photo caches a smaller JPEG copy of itself (its EXIF thumbnail). It is extracted here straight from the file bytes.'
+              : jpegs.length + ' smaller JPEG copies are cached inside this photo (its EXIF thumbnail plus preview(s)), extracted straight from the file bytes, largest first.');
+        const embCard = buildEmbeddedImagesCard({
+          title: isRaw ? 'Embedded images' : 'Embedded thumbnails',
+          hint, items, signal: renderSignal, resultsEl, sourceFile: file,
         });
-        // A stray match that isn't a real JPEG won't decode - drop its cell.
-        im.addEventListener('error', () => { cell.remove(); URL.revokeObjectURL(url); if (!embGrid.children.length) embCard.remove(); });
-        im.addEventListener('click', () => openLightbox(url, file.name,
-          `${im.naturalWidth} × ${im.naturalHeight} · ${fmtBytes(j.length)} · embedded in ${file.name}`, null, false, false));
-        cell.appendChild(el('div', { class: 'anr-embedded-thumb' }, im));
-        cell.appendChild(cap);
-        embGrid.appendChild(cell);
-        shown++;
+        resultsEl.appendChild(embCard);
       }
-      if (!shown) { embCard.remove(); return; }
-      embStatus.textContent = shown === 1 ? '1 embedded JPEG found.' : `${shown} embedded JPEGs found, largest first.`;
-    }).catch(() => embCard.remove());
+    } catch (_) { /* no embedded JPEGs - show nothing */ }
   }
 
-  // ---- QR code detection (async) ----
+  // ---- Barcode / QR detection (async) ----
   const qrPlaceholder = el('div');
   resultsEl.appendChild(qrPlaceholder);
-  detectQrCode(img).then((qr) => {
-    if (!qr || !qr.data) { qrPlaceholder.remove(); return; }
+  detectCodes(img).then((codes) => {
+    if (!codes.length) { qrPlaceholder.remove(); return; }
     const qrCard = el('div', { class: 'anr-card' });
-    qrCard.appendChild(el('h3', {}, 'QR code detected'));
+    qrCard.appendChild(el('h3', {}, codes.length === 1 ? 'Code detected' : codes.length + ' codes detected'));
     const qt = el('table', { class: 'anr-readout' });
-    qt.appendChild(row('Data', qr.data));
-    if (qr.data.startsWith('http'))
-      qt.appendChild(row('Link', el('a', { href: qr.data, target: '_blank', rel: 'noopener' }, qr.data)));
+    for (const c of codes) {
+      qt.appendChild(row(fmtCodeFormat(c.format), c.data.length > 300 ? c.data.slice(0, 300) + '…' : c.data));
+      if (/^https?:\/\//i.test(c.data))
+        qt.appendChild(row('Link', el('a', { href: c.data, target: '_blank', rel: 'noopener' }, c.data)));
+    }
     qrCard.appendChild(qt);
     qrPlaceholder.replaceWith(qrCard);
   }).catch(() => { qrPlaceholder.remove(); });
@@ -3537,10 +3844,77 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   hashCard.appendChild(hashTbl);
   resultsEl.appendChild(hashCard);
 
-  // ---- LSB steganography analysis ----
-  const lsbCard = el('div', { class: 'anr-card' });
+  // ---- Advanced (forensic + technical panels, collapsed) ----
+  // One card holding the heavier/technical views, sitting where LSB analysis used
+  // to: the JPEG Forensics panel (built earlier - ELA, quantization fingerprint,
+  // JPEG ghosts; JPEG only) and LSB / bit-plane analysis. Each panel is a <details>
+  // collapsed by default, so the card stays compact until a tool is opened.
+  const advCard = el('div', { class: 'anr-card' });
+  advCard.appendChild(el('h3', {}, 'Advanced'));
+  advCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 4px;' },
+    'Deeper forensic and technical views. Each panel is collapsed by default - expand one to run it.'));
+  if (advForensics) advCard.appendChild(advForensics);
+
+  // -- Edit history + Privacy panels (read the raw bytes once) --
+  if (!inline) {
+    let advBytes = null;
+    try { advBytes = new Uint8Array(await file.arrayBuffer()); } catch (_) {}
+    if (advBytes) try {
+      // Edit history: XMP xmpMM:History timeline + Photoshop IPTC-digest check.
+      const xh = parseXmpHistory(advBytes);
+      const digest = checkIptcDigest(advBytes);
+      const hasHistory = xh && (xh.history.length || xh.creatorTool || xh.documentId || xh.instanceId);
+      if (hasHistory || (digest && digest.hasDigest)) {
+        const { det, body } = advPanel('Edit history');
+        body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
+          'What editing software recorded about this file. The XMP history is written by Lightroom/Photoshop and similar tools; the IPTC digest check tests whether the caption/keyword block was changed after Photoshop last saved it.'));
+        if (digest && digest.hasDigest) {
+          const dt = el('table', { class: 'anr-readout' });
+          dt.appendChild(rowHelp('IPTC digest',
+            digest.match ? 'Matches - metadata intact since Photoshop wrote it'
+              : (digest.computed ? '⚠ Mismatch - IPTC metadata changed after Photoshop' : 'Present, but no IPTC block to verify against'),
+            'Photoshop stores an MD5 of the IPTC block. A mismatch means the caption/keywords/creator fields were edited by something else after Photoshop last saved the file.'));
+          body.appendChild(dt);
+        }
+        if (xh && (xh.creatorTool || xh.documentId || xh.instanceId)) {
+          const it = el('table', { class: 'anr-readout' });
+          if (xh.creatorTool) it.appendChild(row('Creator tool', xh.creatorTool));
+          if (xh.documentId) it.appendChild(row('Document ID', xh.documentId));
+          if (xh.instanceId) it.appendChild(row('Instance ID', xh.instanceId));
+          body.appendChild(it);
+        }
+        if (xh && xh.history.length) {
+          body.appendChild(el('div', { class: 'anr-readout-section' }, 'Timeline (' + xh.history.length + ' events)'));
+          const tt = el('table', { class: 'anr-readout' });
+          for (const h of xh.history) {
+            const when = h.when ? h.when.replace('T', ' ').replace(/[+-]\d\d:\d\d$/, '') : '-';
+            const what = [h.action, h.softwareAgent].filter(Boolean).join('  ·  ') + (h.changed ? '  (' + h.changed + ')' : '');
+            tt.appendChild(row(when, what || '-'));
+          }
+          body.appendChild(tt);
+        }
+        advCard.appendChild(det);
+      }
+
+      // Privacy: report which identifying fields are present. The lossless
+      // metadata stripper itself is the "Remove metadata" control on the
+      // Metadata card (scrub.js) - not duplicated here.
+      const sens = privacyRows(exif);
+      if (sens.length) {
+        const { det, body } = advPanel('Privacy');
+        body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
+          'Potentially identifying details found in this file\'s metadata. They travel with the file when you share it - use "Remove metadata" on the Metadata card to strip them.'));
+        const st = el('table', { class: 'anr-readout' });
+        for (const [k, v] of sens) st.appendChild(row(k, v));
+        body.appendChild(st);
+        advCard.appendChild(det);
+      }
+    } catch (_) { /* edit-history / privacy parsing failed - skip these panels */ }
+  }
+
+  // -- LSB / bit-plane analysis panel --
   const lsbDet = el('details');
-  const lsbHelp = el('div', { class: 'anr-info-panel is-hidden', html: 'LSB (Least Significant Bit) analysis isolates the lowest bit of each colour channel (R, G, B) and renders it as a black-and-white image. In a normal photograph these planes look like random noise. Visible patterns, text, or structure in the LSB plane can indicate steganographic data (hidden messages embedded in the image) or heavy editing. Click a preview to open it at full resolution.' });
+  const lsbHelp = el('div', { class: 'anr-info-panel is-hidden', html: 'Bit-plane analysis isolates one bit of each colour channel (R, G, B) and renders it as a black-and-white image. In a normal photograph the low bits look like random noise. Visible patterns, text or structure there can indicate steganographic data (hidden messages) or heavy editing. A chi-square test also estimates the statistical likelihood that least-significant-bit data has been embedded, and you can browse all eight bit planes (0 = LSB to 7 = MSB). Click a preview to open it at full resolution.' });
   const lsbSummary = el('summary', {});
   // Title + [?] grouped in one span so the summary's flex space-between keeps them
   // together on the left (only the open/close marker sits at the right edge).
@@ -3555,8 +3929,9 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   lsbContent.appendChild(lsbHelp);
   renderLsbPlanes(img, lsbContent);
   lsbDet.appendChild(lsbContent);
-  lsbCard.appendChild(lsbDet);
-  resultsEl.appendChild(lsbCard);
+  advCard.appendChild(lsbDet);
+
+  resultsEl.appendChild(advCard);
 
   const raw = buildRawDump(exif);
   if (raw && raw.length) {

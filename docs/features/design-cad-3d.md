@@ -220,9 +220,10 @@ more triangles), **open/boundary edges** and the number of **holes** they
 border, **degenerate faces** (zero-area triangles), **duplicate faces**, and
 **inconsistently wound (flipped) faces** whose normals disagree with their
 neighbours. It reports whether the mesh is **watertight** and **manifold**,
-and the **Euler characteristic** (V - E + F). When any fault is found the card
-takes the accent-bordered flag treatment and explains the impact plus a
-repair suggestion.
+and the **Euler characteristic** (V - E + F). A compact verdict badge in the
+card heading reads **Watertight** for a clean solid or **Faults found** in
+accent when any irregularity is present, and the note beneath explains the
+impact plus a repair suggestion.
 
 **How it works.** The check is universal - it runs on the same non-indexed
 position buffer the WebGL viewer uses, so it covers every 3D format (STL,
