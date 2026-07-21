@@ -350,7 +350,7 @@ function trackLanesSvg(tl, H, trackW, ppf) {
         + (gi.effects.length ? '\nFX: ' + gi.effects.join(', ') : '') : '';
       const tip = c.name + (c.path ? '\n' + c.path : '') + (c.fps ? '\n' + fmtFps(c.fps) : '')
         + `\n${tc(c.start, fps)} · ${c.dur} frames` + srcTc + gradeTip;
-      bars += `<rect x="${bx}" y="${y + 4}" width="${bw}" height="${LH - 8}" rx="3" fill="${col}"><title>${esc(tip)}</title></rect>`;
+      bars += `<rect x="${bx}" y="${y + 4}" width="${bw}" height="${LH - 8}" fill="${col}"><title>${esc(tip)}</title></rect>`;
       // Small amber dot marks a clip that carries a colour grade (node graph).
       if (gi && bw > 10) bars += `<circle cx="${bx + bw - 6}" cy="${y + 9}" r="2.6" fill="#f0a830"><title>${esc((gi.nodes.length || '?') + ' grade nodes')}</title></circle>`;
       if (bw > 42) bars += `<text x="${bx + 5}" y="${y + LH / 2 + 4}" fill="#fff" font-size="9.5" opacity=".95" pointer-events="none">${esc(c.name.slice(0, Math.max(3, Math.floor(bw / 6.5))))}</text>`;
@@ -384,7 +384,7 @@ function buildTimelineCard(tl, title) {
   const lanes = el('div', {});
   const scroller = el('div', { style: 'overflow-x:auto;overflow-y:hidden;flex:1 1 auto;cursor:grab;touch-action:pan-y', class: 'anr-aep-scroller' });
   scroller.appendChild(lanes);
-  card.appendChild(el('div', { style: 'display:flex;align-items:flex-start;border:1px solid var(--hairline);border-radius:8px;overflow:hidden' }, [labels, scroller]));
+  card.appendChild(el('div', { style: 'display:flex;align-items:flex-start;border:1px solid var(--hairline);overflow:hidden' }, [labels, scroller]));
 
   const basePpf = () => Math.max(0.0005, (scroller.clientWidth || 660) - 6) / Math.max(1, tl.durFrames);
   const ppfNow = () => basePpf() * zoom;
