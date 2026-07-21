@@ -13,6 +13,7 @@ import { convertHeic, extractRawPreview, convertWithImageMagick, demosaicRaw, ex
 import { ascii, latin1, utf8, inflate, findBytes, hexByte, hexBytes } from '../core/binutil.js';
 import { decodeGifFrames } from './gif-frames.js';
 import { decodeWebpFrames } from './webp-frames.js';
+import { ANIM_PIXEL_BUDGET } from '../core/limits.js';
 import { encodeAnimatedGif } from './gif-encode.js';
 import { buildIcoImagesCard } from './ico.js';
 import { buildMpoImagesCard } from './mpo.js';
@@ -3190,7 +3191,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // Only in the main photo section - skipped for inline cover-art renders.
   if (!inline && (fileExt(file.name) === 'gif' || file.type === 'image/gif') && file.size <= 200 * 1024 * 1024) {
     try {
-      const decoded = decodeGifFrames(await file.arrayBuffer());
+      const decoded = decodeGifFrames(await file.arrayBuffer(), ANIM_PIXEL_BUDGET);
       if (decoded && decoded.frames.length > 1) {
         resultsEl.appendChild(buildFrameViewerCard(file, decoded, resultsEl, renderSignal));
         resultsEl.appendChild(buildReverseAnimationCard(file, decoded, resultsEl, renderSignal));
@@ -3198,7 +3199,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     } catch (_) { /* malformed GIF - leave the normal photo view untouched */ }
   } else if (!inline && (fileExt(file.name) === 'webp' || file.type === 'image/webp')) {
     try {
-      const decoded = await decodeWebpFrames(file);
+      const decoded = await decodeWebpFrames(file, ANIM_PIXEL_BUDGET);
       if (decoded && decoded.frames.length > 1) {
         resultsEl.appendChild(buildFrameViewerCard(file, decoded, resultsEl, renderSignal,
           { kindLabel: 'animated WebP', delaysMs: decoded.delaysMs }));
