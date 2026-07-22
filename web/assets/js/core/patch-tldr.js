@@ -15,6 +15,13 @@ import { el } from './util.js';
 // newest group's notes, or - once that group holds five versions - start a new
 // group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
+  { range: '7.01 - 7.02', notes: [
+    'The deep **Advanced** forensic analysis is gathered into one tidy section - each panel now a sub-heading rather than a separate card - and dropped to the **very bottom** of every photo, video and sound, below everything else.',
+    'Sound\'s **loudness graph** (EBU R128, with true peak) becomes playable like the waveform - a playhead tracks the sound and you can click or drag anywhere on it to seek.',
+    'A photo\'s **privacy report** (GPS, serial, owner, copyright, unique IDs) moves up into the main metadata, and a copyright field that used to misread is fixed.',
+    'The **compare** view reads far better - sub-headings stay with their tables, spectrograms and waveforms show as whole side-by-side panels, and **Show differences** now fades matching panels too, not just rows.',
+    'The **changelog** is split - recent updates load quickly here, with the full older history archived to a separate page.',
+  ] },
   { range: '7.0', milestone: true, notes: [
     'Seventh milestone: a deep **forensic** pass reads the hidden internals of every photo, video and sound - and everything on the site is now explained in **plain English**.',
     'Photos: **error-level analysis**, quantization fingerprint and JPEG ghosts to spot edits; **bit-plane / LSB** hidden-data analysis; edit history and a privacy report; and a switch to analyse a **RAW** as its embedded preview or fully demosaiced.',
@@ -317,6 +324,13 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+  { range: '7.01 - 7.02', notes: [
+    'The deep **Advanced** analysis is gathered into one tidy section and dropped to the **bottom** of every photo, video and sound.',
+    'Sound\'s **loudness graph** (EBU R128) becomes playable - a playhead tracks it and you click or drag to seek.',
+    'A photo\'s **privacy report** moves up into the main metadata, in plain sight.',
+    'The **compare** view reads far better - side-by-side visuals, sub-headings kept with their tables, and a **Show differences** that fades matching panels too.',
+    'The **changelog** is split, with older history archived to keep this page quick.',
+  ] },
   { range: '7.0', milestone: true, notes: [
     'Seventh milestone: a deep **forensic** pass reads the hidden internals of every photo, video and sound, all in **plain English**.',
     'Photos gain **error-level analysis**, a quantization fingerprint and JPEG ghosts to spot edits.',

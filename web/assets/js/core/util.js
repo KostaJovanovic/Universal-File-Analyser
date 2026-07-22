@@ -684,6 +684,17 @@ export function wireInfoToggle(btn, panel) {
     document.addEventListener('click', () => {
       document.querySelectorAll('.anr-info-panel.is-active').forEach(p => p.classList.remove('is-active'));
     });
+    // A viewport-pinned (fixed) popup is placed once at its button; keep it glued
+    // to the button as the page or an inner overflow column scrolls, and on resize
+    // - otherwise it floats away. Capture phase so scrolls inside scroll containers
+    // (which don't bubble) are still caught. No-op unless a fixed popup is open.
+    const reflowInfoPops = () => {
+      document.querySelectorAll('.anr-info-panel.anr-info-pop-fixed.is-active').forEach((p) => {
+        if (p._anrInfoBtn) placeInfoPop(p._anrInfoBtn, p);
+      });
+    };
+    window.addEventListener('scroll', reflowInfoPops, { capture: true, passive: true });
+    window.addEventListener('resize', reflowInfoPops, { passive: true });
   }
   btn.addEventListener('click', (e) => {
     e.preventDefault();
@@ -725,6 +736,7 @@ function anrHasClippingAncestor(elm) {
   return false;
 }
 function placeInfoPop(btn, panel) {
+  panel._anrInfoBtn = btn;   // remembered so the scroll/resize reflow can re-place it
   panel.classList.remove('anr-info-pop-fixed');
   panel.style.left = ''; panel.style.top = '';
   if (!anrHasClippingAncestor(btn)) return;

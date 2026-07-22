@@ -194,12 +194,13 @@ function mergeInteractive(aSub, bSub) {
   [aSub, bSub].forEach((s) => { const p = s && s.querySelector('.anr-card'); if (p) p.style.display = 'none'; });
   const label = ((aBtn || bBtn).textContent || 'Analyse').trim();
   const central = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, label + ' (both files)');
+  const centralRow = el('div', { class: 'anr-btn-row' }, [central]);
   central.addEventListener('click', () => {
     if (aBtn) aBtn.click();
     if (bBtn) bBtn.click();
-    central.remove();
+    centralRow.remove();   // drop the whole row, not just the button, so no empty gap is left
   });
-  card.appendChild(el('div', { class: 'anr-btn-row' }, [central]));
+  card.appendChild(centralRow);
   card.appendChild(splitCols(aSub ? [aSub] : [], bSub ? [bSub] : []));
   return card;
 }
