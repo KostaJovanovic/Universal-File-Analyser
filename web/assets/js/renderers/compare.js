@@ -353,10 +353,14 @@ export async function renderCompare(fileA, fileB, resultsEl, deps = {}) {
     if ((kind === 'photo' || kind === 'video') && typeof deps.ensureExifr === 'function') {
       try { await deps.ensureExifr(); } catch (_) {}
     }
-    // Media renderers get { inline: true } (isolated DOM targets); a PDF gets a
-    // single-page preview up front (the full page set is a lot to show twice).
+    // Media renderers get { inline: true } (isolated DOM targets) plus
+    // { compare: true }, which tells them this is a full analysis panel - not a
+    // trimmed extracted-sub-image render (cover art / a video frame) - so they emit
+    // the same forensics, telemetry, animated-frame and structure cards the normal
+    // single-file page does. A PDF gets a single-page preview up front (the full
+    // page set is a lot to show twice).
     let opts;
-    if (MEDIA.has(kind)) opts = { inline: true };
+    if (MEDIA.has(kind)) opts = { inline: true, compare: true };
     else if (kind === 'pdf') opts = { previewPages: 1 };
     try { await Promise.resolve(route.render(file, staging, opts)); }
     catch (e) { staging.appendChild(errorCard('Could not analyse ' + file.name + ': ' + (e && e.message ? e.message : e))); }

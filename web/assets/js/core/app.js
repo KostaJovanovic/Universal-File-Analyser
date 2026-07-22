@@ -4,16 +4,16 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 249;
+const COMMIT_COUNT = 250;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
 // major version and resets the counter within its era: commit 29 reads "1.0" (and
 // 30 → "1.01"), commit 60 reads "2.0", commit 100 reads "3.0" (and 101 → "3.01"),
-// commit 151 reads "4.0", commit 173 reads "5.0". To crown a future 6.0, append its
-// commit number here (keep the list sorted ascending, and mirror the RELEASES
-// constant in save.bat).
-const RELEASE_COMMITS = [29, 60, 100, 151, 173, 195];
+// commit 151 reads "4.0", commit 173 reads "5.0", commit 195 reads "6.0" and commit
+// 250 reads "7.0". To crown a future 8.0, append its commit number here (keep the
+// list sorted ascending, and mirror the RELEASES constant in save.bat).
+const RELEASE_COMMITS = [29, 60, 100, 151, 173, 195, 250];
 
 function analyserVersion(n, releases) {
   let major = 0, base = 0;
@@ -1053,7 +1053,7 @@ window._anrReadableText = isReadableText;
     // Drive the shared bottom loading popup while both files analyse and merge - the
     // compare render can be slow (two full analyses, WASM loads, hashing), so the
     // same bar the single-file drop shows should be visible here too.
-    window._anrLoader.show('Comparing both files…');
+    window._anrLoader.show('Comparing files…');
     try {
       const { renderCompare } = await import('../renderers/compare.js');
       await renderCompare(_cmpA, _cmpB, ur, { classify: resolveKind, routes: ROUTES, ensureExifr, renderExtras: renderFileExtras });

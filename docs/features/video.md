@@ -134,14 +134,20 @@ btn: Generate contact sheet
 
 ### Audio track extraction
 
-**What it does.** Extracts the video's audio track and runs it through the
-full audio analyser (waveform, spectrogram, LUFS, etc.).
+**What it does.** Extracts and decodes the video's audio track, then renders
+the **identical** Sound section a directly-dropped audio file gets - same
+cards in the same order, with the full forensic set (File info, the EBU R128
+/ spectral **Advanced** card, channel picker, waveform, spectrogram, ...).
 
-**How to reach it.** **Download audio (WAV)** downloads the extracted
-track; **Analyse audio** runs it through `audio.js`'s full pipeline;
-**Analyse photo** (on the paired still) runs the current frame through
-`photo.js`. Built in `video.js`, reusing `audio.js`'s
-`makeSpectrogramPanel`/`buildHistogramCard`/`buildWaveformCard`.
+**How to reach it.** **Analyse audio** decodes the track (Web Audio →
+in-container PCM → ffmpeg.wasm fallback; the AVI path already holds decoded
+PCM) and hands the resulting `AudioBuffer` straight to `audio.js`'s
+`renderAudio(file, el, { inline: true, audioBuffer, playbackFile, download: true })`
+- the pre-decoded entry point, so nothing is decoded twice. A **Download
+audio (WAV)** button (from `renderAudio`'s `opts.download`) saves the
+extracted track. **Analyse photo** (on the paired still) runs the current
+frame through `photo.js`'s `renderPhoto` the same way. `declaredLossless` is
+passed `false` so the WAV wrapper is not mistaken for a fake-lossless file.
 
 ```demo
 btn: Download audio (WAV)

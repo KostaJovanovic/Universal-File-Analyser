@@ -2244,7 +2244,7 @@ function tagRow(name, value) {
   return TAG_HELP[name] ? rowHelp(name, value, TAG_HELP[name]) : row(name, value);
 }
 
-function buildCoverArtCard(art, file) {
+function buildCoverArtCard(art, file, resultsEl) {
   // Embedded cover art is promoted to the dedicated Photo section and given the
   // full photo analysis there (preview, histogram, EXIF, OCR) - the Photo tab is
   // re-enabled for it. A slim pointer card stays here to say where it went.
@@ -2256,9 +2256,18 @@ function buildCoverArtCard(art, file) {
 
   // Lazy-load the photo module (kept out of the audio bundle) only when there is
   // actually cover art to analyse, then reveal the Photo section and render there.
+  // On a page with no Photo section (the compare view), fall back to a local slot
+  // tagged anr-cmp-sub-photo appended to this analysis - the compare merge files it
+  // under the Photo section just like a video's grabbed frame, so the cover still
+  // gets its full photo analysis instead of vanishing with the missing section.
   import('./photo.js').then(({ renderPhoto, revealPhotoSection }) => {
     const photoResults = revealPhotoSection();
-    if (photoResults) renderPhoto(artFile, photoResults, { sourceNote: note });
+    if (photoResults) { renderPhoto(artFile, photoResults, { sourceNote: note }); return; }
+    if (resultsEl) {
+      const slot = el('div', { class: 'anr-results anr-cmp-subslot anr-cmp-sub-photo' });
+      resultsEl.appendChild(slot);
+      renderPhoto(artFile, slot, { inline: true, sourceNote: note });
+    }
   }).catch(() => {});
 
   const labelCard = el('div', { class: 'anr-card' });
@@ -2790,6 +2799,31 @@ function drawLoudnessGraph(series, duration) {
   return cv;
 }
 
+// A collapsible <details> panel with a plain summary label and an optional [?]
+// help button - the same idiom the video Advanced card's vAdvPanel uses, so the
+// sound Advanced card reads identically. Returns { det, body }; append rows/tables
+// to `body`.
+function aAdvPanel(title, helpHtml) {
+  const det = el('details');
+  const sum = el('summary', {});
+  // Title + optional [?] grouped in one span so the summary's flex space-between
+  // keeps them together on the left (only the open/close marker sits at the right).
+  const label = el('span', { class: 'anr-summary-label' });
+  label.appendChild(document.createTextNode(title + (helpHtml ? ' ' : '')));
+  det.appendChild(sum);
+  const body = el('div');
+  if (helpHtml) {
+    const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
+    const panel = el('div', { class: 'anr-info-panel is-hidden', html: helpHtml });
+    wireInfoToggle(btn, panel);
+    label.appendChild(btn);
+    body.appendChild(panel);
+  }
+  sum.appendChild(label);
+  det.appendChild(body);
+  return { det, body };
+}
+
 // --- Render uploaded / recorded audio results ---
 export async function renderAudio(file, resultsEl, opts = {}) {
   // Inline renders (the compare view's side-by-side panels) use an isolated abort
@@ -2806,14 +2840,17 @@ export async function renderAudio(file, resultsEl, opts = {}) {
 
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
-  resultsEl.appendChild(el('div', { class: 'anr-info' }, `Decoding "${file.name}"...`));
-
 
   let header = {};
-  try { header = await peekContainer(file); } catch (e) { /* ignore */ }
-
-  let playbackFile = file;
-  let audioBuffer;
+  // Pre-decoded entry point: callers that already hold the decoded sound (the
+  // video module extracts + decodes a video's audio track itself) pass it in via
+  // opts.audioBuffer so we skip our own container peek and decode, and render the
+  // exact same ordered set of cards as a directly-dropped audio file.
+  //   - opts.playbackFile: the blob/File the <audio> player should use (defaults
+  //     to `file`, which for that caller is a WAV wrapping the same PCM).
+  //   - opts.header: optional { container, codec } for the File info rows.
+  let playbackFile = opts.playbackFile || file;
+  let audioBuffer = opts.audioBuffer || null;
   // True when the browser's own decoder couldn't handle this file and we decoded
   // it with ffmpeg.wasm instead. That's precisely the population where the native
   // <audio> element is untrustworthy for playback too (it may accept the file and
@@ -2821,38 +2858,46 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // build), so it's the signal to play from a WAV of the decoded PCM instead.
   let usedFfmpeg = false;
 
-  if (header.container === 'AAC') {
-    try {
-      const wrapped = adtsToM4a(await file.arrayBuffer());
-      if (wrapped) {
-        playbackFile = new File([wrapped], file.name.replace(/\.[^.]+$/, '.m4a'), { type: 'audio/mp4' });
-        audioBuffer = await ctx().decodeAudioData(wrapped.slice(0));
-      }
-    } catch (_) {}
-  }
+  if (audioBuffer) {
+    header = opts.header || {};
+  } else {
+    resultsEl.appendChild(el('div', { class: 'anr-info' }, `Decoding "${file.name}"...`));
 
-  if (!audioBuffer) {
-    try {
-      audioBuffer = await decodeFile(file);
-    } catch (e) {
-      // Web Audio's decodeAudioData rejected it. This happens for whole codec
-      // families a given browser lacks - AAC in Chromium/Edge and Samsung Internet,
-      // and commonly WMA, AC-3, DTS, AMR and friends everywhere. Fall back to
-      // decoding via ffmpeg.wasm (a full decoder set) to PCM, which recovers the
-      // full waveform/spectrogram/loudness for any of them instead of dropping to
-      // a metadata-only view. Codec-agnostic: whatever failed above lands here.
+    try { header = await peekContainer(file); } catch (e) { /* ignore */ }
+
+    if (header.container === 'AAC') {
       try {
-        audioBuffer = await ffmpegDecodeAudio(file, resultsEl);
-        usedFfmpeg = true;
-      } catch (e2) {
-        // Both decode paths failed - genuinely undecodable here. Log the real
-        // reasons (helps diagnose a platform-specific codec gap) and fall back
-        // to the metadata-only view.
-        try { console.error('[audio] decodeAudioData failed:', e); } catch (_) {}
-        try { console.error('[audio] ffmpeg decode failed:', e2); } catch (_) {}
-        resultsEl.innerHTML = '';
-        await renderUndecodableAudio(file, header, resultsEl, playbackFile);
-        return;
+        const wrapped = adtsToM4a(await file.arrayBuffer());
+        if (wrapped) {
+          playbackFile = new File([wrapped], file.name.replace(/\.[^.]+$/, '.m4a'), { type: 'audio/mp4' });
+          audioBuffer = await ctx().decodeAudioData(wrapped.slice(0));
+        }
+      } catch (_) {}
+    }
+
+    if (!audioBuffer) {
+      try {
+        audioBuffer = await decodeFile(file);
+      } catch (e) {
+        // Web Audio's decodeAudioData rejected it. This happens for whole codec
+        // families a given browser lacks - AAC in Chromium/Edge and Samsung Internet,
+        // and commonly WMA, AC-3, DTS, AMR and friends everywhere. Fall back to
+        // decoding via ffmpeg.wasm (a full decoder set) to PCM, which recovers the
+        // full waveform/spectrogram/loudness for any of them instead of dropping to
+        // a metadata-only view. Codec-agnostic: whatever failed above lands here.
+        try {
+          audioBuffer = await ffmpegDecodeAudio(file, resultsEl);
+          usedFfmpeg = true;
+        } catch (e2) {
+          // Both decode paths failed - genuinely undecodable here. Log the real
+          // reasons (helps diagnose a platform-specific codec gap) and fall back
+          // to the metadata-only view.
+          try { console.error('[audio] decodeAudioData failed:', e); } catch (_) {}
+          try { console.error('[audio] ffmpeg decode failed:', e2); } catch (_) {}
+          resultsEl.innerHTML = '';
+          await renderUndecodableAudio(file, header, resultsEl, playbackFile);
+          return;
+        }
       }
     }
   }
@@ -2868,8 +2913,14 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   for (let c = 0; c < audioBuffer.numberOfChannels; c++) channelData.push(audioBuffer.getChannelData(c));
   const LOSSLESS_EXTS = new Set(['flac', 'wav', 'wave', 'alac', 'aif', 'aiff', 'aifc', 'ape', 'wv', 'tta', 'tak', 'pcm', 'caf', 'w64']);
   const audioExt = (file.name || '').toLowerCase().split('.').pop();
-  const declaredLossless = LOSSLESS_EXTS.has(audioExt)
-    || /FLAC|WAV|AIFF|ALAC|PCM|Lossless|Monkey|WavPack/i.test((header.container || '') + ' ' + (header.codec || ''));
+  // opts.declaredLossless lets a pre-decoded caller override the file-name/header
+  // guess. The video module hands us PCM wrapped in a WAV, whose .wav extension
+  // would otherwise read as a genuine lossless-file claim and frame the lossy-source
+  // check as a fake-lossless accusation - so it passes false, and the check simply
+  // reports where the extracted sound was cut, without the fake-lossless framing.
+  const declaredLossless = opts.declaredLossless != null ? opts.declaredLossless
+    : (LOSSLESS_EXTS.has(audioExt)
+      || /FLAC|WAV|AIFF|ALAC|PCM|Lossless|Monkey|WavPack/i.test((header.container || '') + ' ' + (header.codec || '')));
   let spec = null, health = null, keyResult = null, r128 = null, tpDb = null, dtmf = null;
   try { spec = longAverageSpectrum(mono, sampleRate); } catch (_) {}
   try { health = signalHealth(channelData); } catch (_) {}
@@ -2908,7 +2959,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     const dlLink = el('a', {
       href: audioUrl, download: dlName, class: 'anr-btn',
       style: 'margin-top:10px;display:inline-block;text-decoration:none;'
-    }, 'Download recording');
+    }, opts.downloadLabel || 'Download recording');
     infoCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [dlLink]));
   }
 
@@ -3012,113 +3063,129 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   infoCard.appendChild(specStatsMount);
   resultsEl.appendChild(infoCard);
 
-  // ---- Loudness meter (EBU R128) ----
-  if (r128 && isFinite(r128.integrated)) {
-    const card = el('div', { class: 'anr-card' });
-    const [h, help] = h3help('Loudness meter (EBU R128)',
-      'The complete broadcast and streaming loudness set. Integrated loudness is the overall figure with silence ignored (gated, per ITU-R BS.1770); momentary (400 ms) and short-term (3 s) are the loudest brief windows; Loudness Range (LRA) is the spread between the quiet and loud passages; True peak is the real peak that falls between samples, found by oversampling 4x, which ordinary peak meters miss. All measured on the channel-merged signal.');
-    card.appendChild(h); card.appendChild(help);
-    const lt = el('table', { class: 'anr-readout' });
-    const lufs = (v) => isFinite(v) ? v.toFixed(1) + ' LUFS' : '-';
-    lt.appendChild(rowHelp('Integrated (gated)', lufs(r128.integrated),
-      'The overall loudness of the whole file with silent gaps left out. Streaming targets: Spotify/YouTube −14, Apple −16, broadcast (EBU R128) −23 LUFS.'));
-    lt.appendChild(rowHelp('Momentary max', lufs(r128.momentaryMax),
-      'The loudest short 400 ms window - the peak of brief, punchy moments.'));
-    lt.appendChild(rowHelp('Short-term max', lufs(r128.shortTermMax),
-      'The loudest 3-second window - the peak of longer, sustained loud passages.'));
-    lt.appendChild(rowHelp('Loudness range (LRA)', r128.lra != null ? r128.lra.toFixed(1) + ' LU' : '-',
-      'The spread between the quiet and loud parts of the track (from the 10th to the 95th percentile of short-term loudness). A low range (under about 5 LU) means a flat, heavily compressed master; a high range means a dynamic one.'));
-    if (tpDb != null) {
-      const over = tpDb > 0;
-      const tpRow = rowHelp('True peak', tpDb.toFixed(1) + ' dBTP' + (over ? '  (over 0 - inter-sample clipping)' : ''),
-        'The real loudest point, including peaks that fall between samples (found by oversampling 4x). Anything above 0 dBTP can distort on playback even when no single sample looks clipped; delivery specs usually cap this at −1 dBTP.');
-      if (over) tpRow.querySelector('td').style.color = 'var(--accent)';
-      lt.appendChild(tpRow);
-    }
-    card.appendChild(lt);
-    // Loudness-over-time (momentary series).
-    if (r128.series && r128.series.length > 4) card.appendChild(drawLoudnessGraph(r128.series, r128.duration));
-    resultsEl.appendChild(card);
-  }
+  // ---- Advanced (forensic panels, collapsed) ----
+  // Mirrors the photo and video Advanced cards: one collapsed anr-card holding
+  // <details> panels (built with aAdvPanel). This keeps the deep forensic reads -
+  // the full EBU R128 loudness set and the spectral checks - out of the way of the
+  // everyday File info readout above, exactly as the video Advanced card does.
+  {
+    const advCard = el('div', { class: 'anr-card' });
+    const [advH, advHelp] = h3help('Advanced',
+      'Deep forensic analysis of the sound, computed from the decoded audio. Each panel below is collapsed until you open it.');
+    advCard.appendChild(advH); advCard.appendChild(advHelp);
+    let advCount = 0;
 
-  // ---- Spectral & signal forensics ----
-  if (spec) {
-    const card = el('div', { class: 'anr-card' });
-    const [h, help] = h3help('Spectral forensics',
-      'Clues drawn from the average pitch make-up of the whole file: whether a "lossless" file was really built from a compressed (lossy) source, mains-hum interference, ultrasonic content above human hearing, and any telephone touch-tone (DTMF) digits.');
-    card.appendChild(h); card.appendChild(help);
-
-    // -- Lossy-transcode / fake-lossless verdict --
-    const tr = analyzeTranscode(spec, { declaredLossless });
-    card.appendChild(el('div', { class: 'anr-readout-section' }, 'Lossy-source check'));
-    const verdictLine = el('p', { class: 'anr-hint', style: 'margin:0 0 8px;'
-      + (tr.level === 'bad' ? 'color:var(--accent);' : '') }, tr.verdict);
-    card.appendChild(verdictLine);
-    const trTbl = el('table', { class: 'anr-readout' });
-    trTbl.appendChild(rowHelp('Spectral cutoff', Math.round(tr.cutoffHz).toLocaleString() + ' Hz'
-        + '  (' + Math.round(tr.fillFrac * 100) + '% of Nyquist)',
-      'The pitch where the sound’s energy suddenly drops away to nothing. A genuine lossless file reaches about 95% or more of the way to its theoretical ceiling (the Nyquist limit); a lossy codec leaves a hard cut-off well below it.'));
-    trTbl.appendChild(rowHelp('Rolloff steepness', tr.steepDbPerKHz > 0 ? tr.steepDbPerKHz.toFixed(0) + ' dB/kHz' : '-',
-      'How sharply the high-frequency energy is cut off at that ceiling, in decibels per kilohertz. A lossy encode leaves a steep, abrupt drop; genuine lossless audio tapers off gently.'));
-    if (tr.sourceGuess) trTbl.appendChild(rowHelp('Likely source', tr.sourceGuess,
-      'A best guess at the original compressed format, based on where that cut-off sits. Approximate only, since encoders and their settings vary.'));
-    card.appendChild(trTbl);
-
-    // -- Mains hum / ENF --
-    try {
-      const hum = analyzeMainsHum(spec);
-      card.appendChild(el('div', { class: 'anr-readout-section' }, 'Mains hum / ENF'));
-      const humTbl = el('table', { class: 'anr-readout' });
-      if (hum.present) {
-        humTbl.appendChild(rowHelp('Mains hum', 'Detected at ' + hum.exactHz.toFixed(2) + ' Hz  (+' + hum.fundamentalDb.toFixed(0) + ' dB)',
-          'A steady narrow tone at the frequency of the mains electricity supply, picked up from power lines or nearby equipment. Its exact frequency is what makes ENF forensic timestamping possible.'));
-        humTbl.appendChild(rowHelp('Implied region', hum.region,
-          'Mains electricity runs at 50 Hz across most of the world and 60 Hz in North America and parts of Asia - so the hum gives a rough hint of where it was recorded.'));
-        if (hum.harmonics.length > 1) humTbl.appendChild(rowHelp('Harmonics', hum.harmonics.map((x) => Math.round(x.hz) + ' Hz').join(', '),
-          'Steady tones at whole-number multiples of the mains-hum frequency (for example 100, 150 and 200 Hz above a 50 Hz hum), picked up from the power supply along with the hum itself.'));
-      } else {
-        humTbl.appendChild(rowHelp('Mains hum', 'None detected',
-          'No clear 50 or 60 Hz tone was found - either a clean recording, or one where those low frequencies have been filtered out (high-pass filtered).'));
+    // -- Loudness meter (EBU R128) --
+    if (r128 && isFinite(r128.integrated)) {
+      const { det, body } = aAdvPanel('Loudness meter (EBU R128)',
+        'The complete broadcast and streaming loudness set. Integrated loudness is the overall figure with silence ignored (gated, per ITU-R BS.1770); momentary (400 ms) and short-term (3 s) are the loudest brief windows; Loudness Range (LRA) is the spread between the quiet and loud passages; True peak is the real peak that falls between samples, found by oversampling 4x, which ordinary peak meters miss. All measured on the channel-merged signal.');
+      const lt = el('table', { class: 'anr-readout' });
+      const lufs = (v) => isFinite(v) ? v.toFixed(1) + ' LUFS' : '-';
+      lt.appendChild(rowHelp('Integrated (gated)', lufs(r128.integrated),
+        'The overall loudness of the whole file with silent gaps left out. Streaming targets: Spotify/YouTube −14, Apple −16, broadcast (EBU R128) −23 LUFS.'));
+      lt.appendChild(rowHelp('Momentary max', lufs(r128.momentaryMax),
+        'The loudest short 400 ms window - the peak of brief, punchy moments.'));
+      lt.appendChild(rowHelp('Short-term max', lufs(r128.shortTermMax),
+        'The loudest 3-second window - the peak of longer, sustained loud passages.'));
+      lt.appendChild(rowHelp('Loudness range (LRA)', r128.lra != null ? r128.lra.toFixed(1) + ' LU' : '-',
+        'The spread between the quiet and loud parts of the track (from the 10th to the 95th percentile of short-term loudness). A low range (under about 5 LU) means a flat, heavily compressed master; a high range means a dynamic one.'));
+      if (tpDb != null) {
+        const over = tpDb > 0;
+        const tpRow = rowHelp('True peak', tpDb.toFixed(1) + ' dBTP' + (over ? '  (over 0 - inter-sample clipping)' : ''),
+          'The real loudest point, including peaks that fall between samples (found by oversampling 4x). Anything above 0 dBTP can distort on playback even when no single sample looks clipped; delivery specs usually cap this at −1 dBTP.');
+        if (over) tpRow.querySelector('td').style.color = 'var(--accent)';
+        lt.appendChild(tpRow);
       }
-      card.appendChild(humTbl);
-    } catch (_) {}
-
-    // -- Ultrasonic content --
-    try {
-      const us = analyzeUltrasonic(spec);
-      card.appendChild(el('div', { class: 'anr-readout-section' }, 'Ultrasonic content'));
-      const usTbl = el('table', { class: 'anr-readout' });
-      if (!us.supported) {
-        usTbl.appendChild(rowHelp('Above 18 kHz', 'N/A at ' + (spec.sampleRate / 1000).toFixed(1) + ' kHz sample rate',
-          'The sample rate is too low to carry any meaningful ultrasonic content - it cannot represent frequencies that high (its Nyquist limit is below about 18.5 kHz).'));
-      } else {
-        usTbl.appendChild(rowHelp('Energy above ' + (us.startHz / 1000) + ' kHz',
-          us.ratioDb.toFixed(0) + ' dB below full band' + (us.present ? '  (present)' : '  (negligible)'),
-          'How much energy sits in the near-ultrasonic band compared with the whole signal. Steady content this high - inaudible to people - can be tracking beacons, device-pairing tones, or hidden watermarks.'));
-        if (us.peaks.length) usTbl.appendChild(rowHelp('Ultrasonic tones',
-          us.peaks.map((p) => Math.round(p.hz).toLocaleString() + ' Hz').join(', '),
-          'Individual steady tones found in the near-ultrasonic band, listed by frequency. Too high for people to hear, they can be device-pairing tones, tracking beacons or hidden watermarks.'));
-      }
-      card.appendChild(usTbl);
-    } catch (_) {}
-
-    // -- DTMF touch-tones --
-    if (dtmf && dtmf.digits.length) {
-      card.appendChild(el('div', { class: 'anr-readout-section' }, 'Touch-tones (DTMF)'));
-      const dt = el('table', { class: 'anr-readout' });
-      dt.appendChild(rowHelp('Dialled digits', dtmf.sequence,
-        'The phone touch-tone (DTMF) digits decoded from the audio, read by listening at the 8 standard tone frequencies arranged in row/column pairs (via Goertzel filters) - it recovers numbers that were dialled in a recording.'));
-      dt.appendChild(row('Count', String(dtmf.digits.length)));
-      const det = el('details');
-      det.appendChild(el('summary', {}, 'Timing (' + dtmf.digits.length + ')'));
-      const dtl = el('table', { class: 'anr-readout' });
-      for (const d of dtmf.digits) dtl.appendChild(row(d.digit, formatTime(d.tStart) + ' - ' + formatTime(d.tEnd)));
-      det.appendChild(dtl);
-      card.appendChild(dt);
-      card.appendChild(det);
+      body.appendChild(lt);
+      // Loudness-over-time (momentary series).
+      if (r128.series && r128.series.length > 4) body.appendChild(drawLoudnessGraph(r128.series, r128.duration));
+      advCard.appendChild(det); advCount++;
     }
 
-    resultsEl.appendChild(card);
+    // -- Spectral forensics (each its own panel) --
+    if (spec) {
+      // Lossy-transcode / fake-lossless verdict.
+      {
+        const tr = analyzeTranscode(spec, { declaredLossless });
+        const { det, body } = aAdvPanel('Lossy-source check',
+          'Whether a file that claims to be lossless was really built from a compressed (lossy) source such as MP3 or AAC, judged from where the sound’s high-frequency energy cuts off.');
+        const verdictLine = el('p', { class: 'anr-hint', style: 'margin:0 0 8px;'
+          + (tr.level === 'bad' ? 'color:var(--accent);' : '') }, tr.verdict);
+        body.appendChild(verdictLine);
+        const trTbl = el('table', { class: 'anr-readout' });
+        trTbl.appendChild(rowHelp('Spectral cutoff', Math.round(tr.cutoffHz).toLocaleString() + ' Hz'
+            + '  (' + Math.round(tr.fillFrac * 100) + '% of Nyquist)',
+          'The pitch where the sound’s energy suddenly drops away to nothing. A genuine lossless file reaches about 95% or more of the way to its theoretical ceiling (the Nyquist limit); a lossy codec leaves a hard cut-off well below it.'));
+        trTbl.appendChild(rowHelp('Rolloff steepness', tr.steepDbPerKHz > 0 ? tr.steepDbPerKHz.toFixed(0) + ' dB/kHz' : '-',
+          'How sharply the high-frequency energy is cut off at that ceiling, in decibels per kilohertz. A lossy encode leaves a steep, abrupt drop; genuine lossless audio tapers off gently.'));
+        if (tr.sourceGuess) trTbl.appendChild(rowHelp('Likely source', tr.sourceGuess,
+          'A best guess at the original compressed format, based on where that cut-off sits. Approximate only, since encoders and their settings vary.'));
+        body.appendChild(trTbl);
+        advCard.appendChild(det); advCount++;
+      }
+
+      // Mains hum / ENF.
+      try {
+        const hum = analyzeMainsHum(spec);
+        const { det, body } = aAdvPanel('Mains hum / ENF',
+          'A steady tone at the frequency of the mains electricity supply (50 or 60 Hz), picked up from power lines during a recording. Its exact frequency underpins ENF forensic timestamping and hints at the recording region.');
+        const humTbl = el('table', { class: 'anr-readout' });
+        if (hum.present) {
+          humTbl.appendChild(rowHelp('Mains hum', 'Detected at ' + hum.exactHz.toFixed(2) + ' Hz  (+' + hum.fundamentalDb.toFixed(0) + ' dB)',
+            'A steady narrow tone at the frequency of the mains electricity supply, picked up from power lines or nearby equipment. Its exact frequency is what makes ENF forensic timestamping possible.'));
+          humTbl.appendChild(rowHelp('Implied region', hum.region,
+            'Mains electricity runs at 50 Hz across most of the world and 60 Hz in North America and parts of Asia - so the hum gives a rough hint of where it was recorded.'));
+          if (hum.harmonics.length > 1) humTbl.appendChild(rowHelp('Harmonics', hum.harmonics.map((x) => Math.round(x.hz) + ' Hz').join(', '),
+            'Steady tones at whole-number multiples of the mains-hum frequency (for example 100, 150 and 200 Hz above a 50 Hz hum), picked up from the power supply along with the hum itself.'));
+        } else {
+          humTbl.appendChild(rowHelp('Mains hum', 'None detected',
+            'No clear 50 or 60 Hz tone was found - either a clean recording, or one where those low frequencies have been filtered out (high-pass filtered).'));
+        }
+        body.appendChild(humTbl);
+        advCard.appendChild(det); advCount++;
+      } catch (_) {}
+
+      // Ultrasonic content.
+      try {
+        const us = analyzeUltrasonic(spec);
+        const { det, body } = aAdvPanel('Ultrasonic content',
+          'Energy and steady tones above about 18 kHz - too high for people to hear. Content this high can be tracking beacons, device-pairing tones or hidden watermarks.');
+        const usTbl = el('table', { class: 'anr-readout' });
+        if (!us.supported) {
+          usTbl.appendChild(rowHelp('Above 18 kHz', 'N/A at ' + (spec.sampleRate / 1000).toFixed(1) + ' kHz sample rate',
+            'The sample rate is too low to carry any meaningful ultrasonic content - it cannot represent frequencies that high (its Nyquist limit is below about 18.5 kHz).'));
+        } else {
+          usTbl.appendChild(rowHelp('Energy above ' + (us.startHz / 1000) + ' kHz',
+            us.ratioDb.toFixed(0) + ' dB below full band' + (us.present ? '  (present)' : '  (negligible)'),
+            'How much energy sits in the near-ultrasonic band compared with the whole signal. Steady content this high - inaudible to people - can be tracking beacons, device-pairing tones, or hidden watermarks.'));
+          if (us.peaks.length) usTbl.appendChild(rowHelp('Ultrasonic tones',
+            us.peaks.map((p) => Math.round(p.hz).toLocaleString() + ' Hz').join(', '),
+            'Individual steady tones found in the near-ultrasonic band, listed by frequency. Too high for people to hear, they can be device-pairing tones, tracking beacons or hidden watermarks.'));
+        }
+        body.appendChild(usTbl);
+        advCard.appendChild(det); advCount++;
+      } catch (_) {}
+
+      // DTMF touch-tones (only when digits are found).
+      if (dtmf && dtmf.digits.length) {
+        const { det, body } = aAdvPanel('Touch-tones (DTMF)',
+          'Phone touch-tone (DTMF) digits decoded from the audio, read by listening at the 8 standard tone frequencies arranged in row/column pairs (via Goertzel filters) - it recovers numbers dialled in a recording.');
+        const dt = el('table', { class: 'anr-readout' });
+        dt.appendChild(rowHelp('Dialled digits', dtmf.sequence,
+          'The phone touch-tone (DTMF) digits decoded from the audio, read by listening at the 8 standard tone frequencies arranged in row/column pairs (via Goertzel filters) - it recovers numbers that were dialled in a recording.'));
+        dt.appendChild(row('Count', String(dtmf.digits.length)));
+        body.appendChild(dt);
+        const timing = el('details');
+        timing.appendChild(el('summary', {}, 'Timing (' + dtmf.digits.length + ')'));
+        const dtl = el('table', { class: 'anr-readout' });
+        for (const d of dtmf.digits) dtl.appendChild(row(d.digit, formatTime(d.tStart) + ' - ' + formatTime(d.tEnd)));
+        timing.appendChild(dtl);
+        body.appendChild(timing);
+        advCard.appendChild(det); advCount++;
+      }
+    }
+
+    if (advCount) resultsEl.appendChild(advCard);
   }
 
   // ---- Reverse playback (play / download the audio backwards) ----
@@ -3205,7 +3272,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   const coverSlot = el('div');
   resultsEl.appendChild(coverSlot);
   extractCoverArt(file).then((art) => {
-    if (art && art.bytes && art.bytes.length) coverSlot.appendChild(buildCoverArtCard(art, file));
+    if (art && art.bytes && art.bytes.length) coverSlot.appendChild(buildCoverArtCard(art, file, resultsEl));
   }).catch(() => {});
 
   // ---- Embedded tags + lyrics (async, non-blocking) ----

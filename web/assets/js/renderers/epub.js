@@ -168,10 +168,17 @@ export async function renderEpub(file, resultsEl) {
         'Analysed in the Photo section below.'));
       resultsEl.appendChild(labelCard);
       const note = 'Cover image from ' + (file.name || 'this e-book') + '.';
+      const coverFile = new File([bytes], 'cover.' + ext, { type: mime });
       import('./photo.js')
         .then(({ renderPhoto, revealPhotoSection }) => {
           const photoResults = revealPhotoSection();
-          if (photoResults) renderPhoto(new File([bytes], 'cover.' + ext, { type: mime }), photoResults, { sourceNote: note });
+          if (photoResults) { renderPhoto(coverFile, photoResults, { sourceNote: note }); return; }
+          // No Photo section on this page (the compare view): render into a local
+          // slot tagged anr-cmp-sub-photo, which the compare merge files under the
+          // Photo section - otherwise the cover analysis vanishes with the section.
+          const slot = el('div', { class: 'anr-results anr-cmp-subslot anr-cmp-sub-photo' });
+          resultsEl.appendChild(slot);
+          renderPhoto(coverFile, slot, { inline: true, sourceNote: note });
         })
         .catch(() => {});
     }
