@@ -76,12 +76,6 @@ function mergeReadout(tA, tB) {
   return out;
 }
 
-// Non-heading, non-readout direct children of a card (previews, players, hex,
-// notes) - moved as-is into a side-by-side split.
-function restOf(card) {
-  if (!card) return [];
-  return [...card.children].filter((n) => n.tagName !== 'H3' && !(n.matches && n.matches('table.anr-readout')));
-}
 function splitCols(aNodes, bNodes) {
   const col = (tag, nodes) => el('div', { class: 'anr-cmp-col' }, [el('div', { class: 'anr-cmp-col-tag' }, tag), ...nodes]);
   // A leading empty gutter matches the merged table's Field column, so the A|B
@@ -90,18 +84,90 @@ function splitCols(aNodes, bNodes) {
   return el('div', { class: 'anr-cmp-split' }, [el('div', { class: 'anr-cmp-gutter' }), col('A', aNodes), col('B', bNodes)]);
 }
 
-// Merge one matched card pair: readout tables become Field | A | B; the rest goes
-// side by side underneath.
+// The card's header node: a direct-child <h3>, or the direct child that WRAPS the
+// h3 (some cards, e.g. the timestamp timeline, put the title and its [?] button in
+// a flex row div rather than the plain h3help pattern). We MOVE the whole header so
+// its [?] button stays beside the title at the card top - out of the overflow-
+// scrolling split columns below, where its popup would be clipped ("stuck behind a
+// scroll").
+function headerNodeOf(card) {
+  if (!card) return null;
+  for (const n of card.children) {
+    if (n.tagName === 'H3') return n;
+    if (n.querySelector && n.querySelector('h3')) return n;
+  }
+  return null;
+}
+// Direct children of a card in document order, skipping the header node (moved
+// separately) and any h3 [?] help panel (a sibling; wireInfoToggle pulls it back
+// under its button on demand via a closure, so it needs no home in the merge).
+function bodyNodes(card, header) {
+  if (!card) return [];
+  return [...card.children].filter((n) =>
+    n !== header && !(n.classList && n.classList.contains('anr-info-panel')));
+}
+const nodeKind = (n) =>
+  (n.matches && n.matches('table.anr-readout')) ? 'table'
+    : (n.classList && n.classList.contains('anr-readout-section')) ? 'section'
+      : 'rest';
+const hasCanvas = (card) => !!(card && card.querySelector && card.querySelector('canvas'));
+
+// "Show differences" fades matching readout rows via .is-diff, but the fuller media
+// sections put a lot of content (forensics, edit history, container structure) in
+// side-by-side A | B splits that carry no per-row diff tag - so the toggle used to
+// do nothing to them. Tag each split whose two columns are textually identical with
+// .anr-cmp-split-same so the toggle can fade it too. Visual splits (previews,
+// players, spectrograms, waveforms - canvas/img/media) are left lit: two images or
+// sounds can't be judged equal from their text. Re-run on each activation because
+// some split content fills in asynchronously.
+function tagSplitSameness(root) {
+  const colText = (col) => [...col.children]
+    .filter((c) => !(c.classList && c.classList.contains('anr-cmp-col-tag')))
+    .map((c) => (c.textContent || '').replace(/\s+/g, ' ').trim()).join('');
+  for (const split of root.querySelectorAll('.anr-cmp-split')) {
+    split.classList.remove('anr-cmp-split-same');
+    if (split.querySelector('canvas, img, audio, video, svg')) continue;
+    const cols = [...split.children].filter((c) => c.classList && c.classList.contains('anr-cmp-col'));
+    if (cols.length >= 2 && colText(cols[0]) === colText(cols[1])) split.classList.add('anr-cmp-split-same');
+  }
+}
+
+// Merge one matched card pair. Visualisation panels (spectrogram, waveform,
+// histograms - anything with a <canvas>) are shown as two whole panels side by
+// side: their stats fill in asynchronously and the canvas is the point, so
+// cell-merging them only scrambles them. Every other card is walked in document
+// ORDER - each readout table becomes Field | A | B in place, and the section
+// sub-headings (Camera & lens, Exposure, ...) stay with the table they head
+// instead of being flattened off to the side.
 function mergeCard(cardA, cardB) {
   const card = el('div', { class: 'anr-card' });
-  const h = headingText(cardA) || headingText(cardB);
-  if (h) card.appendChild(el('h3', {}, h));
-  const tablesA = cardA ? [...cardA.querySelectorAll('table.anr-readout')] : [];
-  const tablesB = cardB ? [...cardB.querySelectorAll('table.anr-readout')] : [];
-  const nt = Math.max(tablesA.length, tablesB.length);
-  for (let i = 0; i < nt; i++) card.appendChild(mergeReadout(tablesA[i], tablesB[i]));
-  const ra = restOf(cardA), rb = restOf(cardB);
-  if (ra.length || rb.length) card.appendChild(splitCols(ra, rb));
+  const headA = headerNodeOf(cardA), headB = headerNodeOf(cardB);
+  const head = headA || headB;               // MOVE the whole header (title + wired [?])
+  if (head) card.appendChild(head);
+
+  if (hasCanvas(cardA) || hasCanvas(cardB)) {
+    card.appendChild(splitCols(bodyNodes(cardA, headA), bodyNodes(cardB, headB)));
+    return card;
+  }
+
+  const A = bodyNodes(cardA, headA), B = bodyNodes(cardB, headB);
+  let i = 0, j = 0, restA = [], restB = [];
+  const flushRest = () => {
+    if (restA.length || restB.length) card.appendChild(splitCols(restA, restB));
+    restA = []; restB = [];
+  };
+  while (i < A.length || j < B.length) {
+    const a = A[i], b = B[j];
+    const ka = a ? nodeKind(a) : null, kb = b ? nodeKind(b) : null;
+    if (ka === 'table' && kb === 'table') { flushRest(); card.appendChild(mergeReadout(a, b)); i++; j++; }
+    else if (ka === 'section' && kb === 'section') { flushRest(); card.appendChild(a); i++; j++; }
+    else if (ka === 'table') { flushRest(); card.appendChild(mergeReadout(a, null)); i++; }
+    else if (kb === 'table') { flushRest(); card.appendChild(mergeReadout(null, b)); j++; }
+    else if (ka === 'section') { flushRest(); card.appendChild(a); i++; }
+    else if (kb === 'section') { flushRest(); card.appendChild(b); j++; }
+    else { if (a) { restA.push(a); i++; } if (b) { restB.push(b); j++; } }
+  }
+  flushRest();
   return card;
 }
 
@@ -312,15 +378,28 @@ export async function renderCompare(fileA, fileB, resultsEl, deps = {}) {
   const strip = el('div', { class: 'anr-info anr-cmp-strip' }, stripText(fileA, fileB, kindA, kindB, 'pending'));
   resultsEl.appendChild(strip);
 
-  // "Show differences": fade every row where A and B match, so only the rows that
-  // differ stay lit (see .anr-diff-only in analyser.css).
+  // "Show differences": fade everything A and B share, so only what differs stays
+  // lit - matching readout rows (tagged .is-diff at merge time) AND matching
+  // side-by-side split blocks (the forensics/details content in the fuller media
+  // sections), which is re-evaluated on each activation so async-filled content
+  // (hashes, late panels) is judged fairly. See .anr-diff-only in analyser.css.
   const diffBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Show differences');
   diffBtn.addEventListener('click', () => {
-    const on = resultsEl.classList.toggle('anr-diff-only');
+    const on = !resultsEl.classList.contains('anr-diff-only');
+    if (on) tagSplitSameness(resultsEl);
+    resultsEl.classList.toggle('anr-diff-only', on);
     diffBtn.classList.toggle('is-active', on);
     diffBtn.textContent = on ? 'Show everything' : 'Show differences';
   });
-  resultsEl.appendChild(el('div', { class: 'anr-btn-row anr-cmp-controls' }, [diffBtn]));
+  // Sticky control bar, laid out on the same Field | A | B grid as the readouts so
+  // each file's name sits directly above its own analysis column and stays there
+  // while the long comparison scrolls. The "Show differences" toggle takes the
+  // field-label column on the left.
+  resultsEl.appendChild(el('div', { class: 'anr-cmp-controls' }, [
+    el('div', { class: 'anr-cmp-controls-btn' }, [diffBtn]),
+    el('div', { class: 'anr-cmp-fname anr-cmp-fname-a', title: fileA.name }, 'A - ' + fileA.name),
+    el('div', { class: 'anr-cmp-fname anr-cmp-fname-b', title: fileB.name }, 'B - ' + fileB.name),
+  ]));
   // The authoritative full-file SHA-256 comparison, shared by the identity strip
   // AND the Integrity SHA-256 row re-tag in appendHashExtras: that row's value
   // cells fill in asynchronously, so its merge-time diff check can race (one side
@@ -385,12 +464,9 @@ export async function renderCompare(fileA, fileB, resultsEl, deps = {}) {
     window._anrSuppressSuggest = prevSuppress;
   }
 
+  // The A/B filenames live in the sticky control bar above (so they stay pinned
+  // over their columns as the comparison scrolls) - no separate in-flow legend.
   const merged = el('div', { class: 'anr-cmp-merged' });
-  merged.appendChild(el('div', { class: 'anr-cmp-legend' }, [
-    el('span', {}, ''),
-    el('span', {}, 'A - ' + fileA.name),
-    el('span', {}, 'B - ' + fileB.name),
-  ]));
 
   // Sort both files' blocks into the normal page's sections, then merge each
   // section on its own. Display order puts each file's main type first, then the
@@ -414,14 +490,11 @@ export async function renderCompare(fileA, fileB, resultsEl, deps = {}) {
     mergePanels(bucketsA[key], bucketsB[key], section.body);
     merged.appendChild(section.el);
   }
-  // Integrity above all else: pull the merged Integrity card to the very top (right
-  // under the column legend), whichever section it landed in - the file's fingerprint
-  // is the first thing to check when comparing two files.
+  // Integrity above all else: pull the merged Integrity card to the very top,
+  // whichever section it landed in - the file's fingerprint is the first thing to
+  // check when comparing two files.
   const integ = [...merged.querySelectorAll('.anr-card')].find((c) => headingText(c) === 'Integrity');
-  if (integ) {
-    const legend = merged.querySelector('.anr-cmp-legend');
-    merged.insertBefore(integ, legend ? legend.nextSibling : merged.firstChild);
-  }
+  if (integ) merged.insertBefore(integ, merged.firstChild);
 
   resultsEl.appendChild(merged);
 

@@ -702,8 +702,39 @@ export function wireInfoToggle(btn, panel) {
     }
     const wasActive = panel.classList.contains('is-active');
     document.querySelectorAll('.anr-info-panel.is-active').forEach(p => p.classList.remove('is-active'));
-    if (!wasActive) panel.classList.add('is-active');
+    if (!wasActive) {
+      panel.classList.add('is-active');
+      placeInfoPop(btn, panel);
+    }
   });
+}
+
+// The popup is normally absolutely positioned inside the heading/row that holds its
+// [?] button. That breaks when an ancestor clips overflow (the compare view's
+// side-by-side columns use overflow:auto, which also clips vertically) - the popup
+// gets cut off / "stuck behind a scroll". When such a clipping ancestor exists, pin
+// the popup to the viewport at the button instead so it escapes the clip. No-op on
+// ordinary pages: without a clipping ancestor it stays exactly as before.
+function anrHasClippingAncestor(elm) {
+  let n = elm.parentElement;
+  while (n && n !== document.body && n.nodeType === 1) {
+    const s = getComputedStyle(n);
+    if (/(auto|scroll|hidden|clip)/.test(s.overflowX + ' ' + s.overflowY)) return true;
+    n = n.parentElement;
+  }
+  return false;
+}
+function placeInfoPop(btn, panel) {
+  panel.classList.remove('anr-info-pop-fixed');
+  panel.style.left = ''; panel.style.top = '';
+  if (!anrHasClippingAncestor(btn)) return;
+  const r = btn.getBoundingClientRect();
+  const w = Math.min(380, window.innerWidth - 16);
+  let left = r.left;
+  if (left + w > window.innerWidth - 8) left = window.innerWidth - 8 - w;
+  panel.classList.add('anr-info-pop-fixed');
+  panel.style.left = Math.max(8, left) + 'px';
+  panel.style.top = (r.bottom + 6) + 'px';
 }
 
 export function h3help(title, helpHtml) {

@@ -466,6 +466,38 @@
             <p class="anr-hint">Secondary detail that renders closed by default, so it stays out of the way until opened.</p>
           </div>
 
+          <div class="tst-sub">.anr-card.anr-adv - the "Advanced" card (photo / video / sound): one section whose heavier forensic reads are its parts. Each part is a &lt;details&gt; open by default, its summary styled as an .anr-readout-section sub-heading (the Metadata-card idiom); the muted +/- folds a part away.</div>
+          <div class="anr-card anr-adv">
+            <h3>Advanced</h3>
+            <details open>
+              <summary><span class="anr-summary-label">Loudness meter (EBU R128) <button type="button" class="anr-info-btn" title="Info">[?]</button></span></summary>
+              <div>
+                <table class="anr-readout">
+                  <tr><th>Integrated (gated)</th><td>-14.2 LUFS</td></tr>
+                  <tr><th>Short-term max</th><td>-9.8 LUFS</td></tr>
+                  <tr><th>Loudness range (LRA)</th><td>6.4 LU</td></tr>
+                  <tr><th>True peak</th><td>-1.1 dBTP</td></tr>
+                </table>
+              </div>
+            </details>
+            <details open>
+              <summary><span class="anr-summary-label">Lossy-source check</span></summary>
+              <div>
+                <table class="anr-readout">
+                  <tr><th>Spectral cutoff</th><td>20,500 Hz (93% of Nyquist)</td></tr>
+                </table>
+              </div>
+            </details>
+            <details open>
+              <summary><span class="anr-summary-label">Mains hum / ENF</span></summary>
+              <div>
+                <table class="anr-readout">
+                  <tr><th>Mains hum</th><td>None detected</td></tr>
+                </table>
+              </div>
+            </details>
+          </div>
+
           <div class="tst-sub">Scrollable mono block (pre.anr-code.anr-pre-scroll)</div>
           <pre class="anr-code anr-pre-scroll">00000000  89 50 4E 47 0D 0A 1A 0A  00 00 00 0D 49 48 44 52  .PNG........IHDR
 00000010  00 00 0F C0 00 00 0B D0  08 06 00 00 00 52 6C 3F  .............Rl?</pre>
