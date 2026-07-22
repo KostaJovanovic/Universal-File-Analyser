@@ -13,9 +13,10 @@
 import { el } from './util.js';
 import { renderHistoryPanel } from './history.js';
 import { MDX_OFFLINE_URLS, MDX_TIER_MB } from '../lib/mdx-model.js';
-import { DFN_OFFLINE_URLS, DFN_TIER_MB, DFN_MODEL } from '../lib/dfn-model.js';
+import { DFN_MODEL } from '../lib/dfn-model.js';
 // The denoise model on its own (its ONNX runtime is shared with MDX, already in
-// MDX_OFFLINE_URLS), so the Complete tier adds only this on top of the AI pack.
+// MDX_OFFLINE_URLS), so the AI pack adds only this model file on top of the vocal
+// separator, and the Complete tier the same on top of MDX.
 const DFN_MODEL_MB = Math.round(DFN_MODEL.bytes / 1e6);
 
 // Browser/platform-specific "how to install" hint, shown on the install button
@@ -250,8 +251,9 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
     complete: []
   };
   // OCR language packs (English ships in "Everything"; the rest stream from the
-  // CDN, not the repo) and the AI vocal-separation runtime + model - the two
-  // optional packs the Complete popup offers, each added on top of Everything.
+  // CDN, not the repo) and the on-device audio-AI pack (vocal separation + denoise,
+  // sharing one ONNX runtime) - the two optional packs the Complete popup offers,
+  // each added on top of Everything.
   const LANG_CODES = [
     'spa', 'fra', 'deu', 'ita', 'por', 'rus', 'chi_sim', 'jpn',
     'srp', 'srp_latn', 'hrv', 'ell', 'ara', 'chi_tra', 'kor', 'heb', 'tur',
@@ -259,11 +261,13 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
     'swe', 'nor', 'fin', 'dan',
   ];
   const LANG_URLS = LANG_CODES.map(c => 'https://tessdata.projectnaptha.com/4.0.0/' + c + '.traineddata.gz');
-  const FEATURE_ORDER = ['languages', 'ai', 'denoise'];
+  const FEATURE_ORDER = ['languages', 'ai'];
   const FEATURES = {
     languages: { label: 'Languages', desc: 'Read text (OCR) in 30+ languages, not just English.', mb: TIER_MB.complete - TIER_MB.everything - MDX_TIER_MB - DFN_MODEL_MB, urls: LANG_URLS },
-    ai: { label: 'AI vocal separation', desc: 'Split a song into separate vocal and instrumental stems, on your device.', mb: MDX_TIER_MB, urls: MDX_OFFLINE_URLS },
-    denoise: { label: 'AI denoise', desc: 'Remove background noise and hiss from audio, on your device.', mb: DFN_TIER_MB, urls: DFN_OFFLINE_URLS },
+    // Both on-device audio AI tools ship together: the vocal separator and the
+    // denoise model share one ONNX runtime, so the denoise model is a small add
+    // on top of the separator rather than its own pack.
+    ai: { label: 'AI vocal separation', desc: 'Split a song into separate vocal and instrumental stems, and remove background noise from a recording, on your device.', mb: MDX_TIER_MB + DFN_MODEL_MB, urls: MDX_OFFLINE_URLS.concat([DFN_MODEL.url]) },
   };
   // ORT runtime is shared between the AI packs, so add only the denoise MODEL on
   // top of MDX_OFFLINE_URLS (which already carries the runtime) to avoid duplicates.

@@ -208,43 +208,12 @@
                - let the newest version here disagree with app.js.
              ===================================================================== -->
 
-        <div class="patch-entry">
-          <p class="patch-version">6.54</p>
-          <p class="patch-name">Good Question</p>
+        <div class="patch-entry patch-milestone">
+          <p class="patch-version">7.0</p>
+          <p class="patch-name">X-Ray</p>
           <p class="patch-date">22 July 2026</p>
           <ul class="patch-list">
-            <li><strong>Every explanation on the site has been rewritten in plain English - and the little <code>[?]</code> buttons that carry them now work the same way everywhere, popping up a tidy note instead of pushing the page around. Alongside: a new on-device tool that strips background noise out of a recording, a friendlier set of one-tap sound filters, and a clear answer when a file has nothing inside to open.</strong></li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Clearer help</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>Answers in plain English, everywhere.</strong> The hundreds of little <code>[?]</code> explanations across the site - on photos, sound, video, documents, 3D models, circuit boards and more - have been rewritten so anyone can follow them, with the jargon translated rather than assumed. Many more readouts, table headings and section titles that never had a <code>[?]</code> now carry one, so there is a plain answer wherever you wonder what something means.</li>
-            <li><span class="patch-tag">New</span><strong>Tidier help that stays put.</strong> Tapping a <code>[?]</code> now opens a small pop-up anchored to the button instead of pushing everything below it down the page, and clicking anywhere else closes it. Every <code>[?]</code> across the site behaves the same way.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>A clear answer for an empty file.</strong> Dropping a <strong>0-byte</strong> file - a broken or unfinished download, or an empty placeholder left behind by a recovery tool - now explains plainly that there is nothing inside to open and suggests looking for another copy, instead of failing with a puzzling error.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Sound</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>Remove background noise from a recording.</strong> A new <strong>denoise</strong> option sits beside the vocal tools on any <a href="/about#where">audio file</a>: an on-device AI model (<strong>DeepFilterNet3</strong>) strips out hiss and background noise while keeping the full sound, and shows the result as a <strong>Clean</strong> to <strong>Noise</strong> blend you can play, analyse or save. Like the vocal separation it runs entirely on your device - nothing is uploaded - and downloads its model once, then works offline; you can also add it to the offline download so it is ready with no connection at all.</li>
-            <li><span class="patch-tag">New</span><strong>Friendlier one-tap sound filters.</strong> The instant isolate presets are now <strong>Underwater</strong>, <strong>Radio</strong> and <strong>Hollow</strong> - quick character effects that colour the whole track - while the cleaner, true AI vocal split sits under a clearly labelled <strong>AI separation</strong> button, with its <strong>Standard</strong> and <strong>Lite</strong> models and the new denoise gathered in one row.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Switching AI tool mid-prompt now works.</strong> Choosing a different model - or the new denoise - while a download prompt was already open used to be silently ignored; it now updates the prompt straight away.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Video</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>Motion timelines play for any video.</strong> The synced <strong>motion</strong> and <strong>gyro</strong> timelines - drawn from a clip&rsquo;s <strong>GoPro</strong>, <strong>CAMM</strong> or <strong>Sony</strong> sensor track - now play back even when the video uses a codec the browser cannot open directly, by driving them from the same playable copy used for the main player.</li>
-          </ul>
-        </div>
-
-        <div class="patch-entry">
-          <p class="patch-version">6.53</p>
-          <p class="patch-name">Under The Hood</p>
-          <p class="patch-date">21 July 2026</p>
-          <ul class="patch-list">
-            <li><strong>A deep forensic pass across photos, video and sound - Analyser now reads the hidden internals of each. For photos: tamper tells and concealed data. For video: the container&rsquo;s structure, the camera&rsquo;s own telemetry, and the exact encoder that made it. For sound: broadcast-grade loudness, the musical key, and whether a &ldquo;lossless&rdquo; file was secretly made from an MP3. And when a video has to be converted just to play, every result now describes the <em>original</em> file, never the converted copy.</strong></li>
+            <li><strong>Seventh milestone: Analyser sees straight through a file. A deep forensic pass now reads the hidden internals of every photo, video and sound - tamper tells and concealed data in a picture, a video&rsquo;s true structure, camera telemetry and the exact encoder that made it, and broadcast-grade loudness, the musical key and a fake-lossless check for sound. And it explains all of it - and everything else on the site - in plain English, in a tidy pop-up that stays put. Alongside: on-device noise removal for a recording, friendlier one-tap sound filters, and a clear answer when a file has nothing inside to open.</strong></li>
           </ul>
 
           <hr class="patch-rule">
@@ -266,6 +235,7 @@
             <li><span class="patch-tag">New</span><strong>A whole video at a glance.</strong> A <strong>content timeline</strong> squeezes every part of the video into a single colour &ldquo;barcode&rdquo; - a fingerprint of how it looks over time - with a brightness curve beneath it and automatic flags for black frames and frozen or still stretches. Click anywhere on the barcode to jump the player there.</li>
             <li><span class="patch-tag is-faster">Faster</span><strong>Play unsupported video sooner.</strong> When a clip uses a codec the browser cannot play (much <strong>GoPro HEVC</strong>, for one) and has to be converted, Analyser now makes a fast, lightweight copy by default - 720p and quick - with an <strong>Advanced</strong> panel to set resolution, frame rate and speed, including an extra-quick <strong>Turbo</strong> mode.</li>
             <li><span class="patch-tag is-fix">Fix</span><strong>Analysis always describes the original.</strong> That playable copy is now used <em>only</em> for playback - every result, from resolution and frame rate to the metadata, telemetry and stream fingerprint, is read from the original file you dropped, never the converted stand-in.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Motion timelines play for any video.</strong> The synced <strong>motion</strong> and <strong>gyro</strong> timelines - drawn from a clip&rsquo;s <strong>GoPro</strong>, <strong>CAMM</strong> or <strong>Sony</strong> sensor track - now play back even when the video uses a codec the browser cannot open directly, by driving them from the same playable copy used for the main player.</li>
           </ul>
 
           <hr class="patch-rule">
@@ -275,6 +245,19 @@
             <li><span class="patch-tag">New</span><strong>Catch a fake &ldquo;lossless&rdquo; file.</strong> Analyser inspects the full frequency picture of a file that claims to be lossless (<a href="/about#ext-flac">FLAC</a>, WAV, ALAC) and flags the tell-tale ceiling left behind when it was really made from an <strong>MP3 or AAC</strong>, naming the likely original quality. It also reports the file&rsquo;s <strong>effective bit depth</strong>, exposing padded or upscaled &ldquo;hi-res&rdquo; files.</li>
             <li><span class="patch-tag">New</span><strong>Hear the key, and the hidden tones.</strong> The <strong>musical key</strong> is now estimated to sit alongside the tempo, and a set of forensic listeners flag <strong>mains hum</strong> (revealing 50 vs 60 Hz mains, a basis for recording-authenticity checks), scan for inaudible <strong>ultrasonic</strong> tones and watermarks, and decode <strong>touch-tone (DTMF)</strong> phone digits from a recording.</li>
             <li><span class="patch-tag">New</span><strong>Signal-health checks.</strong> New <strong>crest factor</strong> (how heavily a master is compressed) and <strong>DC offset</strong> (a capture-fault tell) readings join the file info.</li>
+            <li><span class="patch-tag">New</span><strong>Remove background noise from a recording.</strong> A new <strong>denoise</strong> option sits beside the vocal tools on any <a href="/about#where">audio file</a>: an on-device AI model (<strong>DeepFilterNet3</strong>) strips out hiss and background noise while keeping the full sound, and shows the result as a <strong>Clean</strong> to <strong>Noise</strong> blend you can play, analyse or save. Like the vocal separation it runs entirely on your device - nothing is uploaded - and downloads its model once, then works offline; you can also add it to the offline download so it is ready with no connection at all.</li>
+            <li><span class="patch-tag">New</span><strong>Friendlier one-tap sound filters.</strong> The instant isolate presets are now <strong>Underwater</strong>, <strong>Radio</strong> and <strong>Hollow</strong> - quick character effects that colour the whole track - while the cleaner, true AI vocal split sits under a clearly labelled <strong>AI separation</strong> button, with its <strong>Standard</strong> and <strong>Lite</strong> models and the new denoise gathered in one row.</li>
+            <li><span class="patch-tag">New</span><strong>All the deep readings in one Advanced section.</strong> The full <strong>EBU R128</strong> loudness meter and the spectral forensics - the fake-lossless check, mains hum, ultrasonic tones and touch-tone (DTMF) digits - now gather into a single collapsed <strong>Advanced</strong> section, the same way photos and videos already do. The everyday sound readings stay up top and the forensic depth sits a tap away.</li>
+            <li><span class="patch-tag">New</span><strong>A video&rsquo;s sound, analysed in full.</strong> Pulling the sound out of a <a href="/about#where">video</a> now runs it through the very same analysis as opening that sound on its own - the same sections in the same order, with the full loudness meter and Advanced forensics - instead of the shorter summary it used to show.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Switching AI tool mid-prompt now works.</strong> Choosing a different model - or the new denoise - while a download prompt was already open used to be silently ignored; it now updates the prompt straight away.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Clearer help</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Answers in plain English, everywhere.</strong> The hundreds of little <code>[?]</code> explanations across the site - on photos, sound, video, documents, 3D models, circuit boards and more - have been rewritten so anyone can follow them, with the jargon translated rather than assumed. Many more readouts, table headings and section titles that never had a <code>[?]</code> now carry one, so there is a plain answer wherever you wonder what something means.</li>
+            <li><span class="patch-tag">New</span><strong>Tidier help that stays put.</strong> Tapping a <code>[?]</code> now opens a small pop-up anchored to the button instead of pushing everything below it down the page, and clicking anywhere else closes it. Every <code>[?]</code> across the site behaves the same way.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A clear answer for an empty file.</strong> Dropping a <strong>0-byte</strong> file - a broken or unfinished download, or an empty placeholder left behind by a recovery tool - now explains plainly that there is nothing inside to open and suggests looking for another copy, instead of failing with a puzzling error.</li>
           </ul>
 
           <hr class="patch-rule">
@@ -297,9 +280,6 @@
             <li><strong>Maintenance - a visual tidy and internal groundwork.</strong> Every last rounded corner was squared off to match the site&rsquo;s sharp-cornered style - the 3D view cube included - and SPICE readouts took on the monospace figures used elsewhere. Behind the scenes, image-provenance reads, the circuit-board viewer, the photo-salvage helpers and every size limit were consolidated into shared code, and the frame viewer&rsquo;s action buttons now line up full-width. Nothing you do changes; the app is just lighter and more consistent.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">6.36 - 6.37</p>
@@ -325,6 +305,9 @@
             <li><span class="patch-tag is-fix">Fix</span><strong>Recovered photos no longer flash up blank or garbled.</strong> Pictures briefly mis-read as empty during a busy scan now show, and a photo scattered in pieces across the card is reassembled into the real image instead of a jumble.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">6.32 - 6.35</p>

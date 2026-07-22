@@ -89,27 +89,21 @@ the Krumhansl-Schmuckler key profiles, with confidence and a runner-up).
 runner-up is often the relative major/minor. Effective bit depth compares
 against the declared depth and flags a likely padded/upscaled file.
 
-### Loudness meter (EBU R128)
+### Advanced (forensic panels)
 
-**What it does.** The full broadcast/streaming loudness set beyond the
-single integrated-LUFS row: **gated integrated** loudness (ITU-R BS.1770),
-**momentary** (400 ms) and **short-term** (3 s) maxima, **Loudness Range
-(LRA)**, and **true peak** (4x-oversampled dBTP, catching inter-sample overs
-that sample-peak metering misses), plus a **loudness-over-time** plot with a
--14 LUFS streaming-target reference line.
+**What it does.** A single collapsed **Advanced** card - mirroring the photo
+and video Advanced cards - that gathers the deep forensic reads into
+collapsible `<details>` panels, keeping them out of the everyday File info
+readout above. Each panel below is closed until opened:
 
-**How to reach it.** Automatic card below File info for any decoded audio.
-Built in `audio-forensics.js` (`loudnessR128`, `truePeakDb`); rendered by
-`audio.js`.
-
-**Notes / limits.** Measured on the channel-merged signal. A true peak above
-0 dBTP is flagged in the accent colour (delivery specs cap it at -1 dBTP).
-
-### Spectral forensics
-
-**What it does.** A card of spectral/tone reads derived from one long-average
-(Welch) spectrum of the whole file:
-
+- **Loudness meter (EBU R128)** - the full broadcast/streaming loudness set
+  beyond the single integrated-LUFS row: **gated integrated** loudness (ITU-R
+  BS.1770), **momentary** (400 ms) and **short-term** (3 s) maxima, **Loudness
+  Range (LRA)**, and **true peak** (4x-oversampled dBTP, catching inter-sample
+  overs that sample-peak metering misses), plus a **loudness-over-time** plot
+  with a -14 LUFS streaming-target reference line. Measured on the
+  channel-merged signal; a true peak above 0 dBTP is flagged in the accent
+  colour (delivery specs cap it at -1 dBTP).
 - **Lossy-source check** - decides whether a file that claims to be lossless
   (FLAC/WAV/ALAC...) was really made from an MP3/AAC, by finding the hard
   spectral low-pass a lossy codec leaves and mapping its cutoff to a probable
@@ -124,9 +118,12 @@ Built in `audio-forensics.js` (`loudnessR128`, `truePeakDb`); rendered by
   standard row/column frequencies, with per-digit timing (shown only when
   tones are found).
 
-**How to reach it.** Automatic card below the loudness meter. Built in
-`audio-forensics.js` (`analyzeTranscode`, `analyzeMainsHum`,
-`analyzeUltrasonic`, `detectDtmf`); rendered by `audio.js`.
+**How to reach it.** Automatic collapsed card below File info for any decoded
+audio (the card is omitted only if no panel has anything to show). The
+lossless spectral panels derive from one long-average (Welch) spectrum of the
+whole file. Built in `audio-forensics.js` (`loudnessR128`, `truePeakDb`,
+`analyzeTranscode`, `analyzeMainsHum`, `analyzeUltrasonic`, `detectDtmf`);
+rendered by `audio.js` (the `aAdvPanel` helper mirrors video's `vAdvPanel`).
 
 **Notes / limits.** The lossy-source cutoff and its bitrate mapping are
 approximate (encoders and settings vary); a "likely lossy source" verdict on

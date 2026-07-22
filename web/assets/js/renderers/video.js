@@ -3,13 +3,12 @@
    frame capture (routed to photo analysis), audio track extraction
    (waveform + spectrogram via audio module). */
 
-import { makeSpectrogramPanel, makePlayer, buildHistogramCard, buildWaveformCard } from './audio.js';
+import { makePlayer, renderAudio } from './audio.js';
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
 import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob } from '../core/util.js';
 import { parseAviHeader, extractAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
 import { registerSyncedVideo, setAudioCompanion } from '../core/video-sync.js';
-import { buildReverseAudioCard } from './media-reverse.js';
 import { detectMoovlessMp4, extractMp4ParamSets, findInbandParamSets, carveAvccToAnnexB } from './video-recover.js';
 import { analyzeMp4Structure, analyzeBitstream, BOX_GLOSS } from './video-forensics.js';
 import { appendTelemetryCards } from './video-telemetry.js';
@@ -226,15 +225,6 @@ function buildFrameControls(playerEl, getFps, file) {
 
 // "Download audio (WAV)" link for the extracted-audio cards. Reuses the blob URL
 // already created for the player so no re-encoding is needed.
-function audioDownloadRow(wavUrl, file) {
-  const name = (file.name || 'video').replace(/\.[^/.]+$/, '') + '.wav';
-  const link = el('a', {
-    href: wavUrl, download: name, class: 'anr-btn',
-    style: 'text-decoration:none;display:inline-block;'
-  }, 'Download audio (WAV)');
-  return el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [link]);
-}
-
 // Extracting and analysing a video's audio track (full decode + waveform +
 // spectrogram) is heavy, so it no longer runs automatically. Instead this drops
 // an "Analyse audio" prompt card into the Sound section; the supplied routine
@@ -2682,35 +2672,6 @@ function segList(segs, dur) {
   }).join(',  ');
 }
 
-// ---------- audio helpers ----------
-
-function getMono(audioBuffer) {
-  const n = audioBuffer.length;
-  const out = new Float32Array(n);
-  for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
-    const data = audioBuffer.getChannelData(c);
-    for (let i = 0; i < n; i++) out[i] += data[i];
-  }
-  const k = 1 / audioBuffer.numberOfChannels;
-  for (let i = 0; i < n; i++) out[i] *= k;
-  return out;
-}
-
-function computeStats(samples) {
-  let peak = 0, sumSq = 0;
-  for (let i = 0; i < samples.length; i++) {
-    const a = Math.abs(samples[i]);
-    if (a > peak) peak = a;
-    sumSq += samples[i] * samples[i];
-  }
-  const rms = Math.sqrt(sumSq / samples.length);
-  return {
-    peak, rms,
-    peakDb: 20 * Math.log10(peak + 1e-12),
-    rmsDb: 20 * Math.log10(rms + 1e-12)
-  };
-}
-
 // ---------- iOS-safe frame capture ----------
 // On iOS Safari, `loadeddata`/`seeked` can fire before a frame is actually
 // composited, so drawImage() returns a black canvas. requestVideoFrameCallback
@@ -2972,31 +2933,25 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
         audioBuf = await ffmpegExtractAudio(file, audioCard);
       }
       audioStatus.remove();
-      const mono = getMono(audioBuf);
-      const stats = computeStats(mono);
-      const wavBlob = encodeWav(audioBuf);
-      const wavUrl = URL.createObjectURL(wavBlob);
-      const audioPlayer = el('audio', { src: wavUrl }); audioPlayer.style.display = 'none';
-      const apCard = el('div', { class: 'anr-card' });
-      apCard.appendChild(el('h3', {}, 'Extracted audio'));
-      apCard.appendChild(audioPlayer); apCard.appendChild(makePlayer(audioPlayer));
-      apCard.appendChild(audioDownloadRow(wavUrl, file));
-      audioResultsEl.appendChild(apCard);
-      audioResultsEl.appendChild(buildReverseAudioCard(audioBuf, (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio', signal));
-      const at = el('table', { class: 'anr-readout' });
-      at.appendChild(row('Duration', formatDuration(audioBuf.duration)));
-      at.appendChild(rowHelp('Sample rate', audioBuf.sampleRate.toLocaleString() + ' Hz', 'How many times per second the sound was measured when recorded, in hertz - 48000 Hz means 48,000 measurements every second. Higher numbers can capture higher-pitched sound.'));
-      at.appendChild(rowHelp('Channels', audioBuf.numberOfChannels, 'How many separate sound channels there are: 1 is mono, 2 is stereo (left and right), and more means surround sound.'));
-      at.appendChild(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)', 'The loudest single moment in the audio - its highest value.'));
-      at.appendChild(rowHelp('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)', 'The average power of the audio (root mean square) - a steadier measure of overall level than the single loudest peak.'));
-      at.appendChild(rowHelp('Samples', mono.length.toLocaleString(), 'The total count of individual measurements in the audio once the channels are merged to mono - roughly the sample rate multiplied by the length.'));
-      audioCard.appendChild(at);
-      audioResultsEl.appendChild(buildWaveformCard(file, mono, audioBuf, audioPlayer));
-      audioResultsEl.appendChild(buildHistogramCard(mono));
+      // Hand the decoded PCM to the real audio renderer so the Sound section here
+      // is identical to a directly-dropped audio file - same cards, same order, and
+      // the full forensic set (File info, the EBU R128 / spectral Advanced card,
+      // channel picker, ...). renderAudio clears audioResultsEl, replacing the
+      // status card above in place. declaredLossless:false stops the WAV wrapper
+      // from being read as a fake-lossless claim.
       const basename = (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio';
-      audioResultsEl.appendChild(makeSpectrogramPanel(mono, audioBuf.sampleRate, { basename, audioEl: audioPlayer, signal }));
+      const wavBlob = new Blob([encodeWav(audioBuf)], { type: 'audio/wav' });
+      const audioFile = new File([wavBlob], basename + '.wav', { type: 'audio/wav' });
+      await renderAudio(audioFile, audioResultsEl, {
+        inline: true, audioBuffer: audioBuf, playbackFile: audioFile,
+        declaredLossless: false, download: true, downloadLabel: 'Download audio (WAV)',
+      });
     } catch (e) {
       audioStatus.remove();
+      // renderAudio clears audioResultsEl, so re-attach the status card if the
+      // failure happened after that (the common decode failures happen before it,
+      // where the card is still in place).
+      if (!audioCard.isConnected) audioResultsEl.appendChild(audioCard);
       audioCard.appendChild(el('p', { class: 'anr-hint' }, 'Audio decode failed: ' + (e && e.message || 'unknown error')));
     }
   });
@@ -3305,6 +3260,12 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // so two videos don't cancel each other, and route every cross-section target to
   // a local slot inside this panel with player-sync/companion off. See DEFAULT_VCTX.
   const inline = !!opts.inline;
+  // A compare-view panel is a FULL analysis isolated to its own container, so it
+  // should show the same telemetry/Advanced-structure cards the normal page does;
+  // `full` gates those. `inline` still gates the genuine inline concerns (local
+  // slots, isolated abort controller, no autoscroll/player-sync). Video inline mode
+  // is only ever the compare view, so a panel is always the compare (full) case.
+  const full = !inline || !!opts.compare;
   let renderSignal;
   if (inline) {
     renderSignal = new AbortController().signal;
@@ -3324,7 +3285,10 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     audioTarget: () => localSlot('audio'),
     previewTarget: () => localSlot('preview'),
     afterPhoto: () => {},
-    photoOpts: (base) => Object.assign({ inline: true }, base),
+    // A grabbed frame gets the full photo analysis in compare too (matching the
+    // normal page, where the frame renders into the real Photo section), so carry
+    // the compare flag into the inline photo render.
+    photoOpts: (base) => Object.assign({ inline: true, compare: !!opts.compare }, base),
     sync: () => {},
     companion: () => {},
   } : DEFAULT_VCTX;
@@ -3883,45 +3847,19 @@ export async function renderVideo(file, resultsEl, opts = {}) {
 
       // Audio from direct PCM extraction - gated behind an "Analyse audio" button.
       const audioResultsEl = vctx.audioTarget();
-      if (audioResultsEl && aviData && aviData.audioBuffer) mountAudioAnalyseButton(audioResultsEl, () => {
+      if (audioResultsEl && aviData && aviData.audioBuffer) mountAudioAnalyseButton(audioResultsEl, async () => {
         audioResultsEl.hidden = false;
         const audioBuf = aviData.audioBuffer;
-        const mono = getMono(audioBuf);
-        const stats = computeStats(mono);
-        const wavBlob = encodeWav(audioBuf);
-        const wavUrl = URL.createObjectURL(wavBlob);
-
-        const audioPlayer = el('audio', { src: wavUrl });
-        audioPlayer.style.display = 'none';
-        const apCard = el('div', { class: 'anr-card' });
-        apCard.appendChild(el('h3', {}, 'Extracted audio'));
-        apCard.appendChild(audioPlayer);
-        apCard.appendChild(makePlayer(audioPlayer));
-        apCard.appendChild(audioDownloadRow(wavUrl, file));
-        audioResultsEl.appendChild(apCard);
-        audioResultsEl.appendChild(buildReverseAudioCard(audioBuf, (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio', renderSignal));
-
-        const audioCard = el('div', { class: 'anr-card' });
-        audioCard.appendChild(el('h3', {}, 'Audio track'));
-        const at = el('table', { class: 'anr-readout' });
-        at.appendChild(row('Duration', formatDuration(audioBuf.duration)));
-        at.appendChild(rowHelp('Sample rate', audioBuf.sampleRate.toLocaleString() + ' Hz',
-          'How many times per second the sound was measured when recorded, in hertz - 48000 Hz means 48,000 measurements every second. Higher numbers can capture higher-pitched sound.'));
-        at.appendChild(rowHelp('Channels', audioBuf.numberOfChannels,
-          'How many separate sound channels there are: 1 is mono, 2 is stereo (left and right), and more means surround sound.'));
-        at.appendChild(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)',
-          'The loudest single moment in the audio. dBFS measures this against the maximum a digital file can hold, where 0 dBFS is the ceiling.'));
-        at.appendChild(rowHelp('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)',
-          'The average power of the audio (root mean square), which is closer to how loud it actually sounds than the single loudest peak.'));
-        at.appendChild(rowHelp('Samples', mono.length.toLocaleString(),
-          'The total count of individual measurements in the audio once the channels are merged to mono - roughly the sample rate multiplied by the length.'));
-        audioCard.appendChild(at);
-        audioResultsEl.appendChild(audioCard);
-
-        audioResultsEl.appendChild(buildWaveformCard(file, mono, audioBuf, audioPlayer));
-        audioResultsEl.appendChild(buildHistogramCard(mono));
+        // The AVI's PCM is already decoded (aviData.audioBuffer), so wrap it in a WAV
+        // and hand it straight to the real audio renderer - same full Sound section
+        // as a dropped audio file (see the MP4 path above for the rationale).
         const basename = (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio';
-        audioResultsEl.appendChild(makeSpectrogramPanel(mono, audioBuf.sampleRate, { basename, audioEl: audioPlayer, signal: renderSignal }));
+        const wavBlob = new Blob([encodeWav(audioBuf)], { type: 'audio/wav' });
+        const audioFile = new File([wavBlob], basename + '.wav', { type: 'audio/wav' });
+        await renderAudio(audioFile, audioResultsEl, {
+          inline: true, audioBuffer: audioBuf, playbackFile: audioFile,
+          declaredLossless: false, download: true, downloadLabel: 'Download audio (WAV)',
+        });
       });
 
       // SHA-256
@@ -4194,8 +4132,8 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // GoPro GPMF / CAMM telemetry (GPS track + gyro/accelerometer) or a single
   // container GPS point - from the ORIGINAL file (FFmpeg strips the timed-metadata
   // track from the proxy). The single-point card is suppressed when the exifr GPS
-  // card above already showed coordinates. Skipped in inline/compare.
-  if (!inline) {
+  // card above already showed coordinates.
+  if (full) {
     const hasExifGps = !!(exif && exif.latitude != null && exif.longitude != null);
     try { await appendTelemetryCards(analysisFile, resultsEl, { hasExifGps, playFile: file }); } catch (_) {}
   }
@@ -4203,8 +4141,8 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // Advanced (ISOBMFF container structure + stream forensics) - box tree, full
   // track list, provenance tells, frames/bitrate map and bitstream/authenticity.
   // Reads the ORIGINAL file so the SPS, codec and structure describe the user's
-  // file, not the H.264 proxy. Skipped in the inline/compare panels.
-  if (!inline) {
+  // file, not the H.264 proxy.
+  if (full) {
     try {
       const adv = await buildVideoAdvancedCard(analysisFile);
       if (adv && !renderSignal.aborted) resultsEl.appendChild(adv);
@@ -4423,82 +4361,23 @@ export async function renderVideo(file, resultsEl, opts = {}) {
 
       audioStatus.remove();
 
-      const mono = getMono(audioBuf);
-      const stats = computeStats(mono);
-      const audioDuration = audioBuf.duration;
-
-      // Encode WAV for playback
-      const wavChannels = audioBuf.numberOfChannels;
-      const wavSr = audioBuf.sampleRate;
-      const wavSamples = audioBuf.length;
-      const wavBps = 16;
-      const wavBlock = wavChannels * (wavBps / 8);
-      const wavDataSize = wavSamples * wavBlock;
-      const wavBuf = new ArrayBuffer(44 + wavDataSize);
-      const wavView = new DataView(wavBuf);
-      let wo = 0;
-      const ws = (s) => { for (let i = 0; i < s.length; i++) wavView.setUint8(wo++, s.charCodeAt(i)); };
-      ws('RIFF'); wavView.setUint32(wo, 36 + wavDataSize, true); wo += 4; ws('WAVEfmt ');
-      wavView.setUint32(wo, 16, true); wo += 4;
-      wavView.setUint16(wo, 1, true); wo += 2;
-      wavView.setUint16(wo, wavChannels, true); wo += 2;
-      wavView.setUint32(wo, wavSr, true); wo += 4;
-      wavView.setUint32(wo, wavSr * wavBlock, true); wo += 4;
-      wavView.setUint16(wo, wavBlock, true); wo += 2;
-      wavView.setUint16(wo, wavBps, true); wo += 2;
-      ws('data'); wavView.setUint32(wo, wavDataSize, true); wo += 4;
-      const chData = [];
-      for (let c = 0; c < wavChannels; c++) chData.push(audioBuf.getChannelData(c));
-      for (let i = 0; i < wavSamples; i++) {
-        for (let c = 0; c < wavChannels; c++) {
-          let s = chData[c][i];
-          s = Math.max(-1, Math.min(1, s));
-          wavView.setInt16(wo, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-          wo += 2;
-        }
-      }
-      const wavUrl = URL.createObjectURL(new Blob([wavBuf], { type: 'audio/wav' }));
-
-      // Custom player (hidden audio element + styled controls)
-      const audioPlayer = el('audio', { src: wavUrl });
-      audioPlayer.style.display = 'none';
-      const playerCard = el('div', { class: 'anr-card' });
-      playerCard.appendChild(el('h3', {}, 'Extracted audio'));
-      playerCard.appendChild(audioPlayer);
-      playerCard.appendChild(makePlayer(audioPlayer));
-      playerCard.appendChild(audioDownloadRow(wavUrl, file));
-      audioResultsEl.appendChild(playerCard);
-      audioResultsEl.appendChild(buildReverseAudioCard(audioBuf, (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio', renderSignal));
-
-      // Info table
-      const at = el('table', { class: 'anr-readout' });
-      at.appendChild(row('Duration', formatDuration(audioDuration)));
-      at.appendChild(rowHelp('Sample rate', wavSr.toLocaleString() + ' Hz',
-        'How many times per second the sound was measured when recorded, in hertz - 48000 Hz means 48,000 measurements every second. Higher numbers can capture higher-pitched sound.'));
-      at.appendChild(rowHelp('Channels', wavChannels,
-        'How many separate sound channels there are: 1 is mono, 2 is stereo (left and right), and more means surround sound.'));
-      at.appendChild(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)',
-        'The loudest single moment in the audio. dBFS measures this against the maximum a digital file can hold, where 0 dBFS is the ceiling.'));
-      at.appendChild(rowHelp('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)',
-        'The average power of the audio (root mean square), which is closer to how loud it actually sounds than the single loudest peak.'));
-      at.appendChild(rowHelp('Samples', mono.length.toLocaleString(),
-        'The total count of individual measurements in the audio once the channels are merged to mono - roughly the sample rate multiplied by the length.'));
-      audioCard.appendChild(at);
-
-      // Waveform - its own card with region selection, zoom, WAV export and the
-      // smooth grabbable playhead, shared with the standalone audio renderer
-      // (buildWaveformCard in audio.js) rather than a stripped-down local copy.
-      audioResultsEl.appendChild(buildWaveformCard(file, mono, audioBuf, audioPlayer));
-
-      // Amplitude histogram (same labeled card the audio module uses)
-      audioResultsEl.appendChild(buildHistogramCard(mono));
-
-      // Spectrogram (with playhead + click-to-seek)
+      // Hand the decoded PCM to the real audio renderer so this Sound section is
+      // identical to a directly-dropped audio file - same cards, same order, full
+      // forensics (see the primary MP4 path above for the rationale). renderAudio
+      // clears audioResultsEl, replacing the status card in place.
       const basename = (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio';
-      audioResultsEl.appendChild(makeSpectrogramPanel(mono, audioBuf.sampleRate, { basename, audioEl: audioPlayer, signal: renderSignal }));
+      const wavBlob = new Blob([encodeWav(audioBuf)], { type: 'audio/wav' });
+      const audioFile = new File([wavBlob], basename + '.wav', { type: 'audio/wav' });
+      await renderAudio(audioFile, audioResultsEl, {
+        inline: true, audioBuffer: audioBuf, playbackFile: audioFile,
+        declaredLossless: false, download: true, downloadLabel: 'Download audio (WAV)',
+      });
     } catch (e) {
       console.warn('Audio extraction failed:', e);
       audioStatus.remove();
+      // renderAudio clears audioResultsEl, so re-attach the status card if the
+      // failure landed after that (decode failures happen before it).
+      if (!audioCard.isConnected) audioResultsEl.appendChild(audioCard);
       audioCard.appendChild(el('p', { class: 'anr-hint' },
         'Audio decode failed: ' + (e && e.message || 'unknown error') + '. Try converting to MP4 (H.264 + AAC).'));
     }

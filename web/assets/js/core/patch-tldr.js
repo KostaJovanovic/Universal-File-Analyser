@@ -15,18 +15,12 @@ import { el } from './util.js';
 // newest group's notes, or - once that group holds five versions - start a new
 // group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
-  { range: '6.54', notes: [
-    'Every **[?] explanation** across the site rewritten in plain English, with many more readouts, table headings and sections gaining one - and a **[?]** now opens a tidy pop-up instead of pushing the page down.',
-    'New on-device **AI denoise** (**DeepFilterNet3**) strips background noise and hiss from a recording, shown as a **Clean to Noise** blend - nothing uploaded, model downloaded once then offline.',
-    'The instant sound filters are reworked into **Underwater**, **Radio** and **Hollow**, with the true AI vocal split moved under a clearer **AI separation** button.',
-    'Fixes: **motion and gyro timelines** now play even when the video codec will not decode directly; switching AI tool mid-prompt is no longer ignored; and an **empty (0-byte) file** now explains itself instead of failing cryptically.',
-  ] },
-  { range: '6.53', notes: [
-    'A deep **forensic** pass across photos, video and sound - reading the hidden internals of each.',
+  { range: '7.0', milestone: true, notes: [
+    'Seventh milestone: a deep **forensic** pass reads the hidden internals of every photo, video and sound - and everything on the site is now explained in **plain English**.',
     'Photos: **error-level analysis**, quantization fingerprint and JPEG ghosts to spot edits; **bit-plane / LSB** hidden-data analysis; edit history and a privacy report; and a switch to analyse a **RAW** as its embedded preview or fully demosaiced.',
-    'Video: an **Advanced** card with the full box tree, track list, provenance tells and a keyframe/bitrate map; **GoPro/CAMM telemetry** (GPS route, motion, exposure); an **encoder fingerprint** and stream-vs-container check; HDR/Dolby Vision and C2PA; and a **content-timeline barcode** with black-frame and freeze flags.',
-    'When an unplayable clip is converted to play, the copy is used **only for playback** - all analysis now describes the original file.',
-    'Sound: a full **EBU R128** loudness meter with true peak; a **fake-lossless** (MP3-in-FLAC) detector; **musical key**; and forensic listeners for **mains hum**, ultrasonic tones and **DTMF** phone digits.',
+    'Video: an **Advanced** card with the full box tree, track list, provenance tells and a keyframe/bitrate map; **GoPro/CAMM telemetry** (GPS route, motion, exposure); an **encoder fingerprint** and stream-vs-container check; HDR/Dolby Vision and C2PA; and a **content-timeline barcode** - with a converted clip used **only for playback**, so all analysis describes the original.',
+    'Sound: a full **EBU R128** loudness meter with true peak; a **fake-lossless** (MP3-in-FLAC) detector; **musical key**; forensic listeners for **mains hum**, ultrasonic tones and **DTMF** - the loudness meter and forensics gathered into one **Advanced** section, with a video\'s own sound analysed in full the same way; and new on-device **AI denoise** (**DeepFilterNet3**) shown as a Clean-to-Noise blend, plus friendlier one-tap filters.',
+    'Every **[?] explanation** rewritten in plain English, with many more readouts gaining one and a **[?]** now opening a tidy pop-up instead of pushing the page down - plus a clear answer for an **empty (0-byte) file**.',
   ] },
   { range: '6.38 - 6.51', notes: [
     'Long animated **GIFs** and **WebPs** now play in full, however many frames - each decoded as you scrub to it, with only a rolling window kept in memory.',

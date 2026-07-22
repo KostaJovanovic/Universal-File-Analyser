@@ -2928,6 +2928,14 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // those slots belong to a different section, so route all three into the given
   // container instead - otherwise they'd leak into the (empty) photo section.
   const inline = !!opts.inline;
+  // A compare-view panel is a FULL analysis, just isolated to its own container -
+  // it should show everything the normal page does (forensics, C2PA/AI signals,
+  // animated-frame viewers, ICO/MPO, embedded thumbnails, edit history, salvage).
+  // An extracted sub-image (audio cover art, a video frame - inline WITHOUT
+  // compare) stays trimmed so it doesn't bury the host file. `full` gates the heavy
+  // extras a sub-image omits; `inline` still gates the genuine inline concerns
+  // (local preview/OCR slots, isolated abort controller, no autoscroll/sync).
+  const full = !inline || !!opts.compare;
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Loading "${file.name}"...`));
@@ -3039,7 +3047,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
       // unrecognised blob), offer to salvage it rather than dropping to the bare
       // "undecodable" banner. Guarded so the repaired file we re-render doesn't loop.
       let salvageDiag = null;
-      if (!unreadable && !inline && !opts.salvaged) {
+      if (!unreadable && full && !opts.salvaged) {
         try { salvageDiag = diagnoseImage(fileBytes); } catch (_) { salvageDiag = null; }
       }
       const canSalvage = salvageDiag && !salvageDiag.healthy &&
@@ -3051,7 +3059,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
       // that from the bytes; if it flags corruption, salvage it rather than dropping to
       // the bare "browser can't decode" banner.
       let decCorrupt = false;
-      if (!unreadable && !inline && !opts.salvaged && fileBytes && !canSalvage
+      if (!unreadable && full && !opts.salvaged && fileBytes && !canSalvage
           && /^(jpg|jpeg|jpe|jfif)$/.test(fileExt(file.name))) {
         try { const dd = decodeJpegPartial(fileBytes); decCorrupt = !!(dd && dd.corrupt); } catch (_) {}
       }
@@ -3065,7 +3073,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
           issues: [{ msg: 'The JPEG scan desynchronises partway - past that point it decodes to garbage. Only the rows above the break are the real picture.' }],
         };
         return renderPhotoRecovery(file, fileBytes, diag, resultsEl, renderSignal);
-      } else if (!inline && (ext === 'tif' || ext === 'tiff')) {
+      } else if (full && (ext === 'tif' || ext === 'tiff')) {
         // Browsers can't decode TIFF, but a TIFF can hold many pages. Render them
         // all with ImageMagick (only if there are 2+; single-page falls through to
         // the normal undecodable-info card).
@@ -3082,7 +3090,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
         } else {
           await renderUndisplayableImage(file, ext, resultsEl);
         }
-      } else if (!inline && ext === 'jxl') {
+      } else if (full && ext === 'jxl') {
         // Browsers dropped JPEG XL support, but the bundled ImageMagick has the
         // JXL coder - decode it to a viewable image, then run the normal photo
         // analysis on it. On failure, fall back to the metadata-only banner.
@@ -3114,7 +3122,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // does, route to the salvage view (real top strip + greyed remainder + a note on how
   // much is real). Guarded to the plain single-file JPEG path so a good photo is never
   // diverted, and `corrupt` is the well-guarded signal (never trips on a real photo).
-  if (!inline && !opts.salvaged && !fullDecode && !convertedFile
+  if (full && !opts.salvaged && !fullDecode && !convertedFile
       && /^(jpg|jpeg|jpe|jfif)$/.test(fileExt(file.name)) && browserCanvasSuspicious(img)) {
     let bytes = null, dec = null;
     try { bytes = new Uint8Array(await file.arrayBuffer()); } catch (_) {}
@@ -3189,7 +3197,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // Both matter - the preview is the camera's own rendering, the demosaic is the
   // real sensor - so this re-runs the whole analysis on whichever is picked. Only
   // for a genuinely dropped RAW that produced pixels (not inline/cover-art).
-  if (!inline && !opts.sourceNote && convertedFile && RAW_EXTS.has(fileExt(file.name))) {
+  if (full && !opts.sourceNote && convertedFile && RAW_EXTS.has(fileExt(file.name))) {
     const mode = fullDecode ? 'demosaic' : 'preview';
     const bar = el('div', { class: 'anr-raw-modebar' });
     bar.appendChild(el('span', { class: 'anr-raw-modebar-label' }, 'Analyse'));
@@ -3277,8 +3285,14 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     // in with a sourceNote, so the host file's own Sound section stays clean. It
     // reuses the image we already decoded (so HEIC/RAW work without re-decoding);
     // the heavy synthesis module loads on demand.
-    if (!inline && !opts.sourceNote) {
-      const audioResultsEl = document.getElementById('audioResults');
+    if (full && !opts.sourceNote) {
+      // Normally the Sonify prompt goes in the page's dedicated Sound section. On a
+      // page with no Sound section (the compare view) route it into a local slot
+      // tagged anr-cmp-sub-audio, which the compare merge files under Sound and, as
+      // an interactive prompt, collapses into one central "Sonify (both files)"
+      // button - exactly like a video's "Analyse audio" prompt.
+      const audioResultsEl = document.getElementById('audioResults')
+        || (inline ? resultsEl.appendChild(el('div', { class: 'anr-results anr-cmp-subslot anr-cmp-sub-audio' })) : null);
       if (audioResultsEl) {
         audioResultsEl.hidden = false;
         const sonifyCard = el('div', { class: 'anr-card' });
@@ -3416,7 +3430,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // let you step through it. Decode the frames ourselves and offer the same
   // transport the AVI viewer does (play / scrub / Prev / Next / grab / analyse).
   // Only in the main photo section - skipped for inline cover-art renders.
-  if (!inline && (fileExt(file.name) === 'gif' || file.type === 'image/gif') && file.size <= 200 * 1024 * 1024) {
+  if (full && (fileExt(file.name) === 'gif' || file.type === 'image/gif') && file.size <= 200 * 1024 * 1024) {
     try {
       const source = decodeGifFrames(await file.arrayBuffer(), ANIM_PIXEL_BUDGET);
       if (source && source.count > 1) {
@@ -3424,7 +3438,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
         resultsEl.appendChild(buildReverseAnimationCard(file, source, resultsEl, renderSignal));
       }
     } catch (_) { /* malformed GIF - leave the normal photo view untouched */ }
-  } else if (!inline && (fileExt(file.name) === 'webp' || file.type === 'image/webp')) {
+  } else if (full && (fileExt(file.name) === 'webp' || file.type === 'image/webp')) {
     try {
       const source = await decodeWebpFrames(file, ANIM_PIXEL_BUDGET);
       if (source && source.count > 1) {
@@ -3432,7 +3446,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
         resultsEl.appendChild(buildReverseAnimationCard(file, source, resultsEl, renderSignal, { kindLabel: 'animated WebP' }));
       }
     } catch (_) { /* not animated / no ImageDecoder - leave the normal photo view */ }
-  } else if (!inline && (fileExt(file.name) === 'ico' || fileExt(file.name) === 'cur' ||
+  } else if (full && (fileExt(file.name) === 'ico' || fileExt(file.name) === 'cur' ||
       file.type === 'image/x-icon' || file.type === 'image/vnd.microsoft.icon')) {
     // An icon container holds several images; the <img> above paints only one, so
     // pull out and show every embedded size/depth.
@@ -3440,7 +3454,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
       const icoCard = await buildIcoImagesCard(file, renderSignal, resultsEl);
       if (icoCard && !renderSignal.aborted) resultsEl.appendChild(icoCard);
     } catch (_) { /* malformed ICO - leave the normal photo view untouched */ }
-  } else if (!inline && (/^(jpe?g|jpe|jfif|mpo)$/.test(fileExt(file.name)) || file.type === 'image/jpeg')) {
+  } else if (full && (/^(jpe?g|jpe|jfif|mpo)$/.test(fileExt(file.name)) || file.type === 'image/jpeg')) {
     // A JPEG / MPO can carry several full images via Multi-Picture Format (stereo
     // 3D pairs, multi-angle sets). The <img> paints only the first - show them all.
     try {
@@ -3484,7 +3498,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
       for (const [k, v, help] of optRows) t.appendChild(help ? rowHelp(k, v, help) : row(k, v));
       exifCard.appendChild(t);
     }
-    if (!inline) attachImageScrub(file, exifCard);
+    if (full) attachImageScrub(file, exifCard);
     resultsEl.appendChild(exifCard);
   } else {
     resultsEl.appendChild(el('div', { class: 'anr-info' }, 'No EXIF / IPTC / XMP / ICC metadata found.'));
@@ -3493,7 +3507,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // ---- Content Credentials (C2PA) + AI-generation signals ----
   // Both cards read the C2PA manifest; parse it once here and share it so the
   // file isn't read (and the JUMBF/CBOR manifest parsed) twice.
-  if (!inline) {
+  if (full) {
     const c2paManifests = await readC2pa(file).catch(() => null);
     try {
       const c2paCard = await buildC2paCard(file, c2paManifests);
@@ -3603,7 +3617,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // transcoded from HEIC/RAW - re-encoding an already-transcoded frame would say
   // nothing about the original). Stacked sub-sections, like the Metadata card.
   let advForensics = null;
-  if (!inline && !convertedFile && (/^(jpe?g|jpe|jfif)$/.test(fileExt(file.name)) || file.type === 'image/jpeg')) {
+  if (full && !convertedFile && (/^(jpe?g|jpe|jfif)$/.test(fileExt(file.name)) || file.type === 'image/jpeg')) {
     const fDet = el('details');
     const fSum = el('summary', {});
     fSum.appendChild(el('span', { class: 'anr-summary-label' }, 'Forensics'));
@@ -3808,7 +3822,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // JPEG) and returns only the JPEGs those IFDs reference - i.e. the embedded
   // thumbnails/previews, never the main image. Fully isolated: on failure or when
   // there's nothing embedded, the card simply doesn't appear.
-  if (!inline) {
+  if (full) {
     const isRaw = RAW_EXTS.has(fileExt(file.name));
     try {
       const jpegs = await extractRawJpegs(file);
@@ -3886,7 +3900,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   if (advForensics) advCard.appendChild(advForensics);
 
   // -- Edit history + Privacy panels (read the raw bytes once) --
-  if (!inline) {
+  if (full) {
     let advBytes = null;
     try { advBytes = new Uint8Array(await file.arrayBuffer()); } catch (_) {}
     if (advBytes) try {
