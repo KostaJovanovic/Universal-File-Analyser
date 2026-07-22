@@ -3430,6 +3430,11 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   white-space: normal;
 }
 .anr-info-panel.anr-info-pop.is-active { display: block; }
+/* Escaped popup: pinned to the viewport (JS sets left/top from the button's rect)
+   so a clipping-overflow ancestor - the compare view's side-by-side columns - can't
+   cut it off. Only added when such an ancestor is detected; ordinary pages keep the
+   absolute anchoring above. */
+.anr-info-panel.anr-info-pop.anr-info-pop-fixed { position: fixed; }
 
 /* ---------- CUSTOM PLAYER ---------- */
 .anr-player {
@@ -4001,6 +4006,29 @@ details summary::after {
 }
 details summary:hover::after { color: var(--accent); }
 details[open] summary::after { content: "\2212"; }
+
+/* ---------- ADVANCED CARD (one section, its parts) ----------
+   The photo / video / sound "Advanced" cards are one section whose heavier
+   forensic reads are its parts - the same "card heading + .anr-readout-section
+   sub-headings" idiom as the Metadata card, not a nested accordion. Each part is
+   a <details> that opens by default, so it shows as a flat labelled part with
+   its content below; the muted +/- on the right lets a part be folded away, but
+   nothing is boxed or tinted. Direct-child selectors only, so the box tree, the
+   DTMF timing list and the [?] info panels nested deeper keep their own styling. */
+.anr-adv > details { margin: 0; padding: 0; border-top: none; }
+.anr-adv > details > summary {
+  font-size: var(--t-tiny);
+  letter-spacing: 0.15em;
+  color: var(--muted);
+  margin: 28px 0 6px;
+  padding-top: 12px;
+  border-top: var(--bd-hairline);
+}
+/* First part sits directly under the card heading - no divider or top gap. */
+.anr-adv > details:first-of-type > summary { border-top: none; margin: 0 0 6px; padding-top: 0; }
+/* A disclosure nested directly in a part body (the DTMF timing list): trim the
+   generic details' large top gap so it sits close under its part. */
+.anr-adv > details > div > details { margin-top: 12px; padding-top: 12px; }
 
 /* ---------- ABOUT / FOOTER ---------- */
 .site-footer--about {
@@ -5798,30 +5826,36 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   position: sticky;
   top: 0;
   z-index: 5;
+  display: grid;
+  grid-template-columns: 26% 37% 37%;
+  align-items: center;
   margin: 0 0 var(--gap);
   padding: 12px 0;
   background: var(--bg);
   border-bottom: var(--bd-hairline);
 }
-
-/* Off-screen staging: each file is rendered here (laid out, so canvases/players
-   work), then its real cells are moved into the merged view. */
-.anr-cmp-staging { position: absolute; left: -99999px; top: 0; width: 960px; }
-
-/* Column legend (blank | A - name | B - name), aligned to the table columns. */
-.anr-cmp-legend {
-  display: grid;
-  grid-template-columns: 26% 37% 37%;
+/* Each file's name pinned directly above its analysis column (aligned to the same
+   26% | 37% | 37% grid the readout tables use), so it stays in view while the long
+   comparison scrolls beneath the sticky bar. */
+.anr-cmp-fname {
   font-family: var(--font-mono);
   font-size: var(--t-small);
   color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  padding-bottom: 8px;
-  margin-bottom: 12px;
-  border-bottom: var(--bd-hairline);
+  word-break: break-all;
+  padding-right: 12px;
 }
-.anr-cmp-legend span { word-break: break-all; padding-right: 12px; }
+.anr-cmp-fname-b { padding-left: 13px; }
+@media (max-width: 600px) {
+  .anr-cmp-controls { grid-template-columns: 1fr 1fr; row-gap: 8px; }
+  .anr-cmp-controls-btn { grid-column: 1 / -1; }
+  .anr-cmp-fname-b { padding-left: 14px; }
+}
+
+/* Off-screen staging: each file is rendered here (laid out, so canvases/players
+   work), then its real cells are moved into the merged view. */
+.anr-cmp-staging { position: absolute; left: -99999px; top: 0; width: 960px; }
 
 /* Titled sections (Photo / Sound / Video), mirroring the normal single-file page
    but stacked in the single-column compare flow. The generic File bucket has no
@@ -5883,8 +5917,11 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 }
 
 /* "Show differences": fade every row where A and B match, so the differing rows
-   stand out. Nothing is removed. */
+   stand out. Nothing is removed. Matching side-by-side split blocks (forensics,
+   edit history, container structure - the content that isn't a merged readout) fade
+   too, so the toggle works on the fuller media sections as well. */
 .anr-diff-only .anr-readout.anr-cmp tr:not(.is-diff) { opacity: 0.3; }
+.anr-diff-only .anr-cmp-split.anr-cmp-split-same { opacity: 0.3; }
 
 /* Side-by-side split for non-table content (image previews, players, hex, etc.).
    Column geometry MATCHES the merged table - an empty 26% gutter, then A and B at

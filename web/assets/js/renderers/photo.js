@@ -1274,7 +1274,7 @@ function opticsRows(exif, meanLuma) {
 // open, matching the LSB panel). Returns { det, body }; callers fill body and
 // append det.
 function advPanel(title, help) {
-  const det = el('details');
+  const det = el('details', { open: '' });
   const sum = el('summary', {});
   const label = el('span', { class: 'anr-summary-label' }, title);
   let panel = null;
@@ -3618,7 +3618,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // nothing about the original). Stacked sub-sections, like the Metadata card.
   let advForensics = null;
   if (full && !convertedFile && (/^(jpe?g|jpe|jfif)$/.test(fileExt(file.name)) || file.type === 'image/jpeg')) {
-    const fDet = el('details');
+    const fDet = el('details', { open: '' });
     const fSum = el('summary', {});
     fSum.appendChild(el('span', { class: 'anr-summary-label' }, 'Forensics'));
     fDet.appendChild(fSum);
@@ -3893,7 +3893,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // to: the JPEG Forensics panel (built earlier - ELA, quantization fingerprint,
   // JPEG ghosts; JPEG only) and LSB / bit-plane analysis. Each panel is a <details>
   // collapsed by default, so the card stays compact until a tool is opened.
-  const advCard = el('div', { class: 'anr-card' });
+  const advCard = el('div', { class: 'anr-card anr-adv' });
   advCard.appendChild(el('h3', {}, 'Advanced'));
   advCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 4px;' },
     'More detailed forensic and technical views.'));
@@ -3957,7 +3957,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   }
 
   // -- LSB / bit-plane analysis panel --
-  const lsbDet = el('details');
+  const lsbDet = el('details', { open: '' });
   const lsbHelp = el('div', { class: 'anr-info-panel is-hidden', html: 'Every pixel’s colour is stored as bits (ones and zeros). Bit-plane analysis pulls out a single bit from each colour channel (red, green, blue) and shows it as a black-and-white image. In an ordinary photo the lowest bits look like random speckle; clear patterns, text or shapes there can point to a hidden message (steganography) or heavy editing. A chi-square test also estimates how likely it is that data has been tucked into the least-significant bits, and you can flick through all eight bit planes (0 = the least-significant bit, up to 7 = the most-significant). Click a preview to open it at full resolution.' });
   const lsbSummary = el('summary', {});
   // Title + [?] grouped in one span so the summary's flex space-between keeps them

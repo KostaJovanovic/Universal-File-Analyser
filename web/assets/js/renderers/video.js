@@ -32,6 +32,7 @@ function isIOS() {
 // swaps the module-level value. It resets to the default on every renderVideo call.
 const DEFAULT_VCTX = {
   inline: false,
+  compare: false,
   photoTarget: () => document.getElementById('photoResults'),
   audioTarget: () => document.getElementById('audioResults'),
   previewTarget: () => document.getElementById('videoPreview'),
@@ -315,6 +316,20 @@ function makeBlobURL(data, type) {
 const FFMPEG_CORE_BASE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
 let ffmpegInstance = null;
 let _ffLoaderEl = null;
+
+// There is ONE shared ffmpeg.wasm instance, so two heavy jobs can't run at once -
+// on the compare page a user can hit "Convert to H.264" on both videos. Serialise
+// FFmpeg jobs through this promise chain: the second job waits for the first to
+// finish before it starts. `onWait` fires (once) if the job has to queue, so the
+// caller can show a "waiting…" state instead of a stalled progress bar.
+let _ffmpegBusy = false;
+let _ffmpegChain = Promise.resolve();
+function queueFFmpeg(job, onWait) {
+  if (_ffmpegBusy && typeof onWait === 'function') { try { onWait(); } catch (_) {} }
+  const run = _ffmpegChain.then(() => { _ffmpegBusy = true; return job(); });
+  _ffmpegChain = run.then(() => { _ffmpegBusy = false; }, () => { _ffmpegBusy = false; });
+  return run;
+}
 
 // The bottom-of-window loader. Default label/determinate bar for the FFmpeg core
 // download; pass a custom label + indeterminate:true to reuse it for any other
@@ -2102,6 +2117,7 @@ function fileRangeReader(file) {
 // The carved Annex B stream then plays through the existing raw-H.264 segmented
 // player. Audio (often LPCM, with no recoverable timing) is dropped.
 async function renderMoovlessRecovery(file, header, det, resultsEl, signal) {
+  const mctx = curVctx();   // preserve inline/compare when re-rendering the carved stream
   resultsEl.innerHTML = '';
   const reader = fileRangeReader(file);
   const brandStr = (header.brand || '') + ' ' + (header.container || '');
@@ -2170,7 +2186,7 @@ async function renderMoovlessRecovery(file, header, det, resultsEl, signal) {
     // takes the raw-H.264 branch (segmented player above the size cap). opts.recovered
     // stops the moov-less check from firing again; sourceFile keeps the original's
     // name/size on the info card.
-    return renderVideo(carved, resultsEl, { recovered: true, sourceFile: file, sourceKind: kind, noAudio: true });
+    return renderVideo(carved, resultsEl, { recovered: true, sourceFile: file, sourceKind: kind, noAudio: true, inline: mctx.inline, compare: mctx.compare });
   }
 
   // Prefer the stream's own in-band SPS/PPS (correct ids, no reference needed);
@@ -2347,10 +2363,14 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
     };
     let blob = null;
     try {
-      blob = await ffmpegTranscodeToH264(file,
-        (p) => { convLabel.textContent = 'loading ffmpeg'; convSetBar(p); },
-        (p) => { convLabel.textContent = 'converting'; convSetBar(p); },
-        signal, convOpts);
+      // Serialise through the shared FFmpeg instance: if the other file's convert is
+      // already running (compare page), wait for it rather than clashing on one core.
+      blob = await queueFFmpeg(
+        () => ffmpegTranscodeToH264(file,
+          (p) => { convLabel.textContent = 'loading ffmpeg'; convSetBar(p); },
+          (p) => { convLabel.textContent = 'converting'; convSetBar(p); },
+          signal, convOpts),
+        () => { convLabel.textContent = 'waiting for the other conversion to finish…'; });
     } catch (_) { blob = null; }
     convWrap.style.display = 'none';
     if (signal && signal.aborted) return;
@@ -2362,7 +2382,22 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
     }
     const base = (file.name || 'video').replace(/\.[^/.]+$/, '');
     const mp4File = new File([blob], base + ' (H.264).mp4', { type: 'video/mp4' });
-    renderVideo(mp4File, resultsEl, { remuxed: true, converted: true, sourceFile: file, sourceCodec: convName });
+    const reopts = { remuxed: true, converted: true, sourceFile: file, sourceCodec: convName };
+    if (ctx.inline) {
+      // Compare view: `resultsEl` is the off-screen staging container, emptied and
+      // removed once its cards were moved into the merged view - re-rendering there
+      // would draw into a detached node (nothing appears). Anchor to a node that is
+      // actually live (the convert button, moved into the merged column) and render
+      // the converted analysis there, in place of the now-spent convert prompt.
+      // Kept inline so it doesn't reach for the (non-existent) page sections.
+      const host = convBtn.closest('.anr-cmp-col') || convBtn.parentElement || resultsEl;
+      const mount = el('div', { class: 'anr-results' });
+      host.appendChild(mount);
+      [convBtn.closest('.anr-btn-row'), convSettings, convWrap, convErr].forEach((n) => { if (n && n.parentElement) n.remove(); });
+      renderVideo(mp4File, mount, Object.assign(reopts, { inline: true, compare: ctx.compare }));
+    } else {
+      renderVideo(mp4File, resultsEl, reopts);
+    }
   });
   convCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [convBtn, advToggle]));
   convCard.appendChild(convSettings);
@@ -2978,7 +3013,7 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
 // A collapsible <details> panel with a plain summary label (no info button) -
 // the same idiom photo.js's advPanel uses.
 function vAdvPanel(title, helpHtml) {
-  const det = el('details');
+  const det = el('details', { open: '' });
   const sum = el('summary', {});
   // Title + optional [?] grouped in one span so the summary's flex space-between
   // keeps them together on the left (only the open/close marker sits at the right).
@@ -3052,7 +3087,7 @@ async function buildVideoAdvancedCard(file) {
   try { s = await analyzeMp4Structure(file); } catch (_) { return null; }
   if (!s) return null;
 
-  const card = el('div', { class: 'anr-card' });
+  const card = el('div', { class: 'anr-card anr-adv' });
   const [advH, advHelp] = h3help('Advanced',
     'Container structure and stream forensics read straight from the MP4/MOV boxes, with nothing decoded. Each panel below is collapsed until you open it.');
   card.appendChild(advH); card.appendChild(advHelp);
@@ -3281,6 +3316,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   const localSlot = (key) => localSlots[key] || (localSlots[key] = resultsEl.appendChild(el('div', { class: 'anr-results anr-cmp-subslot anr-cmp-sub-' + key })));
   const vctx = inline ? {
     inline: true,
+    compare: !!opts.compare,
     photoTarget: () => localSlot('photo'),
     audioTarget: () => localSlot('audio'),
     previewTarget: () => localSlot('preview'),
@@ -3372,7 +3408,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     if (mp4Blob) {
       const base = (file.name || 'video').replace(/\.[^/.]+$/, '');
       const mp4File = new File([mp4Blob], base + '.mp4', { type: 'video/mp4' });
-      return renderVideo(mp4File, resultsEl, { remuxed: true, sourceFile: file, sourceKind: kind, noAudio: true });
+      return renderVideo(mp4File, resultsEl, { remuxed: true, sourceFile: file, sourceKind: kind, noAudio: true, inline, compare: !!opts.compare });
     }
     resultsEl.innerHTML = '';
     await renderUnplayableVideoInfo(file, header, resultsEl, renderSignal);
@@ -3421,7 +3457,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     if (mp4Blob) {
       const base = (file.name || 'video').replace(/\.[^/.]+$/, '');
       const mp4File = new File([mp4Blob], base + '.mp4', { type: 'video/mp4' });
-      return renderVideo(mp4File, resultsEl, { remuxed: true, converted: true, sourceFile: file, sourceCodec: 'AVCHD / MPEG-TS' });
+      return renderVideo(mp4File, resultsEl, { remuxed: true, converted: true, sourceFile: file, sourceCodec: 'AVCHD / MPEG-TS', inline, compare: !!opts.compare });
     }
     // Remux produced nothing - fall back to the unplayable card and surface why.
     resultsEl.innerHTML = '';

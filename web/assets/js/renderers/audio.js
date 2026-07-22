@@ -2804,7 +2804,7 @@ function drawLoudnessGraph(series, duration) {
 // sound Advanced card reads identically. Returns { det, body }; append rows/tables
 // to `body`.
 function aAdvPanel(title, helpHtml) {
-  const det = el('details');
+  const det = el('details', { open: '' });
   const sum = el('summary', {});
   // Title + optional [?] grouped in one span so the summary's flex space-between
   // keeps them together on the left (only the open/close marker sits at the right).
@@ -3069,7 +3069,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // the full EBU R128 loudness set and the spectral checks - out of the way of the
   // everyday File info readout above, exactly as the video Advanced card does.
   {
-    const advCard = el('div', { class: 'anr-card' });
+    const advCard = el('div', { class: 'anr-card anr-adv' });
     const [advH, advHelp] = h3help('Advanced',
       'Deep forensic analysis of the sound, computed from the decoded audio. Each panel below is collapsed until you open it.');
     advCard.appendChild(advH); advCard.appendChild(advHelp);
