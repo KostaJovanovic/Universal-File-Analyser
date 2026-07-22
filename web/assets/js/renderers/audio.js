@@ -2254,20 +2254,26 @@ function buildCoverArtCard(art, file, resultsEl) {
   const note = 'Embedded cover art from ' + (file.name || 'this audio file')
     + ' (' + art.mime + ' · ' + fmtBytes(art.bytes.length) + ').';
 
+  // Decide the render target SYNCHRONOUSLY. On a normal page the Photo section
+  // exists (#photoResults); we reveal + render there once photo.js loads. On the
+  // compare view there is no Photo section, so append a local sub-photo slot NOW,
+  // before returning - the compare merge bucketizes and tears down its staging
+  // containers synchronously right after each file renders, so a slot created
+  // inside the deferred import().then() below would land after teardown and the
+  // cover's full analysis would vanish. Appended now, the slot is moved into the
+  // merged Photo section while still connected; renderPhoto then fills the
+  // moved-but-live node once the module resolves.
+  let inlineSlot = null;
+  if (resultsEl && !document.getElementById('photoResults')) {
+    inlineSlot = el('div', { class: 'anr-results anr-cmp-subslot anr-cmp-sub-photo' });
+    resultsEl.appendChild(inlineSlot);
+  }
   // Lazy-load the photo module (kept out of the audio bundle) only when there is
-  // actually cover art to analyse, then reveal the Photo section and render there.
-  // On a page with no Photo section (the compare view), fall back to a local slot
-  // tagged anr-cmp-sub-photo appended to this analysis - the compare merge files it
-  // under the Photo section just like a video's grabbed frame, so the cover still
-  // gets its full photo analysis instead of vanishing with the missing section.
+  // actually cover art to analyse, then render into the slot chosen above.
   import('./photo.js').then(({ renderPhoto, revealPhotoSection }) => {
+    if (inlineSlot) { renderPhoto(artFile, inlineSlot, { inline: true, sourceNote: note }); return; }
     const photoResults = revealPhotoSection();
-    if (photoResults) { renderPhoto(artFile, photoResults, { sourceNote: note }); return; }
-    if (resultsEl) {
-      const slot = el('div', { class: 'anr-results anr-cmp-subslot anr-cmp-sub-photo' });
-      resultsEl.appendChild(slot);
-      renderPhoto(artFile, slot, { inline: true, sourceNote: note });
-    }
+    if (photoResults) renderPhoto(artFile, photoResults, { sourceNote: note });
   }).catch(() => {});
 
   const labelCard = el('div', { class: 'anr-card' });
@@ -2770,12 +2776,12 @@ async function ffmpegDecodeAudio(file, resultsEl) {
 
 // Loudness-over-time plot for the EBU R128 meter (momentary LUFS series). Clamped
 // to a readable -40..0 LUFS window with a -14 LUFS streaming-target reference line.
-function drawLoudnessGraph(series, duration) {
+function drawLoudnessGraph(series, duration, audioEl) {
   const W = 640, H = 120, pad = 6;
   const cv = el('canvas', { width: String(W), height: String(H),
-    style: 'width:100%; height:auto; display:block; border:var(--bd-hairline); background:var(--bg); margin-top:12px;' });
+    style: 'width:100%; height:auto; display:block; border:var(--bd-hairline); background:var(--bg);' });
   const ctx = cv.getContext('2d');
-  if (!ctx) return cv;
+  if (!ctx) { cv.style.marginTop = '12px'; return cv; }
   const cs = getComputedStyle(document.body);
   const accent = (cs.getPropertyValue('--accent') || '').trim() || '#e60023';
   const muted = (cs.getPropertyValue('--muted') || '').trim() || '#888';
@@ -2796,15 +2802,59 @@ function drawLoudnessGraph(series, duration) {
     if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
   }
   ctx.stroke();
-  return cv;
+
+  // No playback element: a static readout graph, as before.
+  if (!audioEl) { cv.style.marginTop = '12px'; return cv; }
+
+  // Playable, like the waveform: wrap the canvas so a playhead line can track
+  // playback, click or drag the graph to seek, and a transport sits below. The
+  // line is themed (var(--fg)) rather than the media-canvas white, since this
+  // graph sits on the themed card surface, not a dark media canvas.
+  const wrap = el('div', { class: 'anr-wave-wrap', style: 'margin-top:12px;' });
+  wrap.appendChild(cv);
+  const line = el('div', { class: 'anr-playhead', style: 'background:var(--fg);' });
+  wrap.appendChild(line);
+
+  const durOf = () => audioEl.duration || duration || 0;
+  // `animate` eases the line into place for discrete seeks while paused; live
+  // playback and scrubbing pass false so it tracks frame-by-frame without lag.
+  function tick(animate) {
+    const d = durOf();
+    const pct = d > 0 ? (audioEl.currentTime / d) * 100 : 0;
+    if (pct >= 0 && pct <= 100) {
+      line.style.transition = animate ? '' : 'none';
+      line.style.left = pct + '%';
+      line.hidden = false;
+    } else line.hidden = true;
+  }
+  function loop() { tick(false); if (!audioEl.paused) requestAnimationFrame(loop); }
+  audioEl.addEventListener('play', () => requestAnimationFrame(loop));
+  audioEl.addEventListener('pause', () => tick(true));
+  audioEl.addEventListener('seeked', () => tick(false));
+
+  function seekFromClientX(clientX) {
+    const rect = cv.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    audioEl.currentTime = frac * durOf();
+    tick(false);
+  }
+  cv.style.cursor = 'pointer';
+  cv.addEventListener('click', (e) => seekFromClientX(e.clientX));
+  attachScrub(line, seekFromClientX);
+
+  const out = el('div');
+  out.appendChild(wrap);
+  out.appendChild(el('div', { class: 'anr-spec-transport' }, [makePlayer(audioEl, durOf())]));
+  tick(true);
+  return out;
 }
 
 // A collapsible <details> panel with a plain summary label and an optional [?]
 // help button - the same idiom the video Advanced card's vAdvPanel uses, so the
 // sound Advanced card reads identically. Returns { det, body }; append rows/tables
 // to `body`.
-function aAdvPanel(title, helpHtml) {
-  const det = el('details', { open: '' });
+function aAdvPanel(title, helpHtml, open) {
+  const det = el('details', open ? { open: '' } : {});
   const sum = el('summary', {});
   // Title + optional [?] grouped in one span so the summary's flex space-between
   // keeps them together on the left (only the open/close marker sits at the right).
@@ -3068,6 +3118,8 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // <details> panels (built with aAdvPanel). This keeps the deep forensic reads -
   // the full EBU R128 loudness set and the spectral checks - out of the way of the
   // everyday File info readout above, exactly as the video Advanced card does.
+  // Built here (data is in scope) but appended last, below every other card.
+  let advCardEl = null;
   {
     const advCard = el('div', { class: 'anr-card anr-adv' });
     const [advH, advHelp] = h3help('Advanced',
@@ -3078,7 +3130,8 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     // -- Loudness meter (EBU R128) --
     if (r128 && isFinite(r128.integrated)) {
       const { det, body } = aAdvPanel('Loudness meter (EBU R128)',
-        'The complete broadcast and streaming loudness set. Integrated loudness is the overall figure with silence ignored (gated, per ITU-R BS.1770); momentary (400 ms) and short-term (3 s) are the loudest brief windows; Loudness Range (LRA) is the spread between the quiet and loud passages; True peak is the real peak that falls between samples, found by oversampling 4x, which ordinary peak meters miss. All measured on the channel-merged signal.');
+        'The complete broadcast and streaming loudness set. Integrated loudness is the overall figure with silence ignored (gated, per ITU-R BS.1770); momentary (400 ms) and short-term (3 s) are the loudest brief windows; Loudness Range (LRA) is the spread between the quiet and loud passages; True peak is the real peak that falls between samples, found by oversampling 4x, which ordinary peak meters miss. All measured on the channel-merged signal.',
+        true);   // headline panel, open on top (photo/video parity); the rest start closed
       const lt = el('table', { class: 'anr-readout' });
       const lufs = (v) => isFinite(v) ? v.toFixed(1) + ' LUFS' : '-';
       lt.appendChild(rowHelp('Integrated (gated)', lufs(r128.integrated),
@@ -3098,7 +3151,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
       }
       body.appendChild(lt);
       // Loudness-over-time (momentary series).
-      if (r128.series && r128.series.length > 4) body.appendChild(drawLoudnessGraph(r128.series, r128.duration));
+      if (r128.series && r128.series.length > 4) body.appendChild(drawLoudnessGraph(r128.series, r128.duration, audioEl));
       advCard.appendChild(det); advCount++;
     }
 
@@ -3185,7 +3238,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
       }
     }
 
-    if (advCount) resultsEl.appendChild(advCard);
+    if (advCount) advCardEl = advCard;
   }
 
   // ---- Reverse playback (play / download the audio backwards) ----
@@ -3361,6 +3414,9 @@ export async function renderAudio(file, resultsEl, opts = {}) {
 
     resultsEl.appendChild(stereoCard);
   }
+
+  // Advanced sits last, below every other card.
+  if (advCardEl) resultsEl.appendChild(advCardEl);
 
   // Keep the bottom "Reading…" loader up until the spectrogram has actually
   // painted (it computes on a deferred timeout after the cards are built), so the

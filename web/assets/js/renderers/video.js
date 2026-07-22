@@ -2306,9 +2306,10 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
   // structure card are read straight from the metadata boxes, so they work even
   // when the browser can't decode the video codec - the common GoPro-HEVC case.
   try { await appendTelemetryCards(file, resultsEl); } catch (_) {}
+  let unplayableAdvCard = null;
   try {
     const adv = await buildVideoAdvancedCard(file);
-    if (adv && !(signal && signal.aborted)) resultsEl.appendChild(adv);
+    if (adv && !(signal && signal.aborted)) unplayableAdvCard = adv;   // appended last, below every other card
   } catch (_) {}
 
   // Convert to H.264 in-browser. The browser can't decode this codec, but FFmpeg
@@ -2365,12 +2366,14 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
     try {
       // Serialise through the shared FFmpeg instance: if the other file's convert is
       // already running (compare page), wait for it rather than clashing on one core.
+      // The button reads "Queued…" while waiting and flips to "Converting…" only when
+      // this job actually starts, so it never claims to be converting while it waits.
       blob = await queueFFmpeg(
-        () => ffmpegTranscodeToH264(file,
+        () => { convBtn.textContent = 'Converting…'; return ffmpegTranscodeToH264(file,
           (p) => { convLabel.textContent = 'loading ffmpeg'; convSetBar(p); },
           (p) => { convLabel.textContent = 'converting'; convSetBar(p); },
-          signal, convOpts),
-        () => { convLabel.textContent = 'waiting for the other conversion to finish…'; });
+          signal, convOpts); },
+        () => { convBtn.textContent = 'Queued…'; convLabel.textContent = 'waiting for the other conversion to finish…'; });
     } catch (_) { blob = null; }
     convWrap.style.display = 'none';
     if (signal && signal.aborted) return;
@@ -2461,6 +2464,9 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
     hashCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [hashBtn]));
     resultsEl.appendChild(hashCard);
   }
+
+  // Advanced sits last, below every other card.
+  if (unplayableAdvCard && !(signal && signal.aborted)) resultsEl.appendChild(unplayableAdvCard);
 }
 
 async function detectFpsWithFfmpeg(file, onProgress) {
@@ -3012,8 +3018,8 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
 
 // A collapsible <details> panel with a plain summary label (no info button) -
 // the same idiom photo.js's advPanel uses.
-function vAdvPanel(title, helpHtml) {
-  const det = el('details', { open: '' });
+function vAdvPanel(title, helpHtml, open) {
+  const det = el('details', open ? { open: '' } : {});
   const sum = el('summary', {});
   // Title + optional [?] grouped in one span so the summary's flex space-between
   // keeps them together on the left (only the open/close marker sits at the right).
@@ -3089,43 +3095,10 @@ async function buildVideoAdvancedCard(file) {
 
   const card = el('div', { class: 'anr-card anr-adv' });
   const [advH, advHelp] = h3help('Advanced',
-    'Container structure and stream forensics read straight from the MP4/MOV boxes, with nothing decoded. Each panel below is collapsed until you open it.');
+    'Container structure and stream forensics read straight from the MP4/MOV boxes, with nothing decoded. The headline provenance signs are shown up top; the deeper panels fold open when you want them.');
   card.appendChild(advH); card.appendChild(advHelp);
 
-  // -- Box tree --
-  {
-    const { det, body } = vAdvPanel('Box tree (' + s.tree.length + ' top-level box' + (s.tree.length === 1 ? '' : 'es') + ')',
-      'Every atom (box) in the file: its 4-character type, size and byte offset. Expand a container to see what it holds.');
-    const tree = el('div', { class: 'anr-boxtree' });
-    renderBoxTree(s.tree, tree, 0);
-    body.appendChild(tree);
-    card.appendChild(det);
-  }
-
-  // -- Tracks --
-  if (s.tracks.length) {
-    const { det, body } = vAdvPanel('Tracks (' + s.tracks.length + ')',
-      'Every track in the file, not just the first video and audio - including timecode and timed-metadata streams (GoPro, CAMM, Sony gyro).');
-    const tt = el('table', { class: 'anr-readout' });
-    for (const t of s.tracks) {
-      const parts = [];
-      if (t.codecName) parts.push(t.codecName);
-      if (t.language && t.language !== 'und') parts.push(t.language);
-      if (isFinite(t.durationSec) && t.durationSec > 0) parts.push(formatDuration(t.durationSec));
-      if (t.sampleCount) parts.push(t.sampleCount.toLocaleString() + ' sample' + (t.sampleCount === 1 ? '' : 's'));
-      if (t.timecode) parts.push('start ' + t.timecode + (t.dropFrame ? ' (drop-frame)' : ''));
-      // A single identity edit is standard in nearly every MP4; only note edit
-      // lists that actually splice/trim (more than one segment).
-      if (t.editList && t.editList.entries > 1) parts.push('edit list (' + t.editList.entries + ' segments)');
-      let label = 'Track ' + t.index + '  ·  ' + (t.handlerName || 'Unknown');
-      if (t.enabled === false) label += '  (disabled)';
-      tt.appendChild(row(label, parts.join('  ·  ') || (t.codec || '-')));
-    }
-    body.appendChild(tt);
-    card.appendChild(det);
-  }
-
-  // -- Provenance tells --
+  // -- Provenance tells (the forensic headline - shown open, on top) --
   {
     const rows = [];
     if (s.faststart !== null) {
@@ -3159,12 +3132,45 @@ async function buildVideoAdvancedCard(file) {
         'Extra data sitting after the main media. Sometimes a marker added by an editor or app (a uuid box), sometimes leftover data tacked on after the file was first written.'));
     if (rows.length) {
       const { det, body } = vAdvPanel('Provenance tells',
-        'Structural signs of how the file was produced - camera-original, re-muxed, edited or streamed.');
+        'Structural signs of how the file was produced - camera-original, re-muxed, edited or streamed.', true);
       const pt = el('table', { class: 'anr-readout' });
       for (const r of rows) pt.appendChild(r);
       body.appendChild(pt);
       card.appendChild(det);
     }
+  }
+
+  // -- Box tree --
+  {
+    const { det, body } = vAdvPanel('Box tree (' + s.tree.length + ' top-level box' + (s.tree.length === 1 ? '' : 'es') + ')',
+      'Every atom (box) in the file: its 4-character type, size and byte offset. Expand a container to see what it holds.');
+    const tree = el('div', { class: 'anr-boxtree' });
+    renderBoxTree(s.tree, tree, 0);
+    body.appendChild(tree);
+    card.appendChild(det);
+  }
+
+  // -- Tracks --
+  if (s.tracks.length) {
+    const { det, body } = vAdvPanel('Tracks (' + s.tracks.length + ')',
+      'Every track in the file, not just the first video and audio - including timecode and timed-metadata streams (GoPro, CAMM, Sony gyro).');
+    const tt = el('table', { class: 'anr-readout' });
+    for (const t of s.tracks) {
+      const parts = [];
+      if (t.codecName) parts.push(t.codecName);
+      if (t.language && t.language !== 'und') parts.push(t.language);
+      if (isFinite(t.durationSec) && t.durationSec > 0) parts.push(formatDuration(t.durationSec));
+      if (t.sampleCount) parts.push(t.sampleCount.toLocaleString() + ' sample' + (t.sampleCount === 1 ? '' : 's'));
+      if (t.timecode) parts.push('start ' + t.timecode + (t.dropFrame ? ' (drop-frame)' : ''));
+      // A single identity edit is standard in nearly every MP4; only note edit
+      // lists that actually splice/trim (more than one segment).
+      if (t.editList && t.editList.entries > 1) parts.push('edit list (' + t.editList.entries + ' segments)');
+      let label = 'Track ' + t.index + '  ·  ' + (t.handlerName || 'Unknown');
+      if (t.enabled === false) label += '  (disabled)';
+      tt.appendChild(row(label, parts.join('  ·  ') || (t.codec || '-')));
+    }
+    body.appendChild(tt);
+    card.appendChild(det);
   }
 
   // -- Frames & bitrate --
@@ -4178,10 +4184,11 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // track list, provenance tells, frames/bitrate map and bitstream/authenticity.
   // Reads the ORIGINAL file so the SPS, codec and structure describe the user's
   // file, not the H.264 proxy.
+  let videoAdvCard = null;
   if (full) {
     try {
       const adv = await buildVideoAdvancedCard(analysisFile);
-      if (adv && !renderSignal.aborted) resultsEl.appendChild(adv);
+      if (adv && !renderSignal.aborted) videoAdvCard = adv;   // appended last, below every other card
     } catch (_) { /* structure parse failed - skip the Advanced card */ }
   }
 
@@ -4435,6 +4442,9 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     hashCard.appendChild(hashTbl);
     resultsEl.appendChild(hashCard);
   }
+
+  // Advanced sits last, below every other card.
+  if (videoAdvCard && !renderSignal.aborted) resultsEl.appendChild(videoAdvCard);
 }
 
 // ---------- setup ----------

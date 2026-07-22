@@ -851,14 +851,12 @@ function buildExifSections(exif) {
   if (exif.YResolution)         image.push(['Y resolution', exif.YResolution + ' ' + (exif.ResolutionUnit === 3 ? 'dpcm' : 'dpi'), 'The intended print density - dots per inch (dpi) or per centimetre (dpcm). It only affects printed size, not how many pixels the image has or how it looks on screen.']);
   if (image.length) sections.push({ title: 'Image', rows: image });
 
-  // IPTC / XMP
-  const desc = [];
-  if (exif.title || exif.ObjectName)   desc.push(['Title',       exif.title || exif.ObjectName]);
-  if (exif.description || exif.Caption) desc.push(['Description', exif.description || exif.Caption]);
-  if (exif.creator || exif.Artist)     desc.push(['Creator',     Array.isArray(exif.creator) ? exif.creator.join(', ') : (exif.creator || exif.Artist)]);
-  if (exif.rights || exif.Copyright)   desc.push(['Copyright',   exif.rights || exif.Copyright]);
-  if (exif.keywords || exif.subject)   desc.push(['Keywords',    [].concat(exif.keywords || [], exif.subject || []).join(', ')]);
-  if (desc.length) sections.push({ title: 'Description (IPTC/XMP)', rows: desc });
+  // Privacy - the identifying details carried in the metadata (GPS, serials,
+  // owner/author, copyright, unique IDs, comments). This replaces the old
+  // Description (IPTC/XMP) block and is surfaced here as a normal Metadata
+  // section rather than tucked away inside Advanced. See privacyRows.
+  const priv = privacyRows(exif);
+  if (priv.length) sections.push({ title: 'Privacy', rows: priv });
 
   // ICC
   const icc = [];
@@ -1306,11 +1304,28 @@ function sectionHelp(title, helpHtml) {
 }
 
 // Personally-identifying / sensitive metadata fields, for the privacy report.
+// Coerce an EXIF/XMP value that may arrive as an object (XMP language
+// alternatives like {'x-default': ...}, an exifr {value: ...} wrapper) or an
+// array into readable text, instead of the "[object Object]" a bare String()
+// would give (e.g. dc:rights copyright often comes through as a lang-alt object).
+function exifText(v) {
+  if (v == null) return '';
+  if (Array.isArray(v)) return v.map(exifText).filter(Boolean).join(', ');
+  if (typeof v === 'object') {
+    if (v.value != null) return exifText(v.value);
+    if (v['x-default'] != null) return exifText(v['x-default']);
+    const strs = Object.values(v).map((x) => (typeof x === 'string' ? x : '')).filter(Boolean);
+    if (strs.length) return strs.join(', ');
+    try { return JSON.stringify(v); } catch (_) { return String(v); }
+  }
+  return String(v);
+}
+
 function privacyRows(exif) {
   if (!exif) return [];
   const rows = [];
-  const cap = (v) => { const s = String(v); return s.length > 90 ? s.slice(0, 90) + '…' : s; };
-  const push = (label, val) => { if (val != null && val !== '') rows.push([label, cap(val)]); };
+  const cap = (v) => { const s = exifText(v); return s.length > 90 ? s.slice(0, 90) + '…' : s; };
+  const push = (label, val) => { const s = cap(val); if (s) rows.push([label, s]); };
   if (Number.isFinite(exif.latitude) && Number.isFinite(exif.longitude) && !(exif.latitude === 0 && exif.longitude === 0))
     push('GPS location', exif.latitude.toFixed(5) + ', ' + exif.longitude.toFixed(5));
   push('Camera serial', exif.SerialNumber || exif.BodySerialNumber || exif.InternalSerialNumber || exif.CameraSerialNumber);
@@ -3618,7 +3633,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // nothing about the original). Stacked sub-sections, like the Metadata card.
   let advForensics = null;
   if (full && !convertedFile && (/^(jpe?g|jpe|jfif)$/.test(fileExt(file.name)) || file.type === 'image/jpeg')) {
-    const fDet = el('details', { open: '' });
+    const fDet = el('details');
     const fSum = el('summary', {});
     fSum.appendChild(el('span', { class: 'anr-summary-label' }, 'Forensics'));
     fDet.appendChild(fSum);
@@ -3897,9 +3912,8 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   advCard.appendChild(el('h3', {}, 'Advanced'));
   advCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 4px;' },
     'More detailed forensic and technical views.'));
-  if (advForensics) advCard.appendChild(advForensics);
 
-  // -- Edit history + Privacy panels (read the raw bytes once) --
+  // -- Edit history (on top, shown open; the technical panels below start closed) --
   if (full) {
     let advBytes = null;
     try { advBytes = new Uint8Array(await file.arrayBuffer()); } catch (_) {}
@@ -3938,26 +3952,17 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
         }
         advCard.appendChild(det);
       }
-
-      // Privacy: report which identifying fields are present. The lossless
-      // metadata stripper itself is the "Remove metadata" control on the
-      // Metadata card (scrub.js) - not duplicated here.
-      const sens = privacyRows(exif);
-      if (sens.length) {
-        const { det, body } = advPanel('Privacy',
-          'Details in this file’s metadata that could help identify you or reveal where the photo was taken. They stay inside the file when you share it.');
-        body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
-          'Use "Remove metadata" on the Metadata card to strip these out.'));
-        const st = el('table', { class: 'anr-readout' });
-        for (const [k, v] of sens) st.appendChild(row(k, v));
-        body.appendChild(st);
-        advCard.appendChild(det);
-      }
-    } catch (_) { /* edit-history / privacy parsing failed - skip these panels */ }
+      // Privacy moved out of Advanced: it is now a normal section on the
+      // Metadata card (see buildExifSections, where it replaced the old
+      // Description (IPTC/XMP) block).
+    } catch (_) { /* edit-history parsing failed - skip this panel */ }
   }
 
-  // -- LSB / bit-plane analysis panel --
-  const lsbDet = el('details', { open: '' });
+  // -- Forensics (JPEG only) - closed by default --
+  if (advForensics) advCard.appendChild(advForensics);
+
+  // -- LSB / bit-plane analysis panel (closed by default) --
+  const lsbDet = el('details');
   const lsbHelp = el('div', { class: 'anr-info-panel is-hidden', html: 'Every pixel’s colour is stored as bits (ones and zeros). Bit-plane analysis pulls out a single bit from each colour channel (red, green, blue) and shows it as a black-and-white image. In an ordinary photo the lowest bits look like random speckle; clear patterns, text or shapes there can point to a hidden message (steganography) or heavy editing. A chi-square test also estimates how likely it is that data has been tucked into the least-significant bits, and you can flick through all eight bit planes (0 = the least-significant bit, up to 7 = the most-significant). Click a preview to open it at full resolution.' });
   const lsbSummary = el('summary', {});
   // Title + [?] grouped in one span so the summary's flex space-between keeps them
@@ -3975,8 +3980,6 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   lsbDet.appendChild(lsbContent);
   advCard.appendChild(lsbDet);
 
-  resultsEl.appendChild(advCard);
-
   const raw = buildRawDump(exif);
   if (raw && raw.length) {
     const dumpCard = el('div', { class: 'anr-card' });
@@ -3988,6 +3991,9 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     dumpCard.appendChild(det);
     resultsEl.appendChild(dumpCard);
   }
+
+  // Advanced sits last, below every other card.
+  resultsEl.appendChild(advCard);
 }
 
 // ---------- setup ----------
