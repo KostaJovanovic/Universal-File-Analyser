@@ -166,10 +166,10 @@ export async function renderUnity(file, resultsEl) {
     const tbl = el('table', { class: 'anr-readout' });
     tbl.appendChild(row('Application', 'Unity (game engine)'));
     tbl.appendChild(rowHelp('Format', 'Unity .meta importer record',
-      'Every asset in a Unity project gets a sidecar .meta file: a YAML record holding the stable GUID Unity tracks the asset by, plus the import settings for it.'));
-    if (data.guid) tbl.appendChild(rowHelp('Asset GUID', data.guid, 'The 32-hex-character identifier Unity uses to reference this asset everywhere, independent of its path or name.'));
+      'A companion file Unity keeps beside every asset (image, model, sound) in a game project. It stores a fixed ID Unity uses to track that asset, plus its import settings, written as plain-text YAML.'));
+    if (data.guid) tbl.appendChild(rowHelp('Asset GUID', data.guid, 'A fixed 32-character ID Unity uses to refer to this asset throughout the project. It stays the same even if the file is renamed or moved.'));
     if (data.importer) tbl.appendChild(rowHelp('Importer', data.importer.replace(/([a-z])([A-Z])/g, '$1 $2'),
-      'The Unity importer that processes the asset - e.g. TextureImporter for an image, ModelImporter for a 3D model.'));
+      'The part of Unity that processes this asset when it is brought into the project - for example a texture importer for an image, or a model importer for a 3D model.'));
     if (data.isFolder) tbl.appendChild(row('Folder asset', 'yes'));
     if (data.timeCreated && data.timeCreated !== '0') {
       const t = Number(data.timeCreated);
@@ -194,9 +194,9 @@ export async function renderUnity(file, resultsEl) {
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Application', 'Unity (game engine)'));
   tbl.appendChild(rowHelp('Format', unityFormatName(data.ext, data.label),
-    'Unity serialises its assets as a small YAML dialect - one document per object, each tagged with its class (!u!<classID>). Analyser splits those documents and reads the key fields.'));
+    'Unity saves this asset as plain text in its own flavour of the YAML format - one section per object, each labelled with the kind of object it is (!u!<classID>). Analyser separates those sections and reads the important fields.'));
   if (data.sceneLike) {
-    tbl.appendChild(rowHelp('GameObjects', String(data.gameObjects.length), 'The scene/prefab objects - each is a container of components (Transform, renderers, colliders, scripts).'));
+    tbl.appendChild(rowHelp('GameObjects', String(data.gameObjects.length), 'The individual objects in the scene or prefab. Each one bundles together components that give it behaviour - its position (Transform), how it looks (renderers), how it collides (colliders) and any scripts.'));
     tbl.appendChild(row('Total objects', String(data.docs.length)));
   } else {
     tbl.appendChild(row('Objects', String(data.docs.length)));
@@ -210,7 +210,15 @@ export async function renderUnity(file, resultsEl) {
     const card = el('div', { class: 'anr-card' });
     card.appendChild(el('h3', {}, (data.primaryClass || 'Asset').replace(/([a-z])([A-Z])/g, '$1 $2')));
     const dt = el('table', { class: 'anr-readout' });
-    data.detail.forEach(([k, v]) => dt.appendChild(row(k, String(v))));
+    const DETAIL_HELP = {
+      'DSP buffer': 'The size of the audio buffer Unity’s sound engine works in. A larger buffer plays back more steadily but adds a little delay before a sound is heard; a smaller one responds faster but works the device harder.',
+      'Virtual voices': 'The most sounds Unity keeps track of at once, including quiet or distant ones it is not actually playing out loud.',
+      'Real voices': 'The most sounds Unity plays out loud at the same time. If more than this are triggered, the quietest or least important ones are dropped.',
+      'Sprite (PPtr) curves': 'Animation tracks that swap one whole image (sprite) for another over time, rather than moving or scaling the object - used for frame-by-frame 2D animation.',
+      'Shader': 'The shader this material uses - the small program that decides how the surface is drawn, including how it responds to light and colour. Shown as Unity’s internal reference to it.',
+      'Script GUID': 'The fixed ID of the code file (script) attached to this object. It links the object to its behaviour without naming the file directly, so the link survives renames.',
+    };
+    data.detail.forEach(([k, v]) => dt.appendChild(DETAIL_HELP[k] ? rowHelp(k, String(v), DETAIL_HELP[k]) : row(k, String(v))));
     card.appendChild(dt);
     resultsEl.appendChild(card);
   }

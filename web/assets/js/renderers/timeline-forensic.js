@@ -158,7 +158,7 @@ export async function collectTimestamps(file) {
 }
 
 // ---------- card ----------
-const TL_HELP = 'A file can carry several timestamps: the "last modified" time the filesystem reports, and the dates the format records inside itself (a document\'s created/modified dates, a video\'s movie-header times, a PNG\'s tIME). This card lists them in order and flags relationships that should be impossible - a file modified before it was created, or a document that predates the moment it was last saved - which can indicate a backdated or hand-edited timestamp. Every date is read on your device.';
+const TL_HELP = 'A file can carry several dates: the "last modified" time your computer reports, and the dates the file records inside itself (a document’s created and modified dates, a video’s movie-header times, a PNG’s tIME). This card lists them in order and flags combinations that should be impossible - a file modified before it was created, or a document dated earlier than its own last save - which can point to a date that was faked or edited by hand. Every date is read on your device.';
 
 export async function forensicTimelineCard(file) {
   let stamps, probe;

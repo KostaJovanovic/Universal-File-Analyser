@@ -11,7 +11,7 @@
    NTFS, DMG, firmware blob, ...) it degrades to the normal identification card,
    with the partition table shown when present. */
 
-import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, isUnreadableError, cloudFileWarning, downloadBlob } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, errorCard, integrityCard, isUnreadableError, cloudFileWarning, downloadBlob } from '../core/util.js';
 import { hexByte } from '../core/binutil.js';
 import { renderHandleTree } from './archive.js';
 import { carveImages, repairJpeg, ensureJpegHuffman } from './photo-recover.js';
@@ -141,7 +141,7 @@ export async function renderDiskImage(file, resultsEl, opts = {}) {
     t.appendChild(row('Name', file.name));
     t.appendChild(row('Size', fmtBytes(file.size) + '   (' + file.size.toLocaleString() + ' bytes)'));
     t.appendChild(row('Layout', layout));
-    if (otherFs) t.appendChild(rowHelp('Filesystem', otherFs, 'The filesystem detected inside the image. Only FAT12/16/32 filesystems can currently be browsed here; this one is identified but not opened.'));
+    if (otherFs) t.appendChild(rowHelp('Filesystem', otherFs, 'The way files are organised on the disc inside this image (its filesystem). Analyser can currently open and browse only FAT12, FAT16 and FAT32 discs; this one is recognised but not opened.'));
     note.appendChild(t);
     note.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:10px;' },
       vol && !vol.entries.length
@@ -171,17 +171,17 @@ export async function renderDiskImage(file, resultsEl, opts = {}) {
     row('Application', 'Disk image (' + vol.type + ')'),
     row('Name', file.name),
     row('Image size', fmtBytes(file.size) + '   (' + file.size.toLocaleString() + ' bytes)'),
-    rowHelp('Layout', layout, 'Whether the image is a bare filesystem or a partitioned disk. Partitioned images are opened at their first FAT partition.'),
-    rowHelp('Filesystem', vol.type + (vol.oem ? ' · ' + vol.oem : ''), 'The FAT variant (FAT12/16/32) and the OEM name recorded in the boot sector by the tool that formatted the volume.'),
+    rowHelp('Layout', layout, 'Whether the image is a single storage area on its own, or a whole disk divided into several sections (partitions). For a divided disk, Analyser opens the first FAT section.'),
+    rowHelp('Filesystem', vol.type + (vol.oem ? ' · ' + vol.oem : ''), 'Which version of the FAT file-storage system this is (FAT12, 16 or 32), plus the short maker name that the formatting tool wrote into the disc’s start-up area (the boot sector).'),
   ];
   if (vol.volumeLabel) summaryRows.push(row('Volume label', vol.volumeLabel));
-  summaryRows.push(rowHelp('Cluster size', fmtBytes(vol.bytesPerCluster), 'The allocation unit of the filesystem. Every file occupies a whole number of clusters, so small files still take at least one.'));
+  summaryRows.push(rowHelp('Cluster size', fmtBytes(vol.bytesPerCluster), 'The smallest chunk of space the disc hands out at a time (a cluster). Every file is stored in whole chunks, so even a tiny file uses at least one full chunk.'));
   if (vol.capacityBytes) {
     const usedPct = Math.round((1 - vol.freeBytes / vol.capacityBytes) * 100);
     summaryRows.push(rowHelp('Used space', fmtBytes(vol.capacityBytes - vol.freeBytes) + ' of ' + fmtBytes(vol.capacityBytes) + '  (' + usedPct + '%)',
-      'How much of the filesystem is allocated, from the FAT free-cluster count.'));
+      'How much of the disc’s space is taken up, worked out from how many storage chunks the disc lists as still free.'));
   }
-  if (vol.truncated) summaryRows.push(rowHelp('⚠ Listing truncated', 'over ' + MAX_ENTRIES.toLocaleString() + ' entries', 'The image holds more entries than are listed here; browsing was capped to keep the page responsive.'));
+  if (vol.truncated) summaryRows.push(rowHelp('⚠ Listing truncated', 'over ' + MAX_ENTRIES.toLocaleString() + ' entries', 'The disc holds more files and folders than are shown here; the list was capped to keep the page quick to use.'));
 
   // The tree was parsed from a prefix, so an entry's bytes may well sit past its
   // end. Re-point every getBytes at the full image, fetched on first open - the
@@ -224,7 +224,9 @@ export async function renderDiskImage(file, resultsEl, opts = {}) {
 // image and carves every signature, so it stays out of the way until asked.
 function carvedImageGallery(readFull, file, resultsEl, vol) {
   const card = el('div', { class: 'anr-card anr-collapsible' });
-  card.appendChild(el('h3', {}, 'Images in this disk'));
+  const [cardH, cardHelp] = h3help('Images in this disk', 'Scans every raw sector of the image for embedded picture signatures, so it finds photos regardless of the filesystem - including deleted and orphaned files the directory no longer lists, plus MJPEG video frames and thumbnails. It can therefore show more, or different, files than the tree above. Fragmented files are reassembled from the filesystem when their allocation map survives; a deleted file whose map was cleared can only be read straight through, so it may come back partly garbled or without a preview.');
+  card.appendChild(cardH);
+  card.appendChild(cardHelp);
   const body = el('div', {});
   card.appendChild(body);
   resultsEl.appendChild(card);
@@ -233,7 +235,7 @@ function carvedImageGallery(readFull, file, resultsEl, vol) {
   // it doesn't (deleted / orphaned photos, MJPEG frames) but must read the entire
   // image (up to ~1.5 GB) and carve every signature, so it runs only on request.
   body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 12px;' },
-    'Scan every raw sector for embedded image signatures to recover photos the directory no longer lists - deleted and orphaned files - plus MJPEG video frames. It reads the whole image, so it can take a few seconds.'));
+    'Recover deleted and orphaned images from the raw sectors. It reads the whole image, so it can take a few seconds.'));
   const scanBtn = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Scan for images');
   body.appendChild(scanBtn);
 
@@ -294,7 +296,7 @@ function carvedImageGallery(readFull, file, resultsEl, vol) {
       'Found ' + total + (total >= SCAN_CARVE ? '+' : '') + ' image' + (total === 1 ? '' : 's')
       + ' by scanning every sector for image signatures'
       + (total > shown ? ' - showing the ' + shown + ' largest (biggest first)' : '')
-      + '. This includes deleted and orphaned photos no longer in the directory, plus MJPEG video frames and thumbnails, so it can show more - or different - files than the tree above. Fragmented files are reassembled from the filesystem when their allocation map survives; a deleted file whose map was cleared can only be read straight through, so it may come back partly garbled or without a preview.'));
+      + '.'));
 
     const grid = el('div', { class: 'anr-carve-grid' });
 

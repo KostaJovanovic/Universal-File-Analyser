@@ -191,7 +191,7 @@ export async function stripImage(file) {
 // Appends a "Remove metadata" control to an existing card (the photo Metadata
 // card). On click it strips, lists what was removed, re-scans the output to
 // confirm nothing remains, and offers the clean copy for download.
-const SCRUB_HELP = 'Removes identifying metadata (EXIF, GPS location, XMP, IPTC, comments) by cutting only those blocks out of the file - the image pixels and colour profile are copied byte-for-byte, so the picture is unchanged. The stripped copy is built here on your device and never uploaded. Colour-management data (ICC) is kept so the image still looks the same.';
+const SCRUB_HELP = 'Removes identifying information (EXIF, GPS location, XMP, IPTC and comments) by cutting out only those parts of the file - the actual image and its colour profile are copied across untouched, so the picture itself does not change. The cleaned copy is made here on your device and never uploaded. Colour-management data (ICC) is kept so the image still looks the same.';
 
 export function attachImageScrub(file, cardEl) {
   if (!scrubSupportsImage(file)) return;

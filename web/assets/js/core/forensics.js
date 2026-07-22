@@ -8,7 +8,7 @@
    handleFile callback in via setReanalyse() (mirrors its own _handleFile
    forward-reference, avoiding a circular import). */
 
-import { fileExt, el, row, downloadBlob } from './util.js';
+import { fileExt, el, row, rowHelp, h3help, downloadBlob } from './util.js';
 import { hexBytes } from './binutil.js';
 import { SCAN_MED } from './limits.js';
 import { sniffFileType } from './file-sniff.js';
@@ -94,18 +94,23 @@ export async function signatureCheck(file, sniff) {
 // a flagged integrity card (accent left border), prepended above the analysis.
 export function signatureCard(info) {
   const card = el('div', { class: 'anr-card anr-sig-flag', role: 'alert' });
-  card.appendChild(el('h3', {}, 'Signature mismatch'));
+  const [h, help] = h3help('Signature mismatch',
+    'Every file type opens with a distinctive pattern of bytes - its signature, or “magic number”. '
+    + 'Analyser reads those opening bytes and checks them against what the extension claims the file to be. '
+    + 'When they disagree the file may be renamed, disguised, corrupt, truncated or a polyglot (two formats in one file), '
+    + 'so do not trust the extension alone - verify it before opening.');
+  card.appendChild(h); card.appendChild(help);
   const t = el('table', { class: 'anr-readout' });
   t.appendChild(row('Declared as', '.' + info.ext + ' (' + info.label + ')'));
   if (info.missing) t.appendChild(row('Content', 'no recognised ' + info.label + ' signature'));
   else t.appendChild(row('Content looks like', info.sniff.label + ' (.' + info.sniff.ext + ')'));
-  if (info.hex) t.appendChild(row('Leading bytes', info.hex));
+  if (info.hex) t.appendChild(rowHelp('Leading bytes', info.hex,
+    'The raw first bytes of the file, shown in hex. Because each format begins with its own signature, '
+    + 'these opening bytes reveal what the file really is, whatever its name says.'));
   card.appendChild(t);
   const msg = info.missing
-    ? 'The name claims a ' + info.label + ', but the leading bytes match no known ' + info.label
-      + ' signature. The file may be renamed, corrupt, truncated or empty - do not trust the extension alone.'
-    : 'The name says .' + info.ext + ', but the contents are actually a ' + info.sniff.label
-      + '. This is a renamed or disguised file (or a polyglot) - verify it before trusting the declared type.';
+    ? 'The name claims a ' + info.label + ', but the leading bytes match no known ' + info.label + ' signature.'
+    : 'The name says .' + info.ext + ', but the contents are actually a ' + info.sniff.label + '.';
   card.appendChild(el('p', { class: 'anr-sig-flag-note' }, msg));
   return card;
 }
@@ -236,19 +241,22 @@ export function trailingCard(info, file) {
   // but not an integrity failure, and it sits low in the readout, just above the
   // Integrity card, rather than leading the analysis.
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Trailing data'));
+  const [h, help] = h3help('Trailing data',
+    'Content that sits after a file’s real, structural end. Normal viewers stop at that end and ignore it, '
+    + 'which makes appended bytes a classic way to hide or smuggle content - a polyglot, an appended archive, '
+    + 'or steganography. Inspect it if the file came from an untrusted source.');
+  card.appendChild(h); card.appendChild(help);
   const t = el('table', { class: 'anr-readout' });
   t.appendChild(row('File type', info.fmtLabel));
-  t.appendChild(row('Logical end', info.logicalEnd.toLocaleString() + ' bytes'));
+  t.appendChild(rowHelp('Logical end', info.logicalEnd.toLocaleString() + ' bytes',
+    'Where the file’s own structure actually ends. Anything between here and the total size is extra data added afterwards.'));
   t.appendChild(row('Trailing data', info.trailing.toLocaleString() + ' bytes after the end'));
   if (info.sniffLabel) t.appendChild(row('Appended content', 'looks like ' + info.sniffLabel));
-  if (info.hex) t.appendChild(row('First bytes', info.hex));
+  if (info.hex) t.appendChild(rowHelp('First bytes', info.hex,
+    'The opening bytes of the appended data, in hex. Their signature hints at what the hidden content is.'));
   card.appendChild(t);
   card.appendChild(el('p', { class: 'anr-sig-flag-note' },
-    info.trailing.toLocaleString() + ' bytes sit after the logical end of this ' + info.fmtLabel + '. '
-    + 'Data appended past a file’s structural end is ignored by normal viewers and is a classic way to '
-    + 'smuggle or hide content - a polyglot, an appended archive, or steganography. Inspect it if the file '
-    + 'came from an untrusted source.'));
+    info.trailing.toLocaleString() + ' bytes sit after the logical end of this ' + info.fmtLabel + '.'));
   // Extraction: carve the trailing region out as a blob. Download it, or analyse it
   // in place (an appended ZIP opens the archive browser, a JPEG the photo analyser).
   if (file) {

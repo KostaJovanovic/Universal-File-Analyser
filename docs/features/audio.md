@@ -180,12 +180,13 @@ btn: Download WAV
 using an on-device neural network (MDX-Net "Kim Vocal 2" from Ultimate
 Vocal Remover), entirely in-browser via ONNX Runtime Web.
 
-**How to reach it.** Click **Separate vocals (AI)** inside the Isolate
-panel. Built in `audio.js`, backed by the MDX-Net subsystem in
+**How to reach it.** Click **AI separation** inside the Isolate panel to
+open the AI options row (Standard / Lite / denoise), then click a model tier
+to run. Built in `audio.js`, backed by the MDX-Net subsystem in
 `web/assets/js/lib/mdx-*.js` (see [`parsers-and-libs.md`](../parsers-and-libs.md)).
 
-**How to use it.** Choose **Standard** or **Lite** (mobile-friendlier)
-model tier. First use prompts to confirm the model download
+**How to use it.** Click **Standard** or **Lite** (mobile-friendlier) to
+separate with that model. First use prompts to confirm the model download
 (**Download and continue**/**Start separation** to proceed, **Cancel** to
 back out) unless already cached. Once separated, each stem gets **Play**
 (in a blend row that can mix vocal/instrumental live), **Analyse** (runs
@@ -193,7 +194,7 @@ the stem through the full audio analyser), and **Download WAV**. A `[?]`
 info button next to "Separate" explains the approach.
 
 ```demo
-btn: Separate vocals (AI)
+btn: AI separation
 ```
 
 Pick a model tier, then confirm the one-time model download:
@@ -222,6 +223,42 @@ the model (~85MB) is part of the "Complete" offline tier (see
 separated stems in parallel (nodes can't be shared across the file
 player's audio context and the stem-blend context), so Isolate edits and AI
 separation compose rather than one bypassing the other.
+
+### AI denoise
+
+**What it does.** Removes background noise and hiss from a track while
+keeping the full sound, using an on-device neural network (DeepFilterNet3,
+a 48 kHz full-band speech/audio denoiser), entirely in-browser via ONNX
+Runtime Web. It produces two stems - **Clean** (the enhanced audio) and
+**Noise** (what was removed, = original - clean) - shown in the same blend
+view as vocal separation, relabelled Clean to Noise.
+
+**How to reach it.** Open the AI options row by clicking **AI separation**
+in the Isolate panel (the row is closed by default), then click **denoise**
+to the right of the Standard/Lite tiers. Built in `audio.js`, backed by the
+DeepFilterNet subsystem in `web/assets/js/lib/dfn-*.js` (see
+[`parsers-and-libs.md`](../parsers-and-libs.md)).
+
+**How to use it.** First use prompts to confirm the one-time model download
+(**Download and continue**/**Start denoise** to proceed, **Cancel** to back
+out) unless already cached. Once done, the blend slider fades Clean to Noise,
+and each stem gets **Play**, **Analyse** and **Download WAV**, exactly like
+the separation stems. Denoise and vocal separation are mutually exclusive -
+starting one clears the other, since only one blend owns the spectrogram at a
+time.
+
+```demo
+btn: denoise
+```
+
+**Notes / limits.** Unlike separation, this is noise suppression, not source
+separation - it is aimed at cleaning up recordings (voice, ambience, hiss),
+not splitting a musical mix. Runs on GPU via WebGPU where available, WASM
+otherwise; the model (~9MB on top of the shared ONNX runtime) is part of the
+"Complete" offline tier (see [`pwa-offline.md`](../pwa-offline.md)). All the
+DSP around the model (STFT, ERB features, the gain mask and the deep filter)
+is reimplemented on-device in `dfn-dsp.js`/`dfn-enhance.js`, mirroring libDF;
+long audio is processed in overlapping segments to bound memory.
 
 ### Waveform selection: zoom and export
 

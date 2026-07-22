@@ -5,7 +5,7 @@
 
 import { makeSpectrogramPanel, makePlayer, buildHistogramCard, buildWaveformCard } from './audio.js';
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
-import { el, row, rowHelp, fmtBytes, h3help, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob } from '../core/util.js';
 import { parseAviHeader, extractAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
 import { registerSyncedVideo, setAudioCompanion } from '../core/video-sync.js';
@@ -652,7 +652,7 @@ function buildReverseVideoCard(file, signal) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Reverse'));
   card.appendChild(el('p', { class: 'anr-hint' },
-    'Re-encode this video playing backwards - picture and sound - in your browser with FFmpeg. Fair warning, this isn\'t as straightforward as it seems. It\'s going to take a while.'));
+    'Re-encode this video playing backwards - picture and sound - in your browser with FFmpeg. This can take a while.'));
   const btn = el('button', { type: 'button', class: 'anr-btn' }, '↺ Reverse video');
   const out = el('div');
   const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
@@ -1019,9 +1019,10 @@ async function remuxRawSegment(file, start, end, paramSets, h265, signal, loader
 // the main player's scene card. Rebuildable so it can be run on each part.
 function buildRawSceneCard(playerEl, signal) {
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Scene changes'));
+  const [scH, scHelp] = h3help('Scene changes',
+    'Scans only the part currently loaded in the player. It scrubs through the video, so it can see just the segment that is loaded.');
+  card.appendChild(scH); card.appendChild(scHelp);
   const out = el('div');
-  out.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:8px;' }, 'Scans the part currently loaded in the player.'));
   const runBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Detect scene changes');
   out.appendChild(runBtn);
   card.appendChild(out);
@@ -1138,13 +1139,14 @@ async function renderSegmentedRawVideo(file, header, resultsEl, kind, signal) {
   infoCard.appendChild(tbl);
   infoCard.appendChild(el('p', { class: 'anr-hint' },
     'Too big to convert in one piece, so it’s split at keyframes into ' + N + ' parts, each remuxed to MP4 on demand and '
-    + 'played back-to-back. A raw stream carries no timing, so playback speed assumes 25 fps and there’s no audio track.'));
+    + 'played back-to-back.'));
   resultsEl.appendChild(infoCard);
 
   // Integrity: hashing a multi-GB file reads the whole thing, so keep it on-demand.
   const hashCard = el('div', { class: 'anr-card' });
-  hashCard.appendChild(el('h3', {}, 'Integrity'));
-  hashCard.appendChild(el('p', { class: 'anr-hint' }, 'SHA-256 reads the whole file (' + fmtBytes(file.size) + '), so it isn’t computed automatically.'));
+  const [hashH, hashHelp] = h3help('Integrity',
+    '<strong>SHA-256</strong> is a cryptographic fingerprint of the file’s exact contents. Computing it reads the whole file (' + fmtBytes(file.size) + '), so for a video this size it is left to a button rather than run automatically.');
+  hashCard.appendChild(hashH); hashCard.appendChild(hashHelp);
   const hashBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Compute SHA-256');
   hashBtn.addEventListener('click', () => { hashCard.replaceWith(integrityCard(file)); });
   hashCard.appendChild(el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [hashBtn]));
@@ -1692,9 +1694,10 @@ function appendCreatorRows(tbl, header) {
   if (!header) return;
   const created = header.writingApp || header.software;
   if (created) tbl.appendChild(rowHelp('Created with', created,
-    'The application or library that wrote this file, recorded in the container metadata (Matroska WritingApp or AVI ISFT).'));
+    'The app or software that created this file, as noted inside the file itself (the Matroska WritingApp or AVI ISFT field).'));
   if (header.muxingApp && header.muxingApp !== header.writingApp)
-    tbl.appendChild(row('Muxer', header.muxingApp));
+    tbl.appendChild(rowHelp('Muxer', header.muxingApp,
+      'The tool that packaged (multiplexed) the separate video and audio streams together into this container file. It can differ from the app that created the content - for example, an edit finished in one program but wrapped into the file by another.'));
 }
 
 // ---------- frame rate detection ----------
@@ -2060,34 +2063,34 @@ function appendTrackRows(tbl, tracks) {
       if (v.level) extra.push('L' + v.level);
       if (extra.length) label += '  (' + extra.join(', ') + ')';
       tbl.appendChild(rowHelp('Video codec', label,
-        'The video compression format and (where available) its profile/level, read from the MP4/MOV sample-description and codec-config boxes. The profile/level indicate which encoding features and bitrate ceiling were used.'));
+        'The recipe used to squeeze the picture down to a manageable size, such as H.264, and where available its profile and level. Read from the file’s codec settings (the MP4/MOV sample-description and codec-config boxes), the profile and level show which encoding features and quality ceiling were used.'));
     }
     if (v.bitDepth) {
       let depthText = v.bitDepth + '-bit';
       if (v.chroma) depthText += '  ·  ' + v.chroma + ' chroma';
       tbl.appendChild(rowHelp('Bit depth', depthText,
-        'Bits per colour sample and the chroma subsampling, read from the codec configuration. 8-bit is standard; 10-bit (e.g. Sony XAVC HS, HLG/HDR) stores finer gradients. 4:2:0 is normal delivery, 4:2:2 keeps more colour detail for grading. Browsers ship no decoder for 10-bit 4:2:2, so those files can be identified here but not played.'));
+        'How many shades of colour each pixel can hold, plus how much colour detail is kept (the chroma subsampling), read from the codec settings. 8-bit is standard; 10-bit (e.g. Sony XAVC HS, HLG/HDR) stores smoother gradients. 4:2:0 is normal for delivery, 4:2:2 keeps more colour detail for editing. Browsers have no built-in player for 10-bit 4:2:2, so those files can be identified here but not played.'));
     }
     if (v.rotation) {
       const orient = (v.rotation === 90 || v.rotation === 270) ? 'portrait' : 'landscape';
       tbl.appendChild(rowHelp('Rotation', v.rotation + '°  (' + orient + ')',
-        'A display rotation stored in the track header transform matrix. Phones record sensor-native orientation and add this flag so players rotate the picture upright on playback.'));
+        'A note stored inside the file (in the track header transform matrix) telling players to turn the picture the right way up. Phones film in the sensor’s native orientation and add this flag so the video plays upright.'));
     }
     if (v.hdr) {
       let hdrText = v.hdr;
       if (v.mdcv || v.clli) hdrText += '  · ' + [v.mdcv ? 'mastering display' : '', v.clli ? 'content-light' : ''].filter(Boolean).join(' + ') + ' metadata';
       tbl.appendChild(rowHelp('HDR', hdrText,
-        'High Dynamic Range signalling from the colour box: PQ (HDR10/Dolby Vision) or HLG transfer, usually with the wide BT.2020 colour gamut. Mastering-display / content-light metadata further describe the HDR grade.'));
+        'A flag marking the video as HDR (High Dynamic Range), which allows brighter highlights and a wider range of colour than normal video. The type is PQ (HDR10/Dolby Vision) or HLG, usually with the wide BT.2020 colour range; mastering-display and content-light data describe the HDR grade in more detail.'));
     } else if (v.primaries && v.transfer && (v.primaries !== '-' || v.transfer !== '-')) {
       tbl.appendChild(rowHelp('Colour', v.primaries + ' · ' + v.transfer,
-        'Colour primaries and transfer function (gamma) signalled in the MP4 colour box - they tell a player how to map the stored values to displayed colour. BT.709 is standard HD; BT.2020 is wide-gamut/UHD.'));
+        'Instructions that tell a player how to turn the stored numbers into the colours you see on screen (the colour primaries and gamma). BT.709 is standard HD; BT.2020 is the wider range used for UHD.'));
     }
   }
   if (a && a.codecName) {
     let label = a.codecName;
     if (a.channels) label += '  (' + (a.channels === 1 ? 'mono' : a.channels === 2 ? 'stereo' : a.channels + 'ch') + ')';
     tbl.appendChild(rowHelp('Audio codec', label,
-      'The audio compression format and channel layout of the embedded sound track, read from the MP4/MOV sample-description box.'));
+      'The recipe used to compress the sound, such as AAC, and how many channels it has, read from the file’s own audio settings (the MP4/MOV sample-description box).'));
   }
 }
 
@@ -2123,15 +2126,15 @@ async function renderMoovlessRecovery(file, header, det, resultsEl, signal) {
   tbl.appendChild(row('Size', fmtBytes(file.size) + '   (' + file.size.toLocaleString() + ' bytes)'));
   if (header.container) tbl.appendChild(row('Container', header.container + (header.brand ? '  (' + header.brand + ')' : '')));
   tbl.appendChild(rowHelp('Index (moov atom)', 'missing',
-    'MP4/MOV files carry a sample index - the "moov" atom - that every player needs to find frames. Cameras write it last, so an interrupted recording or an incomplete file copy leaves it out. The encoded video itself is still in the file; it just has no index, which is why no player will open it.'));
+    'MP4/MOV files keep a table of contents - the "moov" atom - that every player needs to locate the frames. Cameras write it last, so a recording that was cut off or a copy that did not finish leaves it out. The video itself is still inside the file; it just has no table of contents, which is why no player will open it.'));
   if (det.truncated) {
     const expect = det.declaredMdatEnd - det.mdatStart;
     tbl.appendChild(rowHelp('Media data', 'truncated - ' + fmtBytes(det.missingBytes) + ' short of the ' + fmtBytes(expect) + ' the header expects',
-      'The media-data box (mdat) declares more bytes than the file actually holds, so the recording or copy stopped early. Everything up to the cut-off can still be salvaged.'));
+      'The file says it should hold more video data (in its mdat box) than it actually does, so the recording or copy stopped early. Everything up to the cut-off point can still be salvaged.'));
   }
   diag.appendChild(tbl);
   diag.appendChild(el('p', { class: 'anr-hint' },
-    'Analyser can scan the leftover data, scoop up every video frame it can decode - keyframes and the frames between them - and stitch them into a playable clip. Audio can’t be recovered without the index.'));
+    'Analyser can scan the leftover data, gather every video frame it can decode and stitch them into a playable clip. Audio can’t be recovered without the index.'));
   resultsEl.appendChild(diag);
 
   // ---- action card ----
@@ -2196,9 +2199,13 @@ async function renderMoovlessRecovery(file, header, det, resultsEl, signal) {
   }
 
   // Reference-clip path.
-  action.appendChild(el('h3', {}, 'Reference clip needed'));
+  {
+    const [refH, refHelp] = h3help('Reference clip needed',
+      'This recording stored its codec setup (the SPS/PPS) only inside the missing index, so Analyser has to borrow that setup from a healthy clip before it can rebuild the picture. Everything stays on your device.');
+    action.appendChild(refH); action.appendChild(refHelp);
+  }
   action.appendChild(el('p', { class: 'anr-hint' },
-    'This recording stored its codec setup (SPS/PPS) only inside the missing index. To salvage it, Analyser needs to borrow that setup from a healthy clip shot on the same camera in the same mode - same resolution and codec (for example another clip from the same memory card). Everything stays on your device.'));
+    'Choose a healthy, complete clip shot on the same camera in the same mode - matching resolution and codec (for example another clip from the same memory card).'));
   const inp = el('input', { type: 'file', accept: 'video/mp4,video/quicktime,.mp4,.mov,.m4v,.3gp', style: 'display:none' });
   const pick = el('button', { type: 'button', class: 'anr-btn' }, 'Choose reference clip…');
   pick.addEventListener('click', () => inp.click());
@@ -2265,7 +2272,7 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Name', file.name));
   tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
-  tbl.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
+  tbl.appendChild(rowHelp('MIME', file.type || '-', "The standard label for a file's format, such as image/jpeg or audio/mpeg. The browser takes it from the file's name or the operating system, so it's a hint about the format, not proof."));
   if (header && header.container) tbl.appendChild(row('Container', header.container + (header.brand ? '  (' + header.brand + ')' : '')));
   appendCreatorRows(tbl, header);
   if (v && v.width && v.height) {
@@ -2276,10 +2283,10 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
   if (dur && dur > 0) {
     tbl.appendChild(row('Duration', formatDuration(dur)));
     const bitrate = (file.size * 8 / dur / 1000).toFixed(0) + ' kbps  (' + (file.size * 8 / dur / 1_000_000).toFixed(2) + ' Mbps)';
-    tbl.appendChild(rowHelp('Bitrate (total)', bitrate, 'Average data rate across the whole file - video, audio, and container overhead combined. Computed as file size ÷ duration, so it is an overall average, not the encoder’s target bitrate.'));
+    tbl.appendChild(rowHelp('Bitrate (total)', bitrate, 'How much data the whole file uses per second of playback - video, audio and packaging combined. Worked out as file size ÷ duration, so it is an overall average rather than the encoder’s target.'));
   }
   if (v && v.width && v.height) {
-    tbl.appendChild(rowHelp('Frame size', ((v.width * v.height) / 1_000_000).toFixed(2) + ' MP', 'Pixels per frame in megapixels (width × height ÷ 1,000,000). A rough indicator of how much raw image data each frame holds before compression.'));
+    tbl.appendChild(rowHelp('Frame size', ((v.width * v.height) / 1_000_000).toFixed(2) + ' MP', 'How many pixels make up each frame, in megapixels (width × height ÷ 1,000,000). A rough guide to how much detail each frame holds before compression.'));
   }
   // Codec / rotation / HDR / audio-codec rows from the moov walk (best-effort).
   try { appendTrackRows(tbl, tracks); } catch (_) {}
@@ -2400,7 +2407,7 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
         alt: 'First frame of ' + file.name,
         style: 'max-width:100%; max-height:480px; display:block; border:1px solid var(--hairline); background:#0a0a0a;',
       }));
-      prevCard.appendChild(el('p', { class: 'anr-hint' }, 'First frame of the video, decoded with FFmpeg since the browser can’t play this codec.'));
+      prevCard.appendChild(el('p', { class: 'anr-hint' }, 'First frame (decoded with FFmpeg).'));
       const basename = (file.name || 'video').replace(/\.[^/.]+$/, '');
       const frameFile = new File([frame.blob], basename + '_frame.jpg', { type: 'image/jpeg' });
       const analyseBtn = el('button', { type: 'button', class: 'anr-btn', onclick: () => {
@@ -2591,7 +2598,7 @@ function buildContentTimelineCard(samples, dur, playerEl) {
 
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Content timeline',
-    'Built from the same frame sampling as scene detection. The barcode compresses each sampled frame to a single average-colour column, giving a colour-over-time fingerprint of the whole video. Below it, the brightness curve plots mean luma, with near-black frames and frozen/still stretches flagged. Click the barcode to jump there.');
+    'Uses the same sampled frames as scene detection. The barcode squeezes each frame down to a single stripe of its average colour, so the whole video reads as a colour-over-time fingerprint. The curve below plots average brightness, flagging near-black frames and frozen or still stretches. Click the barcode to jump to that moment.');
   card.appendChild(h); card.appendChild(help);
   card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' },
     n + ' frames sampled across ' + formatDuration(dur) + '.'));
@@ -2649,18 +2656,18 @@ function buildContentTimelineCard(samples, dur, playerEl) {
   const tbl = el('table', { class: 'anr-readout', style: 'margin-top:10px;' });
   const pct = (l) => Math.round((l / 255) * 100);
   tbl.appendChild(rowHelp('Brightness (mean)', pct(meanL) + '%  (luma ' + meanL.toFixed(0) + '/255)',
-    'Average frame brightness across the sampled frames, as mean luma (Rec. 709). A very low value suggests a dark or underexposed video overall.'));
+    'The average brightness of the sampled frames (measured as luma, the Rec. 709 standard). A very low value suggests the video is dark or underexposed overall.'));
   tbl.appendChild(row('Brightness range', pct(minL) + '% - ' + pct(maxL) + '%'));
   tbl.appendChild(row('Darkest sample', formatDuration(samples[darkIdx].time) + '  (' + pct(minL) + '%)'));
   tbl.appendChild(rowHelp('Black frames', blackSegs.length
       ? blackSegs.length + ' stretch' + (blackSegs.length > 1 ? 'es' : '')
       : 'none',
-    'Sampled frames whose mean luma is under ' + BLACK_LUMA + '/255 - typically fades to black, cuts between shots, or leader/trailer black.'));
+    'Sampled frames that are almost completely dark (brightness under ' + BLACK_LUMA + ' out of 255) - usually fades to black, cuts between shots, or black at the start or end.'));
   if (blackSegs.length) tbl.appendChild(row('', segList(blackSegs, dur)));
   tbl.appendChild(rowHelp('Freeze / still', freezeSegs.length
       ? freezeSegs.length + ' segment' + (freezeSegs.length > 1 ? 's' : '')
       : 'none',
-    'Runs of consecutive sampled frames that barely change - a frozen frame, a held title card, or a static shot. Granularity is the sampling interval, so only stretches longer than that show up.'));
+    'Stretches where the picture barely changes from one sampled frame to the next - a frozen frame, a held title card, or a motionless shot. Only stretches longer than the sampling gap show up.'));
   if (freezeSegs.length) tbl.appendChild(row('', segList(freezeSegs, dur)));
   card.appendChild(tbl);
 
@@ -2781,7 +2788,7 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Name', file.name));
   tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
-  tbl.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
+  tbl.appendChild(rowHelp('MIME', file.type || '-', "The standard label for a file's format, such as image/jpeg or audio/mpeg. The browser takes it from the file's name or the operating system, so it's a hint about the format, not proof."));
   if (header && header.container) tbl.appendChild(row('Container', header.container + (header.brand ? '  (' + header.brand + ')' : '')));
   appendCreatorRows(tbl, header);
   if (vw && vh) {
@@ -2791,10 +2798,10 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
   if (isFinite(dur) && dur > 0) tbl.appendChild(row('Duration', formatDuration(dur)));
   const bitrate = isFinite(dur) && dur > 0
     ? (file.size * 8 / dur / 1000).toFixed(0) + ' kbps  (' + (file.size * 8 / dur / 1_000_000).toFixed(2) + ' Mbps)' : '-';
-  tbl.appendChild(rowHelp('Bitrate (total)', bitrate, 'Average data rate across the whole file - video, audio, and container overhead combined. Computed as file size ÷ duration, so it is an overall average, not the encoder’s target bitrate.'));
+  tbl.appendChild(rowHelp('Bitrate (total)', bitrate, 'How much data the whole file uses per second of playback - video, audio and packaging combined. Worked out as file size ÷ duration, so it is an overall average rather than the encoder’s target.'));
   const fpsRow = row('Frame rate', 'detecting…');
   tbl.appendChild(fpsRow);
-  if (vw && vh) tbl.appendChild(rowHelp('Frame size', ((vw * vh) / 1_000_000).toFixed(2) + ' MP', 'Pixels per frame in megapixels (width × height ÷ 1,000,000). A rough indicator of how much raw image data each frame holds before compression.'));
+  if (vw && vh) tbl.appendChild(rowHelp('Frame size', ((vw * vh) / 1_000_000).toFixed(2) + ' MP', 'How many pixels make up each frame, in megapixels (width × height ÷ 1,000,000). A rough guide to how much detail each frame holds before compression.'));
   // Codec / rotation / HDR / audio-codec from the ISOBMFF moov walk (best-effort).
   try {
     if (header && (/^(MP4|M4V|QuickTime MOV|3GP|3G2)/.test(header.container || '') || /MP4 \//.test(header.container || ''))) {
@@ -2978,11 +2985,11 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
       audioResultsEl.appendChild(buildReverseAudioCard(audioBuf, (file.name || 'video').replace(/\.[^/.]+$/, '') + '_audio', signal));
       const at = el('table', { class: 'anr-readout' });
       at.appendChild(row('Duration', formatDuration(audioBuf.duration)));
-      at.appendChild(rowHelp('Sample rate', audioBuf.sampleRate.toLocaleString() + ' Hz', 'Audio samples captured per second, in hertz - e.g. 48000 Hz means 48,000 amplitude readings per second of sound.'));
-      at.appendChild(rowHelp('Channels', audioBuf.numberOfChannels, 'Number of separate audio channels: 1 = mono, 2 = stereo (left + right), more for surround.'));
-      at.appendChild(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)', 'Highest sample amplitude.'));
-      at.appendChild(rowHelp('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)', 'Root Mean Square - average signal power.'));
-      at.appendChild(rowHelp('Samples', mono.length.toLocaleString(), 'Total number of individual amplitude values in the (channel-merged mono) signal - roughly sample rate × duration.'));
+      at.appendChild(rowHelp('Sample rate', audioBuf.sampleRate.toLocaleString() + ' Hz', 'How many times per second the sound was measured when recorded, in hertz - 48000 Hz means 48,000 measurements every second. Higher numbers can capture higher-pitched sound.'));
+      at.appendChild(rowHelp('Channels', audioBuf.numberOfChannels, 'How many separate sound channels there are: 1 is mono, 2 is stereo (left and right), and more means surround sound.'));
+      at.appendChild(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)', 'The loudest single moment in the audio - its highest value.'));
+      at.appendChild(rowHelp('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)', 'The average power of the audio (root mean square) - a steadier measure of overall level than the single loudest peak.'));
+      at.appendChild(rowHelp('Samples', mono.length.toLocaleString(), 'The total count of individual measurements in the audio once the channels are merged to mono - roughly the sample rate multiplied by the length.'));
       audioCard.appendChild(at);
       audioResultsEl.appendChild(buildWaveformCard(file, mono, audioBuf, audioPlayer));
       audioResultsEl.appendChild(buildHistogramCard(mono));
@@ -3015,12 +3022,23 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
 
 // A collapsible <details> panel with a plain summary label (no info button) -
 // the same idiom photo.js's advPanel uses.
-function vAdvPanel(title) {
+function vAdvPanel(title, helpHtml) {
   const det = el('details');
   const sum = el('summary', {});
-  sum.appendChild(el('span', { class: 'anr-summary-label' }, title));
+  // Title + optional [?] grouped in one span so the summary's flex space-between
+  // keeps them together on the left (only the open/close marker sits at the right).
+  const label = el('span', { class: 'anr-summary-label' });
+  label.appendChild(document.createTextNode(title + (helpHtml ? ' ' : '')));
   det.appendChild(sum);
   const body = el('div');
+  if (helpHtml) {
+    const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
+    const panel = el('div', { class: 'anr-info-panel is-hidden', html: helpHtml });
+    wireInfoToggle(btn, panel);
+    label.appendChild(btn);
+    body.appendChild(panel);
+  }
+  sum.appendChild(label);
   det.appendChild(body);
   return { det, body };
 }
@@ -3080,15 +3098,14 @@ async function buildVideoAdvancedCard(file) {
   if (!s) return null;
 
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Advanced'));
-  card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 4px;' },
-    'Container structure and stream forensics read straight from the MP4/MOV boxes - no decoding. Each panel is collapsed by default.'));
+  const [advH, advHelp] = h3help('Advanced',
+    'Container structure and stream forensics read straight from the MP4/MOV boxes, with nothing decoded. Each panel below is collapsed until you open it.');
+  card.appendChild(advH); card.appendChild(advHelp);
 
   // -- Box tree --
   {
-    const { det, body } = vAdvPanel('Box tree (' + s.tree.length + ' top-level box' + (s.tree.length === 1 ? '' : 'es') + ')');
-    body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
-      'Every atom (box) in the file: its 4-character type, size and byte offset. Expand a container to see what it holds.'));
+    const { det, body } = vAdvPanel('Box tree (' + s.tree.length + ' top-level box' + (s.tree.length === 1 ? '' : 'es') + ')',
+      'Every atom (box) in the file: its 4-character type, size and byte offset. Expand a container to see what it holds.');
     const tree = el('div', { class: 'anr-boxtree' });
     renderBoxTree(s.tree, tree, 0);
     body.appendChild(tree);
@@ -3097,9 +3114,8 @@ async function buildVideoAdvancedCard(file) {
 
   // -- Tracks --
   if (s.tracks.length) {
-    const { det, body } = vAdvPanel('Tracks (' + s.tracks.length + ')');
-    body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
-      'Every track in the file, not just the first video and audio - including timecode and timed-metadata streams (GoPro, CAMM, Sony gyro).'));
+    const { det, body } = vAdvPanel('Tracks (' + s.tracks.length + ')',
+      'Every track in the file, not just the first video and audio - including timecode and timed-metadata streams (GoPro, CAMM, Sony gyro).');
     const tt = el('table', { class: 'anr-readout' });
     for (const t of s.tracks) {
       const parts = [];
@@ -3126,35 +3142,34 @@ async function buildVideoAdvancedCard(file) {
       rows.push(rowHelp('Faststart',
         s.faststart ? 'Yes - moov before mdat (progressive / web-optimised)'
           : 'No - mdat before moov (typical camera-original layout)',
-        'Faststart moves the moov index ahead of the media so playback can begin before the file fully downloads. Editors and upload tools add it; most cameras write moov last, so its absence is normal for an original.'));
+        'Faststart puts the file’s index (the moov) before the video data so playback can start before the whole file has downloaded. Editors and upload tools add it; most cameras write the index last, so an original camera file often will not have it.'));
     }
     if (s.ftyp && s.ftyp.majorBrand) {
       const brands = (s.ftyp.brands || []).filter((b) => b && b !== s.ftyp.majorBrand);
       rows.push(rowHelp('Brand', s.ftyp.majorBrand + (brands.length ? '  (' + brands.join(', ') + ')' : ''),
-        'The ftyp major brand and compatible brands declare which specification the file follows (e.g. mp42, isom, qt, M4V). They hint at the writing tool and target device.'));
+        'Codes near the start of the file (the ftyp brands) that say which format standard it follows, such as mp42, isom, qt or M4V. They hint at which tool wrote the file and which device it was meant for.'));
     }
     if (isFinite(s.movieDurationSec) && s.movieDurationSec > 0)
       rows.push(row('Movie duration', formatDuration(s.movieDurationSec)));
     const edited = s.tracks.filter((t) => t.editList && t.editList.entries > 1).map((t) => 'Track ' + t.index);
     if (edited.length)
       rows.push(rowHelp('Edit lists', edited.join(', ') + '  (multi-segment)',
-        'A multi-segment edit list (elst) splices or trims a track timeline - a sign of editing. Single identity edits, the norm in most MP4s, are not flagged here.'));
+        'An edit list (elst) with several segments splices or trims a track’s timeline, which is a sign of editing. The plain single-segment version found in most MP4s is not flagged here.'));
     if (s.mdatCount > 1)
       rows.push(rowHelp('Media segments', s.mdatCount + ' mdat boxes',
-        'More than one media-data box usually means the file was concatenated or exported by an editor rather than recorded in a single pass.'));
+        'More than one block of media data usually means the file was joined together or exported by an editor, rather than recorded in one continuous pass.'));
     if (s.padBytes > 0)
       rows.push(rowHelp('Padding', fmtBytes(s.padBytes) + ' in ' + s.padCount + ' free/skip box' + (s.padCount === 1 ? '' : 'es'),
-        'Free/skip boxes are reserved space, often left by a faststart tool that relocated the moov, or slack a muxer padded the file with.'));
+        'Empty reserved space inside the file (free or skip boxes), often left behind when a faststart tool moved the index, or added as slack when the file was assembled.'));
     if (s.fragmented)
       rows.push(rowHelp('Fragmented', 'Yes - moof fragments',
-        'The media is split into movie fragments (moof). This is how streamed (DASH/CMAF/HLS-fMP4) and some recorder outputs are laid out, rather than a single contiguous moov + mdat.'));
+        'The video is broken into many small fragments (moof) instead of one continuous block. This is how streaming formats (DASH/CMAF/HLS-fMP4) and some recorders lay out a file.'));
     if (s.trailing)
       rows.push(rowHelp('Trailing data', s.trailing.type + '  (' + fmtBytes(s.trailing.size) + ')',
-        'A box after the media data. Sometimes an editor or app marker (uuid), sometimes leftover data appended after the file was first written.'));
+        'Extra data sitting after the main media. Sometimes a marker added by an editor or app (a uuid box), sometimes leftover data tacked on after the file was first written.'));
     if (rows.length) {
-      const { det, body } = vAdvPanel('Provenance tells');
-      body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
-        'Structural signs of how the file was produced - camera-original, re-muxed, edited or streamed.'));
+      const { det, body } = vAdvPanel('Provenance tells',
+        'Structural signs of how the file was produced - camera-original, re-muxed, edited or streamed.');
       const pt = el('table', { class: 'anr-readout' });
       for (const r of rows) pt.appendChild(r);
       body.appendChild(pt);
@@ -3165,25 +3180,24 @@ async function buildVideoAdvancedCard(file) {
   // -- Frames & bitrate --
   if (s.gop) {
     const g = s.gop;
-    const { det, body } = vAdvPanel('Frames & bitrate');
-    body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
-      'Keyframe structure and data-rate over time, computed from the sample tables (sizes, sync samples and durations) - no frames are decoded.'));
+    const { det, body } = vAdvPanel('Frames & bitrate',
+      'Keyframe structure and data-rate over time, computed from the sample tables (sizes, sync samples and durations) - no frames are decoded.');
     const ft = el('table', { class: 'anr-readout' });
     ft.appendChild(rowHelp('Frame rate',
       g.cfr ? g.avgFps.toFixed(3).replace(/\.?0+$/, '') + ' fps (constant)'
         : 'Variable - avg ' + g.avgFps.toFixed(2) + ' fps (' + g.minFps.toFixed(2) + ' - ' + g.maxFps.toFixed(2) + ')',
-      'Derived by summing every sample duration in the time-to-sample table. A single duration means constant frame rate (CFR); several means variable (VFR), common in screen-recordings and phone footage.'));
+      'How many frames play each second, added up from the timing of every frame. One steady value means a constant frame rate; several means it varies (variable frame rate), which is common in screen recordings and phone footage.'));
     ft.appendChild(rowHelp('Keyframe interval',
       g.allIntra ? 'All-intra (every frame a keyframe)'
         : 'avg ' + g.avgGop.toFixed(1) + ' frames  ·  max ' + g.maxGop + '  ·  ' + g.keyCount.toLocaleString() + ' keyframes',
-      'The average and longest gap between sync (key) frames - the GOP length. Short/regular GOPs suit streaming and editing; a single keyframe or all-intra points to camera-original or intermediate codecs.'));
+      'The average and longest gap between keyframes - full, self-contained frames (also called the GOP length). Short, regular gaps suit streaming and editing; a single keyframe, or every frame being a keyframe, points to camera-original or editing-friendly formats.'));
     if (g.pAvg > 0)
       ft.appendChild(rowHelp('Frame size',
         'keyframe ~' + fmtBytes(g.iAvg) + '  ·  inter ~' + fmtBytes(g.pAvg),
-        'Average encoded size of keyframes versus inter (predicted) frames. Keyframes are typically several times larger because they carry a full image.'));
+        'The average stored size of keyframes compared with in-between frames. Keyframes are usually several times larger because each one holds a complete picture, while the others only store what changed.'));
     ft.appendChild(rowHelp('Bitrate (video)',
       (g.avgBitrateKbps / 1000).toFixed(2) + ' Mbps avg  ·  ' + (g.peakKbps / 1000).toFixed(2) + ' Mbps peak',
-      'Average and peak video data-rate, bucketed per second from the sample sizes. This is the video track alone, unlike the total-file bitrate in File info.'));
+      'How much data the picture uses per second, on average and at its busiest, measured second by second. This is the video on its own, unlike the whole-file bitrate shown in File info.'));
     body.appendChild(ft);
     if (g.perSecKbps && g.perSecKbps.length > 1) {
       body.appendChild(el('div', { class: 'anr-readout-section' }, 'Bitrate over time'));
@@ -3204,9 +3218,8 @@ async function buildVideoAdvancedCard(file) {
 
 // The Advanced > "Bitstream & authenticity" panel, built from analyzeBitstream().
 function appendBitstreamPanel(card, bs) {
-  const { det, body } = vAdvPanel('Bitstream & authenticity');
-  body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
-    'Read from the actual H.264/H.265 stream, not just the container: the codec\'s own SPS, an encoder fingerprint, HDR mastering values and any Content Credentials.'));
+  const { det, body } = vAdvPanel('Bitstream & authenticity',
+    'Read from the actual H.264/H.265 stream, not just the container: the codec’s own SPS, an encoder fingerprint, HDR mastering values and any Content Credentials.');
 
   // Stream (SPS)
   if (bs.sps) {
@@ -3214,14 +3227,17 @@ function appendBitstreamPanel(card, bs) {
     body.appendChild(el('div', { class: 'anr-readout-section' }, 'Stream (from the codec SPS)'));
     const st = el('table', { class: 'anr-readout' });
     st.appendChild(rowHelp('Codec', p.codec + '  ·  ' + p.profile + '  ·  L' + p.level,
-      'Profile and level decoded from the sequence parameter set inside the bitstream itself - the ground truth for what the encoder actually wrote, independent of the container labels.'));
-    st.appendChild(row('Coded size', p.width + ' × ' + p.height + ' px'));
-    st.appendChild(row('Chroma / depth', p.chroma + '  ·  ' + p.bitDepth + '-bit'));
+      'The profile and level read from deep inside the video stream itself (the sequence parameter set) - the true record of what the encoder actually produced, regardless of what the file’s outer labels claim.'));
+    st.appendChild(rowHelp('Coded size', p.width + ' × ' + p.height + ' px',
+      'The full frame size the encoder actually worked on, which can be slightly larger than the displayed resolution. Video is encoded in blocks, so the picture is padded up to the next block boundary (for example a 1080-tall video is often coded as 1088) and the extra rows are cropped off on playback.'));
+    st.appendChild(rowHelp('Chroma / depth', p.chroma + '  ·  ' + p.bitDepth + '-bit',
+      'How the colour is stored. Chroma subsampling (4:2:0, 4:2:2 or 4:4:4) is how much colour detail is kept relative to brightness - the eye notices brightness more, so most video keeps less colour to save space. Bit depth is how many shades each channel has (8-bit is standard; 10-bit gives smoother gradients and is common for HDR).'));
     st.appendChild(rowHelp('Scan', p.progressive ? 'Progressive' : 'Interlaced',
-      'Whether the stream stores whole frames (progressive) or interlaced fields. Read from frame_mbs_only in the SPS.'));
+      'Whether each frame is stored complete (progressive) or as two interlaced half-frames. Read from the frame_mbs_only flag in the stream’s settings (the SPS).'));
     if (p.colourText) st.appendChild(rowHelp('Colour (VUI)', p.colourText,
-      'Colour primaries / transfer / matrix and signal range carried in the stream\'s VUI. If this disagrees with the container colour box, the file was re-tagged.'));
-    if (p.fps) st.appendChild(row('Stream frame rate', p.fps.toFixed(3).replace(/\.?0+$/, '') + ' fps'));
+      'The colour instructions and signal range carried inside the video stream itself (its VUI). If these disagree with the labels on the outer container, the file was re-tagged after encoding.'));
+    if (p.fps) st.appendChild(rowHelp('Stream frame rate', p.fps.toFixed(3).replace(/\.?0+$/, '') + ' fps',
+      'The frame rate read from the video stream itself, shown separately from the container’s stated frame rate. Usually they agree; if they disagree, the file was re-tagged or re-timed after it was encoded.'));
     body.appendChild(st);
   }
 
@@ -3257,11 +3273,13 @@ function appendBitstreamPanel(card, bs) {
     const ht = el('table', { class: 'anr-readout' });
     if (h.mdcv) ht.appendChild(rowHelp('Mastering display',
       h.mdcv.maxLum.toFixed(0) + ' cd/m² peak  ·  ' + h.mdcv.minLum.toFixed(4) + ' cd/m² black',
-      'Mastering-display colour volume (SMPTE ST 2086): the luminance range of the display the content was graded on.'));
+      'The brightness range of the professional screen the video was colour-graded on (recorded as SMPTE ST 2086 data).'));
     if (h.clli) ht.appendChild(rowHelp('Content light', 'MaxCLL ' + h.clli.maxCLL + '  ·  MaxFALL ' + h.clli.maxFALL,
-      'Maximum content light level and maximum frame-average light level (CEA-861.3), in cd/m².'));
-    if (h.dolbyVision) ht.appendChild(row('Dolby Vision', 'profile ' + h.dolbyVision.profile + '  ·  level ' + h.dolbyVision.level));
-    else if (h.dolbyVisionCodec) ht.appendChild(row('Dolby Vision', 'signalled by codec'));
+      'The brightest single point and the brightest whole-frame average in the video, measured in cd/m² (the CEA-861.3 standard).'));
+    if (h.dolbyVision) ht.appendChild(rowHelp('Dolby Vision', 'profile ' + h.dolbyVision.profile + '  ·  level ' + h.dolbyVision.level,
+      'Dolby Vision is a premium HDR format. The profile says which variant is used (which decides how it plays on non-Dolby screens) and the level indicates the resolution and frame-rate range it targets.'));
+    else if (h.dolbyVisionCodec) ht.appendChild(rowHelp('Dolby Vision', 'signalled by codec',
+      'Dolby Vision is a premium HDR format. Here it is declared only by the container’s codec label rather than by full stream metadata, so the profile and level details are not present to read.'));
     body.appendChild(ht);
   }
 
@@ -3539,7 +3557,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       const tbl = el('table', { class: 'anr-readout' });
       tbl.appendChild(row('Name', file.name));
       tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
-      tbl.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
+      tbl.appendChild(rowHelp('MIME', file.type || '-', "The standard label for a file's format, such as image/jpeg or audio/mpeg. The browser takes it from the file's name or the operating system, so it's a hint about the format, not proof."));
       tbl.appendChild(row('Container', header.container || 'AVI'));
       appendCreatorRows(tbl, header);
       if (avi.codec) tbl.appendChild(row('Video codec', avi.codec.toUpperCase()));
@@ -3552,9 +3570,9 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       const bitrate = avi.duration && avi.duration > 0
         ? (file.size * 8 / avi.duration / 1000).toFixed(0) + ' kbps  (' + (file.size * 8 / avi.duration / 1_000_000).toFixed(2) + ' Mbps)'
         : '-';
-      tbl.appendChild(rowHelp('Bitrate (total)', bitrate, 'Average data rate across the whole file - video, audio, and container overhead combined. Computed as file size ÷ duration, so it is an overall average, not the encoder’s target bitrate.'));
+      tbl.appendChild(rowHelp('Bitrate (total)', bitrate, 'How much data the whole file uses per second of playback - video, audio and packaging combined. Worked out as file size ÷ duration, so it is an overall average rather than the encoder’s target.'));
       if (avi.width && avi.height)
-        tbl.appendChild(rowHelp('Frame size', ((avi.width * avi.height) / 1_000_000).toFixed(2) + ' MP', 'Pixels per frame in megapixels (width × height ÷ 1,000,000). A rough indicator of how much raw image data each frame holds before compression.'));
+        tbl.appendChild(rowHelp('Frame size', ((avi.width * avi.height) / 1_000_000).toFixed(2) + ' MP', 'How many pixels make up each frame, in megapixels (width × height ÷ 1,000,000). A rough guide to how much detail each frame holds before compression.'));
       if (avi.audioFormat)
         tbl.appendChild(row('Audio', `${avi.audioFormat.sampleRate} Hz, ${avi.audioFormat.bitsPerSample}-bit, ${avi.audioFormat.channels}ch`));
       infoCard.appendChild(tbl);
@@ -3831,8 +3849,8 @@ export async function renderVideo(file, resultsEl, opts = {}) {
           if (heavy) {
             frameCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px; color: var(--accent);' },
               '⚠ Heavy playback: this clip is large enough (' +
-              (avi.width + '×' + avi.height) + ' at ' + fps + ' fps) that looping every frame ' +
-              'decodes a full JPEG each tick and may stutter or spike CPU. Step through with Prev / Next if it struggles.'));
+              (avi.width + '×' + avi.height) + ' at ' + fps + ' fps) that looping it may stutter or ' +
+              'spike CPU. Step through with Prev / Next if it struggles.'));
           }
           frameCard.appendChild(actionRow);
         }
@@ -3888,15 +3906,15 @@ export async function renderVideo(file, resultsEl, opts = {}) {
         const at = el('table', { class: 'anr-readout' });
         at.appendChild(row('Duration', formatDuration(audioBuf.duration)));
         at.appendChild(rowHelp('Sample rate', audioBuf.sampleRate.toLocaleString() + ' Hz',
-          'Audio samples captured per second, in hertz - e.g. 48000 Hz means 48,000 amplitude readings per second of sound.'));
+          'How many times per second the sound was measured when recorded, in hertz - 48000 Hz means 48,000 measurements every second. Higher numbers can capture higher-pitched sound.'));
         at.appendChild(rowHelp('Channels', audioBuf.numberOfChannels,
-          'Number of separate audio channels: 1 = mono, 2 = stereo (left + right), more for surround.'));
+          'How many separate sound channels there are: 1 is mono, 2 is stereo (left and right), and more means surround sound.'));
         at.appendChild(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)',
-          'Highest sample amplitude. dBFS = decibels relative to full scale (0 dBFS = digital maximum).'));
+          'The loudest single moment in the audio. dBFS measures this against the maximum a digital file can hold, where 0 dBFS is the ceiling.'));
         at.appendChild(rowHelp('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)',
-          'Root Mean Square - average signal power, closer to perceived loudness than peak.'));
+          'The average power of the audio (root mean square), which is closer to how loud it actually sounds than the single loudest peak.'));
         at.appendChild(rowHelp('Samples', mono.length.toLocaleString(),
-          'Total number of individual amplitude values in the (channel-merged mono) signal - roughly sample rate × duration.'));
+          'The total count of individual measurements in the audio once the channels are merged to mono - roughly the sample rate multiplied by the length.'));
         audioCard.appendChild(at);
         audioResultsEl.appendChild(audioCard);
 
@@ -4054,13 +4072,13 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Name', infoFile.name));
   tbl.appendChild(row('Size', `${fmtBytes(infoFile.size)}   (${infoFile.size.toLocaleString()} bytes)`));
-  tbl.appendChild(rowHelp('MIME', infoFile.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
+  tbl.appendChild(rowHelp('MIME', infoFile.type || '-', "The standard label for a file's format, such as image/jpeg or audio/mpeg. The browser takes it from the file's name or the operating system, so it's a hint about the format, not proof."));
   if (opts.sourceFile && opts.converted)
     tbl.appendChild(rowHelp('Source', opts.sourceCodec || 'Original codec',
-      'Your browser could not decode the original codec, so Analyser re-encoded it to H.264 (MP4) in-browser with FFmpeg to make it playable. The re-encode is lossy, so this is for viewing and analysis, not an archival copy.'));
+      'Your browser could not play the original format, so Analyser converted it to H.264 (MP4) on your device using FFmpeg. Converting loses a little quality, so this copy is for viewing and analysis, not for keeping as a master.'));
   else if (opts.sourceFile)
     tbl.appendChild(rowHelp('Source', 'Raw ' + (opts.sourceKind || 'H.264') + ' (Annex B)',
-      'A raw ' + (opts.sourceKind || 'H.264') + ' elementary stream has no container, so Analyser stream-copied it into an MP4 in-browser (no re-encode) to play it. The stream carries no timing, so the frame rate and duration are assumed at 25 fps.'));
+      'A raw ' + (opts.sourceKind || 'H.264') + ' stream has no container to hold it, so Analyser wrapped it in an MP4 on your device without re-encoding, just to play it. The stream carries no timing information, so the frame rate and length are assumed to be 25 fps.'));
   if (header.container)
     tbl.appendChild(row('Container', (
       opts.sourceFile && opts.converted ? (opts.sourceCodec || 'Original') + ' → H.264 / MP4 (converted)'
@@ -4087,12 +4105,12 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   const bitrate = isFinite(dur) && dur > 0
     ? (infoFile.size * 8 / dur / 1000).toFixed(0) + ' kbps  (' + (infoFile.size * 8 / dur / 1_000_000).toFixed(2) + ' Mbps)'
     : '-';
-  tbl.appendChild(rowHelp('Bitrate (total)', bitrate, 'Average data rate across the whole file - video, audio, and container overhead combined. Computed as file size ÷ duration, so it is an overall average, not the encoder’s target bitrate.'));
+  tbl.appendChild(rowHelp('Bitrate (total)', bitrate, 'How much data the whole file uses per second of playback - video, audio and packaging combined. Worked out as file size ÷ duration, so it is an overall average rather than the encoder’s target.'));
   const fpsRow = row('Frame rate', 'detecting…');
   tbl.appendChild(fpsRow);
   if (dispW && dispH) {
     const mp = ((dispW * dispH) / 1_000_000).toFixed(2);
-    tbl.appendChild(rowHelp('Frame size', mp + ' MP', 'Pixels per frame in megapixels (width × height ÷ 1,000,000). A rough indicator of how much raw image data each frame holds before compression.'));
+    tbl.appendChild(rowHelp('Frame size', mp + ' MP', 'How many pixels make up each frame, in megapixels (width × height ÷ 1,000,000). A rough guide to how much detail each frame holds before compression.'));
   }
   try { appendTrackRows(tbl, isoTracks); } catch (_) {}
   infoCard.appendChild(tbl);
@@ -4169,8 +4187,9 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   }
 
   // Sony gyro / IMU metadata (rtmd track) - read from the ORIGINAL (a converted
-  // proxy has no rtmd track).
-  await appendSonyGyroCard(analysisFile, resultsEl);
+  // proxy has no rtmd track), but the Motion timeline's mini player mounts the
+  // playable `file` so it still plays when the original codec can't decode here.
+  await appendSonyGyroCard(analysisFile, resultsEl, file);
 
   // GoPro GPMF / CAMM telemetry (GPS track + gyro/accelerometer) or a single
   // container GPS point - from the ORIGINAL file (FFmpeg strips the timed-metadata
@@ -4178,7 +4197,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // card above already showed coordinates. Skipped in inline/compare.
   if (!inline) {
     const hasExifGps = !!(exif && exif.latitude != null && exif.longitude != null);
-    try { await appendTelemetryCards(analysisFile, resultsEl, { hasExifGps }); } catch (_) {}
+    try { await appendTelemetryCards(analysisFile, resultsEl, { hasExifGps, playFile: file }); } catch (_) {}
   }
 
   // Advanced (ISOBMFF container structure + stream forensics) - box tree, full
@@ -4195,10 +4214,8 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // ---- Contact sheet / thumbnail grid ----
   if (vw && vh) {
     const sheetCard = el('div', { class: 'anr-card' });
-    const [shH, shHelp] = h3help('Contact sheet', 'A 4×2 grid of 8 evenly-spaced thumbnails from across the video. Gives you a visual overview of the entire video at a glance, similar to film contact sheets.');
+    const [shH, shHelp] = h3help('Contact sheet', 'A 4×2 grid of 8 thumbnails taken at even intervals across the video, giving you a quick visual overview of the whole thing at a glance - like a photographer’s contact sheet.');
     sheetCard.appendChild(shH); sheetCard.appendChild(shHelp);
-    sheetCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:12px !important;' },
-      '4×2 grid of 8 evenly-spaced thumbnails from the video'));
     // Marked so the data export can find this card and force the sheet to be
     // generated (via _anrEnsure below) before it scrapes the page.
     sheetCard.classList.add('anr-contact-sheet-card');
@@ -4270,7 +4287,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     // ---- Scene change detection (runs automatically) ----
     const sceneCard = el('div', { class: 'anr-card' });
     const [scH, scHelp] = h3help('Scene changes',
-      'Samples the video at a fixed interval and compares consecutive frames by mean pixel difference. When the difference crosses the threshold a scene change is marked, with a confidence score for how decisively it cleared it. Runs automatically; click any thumbnail or timeline marker to jump there.');
+      'Checks the video at regular intervals and measures how much each frame differs from the one before. When the change is big enough it marks a scene change, with a score for how clear-cut it was. Runs automatically; click any thumbnail or timeline marker to jump there.');
     sceneCard.appendChild(scH); sceneCard.appendChild(scHelp);
     const sceneOut = el('div');
     sceneOut.appendChild(el('p', { class: 'anr-hint' }, 'Detecting scene changes…'));
@@ -4457,15 +4474,15 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       const at = el('table', { class: 'anr-readout' });
       at.appendChild(row('Duration', formatDuration(audioDuration)));
       at.appendChild(rowHelp('Sample rate', wavSr.toLocaleString() + ' Hz',
-        'Audio samples captured per second, in hertz - e.g. 48000 Hz means 48,000 amplitude readings per second of sound.'));
+        'How many times per second the sound was measured when recorded, in hertz - 48000 Hz means 48,000 measurements every second. Higher numbers can capture higher-pitched sound.'));
       at.appendChild(rowHelp('Channels', wavChannels,
-        'Number of separate audio channels: 1 = mono, 2 = stereo (left + right), more for surround.'));
+        'How many separate sound channels there are: 1 is mono, 2 is stereo (left and right), and more means surround sound.'));
       at.appendChild(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)',
-        'Highest sample amplitude. dBFS = decibels relative to full scale (0 dBFS = digital maximum).'));
+        'The loudest single moment in the audio. dBFS measures this against the maximum a digital file can hold, where 0 dBFS is the ceiling.'));
       at.appendChild(rowHelp('RMS', stats.rms.toFixed(3) + '  (' + stats.rmsDb.toFixed(1) + ' dBFS)',
-        'Root Mean Square - average signal power, closer to perceived loudness than peak.'));
+        'The average power of the audio (root mean square), which is closer to how loud it actually sounds than the single loudest peak.'));
       at.appendChild(rowHelp('Samples', mono.length.toLocaleString(),
-        'Total number of individual amplitude values in the (channel-merged mono) signal - roughly sample rate × duration.'));
+        'The total count of individual measurements in the audio once the channels are merged to mono - roughly the sample rate multiplied by the length.'));
       audioCard.appendChild(at);
 
       // Waveform - its own card with region selection, zoom, WAV export and the
@@ -4496,7 +4513,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   const hashFile = opts.sourceFile || file;
   if (hashFile.size <= 500 * 1024 * 1024) {
     const hashCard = el('div', { class: 'anr-card' });
-    const [vhH, vhHelp] = h3help('Integrity', '<strong>SHA-256</strong> is a cryptographic hash of the raw file bytes. Any change to the file, even one bit, produces a completely different hash. Useful for verifying a file has not been tampered with.');
+    const [vhH, vhHelp] = h3help('Integrity', '<strong>SHA-256</strong> is a cryptographic hash - a short fingerprint calculated from the file’s exact contents. Change even a single bit and the fingerprint comes out completely different, which makes it a reliable way to check a file has not been tampered with.');
     hashCard.appendChild(vhH); hashCard.appendChild(vhHelp);
     const hashTbl = el('table', { class: 'anr-readout' });
     hashTbl.appendChild(sha256Row(hashFile));

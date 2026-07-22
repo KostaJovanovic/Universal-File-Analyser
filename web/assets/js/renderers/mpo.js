@@ -127,7 +127,7 @@ export async function buildMpoImagesCard(file, signal, resultsEl) {
 
   return buildEmbeddedImagesCard({
     title: 'Embedded images',
-    hint: ranges.length + ' images packed in this Multi-Picture (MPO) file - for example a stereo 3D pair or multi-angle set. The browser only displays the first; here is every one.',
+    hint: ranges.length + ' separate images packed into this Multi-Picture (MPO) file - for example a left/right 3D pair or a set of different angles. A browser only shows the first one, so here is every image inside.',
     items, signal, resultsEl, sourceFile: file,
   });
 }

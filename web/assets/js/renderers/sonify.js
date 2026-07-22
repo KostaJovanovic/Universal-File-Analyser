@@ -453,8 +453,6 @@ export async function renderSonify(file, mountEl, opts = {}) {
   const [headH, headHelp] = h3help('Image to sound', SETTINGS_HELP);
   card.appendChild(headH);
   card.appendChild(headHelp);
-  card.appendChild(el('p', { class: 'anr-hint' },
-    'Reads this picture as a spectrogram and resynthesises sound from it - x is time, y is frequency, brightness is loudness. Runs entirely on your device.'));
   mountEl.appendChild(card);
 
   // Resolve a pixel source (reuse the photo's already-decoded image when given).
@@ -663,7 +661,7 @@ export async function renderSonify(file, mountEl, opts = {}) {
     const wavFile = new File([blob], base + '.wav', { type: 'audio/wav' });
     specSlot.style.display = 'block';
     specSlot.appendChild(el('p', { class: 'anr-spec-hint', style: 'margin:0 0 10px;' },
-      'Full sound analysis of the rendered audio - play it to scrub the picture in step.'));
+      'Sound analysis of the rendered audio - play it to scrub the picture in step.'));
     const analysisSlot = el('div');
     specSlot.appendChild(analysisSlot);
     await renderAudio(wavFile, analysisSlot, { spectrogramFirst: true });

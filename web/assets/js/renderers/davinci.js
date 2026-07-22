@@ -27,7 +27,7 @@
 
    There is no public spec; this was reverse-engineered from real .drp files. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard, loadScript } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, loadScript } from '../core/util.js';
 
 const MAX_ENTRY = 64 * 1024 * 1024;        // cap any single inflated XML we hold
 const STD_FPS = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60];
@@ -506,14 +506,14 @@ export async function renderDavinci(file, resultsEl) {
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Application', 'Blackmagic DaVinci Resolve'));
   tbl.appendChild(rowHelp('Format', isDrt ? 'Resolve timeline (.drt)' : 'Resolve project (.drp)',
-    'A .drp is a ZIP of XML documents exported from the Resolve project database. Analyser inflates it and walks the SeqContainer track/clip objects to rebuild each timeline.'));
+    'A Resolve project (.drp) is a ZIP archive of XML documents exported from Resolve’s project database. Analyser unpacks it and reads the track and clip objects (SeqContainer) to rebuild each timeline.'));
   if (project.name) tbl.appendChild(row('Project name', project.name));
   if (project.appVer) tbl.appendChild(rowHelp('Resolve version', project.appVer,
-    'The DaVinci Resolve build (DbAppVer) that last wrote this project.'));
-  if (project.dbVer) tbl.appendChild(rowHelp('Database version', project.dbVer, 'The internal Resolve project-database schema version (DbPrjVer).'));
+    'The version of DaVinci Resolve that last saved this project (stored as DbAppVer).'));
+  if (project.dbVer) tbl.appendChild(rowHelp('Database version', project.dbVer, 'The version of Resolve’s internal project-database layout (its schema), stored as DbPrjVer.'));
   if (project.modified && !isNaN(project.modified)) tbl.appendChild(row('Last modified', project.modified.toLocaleString()));
   if (project.ageMs > 0) tbl.appendChild(rowHelp('Project age', (project.ageMs / 86400000).toFixed(1) + ' days',
-    'Total time the project has existed, accumulated by Resolve (ProjectAgeInMs).'));
+    'The total time this project has existed, added up by Resolve across all sessions (stored as ProjectAgeInMs).'));
   tbl.appendChild(row('Timelines', String(timelines.length)));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   meta.appendChild(tbl);
@@ -531,9 +531,10 @@ export async function renderDavinci(file, resultsEl) {
     const totalVideo = timelines.reduce((s, tl) =>
       s + tl.tracks.reduce((a, t) => a + (t.kind === 'video' ? t.clips.length : 0), 0), 0);
     const card = el('div', { class: 'anr-card' });
-    card.appendChild(el('h3', {}, 'Colour grades & nodes'));
+    const [gh, ghp] = h3help('Colour grades & nodes', 'The node chain is read straight from the Color page graph stored (zstd-compressed) in each clip’s grade version.');
+    card.appendChild(gh); card.appendChild(ghp);
     card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 12px' },
-      graded.length + ' of ' + totalVideo + ' video clips carry a colour grade. The node chain is read straight from the Color page graph stored (zstd-compressed) in each clip’s grade version.'));
+      graded.length + ' of ' + totalVideo + ' video clips carry a colour grade.'));
 
     // Distinct node chains, busiest first.
     const chains = new Map();
@@ -555,8 +556,8 @@ export async function renderDavinci(file, resultsEl) {
     for (const c of graded) { c.gradeInfo.luts.forEach((l) => luts.add(l)); c.gradeInfo.effects.forEach((e) => fx.add(e)); }
     if (luts.size || fx.size) {
       const tbl2 = el('table', { class: 'anr-readout', style: 'margin-top:6px' });
-      if (fx.size) tbl2.appendChild(rowHelp('ResolveFX', [...fx].join(', '), 'Blackmagic ResolveFX / OFX plugins applied on grade nodes.'));
-      if (luts.size) tbl2.appendChild(rowHelp('LUTs', [...luts].join(', '), 'Look-up tables loaded by LUT nodes in the grade.'));
+      if (fx.size) tbl2.appendChild(rowHelp('ResolveFX', [...fx].join(', '), 'Add-on visual effects (Blackmagic ResolveFX or OFX plugins) applied during colour grading - on grade nodes, the steps in Resolve’s colour pipeline.'));
+      if (luts.size) tbl2.appendChild(rowHelp('LUTs', [...luts].join(', '), 'Look-up tables (LUTs) - colour presets that remap the image’s colours - loaded during colour grading.'));
       card.appendChild(tbl2);
     }
     resultsEl.appendChild(card);
@@ -564,15 +565,18 @@ export async function renderDavinci(file, resultsEl) {
 
   // ---- Legend ----
   if (timelines.length) {
+    const [legH, legP] = h3help('Legend',
+      'Hover a clip for its source path, frame rate and timecode. '
+      + 'Each timeline zooms with ctrl/⌘ + scroll (or the buttons) and pans by dragging. '
+      + 'The timeline frame rate is inferred from the 01:00:00:00 start. Fusion comps are not drawn.');
     resultsEl.appendChild(el('div', { class: 'anr-card' }, [
-      el('h3', {}, 'Legend'),
+      legH, legP,
       el('p', { class: 'anr-hint', html:
         'Each bar is a clip, positioned by its Start and Duration (in frames) on the timeline. '
         + '<span style="color:#3b82c4">Video</span>, '
         + '<span style="color:#3ba776">audio</span> and '
         + '<span style="color:#9b6cc4">titles / generators / transitions</span> tracks are stacked as Resolve shows them (V1 at the bottom of the video stack). '
-        + 'Hover a clip for its source path, frame rate and timecode. Each timeline zooms with ctrl/⌘ + scroll (or the buttons) and pans by dragging. '
-        + 'The timeline frame rate is inferred from the 01:00:00:00 start. An <span style="color:#f0a830">amber dot</span> marks a clip that carries a colour grade - hover it for the node chain, or see the Colour grades card below. Fusion comps are not drawn.' }),
+        + 'An <span style="color:#f0a830">amber dot</span> marks a clip that carries a colour grade - hover it for the node chain, or see the Colour grades card below.' }),
     ]));
   }
 

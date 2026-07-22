@@ -81,7 +81,7 @@ export async function renderIwork(file, resultsEl) {
   tbl.appendChild(row('Type', info.kind));
   tbl.appendChild(rowHelp('Format',
     isModern ? 'iWork 2013+ (IWA)' : (isLegacy ? "iWork '09 (XML)" : 'iWork package'),
-    'Modern iWork stores its content as Snappy-compressed Protocol Buffer streams (the undocumented .iwa format), so Analyser shows the QuickLook preview embedded in the file rather than re-rendering the document itself.'));
+    'Newer Pages, Numbers and Keynote files store their contents in Apple’s private, undocumented .iwa format - compact data streams called Protocol Buffers, packed with Snappy compression. Because that format is not public, Analyser shows the QuickLook preview image Apple saved inside the file rather than rebuilding the document itself.'));
   const ver = await buildVersion(zip);
   if (ver) tbl.appendChild(row('Created with', ver));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
@@ -127,6 +127,6 @@ export async function renderIwork(file, resultsEl) {
 
   // No embedded preview - metadata only.
   resultsEl.appendChild(el('div', { class: 'anr-info' },
-    'This iWork file was saved without an embedded preview, so only its metadata can be shown. The document body is stored in Apple’s undocumented .iwa format, which cannot be rendered in the browser.'));
+    'This iWork file was saved without an embedded preview, so only its metadata can be shown.'));
   resultsEl.appendChild(integrityCard(file));
 }

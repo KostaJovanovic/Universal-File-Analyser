@@ -6,7 +6,7 @@
    image on a transparency checkerboard, largest/first in order, with its size,
    format and byte count, and a per-image download. Pure DOM; no decoding here. */
 
-import { el, fmtBytes } from '../core/util.js';
+import { el, fmtBytes, h3help } from '../core/util.js';
 
 // items: [{
 //   width?, height?,        // shown if known; otherwise filled from the loaded <img>
@@ -21,9 +21,16 @@ import { el, fmtBytes } from '../core/util.js';
 // button that re-runs the full photo analysis on that extracted picture, rendered
 // into resultsEl (the same container this card lives in - the drill-in replaces the
 // list view, matching the carve/salvage "Analyse" buttons).
-export function buildEmbeddedImagesCard({ title, hint, items, signal, resultsEl, sourceFile }) {
+// `help` (optional): concise explanation folded behind a [?] on the heading, so
+// callers can keep the always-visible `hint` short (or drop it entirely).
+export function buildEmbeddedImagesCard({ title, hint, help, items, signal, resultsEl, sourceFile }) {
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, title || 'Embedded images'));
+  if (help) {
+    const [h, panel] = h3help(title || 'Embedded images', help);
+    card.appendChild(h); card.appendChild(panel);
+  } else {
+    card.appendChild(el('h3', {}, title || 'Embedded images'));
+  }
   if (hint) card.appendChild(el('p', { class: 'anr-hint' }, hint));
 
   const grid = el('div', {

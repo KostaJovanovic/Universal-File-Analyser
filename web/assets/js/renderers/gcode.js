@@ -1904,8 +1904,8 @@ export async function renderGcode(file, resultsEl, opts) {
     let viewer = buildViewer(data, { antialias: !uncapped });
     if (uncapped) { viewer.state.ssaa = false; viewer.state.minWidth = 'none'; viewer.state.translucentTravel = false; }
     if (isPrint) viewCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' }, viewer.instanced
-      ? 'Rebuilt from the G-code as solid deposited filament - each extrusion drawn at its real width and height, coloured by layer. Travel moves are hidden.'
-      : 'Rebuilt from the G-code toolpath, coloured by layer height (your browser lacks instanced rendering, so beads are shown as centrelines).'));
+      ? 'Rebuilt from the G-code as solid deposited filament, coloured by layer. Travel moves are hidden.'
+      : 'Rebuilt from the G-code toolpath, coloured by layer height. Beads are shown as centrelines because your browser lacks instanced rendering.'));
     viewCard.appendChild(viewer.wrap);
 
     if (viewer.ok) {
@@ -2296,7 +2296,7 @@ export async function renderGcode(file, resultsEl, opts) {
       const setLabel = (txt) => { spdBtn.textContent = 'Speed: ' + txt; };
       const allPresetBtns = [];
       const clearActive = () => allPresetBtns.forEach((b) => b.classList.remove('is-active'));
-      const rtWarn = el('p', { class: 'anr-spd-warn', hidden: '' }, 'Real time is only an estimate - the file has no data on acceleration, rapid speeds or tool-change times, so don\'t take it literally.');
+      const rtWarn = el('p', { class: 'anr-spd-warn', hidden: '' }, 'Real time is only an estimate - the file has no data on acceleration, rapid speeds or tool-change times.');
       const choose = (lps, label, btn) => { realtime = false; playLps = lps; setLabel(label); clearActive(); if (btn) btn.classList.add('is-active'); rtWarn.hidden = true; };
       const chooseReal = (btn) => { realtime = true; setLabel('real time (' + fmtDur(realTotal) + ')'); clearActive(); if (btn) btn.classList.add('is-active'); rtWarn.hidden = false; };
 
@@ -3146,7 +3146,7 @@ export async function renderGcode(file, resultsEl, opts) {
           fullBtn,
         ]);
         const fullWarn = el('p', { class: 'anr-spd-warn' },
-          `Only the first ${data.segCount.toLocaleString()} segments are drawn - this print exceeds the ${SEG_CAP.toLocaleString()}-segment limit tuned to your device's memory. Drawing it in full can use a lot of RAM and may run slowly or, on a constrained device, crash the tab.`);
+          `Only the first ${data.segCount.toLocaleString()} segments are drawn - this print exceeds the ${SEG_CAP.toLocaleString()}-segment limit tuned to your device's memory. Showing it in full can use a lot of RAM and may run slowly or crash the tab.`);
         fullBtn.addEventListener('click', () => {
           fullBtn.disabled = true; fullBtn.textContent = 'Rebuilding…';
           setTimeout(() => renderGcode(file, resultsEl, { uncapped: true }), 30);
@@ -3209,56 +3209,56 @@ export async function renderGcode(file, resultsEl, opts) {
   // then provenance, then toolpath technicals, and finally the raw file metadata.
 
   // What it is, and the machine it is for.
-  tbl.appendChild(rowHelp('Type', isPrint ? '3D print (extrusion)' : 'CNC / laser (no extrusion)', 'Whether the program extrudes material (a 3D print) or only moves a tool/laser (CNC machining or laser cutting).'));
-  if (data.printerModel) tbl.appendChild(rowHelp('Printer', data.printerModel, 'The printer/machine profile the file was sliced for, read from the slicer config in the header.'));
+  tbl.appendChild(rowHelp('Type', isPrint ? '3D print (extrusion)' : 'CNC / laser (no extrusion)', 'Whether the file lays down molten plastic to build a 3D print, or only moves a cutting tool or laser (CNC machining or laser cutting).'));
+  if (data.printerModel) tbl.appendChild(rowHelp('Printer', data.printerModel, 'The printer or machine this file was prepared for, read from the slicing software’s settings saved at the top of the file.'));
 
   // Headline outcome - the first things you reach for.
-  if (data.printTime) tbl.appendChild(rowHelp('Est. print time', data.printTime, 'The print-time estimate the slicer wrote into the file header.'));
+  if (data.printTime) tbl.appendChild(rowHelp('Est. print time', data.printTime, 'How long the print is expected to take, as estimated by the slicing software and saved at the top of the file.'));
   if (data.bbox && isFinite(data.bbox.min[0])) {
     const dx = data.bbox.max[0] - data.bbox.min[0], dy = data.bbox.max[1] - data.bbox.min[1], dz = data.bbox.max[2] - data.bbox.min[2];
-    tbl.appendChild(rowHelp(isPrint ? 'Object size' : 'Work size', `${dx.toFixed(1)} × ${dy.toFixed(1)} × ${dz.toFixed(1)} ${u}`, 'The bounding box of all drawn moves - width × depth × height.'));
+    tbl.appendChild(rowHelp(isPrint ? 'Object size' : 'Work size', `${dx.toFixed(1)} × ${dy.toFixed(1)} × ${dz.toFixed(1)} ${u}`, 'The size of the smallest box that would contain everything the machine draws, as width × depth × height.'));
   }
 
   if (isPrint) {
     // Material + print specs.
-    if (data.extrudeMM) tbl.appendChild(rowHelp('Filament used', `${(data.extrudeMM / 1000).toFixed(2)} m  (${Math.round(data.extrudeMM).toLocaleString()} ${u})`, 'Total length of filament extruded, summed from the E axis.'));
-    if (data.layerCount) tbl.appendChild(rowHelp('Layers', data.layerCount.toLocaleString(), 'The number of distinct Z heights at which material was extruded.'));
-    if (data.layerHeight) tbl.appendChild(rowHelp('Layer height', data.layerHeight.toFixed(3) + ' ' + u, 'The typical vertical step between layers (median Z gap).'));
-    if (data.temps.nozzle) tbl.appendChild(rowHelp('Nozzle temp', data.temps.nozzle + ' °C', 'The hot-end target temperature set in the program (M104/M109).'));
-    if (data.temps.bed) tbl.appendChild(rowHelp('Bed temp', data.temps.bed + ' °C', 'The heated-bed target temperature set in the program (M140/M190).'));
+    if (data.extrudeMM) tbl.appendChild(rowHelp('Filament used', `${(data.extrudeMM / 1000).toFixed(2)} m  (${Math.round(data.extrudeMM).toLocaleString()} ${u})`, 'The total length of plastic filament pushed through the nozzle, added up from the extruder (E axis) movements in the file.'));
+    if (data.layerCount) tbl.appendChild(rowHelp('Layers', data.layerCount.toLocaleString(), 'How many horizontal layers the print is built from - each layer is one pass at a distinct height, stacked to form the object.'));
+    if (data.layerHeight) tbl.appendChild(rowHelp('Layer height', data.layerHeight.toFixed(3) + ' ' + u, 'How thick each layer is - the usual vertical step from one layer up to the next (the median gap between layer heights).'));
+    if (data.temps.nozzle) tbl.appendChild(rowHelp('Nozzle temp', data.temps.nozzle + ' °C', 'The temperature the nozzle is told to heat to for melting the plastic (set by the M104/M109 commands).'));
+    if (data.temps.bed) tbl.appendChild(rowHelp('Bed temp', data.temps.bed + ' °C', 'The temperature the heated print bed is told to reach, which helps the first layer stick (set by the M140/M190 commands).'));
     // The build plate it is for.
     if (data.bed) {
       const b = data.bed, bu = data.units;
-      tbl.appendChild(rowHelp('Bed size', `${b.w.toFixed(0)} × ${b.d.toFixed(0)}${b.h ? ` × ${b.h.toFixed(0)}` : ''} ${bu}`, 'The printable area (X × Y' + (b.h ? ' × Z height' : '') + ') declared by the slicer profile - drawn as the plate in the viewer.'));
-      if (b.type) tbl.appendChild(rowHelp('Build plate', b.type, 'The build-plate / bed surface selected in the slicer (e.g. textured PEI, smooth, glass).'));
+      tbl.appendChild(rowHelp('Bed size', `${b.w.toFixed(0)} × ${b.d.toFixed(0)}${b.h ? ` × ${b.h.toFixed(0)}` : ''} ${bu}`, 'The size of the usable print area (X × Y' + (b.h ? ' × Z height' : '') + ') taken from the slicing software’s settings, and shown as the plate in the viewer.'));
+      if (b.type) tbl.appendChild(rowHelp('Build plate', b.type, 'The type of print-bed surface chosen in the slicing software - for example textured PEI, smooth, or glass.'));
     }
-    tbl.appendChild(rowHelp('Filament Ø', data.filDia.toFixed(2) + ' mm', 'The filament diameter used to recover extrusion widths (from the file, else 1.75 mm).'));
+    tbl.appendChild(rowHelp('Filament Ø', data.filDia.toFixed(2) + ' mm', 'The thickness of the plastic filament, used to work out how wide each extruded line is. Taken from the file, or assumed to be 1.75 mm if not stated.'));
   } else {
     // CNC / laser job specs.
     const c = data.cnc;
-    if (c && c.progNum) tbl.appendChild(rowHelp('Program number', 'O' + c.progNum, 'The program (O) number the CAM post wrote - the job identifier the controller lists.'));
-    if (c && c.operations && c.operations.length) tbl.appendChild(rowHelp('Operations', c.operations.length.toLocaleString(), 'The number of named CAM operations (toolpaths) in the program. See the operations table below.'));
-    if (data.cutMM) tbl.appendChild(rowHelp('Cut path length', `${(data.cutMM / 1000).toFixed(2)} m  (${Math.round(data.cutMM).toLocaleString()} ${u})`, 'Total length of the cutting (feed) moves.'));
-    if (c && c.maxDepth != null && c.maxDepth < 0) tbl.appendChild(rowHelp('Max cut depth', `${c.maxDepth.toFixed(2)} ${u}  (${Math.abs(c.maxDepth).toFixed(2)} ${u} below Z0)`, 'The deepest Z the tool reaches - the lowest point of any move.'));
+    if (c && c.progNum) tbl.appendChild(rowHelp('Program number', 'O' + c.progNum, 'The job number the CAM software wrote into the file (its ‘O’ number) - the identifier the machine’s controller lists.'));
+    if (c && c.operations && c.operations.length) tbl.appendChild(rowHelp('Operations', c.operations.length.toLocaleString(), 'How many separate machining steps (toolpaths) the program contains. See the operations table below.'));
+    if (data.cutMM) tbl.appendChild(rowHelp('Cut path length', `${(data.cutMM / 1000).toFixed(2)} m  (${Math.round(data.cutMM).toLocaleString()} ${u})`, 'The total distance the tool travels while actually cutting (its feed moves).'));
+    if (c && c.maxDepth != null && c.maxDepth < 0) tbl.appendChild(rowHelp('Max cut depth', `${c.maxDepth.toFixed(2)} ${u}  (${Math.abs(c.maxDepth).toFixed(2)} ${u} below Z0)`, 'How far down the tool reaches at its deepest point.'));
     if (c) {
-      if (c.changes.length) tbl.appendChild(rowHelp('Tool changes', `${c.changes.length.toLocaleString()}  (${c.tools.length} tool${c.tools.length === 1 ? '' : 's'})`, 'Number of M6 tool changes in the program, and how many distinct tools it uses. See the tooling table below.'));
-      if (c.spindleMax) tbl.appendChild(rowHelp('Max spindle speed', `${Math.round(c.spindleMax).toLocaleString()} rpm${c.spindleDir ? ' · ' + c.spindleDir : ''}`, 'The highest commanded spindle speed (S), and its direction (M3/M4).'));
-      if (c.coolant.length) tbl.appendChild(rowHelp('Coolant', c.coolant.join(', '), 'Coolant modes switched on in the program (M7 mist / M8 flood).'));
-      if (c.workOffsets.length) tbl.appendChild(rowHelp('Work offsets', c.workOffsets.join(', '), 'The work-coordinate systems (G54-G59) the program sets - one per fixture/setup.'));
-      if (c.optStops) tbl.appendChild(rowHelp('Optional stops', c.optStops.toLocaleString(), 'M1 optional stops - the controller pauses here only if the "optional stop" switch is on.'));
-      if (c.progEnd) tbl.appendChild(rowHelp('Program end', c.progEnd, 'How the program signals completion - M2 (end) or M30 (end and rewind).'));
+      if (c.changes.length) tbl.appendChild(rowHelp('Tool changes', `${c.changes.length.toLocaleString()}  (${c.tools.length} tool${c.tools.length === 1 ? '' : 's'})`, 'How many times the machine swaps its cutting tool (M6 commands), and how many different tools it uses in total. See the tooling table below.'));
+      if (c.spindleMax) tbl.appendChild(rowHelp('Max spindle speed', `${Math.round(c.spindleMax).toLocaleString()} rpm${c.spindleDir ? ' · ' + c.spindleDir : ''}`, 'The fastest the cutting spindle is told to spin (the S value), and which way it turns (clockwise M3 or anticlockwise M4).'));
+      if (c.coolant.length) tbl.appendChild(rowHelp('Coolant', c.coolant.join(', '), 'The coolant the program turns on to keep the cut cool - a fine mist (M7) or a heavier flood (M8).'));
+      if (c.workOffsets.length) tbl.appendChild(rowHelp('Work offsets', c.workOffsets.join(', '), 'The reference zero points the program uses (G54-G59), typically one for each part or setup clamped on the machine.'));
+      if (c.optStops) tbl.appendChild(rowHelp('Optional stops', c.optStops.toLocaleString(), 'Points where the program can pause (M1), but only if the operator has the "optional stop" switch turned on.'));
+      if (c.progEnd) tbl.appendChild(rowHelp('Program end', c.progEnd, 'How the program marks its finish - M2 (simply end) or M30 (end and rewind to the start).'));
     }
   }
 
   // Provenance.
-  if (slicer) tbl.appendChild(rowHelp(isPrint ? 'Slicer' : 'CAM / sender', slicer, 'The program that generated this G-code, read from the file header.'));
-  tbl.appendChild(rowHelp('Units', u === 'mm' ? 'Millimetres (G21)' : 'Inches (G20)', 'The measurement units the coordinates are expressed in.'));
+  if (slicer) tbl.appendChild(rowHelp(isPrint ? 'Slicer' : 'CAM / sender', slicer, 'The software that created this G-code, named at the top of the file.'));
+  tbl.appendChild(rowHelp('Units', u === 'mm' ? 'Millimetres (G21)' : 'Inches (G20)', 'The unit of measurement all the coordinates are given in.'));
 
   // Toolpath technicals - for the curious / the viewer's geometry counts.
-  tbl.appendChild(rowHelp(isPrint ? 'Extrusion segments' : 'Cutting moves', data.segCount.toLocaleString(), 'The number of drawn segments - the geometry shown in the viewer (arcs are tessellated into segments).'));
-  if (data.counts.arc) tbl.appendChild(rowHelp('Arc moves', data.counts.arc.toLocaleString(), 'G2/G3 circular moves, drawn as smooth tessellated arcs.'));
-  tbl.appendChild(rowHelp('Travel / rapid moves', data.counts.rapid.toLocaleString(), 'Non-cutting repositioning moves, hidden by default in the viewer.'));
-  if (data.feedRange.max) tbl.appendChild(rowHelp('Feedrate range', `${Math.round(data.feedRange.min).toLocaleString()} - ${Math.round(data.feedRange.max).toLocaleString()} ${u}/min`, 'The slowest to fastest commanded feedrate (F) across drawn moves.'));
+  tbl.appendChild(rowHelp(isPrint ? 'Extrusion segments' : 'Cutting moves', data.segCount.toLocaleString(), 'How many individual line segments make up the path shown in the viewer (curves are drawn as many short straight segments).'));
+  if (data.counts.arc) tbl.appendChild(rowHelp('Arc moves', data.counts.arc.toLocaleString(), 'Curved, circular moves (the G2/G3 commands), drawn here as smooth arcs.'));
+  tbl.appendChild(rowHelp('Travel / rapid moves', data.counts.rapid.toLocaleString(), 'Fast moves that reposition the tool without cutting or printing. Hidden in the viewer by default.'));
+  if (data.feedRange.max) tbl.appendChild(rowHelp('Feedrate range', `${Math.round(data.feedRange.min).toLocaleString()} - ${Math.round(data.feedRange.max).toLocaleString()} ${u}/min`, 'The range of speeds, from slowest to fastest, at which the tool is told to move while working (the F value).'));
 
   // Raw file metadata - least important, kept last.
   tbl.appendChild(row('File', file.name));

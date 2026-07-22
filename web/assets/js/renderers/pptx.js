@@ -121,7 +121,7 @@ export async function renderPptx(file, resultsEl) {
   metaTbl.appendChild(row('Size', fmtBytes(file.size)));
   metaTbl.appendChild(row('Slides', slideOrder.length || '-'));
   metaTbl.appendChild(rowHelp('Slide size', Math.round(slideW) + ' × ' + Math.round(slideH) + ' px',
-    'The slide canvas dimensions in pixels. The presentation\'s aspect ratio (e.g. 16:9 or 4:3) is derived from this.'));
+    'The width and height of each slide, in pixels. The shape of the slides - widescreen 16:9 or the older 4:3 - is worked out from these two numbers.'));
   if (zip.has('docProps/core.xml')) {
     const core = parseXml(await zip.text('docProps/core.xml'));
     const get = (t) => { const e = core.getElementsByTagName(t)[0]; return e ? e.textContent : ''; };

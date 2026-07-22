@@ -11,7 +11,7 @@
      - a count of the solid bodies and embedded appearance assets
    so dropping a design shows the model and what it is, not an "unknown blob". */
 
-import { el, row, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 import { openZip } from './zip.js';
 
 // docstruct.type / .subtype come through as kebab-case tokens; map the common
@@ -113,8 +113,8 @@ export async function renderF3d(file, resultsEl) {
   if (subType) t.appendChild(row('Subtype', SUBTYPES[subType] || prettify(subType)));
   if (docVer) t.appendChild(row('Fusion document version', docVer));
   if (structVer) t.appendChild(row('Document structure', 'v' + structVer));
-  if (bodies) t.appendChild(row('Solid bodies', String(bodies)));
-  if (appearances) t.appendChild(row('Appearance assets', String(appearances)));
+  if (bodies) t.appendChild(rowHelp('Solid bodies', String(bodies), 'The number of distinct solid shapes that make up the design. A simple part is often a single body, but a design can hold several separate solids.'));
+  if (appearances) t.appendChild(rowHelp('Appearance assets', String(appearances), 'The number of surface finishes stored in the design - the colours, metals, plastics and other materials Fusion 360 (which calls them appearances) applies to give surfaces their look.'));
   t.appendChild(row('File size', fmtBytes(file.size)));
   card.appendChild(t);
   resultsEl.appendChild(card);
@@ -126,9 +126,8 @@ export async function renderF3d(file, resultsEl) {
       const bytes = await zip.bytes(previews[0].name);
       if (bytes && bytes.length) {
         const pv = el('div', { class: 'anr-card' });
-        pv.appendChild(el('h3', {}, 'Preview'));
-        pv.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' },
-          'The thumbnail Fusion 360 rendered and saved inside the file.'));
+        const [ph, phelp] = h3help('Preview', 'The thumbnail image Fusion 360 rendered and saved inside the file, so it can be shown without rebuilding the model.');
+        pv.appendChild(ph); pv.appendChild(phelp);
         const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
         const img = el('img', {
           src: url, alt: 'Fusion 360 model preview', loading: 'lazy',
@@ -143,13 +142,13 @@ export async function renderF3d(file, resultsEl) {
 
   // ---- honest note on the geometry ----
   const note = el('div', { class: 'anr-card' });
-  note.appendChild(el('h3', {}, 'About the geometry'));
-  note.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' },
+  const [nh, nhelp] = h3help('About the geometry',
     'A Fusion 360 design stores its solid model as Autodesk ShapeManager BREP data'
     + (bodies ? ' (' + bodies + ' solid ' + (bodies === 1 ? 'body' : 'bodies') + ' here)' : '')
-    + ' and an internal display mesh - both proprietary and undocumented, so the editable'
-    + ' 3D model cannot be rebuilt in the browser. To open it as a viewable mesh, export it'
-    + ' from Fusion 360 as STL, OBJ, STEP or 3MF and drop that here for the full 3D viewer.'));
+    + ' and an internal display mesh - both proprietary and undocumented, so the editable 3D model cannot be rebuilt in the browser.');
+  note.appendChild(nh); note.appendChild(nhelp);
+  note.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' },
+    'To open it as a viewable mesh, export it from Fusion 360 as STL, OBJ, STEP or 3MF and drop that here for the full 3D viewer.'));
   resultsEl.appendChild(note);
 
   resultsEl.appendChild(integrityCard(file));

@@ -24,7 +24,7 @@
    create/modify dates), which is where the "made in After Effects 20XX" comes
    from. We show the project metadata, then each composition's layer timeline. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 
 const SCALE = 30720;                       // default ticks-per-second; the real value is per-comp (cdta u32@8)
 const MAX_READ = 256 * 1024 * 1024;        // guard: don't buffer absurdly large projects whole
@@ -371,14 +371,14 @@ export async function renderAep(file, resultsEl) {
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Application', 'Adobe After Effects'));
   tbl.appendChild(rowHelp('Format', 'After Effects project (.aep)',
-    'A .aep is a RIFX (big-endian) chunk file. Analyser walks its composition and layer chunks to rebuild the timeline, and reads the authoring app and dates from the embedded XMP metadata.'));
+    'An After Effects project (.aep) is a binary file made of labelled blocks (a big-endian "RIFX" chunk format). Analyser reads its composition and layer blocks to rebuild the timeline, and takes the software version and dates from the embedded XMP information.'));
   if (xmp && xmp.creatorTool) tbl.appendChild(rowHelp('Created with', xmp.creatorTool,
-    'The After Effects version that first created this project, read from the xmp:CreatorTool metadata.'));
+    'The version of After Effects that first created this project, taken from its xmp:CreatorTool metadata tag.'));
   if (xmp && xmp.lastAgent && xmp.lastAgent !== (xmp && xmp.creatorTool)) tbl.appendChild(rowHelp('Last saved with', xmp.lastAgent,
-    'The most recent After Effects version to save this project, from the last entry in the XMP edit history.'));
+    'The most recent version of After Effects to save this project, taken from the last entry in its XMP edit history.'));
   if (xmp && xmp.created) tbl.appendChild(row('Created', xmp.created));
   if (xmp && xmp.modified) tbl.appendChild(row('Modified', xmp.modified));
-  tbl.appendChild(row('Compositions', String(data.comps.length)));
+  tbl.appendChild(rowHelp('Compositions', String(data.comps.length), 'After Effects’ term for a timeline or scene - a canvas holding layers arranged over time. One project can hold several.'));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   meta.appendChild(tbl);
   resultsEl.appendChild(meta);
@@ -395,16 +395,17 @@ export async function renderAep(file, resultsEl) {
   const usedLabels = [...new Set(data.comps.flatMap((c) => (c.real || []).map((l) => l.labelIdx)).filter(Boolean))].sort((a, b) => a - b);
   const swatches = usedLabels.map((i) =>
     `<span style="display:inline-block;width:10px;height:10px;background:${AE_LABEL_COLOURS[i]};vertical-align:middle;margin:0 5px 0 10px"></span>${AE_LABEL_NAMES[i]}`).join('');
+  const [legH, legP] = h3help('Legend',
+    'Colours use After Effects’ default label palette - the file stores only the label index, so a customised palette in your preferences will look different. '
+    + 'Each timeline zooms with ctrl/⌘ + scroll (or the zoom buttons) and pans by dragging. '
+    + 'Timings are decoded from the file; keyframes and effects-over-time are not drawn.');
   resultsEl.appendChild(el('div', { class: 'anr-card' }, [
-    el('h3', {}, 'Legend'),
+    legH, legP,
     el('p', { class: 'anr-hint', html:
       'Each bar is a layer, positioned by its in and out point on the composition timeline and coloured by its After Effects label. '
       + (swatches ? 'Labels used:' + swatches + '. ' : '')
       + 'A glyph on each bar marks its kind: <b>T</b> text, ◆ shape, ▣ image, ► video, ♪ audio, ⧉ pre-comp, ■ solid, ◉ camera, ☼ light. '
-      + 'An amber outline and a ◳ marker additionally denote 3D layers. '
-      + 'Colours use After Effects’ default label palette - the file stores only the label index, so a customised palette in your preferences will look different. '
-      + 'Each timeline zooms with ctrl/⌘ + scroll (or the zoom buttons) and pans by dragging. '
-      + 'Timings are decoded from the file; keyframes and effects-over-time are not drawn.' }),
+      + 'An amber outline and a ◳ marker additionally denote 3D layers.' }),
   ]));
 
   // ---- Footage sources ----

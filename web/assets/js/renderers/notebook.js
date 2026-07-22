@@ -137,11 +137,11 @@ export async function renderNotebook(file, container) {
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
     nb.nbformat && ['Notebook format', 'v' + nb.nbformat + (nb.nbformat_minor != null ? '.' + nb.nbformat_minor : '')],
-    kernel && ['Kernel', kernel],
+    kernel && rowHelp('Kernel', kernel, 'The kernel is the engine that runs the notebook code - it names the programming language and version (here Python), so it tells you what is needed to actually run the file.'),
     (lang || langVer) && ['Language', [lang, langVer].filter(Boolean).join(' ')],
     ['Cells', cells.length.toLocaleString()],
     rowHelp('Breakdown', counts.code + ' code, ' + counts.markdown + ' markdown' + (counts.raw ? ', ' + counts.raw + ' raw' : ''),
-      'How the notebook cells split between executable code, narrative markdown, and raw (unformatted) cells.'),
+      'How the notebook’s cells divide up: code cells that can be run, markdown cells holding the written explanation, and raw cells of plain unformatted text.'),
   ]));
   container.appendChild(info);
 

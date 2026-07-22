@@ -172,11 +172,11 @@ export async function renderPdf(file, resultsEl, opts = {}) {
   } catch (_) {}
   tbl.appendChild(row('Title', meta.Title));
   tbl.appendChild(row('Author', meta.Author));
-  tbl.appendChild(rowHelp('Creator', meta.Creator, 'The application that originally authored the document content (for example a word processor or design tool).'));
-  tbl.appendChild(rowHelp('Producer', meta.Producer, 'The software that generated the actual PDF file (often a "Print to PDF" driver or a PDF library). It can differ from the Creator, which is the app that authored the content.'));
+  tbl.appendChild(rowHelp('Creator', meta.Creator, 'The program used to write the original content - for example a word processor or a design tool - before it became a PDF.'));
+  tbl.appendChild(rowHelp('Producer', meta.Producer, 'The software that actually turned the content into a PDF - often a "Print to PDF" feature or a PDF-writing tool. This can be different from the Creator, which is the program that wrote the original content.'));
   tbl.appendChild(row('Creation date', fmtDate(meta.CreationDate)));
   tbl.appendChild(row('Modification date', fmtDate(meta.ModDate)));
-  tbl.appendChild(rowHelp('PDF version', meta.PDFFormatVersion || '-', 'The version of the PDF specification that this file conforms to.'));
+  tbl.appendChild(rowHelp('PDF version', meta.PDFFormatVersion || '-', 'Which version of the PDF standard this file was built to follow.'));
 
   // Page dimensions from page 1
   try {
@@ -188,7 +188,7 @@ export async function renderPdf(file, resultsEl, opts = {}) {
     const hIn = (hPt / 72).toFixed(2);
     const wMm = (wPt / 72 * 25.4).toFixed(1);
     const hMm = (hPt / 72 * 25.4).toFixed(1);
-    tbl.appendChild(rowHelp('Page 1 size', `${wPt.toFixed(0)} x ${hPt.toFixed(0)} pt  (${wIn} x ${hIn} in / ${wMm} x ${hMm} mm)`, 'The physical dimensions of the first page, shown in points with inch and millimetre equivalents. 1 point equals 1/72 of an inch.'));
+    tbl.appendChild(rowHelp('Page 1 size', `${wPt.toFixed(0)} x ${hPt.toFixed(0)} pt  (${wIn} x ${hIn} in / ${wMm} x ${hMm} mm)`, 'The real-world size of the first page, given in points, with inches and millimetres alongside. A point is a printer’s unit equal to 1/72 of an inch.'));
   } catch (_) {}
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
@@ -224,15 +224,15 @@ export async function renderPdf(file, resultsEl, opts = {}) {
       if (fx.eof > 1) {
         const updates = fx.eof - 1;
         addRow(rowHelp('Revisions', String(fx.eof) + ' (incrementally updated ' + updates + ' time' + (updates === 1 ? '' : 's') + ')',
-          'Each save appends a new %%EOF marker. More than one means the file was edited and re-saved incrementally, keeping earlier versions inside the file - a strong provenance and tamper signal.'));
+          'Every time a PDF is saved it adds another end-of-file marker (%%EOF). More than one means the file was edited and saved again without rewriting it from scratch, so older versions of the content are still tucked inside - a strong clue about where the file came from and whether it was altered.'));
       }
       if (fx.linearized) {
         addRow(rowHelp('Linearised', 'yes',
-          'The PDF is linearised ("fast web view"): reorganised so a viewer can display the first page before the whole file downloads. Usually set by web-optimised exporters.'));
+          'The PDF is "linearised" (also called "fast web view"): its parts are rearranged so a viewer can show the first page before the whole file has finished downloading. Usually done by tools that optimise PDFs for the web.'));
       }
       if (fx.appended > 0) {
         addRow(rowHelp('Trailing data', '⚠ ' + fx.appended + ' byte' + (fx.appended === 1 ? '' : 's') + ' after final %%EOF',
-          'Non-blank content follows the final end-of-file marker. Often a harmless re-save artefact, but also how data is smuggled into a PDF (polyglot files, appended payloads) - worth a closer look.'));
+          'There is extra content after the file’s final end-of-file marker. This is often a harmless leftover from re-saving, but it is also a common way to hide data inside a PDF (for example files that are secretly two formats at once, or payloads tacked onto the end) - so it is worth a closer look.'));
       }
     } catch (_) {}
 
@@ -241,7 +241,7 @@ export async function renderPdf(file, resultsEl, opts = {}) {
       const outline = await pdf.getOutline().catch(() => null);
       if (Array.isArray(outline) && outline.length) {
         addRow(rowHelp('Outline entries', String(outline.length),
-          'Top-level bookmarks in the document outline (table of contents). Nested sub-bookmarks are shown indented in the expandable list below.'));
+          'The main bookmarks in the document’s outline - its built-in table of contents. Any bookmarks nested underneath them appear indented in the list you can open below.'));
         const det = el('details');
         det.appendChild(el('summary', {}, 'Outline / table of contents'));
         const list = el('ul', { style: 'margin:8px 0 0;padding-left:18px;font-size:13px;' });
@@ -270,7 +270,7 @@ export async function renderPdf(file, resultsEl, opts = {}) {
       const names = att ? Object.keys(att) : [];
       if (names.length) {
         addRow(rowHelp('Embedded files', String(names.length),
-          'Files attached inside the PDF (the PDF acts as a container). Listed below.'));
+          'Other files tucked away inside this PDF, which can carry attachments just like a folder can. They are listed below.'));
         const det = el('details');
         det.appendChild(el('summary', {}, 'Embedded files'));
         const list = el('ul', { style: 'margin:8px 0 0;padding-left:18px;font-size:13px;' });
@@ -325,13 +325,13 @@ export async function renderPdf(file, resultsEl, opts = {}) {
       } catch (_) {}
       if (actions.length) {
         addRow(rowHelp('Embedded JavaScript', '⚠ yes (' + actions.length + ' action' + (actions.length === 1 ? '' : 's') + ')',
-          'The PDF contains JavaScript a viewer may execute. Scripts can be benign (form logic) but are also a common malware vector, so treat unexpected ones with caution.'));
+          'This PDF contains JavaScript - small programs a PDF viewer might run. They can be harmless (for example making a form work), but are also a common way to deliver malware, so treat unexpected ones with caution.'));
         const autoRun = actions.filter((a) => AUTO_TRIGGERS[a.trigger]);
         if (autoRun.length) addRow(rowHelp('Auto-run scripts', '⚠ ' + [...new Set(autoRun.map((a) => AUTO_TRIGGERS[a.trigger]))].join(', '),
-          'These scripts run automatically on the named event, with no user action - the riskiest kind.'));
+          'These scripts start on their own when the named thing happens (such as simply opening the file), without you doing anything - the riskiest kind.'));
         const allFlags = [...new Set(actions.flatMap((a) => a.flags))];
         if (allFlags.length) addRow(rowHelp('Suspicious patterns', '⚠ ' + allFlags.join(', '),
-          'A heuristic scan of the scripts found calls associated with: ' + allFlags.join(', ') + ' - higher-risk behaviours like reaching the network, touching files, launching programs, or obfuscating code.'));
+          'An automated scan of the scripts spotted commands linked to: ' + allFlags.join(', ') + ' - higher-risk actions such as contacting the internet, reading or writing files, launching other programs, or deliberately scrambling the code to hide what it does.'));
         // Per-trigger source so each action can be reviewed in place.
         const det = el('details');
         det.appendChild(el('summary', {}, 'JavaScript actions (' + actions.length + ')'));
@@ -354,7 +354,7 @@ export async function renderPdf(file, resultsEl, opts = {}) {
       // getPermissions() returns a non-null array only when usage is restricted.
       if (encrypted || Array.isArray(perms)) {
         addRow(rowHelp('Encrypted', encrypted ? 'yes' : 'no',
-          'Whether the PDF is encrypted. Encrypted PDFs may still open without a password but can restrict actions such as printing, copying text, or editing.'));
+          'Whether the PDF is encrypted (its contents scrambled for protection). An encrypted PDF may still open without asking for a password, yet block certain actions such as printing, copying text, or editing.'));
       }
       if (Array.isArray(perms) && lib.PermissionFlag) {
         const PF = lib.PermissionFlag;
@@ -366,7 +366,7 @@ export async function renderPdf(file, resultsEl, opts = {}) {
         const allActions = ['print', 'copy', 'modify'];
         const denied = allActions.filter((a) => allowed.indexOf(a) === -1);
         addRow(rowHelp('Allowed actions', allowed.length ? allowed.join(', ') : 'none',
-          'Actions the document permissions allow. Restricted actions (e.g. printing, copying text, modifying) are enforced by the encryption handler.'));
+          'The things the document’s permissions let you do. Anything left out - such as printing, copying text, or editing - is blocked, and that block is enforced by the PDF’s encryption.'));
         if (denied.length) addRow(row('Restricted actions', denied.join(', ')));
       }
     } catch (_) {}
@@ -390,9 +390,9 @@ export async function renderPdf(file, resultsEl, opts = {}) {
       }
       const scope = pdf.numPages > cap ? ` (first ${cap} pages)` : '';
       if (widgets) addRow(rowHelp('Form fields', String(widgets) + scope,
-        'Interactive form fields (text boxes, checkboxes, buttons) counted across the scanned pages. Indicates a fillable AcroForm.'));
+        'The number of fill-in fields found across the pages checked - text boxes, tick boxes and buttons. Their presence means this is a form you can fill in on screen (an AcroForm).'));
       if (links) addRow(row('Links', String(links) + scope));
-      if (others) addRow(row('Annotations', String(others) + scope));
+      if (others) addRow(rowHelp('Annotations', String(others) + scope, 'Annotations are marks added on top of the page - highlights, sticky notes, stamps and freehand drawings - rather than part of the original document. This counts them across the pages checked.'));
     } catch (_) {}
 
     // -- XMP metadata (Keywords / Subject / PDF/A) --
@@ -409,7 +409,7 @@ export async function renderPdf(file, resultsEl, opts = {}) {
       if (part) {
         const conf = getXmp('pdfaid:conformance');
         addRow(rowHelp('PDF/A', 'PDF/A-' + part + (conf ? conf.toUpperCase() : ''),
-          'The document declares conformance to PDF/A, an ISO archival profile that requires self-contained, long-term-preservable files.'));
+          'The file says it meets PDF/A, an international standard for long-term archiving. It requires everything the document needs (fonts, images and so on) to be stored inside, so it still displays correctly years from now.'));
       }
     } catch (_) {}
 
@@ -454,7 +454,7 @@ export async function renderPdf(file, resultsEl, opts = {}) {
         const notEmbedded = list.filter((f) => !f.embedded).length;
         const scope = pdf.numPages > cap ? ' (first ' + cap + ' pages)' : '';
         addRow(rowHelp('Fonts', list.length + (notEmbedded ? ', ' + notEmbedded + ' not embedded' : ', all embedded') + scope,
-          'Distinct fonts used in the document. Non-embedded fonts rely on the viewer having a matching font installed, so the file may render differently elsewhere - a portability and authenticity tell.'));
+          'How many different fonts the document uses. A font that is not stored inside the file (not embedded) relies on the reader’s device already having it, so the document can look different on another computer - a useful clue to how portable and how genuine the file is.'));
         const det = el('details');
         det.appendChild(el('summary', {}, 'Fonts (' + list.length + ')'));
         const ul = el('ul', { style: 'margin:8px 0 0;padding-left:18px;font-size:13px;' });
@@ -1012,7 +1012,7 @@ export async function renderPdf(file, resultsEl, opts = {}) {
   const imgCard = el('div', { class: 'anr-card' });
   imgCard.appendChild(el('h3', {}, 'Embedded images'));
   imgCard.appendChild(el('p', { class: 'anr-hint', style: 'font-size:12px;margin:0 0 10px;' },
-    'Pull the original raster images embedded in the PDF (logos, photos, scans) - separate from the rendered page previews above.'));
+    'The original photos, logos and scans stored inside the PDF - separate from the page previews above.'));
   const imgExtractBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Extract embedded images');
   const imgStatus = el('span', { class: 'anr-hint', style: 'font-size:12px;margin-left:10px;' }, '');
   const imgGrid = el('div', { style: 'display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;' });

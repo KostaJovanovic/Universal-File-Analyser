@@ -16,7 +16,7 @@
    The actual geometry is proprietary ShapeManager either way and is never
    reconstructed here - export to STEP/STL/3MF for the built-in 3D viewer. */
 
-import { el, row, fmtBytes, integrityCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard } from '../core/util.js';
 import { openCfbf } from '../lib/cfbf.js';
 
 const KIND_LABEL = {
@@ -122,12 +122,12 @@ function parseSummary(bytes) {
 // ends with regardless of era.
 function appendTail(file, resultsEl, encrypted) {
   const note = el('div', { class: 'anr-card' });
-  note.appendChild(el('h3', {}, 'About the geometry'));
+  const [nh, nhelp] = h3help('About the geometry', encrypted
+    ? 'This is a modern (2015 or newer) SolidWorks file: its contents are encrypted with Dassault Systemes’ proprietary scheme, so neither the model, the metadata nor the preview thumbnail can be read outside SolidWorks.'
+    : 'SolidWorks stores its solid model as proprietary Parasolid / ShapeManager geometry, which cannot be rebuilt in the browser.');
+  note.appendChild(nh); note.appendChild(nhelp);
   note.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' },
-    (encrypted
-      ? 'This is a modern (2015 or newer) SolidWorks file: its contents are encrypted with Dassault Systemes’ proprietary scheme, so neither the model, the metadata nor the preview thumbnail can be read outside SolidWorks. '
-      : 'SolidWorks stores its solid model as proprietary Parasolid / ShapeManager geometry, which cannot be rebuilt in the browser. ')
-    + 'To open the actual model, export it from SolidWorks as STEP, STL or 3MF and drop that here for the full 3D viewer.'));
+    'To open the actual model, export it from SolidWorks as STEP, STL or 3MF and drop that here for the full 3D viewer.'));
   resultsEl.appendChild(note);
   resultsEl.appendChild(integrityCard(file));
 }
@@ -150,7 +150,8 @@ export async function renderSolidworks(file, resultsEl) {
 
   if (!cf) {
     // Modern, encrypted format.
-    t.appendChild(row('Container', 'Encrypted (SolidWorks 2015+)'));
+    t.appendChild(rowHelp('Container', 'Encrypted (SolidWorks 2015+)',
+      'The underlying file structure that stores the SolidWorks document. Versions from 2015 onward encrypt it, so the file can be identified but not opened here.'));
     t.appendChild(row('File size', fmtBytes(file.size)));
     card.appendChild(t);
     resultsEl.appendChild(card);
@@ -159,11 +160,12 @@ export async function renderSolidworks(file, resultsEl) {
   }
 
   // Older OLE2 file: read metadata + preview.
-  t.appendChild(row('Container', 'OLE2 / CFBF v' + cf.version));
+  t.appendChild(rowHelp('Container', 'OLE2 / CFBF v' + cf.version,
+    'The underlying file structure that stores the SolidWorks document - an OLE2 / Compound File Binary container, the same wrapper older Microsoft Office files use.'));
   const sumStream = cf.readStream((e) => /SummaryInformation$/i.test(e.name) && !/Document/i.test(e.name));
   const sum = sumStream ? parseSummary(sumStream) : { fields: {}, thumb: null };
   for (const [k, v] of Object.entries(sum.fields)) t.appendChild(row(k, v));
-  t.appendChild(row('Streams', String(cf.entries.filter((e) => e.type === 2).length)));
+  t.appendChild(rowHelp('Streams', String(cf.entries.filter((e) => e.type === 2).length), 'The number of separate data streams stored inside the file’s OLE2 container. Each stream holds one part of the document - metadata, the preview image, geometry and so on - a bit like files inside a folder.'));
   t.appendChild(row('File size', fmtBytes(file.size)));
   card.appendChild(t);
   resultsEl.appendChild(card);
@@ -177,8 +179,8 @@ export async function renderSolidworks(file, resultsEl) {
 
   if (preview) {
     const pv = el('div', { class: 'anr-card' });
-    pv.appendChild(el('h3', {}, 'Preview'));
-    pv.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' }, 'The thumbnail SolidWorks saved inside the file.'));
+    const [ph, phelp] = h3help('Preview', 'The thumbnail image SolidWorks saved inside the file, so it can be shown without opening the full model.');
+    pv.appendChild(ph); pv.appendChild(phelp);
     const url = URL.createObjectURL(new Blob([preview.bytes], { type: preview.mime }));
     const img = el('img', {
       src: url, alt: label + ' preview', loading: 'lazy',

@@ -85,7 +85,7 @@ export async function renderEpub(file, resultsEl) {
   const date = metaGet('dc:date'); if (date) metaTbl.appendChild(row('Date', date));
   const pkg = opf.getElementsByTagName('package')[0];
   if (pkg && pkg.getAttribute('version')) metaTbl.appendChild(rowHelp('EPUB version', pkg.getAttribute('version'),
-    'The EPUB specification version the book conforms to (e.g. 2.0 vs 3.0), which determines the layout and interactivity features it can use.'));
+    'Which version of the EPUB e-book standard this book was built to (for example 2.0 or the newer 3.0). Later versions allow richer layout and interactive features.'));
   // Producing software: <meta name="generator">, or the book-producer
   // contributor (opf:role="bkp") that tools like calibre and Sigil stamp.
   try {
@@ -100,7 +100,7 @@ export async function renderEpub(file, resultsEl) {
     }
     producer = producer.trim();
     if (producer) metaTbl.appendChild(rowHelp('Generated with', producer.length > 120 ? producer.slice(0, 120) + '…' : producer,
-      'The software that produced this EPUB - often stamped by the conversion or authoring tool (for example calibre, Sigil or InDesign).'));
+      'The program that created this e-book file. Tools that build or convert EPUBs - such as calibre, Sigil or InDesign - often leave their name here.'));
   } catch (_) { /* ignore */ }
 
   // --- Extra metadata (additive): description, series, reading direction ---
@@ -130,7 +130,7 @@ export async function renderEpub(file, resultsEl) {
   // --- DRM / encryption detection (additive) ---
   try {
     if (zip.has('META-INF/encryption.xml') || zip.has('META-INF/rights.xml')) {
-      metaTbl.appendChild(row('DRM', '⚠ Encryption present (META-INF/' + (zip.has('META-INF/encryption.xml') ? 'encryption.xml' : 'rights.xml') + ')'));
+      metaTbl.appendChild(rowHelp('DRM', '⚠ Encryption present (META-INF/' + (zip.has('META-INF/encryption.xml') ? 'encryption.xml' : 'rights.xml') + ')', 'DRM (digital rights management) is copy protection. This book carries encrypted content, so it is locked to the shop or app you bought it from, and other readers may refuse to open it or show only a free sample.'));
     }
   } catch (_) { /* ignore */ }
 
@@ -165,7 +165,7 @@ export async function renderEpub(file, resultsEl) {
       const labelCard = el('div', { class: 'anr-card' });
       labelCard.appendChild(el('h3', {}, 'Cover'));
       labelCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' },
-        'The book’s cover image, analysed in the Photo section.'));
+        'Analysed in the Photo section below.'));
       resultsEl.appendChild(labelCard);
       const note = 'Cover image from ' + (file.name || 'this e-book') + '.';
       import('./photo.js')
@@ -278,7 +278,7 @@ export async function renderEpub(file, resultsEl) {
         const mins = Math.max(1, Math.round(totalWords / 220)); // ~220 wpm
         const rt = mins >= 60 ? Math.floor(mins / 60) + ' h ' + (mins % 60) + ' min' : mins + ' min';
         t.appendChild(rowHelp('Reading time', '~' + rt,
-          'Estimated at about 220 words per minute, a typical adult reading speed for prose.'));
+          'A rough guess at how long the book takes to read, based on a typical adult pace of about 220 words a minute.'));
       }
       if (tocList.length) t.appendChild(row('TOC entries', tocList.length));
       c.appendChild(t);

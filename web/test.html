@@ -345,9 +345,9 @@
             <p class="anr-hint">Revealed content sits under the summary.</p>
           </details>
 
-          <div class="tst-sub">Info toggle (.anr-info-btn + sibling .anr-info-panel; shown open - the [?] toggles .is-hidden in the app)</div>
-          <h3 class="anr-summary-label" style="margin:0 0 6px">Spectrogram stats <button type="button" class="anr-info-btn" title="Info">[?]</button></h3>
-          <div class="anr-info-panel">What the columns mean - peak frequency, crest factor and friends.</div>
+          <div class="tst-sub">Info [?] - opens a floating popup anchored to the button (unified with the row-help tips; shown open here, click-away closes it in the app)</div>
+          <h3 class="anr-summary-label anr-info-pop-anchor" style="margin:0 0 6px">Spectrogram stats <button type="button" class="anr-info-btn" title="Info">[?]</button><div class="anr-info-panel anr-info-pop is-active">What the columns mean - peak frequency, crest factor and friends.</div></h3>
+          <div style="height:64px" aria-hidden="true"></div>
         </div>
 
         <h2 class="section-head" id="chips">Chips &amp; badges.</h2>

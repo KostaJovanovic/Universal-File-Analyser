@@ -3,7 +3,7 @@
    previews for plain text, JSON, and XML. */
 
 import { SCAN_MED, SCAN_LARGE } from '../core/limits.js';
-import { el, row, rowHelp, fmtBytes, fileExt, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, fileExt, errorCard } from '../core/util.js';
 import { entropyProfile, hexBytes } from '../core/binutil.js';
 import { buildOsintCard } from '../core/osint.js';
 import { carveImages, repairJpeg, ensureJpegHuffman } from './photo-recover.js';
@@ -243,10 +243,10 @@ export async function renderUnknown(file, resultsEl, opts) {
   tbl.appendChild(row('Application', extensionless ? 'Extensionless (no file extension)' : 'Unknown'));
   tbl.appendChild(row('Name',     file.name));
   tbl.appendChild(row('Size',     `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
-  tbl.appendChild(rowHelp('MIME',     file.type || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
+  tbl.appendChild(rowHelp('MIME',     file.type || '-', "A MIME type is a standard label for a file's format, such as image/jpeg or audio/mpeg. Your browser works it out from the file's extension or from the operating system, so it is only a hint at the format, not proof."));
   tbl.appendChild(row('Modified', file.lastModified ? new Date(file.lastModified).toISOString().replace('T', ' ').replace(/\..*$/, '') : '-'));
   tbl.appendChild(row('Extension', fileExt(file.name) || '-'));
-  tbl.appendChild(rowHelp('Magic guess', guess, 'A best-effort file-type identification read from the first few "magic" bytes of the file. It is used when the extension is unknown, missing, or possibly wrong.'));
+  tbl.appendChild(rowHelp('Magic guess', guess, 'A best guess at the real file type, read from the first few bytes at the very start of the file - its "magic number" fingerprint. Used when the file’s extension is missing, unknown, or possibly wrong.'));
   card.appendChild(tbl);
 
   // Hex dump. For extensionless files the content IS the point, so the
@@ -340,7 +340,7 @@ export async function renderUnknown(file, resultsEl, opts) {
       statsTbl.appendChild(row('Characters', charCount.toLocaleString()));
       statsTbl.appendChild(row('Words', wordCount.toLocaleString()));
       statsTbl.appendChild(row('Lines', lineCount.toLocaleString()));
-      statsTbl.appendChild(rowHelp('Paragraphs', paragraphCount.toLocaleString(), 'The number of blank-line-separated blocks of text in the document.'));
+      statsTbl.appendChild(rowHelp('Paragraphs', paragraphCount.toLocaleString(), 'How many separate blocks of text there are, counting a blank line as the break between one block and the next.'));
       statsTbl.appendChild(rowHelp('Est. reading time', readingTime + ' min', 'A rough estimate of how long the text takes to read, assuming about 200 words per minute.'));
       card.appendChild(statsTbl);
     } catch (_) {}
@@ -375,10 +375,10 @@ export async function renderUnknown(file, resultsEl, opts) {
 
         card.appendChild(el('div', { class: 'anr-readout-section' }, 'JSON statistics'));
         const jsTbl = el('table', { class: 'anr-readout' });
-        jsTbl.appendChild(rowHelp('Total keys', stats.keys.toLocaleString(), 'The total number of object keys across the whole JSON document, counting nested objects.'));
-        jsTbl.appendChild(rowHelp('Max depth', stats.maxDepth, 'How deeply nested the structure is - the maximum number of levels of objects and arrays inside one another.'));
+        jsTbl.appendChild(rowHelp('Total keys', stats.keys.toLocaleString(), 'How many named fields the file holds in total. JSON stores data as name-and-value pairs; this counts every name, including those tucked inside others.'));
+        jsTbl.appendChild(rowHelp('Max depth', stats.maxDepth, 'How many levels deep the data is boxed - the most times you have to open one group inside another to reach the innermost value.'));
         if (stats.arrays.length > 0) {
-          jsTbl.appendChild(rowHelp('Arrays', stats.arrays.length + ' (lengths: ' + stats.arrays.join(', ') + ')', 'The number of arrays found in the document, with the length (item count) of each one listed.'));
+          jsTbl.appendChild(rowHelp('Arrays', stats.arrays.length + ' (lengths: ' + stats.arrays.join(', ') + ')', 'How many lists the file contains, with the number of items in each. An array is JSON’s word for a list of values.'));
         }
         card.appendChild(jsTbl);
 
@@ -432,8 +432,8 @@ export async function renderUnknown(file, resultsEl, opts) {
 
         card.appendChild(el('div', { class: 'anr-readout-section' }, 'XML statistics'));
         const xmlTbl = el('table', { class: 'anr-readout' });
-        xmlTbl.appendChild(rowHelp('Elements', xstats.count.toLocaleString(), 'The total number of XML tags (nodes) in the document.'));
-        xmlTbl.appendChild(rowHelp('Max depth', xstats.maxDepth, 'How deeply nested the structure is - the maximum number of levels of elements contained inside one another.'));
+        xmlTbl.appendChild(rowHelp('Elements', xstats.count.toLocaleString(), 'How many tags the file contains in total. XML marks up data with tags such as <name>...</name>; this counts every one.'));
+        xmlTbl.appendChild(rowHelp('Max depth', xstats.maxDepth, 'How many levels deep the tags are nested - the most times one tag sits inside another to reach the innermost.'));
         card.appendChild(xmlTbl);
 
         let formattedXml = '';
@@ -488,9 +488,11 @@ export async function renderUnknown(file, resultsEl, opts) {
   const carveHost = el('div', {});
   resultsEl.appendChild(carveHost);
   const scanCard = el('div', { class: 'anr-card' });
-  scanCard.appendChild(el('h3', {}, 'Embedded images'));
+  const [scanH, scanHelp] = h3help('Embedded images', 'Scans this file for embedded image signatures - whole JPEGs, PNGs, GIFs, WebPs and BMPs hidden inside a recovered fragment, a joined dump or a mis-typed blob.');
+  scanCard.appendChild(scanH);
+  scanCard.appendChild(scanHelp);
   scanCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 12px;' },
-    'Scan this file for embedded image signatures - whole JPEGs, PNGs, GIFs, WebPs and BMPs hidden inside a recovered fragment, a joined dump or a mis-typed blob. It reads up to ' + fmtBytes(CARVE_SCAN_CAP) + ', so it can take a moment.'));
+    'Recover images hidden inside this file. It reads up to ' + fmtBytes(CARVE_SCAN_CAP) + ', so it can take a moment.'));
   const scanBtn = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Scan for images');
   scanCard.appendChild(scanBtn);
   carveHost.appendChild(scanCard);
@@ -535,9 +537,11 @@ async function appendEntropyCard(file, resultsEl) {
   else assessment = 'Mixed - typical of a structured binary (headers plus packed payloads).';
 
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Byte entropy'));
+  const [entH, entHelp] = h3help('Byte entropy', 'Shannon entropy measures how random each chunk of bytes is: 0 means very repetitive, 8 means completely random. High flat regions suggest compressed or encrypted data; sharp steps mark a boundary between unlike sections.');
+  card.appendChild(entH);
+  card.appendChild(entHelp);
   card.appendChild(el('p', { class: 'anr-hint' },
-    'Shannon entropy per chunk (0 = repetitive, 8 = random). High flat regions suggest compressed or encrypted data; sharp steps mark a boundary between unlike sections'
+    'Shannon entropy per chunk'
     + (file.size > ENTROPY_SCAN_CAP ? ' (first ' + fmtBytes(ENTROPY_SCAN_CAP) + ' scanned)' : '') + '.'));
 
   const cv = el('canvas', { class: 'anr-entropy-map' });
@@ -563,7 +567,7 @@ async function appendEntropyCard(file, resultsEl) {
   cv.addEventListener('mouseleave', () => { hoverEl.textContent = 'Hover the strip for per-chunk detail.'; });
 
   const t = el('table', { class: 'anr-readout' });
-  t.appendChild(row('Mean entropy', mean.toFixed(2) + ' / 8 bits'));
+  t.appendChild(rowHelp('Mean entropy', mean.toFixed(2) + ' / 8 bits', 'The average randomness across the file, from 0 (very repetitive) to 8 (completely random). Higher values point to compressed, encrypted or already-packed content.'));
   t.appendChild(row('Range', min.toFixed(2) + ' - ' + max.toFixed(2)));
   t.appendChild(row('Assessment', assessment));
   card.appendChild(t);
@@ -589,7 +593,7 @@ async function appendEmbeddedImagesCard(file, resultsEl, host) {
   card.appendChild(el('h3', {}, 'Embedded images'));
   card.appendChild(el('p', { class: 'anr-hint' },
     'Found ' + carved.length + ' image' + (carved.length === 1 ? '' : 's') + ' hidden in this file'
-    + (file.size > CARVE_SCAN_CAP ? ' (first ' + fmtBytes(CARVE_SCAN_CAP) + ' scanned)' : '') + '. Salvaged on your device.'));
+    + (file.size > CARVE_SCAN_CAP ? ' (first ' + fmtBytes(CARVE_SCAN_CAP) + ' scanned)' : '') + '.'));
   // Bare thumbnails with their Analyse / Download actions overlaid on hover, each
   // decoding lazily as it scrolls into view - so the cards below this one appear
   // straight away (carve-gallery.js).

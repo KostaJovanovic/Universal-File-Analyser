@@ -253,7 +253,7 @@ function buildArchiveForensics(buf, fileEntries) {
     tbl.appendChild(row('Earliest', fmtT(min)));
     tbl.appendChild(row('Latest', fmtT(max)));
     tbl.appendChild(rowHelp('Time span', fmtDuration(span),
-      'How far apart the oldest and newest entry timestamps are. A span of seconds across many files suggests they were packed in one pass rather than gathered over time.'));
+      'How far apart the oldest and newest file dates inside the archive are. A span of just seconds across many files suggests they were all packed in one go, rather than added over time.'));
 
     const uniq = new Set(dated).size;
     const now = Date.now();
@@ -261,15 +261,15 @@ function buildArchiveForensics(buf, fileEntries) {
     const future = dated.filter((s) => s > now + 86400000).length;
     if (fileEntries.length >= 3 && span <= 2000) {
       tbl.appendChild(rowHelp('⚠ Bulk-added', `all ${dated.length} dated entries within ${fmtDuration(span)}`,
-        'Every entry shares almost the same timestamp - a sign the archive was generated or repacked programmatically in a single pass, not assembled file by file.'));
+        'Every file inside carries almost the same date and time - a sign a program built or repacked the whole archive in one go, rather than files being added one at a time.'));
     } else if (uniq === 1 && dated.length > 1) {
       tbl.appendChild(rowHelp('⚠ Identical timestamps', `all ${dated.length} dated entries share one timestamp`,
-        'A single shared timestamp across every entry is typical of a tool-generated or repacked archive.'));
+        'Every file inside carries the exact same date and time, which usually means a program created or repacked the archive rather than a person adding files over time.'));
     }
     if (placeholder) tbl.appendChild(rowHelp('Placeholder dates', `${placeholder} entr${placeholder === 1 ? 'y' : 'ies'} at 1980-01-01`,
-      'The DOS epoch (1980-01-01 00:00) is what tools write when no real modification time is available.'));
+      'When a program has no real last-changed date for a file, it often fills in a stand-in date of 1 January 1980 - the earliest date the old DOS and ZIP formats can store.'));
     if (future) tbl.appendChild(rowHelp('⚠ Future-dated', `${future} entr${future === 1 ? 'y' : 'ies'} dated after today`,
-      'A timestamp in the future usually means a wrong system clock or a deliberately forged date.'));
+      'A file dated later than today usually means the computer’s clock was set wrong, or the date was deliberately faked.'));
     card.appendChild(tbl);
     card.appendChild(buildTimeHistogram(dated, min, max));
   }
@@ -293,7 +293,7 @@ function buildArchiveForensics(buf, fileEntries) {
       if (res.fail) {
         const sample = res.mismatches.slice(0, 8).join(', ') + (res.mismatches.length > 8 ? `, …(+${res.mismatches.length - 8} more)` : '');
         t.appendChild(rowHelp('⚠ CRC mismatches', sample,
-          'These entries’ recomputed CRC-32 does not match the value stored in the archive - the data is corrupt or was altered after the archive was built.'));
+          'A CRC-32 is a short check number worked out from a file’s contents, like a fingerprint. Re-checking these files gives a different number from the one saved in the archive, so their data is damaged or was changed after the archive was made.'));
       }
       out.appendChild(t);
     } catch (e) {
@@ -387,15 +387,15 @@ export async function renderArchive(file, resultsEl, opts = {}) {
   tbl.appendChild(row('Archive size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
   tbl.appendChild(row('Files', String(fileEntries.length)));
   tbl.appendChild(row('Directories', String(dirEntries.length)));
-  tbl.appendChild(rowHelp('Total uncompressed', fmtBytes(totalUncomp), 'The combined size of all files once they are extracted from the archive.'));
-  tbl.appendChild(rowHelp('Total compressed', fmtBytes(totalComp), 'The combined size of all files as they are stored inside the archive, after compression.'));
-  tbl.appendChild(rowHelp('Compression ratio', ratio + '%', 'How much space the archive saves versus the uncompressed total, computed as 1 − compressed ÷ uncompressed. Higher percentages mean a smaller archive; 0% means no compression.'));
+  tbl.appendChild(rowHelp('Total uncompressed', fmtBytes(totalUncomp), 'The combined size of all the files once they are unpacked out of the archive.'));
+  tbl.appendChild(rowHelp('Total compressed', fmtBytes(totalComp), 'The combined size of all the files as they are actually stored inside the archive, after being squeezed down.'));
+  tbl.appendChild(rowHelp('Compression ratio', ratio + '%', 'How much space squeezing the files saved, compared with their full unpacked size - worked out as 1 − compressed ÷ uncompressed. A higher percentage means a smaller archive; 0% means no space was saved.'));
   // Compression methods used across the entries (8 = Deflate, 0 = Stored, etc.).
   const METHODS = { 0: 'Stored', 8: 'Deflate', 9: 'Deflate64', 12: 'BZIP2', 14: 'LZMA', 93: 'Zstandard', 95: 'XZ', 99: 'AES' };
   const methodCounts = {};
   for (const e of fileEntries) { const n = METHODS[e.compMethod] || ('Method ' + e.compMethod); methodCounts[n] = (methodCounts[n] || 0) + 1; }
   const methodStr = Object.entries(methodCounts).map(([k, v]) => k + ' ×' + v).join(', ');
-  if (methodStr) tbl.appendChild(rowHelp('Compression', methodStr, 'The compression method(s) used for the entries. Deflate is the standard ZIP method; Stored means no compression.'));
+  if (methodStr) tbl.appendChild(rowHelp('Compression', methodStr, 'The method used to shrink each file. Deflate is the usual ZIP squeezing method; Stored means the file was kept as-is with no shrinking.'));
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
 
@@ -439,7 +439,7 @@ export async function renderArchive(file, resultsEl, opts = {}) {
         stbl.appendChild(rowHelp(
           'Encrypted entries',
           `${encrypted.length} of ${fileEntries.length}${note}`,
-          'Files protected with a password (general-purpose flag bit 0). Analyser can list these entries but cannot decompress or preview their contents without the password.'
+          'Files locked with a password (marked by the ZIP general-purpose flag bit 0). Analyser can list them but cannot unpack or preview their contents without the password.'
         ));
       }
 
@@ -449,7 +449,7 @@ export async function renderArchive(file, resultsEl, opts = {}) {
         stbl.appendChild(rowHelp(
           '⚠ Unsafe paths',
           `${unsafe.length} (path traversal) - ${sample}${more}`,
-          'Entry names that contain "../", start with "/", or use a drive letter/UNC path. A naïve extractor could be tricked into writing these files outside the intended folder (a "Zip Slip" attack). Analyser never writes them to disk.'
+          'The names of files inside point outside the archive - they contain "../", start with "/", or name a drive letter or network (UNC) path. Unpacked by a careless program, these could be written outside the folder you chose and overwrite other files (a trick called "Zip Slip"). Analyser never writes them to disk.'
         ));
       }
 
@@ -460,7 +460,7 @@ export async function renderArchive(file, resultsEl, opts = {}) {
         stbl.appendChild(rowHelp(
           '⚠ Suspicious compression ratio',
           detail,
-          'A very high uncompressed-to-compressed ratio can indicate a "zip bomb" - a small archive that expands to an enormous size to exhaust memory or disk. Treat unfamiliar archives like this with caution.'
+          'These files unpack to a huge size from very little stored data. That can be a "zip bomb" - a tiny archive deliberately built to balloon into something enormous and swamp your memory or disk. Treat an unfamiliar archive like this with caution.'
         ));
       }
 
@@ -468,7 +468,7 @@ export async function renderArchive(file, resultsEl, opts = {}) {
         stbl.appendChild(rowHelp(
           'ZIP64',
           'Yes (large-archive extensions present)',
-          'This archive uses the ZIP64 format, which lifts the 4 GB / 65,535-entry limits of classic ZIP. It is normal for large archives.'
+          'This archive uses ZIP64, an extension that lets a ZIP hold more than the classic limits of 4 GB or 65,535 files. It is normal for very large archives.'
         ));
       }
 
@@ -480,7 +480,7 @@ export async function renderArchive(file, resultsEl, opts = {}) {
         stbl.appendChild(rowHelp(
           'Created on',
           `${hostName} (ZIP spec ${ver.toFixed(1)})`,
-          'The host operating system and ZIP specification version recorded by the tool that produced this archive ("version made by" in the central directory).'
+          'The operating system and ZIP format version that the program which built this archive recorded inside it (labelled "version made by" in the archive’s index).'
         ));
       }
 
@@ -637,7 +637,7 @@ export async function renderArchive(file, resultsEl, opts = {}) {
     prevCard.appendChild(el('p', {
       class: 'anr-hint',
       style: 'margin: 0 0 8px; font-size: 12px;'
-    }, `${previewable.length} small text file(s) can be previewed. Click to expand.`));
+    }, `${previewable.length} small text file(s) can be previewed.`));
 
     let ffl = null;
 
@@ -907,7 +907,7 @@ async function renderCompressedEmbedded(file, container, label) {
   if (!res || !res.data) {
     container.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;font-size:12px;' },
       /bzip2|bz2/i.test(label)
-        ? 'This is a single bzip2-compressed file. In-browser bzip2 decompression is not available, so only the identification above is shown.'
+        ? 'Single bzip2-compressed file. In-browser bzip2 decompression is not available, so only the identification above is shown.'
         : 'This compressed file could not be decompressed in the browser.'));
     return;
   }
@@ -916,7 +916,7 @@ async function renderCompressedEmbedded(file, container, label) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Decompressed file'));
   card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;font-size:12px;' },
-    `A single ${res.codec}-compressed file (${fmtBytes(res.data.length)} decompressed). Open the file inside to analyse it.`));
+    `A single ${res.codec}-compressed file (${fmtBytes(res.data.length)} decompressed).`));
   const btn = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse ' + innerName);
   btn.addEventListener('click', () => {
     if (window._anrPushNav) window._anrPushNav(file.name || 'archive', () => { if (window._anrHandleFile) window._anrHandleFile(file, {}); });
@@ -938,8 +938,8 @@ export async function renderArchiveEmbedded(file, container, opts = {}) {
   head.appendChild(el('h3', {}, compressed ? 'Open contents' : 'Browse as archive'));
   head.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;font-size:12px;' },
     compressed
-      ? `This ${label} file is decompressed in your browser so you can open what is inside it.`
-      : `This file is also a ${label} archive. Browse the files inside, and click any one to analyse it.`));
+      ? `Decompressed in your browser so you can open the file inside.`
+      : `This file is also a ${label} archive - browse the files inside.`));
   container.appendChild(head);
 
   const wrap = el('div', {});

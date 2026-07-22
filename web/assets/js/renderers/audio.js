@@ -23,6 +23,7 @@ import { buildReverseAudioCard } from './media-reverse.js';
 // Constants only (no WASM/worker) - safe to load eagerly; the picker and the
 // download prompt read tier sizes from here. The heavy client is still lazy.
 import { MDX_MODELS } from '../lib/mdx-model.js';
+import { DFN_MODEL } from '../lib/dfn-model.js';
 
 // Re-exported so existing importers (e.g. video.js) can keep importing the
 // transport from this module.
@@ -360,11 +361,11 @@ function fmtClock(s) {
 // Per-metric explanations, one per row - each shown behind the row label's own
 // [?] tip (the site's standard rowHelp idiom), the same as every other readout.
 const SPEC_STAT_HELP = {
-  peak: 'When the audio is loudest - the timestamp of the loudest moment and its level (RMS over a 50 ms window, in dBFS).',
-  detected: 'The band that actually carries energy - the lowest to highest frequency staying within ' + SIGNAL_DB + ' dB of the peak.',
-  cutoff: 'The highest frequency present. A hard ceiling well below 20 kHz is the tell-tale lowpass of lossy encoding (MP3 / AAC), and its height hints at the bitrate. Accurate to plus or minus half an FFT bin - raise FFT to refine.',
-  dynRange: 'The gap between the peak and the noise floor (the 10th-percentile bin). Larger means cleaner with more headroom; small means noisy or heavily compressed.',
-  resolution: 'The current analysis grid - hertz per frequency bin and milliseconds per time frame. Set by FFT size: finer in one axis is always coarser in the other.',
+  peak: 'The single loudest moment in the clip - when it happens and how loud it is. The level is a short-term average (RMS over a 50 ms window) in dBFS, where 0 is the digital maximum.',
+  detected: 'The span of pitches that carry real sound, from the lowest to the highest that stay within ' + SIGNAL_DB + ' dB of the loudest point - quieter frequencies below that are ignored.',
+  cutoff: 'The highest pitch present in the sound. A hard ceiling well below 20 kHz (the top of human hearing) is the tell-tale sign of space-saving compression such as MP3 or AAC, and how high it sits hints at the bitrate (quality). Accurate to within half an FFT measurement step - raise FFT to refine.',
+  dynRange: 'The gap between the loudest sound and the quiet background hiss (the noise floor, taken as the 10th-percentile level). A big gap means a clean recording with plenty of headroom; a small gap means it is noisy or heavily compressed.',
+  resolution: 'How fine the analysis is - how many hertz each pitch step covers and how many milliseconds each time slice covers. The FFT size sets this, and sharpening one always blurs the other.',
 };
 
 // Build the stats header (just the caption; each row carries its own [?] tip).
@@ -593,11 +594,11 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   const KARAOKE_LO = 300, KARAOKE_HI = 3400;
 
   const [specH, specHelp] = h3help('Spectrogram',
-    '<strong>Axis</strong> Log maps frequencies logarithmically (closer to human hearing). Linear spaces them evenly.<br>' +
-    '<strong>Mode</strong> STFT is the standard windowed FFT. Reassigned sharpens both the time and frequency axes at once by moving each cell’s energy to its true centre - thin ridges instead of blurred blobs - using the same FFT (3× the compute).<br>' +
-    '<strong>FFT</strong> Fast Fourier Transform window size. Larger = better frequency resolution but lower time resolution.<br>' +
-    '<strong>Window</strong> Windowing function applied before the FFT. Hann is a good default; Blackman reduces spectral leakage; Rect (rectangular) applies no smoothing.<br>' +
-    '<strong>Colour</strong> Colour mapping for intensity values. Magma, viridis, and inferno are perceptually uniform.<br>' +
+    '<strong>Axis</strong> Log spaces the pitches the way we hear them, so each step up an octave takes the same room (closer to human hearing). Linear spaces frequencies evenly in hertz instead.<br>' +
+    '<strong>Mode</strong> STFT is the standard method (a windowed FFT). Reassigned sharpens both the time and pitch axes at once by nudging each cell’s energy to its true centre - thin ridges instead of blurred blobs - using the same FFT (3× the compute).<br>' +
+    '<strong>FFT</strong> Fast Fourier Transform - the block size used to split the sound into pitches. Larger shows pitch more precisely but blurs timing; smaller does the reverse.<br>' +
+    '<strong>Window</strong> A smoothing shape applied to each block before the FFT. Hann is a good default; Blackman further cuts smearing between nearby pitches (spectral leakage); Rect (rectangular) applies no smoothing.<br>' +
+    '<strong>Colour</strong> The colour scheme used to show loudness. Magma, viridis and inferno keep equal loudness steps looking equally different (perceptually uniform).<br>' +
     '<strong>Zoom</strong> Horizontal zoom. Stretches the time axis so you can see finer detail.<br>' +
     '<strong>Height</strong> Vertical size of the spectrogram canvas in pixels. In fullscreen, “Fill” stretches it to the whole screen; pick a pixel value for a fixed size instead.');
   card.appendChild(specH);
@@ -1141,7 +1142,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     let activePreset = null, applyingPreset = false;
     // AI stem separation: a real model, unlike the EQ presets. Wired in the block
     // further down; the elements live here so they can sit inside the panel.
-    const aiBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm anr-iso-ai' }, 'Separate vocals (AI)');
+    const aiBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm anr-iso-ai' }, 'AI separation');
     const aiStatus = el('div', { class: 'anr-iso-aistatus', hidden: true });
     const aiStems = el('div', { class: 'anr-iso-stems' });
     // Explanation tucked behind a [?] next to the "Separate" label (site's
@@ -1150,13 +1151,13 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // help covers both rather than just the AI part.
     const aiHelpBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'About separating parts' }, '[?]');
     const aiHelpPanel = el('div', { class: 'anr-info-panel is-hidden', html:
-      'Two ways to pull a part out of the mix. The <strong>presets</strong> (Vocals, Bass, Drums, Remove vocals) are one-tap EQ filters - they keep or cut frequency ranges, so they are instant but rough and leave some bleed. <strong>Separate vocals (AI)</strong> runs a real AI model that splits the track into true vocal and instrumental stems - far cleaner, and a genuine separation rather than a frequency cut. Pick the model to suit your device: <strong>Standard</strong> is the cleanest, <strong>Lite</strong> is about half the download and lighter to run, for phones. The AI runs entirely on your device and nothing is uploaded; the first run downloads the chosen model once, then works offline.' });
+      'Two ways to pull a single part out of the mix. The <strong>presets</strong> (Underwater, Radio, Hollow) are one-tap character filters - they keep or cut ranges of pitch to colour the whole track: a muffled low-pass (<strong>Underwater</strong>), a tinny band-pass (<strong>Radio</strong>) or a scooped mid notch (<strong>Hollow</strong>). They are instant but rough. <strong>AI separation</strong> opens a row of real on-device AI tools. Pick <strong>Standard</strong> or <strong>Lite</strong> to split the track into a clean vocal and a clean backing track (separate "stems") - far cleaner than the presets, and a true separation rather than just a pitch cut; Standard is the cleanest, Lite is about half the download and lighter to run, for phones. <strong>Denoise</strong> (in the same row) does something different: instead of splitting vocals from music, it removes background noise and hiss while keeping the full sound, and shows the result as a Clean to Noise blend. The AI runs entirely on your device and nothing is uploaded; the first run downloads the chosen model once, then works offline.' });
     wireInfoToggle(aiHelpBtn, aiHelpPanel);
     const aiLabel = el('span', { class: 'anr-iso-seclabel' }, 'Separate');
     aiLabel.appendChild(aiHelpBtn);
     // One row: the AI separator on the far left, a divider, then the rough EQ
-    // presets (Vocals/Bass/Drums/Remove vocals). Clear is appended later and
-    // pushed to the far right. Both sides are one-tap "give me just the X" tools.
+    // presets (Underwater/Radio/Hollow). Clear is appended
+    // later and pushed to the far right. Both sides are one-tap tone tools.
     const aiSep = el('span', { class: 'anr-iso-seg-div', 'aria-hidden': 'true' }, '|');
     const aiRow = el('div', { class: 'anr-iso-ai-row' }, [aiBtn, aiSep, presetBar]);
     // Which AI model the Separate button uses. "standard" (Kim Vocal 2) is the
@@ -1175,21 +1176,34 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     ].forEach(([id, label, title]) => {
       const b = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' + (id === aiModelId ? ' is-active' : ''), title }, label);
       b.addEventListener('click', () => {
-        if (aiRunning || aiModelId === id) return;
+        if (aiRunning) return;
         aiModelId = id;
-        for (const x of Object.values(aiModelBtns)) x.classList.remove('is-active');
-        b.classList.add('is-active');
-        // If the model prompt is open, re-render it for the newly-chosen model so its
-        // title, blurb, size and button all update in real time.
-        if (aiConfirmRender) aiConfirmRender();
+        // Shared dispatch: highlight this tier, record that it runs SEPARATION, and
+        // either re-render an open prompt for it or start the job. See pickAction.
+        pickAction('separate', b);
       });
       aiModelBtns[id] = b; aiModelSeg.appendChild(b);
     });
-    // Hidden until the user clicks Separate vocals (AI), which reveals it.
+    // The denoise action sits in the same row, to the right of the model tiers and
+    // divided by a "|". Unlike Standard/Lite (which pick the SEPARATION model), this
+    // is its own on-device AI job: DeepFilterNet3, which strips background noise and
+    // hiss and shows the result in the same blend view relabelled Clean <-> Noise.
+    // Its click handler is wired in the AI block below (with the separator's).
+    const denoiseBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'DeepFilterNet3 - remove background noise and hiss, about ' + DFN_MODEL.tierMb + ' MB to download once' }, 'denoise');
+    aiModelSeg.appendChild(el('span', { class: 'anr-iso-seg-div', 'aria-hidden': 'true' }, '|'));
+    aiModelSeg.appendChild(denoiseBtn);
+    // Closed by default: the row (separation tiers + the denoise action) is revealed
+    // when the user clicks AI separation, then stays open so denoise remains reachable.
     const aiModelRow = el('div', { class: 'anr-iso-modelrow', hidden: true }, [
       el('span', { class: 'anr-iso-modellabel' }, 'AI model'),
       aiModelSeg,
     ]);
+    // Standard / Lite / denoise act as one visual radio group: clicking any of them
+    // highlights it (black) and drops whichever was selected before.
+    function setAiSelection(sel) {
+      for (const x of Object.values(aiModelBtns)) x.classList.toggle('is-active', x === sel);
+      denoiseBtn.classList.toggle('is-active', sel === denoiseBtn);
+    }
     // Two labelled tiers: the EQ isolation tools (presets + manual bands + WAV
     // export) on top, then the on-device AI stem separator as its own block.
     const isoPanel = el('div', { class: 'anr-iso-panel is-hidden' }, [
@@ -1473,6 +1487,15 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       if (hi < NYQi) addBand(hi, NYQi);
       applyingPreset = false;
     }
+    // Cut a single mid band (keeping the lows AND highs) - the inverse of soloRange,
+    // for the scooped "Hollow" preset.
+    function cutRange(lo, hi) {
+      applyingPreset = true;
+      isoMode = 'bands';
+      for (const b of isoBands.slice()) removeBand(b);
+      addBand(lo, hi);
+      applyingPreset = false;
+    }
     function setKaraoke() {
       applyingPreset = true;
       for (const b of isoBands.slice()) removeBand(b);
@@ -1481,10 +1504,10 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       rebuildGraph();
     }
     const PRESETS = [
-      { key: 'vocals',  label: 'Vocals',        run: () => soloRange(300, 3400) },
-      { key: 'bass',    label: 'Bass',          run: () => soloRange(1, 250) },
-      { key: 'drums',   label: 'Drums',         run: () => soloRange(3000, NYQi) },
-      { key: 'novocal', label: 'Remove vocals', stereoOnly: true, run: setKaraoke },
+      // One-tap character effects: keep or cut ranges of pitch to colour the track.
+      { key: 'underwater', label: 'Underwater', run: () => soloRange(1, 400) },      // muffled low-pass
+      { key: 'radio',      label: 'Radio',      run: () => soloRange(500, 3400) },   // tinny band-pass
+      { key: 'hollow',     label: 'Hollow',     run: () => cutRange(500, 3000) },    // scooped mid notch
     ];
     // Drop any preset/bands but LEAVE isolation on (a cleared slate you can keep
     // editing). Shared by the Clear button and the toggle-off path. The main
@@ -1566,12 +1589,44 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // and produces two playable/downloadable stems. Everything heavy (runtime +
     // model) is lazy-loaded on first click and cached for offline use.
     let aiRunning = false, aiUrls = [], blendCleanup = null;
+    // Display config per AI job. Both jobs produce two stems shown in the same
+    // blend view; only the labels/keys differ. The result object always carries the
+    // left stem as result.vocals and the right as result.instrumental (denoise maps
+    // clean -> vocals, noise -> instrumental when it runs), so the rendering code is
+    // shared and only these strings change.
+    const STEM_CFGS = {
+      separate: { leftKey: 'vocals', leftLabel: 'Vocals', rightKey: 'instrumental', rightLabel: 'Instrumental', toward: ['vocals', 'instrumental'], aria: 'Blend vocals to instrumental' },
+      denoise: { leftKey: 'clean', leftLabel: 'Clean', rightKey: 'noise', rightLabel: 'Noise', toward: ['clean', 'noise'], aria: 'Blend clean to noise' },
+    };
     // Separate button is a toggle: clicking it reveals the model picker and opens the
     // model prompt (download-or-start), and clicking it again once a separation is
     // showing clears it. aiOn tracks whether results are showing. aiConfirming marks
     // the prompt open; aiConfirmRender re-renders it for the current model (called by
     // the picker so switching Standard/Lite updates the prompt in real time).
     let aiOn = false, aiConfirming = false, aiConfirmRender = null;
+    // Dismiss an open confirm prompt from outside (e.g. the AI separation button
+    // closing the panel). Resolves the pending confirmDownload() as cancelled so
+    // startStems returns cleanly instead of leaving its await hanging.
+    let aiConfirmCancel = null;
+    // Which AI job is currently showing: null | 'separate' | 'denoise'. Only one
+    // blend can own the spectrogram at a time, so starting one clears the other.
+    let activeKind = null;
+    // Which job the next Start will run: 'separate' (Standard/Lite) or 'denoise'.
+    // Standard, Lite and denoise all funnel through pickAction so they act as one
+    // radio group even while the confirm prompt is up: clicking any of them
+    // highlights it and, if a prompt is already open, re-renders THAT prompt for
+    // the new choice (title, blurb, size, button track it live) instead of being
+    // ignored. Ignoring was the old bug - denoise was dropped whenever a separation
+    // prompt was open, so its confirm box never appeared. With no prompt open it
+    // just starts the job.
+    let pendingKind = 'separate';
+    function pickAction(kind, btn) {
+      if (aiRunning) return;
+      pendingKind = kind;
+      setAiSelection(btn);
+      if (aiConfirming) { if (aiConfirmRender) aiConfirmRender(); return; }
+      startStems();
+    }
     function revokeAiUrls() { for (const u of aiUrls) { try { URL.revokeObjectURL(u); } catch (_) {} } aiUrls = []; }
 
     function stemBuffer(channels, sr) {
@@ -1594,7 +1649,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // and only RECOMBINE precomputed complex bins per slider move - no re-FFT -
     // so it stays truthful (exact magnitude of the blended audio) yet cheap.
     function gainsFor(s) { return { a: 1 - Math.max(0, s), b: 1 + Math.min(0, s) }; }
-    function renderBlend(result, resume) {
+    function renderBlend(result, resume, cfg) {
+      cfg = cfg || STEM_CFGS.separate;
       const sr = result.sampleRate;
       const L = result.vocals[0].length;
       const dur = L / sr;
@@ -1662,7 +1718,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       // (same idiom as the sensitivity slider's 100% slit).
       const slider = el('input', {
         type: 'range', min: '-100', max: '100', value: '0', step: '1',
-        class: 'anr-range anr-blend-slider', 'aria-label': 'Blend vocals to instrumental',
+        class: 'anr-range anr-blend-slider', 'aria-label': cfg.aria,
       });
       const midTick = el('div', { class: 'anr-range-tick', style: 'left:50%', 'aria-hidden': 'true' });
       const sliderWrap = el('div', { class: 'anr-range-wrap anr-blend-wrap' }, [slider, midTick]);
@@ -1819,8 +1875,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       function updateTag() {
         const s = sliderS();
         tagEl.textContent = s === 0 ? 'Normal mix' : s < 0
-          ? Math.round(-s * 100) + '% toward vocals'
-          : Math.round(s * 100) + '% toward instrumental';
+          ? Math.round(-s * 100) + '% toward ' + cfg.toward[0]
+          : Math.round(s * 100) + '% toward ' + cfg.toward[1];
       }
       slider.addEventListener('input', () => {
         const v = Number(slider.value);
@@ -1838,9 +1894,9 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
           tagEl,
         ]),
         el('div', { class: 'anr-blend-sliderrow' }, [
-          el('span', { class: 'anr-blend-end' }, 'Vocals'),
+          el('span', { class: 'anr-blend-end' }, cfg.leftLabel),
           sliderWrap,
-          el('span', { class: 'anr-blend-end' }, 'Instrumental'),
+          el('span', { class: 'anr-blend-end' }, cfg.rightLabel),
         ]),
       ]);
 
@@ -1882,7 +1938,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       return block;
     }
 
-    function renderStems(result) {
+    function renderStems(result, cfg) {
+      cfg = cfg || STEM_CFGS.separate;
       revokeAiUrls();
       // If the track was playing while the model ran, note where the playhead was so
       // the new blend can resume from there (rather than jumping back to 0:00).
@@ -1902,13 +1959,13 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       aiHelpPanel.classList.add('is-hidden');
       aiStems.textContent = '';
       blendMount.textContent = '';
-      const blend = renderBlend(result, resume);
+      const blend = renderBlend(result, resume, cfg);
       if (blend) blendMount.appendChild(blend);
       const base = opts.basename || 'audio';
       const dur = result.vocals[0].length / result.sampleRate;
       const stems = [
-        { key: 'vocals', label: 'Vocals', channels: result.vocals },
-        { key: 'instrumental', label: 'Instrumental', channels: result.instrumental },
+        { key: cfg.leftKey, label: cfg.leftLabel, channels: result.vocals },
+        { key: cfg.rightKey, label: cfg.rightLabel, channels: result.instrumental },
       ];
       for (const s of stems) {
         const blob = encodeWav(stemBuffer(s.channels, result.sampleRate));
@@ -1969,106 +2026,161 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // once it is already downloaded it is a plain start confirmation ("Start
     // separation"). Either way the model picker stays live above it (aiConfirmSizeEl),
     // so switching tier here updates the size and what actually runs.
+    // `kind` selects the job: 'separate' (MDX, live tier picker) or 'denoise'
+    // (DeepFilterNet3, a single fixed model). The separation prompt tracks the
+    // Standard/Lite pick live; the denoise prompt is static.
     function confirmDownload() {
       return new Promise((resolve) => {
         aiConfirming = true;
         // The prompt drops the description ([?] + panel) while it's up, but the
-        // Separate button and the model picker stay visible.
+        // buttons and the model picker stay visible.
         aiHelpBtn.hidden = true; aiHelpPanel.classList.add('is-hidden');
         aiStatus.hidden = false; aiStatus.textContent = '';
         const box = el('div', { class: 'anr-iso-confirm' });
         const yes = el('button', { type: 'button', class: 'anr-btn anr-btn-sm anr-iso-confirm-yes' }, '');
         const no = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Cancel');
-        const done = (v) => { aiConfirming = false; aiConfirmRender = null; aiStatus.textContent = ''; aiStatus.hidden = true; aiHelpBtn.hidden = false; resolve(v); };
+        const done = (v) => { aiConfirming = false; aiConfirmRender = null; aiConfirmCancel = null; aiStatus.textContent = ''; aiStatus.hidden = true; aiHelpBtn.hidden = false; resolve(v); };
         yes.addEventListener('click', () => done(true));
         no.addEventListener('click', () => done(false));
-        // Rebuild the box for whichever model is selected right now. Called on open and
-        // again by the picker on every model switch, so the title, blurb, size and
-        // button track the selection live. A model already downloaded shows a plain
-        // start confirmation; one still to fetch shows the download notice + size.
+        // Rebuild the box for the current selection (pendingKind). Called again by
+        // pickAction on every Standard/Lite/denoise switch, so the title, blurb, size
+        // and button track the choice live - including switching between separation
+        // and denoise.
         async function render() {
-          const model = MDX_MODELS[aiModelId] || MDX_MODELS.standard;
-          const tier = model.label || 'Standard';
-          const blurb = model.blurb || '';
-          const needsDownload = !(await modelReady(model));
-          yes.textContent = needsDownload ? 'Download and continue' : 'Start separation';
-          const sizeEl = el('span', { class: 'anr-iso-confirm-size' }, 'about ' + model.tierMb + ' MB');
-          // Each tier explains itself (model.blurb), so the prompt text differs per model.
-          const body = needsDownload
-            ? el('p', {}, ['The first run fetches the ', el('strong', {}, tier), ' model (', blurb, ') and its runtime (', sizeEl, '), then keeps them for offline use. Everything runs on your device - nothing is uploaded.'])
-            : el('p', {}, ['Splits this track into separate vocal and instrumental parts with the ', el('strong', {}, tier), ' model - ', blurb, '. Everything runs on your device - nothing is uploaded.']);
           box.textContent = '';
-          box.appendChild(el('div', { class: 'anr-iso-confirm-title' }, needsDownload ? 'Download AI model' : 'Separate vocals'));
-          box.appendChild(body);
+          const kind = pendingKind;
+          if (kind === 'denoise') {
+            const model = DFN_MODEL;
+            const needsDownload = !(await modelReady(model, 'anr-dfn-ready-'));
+            yes.textContent = needsDownload ? 'Download and continue' : 'Start denoise';
+            const sizeEl = el('span', { class: 'anr-iso-confirm-size' }, 'about ' + model.tierMb + ' MB');
+            const body = needsDownload
+              ? el('p', {}, ['The first run fetches the denoise model (', el('strong', {}, model.name), ' - ', model.blurb, ') and its runtime (', sizeEl, '), then keeps them for offline use. Everything runs on your device - nothing is uploaded.'])
+              : el('p', {}, ['Removes background noise and hiss from this track with ', el('strong', {}, model.name), ', keeping the full sound. Everything runs on your device - nothing is uploaded.']);
+            box.appendChild(el('div', { class: 'anr-iso-confirm-title' }, needsDownload ? 'Download denoise model' : 'Denoise'));
+            box.appendChild(body);
+          } else {
+            const model = MDX_MODELS[aiModelId] || MDX_MODELS.standard;
+            const tier = model.label || 'Standard';
+            const blurb = model.blurb || '';
+            const needsDownload = !(await modelReady(model, 'anr-mdx-ready-'));
+            yes.textContent = needsDownload ? 'Download and continue' : 'Start separation';
+            const sizeEl = el('span', { class: 'anr-iso-confirm-size' }, 'about ' + model.tierMb + ' MB');
+            const body = needsDownload
+              ? el('p', {}, ['The first run fetches the ', el('strong', {}, tier), ' model (', blurb, ') and its runtime (', sizeEl, '), then keeps them for offline use. Everything runs on your device - nothing is uploaded.'])
+              : el('p', {}, ['Splits this track into separate vocal and instrumental parts with the ', el('strong', {}, tier), ' model - ', blurb, '. Everything runs on your device - nothing is uploaded.']);
+            box.appendChild(el('div', { class: 'anr-iso-confirm-title' }, needsDownload ? 'Download AI model' : 'Separate vocals'));
+            box.appendChild(body);
+          }
           box.appendChild(el('div', { class: 'anr-iso-confirm-btns' }, [yes, no]));
         }
         aiConfirmRender = render;
+        aiConfirmCancel = () => done(false);
         aiStatus.appendChild(box);
         render();
       });
     }
-    // Toggle OFF: tear down a shown separation and return to the original track.
-    function clearSeparation() {
+    // Toggle OFF: tear down whatever job is showing and return to the original track.
+    function clearStems() {
       revokeAiUrls();
       if (blendCleanup) { try { blendCleanup(); } catch (_) {} blendCleanup = null; }
       aiStems.textContent = '';
       blendMount.textContent = '';
       aiStatus.hidden = true; aiStatus.textContent = '';
       aiHelpBtn.hidden = false;   // bring the [?] description back
-      aiBtn.classList.remove('is-active');
-      aiModelRow.hidden = true;   // re-hide the picker; the next cycle re-reveals it
-      aiOn = false;
+      aiOn = false; activeKind = null;
+      // Note: the radio-group highlight (setAiSelection) is left as-is, like the
+      // model tiers - the last-picked tool stays highlighted after a result clears.
     }
     // "Already downloaded" = present in ANY cache (the offline tier bucket OR the
     // service-worker's own cache, where a prior AI run's fetch lands), or a prior
-    // successful run flagged it. caches.match searches every cache, unlike a single
-    // caches.open('analyser-offline'), which is why the popup used to keep showing.
-    // "Already downloaded" for the SELECTED model (each is cached + flagged on its
-    // own key, so switching models re-warns for the one not yet fetched).
-    async function modelReady(model) {
+    // successful run flagged it (each model on its own localStorage key).
+    async function modelReady(model, keyPrefix) {
       try { if (await caches.match(model.url)) return true; } catch (_) {}
-      try { return localStorage.getItem('anr-mdx-ready-' + model.id) === '1'; } catch (_) { return false; }
+      try { return localStorage.getItem(keyPrefix + model.id) === '1'; } catch (_) { return false; }
     }
-    aiBtn.addEventListener('click', async () => {
+    // Shared runner for both AI jobs. Toggles off if its own job is showing; tears
+    // down the other job first if switching; otherwise confirms, runs, and renders.
+    async function startStems() {
       if (aiRunning || aiConfirming) return;
-      // Toggle OFF: a separation is showing -> clear it and revert to the original.
-      if (aiOn) { clearSeparation(); return; }
-      // Reveal the model picker and ALWAYS open the model prompt, so the user confirms
-      // (and can change) the model every time - whether or not it's already downloaded.
-      aiModelRow.hidden = false;
-      aiBtn.disabled = true;
-      const ok = await confirmDownload();   // model changeable in the prompt (live re-render)
-      if (!ok) { aiModelRow.hidden = true; aiBtn.disabled = false; return; }   // cancelled -> idle
-      const model = MDX_MODELS[aiModelId] || MDX_MODELS.standard;   // whatever was selected in the prompt
-      aiOn = true; aiBtn.classList.add('is-active');
-      const orig = aiBtn.textContent;
+      // A result already showing is torn down before the new job (one blend owns the
+      // view at a time). Turning a result fully OFF is the AI-separation button's job.
+      if (aiOn) clearStems();
+      const ok = await confirmDownload();
+      if (!ok) return;   // cancelled -> idle
+      // The user can switch Standard/Lite/denoise while the prompt is open (the whole
+      // row is one radio group), so read the FINAL choice now, after they confirm.
+      const kind = pendingKind;
+      const btn = kind === 'denoise' ? denoiseBtn : aiBtn;
+      const cfg = STEM_CFGS[kind];
+      aiOn = true; activeKind = kind;
+      const orig = btn.textContent;
       try {
-        const { separateStems } = await import('../lib/mdx-client.js');
-        aiBtn.textContent = 'Separating…';
         aiRunning = true;
+        btn.disabled = true;
         setAiStatus('Preparing…', 0);
-        const result = await separateStems(sourceBuffer(), {
-          modelId: aiModelId,
-          onProgress: (phase, frac) => {
-            const pct = Math.round(frac * 100);
-            setAiStatus(phase === 'model' ? 'Downloading model… ' + pct + '%' : 'Separating… ' + pct + '%', frac);
-          },
-          signal: opts.signal,
-        });
-        // Remember this model is downloaded so its size warning never reappears.
-        try { localStorage.setItem('anr-mdx-ready-' + model.id, '1'); } catch (_) {}
+        let result;
+        if (kind === 'denoise') {
+          btn.textContent = 'Denoising…';
+          const { enhanceAudio } = await import('../lib/dfn-client.js');
+          const r = await enhanceAudio(sourceBuffer(), {
+            onProgress: (phase, frac) => {
+              const pct = Math.round(frac * 100);
+              setAiStatus(phase === 'model' ? 'Downloading model… ' + pct + '%' : 'Denoising… ' + pct + '%', frac);
+            },
+            signal: opts.signal,
+          });
+          try { localStorage.setItem('anr-dfn-ready-' + DFN_MODEL.id, '1'); } catch (_) {}
+          // Feed the shared blend/stem renderer: left stem = Clean, right = Noise.
+          result = { vocals: r.clean, instrumental: r.noise, sampleRate: r.sampleRate };
+        } else {
+          btn.textContent = 'Separating…';
+          const model = MDX_MODELS[aiModelId] || MDX_MODELS.standard;
+          const { separateStems } = await import('../lib/mdx-client.js');
+          result = await separateStems(sourceBuffer(), {
+            modelId: aiModelId,
+            onProgress: (phase, frac) => {
+              const pct = Math.round(frac * 100);
+              setAiStatus(phase === 'model' ? 'Downloading model… ' + pct + '%' : 'Separating… ' + pct + '%', frac);
+            },
+            signal: opts.signal,
+          });
+          try { localStorage.setItem('anr-mdx-ready-' + model.id, '1'); } catch (_) {}
+        }
         aiStatus.hidden = true; aiStatus.textContent = '';
-        renderStems(result);
+        renderStems(result, cfg);
         // Stays ON (button is-active, results shown) until the next click clears it.
       } catch (err) {
-        // Back to idle; the picker stays shown so the next click re-opens the prompt.
-        aiOn = false; aiBtn.classList.remove('is-active');
+        aiOn = false; activeKind = null;
         if (err && err.name === 'AbortError') { aiStatus.hidden = true; aiStatus.textContent = ''; }
-        else setAiStatus('Separation failed: ' + ((err && err.message) || 'unknown error') + '. Check your connection and try again.');
+        else setAiStatus((kind === 'denoise' ? 'Denoise failed: ' : 'Separation failed: ') + ((err && err.message) || 'unknown error') + '. Check your connection and try again.');
       }
       // Restore the button label/enabled state; it must never be left hidden.
-      aiBtn.textContent = orig; aiBtn.disabled = false; aiBtn.hidden = false; aiRunning = false;
+      btn.textContent = orig; btn.disabled = false; btn.hidden = false; aiRunning = false;
+    }
+    // AI separation is the panel toggle. Opening it reveals the options row (Standard
+    // / Lite / denoise) AND pops the confirm card for the default selection straight
+    // away; because that card is a live radio group, clicking denoise (or the other
+    // tier) just re-renders it. Clicking AI separation again closes the panel,
+    // dismissing any open card. While a result is showing it is the master "off" -
+    // clear the stems and revert to the original track.
+    aiBtn.addEventListener('click', () => {
+      if (aiRunning) return;
+      if (aiOn) { clearStems(); return; }
+      if (!aiModelRow.hidden) {                       // open -> close, dropping any card
+        if (aiConfirming && aiConfirmCancel) aiConfirmCancel();
+        aiModelRow.hidden = true;
+        return;
+      }
+      aiModelRow.hidden = false;                      // closed -> open with the default card
+      pendingKind = 'separate';
+      setAiSelection(aiModelBtns[aiModelId] || aiModelBtns.standard);
+      startStems();                                   // shows the default AI's confirm card
     });
+    // Same shared dispatch as the tiers: highlight denoise, mark that the next Start
+    // runs DENOISE, and re-render an open prompt for it (or start it) - so denoise is
+    // reachable even when a separation prompt is already up.
+    denoiseBtn.addEventListener('click', () => pickAction('denoise', denoiseBtn));
     if (opts.signal) opts.signal.addEventListener('abort', revokeAiUrls);
   }
 
@@ -2126,7 +2238,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
 // Known music-tag fields that earn an inline [?] explanation; everything else
 // renders as a plain row. Keyed by the display label set in audio-codec.js.
 const TAG_HELP = {
-  ISRC: "The International Standard Recording Code uniquely identifies a specific audio recording (not the song or the release). It reads as CC-XXX-YY-NNNNN: country, registrant, year, and a per-recording number. Labels and stores use it for royalty tracking and to match the same recording across services.",
+  ISRC: "A unique ID for one specific audio recording (not the song or the album). The International Standard Recording Code reads as CC-XXX-YY-NNNNN: country, registrant, year, and a per-recording number. Labels and stores use it to track royalties and to match the same recording across services.",
 };
 function tagRow(name, value) {
   return TAG_HELP[name] ? rowHelp(name, value, TAG_HELP[name]) : row(name, value);
@@ -2150,9 +2262,11 @@ function buildCoverArtCard(art, file) {
   }).catch(() => {});
 
   const labelCard = el('div', { class: 'anr-card' });
-  labelCard.appendChild(el('h3', {}, 'Embedded cover art'));
+  const [artH, artHelp] = h3help('Embedded cover art', 'The picture stored inside this file’s metadata. It is shown and analysed in full in the Photo section.');
+  labelCard.appendChild(artH);
+  labelCard.appendChild(artHelp);
   labelCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' },
-    'Found in the file’s metadata (' + art.mime + ' · ' + fmtBytes(art.bytes.length) + ') and analysed in the Photo section.'));
+    art.mime + ' · ' + fmtBytes(art.bytes.length)));
   return labelCard;
 }
 
@@ -2495,10 +2609,10 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
 export function buildHistogramCard(samples) {
   const histCard = el('div', { class: 'anr-card' });
   const [ahH, ahHelp] = h3help('Histogram',
-    'Amplitude distribution - how often each sample value occurs across the whole clip. ' +
-    'The horizontal axis is amplitude from −1 to +1 (0 = silence, marked by the red line; ' +
-    '±1 = full scale). The vertical axis is the relative number of samples at each amplitude. ' +
-    'A tall spike at the centre means lots of quiet; energy spread toward the edges means a loud, dynamic signal.');
+    'How often each loudness level shows up across the whole clip. ' +
+    'The horizontal axis is the sample value from −1 to +1 (0 = silence, marked by the red line; ' +
+    '±1 = the loudest the format allows). The vertical axis is how many samples sit at each level. ' +
+    'A tall spike in the centre means lots of quiet moments; energy spread toward the edges means a loud, dynamic signal.');
   histCard.appendChild(ahH); histCard.appendChild(ahHelp);
   const histCanvas = el('canvas', { class: 'anr-histogram' });
   histCanvas.width = 1024; histCanvas.height = 100;
@@ -2551,9 +2665,11 @@ let audioRenderAbort = null;
 // lyrics, and cover art are all readable straight from the bytes.
 async function renderUndecodableAudio(file, header, resultsEl, playable) {
   const infoCard = el('div', { class: 'anr-card' });
-  infoCard.appendChild(el('h3', {}, 'Audio file'));
+  const [infoH, infoHelp] = h3help('Audio file', 'The container details, tags, lyrics, and cover art below were still read straight from the file.');
+  infoCard.appendChild(infoH);
+  infoCard.appendChild(infoHelp);
   infoCard.appendChild(el('p', { class: 'anr-hint', style: 'margin: 0 0 10px;' },
-    "Your browser can't decode this format for analysis, so there's no waveform or spectrogram - but the container info, tags, and cover art below were read straight from the file."));
+    'This format can’t be decoded for analysis, so there’s no waveform or spectrogram.'));
 
   // Native-playback fallback. Web Audio's decodeAudioData couldn't decode this
   // file, but the platform media pipeline (a plain <audio> element) often still
@@ -2568,9 +2684,9 @@ async function renderUndecodableAudio(file, header, resultsEl, playable) {
     const playUrl = URL.createObjectURL(src);
     const audioEl = el('audio', { src: playUrl, class: 'is-hidden', preload: 'metadata' });
     const playCard = el('div', { class: 'anr-card', style: 'display:none;' });
-    playCard.appendChild(el('h3', {}, 'Playback'));
-    playCard.appendChild(el('p', { class: 'anr-hint', style: 'margin: 0 0 10px;' },
-      'Your browser can play this file even though it could not analyse it.'));
+    const [playH, playHelp] = h3help('Playback', 'Your browser can play this file even though it could not analyse it.');
+    playCard.appendChild(playH);
+    playCard.appendChild(playHelp);
     playCard.appendChild(audioEl);
     playCard.appendChild(makePlayer(audioEl));
     audioEl.addEventListener('loadedmetadata', () => { playCard.style.display = ''; });
@@ -2589,9 +2705,11 @@ async function renderUndecodableAudio(file, header, resultsEl, playable) {
   if (header.bitrateText || header.bitrate) tbl.appendChild(row('Bitrate',
     header.bitrateText || (Math.round(header.bitrate / 1000) + ' kbps')));
   try {
-    if (header.encoder) tbl.appendChild(row('Encoder', header.encoder));
+    if (header.encoder) tbl.appendChild(rowHelp('Encoder', header.encoder,
+      'The software that created (encoded) this file, read from its Xing/LAME/VBRI header.'));
     if (header.compressionRatio) tbl.appendChild(row('Compression', header.compressionRatio.toFixed(2) + ':1'));
-    if (header.flacMd5) tbl.appendChild(row('Audio MD5', header.flacMd5));
+    if (header.flacMd5) tbl.appendChild(rowHelp('Audio MD5', header.flacMd5,
+      "A fingerprint (MD5 checksum) of the raw decoded audio that FLAC stores inside the file (in its STREAMINFO block). A decoder can recompute it to confirm the audio survived re-encoding intact."));
   } catch (_) {}
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
@@ -2802,75 +2920,75 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   if (header.codec)     tbl.appendChild(row('Codec',         header.codec));
   tbl.appendChild(row('Duration',       formatTime(audioBuffer.duration)));
   tbl.appendChild(rowHelp('Sample rate',    audioBuffer.sampleRate.toLocaleString() + ' Hz',
-    'Audio samples per second, in hertz. Higher rates capture higher frequencies - CD audio is 44,100 Hz, video audio is often 48,000 Hz.'));
+    'How many times per second the sound was measured when it was recorded, in hertz. Higher numbers capture higher-pitched sound - CD audio is 44,100 Hz, video audio is often 48,000 Hz.'));
   tbl.appendChild(row('Channels',       audioBuffer.numberOfChannels + describeChannels(audioBuffer.numberOfChannels)));
   if (header.bitDepth)  tbl.appendChild(rowHelp('Bit depth',     header.bitDepth + ' bit',
-    'Bits used to store each audio sample. More bits give greater dynamic range and lower quantization noise - CD audio is 16-bit.'));
+    'How many bits are used to store each measurement of the sound. More bits capture a wider range from quiet to loud with less background grain (quantization noise) - CD audio uses 16 bits.'));
   if (header.bitrateText || header.bitrate) tbl.appendChild(rowHelp('Bitrate',
     header.bitrateText || ((header.bitrate / 1000).toFixed(0) + ' kbps'),
-    'Compressed data rate in kilobits per second for lossy formats. Higher generally means better quality and a larger file. VBR shows the average across the file.'));
+    'How much data is spent on each second of audio, in kilobits per second. More data usually means better quality and a bigger file. VBR (variable bitrate) shows the average across the file.'));
   try {
     if (header.encoder) tbl.appendChild(rowHelp('Encoder', header.encoder,
-      'Software/library that encoded this file, read from the Xing/LAME/VBRI header.'));
+      'The software that created (encoded) this file, read from its Xing/LAME/VBRI header.'));
     if (header.compressionRatio) tbl.appendChild(rowHelp('Compression',
       header.compressionRatio.toFixed(2) + ':1',
-      'Lossless compression ratio versus uncompressed PCM of the same samples (higher means a smaller file for the same audio).'));
+      'How much smaller lossless compression made the file compared with the same audio stored raw and uncompressed (PCM). A higher ratio means a smaller file for identical sound.'));
     if (header.flacMd5) tbl.appendChild(rowHelp('Audio MD5', header.flacMd5,
-      "FLAC's MD5 checksum of the raw decoded audio, stored in STREAMINFO. Lets a decoder verify the audio survived re-encoding intact."));
+      "A fingerprint (MD5 checksum) of the raw decoded audio that FLAC stores inside the file (in its STREAMINFO block). A decoder can recompute it to confirm the audio survived re-encoding intact."));
   } catch (_) {}
   tbl.appendChild(rowHelp('Peak', stats.peak.toFixed(3) + '  (' + stats.peakDb.toFixed(1) + ' dBFS)',
-    'Highest sample amplitude in the file. dBFS = decibels relative to full scale, where 0 dBFS is the digital maximum.'));
+    'The loudest single sample in the file. dBFS means decibels relative to full scale, where 0 dBFS is the digital maximum and lower (more negative) numbers are quieter.'));
   tbl.appendChild(rowHelp('RMS', stats.rms.toFixed(3)  + '  (' + stats.rmsDb.toFixed(1)  + ' dBFS)',
-    'Root Mean Square - average signal power, closer to perceived loudness than peak. Typical mastered music sits around −10 dBFS.'));
+    'Root Mean Square - the average energy of the signal, which tracks how loud it actually feels better than the single loudest peak does. Typical mastered music sits around −10 dBFS.'));
   const lufsValue = computeLufs(mono, audioBuffer.sampleRate);
   tbl.appendChild(rowHelp('Loudness', (isFinite(lufsValue) ? lufsValue.toFixed(1) + ' LUFS' : '-'),
-    'Perceived loudness per ITU-R BS.1770. Accounts for human hearing sensitivity. Streaming targets: Spotify −14, YouTube −14, Apple −16 LUFS.'));
+    'How loud the audio feels to human ears, measured the broadcast-standard way (ITU-R BS.1770) that follows our hearing rather than raw signal level. Streaming targets: Spotify −14, YouTube −14, Apple −16 LUFS.'));
   if (stats.clipped > 0) {
     const pct = ((stats.clipped / mono.length) * 100).toFixed(3);
     tbl.appendChild(rowHelp('Clipping', stats.clipped.toLocaleString() + ' samples  (' + pct + '%)',
-      'Samples at or beyond the digital ceiling (0 dBFS). Causes audible distortion. More clipped samples = harsher artifacts.'));
+      'Samples pushed to or past the digital ceiling (0 dBFS), which sounds like harsh distortion. The more samples clip, the rougher it sounds.'));
   } else {
     tbl.appendChild(rowHelp('Clipping', 'None',
-      'Samples at or beyond the digital ceiling (0 dBFS). None detected in this file.'));
+      'Samples pushed to or past the digital ceiling (0 dBFS), which would cause distortion. None were found in this file.'));
   }
   if (health) {
     tbl.appendChild(rowHelp('Crest factor', health.crestDb.toFixed(1) + ' dB',
-      'Peak-to-RMS ratio - a one-number read of dynamics. Loud, heavily compressed masters sit low (under ~8 dB); open, dynamic recordings sit higher (15 dB+).'));
+      'The gap between the loudest peak and the average (RMS) level - the peak-to-RMS ratio, a single number for how punchy or squashed the sound is. Loud, heavily compressed masters sit low (under about 8 dB); open, dynamic recordings sit higher (15 dB or more).'));
     const dcPct = (Math.abs(health.dcOffset) * 100);
     tbl.appendChild(rowHelp('DC offset', Math.abs(health.dcOffset) < 1e-4
         ? 'None (' + health.dcOffset.toExponential(1) + ')'
         : health.dcOffset.toFixed(5) + '  (' + health.dcDb.toFixed(1) + ' dBFS, ' + dcPct.toFixed(3) + '%)',
-      'Average sample value - should be ~0. A non-zero offset points to a capture/hardware fault, wastes headroom, and can cause clicks at edits.'));
+      'The average of all the samples, which should sit at about 0. A value away from 0 points to a recording or hardware fault, wastes loudness headroom, and can cause clicks where the audio is cut.'));
     if (health.effectiveBits > 0) {
       const declaredBits = header.bitDepth || null;
       const padded = declaredBits && health.effectiveBits < declaredBits - 1;
       tbl.appendChild(rowHelp('Effective bit depth', health.effectiveBits + ' bit'
           + (padded ? '  (declared ' + declaredBits + ' - likely padded/upscaled)' : ''),
-        'Deepest bit that actually carries signal, recovered from least-significant-bit activity. Well below the declared depth means the file was padded or upscaled, not truly hi-res.'));
+        'The deepest bit that actually carries real sound, worked out from activity in the smallest bits. Sitting well below the stated bit depth means the file was padded or upscaled rather than genuinely high-resolution.'));
     }
   }
   const centroid = computeCentroid(mono, audioBuffer.sampleRate);
   if (centroid != null) {
     const label = centroid < 1500 ? 'warm' : centroid < 4000 ? 'neutral' : 'bright';
     tbl.appendChild(rowHelp('Spectral centroid', Math.round(centroid).toLocaleString() + ' Hz  (' + label + ')',
-      'Frequency "center of mass" of the spectrum. Below 1500 Hz sounds warm/dark, above 4000 Hz sounds bright/sharp. Useful for comparing tonal character.'));
+      'Where the "centre of gravity" of the sound sits on the pitch scale - roughly whether it leans low or high overall. Below 1500 Hz sounds warm or dark, above 4000 Hz sounds bright or sharp. Handy for comparing the tonal character of two files.'));
   }
   const pitchResult = detectPitch(mono, audioBuffer.sampleRate);
   if (pitchResult) {
     const centsStr = pitchResult.cents >= 0 ? '+' + pitchResult.cents : String(pitchResult.cents);
     tbl.appendChild(rowHelp('Pitch', pitchResult.note + '  (' + pitchResult.frequency.toFixed(1) + ' Hz, ' + centsStr + ' cents)',
-      'Fundamental frequency via the YIN algorithm. Cents = deviation from the nearest note (±50 cents = half a semitone).'));
+      'The main musical note the sound settles on, found with the YIN pitch-detection method. Cents measure how far it drifts from the nearest exact note (±50 cents is half a semitone, the gap between two adjacent piano keys).'));
   } else {
     tbl.appendChild(rowHelp('Pitch', 'N/A',
-      'Fundamental frequency via the YIN algorithm. Could not detect a clear pitch in this audio.'));
+      'The main musical note of the sound, found with the YIN pitch-detection method. No clear, steady pitch could be detected in this audio.'));
   }
   const tagBpm = await readTagBPM(file).catch(() => null);
   const estBpm = detectBPM(mono, audioBuffer.sampleRate);
   const bpmVal = tagBpm || estBpm;
   const bpmIsTag = tagBpm != null;
   const bpmRow = rowHelp('BPM', bpmVal != null ? bpmVal + ' BPM' : 'N/A',
-    bpmIsTag ? 'Beats per minute read from file metadata.'
-             : 'Beats per minute via onset envelope analysis. Most reliable on rhythmic material with a clear beat.');
+    bpmIsTag ? 'Beats per minute - the tempo - read straight from the file’s saved metadata.'
+             : 'Beats per minute - the tempo - estimated by tracking where the beats land in the sound. Most reliable on rhythmic music with a clear, steady beat.');
   if (bpmVal != null && !bpmIsTag) {
     const td = bpmRow.querySelector('td');
     td.appendChild(el('span', { style: 'font-size:0.8em;color:var(--muted);margin-left:4px' }, '(est)'));
@@ -2879,12 +2997,12 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   if (keyResult) {
     const conf = Math.round(keyResult.confidence * 100);
     const keyRow = rowHelp('Musical key', keyResult.key + '  (' + conf + '% confidence)',
-      'Estimated key via a chroma profile matched against the Krumhansl-Schmuckler key templates. Most reliable on tonal music; the runner-up is often the relative major/minor. Pairs with the detected tempo.');
+      'The song’s likely musical key, estimated by matching its blend of notes against reference patterns for each key (the Krumhansl-Schmuckler templates). Most reliable on tonal music; the runner-up is often the relative major or minor. Pairs with the detected tempo.');
     keyRow.querySelector('td').appendChild(el('span', { style: 'font-size:0.8em;color:var(--muted);margin-left:4px' }, '· alt ' + keyResult.alt));
     tbl.appendChild(keyRow);
   }
   tbl.appendChild(rowHelp('Total samples',  mono.length.toLocaleString(),
-    'Total number of individual amplitude values in the (channel-merged mono) signal - roughly sample rate × duration.'));
+    'The total count of individual sound measurements in the merged mono signal - roughly the sample rate multiplied by the duration in seconds.'));
   infoCard.appendChild(tbl);
   // Mount for the spectrogram's "Analysis" sub-block (Peak / detected range /
   // cutoff / dynamic range / resolution). It belongs to the spectrogram panel
@@ -2898,22 +3016,22 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   if (r128 && isFinite(r128.integrated)) {
     const card = el('div', { class: 'anr-card' });
     const [h, help] = h3help('Loudness meter (EBU R128)',
-      'The full broadcast/streaming loudness set. Integrated loudness is gated per ITU-R BS.1770; momentary (400 ms) and short-term (3 s) are the loudest windows; Loudness Range (LRA) is the spread between quiet and loud passages; True peak is the real inter-sample peak, oversampled 4x, which ordinary sample-peak metering misses. Measured on the channel-merged signal.');
+      'The complete broadcast and streaming loudness set. Integrated loudness is the overall figure with silence ignored (gated, per ITU-R BS.1770); momentary (400 ms) and short-term (3 s) are the loudest brief windows; Loudness Range (LRA) is the spread between the quiet and loud passages; True peak is the real peak that falls between samples, found by oversampling 4x, which ordinary peak meters miss. All measured on the channel-merged signal.');
     card.appendChild(h); card.appendChild(help);
     const lt = el('table', { class: 'anr-readout' });
     const lufs = (v) => isFinite(v) ? v.toFixed(1) + ' LUFS' : '-';
     lt.appendChild(rowHelp('Integrated (gated)', lufs(r128.integrated),
-      'Overall loudness across the whole file with silence gated out. Streaming targets: Spotify/YouTube −14, Apple −16, broadcast (EBU R128) −23 LUFS.'));
+      'The overall loudness of the whole file with silent gaps left out. Streaming targets: Spotify/YouTube −14, Apple −16, broadcast (EBU R128) −23 LUFS.'));
     lt.appendChild(rowHelp('Momentary max', lufs(r128.momentaryMax),
-      'Loudest 400 ms window - the peak of short, punchy moments.'));
+      'The loudest short 400 ms window - the peak of brief, punchy moments.'));
     lt.appendChild(rowHelp('Short-term max', lufs(r128.shortTermMax),
-      'Loudest 3 s window - peak of sustained loud passages.'));
+      'The loudest 3-second window - the peak of longer, sustained loud passages.'));
     lt.appendChild(rowHelp('Loudness range (LRA)', r128.lra != null ? r128.lra.toFixed(1) + ' LU' : '-',
-      'Spread between the quiet and loud parts (10th-95th percentile of short-term loudness). Low LRA (under ~5 LU) means a flat, heavily compressed master; high means dynamic.'));
+      'The spread between the quiet and loud parts of the track (from the 10th to the 95th percentile of short-term loudness). A low range (under about 5 LU) means a flat, heavily compressed master; a high range means a dynamic one.'));
     if (tpDb != null) {
       const over = tpDb > 0;
       const tpRow = rowHelp('True peak', tpDb.toFixed(1) + ' dBTP' + (over ? '  (over 0 - inter-sample clipping)' : ''),
-        'The real peak between samples, recovered by 4x oversampling. Values above 0 dBTP distort on playback even when no single sample reads as clipped; delivery specs cap this at −1 dBTP.');
+        'The real loudest point, including peaks that fall between samples (found by oversampling 4x). Anything above 0 dBTP can distort on playback even when no single sample looks clipped; delivery specs usually cap this at −1 dBTP.');
       if (over) tpRow.querySelector('td').style.color = 'var(--accent)';
       lt.appendChild(tpRow);
     }
@@ -2927,7 +3045,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   if (spec) {
     const card = el('div', { class: 'anr-card' });
     const [h, help] = h3help('Spectral forensics',
-      'Reads derived from a long-average spectrum of the whole file: whether a "lossless" file was really made from a lossy source, mains-hum interference, ultrasonic content, and any touch-tone (DTMF) digits.');
+      'Clues drawn from the average pitch make-up of the whole file: whether a "lossless" file was really built from a compressed (lossy) source, mains-hum interference, ultrasonic content above human hearing, and any telephone touch-tone (DTMF) digits.');
     card.appendChild(h); card.appendChild(help);
 
     // -- Lossy-transcode / fake-lossless verdict --
@@ -2939,10 +3057,11 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     const trTbl = el('table', { class: 'anr-readout' });
     trTbl.appendChild(rowHelp('Spectral cutoff', Math.round(tr.cutoffHz).toLocaleString() + ' Hz'
         + '  (' + Math.round(tr.fillFrac * 100) + '% of Nyquist)',
-      'The frequency where broadband energy collapses. Genuine lossless reaches ~95%+ of the Nyquist limit; a lossy codec leaves a hard low-pass well below it.'));
-    trTbl.appendChild(row('Rolloff steepness', tr.steepDbPerKHz > 0 ? tr.steepDbPerKHz.toFixed(0) + ' dB/kHz' : '-'));
+      'The pitch where the sound’s energy suddenly drops away to nothing. A genuine lossless file reaches about 95% or more of the way to its theoretical ceiling (the Nyquist limit); a lossy codec leaves a hard cut-off well below it.'));
+    trTbl.appendChild(rowHelp('Rolloff steepness', tr.steepDbPerKHz > 0 ? tr.steepDbPerKHz.toFixed(0) + ' dB/kHz' : '-',
+      'How sharply the high-frequency energy is cut off at that ceiling, in decibels per kilohertz. A lossy encode leaves a steep, abrupt drop; genuine lossless audio tapers off gently.'));
     if (tr.sourceGuess) trTbl.appendChild(rowHelp('Likely source', tr.sourceGuess,
-      'Probable original encode, inferred from where the low-pass sits. Approximate - encoders and settings vary.'));
+      'A best guess at the original compressed format, based on where that cut-off sits. Approximate only, since encoders and their settings vary.'));
     card.appendChild(trTbl);
 
     // -- Mains hum / ENF --
@@ -2952,13 +3071,14 @@ export async function renderAudio(file, resultsEl, opts = {}) {
       const humTbl = el('table', { class: 'anr-readout' });
       if (hum.present) {
         humTbl.appendChild(rowHelp('Mains hum', 'Detected at ' + hum.exactHz.toFixed(2) + ' Hz  (+' + hum.fundamentalDb.toFixed(0) + ' dB)',
-          'Narrowband tonal energy at the electrical mains frequency - picked up from power lines or equipment. Its exact frequency is the basis of ENF forensic timestamping.'));
+          'A steady narrow tone at the frequency of the mains electricity supply, picked up from power lines or nearby equipment. Its exact frequency is what makes ENF forensic timestamping possible.'));
         humTbl.appendChild(rowHelp('Implied region', hum.region,
-          'Mains runs at 50 Hz across most of the world and 60 Hz in North America and parts of Asia - a coarse geographic tell.'));
-        if (hum.harmonics.length > 1) humTbl.appendChild(row('Harmonics', hum.harmonics.map((x) => Math.round(x.hz) + ' Hz').join(', ')));
+          'Mains electricity runs at 50 Hz across most of the world and 60 Hz in North America and parts of Asia - so the hum gives a rough hint of where it was recorded.'));
+        if (hum.harmonics.length > 1) humTbl.appendChild(rowHelp('Harmonics', hum.harmonics.map((x) => Math.round(x.hz) + ' Hz').join(', '),
+          'Steady tones at whole-number multiples of the mains-hum frequency (for example 100, 150 and 200 Hz above a 50 Hz hum), picked up from the power supply along with the hum itself.'));
       } else {
         humTbl.appendChild(rowHelp('Mains hum', 'None detected',
-          'No clear 50 or 60 Hz tonal energy - either a clean recording or one that has been high-pass filtered.'));
+          'No clear 50 or 60 Hz tone was found - either a clean recording, or one where those low frequencies have been filtered out (high-pass filtered).'));
       }
       card.appendChild(humTbl);
     } catch (_) {}
@@ -2970,13 +3090,14 @@ export async function renderAudio(file, resultsEl, opts = {}) {
       const usTbl = el('table', { class: 'anr-readout' });
       if (!us.supported) {
         usTbl.appendChild(rowHelp('Above 18 kHz', 'N/A at ' + (spec.sampleRate / 1000).toFixed(1) + ' kHz sample rate',
-          'The sample rate is too low to carry meaningful ultrasonic content (Nyquist below ~18.5 kHz).'));
+          'The sample rate is too low to carry any meaningful ultrasonic content - it cannot represent frequencies that high (its Nyquist limit is below about 18.5 kHz).'));
       } else {
         usTbl.appendChild(rowHelp('Energy above ' + (us.startHz / 1000) + ' kHz',
           us.ratioDb.toFixed(0) + ' dB below full band' + (us.present ? '  (present)' : '  (negligible)'),
-          'Energy in the near-ultrasonic band relative to the whole signal. Persistent content up here can be tracking beacons, device-pairing tones, or hidden watermarks - inaudible to people.'));
-        if (us.peaks.length) usTbl.appendChild(row('Ultrasonic tones',
-          us.peaks.map((p) => Math.round(p.hz).toLocaleString() + ' Hz').join(', ')));
+          'How much energy sits in the near-ultrasonic band compared with the whole signal. Steady content this high - inaudible to people - can be tracking beacons, device-pairing tones, or hidden watermarks.'));
+        if (us.peaks.length) usTbl.appendChild(rowHelp('Ultrasonic tones',
+          us.peaks.map((p) => Math.round(p.hz).toLocaleString() + ' Hz').join(', '),
+          'Individual steady tones found in the near-ultrasonic band, listed by frequency. Too high for people to hear, they can be device-pairing tones, tracking beacons or hidden watermarks.'));
       }
       card.appendChild(usTbl);
     } catch (_) {}
@@ -2986,7 +3107,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
       card.appendChild(el('div', { class: 'anr-readout-section' }, 'Touch-tones (DTMF)'));
       const dt = el('table', { class: 'anr-readout' });
       dt.appendChild(rowHelp('Dialled digits', dtmf.sequence,
-        'Phone touch-tone (DTMF) digits decoded from the audio via Goertzel filters at the 8 standard row/column frequencies - recovers numbers dialled in a recording.'));
+        'The phone touch-tone (DTMF) digits decoded from the audio, read by listening at the 8 standard tone frequencies arranged in row/column pairs (via Goertzel filters) - it recovers numbers that were dialled in a recording.'));
       dt.appendChild(row('Count', String(dtmf.digits.length)));
       const det = el('details');
       det.appendChild(el('summary', {}, 'Timing (' + dtmf.digits.length + ')'));
@@ -3055,7 +3176,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   let chanHead = null, chanHelpPanel = null, chanSeg = null, chanStat = null;
   if (chans.length > 1) {
     const [chanH, chanHelp] = h3help('Channel',
-      'This file has ' + audioBuffer.numberOfChannels + ' channels. Choose which one feeds the spectrogram and waveform - <strong>Mix</strong> is every channel averaged together, or isolate a single speaker (Left, Right, Centre, LFE, surrounds) to inspect it on its own. Per-channel peak and RMS update with your choice. Speaker names follow the file\'s declared layout, so treat them as a best-effort label.');
+      'This file has ' + audioBuffer.numberOfChannels + ' separate channels. Choose which one feeds the spectrogram and waveform below - <strong>Mix</strong> blends every channel together, or pick a single speaker (Left, Right, Centre, LFE, surrounds) to inspect on its own. The per-channel peak and RMS update with your choice. Speaker names follow the layout the file declares, so treat them as a best guess.');
     const stat = el('span', { class: 'anr-chan-readout' });
     const seg = el('div', { class: 'anr-btn-row anr-chan-seg' });
     const btns = [];
@@ -3120,7 +3241,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     const origRight = audioBuffer.getChannelData(1);
 
     const stereoCard = el('div', { class: 'anr-card' });
-    const [stH, stHelp] = h3help('Stereo analysis', '<strong>Phase correlation</strong> measures how similar the left and right channels are. +1 = identical (mono), 0 = unrelated, negative = out of phase (can cause cancellation on mono speakers).<br><strong>Stereo width</strong> is derived from correlation. Higher = wider stereo image.<br><strong>Mid/Side</strong> splits the signal into centre (mid) and difference (side) components.<br>The <strong>vectorscope</strong> plots left vs right samples. A vertical line = mono; a circle = wide stereo; a horizontal line = out of phase.<br>These describe the file&#39;s Left/Right pair, so they do not change with the Channel selection below (which only drives the spectrogram + waveform). After AI vocal separation they track the current blend mix instead.');
+    const [stH, stHelp] = h3help('Stereo analysis', '<strong>Phase correlation</strong> measures how alike the left and right channels are. +1 means identical (effectively mono), 0 means unrelated, and negative means they fight each other (out of phase, which can cancel out on a single mono speaker).<br><strong>Stereo width</strong> comes from that correlation. Higher means a wider stereo image.<br><strong>Mid/Side</strong> splits the sound into its centre (mid) and its left-right difference (side).<br>The <strong>vectorscope</strong> plots the left channel against the right. A vertical line means mono; a rounded blob means wide stereo; a horizontal line means out of phase.<br>These describe the file&#39;s original Left/Right pair, so they do not change when you switch Channel below (which only affects the spectrogram and waveform). After AI vocal separation they follow the current blend mix instead.');
     stereoCard.appendChild(stH); stereoCard.appendChild(stHelp);
     // Muted source line: shows when the readout reflects the separation blend rather
     // than the file itself (hidden by default = the file's own Left/Right).
@@ -3129,11 +3250,11 @@ export async function renderAudio(file, resultsEl, opts = {}) {
 
     // Build the value rows once and keep handles so updates just rewrite the cells
     // (no per-frame DOM churn while the blend slider drags).
-    const corrRow = rowHelp('Phase correlation', '', 'Left/right channel similarity. +1 = identical (mono), 0 = unrelated, negative = out of phase (problematic on mono speakers).');
-    const widthRow = rowHelp('Stereo width', '', 'Spatial separation between channels. 0 = mono, 1 = maximum stereo spread.');
-    const midRow = rowHelp('Mid level', '', 'Center (mono) component: (L+R)/2. Carries vocals, bass, and center-panned elements.');
-    const sideRow = rowHelp('Side level', '', 'Difference (stereo) component: (L−R)/2. Carries reverb, panned instruments, and spatial content.');
-    const ratioRow = rowHelp('Side / Mid ratio', '', 'Ratio of side to mid energy. Below 0.5 = center-heavy mix, above 1.0 = very wide/spatial mix.');
+    const corrRow = rowHelp('Phase correlation', '', 'How alike the left and right channels are. +1 means identical (mono), 0 means unrelated, negative means out of phase (a problem on a single mono speaker).');
+    const widthRow = rowHelp('Stereo width', '', 'How wide apart the two channels sound. 0 means mono (no width), 1 means the widest stereo spread.');
+    const midRow = rowHelp('Mid level', '', 'The centre (mono) part of the sound: left and right added together, (L+R)/2. This carries vocals, bass and anything panned to the middle.');
+    const sideRow = rowHelp('Side level', '', 'The stereo-difference part of the sound: left minus right, (L−R)/2. This carries reverb, panned instruments and the sense of space.');
+    const ratioRow = rowHelp('Side / Mid ratio', '', 'How much side (stereo) energy there is compared with mid (centre) energy. Below 0.5 means a centre-heavy mix; above 1.0 means a very wide, spacious mix.');
     const stereoTbl = el('table', { class: 'anr-readout' });
     stereoTbl.append(corrRow, widthRow, midRow, sideRow, ratioRow);
     stereoCard.appendChild(stereoTbl);

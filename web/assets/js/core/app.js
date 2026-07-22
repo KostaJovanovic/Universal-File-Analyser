@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 248;
+const COMMIT_COUNT = 249;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -35,7 +35,7 @@ import { renderUnknown } from '../renderers/unknown.js';
 import { renderProprietary, extractPeIcon } from '../renderers/proprietary.js';
 import { renderSpiceRaw, sniffSpiceRaw } from '../renderers/spice.js';
 import { initSearch } from './search.js';
-import { fileExt, el, row, fmtBytes, probeReadable, cloudFileWarning, integrityCard, errorCard } from './util.js';
+import { fileExt, el, row, fmtBytes, probeReadable, cloudFileWarning, emptyFileWarning, integrityCard, errorCard } from './util.js';
 import { walkItems, renderFolder } from '../renderers/folder.js';
 import { setupHeaderFx, setupSectionFx, setupFooterFx } from './effects.js';
 import { setupStatsPage } from './stats-page.js';
@@ -555,6 +555,21 @@ function boot() {
     // probe means the bytes aren't available (sync app off, online-only, or
     // permission lost), whatever the exact DOMException name/message - a renderer
     // would only fail the same way, so treat every probe error as unavailable.
+    // An empty (0-byte) file passes every read probe - there's simply nothing to
+    // read - but then makes every renderer fail deep in its pipeline with a
+    // cryptic "unexpected end of data" or a blank result. Intercept it here and
+    // explain plainly. (Not counted in stats/history: it isn't a real analysis.)
+    if (file.size === 0) {
+      hideDropLoader();
+      unknownResults.hidden = false;
+      unknownResults.innerHTML = '';
+      const card = el('div', { class: 'anr-card' });
+      card.appendChild(el('h3', {}, 'Empty file'));
+      card.appendChild(emptyFileWarning(file));
+      unknownResults.appendChild(card);
+      return;
+    }
+
     const readErr = await probeReadable(file);
     if (token.cancelled) return;   // cancelled while probing - don't render
     if (readErr) {

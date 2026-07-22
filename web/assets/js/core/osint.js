@@ -7,7 +7,7 @@
 
    Dependency-light: only the DOM helper from util.js. */
 
-import { el } from './util.js';
+import { el, h3help } from './util.js';
 
 // File-ish "TLDs" that are almost always a filename, not a real domain, so a token
 // like "bundle.min.js" or "logo.png" doesn't get reported as a domain indicator.
@@ -72,9 +72,12 @@ export function osintCard(ind, opts = {}) {
   if (!total) return null;
   const limit = opts.limit || 100;
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Network indicators'));
+  const [h, help] = h3help('Network indicators',
+    'Each value carries one-click links to public OSINT lookup services (such as VirusTotal, urlscan, AbuseIPDB and Shodan). '
+    + 'They open in a new tab, and Analyser sends nothing until you click one - so the no-upload promise holds.');
+  card.appendChild(h); card.appendChild(help);
   card.appendChild(el('p', { class: 'anr-hint' },
-    'URLs, IPs, domains and email addresses found in this file’s text. The lookup links open a third-party OSINT service in a new tab - nothing is sent until you click one.'));
+    'URLs, IPs, domains and email addresses found in this file’s text. Nothing is sent until you click a lookup link.'));
 
   const section = (title, items, kind) => {
     if (!items.length) return;

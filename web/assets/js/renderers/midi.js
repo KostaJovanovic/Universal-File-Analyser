@@ -124,9 +124,9 @@ export async function renderMidi(file, resultsEl) {
   tbl.appendChild(row('Format', fmtName));
   tbl.appendChild(row('Tracks', String(ntrks)));
   tbl.appendChild(rowHelp('Division', smpte ? (smpte.fps + ' fps · ' + smpte.tpf + ' ticks/frame') : (ppq + ' ticks/quarter'),
-    'Timing resolution - ticks per quarter-note (or SMPTE frames).'));
+    'How finely the timing is measured - the number of ticks (tiny time steps) in each quarter-note, or SMPTE film frames.'));
   tbl.appendChild(rowHelp('Tempo', Math.round(initialBpm) + ' BPM' + (tempos.length > 1 ? ' (' + tempos.length + ' changes)' : ''),
-    'Initial tempo from the first set-tempo event (default 120 if none).'));
+    'The starting tempo, taken from the first tempo instruction in the file (defaults to 120 BPM if none is given).'));
   if (timeSig) tbl.appendChild(row('Time signature', timeSig));
   tbl.appendChild(row('Duration', fmtDur(durSec)));
   tbl.appendChild(row('Notes', noteOns.toLocaleString()));

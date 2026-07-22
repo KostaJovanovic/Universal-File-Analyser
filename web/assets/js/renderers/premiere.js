@@ -23,7 +23,7 @@
    clip drawn as a bar positioned by its in / out point - mirroring the After
    Effects viewer, then show the project metadata and the clips it references. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 
 const TPS = 254016000000;                  // Premiere ticks per second (fixed timebase)
 const MAX_COMPRESSED = 64 * 1024 * 1024;   // don't buffer absurdly large projects whole
@@ -337,11 +337,11 @@ export async function renderPremiere(file, resultsEl) {
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Application', isPrel ? 'Adobe Premiere Elements' : 'Adobe Premiere Pro'));
   tbl.appendChild(rowHelp('Format', isPrel ? 'Premiere Elements project (.prel)' : 'Premiere Pro project (.prproj)',
-    'A .prproj is a gzip-compressed XML document (the PremiereData model). Analyser inflates it and walks the sequence, track and clip objects to rebuild each timeline.'));
+    'A Premiere Pro project (.prproj) is an XML document squeezed down with gzip compression (the PremiereData model). Analyser unpacks it and reads the sequence, track and clip objects to rebuild each timeline.'));
   if (data.projVer) tbl.appendChild(rowHelp('Project version', data.projVer,
-    'The internal Project object version stored in the PremiereData model - it tracks with the Premiere release that last saved the file.'));
+    'The internal version number of the project data (stored in the PremiereData model). It moves in step with the Premiere release that last saved the file, so it points to that version.'));
   if (data.dataVer) tbl.appendChild(row('Model version', data.dataVer));
-  tbl.appendChild(row('Sequences', String(data.sequences.length)));
+  tbl.appendChild(rowHelp('Sequences', String(data.sequences.length), 'Premiere’s term for an edited timeline - the arrangement of clips you cut together. One project can hold several.'));
   if (data.mediaItems) tbl.appendChild(row('Media items', String(data.mediaItems)));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   meta.appendChild(tbl);
@@ -358,15 +358,16 @@ export async function renderPremiere(file, resultsEl) {
   }
 
   // ---- Legend ----
+  const [legH, legP] = h3help('Legend',
+    'Each timeline zooms with ctrl/⌘ + scroll (or the zoom buttons) and pans by dragging. '
+    + 'Timings are decoded from the file; effects, keyframes and transitions are not drawn.');
   resultsEl.appendChild(el('div', { class: 'anr-card' }, [
-    el('h3', {}, 'Legend'),
+    legH, legP,
     el('p', { class: 'anr-hint', html:
       'Each bar is a clip, positioned by its in and out point on the sequence timeline. '
       + '<span style="color:#3b82c4">Video</span>, '
       + '<span style="color:#3ba776">audio</span>, '
-      + '<span style="color:#7f8896">caption / data</span> tracks are stacked as Premiere shows them (V1 at the bottom of the video stack). '
-      + 'Each timeline zooms with ctrl/⌘ + scroll (or the zoom buttons) and pans by dragging. '
-      + 'Timings are decoded from the file; effects, keyframes and transitions are not drawn.' }),
+      + '<span style="color:#7f8896">caption / data</span> tracks are stacked as Premiere shows them (V1 at the bottom of the video stack).' }),
   ]));
 
   // ---- Clips referenced on the timelines ----

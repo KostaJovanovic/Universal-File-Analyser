@@ -550,30 +550,34 @@ export function buildImuTimeline(d, file) {
   return wrap;
 }
 
-export function buildGyroCard(d, file) {
+// `file` is the ORIGINAL clip (it carries the rtmd track the CSV/gcsv export
+// re-reads). `playFile` is what the mini synced player mounts - normally the same
+// file, but when the browser can't decode the original codec the caller hands us
+// a playable H.264 proxy so the Motion timeline still plays.
+export function buildGyroCard(d, file, playFile = file) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Gyro & motion metadata',
-    'Sony cameras record a per-frame inertial-measurement burst (gyroscope + accelerometer) in the MP4 "rtmd" timed-metadata track. '
-    + 'Analyser walks that track and decodes the raw IMU samples - the same data Gyroflow and Catalyst Browse read to stabilise footage. '
-    + 'Gyroscope is shown in raw sensor counts; accelerometer is scaled to g (about 8192 counts per g).');
+    'Sony cameras save a small burst of motion-sensor readings for every frame - from a gyroscope (which senses rotation) and an accelerometer (which senses movement and tilt) - inside the MP4 video file’s "rtmd" timed-metadata track (metadata tied to the timeline). '
+    + 'Analyser reads that track and decodes the raw motion (IMU) samples - the same data that apps like Gyroflow and Catalyst Browse use to smooth out shaky footage. '
+    + 'Gyroscope values are shown as raw sensor counts; accelerometer values are scaled to g (Earth’s gravity), at about 8192 counts per g.');
   card.appendChild(h); card.appendChild(help);
 
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Source', 'Sony rtmd (Real-Time MetaData) track'));
   tbl.appendChild(rowHelp('Gyroscope', d.hasGyro ? 'Present' : 'Not found',
-    'Three-axis angular-rate (pitch / roll / yaw) samples, used for stabilisation in Gyroflow and Catalyst Browse.'));
+    'How fast the camera is rotating, measured on three axes (pitch, roll and yaw - tilting up and down, rocking side to side, and turning left and right). Used to steady footage in Gyroflow and Catalyst Browse.'));
   tbl.appendChild(rowHelp('Accelerometer', d.hasAccel ? 'Present' : 'Not found',
-    'Three-axis acceleration samples. At rest one axis reads about 1 g (gravity).'));
+    'The camera’s acceleration, measured on three axes. When held still, one axis reads about 1 g - the constant pull of gravity.'));
   tbl.appendChild(row('Frames', d.frames.toLocaleString() + (d.sampled < d.frames ? ` (${d.sampled.toLocaleString()} sampled)` : '')));
-  if (d.perFrame) tbl.appendChild(rowHelp('IMU samples / frame', String(d.perFrame), 'How many inertial samples the camera packs into each video frame.'));
-  if (d.imuRate) tbl.appendChild(rowHelp('IMU rate', '~' + Math.round(d.imuRate).toLocaleString() + ' Hz', 'Approximate inertial-sensor sampling rate (samples per frame × frame rate).'));
+  if (d.perFrame) tbl.appendChild(rowHelp('IMU samples / frame', String(d.perFrame), 'How many motion-sensor readings the camera packs into each video frame.'));
+  if (d.imuRate) tbl.appendChild(rowHelp('IMU rate', '~' + Math.round(d.imuRate).toLocaleString() + ' Hz', 'Roughly how many motion-sensor readings are taken per second (samples per frame × frames per second).'));
   if (d.fps) tbl.appendChild(row('Frame rate', (Math.round(d.fps * 100) / 100) + ' fps'));
   if (d.durationSec) tbl.appendChild(row('Duration', d.durationSec.toFixed(1) + ' s'));
   for (const k in d.scalars) tbl.appendChild(row(k, d.scalars[k]));
   card.appendChild(tbl);
 
   if ((d.hasGyro || d.hasAccel) && d.t.length) {
-    card.appendChild(buildImuTimeline(d, file || null));
+    card.appendChild(buildImuTimeline(d, playFile || file || null));
     card.appendChild(el('div', { style: 'margin:4px 0 2px' }, [
       el('span', { class: 'anr-hint', style: 'margin:0' }, 'Colours: '),
       el('span', { style: 'color:#e0533a' }, d.hasGyro ? 'pitch / X' : 'X'), el('span', { class: 'anr-hint', style: 'margin:0' }, ' · '),
@@ -608,20 +612,23 @@ export function buildGyroCard(d, file) {
     const gcsvBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Export Gyroflow (.gcsv)');
     csvBtn.addEventListener('click', () => run(csvBtn, 'csv'));
     gcsvBtn.addEventListener('click', () => run(gcsvBtn, 'gcsv'));
+    const [exH, exHp] = h3help('Export motion data',
+      'CSV holds the raw gyro plus accelerometer in g for any tool or spreadsheet. The .gcsv loads into Gyroflow and other stabilisers, '
+      + 'then you bring the stabilised clip into your video editor. The accelerometer scale is exact; the gyro scale assumes Sony’s '
+      + '±2000°/s range, so for the most precise stabilisation import the original file into Gyroflow directly - it reads this Sony gyro natively.');
+    card.appendChild(exH); card.appendChild(exHp);
     card.appendChild(el('div', { class: 'anr-btn-row', style: 'gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center' }, [csvBtn, gcsvBtn, status]));
     card.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:6px' },
-      'CSV holds raw gyro plus accelerometer in g for any tool or spreadsheet. The .gcsv loads into Gyroflow and other stabilisers, '
-      + 'then you bring the stabilised clip into your video editor. The accelerometer scale is exact; the gyro scale assumes Sony’s '
-      + '±2000°/s range, so for the most precise stabilisation import the original file into Gyroflow directly - it reads this Sony gyro natively.'));
+      'CSV opens in any tool; the .gcsv loads into Gyroflow for stabilisation.'));
   }
   return card;
 }
 
 // Convenience: extract and append the card if a Sony gyro track is present.
-export async function appendSonyGyroCard(file, resultsEl) {
+export async function appendSonyGyroCard(file, resultsEl, playFile) {
   try {
     const d = await extractSonyGyro(file);
-    if (d) resultsEl.appendChild(buildGyroCard(d, file));
+    if (d) resultsEl.appendChild(buildGyroCard(d, file, playFile || file));
     return !!d;
   } catch (_) { return false; }
 }

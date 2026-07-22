@@ -515,8 +515,11 @@ export async function renderDocx(file, container) {
     infoCard.appendChild(buildReadout([
       ['File', file.name],
       ['Size', fmtBytes(file.size)],
-      file.type && rowHelp('MIME', file.type, "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."),
-      ...Object.entries(meta),
+      file.type && rowHelp('MIME', file.type, "The MIME type is a short standard label for what kind of file this is - for example image/jpeg for a photo or audio/mpeg for an MP3. The browser guesses it from the file's extension or from the operating system, so it's a hint about the format, not proof."),
+      ...Object.entries(meta).map(([k, v]) =>
+        k === 'Revision'
+          ? rowHelp(k, v, 'The internal edit counter Word keeps - it rises by one each time the document is saved, so a high number just means it was saved many times. It is not a version name the writer chose.')
+          : [k, v]),
       file.lastModified && ['Last modified', new Date(file.lastModified).toLocaleString()],
     ]));
     container.appendChild(infoCard);

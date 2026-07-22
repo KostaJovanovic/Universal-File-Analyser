@@ -410,7 +410,7 @@ function infoCard(file, appLabel, extraRows, links) {
     card.appendChild(det);
   }
   card.appendChild(el('p', { class: 'anr-hint', style: 'font-size:12px;margin:10px 0 0;' },
-    'Legacy binary Office format - content is extracted best-effort. Original fonts, styling, images and exact page layout are not reconstructed.'));
+    'Content is extracted best-effort - original fonts, styling, images and exact layout are not reconstructed.'));
   return card;
 }
 

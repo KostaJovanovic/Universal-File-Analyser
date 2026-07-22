@@ -691,13 +691,13 @@ export function geoStatsCard(geo, file, format, unit) {
   tbl.appendChild(row('Format', format));
   tbl.appendChild(row('File', file.name));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
-  tbl.appendChild(rowHelp('Triangles', geo.count.toLocaleString(), 'The number of triangular facets in the tessellated mesh.'));
+  tbl.appendChild(rowHelp('Triangles', geo.count.toLocaleString(), 'How many tiny triangles the model is built from. STL shapes are made up entirely of flat triangular patches.'));
   const dx = geo.bbox.max[0] - geo.bbox.min[0];
   const dy = geo.bbox.max[1] - geo.bbox.min[1];
   const dz = geo.bbox.max[2] - geo.bbox.min[2];
-  tbl.appendChild(rowHelp('Bounding box', `${dx.toFixed(2)} × ${dy.toFixed(2)} × ${dz.toFixed(2)} ${u}`, 'The smallest axis-aligned box that encloses the model, as width × depth × height.'));
-  tbl.appendChild(rowHelp('Surface area', geo.area.toFixed(2) + ' ' + u + '²', 'Combined area of every triangle in the mesh.'));
-  tbl.appendChild(rowHelp('Volume', geo.volume.toFixed(2) + ' ' + u + '³ (if watertight)', 'Enclosed volume - only meaningful for a watertight (fully closed) mesh.'));
+  tbl.appendChild(rowHelp('Bounding box', `${dx.toFixed(2)} × ${dy.toFixed(2)} × ${dz.toFixed(2)} ${u}`, 'The size of the smallest upright box the whole model would fit inside, given as width × depth × height.'));
+  tbl.appendChild(rowHelp('Surface area', geo.area.toFixed(2) + ' ' + u + '²', 'The total area of the model’s outer surface, added up from all its triangles.'));
+  tbl.appendChild(rowHelp('Volume', geo.volume.toFixed(2) + ' ' + u + '³ (if watertight)', 'How much space the model encloses inside. This only makes sense if the model is fully sealed with no gaps (watertight).'));
   card.appendChild(tbl);
   return card;
 }
@@ -829,26 +829,26 @@ export function meshIntegrityCard(geo, opts = {}) {
 
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(rowHelp('Watertight', a.isWatertight ? 'Yes' : 'No',
-    'A watertight mesh is fully closed - every edge is shared by exactly two triangles, with no holes or gaps. Only a watertight mesh has a meaningful volume and prints reliably.'));
+    'The surface is fully sealed with no holes or gaps, so it forms a solid object - every edge joins exactly two triangles. Only a sealed model has a real inside volume and prints reliably.'));
   tbl.appendChild(rowHelp('Manifold', a.isManifold ? 'Yes' : 'No',
-    'A manifold mesh has clean surface topology - no edge is shared by more than two triangles. Non-manifold edges confuse slicers, boolean and CAD operations.'));
+    'The surface is joined cleanly, with no edge where more than two triangles meet. Edges that break this rule confuse slicers and CAD tools, and can make cut-and-combine (boolean) operations fail.'));
   if (a.boundaryEdges) tbl.appendChild(rowHelp('Open edges', a.boundaryEdges.toLocaleString() + (a.holes ? ` (${a.holes.toLocaleString()} ${a.holes === 1 ? 'hole' : 'holes'})` : ''),
-    'Edges used by only one triangle. They border holes or gaps in the surface, so the mesh is not fully closed.'));
+    'Edges that belong to only one triangle instead of two. Each one is the border of a hole or gap, so the surface is not fully sealed.'));
   if (a.nonManifoldEdges) tbl.appendChild(rowHelp('Non-manifold edges', a.nonManifoldEdges.toLocaleString(),
     'A place where too many surfaces meet along the same line. On a normal solid object, exactly two surfaces meet at each edge - like two walls meeting in the corner of a room. Here a third surface joins in, which cannot happen on a real object, so the shape has no clear inside and outside. 3D printers and modelling tools get confused by this and often fail.'));
   if (a.flipped) tbl.appendChild(rowHelp('Inconsistent winding', a.flipped.toLocaleString() + (a.flipped === 1 ? ' edge' : ' edges'),
-    'Edges where two neighbouring triangles disagree on winding, so their normals point opposite ways. Inconsistent winding causes shading artefacts and a mis-computed volume / inside-outside test.'));
+    'Neighbouring triangles disagree about which side faces outward, so some are effectively inside-out. This causes odd shading and throws off the inside/outside and volume calculations.'));
   if (a.degenerate) tbl.appendChild(rowHelp('Degenerate faces', a.degenerate.toLocaleString(),
-    'Triangles with zero area (two or more corners coincide). They carry no surface and should be removed.'));
+    'Collapsed triangles with no area, where two or more corners sit on the same spot. They cover no surface and are best removed.'));
   if (a.duplicate) tbl.appendChild(rowHelp('Duplicate faces', a.duplicate.toLocaleString(),
-    'Triangles that repeat the same three corners as another face - redundant coincident geometry.'));
+    'Triangles that sit exactly on top of another triangle with the same three corners - redundant duplicate copies.'));
   tbl.appendChild(rowHelp('Euler characteristic', String(a.euler),
-    'V - E + F over the welded mesh, a topological invariant. A single closed solid gives 2 (genus 0); each handle/tunnel through the body lowers it by 2.'));
+    'A single number that captures the model’s overall shape, worked out from its corners, edges and faces (V - E + F), and staying the same however the shape is bent or stretched. A single sealed solid gives 2 (genus 0); each hole passing right through the body - like the hole in a doughnut - lowers it by 2.'));
   card.appendChild(tbl);
 
   if (!problems) {
     card.appendChild(el('p', { class: 'anr-sig-flag-note' },
-      'This mesh is watertight and manifold - a fully closed, consistently wound solid with no detected topological errors, so its reported volume is reliable.'));
+      'No topological errors were detected, so the reported volume is reliable.'));
   } else {
     const pl = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : (many || one + 's')}`;
     const issues = [];
@@ -859,7 +859,7 @@ export function meshIntegrityCard(geo, opts = {}) {
     if (a.duplicate) issues.push(pl(a.duplicate, 'duplicate face'));
     const list = issues.length > 1 ? issues.slice(0, -1).join(', ') + ' and ' + issues[issues.length - 1] : issues[0];
     card.appendChild(el('p', { class: 'anr-sig-flag-note' },
-      `This mesh has ${list}. These irregularities can cause slicing failures, an unreliable volume or inside-outside test, and errors in CAD, boolean or repair tools. `
+      `This mesh has ${list}, which can cause slicing failures and an unreliable volume or inside-outside test. `
       + 'Run a mesh-repair pass (in your slicer, or a tool such as Blender or Meshmixer) before printing or machining.'));
   }
   return card;
@@ -1070,17 +1070,15 @@ export async function renderStl(file, resultsEl) {
   tbl.appendChild(row('Format', geo.format));
   tbl.appendChild(row('File', file.name));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
-  tbl.appendChild(rowHelp('Triangles', geo.count.toLocaleString(), 'The number of triangular facets that make up the mesh. STL models describe surfaces entirely as triangles.'));
-  tbl.appendChild(rowHelp('Vertices', (geo.count * 3).toLocaleString() + ' (non-indexed)', 'Total corner points, counted as 3 per triangle. STL stores them non-indexed, so shared corners are duplicated rather than referenced once.'));
+  tbl.appendChild(rowHelp('Triangles', geo.count.toLocaleString(), 'How many triangles make up the model. STL files describe every surface entirely as triangles.'));
+  tbl.appendChild(rowHelp('Vertices', (geo.count * 3).toLocaleString() + ' (non-indexed)', 'The total corner points, counted as three per triangle. STL lists each triangle’s corners separately, so a corner shared by several triangles is stored again each time rather than just once.'));
   const dx = geo.bbox.max[0] - geo.bbox.min[0];
   const dy = geo.bbox.max[1] - geo.bbox.min[1];
   const dz = geo.bbox.max[2] - geo.bbox.min[2];
-  tbl.appendChild(rowHelp('Bounding box', `${dx.toFixed(2)} × ${dy.toFixed(2)} × ${dz.toFixed(2)} (units)`, 'The smallest axis-aligned box that encloses the model, as width × depth × height. STL files are unitless, so these are in whatever units the file assumes (often mm).'));
-  tbl.appendChild(rowHelp('Surface area', geo.area.toFixed(2) + ' units²', 'The combined area of all triangles in the mesh, expressed in the model’s own units squared.'));
-  tbl.appendChild(rowHelp('Volume', geo.volume.toFixed(2) + ' units³ (if watertight)', 'The enclosed volume in the model’s units cubed. Only meaningful if the mesh is watertight - a fully closed solid with no holes or gaps.'));
+  tbl.appendChild(rowHelp('Bounding box', `${dx.toFixed(2)} × ${dy.toFixed(2)} × ${dz.toFixed(2)} (units)`, 'The size of the smallest upright box the whole model fits inside, as width × depth × height. STL files carry no units, so these numbers are in whatever unit the file assumes (often millimetres).'));
+  tbl.appendChild(rowHelp('Surface area', geo.area.toFixed(2) + ' units²', 'The total area of the model’s outer surface, added up from all its triangles, in the model’s own units squared.'));
+  tbl.appendChild(rowHelp('Volume', geo.volume.toFixed(2) + ' units³ (if watertight)', 'How much space the model encloses inside, in the model’s units cubed. This only makes sense if the model is fully sealed with no holes or gaps (watertight).'));
   statsCard.appendChild(tbl);
-  statsCard.appendChild(el('p', { class: 'anr-hint', style: 'font-size:12px;margin-top:8px;' },
-    'STL files carry no unit - dimensions are in the file’s own units (usually mm for 3D printing).'));
   resultsEl.appendChild(statsCard);
 
   // ---- Mesh integrity (non-manifold / open / degenerate faults) ----

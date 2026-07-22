@@ -237,7 +237,7 @@ export async function renderTextDoc(file, container, kind, ext) {
     info.appendChild(buildReadout([
       ['File', file.name],
       ['Size', fmtBytes(file.size)],
-      file.type && rowHelp('MIME', file.type, "The MIME type is the standard label for the file's format. The browser reads it from the extension or operating system, so it is a hint rather than proof of the real format."),
+      file.type && rowHelp('MIME', file.type, "The MIME type is a short standard label for what kind of file this is - for example image/jpeg for a photo or audio/mpeg for an MP3. The browser guesses it from the file's extension or from the operating system, so it's a hint about the format, not proof."),
       file.lastModified && ['Last modified', new Date(file.lastModified).toLocaleString()],
     ]));
     container.appendChild(info);

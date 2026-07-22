@@ -19,7 +19,7 @@
    "open in OpenStreetMap" link the user chooses to click. Motion traces reuse the
    Sony gyro timeline (buildImuTimeline). */
 
-import { el, row, rowHelp, h3help } from '../core/util.js';
+import { el, row, rowHelp, h3help, wireInfoToggle } from '../core/util.js';
 import { buildImuTimeline } from './sony-rtmd.js';
 
 const MAX_MOOV = 32 * 1024 * 1024;
@@ -491,9 +491,9 @@ function buildTrackCanvas(pts) {
 export function buildTelemetryCard(d) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Telemetry - ' + d.source,
-    'Action cameras and phones record a timed-metadata track alongside the video: GPS position and speed, and inertial (gyroscope + accelerometer) samples. '
-    + 'Analyser reads it straight from the file - nothing is uploaded, and no map tiles are fetched. '
-    + 'The track is drawn as a local path; use the OpenStreetMap link to view it on a real map if you choose.');
+    'Action cameras and phones can record a hidden data track alongside the video: where you were and how fast you moved (GPS), plus movement sensed by the gyroscope and accelerometer. '
+    + 'Analyser reads this straight from the file - nothing is uploaded, and no map tiles are fetched. '
+    + 'The route is drawn here as a simple local sketch; use the OpenStreetMap link to see it on a real map if you want to.');
   card.appendChild(h); card.appendChild(help);
 
   const tbl = el('table', { class: 'anr-readout' });
@@ -501,23 +501,24 @@ export function buildTelemetryCard(d) {
   const g = d.gps;
   if (g) {
     tbl.appendChild(rowHelp('GPS points', g.count.toLocaleString(),
-      'Number of satellite-position fixes recorded across the clip.'));
+      'How many times the camera recorded its GPS position during the clip.'));
     tbl.appendChild(row('Track distance', (g.distance >= 1000 ? (g.distance / 1000).toFixed(2) + ' km' : g.distance.toFixed(0) + ' m')));
     if (g.maxSpeed > 0) tbl.appendChild(rowHelp('Max speed', (g.maxSpeed * 3.6).toFixed(1) + ' km/h  (' + g.maxSpeed.toFixed(1) + ' m/s)',
-      'Highest recorded ground speed, from the GPS velocity field.'));
+      'The fastest speed recorded during the clip, taken from the GPS.'));
     if (isFinite(g.altLo) && isFinite(g.altHi)) tbl.appendChild(row('Altitude', g.altLo.toFixed(0) + ' - ' + g.altHi.toFixed(0) + ' m'));
     const start = g.pts[0];
     tbl.appendChild(rowHelp('Start', fmtDeg(start.lat) + ', ' + fmtDeg(start.lon),
-      'First GPS fix in the clip. Use the map link to view the full track.'));
+      'Where the clip began, from the first GPS reading. Use the map link to see the whole route.'));
   } else {
     tbl.appendChild(rowHelp('GPS', d.source === 'GoPro GPMF' ? 'No satellite lock in this clip' : 'Not found',
-      'This clip carries motion and exposure telemetry but no usable GPS fix - the camera had GPS switched off, or never acquired a lock (common indoors or on a short clip).'));
+      'This clip has movement and exposure data but no usable GPS position - the camera had GPS turned off, or never managed to lock onto satellites (common indoors or in a short clip).'));
   }
   tbl.appendChild(rowHelp('Gyroscope', d.motion && d.motion.hasGyro ? 'Present' : 'Not found',
-    'Three-axis angular-rate samples, used for stabilisation (Gyroflow, ReelSteady).'));
+    'Readings of how fast the camera was turning on each of its three axes, used by stabilisation tools such as Gyroflow and ReelSteady.'));
   tbl.appendChild(rowHelp('Accelerometer', d.motion && d.motion.hasAccel ? 'Present' : 'Not found',
-    'Three-axis acceleration samples. At rest one axis reads about 9.8 m/s² (gravity).'));
-  if (d.scalars.temperature != null) tbl.appendChild(row('Temperature', d.scalars.temperature.toFixed(1) + ' °C'));
+    'Readings of the camera’s acceleration along its three axes. When it is still, one axis reads about 9.8 m/s², which is gravity.'));
+  if (d.scalars.temperature != null) tbl.appendChild(rowHelp('Temperature', d.scalars.temperature.toFixed(1) + ' °C',
+    'A temperature the camera measured from its own internal sensors while recording, in degrees Celsius. This is the hardware’s heat, not the white-balance colour temperature.'));
   if (isFinite(d.durationSec) && d.durationSec > 0) tbl.appendChild(row('Duration', d.durationSec.toFixed(1) + ' s'));
   card.appendChild(tbl);
 
@@ -527,11 +528,11 @@ export function buildTelemetryCard(d) {
     card.appendChild(el('div', { class: 'anr-readout-section' }, 'Exposure (per frame)'));
     const et = el('table', { class: 'anr-readout' });
     if (ex.iso) et.appendChild(rowHelp('ISO', Math.round(ex.iso.min) + ' - ' + Math.round(ex.iso.max) + '  (avg ' + Math.round(ex.iso.avg) + ')',
-      'Sensor sensitivity the camera chose across the clip, recorded per frame. A wide range means changing light; a high ISO means a dark scene.'));
+      'How sensitive to light the camera set its sensor, noted for each frame. A wide range means the light was changing; a high ISO means the scene was dark.'));
     if (ex.shutter) et.appendChild(rowHelp('Shutter', fmtShutter(ex.shutter.min) + ' - ' + fmtShutter(ex.shutter.max) + '  (avg ' + fmtShutter(ex.shutter.avg) + ')',
-      'Exposure time per frame. Faster (e.g. 1/1000 s) freezes motion; slower blurs it. Capped by the frame rate.'));
+      'How long each frame was exposed to light. A fast shutter (e.g. 1/1000 s) freezes motion; a slow one blurs it. It cannot go slower than the frame rate allows.'));
     if (ex.wb) et.appendChild(rowHelp('White balance', Math.round(ex.wb.min) + ' - ' + Math.round(ex.wb.max) + ' K  (avg ' + Math.round(ex.wb.avg) + ' K)',
-      'Colour temperature the camera balanced to, in Kelvin. Low is warm/indoor light, high is cool/daylight or shade.'));
+      'The colour of light the camera adjusted for, measured in Kelvin. Low values are warm indoor light; high values are cool daylight or shade.'));
     card.appendChild(et);
   }
 
@@ -561,10 +562,18 @@ export function buildTelemetryCard(d) {
   // makes clear how much more the file records beyond what is charted above.
   if (d.streams && d.streams.length) {
     const det = el('details', { style: 'margin-top:12px' });
-    det.appendChild(el('summary', {}, [el('span', { class: 'anr-summary-label' }, 'All recorded streams (' + d.streams.length + ')')]));
+    const sum = el('summary', {});
+    const label = el('span', { class: 'anr-summary-label' });
+    label.appendChild(document.createTextNode('All recorded streams (' + d.streams.length + ') '));
+    const infoBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
+    const infoPanel = el('div', { class: 'anr-info-panel is-hidden',
+      html: 'Every metadata stream the camera wrote into this clip, by its own name. Analyser charts GPS, motion and exposure above; the rest are listed here.' });
+    wireInfoToggle(infoBtn, infoPanel);
+    label.appendChild(infoBtn);
+    sum.appendChild(label);
+    det.appendChild(sum);
     const body = el('div');
-    body.appendChild(el('p', { class: 'anr-hint', style: 'margin:8px 0 6px' },
-      'Every metadata stream the camera wrote into this clip, by its own name. Analyser charts GPS, motion and exposure above; the rest are listed here.'));
+    body.appendChild(infoPanel);
     const ul = el('ul', { style: 'margin:0; padding-left:18px; font-size:var(--t-small)' });
     for (const s of d.streams) ul.appendChild(el('li', {}, s));
     body.appendChild(ul);
@@ -577,8 +586,8 @@ export function buildTelemetryCard(d) {
 function buildLocationCard(loc) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Location',
-    'A single GPS point stored in the container metadata (QuickTime ©xyz or Apple location key). '
-    + 'Nothing is sent anywhere - the coordinates below are read from the file; the map link opens only if you click it.');
+    'A single GPS location saved inside the file itself (the QuickTime ©xyz or Apple location field). '
+    + 'Nothing is sent anywhere - the coordinates below are read from the file, and the map link opens only if you click it.');
   card.appendChild(h); card.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Source', loc.source));
@@ -603,7 +612,14 @@ export async function appendTelemetryCards(file, resultsEl, opts = {}) {
     let d = null;
     try { d = await extractGpmf(file); } catch (_) {}
     if (!d) { try { d = await extractCamm(file); } catch (_) {} }
-    if (d) { resultsEl.appendChild(buildTelemetryCard(d)); return true; }
+    if (d) {
+      // The Motion timeline mounts a small synced player. Extraction above read the
+      // ORIGINAL's telemetry track, but when the browser can't decode the original
+      // codec the caller passes a playable H.264 proxy to mount instead of it.
+      if (opts.playFile) d.file = opts.playFile;
+      resultsEl.appendChild(buildTelemetryCard(d));
+      return true;
+    }
 
     if (!opts.hasExifGps) {
       let loc = null;

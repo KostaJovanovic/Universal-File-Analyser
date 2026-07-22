@@ -15,6 +15,12 @@ import { el } from './util.js';
 // newest group's notes, or - once that group holds five versions - start a new
 // group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
+  { range: '6.54', notes: [
+    'Every **[?] explanation** across the site rewritten in plain English, with many more readouts, table headings and sections gaining one - and a **[?]** now opens a tidy pop-up instead of pushing the page down.',
+    'New on-device **AI denoise** (**DeepFilterNet3**) strips background noise and hiss from a recording, shown as a **Clean to Noise** blend - nothing uploaded, model downloaded once then offline.',
+    'The instant sound filters are reworked into **Underwater**, **Radio** and **Hollow**, with the true AI vocal split moved under a clearer **AI separation** button.',
+    'Fixes: **motion and gyro timelines** now play even when the video codec will not decode directly; switching AI tool mid-prompt is no longer ignored; and an **empty (0-byte) file** now explains itself instead of failing cryptically.',
+  ] },
   { range: '6.53', notes: [
     'A deep **forensic** pass across photos, video and sound - reading the hidden internals of each.',
     'Photos: **error-level analysis**, quantization fingerprint and JPEG ghosts to spot edits; **bit-plane / LSB** hidden-data analysis; edit history and a privacy report; and a switch to analyse a **RAW** as its embedded preview or fully demosaiced.',

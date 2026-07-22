@@ -71,7 +71,7 @@ export async function buildTiffPagesCard(file, signal, container) {
 
   return buildEmbeddedImagesCard({
     title: 'Pages',
-    hint: rendered.length + ' pages in this TIFF, decoded to PNG. Browsers can’t display TIFF, so each page is rendered here.',
+    hint: rendered.length + ' pages in this TIFF, each converted to a PNG image. Web browsers cannot show TIFF files directly, so every page is drawn out here for you.',
     items, signal, resultsEl: container, sourceFile: file,
   });
 }

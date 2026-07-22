@@ -130,17 +130,17 @@ export async function renderVsSolution(file, resultsEl) {
   const tbl = el('table', { class: 'anr-readout' });
   if (data.slnx) {
     tbl.appendChild(rowHelp('Format', 'Visual Studio solution (.slnx)',
-      'The newer XML solution format (Visual Studio 2022 17.10+ and the dotnet sln tooling) - a terser <Solution> tree of projects, folders and build configurations that replaces the classic text .sln.'));
+      'The newer XML form of a Visual Studio solution - the file that groups related code projects together (used by Visual Studio 2022 17.10+ and the dotnet sln tools). It holds a compact <Solution> tree of the projects, folders and build setups (build configurations, such as Debug and Release), replacing the older plain-text .sln.'));
   } else {
     tbl.appendChild(rowHelp('Format', 'Visual Studio solution (.sln)',
-      'A text manifest that groups one or more projects and their build configurations. Opened by Visual Studio, Rider and MonoDevelop; Unity generates one named after the project.'));
+      'A plain-text file that groups one or more code projects together, along with their build setups (build configurations, such as Debug and Release). Opened by Visual Studio, Rider and MonoDevelop; Unity creates one named after the project.'));
   }
   if (data.version) tbl.appendChild(row('Format version', data.version));
   if (data.vs) tbl.appendChild(row('Visual Studio', data.vs));
   if (data.vsVersion) tbl.appendChild(row('VS version', data.vsVersion));
   tbl.appendChild(row('Projects', String(data.projects.length)));
-  if (data.folders) tbl.appendChild(row('Solution folders', String(data.folders)));
-  if (data.solutionConfigs.length) tbl.appendChild(row('Configurations', data.solutionConfigs.join(', ')));
+  if (data.folders) tbl.appendChild(rowHelp('Solution folders', String(data.folders), 'Named groups used to tidy the projects in Visual Studio’s list. They are just a way to organise the view, not real folders on disk.'));
+  if (data.solutionConfigs.length) tbl.appendChild(rowHelp('Configurations', data.solutionConfigs.join(', '), 'The named build setups, each pairing a build type with a target platform - for example "Debug | Any CPU" (a build with debugging aids) or "Release | Any CPU" (an optimised build).'));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   meta.appendChild(tbl);
   resultsEl.appendChild(meta);

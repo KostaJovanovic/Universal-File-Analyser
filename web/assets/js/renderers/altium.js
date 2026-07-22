@@ -396,15 +396,32 @@ function arcPath(p, Y, col) {
 
 // ---- metadata cards -------------------------------------------------------
 
+// Rows are [label, value] or [label, value, helpText]; a help string routes the
+// row through rowHelp for a local [?] tooltip (kept out of the shared LABEL_HELP
+// map, which would mis-attach to same-named rows elsewhere).
 function metaCard(title, helpText, rows, file, extra) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help(title, helpText);
   card.appendChild(h); card.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
-  for (const [k, v] of rows) if (v != null && v !== '') tbl.appendChild(row(k, String(v)));
+  for (const [k, v, htxt] of rows) if (v != null && v !== '') tbl.appendChild(htxt ? rowHelp(k, String(v), htxt) : row(k, String(v)));
   card.appendChild(tbl);
   if (extra) card.appendChild(extra);
   return card;
+}
+// Local column-header [?] tooltip - helpTh is not exported from util.js, so this
+// mirrors it for the table headers that need a plain-language note.
+let _thTipInit = false;
+function helpTh(label, help) {
+  const th = el('th', {});
+  if (!help) { th.textContent = label; return th; }
+  if (!_thTipInit) { _thTipInit = true; document.addEventListener('click', () => document.querySelectorAll('.anr-tip.is-active').forEach((t) => t.classList.remove('is-active'))); }
+  th.appendChild(document.createTextNode(label + ' '));
+  const btn = el('button', { type: 'button', class: 'anr-tip-btn', title: 'Info' }, '[?]');
+  const tip = el('div', { class: 'anr-tip' }, help);
+  btn.addEventListener('click', (e) => { e.stopPropagation(); const on = tip.classList.contains('is-active'); document.querySelectorAll('.anr-tip.is-active').forEach((t) => t.classList.remove('is-active')); if (!on) tip.classList.add('is-active'); });
+  th.appendChild(btn); th.appendChild(tip);
+  return th;
 }
 
 // ---- entry point ----------------------------------------------------------
@@ -463,7 +480,7 @@ async function renderEpw(file, resultsEl) {
   const parts = desc ? desc.split('/') : [];
   const [compId, partId, ver, pinCount, units, category] = parts;
 
-  resultsEl.appendChild(metaCard('SamacSys ECAD model', 'A SamacSys ECAD Model wrapper (.epw) - the small text stub the SamacSys / Mouser "ECAD Part Wizard" turns into a schematic symbol and PCB footprint. Analyser reads the descriptor it carries.', [
+  resultsEl.appendChild(metaCard('SamacSys ECAD model', 'A small SamacSys ECAD model file (.epw) - a short text pointer that the SamacSys / Mouser "ECAD Part Wizard" turns into a ready-made schematic symbol and PCB footprint for a component. It holds no geometry itself; the matching symbol and footprint, once imported, open here as .SchLib / .PcbLib files.', [
     ['Format', 'SamacSys ECAD model (.epw)'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
@@ -471,15 +488,10 @@ async function renderEpw(file, resultsEl) {
     ['Part ID', partId || null],
     ['Model version', ver || null],
     ['Pins', pinCount || null],
-    ['Symbol parts', units || null],
+    ['Symbol parts', units || null, 'How many sub-units the schematic symbol is split into - for example the separate logic gates that share one physical chip.'],
     ['Category', category || null],
     ['Source', source ? (SRC[source.toLowerCase()] || source) : null],
   ], file));
-
-  const note = el('div', { class: 'anr-card' });
-  note.appendChild(el('h3', {}, 'About this file'));
-  note.appendChild(el('p', {}, 'This .epw holds no geometry itself - it is a reference the ECAD Part Wizard (or Altium Library Loader) downloads the full model from. The matching symbol/footprint, once imported, open here as .SchLib / .PcbLib files.'));
-  resultsEl.appendChild(note);
 
   resultsEl.appendChild(sourceCard(text));
 }
@@ -517,7 +529,7 @@ async function renderPrjPcb(file, resultsEl) {
   try { text = await file.text(); } catch (_) {}
   const { projName, docs, version, cfg, outCount } = parsePrj(text, file.name);
 
-  resultsEl.appendChild(metaCard('Altium project', 'An Altium Designer PCB project file (.PrjPcb) - the INI manifest that ties a schematic and board together. Analyser reads its member documents and configuration.', [
+  resultsEl.appendChild(metaCard('Altium project', 'An Altium Designer circuit-board project (.PrjPcb) - a plain text list (in INI key=value form) that ties a project’s schematic and board files together. Analyser reads the documents it references and its settings.', [
     ['Format', 'Altium PcbProject (.PrjPcb)'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
@@ -525,12 +537,12 @@ async function renderPrjPcb(file, resultsEl) {
     ['Project format', version ? 'v' + version : null],
     ['Documents', docs.length || null],
     ['Default configuration', cfg || null],
-    ['Output jobs', outCount || null],
+    ['Output jobs', outCount || null, 'The number of saved output setups (Altium OutJob files) that define how to generate the manufacturing files - Gerbers, drill files, PDFs and so on.'],
   ], file));
 
   // When the project is opened on its own (not from a folder drop), point the
   // user at the combined view that a folder drop unlocks.
-  resultsEl.appendChild(el('div', { class: 'anr-info' }, 'Tip: drop the whole project folder (not just this file) to open every schematic, board and library together in one cross-probing project view.'));
+  resultsEl.appendChild(el('div', { class: 'anr-info' }, 'Tip: drop the whole project folder for the combined cross-probing view.'));
 
   if (docs.length) {
     const card = el('div', { class: 'anr-card' });
@@ -559,7 +571,7 @@ async function renderPreview(file, resultsEl) {
   for (const m of head.matchAll(/^([A-Za-z]+)=([^\r\n]+)/gm)) ini[m[1].toLowerCase()] = m[2];
   const g = (k) => (/^\d+$/.test(ini[k.toLowerCase()] || '') ? ini[k.toLowerCase()] : null);
   const lw = g('LargeImageWidth'), lh = g('LargeImageHeight');
-  resultsEl.appendChild(metaCard('Altium preview thumbnail', 'An Altium Designer preview-cache file (.SchDocPreview / .PcbDocPreview) - the rendered thumbnail Altium stores beside a document so a browser can show it without opening the source.', [
+  resultsEl.appendChild(metaCard('Altium preview thumbnail', 'A saved preview picture Altium keeps next to a document (.SchDocPreview / .PcbDocPreview) - a small thumbnail of the schematic or board, so a file browser can show what it looks like without opening the original.', [
     ['Format', 'Altium document preview'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
@@ -567,7 +579,7 @@ async function renderPreview(file, resultsEl) {
     ['Medium image', g('MediumImageWidth') && g('MediumImageHeight') ? `${g('MediumImageWidth')} × ${g('MediumImageHeight')}` : null],
     ['Small image', g('SmallImageWidth') && g('SmallImageHeight') ? `${g('SmallImageWidth')} × ${g('SmallImageHeight')}` : null],
   ], file));
-  resultsEl.appendChild(el('div', { class: 'anr-info' }, 'This is an internal thumbnail cache, not a source document - the matching .SchDoc / .PcbDoc opens as a full interactive view.'));
+  resultsEl.appendChild(el('div', { class: 'anr-info' }, 'Internal thumbnail cache - the matching .SchDoc / .PcbDoc opens as the full interactive view.'));
 }
 
 function renderSch(file, reader, resultsEl, ext) {
@@ -578,14 +590,14 @@ function renderSch(file, reader, resultsEl, ext) {
   const part = parsed && parsed.parts[0];
   resultsEl.appendChild(metaCard(
     isLib ? 'Altium schematic library' : 'Altium schematic',
-    'Altium Designer schematic, stored as an OLE compound document. The drawing primitives are parsed from the FileHeader stream and rebuilt as a vector view in the browser.',
+    'An Altium Designer circuit diagram (schematic), stored inside an OLE compound file - a single file that holds many internal streams, like a mini filesystem. Analyser reads the drawing’s lines and shapes from its FileHeader stream and redraws them as a crisp, zoomable (vector) view in the browser.',
     [
       ['Format', isLib ? 'Altium SchLib (' + (file.name.split('.').pop()) + ')' : 'Altium SchDoc'],
       ['File', file.name],
       ['Size', fmtBytes(file.size)],
       ['Document version', ver.replace(/^.*Version /, 'v') || null],
       ['Components', parsed ? parsed.parts.length : 0],
-      ['Primitives', parsed ? parsed.objs.length : 0],
+      ['Primitives', parsed ? parsed.objs.length : 0, 'The count of individual drawing objects in the diagram - each line, wire, pin, label and shape.'],
     ], file));
 
   // part / BOM card
@@ -593,8 +605,8 @@ function renderSch(file, reader, resultsEl, ext) {
     const card = el('div', { class: 'anr-card' });
     card.appendChild(el('h3', {}, 'Component'));
     const tbl = el('table', { class: 'anr-readout' });
-    tbl.appendChild(row('Designator', part.designator || '(unannotated)'));
-    tbl.appendChild(row('Library reference', part.libref));
+    tbl.appendChild(rowHelp('Designator', part.designator || '(unannotated)', 'The short reference label the part is given, such as R1 for a resistor or U2 for a chip.'));
+    tbl.appendChild(rowHelp('Library reference', part.libref, 'The name of the component in the library it was taken from - the source symbol this part is an instance of.'));
     if (part.desc) tbl.appendChild(row('Description', part.desc));
     for (const p of (part.params || [])) {
       if (/^https?:/i.test(p.value)) {
@@ -636,14 +648,14 @@ function parsePcbLibData(reader) {
 function renderPcbLib(file, reader, resultsEl) {
   const { prims, layers, pads, fpName } = parsePcbLibData(reader);
 
-  resultsEl.appendChild(metaCard('Altium footprint library', 'Altium PCB footprint library (.PcbLib). Pads, tracks and arcs are decoded from the footprint geometry stream and rebuilt to scale.', [
+  resultsEl.appendChild(metaCard('Altium footprint library', 'An Altium library of PCB footprints (.PcbLib) - the solder-pad patterns that components sit on. Analyser decodes each footprint’s pads, tracks and arcs and redraws them to scale.', [
     ['Format', 'Altium PcbLib'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
-    ['Footprint', fpName],
-    ['Pads', pads.length],
-    ['Primitives', prims.length],
-    ['Layers used', [...layers].map((l) => layerInfo(l).name).join(', ')],
+    ['Footprint', fpName, 'The name of this footprint - the copper pad pattern and outline a component solders onto.'],
+    ['Pads', pads.length, 'The small metal contacts that a component’s pins solder to.'],
+    ['Primitives', prims.length, 'The count of individual drawing objects that make up the footprint - each pad, line and arc.'],
+    ['Layers used', [...layers].map((l) => layerInfo(l).name).join(', '), 'Which layers of the board this footprint places copper and markings on, such as the top copper and the top silkscreen printing.'],
   ], file));
 
   if (pads.length) {
@@ -666,7 +678,12 @@ function renderPcbLib(file, reader, resultsEl) {
 // Shared pad-table builder (used by the library view and the project view).
 function padsTable(pads) {
   const tbl = el('table', { class: 'anr-readout anr-altium-pads' });
-  tbl.appendChild(el('tr', {}, [el('th', {}, 'Pad'), el('th', {}, 'X (mm)'), el('th', {}, 'Y (mm)'), el('th', {}, 'Size (mm)'), el('th', {}, 'Hole'), el('th', {}, 'Type')]));
+  tbl.appendChild(el('tr', {}, [
+    helpTh('Pad', 'The pad’s number or name - the label matching the component pin that solders to it.'),
+    helpTh('X (mm)', null), helpTh('Y (mm)', null), helpTh('Size (mm)', null),
+    helpTh('Hole', 'The diameter of the hole drilled through the pad, for pins that pass through the board. Blank for surface pads with no hole.'),
+    helpTh('Type', 'How the pad mounts: THT (through-hole, a pin through a drilled hole) or SMD (surface-mount, soldered to the top).'),
+  ]));
   const mm = (mil) => (mil * 0.0254).toFixed(3);
   const shapeName = { 1: 'Round', 2: 'Rect', 3: 'Rounded' };
   for (const p of pads) {
@@ -706,14 +723,14 @@ function parsePcbDocData(reader) {
 function renderPcbDoc(file, reader, resultsEl) {
   const { prims, layers, outline, fields: f, boardW, boardH } = parsePcbDocData(reader);
 
-  resultsEl.appendChild(metaCard('Altium PCB', 'Altium Designer PCB document (.PcbDoc). The board outline and any routed copper are decoded from the binary primitive streams and drawn to scale.', [
+  resultsEl.appendChild(metaCard('Altium PCB', 'An Altium Designer printed-circuit-board layout (.PcbDoc) - the physical board design. Analyser decodes the board outline and any routed copper wiring from its internal binary data and draws them to scale.', [
     ['Format', 'Altium PcbDoc'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
     ['Saved', f.DATE ? `${f.DATE} ${f.TIME || ''}`.trim() : null],
     ['Units', f.DISPLAYUNIT === '1' ? 'Imperial (mil)' : f.DISPLAYUNIT ? 'Metric (mm)' : null],
     ['Board size', boardW ? `${boardW.toFixed(1)} × ${boardH.toFixed(1)} mm` : null],
-    ['Routed primitives', prims.length],
+    ['Routed primitives', prims.length, 'The count of individual copper objects laid out on the board - each track (wire) segment, arc and filled area.'],
   ], file));
 
   const dcard = el('div', { class: 'anr-card' });
@@ -766,7 +783,7 @@ function bomFields(comp) {
 // Small key/value table for a doc panel header (lighter than the full metaCard).
 function miniMeta(rows) {
   const tbl = el('table', { class: 'anr-readout' });
-  for (const [k, v] of rows) if (v != null && v !== '') tbl.appendChild(row(k, String(v)));
+  for (const [k, v, htxt] of rows) if (v != null && v !== '') tbl.appendChild(htxt ? rowHelp(k, String(v), htxt) : row(k, String(v)));
   return tbl;
 }
 
@@ -828,7 +845,7 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
   const card = el('div', { class: 'anr-card anr-altium-project' });
   card.appendChild(el('h3', {}, 'Altium project'));
   card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 12px;' },
-    'Every document in this folder, opened together as one design. Click a designator in the bill of materials to jump to that part on its schematic.'));
+    'Every document in this folder, opened together as one design.'));
 
   const tabsBar = el('div', { class: 'anr-altium-tabs' });
   const panels = el('div', { class: 'anr-altium-tabwrap' });
@@ -867,7 +884,7 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
       panel.appendChild(miniMeta([
         ['Type', isLib ? 'Schematic library' : 'Schematic sheet'],
         ['Components', p ? p.parts.length : 0],
-        ['Primitives', p ? p.objs.length : 0],
+        ['Primitives', p ? p.objs.length : 0, 'The count of individual drawing objects in the diagram - each line, wire, pin, label and shape.'],
       ]));
       if (p && p.objs.length) {
         const v = schView(p);
@@ -882,7 +899,7 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
       panel.appendChild(miniMeta([
         ['Type', 'PCB document'],
         ['Board size', boardW ? `${boardW.toFixed(1)} × ${d.data.boardH.toFixed(1)} mm` : null],
-        ['Routed primitives', prims.length],
+        ['Routed primitives', prims.length, 'The count of individual copper objects laid out on the board - each track (wire) segment, arc and filled area.'],
       ]));
       if (outline && outline.length >= 2) {
         panel.appendChild(pcbView(prims, layers, outline).wrap);
@@ -894,9 +911,9 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
     const { prims, layers, pads, fpName } = d.data;
     panel.appendChild(miniMeta([
       ['Type', 'Footprint library'],
-      ['Footprint', fpName],
-      ['Pads', pads.length],
-      ['Layers used', [...layers].map((l) => layerInfo(l).name).join(', ')],
+      ['Footprint', fpName, 'The name of this footprint - the copper pad pattern and outline a component solders onto.'],
+      ['Pads', pads.length, 'The small metal contacts that a component’s pins solder to.'],
+      ['Layers used', [...layers].map((l) => layerInfo(l).name).join(', '), 'Which layers of the board this footprint places copper and markings on, such as the top copper and the top silkscreen printing.'],
     ]));
     if (pads.length) panel.appendChild(padsTable(pads));
     if (prims.length) panel.appendChild(pcbView(prims, layers, null).wrap);
@@ -918,12 +935,17 @@ export async function buildAltiumProjectCard(altFiles, folderName) {
     // Combined bill of materials with cross-probe.
     if (bom.length) {
       const bomCard = el('div', { class: 'anr-altium-bomwrap' });
-      bomCard.appendChild(el('h3', {}, 'Bill of materials'));
+      const [bh, bhp] = h3help('Bill of materials', 'The list of parts across every schematic. Click a part’s designator to jump to it on its schematic sheet.');
+      bomCard.appendChild(bh); bomCard.appendChild(bhp);
       const multiSheet = schDocs.length > 1;
       const tbl = el('table', { class: 'anr-readout anr-altium-bom' });
+      const HEAD_HELP = {
+        'Designator': 'The short reference label a part is given, such as R1 for a resistor or U2 for a chip.',
+        'Mfr part №': 'The manufacturer’s own part number for the component - the code you would order it by.',
+      };
       const head = ['Designator', 'Part', 'Description', 'Manufacturer', 'Mfr part №', 'Datasheet'];
       if (multiSheet) head.push('Sheet');
-      tbl.appendChild(el('tr', {}, head.map((h) => el('th', {}, h))));
+      tbl.appendChild(el('tr', {}, head.map((h) => helpTh(h, HEAD_HELP[h] || null))));
       for (const { comp, doc } of bom) {
         const { mfr, mpn, datasheet } = bomFields(comp);
         const desigBtn = el('button', { type: 'button', class: 'anr-btn anr-altium-desig' }, comp.designator || '—');

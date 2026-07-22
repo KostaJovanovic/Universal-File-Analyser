@@ -8,7 +8,7 @@
    Detection is by content (loose objects are extensionless) - see
    sniffGitObject, called from handleFile()'s magic-byte sniff. */
 
-import { el, row, fmtBytes } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes } from '../core/util.js';
 import { hexBytes } from '../core/binutil.js';
 
 const TYPES = new Set(['blob', 'tree', 'commit', 'tag']);
@@ -74,12 +74,6 @@ function card(title, rowEls) {
   const t = el('table', { class: 'anr-readout' });
   for (const r of rowEls) t.appendChild(r);
   c.appendChild(t);
-  return c;
-}
-
-function noteCard(text) {
-  const c = el('div', { class: 'anr-card' });
-  c.appendChild(el('p', { class: 'anr-hint', style: 'margin:0;' }, text));
   return c;
 }
 
@@ -163,7 +157,7 @@ function renderBlobObject(file, content, resultsEl) {
     c.appendChild(block(text + (content.length > 8192 ? '\n…' : '')));
   } else {
     c.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' },
-      'Binary blob - analyse it to detect the real format and inspect the contents.'));
+      'Binary blob - not readable as text.'));
   }
 
   // Re-dispatch the blob's bytes through the main analyser. The name has no
@@ -187,13 +181,19 @@ async function renderPackOrIdx(file, resultsEl, kind) {
     const dv = new DataView(head.buffer);
     const version = dv.getUint32(4, false);
     const count = dv.getUint32(8, false);
-    resultsEl.appendChild(card('Git packfile', [
+    const packCard = el('div', { class: 'anr-card' });
+    const [ph, phelp] = h3help('Git packfile', 'A packfile bundles many git objects into one file, stored as compressed differences against one another. Analyser reads its header - the format version and object count - but resolving the individual objects inside needs the matching .idx index file.');
+    packCard.appendChild(ph);
+    packCard.appendChild(phelp);
+    const pt = el('table', { class: 'anr-readout' });
+    for (const r of [
       row('Format', 'Git pack (.pack)'),
       row('Version', String(version)),
       row('Objects', count.toLocaleString()),
       row('Size', fmtBytes(file.size)),
-    ]));
-    resultsEl.appendChild(noteCard('A packfile stores many objects delta-compressed against one another. Analyser reads the header (version and object count); resolving the individual objects needs the matching .idx index.'));
+    ]) pt.appendChild(r);
+    packCard.appendChild(pt);
+    resultsEl.appendChild(packCard);
     return;
   }
   // idx v2: \377tOc, version (uint32 BE) = 2, then a 256-entry fanout table of
@@ -238,11 +238,11 @@ export async function renderGitObject(file, resultsEl) {
   const sha = await sha1Hex(data);
 
   const rows = [
-    row('Object type', type || '(unknown)'),
-    row('Content size', fmtBytes(content.length) + (content.length === size ? '' : '  (header declares ' + size + ')')),
+    rowHelp('Object type', type || '(unknown)', 'Which kind of git object this is. A blob is a file’s contents, a tree is a folder listing, a commit is a saved snapshot with its message, and a tag marks a named point such as a release.'),
+    rowHelp('Content size', fmtBytes(content.length) + (content.length === size ? '' : '  (header declares ' + size + ')'), 'How big the stored contents are once unpacked. Git records this length in the object’s own header; if that figure differs from the actual contents, the header’s figure is shown in brackets.'),
   ];
   if (sha) {
-    rows.push(row('SHA-1', sha));
+    rows.push(rowHelp('SHA-1', sha, 'A 40-character fingerprint git works out from the object’s contents. Git uses it as the object’s name and identity, so the same contents always produce the same value.'));
     const fn = (file.name || '').toLowerCase().replace(/[^0-9a-f]/g, '');
     if (fn.length === 38 && sha.slice(2) === fn) rows.push(row('Filename match', 'Yes - the filename is this object hash'));
   }

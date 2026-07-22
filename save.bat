@@ -147,8 +147,8 @@ git add .
 git status
 
 echo.
-set /p MSG=commit message [update]:
-if "%MSG%"=="" set MSG=update
+set /p MSG=commit message [v%VERLABEL%]:
+if "%MSG%"=="" set MSG=v%VERLABEL%
 
 git commit -m "%MSG%"
 if errorlevel 1 (

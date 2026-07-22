@@ -121,7 +121,7 @@ async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
   t.appendChild(row('Name', file.name));
   t.appendChild(row('Size', fmtBytes(file.size) + '  (' + file.size.toLocaleString() + ' bytes)'));
   t.appendChild(rowHelp('Detected format', (diag.format || 'unrecognised data').toUpperCase(),
-    'The real format read from the file’s signature bytes, regardless of its extension. Salvage works on the actual contents.'));
+    'The file type worked out from the first few bytes inside the file (its ‘signature’), not from the name on the end of the filename. Salvage works on what the file really contains, not what its name claims.'));
   diagCard.appendChild(t);
   // The headerless case explains the damage (and the fix) once, in the Reference
   // photo card above - so skip the "What's wrong" restatement and the carving
@@ -133,7 +133,7 @@ async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
     for (const is of (diag.issues || [])) ul.appendChild(el('li', { class: 'anr-hint', style: 'margin:2px 0;' }, is.msg));
     diagCard.appendChild(ul);
     diagCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:10px;' },
-      'Analyser can scoop up whatever still decodes and stitch it into a viewable image. Everything stays on your device.'));
+      'Analyser can scoop up whatever still decodes and stitch it into a viewable image.'));
   }
   resultsEl.appendChild(diagCard);
 
@@ -173,9 +173,13 @@ async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
       // reference picker so it sits directly under that card - it's the one
       // action that gets the picture back - and keep the diagnosis below it.
       resultsEl.insertBefore(out, diagCard);
-      out.appendChild(el('h3', {}, 'Reference photo needed'));
+      {
+        const [rpH, rpHelp] = h3help('Reference photo needed',
+          'The JPEG header is gone - only the compressed image data survives. Analyser rebuilds a working header from your reference photo so this file decodes. How much of the picture returns depends on how much was lost with the header.');
+        out.appendChild(rpH); out.appendChild(rpHelp);
+      }
       out.appendChild(el('p', { class: 'anr-hint' },
-        'The JPEG header is gone - only the compressed image data survives. Pick a healthy photo from the same camera (same resolution and mode) and Analyser rebuilds a working header so this file decodes. How much of the picture returns depends on how much was lost with the header:'));
+        'Pick a healthy photo from the same camera - same resolution and mode:'));
       const inp = el('input', { type: 'file', accept: 'image/jpeg,.jpg,.jpeg', style: 'display:none' });
       const pick = el('button', { type: 'button', class: 'anr-btn' }, 'Choose reference photo…');
       pick.addEventListener('click', () => inp.click());
@@ -213,7 +217,7 @@ async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
         const f = await canvasToPngFile(cv, base + '.recovered.png');
         if (f) {
           const pct = Math.round((dec.realRows / dec.height) * 100);
-          await present(f, 'The top ' + pct + '% of this picture (' + dec.realRows.toLocaleString() + ' of ' + dec.height.toLocaleString() + ' rows) is the real image. Below the break the JPEG scan is corrupt - what shows there is colour noise the decoder produces from the dead data, not the actual photo. The lost part was overwritten and cannot be recovered.');
+          await present(f, 'The top ' + pct + '% of this picture (' + dec.realRows.toLocaleString() + ' of ' + dec.height.toLocaleString() + ' rows) is the real image. Below the break the JPEG scan is corrupt - what shows there is decoder noise from the dead data, not the real photo, and the lost part cannot be recovered.');
           return;
         }
       }
@@ -236,9 +240,13 @@ async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
       return;
     }
     if (rep.needsReference) {
-      out.appendChild(el('h3', {}, 'Reference photo needed'));
+      {
+        const [rpH, rpHelp] = h3help('Reference photo needed',
+          'The JPEG header (its quantisation / Huffman tables) is damaged, so the picture data can’t be decoded on its own. Analyser rebuilds the header from your reference so the scan data decodes.');
+        out.appendChild(rpH); out.appendChild(rpHelp);
+      }
       out.appendChild(el('p', { class: 'anr-hint' },
-        'The JPEG header (its quantisation / Huffman tables) is damaged, so the picture data can’t be decoded on its own. Analyser can rebuild the header from a healthy photo shot on the same camera in the same mode - then the scan data decodes. Pick one:'));
+        'Pick a healthy photo from the same camera, shot in the same mode:'));
       const inp = el('input', { type: 'file', accept: 'image/jpeg,.jpg,.jpeg', style: 'display:none' });
       const pick = el('button', { type: 'button', class: 'anr-btn' }, 'Choose reference photo…');
       pick.addEventListener('click', () => inp.click());
@@ -348,7 +356,7 @@ async function renderUndisplayableImage(file, ext, resultsEl, bannerNode) {
   const t = el('table', { class: 'anr-readout' });
   t.appendChild(row('Name', file.name));
   t.appendChild(row('Size', fmtBytes(file.size) + '  (' + file.size.toLocaleString() + ' bytes)'));
-  t.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is the standard label for the file's format. The browser reads it from the extension or the OS, so it's a hint rather than proof of the real format."));
+  t.appendChild(rowHelp('MIME', file.type || '-', "The MIME type is a short standard label for the kind of file this is, such as image/jpeg. Your browser guesses it from the filename or the operating system, so it is a hint about the format, not proof."));
   info.appendChild(t);
   resultsEl.appendChild(info);
   let exif = null;
@@ -482,7 +490,7 @@ export function pickOcrLanguage(opts = {}) {
     ]);
     panel.appendChild(head);
     const hintP = el('p', { class: 'anr-hint', style: 'margin:0 20px 12px;' },
-      'Pick the language of the text. English works offline; the rest download once, then are cached.');
+      'Pick the language of the text - English works offline; others download once, then stay cached.');
     panel.appendChild(hintP);
     const list = el('ul', { class: 'anr-ocr-lang-list' });
     const items = [];
@@ -813,19 +821,19 @@ function buildExifSections(exif) {
   const shutter = [exif.ShutterCount, exif.ShutterCount2, exif.MechanicalShutterCount,
     exif.ImageCount, exif.ActuationCount, exif.TotalShutterReleases, exif.ShutterCounter,
     exif.ImageNumber, exif.FileNumber].find((v) => v != null && Number(v) > 0);
-  if (shutter != null) camera.push(['Shutter count', Number(shutter).toLocaleString() + ' actuations']);
+  if (shutter != null) camera.push(['Shutter count', Number(shutter).toLocaleString() + ' actuations', 'How many photos the camera body has taken in its lifetime (each shot trips the shutter once). Useful second-hand, as a rough gauge of wear.']);
   if (camera.length) sections.push({ title: 'Camera & lens', rows: camera });
 
   const exposure = [];
-  if (exif.ISO != null)               exposure.push(['ISO', exif.ISO]);
-  if (exif.FNumber != null)           exposure.push(['Aperture', fmtFNumber(exif.FNumber)]);
-  if (exif.ExposureTime != null)      exposure.push(['Shutter', fmtShutter(exif.ExposureTime)]);
-  if (exif.FocalLength != null)       exposure.push(['Focal length', fmtFocal(exif.FocalLength)]);
-  if (exif.FocalLengthIn35mmFormat != null) exposure.push(['Focal (35mm eq.)', fmtFocal(exif.FocalLengthIn35mmFormat)]);
-  if (exif.ExposureCompensation != null) exposure.push(['Exposure comp.', fmtExpComp(exif.ExposureCompensation)]);
-  if (exif.ExposureProgram != null)   exposure.push(['Exposure program', EXP_PROG[exif.ExposureProgram] || exif.ExposureProgram]);
-  if (exif.MeteringMode != null)      exposure.push(['Metering', METERING[exif.MeteringMode] || exif.MeteringMode]);
-  if (exif.WhiteBalance != null)      exposure.push(['White balance', WHITE_BAL[exif.WhiteBalance] || exif.WhiteBalance]);
+  if (exif.ISO != null)               exposure.push(['ISO', exif.ISO, 'How sensitive the camera’s sensor was set to be. A higher number (say 3200) copes with darker light but adds grain or noise; a lower number (say 100) is cleaner.']);
+  if (exif.FNumber != null)           exposure.push(['Aperture', fmtFNumber(exif.FNumber), 'How wide the lens opening was, written as an f-number. A lower number (like f/2) means a wider opening - more light and a blurrier background; a higher number (like f/11) keeps more of the scene sharp.']);
+  if (exif.ExposureTime != null)      exposure.push(['Shutter', fmtShutter(exif.ExposureTime), 'How long the sensor was exposed to light, in seconds. A fast time like 1/1000 freezes motion; a slow one like 1/15 can blur movement.']);
+  if (exif.FocalLength != null)       exposure.push(['Focal length', fmtFocal(exif.FocalLength), 'The lens’s zoom setting, in millimetres. A small number is wide-angle (fits more in), a large number is telephoto (zoomed in on distant subjects).']);
+  if (exif.FocalLengthIn35mmFormat != null) exposure.push(['Focal (35mm eq.)', fmtFocal(exif.FocalLengthIn35mmFormat), 'The zoom setting rescaled to the old 35mm film standard, so lenses on different-sized sensors can be compared on the same footing.']);
+  if (exif.ExposureCompensation != null) exposure.push(['Exposure comp.', fmtExpComp(exif.ExposureCompensation), 'A deliberate brightness nudge the photographer dialled in, in EV steps. A positive value makes the shot brighter than the camera’s automatic reading, a negative value darker.']);
+  if (exif.ExposureProgram != null)   exposure.push(['Exposure program', EXP_PROG[exif.ExposureProgram] || exif.ExposureProgram, 'Which automatic mode the camera used to balance brightness - for example aperture priority (you pick the opening), shutter priority (you pick the speed), or full manual.']);
+  if (exif.MeteringMode != null)      exposure.push(['Metering', METERING[exif.MeteringMode] || exif.MeteringMode, 'How the camera measured the light to set exposure - for example reading the whole frame, weighting the centre, or just a small spot.']);
+  if (exif.WhiteBalance != null)      exposure.push(['White balance', WHITE_BAL[exif.WhiteBalance] || exif.WhiteBalance, 'How the camera corrected for the colour of the lighting so whites look white. ‘Auto’ lets the camera judge it; ‘Manual’ means it was set by hand.']);
   if (exif.Flash != null)             exposure.push(['Flash', typeof exif.Flash === 'object' ? JSON.stringify(exif.Flash) : exif.Flash]);
   if (exposure.length) sections.push({ title: 'Exposure', rows: exposure });
 
@@ -838,9 +846,9 @@ function buildExifSections(exif) {
 
   const image = [];
   if (exif.Orientation != null) image.push(['Orientation', (ORIENTATIONS[exif.Orientation] || exif.Orientation) + '  (' + exif.Orientation + ')']);
-  if (exif.ColorSpace)          image.push(['Colour space', exif.ColorSpace === 1 ? 'sRGB' : (exif.ColorSpace === 2 ? 'Adobe RGB' : exif.ColorSpace)]);
-  if (exif.XResolution)         image.push(['X resolution', exif.XResolution + ' ' + (exif.ResolutionUnit === 3 ? 'dpcm' : 'dpi')]);
-  if (exif.YResolution)         image.push(['Y resolution', exif.YResolution + ' ' + (exif.ResolutionUnit === 3 ? 'dpcm' : 'dpi')]);
+  if (exif.ColorSpace)          image.push(['Colour space', exif.ColorSpace === 1 ? 'sRGB' : (exif.ColorSpace === 2 ? 'Adobe RGB' : exif.ColorSpace), 'The range of colours the image is meant to be shown in. sRGB is the standard for screens and the web; Adobe RGB covers more colours, mainly for print work.']);
+  if (exif.XResolution)         image.push(['X resolution', exif.XResolution + ' ' + (exif.ResolutionUnit === 3 ? 'dpcm' : 'dpi'), 'The intended print density - dots per inch (dpi) or per centimetre (dpcm). It only affects printed size, not how many pixels the image has or how it looks on screen.']);
+  if (exif.YResolution)         image.push(['Y resolution', exif.YResolution + ' ' + (exif.ResolutionUnit === 3 ? 'dpcm' : 'dpi'), 'The intended print density - dots per inch (dpi) or per centimetre (dpcm). It only affects printed size, not how many pixels the image has or how it looks on screen.']);
   if (image.length) sections.push({ title: 'Image', rows: image });
 
   // IPTC / XMP
@@ -854,10 +862,10 @@ function buildExifSections(exif) {
 
   // ICC
   const icc = [];
-  if (exif.ProfileDescription) icc.push(['ICC profile', exif.ProfileDescription]);
+  if (exif.ProfileDescription) icc.push(['ICC profile', exif.ProfileDescription, 'An embedded colour profile that tells software exactly how this image’s colours should look, so they stay consistent across different screens and printers.']);
   if (exif.DeviceManufacturer) icc.push(['Device mfr', exif.DeviceManufacturer]);
   if (exif.DeviceModel)        icc.push(['Device model', exif.DeviceModel]);
-  if (exif.ColorSpaceData)     icc.push(['Colour space', exif.ColorSpaceData]);
+  if (exif.ColorSpaceData)     icc.push(['Colour space', exif.ColorSpaceData, 'The colour model the embedded profile works in (for example RGB or CMYK) - the kind of colour data it manages.']);
   if (icc.length) sections.push({ title: 'ICC profile', rows: icc });
 
   return sections;
@@ -997,10 +1005,10 @@ async function analyseLivePhoto(file, found, container) {
     { type: isQt ? 'video/quicktime' : 'video/mp4' });
 
   const head = el('div', { class: 'anr-card' });
-  head.appendChild(el('h3', {}, 'Live motion'));
+  const [lmH, lmHelp] = h3help('Live motion', 'The moving clip appended to this still, analysed as a full video and its own audio track.');
+  head.appendChild(lmH); head.appendChild(lmHelp);
   head.appendChild(el('p', { class: 'anr-hint' },
-    found.kind + ' - the moving clip appended to this still, analysed as a full video and its audio track (' +
-    fmtBytes(clipFile.size) + ' from 0x' + found.start.toString(16) + ').'));
+    found.kind + ' (' + fmtBytes(clipFile.size) + ' from 0x' + found.start.toString(16) + ').'));
   container.appendChild(head);
 
   // Heavy modules, loaded only now (dynamic import also sidesteps the photo<->video
@@ -1066,7 +1074,7 @@ function parseDevelopSettings(xmpText) {
   const rows = [];
   const sw = get('xmp', 'CreatorTool') || (crs('Version') ? 'Camera Raw ' + crs('Version') : null);
   if (sw) rows.push(['Edited with', sw]);
-  if (crs('ProcessVersion')) rows.push(['Process version', crs('ProcessVersion')]);
+  if (crs('ProcessVersion')) rows.push(['Process version', crs('ProcessVersion'), 'Which generation of Adobe’s raw-processing engine made these edits. Newer versions render tones and colours slightly differently, so the same settings can look different between them.']);
   if (crs('CameraProfile')) rows.push(['Camera profile', crs('CameraProfile')]);
   const wb = crs('WhiteBalance');
   if (wb) rows.push(['White balance', wb + (crs('Temperature') ? '  (' + crs('Temperature') + 'K, tint ' + (crs('Tint') || '0') + ')' : '')]);
@@ -1095,16 +1103,16 @@ function parseDevelopSettings(xmpText) {
 function buildDevelopCard(xmpText, label) {
   const rows = parseDevelopSettings(xmpText);
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Develop settings (XMP sidecar)'));
+  const [h, helpPanel] = h3help('Develop settings (XMP sidecar)',
+    (label ? 'Read from ' + label + '. ' : '') + 'The non-destructive edits a raw developer (such as Lightroom) recorded; the RAW pixels themselves are left unchanged.');
+  card.appendChild(h); card.appendChild(helpPanel);
   if (!rows) {
     card.appendChild(el('p', { class: 'anr-hint' }, 'No develop settings were found in the XMP' + (label ? ' (' + label + ')' : '') + '.'));
     return card;
   }
   const t = el('table', { class: 'anr-readout' });
-  for (const [k, v] of rows) t.appendChild(row(k, v));
+  for (const [k, v, rowHelpText] of rows) t.appendChild(rowHelpText ? rowHelp(k, v, rowHelpText) : row(k, v));
   card.appendChild(t);
-  card.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px;' },
-    (label ? 'From ' + label + ' - the' : 'The') + ' non-destructive edits a raw developer recorded; the RAW pixels themselves are unchanged.'));
   return card;
 }
 
@@ -1233,25 +1241,25 @@ function opticsRows(exif, meanLuma) {
   if (f35 > 0) {
     const hfov = 2 * Math.atan(36 / (2 * f35)) * 180 / Math.PI;
     const dfov = 2 * Math.atan(43.27 / (2 * f35)) * 180 / Math.PI;
-    rows.push(['Field of view', hfov.toFixed(0) + '° wide · ' + dfov.toFixed(0) + '° diagonal']);
+    rows.push(['Field of view', hfov.toFixed(0) + '° wide · ' + dfov.toFixed(0) + '° diagonal', 'How much of the scene the lens took in, in degrees - a wider angle fits more in the frame. ‘Wide’ measures across the frame, ‘diagonal’ corner to corner.']);
   }
   if (fReal > 0 && N > 0 && f35 > 0) {
     const crop = f35 / fReal;
     const coc = 0.03 / crop;                       // circle of confusion, mm
     const H = (fReal * fReal) / (N * coc) + fReal; // hyperfocal, mm
-    rows.push(['Hyperfocal distance', (H / 1000).toFixed(1) + ' m']);
+    rows.push(['Hyperfocal distance', (H / 1000).toFixed(1) + ' m', 'The focus distance that keeps the most of the scene sharp at once - focus here and everything from about half this distance out to the horizon looks acceptably sharp. Worked out from the lens and aperture.']);
     if (subj > 0) {
       const s = subj * 1000;                       // m -> mm
       const near = (H * s) / (H + (s - fReal));
       const far = (s < H) ? (H * s) / (H - (s - fReal)) : Infinity;
-      rows.push(['Depth of field', (isFinite(far) ? ((far - near) / 1000).toFixed(2) + ' m' : 'near ' + (near / 1000).toFixed(1) + ' m to infinity') + '  (subject ' + subj.toFixed(2) + ' m)']);
+      rows.push(['Depth of field', (isFinite(far) ? ((far - near) / 1000).toFixed(2) + ' m' : 'near ' + (near / 1000).toFixed(1) + ' m to infinity') + '  (subject ' + subj.toFixed(2) + ' m)', 'How deep the sharp zone is, in front of and behind the subject - a small range means only a thin slice is in focus. Estimated from the lens, aperture and subject distance.']);
     }
   }
   if (N > 0 && t > 0) {
     let ev = Math.log2((N * N) / t);
     if (iso > 0) ev -= Math.log2(iso / 100);
     const evR = Math.round(ev);
-    rows.push(['Exposure value (ISO 100)', 'EV ' + evR + ' - ' + evDescriptor(evR)]);
+    rows.push(['Exposure value (ISO 100)', 'EV ' + evR + ' - ' + evDescriptor(evR), 'A single number summing up how much light the exposure settings let in, with a plain-language guess at the scene brightness. Lower numbers mean darker conditions.']);
     const flash = exif.Flash && (typeof exif.Flash === 'object' ? exif.Flash.fired : (num(exif.Flash) & 1));
     if (!flash && meanLuma != null) {
       if (evR <= 5 && meanLuma > 150) rows.push(['⚠ Note', 'The frame is brighter than these low-light settings imply']);
@@ -1261,16 +1269,40 @@ function opticsRows(exif, meanLuma) {
   return rows;
 }
 
-// A collapsible <details> panel for the Advanced card, with a plain summary label
-// (no info button). Returns { det, body }; callers fill body and append det.
-function advPanel(title) {
+// A collapsible <details> panel for the Advanced card. Pass `help` to add a [?]
+// info button to the summary (its panel shows inside the body when the panel is
+// open, matching the LSB panel). Returns { det, body }; callers fill body and
+// append det.
+function advPanel(title, help) {
   const det = el('details');
   const sum = el('summary', {});
-  sum.appendChild(el('span', { class: 'anr-summary-label' }, title));
+  const label = el('span', { class: 'anr-summary-label' }, title);
+  let panel = null;
+  if (help) {
+    label.appendChild(document.createTextNode(' '));
+    const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
+    panel = el('div', { class: 'anr-info-panel is-hidden', html: help });
+    wireInfoToggle(btn, panel);
+    label.appendChild(btn);
+  }
+  sum.appendChild(label);
   det.appendChild(sum);
   const body = el('div');
+  if (panel) body.appendChild(panel);
   det.appendChild(body);
   return { det, body };
+}
+
+// Like h3help, but for a `.anr-readout-section` sub-heading: returns
+// [sectionLabel, panel] with a [?] info button folding helpHtml behind it.
+function sectionHelp(title, helpHtml) {
+  const wrap = el('div', { class: 'anr-readout-section' });
+  wrap.appendChild(document.createTextNode(title + ' '));
+  const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
+  const panel = el('div', { class: 'anr-info-panel is-hidden', html: helpHtml });
+  wireInfoToggle(btn, panel);
+  wrap.appendChild(btn);
+  return [wrap, panel];
 }
 
 // Personally-identifying / sensitive metadata fields, for the privacy report.
@@ -1795,11 +1827,9 @@ function renderLsbPlanes(img, container) {
       const level = chi.max >= 0.95 ? 'High' : (chi.max >= 0.5 ? 'Elevated' : 'Low');
       const vt = el('table', { class: 'anr-readout' });
       vt.appendChild(rowHelp('LSB embedding likelihood', level + '  (' + fmtPct(chi.max) + ')',
-        'A chi-square test (Westfeld-Pfitzmann) for sequential LSB replacement. It measures how far each channel\'s pixel histogram has been pushed towards the flat "pairs of values" pattern that LSB embedding leaves behind. High is a genuine signal; it detects classic LSB replacement, not LSB matching or data hidden in the DCT/frequency domain.'));
+        'Checks whether a hidden message may have been tucked into the least-significant bit (LSB) - the last, least-important bit of each pixel’s colour, where tiny changes are invisible. This chi-square test (Westfeld-Pfitzmann) measures how far each colour channel’s brightness histogram has been flattened towards the tell-tale ‘pairs of values’ pattern this kind of hiding leaves behind. A high score is a real signal, but it only catches classic LSB replacement - not LSB matching, nor data hidden in the compressed (DCT/frequency) data. A low score is normal - the last bits of an untouched photo look like random noise - and a raised score can also come from a very plain or heavily-compressed picture, so read it together with the black-and-white bit views below.'));
       vt.appendChild(row('Per channel', 'R ' + fmtPct(chi.R) + '  ·  G ' + fmtPct(chi.G) + '  ·  B ' + fmtPct(chi.B)));
       container.appendChild(vt);
-      container.appendChild(el('p', { class: 'anr-hint', style: 'margin:6px 0 10px;' },
-        'A low value is normal - clean photos look like random noise in the LSB. An elevated result can also come from a very flat or heavily-compressed image, so read it alongside the plane views below.'));
     }
   } catch (_) { /* too small / undecodable - skip the verdict */ }
 
@@ -1891,8 +1921,6 @@ function renderLsbPlanes(img, container) {
   }
   styleBits();
   container.appendChild(bitRow);
-  container.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
-    'Bit 0 is the least-significant bit (where LSB steganography hides); bit 7 is the most-significant. A natural photo looks like noise in the low bits and like the picture in the high bits.'));
   container.appendChild(wrap);
   renderPreviews();
 }
@@ -2262,8 +2290,8 @@ function parsePngContainer(bytes) {
       const interlace = bytes[dataStart + 12];
       rows.push(['PNG image', w + ' × ' + h + ' px']);
       rows.push(['Bit depth', depth + '-bit / channel']);
-      rows.push(['Colour type', pngColourType(ctype)]);
-      rows.push(['Interlace', interlace === 1 ? 'Adam7 (progressive)' : 'None']);
+      rows.push(['Colour type', pngColourType(ctype), 'How each pixel’s colour is stored - for example truecolour (full RGB), indexed (a small fixed palette), or greyscale, any of which can also carry transparency.']);
+      rows.push(['Interlace', interlace === 1 ? 'Adam7 (progressive)' : 'None', 'Whether a rough version of the image can appear before it finishes loading. ‘Adam7’ loads progressively in passes; ‘None’ loads top to bottom.']);
     } else if (type === 'PLTE') {
       hasPLTE = true;
       rows.push(['Palette', (len / 3) + ' colours']);
@@ -2278,7 +2306,7 @@ function parsePngContainer(bytes) {
         rows.push(['Pixel aspect', px + ':' + py]);
       }
     } else if (type === 'gAMA' && len >= 4) {
-      rows.push(['Gamma', (dv.getUint32(dataStart) / 100000).toFixed(4)]);
+      rows.push(['Gamma', (dv.getUint32(dataStart) / 100000).toFixed(4), 'A stored brightness-correction value that helps the image display with the right tone across different screens.']);
     } else if (type === 'sRGB') {
       rows.push(['Colour space', 'sRGB (tagged)']);
     } else if (type === 'acTL' && len >= 8) {
@@ -2320,7 +2348,7 @@ function parsePngContainer(bytes) {
     const parts = [];
     if (hasPLTE) parts.push('palette');
     if (hasTRNS) parts.push('transparency (tRNS)');
-    rows.push(['Ancillary', parts.join(' + ')]);
+    rows.push(['Ancillary', parts.join(' + '), 'Optional PNG data blocks beyond the raw pixels - here, a colour palette and/or transparency information.']);
   }
   if (frames > 0) {
     rows.push(['Animation', 'APNG · ' + frames + ' frames']);
@@ -2379,12 +2407,12 @@ function parseJpegContainer(bytes) {
   if (sof) {
     rows.push(['JPEG image', sof.w + ' × ' + sof.h + ' px']);
     rows.push(['Bit depth', sof.precision + '-bit / channel']);
-    rows.push(['Mode', progressive ? 'Progressive' : 'Baseline']);
-    rows.push(['Components', sof.comps + (sof.comps === 1 ? ' (grayscale)' : sof.comps === 3 ? ' (YCbCr)' : sof.comps === 4 ? ' (CMYK/YCCK)' : '')]);
-    if (sof.chroma) rows.push(['Chroma subsampling', sof.chroma]);
+    rows.push(['Mode', progressive ? 'Progressive' : 'Baseline', 'How the JPEG is laid out. ‘Baseline’ loads top to bottom; ‘Progressive’ shows the whole frame blurry first, then sharpens as more data arrives.']);
+    rows.push(['Components', sof.comps + (sof.comps === 1 ? ' (grayscale)' : sof.comps === 3 ? ' (YCbCr)' : sof.comps === 4 ? ' (CMYK/YCCK)' : ''), 'How many colour channels the image uses. 3 (YCbCr) is normal colour, 1 is greyscale, 4 (CMYK/YCCK) is a print-style colour set.']);
+    if (sof.chroma) rows.push(['Chroma subsampling', sof.chroma, 'How much colour detail was thrown away to save space (brightness is always kept in full). ‘4:4:4’ keeps all the colour; ‘4:2:0’ keeps a quarter of it - common, usually invisible, and a useful tell about how the file was saved.']);
   }
-  if (jfif) rows.push(['JFIF density', jfif]);
-  if (adobe) rows.push(['Adobe transform', adobe]);
+  if (jfif) rows.push(['JFIF density', jfif, 'A print-size hint stored in the JPEG header - the intended dots per inch or centimetre. It does not change the pixels or how the image looks on screen.']);
+  if (adobe) rows.push(['Adobe transform', adobe, 'A flag Adobe software adds recording how the colour channels were encoded (such as YCbCr or YCCK), so the colours are read back correctly.']);
   if (hasExif) rows.push(['EXIF', 'present (APP1)']);
   if (comment) rows.push(['Comment', comment]);
   return rows.length ? { rows, text: [] } : null;
@@ -2398,7 +2426,7 @@ function parseGifContainer(bytes) {
   const gctSize = (packed & 0x80) ? (2 << (packed & 0x07)) : 0;
   rows.push(['GIF image', w + ' × ' + h + ' px']);
   rows.push(['Version', ascii(bytes, 0, 6)]);
-  if (gctSize) rows.push(['Global colour table', gctSize + ' colours']);
+  if (gctSize) rows.push(['Global colour table', gctSize + ' colours', 'The shared palette of colours a GIF can draw from - at most 256. A smaller table means fewer distinct colours in the image.']);
   // walk blocks for animation
   let pos = 13 + (gctSize ? gctSize * 3 : 0);
   let frameCount = 0, totalDelay = 0, loop = null;
@@ -2571,7 +2599,7 @@ function buildContainerCard(container) {
   card.appendChild(el('h3', {}, 'Container structure'));
   if (container.rows.length) {
     const t = el('table', { class: 'anr-readout' });
-    for (const [k, v] of container.rows) t.appendChild(row(k, v));
+    for (const [k, v, help] of container.rows) t.appendChild(help ? rowHelp(k, v, help) : row(k, v));
     card.appendChild(t);
   }
   for (const a of container.ai) {
@@ -2830,7 +2858,7 @@ function buildReverseAnimationCard(file, source, resultsEl, signal, opts = {}) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Reverse'));
   card.appendChild(el('p', { class: 'anr-hint' },
-    `Play this ${kindLabel} backwards, and download the reversed animation as a GIF.`));
+    `Play this ${kindLabel} backwards and download it as a reversed GIF.`));
   const out = el('div');
   const btn = el('button', { type: 'button', class: 'anr-btn' }, '↺ Reverse');
   btn.addEventListener('click', () => {
@@ -3321,7 +3349,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   tbl.appendChild(rowHelp('Type', file.type || (isThm ? 'image/jpeg - movie thumbnail (.THM)' : '-'),
     isThm
       ? 'A .THM file is the thumbnail a camera saves next to a video clip - a small JPEG (here ' + w + '×' + h + ') previewing the movie. Canon, and others, write one per clip. It is a normal JPEG, just with a .THM extension.'
-      : "The MIME type is the standard label for the file's format. The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
+      : "The MIME type is a short standard label for the kind of file this is, such as image/jpeg. Your browser guesses it from the filename or the operating system, so it is a hint about the format, not proof."));
   tbl.appendChild(row('Modified',      file.lastModified ? new Date(file.lastModified).toISOString().replace('T', ' ').replace(/\..*$/, '') : '-'));
   tbl.appendChild(row('Dimensions',    `${w} × ${h} px`));
   const d = gcd(w, h);
@@ -3347,20 +3375,20 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     aspectVal = aspectRatio(w, h);
   }
   tbl.appendChild(rowHelp('Aspect ratio', aspectVal,
-    'The width-to-height proportion of the image. The first figure is the exact reduced ratio (and its decimal); “≈” is the nearest standard ratio such as 3:2 or 16:9.'));
+    'The shape of the picture - its width compared with its height. The first figure is the exact ratio in lowest terms (with its decimal); “≈” marks the nearest common ratio, such as 3:2 or 16:9.'));
   tbl.appendChild(rowHelp('Megapixels', mp + ' MP',
-    'Total number of pixels in the image, in millions (width × height ÷ 1,000,000).'));
+    'How many pixels (the tiny coloured dots that make up the picture) there are in total, counted in millions - width × height ÷ 1,000,000.'));
   tbl.appendChild(rowHelp('Sharpness', sharpness + ' / 100  (' + sharpnessLabel(sharpness) + ')',
-    'High-frequency (Laplacian) detail as a fraction of the image’s total contrast, mapped to a 0 to 100 score. Normalising by contrast means the score tracks focus rather than how punchy the scene is, so a flat but sharp photo still scores well and a high-contrast blurred one scores low. Around 60 and up reads as sharp, under 40 as soft or blurry.'));
+    'How much fine detail and crisp edges the picture holds (measured with a Laplacian filter), taken as a share of the image’s overall contrast and scored from 0 to 100. Comparing against contrast means the score follows focus rather than how bold the scene is, so a flat but sharp photo still scores well and a punchy but blurred one scores low. Around 60 and up looks sharp, under 40 soft or blurry.'));
   const fpx = Math.round(focus.focusX / pixData.width * w);
   const fpy = Math.round(focus.focusY / pixData.height * h);
   tbl.appendChild(rowHelp('Focus point', fpx + ', ' + fpy + '  (estimated)',
-    'Estimated by finding the region with highest local sharpness (Laplacian variance in a sliding window across the image).'));
+    'A best guess at where the picture is sharpest, found by scanning small patches across the image and picking the one with the most fine detail (highest Laplacian variance).'));
   const avgHex = '#' + hexBytes([colorStats.avgR, colorStats.avgG, colorStats.avgB], '');
   tbl.appendChild(rowHelp('Average colour', avgHex + '  (R' + colorStats.avgR + ' G' + colorStats.avgG + ' B' + colorStats.avgB + ')',
-    'The mean RGB colour of every pixel, shown as a hex swatch. Gives a quick sense of the image\'s overall tint and brightness.'));
+    'The average colour of all the pixels (their red, green and blue values averaged together), shown as a hex-coded swatch. It gives a quick sense of the picture’s overall tint and brightness.'));
   tbl.appendChild(rowHelp('Tonal split', colorStats.shadows + '% shadows · ' + colorStats.midtones + '% midtones · ' + colorStats.highlights + '% highlights',
-    'Pixel luminance split by fixed brightness cutoffs (0–255): shadows < 64, midtones 64–191, highlights ≥ 192.'));
+    'How the picture’s pixels divide up by brightness (on a 0-255 scale): dark ‘shadows’ below 64, mid-tones from 64 to 191, and bright ‘highlights’ at 192 and above.'));
   if (exif && exif.Orientation != null) {
     tbl.appendChild(row('Orientation', (ORIENTATIONS[exif.Orientation] || exif.Orientation)));
   }
@@ -3369,7 +3397,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     const isPreview = convertedFile.name.includes('_preview');
     const convLabel = isPreview ? 'embedded preview' : 'full resolution';
     tbl.appendChild(rowHelp('Converted', ext + ' → JPEG (' + convLabel + ')',
-      'The original format was decoded and transcoded to JPEG in your browser so it could be analysed and previewed here.'));
+      'The original format cannot be shown directly, so your browser converted a copy to JPEG on your device for previewing and analysis here. The original file is left untouched.'));
   }
   infoCard.appendChild(tbl);
 
@@ -3446,14 +3474,14 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     for (const sec of sections) {
       exifCard.appendChild(el('div', { class: 'anr-readout-section' }, sec.title));
       const t = el('table', { class: 'anr-readout' });
-      for (const [k, v] of sec.rows) t.appendChild(row(k, v));
+      for (const [k, v, help] of sec.rows) t.appendChild(help ? rowHelp(k, v, help) : row(k, v));
       exifCard.appendChild(t);
     }
     // ---- Optics (derived, not stored) ----
     if (optRows.length) {
       exifCard.appendChild(el('div', { class: 'anr-readout-section' }, 'Optics (derived)'));
       const t = el('table', { class: 'anr-readout' });
-      for (const [k, v] of optRows) t.appendChild(row(k, v));
+      for (const [k, v, help] of optRows) t.appendChild(help ? rowHelp(k, v, help) : row(k, v));
       exifCard.appendChild(t);
     }
     if (!inline) attachImageScrub(file, exifCard);
@@ -3499,7 +3527,9 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
           const diff = Math.abs(mainAR - thumbAR) / mainAR;
           if (!isFixedThumb && diff > 0.05) {
             const card = el('div', { class: 'anr-card' });
-            card.appendChild(el('h3', {}, 'Thumbnail check'));
+            const [tcH, tcHelp] = h3help('Thumbnail check',
+              'The embedded thumbnail is a cached copy made at capture. Proportions that no longer match the full image can mean the photo was cropped or edited afterwards without the thumbnail being refreshed. Some cameras store a fixed-size thumbnail, which on its own is not a sign of editing.');
+            card.appendChild(tcH); card.appendChild(tcHelp);
             card.appendChild(el('p', { style: 'color:var(--accent);font-weight:600;margin-bottom:8px;' },
               '⚠ Embedded thumbnail proportions differ from the full image'));
             const tt = el('table', { class: 'anr-readout' });
@@ -3507,8 +3537,6 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
             tt.appendChild(row('EXIF thumbnail', tDim.w + ' × ' + tDim.h + '  (' + thumbAR.toFixed(3) + ':1)'));
             tt.appendChild(row('Difference', (diff * 100).toFixed(1) + '%'));
             card.appendChild(tt);
-            card.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px;' },
-              'The embedded thumbnail is a cached copy made at capture. Proportions that no longer match the full image can mean the photo was cropped or edited afterwards without the thumbnail being refreshed. Some cameras store a fixed-size thumbnail, which on its own is not a sign of editing.'));
             resultsEl.appendChild(card);
           }
         }
@@ -3537,14 +3565,14 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   const aiHints = detectAI(exif);
   if (aiHints) {
     const aiCard = el('div', { class: 'anr-card' });
-    aiCard.appendChild(el('h3', {}, 'AI detection'));
+    const [aiH, aiHelp] = h3help('AI detection',
+      'Based on metadata fields. Not all AI-generated images contain markers, and some markers can be spoofed.');
+    aiCard.appendChild(aiH); aiCard.appendChild(aiHelp);
     aiCard.appendChild(el('p', { style: 'color:var(--accent);font-weight:600;margin-bottom:8px;' },
       'AI-generated content markers found'));
     const at = el('table', { class: 'anr-readout' });
     for (const h of aiHints) at.appendChild(row(h.field, h.value));
     aiCard.appendChild(at);
-    aiCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px;' },
-      'Based on metadata fields. Not all AI-generated images contain markers, and some markers can be spoofed.'));
     resultsEl.appendChild(aiCard);
   } else if (exif) {
     const aiCard = el('div', { class: 'anr-card' });
@@ -3556,7 +3584,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // ---- Histogram (full-width, in the body just above the container structure) ----
   const histBlock = el('div', { class: 'anr-card anr-hist-block' });
   const [histH, histHelp] = h3help('RGB histogram',
-    'Per-channel tonal distribution: how many pixels sit at each brightness level for red, green and blue (0 = black on the left, 255 = white on the right). Click to enlarge.');
+    'A graph of how many pixels sit at each brightness level, plotted separately for red, green and blue - black on the far left (0), white on the far right (255). Click to enlarge.');
   histBlock.appendChild(histH); histBlock.appendChild(histHelp);
   const histCanvas = el('canvas', { class: 'anr-histogram' });
   histCanvas.width = 1024; histCanvas.height = 200;
@@ -3583,12 +3611,12 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     const fCard = el('div');   // panel content container (kept named fCard below)
     fDet.appendChild(fCard);
     fCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' },
-      'Pixel- and compression-level checks that look for signs a JPEG was edited after capture. None is proof on its own - read them together, and alongside the metadata and thumbnail checks.'));
+      'Pixel- and compression-level checks for signs the photo was edited after capture. No single one is proof - weigh them together, and alongside the metadata and thumbnail checks.'));
 
     // -- Error-level analysis --
-    fCard.appendChild(el('div', { class: 'anr-readout-section' }, 'Error-level analysis'));
-    fCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
-      'The picture is re-saved as JPEG and the difference amplified. A single untouched save gives a fairly even error field; a region pasted in from a differently-compressed source, or freshly painted, often recompresses at a different rate and stands out. Bright edges along high-contrast detail are normal - look for whole regions that differ from their surroundings.'));
+    const [elaSec, elaSecHelp] = sectionHelp('Error-level analysis',
+      'The picture is saved again as a JPEG and the difference from the original is brightened up. A photo saved just once looks fairly even all over; an area pasted in from another picture, or painted on top, was often compressed differently and shows up brighter or darker than its surroundings. Bright outlines along sharp, high-contrast edges are normal - look instead for whole patches that stand out from what is around them.');
+    fCard.appendChild(elaSec); fCard.appendChild(elaSecHelp);
     const elaStatus = el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' }, 'Computing...');
     fCard.appendChild(elaStatus);
     const elaStage = el('div', { style: 'border:var(--bd-hairline); background:#000; display:flex; justify-content:center; align-items:center; min-height:80px;' });
@@ -3611,16 +3639,16 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
       const qt = el('table', { class: 'anr-readout' });
       qt.appendChild(rowHelp('Effective quality',
         '~' + qz.lumaQuality + '%' + (qz.chromaQuality != null ? ' luma / ~' + qz.chromaQuality + '% chroma' : ''),
-        'The JPEG quality the encoder used, recovered by matching its quantization tables against the standard tables scaled across quality 1-100.'));
+        'The quality setting the JPEG was saved at (roughly 1 to 100, where higher means less compression). It is worked back out by comparing the file’s compression tables (its ‘quantization tables’) against the standard tables at each quality level.'));
       qt.appendChild(rowHelp('Tables',
         qz.isStandard ? 'Standard (IJG / libjpeg)' : 'Custom (camera or encoder-specific)',
-        'Standard Annex-K tables are used by most software (editors, "Save for Web", browsers, converters). Camera firmware almost always ships its own bespoke tables, so standard tables on a photo that claims a camera point to a software re-save.'));
+        'These compression tables can be the standard ones (called Annex-K) that most software uses - editors, "Save for Web", browsers and converters. Cameras almost always use their own custom tables, so finding standard tables on a photo that claims to come straight from a camera suggests it was re-saved by software.'));
       fCard.appendChild(qt);
       // Cross-reference the claimed software when the tables disagree with it.
       const sw = exif && exif.Software ? String(exif.Software) : '';
       let verdict = qz.isStandard
-        ? 'These are standard software tables. If this file is presented as a straight-from-camera original, that is a red flag - it has been through an editor or converter.'
-        : 'These are bespoke tables, consistent with an original camera JPEG (or a specific encoder that ships its own tables).';
+        ? 'These are the standard tables that software uses. If the file is being presented as a straight-from-camera original, that is a warning sign - it has been through an editor or converter.'
+        : 'These are custom tables, which fits an original camera JPEG (or a particular program that uses its own tables).';
       if (sw) verdict += ' Metadata names the software as "' + sw + '".';
       fCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:8px 0 0;' }, verdict));
       // The luminance table itself - the literal fingerprint - as a compact grid.
@@ -3633,9 +3661,9 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     }
 
     // -- JPEG ghosts (on demand - it does a full sweep of recompressions) --
-    fCard.appendChild(el('div', { class: 'anr-readout-section' }, 'JPEG ghosts'));
-    fCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
-      'Recompresses the picture across a sweep of qualities. A region carried over from a differently-compressed source settles into a dark patch - a "ghost" - in the map whose quality matches its original save, while the rest of the frame does not. Look for a localised dark blob that shows up in only some of the maps.'));
+    const [ghostSec, ghostSecHelp] = sectionHelp('JPEG ghosts',
+      'Saves the picture again at many different quality settings and compares each one. An area brought in from another, differently-compressed picture turns dark - a ‘ghost’ - in the map whose quality matches how that area was first saved, while the rest of the frame stays plain. Look for a small dark blob that appears in only some of the maps.');
+    fCard.appendChild(ghostSec); fCard.appendChild(ghostSecHelp);
     const ghostGrid = el('div', { style: 'display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:10px; margin-top:6px;' });
     const ghostBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Run ghost sweep');
     ghostBtn.addEventListener('click', async () => {
@@ -3702,12 +3730,11 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     const comp = await detectComputational(file, exif);
     if (comp.length) {
       const card = el('div', { class: 'anr-card' });
-      card.appendChild(el('h3', {}, 'Computational photo'));
+      const [ch, cHelp] = h3help('Computational photo', 'Detected from XMP / maker metadata and embedded markers.');
+      card.appendChild(ch); card.appendChild(cHelp);
       const t = el('table', { class: 'anr-readout' });
       for (const [k, v] of comp) t.appendChild(row(k, v));
       card.appendChild(t);
-      card.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:8px;' },
-        'Detected from XMP / maker metadata and embedded markers.'));
       resultsEl.appendChild(card);
     }
   } catch (e) { /* never break the rest of the analysis */ }
@@ -3724,9 +3751,9 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     gt.appendChild(row('Latitude',  lat.toFixed(6) + '°'));
     gt.appendChild(row('Longitude', lon.toFixed(6) + '°'));
     if (exif.GPSAltitude != null) gt.appendChild(rowHelp('Altitude', (+exif.GPSAltitude).toFixed(1) + ' m',
-      'Height above sea level recorded by the camera\'s GPS, in metres.'));
+      'How high above sea level the camera’s GPS recorded the photo being taken, in metres.'));
     if (exif.GPSImgDirection != null) gt.appendChild(rowHelp('Image direction', (+exif.GPSImgDirection).toFixed(1) + '°',
-      'The compass bearing the camera was pointing when the photo was taken, in degrees (0° = north).'));
+      'Which way the camera was pointing when the photo was taken, as a compass bearing in degrees (0° = north, 90° = east, and so on).'));
     if (exif.GPSSpeed != null) gt.appendChild(row('Speed', exif.GPSSpeed + ' ' + (exif.GPSSpeedRef || '')));
     gpsCard.appendChild(gt);
 
@@ -3747,7 +3774,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
 
   // ---- Palette ----
   const palCard = el('div', { class: 'anr-card' });
-  const [palH, palHelp] = h3help('Dominant colours', 'Extracted by quantizing every pixel into an 8-level-per-channel RGB cube (512 cells), counting how many pixels fall in each cell, then merging near-duplicates - the 8 most populated colours are shown. Click a swatch to copy its hex value.');
+  const [palH, palHelp] = h3help('Dominant colours', 'The picture’s most common colours. Every pixel is sorted into one of 512 colour bins (8 steps each for red, green and blue), the busiest bins are counted, near-identical ones are merged, and the top 8 colours are shown. Click a swatch to copy its hex code.');
   palCard.appendChild(palH); palCard.appendChild(palHelp);
   const palDiv = el('div', { class: 'anr-palette' });
   const totalPx = pixData.width * pixData.height;
@@ -3794,13 +3821,16 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
           downloadName: baseName + '_thumb_' + (i + 1) + '.jpg',
         }));
         const hint = isRaw
-          ? 'RAW files store one or more complete JPEGs alongside the sensor data - a small thumbnail for camera playback, plus larger preview(s) a viewer can show without decoding the RAW. These are extracted straight from the file bytes; the main image above is handled separately.'
+          ? 'Cached JPEG previews extracted straight from the file bytes.'
           : (jpegs.length === 1
-              ? 'This photo caches a smaller JPEG copy of itself (its EXIF thumbnail). It is extracted here straight from the file bytes.'
-              : jpegs.length + ' smaller JPEG copies are cached inside this photo (its EXIF thumbnail plus preview(s)), extracted straight from the file bytes, largest first.');
+              ? 'A cached JPEG copy extracted straight from the file bytes.'
+              : jpegs.length + ' cached JPEG copies extracted straight from the file bytes, largest first.');
+        const help = isRaw
+          ? 'RAW files store one or more complete JPEGs alongside the sensor data - a small thumbnail for camera playback, plus larger preview(s) a viewer can show without decoding the RAW. The main image above is handled separately.'
+          : 'An EXIF thumbnail is a smaller JPEG copy of the photo that the camera caches inside the file for quick previewing.';
         const embCard = buildEmbeddedImagesCard({
           title: isRaw ? 'Embedded images' : 'Embedded thumbnails',
-          hint, items, signal: renderSignal, resultsEl, sourceFile: file,
+          hint, help, items, signal: renderSignal, resultsEl, sourceFile: file,
         });
         resultsEl.appendChild(embCard);
       }
@@ -3834,12 +3864,12 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
 
   // ---- Hash + raw EXIF dump (collapsible) ----
   const hashCard = el('div', { class: 'anr-card' });
-  const [hashH, hashHelp] = h3help('Integrity', '<strong>pHash</strong> (perceptual hash) is a fingerprint of the image content. Similar-looking images produce similar hashes, even after resizing or recompression. Useful for finding duplicates.<br><strong>SHA-256</strong> is a cryptographic hash of the raw file bytes. Any change to the file, even one bit, produces a completely different hash. Useful for verifying a file has not been tampered with.');
+  const [hashH, hashHelp] = h3help('Integrity', '<strong>pHash</strong> (perceptual hash) is a short fingerprint of what the picture looks like. Two images that look alike get similar fingerprints, even after resizing or re-saving - handy for spotting duplicates.<br><strong>SHA-256</strong> is a fingerprint of the exact file data instead. Change even a single bit of the file and this fingerprint changes completely - handy for checking a file has not been altered.');
   hashCard.appendChild(hashH); hashCard.appendChild(hashHelp);
   const phash = computePHash(img);
   const hashTbl = el('table', { class: 'anr-readout' });
   hashTbl.appendChild(rowHelp('pHash', phash,
-    'Perceptual hash - a fingerprint of image content. Similar images produce similar hashes, even after resizing or compression.'));
+    'Perceptual hash - a short fingerprint of what the picture looks like. Images that look alike get similar fingerprints, even after resizing or compression.'));
   hashTbl.appendChild(sha256Row(file));
   hashCard.appendChild(hashTbl);
   resultsEl.appendChild(hashCard);
@@ -3852,7 +3882,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   const advCard = el('div', { class: 'anr-card' });
   advCard.appendChild(el('h3', {}, 'Advanced'));
   advCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 4px;' },
-    'Deeper forensic and technical views. Each panel is collapsed by default - expand one to run it.'));
+    'More detailed forensic and technical views.'));
   if (advForensics) advCard.appendChild(advForensics);
 
   // -- Edit history + Privacy panels (read the raw bytes once) --
@@ -3865,22 +3895,21 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
       const digest = checkIptcDigest(advBytes);
       const hasHistory = xh && (xh.history.length || xh.creatorTool || xh.documentId || xh.instanceId);
       if (hasHistory || (digest && digest.hasDigest)) {
-        const { det, body } = advPanel('Edit history');
-        body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
-          'What editing software recorded about this file. The XMP history is written by Lightroom/Photoshop and similar tools; the IPTC digest check tests whether the caption/keyword block was changed after Photoshop last saved it.'));
+        const { det, body } = advPanel('Edit history',
+          'Traces that editing software left behind in this file. The XMP history is a log written by Lightroom, Photoshop and similar tools; the IPTC digest check tests whether the caption and keyword details were changed after Photoshop last saved the file.');
         if (digest && digest.hasDigest) {
           const dt = el('table', { class: 'anr-readout' });
           dt.appendChild(rowHelp('IPTC digest',
             digest.match ? 'Matches - metadata intact since Photoshop wrote it'
               : (digest.computed ? '⚠ Mismatch - IPTC metadata changed after Photoshop' : 'Present, but no IPTC block to verify against'),
-            'Photoshop stores an MD5 of the IPTC block. A mismatch means the caption/keywords/creator fields were edited by something else after Photoshop last saved the file.'));
+            'When Photoshop saves a file it stores a small checksum (an MD5) of the caption, keyword and creator details. If that no longer matches, those details were changed by another program after Photoshop last saved the file.'));
           body.appendChild(dt);
         }
         if (xh && (xh.creatorTool || xh.documentId || xh.instanceId)) {
           const it = el('table', { class: 'anr-readout' });
           if (xh.creatorTool) it.appendChild(row('Creator tool', xh.creatorTool));
-          if (xh.documentId) it.appendChild(row('Document ID', xh.documentId));
-          if (xh.instanceId) it.appendChild(row('Instance ID', xh.instanceId));
+          if (xh.documentId) it.appendChild(rowHelp('Document ID', xh.documentId, 'A hidden identifier XMP tools give the original document. It stays the same across edits and re-saves, so it can link different versions of one file back to a common source.'));
+          if (xh.instanceId) it.appendChild(rowHelp('Instance ID', xh.instanceId, 'A hidden identifier that changes each time the file is saved, so it marks this particular saved version - useful for telling one edit of a file from another.'));
           body.appendChild(it);
         }
         if (xh && xh.history.length) {
@@ -3901,9 +3930,10 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
       // Metadata card (scrub.js) - not duplicated here.
       const sens = privacyRows(exif);
       if (sens.length) {
-        const { det, body } = advPanel('Privacy');
+        const { det, body } = advPanel('Privacy',
+          'Details in this file’s metadata that could help identify you or reveal where the photo was taken. They stay inside the file when you share it.');
         body.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' },
-          'Potentially identifying details found in this file\'s metadata. They travel with the file when you share it - use "Remove metadata" on the Metadata card to strip them.'));
+          'Use "Remove metadata" on the Metadata card to strip these out.'));
         const st = el('table', { class: 'anr-readout' });
         for (const [k, v] of sens) st.appendChild(row(k, v));
         body.appendChild(st);
@@ -3914,7 +3944,7 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
 
   // -- LSB / bit-plane analysis panel --
   const lsbDet = el('details');
-  const lsbHelp = el('div', { class: 'anr-info-panel is-hidden', html: 'Bit-plane analysis isolates one bit of each colour channel (R, G, B) and renders it as a black-and-white image. In a normal photograph the low bits look like random noise. Visible patterns, text or structure there can indicate steganographic data (hidden messages) or heavy editing. A chi-square test also estimates the statistical likelihood that least-significant-bit data has been embedded, and you can browse all eight bit planes (0 = LSB to 7 = MSB). Click a preview to open it at full resolution.' });
+  const lsbHelp = el('div', { class: 'anr-info-panel is-hidden', html: 'Every pixel’s colour is stored as bits (ones and zeros). Bit-plane analysis pulls out a single bit from each colour channel (red, green, blue) and shows it as a black-and-white image. In an ordinary photo the lowest bits look like random speckle; clear patterns, text or shapes there can point to a hidden message (steganography) or heavy editing. A chi-square test also estimates how likely it is that data has been tucked into the least-significant bits, and you can flick through all eight bit planes (0 = the least-significant bit, up to 7 = the most-significant). Click a preview to open it at full resolution.' });
   const lsbSummary = el('summary', {});
   // Title + [?] grouped in one span so the summary's flex space-between keeps them
   // together on the left (only the open/close marker sits at the right edge).
