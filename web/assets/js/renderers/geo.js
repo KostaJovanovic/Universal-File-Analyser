@@ -282,7 +282,7 @@ export async function renderGeo(file, resultsEl) {
   const hasGeo = isFinite(minLat);
 
   // ---- Info card ----
-  const [h, help] = h3help(format + ' map data', 'Parses the geometry and plots it on an OpenStreetMap map. Distance is the great-circle length along all lines/tracks.');
+  const [h, help] = h3help(format + ' map data', 'Reads the shapes and coordinates in the file and draws them on an OpenStreetMap map. Distance is the real-world length along every line and track, measured across the curve of the Earth (the great-circle distance).');
   const infoCard = el('div', { class: 'anr-card' });
   infoCard.appendChild(h); infoCard.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
@@ -306,12 +306,12 @@ export async function renderGeo(file, resultsEl) {
       ts = trackStats(g.tracks);
       if (ts.ascent >= 1 || ts.descent >= 1) {
         tbl.appendChild(rowHelp('Total ascent', Math.round(ts.ascent) + ' m',
-          'Sum of all uphill elevation gains along the track (changes under 2 m are ignored as GPS noise).'));
+          'How much you climbed in total - every uphill height gain along the route added together. Tiny changes under 2 m are ignored as GPS jitter.'));
         tbl.appendChild(row('Total descent', Math.round(ts.descent) + ' m'));
       }
       if (ts.hasTime && ts.movingTime > 0) {
         tbl.appendChild(rowHelp('Moving time', fmtDuration(ts.movingTime),
-          'Elapsed time excluding pauses (gaps longer than 60 s between points).'));
+          'How long you were actually moving, with pauses left out - any gap longer than 60 seconds between recorded points counts as a stop.'));
         if (ts.movingDist > 0) {
           const speed = (ts.movingDist / 1000) / (ts.movingTime / 3600);   // km/h
           tbl.appendChild(row('Average speed', speed.toFixed(1) + ' km/h'));
@@ -329,7 +329,7 @@ export async function renderGeo(file, resultsEl) {
   } catch (e) { ts = null; }
   if (hasGeo) {
     tbl.appendChild(rowHelp('Bounds', minLat.toFixed(4) + ', ' + minLon.toFixed(4) + '  →  ' + maxLat.toFixed(4) + ', ' + maxLon.toFixed(4),
-      'Bounding box of all coordinates (SW corner → NE corner).'));
+      'The smallest rectangle on the map that contains every point, given as its south-west corner → its north-east corner.'));
   }
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
@@ -339,7 +339,7 @@ export async function renderGeo(file, resultsEl) {
   try {
     if (ts && ts.profile && ts.profile.length > 1) {
       const elevCard = el('div', { class: 'anr-card' });
-      const [eh, ehelp] = h3help('Elevation profile', 'Elevation (Y) against distance travelled (X), drawn on a plain canvas. Ascent/descent totals are in the summary above.');
+      const [eh, ehelp] = h3help('Elevation profile', 'A graph of height (up the side) against how far you have travelled (along the bottom). The total climb and descent are in the summary above.');
       elevCard.appendChild(eh); elevCard.appendChild(ehelp);
       elevCard.appendChild(elevationProfileCanvas(ts.profile));
       resultsEl.insertBefore(elevCard, _renderAnchor);
@@ -350,7 +350,7 @@ export async function renderGeo(file, resultsEl) {
   try {
     if (g.features && g.features.length) {
       const propCard = el('div', { class: 'anr-card' });
-      const [ph, phelp] = h3help('Properties', 'Feature attributes carried in the file (GeoJSON feature.properties / KML ExtendedData). Small sets list each feature; larger sets show the union of keys with how often each appears.');
+      const [ph, phelp] = h3help('Properties', 'The extra labels and values attached to each map feature in the file (stored as feature.properties in GeoJSON, or ExtendedData in KML). For just a few features, each is listed on its own; for many, Analyser shows the full set of label names and how often each is used.');
       propCard.appendChild(ph); propCard.appendChild(phelp);
       const ptbl = el('table', { class: 'anr-readout' });
       if (g.features.length <= 20) {
@@ -364,7 +364,7 @@ export async function renderGeo(file, resultsEl) {
         // Union of keys + count of features carrying each.
         const counts = {};
         g.features.forEach((f) => Object.keys(f.props || {}).forEach((k) => { counts[k] = (counts[k] || 0) + 1; }));
-        ptbl.appendChild(row('Features', g.features.length.toLocaleString()));
+        ptbl.appendChild(rowHelp('Features', g.features.length.toLocaleString(), 'In GeoJSON, a feature is one item on the map - a single shape (a point, line or area) together with the labels and values attached to it. This is how many the file holds.'));
         Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 40)
           .forEach(([k, v]) => ptbl.appendChild(row(k, v.toLocaleString() + ' features')));
       }

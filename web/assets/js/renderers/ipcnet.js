@@ -168,20 +168,20 @@ export async function renderIpcNetlist(file, resultsEl) {
   // --- summary card ---
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('IPC-D-356A netlist (.ipc)',
-    'A PCB fabrication / bare-board test netlist. Each record is a test point - the net it belongs to, the component pin or via, its pad geometry and X/Y position. '
-    + 'Analyser rebuilds the net connectivity and maps every test point.');
+    'A test-and-manufacturing list for a bare printed circuit board (before any components are fitted). Each line is one test point - which electrical connection (net) it belongs to, the component pin or plated hole (via) it sits on, its pad shape and its X/Y position on the board. '
+    + 'Analyser rebuilds which points are joined into the same connection and maps every test point.');
   card.appendChild(h); card.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Format', 'IPC-D-356A netlist'));
   if (params.JOB) tbl.appendChild(row('Job', params.JOB));
-  tbl.appendChild(rowHelp('Units', parsed.metric ? 'Metric (0.001 mm)' : 'Imperial (0.0001 in / 0.1 mil)', 'The coordinate units declared by the file\'s "P UNITS" record.'));
-  tbl.appendChild(rowHelp('Nets', String(realNets.length), 'Distinct signal nets (excluding ground and no-connect).'));
+  tbl.appendChild(rowHelp('Units', parsed.metric ? 'Metric (0.001 mm)' : 'Imperial (0.0001 in / 0.1 mil)', 'The measurement units used for the X/Y positions, as declared by the file’s "P UNITS" line.'));
+  tbl.appendChild(rowHelp('Nets', String(realNets.length), 'The number of separate electrical connections (nets) carrying signals, not counting ground and deliberately unconnected points.'));
   tbl.appendChild(row('Components', String(compMap.size)));
-  tbl.appendChild(rowHelp('Test points', String(recs.length), 'Total feature records - every pad, pin and via the fab will probe.'));
-  tbl.appendChild(row('Through-hole pads', String(tht)));
-  tbl.appendChild(row('SMD pads', String(smd)));
-  tbl.appendChild(row('Vias', String(vias)));
-  if (extent) tbl.appendChild(rowHelp('Board extent', extent, 'Bounding box of all test points.'));
+  tbl.appendChild(rowHelp('Test points', String(recs.length), 'The total number of points on the board - every pad, pin and plated hole (via) the manufacturer will physically probe when testing.'));
+  tbl.appendChild(rowHelp('Through-hole pads', String(tht), 'Pads for parts whose metal legs pass through a drilled hole in the board and are soldered on the far side.'));
+  tbl.appendChild(rowHelp('SMD pads', String(smd), 'Pads for surface-mount parts (SMD), which sit soldered flat on the board surface with no through-hole.'));
+  tbl.appendChild(rowHelp('Vias', String(vias), 'Small plated holes that carry a connection from one layer of the board through to another.'));
+  if (extent) tbl.appendChild(rowHelp('Board extent', extent, 'The overall size of the board, measured as the rectangle that just encloses all the test points.'));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   card.appendChild(tbl);
   resultsEl.appendChild(card);

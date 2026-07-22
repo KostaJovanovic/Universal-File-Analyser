@@ -2,7 +2,7 @@
    Reads .xlsx (Office Open XML spreadsheet) and renders each worksheet as a
    table, with sheet tabs and document metadata. */
 
-import { el, row, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 import { openZip } from './zip.js';
 
 // "A1" -> { col: 0, row: 0 }; "BC12" -> { col: 54, row: 11 }
@@ -246,7 +246,7 @@ export async function renderXlsx(file, resultsEl) {
       }
       if (namedRanges.length) t.appendChild(row('Named ranges', namedRanges.length));
       if (externalLinkCount) t.appendChild(row('External workbook links', externalLinkCount));
-      if (pivots.length) t.appendChild(row('Pivot tables', pivots.length));
+      if (pivots.length) t.appendChild(rowHelp('Pivot tables', pivots.length, 'A pivot table is a built-in spreadsheet tool that summarises a large table - totalling or averaging figures grouped by category, like sales per region. This counts how many the workbook contains.'));
       c.appendChild(t);
       if (pivots.length) {
         const det = el('details', { style: 'margin-top:8px;' });

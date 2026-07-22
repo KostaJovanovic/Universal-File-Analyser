@@ -52,7 +52,7 @@ export async function renderDjvu(file, resultsEl) {
 
   // ---- Metadata ----
   const card = el('div', { class: 'anr-card' });
-  const [h, help] = h3help('DjVu document', 'A scanned-document format. Analyser decodes and renders each page in the browser.');
+  const [h, help] = h3help('DjVu document', 'A file format for scanned documents, built to keep page scans small. Analyser opens and draws each page here in your browser.');
   card.appendChild(h); card.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Format', (doc.isBundled && doc.isBundled()) ? 'DjVu (bundled)' : 'DjVu'));

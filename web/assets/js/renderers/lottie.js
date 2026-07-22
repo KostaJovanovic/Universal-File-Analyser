@@ -80,7 +80,7 @@ export async function renderLottieData(data, resultsEl, file) {
   if (data.nm) t.appendChild(row('Name', String(data.nm)));
   t.appendChild(row('Bodymovin version', String(data.v || '-')));
   t.appendChild(row('Dimensions', (data.w || '?') + ' × ' + (data.h || '?') + ' px'));
-  t.appendChild(rowHelp('Frame rate', fr ? fr + ' fps' : '-', 'Frames per second the animation is authored at.'));
+  t.appendChild(rowHelp('Frame rate', fr ? fr + ' fps' : '-', 'How many frames play each second - the speed the animation was designed to run at.'));
   t.appendChild(row('Frames', frames ? Math.round(frames).toLocaleString() : '-'));
   t.appendChild(row('Duration', fr ? (frames / fr).toFixed(2) + ' s' : '-'));
   t.appendChild(row('Layers', Array.isArray(data.layers) ? data.layers.length : 0));

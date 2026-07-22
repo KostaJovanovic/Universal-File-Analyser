@@ -13,6 +13,10 @@
 import { el } from './util.js';
 import { renderHistoryPanel } from './history.js';
 import { MDX_OFFLINE_URLS, MDX_TIER_MB } from '../lib/mdx-model.js';
+import { DFN_OFFLINE_URLS, DFN_TIER_MB, DFN_MODEL } from '../lib/dfn-model.js';
+// The denoise model on its own (its ONNX runtime is shared with MDX, already in
+// MDX_OFFLINE_URLS), so the Complete tier adds only this on top of the AI pack.
+const DFN_MODEL_MB = Math.round(DFN_MODEL.bytes / 1e6);
 
 // Browser/platform-specific "how to install" hint, shown on the install button
 // when the native install prompt is not available (iOS, Safari, Firefox, or a
@@ -69,7 +73,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   // and used by the post-clear reset) derive from it, and the "+N MB more" upgrade
   // deltas in refreshTierButtons() use the numbers directly. One place to edit.
   const TIER_ORDER = ['essentials', 'everything', 'complete'];
-  const TIER_MB = { essentials: 50, everything: 120, complete: 345 + MDX_TIER_MB };
+  const TIER_MB = { essentials: 50, everything: 120, complete: 345 + MDX_TIER_MB + DFN_MODEL_MB };
   const TIER_SIZES = {};
   TIER_ORDER.forEach((t) => { TIER_SIZES[t] = '~' + TIER_MB[t] + ' MB'; });
 
@@ -126,6 +130,10 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       // + model URLs they pull live in the Complete tier below).
       './assets/js/lib/mdx-model.js', './assets/js/lib/mdx-stft.js', './assets/js/lib/mdx-separate.js',
       './assets/js/lib/mdx-client.js', './assets/js/lib/mdx-worker.js',
+      // On-device denoise (DeepFilterNet3) modules; the heavy ONNX runtime + model
+      // URLs they pull live in the Complete tier below.
+      './assets/js/lib/dfn-model.js', './assets/js/lib/dfn-dsp.js', './assets/js/lib/dfn-enhance.js',
+      './assets/js/lib/dfn-client.js', './assets/js/lib/dfn-worker.js',
       './assets/js/core/effects.js', './assets/js/core/popups.js', './assets/js/core/export-data.js',
       './assets/img/favicon.svg', './assets/img/icon.png', './assets/img/icon-192.png', './assets/img/icon-512.png',
       './assets/vendor/exifr.umd.js',
@@ -251,12 +259,15 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
     'swe', 'nor', 'fin', 'dan',
   ];
   const LANG_URLS = LANG_CODES.map(c => 'https://tessdata.projectnaptha.com/4.0.0/' + c + '.traineddata.gz');
-  const FEATURE_ORDER = ['languages', 'ai'];
+  const FEATURE_ORDER = ['languages', 'ai', 'denoise'];
   const FEATURES = {
-    languages: { label: 'Languages', desc: 'Read text (OCR) in 30+ languages, not just English.', mb: TIER_MB.complete - TIER_MB.everything - MDX_TIER_MB, urls: LANG_URLS },
+    languages: { label: 'Languages', desc: 'Read text (OCR) in 30+ languages, not just English.', mb: TIER_MB.complete - TIER_MB.everything - MDX_TIER_MB - DFN_MODEL_MB, urls: LANG_URLS },
     ai: { label: 'AI vocal separation', desc: 'Split a song into separate vocal and instrumental stems, on your device.', mb: MDX_TIER_MB, urls: MDX_OFFLINE_URLS },
+    denoise: { label: 'AI denoise', desc: 'Remove background noise and hiss from audio, on your device.', mb: DFN_TIER_MB, urls: DFN_OFFLINE_URLS },
   };
-  TIERS.complete = LANG_URLS.concat(MDX_OFFLINE_URLS);
+  // ORT runtime is shared between the AI packs, so add only the denoise MODEL on
+  // top of MDX_OFFLINE_URLS (which already carries the runtime) to avoid duplicates.
+  TIERS.complete = LANG_URLS.concat(MDX_OFFLINE_URLS).concat([DFN_MODEL.url]);
   // Built lazily the first time the Complete popup opens.
   let featPopup = null;
   const featButtons = {};

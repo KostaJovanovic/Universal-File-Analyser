@@ -72,8 +72,8 @@ export async function renderMtl(file, resultsEl) {
   stbl.appendChild(row('Format', 'Wavefront material library (.mtl)'));
   stbl.appendChild(row('File', file.name));
   stbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
-  stbl.appendChild(rowHelp('Materials', mats.length.toLocaleString(), 'The number of named materials (newmtl blocks) defined in this library.'));
-  if (textures.size) stbl.appendChild(rowHelp('Textures referenced', textures.size.toLocaleString(), 'Distinct image files this library points at (map_Kd, bump, normal and so on). They are expected to sit beside the .mtl and .obj.'));
+  stbl.appendChild(rowHelp('Materials', mats.length.toLocaleString(), 'How many named surface materials - the colour and finish settings applied to a model - are defined in this file (its newmtl blocks).'));
+  if (textures.size) stbl.appendChild(rowHelp('Textures referenced', textures.size.toLocaleString(), 'The separate image files this material library refers to for surface detail (colour, bump and normal maps, and so on). They are expected to sit in the same folder as the .mtl and .obj files.'));
   stbl.appendChild(sha256Row(file));
   sum.appendChild(stbl);
   if (textures.size) {
@@ -92,7 +92,10 @@ export async function renderMtl(file, resultsEl) {
   const CAP = 80;
   const FIELDS = [
     ['Kd', 'Diffuse colour', 'colour'], ['Ka', 'Ambient colour', 'colour'], ['Ks', 'Specular colour', 'colour'], ['Ke', 'Emissive colour', 'colour'],
-    ['Ns', 'Specular exponent', 'num'], ['Ni', 'Optical density (IOR)', 'num'], ['d', 'Opacity', 'num'], ['Tr', 'Transparency', 'num'], ['illum', 'Illumination model', 'num'],
+    ['Ns', 'Specular exponent', 'num', 'How sharp and glossy the surface highlight is. Higher values give a small, tight, shiny highlight (a polished look); lower values spread it out for a more matt finish.'],
+    ['Ni', 'Optical density (IOR)', 'num', 'The index of refraction - how much light bends as it passes through a transparent material. Roughly 1.0 is air, about 1.3 is water and around 1.5 is glass.'],
+    ['d', 'Opacity', 'num'], ['Tr', 'Transparency', 'num'],
+    ['illum', 'Illumination model', 'num', 'A number picking which lighting recipe the material uses - for example flat colour with no shading, standard shading with highlights, or added reflections and transparency.'],
   ];
   mats.slice(0, CAP).forEach((m) => {
     const card = el('div', { class: 'anr-card' });
@@ -102,13 +105,14 @@ export async function renderMtl(file, resultsEl) {
     h.appendChild(document.createTextNode(m.name));
     card.appendChild(h);
     const tbl = el('table', { class: 'anr-readout' });
-    for (const [k, label, type] of FIELDS) {
+    for (const [k, label, type, help] of FIELDS) {
       const v = m.props[k.toLowerCase()];
       if (v == null) continue;
-      tbl.appendChild(type === 'colour' ? rowNode(label, colourCell(v)) : row(label, v));
+      if (type === 'colour') tbl.appendChild(rowNode(label, colourCell(v)));
+      else tbl.appendChild(help ? rowHelp(label, v, help) : row(label, v));
     }
     const mapEntries = Object.entries(m.maps);
-    for (const [k, fn] of mapEntries) tbl.appendChild(row((MAP_LABEL[k] || k) + ' map', fn));
+    for (const [k, fn] of mapEntries) tbl.appendChild(rowHelp((MAP_LABEL[k] || k) + ' map', fn, 'A texture map is an image wrapped onto the model’s surface to add detail without extra geometry. Different maps control different things - the base colour, fine surface bumps, shininess or transparency - and this names the image file used.'));
     if (!tbl.children.length) tbl.appendChild(row('Definition', '(no properties)'));
     card.appendChild(tbl);
     resultsEl.appendChild(card);
@@ -888,9 +892,10 @@ async function renderObjColoured(file, resultsEl, parsed, materials = null, texI
 // drop has no access to. Mirrors the RAW+XMP sidecar / video reference-clip flow.
 function objMaterialsPrompt(file, resultsEl, parsed) {
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Colours and textures'));
+  const [mh, mhelp] = h3help('Colours and textures', 'A dropped .obj file can’t read its sibling files, so without the material library its surfaces show above as plain grey shades.');
+  card.appendChild(mh); card.appendChild(mhelp);
   card.appendChild(el('p', { class: 'anr-hint' },
-    `This model references materials in "${parsed.mtllib}". A dropped .obj can't read its sibling files, so its materials show above as plain grey shades. Add the .mtl (and any texture images it uses) to see its real colours and textures - everything stays on your device.`));
+    `This model references materials in "${parsed.mtllib}". Add the .mtl (and any texture images it uses) to see its real colours and textures - everything stays on your device.`));
 
   const input = el('input', { type: 'file', accept: '.mtl,image/*', multiple: true, style: 'display:none' });
   const status = el('span', { class: 'anr-hint', style: 'display:block;margin-top:8px;' }, '');
@@ -1101,7 +1106,7 @@ function gltfToMesh(json, glbBin) {
 
 function gltfInfoCard(json, file, ext, mesh) {
   const a = json.asset || {};
-  const [h, help] = h3help(ext === 'glb' ? 'glTF (binary)' : 'glTF', 'glTF ("GL Transmission Format") is the runtime 3D scene format used by the web, AR and game engines. Analyser reads the embedded geometry and scene metadata.');
+  const [h, help] = h3help(ext === 'glb' ? 'glTF (binary)' : 'glTF', 'glTF ("GL Transmission Format") is a compact 3D scene format built for fast loading on the web, in augmented reality and in game engines. Analyser reads the model’s shape data and scene details from it.');
   const card = el('div', { class: 'anr-card' });
   card.appendChild(h); card.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
@@ -1109,14 +1114,14 @@ function gltfInfoCard(json, file, ext, mesh) {
   tbl.appendChild(row('File', file.name));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   if (a.version) tbl.appendChild(row('glTF version', String(a.version)));
-  if (a.generator) tbl.appendChild(rowHelp('Authoring tool', String(a.generator), 'The exporter or program that wrote this file (the asset.generator string).'));
+  if (a.generator) tbl.appendChild(rowHelp('Authoring tool', String(a.generator), 'The program or exporter that created this file, as recorded inside it (the asset.generator field).'));
   if (a.copyright) tbl.appendChild(row('Copyright', String(a.copyright)));
   const cnt = (k) => Array.isArray(json[k]) ? json[k].length : 0;
   tbl.appendChild(row('Meshes', String(cnt('meshes'))));
-  tbl.appendChild(row('Nodes', String(cnt('nodes'))));
+  tbl.appendChild(rowHelp('Nodes', String(cnt('nodes')), 'The number of items in the model’s scene layout. Each node places one piece of the scene (a mesh, camera or light) in 3D space and can hold others beneath it, together forming the scene’s structure.'));
   if (cnt('materials')) tbl.appendChild(row('Materials', String(cnt('materials'))));
   if (cnt('textures')) tbl.appendChild(row('Textures', String(cnt('textures'))));
-  if (cnt('animations')) tbl.appendChild(rowHelp('Animations', String(cnt('animations')), 'Keyframe animation clips. Analyser shows the static mesh, not the animation.'));
+  if (cnt('animations')) tbl.appendChild(rowHelp('Animations', String(cnt('animations')), 'The number of animation clips stored in the file. Analyser displays the model still, not the movement.'));
   if (cnt('skins')) tbl.appendChild(row('Skins (rigged)', String(cnt('skins'))));
   if (cnt('cameras')) tbl.appendChild(row('Cameras', String(cnt('cameras'))));
   card.appendChild(tbl);
@@ -1223,7 +1228,11 @@ async function renderStepIges(file, resultsEl, ext) {
   const mt = el('table', { class: 'anr-readout' });
   mt.appendChild(row('File', file.name));
   mt.appendChild(row('Size', fmtBytes(file.size)));
-  if (headerFields) for (const [k, v] of Object.entries(headerFields)) if (v != null && v !== '') mt.appendChild(row(k, String(v)));
+  const STEP_HELP = {
+    'Preprocessor': 'The software that actually wrote this STEP file - the exporter or translator that converted the original CAD model into the STEP exchange format. It can differ from the program the model was first designed in.',
+    'Application protocol': 'Which flavour of the STEP standard the file follows. STEP comes in variants tuned to different industries, and the code (AP203, AP214, AP242 and so on) tells software what kind of design and product information to expect.',
+  };
+  if (headerFields) for (const [k, v] of Object.entries(headerFields)) if (v != null && v !== '') mt.appendChild(STEP_HELP[k] ? rowHelp(k, String(v), STEP_HELP[k]) : row(k, String(v)));
   mt.appendChild(sha256Row(file));
   metaCard.appendChild(mt);
 

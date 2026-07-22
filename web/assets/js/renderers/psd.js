@@ -17,7 +17,7 @@
    ag-psd does not support CMYK / Lab / 16-bit / PSB and re-composites nothing, so
    for those we rely on path 1's embedded thumbnail rather than failing. */
 
-import { el, row, h3help, fmtBytes, integrityCard, errorCard, blobImg, downloadBlob } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, blobImg, downloadBlob } from '../core/util.js';
 import { loadScript } from '../core/util.js';
 
 const AGPSD_URL = 'assets/vendor/ag-psd/bundle.js';
@@ -166,7 +166,7 @@ function layerTreeCard(psd) {
   }
   if (flagged.length) {
     card.appendChild(el('p', { class: 'anr-hint', style: 'color:var(--accent);font-weight:600;margin:0 0 8px;' },
-      '⚠ ' + flagged.length + ' of ' + rows.length + ' layers carry invisible content (hidden, fully transparent, or zero-size) - not shown in the flattened image.'));
+      '⚠ ' + flagged.length + ' of ' + rows.length + ' layers hold content you cannot see (switched off, fully see-through, or zero-size) - not part of the flattened image shown here.'));
   }
 
   const list = el('div', { class: 'anr-psd-layers' });
@@ -207,7 +207,7 @@ function layerTreeCard(psd) {
 
 function metaCard(file, header, layerCount) {
   const card = el('div', { class: 'anr-card' });
-  const [h, help] = h3help('Photoshop document', 'Adobe Photoshop document. Analyser shows the embedded preview and, where possible, the layer tree.');
+  const [h, help] = h3help('Photoshop document', 'An Adobe Photoshop file. Analyser shows the preview image saved inside it and, where it can, the list of layers it is built from.');
   card.appendChild(h); card.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
   const isPsb = header && header.version === 2;
@@ -217,11 +217,11 @@ function metaCard(file, header, layerCount) {
   if (header) {
     if (header.width && header.height) tbl.appendChild(row('Dimensions', header.width + ' × ' + header.height + ' px'));
     const mode = COLOR_MODES[header.mode];
-    if (mode) tbl.appendChild(row('Colour mode', mode));
+    if (mode) tbl.appendChild(rowHelp('Colour mode', mode, 'How the file stores colour. RGB is normal screen colour and CMYK is for print; Indexed, Lab, Duotone and Multichannel are specialist modes for particular workflows.'));
     if (header.depth) tbl.appendChild(row('Bit depth', header.depth + '-bit'));
     if (header.channels) tbl.appendChild(row('Channels', String(header.channels)));
   }
-  if (layerCount != null) tbl.appendChild(row('Layers', String(layerCount)));
+  if (layerCount != null) tbl.appendChild(rowHelp('Layers', String(layerCount), 'A Photoshop image is built from stacked layers, like sheets of transparent film. Layers that are hidden or switched off can still hold content you will not see in the flattened picture.'));
   card.appendChild(tbl);
   return card;
 }
@@ -260,7 +260,7 @@ export async function renderPsd(file, resultsEl) {
             resultsEl.insertBefore(thumbPreviewCard(header.thumb, 'Embedded preview', base), resultsEl.firstChild);
           } else {
             resultsEl.appendChild(el('div', { class: 'anr-info' },
-              'This file has no embedded composite (it was saved without "Maximize Compatibility"), so the layers below are shown instead.'));
+              'This file does not include a ready-made flattened preview (it was saved with Photoshop’s "Maximize Compatibility" option turned off), so the individual layers are shown below instead.'));
           }
           const lt = layerTreeCard(psd);
           if (lt) resultsEl.appendChild(lt);
@@ -286,13 +286,13 @@ export async function renderPsd(file, resultsEl) {
     if (header.version === 2) why.push('PSB');
     if (file.size > AGPSD_SIZE_LIMIT) why.push('very large file');
     resultsEl.appendChild(el('div', { class: 'anr-info' },
-      'Showing the preview Photoshop embedded in the file. Full layer decoding is skipped here' +
-      (why.length ? ' (' + why.join(', ') + ')' : '') + ' - the in-browser PSD decoder handles RGB / Grayscale 8-bit documents.'));
+      'Showing the preview image Photoshop saved inside the file. Its layers are not being unpacked here' +
+      (why.length ? ' (' + why.join(', ') + ')' : '') + ' - the built-in PSD reader can only unpack standard RGB or Grayscale 8-bit documents.'));
   } else {
     resultsEl.appendChild(el('div', { class: 'anr-info' },
-      'This file has no embedded preview (it was saved without "Maximize Compatibility")' +
+      'This file has no built-in preview image (it was saved with Photoshop’s "Maximize Compatibility" option turned off)' +
       ((header.mode !== 3 && header.mode !== 1) || header.depth !== 8 || header.version === 2
-        ? ', and its colour mode / depth is not supported by the in-browser layer decoder' : '') +
+        ? ', and its colour mode or bit depth is not one the built-in layer reader supports' : '') +
       ', so only its metadata can be shown.'));
   }
 }

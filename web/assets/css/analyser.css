@@ -3408,6 +3408,28 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
+/* Popup mode: wireInfoToggle floats the panel as an overlay anchored to the
+   heading/row that holds its [?] button (unified with the .anr-tip row help),
+   instead of the old inline drop-down that pushed content down. The button itself
+   is left in place, so its heading layout is unchanged. */
+.anr-info-pop-anchor { position: relative; }
+.anr-info-panel.anr-info-pop {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 100;
+  min-width: 260px;
+  max-width: 380px;
+  padding: 10px 12px;
+  margin: 0;
+  border: var(--bd-hairline);
+  background: var(--bg);
+  box-shadow: var(--shadow-popover);
+  line-height: 1.65;
+  white-space: normal;
+}
+.anr-info-panel.anr-info-pop.is-active { display: block; }
 
 /* ---------- CUSTOM PLAYER ---------- */
 .anr-player {
@@ -3938,8 +3960,8 @@ audio { width: 100%; }
   font-size: var(--t-small);
   letter-spacing: 0.02em;
 }
-.anr-cloud-warning { line-height: 1.55; }
-.anr-cloud-warning ul { line-height: 1.55; }
+.anr-cloud-warning, .anr-empty-warning { line-height: 1.55; }
+.anr-cloud-warning ul, .anr-empty-warning ul { line-height: 1.55; }
 .anr-info {
   background: var(--surface);
   border: var(--bd-rule);
@@ -8227,7 +8249,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
 
   /* ---- Separate / Isolate panel: stack cleanly on a phone ---- */
   /* On desktop the AI separator + EQ presets share one wrapping row
-     ([Separate vocals (AI)] | [Vocals][Bass][Drums][Remove vocals]   [Clear]).
+     ([AI separation] | [Underwater][Radio][Hollow]   [Clear]).
      On a narrow screen that orphans the "|", wraps the presets untidily and
      floats Clear onto its own line - so stack the row into full-width blocks. */
   .anr-iso-ai-row { flex-direction: column; align-items: stretch; gap: 10px; }

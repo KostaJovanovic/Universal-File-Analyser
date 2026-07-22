@@ -170,7 +170,7 @@ function messageCard(text, title) {
     ['Subject', decodeWords(h1(hdrs, 'subject')) || '(no subject)'],
     h1(hdrs, 'date') && ['Date', h1(hdrs, 'date')],
     (hdrs['received'] && hdrs['received'].length) && rowHelp('Received hops', String(hdrs['received'].length),
-      'How many mail servers relayed this message, counted from the Received: headers - the message\'s delivery path.'),
+      'The number of mail servers that passed this message along on its way to you. Each server that handles an email stamps a "Received:" line into the hidden headers, so counting those lines shows how many hops the message made.'),
   ];
   const auth = authVerdict(hdrs);
   if (auth.has) {
@@ -179,7 +179,7 @@ function messageCard(text, title) {
     if (auth.dkim) parts.push('DKIM ' + auth.dkim);
     if (auth.dmarc) parts.push('DMARC ' + auth.dmarc);
     if (parts.length) rows.push(rowHelp('Authentication', parts.join('  -  '),
-      'Sender-authentication results recorded by the receiving server: SPF (sending IP allowed), DKIM (cryptographic signature valid) and DMARC (alignment policy). "pass" is good; "fail" or "none" is worth noting.'));
+      'Checks that help prove an email really came from who it claims. The receiving server runs three: SPF (was this server allowed to send for that domain?), DKIM (does the message carry a valid cryptographic signature?) and DMARC (do those two line up with the domain’s stated policy?). "pass" is good; "fail" or "none" is worth a closer look.'));
   }
   card.appendChild(buildReadout(rows.filter(Boolean)));
 

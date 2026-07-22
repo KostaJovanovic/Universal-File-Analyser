@@ -65,12 +65,12 @@ async function renderKra(file, zip, resultsEl) {
   card.appendChild(el('h3', {}, 'Krita document'));
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Application', 'Krita'));
-  tbl.appendChild(rowHelp('Format', 'Krita archive (.kra)', 'A .kra is a ZIP package; Analyser shows the merged-image preview Krita stores inside, plus the canvas metadata from maindoc.xml.'));
+  tbl.appendChild(rowHelp('Format', 'Krita archive (.kra)', 'A .kra file is really a ZIP bundle. Analyser shows the flattened preview picture Krita keeps inside it, plus the canvas details from its maindoc.xml file.'));
   if (main) {
     if (main.width && main.height) tbl.appendChild(row('Canvas', main.width + ' × ' + main.height + ' px'));
-    if (main.colorspace) tbl.appendChild(row('Colour space', main.colorspace));
+    if (main.colorspace) tbl.appendChild(rowHelp('Colour space', main.colorspace, 'The colour model the artwork is painted in, shown as Krita’s own code - for example ‘RGBA’ (red-green-blue plus transparency) or ‘CMYKA’ (the print inks plus transparency).'));
     if (main.xres) tbl.appendChild(row('Resolution', Math.round(parseFloat(main.xres)) + ' dpi'));
-    if (main.layers) tbl.appendChild(row('Layers', String(main.layers)));
+    if (main.layers) tbl.appendChild(rowHelp('Layers', String(main.layers), 'The artwork is built from stacked layers, like sheets of transparent film. Hidden or switched-off layers can still hold content that is not visible in the flattened preview.'));
     if (main.kritaVersion) tbl.appendChild(row('Krita version', main.kritaVersion));
   }
   tbl.appendChild(row('Size', fmtBytes(file.size)));
@@ -114,7 +114,7 @@ async function renderProcreate(file, zip, resultsEl) {
   card.appendChild(el('h3', {}, 'Procreate document'));
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Application', 'Procreate'));
-  tbl.appendChild(rowHelp('Format', 'Procreate document', 'A Procreate file is a ZIP package; the per-layer artwork is stored in a private chunked format, so Analyser shows the QuickLook preview Procreate embeds.'));
+  tbl.appendChild(rowHelp('Format', 'Procreate document', 'A Procreate file is really a ZIP bundle. Its layers are stored in Procreate’s own private format, so Analyser shows the QuickLook preview picture that Procreate saves inside for quick viewing.'));
   if (size) tbl.appendChild(row('Canvas', size.replace(/[{}]/g, '').replace(/\s+/g, '').replace(',', ' × ') + ' px'));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   card.appendChild(tbl);
@@ -155,9 +155,9 @@ async function renderPdn(file, resultsEl) {
   card.appendChild(el('h3', {}, 'Paint.NET image'));
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Application', 'Paint.NET'));
-  tbl.appendChild(rowHelp('Format', 'Paint.NET image (.pdn)', 'A .pdn stores the layered Paint.NET document; Analyser shows the flattened preview Paint.NET embeds in the header, plus the canvas metadata.'));
+  tbl.appendChild(rowHelp('Format', 'Paint.NET image (.pdn)', 'A .pdn file holds a layered Paint.NET document. Analyser shows the flattened preview picture Paint.NET saves near the start of the file, plus the canvas details.'));
   if (width && height) tbl.appendChild(row('Canvas', width + ' × ' + height + ' px'));
-  if (layers) tbl.appendChild(row('Layers', layers));
+  if (layers) tbl.appendChild(rowHelp('Layers', layers, 'The artwork is built from stacked layers, like sheets of transparent film. Hidden or switched-off layers can still hold content that is not visible in the flattened preview.'));
   if (ver) tbl.appendChild(row('Saved with version', ver));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   card.appendChild(tbl);

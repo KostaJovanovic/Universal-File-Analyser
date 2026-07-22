@@ -115,19 +115,19 @@ export async function renderGcsv(file, resultsEl) {
 
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Gyro log (.gcsv)',
-    'A Gyroflow IMU log: per-sample gyroscope and accelerometer readings used to stabilise footage. '
-    + 'Analyser applies the file\'s own scale factors (gyroscope shown in deg/s, accelerometer in g) and plots the traces against time.');
+    'A motion-sensor log from Gyroflow: moment by moment it records how fast the camera was turning (gyroscope) and the forces acting on it (accelerometer), the readings used to smooth out shaky footage. '
+    + 'Analyser scales them using the file’s own settings (turning shown in degrees per second, force in g) and draws them over time.');
   card.appendChild(h); card.appendChild(help);
 
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Format', 'Gyroflow IMU log (.gcsv)'));
   if (m.version) tbl.appendChild(row('Version', m.version));
   if (m.id) tbl.appendChild(row('Logger / camera', m.id));
-  if (m.orientation) tbl.appendChild(rowHelp('IMU orientation', m.orientation, 'The axis convention Gyroflow uses to map the sensor axes to the image.'));
-  tbl.appendChild(rowHelp('Gyroscope', parsed.hasGyro ? 'Present' : 'Not found', 'Three-axis angular rate, shown here in deg/s after applying the file\'s gscale.'));
-  tbl.appendChild(rowHelp('Accelerometer', parsed.hasAccel ? 'Present' : 'Not found', 'Three-axis acceleration in g after applying the file\'s ascale.'));
+  if (m.orientation) tbl.appendChild(rowHelp('IMU orientation', m.orientation, 'Which way round Gyroflow treats the sensor’s three directions (up/down, left/right, forward/back) so they line up with the picture.'));
+  tbl.appendChild(rowHelp('Gyroscope', parsed.hasGyro ? 'Present' : 'Not found', 'How fast the camera turns around each of its three directions, shown in degrees per second after Analyser applies the file’s own scale value (gscale).'));
+  tbl.appendChild(rowHelp('Accelerometer', parsed.hasAccel ? 'Present' : 'Not found', 'The push or pull felt along each of the camera’s three directions, in g (1 g is normal gravity), after applying the file’s own scale value (ascale).'));
   tbl.appendChild(row('Samples', parsed.samples.toLocaleString()));
-  if (parsed.rate) tbl.appendChild(rowHelp('Sample rate', '~' + Math.round(parsed.rate).toLocaleString() + ' Hz', 'Estimated from the median time step between samples.'));
+  if (parsed.rate) tbl.appendChild(rowHelp('Sample rate', '~' + Math.round(parsed.rate).toLocaleString() + ' Hz', 'How many readings were taken each second, estimated from the typical time gap between them.'));
   if (parsed.durationSec) tbl.appendChild(row('Duration', parsed.durationSec.toFixed(2) + ' s'));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
 
@@ -241,16 +241,16 @@ export async function renderGyroCsv(file, resultsEl, preText) {
   resultsEl.innerHTML = '';
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Gyro log (CSV)',
-    'A gyroscope / accelerometer CSV (such as the one Analyser exports from a video\'s gyro track). '
-    + 'Analyser plots the three-axis traces against time on a zoomable timeline you can hover to read off values.');
+    'A spreadsheet-style (CSV) log of motion-sensor readings - how fast the camera turned (gyroscope) and the forces on it (accelerometer) - like the one Analyser can pull from a video’s built-in motion track. '
+    + 'Analyser draws the three directions over time on a timeline you can zoom into and hover over to read exact values.');
   card.appendChild(h); card.appendChild(help);
 
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Format', 'Gyro / accelerometer CSV'));
-  tbl.appendChild(rowHelp('Gyroscope', parsed.hasGyro ? 'Present' : 'Not found', 'Three-axis angular rate (here in the file\'s own units - raw sensor counts for Analyser\'s export).'));
-  tbl.appendChild(rowHelp('Accelerometer', parsed.hasAccel ? 'Present' : 'Not found', 'Three-axis acceleration in g.'));
+  tbl.appendChild(rowHelp('Gyroscope', parsed.hasGyro ? 'Present' : 'Not found', 'How fast the camera turns around each of its three directions, shown in whatever units the file uses (raw sensor counts for files Analyser exports).'));
+  tbl.appendChild(rowHelp('Accelerometer', parsed.hasAccel ? 'Present' : 'Not found', 'The push or pull felt along each of the camera’s three directions, in g (1 g is normal gravity).'));
   tbl.appendChild(row('Samples', parsed.samples.toLocaleString()));
-  if (parsed.rate) tbl.appendChild(rowHelp('Sample rate', '~' + Math.round(parsed.rate).toLocaleString() + ' Hz', 'Estimated from the median time step between rows.'));
+  if (parsed.rate) tbl.appendChild(rowHelp('Sample rate', '~' + Math.round(parsed.rate).toLocaleString() + ' Hz', 'How many readings were taken each second, estimated from the typical time gap between rows.'));
   if (parsed.durationSec) tbl.appendChild(row('Duration', parsed.durationSec.toFixed(2) + ' s'));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
 

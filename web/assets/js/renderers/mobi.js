@@ -44,7 +44,7 @@ export async function renderMobi(file, resultsEl) {
 
   // ---- Metadata ----
   const card = el('div', { class: 'anr-card' });
-  const [h, help] = h3help('E-book', 'Kindle / Mobipocket e-book. Text, metadata and cover are decoded in the browser.');
+  const [h, help] = h3help('E-book', 'A Kindle / Mobipocket e-book. Its text, details and cover image are read here in your browser.');
   card.appendChild(h); card.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Format', ext === 'azw3' ? 'Kindle KF8 (AZW3)' : ext === 'azw' ? 'Kindle (AZW)' : 'Mobipocket / Kindle (MOBI)'));

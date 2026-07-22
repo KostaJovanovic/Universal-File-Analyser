@@ -2,7 +2,7 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v248';
+const VERSION = 'analyser-v249';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -123,6 +123,11 @@ const SHELL = [
   './assets/js/lib/mdx-separate.js',
   './assets/js/lib/mdx-client.js',
   './assets/js/lib/mdx-worker.js',
+  './assets/js/lib/dfn-model.js',
+  './assets/js/lib/dfn-dsp.js',
+  './assets/js/lib/dfn-enhance.js',
+  './assets/js/lib/dfn-client.js',
+  './assets/js/lib/dfn-worker.js',
   './assets/js/parsers/parsers-dev.js',
   './assets/js/parsers/parsers-archive.js',
   './assets/js/parsers/parsers-email.js',
@@ -236,7 +241,8 @@ self.addEventListener('install', (e) => {
 // version-aware re-download in offline-tiers.js, not by this cleanup.
 // 'analyser-mdx' - the day-cached AI separation model (see mdx-worker.js) - also
 // survives, so a service-worker update doesn't force a multi-MB model re-download.
-const KEEP_CACHES = [VERSION, 'analyser-offline', 'analyser-mdx'];
+// 'analyser-dfn' - the day-cached denoise model (see dfn-worker.js) - likewise.
+const KEEP_CACHES = [VERSION, 'analyser-offline', 'analyser-mdx', 'analyser-dfn'];
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(

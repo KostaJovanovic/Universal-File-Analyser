@@ -16,7 +16,7 @@
    Deliberately overlaps with the C2PA card only to *corroborate*; the provenance
    detail itself lives there. */
 
-import { el, row, wireInfoToggle } from '../core/util.js';
+import { el, row, rowHelp, wireInfoToggle } from '../core/util.js';
 import { ascii, utf8, findBytes, inflate } from '../core/binutil.js';
 import { readC2pa } from './c2pa.js';
 
@@ -26,6 +26,10 @@ const AI_TOOLS = /(stable\s?diffusion|automatic1111|comfyui|invoke\s?ai|fooocus|
 const DIGITAL_SOURCE_AI = /(trainedAlgorithmicMedia|compositeWithTrainedAlgorithmicMedia|algorithmicMedia|compositeSyntheticMedia|syntheticMedia)/i;
 // Stable-Diffusion-style parameter block fingerprints.
 const SD_PARAMS = /(^|\n)\s*Steps:\s*\d+|Negative prompt:|Sampler:\s*\S|CFG scale:\s*[\d.]|Model hash:|Denoising strength:/i;
+
+// Local per-row help for the jargon labels (kept off the shared LABEL_HELP map).
+const DST_HELP = 'A standard metadata tag that records how an image was made. A value like ‘trainedAlgorithmicMedia’ is the agreed marker for fully AI-generated content.';
+const CC_AI_HELP = 'Content Credentials (C2PA) is a signed "made by / edited by" history some AI and editing tools attach to a file. Here it names an AI tool or AI source; the full record is in the C2PA card above.';
 
 // Fields that legitimately mention a tool as normal usage (avoid over-flagging a
 // plain camera "Software" note); we still scan them but flag only on AI matches.
@@ -102,7 +106,7 @@ export async function collectAiSignals(file, exif, preManifests) {
   if (exif) {
     for (const [k, v] of Object.entries(exif)) {
       if (typeof v !== 'string' || !v) continue;
-      if (DIGITAL_SOURCE_AI.test(v)) pushUnique(signals, { label: 'Digital Source Type (' + k + ')', detail: v + '  - a standard "AI-generated" marker', strong: true });
+      if (DIGITAL_SOURCE_AI.test(v)) pushUnique(signals, { label: 'Digital Source Type (' + k + ')', detail: v + '  - a standard "AI-generated" marker', strong: true, help: DST_HELP });
       else if (SD_PARAMS.test(v)) { const sd = sdSummary(v); pushUnique(signals, { label: 'Generation parameters (' + k + ')', detail: sd.params || v.slice(0, 200), prompt: sd.prompt, strong: true }); }
       else if (AI_TOOLS.test(v)) pushUnique(signals, { label: 'Generator tool in metadata (' + k + ')', detail: v, strong: true });
     }
@@ -111,7 +115,7 @@ export async function collectAiSignals(file, exif, preManifests) {
   // 2) Raw XMP packet (covers fields exifr may not expose, e.g. GenAI extensions).
   const xmp = extractXmp(b);
   if (xmp) {
-    if (DIGITAL_SOURCE_AI.test(xmp)) pushUnique(signals, { label: 'Digital Source Type (XMP)', detail: (xmp.match(DIGITAL_SOURCE_AI) || [])[0] + '  - a standard "AI-generated" marker', strong: true });
+    if (DIGITAL_SOURCE_AI.test(xmp)) pushUnique(signals, { label: 'Digital Source Type (XMP)', detail: (xmp.match(DIGITAL_SOURCE_AI) || [])[0] + '  - a standard "AI-generated" marker', strong: true, help: DST_HELP });
     const tool = xmp.match(AI_TOOLS);
     if (tool) pushUnique(signals, { label: 'Generator tool named in XMP', detail: tool[0], strong: true });
   }
@@ -141,8 +145,8 @@ export async function collectAiSignals(file, exif, preManifests) {
   try {
     const manifests = preManifests !== undefined ? preManifests : await readC2pa(file);
     for (const m of manifests || []) {
-      if (m.ai && m.ai.length) pushUnique(signals, { label: 'Content Credentials declare an AI source', detail: 'see the C2PA card above', strong: true, c2pa: true });
-      else if (m.generator && AI_TOOLS.test(m.generator)) pushUnique(signals, { label: 'Content Credentials generator is an AI tool', detail: m.generator, strong: true, c2pa: true });
+      if (m.ai && m.ai.length) pushUnique(signals, { label: 'Content Credentials declare an AI source', detail: 'see the C2PA card above', strong: true, c2pa: true, help: CC_AI_HELP });
+      else if (m.generator && AI_TOOLS.test(m.generator)) pushUnique(signals, { label: 'Content Credentials generator is an AI tool', detail: m.generator, strong: true, c2pa: true, help: CC_AI_HELP });
     }
   } catch (_) { /* no C2PA - fine */ }
 
@@ -150,7 +154,7 @@ export async function collectAiSignals(file, exif, preManifests) {
 }
 
 // ---------- card ----------
-const AI_HELP = 'These are indicators found in the file that are associated with AI image generators - editor/tool names in the metadata, the standard IPTC "AI-generated" marker, or the parameter blocks tools like Stable Diffusion embed. They are signals, not a verdict: metadata can be stripped (so a real AI image may show nothing here) or added by hand (so a match is not proof). Everything is read on your device.';
+const AI_HELP = 'Clues in the file that are often left by AI image generators - the name of an AI tool in the metadata, the standard IPTC "AI-generated" marker, or the settings blocks that tools like Stable Diffusion save inside the image. These are hints, not a verdict: metadata can be removed (so a genuine AI image might show nothing here) or added by hand (so a match is not proof either). Everything is read on your device.';
 
 export async function buildAiSignalsCard(file, exif, manifests) {
   let signals;
@@ -166,11 +170,9 @@ export async function buildAiSignalsCard(file, exif, manifests) {
   head.appendChild(infoBtn);
   card.appendChild(head);
   card.appendChild(help);
-  card.appendChild(el('p', { class: 'anr-hint', style: 'margin:8px 0;' },
-    'Indicators associated with AI image tools were found. These are signals, not a verdict - metadata can be absent, added, or forged, so this is not proof the image is (or is not) AI-generated.'));
 
   const tbl = el('table', { class: 'anr-readout' });
-  for (const s of signals) tbl.appendChild(row(s.label, s.detail));
+  for (const s of signals) tbl.appendChild(s.help ? rowHelp(s.label, s.detail, s.help) : row(s.label, s.detail));
   card.appendChild(tbl);
 
   // Show any extracted prompt(s) - forensically the most interesting content.

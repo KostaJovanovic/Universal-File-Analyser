@@ -31,7 +31,7 @@ export function reverseAudioBufferToWav(audioBuffer) {
 export function buildReverseAudioCard(audioBuffer, baseName, signal) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Reverse'));
-  card.appendChild(el('p', { class: 'anr-hint' }, 'Play and download this audio reversed (played backwards).'));
+  card.appendChild(el('p', { class: 'anr-hint' }, 'Play or download this audio played backwards.'));
   const out = el('div');
   const btn = el('button', { type: 'button', class: 'anr-btn' }, '↺ Reverse audio');
   btn.addEventListener('click', () => {

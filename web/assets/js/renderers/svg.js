@@ -154,7 +154,7 @@ export async function renderSvg(file, resultsEl) {
   tbl.appendChild(row('Application', 'SVG Vector Image'));
   const svgCreator = detectSvgCreator(svgText);
   if (svgCreator) tbl.appendChild(rowHelp('Created with', svgCreator,
-    'The program that produced this SVG, read from the generator comment or version attribute the exporter wrote (for example Adobe Illustrator, Inkscape, Sketch or Figma).'));
+    'The program that made this SVG, taken from a note the exporting software left in the file (for example Adobe Illustrator, Inkscape, Sketch or Figma).'));
   tbl.appendChild(row('Name', file.name));
   tbl.appendChild(row('Size', `${fmtBytes(file.size)}   (${file.size.toLocaleString()} bytes)`));
 
@@ -162,7 +162,7 @@ export async function renderSvg(file, resultsEl) {
     const viewBox = svgRoot.getAttribute('viewBox');
     const width = svgRoot.getAttribute('width');
     const height = svgRoot.getAttribute('height');
-    tbl.appendChild(rowHelp('viewBox', viewBox || '-', 'The SVG coordinate system, given as "min-x min-y width height". It defines how the vector canvas maps onto the display size, letting the image scale to any size without pixelation.'));
+    tbl.appendChild(rowHelp('viewBox', viewBox || '-', 'The drawing area of the SVG, written as "min-x min-y width height". Because SVG is drawn from maths rather than fixed dots, this lets the image be shown at any size and stay crisp, never blocky.'));
     tbl.appendChild(row('Width', width || '-'));
     tbl.appendChild(row('Height', height || '-'));
   }
@@ -178,7 +178,7 @@ export async function renderSvg(file, resultsEl) {
   }
   // Count all nodes
   const allElements = doc.getElementsByTagName('*');
-  tbl.appendChild(rowHelp('Total elements', String(allElements.length), 'The total count of all SVG nodes in the file - shapes, groups, paths, and every other tag.'));
+  tbl.appendChild(rowHelp('Total elements', String(allElements.length), 'How many individual building blocks the SVG contains in total - every shape, line, group and other tag added up.'));
 
   statsCard.appendChild(tbl);
 
@@ -198,7 +198,7 @@ export async function renderSvg(file, resultsEl) {
   const rasterCard = el('div', { class: 'anr-card' });
   rasterCard.appendChild(el('h3', {}, 'Image analysis'));
   const rasterHint = el('p', { class: 'anr-hint', style: 'margin: 0 0 10px; font-size: 12px;' },
-    'Render this SVG to a PNG and run the full photo analysis (histogram, palette, OCR, and more) on it.');
+    'Render this SVG to a PNG and run the full photo analysis - histogram, palette, OCR and more.');
   rasterCard.appendChild(rasterHint);
   const rasterBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse as image');
   const rasterTarget = el('div', { class: 'anr-results' });

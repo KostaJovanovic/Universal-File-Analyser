@@ -139,7 +139,7 @@ export async function renderComic(file, resultsEl, extOverride) {
   tbl.appendChild(row('Application', APP[ext] || 'Comic Book Archive'));
   tbl.appendChild(row('File', file.name));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
-  tbl.appendChild(rowHelp('Pages', String(pages.length), 'The number of image pages found inside the comic archive.'));
+  tbl.appendChild(rowHelp('Pages', String(pages.length), 'How many page images are stored inside the comic file - a comic is really a zip holding one picture per page.'));
   // Format breakdown of the pages.
   const fmtCount = {};
   for (const p of pages) { const e = (p.name.split('.').pop() || '').toLowerCase(); fmtCount[e] = (fmtCount[e] || 0) + 1; }

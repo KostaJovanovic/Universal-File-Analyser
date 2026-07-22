@@ -21,7 +21,7 @@
    footprint, which the project view uses for two-way cross-probing.
 */
 
-import { el, row, h3help, fmtBytes, errorCard, inlineLoader, wheelZoomToggle } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, errorCard, inlineLoader, wheelZoomToggle } from '../core/util.js';
 import { buildViewer, fitBox, grow, safeBox } from './eda-viewer.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -1117,24 +1117,47 @@ function hexA(hex, a) {
 // ===========================================================================
 //  metadata helpers + single-file entry
 // ===========================================================================
+// Rows are [label, value] or [label, value, helpText]; a help string routes the
+// row through rowHelp so it gets a local [?] tooltip (kept out of the shared
+// LABEL_HELP map, which would mis-attach to same-named rows elsewhere).
 function metaCard(title, help, rows, file, extra) {
   const card = el('div', { class: 'anr-card' });
   const [h, hp] = h3help(title, help);
   card.appendChild(h); card.appendChild(hp);
   const tbl = el('table', { class: 'anr-readout' });
-  for (const [k, val] of rows) if (val != null && val !== '') tbl.appendChild(row(k, String(val)));
+  for (const [k, val, htxt] of rows) if (val != null && val !== '') tbl.appendChild(htxt ? rowHelp(k, String(val), htxt) : row(k, String(val)));
   card.appendChild(tbl);
   if (extra) card.appendChild(extra);
   return card;
 }
 function miniMeta(rows) {
   const tbl = el('table', { class: 'anr-readout' });
-  for (const [k, val] of rows) if (val != null && val !== '') tbl.appendChild(row(k, String(val)));
+  for (const [k, val, htxt] of rows) if (val != null && val !== '') tbl.appendChild(htxt ? rowHelp(k, String(val), htxt) : row(k, String(val)));
   return tbl;
+}
+// Local column-header [?] tooltip - helpTh is not exported from util.js, so this
+// mirrors it for the few table headers that need a plain-language note. Falls
+// back to a bare <th> when no help is supplied.
+let _thTipInit = false;
+function helpTh(label, help) {
+  const th = el('th', {});
+  if (!help) { th.textContent = label; return th; }
+  if (!_thTipInit) { _thTipInit = true; document.addEventListener('click', () => document.querySelectorAll('.anr-tip.is-active').forEach((t) => t.classList.remove('is-active'))); }
+  th.appendChild(document.createTextNode(label + ' '));
+  const btn = el('button', { type: 'button', class: 'anr-tip-btn', title: 'Info' }, '[?]');
+  const tip = el('div', { class: 'anr-tip' }, help);
+  btn.addEventListener('click', (e) => { e.stopPropagation(); const on = tip.classList.contains('is-active'); document.querySelectorAll('.anr-tip.is-active').forEach((t) => t.classList.remove('is-active')); if (!on) tip.classList.add('is-active'); });
+  th.appendChild(btn); th.appendChild(tip);
+  return th;
 }
 function padsTable(pads) {
   const tbl = el('table', { class: 'anr-readout anr-altium-pads' });
-  tbl.appendChild(el('tr', {}, ['Pad', 'X (mm)', 'Y (mm)', 'Size (mm)', 'Drill', 'Type'].map((h) => el('th', {}, h))));
+  tbl.appendChild(el('tr', {}, [
+    helpTh('Pad', 'The pad’s number or name - the label matching the component pin that solders to it.'),
+    helpTh('X (mm)', null), helpTh('Y (mm)', null), helpTh('Size (mm)', null),
+    helpTh('Drill', 'The diameter of the hole drilled through the pad, for pins that pass through the board. Blank for surface pads with no hole.'),
+    helpTh('Type', 'How the pad mounts: THT (through-hole, a pin through a drilled hole) or SMD (surface-mount, soldered to the top).'),
+  ]));
   for (const p of pads) {
     tbl.appendChild(el('tr', {}, [
       el('td', {}, String(p.num || '?')),
@@ -1180,7 +1203,7 @@ export async function renderKicad(file, resultsEl) {
 
 function renderSchDoc(file, node, resultsEl) {
   const parsed = parseSchematic(node);
-  resultsEl.appendChild(metaCard('KiCad schematic', 'KiCad Eeschema schematic (.kicad_sch) - an S-expression document. The symbol graphics, wires and labels are parsed and rebuilt as a vector view in the browser.', [
+  resultsEl.appendChild(metaCard('KiCad schematic', 'A circuit diagram from KiCad’s Eeschema editor (.kicad_sch), showing how the parts connect. It is stored as a bracketed text format (an S-expression); Analyser reads the symbols, wires and labels and redraws them as a crisp, zoomable (vector) picture in the browser.', [
     ['Format', 'KiCad schematic'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
@@ -1210,18 +1233,18 @@ function renderPcbDoc(file, node, resultsEl) {
     for (const p of edge) { if (p.x1 != null) { grow(b, p.x1, p.y1); grow(b, p.x2, p.y2); } if (p.cx != null) { grow(b, p.cx - p.r, p.cy - p.r); grow(b, p.cx + p.r, p.cy + p.r); } if (p.pts) for (const q of p.pts) grow(b, q[0], q[1]); }
     if (Number.isFinite(b.minx)) { bw = b.maxx - b.minx; bh = b.maxy - b.miny; }
   }
-  resultsEl.appendChild(metaCard('KiCad PCB', 'KiCad Pcbnew board (.kicad_pcb) - an S-expression document. Footprints, copper, vias, zones and the board outline are decoded from it and drawn to scale.', [
+  resultsEl.appendChild(metaCard('KiCad PCB', 'A printed-circuit-board layout from KiCad’s Pcbnew editor (.kicad_pcb) - the physical board design, stored as a bracketed text format (an S-expression). Analyser decodes and draws it to scale: the component pads (footprints), the copper wiring, the plated holes that link layers (vias), the filled copper areas (zones) and the board outline.', [
     ['Format', 'KiCad PCB'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
     ['File version', pcb.version],
     ['Board thickness', pcb.thickness ? pcb.thickness + ' mm' : null],
     ['Board size', bw ? `${bw.toFixed(1)} × ${bh.toFixed(1)} mm` : null],
-    ['Footprints', pcb.footprints.length],
-    ['Pads', pcb.pads.length],
-    ['Tracks', pcb.tracks.length],
-    ['Vias', pcb.vias.length],
-    ['Copper zones', pcb.zones || null],
+    ['Footprints', pcb.footprints.length, 'The copper pad patterns that components solder onto - one per part placed on the board. For example a chip’s footprint is the grid of pads its pins land on.'],
+    ['Pads', pcb.pads.length, 'The small metal contacts that a component’s pins solder to.'],
+    ['Tracks', pcb.tracks.length, 'The copper wires printed on the board that carry signals between components (also called traces).'],
+    ['Vias', pcb.vias.length, 'Small plated holes that carry a connection from one layer of the board through to another.'],
+    ['Copper zones', pcb.zones || null, 'Filled areas of copper, such as a ground plane, rather than thin wires.'],
   ], file));
 
   const dcard = el('div', { class: 'anr-card' });
@@ -1233,14 +1256,14 @@ function renderPcbDoc(file, node, resultsEl) {
 function renderMod(file, node, resultsEl) {
   const fp = parseFootprint(node);
   const layers = new Set(fp.prims.map((p) => p.layer));
-  resultsEl.appendChild(metaCard('KiCad footprint', 'A KiCad footprint module (.kicad_mod) - one footprint in S-expression form. Its pads and silkscreen/courtyard graphics are decoded and drawn to scale.', [
+  resultsEl.appendChild(metaCard('KiCad footprint', 'One component’s footprint - the pattern of solder pads and outline a single part sits on - saved as a bracketed text file (.kicad_mod, an S-expression). Analyser draws its pads to scale along with the printed outline (silkscreen) and the part’s keep-clear boundary (courtyard).', [
     ['Format', 'KiCad footprint'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
-    ['Footprint', fp.name],
+    ['Footprint', fp.name, 'The name of this footprint - the copper pad pattern and outline one component solders onto.'],
     ['Description', fp.descr],
     ['Tags', fp.tags],
-    ['Pads', fp.pads.length],
+    ['Pads', fp.pads.length, 'The small metal contacts that a component’s pins solder to.'],
   ], file));
   if (fp.pads.length) { const c = el('div', { class: 'anr-card' }); c.appendChild(el('h3', {}, 'Pads')); c.appendChild(padsTable(fp.pads)); resultsEl.appendChild(c); }
   const dcard = el('div', { class: 'anr-card' });
@@ -1251,7 +1274,7 @@ function renderMod(file, node, resultsEl) {
 
 function renderSymLib(file, node, resultsEl) {
   const syms = kids(node, 'symbol');
-  resultsEl.appendChild(metaCard('KiCad symbol library', 'A KiCad symbol library (.kicad_sym) - a collection of schematic symbols in S-expression form. Each symbol is drawn from its graphic primitives.', [
+  resultsEl.appendChild(metaCard('KiCad symbol library', 'A set of schematic symbols (.kicad_sym) - the diagram pictures that stand for components (a resistor, a chip and so on) in a circuit drawing, saved as a bracketed text file (an S-expression). Analyser draws each symbol from the lines and shapes that make it up.', [
     ['Format', 'KiCad symbol library'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
@@ -1287,19 +1310,24 @@ function renderProjectJson(file, text, resultsEl) {
   const isPrl = ext === 'kicad_prl';
   const meta = data && data.meta;
   const nets = data && data.net_settings && data.net_settings.classes;
-  resultsEl.appendChild(metaCard(isPrl ? 'KiCad local settings' : 'KiCad project', 'KiCad ' + (isPrl ? 'per-user local settings (.kicad_prl)' : 'project file (.kicad_pro)') + ' - JSON holding the design rules, net classes, layer presets and tool state for the project.', [
+  resultsEl.appendChild(metaCard(isPrl ? 'KiCad local settings' : 'KiCad project', 'A KiCad ' + (isPrl ? 'per-user local settings (.kicad_prl)' : 'project file (.kicad_pro)') + ' - a settings file written in JSON text, holding the project’s design rules (the spacing and size limits the layout must obey), its net classes (groups of connections that share the same rules), saved layer view presets and the editor’s current tool state.', [
     ['Format', isPrl ? 'KiCad local settings (.kicad_prl)' : 'KiCad project (.kicad_pro)'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
     ['Schema version', meta && meta.version],
-    ['Net classes', nets ? nets.length : null],
+    ['Net classes', nets ? nets.length : null, 'Groups of connections (nets) that share the same routing rules - such as the wire width, spacing and hole size the board must use for them.'],
   ], file));
 
   if (nets && nets.length) {
     const card = el('div', { class: 'anr-card' });
     card.appendChild(el('h3', {}, 'Net classes'));
     const tbl = el('table', { class: 'anr-readout' });
-    tbl.appendChild(el('tr', {}, ['Name', 'Track (mm)', 'Clearance (mm)', 'Via (mm)'].map((h) => el('th', {}, h))));
+    tbl.appendChild(el('tr', {}, [
+      helpTh('Name', null),
+      helpTh('Track (mm)', 'The default width of the copper wires (tracks) for connections in this group.'),
+      helpTh('Clearance (mm)', 'The smallest gap this group must leave between copper and neighbouring copper, so nothing accidentally touches.'),
+      helpTh('Via (mm)', 'The default diameter of the plated holes (vias) that carry these connections between board layers.'),
+    ]));
     for (const nc of nets) tbl.appendChild(el('tr', {}, [el('td', {}, nc.name || '—'), el('td', {}, fmtNum(nc.track_width)), el('td', {}, fmtNum(nc.clearance)), el('td', {}, fmtNum(nc.via_diameter))]));
     card.appendChild(tbl);
     resultsEl.appendChild(card);
@@ -1325,7 +1353,7 @@ function parseFpCache(text) {
 }
 function renderFpCache(file, text, resultsEl) {
   const items = parseFpCache(text);
-  resultsEl.appendChild(metaCard('KiCad footprint cache', "KiCad's fp-info-cache - an index of every footprint in the project's libraries (nickname, name, description and pad count), so Pcbnew can list them without reparsing each .kicad_mod.", [
+  resultsEl.appendChild(metaCard('KiCad footprint cache', "KiCad's footprint index (fp-info-cache) - a quick lookup list of every component footprint in the project's libraries, storing each one's nickname, name, description and pad count. It lets the Pcbnew board editor show them instantly without re-reading every .kicad_mod file.", [
     ['Format', 'KiCad footprint info cache'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
@@ -1347,7 +1375,7 @@ function renderLibTable(file, text, resultsEl) {
   const node = parseSexpr(text);
   const libs = node ? kids(node, 'lib') : [];
   const isFp = /^fp/i.test(file.name);
-  resultsEl.appendChild(metaCard('KiCad library table', 'A KiCad library table (' + (isFp ? 'fp-lib-table - footprints' : 'sym-lib-table - symbols') + ') - an S-expression list mapping library nicknames to their on-disk paths.', [
+  resultsEl.appendChild(metaCard('KiCad library table', 'A KiCad library table (' + (isFp ? 'fp-lib-table - footprints' : 'sym-lib-table - symbols') + ') - a short text file (an S-expression) that lists each library by its short nickname and tells KiCad where to find it on disk.', [
     ['Format', isFp ? 'KiCad footprint library table' : 'KiCad symbol library table'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
@@ -1369,12 +1397,12 @@ function renderWbk(file, text, resultsEl) {
   const lines = text.split(/\r?\n/);
   const directive = lines.find((l) => /^\.(tran|ac|dc|op|noise)/i.test(l.trim())) || '';
   const probes = lines.filter((l) => /^[VIvi]\(/.test(l.trim()));
-  resultsEl.appendChild(metaCard('KiCad simulation workbook', 'A KiCad / ngspice simulation workbook (.wbk) - the saved SPICE analysis setup (the run directive and the probed signals) for the schematic simulator.', [
+  resultsEl.appendChild(metaCard('KiCad simulation workbook', 'A saved setup for KiCad’s built-in circuit simulator (.wbk, using ngspice/SPICE) - it stores which simulation to run and which signals (voltages and currents) to record, ready to run again on the schematic.', [
     ['Format', 'KiCad simulation workbook (.wbk)'],
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
-    ['Analysis', directive ? directive.trim().replace(/\{return\}.*/, '') : null],
-    ['Probed signals', probes.length ? probes.map((p) => p.trim()).join(', ') : null],
+    ['Analysis', directive ? directive.trim().replace(/\{return\}.*/, '') : null, 'The kind of simulation to run - for example transient (how signals change over time), AC (frequency response), DC sweep or operating point (the steady resting state).'],
+    ['Probed signals', probes.length ? probes.map((p) => p.trim()).join(', ') : null, 'The voltages and currents the simulator is told to record and plot, written as V(node) for a voltage or I(part) for a current.'],
   ], file));
   resultsEl.appendChild(sourceCard(text));
 }
@@ -1412,11 +1440,16 @@ function bomFromInstances(instances) {
 // bomCard with optional cross-probe callbacks.
 function bomCard(bom, onSch, onPcb) {
   const card = el('div', { class: 'anr-altium-bomwrap' });
-  card.appendChild(el('h3', {}, 'Bill of materials'));
+  if (onSch || onPcb) {
+    const [h, hp] = h3help('Bill of materials', 'The list of parts on the board. Click a part’s designator to jump to it on the schematic' + (onPcb ? ', or to its footprint on the board.' : '.'));
+    card.appendChild(h); card.appendChild(hp);
+  } else {
+    card.appendChild(el('h3', {}, 'Bill of materials'));
+  }
   const tbl = el('table', { class: 'anr-readout anr-altium-bom' });
   const head = ['Designator', 'Value', 'Footprint', 'Datasheet'];
   if (onPcb) head.push('On board');
-  tbl.appendChild(el('tr', {}, head.map((h) => el('th', {}, h))));
+  tbl.appendChild(el('tr', {}, head.map((h) => helpTh(h, h === 'Designator' ? 'The short reference label a part is given on the board, such as R1 for a resistor or U2 for a chip.' : null))));
   for (const inst of bom) {
     const ds = inst.datasheet && inst.datasheet !== '~' ? inst.datasheet : '';
     const desigBtn = el('button', { type: 'button', class: 'anr-btn anr-altium-desig' }, inst.ref);
@@ -1481,7 +1514,7 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
   const card = el('div', { class: 'anr-card anr-altium-project' });
   card.appendChild(el('h3', {}, 'KiCad project'));
   card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 12px;' },
-    'Every document in this project, opened together. Click a designator in the bill of materials to jump to that part on the schematic - or its footprint on the board.'));
+    'Every document in this project, opened together.'));
   const tabsBar = el('div', { class: 'anr-altium-tabs' });
   const panels = el('div', { class: 'anr-altium-tabwrap' });
   card.appendChild(tabsBar); card.appendChild(panels);
@@ -1509,7 +1542,12 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
     const v = schView(sch); panel.appendChild(v.wrap); return v;
   });
   if (pcb) pcbTab = addTab(pcbFile ? base(pcbFile.path) : 'PCB', (panel) => {
-    panel.appendChild(miniMeta([['Footprints', pcb.footprints.length], ['Tracks', pcb.tracks.length], ['Vias', pcb.vias.length], ['Zones', pcb.zones || null]]));
+    panel.appendChild(miniMeta([
+      ['Footprints', pcb.footprints.length, 'The copper pad patterns that components solder onto - one per part placed on the board.'],
+      ['Tracks', pcb.tracks.length, 'The copper wires printed on the board that carry signals between components (also called traces).'],
+      ['Vias', pcb.vias.length, 'Small plated holes that carry a connection from one layer of the board through to another.'],
+      ['Zones', pcb.zones || null, 'Filled areas of copper, such as a ground plane, rather than thin wires.'],
+    ]));
     const v = boardView(pcb); panel.appendChild(v.wrap); return v;
   });
   if (symFile) addTab(base(symFile.path), (panel) => { buildSymPanel(panel, symFile); });
@@ -1524,7 +1562,7 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
       ['Schematic', schFile ? base(schFile.path) : null],
       ['Board', pcbFile ? base(pcbFile.path) : null],
       ['Components', bom.length || null],
-      ['Footprints on board', pcb ? pcb.footprints.length : null],
+      ['Footprints on board', pcb ? pcb.footprints.length : null, 'How many component pad patterns (footprints) are placed on the finished board layout.'],
       ['Footprint modules', modFiles.length || null],
     ]));
     if (bom.length) panel.appendChild(bomCard(bom, schTab >= 0 ? crossSch : null, pcbTab >= 0 ? crossPcb : null));
@@ -1582,7 +1620,7 @@ export async function buildKicadProjectCard(kiFiles, folderName) {
       mf.file.text().then((t) => {
         host.innerHTML = '';
         const fp = parseFootprint(parseSexpr(t));
-        host.appendChild(miniMeta([['Footprint', fp.name], ['Description', fp.descr], ['Pads', fp.pads.length]]));
+        host.appendChild(miniMeta([['Footprint', fp.name, 'The name of this footprint - the copper pad pattern and outline one component solders onto.'], ['Description', fp.descr], ['Pads', fp.pads.length, 'The small metal contacts that a component’s pins solder to.']]));
         if (fp.pads.length) host.appendChild(padsTable(fp.pads));
         host.appendChild(pcbView({ prims: fp.prims, pads: fp.pads, tracks: [], vias: [], footprints: [], zones: 0, layersUsed: new Set(fp.prims.map((q) => q.layer)) }).wrap);
       }).catch(() => { host.innerHTML = ''; host.appendChild(el('div', { class: 'anr-info' }, 'Could not read this footprint.')); });

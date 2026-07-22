@@ -29,115 +29,115 @@ export function el(tag, attrs = {}, children = []) {
 // Name, Title, Size, Date, Version, Resolution…) are intentionally left plain.
 export const LABEL_HELP = {
   // --- Media: containers, codecs, streams ---
-  'Container': 'The container (or wrapper) format that packages the media streams together - for example MP4, MKV or WebM. It is separate from the codecs stored inside, so the same container can hold different codecs.',
-  'Codec': 'The codec is the method used to compress and store the media inside the container (for example H.264 for video or AAC for audio). Container and codec are independent.',
-  'Audio codec': 'The method used to compress the audio stream (for example AAC, MP3 or Opus), independent of the container holding it.',
-  'Video codec': 'The method used to compress the video stream (for example H.264, HEVC or AV1), independent of the container holding it.',
-  'Aspect ratio': 'The ratio of frame width to height (for example 16:9). Shown as the exact pixel ratio, sometimes alongside the nearest standard ratio.',
-  'Frame rate': 'How many frames are shown each second (fps). Higher rates look smoother; 24, 25, 30 and 60 are common.',
-  'Bitrate': 'How many bits are used per second of audio or video. Higher bitrates generally mean better quality and larger files.',
-  'Sample rate': 'How many audio samples are captured per second, in hertz (44,100 Hz is CD quality). Higher rates can represent higher frequencies.',
-  'Bit depth': 'The number of bits stored per sample or per colour channel. More bits allow finer gradations - smoother audio dynamics or colour.',
-  'Channels': 'The number of independent audio channels (1 = mono, 2 = stereo, 6 = 5.1 surround, and so on).',
-  'Compression': 'The method used to shrink the file’s data. Lossless compression preserves every byte; lossy compression discards some detail to save space.',
+  'Container': 'The kind of file that wraps the video and sound together and keeps them in step - for example MP4, MKV or WebM. It is separate from the recipe (codec) used to squeeze the picture and sound, so the same kind of file can hold different codecs.',
+  'Codec': 'The recipe used to squeeze the picture or sound down to a manageable size - for example H.264 for video or AAC for audio. It is chosen separately from the container file that holds it.',
+  'Audio codec': 'The recipe used to squeeze the sound down to a manageable size - for example AAC, MP3 or Opus. It is chosen separately from the file that holds it.',
+  'Video codec': 'The recipe used to squeeze the picture down to a manageable size - for example H.264, HEVC or AV1. It is chosen separately from the file that holds it.',
+  'Aspect ratio': 'The shape of the picture - how wide it is compared with how tall, for example 16:9 (a typical widescreen shape). Shown as the exact pixel ratio, sometimes next to the nearest standard shape.',
+  'Frame rate': 'How many still pictures are shown each second to make the moving image (measured in fps, frames per second). Higher numbers look smoother; 24, 25, 30 and 60 are common.',
+  'Bitrate': 'How much data is spent on each second of audio or video. More data usually means better quality and a bigger file.',
+  'Sample rate': 'How many times per second the sound was measured when recorded (44,100 times a second is CD quality). Higher numbers can capture higher-pitched sound.',
+  'Bit depth': 'How finely each sound measurement, or each colour, is recorded - counted in bits. More bits give smoother sound and finer colour shades, but a slightly bigger file.',
+  'Channels': 'How many separate sound signals are stored (1 is mono, 2 is stereo, 6 is 5.1 surround, and so on).',
+  'Compression': 'The way the file’s data has been shrunk to save space. Lossless keeps every last detail; lossy throws away some detail you are unlikely to notice in order to make the file smaller.',
   // --- Text & encoding ---
-  'Encoding': 'The character encoding used to store the text (for example UTF-8 or UTF-16), which determines how the raw bytes map to characters.',
-  'Code page': 'A legacy character-encoding table (for example Windows-1252) mapping byte values to characters. Reading text with the wrong code page produces garbled characters.',
-  'Line endings': 'The byte sequence that marks the end of each line - LF on Unix/Mac, CRLF on Windows - which often hints at where a file came from.',
-  'Units': 'The measurement units the file’s coordinates or dimensions are expressed in, such as millimetres or inches.',
+  'Encoding': 'The system used to turn the text into the raw data stored in the file (for example UTF-8 or UTF-16). Read it with the wrong system and the characters come out garbled.',
+  'Code page': 'An older table for turning stored data back into letters and symbols (for example Windows-1252). Read the text with the wrong code page and you get garbled characters.',
+  'Line endings': 'The hidden marker that shows where each line stops - LF on Mac and Linux, CRLF on Windows. It often hints at which kind of computer made the file.',
+  'Units': 'The units the file uses for its sizes and coordinates, such as millimetres or inches.',
   // --- Photo / EXIF ---
-  'Orientation': 'How the camera was held when the photo was taken, stored in EXIF. Viewers use it to rotate the image upright automatically.',
-  'Temperature': 'The white-balance colour temperature, in kelvin, the camera recorded for the shot - lower is warmer (orange), higher is cooler (blue).',
+  'Orientation': 'Which way up the camera was held for the shot, recorded in the photo’s hidden EXIF details. Viewers use it to turn the picture upright automatically.',
+  'Temperature': 'The colour of the light the camera set itself for (its white balance), measured in kelvin. Lower numbers are warmer and more orange, higher numbers are cooler and more blue.',
   // --- Detection / sniffing ---
-  'Detected original format': 'The true format detected from the file’s actual bytes, which can differ from what its extension claims.',
-  'Confidence': 'How sure the detector is about its guess, based on how strongly the file’s bytes match a known signature.',
-  'Recognised tokens': 'How many known keywords or markers were found while scanning the file, used to identify its format.',
-  'DHT': 'Define Huffman Table - the JPEG segment holding the code tables used to compress the image data.',
+  'Detected original format': 'What the file really is, worked out from its actual contents rather than its name - the two can differ if a file has been renamed.',
+  'Confidence': 'How sure the tool is about its answer, based on how closely the file’s contents match a known format’s tell-tale pattern.',
+  'Recognised tokens': 'How many familiar keywords or markers turned up while scanning the file - the clues used to work out its format.',
+  'DHT': 'A section inside a JPEG (its ‘Define Huffman Table’) that stores the lookup tables used to shrink the picture.',
   // --- Documents / office ---
-  'Tracked changes': 'Whether the document records edits (insertions and deletions) made with revision tracking turned on.',
-  'Track changes': 'Whether the document records edits (insertions and deletions) made with revision tracking turned on.',
-  'Macros': 'Embedded VBA code that can run inside the document. Macros automate tasks but are also a common malware vector, so unexpected ones warrant caution.',
-  'Document protection': 'Restrictions the author placed on the document, such as preventing editing, formatting or printing.',
-  'Restricted actions': 'Things the author has locked down in this document, such as editing, copying or printing.',
-  'Hidden slides': 'Slides kept in the file but marked not to appear when the presentation is played.',
-  'Hidden slides (declared)': 'Slides kept in the file but marked not to appear when the presentation is played.',
-  'Hidden sheets': 'Worksheets present in the workbook but hidden from view in the spreadsheet.',
-  'Named ranges': 'Cell ranges given a human-readable name so formulas can refer to them by name instead of by coordinates.',
-  'External workbook links': 'References to data in other files or on the web that this document pulls in when opened.',
-  'External links': 'References to data in other files or on the web that this document pulls in when opened.',
-  'Editing time': 'The total time the document reports being open for editing, accumulated in its metadata.',
-  'Reading direction': 'The direction the content flows - left-to-right or right-to-left (for example manga, or Arabic and Hebrew text).',
-  'TOC entries': 'The number of entries in the document’s table of contents.',
+  'Tracked changes': 'Whether the document has been keeping a record of edits - every insertion and deletion - made while revision tracking was switched on.',
+  'Track changes': 'Whether the document has been keeping a record of edits - every insertion and deletion - made while revision tracking was switched on.',
+  'Macros': 'Small programs saved inside the document that can run automatically. They can be useful, but are also a common way to hide malware - so treat unexpected ones with caution.',
+  'Document protection': 'Limits the author placed on the document, such as blocking editing, formatting or printing.',
+  'Restricted actions': 'Things the author has locked in this document, such as editing, copying or printing.',
+  'Hidden slides': 'Slides that are still in the file but set not to appear when the presentation is played.',
+  'Hidden slides (declared)': 'Slides that are still in the file but set not to appear when the presentation is played.',
+  'Hidden sheets': 'Worksheets that are in the workbook but hidden from view in the spreadsheet.',
+  'Named ranges': 'Groups of spreadsheet cells given a name, so formulas can point to them by that name instead of grid coordinates like B2:B20.',
+  'External workbook links': 'Links to data kept in other files or on the web, which this document pulls in when it is opened.',
+  'External links': 'Links to data kept in other files or on the web, which this document pulls in when it is opened.',
+  'Editing time': 'The total time the document reports having been open for editing, added up and kept in its own hidden details.',
+  'Reading direction': 'Which way the content flows - left to right, or right to left (as in Arabic and Hebrew text, or manga).',
+  'TOC entries': 'How many items are listed in the document’s table of contents.',
   // --- Subtitles / lyrics ---
-  'Cues': 'A cue is a single timed subtitle entry - its text plus the start and end times it appears on screen.',
-  'Timestamped': 'Whether each line carries timing information, so the lyrics or subtitles can sync to playback.',
+  'Cues': 'A cue is one timed subtitle - a line of text plus the moment it appears on screen and the moment it disappears.',
+  'Timestamped': 'Whether each line comes with timing information, so the lyrics or subtitles can be kept in step with playback.',
   // --- CSV / tabular ---
-  'Delimiter confidence': 'How confident the parser is that it picked the right character separating the columns.',
-  'Data rows': 'The number of rows of actual data, not counting the header row.',
+  'Delimiter confidence': 'How sure the tool is that it spotted the right character separating the columns (often a comma, tab or semicolon).',
+  'Data rows': 'How many rows hold actual data, not counting the header row at the top.',
   // --- Fitness / GPS tracks ---
-  'Cadence': 'Pedalling or step rate recorded during the activity, typically in revolutions or steps per minute.',
-  'Average pace': 'The average time taken per unit of distance, such as minutes per kilometre.',
-  'Total descent': 'The cumulative height lost over the route, summing every downhill section.',
+  'Cadence': 'How fast you were pedalling or stepping during the activity, usually counted per minute.',
+  'Average pace': 'The average time taken to cover each unit of distance, such as minutes per kilometre.',
+  'Total descent': 'The total height dropped over the route, adding up every downhill stretch.',
   // --- 3D printing / slicing ---
-  'Layer height': 'The thickness of each printed layer. Thinner layers give finer detail but take longer to print.',
-  'Nozzle temp': 'The temperature the printer heats its nozzle to in order to melt the filament.',
-  'Bed temp': 'The temperature of the heated print bed, which helps the first layer stick and prevents warping.',
-  'Nozzle': 'The nozzle diameter the file was sliced for, which sets the width of each extruded line of plastic.',
-  'Slicer': 'The software that sliced the 3D model into printer instructions (G-code), such as Cura or PrusaSlicer.',
-  'Print size': 'The width, depth and height the finished print occupies.',
-  'Layout': 'How the data is arranged within the file.',
+  'Layer height': 'How thick each printed layer is. Thinner layers capture finer detail but take longer to print.',
+  'Nozzle temp': 'How hot the printer heats its nozzle to melt the plastic filament.',
+  'Bed temp': 'How warm the print bed is kept, which helps the first layer stick and stops the print warping.',
+  'Nozzle': 'The nozzle width the file was prepared (sliced) for, which sets how wide each line of melted plastic is laid down.',
+  'Slicer': 'The software that turned the 3D model into step-by-step printer instructions (G-code), such as Cura or PrusaSlicer.',
+  'Print size': 'How much space the finished print takes up - its width, depth and height.',
+  'Layout': 'How the data is arranged inside the file.',
   // --- CNC / G-code ---
-  'G-code type': 'The dialect of G-code, which varies between machine controllers and target machines (3D printer, CNC mill, laser, etc.).',
-  'CAM software': 'The computer-aided-manufacturing program that generated the toolpaths (G-code) from a CAD model.',
-  'Controller': 'The machine controller or firmware the G-code targets, which determines which commands it understands.',
-  'Likely machine': 'A best guess at the kind of machine this G-code drives - 3D printer, CNC router, laser cutter - inferred from the commands used.',
-  'Coolant': 'Whether and how the program switches cutting coolant on, used in CNC machining to cool the tool and clear away chips.',
-  'Max feed rate': 'The highest commanded movement speed (feed rate) found anywhere in the program.',
-  'Max spindle / power': 'The highest spindle speed (for a mill or router) or laser power level commanded in the program.',
-  'Work offsets': 'Stored coordinate systems (G54-G59) a CNC program switches between to locate the workpiece on the table.',
-  'Canned cycles': 'Built-in multi-step machining routines, such as drilling or tapping, each invoked by a single G-code command.',
-  'Arc moves': 'The number of curved (arc) tool movements (G2/G3) in the program, as opposed to straight-line moves.',
-  'Tool': 'The cutting tool the program selects, identified by its tool-changer number.',
-  'Tools used': 'The set of cutting tools the program calls up, identified by their tool-changer numbers.',
+  'G-code type': 'Which style of G-code (the instruction language a machine follows) this is - it varies between different machines and controllers, such as a 3D printer, CNC mill or laser cutter.',
+  'CAM software': 'The program that worked out the cutting paths (the G-code) from a CAD design - its CAM, or computer-aided-manufacturing, software.',
+  'Controller': 'The machine’s control box or firmware the G-code is written for, which decides which commands it will understand.',
+  'Likely machine': 'A best guess at what kind of machine this G-code drives - a 3D printer, CNC router or laser cutter - worked out from the commands it uses.',
+  'Coolant': 'Whether and how the program turns on cutting coolant - the fluid used in machining to cool the tool and wash away chips.',
+  'Max feed rate': 'The fastest movement speed (the feed rate) commanded anywhere in the program.',
+  'Max spindle / power': 'The highest speed of the spinning cutting tool (on a mill or router), or the highest laser power, asked for anywhere in the program.',
+  'Work offsets': 'Saved reference points (G54-G59) a CNC program switches between to know where the workpiece sits on the table.',
+  'Canned cycles': 'Built-in machining routines, such as drilling or tapping, each done with a single G-code command instead of spelling out every move.',
+  'Arc moves': 'How many curved tool movements (G2/G3) the program uses, as opposed to straight-line ones.',
+  'Tool': 'The cutting tool the program picks, named by its number in the tool changer.',
+  'Tools used': 'The set of cutting tools the program calls on, named by their numbers in the tool changer.',
   // --- MIDI / music ---
-  'PPQ (ticks/beat)': 'Pulses per quarter note - the MIDI file’s timing resolution, i.e. how many ticks make up one beat. Higher values allow finer timing.',
-  'Tempo': 'The playback speed, in beats per minute (BPM).',
-  'Time signature': 'How beats are grouped into bars, written as a fraction such as 4/4 or 3/4.',
+  'PPQ (ticks/beat)': 'How finely the MIDI file measures time within each beat - its pulses per quarter note. Higher numbers allow more precise timing.',
+  'Tempo': 'How fast the music plays, in beats per minute (BPM).',
+  'Time signature': 'How the beats are grouped into bars, written like a fraction such as 4/4 or 3/4.',
   // --- Torrents ---
-  'Piece size': 'The size of each fixed chunk a torrent splits its data into for transfer and verification.',
-  'Pieces': 'The number of fixed-size chunks the torrent’s data is divided into; each is checked independently as it downloads.',
-  'Tracker': 'A server that coordinates a torrent swarm by telling peers about one another.',
-  'Trackers': 'Servers that coordinate a torrent swarm by telling peers about one another.',
+  'Piece size': 'The size of each equal chunk a torrent splits its data into for sharing and checking.',
+  'Pieces': 'How many equal-sized chunks the torrent’s data is split into; each one is checked on its own as it downloads.',
+  'Tracker': 'A server that helps a torrent’s downloaders find one another so they can swap pieces.',
+  'Trackers': 'Servers that help a torrent’s downloaders find one another so they can swap pieces.',
   // --- CAD exchange (STEP / IGES) ---
-  'Implementation level': 'A STEP/IGES conformance level indicating which subset of the standard the file uses.',
-  'Originating system': 'The CAD application that originally created the exchange file.',
-  'Sending system': 'The system that exported or transmitted the exchange file.',
-  'Schema': 'The data schema (for example AP203 or AP214 for STEP) defining which entity types the file may contain.',
-  'Schema version': 'The version of the data schema the file conforms to.',
+  'Implementation level': 'For a STEP or IGES CAD file, which portion of the standard the file keeps to.',
+  'Originating system': 'The CAD program that first created this exchange file.',
+  'Sending system': 'The system that exported or sent out this exchange file.',
+  'Schema': 'The rulebook the file follows (for example AP203 or AP214 for STEP), which sets out what kinds of information it may contain.',
+  'Schema version': 'Which version of that rulebook the file follows.',
   // --- Disk images ---
-  'Disk GUID': 'A globally unique identifier stored on a GPT-partitioned disk to distinguish it from any other disk.',
-  'Partitioning': 'The partition-table scheme dividing the disk - MBR (older) or GPT (modern).',
-  'Partitions': 'The number of partitions (separate storage volumes) defined on the disk image.',
+  'Disk GUID': 'A unique identifier stored on a GPT-formatted disk so it can be told apart from any other disk.',
+  'Partitioning': 'How the disk is divided into sections - MBR (the older scheme) or GPT (the modern one).',
+  'Partitions': 'How many separate storage sections (partitions) the disk image is divided into.',
   // --- Logs ---
-  'Log format': 'The detected structure of the log lines, such as Apache combined, JSON or syslog.',
-  'Log levels (sample)': 'A sample of the severity levels seen in the log, such as INFO, WARN and ERROR.',
-  'IPs (sample)': 'A sample of the IP addresses appearing in the log.',
+  'Log format': 'The recognised layout of the log lines, such as Apache combined, JSON or syslog.',
+  'Log levels (sample)': 'A sample of the importance levels seen in the log, such as INFO, WARN and ERROR.',
+  'IPs (sample)': 'A sample of the IP addresses (network addresses) that appear in the log.',
   // --- Windows shortcut (.lnk) / OS links ---
-  'Relative path': "The target's location written relative to the shortcut's own folder, so the link still resolves if the pair is moved together.",
-  'Working directory': 'The folder the target program treats as its current directory when launched from this shortcut.',
-  'Arguments': 'Command-line arguments passed to the target program each time the shortcut is run.',
-  'Window': 'How the target opens when you run the shortcut - in a normal, maximised or minimised window.',
-  'Icon location': 'The file the shortcut pulls its displayed icon from.',
-  'Hotkey': 'A global keyboard shortcut assigned to launch this link.',
+  'Relative path': "Where the target file sits, written in relation to the shortcut's own folder - so the link still works if the pair is moved together.",
+  'Working directory': 'The folder the target program treats as its home base when it is launched from this shortcut.',
+  'Arguments': 'Extra command-line instructions handed to the target program each time you run the shortcut.',
+  'Window': 'How the program’s window opens when you run the shortcut - normal, maximised or minimised.',
+  'Icon location': 'The file the shortcut takes its displayed icon from.',
+  'Hotkey': 'A keyboard shortcut set to launch this link from anywhere.',
   // --- Certificates / keys / crypto ---
-  'Issuer': 'The certificate authority that issued and signed this certificate, vouching for its subject.',
-  'Valid from': 'The start of the certificate’s validity period; before this date it is not yet trusted.',
-  'Valid to': 'The expiry date of the certificate; after this it is no longer trusted and software will warn.',
-  'Serial': 'The serial number the issuing authority assigned to this certificate, unique within that issuer.',
-  'Signature': 'The algorithm used to cryptographically sign the certificate or file, binding its contents to the signer.',
-  'Key size': 'The length of the cryptographic key in bits. Larger keys are harder to break but slower; 2048-bit RSA or 256-bit elliptic-curve are typical.',
-  'Key type': 'The cryptographic algorithm family of the key, such as RSA, ECDSA or Ed25519.',
-  'Recovery ID': 'A small value stored alongside some signatures that lets the signer’s public key be recovered from the signature itself.',
+  'Issuer': 'The trusted authority that issued this certificate and signed it, vouching for who it belongs to.',
+  'Valid from': 'The date the certificate starts being valid; before this date it is not yet trusted.',
+  'Valid to': 'The date the certificate expires; after this it is no longer trusted and software will warn you.',
+  'Serial': 'The serial number the issuing authority gave this certificate, unique among the ones that authority issues.',
+  'Signature': 'The maths used to cryptographically sign the certificate or file, tying its contents to the signer so any later change would show.',
+  'Key size': 'The length of the cryptographic key, measured in bits. Longer keys are harder to break but a little slower; 2048-bit RSA or 256-bit elliptic-curve are typical.',
+  'Key type': 'The family of cryptographic maths the key uses, such as RSA, ECDSA or Ed25519.',
+  'Recovery ID': 'A small extra value kept with some signatures that lets the signer’s public key be worked out from the signature itself.',
 };
 
 // Build a <th> for a readout row. If `helpText` is given (passed explicitly via
@@ -218,6 +218,27 @@ export function cloudFileWarning(file) {
     el('li', {}, 'In the file manager, right-click the file → “Always keep on this device”, wait for the download to finish, then try again.'),
   ]);
   box.appendChild(ul);
+  return box;
+}
+
+// A friendly "this file is empty" card body. A zero-length file passes the read
+// probe (there's nothing to read) but every renderer then fails deep in its
+// pipeline with a cryptic "unexpected end"/blank result - so we intercept it
+// up front and explain plainly that the file holds no data.
+export function emptyFileWarning(file) {
+  const box = el('div', { class: 'anr-error anr-empty-warning' });
+  box.appendChild(el('p', { style: 'margin:0 0 10px; font-weight:600;' },
+    '“' + ((file && file.name) || 'This file') + '” is empty - it’s 0 bytes, so there’s nothing to open or analyse.'));
+  box.appendChild(el('p', { style: 'margin:0 0 10px;' },
+    'This isn’t something Analyser can fix: a zero-length file contains no data at all, so it can’t be viewed or repaired. It usually means the file never finished being written.'));
+  const ul = el('ul', { style: 'margin:0; padding-left:18px;' }, [
+    el('li', {}, 'A download, copy or save that was interrupted before any bytes were written.'),
+    el('li', {}, 'A placeholder left behind by a recovery, carving or export tool when it couldn’t extract the file.'),
+    el('li', {}, 'A cloud sync app (OneDrive, iCloud Drive, Google Drive…) that created the file but hasn’t filled it in yet.'),
+  ]);
+  box.appendChild(ul);
+  box.appendChild(el('p', { style: 'margin:10px 0 0;' },
+    'Look for another copy of the same file - a working version is often saved right alongside it (for example with a “(1)” suffix). If this is the only copy, the data is gone and can’t be recovered from an empty file.'));
   return box;
 }
 
@@ -650,25 +671,38 @@ export async function readText(file, cap = 262144) {
   return file.slice(0, Math.min(file.size, cap)).text();
 }
 
-// Wire a [?] info button to an inline dropdown panel (.anr-info-panel shown/hidden
-// via .is-hidden). The button label flips between [?] (closed) and [-] (open). If
-// the button sits inside a collapsed <details>, the first click also opens that
-// section so the panel is actually visible. Use this for every dropdown-style [?]
-// (the popup [?] in rowHelp is intentionally left as a plain tip).
+// Wire a [?] info button to its help panel (.anr-info-panel). The [?] opens a
+// floating popup anchored to the button - the same affordance as the row-help
+// tips (helpTh) - so every [?] across the site behaves identically: it pops up,
+// it never pushes content down, the label stays [?] (no [-] flip), and clicking
+// anywhere else closes it. The panel is anchored to the button lazily on first
+// open, which works whether the caller wired before or after inserting the
+// button into the DOM (h3help wires before; most manual sites wire after).
 export function wireInfoToggle(btn, panel) {
-  const sync = () => { btn.textContent = panel.classList.contains('is-hidden') ? '[?]' : '[-]'; };
-  sync();
+  if (!wireInfoToggle._init) {
+    wireInfoToggle._init = true;
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.anr-info-panel.is-active').forEach(p => p.classList.remove('is-active'));
+    });
+  }
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const det = btn.closest('details');
-    if (det && !det.open) {
-      det.open = true;
-      panel.classList.remove('is-hidden');
-    } else {
-      panel.classList.toggle('is-hidden');
+    if (!panel.classList.contains('anr-info-pop')) {
+      // First open: float the panel as an overlay anchored to the heading/row that
+      // holds the [?] button, rather than the old inline drop-down. Anchoring to the
+      // button's own parent leaves the button's layout untouched and opens the popup
+      // right where the drop-down used to appear (just below the heading).
+      const anchor = btn.parentElement || btn;
+      anchor.classList.add('anr-info-pop-anchor');
+      panel.remove();
+      panel.classList.add('anr-info-pop');
+      panel.classList.remove('is-hidden'); // visibility is now governed by .is-active
+      anchor.appendChild(panel);
     }
-    sync();
+    const wasActive = panel.classList.contains('is-active');
+    document.querySelectorAll('.anr-info-panel.is-active').forEach(p => p.classList.remove('is-active'));
+    if (!wasActive) panel.classList.add('is-active');
   });
 }
 
@@ -794,7 +828,7 @@ export async function extraHashRows(file) {
   const md5 = md5Hex(bytes);
   const crc = crc32Hex(bytes);
   return [
-    ['CRC-32', crc, 'CRC-32 is a fast, non-cryptographic checksum - the same one ZIP, PNG and gzip embed, and what SFV checksum files store. It reliably catches accidental corruption, but unlike the hashes below it is not collision-resistant, so it is not proof against deliberate tampering.'],
+    ['CRC-32', crc, 'CRC-32 is a fast check number, not a security fingerprint - the same one built into ZIP, PNG and gzip files, and stored in SFV checksum files. It reliably catches accidental damage, but it can be fooled on purpose (it is not collision-resistant), so unlike the hashes below it is not proof against deliberate tampering.'],
     ['MD5', md5],
     ['SHA-1', sha1 || 'unavailable'],
     ['SHA-512', sha512 || 'unavailable'],
@@ -807,7 +841,7 @@ const SHA256_AUTO_LIMIT = 50 * 1024 * 1024; // 50 MB
 
 export function sha256Row(file) {
   const hashRow = rowHelp('SHA-256', '',
-    "SHA-256 is a cryptographic fingerprint of the file’s exact bytes. Identical files share the same hash; changing even a single byte changes it completely - useful for verifying a file hasn't been altered or matches a known copy.");
+    "SHA-256 is a cryptographic fingerprint of the file’s exact contents - a short code where two identical files always match, and changing even a single byte changes it completely. That makes it a reliable way to check a file hasn’t been altered, or that it matches a known copy.");
   const td = hashRow.querySelector('td');
   td.textContent = '';
 
@@ -831,7 +865,7 @@ export function sha256Row(file) {
         bar.stop();
         let anchor = ctrlRow;
         rows.forEach(([label, value, desc]) => {
-          const tr = rowHelp(label, value, desc || (label + ' is a cryptographic fingerprint of the file’s exact bytes, for matching against forensic databases and checksum files.'));
+          const tr = rowHelp(label, value, desc || (label + ' is a cryptographic fingerprint of the file’s exact contents, used to match it against forensic databases and checksum files.'));
           const vtd = tr.querySelector('td');
           if (vtd) vtd.style.wordBreak = 'break-all';
           anchor.after(tr);

@@ -53,22 +53,22 @@ export async function renderDwg(file, resultsEl) {
 
   // ---- Metadata ----
   const card = el('div', { class: 'anr-card' });
-  const [h, help] = h3help('AutoCAD drawing', 'AutoCAD DWG. The drawing entities are parsed and rendered to a 2D preview in the browser.');
+  const [h, help] = h3help('AutoCAD drawing', 'DWG is the native drawing format of AutoCAD, used for 2D technical and architectural drawings. Analyser reads the shapes in the file and renders a flat 2D preview here in the browser.');
   card.appendChild(h); card.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Format', 'AutoCAD DWG'));
   tbl.appendChild(row('File', file.name));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   const ents = (db && db.entities) || [];
-  tbl.appendChild(row('Entities', ents.length.toLocaleString()));
+  tbl.appendChild(rowHelp('Entities', ents.length.toLocaleString(), 'The individual drawing elements in the file - each line, arc, circle, piece of text or dimension counts as one entity. This is the total across the drawing.'));
   const layerTable = db && db.tables && db.tables.LAYER;
   const layers = layerTable && (layerTable.entries || layerTable.records || layerTable.items);
-  if (layers && layers.length != null) tbl.appendChild(row('Layers', String(layers.length)));
+  if (layers && layers.length != null) tbl.appendChild(rowHelp('Layers', String(layers.length), 'Named layers the drawing is organised into. Like transparent overlays, each groups related elements (walls, dimensions, text and so on) so they can be shown, hidden or styled together.'));
   // Top entity types (LINE, CIRCLE, LWPOLYLINE, TEXT, ...).
   const types = {};
   for (const e of ents) { const t = (e && e.type) || '?'; types[t] = (types[t] || 0) + 1; }
   const topTypes = Object.entries(types).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t, n]) => t + ' ×' + n).join(', ');
-  if (topTypes) tbl.appendChild(rowHelp('Entity types', topTypes, 'The most common drawing primitives found in the model space.'));
+  if (topTypes) tbl.appendChild(rowHelp('Entity types', topTypes, 'The most common kinds of drawing element (lines, arcs, circles and so on) found in the main drawing area (model space).'));
   card.appendChild(tbl);
   resultsEl.appendChild(card);
 

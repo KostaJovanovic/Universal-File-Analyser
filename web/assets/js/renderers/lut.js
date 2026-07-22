@@ -14,7 +14,7 @@
    before/after of memory colours and a hue/luma test chart pushed through the
    LUT, and an interactive 3D scatter of the colour cube it defines. */
 
-import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, attachZoomPan, openOverlayBack, wheelZoomToggle } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, attachZoomPan, openOverlayBack, wheelZoomToggle } from '../core/util.js';
 import { hexByte } from '../core/binutil.js';
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -137,9 +137,9 @@ function lookNamedStages(stages) { return stages.filter((s) => s.name && !s.name
 
 function buildLookStack(stages) {
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Grade stack'));
-  card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px' },
-    'The grading stages this look applies, in order, as built in Adobe SpeedGrade / Premiere Lumetri. Stages left at their defaults are marked so; the baked 3D LUT is the whole stack flattened into one table.'));
+  const [h, help] = h3help('Grade stack',
+    'The grading stages this look applies, in order, as built in Adobe SpeedGrade / Premiere Lumetri. Stages left at their defaults are marked so; the baked 3D LUT is the whole stack flattened into one table.');
+  card.appendChild(h); card.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
   for (const op of lookNamedStages(stages)) {
     const label = (op.custom && !op.custom.startsWith('__')) ? op.custom : op.name;
@@ -452,9 +452,11 @@ function itemUrl(it) {
 
 function buildTryout(sample) {
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'See the look'));
+  const [h, help] = h3help('See the look',
+    'Your file is handled on your device - nothing is uploaded. A video is sampled at 8 equally spaced frames at full resolution. Click any frame to open it full-size, then step through with the arrows (or ← / → keys).');
+  card.appendChild(h); card.appendChild(help);
   card.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px' },
-    'This LUT applied to a sample photo, shown original next to graded. Drop in your own photo or video to replace it - on your device, nothing uploaded. A video is sampled at 8 equally spaced frames at full resolution. Click any frame to open it full-size, then step through with the arrows (or ← / → keys).'));
+    'This LUT applied to a sample photo, shown original next to graded. Drop in your own photo or video to replace it.'));
   const input = el('input', { type: 'file', accept: 'image/*,video/*', style: 'display:none' });
   const btn = el('button', { type: 'button', class: 'anr-btn' }, 'Choose photo or video');
   btn.addEventListener('click', () => input.click());
@@ -595,8 +597,8 @@ export async function renderLut(file, resultsEl) {
     idCard.appendChild(el('h3', {}, 'Colour LUT'));
     const idTbl = el('table', { class: 'anr-readout' });
     idTbl.appendChild(row('Format', 'SpeedGrade look (.look)'));
-    idTbl.appendChild(row('Grade stages', lookNamedStages(look.stages).length + ' stages'));
-    idTbl.appendChild(row('Baked LUT', 'none embedded'));
+    idTbl.appendChild(rowHelp('Grade stages', lookNamedStages(look.stages).length + ' stages', 'The number of separate colour-grading steps stored in this look (exposure, contrast, colour balance and so on), applied one after another.'));
+    idTbl.appendChild(rowHelp('Baked LUT', 'none embedded', 'A ‘baked’ LUT is the whole grade flattened into one ready-to-use colour table. ‘None embedded’ means this file keeps only the editable stages, not a flattened version.'));
     idTbl.appendChild(row('Size', fmtBytes(file.size)));
     idCard.appendChild(idTbl);
     resultsEl.appendChild(idCard);
@@ -613,15 +615,15 @@ export async function renderLut(file, resultsEl) {
   card.appendChild(el('h3', {}, 'Colour LUT'));
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Format', look ? `SpeedGrade look (.look) - baked ${lut.size}x${lut.size}x${lut.size} 3D LUT` : 'Cube LUT (.cube)'));
-  if (look) tbl.appendChild(row('Grade stages', lookNamedStages(look.stages).length + ' stages'));
+  if (look) tbl.appendChild(rowHelp('Grade stages', lookNamedStages(look.stages).length + ' stages', 'The number of separate colour-grading steps stored in this look (exposure, contrast, colour balance and so on), applied one after another.'));
   if (lut.title) tbl.appendChild(row('Title', lut.title));
   tbl.appendChild(rowHelp('Type', lut.type === '3D' ? '3D LUT (full colour cube)' : '1D LUT (per-channel curve)',
-    'A 3D LUT remaps every R/G/B combination, so it can change hue and saturation; a 1D LUT only reshapes each channel independently (a tone curve).'));
+    'A LUT (look-up table) is a colour recipe. A 3D LUT can remap any red/green/blue mix, so it can shift both colour and richness; a 1D LUT only adjusts each colour channel on its own, like a simple brightness curve.'));
   tbl.appendChild(rowHelp('Grid size', lut.type === '3D' ? `${lut.size} x ${lut.size} x ${lut.size}  (${lut.count.toLocaleString()} entries)` : `${lut.size} points`,
-    'The lattice resolution. Output colours between lattice points are trilinearly interpolated.'));
-  if (!lut.complete) tbl.appendChild(rowHelp('Entries', lut.count.toLocaleString() + ' of ' + lut.expected.toLocaleString() + ' (truncated)', 'The table has fewer rows than the declared size, so the file is incomplete.'));
-  if (lut.domainMin.some((v, i) => v !== 0 || lut.domainMax[i] !== 1)) tbl.appendChild(row('Input domain', `[${lut.domainMin.join(', ')}] - [${lut.domainMax.join(', ')}]`));
-  if (lut.range[0] < -0.001 || lut.range[1] > 1.001) tbl.appendChild(rowHelp('Output range', lut.range[0].toFixed(3) + ' - ' + lut.range[1].toFixed(3), 'Values outside 0-1 mean an extended-range (HDR / scene-linear) LUT.'));
+    'How finely the colour table is sampled. Colours that fall between the stored points are blended smoothly from the nearest ones (trilinear interpolation).'));
+  if (!lut.complete) tbl.appendChild(rowHelp('Entries', lut.count.toLocaleString() + ' of ' + lut.expected.toLocaleString() + ' (truncated)', 'The table holds fewer entries than it says it should, so the file looks incomplete or cut off.'));
+  if (lut.domainMin.some((v, i) => v !== 0 || lut.domainMax[i] !== 1)) tbl.appendChild(rowHelp('Input domain', `[${lut.domainMin.join(', ')}] - [${lut.domainMax.join(', ')}]`, 'The range of input values the LUT expects for each colour channel, normally 0 to 1 (black to white). A different range means it was built for a special input such as log or HDR footage.'));
+  if (lut.range[0] < -0.001 || lut.range[1] > 1.001) tbl.appendChild(rowHelp('Output range', lut.range[0].toFixed(3) + ' - ' + lut.range[1].toFixed(3), 'Values reaching outside the normal 0 to 1 range mean this is an extended-range LUT, meant for HDR or scene-linear footage.'));
   if (lut.comments.length) tbl.appendChild(row('Source', lut.comments.slice(0, 3).join(' · ')));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   card.appendChild(tbl);
@@ -633,17 +635,17 @@ export async function renderLut(file, resultsEl) {
   // ---- Tone-response curve ----
   const _renderAnchor = resultsEl.firstChild;
   const curveCard = el('div', { class: 'anr-card' });
-  curveCard.appendChild(el('h3', {}, 'Tone response (neutral axis)'));
-  curveCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px' },
-    'How the LUT maps a neutral grey ramp from black to white. The dashed line is no change; curves bowing above it lift, below it crush. Separation between the red, green and blue curves is the colour cast the LUT introduces.'));
+  const [trH, trHelp] = h3help('Tone response (neutral axis)',
+    'How the LUT reshapes a plain grey ramp running from black to white. The dashed line means no change; a curve bowing above it brightens those tones, below it darkens them. Any gap between the red, green and blue curves is the colour tint the LUT adds.');
+  curveCard.appendChild(trH); curveCard.appendChild(trHelp);
   curveCard.appendChild(el('div', { html: toneCurveSvg(sample, 520, 200), style: 'border:1px solid var(--hairline);border-radius:8px;overflow:hidden' }));
   resultsEl.insertBefore(curveCard, _renderAnchor);
 
   // ---- Before / after test chart ----
   const chartCard = el('div', { class: 'anr-card' });
-  chartCard.appendChild(el('h3', {}, 'Before / after'));
-  chartCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px' },
-    'A hue x brightness field and a neutral grey ramp, shown straight (left) and pushed through this LUT (right).'));
+  const [baH, baHelp] = h3help('Before / after',
+    'A hue x brightness field and a neutral grey ramp, shown straight (left) and pushed through this LUT (right).');
+  chartCard.appendChild(baH); chartCard.appendChild(baHelp);
   const cW = 300, cH = 200;
   const mk = (label, apply) => {
     const cv = el('canvas', { width: String(cW), height: String(cH), style: 'width:100%;border-radius:6px;display:block;image-rendering:auto' });
@@ -678,9 +680,11 @@ export async function renderLut(file, resultsEl) {
   // ---- 3D colour-cube scatter (original vs LUT, synced) ----
   if (lut.type === '3D') {
     const cubeCard = el('div', { class: 'anr-card' });
-    cubeCard.appendChild(el('h3', {}, 'Colour cube'));
+    const [ccH, ccHelp] = h3help('Colour cube',
+      'The left cube is the untouched RGB space; the right is the same lattice recoloured by this LUT, so the difference is exactly what the LUT does. Each point sits at its input R/G/B position.');
+    cubeCard.appendChild(ccH); cubeCard.appendChild(ccHelp);
     cubeCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px' },
-      'The left cube is the untouched RGB space; the right is the same lattice recoloured by this LUT, so the difference is exactly what the LUT does. Each point sits at its input R/G/B position. Drag either cube to rotate both, scroll (or pinch) to zoom in and look inside.'));
+      'Drag either cube to rotate both, scroll (or pinch) to zoom in and look inside.'));
     cubeCard.appendChild(buildCubePair(lut, sample));
     resultsEl.insertBefore(cubeCard, _renderAnchor);
   }

@@ -293,8 +293,11 @@ function infoCard(file, kindLabel, meta) {
   card.appendChild(buildReadout([
     ['File', file.name],
     ['Size', fmtBytes(file.size)],
-    file.type && rowHelp('MIME', file.type, "The MIME type is the standard label for the file's format. The browser reads it from the extension or operating system, so it is a hint rather than proof of the real format."),
-    ...Object.entries(meta),
+    file.type && rowHelp('MIME', file.type, "The MIME type is a short standard label for what kind of file this is - for example image/jpeg for a photo or audio/mpeg for an MP3. The browser guesses it from the file's extension or from the operating system, so it's a hint about the format, not proof."),
+    ...Object.entries(meta).map(([k, v]) =>
+      k === 'Generator'
+        ? rowHelp(k, v, 'The software that created the file, as recorded inside it - for example LibreOffice or Apache OpenOffice, with its version. It can be edited or stripped out, so treat it as a clue rather than proof.')
+        : [k, v]),
     file.lastModified && ['Last modified', new Date(file.lastModified).toLocaleString()],
   ]));
   return card;

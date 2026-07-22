@@ -167,7 +167,7 @@ export async function renderJsonData(file, container) {
       ['Size', fmtBytes(file.size)],
       ['Lines', text.split('\n').length.toLocaleString()],
       rowHelp('Parses', parsed != null ? 'Yes (after comment / trailing-comma stripping)' : 'No - shown as source only',
-        'These formats relax standard JSON (comments, trailing commas, unquoted keys). Analyser tries to parse them by stripping comments and trailing commas; full JSON5 / Hjson syntax (single quotes, unquoted keys) may not parse, in which case only the source is shown.'),
+        'JSON is a common data format with strict rules; these relaxed versions (JSON5, Hjson) allow extras like comments and stray commas. Analyser tries to read them by stripping those out, but some looser habits (single quotes, names left without quotes) may still not read, in which case it just shows the raw text.'),
     ]));
     container.appendChild(info);
 
@@ -221,7 +221,7 @@ export async function renderNfo(file, container) {
     info.appendChild(buildReadout([
       ['File', file.name],
       ['Size', fmtBytes(file.size)],
-      rowHelp('Encoding', 'CP437 (IBM PC OEM)', 'NFO files are scene-release notes drawn with the original IBM PC code page (CP437) box-drawing and block characters. Analyser decodes them from CP437 so the ASCII art renders the way it was authored, rather than as mojibake.'),
+      rowHelp('Encoding', 'CP437 (IBM PC OEM)', 'NFO files are info notes decorated with the box and block characters from the original IBM PC character set (called CP437). Analyser reads them using CP437 so the artwork shows the way it was drawn, instead of turning into a jumble of wrong symbols.'),
       ['Lines', text.split('\n').length.toLocaleString()],
     ]));
     container.appendChild(info);

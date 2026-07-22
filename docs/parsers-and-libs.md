@@ -86,11 +86,18 @@ fetched the first time a matching file is actually opened, then cached
 | `mdx-separate.js` | MDX-Net separation pipeline (pure DSP, model call injected) - mirrors the reference UVR/python-audio-separator "demix" algorithm |
 | `mdx-client.js` | Main-thread client for the MDX-Net worker - resamples audio to 44.1kHz, relays progress, returns vocal/instrumental stems |
 | `mdx-worker.js` | The MDX-Net separation Web Worker - loads onnxruntime-web (WASM, single-threaded, no cross-origin isolation), downloads the pinned model, runs the pipeline off the main thread |
+| `dfn-model.js` | DeepFilterNet3 denoise model + ONNX Runtime config (reuses the MDX runtime); single source of truth for the denoise network files the offline tier caches |
+| `dfn-dsp.js` | DeepFilterNet3 DSP core - pure math, no DOM, Node-testable; ERB filterbank, Vorbis-window STFT/ISTFT (reuses `mdx-stft.js`'s mixed-radix FFT), feature normalisation, ERB gain expansion |
+| `dfn-enhance.js` | DeepFilterNet3 enhancement pipeline (pure DSP, model call injected) - per-channel, segmented with warm-up; applies the ERB mask then the order-5 deep filter, returns clean + noise stems |
+| `dfn-client.js` | Main-thread client for the denoise worker - resamples audio to 48kHz, relays progress, returns clean/noise stems |
+| `dfn-worker.js` | The denoise Web Worker - loads onnxruntime-web (shared with MDX), downloads the pinned DeepFilterNet3 model, runs the pipeline off the main thread |
 | `table-stats.js` | Pure, DOM-free table-statistics helpers (column typing, numeric description, grouping) shared by `csv.js` and `tablekit.js`; parses ambiguous D/M dates day-first per the site's European/British convention |
 
 The MDX-Net vocal-separation subsystem (`mdx-*.js`) is what powers
 `audio.js`'s isolate panel and `spectrogram.js`'s vocal/instrumental blend
-slider - see [`audio.md`](features/audio.md).
+slider - see [`audio.md`](features/audio.md). The DeepFilterNet3 denoise
+subsystem (`dfn-*.js`) is its noise-suppression twin, reached via the
+**denoise** button in the same AI model row and shown as a Clean/Noise blend.
 
 ## Vendored WASM/third-party libs (`web/assets/vendor/`)
 

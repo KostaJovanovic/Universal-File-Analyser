@@ -32,14 +32,14 @@ function csvQuote(v) { const s = String(v == null ? '' : v); return /[",\n\r]/.t
 // uppercase label, matching every other [?] on the site.
 const WORKBENCH_HELP_HTML =
   '<div class="anr-tk-help-item">Everything here runs in your browser - nothing is uploaded. The grid is a live, filterable view of your data, and the tools below summarise and chart whatever you select.</div>' +
-  '<div class="anr-tk-help-item"><strong>Scroll:</strong> the grid is virtualised, so only the rows on screen are drawn - scroll to load the rest, and click any cell to read its full value.</div>' +
+  '<div class="anr-tk-help-item"><strong>Scroll:</strong> to stay fast, only the rows currently on screen are drawn - scroll down to load the rest, and click any cell to read its full value.</div>' +
   '<div class="anr-tk-help-item"><strong>Sort:</strong> click a column header to sort by it - ascending, then descending, then back to the original order.</div>' +
   '<div class="anr-tk-help-item"><strong>Select a column:</strong> clicking a header also highlights the whole column and shows its stats below (text columns report distinct counts and their most common values).</div>' +
   '<div class="anr-tk-help-item"><strong>Select a row:</strong> click a row number in the left gutter to highlight that whole row.</div>' +
   '<div class="anr-tk-help-item"><strong>Select a block:</strong> drag across cells to select a rectangle - any numeric selection is summarised in the stats bar.</div>' +
   '<div class="anr-tk-help-item"><strong>Filter:</strong> the gear on each header filters that column (a min/max range for numbers, or a "contains" match for text), and the search box filters across every column at once.</div>' +
   '<div class="anr-tk-help-item"><strong>Columns:</strong> the Columns menu shows or hides individual columns.</div>' +
-  '<div class="anr-tk-help-item"><strong>Split column:</strong> some files pack several fields into one delimited column - this breaks a chosen column into real columns on a delimiter (auto-detected by default) and splits its header name too, with Undo split to revert.</div>' +
+  '<div class="anr-tk-help-item"><strong>Split column:</strong> some files cram several values into one column, kept apart by a marker such as a comma - this breaks a chosen column into real separate columns at that marker (found automatically by default) and splits its heading too, with Undo split to put it back.</div>' +
   '<div class="anr-tk-help-item"><strong>Stats bar:</strong> for the current selection it reports count, sum, average, median, min, max and standard deviation.</div>' +
   '<div class="anr-tk-help-item"><strong>Summarise (For each ... show the ...):</strong> pick a column to group on and a calculation - count, sum, average, minimum, maximum or median - of a number column, and the rows roll up into per-group totals live as you choose. Count needs no number column, so its picker greys out.</div>' +
   '<div class="anr-tk-help-item"><strong>Charts:</strong> choose a chart type and its fields and the chart redraws instantly; suggested charts appear as quick buttons, hovering a bar, point or slice shows its exact value, and Plot selected range charts whatever you have selected in the grid.</div>' +

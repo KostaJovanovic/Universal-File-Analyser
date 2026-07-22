@@ -14,7 +14,7 @@
    payloads (claim, assertions, signature) are CBOR; the signature is a COSE_Sign1
    whose x5chain header carries the signer's DER certificate(s). */
 
-import { el, row, wireInfoToggle } from '../core/util.js';
+import { el, row, rowHelp, wireInfoToggle } from '../core/util.js';
 import { ascii, utf8 } from '../core/binutil.js';
 
 // The 12-byte suffix shared by all C2PA/JUMBF box type UUIDs; the first 4 bytes
@@ -312,7 +312,7 @@ export async function readC2pa(file) {
 }
 
 // ---------- card UI ----------
-const C2PA_HELP = 'Content Credentials (C2PA) is a provenance record some cameras and editing/AI tools embed: who or what created the image and how it was edited, sealed with a digital signature. This panel DECODES that record but does not cryptographically verify the signature, so treat it as what the file claims about itself - useful context, not proof. The data is read entirely on your device.';
+const C2PA_HELP = 'Content Credentials (C2PA) is a built-in history that some cameras and editing or AI tools attach to an image: who or what made it and how it was edited, sealed with a digital signature (a tamper-evident stamp). This panel reads that history but does not check the signature itself, so treat it as what the file says about itself - useful background, not proof. It is all read on your device.';
 
 // `manifests` is optional: pass an already-parsed readC2pa() result to avoid
 // re-reading and re-parsing the file (photo.js shares one read across this card
@@ -332,8 +332,6 @@ export async function buildC2paCard(file, manifests) {
   head.appendChild(infoBtn);
   card.appendChild(head);
   card.appendChild(help);
-  card.appendChild(el('p', { class: 'anr-hint', style: 'margin:8px 0;' },
-    'Present and decoded below. Not cryptographically verified - this is what the manifest asserts, which can be authored or altered, not proof the image is authentic.'));
 
   manifests.forEach((m, idx) => {
     if (manifests.length > 1) card.appendChild(el('div', { class: 'anr-readout-section' }, 'Manifest ' + (idx + 1)));
@@ -342,12 +340,12 @@ export async function buildC2paCard(file, manifests) {
     if (m.generator) t.appendChild(row('Created with', m.generator));
     if (m.title) t.appendChild(row('Title', m.title));
     if (m.format) t.appendChild(row('Format', m.format));
-    if (m.alg) t.appendChild(row('Claim hash alg', m.alg));
+    if (m.alg) t.appendChild(rowHelp('Claim hash alg', m.alg, 'The type of cryptographic fingerprint used to seal this record - ‘sha256’ is a common one. It is the method that would reveal any tampering if the signature were checked.'));
     if (m.signer) {
       if (m.signer.subject) t.appendChild(row('Signed by', m.signer.subject));
-      if (m.signer.issuer) t.appendChild(row('Certificate issuer', m.signer.issuer + (m.signer.subject === m.signer.issuer ? '  (self-signed)' : '')));
+      if (m.signer.issuer) t.appendChild(rowHelp('Certificate issuer', m.signer.issuer + (m.signer.subject === m.signer.issuer ? '  (self-signed)' : ''), 'Who issued the digital certificate that signed this record. ‘Self-signed’ means the signer vouched for themselves rather than a recognised authority, which is weaker evidence.'));
       const fmtD = (d) => d ? d.toISOString().replace('T', ' ').replace(/\..*$/, '') : null;
-      if (m.signer.notBefore || m.signer.notAfter) t.appendChild(row('Certificate validity', (fmtD(m.signer.notBefore) || '?') + '  to  ' + (fmtD(m.signer.notAfter) || '?')));
+      if (m.signer.notBefore || m.signer.notAfter) t.appendChild(rowHelp('Certificate validity', (fmtD(m.signer.notBefore) || '?') + '  to  ' + (fmtD(m.signer.notAfter) || '?'), 'The dates the signing certificate itself is valid between - this is about the certificate, not when the photo was taken or edited.'));
     } else {
       t.appendChild(row('Signature', 'present (certificate could not be decoded)'));
     }

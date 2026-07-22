@@ -220,14 +220,14 @@ export async function renderSubtitles(file, resultsEl) {
       // Replacement chars / NULs mean we read binary as text - flag VobSub.
       const binary = /[ �]/.test(text.slice(0, 4096));
       const infoCard = el('div', { class: 'anr-card' });
-      const [h, help] = h3help('Subtitles', 'This .sub file is not a text subtitle (MicroDVD or SubViewer).');
+      const [h, help] = h3help('Subtitles', 'This .sub file does not contain text subtitles of the MicroDVD or SubViewer kind.');
       infoCard.appendChild(h); infoCard.appendChild(help);
       const tbl = el('table', { class: 'anr-readout' });
       tbl.appendChild(row('File', file.name));
       tbl.appendChild(row('Size', fmtBytes(file.size)));
       tbl.appendChild(row('Format', binary ? 'VobSub (binary image subtitle)' : 'Unrecognised .sub'));
       tbl.appendChild(rowHelp('Note', binary ? 'VobSub stores subtitles as bitmaps' : 'No MicroDVD or SubViewer cues found',
-        binary ? 'VobSub (.sub) holds rendered subtitle images alongside an .idx timing file, not decodable text. The paired .idx is the readable part.' : 'The file did not match any supported subtitle text format.'));
+        binary ? 'VobSub (.sub) stores its subtitles as ready-made pictures, paired with an .idx file that holds the timings - there is no actual text to read out. The matching .idx file is the readable half.' : 'The file did not match any of the text subtitle formats Analyser can read.'));
       infoCard.appendChild(tbl);
       resultsEl.appendChild(infoCard);
       return;
@@ -246,7 +246,7 @@ export async function renderSubtitles(file, resultsEl) {
   cues.sort((a, b) => a.start - b.start);
 
   // ---- Stats ----
-  const [h, help] = h3help('Subtitles', 'Parses subtitle cues and their timing. SRT, WebVTT, ASS/SSA, MicroDVD and SubViewer are supported.');
+  const [h, help] = h3help('Subtitles', 'Reads the subtitle lines and when each one appears on screen. SRT, WebVTT, ASS/SSA, MicroDVD and SubViewer files are supported.');
   const infoCard = el('div', { class: 'anr-card' });
   infoCard.appendChild(h); infoCard.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
@@ -255,7 +255,7 @@ export async function renderSubtitles(file, resultsEl) {
   tbl.appendChild(row('Format', format));
   tbl.appendChild(row('Cues', String(cues.length)));
   if (fps != null) tbl.appendChild(rowHelp('Frame rate', fps.toFixed(3).replace(/\.?0+$/, '') + ' fps',
-    'MicroDVD stores cue timing as frame numbers, so a frame rate is needed to convert them to time. Assumed 23.976 fps unless the file declares one.'));
+    'MicroDVD subtitles are timed by frame number rather than by the clock, so a frame rate (frames per second) is needed to turn those into real times. Assumed to be 23.976 fps unless the file states its own.'));
   if (styles) tbl.appendChild(row('Styles', String(styles)));
   if (cues.length) {
     const first = cues[0].start;
@@ -265,7 +265,7 @@ export async function renderSubtitles(file, resultsEl) {
     tbl.appendChild(row('First cue', fmtTime(first)));
     tbl.appendChild(row('Last cue end', fmtTime(last)));
     tbl.appendChild(rowHelp('On-screen time', fmtTime(covered),
-      'Total time at least one cue is visible (sum of cue durations).'));
+      'The total time that at least one subtitle line is showing, adding up how long every line stays on screen.'));
     tbl.appendChild(row('Total characters', chars.toLocaleString()));
   }
   infoCard.appendChild(tbl);

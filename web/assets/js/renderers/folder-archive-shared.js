@@ -112,7 +112,7 @@ export function renderBreakdownCards(items, resultsEl, extraSummaryRows) {
   tbl.appendChild(rowHelp('Categories', catParts.join(', ') || '-',
     'A breakdown of the contents grouped by media kind: photos, audio, video, documents, archives, and other.'));
   tbl.appendChild(rowHelp('Unique extensions', String(breakdown.sorted.length),
-    'How many distinct file extensions appear across all the files in this set.'));
+    'How many different file types appear, counted by their extension - the bit after the dot in a name, like .jpg or .pdf.'));
   card.appendChild(tbl);
   resultsEl.appendChild(card);
 

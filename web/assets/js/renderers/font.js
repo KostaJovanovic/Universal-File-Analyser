@@ -293,20 +293,20 @@ function extractCollection(buf) {
 // Per-font metadata table (the naming/version/glyph rows for one font).
 function fontMetaCard(font, axes) {
   const card = el('div', { class: 'anr-card' });
-  const [h, help] = h3help('Font', 'Reads the typeface naming, metadata and outlines; the live specimen above is the real rendering.');
+  const [h, help] = h3help('Font', 'Reads the font’s name, its embedded details and the letter shapes inside; the live sample above is this font actually drawing text.');
   card.appendChild(h); card.appendChild(help);
   const tbl = el('table', { class: 'anr-readout' });
   const fam = fontName(font, 'fontFamily'); if (fam) tbl.appendChild(row('Family', fam));
   const sub = fontName(font, 'fontSubfamily'); if (sub) tbl.appendChild(row('Style', sub));
   const ver = fontName(font, 'version'); if (ver) tbl.appendChild(row('Version', ver.replace(/^Version\s*/i, '')));
   const designer = fontName(font, 'designer'); if (designer) tbl.appendChild(row('Designer', designer));
-  const manuf = fontName(font, 'manufacturer'); if (manuf) tbl.appendChild(row('Foundry', manuf));
-  const lic = fontName(font, 'license'); if (lic) tbl.appendChild(rowHelp('Licence', lic.length > 160 ? lic.slice(0, 160) + '…' : lic, 'The licence string embedded in the font name table.'));
-  if (font && font.outlinesFormat) tbl.appendChild(row('Outlines', font.outlinesFormat === 'cff' ? 'PostScript (CFF)' : 'TrueType (glyf)'));
-  if (font && font.unitsPerEm) tbl.appendChild(row('Units per em', String(font.unitsPerEm)));
-  if (font && font.glyphs && font.glyphs.length) tbl.appendChild(row('Glyphs', font.glyphs.length.toLocaleString()));
-  if (axes.length) tbl.appendChild(rowHelp('Variable', axes.length + (axes.length === 1 ? ' axis' : ' axes') + ' - ' + axes.map((a) => a.tag).join(', '), 'A variable font carries multiple styles on continuous axes; the sliders in the specimen above interpolate them live.'));
-  const copyright = fontName(font, 'copyright'); if (copyright) tbl.appendChild(rowHelp('Copyright', copyright.length > 160 ? copyright.slice(0, 160) + '…' : copyright, 'The copyright notice from the font name table.'));
+  const manuf = fontName(font, 'manufacturer'); if (manuf) tbl.appendChild(rowHelp('Foundry', manuf, 'The type foundry - the company or studio that designs and sells the font.'));
+  const lic = fontName(font, 'license'); if (lic) tbl.appendChild(rowHelp('Licence', lic.length > 160 ? lic.slice(0, 160) + '…' : lic, 'The licence text the font maker stored inside the font’s name records.'));
+  if (font && font.outlinesFormat) tbl.appendChild(rowHelp('Outlines', font.outlinesFormat === 'cff' ? 'PostScript (CFF)' : 'TrueType (glyf)', 'How the letter shapes are drawn inside the font. The two common styles - PostScript (CFF) and TrueType (glyf) - describe curves slightly differently but both render normally.'));
+  if (font && font.unitsPerEm) tbl.appendChild(rowHelp('Units per em', String(font.unitsPerEm), 'The size of the design grid each letter is drawn on. A bigger number (often 1000 or 2048) allows finer detail; it does not change how large the text appears.'));
+  if (font && font.glyphs && font.glyphs.length) tbl.appendChild(rowHelp('Glyphs', font.glyphs.length.toLocaleString(), 'How many individual shapes the font contains. A glyph is one drawn form - a letter, digit, accented character, symbol or ligature - so a font usually has far more glyphs than there are letters in the alphabet.'));
+  if (axes.length) tbl.appendChild(rowHelp('Variable', axes.length + (axes.length === 1 ? ' axis' : ' axes') + ' - ' + axes.map((a) => a.tag).join(', '), 'A variable font packs many styles into one file, adjustable along sliding scales (axes) such as weight or width; the sliders in the sample above blend between them live.'));
+  const copyright = fontName(font, 'copyright'); if (copyright) tbl.appendChild(rowHelp('Copyright', copyright.length > 160 ? copyright.slice(0, 160) + '…' : copyright, 'The copyright notice stored inside the font’s name records.'));
   if (!tbl.children.length) tbl.appendChild(row('Naming', 'not available'));
   card.appendChild(tbl);
   return card;
@@ -354,7 +354,7 @@ export async function renderFont(file, resultsEl) {
   const FLAVOUR = { ttf: 'TrueType (TTF)', otf: 'OpenType (OTF)', woff: 'Web font (WOFF)', woff2: 'Web font (WOFF2)', ttc: 'TrueType collection (TTC)', otc: 'OpenType collection (OTC)' };
   let fmtLabel = FLAVOUR[ext] || (entries[0].font && entries[0].font.outlinesFormat === 'cff' ? 'OpenType (CFF)' : 'Font');
   if (isColl) fmtLabel += ' - ' + entries.length + (entries.length === 1 ? ' font' : ' fonts');
-  tbl.appendChild(rowHelp('Format', fmtLabel, isColl ? 'A font collection (TTC/OTC) packs several related fonts in one file, sharing common glyph data. Each member is unpacked and previewed individually below.' : 'The on-disk font format.'));
+  tbl.appendChild(rowHelp('Format', fmtLabel, isColl ? 'A font collection (TTC/OTC) holds several related fonts in a single file, sharing letter shapes to save space. Each one is unpacked and previewed separately below.' : 'The font’s file format.'));
   tbl.appendChild(row('File', file.name));
   tbl.appendChild(row('Size', fmtBytes(file.size)));
   card.appendChild(tbl);

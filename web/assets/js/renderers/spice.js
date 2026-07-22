@@ -359,18 +359,18 @@ export async function renderSpiceRaw(file, resultsEl) {
 
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('SPICE simulation (.raw)',
-    'A SPICE waveform dump - the raw output of a circuit simulation (KiCad / ngspice or LTspice). '
-    + 'Analyser decodes the header and sample data and ' + (isOp ? 'tabulates the operating point.' : 'plots the traces on an interactive timeline.'));
+    'The saved results of a circuit simulation (a SPICE ".raw" waveform dump), produced by tools such as KiCad / ngspice or LTspice - it records how the voltages and currents change during the simulated run. '
+    + 'Analyser decodes the header and the recorded samples and ' + (isOp ? 'tabulates the operating point.' : 'plots the traces on an interactive timeline.'));
   card.appendChild(h); card.appendChild(help);
 
   const tbl = el('table', { class: 'anr-readout' });
   tbl.appendChild(row('Format', 'SPICE raw waveform (.raw)'));
   tbl.appendChild(row('Simulator', tool));
-  if (m.plotname) tbl.appendChild(rowHelp('Analysis', m.plotname, 'The SPICE analysis that produced this data (transient, AC, DC sweep, operating point, …).'));
+  if (m.plotname) tbl.appendChild(rowHelp('Analysis', m.plotname, 'The kind of simulation run that produced this data - for example transient (how signals change over time), AC (frequency response), DC sweep (stepping a source through a range of values) or operating point (the steady resting state).'));
   if (m.title) tbl.appendChild(row('Title', m.title));
   if (m.date) tbl.appendChild(row('Date', m.date));
-  if (m.flags) tbl.appendChild(rowHelp('Flags', m.flags, '"real" for time/DC data, "complex" for AC (each value is a real+imaginary pair).'));
-  tbl.appendChild(rowHelp('Variables', String(parsed.nVars), 'Signals recorded - node voltages, branch currents and the sweep axis.'));
+  if (m.flags) tbl.appendChild(rowHelp('Flags', m.flags, 'Whether each recorded value is a single ("real") number, used for time and DC data, or a pair of numbers ("complex", a real part and an imaginary part), used for AC frequency data.'));
+  tbl.appendChild(rowHelp('Variables', String(parsed.nVars), 'The signals recorded in the simulation - the voltages at circuit connection points (nodes), the currents through parts (branches) and the axis being swept, such as time or frequency.'));
   tbl.appendChild(row('Data points', parsed.nPoints.toLocaleString()));
   if (!isOp && parsed.x && parsed.x.length > 1) {
     const xt = parsed.vars[0] && parsed.vars[0].type;
@@ -386,7 +386,8 @@ export async function renderSpiceRaw(file, resultsEl) {
   if (isOp) {
     // Operating point - one value per variable, tabulated.
     const opCard = el('div', { class: 'anr-card' });
-    opCard.appendChild(el('h3', {}, 'Operating point'));
+    const [oph, ophp] = h3help('Operating point', 'The circuit’s steady resting state. Each row is either a node - a connection point in the circuit, giving a voltage - or a branch - a path of current through a part, giving a current.');
+    opCard.appendChild(oph); opCard.appendChild(ophp);
     const t = el('table', { class: 'anr-readout anr-spice-op' });
     t.appendChild(el('tr', {}, [el('th', {}, 'Node / branch'), el('th', {}, 'Type'), el('th', {}, 'Value')]));
     parsed.vars.forEach((v, i) => {
