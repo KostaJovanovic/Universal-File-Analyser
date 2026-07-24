@@ -242,7 +242,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       './samples/After-effects.aep', './samples/CNC-mill.tap', './samples/Cave14.ogg',
       './samples/LUT-file.cube', './samples/PCB-design.kicad_pcb', './samples/archive.zip',
       './samples/audio.mp3', './samples/image.jpg', './samples/pdf_file.pdf',
-      './samples/spreadsheet.csv', './samples/video.mp4', './samples/webpage.html',
+      './samples/termodinamika.csv', './samples/video.mp4', './samples/webpage.html',
       './samples/Fraunces.ttf'
     ],
     // The "Complete" tier is split into optional feature packs (FEATURES below),

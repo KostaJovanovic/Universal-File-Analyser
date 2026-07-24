@@ -18,9 +18,10 @@ import { fft } from './spectrogram.js';
 // One high-resolution averaged power spectrum spread across the whole file. A
 // large window keeps low-frequency resolution fine enough for mains hum while
 // still reaching the Nyquist ceiling for the transcode/ultrasonic reads.
-export function longAverageSpectrum(mono, sampleRate, opts = {}) {
+export async function longAverageSpectrum(mono, sampleRate, opts = {}) {
   const N = opts.fftSize || 32768;
   const maxWindows = opts.maxWindows || 160;
+  const tick = opts.tick;
   const half = N >> 1;
   const power = new Float64Array(half);
   const win = new Float64Array(N);
@@ -41,6 +42,7 @@ export function longAverageSpectrum(mono, sampleRate, opts = {}) {
     const step = count > 1 ? span / (count - 1) : 0;
     const re = new Float64Array(N), im = new Float64Array(N);
     for (let w = 0; w < count; w++) {
+      if (tick) await tick();
       const off = Math.floor(w * step);
       for (let i = 0; i < N; i++) { re[i] = mono[off + i] * win[i]; im[i] = 0; }
       fft(re, im);
@@ -257,11 +259,12 @@ export function detectKey(spec) {
 }
 
 // ---------- EBU R128 loudness (momentary / short-term / integrated + LRA) ----------
-function kWeight(samples, sampleRate) {
-  const applyBiquad = (x, b0, b1, b2, a1, a2) => {
+async function kWeight(samples, sampleRate, tick) {
+  const applyBiquad = async (x, b0, b1, b2, a1, a2) => {
     const y = new Float32Array(x.length);
     let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
     for (let i = 0; i < x.length; i++) {
+      if (tick && (i & 0x3FFF) === 0) await tick();
       const xi = x[i];
       const yi = b0 * xi + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
       y[i] = yi; x2 = x1; x1 = xi; y2 = y1; y1 = yi;
@@ -272,7 +275,7 @@ function kWeight(samples, sampleRate) {
   const A1 = Math.pow(10, shelfG / 40), w1 = 2 * Math.PI * shelfF0 / sampleRate;
   const c1 = Math.cos(w1), s1 = Math.sin(w1), al1 = s1 / (2 * shelfQ), sq = Math.sqrt(A1);
   const a0s = (A1 + 1) - (A1 - 1) * c1 + 2 * sq * al1;
-  const st1 = applyBiquad(samples,
+  const st1 = await applyBiquad(samples,
     (A1 * ((A1 + 1) + (A1 - 1) * c1 + 2 * sq * al1)) / a0s,
     (-2 * A1 * ((A1 - 1) + (A1 + 1) * c1)) / a0s,
     (A1 * ((A1 + 1) + (A1 - 1) * c1 - 2 * sq * al1)) / a0s,
@@ -283,26 +286,29 @@ function kWeight(samples, sampleRate) {
   const a0h = 1 + al2;
   return applyBiquad(st1, ((1 + c2) / 2) / a0h, (-(1 + c2)) / a0h, ((1 + c2) / 2) / a0h, (-2 * c2) / a0h, (1 - al2) / a0h);
 }
+// (kWeight returns the promise from its final applyBiquad; loudnessR128 awaits it.)
 
 const msToLufs = (ms) => -0.691 + 10 * Math.log10(ms + 1e-30);
 
-export function loudnessR128(mono, sampleRate) {
-  const f = kWeight(mono, sampleRate);
+export async function loudnessR128(mono, sampleRate, tick) {
+  const f = await kWeight(mono, sampleRate, tick);
 
   // Blocks of a given length with a hop; return per-block mean square.
-  const blockMs = (blockSec, hopSec) => {
+  const blockMs = async (blockSec, hopSec) => {
     const bl = Math.round(blockSec * sampleRate), hop = Math.round(hopSec * sampleRate);
     const out = [];
     if (f.length < bl) return out;
+    let bc = 0;
     for (let start = 0; start + bl <= f.length; start += hop) {
+      if (tick && (bc++ & 0x3F) === 0) await tick();
       let s = 0; for (let i = start; i < start + bl; i++) s += f[i] * f[i];
       out.push({ t: start / sampleRate, ms: s / bl });
     }
     return out;
   };
 
-  const mom = blockMs(0.4, 0.1);   // momentary: 400 ms / 100 ms hop
-  const shrt = blockMs(3.0, 1.0);  // short-term: 3 s / 1 s hop
+  const mom = await blockMs(0.4, 0.1);   // momentary: 400 ms / 100 ms hop
+  const shrt = await blockMs(3.0, 1.0);  // short-term: 3 s / 1 s hop
 
   let momentaryMax = -Infinity, shortTermMax = -Infinity;
   const series = [];
@@ -341,7 +347,7 @@ export function loudnessR128(mono, sampleRate) {
 }
 
 // ---------- true peak (4x oversampled inter-sample peak, dBTP) ----------
-export function truePeakDb(channels, sampleRate) {
+export async function truePeakDb(channels, sampleRate, tick) {
   const OS = 4, half = 8, L = OS * half * 2; // 64-tap windowed-sinc interpolator
   // Build the interpolation kernel (cutoff at the original Nyquist, i.e. 1/OS).
   const kernel = new Float64Array(L);
@@ -367,6 +373,7 @@ export function truePeakDb(channels, sampleRate) {
     for (let i = 0; i < ch.length; i++) { const a = Math.abs(ch[i]); if (a > peak) peak = a; }
     // Interpolated inter-sample values.
     for (let n = half; n < ch.length - half; n++) {
+      if (tick && (n & 0x3FFF) === 0) await tick();
       for (let p = 1; p < OS; p++) {
         const sub = phase[p];
         let acc = 0;
@@ -380,13 +387,14 @@ export function truePeakDb(channels, sampleRate) {
 }
 
 // ---------- signal health: crest factor, DC offset, effective bit depth ----------
-export function signalHealth(channels) {
+export async function signalHealth(channels, tick) {
   let peak = 0, sumSq = 0, count = 0;
   let orAccum = 0; // OR of all sample magnitudes quantised to 24-bit ints
   const dcPerCh = [];
   for (const ch of channels) {
     let sum = 0;
     for (let i = 0; i < ch.length; i++) {
+      if (tick && (i & 0x3FFF) === 0) await tick();
       const v = ch[i];
       const a = Math.abs(v);
       if (a > peak) peak = a;
@@ -425,7 +433,7 @@ const DTMF_GRID = [
   ['*', '0', '#', 'D'],
 ];
 
-export function detectDtmf(mono, sampleRate) {
+export async function detectDtmf(mono, sampleRate, tick) {
   const winSec = 0.035, hopSec = 0.015;
   const W = Math.round(winSec * sampleRate), hop = Math.round(hopSec * sampleRate);
   if (mono.length < W) return { digits: [], sequence: '' };
@@ -445,9 +453,9 @@ export function detectDtmf(mono, sampleRate) {
       mag[k] = s1 * s1 + s2 * s2 - c * s1 * s2;
     }
     // Strongest in each group; require dominance over the rest of its group.
-    let li = 0, hi = 0;
+    let li = 0, hi = 4;
     for (let i = 1; i < 4; i++) if (mag[i] > mag[li]) li = i;
-    for (let i = 1; i < 4; i++) if (mag[4 + i] > mag[4 + hi]) hi = 4 + i;
+    for (let i = 5; i < 8; i++) if (mag[i] > mag[hi]) hi = i;
     const low = mag[li], high = mag[hi];
     let secLow = 0, secHigh = 0;
     for (let i = 0; i < 4; i++) { if (i !== li && mag[i] > secLow) secLow = mag[i]; if (4 + i !== hi && mag[4 + i] > secHigh) secHigh = mag[4 + i]; }
@@ -456,17 +464,23 @@ export function detectDtmf(mono, sampleRate) {
     if (rowColSum < total * 0.30) return null;              // tones must dominate the frame
     if (low < secLow * 4 || high < secHigh * 4) return null; // one clear tone per group
     const twist = 10 * Math.log10((low + 1e-30) / (high + 1e-30));
-    if (Math.abs(twist) > 12) return null;
+    if (Math.abs(twist) > 8) return null;   // ITU-T Q.24 receivers accept ~8 dB twist; looser than that admits music transients
     return DTMF_GRID[li][hi - 4];
   };
 
-  // Slide, then debounce into stable digit events (min ~40 ms).
+  // Slide, then debounce into stable digit events (min ~60 ms).
   const raw = [];
-  for (let start = 0; start + W <= mono.length; start += hop) raw.push({ t: start / sampleRate, d: frameDigit(start) });
+  let dc = 0;
+  for (let start = 0; start + W <= mono.length; start += hop) {
+    if (tick && (dc++ & 0x1F) === 0) await tick();
+    raw.push({ t: start / sampleRate, d: frameDigit(start) });
+  }
 
   const digits = [];
   let cur = null, runStart = 0, runEnd = 0, gap = 0;
-  const MIN_FRAMES = Math.max(2, Math.round(0.04 / hopSec));
+  // A dialled digit is held ~70-100 ms; a music transient rarely locks a tone pair
+  // that long, so requiring ~60 ms of steady tone drops single-frame false hits.
+  const MIN_FRAMES = Math.max(2, Math.round(0.06 / hopSec));
   let runLen = 0;
   const flush = () => { if (cur && runLen >= MIN_FRAMES) digits.push({ digit: cur, tStart: runStart, tEnd: runEnd }); };
   for (const f of raw) {

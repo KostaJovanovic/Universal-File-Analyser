@@ -4140,6 +4140,9 @@ details[open] summary::after { content: "\2212"; }
   grid-template-columns: repeat(auto-fill, minmax(66px, 1fr));
   gap: 8px;
 }
+/* display:grid above outranks the UA [hidden] rule, so without this the grid
+   stays visible and the "Show N tones" button reveals nothing. */
+.anr-dtmf-keys[hidden] { display: none; }
 .anr-dtmf-key {
   display: flex;
   flex-direction: column;
@@ -8418,12 +8421,10 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
     width: 100%;
   }
   /* Actions row: the "|" separator (a bare grid cell here) is noise on the stacked
-     mobile grid - hide it, and give Isolate and AI separation their own full-width
-     rows above the plain Save PNG / Fullscreen actions so the two "pull a part out
-     of the mix" tools read as the primary ones. */
+     mobile grid - hide it. Isolate and AI separation then fall into a single row
+     (one grid column each) above the plain Save PNG / Fullscreen actions, so the
+     two "pull a part out of the mix" tools read as a pair. */
   .anr-spec-card .anr-spec-actdiv { display: none; }
-  .anr-spec-card .anr-control:has(.anr-iso-toggle),
-  .anr-spec-card .anr-control:has(.anr-iso-ai) { grid-column: 1 / -1; }
 
   /* ---- Separate / Isolate panel: stack cleanly on a phone ---- */
   /* The AI separator has moved out to the Actions row, so this row now holds just
@@ -8431,9 +8432,10 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
      presets from wrapping untidily and Clear from floating onto its own line. */
   .anr-iso-preset-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .anr-iso-seg-div { display: none; }                 /* divider is meaningless once stacked */
-  /* The four EQ presets sit in a tidy 2-up grid, each filling its cell. */
-  .anr-iso-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .anr-iso-presets .anr-btn { width: 100%; }
+  /* Keep the EQ presets compact - small content-width buttons in a wrapping row,
+     matching the desktop look - rather than stretching each to fill a 2-up grid. */
+  .anr-iso-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+  .anr-iso-presets .anr-btn { width: auto; }
   /* Clear (a sibling of the presets) drops its desktop right-float and becomes its
      own full-width row beneath the grid. */
   .anr-iso-preset-clear { margin-left: 0; width: 100%; }

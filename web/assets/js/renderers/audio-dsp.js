@@ -39,27 +39,43 @@ function mergeMono(channels) {
   return out;
 }
 
+// A throttled cooperative yield. The heavy passes call `await tick()` inside their
+// hot loops; it only actually hands the thread back once ~24 ms of work has accrued,
+// so the added wall-time stays small while the page keeps painting. When no onTick is
+// given - the worker path, where blocking the worker thread is fine - it's null and
+// the passes run straight through. Exported so the passes share exactly one throttle.
+export function makeTick(onTick) {
+  if (typeof onTick !== 'function') return null;
+  let t = performance.now();
+  return async () => {
+    if (performance.now() - t >= 24) { await onTick(); t = performance.now(); }
+  };
+}
+
 /**
  * Run the forensic passes in order, yielding [name, value] as each lands.
- * Synchronous: in the worker that is the point (nothing else is waiting on that
- * thread); the inline fallback awaits a yieldToMain() between iterations.
+ * Async generator: each heavy pass takes a shared `tick` and awaits it inside its
+ * loops, so on the inline (main-thread) path the page stays responsive DURING a
+ * pass, not just between passes. In the worker, onTick is omitted, tick is null, and
+ * every pass runs straight through - the worker thread has nothing else waiting.
  *
- * @param {{ channels: Float32Array[], mono?: Float32Array, sampleRate: number, needBpm: boolean }} input
+ * @param {{ channels: Float32Array[], mono?: Float32Array, sampleRate: number, needBpm: boolean, onTick?: () => Promise<void> }} input
  *   needBpm is false when the file already declares a tempo in its tags, which
  *   skips a whole-file STFT - the tag wins over an estimate either way.
  *   mono is optional: the inline caller already holds the merged signal and
  *   passes it straight in, so only the worker (which is sent the channels
- *   alone) pays to rebuild it.
+ *   alone) pays to rebuild it. onTick, when given, is the main-thread yield.
  */
-export function* audioDspPasses({ channels, mono, sampleRate, needBpm }) {
+export async function* audioDspPasses({ channels, mono, sampleRate, needBpm, onTick }) {
+  const tick = makeTick(onTick);
   if (!mono) mono = mergeMono(channels);
 
   let spec = null;
-  try { spec = longAverageSpectrum(mono, sampleRate); } catch (_) {}
+  try { spec = await longAverageSpectrum(mono, sampleRate, { tick }); } catch (_) {}
   yield ['spec', spec];
 
   let health = null;
-  try { health = signalHealth(channels); } catch (_) {}
+  try { health = await signalHealth(channels, tick); } catch (_) {}
   yield ['health', health];
 
   let key = null;
@@ -67,19 +83,19 @@ export function* audioDspPasses({ channels, mono, sampleRate, needBpm }) {
   yield ['key', key];
 
   let r128 = null;
-  try { r128 = loudnessR128(mono, sampleRate); } catch (_) {}
+  try { r128 = await loudnessR128(mono, sampleRate, tick); } catch (_) {}
   yield ['r128', r128];
 
   let tpDb = null;
-  try { tpDb = truePeakDb(channels, sampleRate); } catch (_) {}
+  try { tpDb = await truePeakDb(channels, sampleRate, tick); } catch (_) {}
   yield ['truePeak', tpDb];
 
   let dtmf = null;
-  try { dtmf = detectDtmf(mono, sampleRate); } catch (_) {}
+  try { dtmf = await detectDtmf(mono, sampleRate, tick); } catch (_) {}
   yield ['dtmf', dtmf];
 
   let centroid = null;
-  try { centroid = computeCentroid(mono, sampleRate); } catch (_) {}
+  try { centroid = await computeCentroid(mono, sampleRate, tick); } catch (_) {}
   yield ['centroid', centroid];
 
   // Cheap - a single window from the middle of the file, not a whole-file sweep.
@@ -88,6 +104,6 @@ export function* audioDspPasses({ channels, mono, sampleRate, needBpm }) {
   yield ['pitch', pitch];
 
   let bpm = null;
-  if (needBpm) { try { bpm = detectBPM(mono, sampleRate); } catch (_) {} }
+  if (needBpm) { try { bpm = await detectBPM(mono, sampleRate, tick); } catch (_) {} }
   yield ['bpm', bpm];
 }

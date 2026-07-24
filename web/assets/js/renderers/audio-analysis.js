@@ -43,7 +43,7 @@ function fftTables(N) {
   return t;
 }
 
-export function computeCentroid(samples, sampleRate) {
+export async function computeCentroid(samples, sampleRate, tick) {
   const N = 4096;
   const frames = Math.floor(samples.length / N);
   if (frames === 0) return null;
@@ -53,6 +53,7 @@ export function computeCentroid(samples, sampleRate) {
   const re = new Float32Array(N), im = new Float32Array(N);
   let totalCentroid = 0;
   for (let f = 0; f < frames; f++) {
+    if (tick && (f & 0x1F) === 0) await tick();
     const off = f * N;
     for (let i = 0; i < N; i++) { re[i] = samples[off + i] * win[i]; im[i] = 0; }
     for (let s = 1; s < N; s <<= 1) {
@@ -164,7 +165,7 @@ export function detectPitch(samples, sampleRate) {
 }
 
 // --- BPM / Tempo detection (onset detection + autocorrelation) ---
-export function detectBPM(samples, sampleRate) {
+export async function detectBPM(samples, sampleRate, tick) {
   const N = 1024;                    // FFT window size
   const hop = N / 2;                 // 50 % overlap
   const halfN = N / 2;
@@ -184,6 +185,7 @@ export function detectBPM(samples, sampleRate) {
   let prevMag = new Float32Array(halfN), curMag = new Float32Array(halfN);
   const flux = new Float32Array(numFrames);
   for (let f = 0; f < numFrames; f++) {
+    if (tick && (f & 0x3F) === 0) await tick();
     const off = f * hop;
     // Hann window + copy
     for (let i = 0; i < N; i++) { re[i] = samples[off + i] * win[i]; im[i] = 0; }
@@ -235,6 +237,7 @@ export function detectBPM(samples, sampleRate) {
   let bestLag = minLag;
   let bestCorr = -Infinity;
   for (let lag = minLag; lag <= maxLag && lag < numFrames; lag++) {
+    if (tick) await tick();
     let corr = 0;
     const len = numFrames - lag;
     for (let i = 0; i < len; i++) {

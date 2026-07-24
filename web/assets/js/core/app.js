@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 256;
+const COMMIT_COUNT = 257;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1584,11 +1584,25 @@ window._anrReadableText = isReadableText;
       const target = location.hash;
       hashCleanTimer = setTimeout(() => {
         if (location.hash === target) {
-          history.replaceState(null, '', location.pathname + location.search);
+          // Keep the entry's state (its navigation tag) and only strip the hash.
+          // Passing null here wiped the tag, which made the installed-PWA back
+          // guard (util.js) mistake this ordinary in-app entry for the app's
+          // pre-launch base and wrongly prompt "Are you sure you want to exit?".
+          history.replaceState(history.state, '', location.pathname + location.search);
         }
       }, HASH_CLEAN_DELAY);
     };
-    window.addEventListener('hashchange', scheduleHashClean);
+    const onHashChange = () => {
+      // A sticky-nav jump (#photo/#audio/#video) creates a fresh, untagged
+      // history entry. Tag it in place (no extra entry) so the PWA back guard
+      // doesn't later read it as the app's base and prompt to exit when Back
+      // lands on it. navigate.js's SPA entries already carry anrNav.
+      if (location.hash && !(history.state && history.state.anrNav)) {
+        try { history.replaceState({ anrNav: 1 }, '', location.href); } catch (_) {}
+      }
+      scheduleHashClean();
+    };
+    window.addEventListener('hashchange', onHashChange);
     scheduleHashClean(); // handle a hash present on initial load
 
     // Console easter egg, printed once per session for anyone who opens devtools.

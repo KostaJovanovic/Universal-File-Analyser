@@ -181,7 +181,7 @@ btn: Download WAV
 using an on-device neural network (MDX-Net "Kim Vocal 2" from Ultimate
 Vocal Remover), entirely in-browser via ONNX Runtime Web.
 
-**How to reach it.** Click **AI separation** in the audio actions row under
+**How to reach it.** Click **Separation** in the audio actions row under
 the spectrogram (next to **Isolate**) to open the AI options row (Standard /
 Lite / denoise), then click a model tier to run. Built in `audio.js`, backed by the MDX-Net subsystem in
 `web/assets/js/lib/mdx-*.js` (see [`parsers-and-libs.md`](../parsers-and-libs.md)).
@@ -195,7 +195,7 @@ the stem through the full audio analyser), and **Download WAV**. A `[?]`
 info button next to "Separate" explains the approach.
 
 ```demo
-btn: AI separation
+btn: Separation
 ```
 
 Pick a model tier, then confirm the one-time model download:
@@ -222,8 +222,8 @@ btn: Download WAV
 the model (~85MB) is part of the "Complete" offline tier (see
 [`pwa-offline.md`](../pwa-offline.md)). The isolate band-stop cuts are re-applied to
 separated stems in parallel (nodes can't be shared across the file
-player's audio context and the stem-blend context), so Isolate edits and AI
-separation compose rather than one bypassing the other.
+player's audio context and the stem-blend context), so Isolate edits and
+Separation compose rather than one bypassing the other.
 
 ### AI denoise
 
@@ -234,7 +234,7 @@ Runtime Web. It produces two stems - **Clean** (the enhanced audio) and
 **Noise** (what was removed, = original - clean) - shown in the same blend
 view as vocal separation, relabelled Clean to Noise.
 
-**How to reach it.** Open the AI options row by clicking **AI separation**
+**How to reach it.** Open the AI options row by clicking **Separation**
 in the audio actions row under the spectrogram (the row is closed by
 default), then click **denoise** to the right of the Standard/Lite tiers. Built in `audio.js`, backed by the
 DeepFilterNet subsystem in `web/assets/js/lib/dfn-*.js` (see

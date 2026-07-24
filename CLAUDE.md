@@ -23,6 +23,9 @@ overrides any default tendency to wrap up a task by committing or changelogging.
 ## Commands
 
 There is no build, lint, or test pipeline — editing a file *is* the dev loop.
+There is nothing to run to verify a change except loading it in the browser, and
+**the user does that themselves** — don't spin up dev servers, headless browsers,
+or automated checks to "confirm it works". Make the change and hand it back.
 
 - **Run locally**: `server.bat` launches
   `serve.py` on port **3000** and opens a browser. Use this, not

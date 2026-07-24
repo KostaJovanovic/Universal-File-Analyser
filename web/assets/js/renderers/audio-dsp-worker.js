@@ -18,12 +18,14 @@
 
 import { audioDspPasses } from './audio-dsp.js';
 
-self.addEventListener('message', (e) => {
+self.addEventListener('message', async (e) => {
   const m = e.data;
   if (!m || m.type !== 'run') return;
   const { jobId, channels, sampleRate, needBpm } = m;
   try {
-    for (const [name, value] of audioDspPasses({ channels, sampleRate, needBpm })) {
+    // No onTick in the worker: the passes run straight through (blocking this thread
+    // is the point). audioDspPasses is an async generator, so drain it with for-await.
+    for await (const [name, value] of audioDspPasses({ channels, sampleRate, needBpm })) {
       self.postMessage({ type: 'pass', jobId, name, value });
     }
     self.postMessage({ type: 'done', jobId });

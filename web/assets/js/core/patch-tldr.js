@@ -337,6 +337,20 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+  { range: '8.01', notes: [
+    'A **long compressed song** (AAC and the like) opens without freezing the page - details, cover art and a player show at once, with the full analysis behind a **Decode and analyse** button.',
+    '**AAC** files now read their profile, sample rate, channels and an estimated length and bitrate straight from the audio, without decoding.',
+    'The **page stays smooth** while a long file is analysed - the waveform, spectrogram and forensic reads hand control back as they work.',
+    'The **touch-tone (DTMF) reader** is fixed - it was keeping only the middle keypad column (2, 5, 8, 0) and dropping every other digit, plus tighter checks against phantom tones and a working **Show tones** button.',
+    'A photo\'s **histogram** and **dominant colours** lead its analysis, and its **fingerprints** are back in a card of their own.',
+  ] },
+  { range: '8.0', milestone: true, notes: [
+    'Eighth milestone: analysing a song is close to **nine times quicker** and the page stays smooth throughout, with the heavy sound reads moved onto a background thread.',
+    'A new **.xmp sidecar** viewer shows the develop recipe beside a raw photo - tone curve, sliders, colour mixer and crop.',
+    '**Touch-tones** were redrawn: the dialled number shown large, a timeline of where the tones fall, and one playable key per tone.',
+    '**Circuit boards** (KiCad, Altium) finally open offline, gaining a view cube, auto-rotate and a three-quarter opening angle.',
+    'One **strict cleaner** now handles everything a dropped file wants to display - email bodies, saved web pages, e-book chapters and SVGs.',
+  ] },
   { range: '7.01 - 7.02', notes: [
     'The deep **Advanced** analysis is gathered into one tidy section and dropped to the **bottom** of every photo, video and sound.',
     'Sound\'s **loudness graph** (EBU R128) becomes playable - a playhead tracks it and you click or drag to seek.',
