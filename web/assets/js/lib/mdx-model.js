@@ -138,6 +138,23 @@ export const MDX_PRO_STEMS = [
 ];
 // The three real models (skip the residual), by run order - the worker iterates this.
 export const MDX_PRO_MODELS = MDX_PRO_STEMS.filter((s) => s.model).map((s) => s.model);
+// Feature flag for the "Heavy" 4-stem tier. When false the button is never built,
+// so the tier is unreachable from the UI - but every model entry, the worker's
+// separateMulti path, the client, the 4-fader mixer and the combine maths below
+// stay exactly as they are. Flipping this back to true is the ONLY edit needed to
+// restore it.
+//
+// Parked because the tier could not justify its ~82 MB: KUIELab's drums fall short
+// of the quality bar, and its vocals are a step DOWN from Standard's Kim Vocal 2
+// (a later, better-trained model), so Heavy was worse than Standard at the one
+// thing most people separate for. The KUIELab per-stem ONNX set is the entire
+// drop-in option space for this pipeline - a/b variants of the same 2021 models -
+// so there is nothing better to swap in without a new architecture. HT-Demucs was
+// evaluated as a replacement and rejected: its ONNX exports abort at load in
+// onnxruntime-web, and even working it would need WebGPU (Chrome/Edge only) to run
+// at a tolerable speed, so the tier would silently not work for Firefox/Safari.
+export const MDX_PRO_ENABLED = false;
+
 // Picker / download-prompt descriptor for the Pro job (parallels an MDX_MODELS entry).
 export const MDX_PRO = {
   id: 'pro',

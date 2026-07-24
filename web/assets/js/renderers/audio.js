@@ -20,7 +20,7 @@ import { encodeWav } from './video-avi.js';
 import { reverseAudioBufferToWav } from './media-reverse.js';
 // Constants only (no WASM/worker) - safe to load eagerly; the picker and the
 // download prompt read tier sizes from here. The heavy client is still lazy.
-import { MDX_MODELS, MDX_PRO } from '../lib/mdx-model.js';
+import { MDX_MODELS, MDX_PRO, MDX_PRO_ENABLED } from '../lib/mdx-model.js';
 import { DFN_MODEL } from '../lib/dfn-model.js';
 
 // Re-exported so existing importers (e.g. video.js) can keep importing the
@@ -1382,9 +1382,14 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // than the 2-stem tiers, so it is hidden on the narrow (mobile) layout and on
     // coarse-pointer devices. Like denoise it is its own job (kind 'pro'), not a
     // SEPARATION tier, but it shares the same radio-group highlight and prompt flow.
+    //
+    // Currently parked behind MDX_PRO_ENABLED (see mdx-model.js for why). With the
+    // flag off proBtn stays null, which every consumer below already handles - the
+    // mixer, combine maths and worker path are untouched and come straight back
+    // when the flag flips.
     const isDesktop = !preferLite && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
     let proBtn = null;
-    if (isDesktop) {
+    if (MDX_PRO_ENABLED && isDesktop) {
       proBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Heavy - ' + MDX_PRO.blurb + ', about ' + MDX_PRO.tierMb + ' MB to download once' }, 'Heavy');
       // Sits at the far LEFT of the row, ahead of Standard, with a divider after it
       // (prepend the divider first, then the button, so order is Heavy | Standard …).
