@@ -22,18 +22,29 @@ import { makeStftEngine } from './mdx-stft.js';
 
 export const MDX_SR = 44100;   // MDX-Net models are trained at 44.1 kHz
 
-export async function separateVocals({ channels, model, runModel, onProgress }) {
+// Normalise to exactly two channels the way MDX expects: duplicate mono, drop
+// extras. Shared so a single-model split and a multi-model (Pro) run frame the
+// SAME stereo source - which is what makes the residual "other" stem exact.
+export function normStereo(channels) {
+  let ch = channels;
+  if (ch.length === 1) ch = [ch[0], ch[0]];
+  else if (ch.length > 2) ch = [ch[0], ch[1]];
+  return ch;
+}
+
+// Run ONE per-stem MDX model over pre-normalised stereo `ch` and return that
+// model's PRIMARY stem as [L, R] at the original sample length, magnitude
+// compensation applied. No residual is derived here - the caller does that
+// (2-stem: original - primary; Pro: original - sum of the three primaries). This
+// is the exact framing/demix the file used to inline; splitting it out lets the
+// Pro path call it once per model with no change to the DSP.
+export async function runStemModel({ ch, model, runModel, onProgress }) {
   const { nFft, hop, dimF, dimT, compensate } = model;
   const eng = makeStftEngine(nFft, hop);
   const nBins = eng.nBins;
   const trim = nFft >> 1;                 // n_fft/2
   const chunkSize = hop * (dimT - 1);     // samples per model window
   const genSize = chunkSize - 2 * trim;   // usable (kept) samples per window
-
-  // Model needs exactly two channels; duplicate mono, drop extra channels.
-  let ch = channels;
-  if (ch.length === 1) ch = [ch[0], ch[0]];
-  else if (ch.length > 2) ch = [ch[0], ch[1]];
   const nSample = ch[0].length;
 
   const numChunks = Math.max(1, Math.ceil(nSample / genSize));
@@ -45,7 +56,7 @@ export async function separateVocals({ channels, model, runModel, onProgress }) 
     return p;
   });
 
-  const vocal = [new Float32Array(numChunks * genSize), new Float32Array(numChunks * genSize)];
+  const stem = [new Float32Array(numChunks * genSize), new Float32Array(numChunks * genSize)];
   const dims = [1, 4, dimF, dimT];
   const input = new Float32Array(4 * dimF * dimT);
   const chunk = new Float64Array(chunkSize);
@@ -71,7 +82,7 @@ export async function separateVocals({ channels, model, runModel, onProgress }) 
       }
     }
 
-    // Run the model -> predicted vocal spectrogram (same [1,4,dimF,dimT] layout).
+    // Run the model -> predicted primary-stem spectrogram (same [1,4,dimF,dimT]).
     const out = await runModel(input, dims);
 
     // ISTFT each channel back to the time domain, keep the middle gen_size.
@@ -89,7 +100,7 @@ export async function separateVocals({ channels, model, runModel, onProgress }) 
         }
       }
       const rec = eng.istft(preRe, preIm, frames, chunkSize);
-      const dst = vocal[cc];
+      const dst = stem[cc];
       const outStart = i * genSize;
       for (let s = 0; s < genSize; s++) dst[outStart + s] = rec[trim + s];
     }
@@ -97,20 +108,21 @@ export async function separateVocals({ channels, model, runModel, onProgress }) 
     if (onProgress) onProgress((i + 1) / numChunks);
   }
 
-  // Trim to the original length, apply magnitude compensation, derive instrumental.
-  const outVocal = [], outInstr = [];
+  // Trim to the original length, apply magnitude compensation.
   const comp = compensate || 1;
-  for (let cc = 0; cc < 2; cc++) {
-    const v = new Float32Array(nSample);
-    const inst = new Float32Array(nSample);
-    const src = ch[cc];
-    for (let s = 0; s < nSample; s++) {
-      const vs = vocal[cc][s] * comp;
-      v[s] = vs;
-      inst[s] = src[s] - vs;
-    }
-    outVocal.push(v);
-    outInstr.push(inst);
-  }
-  return { vocals: outVocal, instrumental: outInstr, sampleRate: MDX_SR };
+  const outL = new Float32Array(nSample), outR = new Float32Array(nSample);
+  for (let s = 0; s < nSample; s++) { outL[s] = stem[0][s] * comp; outR[s] = stem[1][s] * comp; }
+  return [outL, outR];
+}
+
+// 2-stem split (the existing Standard / Lite path): the model's primary stem plus
+// the instrumental (= original - primary). Behaviour is unchanged - the framing/
+// demix now lives in runStemModel and this just derives the complement.
+export async function separateVocals({ channels, model, runModel, onProgress }) {
+  const ch = normStereo(channels);
+  const nSample = ch[0].length;
+  const [vL, vR] = await runStemModel({ ch, model, runModel, onProgress });
+  const iL = new Float32Array(nSample), iR = new Float32Array(nSample);
+  for (let s = 0; s < nSample; s++) { iL[s] = ch[0][s] - vL[s]; iR[s] = ch[1][s] - vR[s]; }
+  return { vocals: [vL, vR], instrumental: [iL, iR], sampleRate: MDX_SR };
 }

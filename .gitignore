@@ -23,8 +23,9 @@ DOCS_PLAN.md
 
 .codex/
 
-# Claude Code local config / skills - editor tooling, not part of the site
-.claude/
+# Claude Code: skills and project settings ARE checked in (they document the
+# repo's workflows); only the machine-specific local settings stay out.
+.claude/settings.local.json
 
 # README media staging - scratch working folder, not shipped
 README TEMP/

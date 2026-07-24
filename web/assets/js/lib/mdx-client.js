@@ -78,3 +78,42 @@ export async function separateStems(audioBuffer, { onProgress, signal, modelId }
     w.postMessage({ type: 'separate', channels, sampleRate, modelId, jobId }, channels.map((c) => c.buffer));
   });
 }
+
+/**
+ * "Pro" 4-stem separation: runs the per-stem MDX models (vocals, drums, bass) and
+ * derives "other" as the residual, all in the worker. Mirrors separateStems (one
+ * 44.1 kHz resample up front, jobId matching, abort kills the worker), but returns
+ * a keyed map of stems rather than a fixed vocals/instrumental pair.
+ * @param {AudioBuffer} audioBuffer
+ * @param {{ onProgress?: (phase:'model'|'infer', frac:number, stem?:string)=>void, signal?: AbortSignal }} [opts]
+ * @returns {Promise<{ stems: Record<string, Float32Array[]>, order: string[], sampleRate: number }>}
+ */
+export async function separateStemsMulti(audioBuffer, { onProgress, signal } = {}) {
+  const { channels, sampleRate } = await toModelChannels(audioBuffer);
+  const w = getWorker();
+  const jobId = ++_jobSeq;
+  return new Promise((resolve, reject) => {
+    const onMsg = (e) => {
+      const m = e.data;
+      if (!m || m.jobId !== jobId) return;
+      if (m.type === 'progress') { if (onProgress) onProgress(m.phase, m.frac, m.stem); }
+      else if (m.type === 'done') { cleanup(); resolve({ stems: m.stems, order: m.order, sampleRate: m.sampleRate }); }
+      else if (m.type === 'error') { cleanup(); reject(new Error(m.message || 'separation failed')); }
+    };
+    const onAbort = () => {
+      cleanup();
+      try { if (worker) { worker.terminate(); worker = null; } } catch (_) {}
+      reject(new DOMException('separation aborted', 'AbortError'));
+    };
+    function cleanup() {
+      w.removeEventListener('message', onMsg);
+      if (signal) signal.removeEventListener('abort', onAbort);
+    }
+    if (signal) {
+      if (signal.aborted) { onAbort(); return; }
+      signal.addEventListener('abort', onAbort);
+    }
+    w.addEventListener('message', onMsg);
+    w.postMessage({ type: 'separateMulti', channels, sampleRate, jobId }, channels.map((c) => c.buffer));
+  });
+}

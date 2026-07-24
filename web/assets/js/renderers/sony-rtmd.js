@@ -471,22 +471,28 @@ export function buildImuTimeline(d, file) {
 
   function place(follow) {
     const x = (curDur() > 0 ? curTime() / curDur() : 0) * trackW;
-    playhead.style.left = x + 'px';
+    const vw = scroller.clientWidth;
     // Auto-scroll the same way the spectrogram does (see scrollToLine in audio.js):
     // when zoomed in so the track overflows the viewport, keep the moving line in view.
-    const vw = scroller.clientWidth;
-    if (trackW <= vw) return;
+    if (trackW <= vw) { playhead.style.left = x + 'px'; return; }
     const parked = Math.max(0, Math.min(trackW - vw, x - vw / 5));
     if (follow && video && !video.paused) {
       // Playing: park the line a fifth in from the left and slide the graph under it.
       // It drifts in from the left edge at the start, sits fixed through the middle,
       // then slides out to the right once the scroll bottoms out.
       scroller.scrollLeft = parked;
+      // The line lives INSIDE the scrolled track, so pin it to the actual (integer-
+      // rounded) scroll position rather than its own sub-pixel x - otherwise the line
+      // and the graph round apart each frame and the line jitters against a graph that
+      // is meant to slide smoothly under a still line. `x - parked` is the intended
+      // on-screen offset (vw/5 through the middle, tapering at the very start/end).
+      playhead.style.left = (scroller.scrollLeft + (x - parked)) + 'px';
     } else {
       // Paused seek: leave the view put unless the line lands off-screen, then bring
       // it back to the left fifth.
       const viewLeft = scroller.scrollLeft, viewRight = viewLeft + vw;
       if (x < viewLeft + 20 || x > viewRight - 20) scroller.scrollLeft = parked;
+      playhead.style.left = x + 'px';
     }
   }
   function layout() {

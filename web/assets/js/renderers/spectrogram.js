@@ -475,6 +475,35 @@ export function combineStftToDb(a, b, gainA, gainB, out) {
   return { frames, bins: a.bins, sampleRate: a.sampleRate, data: out };
 }
 
+/**
+ * N-stem generalisation of combineStftToDb: recombine an array of complex STFTs
+ * (all from computeStftComplex on the SAME grid) with per-stem gains into a dB
+ * spectrogram, written into `out`. Same linearity guarantee - the magnitude of
+ * the gain-weighted sum of the complex bins is the EXACT magnitude of the
+ * gain-summed time-domain signal, so this drives the 4-stem mixer's spectrogram
+ * morph truthfully and with no re-FFT (verified in Node against a real STFT of
+ * the summed audio). Powers the Pro mixer exactly as combineStftToDb powers the
+ * 2-stem blend; the 2-arg version is kept for that existing path.
+ */
+export function combineStftToDbN(specs, gains, out) {
+  const S = specs.length;
+  if (!S) return { frames: 0, bins: 0, sampleRate: 0, data: out };
+  // Iterate only the cells every stem actually has (guards a grid mismatch the
+  // same way the 2-arg version does - an overrun would read undefined -> NaN).
+  let n = out.length;
+  for (let s = 0; s < S; s++) n = Math.min(n, specs[s].re.length);
+  // Work in power (10*log10(|z|^2)) so the per-cell sqrt is dropped - this runs
+  // on every fader move over ~1.5M cells, so it matters.
+  const k = specs[0].norm * 2, k2 = k * k;
+  for (let i = 0; i < n; i++) {
+    let rr = 0, ii = 0;
+    for (let s = 0; s < S; s++) { const g = gains[s]; rr += g * specs[s].re[i]; ii += g * specs[s].im[i]; }
+    out[i] = 10 * Math.log10((rr * rr + ii * ii) * k2 + 1e-20);
+  }
+  const frames = specs[0].bins ? Math.floor(n / specs[0].bins) : 0;
+  return { frames, bins: specs[0].bins, sampleRate: specs[0].sampleRate, data: out };
+}
+
 // ---------- COLORMAPS ----------
 // Each returns [r,g,b] for t in [0,1]
 function lerp(a, b, t) { return a + (b - a) * t; }

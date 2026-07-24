@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 257;
+const COMMIT_COUNT = 258;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1650,7 +1650,11 @@ window._anrReadableText = isReadableText;
       const t = e.target;
       if (t && (t.isContentEditable
         || (t.closest && t.closest('input, textarea, select, button, a[href], summary, [contenteditable="true"], [role="button"]')))) return;
-      const all = document.querySelectorAll('audio, video');
+      // Separation stems (data-anr-stem) opt out: they sit earlier in the DOM than
+      // the main track's audio element, so without this the space bar would jump to
+      // a stem after an AI separation. Space stays on the main track; the stems keep
+      // their own play buttons.
+      const all = [...document.querySelectorAll('audio, video')].filter((m) => !m.hasAttribute('data-anr-stem'));
       if (!all.length) return;
       // Whatever is audible wins, so space always pauses what you can actually
       // hear; otherwise take the first player on the page.
