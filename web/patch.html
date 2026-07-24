@@ -209,6 +209,59 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">7.03 - 7.05</p>
+          <p class="patch-name">Gotta Go Fast</p>
+          <p class="patch-date">24 July 2026</p>
+          <ul class="patch-list">
+            <li><strong>Analysing a song is close to nine times quicker, and the page stays smooth the whole way through. A deep speed pass across sound, photos, documents and folders - plus a new viewer for the .xmp sidecar sitting next to your raw photos.</strong></li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Speed</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-faster">Faster</span><strong>Nearly nine times faster on a song.</strong> A track that took <em>26 seconds</em> to analyse on my laptop now finishes in about <em>3</em>. The heavy sound reads - loudness, musical key, tempo, spectral shape - moved off the page and onto a background thread, so scrolling, hovering and playback carry on untouched while they run.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>The frequency maths itself is much quicker.</strong> The analysis now reuses prepared tables and buffers instead of recalculating the same values millions of times, and a five-minute track no longer holds tens of megabytes of half-finished workings in memory while it thinks.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Answers arrive as they land.</strong> Loudness, tempo, key and the rest each show a small progress bar in place and fill in the moment their number is ready, so nothing sits waiting on the slowest read.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Long documents open far quicker.</strong> Splitting a <a href="/about#ext-docx">Word</a>, ODF, plain-text or <a href="/about#ext-md">Markdown</a> file into pages used to remeasure the whole layout after every single paragraph. It now measures once and works out every page break from that.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Dropped folders read in parallel.</strong> A <a href="/about#where">folder</a>&rsquo;s files are read many at a time rather than one after another, the loading bar counts them as they come in, and <strong>Cancel</strong> now stops the scan partway instead of only after it.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Photos stop paying for tools nobody opened.</strong> The text-extraction canvas and the heavy bit-plane and error-level reads are prepared only when you actually ask for them, instead of on every photo you drop.</li>
+            <li><span class="patch-tag is-faster">Faster</span>The check for <strong>data hidden past a file&rsquo;s end</strong> reads the last few bytes first, so an ordinary photo is cleared at once rather than read from front to back.</li>
+            <li><span class="patch-tag">New</span>Photos and videos put a <strong>decoding</strong> bar in the preview panel straight away, so a slow HEIC, <a href="/about#where">raw</a> or large clip visibly gets to work instead of leaving the panel blank.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Hovering a heading no longer stutters once a big analysis is on the page.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Sound</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Reverse</strong> moves into the row of actions under the spectrogram, and playing a sound backwards now runs a complete fresh analysis of the reversed audio - its own spectrogram, waveform, loudness and key - rather than handing you a second player. It takes the place of the Fullscreen button there.</li>
+            <li><span class="patch-tag">New</span>The <strong>lossy-source check</strong> - whether a file claiming to be lossless was really built from an MP3 or AAC - is now a card of its own in the main flow, instead of something to go digging for inside Advanced.</li>
+            <li><span class="patch-tag">New</span><strong>Touch-tones</strong> are redrawn: the dialled number shown large, a timeline of where the tones fall across the whole recording, and one key per tone that plays the call from the moment it was pressed.</li>
+            <li><span class="patch-tag">New</span>Press <strong>space</strong> to play or pause whatever the page is playing - sound, video, a separated stem or a reversed track - unless you are typing or on a button.</li>
+            <li><span class="patch-tag">New</span>The <strong>Advanced</strong> card now reads as one continuous readout: no repeated sub-headings above rows that already explain themselves, just the numbers running on.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>AI separation</strong> gets its own panel beside <strong>Isolate</strong>. It previously opened inside a panel that was itself still closed, so clicking it looked like it did nothing.</li>
+            <li><span class="patch-tag is-fix">Fix</span>The <strong>vocals to instrumental</strong> blend slider stays under your finger on a long track, instead of lagging behind as the picture caught up.</li>
+            <li><strong>Tidied:</strong> playback now runs from the transports under the spectrogram and the waveform, so <strong>File info</strong> is a pure readout; the loudness graph is styled to match the waveform; and which encoder wrote the file moves from Tags into Advanced.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Photos</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>XMP sidecars.</strong> The <strong>.xmp</strong> file Lightroom, Adobe Camera Raw and darktable write next to a raw photo now opens as the develop recipe it is: the tone curve drawn as a real curve, the Basic-panel sliders as bipolar bars, the colour mixer, and the crop rectangle - along with the editor, the paired raw file, white balance, star rating, keywords and the camera details copied across.</li>
+            <li><span class="patch-tag">New</span><strong>Image to sound</strong> no longer starts playing by itself. <strong>Render</strong> builds the sound and its full analysis, then leaves it to you to press play.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Elsewhere</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span>Dropping a photo, sound or video now scrolls straight to that section, so the analysis is in front of you instead of leaving you up at the dropzones.</li>
+            <li><span class="patch-tag is-fix">Fix</span>An enormous <a href="/about#where">folder</a> shows its first 100,000 files and says so, rather than appearing to load forever.</li>
+            <li><span class="patch-tag is-fix">Fix</span>A damaged <strong>SPICE</strong> simulation whose header claims far more data than the file actually holds no longer takes the tab down - the points that are really there are plotted, with a note of what was claimed.</li>
+            <li><span class="patch-tag is-fix">Fix</span>A very large <a href="/about#ext-csv">CSV</a> column or a dense circuit-board netlist no longer fails outright partway through the readout.</li>
+            <li><strong>Maintenance:</strong> <strong>Record</strong> and <strong>Live spectrogram</strong> now live only on the dropzone, where they started.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">7.01 - 7.02</p>
           <p class="patch-name">Bottom Line</p>
           <p class="patch-date">22 July 2026</p>
@@ -304,6 +357,9 @@
           </ul>
         </div>
 
+        <details class="about-formats">
+          <summary>Older updates</summary>
+
         <div class="patch-entry">
           <p class="patch-version">6.38 - 6.52</p>
           <p class="patch-name">Full Frame</p>
@@ -317,9 +373,6 @@
             <li><strong>Maintenance:</strong> every rounded corner squared off, SPICE readouts moved to monospace, and shared code consolidated across provenance, the PCB viewer, photo salvage and size limits.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">6.36 - 6.37</p>

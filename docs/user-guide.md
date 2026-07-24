@@ -44,6 +44,8 @@ Every analysis is built from the same recurring pieces:
   CRC-32/MD5/SHA-1/SHA-512 available on click), plus, when conclusive,
   forensic flags for a signature-vs-extension mismatch or trailing data
   appended past the file's logical end (see [`cross-cutting.md`](features/cross-cutting.md)).
+  On photos the same fingerprints sit inside the **Advanced** card instead
+  of getting one of their own.
 - **Network indicators** - if a file's text contains URLs, IPs, domains or
   email addresses, a card lists them with click-to-open lookup links to
   public OSINT services. Nothing is contacted automatically.
@@ -97,7 +99,12 @@ cumulative tiers (see [`pwa-offline.md`](pwa-offline.md) for exact contents and 
 Click **Install as app** to add Analyser to your home screen/app list
 (uses the browser's native install prompt where available, or shows
 platform-specific manual instructions otherwise). **Clear storage** removes
-everything cached.
+everything this site has put on your device: your analysis history, all
+local/session state and databases, and the offline downloads themselves -
+the cached tiers and the AI models - so the space comes back and the tier
+buttons reset to un-downloaded. It is the only way to remove a download from
+inside the site. Two settings survive, because they change how the site looks
+rather than what it has stored: your light/dark choice and **Clear view**.
 
 ```demo
 btn cta: Install as app

@@ -64,10 +64,20 @@ export function initSearch() {
       if (old) old.classList.remove('anr-search-current');
       matchIdx = ((i % matches.length) + matches.length) % matches.length;
       const m = matches[matchIdx];
-      // Reveal the match if it sits inside a collapsed <details> (e.g. a schema /
-      // sample-data / source block) so the scroll lands on something visible.
+      // Reveal the match if it sits inside something closed, so the scroll lands on
+      // something visible rather than on a shut container: a collapsed <details>
+      // (a schema / sample-data / source block) or a collapsed .anr-collapsible card
+      // (the photo/sound/video "Advanced" card, the archive text-previews card, ...),
+      // whose body is display:none while .is-collapsed is set. Dropping the class is
+      // exactly what the delegated title-click toggle in app.js does.
       let p = m.parentElement;
-      while (p) { if (p.tagName === 'DETAILS' && !p.open) p.open = true; p = p.parentElement; }
+      while (p) {
+        if (p.tagName === 'DETAILS' && !p.open) p.open = true;
+        if (p.classList && p.classList.contains('anr-card') && p.classList.contains('is-collapsed')) {
+          p.classList.remove('is-collapsed');
+        }
+        p = p.parentElement;
+      }
       m.classList.add('anr-search-current');
       m.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }

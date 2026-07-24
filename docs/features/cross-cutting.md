@@ -155,8 +155,12 @@ injects with its `handleFile` callback to avoid a circular import).
 (ISO-BMFF: mp4/heic/avif/m4a/3gp; the ZIP-based Office/EPUB/OpenDocument
 family) are grouped so renaming within the family (e.g. `.m4a` to `.mp4`)
 doesn't falsely flag a mismatch. `findIntegrityCard()` locates an existing
-Integrity card in a container by its heading text, for callers that need
-to slot content near it.
+integrity readout in a container, for callers that need to slot content
+near it or to avoid appending a duplicate. It accepts two shapes: a card of
+its own led by an `<h3>` starting with "Integrity" (what most renderers
+build), or any element marked `[data-integrity]`, in which case it returns
+the enclosing `.anr-card`. The second shape exists for `photo.js`, which
+keeps the fingerprints as a part inside its Advanced card.
 
 ### /compare - two-file side-by-side view
 

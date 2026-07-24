@@ -21,19 +21,17 @@ an FFmpeg fallback for containers the browser can't introspect natively
 ### Advanced: container structure and stream forensics
 
 **What it does.** For MP4/MOV/M4V/3GP files, reads the ISOBMFF box layout
-directly - no decoding - and surfaces four collapsible panels in an
-**Advanced** card:
+directly - no decoding - and surfaces five flat parts in an **Advanced**
+card, in this order:
 
-- **Box tree** - the recursive atom tree (4CC, size, byte offset, one-line
-  gloss); container boxes expand.
-- **Tracks** - every track, not just the first video and audio: handler,
-  codec, language, duration, sample count, multi-segment edit lists, `tmcd`
-  start-timecode (with drop-frame flag), and timed-metadata streams (GoPro
-  `gpmd`, CAMM, Sony `rtmd`, Apple `mebx`).
 - **Provenance tells** - structural signs of how the file was made:
   faststart (moov vs mdat order), ftyp major + compatible brands,
   multi-segment edit lists, free/skip padding, multiple `mdat` boxes,
   fragmentation (`moof`), and trailing data.
+- **Tracks** - every track, not just the first video and audio: handler,
+  codec, language, duration, sample count, multi-segment edit lists, `tmcd`
+  start-timecode (with drop-frame flag), and timed-metadata streams (GoPro
+  `gpmd`, CAMM, Sony `rtmd`, Apple `mebx`).
 - **Frames & bitrate** - GOP/keyframe interval, VFR-vs-CFR verdict and true
   average frame rate, keyframe-vs-inter frame sizes, and a per-second video
   bitrate graph - all from the sample tables (`stsz`/`stss`/`stts`/`stco`),
@@ -47,6 +45,9 @@ directly - no decoding - and surfaces four collapsible panels in an
   encode settings); **HDR** mastering-display (`mdcv`) and content-light
   (`clli`) values plus Dolby Vision config; and detection of a **C2PA /
   Content Credentials** manifest. Built on `analyzeBitstream()`.
+- **Box tree** - the recursive atom tree (4CC, size, byte offset, one-line
+  gloss); container boxes expand. Deliberately last: it is the longest part
+  by far and the least often read, so above the findings it buried them.
 
 **How to reach it.** Automatic for any MP4/MOV-family file. The parser is
 `analyzeMp4Structure()` in `video-forensics.js` (UI-free, best-effort,
@@ -110,15 +111,13 @@ btn: Analyse frame
 
 ### Sonify a frame
 
-**What it does.** Turns the current video frame into sound, same as the
-photo sonify feature.
+**What it does.** Turns a video frame into sound, same as the photo sonify
+feature.
 
-**How to reach it.** Click **Sonify** on the current frame. Lazy-imports
-`sonify.js` - see [`images.md`](images.md) for full control detail.
-
-```demo
-btn: Sonify
-```
+**How to reach it.** There is no longer a **Sonify frame** button under the
+player. Send the frame to the photo section with **Analyse frame** first,
+then use **Sonify (play as spectrogram)** there - see
+[`images.md`](images.md) for full control detail.
 
 ### Contact sheet
 
@@ -127,6 +126,17 @@ video.
 
 **How to reach it.** Click **Generate contact sheet** (shown once there are
 enough frames, 8+). Built in `video.js`.
+
+**How to use it.** A progress bar counts the captures ("Capturing frame 3 of
+8..."), since each tile costs a seek and a large file can take a while.
+
+**Notes / limits.** Every tile is captured by `seekAndPaint()`, which waits
+for `seeked` and *then* for a painted frame (via `requestVideoFrameCallback`
+where available) before drawing - registering that callback before the seek
+would capture the frame being seeked away from. A seek that does not land
+within 12s is retried once a hair further in; if it still fails the tile is
+left as bare background and a line under the sheet says how many positions
+could not be reached, rather than silently repeating the previous frame.
 
 ```demo
 btn: Generate contact sheet
@@ -200,8 +210,10 @@ btn: Detect scene changes
 btn: Run again (current part)
 ```
 
-**How to use it.** Click any result thumbnail or timeline marker to jump
-the player there.
+**How to use it.** A progress bar tracks the scan while it runs ("Scanning
+for scene changes... 40%"): it walks up to ~600 sampled positions, one seek
+each, so on a long clip it is not quick. Click any result thumbnail or
+timeline marker to jump the player there.
 
 ### Content timeline (movie barcode + brightness)
 
@@ -217,8 +229,12 @@ black and freeze stretches.
 
 **How to reach it.** Appears just under **Scene changes** whenever scene
 detection runs (automatically for smaller videos, or after you trigger it
-manually for large ones). Click anywhere on the barcode to jump the player
-to that point. Built in `video.js` (`buildContentTimelineCard`).
+manually for large ones). It has no trigger of its own: the per-sample
+colour and luma series it draws is collected by the scene-detection seek
+loop, so on a large video - where detection is skipped by default - nothing
+appears until you click **Detect scene changes**. The skip notice says so.
+Click anywhere on the barcode to jump the player to that point. Built in
+`video.js` (`buildContentTimelineCard`).
 
 **Note.** Freeze detection is only as fine as the sampling interval, so it
 catches stretches longer than that, not single dropped frames. On an

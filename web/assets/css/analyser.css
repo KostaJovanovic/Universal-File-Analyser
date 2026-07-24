@@ -2960,11 +2960,10 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
    separator. Each tier stacks its own controls; the AI tier is fenced off with
    a hairline so it doesn't read as more of the same EQ chips. */
 .anr-iso-sec { display: flex; flex-direction: column; gap: 9px; }
-.anr-iso-sec-ai {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: var(--bd-hairline);
-}
+/* The AI tools are their own panel now (opened by their own button, and never at
+   the same time as Isolate), so this is the only section in it - no leading
+   divider, which would just draw a line across the top of the panel. */
+.anr-iso-sec-ai { margin-top: 0; padding-top: 0; border-top: none; }
 .anr-iso-seclabel {
   font-family: var(--font-mono);
   font-size: 10.5px;
@@ -2978,13 +2977,13 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 .anr-iso-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .anr-iso-presets:empty { display: none; }
 .anr-iso-preset-clear { margin-left: auto; }   /* floats Clear to the row's right */
-/* Vertical divider between the AI separator button and the EQ presets. */
+/* Vertical divider inside the AI model row (tiers | denoise). */
 .anr-iso-seg-div { color: var(--muted); opacity: 0.5; user-select: none; }
 /* Same divider in the spectrogram Actions row (between Isolate and Save PNG). */
 .anr-spec-actdiv { color: var(--muted); opacity: 0.5; user-select: none; align-self: center; }
-/* Rough EQ presets sit to the left of the real AI separator, wrapping gracefully
-   when the row runs out of width. */
-.anr-iso-ai-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* The rough EQ presets, at the head of the Isolate panel above its manual band
+   tools. Wraps gracefully when the row runs out of width. */
+.anr-iso-preset-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .anr-iso-hint { margin: 0; }
 .anr-iso-list { display: flex; flex-direction: column; gap: 6px; }
 .anr-iso-list:empty { display: none; }
@@ -3262,7 +3261,12 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 /* At-a-glance spectrogram stats strip (under the canvas) */
 /* Stats block under the spectrogram: a captioned header with a [?] toggle, then
    a tidy grid of labelled value cells. */
-.anr-spec-statsblock { margin: 10px 0 0; }
+/* The "Analysis" block is a sub-heading inside a readout card, so it takes the
+   .anr-readout-section rhythm exactly - 28px above the rule, 12px below it, 6px
+   before the table. It used to be 10/10/12, which put the same full-strength
+   hairline right up against the File info table above with the label almost
+   sitting on the line. */
+.anr-spec-statsblock { margin: 28px 0 0; }
 .anr-spec-stats-head {
   display: flex;
   align-items: center;
@@ -3270,7 +3274,7 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   flex-wrap: wrap;
   gap: 6px 12px;
   border-top: var(--bd-hairline);
-  padding-top: 10px;
+  padding-top: 12px;
 }
 .anr-spec-stats-headleft { display: flex; align-items: center; gap: 12px; }
 /* Frame/bin/px/ms readout folded into the header (right, muted) instead of a
@@ -3283,18 +3287,19 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+/* Matches .anr-readout-section exactly: no extra opacity on top of --muted, which
+   made this the one sub-label on the page fainter than all the others. */
 .anr-spec-stats-title {
   font-family: var(--font-mono);
   font-size: var(--t-tiny);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--muted);
-  opacity: 0.7;
 }
 /* The [?] in this header is a flex item, so neutralise .anr-info-btn's float. */
 .anr-spec-stats-head .anr-info-btn { float: none; }
 /* Holds the standard .anr-readout findings table; just a top margin here. */
-.anr-spec-stats { margin: 12px 0 0; }
+.anr-spec-stats { margin: 6px 0 0; }
 .anr-spec-stats .anr-readout { margin: 0; }
 
 /* Channel picker: a lean control strip above the spectrogram - a mono uppercase
@@ -8408,7 +8413,7 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   /* The AI separator has moved out to the Actions row, so this row now holds just
      the EQ presets ([Underwater][Radio][Hollow]   [Clear]). Stacking it keeps the
      presets from wrapping untidily and Clear from floating onto its own line. */
-  .anr-iso-ai-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .anr-iso-preset-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .anr-iso-seg-div { display: none; }                 /* divider is meaningless once stacked */
   /* The four EQ presets sit in a tidy 2-up grid, each filling its cell. */
   .anr-iso-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

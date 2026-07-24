@@ -69,6 +69,25 @@ function sheetImg(dataUrl) {
   });
 }
 
+// Determinate sibling of util.js's inlineLoader: the same inline label + ASCII
+// bar, but driven by a known step count instead of bouncing. Used by the jobs
+// that scrub the player (contact sheet, scene detection) - both walk a fixed
+// number of seeks, and both are slow enough on a big file that an unlabelled
+// wait reads as a hang. Returns { node, set(frac, text) }.
+function stepLoader(text) {
+  // Fixed 20 characters, exactly like inlineLoader's bar. NOT fit:true - that
+  // re-measures on every set(), and scene detection calls set() hundreds of
+  // times, so any drift in the character-width estimate would compound.
+  const bar = asciiBar();
+  const label = el('span', { class: 'anr-inline-loader-label' }, text || 'Working…');
+  const node = el('div', { class: 'anr-inline-loader' }, [label, bar]);
+  bar.set(0);
+  return {
+    node,
+    set(frac, t) { if (t) label.textContent = t; bar.set(frac); },
+  };
+}
+
 // Smooth-scroll to the photo section. Called after the user explicitly clicks an
 // "Analyse frame" button (not on the silent auto-analysis of the first frame).
 function scrollToPhoto() {
@@ -195,31 +214,10 @@ function buildFrameControls(playerEl, getFps, file) {
     grabBtn.disabled = false;
   } }, 'Frame grab');
 
-  // Sonify frame: read the current frame as a spectrogram and resynthesise it as
-  // sound. Deliberately mounted into its OWN container below the controls (never
-  // #audioResults), so the video's extracted-audio analysis is left untouched.
-  const sonifyMount = el('div');
-  const sonifyBtn = el('button', { type: 'button', class: 'anr-btn', style: 'grid-column:1 / -1;', onclick: async () => {
-    const cv = grabCanvas(); if (!cv) return;
-    sonifyBtn.disabled = true; sonifyBtn.textContent = 'Loading sonifier…';
-    try {
-      const blob = await new Promise((r) => cv.toBlob(r, 'image/png'));
-      const p = parts(playerEl.currentTime);
-      const tcName = `${pad(p.h)}-${pad(p.m)}-${pad(p.s)}-${pad(p.f)}`;
-      const frameFile = new File([blob], (file.name || 'video').replace(/\.[^.]+$/, '') + `_${tcName}.png`, { type: 'image/png' });
-      sonifyMount.innerHTML = '';
-      // Pass the grabbed canvas as the pixel source so the sonifier skips a re-decode.
-      const { renderSonify } = await import('./sonify.js');
-      await renderSonify(frameFile, sonifyMount, { source: cv });
-      sonifyMount.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    } catch (e) {
-      sonifyMount.appendChild(el('div', { class: 'anr-info' }, 'Sonifier failed to load: ' + (e && e.message ? e.message : e)));
-    }
-    sonifyBtn.disabled = false; sonifyBtn.textContent = 'Sonify frame';
-  } }, 'Sonify frame');
-
-  const grid = el('div', { class: 'anr-frame-grid' }, [prevBtn, nextBtn, analyseBtn, grabBtn, sonifyBtn]);
-  const wrap = el('div', { class: 'anr-frame-wrap' }, [tc, grid, sonifyMount]);
+  // (No "Sonify frame" here. Sonifying a grabbed frame is still available from
+  // the photo renderer once the frame has been sent there with "Analyse frame".)
+  const grid = el('div', { class: 'anr-frame-grid' }, [prevBtn, nextBtn, analyseBtn, grabBtn]);
+  const wrap = el('div', { class: 'anr-frame-wrap' }, [tc, grid]);
   refresh();
   return { wrap, refresh };
 }
@@ -1036,8 +1034,14 @@ function buildRawSceneCard(playerEl, signal) {
     runBtn.disabled = true;
     runBtn.textContent = 'Detecting…';
     const dur = playerEl.duration;
+    const prog = stepLoader('Scanning for scene changes…');
+    out.innerHTML = '';
+    out.appendChild(prog.node);
     let changes = [];
-    try { changes = await detectSceneChanges(playerEl, 55, signal); } catch (_) {}
+    try {
+      changes = await detectSceneChanges(playerEl, 55, signal, null,
+        (f) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'));
+    } catch (_) {}
     try { playerEl.currentTime = 0; playerEl.pause(); } catch (_) {}
     if (signal && signal.aborted) return;
     out.innerHTML = '';
@@ -2523,7 +2527,10 @@ async function detectFps(file, fpsCell) {
 // entry per sampled frame - the raw material for the content-timeline card (movie
 // barcode + brightness/black-frame/freeze read). Computed in the same seek loop so
 // it costs no extra scrubbing.
-async function detectSceneChanges(video, threshold, signal, collect) {
+// `onProgress`, if given, is called with a 0..1 fraction before each sample.
+// Scrubbing a long or large clip takes a while, so every caller feeds it a
+// progress bar rather than leaving a bare "Detecting…" line on screen.
+async function detectSceneChanges(video, threshold, signal, collect, onProgress) {
   if (!isFinite(video.duration) || video.duration <= 0) return [];
 
   const dur = video.duration;
@@ -2551,8 +2558,12 @@ async function detectSceneChanges(video, threshold, signal, collect) {
   const px = tw * th;
   for (let i = 0; i <= sampleCount; i++) {
     if (signal && signal.aborted) break;
+    if (onProgress) { try { onProgress(i / (sampleCount + 1)); } catch (_) {} }
     const t = Math.min(i * interval, dur - 0.05);
-    await seekAndPaint(video, t);
+    // Shorter patience than the contact sheet's: these seeks step forward in
+    // small increments so they rarely stall, and there can be hundreds of them -
+    // a long per-seek ceiling would turn one bad sample into a minutes-long wait.
+    await seekAndPaint(video, t, 5000);
 
     cmpCtx.drawImage(video, 0, 0, tw, th);
     const frame = cmpCtx.getImageData(0, 0, tw, th);
@@ -2740,14 +2751,49 @@ function whenFramePainted(video) {
   });
 }
 
-function seekAndPaint(video, t) {
+// Seek `video` to `t` and resolve once a frame from that position has actually
+// been painted, so a following drawImage() can't capture the previous frame.
+// Resolves true on success, false if the seek never landed - callers that build
+// a picture out of the result use that to retry instead of baking in whatever
+// happened to be on screen.
+//
+// Two bugs here used to corrupt contact sheets of large files:
+//   - requestVideoFrameCallback was registered BEFORE the seek. It fires on the
+//     next presented frame, which at that point is still the frame we're seeking
+//     AWAY from, so the capture ran early and grabbed the wrong picture.
+//   - the whole thing gave up after 2.5s and resolved anyway. A 1.5 GB clip
+//     routinely needs longer to reach a distant keyframe, so tiles came out as
+//     duplicates of the previous one or as bare background.
+// So: wait for `seeked` first, and only then for a painted frame.
+function seekAndPaint(video, t, timeoutMs = 12000) {
   return new Promise((resolve) => {
-    let done = false;
-    const finish = () => { if (!done) { done = true; resolve(); } };
-    if ('requestVideoFrameCallback' in video) video.requestVideoFrameCallback(() => finish());
-    else video.addEventListener('seeked', () => requestAnimationFrame(finish), { once: true });
-    video.currentTime = t;
-    setTimeout(finish, 2500);
+    let done = false, timer = 0;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      video.removeEventListener('seeked', onSeeked);
+      resolve(ok);
+    };
+    // The seek has landed; now wait for the decoder to present a frame at the new
+    // position. rVFC is the only trustworthy signal (iOS Safari fires `seeked`
+    // before compositing), but a paused off-screen video can go quiet without
+    // ever presenting again, so it never gets to be the only way out.
+    function onSeeked() {
+      if ('requestVideoFrameCallback' in video) {
+        video.requestVideoFrameCallback(() => finish(true));
+        setTimeout(() => finish(true), 600);
+      } else {
+        requestAnimationFrame(() => finish(true));
+      }
+    }
+    video.addEventListener('seeked', onSeeked, { once: true });
+    timer = setTimeout(() => finish(false), timeoutMs);
+    try {
+      video.currentTime = t;
+      // Seeking to the position the element is already parked at fires no event.
+      if (!video.seeking) onSeeked();
+    } catch (_) { finish(false); }
   });
 }
 
@@ -2881,14 +2927,25 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
       gc.height = rows * th + (rows + 1) * pad;
       const ctx = gc.getContext('2d');
       ctx.fillStyle = '#111'; ctx.fillRect(0, 0, gc.width, gc.height);
+      const safeDur = Math.max(0, dur - 0.1);
+      const prog = stepLoader('Capturing frame 1 of ' + total + '…');
+      sheetOut.innerHTML = '';
+      sheetOut.appendChild(prog.node);
+      let missed = 0;
       for (let i = 0; i < total; i++) {
-        const t = total > 1 ? (Math.max(0, dur - 0.1) * i) / (total - 1) : 0;
-        await seekAndPaint(playerEl, t);
+        prog.set(i / total, 'Capturing frame ' + (i + 1) + ' of ' + total + '…');
+        const t = total > 1 ? (safeDur * i) / (total - 1) : 0;
+        let ok = await seekAndPaint(playerEl, t);
+        if (!ok) ok = await seekAndPaint(playerEl, Math.min(safeDur, t + 0.05));
         const c = i % cols, r = Math.floor(i / cols);
-        ctx.drawImage(playerEl, pad + c * (tw + pad), pad + r * (th + pad), tw, th);
+        if (ok) ctx.drawImage(playerEl, pad + c * (tw + pad), pad + r * (th + pad), tw, th);
+        else missed++;
       }
+      prog.set(1, 'Building the sheet…');
       sheetOut.innerHTML = '';
       sheetOut.appendChild(sheetImg(gc.toDataURL('image/png')));
+      if (missed) sheetOut.appendChild(el('p', { class: 'anr-hint' },
+        missed + ' of ' + total + ' frames could not be captured - the video stalled seeking to them.'));
       sheetBtn.disabled = false; sheetBtn.textContent = 'Generate contact sheet';
     });
     sheetCard.appendChild(el('div', { class: 'anr-btn-row' }, [sheetBtn]));
@@ -2903,13 +2960,19 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
     sceneCard.appendChild(sceneOut);
     resultsEl.appendChild(sceneCard);
     const runScenes = async () => {
+      const prog = stepLoader('Scanning for scene changes…');
+      sceneOut.innerHTML = '';
+      sceneOut.appendChild(prog.node);
       if (!isFinite(playerEl.duration) || playerEl.duration <= 0) {
         await new Promise(r => { playerEl.addEventListener('loadedmetadata', r, { once: true }); setTimeout(r, 6000); });
       }
       if (signal && signal.aborted) return;
       let changes = [];
       const contentSamples = [];
-      try { changes = await detectSceneChanges(playerEl, 55, signal, contentSamples); } catch (_) {}
+      try {
+        changes = await detectSceneChanges(playerEl, 55, signal, contentSamples,
+          (f) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'));
+      } catch (_) {}
       try { playerEl.currentTime = 0; playerEl.pause(); } catch (_) {}
       sceneBadge.remove();
       if (signal && signal.aborted) return;
@@ -2951,13 +3014,10 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
       sceneBadge.remove();
       sceneOut.innerHTML = '';
       sceneOut.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:8px;' },
-        'Skipped automatically for large videos (' + (file.size / 1048576).toFixed(0) + ' MB). Run it when you want:'));
+        'Skipped automatically for large videos (' + (file.size / 1048576).toFixed(0) + ' MB). '
+        + 'The Content timeline (movie barcode and brightness curve) is read from the same scan, so it appears with the results. Run it when you want:'));
       const runBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Detect scene changes');
-      runBtn.addEventListener('click', () => {
-        runBtn.remove();
-        sceneOut.insertBefore(el('p', { class: 'anr-hint' }, 'Detecting scene changes…'), sceneOut.firstChild);
-        runScenes();
-      });
+      runBtn.addEventListener('click', () => { runBtn.remove(); runScenes(); });
       sceneOut.appendChild(runBtn);
     } else {
       runScenes();
@@ -3023,10 +3083,10 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
 
 // ---------- Advanced: container structure / forensics (ISOBMFF) ----------
 // Card chrome for the UI-free parser in video-forensics.js. Mirrors the photo
-// Advanced card: one collapsed anr-card holding <details> panels - box tree,
-// tracks, provenance tells, and a frames/bitrate map. All read from the MP4/MOV
-// boxes with zero decoding. Returns null for non-ISOBMFF files or any failure,
-// so callers just skip it.
+// Advanced card: one collapsed anr-card holding flat parts - provenance tells,
+// tracks, a frames/bitrate map, bitstream & authenticity, and the full box tree
+// last. All read from the MP4/MOV boxes with zero decoding. Returns null for
+// non-ISOBMFF files or any failure, so callers just skip it.
 
 // A collapsible <details> panel with a plain summary label (no info button) -
 // the same idiom photo.js's advPanel uses.
@@ -3150,16 +3210,6 @@ async function buildVideoAdvancedCard(file) {
     }
   }
 
-  // -- Box tree --
-  {
-    const { det, body } = vAdvPanel('Box tree (' + s.tree.length + ' top-level box' + (s.tree.length === 1 ? '' : 'es') + ')',
-      'Every atom (box) in the file: its 4-character type, size and byte offset. Expand a container to see what it holds.');
-    const tree = el('div', { class: 'anr-boxtree' });
-    renderBoxTree(s.tree, tree, 0);
-    body.appendChild(tree);
-    card.appendChild(det);
-  }
-
   // -- Tracks --
   if (s.tracks.length) {
     const { det, body } = vAdvPanel('Tracks (' + s.tracks.length + ')',
@@ -3218,6 +3268,19 @@ async function buildVideoAdvancedCard(file) {
   let bs = null;
   try { bs = await analyzeBitstream(file); } catch (_) {}
   if (bs) appendBitstreamPanel(card, bs);
+
+  // -- Box tree (last) --
+  // The raw atom dump goes to the very bottom: it is the longest part by far and
+  // the least often read, so keeping it above the findings pushed everything else
+  // down behind a wall of four-character codes.
+  {
+    const { det, body } = vAdvPanel('Box tree (' + s.tree.length + ' top-level box' + (s.tree.length === 1 ? '' : 'es') + ')',
+      'Every atom (box) in the file: its 4-character type, size and byte offset. Expand a container to see what it holds.');
+    const tree = el('div', { class: 'anr-boxtree' });
+    renderBoxTree(s.tree, tree, 0);
+    body.appendChild(tree);
+    card.appendChild(det);
+  }
 
   return card;
 }
@@ -4234,20 +4297,37 @@ export async function renderVideo(file, resultsEl, opts = {}) {
 
       const safeDur = Math.max(0, dur - 0.1);
 
+      const prog = stepLoader('Capturing frame 1 of ' + total + '…');
+      sheetOut.innerHTML = '';
+      sheetOut.appendChild(prog.node);
+
+      let missed = 0;
       for (let i = 0; i < total; i++) {
+        prog.set(i / total, 'Capturing frame ' + (i + 1) + ' of ' + total + '…');
         const t = total > 1 ? (safeDur * i) / (total - 1) : 0;
-        await seekAndPaint(playerEl, t);
+        // One retry a hair further in: a big file will often stall on one exact
+        // position and come back on the next attempt.
+        let ok = await seekAndPaint(playerEl, t);
+        if (!ok) ok = await seekAndPaint(playerEl, Math.min(safeDur, t + 0.05));
 
         const c = i % cols;
         const r = Math.floor(i / cols);
         const x = pad + c * (thumbW + pad);
         const y = pad + r * (thumbH + pad);
-        ctx.drawImage(playerEl, x, y, thumbW, thumbH);
+        // A tile that couldn't be reached is left as bare background rather than
+        // painted from the stale player, so a stalled seek shows up as a gap
+        // instead of silently repeating the previous frame.
+        if (ok) ctx.drawImage(playerEl, x, y, thumbW, thumbH);
+        else missed++;
       }
+      prog.set(1, 'Building the sheet…');
 
       const url = gridCanvas.toDataURL('image/png');
       sheetOut.innerHTML = '';
       sheetOut.appendChild(sheetImg(url));
+      if (missed) sheetOut.appendChild(el('p', { class: 'anr-hint' },
+        missed + ' of ' + total + ' frames could not be captured - the video stalled seeking to them. '
+        + 'The blank tiles are those positions.'));
 
       const saveBtn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:8px;', onclick: () => {
         const a = document.createElement('a');
@@ -4268,7 +4348,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       sheetBtn.textContent = 'Generating…';
       sheetPromise = buildSheet()
         .then(() => { sheetDone = true; })
-        .catch(() => { sheetPromise = null; })
+        .catch(() => { sheetPromise = null; sheetOut.innerHTML = ''; })
         .finally(() => { sheetBtn.disabled = false; sheetBtn.textContent = 'Generate contact sheet'; });
       return sheetPromise;
     }
@@ -4329,9 +4409,15 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     }
 
     async function detectAndRender(videoEl, removeAfter) {
+      const prog = stepLoader('Scanning for scene changes…');
+      sceneOut.innerHTML = '';
+      sceneOut.appendChild(prog.node);
       let changes = [];
       const contentSamples = [];
-      try { changes = await detectSceneChanges(videoEl, 55, renderSignal, contentSamples); } catch (_) {}
+      try {
+        changes = await detectSceneChanges(videoEl, 55, renderSignal, contentSamples,
+          (f) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'));
+      } catch (_) {}
       if (removeAfter) { try { videoEl.removeAttribute('src'); videoEl.load(); } catch (_) {} videoEl.remove(); }
       sceneBadge.remove();
       if (renderSignal.aborted) return;
@@ -4363,13 +4449,20 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       sceneBadge.remove();
       sceneOut.innerHTML = '';
       sceneOut.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:8px;' },
-        'Skipped automatically for large videos (' + (file.size / 1048576).toFixed(0) + ' MB). Run it when you want:'));
+        'Skipped automatically for large videos (' + (file.size / 1048576).toFixed(0) + ' MB). '
+        + 'The Content timeline (movie barcode and brightness curve) is read from the same scan, so it appears with the results. Run it when you want:'));
       const runBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Detect scene changes');
       runBtn.addEventListener('click', () => {
         runBtn.remove();
-        sceneOut.insertBefore(el('p', { class: 'anr-hint' }, 'Detecting scene changes…'), sceneOut.firstChild);
         const v = makeAnalysisVideo();
-        const go = () => detectAndRender(v, true);
+        // The 6s timeout is a fallback for a `loadeddata` that never comes, so it
+        // must not fire a SECOND run when the event did arrive. Without this guard
+        // both ran: two loops seeking the same element, the first finishing and
+        // tearing the element down under the second, which then timed out on every
+        // remaining sample and finally overwrote the good results (and the Content
+        // timeline built from them) with its own mangled set.
+        let started = false;
+        const go = () => { if (started) return; started = true; detectAndRender(v, true); };
         if (isFinite(v.duration) && v.duration > 0) go();
         else { v.addEventListener('loadeddata', go, { once: true }); setTimeout(go, 6000); }
       });

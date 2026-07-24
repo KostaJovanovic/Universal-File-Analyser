@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 254;
+const COMMIT_COUNT = 255;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -803,7 +803,6 @@ function boot() {
       // as they land outside a programmatic-scroll window - this covers scrolling
       // away during a slow audio decode before the section is even ready.
       const onScroll = () => { if (performance.now() > progScrollUntil) userTookScroll = true; };
-      window.addEventListener('scroll', onScroll, { passive: true });
       stopScrollWatch = () => {
         window.removeEventListener('wheel', onUserScroll);
         window.removeEventListener('touchmove', onUserScroll);
@@ -811,7 +810,19 @@ function boot() {
         window.removeEventListener('scroll', onScroll);
       };
       requestAnimationFrame(() => {
-        if (!userTookScroll) doAutoScroll();
+        if (userTookScroll) return;
+        doAutoScroll();
+        // Only NOW start treating a bare 'scroll' as the user. A plain scroll event
+        // is not proof of intent: handleFile has just hidden the page-drop overlay
+        // and swapped the three dropzones for "Analyse next file?", which shortens
+        // the document - and if the reader was near the bottom of it (the footer,
+        // the offline-use block) the browser clamps the scroll position to the new
+        // height and fires 'scroll' for that. Armed from the start, that clamp read
+        // as "the user took over" before the first autoscroll had even run, and the
+        // drop silently left them wherever they were. Nothing above this line can
+        // move the page, so anything after it is either our own smooth scroll
+        // (inside the window) or genuinely them.
+        window.addEventListener('scroll', onScroll, { passive: true });
       });
     }
 
@@ -930,10 +941,12 @@ function boot() {
       // re-sniff/type-suggestion popup. Not persisted anywhere - lives in memory and
       // survives SPA nav (same document); a full reload clears it, by design. Only for
       // a genuine top-level render that actually produced a result (not nested/failed).
-      // Samples overwrite this too (the most-recently-analysed file wins, gallery
-      // included) - see research/PERSIST-ANALYSED-FILE-SPA.md for the alternative.
-      if (!nested && !renderFailed) {
-        window._anrRestore = { file, kind, ext: extOverride || analysed.ext, sidecarXmp, sample: isSample };
+      // Sandboxed /samples runs are deliberately excluded: a demo file clicked in the
+      // gallery is not the visitor's own analysis, so it must not follow them to the
+      // home page - home is either empty or still holds whatever real file they last
+      // dropped. See research/PERSIST-ANALYSED-FILE-SPA.md.
+      if (!nested && !renderFailed && !isSample) {
+        window._anrRestore = { file, kind, ext: extOverride || analysed.ext, sidecarXmp };
       }
       // Reveal the "About .EXT files" link above the footer, deep-linking to the
       // analysed extension's own /formats guide page. A forced re-analyse (sniff
@@ -1634,10 +1647,11 @@ window._anrReadableText = isReadableText;
   }
   // Fallback: replay the most-recently-analysed top-level file after an SPA round
   // trip (home -> About/Samples/etc -> home) when navigate.js couldn't preserve the
-  // rendered DOM (the samples round trip - a sample analysed inline on /samples has
-  // no home main to preserve - or no analysis was ever on home this session). The
-  // File object survives in memory across the in-place page swap, so this just
-  // re-runs the same route. Home-only (by pathname, not container presence -
+  // rendered DOM. Only a file the visitor really analysed is replayed - a sandboxed
+  // /samples demo never writes _anrRestore (see handleFile), so clicking through the
+  // gallery leaves home exactly as they left it. The File object survives in memory
+  // across the in-place page swap, so this just re-runs the same route. Home-only
+  // (by pathname, not container presence -
   // /samples shares these same result containers), yields to a preserved main
   // (window._anrHomeRestored - see navigate.js swap()) which already put the
   // analysis back verbatim, and yields to an explicit pending file above.
@@ -1646,7 +1660,7 @@ window._anrReadableText = isReadableText;
   const isHome = location.pathname === '/' || location.pathname === '/index.html';
   if (isHome && !window._anrHomeRestored && !firstFileLoaded && window._anrRestore && photoResults) {
     const r = window._anrRestore;
-    handleFile(r.file, { kind: r.kind, ext: r.ext, sidecarXmp: r.sidecarXmp, sample: r.sample, restore: true });
+    handleFile(r.file, { kind: r.kind, ext: r.ext, sidecarXmp: r.sidecarXmp, restore: true });
   }
   if (window._anrPendingFolder && unknownResults) {
     resetNav();

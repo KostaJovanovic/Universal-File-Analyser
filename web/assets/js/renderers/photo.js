@@ -3876,6 +3876,9 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
           viewBlob: j.blob,
           downloadBlob: j.blob,
           downloadName: baseName + '_thumb_' + (i + 1) + '.jpg',
+          // The carved JPEG has no EXIF of its own; this is the rotation from the
+          // IFD that pointed at it, so the card can show it the right way up.
+          orientation: j.orientation,
         }));
         const hint = isRaw
           ? 'Cached JPEG previews extracted straight from the file bytes.'
@@ -3919,17 +3922,25 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     ocrSlot.appendChild(makeOcrCard(file, img));
   }
 
-  // ---- Hash + raw EXIF dump (collapsible) ----
-  const hashCard = el('div', { class: 'anr-card' });
-  const [hashH, hashHelp] = h3help('Integrity', '<strong>pHash</strong> (perceptual hash) is a short fingerprint of what the picture looks like. Two images that look alike get similar fingerprints, even after resizing or re-saving - handy for spotting duplicates.<br><strong>SHA-256</strong> is a fingerprint of the exact file data instead. Change even a single bit of the file and this fingerprint changes completely - handy for checking a file has not been altered.');
-  hashCard.appendChild(hashH); hashCard.appendChild(hashHelp);
-  const phash = computePHash(img);
-  const hashTbl = el('table', { class: 'anr-readout' });
-  hashTbl.appendChild(rowHelp('pHash', phash,
+  // ---- Integrity (fingerprints) ----
+  // Built here, mounted in one of two places. On the normal page it is a part of
+  // the Advanced card (below). On /compare it stays a card of its own: the merge
+  // there finds "Integrity" by its heading to hoist the fingerprints to the very
+  // top of the side-by-side view, and appendHashExtras fills the rest of the hash
+  // set the same way - both would lose it inside a collapsed Advanced card.
+  const INTEG_HELP = '<strong>pHash</strong> (perceptual hash) is a short fingerprint of what the picture looks like. Two images that look alike get similar fingerprints, even after resizing or re-saving - handy for spotting duplicates.<br><strong>SHA-256</strong> is a fingerprint of the exact file data instead. Change even a single bit of the file and this fingerprint changes completely - handy for checking a file has not been altered.';
+  const integTbl = el('table', { class: 'anr-readout' });
+  integTbl.appendChild(rowHelp('pHash', computePHash(img),
     'Perceptual hash - a short fingerprint of what the picture looks like. Images that look alike get similar fingerprints, even after resizing or compression.'));
-  hashTbl.appendChild(sha256Row(file));
-  hashCard.appendChild(hashTbl);
-  resultsEl.appendChild(hashCard);
+  // sha256Row kicks off its own hash and fills the cell when it lands, so it is
+  // safe to build here even when it ends up inside a collapsed card.
+  integTbl.appendChild(sha256Row(file));
+  if (inline) {
+    const integCard = el('div', { class: 'anr-card' });
+    const [iH, iHelp] = h3help('Integrity', INTEG_HELP);
+    integCard.appendChild(iH); integCard.appendChild(iHelp); integCard.appendChild(integTbl);
+    resultsEl.appendChild(integCard);
+  }
 
   // ---- Advanced (forensic + technical panels, collapsed) ----
   // One card holding the heavier/technical views, sitting where LSB analysis used
@@ -3941,7 +3952,17 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   advCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 4px;' },
     'More detailed forensic and technical views.'));
 
-  // -- Edit history (on top, shown open; the technical panels below start closed) --
+  // -- Integrity (fingerprints) - first, so the hashes stay easy to find --
+  // [data-integrity] is what findIntegrityCard() looks for: without it app.js
+  // would see no Integrity card here and append a second, generic one.
+  if (!inline) {
+    const { det, body } = advPanel('Integrity', INTEG_HELP);
+    det.setAttribute('data-integrity', '1');
+    body.appendChild(integTbl);
+    advCard.appendChild(det);
+  }
+
+  // -- Edit history (shown next; the technical panels below follow) --
   if (full) {
     // Yet another whole-file read, then two synchronous scans over it (an XMP packet
     // hunt and an MD5 of the IPTC block). Yield first so this lands between frames
