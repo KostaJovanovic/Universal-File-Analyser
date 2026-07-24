@@ -696,7 +696,7 @@ function objUVs(parsed) {
 function objMaterialPreviewColors(parsed) {
   const order = [], idx = new Map();
   for (const m of parsed.triMat) {
-    const key = (m == null) ? ' none' : m;
+    const key = (m == null) ? '\x00none' : m;
     if (!idx.has(key)) { idx.set(key, order.length); order.push(key); }
   }
   if (order.length < 2) return null;
@@ -705,7 +705,7 @@ function objMaterialPreviewColors(parsed) {
   const triCount = parsed.tris.length / 3;
   const colors = new Float32Array(triCount * 9);
   for (let t = 0; t < triCount; t++) {
-    const g = bright[idx.get(parsed.triMat[t] == null ? ' none' : parsed.triMat[t])];
+    const g = bright[idx.get(parsed.triMat[t] == null ? '\x00none' : parsed.triMat[t])];
     const o = t * 9;
     for (let k = 0; k < 9; k++) colors[o + k] = g;   // greyscale: r = g = b
   }

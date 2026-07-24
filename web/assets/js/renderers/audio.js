@@ -2930,7 +2930,14 @@ function drawLoudnessGraph(series, duration, audioEl) {
   const line = el('div', { class: 'anr-playhead' });
   wrap.appendChild(line);
 
-  const durOf = () => audioEl.duration || duration || 0;
+  // Measure against the DECODED buffer's duration - the same time base `xOf` drew
+  // the curve in, and the one the waveform and spectrogram playheads use. This
+  // used to prefer audioEl.duration, which drifts from the decoded length whenever
+  // the two disagree (MP3 encoder delay/padding, a VBR file with no accurate
+  // header, or a video's extracted track), so the line sat off the curve it was
+  // meant to point at and lagged the other playheads. audioEl.duration is kept
+  // only as a fallback for the case where no decoded duration was passed in.
+  const durOf = () => (duration > 0 ? duration : (audioEl.duration || 0));
   // `animate` eases the line into place for discrete seeks while paused; live
   // playback and scrubbing pass false so it tracks frame-by-frame without lag.
   function tick(animate) {
@@ -3640,7 +3647,11 @@ export async function renderAudio(file, resultsEl, opts = {}) {
         dtmf.digits.length + (dtmf.digits.length === 1 ? ' tone' : ' tones')
         + (dur > 0 ? ' across ' + fmtClock(dur) : '')));
       // One cell per tone: the digit, and when it was pressed. Click to hear it.
-      const keys = el('div', { class: 'anr-dtmf-keys' });
+      // Kept behind a Show button: a long call dials a lot of tones, and the grid
+      // would then push the number and the timeline - the answer most people came
+      // for - up off the screen. One-way, like the "Show full source" reveals
+      // elsewhere: the button removes itself and the keys stay for good.
+      const keys = el('div', { class: 'anr-dtmf-keys', hidden: true });
       for (const d of dtmf.digits) {
         const at = fmtClock(d.tStart);
         const key = el('button', { type: 'button', class: 'anr-dtmf-key',
@@ -3658,6 +3669,10 @@ export async function renderAudio(file, resultsEl, opts = {}) {
         });
         keys.appendChild(key);
       }
+      const showKeys = el('button', { type: 'button', class: 'anr-btn' },
+        'Show ' + dtmf.digits.length + (dtmf.digits.length === 1 ? ' tone' : ' tones'));
+      showKeys.addEventListener('click', () => { keys.hidden = false; showKeys.remove(); });
+      body.appendChild(showKeys);
       body.appendChild(keys);
       advCard.appendChild(det); advCount++;
     }

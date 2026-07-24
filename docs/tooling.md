@@ -81,6 +81,7 @@ sync with single sources of truth, run by `save.bat` on every commit:
 | `prerender-samples.mjs` | Rebuilds the `/samples` gallery from whatever files are in `samples/`, deriving each card's label/caption from the format catalog (with an optional override in `tools/sample-content.mjs`) |
 | `prerender-testpage.mjs` | Regenerates only the token/animation sections of `/test` (`test.html`) from `analyser.css`, between `TOKENS:START`/`TOKENS:END` markers - the hand-authored component demos further down the page are untouched |
 | `build-docs-html.mjs` | Converts the Markdown in `docs/` into the on-brand `/docs` site (`web/docs.html` hub + `web/docs/` sub-pages, both wiped and rebuilt), and emits `sitemap-docs.xml` listing the sub-pages (the `/docs` hub itself stays in the main `sitemap.xml`) |
+| `check-shell.mjs` | The one check rather than a generator - writes nothing. Verifies every module under `web/assets/js` is in `sw.js` `SHELL`, and that no precached module imports one that isn't. That second pass catches the offline-only breakage a browser never shows in dev: a shipped module whose import misses the cache and dies only once the network is gone |
 
 See the `format-seo-pages` and `shared-partials` skills for the fuller
 picture of the generated-page and single-sourcing systems these scripts

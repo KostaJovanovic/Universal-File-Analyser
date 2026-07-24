@@ -22,7 +22,7 @@
    video - and the whole thing is best-effort: any failure returns null so the
    normal video analysis is untouched. */
 
-import { el, row, rowHelp, h3help, downloadBlob } from '../core/util.js';
+import { el, row, rowHelp, h3help, downloadBlob, setPlayerFill } from '../core/util.js';
 import { registerSyncedVideo, getAudioOwner, getAudioCompanion } from '../core/video-sync.js';
 import { makePlayer } from './audio-player.js';
 
@@ -527,7 +527,7 @@ export function buildImuTimeline(d, file) {
       playhead.style.left = (frac * trackW) + 'px';
       // Glide the player's seek bar with the drag (same fraction = same position),
       // rather than letting it lag on the video's coalesced seeked events.
-      if (transportFill) transportFill.style.width = (frac * 100) + '%';
+      if (transportFill) setPlayerFill(transportFill, frac);
     };
     scroller.addEventListener('pointerdown', (e) => { scrubbing = true; try { scroller.setPointerCapture(e.pointerId); } catch (_) {} seekAt(e.clientX, false); });
     scroller.addEventListener('pointermove', (e) => { if (scrubbing) seekAt(e.clientX, false); });

@@ -218,7 +218,7 @@ export async function renderSubtitles(file, resultsEl) {
       cues = parseSubViewer(text);
     } else {
       // Replacement chars / NULs mean we read binary as text - flag VobSub.
-      const binary = /[ �]/.test(text.slice(0, 4096));
+      const binary = /[\x00�]/.test(text.slice(0, 4096));
       const infoCard = el('div', { class: 'anr-card' });
       const [h, help] = h3help('Subtitles', 'This .sub file does not contain text subtitles of the MicroDVD or SubViewer kind.');
       infoCard.appendChild(h); infoCard.appendChild(help);

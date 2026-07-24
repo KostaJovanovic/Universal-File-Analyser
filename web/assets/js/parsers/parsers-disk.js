@@ -671,7 +671,7 @@ async function parseGpt(file) {
       const firstLba = Number(new DataView(buf.buffer, buf.byteOffset + off + 32, 8).getBigUint64(0, true));
       const lastLba = Number(new DataView(buf.buffer, buf.byteOffset + off + 40, 8).getBigUint64(0, true));
       const nameBytes = buf.subarray(off + 56, off + 56 + 72);
-      const name = utf16(nameBytes, true).replace(/ +$/, '').replace(/ /g, '').trim();
+      const name = utf16(nameBytes, true).replace(/\x00+$/, '').replace(/\x00/g, '').trim();
       parts.push({ typeGuid, partGuid, firstLba, lastLba, name });
     }
   } catch (_) {}

@@ -42,7 +42,8 @@
       "Bash(rtk find *)",
       "Bash(echo \"--- first 64 bytes hex ---\")",
       "Bash(xxd -l 64 '/c/Users/kosta/Downloads/Telegram Desktop/pucketanje 1.aac')",
-      "PowerShell(.\\\\save.bat save)"
+      "PowerShell(.\\\\save.bat save)",
+      "PowerShell(Select-String -Path \"C:\\\\Users\\\\kosta\\\\Projekti\\\\file-analyser\\\\web\\\\assets\\\\js\\\\core\\\\patch-tldr.js\" -Pattern \"7\\\\.0\" -Context 0,8 | Select-Object -First 3 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\"; $_.Context.PostContext })"
     ]
   },
   "outputStyle": "default",

@@ -9,7 +9,7 @@
 
 import { el, rowHelp, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 import { openZip } from './zip.js';
-import { paginateFlow, pagedPreviewCard, pagedTextCard, makePage } from './paged.js';
+import { paginateFlow, pagedPreviewCard, pagedTextCard, makePage, pagePreviewSkeleton } from './paged.js';
 
 // Each key maps to the candidate namespace URIs: the OASIS ODF 1.x URI first,
 // then the older OpenOffice.org 1.x URI so StarOffice .sxw/.sxc/.sxd parse too.
@@ -420,7 +420,9 @@ export async function renderOdf(file, container, kind) {
   destroyOdfTableKits();
   container.innerHTML = '';
   revokeOdfImageUrls();   // free the previous document's embedded-image object URLs
-  container.appendChild(el('div', { class: 'anr-info' }, 'Reading document…'));
+  // Ghost sheets hold the page grid's space through the unzip / XML parse / image
+  // decode below - all of it happens before a single real page exists.
+  container.appendChild(pagePreviewSkeleton({ note: 'Reading document…' }));
 
   try {
     // Flat ODF (.fodt/.fods/.fodp/.fodg) is a single XML file, not a zip - so

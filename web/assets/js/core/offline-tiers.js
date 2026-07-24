@@ -81,7 +81,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   const TIERS = {
     essentials: [
       './', './about', './patch', './compare', './manifest.json', './assets/css/analyser.css', './assets/css/fonts.css',
-      './assets/js/core/app.js', './assets/js/core/formats.js', './assets/js/core/util.js', './assets/js/core/search.js',
+      './assets/js/core/app.js', './assets/js/core/formats.js', './assets/js/core/util.js', './assets/js/core/sanitize.js', './assets/js/core/search.js',
       './assets/js/core/stats-page.js', './assets/js/core/history.js', './assets/js/core/file-sniff.js', './assets/js/core/forensics.js', './assets/js/core/overlays.js', './assets/js/core/patch-tldr.js', './assets/js/core/offline-tiers.js', './assets/js/core/format-overlay.js', './assets/js/core/classify.js',
       './assets/js/renderers/photo.js', './assets/js/renderers/scrub.js', './assets/js/renderers/c2pa.js', './assets/js/renderers/ai-signals.js', './assets/js/renderers/timeline-forensic.js', './assets/js/renderers/audio.js', './assets/js/renderers/audio-analysis.js',
       './assets/js/renderers/audio-codec.js', './assets/js/renderers/video.js', './assets/js/renderers/spectrogram.js',
@@ -231,7 +231,8 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       './assets/js/core/osint.js', './assets/js/renderers/lottie.js',
       './assets/js/renderers/photo-recover.js', './assets/js/renderers/video-recover.js',
       './assets/js/renderers/sonify.js', './assets/js/renderers/altium.js',
-      './assets/js/renderers/kicad.js', './assets/js/renderers/spice.js',
+      './assets/js/renderers/kicad.js', './assets/js/renderers/eda-viewer.js',
+      './assets/js/renderers/spice.js',
       './assets/js/renderers/ipcnet.js', './assets/js/renderers/lut.js',
       './assets/js/renderers/f3d.js', './assets/js/renderers/solidworks.js',
       './assets/js/renderers/gcode.js',
@@ -777,12 +778,17 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   //        service worker's KEEP_CACHES deliberately preserves all three across
   //        version bumps), so this button was the only place it could live.
   //
-  //        TWO things survive, both settings rather than stored data:
-  //          - 'anr-theme' (+ ':ts')  the light/dark choice
-  //          - 'anr-a11y'             Clear view, the low-vision mode
-  //        Wiping either would change how the site LOOKS for someone who only
-  //        asked to delete what it had stored - and app.js marks the accessibility
-  //        key permanent precisely so it can never silently expire.
+  //        What survives is SETTINGS, never stored data:
+  //          - 'anr-theme' (+ ':ts')      the light/dark choice
+  //          - 'anr-a11y'                 Clear view, the low-vision mode
+  //          - 'anr-asteroids-settings'   the game's options object
+  //        Wiping any of them would change how the site BEHAVES for someone who
+  //        only asked to delete what it had stored - and two are accessibility
+  //        choices: app.js marks 'anr-a11y' permanent precisely so it can never
+  //        silently expire, and the game's object carries "Reduce flashing",
+  //        which is the same kind of promise. The game's PROGRESS goes with
+  //        everything else - high score, best wave, boss unlock, start wave,
+  //        the dismissed keyboard hint, and the leaderboard name/submit counter.
   //
   //        Not touched: the service worker's app-shell cache (keyed by VERSION).
   //        That is the application itself, not user data, and the SW repopulates
@@ -798,12 +804,14 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       // cached, which is what makes a clear look inert (see activeDownloads above).
       for (const abort of activeDownloads) { try { abort.abort(); } catch (_) {} }
       activeDownloads.clear();
-      // Preserve the two settings, wipe localStorage + sessionStorage, restore them.
-      // Everything else goes, the download records ('anr-offline' /
+      // Preserve the settings keys, wipe localStorage + sessionStorage, restore
+      // them. Everything else goes, the download records ('anr-offline' /
       // 'anr-offline-feat') and the model ready-flags ('anr-mdx-ready-*' /
       // 'anr-dfn-ready-*') included - they must not outlive the caches they
       // describe, or the badges would claim a download that is no longer there.
-      const KEEP = ['anr-theme', 'anr-theme:ts', 'anr-a11y'];
+      // The game's keys live in games/config.js; only its options object is
+      // listed here, deliberately - see the note above.
+      const KEEP = ['anr-theme', 'anr-theme:ts', 'anr-a11y', 'anr-asteroids-settings'];
       const kept = {};
       for (const k of KEEP) { const v = localStorage.getItem(k); if (v !== null) kept[k] = v; }
       try { localStorage.clear(); } catch (_) {}

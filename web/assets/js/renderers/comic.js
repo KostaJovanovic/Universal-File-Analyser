@@ -221,14 +221,24 @@ export async function renderComic(file, resultsEl, extOverride) {
     const native = NATIVE_RE.test(pages[i].name);
     const cap = el('div', { style: 'font-family:var(--font-mono);font-size:10px;color:var(--muted);text-align:center;margin-top:4px;' }, 'Page ' + (i + 1));
     const thumb = el('div', { style: 'width:120px;cursor:pointer;', title: 'Page ' + (i + 1) + ' - click to read' });
-    const img = el('img', { loading: 'lazy', alt: '', style: 'width:120px;height:170px;object-fit:cover;display:block;border:1px solid var(--hairline);background:var(--surface);' });
-    thumb.appendChild(img);
+    // The box is a ghost sheet until its page decodes, so the grid shows page-shaped
+    // placeholders from the start rather than a row of blank squares.
+    const box = el('div', { class: 'anr-ghost-sheet', style: 'width:120px;height:170px;' });
+    const img = el('img', { loading: 'lazy', alt: '', style: 'width:100%;height:100%;object-fit:cover;display:block;' });
+    box.appendChild(img);
+    thumb.appendChild(box);
     thumb.appendChild(cap);
     thumb.addEventListener('click', () => openReader(i));
     thumbContainer.appendChild(thumb);
     // Decode the page (libarchive/zip may yield bmp/jxl which <img> can't show -
-    // those still open in the reader, just without a thumbnail image).
-    if (native) pageUrl(i).then((u) => { img.src = u; }).catch(() => {});
+    // those still open in the reader, just without a thumbnail image). Anything
+    // that will never produce a picture stops sweeping immediately.
+    const settle = () => box.classList.add('is-loaded');
+    if (native) {
+      img.addEventListener('load', settle, { once: true });
+      img.addEventListener('error', settle, { once: true });
+      pageUrl(i).then((u) => { img.src = u; }).catch(settle);
+    } else settle();
   }
   if (pages.length > shown) {
     thumbCard.appendChild(el('p', { class: 'anr-hint', style: 'margin-top:12px;' },

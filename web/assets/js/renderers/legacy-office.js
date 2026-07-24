@@ -15,7 +15,7 @@
 
 import { el, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 import { openCfbf } from '../lib/cfbf.js';
-import { paginateFlow, pagedPreviewCard, pagedTextCard, makePage } from './paged.js';
+import { paginateFlow, pagedPreviewCard, pagedTextCard, makePage, pagePreviewSkeleton } from './paged.js';
 
 const dvOf = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 const u16 = (dv, off) => (off + 2 <= dv.byteLength ? dv.getUint16(off, true) : 0);
@@ -417,7 +417,9 @@ function infoCard(file, appLabel, extraRows, links) {
 export async function renderLegacyOffice(file, container, kind) {
   container.hidden = false;
   container.innerHTML = '';
-  container.appendChild(el('div', { class: 'anr-info' }, 'Reading document...'));
+  // Ghost sheets stand in while the OLE2 container is opened and its streams are
+  // decoded - nothing pageable exists until that finishes.
+  container.appendChild(pagePreviewSkeleton({ note: 'Reading document...' }));
 
   try {
     const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());

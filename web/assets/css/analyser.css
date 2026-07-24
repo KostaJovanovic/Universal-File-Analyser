@@ -3510,10 +3510,17 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   height: 3px;
   background: var(--rule);
 }
+/* Scrubber fill. Painted with transform: scaleX(), never width - see
+   setPlayerFill() in core/util.js. It is repainted on EVERY animation frame while
+   something plays, and a percentage width forces a layout of the whole analysis
+   document each time; a scaleX is composited instead. Hence width:100% here with
+   the scale doing the work, and origin on the left so it grows rightwards. */
 .anr-player-fill {
   height: 3px;
   background: var(--accent);
-  width: 0%;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
   pointer-events: none;
   position: relative;
   z-index: 1;
@@ -4030,6 +4037,12 @@ details summary::after {
 }
 details summary:hover::after { color: var(--accent); }
 details[open] summary::after { content: "\2212"; }
+/* A <details> that LEADS a card (the HTML "Rendered preview", which is inserted
+   above the readout table) sits immediately under the heading's own rule, so its
+   border-top would draw a second hairline 24px below the first. Drop the rule and
+   the top gap there; the heading's 14px margin is the separator, exactly as it is
+   when a readout table follows instead. */
+.anr-card > h3 + details { border-top: 0; margin-top: 0; padding-top: 0; }
 
 /* ---------- ADVANCED CARD (one dropdown, uniform parts) ----------
    The photo / video / sound "Advanced" cards are ONE collapsible section, sat at
@@ -8047,7 +8060,10 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   transition: transform 0.45s cubic-bezier(0.4, 0.1, 0.2, 1);
   will-change: transform;
 }
-.anr-pcb3d-board.is-dragging { transition: none; }
+/* Live per-frame rotation - a drag, the view cube, or auto-rotate - sets the
+   transform every frame, so the ease above has to come off or it lags and rubbers. */
+.anr-pcb3d-board.is-dragging,
+.anr-pcb3d-board.is-spinning { transition: none; }
 .anr-pcb3d-face, .anr-pcb3d-wall { position: absolute; left: 50%; top: 50%; }
 .anr-pcb3d-face {
   background: transparent;   /* the board silhouette + shadow are drawn in the SVG */
@@ -8959,6 +8975,48 @@ a.stats-ext-link:hover { color: var(--accent); text-decoration: none; }
   font-size: 11px;
   opacity: 0.7;
   margin-top: 6px;
+}
+/* Ghost sheet: an empty page-shaped tile standing in for a preview that is still
+   being built (paged.js's pagePreviewSkeleton / ghostSheet, and the PPTX slide
+   grid). It holds exactly the space the real page lands in, so a slow unzip-and-
+   paginate no longer leaves the results looking finished and then shoves them
+   down when the pages arrive. The slow accent sweep is what says "still coming"
+   rather than "blank and broken", so it deliberately reads as pending, not paper:
+   surface-coloured, not the white of a real sheet. */
+.anr-ghost-sheet {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  border: var(--bd-hairline);
+}
+.anr-ghost-sheet::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg,
+    transparent 38%,
+    rgb(var(--accent-rgb) / 0.16) 50%,
+    transparent 62%);
+  animation: anr-ghost-sweep 1.6s linear infinite;
+}
+/* Tiles that fill in one at a time (comic pages) keep the box and drop only the
+   sweep, so the frame around the picture never moves. */
+.anr-ghost-sheet.is-loaded::after { content: none; }
+@keyframes anr-ghost-sweep {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .anr-ghost-sheet::after { animation: none; }
+}
+/* Stands in for the "Page 1" caption while the page count is still unknown. */
+.anr-page-cap-ghost {
+  display: inline-block;
+  width: 46px;
+  height: 0.85em;
+  vertical-align: -0.1em;
+  background: var(--hairline);
+  opacity: 0.35;
 }
 .anr-page {
   box-sizing: border-box;

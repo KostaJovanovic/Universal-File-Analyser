@@ -532,7 +532,9 @@ export function showCellPopup(value, label) {
 // camera. Its faces, edges and corners are all clickable hotspots that snap the
 // view head-on / edge-on / corner-on, and dragging the cube orbits the camera just
 // like dragging the canvas. Works with any viewer exposing { wrap, state:{yaw,
-// pitch}, markDirty(), setSpin? } - shared by the STL/model and G-code viewers.
+// pitch}, markDirty(), setSpin? } - shared by the STL/model and G-code viewers,
+// and by the KiCad 3D board, which is CSS 3D rather than WebGL and adapts its
+// degrees-and-Y-down camera to this one behind a getter/setter state object.
 // Yaw/pitch are radians; the model is rotated rotX(pitch)*rotY(yaw) with +pitch
 // looking down from above, so a hotspot pointing outward along d=(dx,dy,dz) snaps
 // to yaw=atan2(-dx,dz), pitch=asin(dy). The CSS cube (Y-down) mirrors the camera as
@@ -1261,8 +1263,24 @@ export function attachZoomPan(wrap, opts = {}) {
 // bottom-right of a position:relative stage (it carries the .anr-wheelzoom
 // overlay styling) and gate the wheel handler on enabled() BEFORE calling
 // preventDefault, so a disabled viewer lets the wheel scroll the page.
+// Paint a .anr-player-fill scrubber bar to `frac` (0..1). Every transport on the
+// site goes through this, and it is the one piece of UI updated on EVERY
+// animation frame while something plays - so it must not cost a layout. Setting a
+// percentage width does exactly that, and reflowing a finished analysis (box
+// tree, timelines, contact sheet, telemetry traces) 60 times a second is enough
+// to take frames off a heavy video. A scaleX is handled by the compositor: no
+// layout, no paint. The CSS pairs this with width:100% and a left origin.
+export function setPlayerFill(fillEl, frac) {
+  if (!fillEl) return;
+  const f = frac > 0 ? (frac < 1 ? frac : 1) : 0;      // also coerces NaN to 0
+  fillEl.style.transform = 'scaleX(' + f + ')';
+}
+
+// Off by default, matching the STL/model and G-code viewers' own copy of this
+// control: a viewer that eats the wheel the moment the pointer crosses it traps
+// the page scroll, so arming it is the user's call, not the page's.
 export function wheelZoomToggle(extraClass) {
-  let on = true;
+  let on = false;
   const btn = el('button', { type: 'button', class: 'anr-wheelzoom' + (extraClass ? ' ' + extraClass : '') });
   const paint = () => {
     btn.textContent = on ? 'Scroll zoom on' : 'Scroll zoom off';

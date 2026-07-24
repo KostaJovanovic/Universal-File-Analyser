@@ -7,7 +7,7 @@
    - On-device OCR via lazy-loaded Tesseract.js with language picker
    - SHA-256 file hash */
 
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, cloudFileWarning, errorCard, attachZoomPan, openOverlayBack, timeAnomalies, timeAnomalyCard, downloadBlob, inlineLoader, afterPaint, yieldToMain } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, cloudFileWarning, errorCard, attachZoomPan, openOverlayBack, timeAnomalies, timeAnomalyCard, downloadBlob, inlineLoader, afterPaint, yieldToMain, setPlayerFill } from '../core/util.js';
 import { HEIC_EXTS, RAW_EXTS } from '../core/formats.js';
 import { convertHeic, extractRawPreview, convertWithImageMagick, demosaicRaw, extractRawJpegs, extractX3fPreview } from './photo-convert.js';
 import { ascii, latin1, utf8, inflate, findBytes, hexByte, hexBytes } from '../core/binutil.js';
@@ -2753,7 +2753,7 @@ function buildFrameViewerCard(file, source, resultsEl, signal, opts = {}) {
 
   onFrameShown = (idx) => {
     const t = startTimes[idx];
-    fillEl.style.width = (totalTime > 0 ? Math.min(1, t / totalTime) * 100 : 0) + '%';
+    setPlayerFill(fillEl, totalTime > 0 ? t / totalTime : 0);
     timeEl.textContent = `${fmtTc(t)} / ${fmtTc(totalTime)}`;
   };
 

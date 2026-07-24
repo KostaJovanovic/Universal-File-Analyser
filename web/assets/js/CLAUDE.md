@@ -45,6 +45,13 @@ js/
     video-sync.js — shared video↔analysis scrubbing/sync helpers
     util.js       — shared DOM helpers (el, fileExt, …) and formatters
     binutil.js    — shared binary toolkit (cursor reader, decoders, magic)
+    sanitize.js   — THE HTML/URL sanitiser. Any viewer that renders markup from
+                    an untrusted file inline (email.js, textdoc.js's MHTML,
+                    epub.js chapters, svg.js) must go through this - the site
+                    ships no CSP, so it is the only thing stopping a crafted
+                    file executing script in the page's own origin. Never
+                    hand-roll a second copy: there used to be four, they drifted,
+                    and three carried a javascript:-scheme bypass
   renderers/      — one module per top-level type (classifyFile() routes to these
                     via ROUTES in app.js). Inventory by domain:
     photo.js · photo-convert.js · photo-recover.js · sonify.js · tiff.js · mpo.js · ico · embedded-images.js

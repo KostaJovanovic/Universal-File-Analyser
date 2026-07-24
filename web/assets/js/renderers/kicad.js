@@ -21,7 +21,7 @@
    footprint, which the project view uses for two-way cross-probing.
 */
 
-import { el, row, rowHelp, h3help, fmtBytes, errorCard, inlineLoader, wheelZoomToggle } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, errorCard, inlineLoader, wheelZoomToggle, attachViewCube } from '../core/util.js';
 import { buildViewer, fitBox, grow, safeBox } from './eda-viewer.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -808,13 +808,21 @@ function staticFace(pcb) {
   return { s, bb, outline };
 }
 
+// Home orientation, in the CSS degrees this viewer rotates by. The WebGL viewers
+// (STL/model, G-code) open on a three-quarter iso view - yaw 0.6 rad, pitch 0.5 rad
+// in their radians-and-Y-up camera - so the board opens on the same one, converted
+// through the mapping the view cube uses (rx = -pitch, ry = yaw, in degrees). It
+// used to open at rx -22 / ry 0: tilted, but square-on, which read as a flat board
+// knocked slightly askew rather than an object seen in three dimensions.
+const HOME3D = { rx: -0.5 * 180 / Math.PI, ry: 0.6 * 180 / Math.PI };
+
 // Build a 3D, drag-to-rotate board: a thin slab with the top side on the front
 // face and the bottom side on the back (a real rotateY(180) flip, so it mirrors
 // physically and you can read the other side). Pure CSS 3D - no WebGL, vector
 // crisp at any angle. Reuses the same painter as the flat view.
 function buildBoard3D(pcb, opts = {}) {
   const ss = opts.ss !== false;                  // supersampling toggle (Quality popup)
-  const view = opts.view || { rx: -22, ry: 0, zoom: 1, panX: 0, panY: 0 };   // preserved across rebuilds
+  const view = opts.view || { rx: HOME3D.rx, ry: HOME3D.ry, zoom: 1, panX: 0, panY: 0, spin: false };   // preserved across rebuilds
   const front = staticFace(sidePcb(pcb, 'top'));
   // The back face is mirrored about the board centre so the physical flip reads
   // correctly (forward silk, sides as KiCad's 3D viewer) while staying aligned
@@ -911,16 +919,39 @@ function buildBoard3D(pcb, opts = {}) {
   // rotates (board, inside the perspective); right/middle-drag pans and the wheel
   // zooms (cam, a plain 2D transform outside the perspective). 1/RES undoes the
   // supersample. Double-click/Reset returns home.
-  const HOME = { rx: -22, ry: 0, zoom: 1 };
+  const HOME = { rx: HOME3D.rx, ry: HOME3D.ry, zoom: 1 };
   const applyCam = () => { cam.style.transform = `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`; };
   const applyBoard = () => { board.style.transform = `scale(${1 / RES}) rotateX(${view.rx}deg) rotateY(${view.ry}deg)`; };
   applyCam(); applyBoard();
+  // Auto-rotate, off by default (unlike the STL / G-code viewers, which open
+  // spinning - a board is something you read, so it should sit still until asked).
+  // The state lives on `view` so a Quality rebuild keeps it, and the per-frame step
+  // matches those viewers' 0.003 rad/frame. .is-spinning drops the board's eased
+  // transform for the same reason a drag does: an ease per frame lags and rubbers.
+  let spinRaf = 0;
+  let spinBtn = null;      // assigned when the bar is built, below
+  const spinTick = () => {
+    if (!view.spin || !stage.isConnected) { spinRaf = 0; return; }
+    view.ry += 0.003 * 180 / Math.PI;
+    applyBoard();
+    spinRaf = requestAnimationFrame(spinTick);
+  };
+  const setSpin = (v) => {
+    if (!!view.spin === !!v) return;
+    view.spin = !!v;
+    board.classList.toggle('is-spinning', view.spin);
+    if (spinBtn) spinBtn.classList.toggle('is-on', view.spin);
+    if (view.spin && !spinRaf) spinRaf = requestAnimationFrame(spinTick);
+  };
+
   // Reset: ease the camera (zoom + pan) home as well as the board, so the whole
   // view glides back instead of the rotation animating while the zoom snaps. The
   // cam transition is off during live zoom/pan (it would lag the gesture) and only
-  // switched on for this animation, then cleared after the 0.45s ease.
+  // switched on for this animation, then cleared after the 0.45s ease. Auto-rotate
+  // stops first - it would otherwise carry the board straight back off home.
   let resetTimer = null;
   const resetView = () => {
+    setSpin(false);
     cam.classList.add('is-animating');
     Object.assign(view, { rx: HOME.rx, ry: HOME.ry, zoom: HOME.zoom, panX: 0, panY: 0 });
     applyCam(); applyBoard();
@@ -943,6 +974,11 @@ function buildBoard3D(pcb, opts = {}) {
   };
   stage.addEventListener('contextmenu', (e) => e.preventDefault());   // right-drag pans - suppress the menu
   stage.addEventListener('pointerdown', (e) => {
+    // The view cube (below) lives inside the stage and drives the camera itself.
+    // It stops the mouse/touch events it knows about, but not pointer ones, so
+    // without this a drag on the cube would also be read as a drag on the board.
+    if (e.target.closest('.anr-viewcube')) return;
+    setSpin(false);            // touching the board stops auto-rotate, as in the other 3D viewers
     stage.setPointerCapture(e.pointerId);
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     board.classList.add('is-dragging');
@@ -977,11 +1013,49 @@ function buildBoard3D(pcb, opts = {}) {
   const wheelZoom = wheelZoomToggle();
   stage.appendChild(wheelZoom.el);
   stage.addEventListener('wheel', (e) => { if (!wheelZoom.enabled()) return; e.preventDefault(); view.zoom = Math.max(ZMIN, Math.min(ZMAX, view.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); applyCam(); }, { passive: false });
-  stage.addEventListener('dblclick', resetView);
+  stage.addEventListener('dblclick', (e) => { if (e.target.closest('.anr-viewcube')) return; resetView(); });
+
+  // ---- Orientation gizmo: the same view cube the STL / G-code viewers carry ----
+  // The cube speaks those viewers' camera - yaw/pitch in radians, Y up - while this
+  // board is CSS 3D in degrees (rx/ry, Y down). `camState` is a live view of the one
+  // camera in the other's units, using exactly the mapping the cube already assumes:
+  // it draws itself with rotateX(-pitch) rotateY(yaw), which is this board's
+  // rotateX(rx) rotateY(ry). So snapping a face, dragging the cube and dragging the
+  // board all move the same state, and the cube tracks the board for free.
+  const D = 180 / Math.PI;
+  const camState = {
+    get yaw() { return view.ry / D; },
+    set yaw(v) { view.ry = v * D; },
+    get pitch() { return -view.rx / D; },
+    set pitch(v) { view.rx = -v * D; },
+  };
+  // The board eases every transform change (0.45s), which would smear the cube's
+  // per-frame drag and its own snap tween into a laggy rubber band. Drop the
+  // transition while the cube is driving - the same thing a board drag does - and
+  // restore it once the frames stop, so Flip over / Reset still glide home.
+  let cubeSettle = null;
+  attachViewCube({
+    wrap: stage,
+    state: camState,
+    setSpin,                   // the cube stops auto-rotate when grabbed or snapped
+    markDirty: () => {
+      board.classList.add('is-dragging');
+      applyBoard();
+      if (cubeSettle) clearTimeout(cubeSettle);
+      cubeSettle = setTimeout(() => { if (!pts.size) board.classList.remove('is-dragging'); }, 90);
+    },
+  });
 
   const bar = el('div', { class: 'anr-altium-bar' });
   const flip = el('button', { class: 'anr-btn', type: 'button' }, 'Flip over');
-  flip.addEventListener('click', () => { view.ry = Math.abs(((view.ry % 360) + 360) % 360 - 180) < 90 ? 0 : 180; applyBoard(); });
+  // A physical flip: half a turn from wherever the board currently sits, so the
+  // other side arrives at the angle you were already looking from. (It used to snap
+  // ry to exactly 0 or 180, throwing the viewing angle away and landing the board
+  // square-on.) Auto-rotate off first, or the half turn is just swallowed by it.
+  flip.addEventListener('click', () => { setSpin(false); view.ry += 180; applyBoard(); });
+  spinBtn = el('button', { class: 'anr-btn', type: 'button', title: 'Turn the board slowly on the spot' }, 'Auto-rotate');
+  spinBtn.classList.toggle('is-on', !!view.spin);
+  spinBtn.addEventListener('click', () => setSpin(!view.spin));
   const reset = el('button', { class: 'anr-btn', type: 'button' }, 'Reset view');
   reset.addEventListener('click', resetView);
   // Quality popup: supersampling toggle (rebuilds the slab via onToggleSS). MSAA
@@ -1000,10 +1074,26 @@ function buildBoard3D(pcb, opts = {}) {
   qBtn.addEventListener('click', (e) => { e.stopPropagation(); qPanel.classList.toggle('is-hidden'); });
   document.addEventListener('click', (e) => { if (!qWrap.contains(e.target)) qPanel.classList.add('is-hidden'); });
   qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
-  bar.appendChild(flip); bar.appendChild(reset); bar.appendChild(qWrap);
-  bar.appendChild(el('span', { class: 'anr-hint anr-pcb3d-hint' }, 'Drag to rotate - pinch or wheel to zoom - two-finger or right-drag to pan - double-tap to reset.'));
+  bar.appendChild(flip); bar.appendChild(spinBtn); bar.appendChild(reset); bar.appendChild(qWrap);
+  // The wheel only zooms once the scroll-zoom pill is armed (it starts off so the
+  // board doesn't trap the page scroll), so the hint points at the pill rather than
+  // promising a wheel zoom that does nothing yet.
+  bar.appendChild(el('span', { class: 'anr-hint anr-pcb3d-hint' }, 'Drag to rotate - pinch to zoom, or switch scroll zoom on for the wheel - two-finger or right-drag to pan - double-tap to reset.'));
+
+  // The rotation loop stops itself whenever the stage leaves the document, which
+  // covers teardown but also the two ways this node comes back: a Quality rebuild
+  // (a new slab, same `view`) and a Top/Bottom round trip (the very same node, put
+  // back from the mode cache). resumeSpin restarts it for both - called below for
+  // the rebuild, and by boardView's show() for the cached node.
+  const resumeSpin = () => {
+    if (!view.spin || spinRaf) return;
+    board.classList.add('is-spinning');
+    spinRaf = requestAnimationFrame(spinTick);
+  };
 
   const wrap = el('div', { class: 'anr-altium-wrap anr-pcb3d-wrap' });
+  wrap._anrResumeSpin = resumeSpin;
+  resumeSpin();
   wrap.appendChild(stage); wrap.appendChild(bar);
   return wrap;
 }
@@ -1020,7 +1110,7 @@ function boardView(pcb) {
   // 3D supersampling state + a camera shared across rebuilds, so toggling
   // supersampling keeps the view. onToggleSS flips it and rebuilds the 3D node.
   let ss3d = true;
-  const view3d = { rx: -22, ry: 0, zoom: 1, panX: 0, panY: 0 };
+  const view3d = { rx: HOME3D.rx, ry: HOME3D.ry, zoom: 1, panX: 0, panY: 0, spin: false };
   const build = (mode) => {
     if (cache[mode]) return cache[mode];
     let node;
@@ -1031,7 +1121,12 @@ function boardView(pcb) {
   };
   const show = (mode) => {
     host.innerHTML = '';
-    host.appendChild(build(mode));
+    const node = build(mode);
+    host.appendChild(node);
+    // Detaching the 3D board (switching to Top/Bottom) stops its auto-rotate loop.
+    // Putting the cached node back has to start it again, or the board comes back
+    // still with the Auto-rotate button reading as on.
+    if (node._anrResumeSpin) node._anrResumeSpin();
     for (const btn of bar.querySelectorAll('button[data-mode]')) btn.classList.toggle('is-on', btn.dataset.mode === mode);
   };
   for (const [mode, label] of [['3d', '3D board'], ['top', 'Top'], ['bottom', 'Bottom']]) {

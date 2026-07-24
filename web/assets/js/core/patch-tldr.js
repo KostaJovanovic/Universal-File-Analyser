@@ -15,11 +15,20 @@ import { el } from './util.js';
 // newest group's notes, or - once that group holds five versions - start a new
 // group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
-  { range: '7.01 - 7.05', notes: [
-    'A song that took **26 seconds** to analyse now takes **3** - the heavy sound reads moved to a background thread, the frequency maths rewritten, and each answer filling in as it lands.',
+  { range: '8.0', milestone: true, notes: [
+    'Eighth milestone: a song that took **26 seconds** to analyse now takes **3** - the heavy sound reads moved to a background thread, the frequency maths rewritten, and each answer filling in as it lands.',
     'The same speed pass reaches **long documents** (measured once instead of per paragraph), **dropped folders** (read in parallel, cancellable, counted as they arrive) and **photos** (the heavy forensic reads prepared only when opened).',
     'New **XMP sidecar** viewer: the develop recipe Lightroom, Camera Raw and darktable write beside a raw photo, with the tone curve, sliders, colour mixer and crop drawn out.',
     'Sound gains a **Reverse** that re-analyses the reversed track in full, a **lossy-source check** promoted to its own card, redrawn **touch-tones** you can click to hear, and **space** to play or pause anywhere.',
+    '**Circuit boards open offline** at last - the drawing engine both board viewers are built on was never saved for offline use - and the 3D board gains the **view cube** the other 3D viewers carry, an **Auto-rotate**, a three-quarter opening angle and a **Flip over** that keeps your viewing angle.',
+    'One strict **cleaner** for anything a dropped file wants to display (email, saved web page, e-book chapter, SVG): there were four, they had drifted, three could be slipped past by a disguised link, and an **e-book chapter** could quietly fetch a picture from the internet.',
+    'A video **contact sheet** stops dropping frames on a big file (two of eight on a 1.5 GB clip), both it and **scene detection** now show progress, the **content timeline** finally appears on a large video, and the raw **box tree** drops to the bottom of Advanced.',
+    'A photo\'s **embedded thumbnail** is shown the right way up at last, and its **fingerprints** move into Advanced with the rest of the deep analysis.',
+    '**Blank sheets hold the space** while a PDF, document, slideshow or comic draws its pages, instead of a tall block of previews landing on top of the finished analysis and shoving it downwards.',
+    '**Clear storage** finally reclaims the space - the offline downloads, extra OCR languages and AI models go too - and **settings stop vanishing** on a reload, swept away by a tidy-up that had no business touching them.',
+    'Searching the page now **opens a folded Advanced section** to show the match, a **sample** you open no longer replaces the file you had on the home page, and a 3D viewer no longer **swallows the page scroll**.',
+  ] },
+  { range: '7.01 - 7.02', notes: [
     'The deep **Advanced** forensic analysis is gathered into one tidy section - each panel now a sub-heading rather than a separate card - and dropped to the **very bottom** of every photo, video and sound, below everything else.',
     'Sound\'s **loudness graph** (EBU R128, with true peak) becomes playable like the waveform - a playhead tracks the sound and you can click or drag anywhere on it to seek.',
     'A photo\'s **privacy report** (GPS, serial, owner, copyright, unique IDs) moves up into the main metadata, and a copyright field that used to misread is fixed.',

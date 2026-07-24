@@ -15,10 +15,12 @@
    ============================================================================ */
 
 import { el, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '../core/util.js';
+// Saved web pages arrive as untrusted markup - sanitised with the shared rules.
+import { sanitizeHtml } from '../core/sanitize.js';
 import { buildOsintCard } from '../core/osint.js';
 import { SCAN_LARGE } from '../core/limits.js';
 import { openZip } from './zip.js';
-import { paginateText, paginateFlow, pagedPreviewCard, pagedTextCard } from './paged.js';
+import { paginateText, paginateFlow, pagedPreviewCard, pagedTextCard, pagePreviewSkeleton } from './paged.js';
 
 const LABELS = {
   rtf: 'Rich Text Format', abw: 'AbiWord document', fb2: 'FictionBook e-book',
@@ -172,32 +174,12 @@ function extractMhtmlHtml(text) {
   return html;
 }
 
-// Build a sanitised content element from an HTML string (no scripts, styles,
-// event handlers or network-loading resources).
-function sanitizeHtml(html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  doc.querySelectorAll('script, style, link, meta, iframe, object, embed, noscript, base, title').forEach((n) => n.remove());
-  for (const node of doc.querySelectorAll('*')) {
-    for (const attr of [...node.attributes]) {
-      const name = attr.name.toLowerCase();
-      const val = attr.value;
-      if (name.startsWith('on')) node.removeAttribute(attr.name);
-      else if ((name === 'href' || name === 'src' || name === 'xlink:href') && /^\s*javascript:/i.test(val)) node.removeAttribute(attr.name);
-      else if (name === 'src' || name === 'srcset' || name === 'background') node.removeAttribute(attr.name); // no network fetches
-      else if (name === 'style' && /url\s*\(/i.test(val)) node.removeAttribute(attr.name);
-    }
-  }
-  const container = document.createElement('div');
-  const body = doc.body || doc.documentElement;
-  for (const child of [...body.childNodes]) container.appendChild(child);
-  return container;
-}
-
 // ---------- main ----------
 export async function renderTextDoc(file, container, kind, ext) {
   container.hidden = false;
   container.innerHTML = '';
-  container.appendChild(el('div', { class: 'anr-info' }, 'Reading document...'));
+  // Ghost sheets stand in while the file is read, decoded and paginated.
+  container.appendChild(pagePreviewSkeleton({ note: 'Reading document...' }));
 
   try {
     ext = (ext || (file.name.split('.').pop() || '')).toLowerCase();

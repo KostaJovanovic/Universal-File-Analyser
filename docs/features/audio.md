@@ -101,9 +101,13 @@ readout above. Each panel below is closed until opened:
   BS.1770), **momentary** (400 ms) and **short-term** (3 s) maxima, **Loudness
   Range (LRA)**, and **true peak** (4x-oversampled dBTP, catching inter-sample
   overs that sample-peak metering misses), plus a **loudness-over-time** plot
-  with a -14 LUFS streaming-target reference line. Measured on the
-  channel-merged signal; a true peak above 0 dBTP is flagged in the accent
-  colour (delivery specs cap it at -1 dBTP).
+  with a -14 LUFS streaming-target reference line. The plot is playable like
+  the waveform - click or drag to seek, own transport below - and its
+  playhead is measured against the decoded buffer's duration, the same time
+  base the curve is plotted in and the one every other playhead on the page
+  uses, so all of them stay in step. Measured on the channel-merged signal;
+  a true peak above 0 dBTP is flagged in the accent colour (delivery specs
+  cap it at -1 dBTP).
 - **Lossy-source check** - decides whether a file that claims to be lossless
   (FLAC/WAV/ALAC...) was really made from an MP3/AAC, by finding the hard
   spectral low-pass a lossy codec leaves and mapping its cutoff to a probable

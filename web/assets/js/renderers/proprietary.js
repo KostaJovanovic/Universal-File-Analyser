@@ -2705,7 +2705,7 @@ async function parseAep(file) {
       else if (fourcc === 'sspc' || fourcc === 'pin ' || fourcc === 'Pin ') footage++;
       else if (fourcc === 'tdmn') {
         // Effect / property match-name: a NUL-terminated ASCII string.
-        const s = ascii(buf, dataStart, Math.min(len, 128)).replace(/ .*$/, '').trim();
+        const s = ascii(buf, dataStart, Math.min(len, 128)).replace(/\x00.*$/, '').trim();
         if (s && s !== 'ADBE Group End' && /[A-Za-z]/.test(s)) matchNames.add(s);
       }
 
@@ -2786,7 +2786,7 @@ function utf16Safe(buf) {
 // buffer by scanning both ASCII and UTF-16 string runs.
 function harvestPaths(buf) {
   const out = new Set();
-  const re = /(?:[A-Za-z]:\\|\\\\[^\s"<>|*?]+\\|\/(?:Users|Volumes|home|Applications|Movies)\/)[^ "<>|*?\n\r]{2,200}/g;
+  const re = /(?:[A-Za-z]:\\|\\\\[^\s"<>|*?]+\\|\/(?:Users|Volumes|home|Applications|Movies)\/)[^\x00"<>|*?\n\r]{2,200}/g;
   // ASCII pass
   const aRun = asciiRun(buf, 0, buf.length);
   for (const m of aRun.matchAll(re)) {

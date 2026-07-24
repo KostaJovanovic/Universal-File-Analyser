@@ -105,6 +105,29 @@ in `paged.js`.
 **How to use it.** Same controls as PDF's thumbnail/lightbox pattern: **Show
 next N pages**/**Show all**, per-page **Copy**, and **Copy all text**.
 
+### Page preview placeholder
+
+**What it does.** Every paged format shows empty page-shaped tiles where its
+previews will land, from the moment the file is recognised until the real
+sheets exist. Getting to a first page is slow in a way that isn't obvious -
+a DOCX has to be unzipped, its XML parsed, its images decoded and its flow
+laid out; a PDF needs a `pdf.js` render pass per page - and until this the
+other cards appeared first, so the analysis looked finished and then had
+everything shoved down when a tall previews card arrived on top.
+
+**How to reach it.** Automatic, on PDF, DOCX, ODT/ODS/ODP, legacy
+DOC/XLS/PPT, RTF/FB2/MHTML and the other `textdoc.js` types, PPTX slides,
+and CBZ/CBR comic pages.
+
+**How it works.** `pagePreviewSkeleton()` in `paged.js` builds the stand-in
+card - the real title, a status line, and ghost tiles sized from the same
+`thumbWidth()` the real thumbnails use, so the swap moves nothing. Renderers
+keep the returned node and `.replaceWith()` the real card onto it. Grids
+whose tiles fill in one at a time (PPTX slides, comic pages) instead
+pre-place one `.anr-ghost-sheet` per page and replace them individually.
+The tiles are surface-coloured rather than paper-white, with a slow accent
+sweep, so they read as pending rather than as blank pages.
+
 ```demo
 btn: Show next 3 pages
 btn: Show all

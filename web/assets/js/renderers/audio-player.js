@@ -5,7 +5,7 @@
    Drag listeners are attached on press and removed on release so they don't pile
    up as new files are analysed. Used by audio.js and (via re-export) video.js. */
 
-import { el } from '../core/util.js';
+import { el, setPlayerFill } from '../core/util.js';
 import { isSynced, getAudioOwner, onAudioOwner, getAudioCompanion } from '../core/video-sync.js';
 
 export function makePlayer(mediaEl, knownDuration, opts = {}) {
@@ -70,7 +70,7 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
   function scrub(clientX) {
     const rect = trackEl.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    fillEl.style.width = (frac * 100) + '%';
+    setPlayerFill(fillEl, frac);
     if (controller) { controller.seek(frac); return; }
     const d = dur();
     // Set currentTime directly. The browser coalesces rapid seeks during a drag;
@@ -110,12 +110,16 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
     window.addEventListener('touchend', onTouchEnd);
   }, { passive: false });
 
+  let lastLabel = '';
   function tick() {
     if (controller) return;   // while delegated, the controller pushes UI via update()
     const d = dur();
-    const pct = d > 0 ? (mediaEl.currentTime / d) * 100 : 0;
-    fillEl.style.width = pct + '%';
-    timeEl.textContent = fmt(mediaEl.currentTime) + ' / ' + fmt(d);
+    setPlayerFill(fillEl, d > 0 ? mediaEl.currentTime / d : 0);
+    // The readout is whole seconds, so it changes ~once a second while this runs
+    // 60 times a second. Writing textContent invalidates the node either way, so
+    // compare first and leave it alone for the other 59 frames.
+    const label = fmt(mediaEl.currentTime) + ' / ' + fmt(d);
+    if (label !== lastLabel) { lastLabel = label; timeEl.textContent = label; }
     if (!mediaEl.paused) requestAnimationFrame(tick);
   }
   mediaEl.addEventListener('seeked', tick);
@@ -138,7 +142,7 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
       tick();
     },
     update(frac, curSec, durSec, playing) {
-      fillEl.style.width = (Math.max(0, Math.min(1, frac)) * 100) + '%';
+      setPlayerFill(fillEl, frac);
       timeEl.textContent = fmt(curSec) + ' / ' + fmt(durSec);
       playBtn.classList.remove('is-replay');
       playBtn.textContent = playing ? '❚❚' : '▶';

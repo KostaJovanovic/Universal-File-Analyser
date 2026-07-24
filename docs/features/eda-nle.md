@@ -49,9 +49,14 @@ those, or the extensionless `fp-lib-table`/`sym-lib-table`/`fp-info-cache`.
 Built in `kicad.js`.
 
 **How to use it.** **Fit**/**Reset view** reset the schematic or 3D view;
-**layer chips** toggle PCB layer visibility; **Flip over** flips the 3D
-board to the other side; **Quality**/**Supersampling** are render-quality
+**layer chips** toggle PCB layer visibility; **Flip over** turns the 3D board
+half a turn to show the other side, keeping the angle you were looking from;
+**Auto-rotate** turns the board slowly on the spot (off by default, and any
+drag, snap or reset stops it); **Quality**/**Supersampling** are render-quality
 toggles; **3D board**/**Top**/**Bottom** switch board view mode; the
+**view cube** in the lower left of the 3D board is the same orientation
+gizmo the G-code and 3D-model viewers carry - drag it to orbit, or click a
+face, edge or corner to snap the board head-on, edge-on or corner-on; the
 **symbol select** dropdown previews a specific library symbol/footprint;
 **designator buttons** (per BOM row) and **PCB** cross-probe between the
 schematic and board views; **tab buttons** switch multi-sheet schematics.
@@ -60,6 +65,7 @@ schematic and board views; **tab buttons** switch multi-sheet schematics.
 btn: Fit
 btn: Reset view
 btn: Flip over
+btn: Auto-rotate
 btn: Quality
 ```
 

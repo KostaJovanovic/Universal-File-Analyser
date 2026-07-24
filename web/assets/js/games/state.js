@@ -38,10 +38,15 @@ export const maxStartWave = () => Math.max(1, (g.bestWave || 0) - 2);
 // orchestrator after this runs.
 export function initState() {
   // Persistent player settings; saved overrides merged in. Read live each frame.
+  // SETTINGS_KEY is the one game key the footer's "Clear storage" preserves - it
+  // spares settings and wipes stored data, and this object holds reduceFlash, an
+  // accessibility choice. Everything else read below is progress, so a clear
+  // resets it to these defaults.
   g.settings = { reduceFlash: false, bgDetail: true, showFps: true, hideAsteroidText: false, legacyControls: false, renderScale: 1 };
   try { Object.assign(g.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (_) {}
 
-  // Persistent high score (survives the footer "Clear storage", which preserves this key).
+  // High score - cleared by the footer's "Clear storage" along with the rest of
+  // the run history (best wave, boss unlock, start wave).
   g.highScore = 0;
   try { g.highScore = parseInt(localStorage.getItem(HI_KEY) || '0', 10) || 0; } catch (_) {}
   g.newHigh = false;

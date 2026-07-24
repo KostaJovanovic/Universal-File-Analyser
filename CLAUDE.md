@@ -43,7 +43,10 @@ There is no build, lint, or test pipeline — editing a file *is* the dev loop.
   `stamp-head`, `prerender-testpage`, `build-docs-html`. Anything those scripts
   emit is **regenerated on every commit** — edit their inputs, never their
   output. You can run any of them standalone (`node tools/<name>.mjs`) to
-  preview locally.
+  preview locally. `check-shell` runs last and is the odd one out: a check, not
+  a generator — it writes nothing and just reports offline-manifest gaps
+  (a module missing from `sw.js` `SHELL`, or a precached module importing one
+  that isn't). Non-fatal, but a report there means something is broken offline.
 - **Deploy**: pushing to `main` ships via Cloudflare (config in
   `wrangler.jsonc`). No manual deploy step.
 

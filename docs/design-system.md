@@ -84,6 +84,19 @@ kind of special-purpose shape.
 - Cards, tables, and readouts generally live inside `.anr-results` /
   `row()`/`rowHelp()`-built structures from `core/util.js`, styled once in
   `analyser.css` rather than per-renderer.
+- **`.anr-ghost-sheet`** - the empty placeholder tile for a preview that is
+  still being built (document/PDF page previews, PPTX slides, comic pages).
+  Surface-coloured with a slow accent sweep, deliberately *not* the white of
+  a real page sheet, so it reads as pending rather than blank. Add
+  `.is-loaded` to settle a tile that has filled in without moving its frame.
+- **`.anr-player-fill`** - the accent scrubber bar inside `.anr-player-track`.
+  Always painted through `setPlayerFill(el, frac)` in `core/util.js`, never by
+  setting `width`: it is the one element updated on every animation frame while
+  something plays, and a percentage width reflows the whole analysis document
+  each time - enough to cost a heavy video its frame budget. The CSS is
+  `width:100%` with `transform: scaleX()` and a left origin, so the change is
+  compositor-only. Any new transport must use the helper; a raw `width` write
+  will now paint nothing.
 
 The standard button in its default, call-to-action and disabled states (hover
 or press any of them to see the invert):
