@@ -116,9 +116,21 @@ function bindSweepFx(mark, letters, opts = {}) {
   let sweep = null;                 // { t0, duration, sx, ex, cy, vx, radius } | null
   let raf = 0, running = false, fxT = 0;
 
-  function letterWeight(l) {
-    const r = l.el.getBoundingClientRect();
-    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  // Read every letter's centre in one pass, then write every weight. Reading a
+  // rect immediately after writing a fontWeight forces a synchronous
+  // style+layout flush, so interleaving the two cost one full-document layout
+  // per letter per frame - and each of those scales with however much analysis
+  // is on the page, which is what made hovering a heading lock up after a big
+  // file. lockWidths() already batches this way.
+  const cxs = [], cys = [];
+  function readCentres() {
+    for (let i = 0; i < letters.length; i++) {
+      const r = letters[i].el.getBoundingClientRect();
+      cxs[i] = r.left + r.width / 2;
+      cys[i] = r.top + r.height / 2;
+    }
+  }
+  function letterWeight(l, cx, cy) {
     let t = 1;
     if (inside) t = Math.min(t, Math.hypot(mx - cx, my - cy) / RADIUS_HOVER);
     if (sweep)  t = Math.min(t, Math.hypot(sweep.vx - cx, sweep.cy - cy) / sweep.radius);
@@ -134,7 +146,10 @@ function bindSweepFx(mark, letters, opts = {}) {
       if (p >= 1) sweep = null;
     }
     if (inside || sweep) {
-      for (const l of letters) l.el.style.fontWeight = letterWeight(l);
+      readCentres();
+      for (let i = 0; i < letters.length; i++) {
+        letters[i].el.style.fontWeight = letterWeight(letters[i], cxs[i], cys[i]);
+      }
       raf = requestAnimationFrame(frame);
     } else {
       // Don't overwrite to base here - leave the letters at their last hover
@@ -249,9 +264,18 @@ export function setupSectionFx() {
     const unlockWidths = () => { for (const l of letters) l.el.style.width = ''; };
 
     let mx = -9999, my = -9999, inside = false, raf = 0, running = false, fxT = 0;
-    const weight = (l) => {
-      const r = l.el.getBoundingClientRect();
-      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    // Read all centres, then write all weights - see the note on readCentres()
+    // in the section-heading effect above. Interleaved, this forced one
+    // full-document layout per letter per frame.
+    const cxs = [], cys = [];
+    const readCentres = () => {
+      for (let i = 0; i < letters.length; i++) {
+        const r = letters[i].el.getBoundingClientRect();
+        cxs[i] = r.left + r.width / 2;
+        cys[i] = r.top + r.height / 2;
+      }
+    };
+    const weight = (l, cx, cy) => {
       const t = inside ? Math.min(1, Math.hypot(mx - cx, my - cy) / RADIUS) : 1;
       return Math.round(l.base * t + 300 * (1 - t));
     };
@@ -264,7 +288,10 @@ export function setupSectionFx() {
     };
     const frame = () => {
       if (inside) {
-        for (const l of letters) l.el.style.fontWeight = weight(l);
+        readCentres();
+        for (let i = 0; i < letters.length; i++) {
+          letters[i].el.style.fontWeight = weight(letters[i], cxs[i], cys[i]);
+        }
         raf = requestAnimationFrame(frame);
       } else {
         // Leave letters at their last hover weight so settle() can ease them
@@ -351,9 +378,17 @@ function bindLetterFx(mark) {
   const unlockWidths = () => { for (const l of letters) l.el.style.width = ''; };
 
   let mx = -9999, my = -9999, inside = false, raf = 0, running = false, fxT = 0;
-  const weight = (l) => {
-    const r = l.el.getBoundingClientRect();
-    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  // Read all centres, then write all weights - see the note on readCentres() in
+  // the section-heading effect above.
+  const cxs = [], cys = [];
+  const readCentres = () => {
+    for (let i = 0; i < letters.length; i++) {
+      const r = letters[i].el.getBoundingClientRect();
+      cxs[i] = r.left + r.width / 2;
+      cys[i] = r.top + r.height / 2;
+    }
+  };
+  const weight = (l, cx, cy) => {
     const t = inside ? Math.min(1, Math.hypot(mx - cx, my - cy) / RADIUS) : 1;
     return Math.round(l.base * t + 300 * (1 - t));
   };
@@ -364,7 +399,10 @@ function bindLetterFx(mark) {
   };
   const frame = () => {
     if (inside) {
-      for (const l of letters) l.el.style.fontWeight = weight(l);
+      readCentres();
+      for (let i = 0; i < letters.length; i++) {
+        letters[i].el.style.fontWeight = weight(letters[i], cxs[i], cys[i]);
+      }
       raf = requestAnimationFrame(frame);
     } else {
       running = false;

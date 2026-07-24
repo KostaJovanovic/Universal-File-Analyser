@@ -68,9 +68,21 @@ function parseRaw(buf) {
     flags: get('Flags'), command: get('Command'), offset: get('Offset'),
   };
   const nVars = parseInt(get('No\\. Variables'), 10) || 0;
-  const nPoints = parseInt(get('No\\. Points'), 10) || 0;
+  let nPoints = parseInt(get('No\\. Points'), 10) || 0;
   const complex = /complex/i.test(meta.flags);
   if (!nVars || !nPoints) throw new Error('missing variable/point count');
+
+  // Both counts come from the header text, and they size the allocation below.
+  // A corrupt (or hostile) header can claim far more than the file holds - a
+  // 1 KB file declaring "5000 variables x 1000000 points" would ask for a 40 GB
+  // allocation and take the tab down. The smallest encoding of a value is a
+  // 4-byte float, so the file itself can never contain more than length/4 of
+  // them: use that as the physical ceiling. Clamp rather than throw, so a
+  // truncated capture still plots the points it actually has.
+  const maxValues = Math.floor(buf.length / 4);
+  const pointsClaimed = nPoints;
+  if (nVars * nPoints > maxValues) nPoints = Math.max(1, Math.floor(maxValues / nVars));
+  const truncated = nPoints < pointsClaimed;
 
   // Variable table: between "Variables:" and the data marker, one per line as
   // "<index>\t<name>\t<type>".
@@ -157,7 +169,7 @@ function parseRaw(buf) {
     }
   }
 
-  return { meta, vars, nVars, nPoints, complex, data, x: data[0] };
+  return { meta, vars, nVars, nPoints, complex, data, x: data[0], truncated, pointsClaimed };
 }
 
 // ---------------------------------------------------------------------------
@@ -371,7 +383,13 @@ export async function renderSpiceRaw(file, resultsEl) {
   if (m.date) tbl.appendChild(row('Date', m.date));
   if (m.flags) tbl.appendChild(rowHelp('Flags', m.flags, 'Whether each recorded value is a single ("real") number, used for time and DC data, or a pair of numbers ("complex", a real part and an imaginary part), used for AC frequency data.'));
   tbl.appendChild(rowHelp('Variables', String(parsed.nVars), 'The signals recorded in the simulation - the voltages at circuit connection points (nodes), the currents through parts (branches) and the axis being swept, such as time or frequency.'));
-  tbl.appendChild(row('Data points', parsed.nPoints.toLocaleString()));
+  if (parsed.truncated) {
+    tbl.appendChild(rowHelp('Data points',
+      parsed.nPoints.toLocaleString() + '  (header declares ' + parsed.pointsClaimed.toLocaleString() + ')',
+      'The file says the simulation recorded more points than the file itself actually holds, so the run was cut short or the file is damaged. Analyser plots the points that are really there.'));
+  } else {
+    tbl.appendChild(row('Data points', parsed.nPoints.toLocaleString()));
+  }
   if (!isOp && parsed.x && parsed.x.length > 1) {
     const xt = parsed.vars[0] && parsed.vars[0].type;
     const span = parsed.x[parsed.x.length - 1] - parsed.x[0];

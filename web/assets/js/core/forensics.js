@@ -140,8 +140,27 @@ async function zipLogicalEnd(file) {
   return null;
 }
 
+// Fast path shared by the three whole-file scans below. These sit on the
+// critical path for every PNG/JPEG/GIF - trailingDataCheck is awaited before the
+// renderer is even dispatched - and each one used to pull the entire file into
+// memory just to confirm the usual answer, "nothing is appended". A file whose
+// final bytes are its own terminator has nothing after its logical end, so check
+// that first and read a few bytes instead of up to TRAIL_MAX_FULL. The full scan
+// still runs for the files that actually have something hidden after the end,
+// which is the case worth spending time on.
+async function endsWith(file, sig) {
+  if (file.size < sig.length) return false;
+  const b = new Uint8Array(await file.slice(file.size - sig.length).arrayBuffer());
+  for (let i = 0; i < sig.length; i++) if (b[i] !== sig[i]) return false;
+  return true;
+}
+
+// IEND is always a zero-length chunk with a fixed CRC, so all 12 bytes are known.
+const PNG_IEND = [0, 0, 0, 0, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82];
+
 // PNG: walk length-prefixed chunks from byte 8 to IEND; end is past IEND's CRC.
 async function pngLogicalEnd(file) {
+  if (await endsWith(file, PNG_IEND)) return file.size;
   const b = new Uint8Array(await file.arrayBuffer());
   const dv = new DataView(b.buffer);
   let pos = 8;
@@ -158,6 +177,7 @@ async function pngLogicalEnd(file) {
 // JPEG: the real EOI is the last FF D9 (appended data after it has no marker
 // meaning). Scanning from the end under-reports rather than false-flags.
 async function jpegLogicalEnd(file) {
+  if (await endsWith(file, [0xFF, 0xD9])) return file.size;
   const b = new Uint8Array(await file.arrayBuffer());
   for (let i = b.length - 2; i >= 2; i--) {
     if (b[i] === 0xFF && b[i + 1] === 0xD9) return i + 2;
@@ -168,6 +188,10 @@ async function jpegLogicalEnd(file) {
 // GIF: block walk (screen descriptor -> extensions / image blocks) to the 0x3B
 // trailer; end is the byte after it.
 async function gifLogicalEnd(file) {
+  // A single 0x3B could in principle be the last byte of an appended blob rather
+  // than the real trailer, so this can under-report - the same trade-off the JPEG
+  // scan above already makes deliberately, and preferable to a false flag.
+  if (await endsWith(file, [0x3B])) return file.size;
   const b = new Uint8Array(await file.arrayBuffer());
   let p = 6;                            // after "GIF87a"/"GIF89a"
   if (p + 7 > b.length) return null;

@@ -17,19 +17,50 @@ export function computeStats(samples) {
   return { peak, rms, peakDb, rmsDb, clipped };
 }
 
+// Precomputed twiddle factors and Hann window, cached per FFT size.
+//
+// The butterfly loops below used to compute `Math.cos(-PI*j/s)` and the matching
+// sin on every single butterfly, and rebuild the Hann window on every frame -
+// two transcendental calls per butterfly, which dominated the cost of both
+// whole-file passes in this file (and they run over every sample of the track).
+// The values only depend on the FFT size, so they are built once and reused.
+// Results are bit-identical: same angles, same order, just looked up.
+const _fftCache = new Map();
+function fftTables(N) {
+  let t = _fftCache.get(N);
+  if (t) return t;
+  const half = N >> 1;
+  const cosT = new Float64Array(half), sinT = new Float64Array(half);
+  for (let k = 0; k < half; k++) {
+    const a = -Math.PI * k / half;
+    cosT[k] = Math.cos(a);
+    sinT[k] = Math.sin(a);
+  }
+  const win = new Float64Array(N);
+  for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N);
+  t = { cosT, sinT, win, half };
+  _fftCache.set(N, t);
+  return t;
+}
+
 export function computeCentroid(samples, sampleRate) {
   const N = 4096;
   const frames = Math.floor(samples.length / N);
   if (frames === 0) return null;
+  const { cosT, sinT, win, half } = fftTables(N);
+  // Reused across frames - this allocated two Float32Arrays per frame before,
+  // which on a long track meant thousands of throwaway buffers.
+  const re = new Float32Array(N), im = new Float32Array(N);
   let totalCentroid = 0;
   for (let f = 0; f < frames; f++) {
-    const re = new Float32Array(N), im = new Float32Array(N);
-    for (let i = 0; i < N; i++) re[i] = samples[f * N + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / N));
+    const off = f * N;
+    for (let i = 0; i < N; i++) { re[i] = samples[off + i] * win[i]; im[i] = 0; }
     for (let s = 1; s < N; s <<= 1) {
+      const step = half / s;
       for (let k = 0; k < N; k += s << 1) {
         for (let j = 0; j < s; j++) {
-          const a = -Math.PI * j / s;
-          const wr = Math.cos(a), wi = Math.sin(a);
+          const idx = j * step;
+          const wr = cosT[idx], wi = sinT[idx];
           const tr = re[k + j + s] * wr - im[k + j + s] * wi;
           const ti = re[k + j + s] * wi + im[k + j + s] * wr;
           re[k + j + s] = re[k + j] - tr; im[k + j + s] = im[k + j] - ti;
@@ -38,7 +69,7 @@ export function computeCentroid(samples, sampleRate) {
       }
     }
     let num = 0, den = 0;
-    for (let i = 0; i < N / 2; i++) {
+    for (let i = 0; i < half; i++) {
       const mag = Math.sqrt(re[i] * re[i] + im[i] * im[i]);
       const freq = (i * sampleRate) / N;
       num += freq * mag;
@@ -140,22 +171,29 @@ export function detectBPM(samples, sampleRate) {
   const numFrames = Math.floor((samples.length - N) / hop);
   if (numFrames < 4) return null;
 
-  // Compute magnitude spectra for each frame
-  const mags = [];
+  // Per-frame magnitude spectrum, folded straight into the spectral flux (the
+  // sum of positive magnitude differences between consecutive frames).
+  //
+  // This used to keep every frame's spectrum in a `mags` array so a second pass
+  // could diff them - on a 5-minute track that is ~28k Float32Arrays and ~57 MB
+  // held live, for a calculation that only ever looks at the previous frame. Two
+  // rolling buffers do the same job, and the FFT scratch buffers are reused
+  // instead of reallocated per frame.
+  const { cosT, sinT, win } = fftTables(N);
+  const re = new Float32Array(N), im = new Float32Array(N);
+  let prevMag = new Float32Array(halfN), curMag = new Float32Array(halfN);
+  const flux = new Float32Array(numFrames);
   for (let f = 0; f < numFrames; f++) {
     const off = f * hop;
-    const re = new Float32Array(N);
-    const im = new Float32Array(N);
     // Hann window + copy
-    for (let i = 0; i < N; i++) {
-      re[i] = samples[off + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / N));
-    }
+    for (let i = 0; i < N; i++) { re[i] = samples[off + i] * win[i]; im[i] = 0; }
     // In-place radix-2 FFT (same pattern as computeCentroid)
     for (let s = 1; s < N; s <<= 1) {
+      const step = halfN / s;
       for (let k = 0; k < N; k += s << 1) {
         for (let j = 0; j < s; j++) {
-          const a = -Math.PI * j / s;
-          const wr = Math.cos(a), wi = Math.sin(a);
+          const idx = j * step;
+          const wr = cosT[idx], wi = sinT[idx];
           const tr = re[k + j + s] * wr - im[k + j + s] * wi;
           const ti = re[k + j + s] * wi + im[k + j + s] * wr;
           re[k + j + s] = re[k + j] - tr;
@@ -165,22 +203,16 @@ export function detectBPM(samples, sampleRate) {
         }
       }
     }
-    const mag = new Float32Array(halfN);
-    for (let i = 0; i < halfN; i++) {
-      mag[i] = Math.sqrt(re[i] * re[i] + im[i] * im[i]);
+    for (let i = 0; i < halfN; i++) curMag[i] = Math.sqrt(re[i] * re[i] + im[i] * im[i]);
+    if (f > 0) {
+      let sum = 0;
+      for (let i = 0; i < halfN; i++) {
+        const diff = curMag[i] - prevMag[i];
+        if (diff > 0) sum += diff;
+      }
+      flux[f] = sum;
     }
-    mags.push(mag);
-  }
-
-  // Spectral flux: sum of positive magnitude differences between consecutive frames
-  const flux = new Float32Array(numFrames);
-  for (let f = 1; f < numFrames; f++) {
-    let sum = 0;
-    for (let i = 0; i < halfN; i++) {
-      const diff = mags[f][i] - mags[f - 1][i];
-      if (diff > 0) sum += diff;
-    }
-    flux[f] = sum;
+    const swap = prevMag; prevMag = curMag; curMag = swap;
   }
 
   // Adaptive peak picking: onset if flux > local mean * 1.5

@@ -59,6 +59,10 @@ let _dropLoaderShownAt = 0;
 // rAF that actually applies the is-open class, so hideDropLoader() can tell
 // "about to show" apart from "never shown" and never lose the race.
 let _dropLoaderOpen = false;
+// Latest label text, so a long multi-step read (the folder walk) can report
+// progress even while the bar is still inside its 160ms anti-flash debounce -
+// reveal() picks this up rather than the text captured when it was scheduled.
+let _dropLoaderLabel = null;
 // Once the bar is actually on screen, keep it up at least this long so a near-
 // instant render (e.g. a small file opened straight from a folder/zip view,
 // already in memory) doesn't make it flash-and-vanish.
@@ -72,6 +76,7 @@ export function showDropLoader(file, onCancel, labelText, immediate) {
   clearTimeout(_dropLoaderTimer);
   clearTimeout(_dropLoaderHideTimer);
   _dropLoaderOnCancel = onCancel || null;
+  _dropLoaderLabel = null;
   const name = (file && file.name) ? file.name : 'file';
   const reveal = () => {
     if (!_dropLoaderEl || !_dropLoaderEl.isConnected) {
@@ -98,7 +103,7 @@ export function showDropLoader(file, onCancel, labelText, immediate) {
       _dropLoaderEl._label = label;
       document.body.appendChild(_dropLoaderEl);
     }
-    _dropLoaderEl._label.textContent = labelText || ('Reading ' + name + '…');
+    _dropLoaderEl._label.textContent = _dropLoaderLabel || labelText || ('Reading ' + name + '…');
     _dropLoaderShownAt = performance.now();
     _dropLoaderOpen = true;
     // Guard the class-add on the intent flag: if hideDropLoader() runs in the
@@ -109,6 +114,12 @@ export function showDropLoader(file, onCancel, labelText, immediate) {
   };
   if (immediate) reveal();
   else _dropLoaderTimer = setTimeout(reveal, 160);
+}
+
+// Retitle the drop loader mid-flight (progress during a long read).
+export function setDropLoaderLabel(text) {
+  _dropLoaderLabel = text || null;
+  if (_dropLoaderEl && _dropLoaderEl._label) _dropLoaderEl._label.textContent = text || '';
 }
 
 export function hideDropLoader() {

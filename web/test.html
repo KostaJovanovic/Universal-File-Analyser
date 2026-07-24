@@ -509,11 +509,32 @@
             <p class="anr-hint">Secondary detail that renders closed by default, so it stays out of the way until opened.</p>
           </div>
 
-          <div class="tst-sub">.anr-card.anr-adv - the "Advanced" card (photo / video / sound): ONE collapsible section, sat at the very bottom of the page and closed by default. The card's own h3 is the only disclosure (.anr-collapsible + .is-collapsed, toggled by the delegated handler in app.js); its heavier forensic reads are flat .anr-adv-part blocks inside, each a .anr-readout-section-style sub-heading with its content below - the Metadata-card idiom, not a stack of nested accordions. Shown here expanded.</div>
+          <div class="tst-sub">.anr-card.anr-adv - the "Advanced" card (photo / video / sound): ONE collapsible section, sat at the very bottom of the page and closed by default. The card's own h3 is the only disclosure (.anr-collapsible + .is-collapsed, toggled by the delegated handler in app.js); its heavier forensic reads are flat .anr-adv-part blocks inside, each a .anr-readout-section-style sub-heading with its content below - the Metadata-card idiom, not a stack of nested accordions. The divider sits only BETWEEN parts (part ~ part), never under the card heading, which carries its own. Shown here expanded.</div>
           <div class="anr-card anr-adv anr-collapsible">
             <h3>Advanced</h3>
             <div class="anr-adv-part">
-              <div class="anr-adv-parthead">Loudness meter (EBU R128) <button type="button" class="anr-info-btn" title="Info">[?]</button></div>
+              <div class="anr-adv-parthead">Edit history <button type="button" class="anr-info-btn" title="Info">[?]</button></div>
+              <div>
+                <table class="anr-readout">
+                  <tr><th>Software</th><td>Adobe Photoshop 26.0</td></tr>
+                  <tr><th>Last edited</th><td>2026-07-02 14:11</td></tr>
+                </table>
+              </div>
+            </div>
+            <div class="anr-adv-part">
+              <div class="anr-adv-parthead">Error level analysis</div>
+              <div>
+                <table class="anr-readout">
+                  <tr><th>Resave quality</th><td>Estimated 92</td></tr>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="tst-sub">.anr-adv--flow - the same card as ONE continuous readout: no per-part sub-headings, no dividers, no gaps, the rows simply running on as though they were a single table. The .anr-adv-part wrappers survive only to carry each group's aria-label. Used by the sound renderer, where every row already carries its own label and [?] help, so a heading above them only restated the rows. Photo and video keep their headings (above) - their parts hold images and trees a label is doing real work above.</div>
+          <div class="anr-card anr-adv anr-adv--flow anr-collapsible">
+            <h3>Advanced</h3>
+            <div class="anr-adv-part" role="group" aria-label="Loudness meter (EBU R128)">
               <div>
                 <table class="anr-readout">
                   <tr><th>Integrated (gated)</th><td>-14.2 LUFS</td></tr>
@@ -523,20 +544,43 @@
                 </table>
               </div>
             </div>
-            <div class="anr-adv-part">
-              <div class="anr-adv-parthead">Lossy-source check</div>
-              <div>
-                <table class="anr-readout">
-                  <tr><th>Spectral cutoff</th><td>20,500 Hz (93% of Nyquist)</td></tr>
-                </table>
-              </div>
-            </div>
-            <div class="anr-adv-part">
-              <div class="anr-adv-parthead">Mains hum / ENF</div>
+            <div class="anr-adv-part" role="group" aria-label="Mains hum / ENF">
               <div>
                 <table class="anr-readout">
                   <tr><th>Mains hum</th><td>None detected</td></tr>
                 </table>
+              </div>
+            </div>
+            <div class="anr-adv-part" role="group" aria-label="Ultrasonic content">
+              <div>
+                <table class="anr-readout">
+                  <tr><th>Energy above 18 kHz</th><td>-62 dB below full band (negligible)</td></tr>
+                </table>
+              </div>
+            </div>
+            <div class="anr-adv-part anr-adv-part--titled">
+              <div class="anr-adv-parthead">Touch-tones (DTMF) <button type="button" class="anr-info-btn" title="Info">[?]</button></div>
+              <div>
+                <div class="anr-dtmf-seq">0207946</div>
+                <div class="anr-dtmf-track">
+                  <span class="anr-dtmf-tick" style="left:12.400%"></span>
+                  <span class="anr-dtmf-tick" style="left:15.100%"></span>
+                  <span class="anr-dtmf-tick" style="left:17.900%"></span>
+                  <span class="anr-dtmf-tick" style="left:20.300%"></span>
+                  <span class="anr-dtmf-tick" style="left:23.100%"></span>
+                  <span class="anr-dtmf-tick" style="left:25.800%"></span>
+                  <span class="anr-dtmf-tick" style="left:28.400%"></span>
+                </div>
+                <p class="anr-dtmf-caption">7 tones across 3:24</p>
+                <div class="anr-dtmf-keys">
+                  <button type="button" class="anr-dtmf-key"><span class="anr-dtmf-digit">0</span><span class="anr-dtmf-at">0:25.3</span></button>
+                  <button type="button" class="anr-dtmf-key"><span class="anr-dtmf-digit">2</span><span class="anr-dtmf-at">0:30.8</span></button>
+                  <button type="button" class="anr-dtmf-key"><span class="anr-dtmf-digit">0</span><span class="anr-dtmf-at">0:36.5</span></button>
+                  <button type="button" class="anr-dtmf-key"><span class="anr-dtmf-digit">7</span><span class="anr-dtmf-at">0:41.4</span></button>
+                  <button type="button" class="anr-dtmf-key"><span class="anr-dtmf-digit">9</span><span class="anr-dtmf-at">0:47.1</span></button>
+                  <button type="button" class="anr-dtmf-key"><span class="anr-dtmf-digit">4</span><span class="anr-dtmf-at">0:52.6</span></button>
+                  <button type="button" class="anr-dtmf-key"><span class="anr-dtmf-digit">6</span><span class="anr-dtmf-at">0:57.9</span></button>
+                </div>
               </div>
             </div>
           </div>

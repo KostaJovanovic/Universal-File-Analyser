@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 253;
+const COMMIT_COUNT = 254;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -41,7 +41,7 @@ import { setupHeaderFx, setupSectionFx, setupFooterFx } from './effects.js';
 import { setupStatsPage } from './stats-page.js';
 import { sniffFileType, resolveByContent, isReadableText } from './file-sniff.js';
 import { signatureCheck, signatureCard, trailingDataCheck, trailingCard, findIntegrityCard, setReanalyse } from './forensics.js';
-import { anrConfirm, showDropLoader, hideDropLoader, showTypeSuggestion, hideTypeSuggestion, showLinkConfirm } from './overlays.js';
+import { anrConfirm, showDropLoader, hideDropLoader, setDropLoaderLabel, showTypeSuggestion, hideTypeSuggestion, showLinkConfirm } from './overlays.js';
 import { setupPatchTldr } from './patch-tldr.js';
 import { setupOfflineTiers } from './offline-tiers.js';
 import { setupFormatOverlay } from './format-overlay.js';
@@ -1328,7 +1328,13 @@ window._anrReadableText = isReadableText;
       const folderToken = { cancelled: false };
       if (droppedFolderName) showDropLoader({ name: droppedFolderName }, () => { folderToken.cancelled = true; });
 
-      const folderFiles = await walkItems(e.dataTransfer);
+      // The walk polls shouldStop between batches, so Cancel stops it partway
+      // instead of only being noticed once the whole tree has been read.
+      const folderFiles = await walkItems(e.dataTransfer, {
+        shouldStop: () => folderToken.cancelled,
+        onProgress: (n) => setDropLoaderLabel(
+          'Reading ' + droppedFolderName + '… ' + n.toLocaleString() + ' files'),
+      });
       if (folderToken.cancelled) return;   // cancelled during the folder walk
       if (folderFiles) {
         if (!$('photoResults') || onSamples) {
@@ -1583,6 +1589,36 @@ window._anrReadableText = isReadableText;
         const a = document.createElement('a'); a.href = '/atari';
         document.body.appendChild(a); a.click(); a.remove();
       }
+    });
+
+    // Space bar = play/pause, whenever the page is showing a player. Bound once on
+    // window so every renderer that mounts an <audio> or <video> gets it for free -
+    // sound, video, the separated-stem and reversed players, the compare view - with
+    // no per-renderer key handling.
+    //
+    // The main audio element is deliberately display:none (its transports live under
+    // the spectrogram and waveform), so we must NOT filter candidates by visibility.
+    window.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      if (e.code !== 'Space' && e.key !== ' ' && e.key !== 'Spacebar') return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // Never steal space from typing, nor from a control that space natively
+      // activates (button, link, checkbox, select, <summary>) - taking it there
+      // would break the keyboard interface of every control on the page.
+      const t = e.target;
+      if (t && (t.isContentEditable
+        || (t.closest && t.closest('input, textarea, select, button, a[href], summary, [contenteditable="true"], [role="button"]')))) return;
+      const all = document.querySelectorAll('audio, video');
+      if (!all.length) return;
+      // Whatever is audible wins, so space always pauses what you can actually
+      // hear; otherwise take the first player on the page.
+      let media = null;
+      for (const m of all) { if (!m.paused && !m.ended) { media = m; break; } }
+      if (!media) for (const m of all) { if (m.currentSrc || m.src) { media = m; break; } }
+      if (!media) return;
+      e.preventDefault();
+      if (media.paused) { const p = media.play(); if (p && p.catch) p.catch(() => {}); }
+      else media.pause();
     });
 
     boot._once = true;
