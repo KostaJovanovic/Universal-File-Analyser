@@ -53,6 +53,52 @@ or automated checks to "confirm it works". Make the change and hand it back.
 - **Deploy**: pushing to `main` ships via Cloudflare (config in
   `wrangler.jsonc`). No manual deploy step.
 
+## The analysis pipeline
+
+`handleFile()` in `assets/js/core/app.js` is the spine, and nearly every task
+touches some part of this path:
+
+1. **`classifyFile()`** (`core/classify.js`) maps name / extension / MIME to a
+   *kind*. It does **no byte sniffing** — a `.pdf` with no extension is
+   `unknown` here.
+2. **`resolveKind()`** (app.js) then applies the byte-level reroutes: the SPICE
+   `.raw` disambiguation, `VARIANT_REROUTE` for extensions that name two
+   unrelated formats (`.ts`, `.nc`, `.md`, `.obj`, … — resolved by
+   `detectVariant()` in `formats.js`), and `resolveByContent()`
+   (`core/file-sniff.js`) for `unknown`/`extensionless`, which is what turns an
+   extension-less PDF/ZIP/image into its real kind. **Anything that routes
+   without `resolveKind()` falls to the hex-dump renderer** — that's the bug to
+   look for when a file analyses as "unknown" somewhere but not on the main page.
+3. The kind indexes **`ROUTES`** in app.js. Every entry is
+   `lazy('../renderers/x.js', 'renderX')`, so renderers are dynamic imports and
+   stay out of the initial module graph; photo/audio/video are lazy in `boot()`
+   too, since they pull the heaviest dependency chains.
+4. **`renderFileExtras()`** wraps the shared cards *around* whatever the renderer
+   builds: the dotenv secrets warning, the signature-vs-extension and
+   trailing-data forensic cards (`core/forensics.js`), and the browse-as-archive
+   tree for files that are physically a zip/rar/7z (APK, JAR, DOCX, …). `/compare`
+   calls the same function so it renders to the same depth as a single-file
+   analysis.
+
+Module-by-module detail lives in `web/assets/js/CLAUDE.md`, which loads
+automatically when you work in that tree.
+
+## Invariants
+
+- **`core/sanitize.js` is the only XSS defence.** The site ships no CSP, so any
+  renderer that inlines markup from an untrusted file (`email.js`, `textdoc.js`'s
+  MHTML, `epub.js` chapters, `svg.js`) **must** go through it. Never hand-roll a
+  second copy: there used to be four, they drifted, and three carried a
+  `javascript:`-scheme bypass.
+- **`core/limits.js` is the single source of truth for every size/memory cap** —
+  device tiering, "too large" walls, mobile OOM guards, decompression-bomb
+  ceilings, first-N-byte read budgets. Don't hardcode a new threshold in a
+  renderer; add it there.
+- **Every new module under `assets/js/` must be added to `SHELL` in `web/sw.js`.**
+  That list enumerates the precached shell by path — a module missing from it
+  silently breaks offline use, and `check-shell` only reports the gap at commit
+  time (non-fatally).
+
 ## Site-content writing convention
 
 All **user-facing text** (HTML pages, patch notes, format `desc` strings) is
@@ -101,40 +147,12 @@ upkeep checklist for when you add/change a format.
 
 ## The docs site (`/docs`) - source is `docs/*.md`, never the HTML
 
-`docs/` (repo root) is the project's own reference documentation: an
-architecture set (architecture, pipeline, renderers, parsers-and-libs, pages,
-pwa-offline, tooling, worker, design-system), a "start here" pair
-(`user-guide.md`, `faq.md`), a usage-oriented `features/` set, and a reference
-pair (`FEATURE-INVENTORY.md`, `PROGRESS.md`), mapped in `docs/README.md`. It is
-both the working reference *and* the source for a public docs site.
+`web/docs.html` and the whole `web/docs/` directory are **wiped and rebuilt on
+every commit** - never hand-edit them; edit the Markdown in `docs/` instead, and
+update the relevant `docs/` page in the same pass as any behaviour change.
 
-`tools/build-docs-html.mjs` (run by save.bat) converts the Markdown to on-brand
-HTML with its own tiny converter - no npm deps:
-
-- `docs/README.md` → `web/docs.html` (served at `/docs`) - the hub is a
-  **sibling file, not `web/docs/index.html`**, matching the `/formats` clean-URL
-  pattern.
-- `docs/<name>.md` → `web/docs/<name>.html`, `docs/features/<n>.md` →
-  `web/docs/features/<n>.html`.
-
-**Both `web/docs.html` and the whole `web/docs/` directory are wiped
-(`rmSync`) and rebuilt on every commit - never hand-edit them; edit the
-Markdown in `docs/` instead.** Adding a page also means adding it to the `NAV`
-array in the generator (it drives the sidebar, prev/next pager and output
-filenames).
-
-The docs pages are deliberately self-contained: they load `assets/css/docs.css`
-plus `analyser.css`, and `assets/js/core/docs.js` (theme toggle, sidebar
-filter, footer contact) rather than the main `app.js` - no drop pipeline, no
-stats pings. They get the theme bootstrap from the generator directly, so they
-are **not** in stamp-head's or stamp-footer's `PAGES`, and not in `sw.js`
-`SHELL`. The `/docs` hub is listed in `sitemap.xml`; the sub-pages get their own
-`sitemap-docs.xml`, emitted by `build-docs-html.mjs` (mirroring how
-`prerender-format-pages.mjs` owns `sitemap-formats.xml`) and referenced from
-`robots.txt`.
-
-When you change how something works, update its `docs/` page in the same pass -
-it's verified-against-source documentation and drifts silently otherwise.
+See the `docs-site` skill for the generator (`tools/build-docs-html.mjs`), the
+`NAV` array, output paths and `sitemap-docs.xml`.
 
 ## Single-sourced footer and head
 
@@ -157,20 +175,10 @@ If you add new window-level event listeners, put them inside the `if (!boot._onc
 
 ## The /compare page
 
-`compare.html` (served at `/compare`) analyses two files side by side. Its two
-dropzones (A/B) are wired in `boot()` in app.js — the wiring guards on
-`#cmpDropA`, so it stays inert on every other page, and the *global* page-wide
-drop handler skips the compare page so only the A/B zones accept files there.
-`renderers/compare.js` runs each file through the real `classifyFile()`/`ROUTES`
-renderer into an off-screen staging container, then **moves** (not clones) the
-readout cells into merged `Field | A | B` tables — so tooltips and deferred
-async fills (e.g. the SHA-256 cell) keep working. Rows whose values differ are
-tagged `.is-diff`, which powers the "Show differences" toggle; non-readout card
-content (previews, players, hex dumps) falls back to a side-by-side A | B split.
-Media renderers are invoked with `{ inline: true }` so they don't target the
-main page's fixed sections (`#photoPreview`, `#videoPreview`, ...). It is a full
-main page: listed in `sw.js` `SHELL`, `sitemap.xml`, and both stamp-head and
-stamp-footer `PAGES`.
+See the `compare-page` skill for how `compare.html` and `renderers/compare.js`
+stage two files through the real renderers and merge them into `Field | A | B`
+tables. It is a full main page: `sw.js` `SHELL`, `sitemap.xml`, and both
+stamp-head and stamp-footer `PAGES`.
 
 ## File structure
 
@@ -194,6 +202,16 @@ FEATURE-IDEAS.md    — backlog checklist of unbuilt ideas with effort estimates
 docs/               — project reference docs (Markdown). SOURCE for the public
                       /docs site - see "The docs site" above. Never edit the
                       generated web/docs*.html; edit these.
+research/           — gitignored. Working notes, plans and reverse-engineering
+                      scratch go HERE, not in a temp dir - they're worth keeping
+                      across sessions but are not part of the shipped site.
+.claude/            — Claude Code skills (add-file-format, format-seo-pages,
+                      shared-partials, version-numbering, docs-site,
+                      compare-page) - these ARE checked in, deliberately.
+                      .gitignore lists `.claude/` but that line is inert here:
+                      the files were tracked before it was added, so git keeps
+                      tracking them. settings.local.json is machine-specific and
+                      is now untracked; don't re-add it.
 .github/            — issue/PR templates, CONTRIBUTING, SECURITY, code of conduct
 tools/              — Node generator scripts (dev-only, never served). They read
                       website files via a WEB = join(ROOT, 'web') constant, while
@@ -218,6 +236,9 @@ web/                — THE WEBSITE, served at "/" by Cloudflare (assets.directo
   index.html          — main page (the drop/analyse app)
   about.html          — about/info page (format tables, #ext-/#fmt- anchors)
   patch.html          — public changelog (one .patch-entry per commit)
+  patch_old.html      — archived older patch entries, served at /patch_old
+                        (patch-tldr.js special-cases it: no #when marker, keeps
+                        its own PATCH_DIGEST)
   privacy.html        — privacy page (single-sourced footer)
   stats.html          — public analytics page (reads the Worker's stats API)
   samples.html        — generated /samples gallery (driven by samples/ dir)
@@ -241,18 +262,10 @@ web/                — THE WEBSITE, served at "/" by Cloudflare (assets.directo
   _headers            — Cloudflare Workers static-asset response headers (security
                         headers site-wide + immutable caching for /assets/fonts;
                         consumed by the deploy, never served, not applied by serve.py)
-  assets/             — css / fonts / img / vendor + all the app JS; detailed below
-
-web/assets/ in detail (the app's CSS, fonts, images and third-party libs):
-assets/
-  css/
-    analyser.css    — all styles for the app + main pages
-    docs.css        — /docs-only styles (layered on analyser.css by the docs pages)
-    fonts.css       — @font-face declarations (url(../fonts/...))
-  fonts/            — Geist woff2 files
-  img/              — banner, favicons, app icons
-  vendor/           — third-party libraries (exifr, ffmpeg, imagemagick, ...)
-  js/               — all the app JS (core / renderers / parsers / lib / games).
-                      Module-by-module inventory: web/assets/js/CLAUDE.md,
-                      which loads automatically when you work in that tree.
+  assets/             — css / fonts / img / vendor + all the app JS.
+                        analyser.css is the central stylesheet (docs.css layers
+                        on it for /docs only); vendor/ is third-party code
+                        (exifr, ffmpeg, imagemagick, ...). Module-by-module JS
+                        inventory: web/assets/js/CLAUDE.md, which loads
+                        automatically when you work in that tree.
 ```

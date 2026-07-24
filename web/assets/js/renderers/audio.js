@@ -4,7 +4,7 @@
 
 import {
   computeSpectrogram, computeSpectrogramAsync, computeReassignedSpectrogram, renderSpectrogram, colormaps,
-  computeStftComplex, combineStftToDb,
+  computeStftComplex, combineStftToDb, combineStftToDbN,
   frequencyTicks, timeTicks, formatHz, formatTime
 } from './spectrogram.js';
 import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, errorCard, integrityCard, downloadBlob, inlineLoader, asciiBar, yieldToMain, afterPaint } from '../core/util.js';
@@ -20,7 +20,7 @@ import { encodeWav } from './video-avi.js';
 import { reverseAudioBufferToWav } from './media-reverse.js';
 // Constants only (no WASM/worker) - safe to load eagerly; the picker and the
 // download prompt read tier sizes from here. The heavy client is still lazy.
-import { MDX_MODELS } from '../lib/mdx-model.js';
+import { MDX_MODELS, MDX_PRO } from '../lib/mdx-model.js';
 import { DFN_MODEL } from '../lib/dfn-model.js';
 
 // Re-exported so existing importers (e.g. video.js) can keep importing the
@@ -1377,6 +1377,20 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     const denoiseBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'DeepFilterNet3 - remove background noise and hiss, about ' + DFN_MODEL.tierMb + ' MB to download once' }, 'denoise');
     aiModelSeg.appendChild(el('span', { class: 'anr-iso-seg-div', 'aria-hidden': 'true' }, '|'));
     aiModelSeg.appendChild(denoiseBtn);
+    // "Pro" 4-stem separation, desktop-only. It runs three per-stem MDX models in
+    // turn (vocals, drums, bass) plus a residual "other" - much heavier and slower
+    // than the 2-stem tiers, so it is hidden on the narrow (mobile) layout and on
+    // coarse-pointer devices. Like denoise it is its own job (kind 'pro'), not a
+    // SEPARATION tier, but it shares the same radio-group highlight and prompt flow.
+    const isDesktop = !preferLite && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    let proBtn = null;
+    if (isDesktop) {
+      proBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'Heavy - ' + MDX_PRO.blurb + ', about ' + MDX_PRO.tierMb + ' MB to download once' }, 'Heavy');
+      // Sits at the far LEFT of the row, ahead of Standard, with a divider after it
+      // (prepend the divider first, then the button, so order is Heavy | Standard …).
+      aiModelSeg.prepend(el('span', { class: 'anr-iso-seg-div', 'aria-hidden': 'true' }, '|'));
+      aiModelSeg.prepend(proBtn);
+    }
     // Always present; the AI panel around it carries the open/closed state, so the
     // tiers and the denoise action are there the moment the panel opens and stay
     // reachable while a result is showing.
@@ -1389,6 +1403,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     function setAiSelection(sel) {
       for (const x of Object.values(aiModelBtns)) x.classList.toggle('is-active', x === sel);
       denoiseBtn.classList.toggle('is-active', sel === denoiseBtn);
+      if (proBtn) proBtn.classList.toggle('is-active', sel === proBtn);
     }
     // TWO independent panels under the actions row, each opened by its own button
     // there: the EQ isolation tools (presets + manual bands + WAV export), and the
@@ -1798,6 +1813,9 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     const STEM_CFGS = {
       separate: { leftKey: 'vocals', leftLabel: 'Vocals', rightKey: 'instrumental', rightLabel: 'Instrumental', toward: ['vocals', 'instrumental'], aria: 'Blend vocals to instrumental' },
       denoise: { leftKey: 'clean', leftLabel: 'Clean', rightKey: 'noise', rightLabel: 'Noise', toward: ['clean', 'noise'], aria: 'Blend clean to noise' },
+      // Pro is the N-stem path: no left/right crossfade, a per-stem mixer instead
+      // (renderMixer). `multi` routes renderStems to the mixer + one row per stem.
+      pro: { multi: true },
     };
     // Separate button is a toggle: clicking it reveals the model picker and opens the
     // model prompt (download-or-start), and clicking it again once a separation is
@@ -2174,6 +2192,229 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       return block;
     }
 
+    // The Pro mixer (N stems). Same idea as renderBlend, generalised from a 2-way
+    // crossfader to one level fader per stem (with mute/solo): analyse each stem's
+    // complex STFT once, then every fader move recombines the precomputed bins with
+    // combineStftToDbN - no re-FFT - so the main spectrogram morphs live and stays
+    // the exact magnitude of the audio you are mixing. All faders at 100% is the
+    // original (the stems sum to it), just like the 2-stem centre. It owns the main
+    // canvas + the under-spectrogram transport while it is up, via the same hooks.
+    function renderMixer(result, resume) {
+      const sr = result.sampleRate;
+      const order = result.order;
+      const L = result.stems[order[0]][0].length;
+      const dur = L / sr;
+      if (L < 4096) return null;   // too short to be worth a mixer view
+
+      const FRAME_CAP = 1500;
+      function dragStftOpts() {
+        const fftSize = Math.min((state.fftSize | 0) || 2048, 2048);
+        const hop = Math.max(Math.floor(fftSize / 4), Math.ceil((L - fftSize) / (FRAME_CAP - 1)));
+        return { fftSize, hopSize: hop, window: state.winName };
+      }
+      // Per-stem: label from the registry, channels for playback, mono for the
+      // spectrogram analysis.
+      const stems = order.map((key) => {
+        const meta = MDX_PRO.stems.find((s) => s.key === key) || {};
+        return { key, label: meta.label || key, channels: result.stems[key], mono: stemMono(result.stems[key]) };
+      });
+      const Nn = stems.length;
+
+      // Fader state: level 0..1 (default 1) per stem, plus solo. Effective gain:
+      // if ANY stem is soloed, only soloed stems play; otherwise every stem plays
+      // at its fader level (drag a fader to 0 to silence a stem).
+      const level = stems.map(() => 1);
+      const soloed = stems.map(() => false);
+      function gains() {
+        const anySolo = soloed.some(Boolean);
+        return level.map((lv, i) => (anySolo ? (soloed[i] ? lv : 0) : lv));
+      }
+      function mixStems(g) {
+        const m = new Float32Array(L);
+        for (let i = 0; i < Nn; i++) { const gi = g[i]; if (!gi) continue; const mo = stems[i].mono; for (let s = 0; s < L; s++) m[s] += gi * mo[s]; }
+        return m;
+      }
+
+      // Transport UI (declared up here so the audio functions can reference it).
+      const playBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', disabled: true }, 'Play');
+      const timeEl = el('span', { class: 'anr-blend-time' }, fmtClock(0) + ' / ' + fmtClock(dur));
+      const tagEl = el('span', { class: 'anr-blend-tag' }, 'Analysing…');
+
+      // Feed the Stereo analysis card the current mix (strided subsample), like
+      // renderBlend's pushBlendStereo but summing N stems at their current gains.
+      function pushMixStereo() {
+        const sink = opts.stereoSink;
+        if (!sink || !sink.update) return;
+        const g = gains();
+        const stride = Math.max(1, Math.floor(L / 40000));
+        const sL = new Float32Array(Math.ceil(L / stride)); const sR = new Float32Array(sL.length);
+        let sumLR = 0, sumLL = 0, sumRR = 0, sumMid = 0, sumSide = 0, cnt = 0, si = 0;
+        for (let i = 0; i < L; i += stride) {
+          let l = 0, r = 0;
+          for (let k = 0; k < Nn; k++) { const gi = g[k]; if (!gi) continue; const ch = stems[k].channels; l += gi * ch[0][i]; r += gi * (ch[1] || ch[0])[i]; }
+          sL[si] = l; sR[si] = r; si++;
+          sumLR += l * r; sumLL += l * l; sumRR += r * r;
+          const mid = (l + r) * 0.5, side = (l - r) * 0.5; sumMid += mid * mid; sumSide += side * side; cnt++;
+        }
+        const denom = Math.sqrt(sumLL * sumRR);
+        const correlation = denom > 1e-12 ? sumLR / denom : 0;
+        sink.update({ correlation, width: 1 - Math.abs(correlation), midLevel: Math.sqrt(sumMid / cnt), sideLevel: Math.sqrt(sumSide / cnt) }, sL.subarray(0, si), sR.subarray(0, si));
+      }
+
+      // --- audio: N stem buffers -> per-stem gains -> master -> [iso] -> out ---
+      const ac = ctx();
+      let bufs = null;   // built lazily on first Play
+      function ensureBufs() { if (!bufs) bufs = stems.map((s) => stemBuffer(s.channels, sr)); }
+      const master = ac.createGain(); master.gain.value = sharedVolume();
+      const gainNodes = stems.map(() => { const g = ac.createGain(); g.connect(master); return g; });
+      const unsubVol = onSharedVolume((lvl) => { master.gain.value = lvl; });
+
+      let blendFilters = [];
+      function applyMixIso() {
+        try { master.disconnect(); } catch (_) {}
+        for (const n of blendFilters) { try { n.disconnect(); } catch (_) {} }
+        blendFilters = [];
+        if (!isoActive) { master.connect(ac.destination); return; }
+        if (isoMode === 'karaoke') { buildKaraoke(ac, master, blendFilters).connect(ac.destination); return; }
+        const merged = computeMerged();
+        if (!merged.length) { master.connect(ac.destination); return; }
+        buildStops(ac, master, merged, blendFilters).connect(ac.destination);
+      }
+      blendApplyIso = applyMixIso;
+      applyMixIso();
+
+      let srcs = null, playing = false, startCtx = 0, offset = 0, raf = 0, armed = false;
+      function applyGains(ramp) {
+        const g = gains(); const t = ac.currentTime;
+        for (let i = 0; i < Nn; i++) {
+          if (ramp) gainNodes[i].gain.setTargetAtTime(g[i], t, 0.02);
+          else gainNodes[i].gain.value = g[i];
+        }
+      }
+      function stopSources() { if (srcs) for (const s of srcs) { if (s) { try { s.onended = null; s.stop(); } catch (_) {} } } srcs = null; }
+      function startAt(sec) {
+        ensureBufs(); stopSources();
+        srcs = stems.map((s, i) => { const src = ac.createBufferSource(); src.buffer = bufs[i]; src.connect(gainNodes[i]); return src; });
+        applyGains(false);
+        for (const s of srcs) s.start(0, sec);
+        startCtx = ac.currentTime - sec;
+        srcs[0].onended = () => { if (playing) { pause(); offset = 0; moveHead(); } };
+      }
+      function pos() { return playing ? Math.min(dur, ac.currentTime - startCtx) : offset; }
+      function moveHead(animate) {
+        const frac = dur ? pos() / dur : 0;
+        const anim = animate == null ? !playing : animate;
+        if (driveSpecLine) driveSpecLine(frac, playing, anim);
+        timeEl.textContent = fmtClock(pos()) + ' / ' + fmtClock(dur);
+        if (blendActive && specTransport && specTransport._anrTransport) specTransport._anrTransport.update(frac, pos(), dur, playing);
+      }
+      function play() {
+        if (playing || !armed) return;
+        if (opts.audioEl && !opts.audioEl.paused) opts.audioEl.pause();
+        if (ac.state === 'suspended' && ac.resume) ac.resume();
+        playing = true; startAt(Math.max(0, Math.min(offset, dur - 0.02)));
+        playBtn.textContent = 'Pause'; playBtn.classList.add('is-active'); tick();
+      }
+      function pause() {
+        if (!playing) return;
+        offset = pos(); playing = false; stopSources();
+        playBtn.textContent = 'Play'; playBtn.classList.remove('is-active');
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+        moveHead();
+      }
+      function seekFrac(frac) { offset = Math.max(0, Math.min(dur, frac * dur)); if (playing) startAt(Math.min(offset, dur - 0.02)); moveHead(false); }
+      function tick() { moveHead(); if (playing) raf = requestAnimationFrame(tick); }
+      playBtn.addEventListener('click', () => (playing ? pause() : play()));
+
+      // --- spectrogram: recombine the precomputed per-stem STFTs on every move ---
+      let specsArr = null, out = null;
+      function paintDrag() {
+        if (!specsArr) return;
+        blendSpec = combineStftToDbN(specsArr, gains(), out);
+        renderOnly();
+      }
+      let paintBusy = false, paintDirty = false;
+      const PAINT_GAP_MS = 80;
+      function runPaint() {
+        paintDirty = false;
+        try { paintDrag(); } finally {
+          setTimeout(() => { if (paintDirty) requestAnimationFrame(runPaint); else { paintBusy = false; pushMixStereo(); } }, PAINT_GAP_MS);
+        }
+      }
+      function requestPaint() { paintDirty = true; if (paintBusy) return; paintBusy = true; requestAnimationFrame(runPaint); }
+      function paintSettled() {
+        const mix = mixStems(gains());
+        const fftSize = (state.fftSize | 0) || 2048;
+        const targetFrames = Math.max(FRAME_CAP, canvas.width || FRAME_CAP);
+        const hopSize = Math.max(Math.floor(fftSize / 4), Math.ceil((L - fftSize) / Math.max(1, targetFrames - 1)));
+        const params = { fftSize, hopSize, window: state.winName };
+        blendSpec = state.mode === 'reassigned' ? computeReassignedSpectrogram(mix, sr, params) : computeSpectrogram(mix, sr, params);
+        renderOnly();
+      }
+      function reanalyse() {
+        const o = dragStftOpts();
+        specsArr = stems.map((s) => computeStftComplex(s.mono, sr, o));
+        out = new Float32Array(specsArr[0].frames * specsArr[0].bins);
+        paintSettled();
+      }
+      function updateTag() {
+        const g = gains();
+        tagEl.textContent = g.every((x) => Math.abs(x - 1) < 1e-6) ? 'Original mix' : 'Custom mix';
+      }
+
+      // --- fader rows: one per stem (label, level fader, %, solo) ---
+      // Solo is single-select: at most one stem is soloed, so clicking one clears
+      // any other. Click the active one again to drop back to the full mix.
+      const soloBtns = [];
+      const rows = stems.map((s, i) => {
+        const fader = el('input', { type: 'range', min: '0', max: '100', value: '100', step: '1', class: 'anr-range anr-mixer-fader', 'aria-label': s.label + ' level' });
+        const pct = el('span', { class: 'anr-mixer-pct' }, '100%');
+        const soloB = el('button', { type: 'button', class: 'anr-btn anr-btn-sm anr-mixer-btn', title: 'Solo ' + s.label }, 'Solo');
+        soloBtns[i] = soloB;
+        fader.addEventListener('input', () => { level[i] = Number(fader.value) / 100; pct.textContent = Math.round(level[i] * 100) + '%'; applyGains(true); updateTag(); requestPaint(); });
+        fader.addEventListener('change', () => { applyGains(false); requestPaint(); });
+        soloB.addEventListener('click', () => {
+          const next = !soloed[i];
+          for (let j = 0; j < Nn; j++) { soloed[j] = false; soloBtns[j].classList.remove('is-active'); }
+          soloed[i] = next; soloB.classList.toggle('is-active', next);
+          applyGains(true); updateTag(); requestPaint();
+        });
+        return el('div', { class: 'anr-mixer-row' }, [el('span', { class: 'anr-mixer-label' }, s.label), fader, pct, soloB]);
+      });
+
+      const block = el('div', { class: 'anr-blend anr-mixer' }, [
+        el('div', { class: 'anr-blend-head' }, [el('span', { class: 'anr-iso-stem-label' }, 'Mixer'), tagEl, playBtn, timeEl]),
+        el('div', { class: 'anr-mixer-rows' }, rows),
+      ]);
+
+      // Deferred (two rAFs) so the block paints first, then the mixer takes over the
+      // main spectrogram + transport at the settled (original) mix.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        playBtn.disabled = false; armed = true;
+        blendActive = true; blendSeek = seekFrac; blendPause = pause; blendReanalyse = reanalyse;
+        reanalyse();
+        if (specTransport && specTransport._anrTransport) specTransport._anrTransport.attach({ toggle: () => (playing ? pause() : play()), seek: seekFrac });
+        updateTag();
+        pushMixStereo();
+        if (resume && dur) { offset = Math.max(0, Math.min(dur, resume.at)); play(); } else moveHead();
+      }));
+
+      blendCleanup = () => {
+        pause();
+        blendActive = false; blendSeek = null; blendPause = null; blendApplyIso = null; blendReanalyse = null; blendSpec = null;
+        if (opts.stereoSink && opts.stereoSink.reset) { try { opts.stereoSink.reset(); } catch (_) {} }
+        if (specTransport && specTransport._anrTransport) { try { specTransport._anrTransport.detach(); } catch (_) {} }
+        try { renderOnly(); } catch (_) {}
+        try { unsubVol(); } catch (_) {}
+        for (const n of blendFilters) { try { n.disconnect(); } catch (_) {} }
+        blendFilters = [];
+        for (const g of gainNodes) { try { g.disconnect(); } catch (_) {} }
+        try { master.disconnect(); } catch (_) {}
+        armed = false; specsArr = out = null; bufs = null;
+      };
+      return block;
+    }
+
     function renderStems(result, cfg) {
       cfg = cfg || STEM_CFGS.separate;
       revokeAiUrls();
@@ -2195,14 +2436,21 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       aiHelpPanel.classList.add('is-hidden');
       aiStems.textContent = '';
       blendMount.textContent = '';
-      const blend = renderBlend(result, resume, cfg);
+      // Pro (multi) -> the N-stem mixer + one row per stem; otherwise the 2-stem
+      // blend + its two rows. Both mount the same per-stem player/spectrogram/WAV.
+      const multi = !!(cfg && cfg.multi);
+      const blend = multi ? renderMixer(result, resume) : renderBlend(result, resume, cfg);
       if (blend) blendMount.appendChild(blend);
       const base = opts.basename || 'audio';
-      const dur = result.vocals[0].length / result.sampleRate;
-      const stems = [
-        { key: cfg.leftKey, label: cfg.leftLabel, channels: result.vocals },
-        { key: cfg.rightKey, label: cfg.rightLabel, channels: result.instrumental },
-      ];
+      const dur = multi
+        ? result.stems[result.order[0]][0].length / result.sampleRate
+        : result.vocals[0].length / result.sampleRate;
+      const stems = multi
+        ? result.order.map((key) => { const m = MDX_PRO.stems.find((x) => x.key === key) || {}; return { key, label: m.label || key, channels: result.stems[key] }; })
+        : [
+            { key: cfg.leftKey, label: cfg.leftLabel, channels: result.vocals },
+            { key: cfg.rightKey, label: cfg.rightLabel, channels: result.instrumental },
+          ];
       for (const s of stems) {
         const blob = encodeWav(stemBuffer(s.channels, result.sampleRate));
         const url = URL.createObjectURL(blob);
@@ -2210,7 +2458,12 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         // Custom player (sharp-cornered, shared volume popup) instead of the native
         // browser pill, so the stems match the rest of the site. The <audio> is the
         // hidden playback source the player drives.
-        const audioEl = el('audio', { src: url, preload: 'metadata', style: 'display:none;' });
+        // data-anr-stem opts this player out of the global space-bar handler: the
+        // stems sit inside the spectrogram panel, which is earlier in the DOM than
+        // the main track's audio element, so without this the space bar would target
+        // a stem after a separation. Space stays on the main track; stems have their
+        // own play buttons.
+        const audioEl = el('audio', { src: url, preload: 'metadata', style: 'display:none;', 'data-anr-stem': '1' });
         const player = makePlayer(audioEl, dur);
         const specBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Analyse');
         const dl = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Download WAV');
@@ -2295,6 +2548,15 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
               : el('p', {}, ['Removes background noise and hiss from this track with ', el('strong', {}, model.name), ', keeping the full sound. Everything runs on your device - nothing is uploaded.']);
             box.appendChild(el('div', { class: 'anr-iso-confirm-title' }, needsDownload ? 'Download denoise model' : 'Denoise'));
             box.appendChild(body);
+          } else if (kind === 'pro') {
+            const needsDownload = !(await proReady());
+            yes.textContent = needsDownload ? 'Download and continue' : 'Start separation';
+            const sizeEl = el('span', { class: 'anr-iso-confirm-size' }, 'about ' + MDX_PRO.tierMb + ' MB');
+            const body = needsDownload
+              ? el('p', {}, ['The first run fetches the four-stem models (vocals, drums and bass; "other" is whatever is left) and the shared runtime (', sizeEl, '), then keeps them for offline use. It runs three models one after another, so a full song takes a few minutes - and it is desktop only. Everything runs on your device - nothing is uploaded.'])
+              : el('p', {}, ['Splits this track into four stems - vocals, drums, bass and other - by running three models one after another, so it takes a few minutes. Everything runs on your device - nothing is uploaded.']);
+            box.appendChild(el('div', { class: 'anr-iso-confirm-title' }, needsDownload ? 'Download 4-stem models' : 'Separate into 4 stems'));
+            box.appendChild(body);
           } else {
             const model = MDX_MODELS[aiModelId] || MDX_MODELS.standard;
             const tier = model.label || 'Standard';
@@ -2335,6 +2597,11 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       try { if (await caches.match(model.url)) return true; } catch (_) {}
       try { return localStorage.getItem(keyPrefix + model.id) === '1'; } catch (_) { return false; }
     }
+    // Pro needs ALL of its per-stem models present to skip the download prompt.
+    async function proReady() {
+      for (const s of MDX_PRO.stems) if (s.model && !(await modelReady(s.model, 'anr-mdx-ready-'))) return false;
+      return true;
+    }
     // Shared runner for both AI jobs. Toggles off if its own job is showing; tears
     // down the other job first if switching; otherwise confirms, runs, and renders.
     async function startStems() {
@@ -2347,7 +2614,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       // The user can switch Standard/Lite/denoise while the prompt is open (the whole
       // row is one radio group), so read the FINAL choice now, after they confirm.
       const kind = pendingKind;
-      const btn = kind === 'denoise' ? denoiseBtn : aiBtn;
+      const btn = kind === 'denoise' ? denoiseBtn : kind === 'pro' ? proBtn : aiBtn;
       const cfg = STEM_CFGS[kind];
       aiOn = true; activeKind = kind;
       const orig = btn.textContent;
@@ -2369,6 +2636,19 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
           try { localStorage.setItem('anr-dfn-ready-' + DFN_MODEL.id, '1'); } catch (_) {}
           // Feed the shared blend/stem renderer: left stem = Clean, right = Noise.
           result = { vocals: r.clean, instrumental: r.noise, sampleRate: r.sampleRate };
+        } else if (kind === 'pro') {
+          btn.textContent = 'Separating…';
+          const { separateStemsMulti } = await import('../lib/mdx-client.js');
+          result = await separateStemsMulti(sourceBuffer(), {
+            onProgress: (phase, frac, stem) => {
+              const pct = Math.round(frac * 100);
+              setAiStatus(phase === 'model' ? 'Downloading ' + (stem || 'model') + '… ' + pct + '%' : 'Separating ' + (stem || '') + '… ' + pct + '%', frac);
+            },
+            signal: opts.signal,
+          });
+          result.multi = true;
+          // Flag each per-stem model as downloaded so the next run skips the prompt.
+          try { for (const s of MDX_PRO.stems) if (s.model) localStorage.setItem('anr-mdx-ready-' + s.model.id, '1'); } catch (_) {}
         } else {
           btn.textContent = 'Separating…';
           const model = MDX_MODELS[aiModelId] || MDX_MODELS.standard;
@@ -2423,6 +2703,10 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // runs DENOISE, and re-render an open prompt for it (or start it) - so denoise is
     // reachable even when a separation prompt is already up.
     denoiseBtn.addEventListener('click', () => pickAction('denoise', denoiseBtn));
+    // Pro runs through the same shared dispatch as the tiers/denoise (one radio
+    // group): highlight it, mark the next Start as the 4-stem job, re-render an open
+    // prompt for it or start it. Only present on the desktop layout.
+    if (proBtn) proBtn.addEventListener('click', () => pickAction('pro', proBtn));
     if (opts.signal) opts.signal.addEventListener('abort', revokeAiUrls);
   }
 

@@ -9,8 +9,8 @@
    Everything heavy (ORT runtime + model) is fetched from the URLs the Complete
    offline tier caches, so once downloaded the whole thing works offline. */
 
-import { ORT_BASE, ORT_ENTRY, MDX_MODELS, MDX_MODEL } from './mdx-model.js';
-import { separateVocals } from './mdx-separate.js';
+import { ORT_BASE, ORT_ENTRY, MDX_MODELS, MDX_MODEL, MDX_PRO_STEMS } from './mdx-model.js';
+import { separateVocals, runStemModel, normStereo, MDX_SR } from './mdx-separate.js';
 
 let ortMod = null;        // the onnxruntime-web module namespace
 let session = null;       // the InferenceSession (kept warm across runs)
@@ -135,11 +135,8 @@ async function runModel(input, dims) {
   return out.data;
 }
 
-self.onmessage = async (e) => {
-  const msg = e.data;
-  if (!msg || msg.type !== 'separate') return;
-  // Echo the caller's jobId on every reply so the client can ignore messages
-  // from a different (e.g. overlapping) job on this shared worker.
+// 2-stem job (Standard / Lite): one model -> vocals + instrumental.
+async function handleSeparate(msg) {
   const jobId = msg.jobId;
   try {
     const model = MDX_MODELS[msg.modelId] || MDX_MODEL;
@@ -165,4 +162,54 @@ self.onmessage = async (e) => {
   } catch (err) {
     self.postMessage({ type: 'error', message: (err && err.message) || String(err), jobId });
   }
+}
+
+// 4-stem "Pro" job: run each per-stem model in turn (one session resident at a
+// time -> low peak memory), then derive "other" as the residual. Progress spans
+// all passes as (passIndex + passFrac)/N, tagged with the stem being separated so
+// the UI can say "Separating drums…". Stems come back in MDX_PRO_STEMS order.
+async function handleSeparateMulti(msg) {
+  const jobId = msg.jobId;
+  try {
+    const ch = normStereo(msg.channels);
+    const nSample = ch[0].length;
+    const stemModels = MDX_PRO_STEMS.filter((s) => s.model);
+    const N = stemModels.length;
+    const primaries = {};
+    for (let i = 0; i < N; i++) {
+      const { key, label, model } = stemModels[i];
+      await ensureModel(model, (frac) => self.postMessage({ type: 'progress', phase: 'model', frac, stem: label, jobId }));
+      self.postMessage({ type: 'progress', phase: 'infer', frac: i / N, stem: label, jobId });
+      primaries[key] = await runStemModel({
+        ch, model, runModel,
+        onProgress: (frac) => self.postMessage({ type: 'progress', phase: 'infer', frac: (i + frac) / N, stem: label, jobId }),
+      });
+    }
+    // Residual "other" = original - sum of the separated primaries. Exact by
+    // construction, so the four stems always sum back to the source.
+    const otherL = new Float32Array(nSample), otherR = new Float32Array(nSample);
+    for (let s = 0; s < nSample; s++) {
+      let l = ch[0][s], r = ch[1][s];
+      for (const k in primaries) { l -= primaries[k][0][s]; r -= primaries[k][1][s]; }
+      otherL[s] = l; otherR[s] = r;
+    }
+    const stems = {}, order = [], transfer = [];
+    for (const st of MDX_PRO_STEMS) {
+      order.push(st.key);
+      stems[st.key] = st.residual ? [otherL, otherR] : primaries[st.key];
+      transfer.push(stems[st.key][0].buffer, stems[st.key][1].buffer);
+    }
+    self.postMessage({ type: 'done', multi: true, stems, order, sampleRate: MDX_SR, jobId }, transfer);
+  } catch (err) {
+    self.postMessage({ type: 'error', message: (err && err.message) || String(err), jobId });
+  }
+}
+
+self.onmessage = (e) => {
+  const msg = e.data;
+  if (!msg) return;
+  // Echo the caller's jobId on every reply (in the handlers) so the client can
+  // ignore messages from a different (e.g. overlapping) job on this shared worker.
+  if (msg.type === 'separate') handleSeparate(msg);
+  else if (msg.type === 'separateMulti') handleSeparateMulti(msg);
 };
