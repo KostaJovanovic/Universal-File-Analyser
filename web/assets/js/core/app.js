@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 252;
+const COMMIT_COUNT = 253;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -256,6 +256,7 @@ const ROUTES = {
   unity:       { render: lazy('../renderers/unity.js', 'renderUnity') },
   vssolution:  { render: lazy('../renderers/vssolution.js', 'renderVsSolution') },
   lut:         { render: lazy('../renderers/lut.js', 'renderLut') },
+  xmp:         { render: lazy('../renderers/xmp.js', 'renderXmp') },
   gcsv:        { render: lazy('../renderers/gcsv.js', 'renderGcsv') },
   iwork:       { render: lazy('../renderers/iwork.js', 'renderIwork') },
   stl:         { render: lazy('../renderers/stl.js', 'renderStl') },
@@ -771,17 +772,16 @@ function boot() {
     // responsiveness and re-assert once the renderer settles (below) - unless the
     // user has grabbed the scroll themselves in the meantime.
     // Autoscroll the analysed section into view, right under the nav bar (each
-    // target carries scroll-margin-top: --nav-offset). Audio/video scroll to their
-    // own low-on-the-page sections; photo keeps its existing behaviour (it only
-    // autoscrolls when opened nested from a folder/zip view). Every OTHER kind -
-    // documents, archives, EDA projects, the unknown/hex view - now scrolls to
-    // wherever its result lands (the generic #unknownResults block or its section),
-    // so the analysis is in view the moment the file is dropped instead of leaving
-    // the user up at the dropzones.
+    // target carries scroll-margin-top: --nav-offset). The three media kinds each
+    // scroll to their own numbered section - photo to 01, audio to 02, video to 03.
+    // Every OTHER kind - documents, archives, EDA projects, the unknown/hex view -
+    // scrolls to wherever its result lands (the generic #unknownResults block or its
+    // section), so the analysis is in view the moment the file is dropped instead of
+    // leaving the user up at the dropzones.
     const resultEl = resultsByName[results];
     const autoScrollSec = kind === 'video' ? sectionVideo
       : kind === 'audio' ? sectionAudio
-      : kind === 'photo' ? ((nested || isSample) && resultEl ? (resultEl.closest('.section') || resultEl) : null)
+      : kind === 'photo' ? sectionPhoto
       : resultEl ? (resultEl.closest('.section') || resultEl)
       : null;
     let userTookScroll = false;

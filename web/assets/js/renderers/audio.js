@@ -7,9 +7,9 @@ import {
   computeStftComplex, combineStftToDb,
   frequencyTicks, timeTicks, formatHz, formatTime
 } from './spectrogram.js';
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, errorCard, integrityCard, downloadBlob, inlineLoader, asciiBar } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, errorCard, integrityCard, downloadBlob, inlineLoader, asciiBar, yieldToMain, afterPaint } from '../core/util.js';
 import {
-  computeStats, computeCentroid, computeLufs,
+  computeStats, computeCentroid,
   detectPitch, detectBPM, computeStereoStats
 } from './audio-analysis.js';
 import { peekContainer, adtsToM4a, readTagBPM, extractCoverArt, readAudioTags } from './audio-codec.js';
@@ -664,9 +664,6 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     ctl('Window', winSel),
   ]));
 
-  // Persistent capture controls (audio panel only - opts.capture). They delegate to
-  // the top-level Record / Live buttons, reusing all their wiring; #audioLive already
-  // toggles on/off via closeLive(), so the Live button is a true toggle.
   const actions = [ctl('', saveBtn)];
   if (fsBtn) actions.push(ctl('', fsBtn));
   // Isolate frequencies (band-stop) - only offered when driving file playback.
@@ -677,21 +674,6 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     actions.unshift(ctl('', isoBtn));   // Isolate sits leftmost in the Actions row
     // Divider between the Isolate tool and the plain Save PNG / Fullscreen actions.
     actions.splice(1, 0, el('span', { class: 'anr-spec-actdiv', 'aria-hidden': 'true' }, '|'));
-  }
-  if (opts.capture) {
-    const recBtn  = el('button', { type: 'button', class: 'anr-btn' }, [sIco('<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" fill="currentColor"/></svg>'), 'Record']);
-    const liveBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Live spectrogram');
-    // Call startRecording directly (same module) rather than clicking the dropzone's
-    // #audioRecord button - a programmatic .click() can focus-scroll the dropzone
-    // into view. Then scroll to the Sound section (02), where the result renders.
-    recBtn.addEventListener('click', () => {
-      const ar = document.getElementById('audioResults');
-      const topRecBtn = document.getElementById('audioRecord');
-      if (topRecBtn && topRecBtn.classList.contains('is-recording')) { if (topRecBtn._stopRec) topRecBtn._stopRec(); return; }
-      if (ar) startRecording(ar, topRecBtn || recBtn);
-    });
-    liveBtn.addEventListener('click', () => document.getElementById('audioLive')?.click());
-    actions.push(ctl('', recBtn), ctl('', liveBtn));
   }
   // The Actions group lives in its own row UNDER the scrubber (appended after the
   // transport below), separate from the settings controls above the canvas.
@@ -939,12 +921,39 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     }
   }
 
+  // renderSpectrogram samples ONE column per output pixel, so computing more time
+  // frames than the canvas is wide is pure wasted STFT work. At the natural hop of
+  // fftSize/4 a 5-minute track is ~25k frames against a ~1200px canvas - 20x more
+  // FFTs than pixels, which is what stalled the main thread for seconds on the very
+  // first paint. Widen the hop so the frame count tracks the display width instead.
+  // This is the same trick the AI-blend view already uses (see paintSettled), just
+  // applied to the file's own spectrogram too.
+  //
+  // Two details keep it invisible:
+  //  - the natural hop is a FLOOR, so short files compute exactly as before;
+  //  - the target is rounded UP to a power of two, so there are never fewer frames
+  //    than pixels (the image is unchanged) and wheel-zoom only re-runs the STFT
+  //    when it crosses a boundary rather than on every 1.2x step.
+  const SPEC_FRAME_FLOOR = 1500;
+  function targetFrames() {
+    const w = Math.max(canvas.width || 0, SPEC_FRAME_FLOOR);
+    return Math.min(16384, 2 ** Math.ceil(Math.log2(w)));
+  }
+  function hopFor(fftSize) {
+    const natural = Math.floor(fftSize / 4);
+    const spread = Math.ceil((samples.length - fftSize) / Math.max(1, targetFrames() - 1));
+    return Math.max(natural, spread);
+  }
+
   function recompute() {
     const t0 = performance.now();
-    if (!cached || cached.fftSize !== state.fftSize || cached.winName !== state.winName || cached.mode !== state.mode) {
+    // Size the canvas FIRST - the hop below is derived from its width.
+    sizeCanvas();
+    const hopSize = hopFor(state.fftSize);
+    if (!cached || cached.fftSize !== state.fftSize || cached.winName !== state.winName || cached.mode !== state.mode || cached.hopSize !== hopSize) {
       const params = {
         fftSize: state.fftSize,
-        hopSize: Math.floor(state.fftSize / 4),
+        hopSize,
         window:  state.winName
       };
       const spec = state.mode === 'reassigned'
@@ -952,9 +961,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         : computeSpectrogram(samples, sampleRate, params);
       // Stats are signal-relative (independent of the dB floor / sensitivity), so
       // they only need computing once per spectrum - not on every render.
-      cached = { fftSize: state.fftSize, winName: state.winName, mode: state.mode, spec, stats: specStats(spec) };
+      cached = { fftSize: state.fftSize, winName: state.winName, mode: state.mode, hopSize, spec, stats: specStats(spec) };
     }
-    sizeCanvas();
     renderSpectrogram(canvas, blendSpec || cached.spec, { scale: state.scale, colormap: state.cmap, dbFloor: state.dbFloor, minHz: state.scale === 'log' ? SPEC_LOG_MIN : 0 });
     const duration = samples.length / sampleRate;
     buildFreqAxis(axisY, sampleRate, state.scale);
@@ -1142,7 +1150,10 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     let activePreset = null, applyingPreset = false;
     // AI stem separation: a real model, unlike the EQ presets. Wired in the block
     // further down; the elements live here so they can sit inside the panel.
-    const aiBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm anr-iso-ai' }, 'AI separation');
+    // Lives in the Actions row under the spectrogram, beside Isolate - so it takes
+    // the same full-size .anr-btn as its neighbours there, not the panel's small
+    // variant. It is mounted into that row just below (see "Actions row mount").
+    const aiBtn = el('button', { type: 'button', class: 'anr-btn anr-iso-ai' }, 'AI separation');
     const aiStatus = el('div', { class: 'anr-iso-aistatus', hidden: true });
     const aiStems = el('div', { class: 'anr-iso-stems' });
     // Explanation tucked behind a [?] next to the "Separate" label (site's
@@ -1155,11 +1166,17 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     wireInfoToggle(aiHelpBtn, aiHelpPanel);
     const aiLabel = el('span', { class: 'anr-iso-seclabel' }, 'Separate');
     aiLabel.appendChild(aiHelpBtn);
-    // One row: the AI separator on the far left, a divider, then the rough EQ
-    // presets (Underwater/Radio/Hollow). Clear is appended
-    // later and pushed to the far right. Both sides are one-tap tone tools.
-    const aiSep = el('span', { class: 'anr-iso-seg-div', 'aria-hidden': 'true' }, '|');
-    const aiRow = el('div', { class: 'anr-iso-ai-row' }, [aiBtn, aiSep, presetBar]);
+    // The AI separator used to lead this row; it now lives in the Actions row beside
+    // Isolate, so what is left here is just the rough EQ presets
+    // (Underwater/Radio/Hollow). Clear is appended later and pushed to the far right.
+    const aiRow = el('div', { class: 'anr-iso-ai-row' }, [presetBar]);
+
+    // ---- Actions row mount ----
+    // Sit AI separation directly beside Isolate: both pull a part out of the mix, so
+    // they read as a pair, ahead of the divider that separates them from the plain
+    // Save PNG / Fullscreen actions. Mounted here rather than built into `actions`
+    // above because this block owns the button and all its wiring.
+    if (isoBtn.parentElement) isoBtn.parentElement.after(ctl('', aiBtn));
     // Which AI model the Separate button uses. "standard" (Kim Vocal 2) is the
     // cleaner, heavier default; "lite" (UVR-MDX-NET 1) is roughly half the download
     // and lighter to run - meant for phones / slower machines. The models are
@@ -2235,6 +2252,33 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   return card;
 }
 
+// A readout row whose value isn't ready yet: renders its label immediately with a
+// progress bar where the number goes, so File info can be shown in full before the
+// slow analysis passes have finished.
+//
+// The bar is determinate, not a looping one - `atStep` is the index of the DSP pass
+// that produces this row's value, so progress(step) fills it in proportion to how
+// close that pass is. A row waiting on the last pass fills gradually across the
+// whole run; one waiting on the second pass is full almost immediately. Call fill()
+// with the value once it lands, or drop() if there turned out to be nothing to
+// report.
+function pendingRow(label, help, atStep) {
+  const tr = rowHelp(label, '', help);
+  const td = tr.querySelector('td');
+  td.textContent = '';
+  const bar = asciiBar();
+  td.appendChild(bar);
+  tr.progress = (step) => { if (!tr.done) bar.set(Math.min(1, step / atStep)); };
+  tr.fill = (value, extra) => {
+    tr.done = true;
+    try { bar.stop(); } catch (_) {}
+    td.textContent = value;
+    if (extra) td.appendChild(extra);
+  };
+  tr.drop = () => { tr.done = true; try { bar.stop(); } catch (_) {} tr.remove(); };
+  return tr;
+}
+
 // Known music-tag fields that earn an inline [?] explanation; everything else
 // renders as a plain row. Keyed by the display label set in audio-codec.js.
 const TAG_HELP = {
@@ -2810,9 +2854,13 @@ function drawLoudnessGraph(series, duration, audioEl) {
   // playback, click or drag the graph to seek, and a transport sits below. The
   // line is themed (var(--fg)) rather than the media-canvas white, since this
   // graph sits on the themed card surface, not a dark media canvas.
-  const wrap = el('div', { class: 'anr-wave-wrap', style: 'margin-top:12px;' });
+  // Unlike the waveform and spectrogram, this canvas is var(--bg) - a themed surface,
+  // not a fixed dark one - so the default on-dark white line would vanish in light
+  // mode. Declare the colour on the WRAPPER via --playhead; the playhead itself is
+  // then byte-for-byte the same element the waveform uses.
+  const wrap = el('div', { class: 'anr-wave-wrap', style: 'margin-top:12px; --playhead: var(--fg);' });
   wrap.appendChild(cv);
-  const line = el('div', { class: 'anr-playhead', style: 'background:var(--fg);' });
+  const line = el('div', { class: 'anr-playhead' });
   wrap.appendChild(line);
 
   const durOf = () => audioEl.duration || duration || 0;
@@ -2853,23 +2901,21 @@ function drawLoudnessGraph(series, duration, audioEl) {
 // help button - the same idiom the video Advanced card's vAdvPanel uses, so the
 // sound Advanced card reads identically. Returns { det, body }; append rows/tables
 // to `body`.
-function aAdvPanel(title, helpHtml, open) {
-  const det = el('details', open ? { open: '' } : {});
-  const sum = el('summary', {});
-  // Title + optional [?] grouped in one span so the summary's flex space-between
-  // keeps them together on the left (only the open/close marker sits at the right).
-  const label = el('span', { class: 'anr-summary-label' });
-  label.appendChild(document.createTextNode(title + (helpHtml ? ' ' : '')));
-  det.appendChild(sum);
+// One part of the Advanced card - a flat labelled block, not a disclosure of its
+// own (the card is the single dropdown). The legacy `open` argument is accepted and
+// ignored: with no per-part folding there is no headline part to pre-open.
+function aAdvPanel(title, helpHtml, _open) {
+  const det = el('div', { class: 'anr-adv-part' });
+  const head = el('div', { class: 'anr-adv-parthead' }, title + (helpHtml ? ' ' : ''));
   const body = el('div');
   if (helpHtml) {
     const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
     const panel = el('div', { class: 'anr-info-panel is-hidden', html: helpHtml });
     wireInfoToggle(btn, panel);
-    label.appendChild(btn);
+    head.appendChild(btn);
     body.appendChild(panel);
   }
-  sum.appendChild(label);
+  det.appendChild(head);
   det.appendChild(body);
   return { det, body };
 }
@@ -2971,13 +3017,11 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   const declaredLossless = opts.declaredLossless != null ? opts.declaredLossless
     : (LOSSLESS_EXTS.has(audioExt)
       || /FLAC|WAV|AIFF|ALAC|PCM|Lossless|Monkey|WavPack/i.test((header.container || '') + ' ' + (header.codec || '')));
+  // The forensic DSP passes below used to run HERE, before a single card existed,
+  // which is why nothing appeared for seconds. They now run after File info is on
+  // screen (see "Forensic DSP" below); the rows that need them start as pending
+  // placeholders and fill in as each pass lands.
   let spec = null, health = null, keyResult = null, r128 = null, tpDb = null, dtmf = null;
-  try { spec = longAverageSpectrum(mono, sampleRate); } catch (_) {}
-  try { health = signalHealth(channelData); } catch (_) {}
-  try { if (spec) keyResult = detectKey(spec); } catch (_) {}
-  try { r128 = loudnessR128(mono, sampleRate); } catch (_) {}
-  try { tpDb = truePeakDb(channelData, sampleRate); } catch (_) {}
-  try { dtmf = detectDtmf(mono, sampleRate); } catch (_) {}
 
   // ---- File info card ----
   const infoCard = el('div', { class: 'anr-card' });
@@ -3041,9 +3085,14 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     'The loudest single sample in the file. dBFS means decibels relative to full scale, where 0 dBFS is the digital maximum and lower (more negative) numbers are quieter.'));
   tbl.appendChild(rowHelp('RMS', stats.rms.toFixed(3)  + '  (' + stats.rmsDb.toFixed(1)  + ' dBFS)',
     'Root Mean Square - the average energy of the signal, which tracks how loud it actually feels better than the single loudest peak does. Typical mastered music sits around −10 dBFS.'));
-  const lufsValue = computeLufs(mono, audioBuffer.sampleRate);
-  tbl.appendChild(rowHelp('Loudness', (isFinite(lufsValue) ? lufsValue.toFixed(1) + ' LUFS' : '-'),
-    'How loud the audio feels to human ears, measured the broadcast-standard way (ITU-R BS.1770) that follows our hearing rather than raw signal level. Streaming targets: Spotify −14, YouTube −14, Apple −16 LUFS.'));
+  // Reuse the gated integrated figure the R128 pass already produced above rather
+  // than running a second, independent K-weighting sweep over the whole file for
+  // the same row. This is also the more correct number for the claim the help text
+  // makes: the streaming targets it cites are all defined against the GATED value
+  // (BS.1770 two-stage gate), which is what the Advanced card shows.
+  const rLoud = pendingRow('Loudness',
+    'How loud the audio feels to human ears, measured the broadcast-standard way (ITU-R BS.1770) that follows our hearing rather than raw signal level. Streaming targets: Spotify −14, YouTube −14, Apple −16 LUFS.', 4);
+  tbl.appendChild(rLoud);
   if (stats.clipped > 0) {
     const pct = ((stats.clipped / mono.length) * 100).toFixed(3);
     tbl.appendChild(rowHelp('Clipping', stats.clipped.toLocaleString() + ' samples  (' + pct + '%)',
@@ -3052,56 +3101,25 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     tbl.appendChild(rowHelp('Clipping', 'None',
       'Samples pushed to or past the digital ceiling (0 dBFS), which would cause distortion. None were found in this file.'));
   }
-  if (health) {
-    tbl.appendChild(rowHelp('Crest factor', health.crestDb.toFixed(1) + ' dB',
-      'The gap between the loudest peak and the average (RMS) level - the peak-to-RMS ratio, a single number for how punchy or squashed the sound is. Loud, heavily compressed masters sit low (under about 8 dB); open, dynamic recordings sit higher (15 dB or more).'));
-    const dcPct = (Math.abs(health.dcOffset) * 100);
-    tbl.appendChild(rowHelp('DC offset', Math.abs(health.dcOffset) < 1e-4
-        ? 'None (' + health.dcOffset.toExponential(1) + ')'
-        : health.dcOffset.toFixed(5) + '  (' + health.dcDb.toFixed(1) + ' dBFS, ' + dcPct.toFixed(3) + '%)',
-      'The average of all the samples, which should sit at about 0. A value away from 0 points to a recording or hardware fault, wastes loudness headroom, and can cause clicks where the audio is cut.'));
-    if (health.effectiveBits > 0) {
-      const declaredBits = header.bitDepth || null;
-      const padded = declaredBits && health.effectiveBits < declaredBits - 1;
-      tbl.appendChild(rowHelp('Effective bit depth', health.effectiveBits + ' bit'
-          + (padded ? '  (declared ' + declaredBits + ' - likely padded/upscaled)' : ''),
-        'The deepest bit that actually carries real sound, worked out from activity in the smallest bits. Sitting well below the stated bit depth means the file was padded or upscaled rather than genuinely high-resolution.'));
-    }
-  }
-  const centroid = computeCentroid(mono, audioBuffer.sampleRate);
-  if (centroid != null) {
-    const label = centroid < 1500 ? 'warm' : centroid < 4000 ? 'neutral' : 'bright';
-    tbl.appendChild(rowHelp('Spectral centroid', Math.round(centroid).toLocaleString() + ' Hz  (' + label + ')',
-      'Where the "centre of gravity" of the sound sits on the pitch scale - roughly whether it leans low or high overall. Below 1500 Hz sounds warm or dark, above 4000 Hz sounds bright or sharp. Handy for comparing the tonal character of two files.'));
-  }
-  const pitchResult = detectPitch(mono, audioBuffer.sampleRate);
-  if (pitchResult) {
-    const centsStr = pitchResult.cents >= 0 ? '+' + pitchResult.cents : String(pitchResult.cents);
-    tbl.appendChild(rowHelp('Pitch', pitchResult.note + '  (' + pitchResult.frequency.toFixed(1) + ' Hz, ' + centsStr + ' cents)',
-      'The main musical note the sound settles on, found with the YIN pitch-detection method. Cents measure how far it drifts from the nearest exact note (±50 cents is half a semitone, the gap between two adjacent piano keys).'));
-  } else {
-    tbl.appendChild(rowHelp('Pitch', 'N/A',
-      'The main musical note of the sound, found with the YIN pitch-detection method. No clear, steady pitch could be detected in this audio.'));
-  }
-  const tagBpm = await readTagBPM(file).catch(() => null);
-  const estBpm = detectBPM(mono, audioBuffer.sampleRate);
-  const bpmVal = tagBpm || estBpm;
-  const bpmIsTag = tagBpm != null;
-  const bpmRow = rowHelp('BPM', bpmVal != null ? bpmVal + ' BPM' : 'N/A',
-    bpmIsTag ? 'Beats per minute - the tempo - read straight from the file’s saved metadata.'
-             : 'Beats per minute - the tempo - estimated by tracking where the beats land in the sound. Most reliable on rhythmic music with a clear, steady beat.');
-  if (bpmVal != null && !bpmIsTag) {
-    const td = bpmRow.querySelector('td');
-    td.appendChild(el('span', { style: 'font-size:0.8em;color:var(--muted);margin-left:4px' }, '(est)'));
-  }
-  tbl.appendChild(bpmRow);
-  if (keyResult) {
-    const conf = Math.round(keyResult.confidence * 100);
-    const keyRow = rowHelp('Musical key', keyResult.key + '  (' + conf + '% confidence)',
-      'The song’s likely musical key, estimated by matching its blend of notes against reference patterns for each key (the Krumhansl-Schmuckler templates). Most reliable on tonal music; the runner-up is often the relative major or minor. Pairs with the detected tempo.');
-    keyRow.querySelector('td').appendChild(el('span', { style: 'font-size:0.8em;color:var(--muted);margin-left:4px' }, '· alt ' + keyResult.alt));
-    tbl.appendChild(keyRow);
-  }
+  // Every row from here to Total samples needs a slow pass. They go in now as
+  // pending placeholders, in their normal positions, and fill in below - so the
+  // table's shape and order are the same as they always were, it just arrives in
+  // two stages instead of after a multi-second stall.
+  const rCrest = pendingRow('Crest factor',
+    'The gap between the loudest peak and the average (RMS) level - the peak-to-RMS ratio, a single number for how punchy or squashed the sound is. Loud, heavily compressed masters sit low (under about 8 dB); open, dynamic recordings sit higher (15 dB or more).', 2);
+  const rDc = pendingRow('DC offset',
+    'The average of all the samples, which should sit at about 0. A value away from 0 points to a recording or hardware fault, wastes loudness headroom, and can cause clicks where the audio is cut.', 2);
+  const rBits = pendingRow('Effective bit depth',
+    'The deepest bit that actually carries real sound, worked out from activity in the smallest bits. Sitting well below the stated bit depth means the file was padded or upscaled rather than genuinely high-resolution.', 2);
+  const rCentroid = pendingRow('Spectral centroid',
+    'Where the "centre of gravity" of the sound sits on the pitch scale - roughly whether it leans low or high overall. Below 1500 Hz sounds warm or dark, above 4000 Hz sounds bright or sharp. Handy for comparing the tonal character of two files.', 7);
+  const rPitch = pendingRow('Pitch',
+    'The main musical note the sound settles on, found with the YIN pitch-detection method. Cents measure how far it drifts from the nearest exact note (±50 cents is half a semitone, the gap between two adjacent piano keys).', 8);
+  const rBpm = pendingRow('BPM',
+    'Beats per minute - the tempo - read from the file’s saved metadata when it carries one, otherwise estimated by tracking where the beats land in the sound.', 9);
+  const rKey = pendingRow('Musical key',
+    'The song’s likely musical key, estimated by matching its blend of notes against reference patterns for each key (the Krumhansl-Schmuckler templates). Most reliable on tonal music; the runner-up is often the relative major or minor. Pairs with the detected tempo.', 3);
+  for (const r of [rCrest, rDc, rBits, rCentroid, rPitch, rBpm, rKey]) tbl.appendChild(r);
   tbl.appendChild(rowHelp('Total samples',  mono.length.toLocaleString(),
     'The total count of individual sound measurements in the merged mono signal - roughly the sample rate multiplied by the duration in seconds.'));
   infoCard.appendChild(tbl);
@@ -3111,7 +3129,200 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // change - but is shown here inside File info at the user's request.
   const specStatsMount = el('div');
   infoCard.appendChild(specStatsMount);
+
+  // Show the result's shape immediately: the spectrogram's slot goes in above File
+  // info holding a loading bar (the panel itself needs the channel options built
+  // further down), and File info itself goes in fully formed, with the rows that
+  // depend on the slow passes sitting as pending placeholders.
+  const specSlot = el('div');
+  const specBooting = inlineLoader('Building spectrogram…');
+  specSlot.appendChild(specBooting);
+  resultsEl.appendChild(specSlot);
   resultsEl.appendChild(infoCard);
+  // Wait for a REAL paint, not just a rAF tick. Everything below - building the
+  // panel, then its FFT - runs synchronously and would block the paint, so without
+  // this the spectrogram's loading bar is inserted and then never shown: the reader
+  // just gets a blank gap where the spectrogram will be.
+  await afterPaint();
+
+  // ---- Channel picker (multi-channel files) ----
+  // For stereo / surround, let the user drive the spectrogram + waveform below off
+  // a chosen channel (or the Mix downmix), instead of always analysing the merged
+  // mono. Both visuals live in slots that re-render when the channel changes.
+  const basename = (file.name || 'spectrogram').replace(/\.[^/.]+$/, '');
+  const chans = channelOptions(audioBuffer, mono);
+  const waveSlot = el('div');
+  let curSpecPanel = null;
+  // Filled in below when the Stereo analysis card is built (stereo files only). The
+  // AI-separation blend, which lives inside the spectrogram panel, pushes its live
+  // mix here so the stereo readout tracks the blend; reset() reverts to the file.
+  const stereoSink = { update: null, reset: null };
+
+  function renderSignalViews(idx, showLoader) {
+    // A user channel switch (showLoader) rebuilds the spectrogram + waveform and
+    // their transports; stop playback first so it doesn't carry on under the new
+    // views (and the fresh transports show a clean paused state). showLoader is
+    // false only for the initial render, where nothing is playing yet. The rebuild
+    // also drops any active separation, so revert the stereo readout to the file.
+    if (showLoader) {
+      try { audioEl.pause(); } catch (_) {}
+      if (stereoSink.reset) stereoSink.reset();
+    }
+    const sig = chans[idx].data;
+    // chans[0] is the Mix downmix (normal stereo playback); chans[i>=1] is source
+    // channel i-1 - selecting it solos that channel for playback too, not just the view.
+    const soloChannel = idx >= 1 ? idx - 1 : null;
+    specSlot.innerHTML = '';
+    // On a channel switch the spectrogram recomputes on a deferred timeout, so drop
+    // in the standard inline loader (as elsewhere) until the new panel first paints.
+    let loader = null;
+    if (showLoader) { loader = inlineLoader('Analysing ' + chans[idx].full + '…'); specSlot.appendChild(loader); }
+    curSpecPanel = makeSpectrogramPanel(sig, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, audioBuffer, statsMount: specStatsMount, stereoSink, soloChannel });
+    if (loader) curSpecPanel.style.visibility = 'hidden';   // keep the blank canvas out of view behind the bar
+    specSlot.appendChild(curSpecPanel);
+    waveSlot.innerHTML = '';
+    waveSlot.appendChild(buildWaveformCard(file, sig, audioBuffer, audioEl));
+    if (loader) {
+      const panel = curSpecPanel;
+      const clear = () => { loader.remove(); panel.style.visibility = ''; };
+      if (panel.firstPaint) panel.firstPaint.then(clear).catch(clear);
+      else clear();
+    }
+  }
+
+  // The Mix/L/R channel selector that drives the spectrogram + waveform. It used to
+  // live in its own card above the spectrogram; it now folds into the Stereo analysis
+  // card at the bottom (built below), so keep references to drop it in there.
+  let chanHead = null, chanHelpPanel = null, chanSeg = null, chanStat = null;
+  if (chans.length > 1) {
+    const [chanH, chanHelp] = h3help('Channel',
+      'This file has ' + audioBuffer.numberOfChannels + ' separate channels. Choose which one feeds the spectrogram and waveform below - <strong>Mix</strong> blends every channel together, or pick a single speaker (Left, Right, Centre, LFE, surrounds) to inspect on its own. The per-channel peak and RMS update with your choice. Speaker names follow the layout the file declares, so treat them as a best guess.');
+    const stat = el('span', { class: 'anr-chan-readout' });
+    const seg = el('div', { class: 'anr-btn-row anr-chan-seg' });
+    const btns = [];
+    const setActive = (i) => {
+      btns.forEach((b, j) => b.classList.toggle('is-active', j === i));
+      const s = computeStats(chans[i].data);
+      stat.textContent = chans[i].full + ' · peak ' + s.peakDb.toFixed(1) + ' dBFS · RMS ' + s.rmsDb.toFixed(1) + ' dBFS';
+    };
+    chans.forEach((c, i) => {
+      const b = el('button', { type: 'button', class: 'anr-btn', title: c.full }, c.short);
+      b.addEventListener('click', () => { setActive(i); renderSignalViews(i, true); });
+      btns.push(b); seg.appendChild(b);
+    });
+    setActive(0);
+    chanHead = chanH; chanHelpPanel = chanHelp; chanSeg = seg; chanStat = stat;
+  }
+
+  // Place the remaining slots now, in their final order, so the result has its
+  // full shape before any slow work starts and nothing jumps around as the cards
+  // land in it.
+  const reverseSlot = el('div');
+  const coverSlot = el('div');
+  const tagSlot = el('div');
+  resultsEl.appendChild(reverseSlot);
+  resultsEl.appendChild(coverSlot);
+  resultsEl.appendChild(tagSlot);
+  resultsEl.appendChild(waveSlot);
+
+  // Build the spectrogram and WAIT for it to finish before starting anything else.
+  // It is the headline visual, so it gets the main thread to itself: the forensic
+  // passes below would otherwise compete with its FFT and delay the one thing the
+  // reader is actually waiting to see. firstPaint always settles (the panel resolves
+  // it in a finally, with a 6 s safety net), so this cannot wedge the render.
+  renderSignalViews(0, true);
+  if (curSpecPanel && curSpecPanel.firstPaint) { try { await curSpecPanel.firstPaint; } catch (_) {} }
+
+  // ---- Forensic DSP (heavy, whole-file passes) ----
+  // These deliberately run AFTER File info is on screen. Each is a full-length
+  // sweep over the decoded audio, and back to back they used to take the main
+  // thread away for seconds before anything at all had rendered. truePeakDb is the
+  // worst (4x-oversampled FIR, ~96 multiply-adds per input sample per channel),
+  // with loudnessR128 and detectDtmf close behind.
+  //
+  // Yield between passes so the page keeps painting and scrolling, and fill each
+  // pending row as its number lands. advance() ticks the shared step counter that
+  // drives every still-pending row's progress bar (see pendingRow).
+  const pendRows = [rLoud, rCrest, rDc, rBits, rCentroid, rPitch, rBpm, rKey];
+  let dspStep = 0;
+  const advance = () => { dspStep++; for (const r of pendRows) r.progress(dspStep); };
+
+  try { spec = longAverageSpectrum(mono, sampleRate); } catch (_) {}
+  advance();
+  await yieldToMain();
+
+  try { health = signalHealth(channelData); } catch (_) {}
+  advance();
+  if (health) {
+    rCrest.fill(health.crestDb.toFixed(1) + ' dB');
+    const dcPct = Math.abs(health.dcOffset) * 100;
+    rDc.fill(Math.abs(health.dcOffset) < 1e-4
+      ? 'None (' + health.dcOffset.toExponential(1) + ')'
+      : health.dcOffset.toFixed(5) + '  (' + health.dcDb.toFixed(1) + ' dBFS, ' + dcPct.toFixed(3) + '%)');
+    if (health.effectiveBits > 0) {
+      const declaredBits = header.bitDepth || null;
+      const padded = declaredBits && health.effectiveBits < declaredBits - 1;
+      rBits.fill(health.effectiveBits + ' bit'
+        + (padded ? '  (declared ' + declaredBits + ' - likely padded/upscaled)' : ''));
+    } else rBits.drop();
+  } else { rCrest.drop(); rDc.drop(); rBits.drop(); }
+  await yieldToMain();
+
+  try { if (spec) keyResult = detectKey(spec); } catch (_) {}
+  advance();
+  if (keyResult) {
+    rKey.fill(keyResult.key + '  (' + Math.round(keyResult.confidence * 100) + '% confidence)',
+      el('span', { style: 'font-size:0.8em;color:var(--muted);margin-left:4px' }, '· alt ' + keyResult.alt));
+  } else rKey.drop();
+  await yieldToMain();
+
+  try { r128 = loudnessR128(mono, sampleRate); } catch (_) {}
+  advance();
+  rLoud.fill(r128 && isFinite(r128.integrated) ? r128.integrated.toFixed(1) + ' LUFS' : '-');
+  await yieldToMain();
+
+  try { tpDb = truePeakDb(channelData, sampleRate); } catch (_) {}
+  advance();
+  await yieldToMain();
+
+  try { dtmf = detectDtmf(mono, sampleRate); } catch (_) {}
+  advance();
+  await yieldToMain();
+
+  // Spectral centroid - another whole-file STFT (4096-pt FFT per frame).
+  let centroid = null;
+  try { centroid = computeCentroid(mono, audioBuffer.sampleRate); } catch (_) {}
+  advance();
+  if (centroid != null) {
+    const cLabel = centroid < 1500 ? 'warm' : centroid < 4000 ? 'neutral' : 'bright';
+    rCentroid.fill(Math.round(centroid).toLocaleString() + ' Hz  (' + cLabel + ')');
+  } else rCentroid.drop();
+  await yieldToMain();
+
+  // Pitch - a single window from the middle of the file, so this one is cheap.
+  let pitchResult = null;
+  try { pitchResult = detectPitch(mono, audioBuffer.sampleRate); } catch (_) {}
+  advance();
+  rPitch.fill(pitchResult
+    ? pitchResult.note + '  (' + pitchResult.frequency.toFixed(1) + ' Hz, '
+      + (pitchResult.cents >= 0 ? '+' + pitchResult.cents : String(pitchResult.cents)) + ' cents)'
+    : 'N/A');
+
+  // BPM - prefer the tempo the file already declares; only pay for the third
+  // whole-file STFT when there isn't one (the tag wins either way).
+  const tagBpm = await readTagBPM(file).catch(() => null);
+  let estBpm = null;
+  if (tagBpm == null) {
+    await yieldToMain();
+    try { estBpm = detectBPM(mono, audioBuffer.sampleRate); } catch (_) {}
+  }
+  advance();
+  const bpmVal = tagBpm != null ? tagBpm : estBpm;
+  rBpm.fill(bpmVal != null ? bpmVal + ' BPM' : 'N/A',
+    (bpmVal != null && tagBpm == null)
+      ? el('span', { style: 'font-size:0.8em;color:var(--muted);margin-left:4px' }, '(est)')
+      : null);
+  await yieldToMain();
 
   // ---- Advanced (forensic panels, collapsed) ----
   // Mirrors the photo and video Advanced cards: one collapsed anr-card holding
@@ -3121,7 +3332,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // Built here (data is in scope) but appended last, below every other card.
   let advCardEl = null;
   {
-    const advCard = el('div', { class: 'anr-card anr-adv' });
+    const advCard = el('div', { class: 'anr-card anr-adv anr-collapsible is-collapsed' });
     const [advH, advHelp] = h3help('Advanced',
       'Deep forensic analysis of the sound, computed from the decoded audio. Each panel below is collapsed until you open it.');
     advCard.appendChild(advH); advCard.appendChild(advHelp);
@@ -3242,95 +3453,21 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   }
 
   // ---- Reverse playback (play / download the audio backwards) ----
-  resultsEl.appendChild(buildReverseAudioCard(audioBuffer, (file.name || 'audio').replace(/\.[^/.]+$/, ''), renderSignal));
+  reverseSlot.appendChild(buildReverseAudioCard(audioBuffer, (file.name || 'audio').replace(/\.[^/.]+$/, ''), renderSignal));
 
-  // ---- Channel picker (multi-channel files) ----
-  // For stereo / surround, let the user drive the spectrogram + waveform below off
-  // a chosen channel (or the Mix downmix), instead of always analysing the merged
-  // mono. Both visuals live in slots that re-render when the channel changes.
-  const basename = (file.name || 'spectrogram').replace(/\.[^/.]+$/, '');
-  const chans = channelOptions(audioBuffer, mono);
-  const specSlot = el('div');
-  const waveSlot = el('div');
-  let curSpecPanel = null;
-  // Filled in below when the Stereo analysis card is built (stereo files only). The
-  // AI-separation blend, which lives inside the spectrogram panel, pushes its live
-  // mix here so the stereo readout tracks the blend; reset() reverts to the file.
-  const stereoSink = { update: null, reset: null };
 
-  function renderSignalViews(idx, showLoader) {
-    // A user channel switch (showLoader) rebuilds the spectrogram + waveform and
-    // their transports; stop playback first so it doesn't carry on under the new
-    // views (and the fresh transports show a clean paused state). showLoader is
-    // false only for the initial render, where nothing is playing yet. The rebuild
-    // also drops any active separation, so revert the stereo readout to the file.
-    if (showLoader) {
-      try { audioEl.pause(); } catch (_) {}
-      if (stereoSink.reset) stereoSink.reset();
-    }
-    const sig = chans[idx].data;
-    // chans[0] is the Mix downmix (normal stereo playback); chans[i>=1] is source
-    // channel i-1 - selecting it solos that channel for playback too, not just the view.
-    const soloChannel = idx >= 1 ? idx - 1 : null;
-    specSlot.innerHTML = '';
-    // On a channel switch the spectrogram recomputes on a deferred timeout, so drop
-    // in the standard inline loader (as elsewhere) until the new panel first paints.
-    let loader = null;
-    if (showLoader) { loader = inlineLoader('Analysing ' + chans[idx].full + '…'); specSlot.appendChild(loader); }
-    curSpecPanel = makeSpectrogramPanel(sig, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, capture: true, audioBuffer, statsMount: specStatsMount, stereoSink, soloChannel });
-    if (loader) curSpecPanel.style.visibility = 'hidden';   // keep the blank canvas out of view behind the bar
-    specSlot.appendChild(curSpecPanel);
-    waveSlot.innerHTML = '';
-    waveSlot.appendChild(buildWaveformCard(file, sig, audioBuffer, audioEl));
-    if (loader) {
-      const panel = curSpecPanel;
-      const clear = () => { loader.remove(); panel.style.visibility = ''; };
-      if (panel.firstPaint) panel.firstPaint.then(clear).catch(clear);
-      else clear();
-    }
-  }
-
-  // The Mix/L/R channel selector that drives the spectrogram + waveform. It used to
-  // live in its own card above the spectrogram; it now folds into the Stereo analysis
-  // card at the bottom (built below), so keep references to drop it in there.
-  let chanHead = null, chanHelpPanel = null, chanSeg = null, chanStat = null;
-  if (chans.length > 1) {
-    const [chanH, chanHelp] = h3help('Channel',
-      'This file has ' + audioBuffer.numberOfChannels + ' separate channels. Choose which one feeds the spectrogram and waveform below - <strong>Mix</strong> blends every channel together, or pick a single speaker (Left, Right, Centre, LFE, surrounds) to inspect on its own. The per-channel peak and RMS update with your choice. Speaker names follow the layout the file declares, so treat them as a best guess.');
-    const stat = el('span', { class: 'anr-chan-readout' });
-    const seg = el('div', { class: 'anr-btn-row anr-chan-seg' });
-    const btns = [];
-    const setActive = (i) => {
-      btns.forEach((b, j) => b.classList.toggle('is-active', j === i));
-      const s = computeStats(chans[i].data);
-      stat.textContent = chans[i].full + ' · peak ' + s.peakDb.toFixed(1) + ' dBFS · RMS ' + s.rmsDb.toFixed(1) + ' dBFS';
-    };
-    chans.forEach((c, i) => {
-      const b = el('button', { type: 'button', class: 'anr-btn', title: c.full }, c.short);
-      b.addEventListener('click', () => { setActive(i); renderSignalViews(i, true); });
-      btns.push(b); seg.appendChild(b);
-    });
-    setActive(0);
-    chanHead = chanH; chanHelpPanel = chanHelp; chanSeg = seg; chanStat = stat;
-  }
-
-  // ---- Spectrogram (leads the analysis, above the file-info card) ----
-  // The spectrogram is the headline visual, so it sits at the very top of the
-  // result - above the file info + player. (opts.spectrogramFirst predates this
-  // being the default and is kept for the image-sonify caller; the placement is
-  // now the same either way.)
-  resultsEl.insertBefore(specSlot, infoCard);
+  // The spectrogram is the headline visual and sits at the very top of the result,
+  // above the file info + player. Its slot was already placed there (holding a
+  // loading bar) before the forensic passes ran; renderSignalViews below fills it.
+  // (opts.spectrogramFirst predates this being the default and is kept for the
+  // image-sonify caller; the placement is now the same either way.)
 
   // ---- Embedded cover art (filled in asynchronously so it doesn't block) ----
-  const coverSlot = el('div');
-  resultsEl.appendChild(coverSlot);
   extractCoverArt(file).then((art) => {
     if (art && art.bytes && art.bytes.length) coverSlot.appendChild(buildCoverArtCard(art, file, resultsEl));
   }).catch(() => {});
 
   // ---- Embedded tags + lyrics (async, non-blocking) ----
-  const tagSlot = el('div');
-  resultsEl.appendChild(tagSlot);
   readAudioTags(file).then((meta) => {
     if (!meta) return;
     if (meta.tags && meta.tags.length) {
@@ -3349,11 +3486,6 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     }
   }).catch(() => {});
 
-  // ---- Waveform card ----
-  resultsEl.appendChild(waveSlot);
-
-  // Fill the spectrogram + waveform slots now that both are in the DOM (Mix by default).
-  renderSignalViews(0);
 
   // ---- Stereo Width / Vectorscope card (stereo files only) ----
   if (audioBuffer.numberOfChannels >= 2) {
@@ -3418,10 +3550,8 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // Advanced sits last, below every other card.
   if (advCardEl) resultsEl.appendChild(advCardEl);
 
-  // Keep the bottom "Reading…" loader up until the spectrogram has actually
-  // painted (it computes on a deferred timeout after the cards are built), so the
-  // bar doesn't vanish while the main visual is still blank.
-  if (curSpecPanel && curSpecPanel.firstPaint) { try { await curSpecPanel.firstPaint; } catch (_) {} }
+  // (The spectrogram's first paint was already awaited before the forensic passes
+  // began, so there is nothing left to wait for here.)
 }
 
 // --- Compact streaming spectrogram (mic visual for the Record card) ---

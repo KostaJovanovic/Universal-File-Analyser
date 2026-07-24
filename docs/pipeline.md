@@ -157,3 +157,37 @@ and a raw hex/ASCII dump. It also computes SHA-256 and offers enhanced
 previews for plain text, JSON and XML, and can hand off to
 `photo-recover.js`'s `carveImages`/`repairJpeg` when an embedded or truncated
 image is detected inside an otherwise-unknown blob.
+
+## Keeping the page alive during heavy analysis (`yieldToMain`)
+
+Analysis runs on the main thread, so a chain of unbroken synchronous passes
+freezes the tab outright - scrolling stops and clicks queue until the last one
+returns. `yieldToMain()` in `core/util.js` is the shared escape hatch: it awaits
+a `requestAnimationFrame` (falling back to `setTimeout` when the tab is hidden,
+where rAF never fires) so the browser gets to paint and service input between
+slices of work.
+
+Two conventions build on it, both currently modelled by `renderAudio` in
+`renderers/audio.js`:
+
+- **Yield between heavy passes.** Whole-file sweeps (loudness, true peak, DTMF,
+  each whole-file STFT) are separated by `await yieldToMain()`. This costs about
+  a frame per pass and in exchange the page stays responsive throughout.
+- **Show the card first, fill the slow rows after.** `pendingRow(label, help,
+  atStep)` builds a readout row whose value is a `asciiBar()`; the card is
+  appended immediately with its cheap rows complete and its expensive ones
+  pending, then each row's `fill(value, extra)` (or `drop()`, when there turned
+  out to be nothing to report) runs as its pass lands. Row order and card shape
+  are identical to a synchronous build - only the arrival is staged. The bar is
+  determinate, not a looping one: `atStep` is the index of the pass that produces
+  that row's value, and a shared step counter advanced after each pass fills every
+  outstanding bar in proportion, so each reaches full exactly as its value lands.
+- **Finish the headline visual before starting anything else.** Audio builds the
+  spectrogram and awaits its `firstPaint` *before* the forensic passes begin, so
+  the main visual gets the thread to itself rather than competing with analysis
+  the reader isn't waiting on.
+
+The same shape applies to panels that are collapsed by default: build them
+empty and compute on the `<details>` `toggle` event rather than on load. The
+ELA and LSB panels in `renderers/photo.js` and the OCR canvas both do this, so a
+forensic read that most visitors never open costs nothing until it is opened.

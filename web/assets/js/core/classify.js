@@ -183,6 +183,12 @@ export function classifyFile(file) {
   // is an Adobe SpeedGrade / Iridas grade stack carrying a baked 3D LUT, read by
   // the same renderer (grade stack + the embedded LUT visualised).
   if (ext === 'cube' || ext === 'look') return 'lut';
+  // XMP develop sidecar: the RAW edit recipe (crs:/Lightroom/darktable) written
+  // next to a raw photo. renderXmp parses and visualises the develop settings
+  // (tone curve, sliders, HSL, crop) and hands a non-XMP .xmp back to the
+  // generic identifier. (Adobe .xmp templates carry the same packet, so they
+  // read here too rather than as a bare Adobe identification.)
+  if (ext === 'xmp') return 'xmp';
   // Raw disk-filesystem images: browsable like a folder/archive. renderDiskImage
   // mounts a FAT12/16/32 volume (bare "superfloppy" or an MBR-partitioned disk)
   // and falls back to identification for non-FAT images (ISO, ext4, NTFS, DMG,

@@ -2101,6 +2101,22 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 .anr-lut-thumb { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 0; display: block; background: #0a0a0a; cursor: zoom-in; transition: filter .12s; }
 .anr-lut-thumb:hover { filter: brightness(1.08); }
 .anr-lut-cap { text-align: center; font-size: 10.5px; opacity: .6; margin-top: 2px; }
+/* XMP develop sidecar (.xmp): the Basic-panel sliders drawn as bipolar bars,
+   the HSL colour-mixer grid, and keyword/module chips. */
+.anr-xmp-sliders { display: grid; grid-template-columns: minmax(78px, auto) 1fr minmax(52px, auto); gap: 6px 12px; align-items: center; margin-top: 6px; }
+.anr-xmp-sk { font-size: 12px; opacity: .85; }
+.anr-xmp-sv { font-family: var(--font-mono); font-size: 11.5px; text-align: right; white-space: nowrap; }
+.anr-xmp-bar { position: relative; height: 6px; background: rgba(128,128,128,.16); overflow: hidden; }
+.anr-xmp-bar--mini { min-width: 34px; }
+.anr-xmp-bar-fill { position: absolute; top: 0; bottom: 0; background: var(--fg); opacity: .78; }
+.anr-xmp-bar-zero { position: absolute; top: -2px; bottom: -2px; width: 1px; background: currentColor; opacity: .4; }
+.anr-xmp-hsl { display: grid; grid-template-columns: minmax(84px, auto) repeat(3, 1fr); gap: 5px 10px; align-items: center; margin-top: 6px; }
+.anr-xmp-hsl-head { font-size: 10.5px; opacity: .55; text-transform: uppercase; letter-spacing: .04em; }
+.anr-xmp-hsl-head:first-child { grid-column: 1; }
+.anr-xmp-hsl-name { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.anr-xmp-hsl-chip { width: 12px; height: 12px; flex: 0 0 auto; box-shadow: inset 0 0 0 1px rgba(128,128,128,.3); }
+.anr-xmp-kws { display: flex; flex-wrap: wrap; gap: 5px; }
+.anr-xmp-kw { font-size: 11px; font-family: var(--font-mono); padding: 2px 7px; border: var(--bd-hairline); color: var(--muted); }
 .anr-scan-list { list-style: none; margin: 0; padding: 0; }
 .anr-scan-list li {
   display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: space-between;
@@ -2464,7 +2480,11 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   bottom: 0;
   left: 0;
   width: 1px;
-  background: var(--on-dark);
+  /* Defaults to the media-canvas white, since most playheads sit on a fixed dark
+     canvas (spectrogram, waveform). A themed surface - e.g. the loudness graph,
+     whose canvas is var(--bg) - sets --playhead on its wrapper to override it,
+     rather than needing a playhead variant of its own. */
+  background: var(--playhead, var(--on-dark));
   pointer-events: none;
   z-index: 3;
   will-change: left;
@@ -2990,11 +3010,10 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
 .anr-iso-draghint { color: var(--muted); font-size: var(--t-small); }
 .anr-iso-export { margin-left: auto; }   /* Download WAV floats right, opposite + Custom band */
 
-/* The AI separator is a plain white button (default .anr-btn look). It sits in
-   its own labelled "Separate" tier, so it doesn't need colour to stand apart -
-   and align-self stops the flex column from stretching it edge to edge (which
-   would centre its text and box it against the dividers). */
-.anr-iso-ai { align-self: flex-start; }
+/* The AI separator is a plain white button (default .anr-btn look). It now sits in
+   the Actions row beside Isolate rather than inside the Separate panel, so it needs
+   no alignment override of its own - the .anr-control wrapper places it exactly
+   like Isolate, Save PNG and Fullscreen. */
 
 /* The Isolate toggle looks like every other Actions-row button (no accent border);
    when toggled on it uses the standard .anr-btn.is-active fill. */
@@ -4007,28 +4026,33 @@ details summary::after {
 details summary:hover::after { color: var(--accent); }
 details[open] summary::after { content: "\2212"; }
 
-/* ---------- ADVANCED CARD (one section, its parts) ----------
-   The photo / video / sound "Advanced" cards are one section whose heavier
-   forensic reads are its parts - the same "card heading + .anr-readout-section
-   sub-headings" idiom as the Metadata card, not a nested accordion. Each part is
-   a <details> that opens by default, so it shows as a flat labelled part with
-   its content below; the muted +/- on the right lets a part be folded away, but
-   nothing is boxed or tinted. Direct-child selectors only, so the box tree, the
-   DTMF timing list and the [?] info panels nested deeper keep their own styling. */
-.anr-adv > details { margin: 0; padding: 0; border-top: none; }
-.anr-adv > details > summary {
+/* ---------- ADVANCED CARD (one dropdown, uniform parts) ----------
+   The photo / video / sound "Advanced" cards are ONE collapsible section, sat at
+   the very bottom of the page and closed by default: the card's own <h3> is the
+   only disclosure (.anr-collapsible, +/- glyph, handled by the delegated toggle in
+   app.js). Its heavier forensic reads are flat parts inside it - a
+   .anr-readout-section-style sub-heading with its content below, exactly the
+   Metadata-card idiom - NOT a stack of nested accordions. Nothing is boxed or
+   tinted. Direct-child selectors only, so the box tree, the DTMF timing list and
+   the [?] info panels nested deeper keep their own styling. */
+.anr-adv > .anr-adv-part { margin: 0; padding: 0; }
+.anr-adv > .anr-adv-part > .anr-adv-parthead {
+  font-family: var(--font-mono);
   font-size: var(--t-tiny);
   letter-spacing: 0.15em;
+  text-transform: uppercase;
   color: var(--muted);
   margin: 28px 0 6px;
   padding-top: 12px;
   border-top: var(--bd-hairline);
 }
 /* First part sits directly under the card heading - no divider or top gap. */
-.anr-adv > details:first-of-type > summary { border-top: none; margin: 0 0 6px; padding-top: 0; }
-/* A disclosure nested directly in a part body (the DTMF timing list): trim the
-   generic details' large top gap so it sits close under its part. */
-.anr-adv > details > div > details { margin-top: 12px; padding-top: 12px; }
+.anr-adv > .anr-adv-part:first-of-type > .anr-adv-parthead {
+  border-top: none; margin: 0 0 6px; padding-top: 0;
+}
+/* A genuine disclosure nested inside a part body (the DTMF timing list, the box
+   tree): trim the generic details' large top gap so it sits close under its part. */
+.anr-adv > .anr-adv-part > div > details { margin-top: 12px; padding-top: 12px; }
 
 /* ---------- ABOUT / FOOTER ---------- */
 .site-footer--about {
@@ -8279,19 +8303,19 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
     width: 100%;
   }
   /* Actions row: the "|" separator (a bare grid cell here) is noise on the stacked
-     mobile grid - hide it, and give Isolate its own full-width row above the plain
-     Save PNG / Fullscreen actions so it reads as the primary tool. */
+     mobile grid - hide it, and give Isolate and AI separation their own full-width
+     rows above the plain Save PNG / Fullscreen actions so the two "pull a part out
+     of the mix" tools read as the primary ones. */
   .anr-spec-card .anr-spec-actdiv { display: none; }
-  .anr-spec-card .anr-control:has(.anr-iso-toggle) { grid-column: 1 / -1; }
+  .anr-spec-card .anr-control:has(.anr-iso-toggle),
+  .anr-spec-card .anr-control:has(.anr-iso-ai) { grid-column: 1 / -1; }
 
   /* ---- Separate / Isolate panel: stack cleanly on a phone ---- */
-  /* On desktop the AI separator + EQ presets share one wrapping row
-     ([AI separation] | [Underwater][Radio][Hollow]   [Clear]).
-     On a narrow screen that orphans the "|", wraps the presets untidily and
-     floats Clear onto its own line - so stack the row into full-width blocks. */
+  /* The AI separator has moved out to the Actions row, so this row now holds just
+     the EQ presets ([Underwater][Radio][Hollow]   [Clear]). Stacking it keeps the
+     presets from wrapping untidily and Clear from floating onto its own line. */
   .anr-iso-ai-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .anr-iso-seg-div { display: none; }                 /* divider is meaningless once stacked */
-  .anr-iso-ai { align-self: stretch; width: 100%; }   /* Separate button spans the row */
   /* The four EQ presets sit in a tidy 2-up grid, each filling its cell. */
   .anr-iso-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .anr-iso-presets .anr-btn { width: 100%; }
@@ -8330,7 +8354,10 @@ a.fmt-item-ext:hover { color: var(--accent); text-decoration: underline; text-un
   top: 0;
   bottom: 0;
   width: 1px;
-  background: var(--on-dark);
+  /* Same --playhead override as the base rule: once grabbable, THIS is the visible
+     line (the element itself becomes a transparent 13px hit-area), so a themed
+     surface has to be able to colour it here too. */
+  background: var(--playhead, var(--on-dark));
 }
 
 /* Grab-to-pan: drag the spectrogram body to scroll it horizontally (mouse/pen).

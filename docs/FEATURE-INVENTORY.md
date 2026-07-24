@@ -36,8 +36,7 @@ there in Phase D.
 - [x] photo.js - Import XMP settings - applies an external .xmp sidecar's edit settings - images.md
 - [x] photo.js - Sonify (play as spectrogram) - opens the image-as-audio sonifier - images.md
 - [x] photo.js - Download as JPEG - downloads a format-converted copy - images.md
-- [x] sonify.js - Render & play - renders the image/data as audio and plays it - images.md
-- [x] sonify.js - Analyse WAV - runs the rendered audio through the full audio analyser - images.md
+- [x] sonify.js - Render - renders the image/data as audio and runs it through the full audio analyser (never auto-plays) - images.md
 - [x] sonify.js - Download WAV - downloads the rendered audio - images.md
 - [x] tiff.js - (uses embedded-images.js's Download/Analyse per page; multi-page decode via photo-convert.js) - images.md
 - [x] mpo.js - (uses embedded-images.js's Download/Analyse per stereo-pair image) - images.md

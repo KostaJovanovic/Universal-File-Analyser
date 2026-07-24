@@ -367,9 +367,18 @@ export async function renderCsv(file, resultsEl) {
       if (colTypes[c] !== 'number') continue;
       const nums = columnValues(dataRows, c, 'number');
       if (!nums.length) continue;
-      const min = Math.min(...nums);
-      const max = Math.max(...nums);
-      const mean = nums.reduce((s, n) => s + n, 0) / nums.length;
+      // Same call-stack hazard as colCount above - a numeric column with
+      // hundreds of thousands of values cannot be spread as arguments, and
+      // this sits outside the buildProfile try/catch, so a throw here would
+      // take the whole render down. One pass, no spread.
+      let min = Infinity, max = -Infinity, sum = 0;
+      for (let i = 0; i < nums.length; i++) {
+        const n = nums[i];
+        if (n < min) min = n;
+        if (n > max) max = n;
+        sum += n;
+      }
+      const mean = sum / nums.length;
       numericStats.push({
         col: headers[c] || `Col ${c + 1}`,
         min, max, mean: mean.toFixed(2), count: nums.length

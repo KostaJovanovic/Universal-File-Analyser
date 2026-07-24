@@ -177,9 +177,9 @@ btn: Download WAV
 using an on-device neural network (MDX-Net "Kim Vocal 2" from Ultimate
 Vocal Remover), entirely in-browser via ONNX Runtime Web.
 
-**How to reach it.** Click **AI separation** inside the Isolate panel to
-open the AI options row (Standard / Lite / denoise), then click a model tier
-to run. Built in `audio.js`, backed by the MDX-Net subsystem in
+**How to reach it.** Click **AI separation** in the audio actions row under
+the spectrogram (next to **Isolate**) to open the AI options row (Standard /
+Lite / denoise), then click a model tier to run. Built in `audio.js`, backed by the MDX-Net subsystem in
 `web/assets/js/lib/mdx-*.js` (see [`parsers-and-libs.md`](../parsers-and-libs.md)).
 
 **How to use it.** Click **Standard** or **Lite** (mobile-friendlier) to
@@ -231,8 +231,8 @@ Runtime Web. It produces two stems - **Clean** (the enhanced audio) and
 view as vocal separation, relabelled Clean to Noise.
 
 **How to reach it.** Open the AI options row by clicking **AI separation**
-in the Isolate panel (the row is closed by default), then click **denoise**
-to the right of the Standard/Lite tiers. Built in `audio.js`, backed by the
+in the audio actions row under the spectrogram (the row is closed by
+default), then click **denoise** to the right of the Standard/Lite tiers. Built in `audio.js`, backed by the
 DeepFilterNet subsystem in `web/assets/js/lib/dfn-*.js` (see
 [`parsers-and-libs.md`](../parsers-and-libs.md)).
 
@@ -303,8 +303,7 @@ Video reverse is a separate feature (FFmpeg re-encode) - see
 **What it does.** Records live audio from the microphone and runs it
 through the same analysis as a dropped file.
 
-**How to reach it.** Click **Record** (dropzone or the audio actions row).
-Built in `audio.js`.
+**How to reach it.** Click **Record** on the dropzone. Built in `audio.js`.
 
 **How to use it.** Shows a compact live streaming spectrogram while
 recording (a lighter-weight visual than the full interactive one). Click
@@ -323,8 +322,9 @@ btn: Download recording
 
 **How to reach it.** Click **Live spectrogram**. Built in `audio.js`.
 
-**How to use it.** Same toolbar as the file spectrogram (**Save PNG**,
-**Fullscreen**, **Record**, **Live spectrogram** toggle) plus **Pause** and
+**How to use it.** Much the same toolbar as the file spectrogram (**Save
+PNG**, **Fullscreen**), plus its own **Record** and **Live spectrogram**
+toggle - which the file spectrogram does not carry - and **Pause** and
 **Analyse last Ns**, which freezes and analyses the trailing N seconds of
 the live stream. A channel picker (**Mix/L/R/etc.**) chooses which input
 channel feeds the view.
