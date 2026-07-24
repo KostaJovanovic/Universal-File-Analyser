@@ -345,47 +345,103 @@ function entryToFile(entry) {
   return new Promise((resolve, reject) => entry.file(resolve, reject));
 }
 
-async function walk(entry, path) {
-  if (entry.isFile) {
-    try {
-      const file = await entryToFile(entry);
-      return [{ path: path + entry.name, size: file.size, file }];
-    } catch (_) {
-      return [];
-    }
-  }
-  if (entry.isDirectory) {
-    const reader = entry.createReader();
-    const children = await readEntries(reader);
-    const results = [];
-    for (const child of children) {
-      // push(...sub) spreads every file in the subtree as call arguments, which
-      // throws RangeError past ~120k entries - and a dropped folder can easily
-      // exceed that. Append in a loop instead (concat would be quadratic).
-      const sub = await walk(child, path + entry.name + '/');
-      for (let i = 0; i < sub.length; i++) results.push(sub[i]);
-    }
-    return results;
-  }
-  return [];
+// How many FileSystem API calls to keep in flight at once. Every entry.file()
+// and readEntries() is a round-trip to the browser's file layer; issuing them
+// strictly one after another (which this used to do, via `await` per child in a
+// depth-first recursion) meant a folder of N files took N serialised
+// round-trips. On a large tree that reads as "it just loads forever".
+const WALK_CONCURRENCY = 32;
+
+// Terminal condition for a pathological tree. Without it a deep enough folder
+// has no bound at all, and the walk has to finish before anything is shown.
+export const FOLDER_ENTRY_CAP = 100000;
+
+function mapLimited(items, limit, fn) {
+  // Small bounded-concurrency map: keeps `limit` promises in flight, preserving
+  // input order in the result.
+  return new Promise((resolve) => {
+    const out = new Array(items.length);
+    let next = 0, done = 0;
+    if (!items.length) return resolve(out);
+    const startOne = () => {
+      const i = next++;
+      if (i >= items.length) return;
+      Promise.resolve(fn(items[i], i)).then((v) => { out[i] = v; }, () => { out[i] = undefined; })
+        .then(() => {
+          if (++done === items.length) resolve(out);
+          else startOne();
+        });
+    };
+    for (let i = 0; i < Math.min(limit, items.length); i++) startOne();
+  });
 }
 
-export async function walkItems(dataTransfer) {
+// Breadth-first walk with bounded parallelism. `opts.shouldStop()` is polled
+// between batches so Cancel takes effect during the walk rather than after it,
+// and `opts.onProgress(count)` reports files found so far.
+async function walkTree(roots, opts = {}) {
+  const shouldStop = opts.shouldStop || (() => false);
+  const onProgress = opts.onProgress;
+  const out = [];
+  let level = roots.map((entry) => ({ entry, path: '' }));
+  let truncated = false;
+
+  while (level.length && !shouldStop() && out.length < FOLDER_ENTRY_CAP) {
+    // List every directory at this depth concurrently.
+    const listings = await mapLimited(level, WALK_CONCURRENCY, async (d) => {
+      try { return { d, children: await readEntries(d.entry.createReader()) }; }
+      catch (_) { return { d, children: [] }; }
+    });
+    if (shouldStop()) break;
+
+    const nextLevel = [], fileEntries = [];
+    for (const listing of listings) {
+      if (!listing) continue;
+      const base = listing.d.path + listing.d.entry.name + '/';
+      for (const c of listing.children) {
+        if (c.isDirectory) nextLevel.push({ entry: c, path: base });
+        else if (c.isFile) fileEntries.push({ entry: c, path: base + c.name });
+      }
+    }
+
+    // Resolve this depth's files concurrently, in batches so progress reports
+    // and cancellation land partway through a very wide directory.
+    for (let i = 0; i < fileEntries.length; i += WALK_CONCURRENCY * 8) {
+      if (shouldStop()) break;
+      if (out.length >= FOLDER_ENTRY_CAP) { truncated = true; break; }
+      const batch = fileEntries.slice(i, i + WALK_CONCURRENCY * 8);
+      const resolved = await mapLimited(batch, WALK_CONCURRENCY, async (fe) => {
+        try {
+          const file = await entryToFile(fe.entry);
+          return { path: fe.path, size: file.size, file };
+        } catch (_) { return null; }
+      });
+      for (const f of resolved) {
+        if (!f) continue;
+        if (out.length >= FOLDER_ENTRY_CAP) { truncated = true; break; }
+        out.push(f);
+      }
+      if (onProgress) onProgress(out.length);
+    }
+    level = nextLevel;
+  }
+
+  if (level.length && out.length >= FOLDER_ENTRY_CAP) truncated = true;
+  out.truncated = truncated;
+  out.cancelled = shouldStop();
+  return out;
+}
+
+export async function walkItems(dataTransfer, opts) {
   const items = dataTransfer.items;
   if (!items) return null;
-  let hasFolder = false;
   const entries = [];
   for (let i = 0; i < items.length; i++) {
     const entry = items[i].webkitGetAsEntry && items[i].webkitGetAsEntry();
-    if (entry && entry.isDirectory) { hasFolder = true; entries.push(entry); }
+    if (entry && entry.isDirectory) entries.push(entry);
   }
-  if (!hasFolder) return null;
-  const files = [];
-  for (const entry of entries) {
-    const sub = await walk(entry, '');
-    for (let i = 0; i < sub.length; i++) files.push(sub[i]);
-  }
-  return files;
+  if (!entries.length) return null;
+  return walkTree(entries, opts || {});
 }
 
 function extOf(name) {
@@ -396,6 +452,14 @@ function extOf(name) {
 export function renderFolder(files, resultsEl) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
+
+  // walkTree stops at FOLDER_ENTRY_CAP so an enormous tree still finishes. Say
+  // so rather than quietly showing a partial folder as if it were the whole one.
+  if (files.truncated) {
+    resultsEl.appendChild(el('div', { class: 'anr-info' },
+      'This folder holds more than ' + FOLDER_ENTRY_CAP.toLocaleString()
+      + ' files - showing the first ' + files.length.toLocaleString() + '.'));
+  }
 
   const folderName = files.length ? files[0].path.split('/')[0] : 'folder';
   const items = normalizeFolder(files);

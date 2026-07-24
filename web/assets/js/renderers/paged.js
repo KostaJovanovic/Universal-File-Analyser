@@ -47,29 +47,62 @@ export function paginateFlow(contentEl, opts = {}) {
   document.body.appendChild(host);
 
   const pages = [];
-  let page = makePage();
-  host.appendChild(page);
-
   const blocks = Array.from(contentEl.children);
+  let page = makePage();
+  // Declared out here so the catch below can rescue anything left inside it -
+  // the blocks live in this sheet until they are dealt out, so letting it go
+  // down with the host on an error would lose the document rather than
+  // degrading to a partial one.
+  const measure = makePage();
+
   try {
-    for (const block of blocks) {
-      page.appendChild(block);
-      // scrollHeight includes padding; a sheet with min-height pageH only grows
-      // past pageH once its content area overflows.
-      if (page.scrollHeight > pageH + 2 && page.childElementCount > 1) {
-        page.removeChild(block);
+    // Measure the whole flow once, then distribute arithmetically.
+    //
+    // This used to append a block to a live page and immediately read
+    // page.scrollHeight to decide whether to break - a write/read/write cycle
+    // that forces a synchronous layout on every single block, against a host
+    // attached to document.body so each one is a real full-document reflow. A
+    // long document meant tens of thousands of them in one unbroken task, and
+    // this function is the shared spine of the docx/odf/textdoc/legacy-office/
+    // markdown viewers, so every one of them paid it.
+    //
+    // Now: lay every block out once in a single sheet (writes), read all the
+    // geometry in one pass (one flush for the entire document), then decide the
+    // page breaks with pure arithmetic and move the blocks into place (writes
+    // only, never read again).
+    host.appendChild(measure);
+    for (const b of blocks) measure.appendChild(b);
+
+    // --- read pass: nothing below this writes until every measurement is in ---
+    const cs = getComputedStyle(measure);
+    const padV = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    // scrollHeight used to be compared against pageH including padding, so the
+    // usable content height is the sheet minus its own padding.
+    const capacity = Math.max(50, pageH - padV);
+    const tops = [], heights = [];
+    for (const b of blocks) { tops.push(b.offsetTop); heights.push(b.offsetHeight); }
+    // --- write pass ---
+
+    let pageTop = tops.length ? tops[0] : 0;
+    for (let i = 0; i < blocks.length; i++) {
+      // Same rule as before: a block that overflows moves to the next page,
+      // unless it is the only thing on this one.
+      if (page.childElementCount > 0 && (tops[i] + heights[i] - pageTop) > capacity + 2) {
         pages.push(page);
         if (pages.length >= maxPages) { page = null; break; }
         page = makePage();
-        host.appendChild(page);
-        page.appendChild(block);
+        pageTop = tops[i];
       }
+      page.appendChild(blocks[i]);
     }
-  } catch (_) { /* fall through with whatever we paginated */ }
+  } catch (_) {
+    // Fall through with whatever we paginated, keeping any unplaced blocks.
+    // (A maxPages break leaves blocks here deliberately - that path doesn't throw.)
+    if (page) while (measure.firstChild) page.appendChild(measure.firstChild);
+  }
+  measure.remove();
 
   if (page) pages.push(page);
-  // Detach the sheets from the measuring host without losing them.
-  for (const p of pages) p.remove();
   host.remove();
   return pages;
 }

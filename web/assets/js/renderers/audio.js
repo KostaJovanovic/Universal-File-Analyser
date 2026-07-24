@@ -8,18 +8,16 @@ import {
   frequencyTicks, timeTicks, formatHz, formatTime
 } from './spectrogram.js';
 import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, errorCard, integrityCard, downloadBlob, inlineLoader, asciiBar, yieldToMain, afterPaint } from '../core/util.js';
-import {
-  computeStats, computeCentroid,
-  detectPitch, detectBPM, computeStereoStats
-} from './audio-analysis.js';
+import { computeStats, computeStereoStats } from './audio-analysis.js';
 import { peekContainer, adtsToM4a, readTagBPM, extractCoverArt, readAudioTags } from './audio-codec.js';
-import {
-  longAverageSpectrum, analyzeTranscode, analyzeUltrasonic, analyzeMainsHum,
-  detectKey, loudnessR128, truePeakDb, signalHealth, detectDtmf
-} from './audio-forensics.js';
+// Only the cheap read-the-spectrum verdicts are called from here now; the nine
+// heavy passes that produce their inputs run in the DSP worker (see below).
+import { analyzeTranscode, analyzeUltrasonic, analyzeMainsHum } from './audio-forensics.js';
+import { audioDspPasses } from './audio-dsp.js';
+import { canOffloadDsp, runAudioDsp } from './audio-dsp-client.js';
 import { makePlayer, playerAudioNode, onSharedVolume, sharedVolume } from './audio-player.js';
 import { encodeWav } from './video-avi.js';
-import { buildReverseAudioCard } from './media-reverse.js';
+import { reverseAudioBufferToWav } from './media-reverse.js';
 // Constants only (no WASM/worker) - safe to load eagerly; the picker and the
 // download prompt read tier sizes from here. The heavy client is still lazy.
 import { MDX_MODELS } from '../lib/mdx-model.js';
@@ -638,13 +636,32 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   const sensLabel = el('label', { class: 'anr-resettable', title: 'Click to reset to 100%' }, 'Sensitivity');
   const sensCtl = el('div', { class: 'anr-control' }, [sensLabel, sensWrap, sensOut]);
 
-  // Fullscreen is desktop-only: mobile browsers can't fullscreen an arbitrary
-  // element reliably, so we drop the button and its handlers on touch devices.
-  const allowFs = !window.matchMedia('(pointer: coarse)').matches;
-
   const sIco = specIco;
   const saveBtn = el('button', { type: 'button', class: 'anr-btn' }, [sIco('<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 1v8M3 6l4 4 4-4"/><path d="M1 11v2h12v-2"/></svg>'), 'Save PNG']);
-  const fsBtn   = allowFs ? el('button', { type: 'button', class: 'anr-btn' }, [sIco('<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 5V1h4M9 1h4v4M13 9v4H9M5 13H1V9"/></svg>'), 'Fullscreen']) : null;
+  // Reverse: flip the decoded sound end-to-end and push the result back through
+  // the analyser as a new file, so the reversed audio gets a full analysis of its
+  // own - its own spectrogram, waveform, loudness, key - rather than just a second
+  // player. Only offered where we hold the decoded buffer (the mic/live panel
+  // below builds its own action row and has none).
+  const revBtn = opts.audioBuffer
+    ? el('button', { type: 'button', class: 'anr-btn' }, [sIco('<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 2.5 7.5 7l5 4.5"/><path d="M6.5 2.5 1.5 7l5 4.5"/></svg>'), 'Reverse'])
+    : null;
+  if (revBtn) {
+    revBtn.addEventListener('click', () => {
+      revBtn.disabled = true;
+      // Only the trailing text node - keep the icon in place.
+      revBtn.lastChild.nodeValue = 'Reversing…';
+      // Defer a frame so that label repaints before the synchronous reverse.
+      setTimeout(() => {
+        let blob;
+        try { blob = reverseAudioBufferToWav(opts.audioBuffer); }
+        catch (_) { revBtn.disabled = false; revBtn.lastChild.nodeValue = 'Reverse failed'; return; }
+        const f = new File([blob], (opts.basename || 'audio') + '_reversed.wav', { type: 'audio/wav' });
+        if (window._anrHandleFile) window._anrHandleFile(f);
+        else { revBtn.disabled = false; revBtn.lastChild.nodeValue = 'Reverse'; }
+      }, 0);
+    });
+  }
 
   // Settings are organised into labelled, hairline-divided groups (segmented):
   // View (how it looks) - Resolution (analysis params) - Actions (buttons).
@@ -665,14 +682,14 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   ]));
 
   const actions = [ctl('', saveBtn)];
-  if (fsBtn) actions.push(ctl('', fsBtn));
+  if (revBtn) actions.push(ctl('', revBtn));
   // Isolate frequencies (band-stop) - only offered when driving file playback.
   const isoBtn = opts.audioEl
     ? el('button', { type: 'button', class: 'anr-btn anr-iso-toggle' }, [sIco('<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 4h5M9 4h4M1 10h4M8 10h5"/><circle cx="7.5" cy="4" r="1.6" fill="currentColor" stroke="none"/><circle cx="6.5" cy="10" r="1.6" fill="currentColor" stroke="none"/></svg>'), 'Isolate'])
     : null;
   if (isoBtn) {
     actions.unshift(ctl('', isoBtn));   // Isolate sits leftmost in the Actions row
-    // Divider between the Isolate tool and the plain Save PNG / Fullscreen actions.
+    // Divider between the Isolate tool and the plain Save PNG / Reverse actions.
     actions.splice(1, 0, el('span', { class: 'anr-spec-actdiv', 'aria-hidden': 'true' }, '|'));
   }
   // The Actions group lives in its own row UNDER the scrubber (appended after the
@@ -1209,9 +1226,10 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     const denoiseBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm', title: 'DeepFilterNet3 - remove background noise and hiss, about ' + DFN_MODEL.tierMb + ' MB to download once' }, 'denoise');
     aiModelSeg.appendChild(el('span', { class: 'anr-iso-seg-div', 'aria-hidden': 'true' }, '|'));
     aiModelSeg.appendChild(denoiseBtn);
-    // Closed by default: the row (separation tiers + the denoise action) is revealed
-    // when the user clicks AI separation, then stays open so denoise remains reachable.
-    const aiModelRow = el('div', { class: 'anr-iso-modelrow', hidden: true }, [
+    // Always present; the AI panel around it carries the open/closed state, so the
+    // tiers and the denoise action are there the moment the panel opens and stay
+    // reachable while a result is showing.
+    const aiModelRow = el('div', { class: 'anr-iso-modelrow' }, [
       el('span', { class: 'anr-iso-modellabel' }, 'AI model'),
       aiModelSeg,
     ]);
@@ -1221,8 +1239,12 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       for (const x of Object.values(aiModelBtns)) x.classList.toggle('is-active', x === sel);
       denoiseBtn.classList.toggle('is-active', sel === denoiseBtn);
     }
-    // Two labelled tiers: the EQ isolation tools (presets + manual bands + WAV
-    // export) on top, then the on-device AI stem separator as its own block.
+    // TWO independent panels under the actions row, each opened by its own button
+    // there: the EQ isolation tools (presets + manual bands + WAV export), and the
+    // on-device AI separator. They were a single panel until the AI separator moved
+    // out of it and up into the Actions row - after which "AI separation" was
+    // un-hiding a row nested inside a panel that was itself still hidden behind the
+    // Isolate button, so clicking it appeared to do nothing.
     const isoPanel = el('div', { class: 'anr-iso-panel is-hidden' }, [
       el('div', { class: 'anr-iso-sec' }, [
         el('span', { class: 'anr-iso-seclabel' }, 'Isolate'),
@@ -1234,6 +1256,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         ]),
         bandList,
       ]),
+    ]);
+    const aiPanel = el('div', { class: 'anr-iso-panel is-hidden' }, [
       el('div', { class: 'anr-iso-sec anr-iso-sec-ai' }, [
         aiLabel,
         aiHelpPanel,
@@ -1243,6 +1267,9 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         aiStems,
       ]),
     ]);
+    // Inserted back to front so they end up as actionsBar -> Isolate -> AI, matching
+    // the left-to-right order of the two buttons that open them.
+    actionsBar.insertAdjacentElement('afterend', aiPanel);
     actionsBar.insertAdjacentElement('afterend', isoPanel);
 
     // --- Web Audio band-stop graph ---
@@ -1847,17 +1874,52 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       // --- spectrogram: once analysed, the blend OWNS the main canvas - it stays
       // the file's own spectrogram until separation finishes, then this replaces
       // it and every slider move recombines both stems into it (rAF-throttled). ---
-      let A = null, B = null, out = null, pend = false;
+      let A = null, B = null, out = null;
       // Fast path (used while dragging): recombine the precomputed complex bins.
       function paintDrag() {
-        pend = false;
         if (!A) return;
         const { a, b } = gainsFor(sliderS());
         blendSpec = combineStftToDb(A, B, a, b, out);
         renderOnly();
-        pushBlendStereo();   // keep the stereo readout in step with the blend (same rAF)
       }
-      function requestPaint() { if (!pend) { pend = true; requestAnimationFrame(paintDrag); } }
+
+      // The slider puck has to stay completely free under the finger, like the
+      // scrubber. Only the cheap half runs on the input event - the Web Audio gain
+      // ramp and the label - so the blend is heard moving instantly. Recombining
+      // every STFT bin and repainting the canvas is decoupled and simply follows at
+      // whatever rate it can manage.
+      //
+      // Self-paced, not per-frame: repaint, then only once that repaint has FINISHED
+      // (plus a short gap) look at whether the value moved again. A rAF-per-input
+      // was the problem - each queued frame occupied the main thread before the next
+      // pointer event could be delivered, so the puck stuttered behind the finger on
+      // exactly the long tracks where the recombine is dearest. Coalescing this way
+      // means a fast drag never builds a backlog of stale frames and a slow machine
+      // simply paints fewer of them.
+      let paintBusy = false, paintDirty = false;
+      const PAINT_GAP_MS = 80;
+      function runPaint() {
+        paintDirty = false;
+        try { paintDrag(); } finally {
+          // Yield the thread, then decide whether another pass is owed.
+          setTimeout(() => {
+            if (paintDirty) requestAnimationFrame(runPaint);
+            else {
+              paintBusy = false;
+              // Settled: refresh the stereo readout once, rather than on every
+              // repaint. It is a numeric readout plus a vectorscope - nobody reads
+              // it mid-drag, and computing it per pass doubled the cost of one.
+              pushBlendStereo();
+            }
+          }, PAINT_GAP_MS);
+        }
+      }
+      function requestPaint() {
+        paintDirty = true;
+        if (paintBusy) return;
+        paintBusy = true;
+        requestAnimationFrame(runPaint);
+      }
       // Settled path (arm, slider release, control change): run the REAL spectrogram
       // pipeline on the recombined audio at the current FFT / window / mode, so the
       // blend reacts to those controls exactly like the file's own spectrogram.
@@ -2184,12 +2246,14 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     aiBtn.addEventListener('click', () => {
       if (aiRunning) return;
       if (aiOn) { clearStems(); return; }
-      if (!aiModelRow.hidden) {                       // open -> close, dropping any card
+      if (!aiPanel.classList.contains('is-hidden')) {  // open -> close, dropping any card
         if (aiConfirming && aiConfirmCancel) aiConfirmCancel();
-        aiModelRow.hidden = true;
+        aiPanel.classList.add('is-hidden');
+        aiBtn.classList.remove('is-active');
         return;
       }
-      aiModelRow.hidden = false;                      // closed -> open with the default card
+      aiPanel.classList.remove('is-hidden');           // closed -> open with the default card
+      aiBtn.classList.add('is-active');
       pendingKind = 'separate';
       setAiSelection(aiModelBtns[aiModelId] || aiModelBtns.standard);
       startStems();                                   // shows the default AI's confirm card
@@ -2205,31 +2269,11 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   // listeners down when a new file is analysed, instead of leaking the cached
   // spectrogram data they close over.
   const sig = opts.signal;
-  // The Height dropdown is px-only out of fullscreen. Entering fullscreen adds a
-  // 'Fill' option (stretch to the whole screen) and selects it by default; the user
-  // can still pick a pixel height, which applies in fullscreen too. Exiting removes
-  // 'Fill' and restores the previous pixel choice.
-  function syncHeightForFs() {
-    const fs = isFs();
-    const hasFill = heightSel.options.length && heightSel.options[0].value === 'fill';
-    if (fs && !hasFill) {
-      heightSel._prevHeight = heightSel.value;
-      heightSel.insertBefore(el('option', { value: 'fill' }, 'Fill'), heightSel.firstChild);
-      heightSel.value = 'fill';
-      state.height = 'fill';
-    } else if (!fs && hasFill) {
-      heightSel.remove(0);
-      heightSel.value = heightSel._prevHeight || '320';
-      state.height = parseInt(heightSel.value, 10);
-    }
-  }
-  attachFullscreen(card, fsBtn, allowFs, sig, () => {
-    syncHeightForFs();
-    // Recompute on the next frame and again once the fullscreen layout settles, so
-    // the bitmap height catches up to the (filled or fixed) display.
-    requestAnimationFrame(recompute);
-    setTimeout(recompute, 120);
-  });
+  // This panel no longer offers a fullscreen entry point - its Actions row trades
+  // that button for Reverse. isFs() below therefore always reports false, leaving
+  // the fullscreen branches in sizeCanvas() inert; they are kept because the
+  // mic/live spectrogram further down still uses attachFullscreen(), and because
+  // restoring the button here is a one-line change if it is ever wanted back.
 
   let resizeRaf;
   window.addEventListener('resize', () => {
@@ -2821,22 +2865,28 @@ async function ffmpegDecodeAudio(file, resultsEl) {
 // Loudness-over-time plot for the EBU R128 meter (momentary LUFS series). Clamped
 // to a readable -40..0 LUFS window with a -14 LUFS streaming-target reference line.
 function drawLoudnessGraph(series, duration, audioEl) {
-  const W = 640, H = 120, pad = 6;
-  const cv = el('canvas', { width: String(W), height: String(H),
-    style: 'width:100%; height:auto; display:block; border:var(--bd-hairline); background:var(--bg);' });
+  // Styled as the Waveform card is: the same .anr-waveform canvas (fixed dark
+  // --media-bg, hairline border, 96px tall, full width), the same .anr-wave-wrap
+  // and white .anr-playhead over it, and the same transport below. The bitmap is
+  // 1024 wide to match the waveform's, so the curve stays crisp at card width.
+  const W = 1024, H = 120, pad = 6;
+  const cv = el('canvas', { class: 'anr-waveform', width: String(W), height: String(H) });
   const ctx = cv.getContext('2d');
   if (!ctx) { cv.style.marginTop = '12px'; return cv; }
   const cs = getComputedStyle(document.body);
   const accent = (cs.getPropertyValue('--accent') || '').trim() || '#e60023';
-  const muted = (cs.getPropertyValue('--muted') || '').trim() || '#888';
+  // The canvas is a fixed dark media surface in both themes, so the reference line
+  // and its label take the on-dark treatment rather than a themed variable, which
+  // would be near-black - and so invisible here - in light mode.
+  const grid = 'rgba(255,255,255,0.45)';
   const LO = -40, HI = 0;
   const yOf = (l) => pad + (HI - Math.max(LO, Math.min(HI, l))) / (HI - LO) * (H - pad * 2);
   const xOf = (t) => pad + (duration > 0 ? t / duration : 0) * (W - pad * 2);
   // -14 LUFS reference (common streaming target).
-  ctx.strokeStyle = muted; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+  ctx.strokeStyle = grid; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(pad, yOf(-14)); ctx.lineTo(W - pad, yOf(-14)); ctx.stroke();
   ctx.setLineDash([]);
-  ctx.fillStyle = muted; ctx.font = '10px monospace'; ctx.fillText('−14', W - pad - 22, yOf(-14) - 3);
+  ctx.fillStyle = grid; ctx.font = '10px monospace'; ctx.fillText('−14', W - pad - 22, yOf(-14) - 3);
   // Momentary curve.
   ctx.strokeStyle = accent; ctx.lineWidth = 1.2; ctx.beginPath();
   let started = false;
@@ -2850,15 +2900,11 @@ function drawLoudnessGraph(series, duration, audioEl) {
   // No playback element: a static readout graph, as before.
   if (!audioEl) { cv.style.marginTop = '12px'; return cv; }
 
-  // Playable, like the waveform: wrap the canvas so a playhead line can track
-  // playback, click or drag the graph to seek, and a transport sits below. The
-  // line is themed (var(--fg)) rather than the media-canvas white, since this
-  // graph sits on the themed card surface, not a dark media canvas.
-  // Unlike the waveform and spectrogram, this canvas is var(--bg) - a themed surface,
-  // not a fixed dark one - so the default on-dark white line would vanish in light
-  // mode. Declare the colour on the WRAPPER via --playhead; the playhead itself is
-  // then byte-for-byte the same element the waveform uses.
-  const wrap = el('div', { class: 'anr-wave-wrap', style: 'margin-top:12px; --playhead: var(--fg);' });
+  // Playable, exactly as the waveform is: wrap the canvas so a playhead line can
+  // track playback, click or drag the graph to seek, and a transport sits below.
+  // The canvas is now a dark media surface like the waveform's, so the playhead
+  // keeps its default on-dark white - no --playhead override needed.
+  const wrap = el('div', { class: 'anr-wave-wrap', style: 'margin-top:12px;' });
   wrap.appendChild(cv);
   const line = el('div', { class: 'anr-playhead' });
   wrap.appendChild(line);
@@ -2890,22 +2936,38 @@ function drawLoudnessGraph(series, duration, audioEl) {
   cv.addEventListener('click', (e) => seekFromClientX(e.clientX));
   attachScrub(line, seekFromClientX);
 
-  const out = el('div');
+  // Classed so the Advanced card's continuous-readout layout (.anr-adv--flow) can
+  // give the graph air on both sides - it is the one non-table block in that flow.
+  const out = el('div', { class: 'anr-loudgraph' });
   out.appendChild(wrap);
   out.appendChild(el('div', { class: 'anr-spec-transport' }, [makePlayer(audioEl, durOf())]));
   tick(true);
   return out;
 }
 
-// A collapsible <details> panel with a plain summary label and an optional [?]
-// help button - the same idiom the video Advanced card's vAdvPanel uses, so the
-// sound Advanced card reads identically. Returns { det, body }; append rows/tables
-// to `body`.
-// One part of the Advanced card - a flat labelled block, not a disclosure of its
-// own (the card is the single dropdown). The legacy `open` argument is accepted and
-// ignored: with no per-part folding there is no headline part to pre-open.
-function aAdvPanel(title, helpHtml, _open) {
-  const det = el('div', { class: 'anr-adv-part' });
+// One part of the sound Advanced card. Returns { det, body }; append rows/tables
+// to `body`. The card itself is the only disclosure, so this is a flat block, not
+// a nested one - the legacy `open` argument is accepted and ignored.
+//
+// No visible sub-heading: the card reads as ONE continuous readout, its groups
+// set apart by a rule and a generous gap (.anr-adv--flow). Every row in it
+// already carries its own label and [?] explanation, so a heading above them
+// only restated what the rows say. `title` is kept as the group's aria-label so
+// the structure is still announced, and `helpHtml` - which duplicated the row
+// help - is dropped rather than left with nothing to hang off.
+function aAdvPanel(title, _helpHtml, _open) {
+  const det = el('div', { class: 'anr-adv-part', role: 'group', 'aria-label': title });
+  const body = el('div');
+  det.appendChild(body);
+  return { det, body };
+}
+
+// The exception to the above: a part that DOES carry a visible sub-heading and a
+// divider above it, for the one group in this card that is not label/value rows -
+// the decoded touch-tones, a keypad grid that would read as noise if it were
+// dropped into the continuous readout unannounced. Same { det, body } contract.
+function aAdvSection(title, helpHtml) {
+  const det = el('div', { class: 'anr-adv-part anr-adv-part--titled' });
   const head = el('div', { class: 'anr-adv-parthead' }, title + (helpHtml ? ' ' : ''));
   const body = el('div');
   if (helpHtml) {
@@ -3041,9 +3103,13 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // backing blob for the page's lifetime.
   (window._anrMediaStoppers = window._anrMediaStoppers || new Set())
     .add(() => { try { URL.revokeObjectURL(audioUrl); } catch (_) {} });
+  // The element itself stays (hidden): it is the single playback source every
+  // visual on the page follows - the spectrogram and waveform playheads, the
+  // loudness graph, the isolate/AI graph all hang off it. Only its transport is
+  // gone from here; playback is driven by the transports under the spectrogram
+  // and the waveform, so File info stays a pure readout.
   const audioEl = el('audio', { src: audioUrl, class: 'is-hidden' });
   infoCard.appendChild(audioEl);
-  infoCard.appendChild(makePlayer(audioEl, audioBuffer.duration));
 
   // Download button for in-browser captures (recording / live spectrogram), where
   // the analysed sound exists only as a blob and would otherwise be unsaveable. A
@@ -3217,13 +3283,23 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // Place the remaining slots now, in their final order, so the result has its
   // full shape before any slow work starts and nothing jumps around as the cards
   // land in it.
-  const reverseSlot = el('div');
   const coverSlot = el('div');
   const tagSlot = el('div');
-  resultsEl.appendChild(reverseSlot);
+  // Every card from here down waits on the forensic DSP queue, which runs for as
+  // long as it runs. Each slot holds a loading bar meanwhile - the same inline bar
+  // the spectrogram slot uses - so the result shows its full shape and says what is
+  // still on its way, instead of cards silently appearing well after the page has
+  // stopped looking busy.
+  const lossySlot = el('div', {}, [inlineLoader('Checking for a lossy source…')]);
+  const stereoSlot = el('div', {}, audioBuffer.numberOfChannels >= 2
+    ? [inlineLoader('Measuring the stereo image…')] : []);
+  const advSlot = el('div', {}, [inlineLoader('Running the deeper forensic reads…')]);
   resultsEl.appendChild(coverSlot);
   resultsEl.appendChild(tagSlot);
   resultsEl.appendChild(waveSlot);
+  resultsEl.appendChild(lossySlot);
+  resultsEl.appendChild(stereoSlot);
+  resultsEl.appendChild(advSlot);
 
   // Build the spectrogram and WAIT for it to finish before starting anything else.
   // It is the headline visual, so it gets the main thread to itself: the forensic
@@ -3233,6 +3309,15 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   renderSignalViews(0, true);
   if (curSpecPanel && curSpecPanel.firstPaint) { try { await curSpecPanel.firstPaint; } catch (_) {} }
 
+  // The headline visual is up and File info is complete bar a few pending rows,
+  // so the drop popup has nothing left to report - everything below either fills
+  // a row in place or appends a card. Dismiss it here instead of leaving it
+  // hanging over a page that already looks finished. app.js hides it again when
+  // the renderer settles, which is a no-op by then.
+  // Not on the compare path: there the popup belongs to the two-file flow in
+  // app.js and must stay up until BOTH sides have rendered.
+  if (!opts.inline) { try { window._anrLoader.hide(); } catch (_) {} }
+
   // ---- Forensic DSP (heavy, whole-file passes) ----
   // These deliberately run AFTER File info is on screen. Each is a full-length
   // sweep over the decoded audio, and back to back they used to take the main
@@ -3240,89 +3325,164 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // worst (4x-oversampled FIR, ~96 multiply-adds per input sample per channel),
   // with loudnessR128 and detectDtmf close behind.
   //
-  // Yield between passes so the page keeps painting and scrolling, and fill each
-  // pending row as its number lands. advance() ticks the shared step counter that
-  // drives every still-pending row's progress bar (see pendingRow).
+  // They run as a QUEUE inside a Web Worker (audio-dsp-worker.js), which drains
+  // the pass sequence in audio-dsp.js and posts each result back the moment it
+  // lands. The main thread's only job is applyPass() below - filling one table
+  // cell - so hovering, scrolling and the transport stay responsive throughout.
+  // Merely yielding between passes on the main thread was never enough: a single
+  // pass is one uninterruptible block of a few hundred milliseconds, which is
+  // long enough to drop frames and leave the page looking torn while scrolling.
+  //
+  // advance() ticks the shared step counter that drives every still-pending
+  // row's progress bar (see pendingRow).
   const pendRows = [rLoud, rCrest, rDc, rBits, rCentroid, rPitch, rBpm, rKey];
   let dspStep = 0;
   const advance = () => { dspStep++; for (const r of pendRows) r.progress(dspStep); };
 
-  try { spec = longAverageSpectrum(mono, sampleRate); } catch (_) {}
-  advance();
-  await yieldToMain();
-
-  try { health = signalHealth(channelData); } catch (_) {}
-  advance();
-  if (health) {
-    rCrest.fill(health.crestDb.toFixed(1) + ' dB');
-    const dcPct = Math.abs(health.dcOffset) * 100;
-    rDc.fill(Math.abs(health.dcOffset) < 1e-4
-      ? 'None (' + health.dcOffset.toExponential(1) + ')'
-      : health.dcOffset.toFixed(5) + '  (' + health.dcDb.toFixed(1) + ' dBFS, ' + dcPct.toFixed(3) + '%)');
-    if (health.effectiveBits > 0) {
-      const declaredBits = header.bitDepth || null;
-      const padded = declaredBits && health.effectiveBits < declaredBits - 1;
-      rBits.fill(health.effectiveBits + ' bit'
-        + (padded ? '  (declared ' + declaredBits + ' - likely padded/upscaled)' : ''));
-    } else rBits.drop();
-  } else { rCrest.drop(); rDc.drop(); rBits.drop(); }
-  await yieldToMain();
-
-  try { if (spec) keyResult = detectKey(spec); } catch (_) {}
-  advance();
-  if (keyResult) {
-    rKey.fill(keyResult.key + '  (' + Math.round(keyResult.confidence * 100) + '% confidence)',
-      el('span', { style: 'font-size:0.8em;color:var(--muted);margin-left:4px' }, '· alt ' + keyResult.alt));
-  } else rKey.drop();
-  await yieldToMain();
-
-  try { r128 = loudnessR128(mono, sampleRate); } catch (_) {}
-  advance();
-  rLoud.fill(r128 && isFinite(r128.integrated) ? r128.integrated.toFixed(1) + ' LUFS' : '-');
-  await yieldToMain();
-
-  try { tpDb = truePeakDb(channelData, sampleRate); } catch (_) {}
-  advance();
-  await yieldToMain();
-
-  try { dtmf = detectDtmf(mono, sampleRate); } catch (_) {}
-  advance();
-  await yieldToMain();
-
-  // Spectral centroid - another whole-file STFT (4096-pt FFT per frame).
-  let centroid = null;
-  try { centroid = computeCentroid(mono, audioBuffer.sampleRate); } catch (_) {}
-  advance();
-  if (centroid != null) {
-    const cLabel = centroid < 1500 ? 'warm' : centroid < 4000 ? 'neutral' : 'bright';
-    rCentroid.fill(Math.round(centroid).toLocaleString() + ' Hz  (' + cLabel + ')');
-  } else rCentroid.drop();
-  await yieldToMain();
-
-  // Pitch - a single window from the middle of the file, so this one is cheap.
-  let pitchResult = null;
-  try { pitchResult = detectPitch(mono, audioBuffer.sampleRate); } catch (_) {}
-  advance();
-  rPitch.fill(pitchResult
-    ? pitchResult.note + '  (' + pitchResult.frequency.toFixed(1) + ' Hz, '
-      + (pitchResult.cents >= 0 ? '+' + pitchResult.cents : String(pitchResult.cents)) + ' cents)'
-    : 'N/A');
-
-  // BPM - prefer the tempo the file already declares; only pay for the third
-  // whole-file STFT when there isn't one (the tag wins either way).
+  // BPM prefers the tempo the file already declares over an estimated one, so
+  // read the tag up front (a 64 KB header read) and let the queue skip a whole
+  // extra STFT when there is one, rather than computing it and throwing it away.
   const tagBpm = await readTagBPM(file).catch(() => null);
-  let estBpm = null;
-  if (tagBpm == null) {
-    await yieldToMain();
-    try { estBpm = detectBPM(mono, audioBuffer.sampleRate); } catch (_) {}
+  const needBpm = tagBpm == null;
+
+  // Embedded tags. Started here and awaited just before the Advanced card is
+  // built, because the encoder tags belong in Advanced rather than in a Tags card
+  // they were usually the only occupant of. The DSP queue below takes far longer
+  // than this read, so by the time it is awaited it has long since resolved.
+  const tagsPromise = readAudioTags(file).catch(() => null);
+
+  // One handler for every pass, called in order by whichever driver runs below,
+  // so the worker path and the inline fallback fill the readout identically.
+  function applyPass(name, value) {
+    advance();
+    switch (name) {
+      case 'spec': spec = value; break;
+
+      case 'health': {
+        health = value;
+        if (health) {
+          rCrest.fill(health.crestDb.toFixed(1) + ' dB');
+          const dcPct = Math.abs(health.dcOffset) * 100;
+          rDc.fill(Math.abs(health.dcOffset) < 1e-4
+            ? 'None (' + health.dcOffset.toExponential(1) + ')'
+            : health.dcOffset.toFixed(5) + '  (' + health.dcDb.toFixed(1) + ' dBFS, ' + dcPct.toFixed(3) + '%)');
+          if (health.effectiveBits > 0) {
+            const declaredBits = header.bitDepth || null;
+            const padded = declaredBits && health.effectiveBits < declaredBits - 1;
+            rBits.fill(health.effectiveBits + ' bit'
+              + (padded ? '  (declared ' + declaredBits + ' - likely padded/upscaled)' : ''));
+          } else rBits.drop();
+        } else { rCrest.drop(); rDc.drop(); rBits.drop(); }
+        break;
+      }
+
+      case 'key': {
+        keyResult = value;
+        if (keyResult) {
+          rKey.fill(keyResult.key + '  (' + Math.round(keyResult.confidence * 100) + '% confidence)',
+            el('span', { style: 'font-size:0.8em;color:var(--muted);margin-left:4px' }, '· alt ' + keyResult.alt));
+        } else rKey.drop();
+        break;
+      }
+
+      case 'r128': {
+        r128 = value;
+        rLoud.fill(r128 && isFinite(r128.integrated) ? r128.integrated.toFixed(1) + ' LUFS' : '-');
+        break;
+      }
+
+      // No row of their own - they feed the Advanced card, built further down.
+      case 'truePeak': tpDb = value; break;
+      case 'dtmf': dtmf = value; break;
+
+      case 'centroid': {
+        if (value != null) {
+          const cLabel = value < 1500 ? 'warm' : value < 4000 ? 'neutral' : 'bright';
+          rCentroid.fill(Math.round(value).toLocaleString() + ' Hz  (' + cLabel + ')');
+        } else rCentroid.drop();
+        break;
+      }
+
+      case 'pitch': {
+        rPitch.fill(value
+          ? value.note + '  (' + value.frequency.toFixed(1) + ' Hz, '
+            + (value.cents >= 0 ? '+' + value.cents : String(value.cents)) + ' cents)'
+          : 'N/A');
+        break;
+      }
+
+      case 'bpm': {
+        const bpmVal = tagBpm != null ? tagBpm : value;
+        rBpm.fill(bpmVal != null ? bpmVal + ' BPM' : 'N/A',
+          (bpmVal != null && tagBpm == null)
+            ? el('span', { style: 'font-size:0.8em;color:var(--muted);margin-left:4px' }, '(est)')
+            : null);
+        break;
+      }
+    }
   }
-  advance();
-  const bpmVal = tagBpm != null ? tagBpm : estBpm;
-  rBpm.fill(bpmVal != null ? bpmVal + ' BPM' : 'N/A',
-    (bpmVal != null && tagBpm == null)
-      ? el('span', { style: 'font-size:0.8em;color:var(--muted);margin-left:4px' }, '(est)')
-      : null);
-  await yieldToMain();
+
+  let queued = false;
+  if (canOffloadDsp(audioBuffer)) {
+    try {
+      await runAudioDsp(audioBuffer, { needBpm, signal: renderSignal, onPass: applyPass });
+      queued = true;
+    } catch (e) {
+      // A newer analysis replaced this one while the queue was draining - it has
+      // already cleared and re-filled resultsEl, so everything below would now be
+      // appending to somebody else's readout. Stop here.
+      if (renderSignal.aborted) return;
+      // Anything else (no module worker support, a blocked worker script) drops
+      // through to the inline path.
+      try { console.warn('[audio] DSP worker unavailable, running inline:', e); } catch (_) {}
+    }
+  }
+  if (!queued) {
+    // Inline fallback - the same passes in the same order, since audio-dsp.js
+    // drives both paths, with a yield between each so the page at least keeps
+    // painting between sweeps. This is also the path for audio too large to copy
+    // across to the worker (see canOffloadDsp). Any row filled before a mid-run
+    // worker failure is simply rewritten here with the same value.
+    for (const [name, value] of audioDspPasses({ channels: channelData, mono, sampleRate, needBpm })) {
+      applyPass(name, value);
+      await yieldToMain();
+    }
+  }
+
+  // ---- Lossy-source check (its own card, in the main flow) ----
+  // The "is this really lossless?" verdict is the headline provenance answer for a
+  // sound file, so it reads as a normal card rather than something to go digging
+  // for inside Advanced. Needs the long-average spectrum, hence built here.
+  lossySlot.innerHTML = '';
+  if (spec) {
+    const tr = analyzeTranscode(spec, { declaredLossless });
+    const trCard = el('div', { class: 'anr-card' });
+    const [trH, trHelp] = h3help('Lossy-source check',
+      'Whether a file that claims to be lossless was really built from a compressed (lossy) source such as MP3 or AAC, judged from where the sound’s high-frequency energy cuts off.');
+    trCard.appendChild(trH); trCard.appendChild(trHelp);
+    trCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 8px;'
+      + (tr.level === 'bad' ? 'color:var(--accent);' : '') }, tr.verdict));
+    const trTbl = el('table', { class: 'anr-readout' });
+    trTbl.appendChild(rowHelp('Spectral cutoff', Math.round(tr.cutoffHz).toLocaleString() + ' Hz'
+        + '  (' + Math.round(tr.fillFrac * 100) + '% of Nyquist)',
+      'The pitch where the sound’s energy suddenly drops away to nothing. A genuine lossless file reaches about 95% or more of the way to its theoretical ceiling (the Nyquist limit); a lossy codec leaves a hard cut-off well below it.'));
+    trTbl.appendChild(rowHelp('Rolloff steepness', tr.steepDbPerKHz > 0 ? tr.steepDbPerKHz.toFixed(0) + ' dB/kHz' : '-',
+      'How sharply the high-frequency energy is cut off at that ceiling, in decibels per kilohertz. A lossy encode leaves a steep, abrupt drop; genuine lossless audio tapers off gently.'));
+    if (tr.sourceGuess) trTbl.appendChild(rowHelp('Likely source', tr.sourceGuess,
+      'A best guess at the original compressed format, based on where that cut-off sits. Approximate only, since encoders and their settings vary.'));
+    trCard.appendChild(trTbl);
+    lossySlot.appendChild(trCard);
+  }
+
+  // Which software wrote the file. Pulled out of the Tags card - on most files it
+  // was the only tag there, leaving a whole card to say one thing - and shown in
+  // Advanced instead. Both labels move together: audio-codec.js emits 'Encoder'
+  // for the explicit tag and 'Encoder library' for the stream vendor string when a
+  // file carries both.
+  const tagsMeta = await tagsPromise;
+  const ENCODER_TAGS = new Set(['Encoder', 'Encoder library']);
+  const encoderTags = (tagsMeta && tagsMeta.tags)
+    ? tagsMeta.tags.filter(([name]) => ENCODER_TAGS.has(name)) : [];
 
   // ---- Advanced (forensic panels, collapsed) ----
   // Mirrors the photo and video Advanced cards: one collapsed anr-card holding
@@ -3332,7 +3492,7 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // Built here (data is in scope) but appended last, below every other card.
   let advCardEl = null;
   {
-    const advCard = el('div', { class: 'anr-card anr-adv anr-collapsible is-collapsed' });
+    const advCard = el('div', { class: 'anr-card anr-adv anr-adv--flow anr-collapsible is-collapsed' });
     const [advH, advHelp] = h3help('Advanced',
       'Deep forensic analysis of the sound, computed from the decoded audio. Each panel below is collapsed until you open it.');
     advCard.appendChild(advH); advCard.appendChild(advHelp);
@@ -3368,26 +3528,6 @@ export async function renderAudio(file, resultsEl, opts = {}) {
 
     // -- Spectral forensics (each its own panel) --
     if (spec) {
-      // Lossy-transcode / fake-lossless verdict.
-      {
-        const tr = analyzeTranscode(spec, { declaredLossless });
-        const { det, body } = aAdvPanel('Lossy-source check',
-          'Whether a file that claims to be lossless was really built from a compressed (lossy) source such as MP3 or AAC, judged from where the sound’s high-frequency energy cuts off.');
-        const verdictLine = el('p', { class: 'anr-hint', style: 'margin:0 0 8px;'
-          + (tr.level === 'bad' ? 'color:var(--accent);' : '') }, tr.verdict);
-        body.appendChild(verdictLine);
-        const trTbl = el('table', { class: 'anr-readout' });
-        trTbl.appendChild(rowHelp('Spectral cutoff', Math.round(tr.cutoffHz).toLocaleString() + ' Hz'
-            + '  (' + Math.round(tr.fillFrac * 100) + '% of Nyquist)',
-          'The pitch where the sound’s energy suddenly drops away to nothing. A genuine lossless file reaches about 95% or more of the way to its theoretical ceiling (the Nyquist limit); a lossy codec leaves a hard cut-off well below it.'));
-        trTbl.appendChild(rowHelp('Rolloff steepness', tr.steepDbPerKHz > 0 ? tr.steepDbPerKHz.toFixed(0) + ' dB/kHz' : '-',
-          'How sharply the high-frequency energy is cut off at that ceiling, in decibels per kilohertz. A lossy encode leaves a steep, abrupt drop; genuine lossless audio tapers off gently.'));
-        if (tr.sourceGuess) trTbl.appendChild(rowHelp('Likely source', tr.sourceGuess,
-          'A best guess at the original compressed format, based on where that cut-off sits. Approximate only, since encoders and their settings vary.'));
-        body.appendChild(trTbl);
-        advCard.appendChild(det); advCount++;
-      }
-
       // Mains hum / ENF.
       try {
         const hum = analyzeMainsHum(spec);
@@ -3430,31 +3570,71 @@ export async function renderAudio(file, resultsEl, opts = {}) {
         advCard.appendChild(det); advCount++;
       } catch (_) {}
 
-      // DTMF touch-tones (only when digits are found).
-      if (dtmf && dtmf.digits.length) {
-        const { det, body } = aAdvPanel('Touch-tones (DTMF)',
-          'Phone touch-tone (DTMF) digits decoded from the audio, read by listening at the 8 standard tone frequencies arranged in row/column pairs (via Goertzel filters) - it recovers numbers dialled in a recording.');
-        const dt = el('table', { class: 'anr-readout' });
-        dt.appendChild(rowHelp('Dialled digits', dtmf.sequence,
-          'The phone touch-tone (DTMF) digits decoded from the audio, read by listening at the 8 standard tone frequencies arranged in row/column pairs (via Goertzel filters) - it recovers numbers that were dialled in a recording.'));
-        dt.appendChild(row('Count', String(dtmf.digits.length)));
-        body.appendChild(dt);
-        const timing = el('details');
-        timing.appendChild(el('summary', {}, 'Timing (' + dtmf.digits.length + ')'));
-        const dtl = el('table', { class: 'anr-readout' });
-        for (const d of dtmf.digits) dtl.appendChild(row(d.digit, formatTime(d.tStart) + ' - ' + formatTime(d.tEnd)));
-        timing.appendChild(dtl);
-        body.appendChild(timing);
-        advCard.appendChild(det); advCount++;
+    }
+
+    // -- Encoder (moved here from the Tags card) --
+    if (encoderTags.length) {
+      const { det, body } = aAdvPanel('Encoder');
+      const et = el('table', { class: 'anr-readout' });
+      for (const [name, value] of encoderTags) et.appendChild(tagRow(name, value));
+      body.appendChild(et);
+      advCard.appendChild(det); advCount++;
+    }
+
+    // -- Touch-tones (DTMF), only when digits are found --
+    // The one part of this card that ISN'T label/value rows, so it is also the one
+    // that keeps a heading and a divider: dropped unannounced into the continuous
+    // readout above, a keypad grid would read as noise. It goes last so every
+    // flowing group stays contiguous ahead of it.
+    if (dtmf && dtmf.digits.length) {
+      const { det, body } = aAdvSection('Touch-tones (DTMF)',
+        'Phone touch-tone (DTMF) digits decoded from the audio, read by listening at the 8 standard tone frequencies arranged in row/column pairs (via Goertzel filters) - it recovers numbers dialled in a recording. Each tone below is clickable: it plays the recording from the moment that digit was pressed.');
+      // The decoded number itself - the answer most people opened this for.
+      body.appendChild(el('div', { class: 'anr-dtmf-seq' }, dtmf.sequence));
+      const dur = audioBuffer.duration || 0;
+      // Where the tones fall across the whole recording. A number dialled in one
+      // burst then reads as a burst, and digits scattered through a long call read
+      // as scattered - which the old start/end list could not show at all.
+      if (dur > 0) {
+        const track = el('div', { class: 'anr-dtmf-track' });
+        for (const d of dtmf.digits) {
+          track.appendChild(el('span', { class: 'anr-dtmf-tick',
+            style: 'left:' + Math.max(0, Math.min(100, (d.tStart / dur) * 100)).toFixed(3) + '%' }));
+        }
+        body.appendChild(track);
       }
+      body.appendChild(el('p', { class: 'anr-dtmf-caption' },
+        dtmf.digits.length + (dtmf.digits.length === 1 ? ' tone' : ' tones')
+        + (dur > 0 ? ' across ' + fmtClock(dur) : '')));
+      // One cell per tone: the digit, and when it was pressed. Click to hear it.
+      const keys = el('div', { class: 'anr-dtmf-keys' });
+      for (const d of dtmf.digits) {
+        const at = fmtClock(d.tStart);
+        const key = el('button', { type: 'button', class: 'anr-dtmf-key',
+          title: 'Play from ' + at + ' (held ' + Math.round((d.tEnd - d.tStart) * 1000) + ' ms)' }, [
+          el('span', { class: 'anr-dtmf-digit' }, d.digit),
+          el('span', { class: 'anr-dtmf-at' }, at),
+        ]);
+        key.addEventListener('click', () => {
+          // Start a beat early so the tone is heard from its attack, not mid-way.
+          try {
+            audioEl.currentTime = Math.max(0, d.tStart - 0.15);
+            const p = audioEl.play();
+            if (p && p.catch) p.catch(() => {});
+          } catch (_) {}
+        });
+        keys.appendChild(key);
+      }
+      body.appendChild(keys);
+      advCard.appendChild(det); advCount++;
     }
 
     if (advCount) advCardEl = advCard;
   }
 
-  // ---- Reverse playback (play / download the audio backwards) ----
-  reverseSlot.appendChild(buildReverseAudioCard(audioBuffer, (file.name || 'audio').replace(/\.[^/.]+$/, ''), renderSignal));
-
+  // (Reverse playback used to be its own card here. It is now the Reverse button
+  // in the spectrogram's Actions row, which re-analyses the reversed audio as a
+  // fresh file rather than offering a second player alongside this one.)
 
   // The spectrogram is the headline visual and sits at the very top of the result,
   // above the file info + player. Its slot was already placed there (holding a
@@ -3467,14 +3647,18 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     if (art && art.bytes && art.bytes.length) coverSlot.appendChild(buildCoverArtCard(art, file, resultsEl));
   }).catch(() => {});
 
-  // ---- Embedded tags + lyrics (async, non-blocking) ----
-  readAudioTags(file).then((meta) => {
+  // ---- Embedded tags + lyrics ----
+  // Already resolved (started before the DSP queue). The encoder tags are skipped
+  // here - they are shown in Advanced - so a file whose only tag was its encoder
+  // no longer gets a Tags card holding a single row.
+  tagsPromise.then((meta) => {
     if (!meta) return;
-    if (meta.tags && meta.tags.length) {
+    const tags = (meta.tags || []).filter(([name]) => !ENCODER_TAGS.has(name));
+    if (tags.length) {
       const card = el('div', { class: 'anr-card' });
       card.appendChild(el('h3', {}, 'Tags'));
       const tbl = el('table', { class: 'anr-readout' });
-      for (const [name, value] of meta.tags) tbl.appendChild(tagRow(name, value));
+      for (const [name, value] of tags) tbl.appendChild(tagRow(name, value));
       card.appendChild(tbl);
       tagSlot.appendChild(card);
     }
@@ -3544,11 +3728,13 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     // visual break between it and the stereo stats above.
     if (chanSeg) stereoCard.append(chanHead, chanHelpPanel, chanSeg, chanStat);
 
-    resultsEl.appendChild(stereoCard);
+    stereoSlot.innerHTML = '';
+    stereoSlot.appendChild(stereoCard);
   }
 
   // Advanced sits last, below every other card.
-  if (advCardEl) resultsEl.appendChild(advCardEl);
+  advSlot.innerHTML = '';
+  if (advCardEl) advSlot.appendChild(advCardEl);
 
   // (The spectrogram's first paint was already awaited before the forensic passes
   // began, so there is nothing left to wait for here.)

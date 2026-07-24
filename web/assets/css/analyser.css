@@ -4042,17 +4042,111 @@ details[open] summary::after { content: "\2212"; }
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 28px 0 6px;
+  margin: 0 0 6px;
+}
+/* Divider + gap only BETWEEN parts: the first part sits directly under the card
+   heading, which already carries its own hairline, so a second line there just
+   doubles it up.
+   Written as part ~ part rather than :first-of-type because "the first part" is
+   not the first child of any type - h3help's [?] info panel (sound, video) and
+   photo's intro hint both sit between the <h3> and the first part, so
+   :first-of-type matched the wrong element or nothing at all. */
+.anr-adv > .anr-adv-part ~ .anr-adv-part > .anr-adv-parthead {
+  margin-top: 28px;
   padding-top: 12px;
   border-top: var(--bd-hairline);
-}
-/* First part sits directly under the card heading - no divider or top gap. */
-.anr-adv > .anr-adv-part:first-of-type > .anr-adv-parthead {
-  border-top: none; margin: 0 0 6px; padding-top: 0;
 }
 /* A genuine disclosure nested inside a part body (the DTMF timing list, the box
    tree): trim the generic details' large top gap so it sits close under its part. */
 .anr-adv > .anr-adv-part > div > details { margin-top: 12px; padding-top: 12px; }
+
+/* --flow: the card is ONE continuous readout. No sub-headings, no dividers, no
+   gaps - the rows simply run on, exactly as they would in a single table. The
+   .anr-adv-part wrappers survive only to carry each group's aria-label; visually
+   there is nothing between them. Used by the sound renderer, where every row
+   already carries its own label and [?] help. Photo and video keep their headings:
+   their parts hold images and trees that a label is doing real work above.
+   The rules come from .anr-readout, so the only fix needed is its last-row
+   exception - without this the join between two groups would be the one place with
+   no rule, which is precisely backwards. */
+.anr-adv--flow > .anr-adv-part ~ .anr-adv-part { margin-top: 0; padding-top: 0; border-top: none; }
+.anr-adv--flow .anr-readout tr:last-child th,
+.anr-adv--flow .anr-readout tr:last-child td { border-bottom: var(--bd-rule); }
+.anr-adv--flow > .anr-adv-part:last-child .anr-readout tr:last-child th,
+.anr-adv--flow > .anr-adv-part:last-child .anr-readout tr:last-child td { border-bottom: none; }
+/* The loudness graph + its transport are the one non-table thing in that flow, so
+   they get air on both sides before the rows resume. */
+.anr-adv--flow .anr-loudgraph { margin: 4px 0 22px; }
+/* The one part allowed to break the flow: --titled keeps a sub-heading and the
+   divider above it, because its content is a keypad grid rather than rows and
+   would read as noise arriving unannounced. Built last, so nothing flows after it. */
+.anr-adv--flow > .anr-adv-part--titled { margin-top: 36px; padding-top: 26px; border-top: var(--bd-hairline); }
+.anr-adv--flow > .anr-adv-part--titled > .anr-adv-parthead { margin: 0 0 14px; }
+/* The flow ends where a titled part begins, so the last row before one drops its
+   rule - the titled part's own hairline is the divider there, and keeping both
+   would draw two lines a gap apart. */
+.anr-adv--flow > .anr-adv-part:has(+ .anr-adv-part--titled) .anr-readout tr:last-child th,
+.anr-adv--flow > .anr-adv-part:has(+ .anr-adv-part--titled) .anr-readout tr:last-child td { border-bottom: none; }
+
+/* ---------- DTMF touch-tones (sound Advanced) ----------
+   The decoded number, then where its tones fall across the recording, then one
+   cell per tone. Replaces a <details> holding a start/end table, which buried the
+   answer and could not show the shape of the dialling at all. */
+.anr-dtmf-seq {
+  font-family: var(--font-mono);
+  font-size: var(--t-h3);
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  word-break: break-all;
+  margin: 0 0 16px;
+}
+/* Hairline the width of the file, one tick per digit: a number dialled in a single
+   burst reads as a burst, digits spread through a long call read as spread. */
+.anr-dtmf-track {
+  position: relative;
+  height: 18px;
+  border-bottom: var(--bd-hairline);
+  margin: 0 0 7px;
+}
+.anr-dtmf-tick { position: absolute; bottom: 0; width: 1px; height: 11px; background: var(--accent); }
+.anr-dtmf-caption {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+.anr-dtmf-keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(66px, 1fr));
+  gap: 8px;
+}
+.anr-dtmf-key {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 11px 4px 9px;
+  background: transparent;
+  border: var(--bd-hairline);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--dur-snappy) ease, color var(--dur-snappy) ease;
+}
+.anr-dtmf-key:hover,
+.anr-dtmf-key:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.anr-dtmf-digit { font-family: var(--font-mono); font-size: 20px; line-height: 1; font-weight: 500; }
+.anr-dtmf-at {
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.anr-dtmf-key:hover .anr-dtmf-at,
+.anr-dtmf-key:focus-visible .anr-dtmf-at { color: var(--accent); }
 
 /* ---------- ABOUT / FOOTER ---------- */
 .site-footer--about {

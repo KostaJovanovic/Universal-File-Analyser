@@ -309,8 +309,10 @@ export function loudnessR128(mono, sampleRate) {
   for (const b of mom) { const l = msToLufs(b.ms); if (l > momentaryMax) momentaryMax = l; series.push({ t: b.t, lufs: l }); }
   for (const b of shrt) { const l = msToLufs(b.ms); if (l > shortTermMax) shortTermMax = l; }
 
-  // Gated integrated loudness (BS.1770 two-stage gate) over 400 ms / 75% overlap blocks.
-  const gate = blockMs(0.4, 0.1);
+  // Gated integrated loudness (BS.1770 two-stage gate) over 400 ms / 75% overlap
+  // blocks - which is exactly the momentary block set already computed above, so
+  // reuse it rather than running the same full-length pass a second time.
+  const gate = mom;
   const ABS = -70;
   let sum = 0, n = 0;
   for (const b of gate) { if (msToLufs(b.ms) > ABS) { sum += b.ms; n++; } }
