@@ -326,6 +326,47 @@ export function inlineLoader(text) {
   ]);
 }
 
+// Hand the thread back to the browser so queued input, scrolling and painting get
+// a turn before the next slice of a long job. Without this a chain of heavy
+// synchronous passes locks the page up completely - the tab stops scrolling and
+// clicks queue until the whole chain finishes.
+//
+// rAF is the right wake-up when the page is visible (the browser gets to paint
+// first), but it never fires in a background tab, so fall back to a timeout there
+// and keep working rather than stalling until the user returns.
+// Both helpers below race their rAF against a timeout. rAF is not guaranteed to
+// fire: a background tab stops it (caught by document.hidden), but so does an
+// occluded window and some iOS low-power states, where document.hidden can still
+// read false. Without the race an await here would never resolve and the whole
+// render would wedge with the drop loader stuck on screen. The timeout only ever
+// makes us continue early, never late, so it is safe to lose the race.
+export function yieldToMain(timeoutMs = 200) {
+  return new Promise((r) => {
+    if (document.hidden) { setTimeout(r, 0); return; }
+    let done = false;
+    const finish = () => { if (done) return; done = true; r(); };
+    requestAnimationFrame(finish);
+    setTimeout(finish, timeoutMs);
+  });
+}
+
+// Resolve only once the browser has actually PAINTED. Subtle but important: a
+// single requestAnimationFrame callback runs *before* the paint of that frame, so
+// `await yieldToMain()` guarantees the DOM change is queued, not that anyone can
+// see it - if heavy synchronous work follows, it blocks the paint and the loader
+// you just inserted never appears at all. Two rAFs in a row put us on the far side
+// of a real paint. Use this before handing the thread to a long blocking job whose
+// "working…" indicator has to be visible while it runs.
+export function afterPaint(timeoutMs = 400) {
+  return new Promise((r) => {
+    if (document.hidden) { setTimeout(r, 0); return; }
+    let done = false;
+    const finish = () => { if (done) return; done = true; r(); };
+    requestAnimationFrame(() => requestAnimationFrame(finish));
+    setTimeout(finish, timeoutMs);
+  });
+}
+
 export function rowHelp(label, value, helpText) {
   return el('tr', {}, [
     helpTh(label, helpText),

@@ -146,9 +146,10 @@ collapsed by default:
   likelihood that least-significant-bit data has been embedded, plus a
   browser for all eight bit planes (0 = LSB to 7 = MSB) per channel.
 
-**How to reach it.** Automatic - expand the Advanced card, then a panel.
-The forensic maths lives in `photo-forensics.js`; ELA computes lazily the
-first time its panel is opened. Also derived-and-shown in the **Metadata**
+**How to reach it.** Automatic - expand the Advanced card, which shows every
+forensic read as a flat part (the card is the only dropdown). The forensic
+maths lives in `photo-forensics.js`; ELA and the LSB bit planes compute lazily
+the first time the card is expanded, not on load. Also derived-and-shown in the **Metadata**
 card: an **Optics** section (field of view, hyperfocal, depth of field, and
 exposure value at ISO 100 with a lighting label + a brightness-sanity note).
 
@@ -317,10 +318,10 @@ exact value past the slider's range), and an Advanced panel (sample rate,
 FFT size, window function, Griffin-Lim iteration count, gamma brightness
 curve, left/right channel source for stereo, colourmap decoding and dB
 scale for real-spectrogram mode). The source image preview updates live as
-controls change. Click **Render & play** to synthesise and immediately play
-the result through the site's full Sound analysis (waveform, spectrogram,
-LUFS, etc. - see [`audio.md`](audio.md)); **Analyse WAV** does the same
-without auto-playing; **Download WAV** saves the rendered audio. Clicking
+controls change. Click **Render** to synthesise the result and run it through
+the site's full Sound analysis (waveform, spectrogram, LUFS, etc. - see
+[`audio.md`](audio.md)). It never starts playing on its own - press play on
+the player it builds; **Download WAV** saves the rendered audio. Clicking
 the source-image preview seeks the audio to that point (and the reverse:
 playback drives an accent-coloured playhead over the image).
 
@@ -337,8 +338,7 @@ btn: Linear
 ```
 
 ```demo
-btn cta: Render & play
-btn: Analyse WAV
+btn cta: Render
 btn: Download WAV
 ```
 

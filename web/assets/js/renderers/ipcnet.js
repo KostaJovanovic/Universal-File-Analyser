@@ -157,8 +157,17 @@ export async function renderIpcNetlist(file, resultsEl) {
   const xs = recs.filter((r) => r.x != null);
   let extent = '';
   if (xs.length) {
-    const minX = Math.min(...xs.map((r) => r.x)), maxX = Math.max(...xs.map((r) => r.x));
-    const minY = Math.min(...xs.map((r) => r.y)), maxY = Math.max(...xs.map((r) => r.y));
+    // One pass, no spread: Math.min(...) over a record-per-test-point array
+    // throws RangeError on dense boards (~125k+ points), and this sits outside
+    // the parse try/catch so it would abort the whole render.
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const r of xs) {
+      const x = r.x, y = r.y == null ? 0 : r.y;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
     const wU = maxX - minX, hU = maxY - minY;
     extent = parsed.metric
       ? `${(wU / 1000).toFixed(1)} x ${(hU / 1000).toFixed(1)} mm`

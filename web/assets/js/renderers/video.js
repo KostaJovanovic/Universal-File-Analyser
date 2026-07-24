@@ -5,7 +5,7 @@
 
 import { makePlayer, renderAudio } from './audio.js';
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob, inlineLoader, yieldToMain } from '../core/util.js';
 import { parseAviHeader, extractAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
 import { registerSyncedVideo, setAudioCompanion } from '../core/video-sync.js';
@@ -2116,8 +2116,19 @@ function fileRangeReader(file) {
 // and otherwise borrow them from a healthy reference clip shot on the same camera.
 // The carved Annex B stream then plays through the existing raw-H.264 segmented
 // player. Audio (often LPCM, with no recoverable timing) is dropped.
+// Clear the "decoding" bar that renderVideo drops into the #videoPreview panel
+// while it works. Only ever removes OUR loader (checked by class), so it can be
+// called freely on paths that mounted a real preview or never showed a bar at all.
+// Lives here because the fallback renderers below each end the render without ever
+// reaching the normal preview mount, and would otherwise strand it on screen.
+function clearVideoPreviewBoot() {
+  const pv = document.getElementById('videoPreview');
+  if (pv && pv.querySelector('.anr-inline-loader')) pv.innerHTML = '';
+}
+
 async function renderMoovlessRecovery(file, header, det, resultsEl, signal) {
   const mctx = curVctx();   // preserve inline/compare when re-rendering the carved stream
+  clearVideoPreviewBoot();
   resultsEl.innerHTML = '';
   const reader = fileRangeReader(file);
   const brandStr = (header.brand || '') + ' ' + (header.container || '');
@@ -2248,6 +2259,7 @@ async function renderMoovlessRecovery(file, header, det, resultsEl, signal) {
 // play and how to make it playable. Degrades gracefully for non-ISOBMFF files
 // (shows name / size / container only).
 async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
+  clearVideoPreviewBoot();
   const ctx = curVctx();
   let tracks = null;
   try { tracks = await detectIsobmffTracks(file); } catch (_) {}
@@ -3018,23 +3030,21 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
 
 // A collapsible <details> panel with a plain summary label (no info button) -
 // the same idiom photo.js's advPanel uses.
-function vAdvPanel(title, helpHtml, open) {
-  const det = el('details', open ? { open: '' } : {});
-  const sum = el('summary', {});
-  // Title + optional [?] grouped in one span so the summary's flex space-between
-  // keeps them together on the left (only the open/close marker sits at the right).
-  const label = el('span', { class: 'anr-summary-label' });
-  label.appendChild(document.createTextNode(title + (helpHtml ? ' ' : '')));
-  det.appendChild(sum);
+// One part of the Advanced card - a flat labelled block, not a disclosure of its
+// own (the card is the single dropdown). The legacy `open` argument is accepted and
+// ignored: with no per-part folding there is no headline part to pre-open.
+function vAdvPanel(title, helpHtml, _open) {
+  const det = el('div', { class: 'anr-adv-part' });
+  const head = el('div', { class: 'anr-adv-parthead' }, title + (helpHtml ? ' ' : ''));
   const body = el('div');
   if (helpHtml) {
     const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
     const panel = el('div', { class: 'anr-info-panel is-hidden', html: helpHtml });
     wireInfoToggle(btn, panel);
-    label.appendChild(btn);
+    head.appendChild(btn);
     body.appendChild(panel);
   }
-  sum.appendChild(label);
+  det.appendChild(head);
   det.appendChild(body);
   return { det, body };
 }
@@ -3093,7 +3103,7 @@ async function buildVideoAdvancedCard(file) {
   try { s = await analyzeMp4Structure(file); } catch (_) { return null; }
   if (!s) return null;
 
-  const card = el('div', { class: 'anr-card anr-adv' });
+  const card = el('div', { class: 'anr-card anr-adv anr-collapsible is-collapsed' });
   const [advH, advHelp] = h3help('Advanced',
     'Container structure and stream forensics read straight from the MP4/MOV boxes, with nothing decoded. The headline provenance signs are shown up top; the deeper panels fold open when you want them.');
   card.appendChild(advH); card.appendChild(advHelp);
@@ -3349,6 +3359,16 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Loading "${file.name}"…`));
+  // Put a loading bar in the preview panel straight away. Everything between here
+  // and the player - the container reads, then a probe decode that can sit on its
+  // 8 s timeout - happens with that panel empty, which reads as nothing happening
+  // at all. The normal path wipes the slot when it mounts the real player; the
+  // fallback renderers call clearVideoPreviewBoot(). Inline renders own no such
+  // panel, so they skip this.
+  if (!inline) {
+    const bootPv = document.getElementById('videoPreview');
+    if (bootPv) { bootPv.innerHTML = ''; bootPv.appendChild(inlineLoader('Decoding video…')); }
+  }
 
 
   let header = {};
@@ -3962,6 +3982,8 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     thumb.appendChild(el('p', { class: 'section-meta-preview-caption' },
       `${vw} × ${vh} · ${formatDuration(dur)} · ${fmtBytes(file.size)}`));
     previewSlot.appendChild(thumb);
+  } else {
+    clearVideoPreviewBoot();   // no preview to mount - don't strand the loading bar
   }
 
   // Frame 0, captured now from the probe (full-res) - kept only as a fallback for
@@ -4176,20 +4198,12 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // track from the proxy). The single-point card is suppressed when the exifr GPS
   // card above already showed coordinates.
   if (full) {
+    // GPMF/CAMM/container-location, each re-reading the moov and walking up to
+    // MAX_CHUNKS sequential slices. Yield first: the player and the metadata cards
+    // are already on screen and the reader may be scrolling them.
+    await yieldToMain();
     const hasExifGps = !!(exif && exif.latitude != null && exif.longitude != null);
     try { await appendTelemetryCards(analysisFile, resultsEl, { hasExifGps, playFile: file }); } catch (_) {}
-  }
-
-  // Advanced (ISOBMFF container structure + stream forensics) - box tree, full
-  // track list, provenance tells, frames/bitrate map and bitstream/authenticity.
-  // Reads the ORIGINAL file so the SPS, codec and structure describe the user's
-  // file, not the H.264 proxy.
-  let videoAdvCard = null;
-  if (full) {
-    try {
-      const adv = await buildVideoAdvancedCard(analysisFile);
-      if (adv && !renderSignal.aborted) videoAdvCard = adv;   // appended last, below every other card
-    } catch (_) { /* structure parse failed - skip the Advanced card */ }
   }
 
   // ---- Contact sheet / thumbnail grid ----
@@ -4443,8 +4457,24 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     resultsEl.appendChild(hashCard);
   }
 
-  // Advanced sits last, below every other card.
-  if (videoAdvCard && !renderSignal.aborted) resultsEl.appendChild(videoAdvCard);
+  // ---- Advanced (ISOBMFF container structure + stream forensics) ----
+  // Box tree, full track list, provenance tells, frames/bitrate map and
+  // bitstream/authenticity. Reads the ORIGINAL file so the SPS, codec and structure
+  // describe the user's file, not the H.264 proxy.
+  //
+  // Built HERE rather than up with the other container reads, even though it is
+  // ordered after them: it is by far the most expensive await in this renderer
+  // (several full moov buffers, two box-tree walks, a GOP map over every sample)
+  // and its card displays LAST. Running it early bought nothing and delayed every
+  // card below it - contact sheet, scene changes, audio, reverse, integrity - none
+  // of which need it. Now everything else is on screen before it starts.
+  await yieldToMain();
+  if (full && !renderSignal.aborted) {
+    try {
+      const adv = await buildVideoAdvancedCard(analysisFile);
+      if (adv && !renderSignal.aborted) resultsEl.appendChild(adv);
+    } catch (_) { /* structure parse failed - skip the Advanced card */ }
+  }
 }
 
 // ---------- setup ----------

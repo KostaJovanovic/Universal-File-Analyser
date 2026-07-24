@@ -359,7 +359,11 @@ async function walk(entry, path) {
     const children = await readEntries(reader);
     const results = [];
     for (const child of children) {
-      results.push(...await walk(child, path + entry.name + '/'));
+      // push(...sub) spreads every file in the subtree as call arguments, which
+      // throws RangeError past ~120k entries - and a dropped folder can easily
+      // exceed that. Append in a loop instead (concat would be quadratic).
+      const sub = await walk(child, path + entry.name + '/');
+      for (let i = 0; i < sub.length; i++) results.push(sub[i]);
     }
     return results;
   }
@@ -378,7 +382,8 @@ export async function walkItems(dataTransfer) {
   if (!hasFolder) return null;
   const files = [];
   for (const entry of entries) {
-    files.push(...await walk(entry, ''));
+    const sub = await walk(entry, '');
+    for (let i = 0; i < sub.length; i++) files.push(sub[i]);
   }
   return files;
 }

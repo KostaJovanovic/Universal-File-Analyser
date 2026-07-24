@@ -7,7 +7,7 @@
    - On-device OCR via lazy-loaded Tesseract.js with language picker
    - SHA-256 file hash */
 
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, cloudFileWarning, errorCard, attachZoomPan, openOverlayBack, timeAnomalies, timeAnomalyCard, downloadBlob } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, fileExt, sha256Row, loadScript, loadCss, cloudFileWarning, errorCard, attachZoomPan, openOverlayBack, timeAnomalies, timeAnomalyCard, downloadBlob, inlineLoader, afterPaint, yieldToMain } from '../core/util.js';
 import { HEIC_EXTS, RAW_EXTS } from '../core/formats.js';
 import { convertHeic, extractRawPreview, convertWithImageMagick, demosaicRaw, extractRawJpegs, extractX3fPreview } from './photo-convert.js';
 import { ascii, latin1, utf8, inflate, findBytes, hexByte, hexBytes } from '../core/binutil.js';
@@ -1271,20 +1271,22 @@ function opticsRows(exif, meanLuma) {
 // info button to the summary (its panel shows inside the body when the panel is
 // open, matching the LSB panel). Returns { det, body }; callers fill body and
 // append det.
+// One part of the Advanced card. The card itself is the single dropdown now, so a
+// part is a FLAT labelled block (an .anr-readout-section-style sub-heading with its
+// content below), not a disclosure of its own. Returns the same { det, body } shape
+// the call sites already use - `det` is simply a plain div rather than a <details>.
 function advPanel(title, help) {
-  const det = el('details', { open: '' });
-  const sum = el('summary', {});
-  const label = el('span', { class: 'anr-summary-label' }, title);
+  const det = el('div', { class: 'anr-adv-part' });
+  const head = el('div', { class: 'anr-adv-parthead' }, title);
   let panel = null;
   if (help) {
-    label.appendChild(document.createTextNode(' '));
+    head.appendChild(document.createTextNode(' '));
     const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
     panel = el('div', { class: 'anr-info-panel is-hidden', html: help });
     wireInfoToggle(btn, panel);
-    label.appendChild(btn);
+    head.appendChild(btn);
   }
-  sum.appendChild(label);
-  det.appendChild(sum);
+  det.appendChild(head);
   const body = el('div');
   if (panel) body.appendChild(panel);
   det.appendChild(body);
@@ -1667,8 +1669,17 @@ function makeOcrCard(file, img) {
   det.appendChild(summary);
   const detContent = el('div');
 
-  const ocrCanvas = img ? prepareOcrCanvas(img) : null;
-  const ocrInput = ocrCanvas || file;
+  // prepareOcrCanvas upscales until the short side is >=2000px, so even a modest
+  // 1000x750 photo allocates a 2667x2000 canvas (~21 MB) plus a high-quality
+  // rescale. Building it here charged that to every photo load for a feature that
+  // sits behind a button, so build it on first run instead. Cached after that, so
+  // a second run reuses it.
+  let ocrCanvas = null;
+  const ocrInputFor = () => {
+    if (!img) return file;
+    if (!ocrCanvas) ocrCanvas = prepareOcrCanvas(img);
+    return ocrCanvas;
+  };
 
   // Same flow as PDF OCR: a single button that opens the shared language picker
   // (pickOcrLanguage) before running, rather than an inline language dropdown.
@@ -1725,7 +1736,7 @@ function makeOcrCard(file, img) {
         corePath: 'assets/vendor/tesseract'
       });
       progressLabel.textContent = 'Recognising…';
-      const r = await activeWorker.recognize(ocrInput);
+      const r = await activeWorker.recognize(ocrInputFor());
       await activeWorker.terminate();
       activeWorker = null;
       const MIN_CONF = 60;
@@ -2954,6 +2965,15 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Loading "${file.name}"...`));
+  // Put a loading bar in the preview panel straight away. The decode below - and
+  // for HEIC/RAW/JXL the WASM conversion after it - can take seconds, during which
+  // the panel would otherwise sit empty with no sign that anything is happening.
+  // It clears itself: the real thumbnail wipes the slot before mounting (see
+  // previewSlot below). Inline renders own no such panel, so they skip this.
+  if (!inline) {
+    const bootPv = document.getElementById('photoPreview');
+    if (bootPv) { bootPv.innerHTML = ''; bootPv.appendChild(inlineLoader('Decoding image…')); }
+  }
 
   let imgInfo;
   let convertedFile = null;
@@ -3522,6 +3542,10 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // ---- Content Credentials (C2PA) + AI-generation signals ----
   // Both cards read the C2PA manifest; parse it once here and share it so the
   // file isn't read (and the JUMBF/CBOR manifest parsed) twice.
+  // These are whole-file reads followed by synchronous scans, so let the page
+  // breathe first - by this point several cards are on screen and the reader may
+  // already be scrolling through them.
+  await yieldToMain();
   if (full) {
     const c2paManifests = await readC2pa(file).catch(() => null);
     try {
@@ -3631,12 +3655,14 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // (next to LSB analysis). Runs only for a genuinely-dropped JPEG (not a preview
   // transcoded from HEIC/RAW - re-encoding an already-transcoded frame would say
   // nothing about the original). Stacked sub-sections, like the Metadata card.
+  // Heavy Advanced-card reads (ELA, LSB bit planes) that must not run on load.
+  // They used to fire when their own <details> was opened; the card is now the only
+  // disclosure, so they queue here and run the first time it is expanded.
+  const advLazy = [];
   let advForensics = null;
   if (full && !convertedFile && (/^(jpe?g|jpe|jfif)$/.test(fileExt(file.name)) || file.type === 'image/jpeg')) {
-    const fDet = el('details');
-    const fSum = el('summary', {});
-    fSum.appendChild(el('span', { class: 'anr-summary-label' }, 'Forensics'));
-    fDet.appendChild(fSum);
+    const fDet = el('div', { class: 'anr-adv-part' });
+    fDet.appendChild(el('div', { class: 'anr-adv-parthead' }, 'Forensics'));
     const fCard = el('div');   // panel content container (kept named fCard below)
     fDet.appendChild(fCard);
     fCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' },
@@ -3740,8 +3766,10 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     aSlider.addEventListener('input', () => { aVal.textContent = aSlider.value + '×'; });
     qSlider.addEventListener('change', runEla);
     aSlider.addEventListener('change', runEla);
-    // Compute lazily the first time the panel is expanded, not on every load.
-    fDet.addEventListener('toggle', () => { if (fDet.open && !fDet._elaRan) { fDet._elaRan = true; runEla(); } });
+    // The panel no longer has a disclosure of its own, so hang the lazy compute off
+    // the Advanced card's first expansion instead (see onAdvFirstOpen below). ELA is
+    // an expensive re-save + diff, so it must still cost nothing until asked for.
+    advLazy.push(runEla);
   }
 
   // ---- Container structure (raw bytes the img/exifr pipeline ignores) ----
@@ -3908,13 +3936,17 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   // to: the JPEG Forensics panel (built earlier - ELA, quantization fingerprint,
   // JPEG ghosts; JPEG only) and LSB / bit-plane analysis. Each panel is a <details>
   // collapsed by default, so the card stays compact until a tool is opened.
-  const advCard = el('div', { class: 'anr-card anr-adv' });
+  const advCard = el('div', { class: 'anr-card anr-adv anr-collapsible is-collapsed' });
   advCard.appendChild(el('h3', {}, 'Advanced'));
   advCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 4px;' },
     'More detailed forensic and technical views.'));
 
   // -- Edit history (on top, shown open; the technical panels below start closed) --
   if (full) {
+    // Yet another whole-file read, then two synchronous scans over it (an XMP packet
+    // hunt and an MD5 of the IPTC block). Yield first so this lands between frames
+    // rather than in the middle of one.
+    await yieldToMain();
     let advBytes = null;
     try { advBytes = new Uint8Array(await file.arrayBuffer()); } catch (_) {}
     if (advBytes) try {
@@ -3962,21 +3994,34 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   if (advForensics) advCard.appendChild(advForensics);
 
   // -- LSB / bit-plane analysis panel (closed by default) --
-  const lsbDet = el('details');
+  const lsbDet = el('div', { class: 'anr-adv-part' });
   const lsbHelp = el('div', { class: 'anr-info-panel is-hidden', html: 'Every pixel’s colour is stored as bits (ones and zeros). Bit-plane analysis pulls out a single bit from each colour channel (red, green, blue) and shows it as a black-and-white image. In an ordinary photo the lowest bits look like random speckle; clear patterns, text or shapes there can point to a hidden message (steganography) or heavy editing. A chi-square test also estimates how likely it is that data has been tucked into the least-significant bits, and you can flick through all eight bit planes (0 = the least-significant bit, up to 7 = the most-significant). Click a preview to open it at full resolution.' });
-  const lsbSummary = el('summary', {});
-  // Title + [?] grouped in one span so the summary's flex space-between keeps them
-  // together on the left (only the open/close marker sits at the right edge).
-  const lsbTitle = el('span', { class: 'anr-summary-label' });
+  const lsbTitle = el('div', { class: 'anr-adv-parthead' });
   lsbTitle.appendChild(document.createTextNode('LSB Analysis '));
   const lsbInfoBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
   wireInfoToggle(lsbInfoBtn, lsbHelp);
   lsbTitle.appendChild(lsbInfoBtn);
-  lsbSummary.appendChild(lsbTitle);
-  lsbDet.appendChild(lsbSummary);
+  lsbDet.appendChild(lsbTitle);
   const lsbContent = el('div');
   lsbContent.appendChild(lsbHelp);
-  renderLsbPlanes(img, lsbContent);
+  // Build the planes lazily the first time the panel is expanded, exactly like the
+  // ELA panel above. This used to run on every photo load even though the panel is
+  // closed by default - a chi-square pass over a 1024px raster plus three
+  // per-pixel plane loops, right at the end of the render, which is what made the
+  // page lock up just as the analysis appeared to finish.
+  const lsbStage = el('div');
+  lsbContent.appendChild(lsbStage);
+  advLazy.push(() => {
+    const busy = inlineLoader('Analysing bit planes…');
+    lsbStage.appendChild(busy);
+    // renderLsbPlanes is synchronous and takes a moment on a large image, so wait
+    // for a real paint before it takes the thread - otherwise the loader is only
+    // ever inserted, never shown.
+    afterPaint().then(() => {
+      if (renderSignal.aborted) return;
+      try { renderLsbPlanes(img, lsbStage); } finally { busy.remove(); }
+    });
+  });
   lsbDet.appendChild(lsbContent);
   advCard.appendChild(lsbDet);
 
@@ -3990,6 +4035,21 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     det.appendChild(t);
     dumpCard.appendChild(det);
     resultsEl.appendChild(dumpCard);
+  }
+
+  // Run the queued heavy reads the first time the reader opens Advanced. The
+  // delegated toggle in app.js flips .is-collapsed on the document listener, which
+  // runs AFTER this target-phase one - so read the resulting state on the next tick
+  // rather than guessing it here.
+  if (advLazy.length) {
+    const advH3 = advCard.querySelector(':scope > h3');
+    if (advH3) advH3.addEventListener('click', () => {
+      setTimeout(() => {
+        if (advCard.classList.contains('is-collapsed') || advCard._advLazyRan) return;
+        advCard._advLazyRan = true;
+        for (const fn of advLazy) { try { fn(); } catch (_) {} }
+      }, 0);
+    });
   }
 
   // Advanced sits last, below every other card.

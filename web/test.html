@@ -460,17 +460,60 @@
             <p class="anr-sig-flag-note">This mesh has 8,091 non-manifold edges and 3,802 duplicate faces. These irregularities can cause slicing failures, an unreliable volume or inside-outside test, and errors in CAD, boolean or repair tools. Run a mesh-repair pass (in your slicer, or a tool such as Blender or Meshmixer) before printing or machining.</p>
           </div>
 
+          <div class="tst-sub">.anr-xmp-sliders / .anr-xmp-hsl / .anr-xmp-kw - the XMP develop-sidecar readout: Basic-panel sliders as bipolar bars (.anr-xmp-bar with a centre .anr-xmp-bar-zero and a .anr-xmp-bar-fill), the HSL colour-mixer grid, and keyword chips</div>
+          <div class="anr-card">
+            <h3>Develop settings</h3>
+            <div class="anr-xmp-sliders">
+              <div class="anr-xmp-sk">Exposure</div>
+              <div class="anr-xmp-bar"><div class="anr-xmp-bar-zero" style="left:50%"></div><div class="anr-xmp-bar-fill" style="left:50%;width:5.50%"></div></div>
+              <div class="anr-xmp-sv">+0.55 EV</div>
+              <div class="anr-xmp-sk">Contrast</div>
+              <div class="anr-xmp-bar"><div class="anr-xmp-bar-zero" style="left:50%"></div><div class="anr-xmp-bar-fill" style="left:50%;width:12.50%"></div></div>
+              <div class="anr-xmp-sv">+25</div>
+              <div class="anr-xmp-sk">Highlights</div>
+              <div class="anr-xmp-bar"><div class="anr-xmp-bar-zero" style="left:50%"></div><div class="anr-xmp-bar-fill" style="left:20%;width:30.00%"></div></div>
+              <div class="anr-xmp-sv">-60</div>
+              <div class="anr-xmp-sk">Shadows</div>
+              <div class="anr-xmp-bar"><div class="anr-xmp-bar-zero" style="left:50%"></div><div class="anr-xmp-bar-fill" style="left:50%;width:20.00%"></div></div>
+              <div class="anr-xmp-sv">+40</div>
+              <div class="anr-xmp-sk">Clarity</div>
+              <div class="anr-xmp-bar"><div class="anr-xmp-bar-zero" style="left:50%"></div><div class="anr-xmp-bar-fill" style="left:44%;width:6.00%"></div></div>
+              <div class="anr-xmp-sv">-12</div>
+            </div>
+            <p class="anr-readout-section">Colour mixer (HSL)</p>
+            <div class="anr-xmp-hsl">
+              <div class="anr-xmp-hsl-head"></div>
+              <div class="anr-xmp-hsl-head">Hue</div>
+              <div class="anr-xmp-hsl-head">Sat</div>
+              <div class="anr-xmp-hsl-head">Lum</div>
+              <div class="anr-xmp-hsl-name"><span class="anr-xmp-hsl-chip" style="background:#3d6fd9"></span>Blue</div>
+              <div class="anr-xmp-bar anr-xmp-bar--mini"><div class="anr-xmp-bar-zero" style="left:50%"></div><div class="anr-xmp-bar-fill" style="left:50%;width:15%"></div></div>
+              <div class="anr-xmp-bar anr-xmp-bar--mini"><div class="anr-xmp-bar-zero" style="left:50%"></div><div class="anr-xmp-bar-fill" style="left:50%;width:30%"></div></div>
+              <div class="anr-xmp-bar anr-xmp-bar--mini"><div class="anr-xmp-bar-zero" style="left:50%"></div><div class="anr-xmp-bar-fill" style="left:35%;width:15%"></div></div>
+              <div class="anr-xmp-hsl-name"><span class="anr-xmp-hsl-chip" style="background:#4fae5a"></span>Green</div>
+              <div class="anr-xmp-bar anr-xmp-bar--mini"><div class="anr-xmp-bar-zero" style="left:50%"></div><div class="anr-xmp-bar-fill" style="left:40%;width:10%"></div></div>
+              <div class="anr-xmp-bar anr-xmp-bar--mini"><div class="anr-xmp-bar-zero" style="left:50%"></div><div class="anr-xmp-bar-fill" style="left:50%;width:20%"></div></div>
+              <div class="anr-xmp-bar anr-xmp-bar--mini"><div class="anr-xmp-bar-zero" style="left:50%"></div><div class="anr-xmp-bar-fill" style="left:50%;width:5%"></div></div>
+            </div>
+            <p class="anr-readout-section">Keywords</p>
+            <div class="anr-xmp-kws">
+              <span class="anr-xmp-kw">landscape</span>
+              <span class="anr-xmp-kw">golden hour</span>
+              <span class="anr-xmp-kw">Iceland</span>
+            </div>
+          </div>
+
           <div class="tst-sub">.anr-card.anr-collapsible.is-collapsed - the opt-in collapsible variant, shown closed (click the title to open; the glyph reads + when closed, - when open)</div>
           <div class="anr-card anr-collapsible is-collapsed">
             <h3>Text file previews</h3>
             <p class="anr-hint">Secondary detail that renders closed by default, so it stays out of the way until opened.</p>
           </div>
 
-          <div class="tst-sub">.anr-card.anr-adv - the "Advanced" card (photo / video / sound): one section whose heavier forensic reads are its parts, sat at the very bottom of the page. Each part is a &lt;details&gt; whose summary is styled as an .anr-readout-section sub-heading (the Metadata-card idiom). The headline part shows open on top; the rest start closed, the muted +/- folding each open.</div>
-          <div class="anr-card anr-adv">
+          <div class="tst-sub">.anr-card.anr-adv - the "Advanced" card (photo / video / sound): ONE collapsible section, sat at the very bottom of the page and closed by default. The card's own h3 is the only disclosure (.anr-collapsible + .is-collapsed, toggled by the delegated handler in app.js); its heavier forensic reads are flat .anr-adv-part blocks inside, each a .anr-readout-section-style sub-heading with its content below - the Metadata-card idiom, not a stack of nested accordions. Shown here expanded.</div>
+          <div class="anr-card anr-adv anr-collapsible">
             <h3>Advanced</h3>
-            <details open>
-              <summary><span class="anr-summary-label">Loudness meter (EBU R128) <button type="button" class="anr-info-btn" title="Info">[?]</button></span></summary>
+            <div class="anr-adv-part">
+              <div class="anr-adv-parthead">Loudness meter (EBU R128) <button type="button" class="anr-info-btn" title="Info">[?]</button></div>
               <div>
                 <table class="anr-readout">
                   <tr><th>Integrated (gated)</th><td>-14.2 LUFS</td></tr>
@@ -479,23 +522,23 @@
                   <tr><th>True peak</th><td>-1.1 dBTP</td></tr>
                 </table>
               </div>
-            </details>
-            <details>
-              <summary><span class="anr-summary-label">Lossy-source check</span></summary>
+            </div>
+            <div class="anr-adv-part">
+              <div class="anr-adv-parthead">Lossy-source check</div>
               <div>
                 <table class="anr-readout">
                   <tr><th>Spectral cutoff</th><td>20,500 Hz (93% of Nyquist)</td></tr>
                 </table>
               </div>
-            </details>
-            <details>
-              <summary><span class="anr-summary-label">Mains hum / ENF</span></summary>
+            </div>
+            <div class="anr-adv-part">
+              <div class="anr-adv-parthead">Mains hum / ENF</div>
               <div>
                 <table class="anr-readout">
                   <tr><th>Mains hum</th><td>None detected</td></tr>
                 </table>
               </div>
-            </details>
+            </div>
           </div>
 
           <div class="tst-sub">Scrollable mono block (pre.anr-code.anr-pre-scroll)</div>

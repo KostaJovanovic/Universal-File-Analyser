@@ -584,11 +584,10 @@ export async function renderSonify(file, mountEl, opts = {}) {
   card.appendChild(controls);
 
   // ---- actions ----
-  const renderBtn  = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Render & play');
-  const analyseBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Analyse WAV');
+  const renderBtn  = el('button', { type: 'button', class: 'anr-btn anr-btn--cta' }, 'Render');
   const wavBtn     = el('button', { type: 'button', class: 'anr-btn' }, 'Download WAV');
   const status     = el('span', { class: 'anr-spec-hint', style: 'align-self:center;' }, '');
-  card.appendChild(el('div', { class: 'anr-btn-row' }, [renderBtn, analyseBtn, wavBtn, status]));
+  card.appendChild(el('div', { class: 'anr-btn-row' }, [renderBtn, wavBtn, status]));
 
   // ---- render progress (the site's standard ASCII bar) ----
   const progBar   = asciiBar({ fit: true });
@@ -685,9 +684,9 @@ export async function renderSonify(file, mountEl, opts = {}) {
     if (audioEl.paused) audioEl.play();
   });
 
-  async function doRender(play) {
+  async function doRender() {
     const o = readOpts();
-    renderBtn.disabled = true; wavBtn.disabled = true; analyseBtn.disabled = true;
+    renderBtn.disabled = true; wavBtn.disabled = true;
     status.textContent = 'Rendering...';
     progBar.set(0);
     progWrap.style.display = 'block';
@@ -728,26 +727,21 @@ export async function renderSonify(file, mountEl, opts = {}) {
       // Run the site's full Sound analysis on the rendered audio.
       await buildOutput();
       status.textContent = `Done - ${o.duration}s, ${o.sampleRate} Hz, ${stereo ? 'stereo' : 'mono'}`;
-      if (play && audioEl) audioEl.play().catch(() => {});
     } catch (err) {
       status.textContent = 'Render failed: ' + (err && err.message ? err.message : err);
     } finally {
-      renderBtn.disabled = false; wavBtn.disabled = false; analyseBtn.disabled = false;
+      renderBtn.disabled = false; wavBtn.disabled = false;
       progBar.stop();
       progWrap.style.display = 'none';
     }
   }
 
-  renderBtn.addEventListener('click', () => doRender(true));
-  // Render (or re-render) and run the full Sound analysis without auto-playing - the
-  // analyse-only twin of Render & play. If it is already rendered, just rebuild the
-  // analysis from the existing channels instead of resynthesising.
-  analyseBtn.addEventListener('click', async () => {
-    if (!lastChannels) { await doRender(false); return; }
-    await buildOutput();
-  });
+  // Render and run the full Sound analysis, but never start playback - the audio is
+  // someone's picture turned into noise, so it only ever sounds when they press play
+  // on the player renderAudio builds.
+  renderBtn.addEventListener('click', () => doRender());
   wavBtn.addEventListener('click', async () => {
-    if (!lastChannels) await doRender(false);
+    if (!lastChannels) await doRender();
     if (!lastChannels) return;
     const base = file.name.replace(/\.[^.]+$/, '') || 'sonified';
     downloadBlob(base + '-sonified.wav', encodeWav(lastChannels, lastRate));
