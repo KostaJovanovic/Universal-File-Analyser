@@ -56,9 +56,9 @@ there in Phase D.
 - [x] audio.js - Live spectrogram - switches to a live/real-time spectrogram of the mic - audio.md
 - [x] audio.js - + Custom band - adds a new isolate frequency band - audio.md
 - [x] audio.js - Download WAV (isolate panel) - exports the isolated-band audio as WAV - audio.md
-- [x] audio.js - AI separation - runs an in-browser AI stem-separation model - audio.md
+- [x] audio.js - Separation - runs an in-browser AI stem-separation model - audio.md
 - [x] audio.js - AI denoise (DeepFilterNet3) - removes background noise on-device (Clean/Noise blend) - audio.md
-- [x] audio.js - Standard / Lite (mobile) - choose which AI separation model tier to use - audio.md
+- [x] audio.js - Standard / Lite (mobile) - choose which Separation model tier to use - audio.md
 - [x] audio.js - Remove band (x, per band row) - deletes a custom isolate band - audio.md
 - [x] audio.js - Clear (presets) - clears the active EQ preset - audio.md
 - [x] audio.js - Preset buttons (per EQ preset) - apply a named frequency preset - audio.md

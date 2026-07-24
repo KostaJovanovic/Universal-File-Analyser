@@ -14,7 +14,12 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
   // caller knows the real length (e.g. from decodeAudioData), use it as a fallback so
   // the total shows immediately instead of 0:00. durationchange (below) picks up the
   // browser's real value once it learns it.
+  // opts.preferKnown: trust the caller's duration OVER the element's own. Needed for
+  // raw ADTS AAC, where the browser reports a finite but wildly wrong .duration (no
+  // container index to measure against) - so the usual "element value wins when
+  // finite" rule would show e.g. 7319:30 for a 2-hour file.
   function dur() {
+    if (opts.preferKnown && typeof knownDuration === 'number' && isFinite(knownDuration) && knownDuration > 0) return knownDuration;
     const d = mediaEl.duration;
     if (isFinite(d) && d > 0) return d;
     return (typeof knownDuration === 'number' && isFinite(knownDuration)) ? knownDuration : 0;

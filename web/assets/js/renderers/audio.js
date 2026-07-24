@@ -3,7 +3,7 @@
    Renders waveform, file info, and an interactive spectrogram. */
 
 import {
-  computeSpectrogram, computeReassignedSpectrogram, renderSpectrogram, colormaps,
+  computeSpectrogram, computeSpectrogramAsync, computeReassignedSpectrogram, renderSpectrogram, colormaps,
   computeStftComplex, combineStftToDb,
   frequencyTicks, timeTicks, formatHz, formatTime
 } from './spectrogram.js';
@@ -34,23 +34,97 @@ function ctx() {
 }
 
 // --- Decode helpers ---
-async function decodeFile(file) {
-  const buf = await file.arrayBuffer();
-  // decodeAudioData mutates buffer in some browsers, so pass a copy
-  const copy = buf.slice(0);
-  return await ctx().decodeAudioData(copy);
+// The file read + decode strategy (raw ADTS -> M4A wrap, direct decode, ffmpeg
+// fallback) lives in decodeAudioStrategy further down, shared by the direct render
+// path and the deferred "Decode and analyse" button.
+
+// --- The audio work queue -------------------------------------------------------
+// ONE serial queue for every heavy audio pass on the page. run(task) appends the task
+// to a single promise chain, so tasks execute strictly one at a time, in the order
+// they were enqueued - two analyses can never have passes running at the same moment.
+// A task tagged with an already-aborted signal is skipped without running at all, so a
+// superseded run's still-queued work evaporates instead of piling on behind the new
+// run. The chain is kept alive past a failed/aborted task so later tasks still run.
+const aborted = (signal) => signal && signal.aborted;
+function AbortErr() { return new DOMException('aborted', 'AbortError'); }
+const runAudioTask = (() => {
+  let tail = Promise.resolve();
+  return (task, signal) => {
+    const result = tail.then(() => { if (aborted(signal)) throw AbortErr(); return task(); });
+    tail = result.then(() => {}, () => {});
+    return result;
+  };
+})();
+
+// Time-sliced cooperative loop. `body(start, end)` does one micro-step; the loop yields
+// after ~sliceMs of work, and BAILS (throws AbortError) the instant its signal is
+// aborted - so a pass belonging to a replaced analysis stops at once rather than
+// draining alongside the new one. This is what stops the "still runs in parallel".
+async function coopLoop(len, body, signal, sliceMs = 24) {
+  const STEP = 1 << 18;   // 262k items per micro-step between time checks
+  let t = performance.now();
+  for (let s = 0; s < len; s += STEP) {
+    if (aborted(signal)) throw AbortErr();
+    body(s, Math.min(len, s + STEP));
+    if (s + STEP < len && performance.now() - t >= sliceMs) {
+      await yieldToMain();
+      t = performance.now();
+    }
+  }
 }
 
-function getMono(audioBuffer) {
-  const n = audioBuffer.length;
+// Merge all channels to mono (accumulate then scale), in yielding, cancellable chunks.
+async function getMonoCoop(audioBuffer, signal) {
+  const n = audioBuffer.length, nc = audioBuffer.numberOfChannels;
   const out = new Float32Array(n);
-  for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
-    const data = audioBuffer.getChannelData(c);
-    for (let i = 0; i < n; i++) out[i] += data[i];
-  }
-  const k = 1 / audioBuffer.numberOfChannels;
-  for (let i = 0; i < n; i++) out[i] *= k;
+  const chans = [];
+  for (let c = 0; c < nc; c++) chans.push(audioBuffer.getChannelData(c));
+  const k = 1 / nc;
+  await coopLoop(n, (s, e) => {
+    for (let i = s; i < e; i++) {
+      let sum = 0;
+      for (let c = 0; c < nc; c++) sum += chans[c][i];
+      out[i] = sum * k;
+    }
+  }, signal);
   return out;
+}
+
+// Cooperative computeStats: same numbers as computeStats() in audio-analysis.js, in
+// yielding, cancellable chunks. (The sync export is still used by compare and others.)
+async function computeStatsCoop(samples, signal) {
+  let peak = 0, sumSq = 0, clipped = 0;
+  await coopLoop(samples.length, (s, e) => {
+    for (let i = s; i < e; i++) {
+      const v = samples[i], a = v < 0 ? -v : v;
+      if (a > peak) peak = a;
+      sumSq += v * v;
+      if (a >= 0.999) clipped++;
+    }
+  }, signal);
+  const rms = Math.sqrt(sumSq / samples.length);
+  return { peak, rms, peakDb: 20 * Math.log10(peak + 1e-12), rmsDb: 20 * Math.log10(rms + 1e-12), clipped };
+}
+
+// Cooperative loudestMoment: same result as loudestMoment(), yielding periodically and
+// bailing on abort. Block-aligned so no 50 ms block is split across a chunk edge.
+async function loudestMomentCoop(samples, sampleRate, signal) {
+  if (!samples || !samples.length || !sampleRate) return null;
+  const block = Math.max(1, Math.round(sampleRate * 0.05));
+  let bestMeanSq = -1, bestStart = 0, bc = 0, t = performance.now();
+  for (let s = 0; s < samples.length; s += block) {
+    const end = Math.min(samples.length, s + block);
+    let sum = 0;
+    for (let i = s; i < end; i++) sum += samples[i] * samples[i];
+    const meanSq = sum / (end - s);
+    if (meanSq > bestMeanSq) { bestMeanSq = meanSq; bestStart = s; }
+    if ((++bc & 63) === 0 && performance.now() - t >= 24) {
+      if (aborted(signal)) throw AbortErr();
+      await yieldToMain(); t = performance.now();
+    }
+  }
+  const rms = Math.sqrt(Math.max(0, bestMeanSq));
+  return { time: (bestStart + block / 2) / sampleRate, db: rms > 0 ? 20 * Math.log10(rms) : -Infinity };
 }
 
 // Human-readable speaker layout for a given channel count.
@@ -190,9 +264,42 @@ function renderVectorscope(canvas, left, right) {
 }
 
 // --- Waveform render (downsampled min/max per pixel) ---
-function renderWaveform(canvas, samples) {
-  const ctxC = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
+// Reduce `samples` to per-column min/max/clip for a `w`-wide canvas. The single
+// O(samples.length) sweep here is the waveform's whole cost; split out from the draw
+// so it can run either synchronously (zoom redraws over a smaller window) or in
+// cooperative chunks (the initial full-length pass over a multi-hour buffer).
+function reduceWave(samples, w, mins, maxs, clips, x0, x1) {
+  const spp = samples.length / w;
+  for (let x = x0; x < x1; x++) {
+    const start = Math.floor(x * spp);
+    const end   = Math.floor((x + 1) * spp);
+    let mn = 1, mx = -1, clip = 0;
+    for (let i = start; i < end && i < samples.length; i++) {
+      const v = samples[i];
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+      if (v >= 0.999 || v <= -0.999) clip = 1;
+    }
+    mins[x] = mn; maxs[x] = mx; clips[x] = clip;
+  }
+}
+
+// Cooperative version of the reduction: yields every ~24 ms and bails on abort so a
+// whole-file waveform doesn't freeze the page, nor keep running for a replaced file.
+async function reduceWaveCoop(samples, w, signal) {
+  const mins = new Float32Array(w), maxs = new Float32Array(w), clips = new Uint8Array(w);
+  let t = performance.now();
+  for (let x = 0; x < w; x++) {
+    reduceWave(samples, w, mins, maxs, clips, x, x + 1);
+    if (performance.now() - t >= 24) {
+      if (aborted(signal)) throw AbortErr();
+      await yieldToMain(); t = performance.now();
+    }
+  }
+  return { mins, maxs, clips };
+}
+
+function drawWaveBg(ctxC, w, h) {
   ctxC.fillStyle = '#1a1a1a';
   ctxC.fillRect(0, 0, w, h);
   ctxC.strokeStyle = '#445f74';
@@ -201,31 +308,26 @@ function renderWaveform(canvas, samples) {
   ctxC.moveTo(0, h / 2);
   ctxC.lineTo(w, h / 2);
   ctxC.stroke();
+}
 
-  if (!samples.length) return;
-  const samplesPerPx = samples.length / w;
+// Draw the bars + clip hatching from precomputed per-column peaks.
+function drawWavePeaks(canvas, mins, maxs, clips) {
+  const ctxC = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  drawWaveBg(ctxC, w, h);
   const clipRegions = [];
   for (let x = 0; x < w; x++) {
-    const start = Math.floor(x * samplesPerPx);
-    const end   = Math.floor((x + 1) * samplesPerPx);
-    let mn = 1, mx = -1, clip = false;
-    for (let i = start; i < end && i < samples.length; i++) {
-      const v = samples[i];
-      if (v < mn) mn = v;
-      if (v > mx) mx = v;
-      if (Math.abs(v) >= 0.999) clip = true;
-    }
-    const y1 = ((1 - mx) / 2) * h;
-    const y2 = ((1 - mn) / 2) * h;
+    if (maxs[x] < mins[x]) continue;   // empty column
+    const y1 = ((1 - maxs[x]) / 2) * h;
+    const y2 = ((1 - mins[x]) / 2) * h;
     const bh = Math.max(1, y2 - y1);
-    if (clip) {
+    if (clips[x]) {
       clipRegions.push({ x, y: y1, h: bh });
       ctxC.fillStyle = '#444';
-      ctxC.fillRect(x, y1, 1, bh);
     } else {
       ctxC.fillStyle = '#80a4ba';
-      ctxC.fillRect(x, y1, 1, bh);
     }
+    ctxC.fillRect(x, y1, 1, bh);
   }
   if (clipRegions.length) {
     ctxC.save();
@@ -244,6 +346,17 @@ function renderWaveform(canvas, samples) {
   }
   ctxC.strokeStyle = '#C8DCE8';
   ctxC.strokeRect(0, 0, w, h);
+}
+
+// Synchronous whole-in-one render, used by zoom/selection redraws (which operate on
+// the smaller visible window). The initial full-length render uses the cooperative
+// path in buildWaveformCard instead.
+function renderWaveform(canvas, samples) {
+  const w = canvas.width, h = canvas.height;
+  if (!samples.length) { drawWaveBg(canvas.getContext('2d'), w, h); return; }
+  const mins = new Float32Array(w), maxs = new Float32Array(w), clips = new Uint8Array(w);
+  reduceWave(samples, w, mins, maxs, clips, 0, w);
+  drawWavePeaks(canvas, mins, maxs, clips);
 }
 
 function buildFreqAxis(axisEl, sampleRate, scale) {
@@ -885,8 +998,10 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     zoom: 1, height: 320, dbFloor: -90
   };
   let cached = null;
-  // Loudest-moment figure for the Peak stat - signal-only, so compute it once.
-  const loud = loudestMoment(samples, sampleRate);
+  // Loudest-moment figure for the Peak stat - signal-only, so compute it once. The
+  // initial render passes it in precomputed (cooperatively, off the critical path);
+  // channel switches, a deliberate action on a loaded file, compute it inline.
+  const loud = opts.loud !== undefined ? opts.loud : loudestMoment(samples, sampleRate);
 
   // Resolves after the first recompute() paints. renderAudio awaits this so the
   // bottom "Reading…" loader stays up until the spectrogram is actually on screen
@@ -966,33 +1081,58 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     return Math.max(natural, spread);
   }
 
-  function recompute() {
+  // Bumped on every recompute() so a slow STFT that's been superseded (the user
+  // changed FFT size / window / mode while it was still running) can bail instead of
+  // painting a stale spectrum over the current one.
+  let computeToken = 0;
+  async function recompute() {
+    const myToken = ++computeToken;
     const t0 = performance.now();
-    // Size the canvas FIRST - the hop below is derived from its width.
-    sizeCanvas();
-    const hopSize = hopFor(state.fftSize);
-    if (!cached || cached.fftSize !== state.fftSize || cached.winName !== state.winName || cached.mode !== state.mode || cached.hopSize !== hopSize) {
-      const params = {
-        fftSize: state.fftSize,
-        hopSize,
-        window:  state.winName
-      };
-      const spec = state.mode === 'reassigned'
-        ? computeReassignedSpectrogram(samples, sampleRate, params)
-        : computeSpectrogram(samples, sampleRate, params);
-      // Stats are signal-relative (independent of the dB floor / sensitivity), so
-      // they only need computing once per spectrum - not on every render.
-      cached = { fftSize: state.fftSize, winName: state.winName, mode: state.mode, hopSize, spec, stats: specStats(spec) };
+    try {
+      // Size the canvas FIRST - the hop below is derived from its width.
+      sizeCanvas();
+      const hopSize = hopFor(state.fftSize);
+      if (!cached || cached.fftSize !== state.fftSize || cached.winName !== state.winName || cached.mode !== state.mode || cached.hopSize !== hopSize) {
+        const params = {
+          fftSize: state.fftSize,
+          hopSize,
+          window:  state.winName
+        };
+        // Plain STFT (the default and the one a long file hits on load) runs the
+        // cooperative compute THROUGH THE SHARED QUEUE, so it never overlaps the mono/
+        // stats/waveform/DSP passes of this or any other analysis. It bails on its own
+        // supersession (token) or on this analysis being replaced (opts.signal).
+        // Reassigned mode stays synchronous - a deliberate choice on a loaded file.
+        const stale = () => myToken !== computeToken || aborted(opts.signal);
+        let spec;
+        if (state.mode === 'reassigned') {
+          spec = computeReassignedSpectrogram(samples, sampleRate, params);
+        } else {
+          spec = await runAudioTask(() => stale() ? null : computeSpectrogramAsync(samples, sampleRate,
+            Object.assign({}, params, { shouldAbort: stale })), opts.signal).catch(() => null);
+          if (spec == null) return;   // superseded mid-compute - a newer recompute owns the canvas
+        }
+        if (stale()) return;
+        // Stats are signal-relative (independent of the dB floor / sensitivity), so
+        // they only need computing once per spectrum - not on every render.
+        cached = { fftSize: state.fftSize, winName: state.winName, mode: state.mode, hopSize, spec, stats: specStats(spec) };
+      }
+      renderSpectrogram(canvas, blendSpec || cached.spec, { scale: state.scale, colormap: state.cmap, dbFloor: state.dbFloor, minHz: state.scale === 'log' ? SPEC_LOG_MIN : 0 });
+      const duration = samples.length / sampleRate;
+      buildFreqAxis(axisY, sampleRate, state.scale);
+      buildTimeAxis(axisX, duration);
+      buildSpecStats(stats, cached.stats, state.fftSize, sampleRate, loud);
+      scrollbar.update();
+      positionBands();
+      const ms = (performance.now() - t0).toFixed(0);
+      status.textContent = `${cached.spec.frames} frames × ${cached.spec.bins} bins | ${canvas.width}×${canvas.height} px | ${ms} ms`;
+    } catch (e) {
+      try { console.warn('[audio] spectrogram recompute failed:', e); } catch (_) {}
+    } finally {
+      // Resolve the loader only for the compute that actually painted (the current
+      // token), so a superseded run doesn't clear the bar before the winner lands.
+      if (myToken === computeToken) markFirstPaint();
     }
-    renderSpectrogram(canvas, blendSpec || cached.spec, { scale: state.scale, colormap: state.cmap, dbFloor: state.dbFloor, minHz: state.scale === 'log' ? SPEC_LOG_MIN : 0 });
-    const duration = samples.length / sampleRate;
-    buildFreqAxis(axisY, sampleRate, state.scale);
-    buildTimeAxis(axisX, duration);
-    buildSpecStats(stats, cached.stats, state.fftSize, sampleRate, loud);
-    scrollbar.update();
-    positionBands();
-    const ms = (performance.now() - t0).toFixed(0);
-    status.textContent = `${cached.spec.frames} frames × ${cached.spec.bins} bins | ${canvas.width}×${canvas.height} px | ${ms} ms`;
   }
 
   // Cheap path for changes that only affect pixels, not geometry or the spectrum
@@ -1174,7 +1314,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // Lives in the Actions row under the spectrogram, beside Isolate - so it takes
     // the same full-size .anr-btn as its neighbours there, not the panel's small
     // variant. It is mounted into that row just below (see "Actions row mount").
-    const aiBtn = el('button', { type: 'button', class: 'anr-btn anr-iso-ai' }, 'AI separation');
+    const aiBtn = el('button', { type: 'button', class: 'anr-btn anr-iso-ai' }, [specIco('<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 7h4l6.5-3.5M5 7l6.5 3.5"/><circle cx="11.5" cy="3.5" r="1.15" fill="currentColor" stroke="none"/><circle cx="11.5" cy="10.5" r="1.15" fill="currentColor" stroke="none"/></svg>'), 'Separation']);
     const aiStatus = el('div', { class: 'anr-iso-aistatus', hidden: true });
     const aiStems = el('div', { class: 'anr-iso-stems' });
     // Each panel's explanation sits behind a [?] next to its section label (the
@@ -1183,16 +1323,16 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // beside them, so they belong to Isolate; the AI panel covers only the models.
     const isoHelpBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'About isolating frequencies' }, '[?]');
     const isoHelpPanel = el('div', { class: 'anr-info-panel is-hidden', html:
-      'Keep or cut ranges of pitch across the whole track. The <strong>presets</strong> are one-tap character filters: a muffled low-pass (<strong>Underwater</strong>), a tinny band-pass (<strong>Radio</strong>) or a scooped mid notch (<strong>Hollow</strong>). <strong>Add band</strong> - or dragging vertically on the spectrogram - cuts an exact range you choose, and you can stack as many bands as you like. This is ordinary EQ, so it is instant, but rough: it cannot tell a voice from a guitar playing the same notes. For a true split, use <strong>AI separation</strong> in the Actions row. <strong>Export</strong> writes whatever you are hearing to a WAV file.' });
+      'Keep or cut ranges of pitch across the whole track. The <strong>presets</strong> are one-tap character filters: a muffled low-pass (<strong>Underwater</strong>), a tinny band-pass (<strong>Radio</strong>) or a scooped mid notch (<strong>Hollow</strong>). <strong>Add band</strong> - or dragging vertically on the spectrogram - cuts an exact range you choose, and you can stack as many bands as you like. This is ordinary EQ, so it is instant, but rough: it cannot tell a voice from a guitar playing the same notes. For a true split, use <strong>Separation</strong> in the Actions row. <strong>Export</strong> writes whatever you are hearing to a WAV file.' });
     wireInfoToggle(isoHelpBtn, isoHelpPanel);
     const isoLabel = el('span', { class: 'anr-iso-seclabel' }, 'Isolate');
     isoLabel.appendChild(isoHelpBtn);
 
-    const aiHelpBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'About AI separation' }, '[?]');
+    const aiHelpBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'About separation' }, '[?]');
     const aiHelpPanel = el('div', { class: 'anr-info-panel is-hidden', html:
       'Real on-device AI that pulls a single part out of the mix. Unlike the Isolate presets this is a true separation rather than a pitch cut, so it can tell a voice from music playing the same notes. Pick <strong>Standard</strong> or <strong>Lite</strong> to split the track into a clean vocal and a clean backing track (separate "stems"); Standard is the cleanest, Lite is about half the download and lighter to run, meant for phones. <strong>Denoise</strong> does something different: instead of splitting vocals from music it strips background noise and hiss while keeping the full sound, and shows the result as a Clean to Noise blend. It all runs on your device and nothing is uploaded; the first run downloads the chosen model once, then works offline.' });
     wireInfoToggle(aiHelpBtn, aiHelpPanel);
-    const aiLabel = el('span', { class: 'anr-iso-seclabel' }, 'AI separation');
+    const aiLabel = el('span', { class: 'anr-iso-seclabel' }, 'Separation');
     aiLabel.appendChild(aiHelpBtn);
     // The rough EQ presets (Underwater/Radio/Hollow). They sit in the Isolate panel
     // below, not with the AI models: they are band filters, the same tool as the
@@ -2306,11 +2446,16 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     });
   }, { signal: sig });
 
-  // Defer until in DOM so clientWidth is real. The first paint resolves
-  // card.firstPaint (guaranteed even if recompute throws) so the drop loader can
-  // wait for it.
-  setTimeout(() => { try { recompute(); } finally { markFirstPaint(); } }, 0);
-  setTimeout(recompute, 80);
+  // Defer until in DOM so clientWidth is real. recompute() resolves card.firstPaint
+  // itself once it has actually painted (or on error), so the drop loader can wait
+  // for it. The 80 ms follow-up only re-runs if the measured width really changed -
+  // recompute is async now, and a blind second call would abort and restart the whole
+  // STFT of a long file for nothing.
+  setTimeout(() => { recompute(); }, 0);
+  setTimeout(() => {
+    const w = Math.max(200, Math.round(availableWidth() * state.zoom));
+    if (Math.abs(w - canvas.width) > 2) recompute();
+  }, 80);
   // Safety net: never let the loader hang on the spectrogram for more than ~6 s.
   setTimeout(markFirstPaint, 6000);
 
@@ -2394,7 +2539,7 @@ function buildCoverArtCard(art, file, resultsEl) {
   return labelCard;
 }
 
-export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
+export function buildWaveformCard(file, mono, audioBuffer, audioEl, signal) {
   const sr = audioBuffer.sampleRate;
   const waveCard = el('div', { class: 'anr-card' });
   const [waveH, waveHelp] = h3help('Waveform', 'Amplitude over time. Click and drag to select a region - then drag its edges to fine-tune, drag the middle to move it, or type exact start/end times. Zoom in or export the selection as a WAV file. The white playhead line shows the current playback position; drag it, or use the transport below, to scrub.');
@@ -2402,7 +2547,17 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl) {
   const waveCanvas = el('canvas', { class: 'anr-waveform' });
   waveCanvas.width = 1024; waveCanvas.height = 80;
   waveCard.appendChild(waveCanvas);
-  renderWaveform(waveCanvas, mono);
+  // Draw the empty bed at once. The full-length reduction is the waveform's only
+  // heavy work; rather than fire it here (where it would run at the same time as the
+  // spectrogram FFT), expose it as a task the caller runs IN SEQUENCE, after the
+  // spectrogram, so only one whole-file pass touches the thread at a time. Zoom
+  // redraws below stay synchronous (they work on the smaller visible window).
+  drawWaveBg(waveCanvas.getContext('2d'), waveCanvas.width, waveCanvas.height);
+  waveCard.renderWave = () => runAudioTask(async () => {
+    const pk = await reduceWaveCoop(mono, waveCanvas.width, signal);
+    drawWavePeaks(waveCanvas, pk.mins, pk.maxs, pk.clips);
+  }, signal).catch(() => {});   // swallow AbortError from a superseded run
+
 
   // --- Interactive waveform: region selection, zoom, WAV export ---
   let selStart = null, selEnd = null;   // sample indices (unordered mid-drag)
@@ -2787,6 +2942,234 @@ let audioRenderAbort = null;
 // Fallback when the browser can't decode the audio (e.g. WMA, AC3, DTS, AMR,
 // undecodable MKA). There's no waveform/spectrogram, but the container info, tags,
 // lyrics, and cover art are all readable straight from the bytes.
+const MB = 1024 * 1024;
+// Past this decoded size the forensic DSP can no longer be handed to the worker
+// (canOffloadDsp caps the transfer at 256 MB) and would run on the main thread,
+// and the PCM buffer itself is big enough to stall the page. So a file whose decode
+// we can estimate above this line gets the on-demand treatment (show the header,
+// decode on a button) rather than freezing the page decoding the whole thing up front.
+const DECODE_DEFER_BYTES = 256 * MB;
+
+// Estimate the size of the decoded Float32 PCM (all channels) from what the header
+// gave, WITHOUT decoding. Returns bytes, or null when we can't estimate reliably.
+function estimateDecodedBytes(file, header) {
+  const ch = header.channels || 2;
+  if (header.sampleRate && header.durationEst)
+    return header.sampleRate * ch * header.durationEst * 4;
+  if (header.totalSamples && header.channels)          // FLAC STREAMINFO: exact counts
+    return header.totalSamples * header.channels * 4;
+  if (header.container === 'WAV' && header.bitrate && header.sampleRate) {
+    const dur = (file.size * 8) / header.bitrate;
+    return header.sampleRate * ch * dur * 4;
+  }
+  return null;
+}
+
+function shouldDeferDecode(file, header) {
+  const est = estimateDecodedBytes(file, header);
+  if (est != null) return est > DECODE_DEFER_BYTES;
+  // No reliable estimate - fall back to a raw-size guard so a very large unknown
+  // compressed file still defers rather than trying to decode blind.
+  return file.size > 100 * MB;
+}
+
+// Read a file into one ArrayBuffer in chunks, reporting progress and handing the
+// thread back between chunks - so a large read fuels a real progress bar and doesn't
+// block the page the way a single file.arrayBuffer() of a big file does.
+async function readArrayBufferProgress(file, onProgress) {
+  const size = file.size;
+  if (!size) return await file.arrayBuffer();
+  const CHUNK = 8 * MB;
+  const out = new Uint8Array(size);
+  let off = 0;
+  while (off < size) {
+    const end = Math.min(size, off + CHUNK);
+    out.set(new Uint8Array(await file.slice(off, end).arrayBuffer()), off);
+    off = end;
+    if (onProgress) onProgress(off / size);
+    if (off < size) await yieldToMain();
+  }
+  return out.buffer;
+}
+
+// Decode a dropped audio file to an AudioBuffer, reporting progress and yielding
+// while it reads. Same strategy as the direct path: raw ADTS AAC is wrapped to M4A
+// (browsers reject bare ADTS in decodeAudioData), otherwise decoded directly, with
+// ffmpeg.wasm as the fallback for codecs Web Audio can't handle. onProgress(frac)
+// spans read (0..0.45) and repack (..0.55); the opaque decodeAudioData tail has no
+// progress of its own, so the caller eases the bar across it. Returns
+// { audioBuffer, playbackFile, usedFfmpeg }; throws if nothing could decode it.
+async function decodeAudioStrategy(file, header, { onProgress, noteMount } = {}) {
+  const rp = (f) => { if (onProgress) onProgress(f); };
+  const buf = await readArrayBufferProgress(file, (f) => rp(f * 0.45));
+  let audioBuffer = null, playbackFile = file, usedFfmpeg = false;
+  if (header.container === 'AAC') {
+    try {
+      rp(0.5);
+      const wrapped = adtsToM4a(buf);
+      if (wrapped) {
+        playbackFile = new File([wrapped], file.name.replace(/\.[^.]+$/, '.m4a'), { type: 'audio/mp4' });
+        rp(0.55);
+        audioBuffer = await ctx().decodeAudioData(wrapped.slice(0));
+      }
+    } catch (_) {}
+  }
+  if (!audioBuffer) {
+    try {
+      audioBuffer = await ctx().decodeAudioData(buf.slice(0));
+    } catch (e) {
+      // Web Audio rejected it (a codec this browser lacks). ffmpeg.wasm has the full
+      // decoder set; it runs in its own worker, so the decode itself is off-thread.
+      audioBuffer = await ffmpegDecodeAudio(file, noteMount || el('div'));
+      usedFfmpeg = true;
+    }
+  }
+  rp(1);
+  return { audioBuffer, playbackFile, usedFfmpeg };
+}
+
+// Large compressed audio (a long AAC especially) decodes to potentially gigabytes
+// of PCM, and the whole-file forensic pass would then run on the main thread -
+// seconds of a frozen page. So we do what the video module does for a codec the
+// browser can't decode: pull everything the container header gives for free and show
+// it at once, offer immediate native playback, and put the heavy decode behind a
+// button. The decode runs in place (the pulled cards stay on screen, a fill-up bar
+// tracks it) and, when done, hands the decoded buffer to renderAudio for the full view.
+async function renderDeferredAudio(file, header, resultsEl, opts) {
+  const estBytes = estimateDecodedBytes(file, header);
+
+  // ---- Full analysis (the decode button) - FIRST, at the top of the section ----
+  const decodeCard = el('div', { class: 'anr-card' });
+  const [dH, dHelp] = h3help('Full analysis',
+    'Decoding a long compressed file to raw audio uses a lot of memory and processing, so it runs when you ask rather than automatically. Once decoded you get the waveform, spectrogram, loudness and every forensic read - exactly as a shorter file shows straight away.');
+  decodeCard.appendChild(dH); decodeCard.appendChild(dHelp);
+  const sizeNote = estBytes ? ' Decoding it will use roughly ' + fmtBytes(estBytes) + ' of memory.' : '';
+  const hint = el('p', { class: 'anr-hint', style: 'margin:0 0 10px;' },
+    'This file is large.' + sizeNote);
+  decodeCard.appendChild(hint);
+  const btn = el('button', { type: 'button', class: 'anr-btn' }, 'Decode and analyse');
+  const btnRow = el('div', { class: 'anr-btn-row', style: 'margin-top:8px;' }, [btn]);
+  decodeCard.appendChild(btnRow);
+  // Determinate fill-up bar, hidden until the reader starts the decode. Uses an
+  // inline display:none (not [hidden]) because .anr-inline-loader sets display:flex,
+  // which would otherwise win over the attribute and show the empty bar up front.
+  const bar = asciiBar({ fit: true });
+  const barLabel = el('span', { class: 'anr-inline-loader-label' }, 'Reading…');
+  const barWrap = el('div', { class: 'anr-inline-loader', style: 'display:none;' }, [barLabel, bar]);
+  decodeCard.appendChild(barWrap);
+  const errBox = el('div');
+  decodeCard.appendChild(errBox);
+  resultsEl.appendChild(decodeCard);
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btnRow.hidden = true;
+    errBox.innerHTML = '';
+    barWrap.style.display = '';
+    // The read/repack phases report real progress; the opaque decodeAudioData tail
+    // has none, so ease the bar toward ~0.95 while it runs and snap to full on land.
+    let shown = 0, target = 0, decoding = true, raf = 0;
+    bar.set(0);
+    const tick = () => {
+      if (decoding && target < 0.95) target += (0.95 - target) * 0.012;
+      shown += (Math.min(1, target) - shown) * 0.2;
+      bar.set(shown);
+      if (decoding || shown < 0.999) raf = requestAnimationFrame(tick);
+      else bar.set(1);
+    };
+    raf = requestAnimationFrame(tick);
+
+    let dec = null;
+    try {
+      dec = await decodeAudioStrategy(file, header, {
+        noteMount: errBox,
+        onProgress: (f) => { target = Math.max(target, f); barLabel.textContent = f < 0.46 ? 'Reading…' : 'Decoding…'; },
+      });
+    } catch (_) { dec = null; }
+
+    decoding = false;
+    if (!dec || !dec.audioBuffer) {
+      cancelAnimationFrame(raf);
+      barWrap.style.display = 'none';
+      btnRow.hidden = false;
+      btn.disabled = false; btn.textContent = 'Decode and analyse';
+      errBox.appendChild(el('p', { class: 'anr-hint', style: 'color:var(--accent);margin:8px 0 0;' },
+        'Could not decode this file - it may be corrupt, or too large to hold in memory.'));
+      return;
+    }
+    bar.set(1); cancelAnimationFrame(raf);
+    // Hand the decoded buffer to the normal renderer for the full view. The pulled
+    // cards stayed on screen throughout the decode; this swaps them for the complete
+    // analysis (which re-shows the same File info, now with exact figures).
+    renderAudio(file, resultsEl, Object.assign({}, opts, {
+      audioBuffer: dec.audioBuffer, playbackFile: dec.playbackFile, usedFfmpeg: dec.usedFfmpeg, header,
+    }));
+  });
+
+  // ---- File info (everything the header gave, no decode) - KEPT below the button ----
+  const infoCard = el('div', { class: 'anr-card' });
+  infoCard.appendChild(el('h3', {}, 'File info'));
+
+  // Immediate native playback. Chromium/Edge play AAC in an <audio> element even
+  // though Web Audio can't decode it, so a plain player works now, before any decode.
+  // The transport stays hidden until the element proves it can play, so a file the
+  // browser genuinely can't play shows no dead controls.
+  try {
+    const playUrl = URL.createObjectURL(file);
+    (window._anrMediaStoppers = window._anrMediaStoppers || new Set())
+      .add(() => { try { URL.revokeObjectURL(playUrl); } catch (_) {} });
+    const audioEl = el('audio', { src: playUrl, class: 'is-hidden', preload: 'metadata' });
+    infoCard.appendChild(audioEl);
+    // Raw ADTS: the browser's own .duration is unreliable, so drive the transport off
+    // our header estimate instead (preferKnown) - otherwise it shows a nonsense total.
+    const transport = makePlayer(audioEl, header.durationEst, header.durationEst ? { preferKnown: true } : {});
+    transport.style.display = 'none';
+    audioEl.addEventListener('loadedmetadata', () => { transport.style.display = ''; });
+    audioEl.addEventListener('error', () => { try { transport.remove(); } catch (_) {} });
+    infoCard.appendChild(transport);
+  } catch (_) {}
+
+  const tbl = el('table', { class: 'anr-readout' });
+  tbl.appendChild(row('Name', file.name));
+  tbl.appendChild(row('Size', fmtBytes(file.size)));
+  tbl.appendChild(rowHelp('MIME', file.type || header.container || '-', "The MIME type is the standard label for the file's format (for example image/jpeg or audio/mpeg). The browser reads it from the extension or the operating system, so it's a hint rather than proof of the real format."));
+  if (header.container) tbl.appendChild(row('Container', header.container));
+  if (header.codec) tbl.appendChild(row('Codec', header.codec));
+  if (header.durationEst) tbl.appendChild(rowHelp('Duration',
+    (header.durationEstimated ? '~ ' : '') + formatTime(header.durationEst) + (header.durationEstimated ? '  (estimated)' : ''),
+    'Worked out from the file size and the average frame size sampled from the start of the file, so it is an approximation. Decoding the file (button above) replaces it with the exact length.'));
+  if (header.sampleRate) tbl.appendChild(rowHelp('Sample rate', header.sampleRate.toLocaleString() + ' Hz',
+    'How many times per second the sound was measured when it was recorded, in hertz. Higher numbers capture higher-pitched sound - CD audio is 44,100 Hz, video audio is often 48,000 Hz.'));
+  if (header.channels) tbl.appendChild(row('Channels', header.channels + describeChannels(header.channels)));
+  if (header.bitDepth) tbl.appendChild(rowHelp('Bit depth', header.bitDepth + ' bit',
+    'How many bits are used to store each measurement of the sound. More bits capture a wider range from quiet to loud with less background grain.'));
+  if (header.bitrateText || header.bitrate) tbl.appendChild(rowHelp('Bitrate',
+    header.bitrateText || (Math.round(header.bitrate / 1000) + ' kbps' + (header.durationEstimated ? '  (average, estimated)' : '')),
+    'How much data is spent on each second of audio, in kilobits per second. More data usually means better quality and a bigger file.'));
+  infoCard.appendChild(tbl);
+  resultsEl.appendChild(infoCard);
+
+  // ---- Cheap header reads: tags, lyrics, cover art, integrity (as the undecodable view) ----
+  try {
+    const meta = await readAudioTags(file);
+    if (meta && meta.tags && meta.tags.length) {
+      const card = el('div', { class: 'anr-card' });
+      card.appendChild(el('h3', {}, 'Tags'));
+      const t = el('table', { class: 'anr-readout' });
+      for (const [n, v] of meta.tags) t.appendChild(tagRow(n, v));
+      card.appendChild(t); resultsEl.appendChild(card);
+    }
+    if (meta && meta.lyrics) {
+      const card = el('div', { class: 'anr-card' });
+      card.appendChild(el('h3', {}, 'Lyrics'));
+      card.appendChild(el('pre', { class: 'anr-lyrics' }, meta.lyrics));
+      resultsEl.appendChild(card);
+    }
+  } catch (_) {}
+  try { const art = await extractCoverArt(file); if (art && art.bytes && art.bytes.length) resultsEl.appendChild(buildCoverArtCard(art, file)); } catch (_) {}
+  resultsEl.appendChild(integrityCard(file));
+}
+
 async function renderUndecodableAudio(file, header, resultsEl, playable) {
   const infoCard = el('div', { class: 'anr-card' });
   const [infoH, infoHelp] = h3help('Audio file', 'The container details, tags, lyrics, and cover art below were still read straight from the file.');
@@ -3046,52 +3429,49 @@ export async function renderAudio(file, resultsEl, opts = {}) {
 
   if (audioBuffer) {
     header = opts.header || {};
+    usedFfmpeg = opts.usedFfmpeg || false;
   } else {
-    resultsEl.appendChild(el('div', { class: 'anr-info' }, `Decoding "${file.name}"...`));
-
     try { header = await peekContainer(file); } catch (e) { /* ignore */ }
 
-    if (header.container === 'AAC') {
-      try {
-        const wrapped = adtsToM4a(await file.arrayBuffer());
-        if (wrapped) {
-          playbackFile = new File([wrapped], file.name.replace(/\.[^.]+$/, '.m4a'), { type: 'audio/mp4' });
-          audioBuffer = await ctx().decodeAudioData(wrapped.slice(0));
-        }
-      } catch (_) {}
+    // Large compressed audio: show everything the header gives immediately and put
+    // the heavy whole-file decode behind a button, instead of freezing the page
+    // decoding gigabytes of PCM up front (see renderDeferredAudio). Skipped for the
+    // compare view, which needs both sides fully rendered. Once the reader presses
+    // "Decode and analyse" the decoded buffer arrives via opts.audioBuffer, so this
+    // branch isn't reached on that pass.
+    if (!opts.inline && shouldDeferDecode(file, header)) {
+      await renderDeferredAudio(file, header, resultsEl, opts);
+      try { window._anrLoader.hide(); } catch (_) {}
+      return;
     }
 
-    if (!audioBuffer) {
-      try {
-        audioBuffer = await decodeFile(file);
-      } catch (e) {
-        // Web Audio's decodeAudioData rejected it. This happens for whole codec
-        // families a given browser lacks - AAC in Chromium/Edge and Samsung Internet,
-        // and commonly WMA, AC-3, DTS, AMR and friends everywhere. Fall back to
-        // decoding via ffmpeg.wasm (a full decoder set) to PCM, which recovers the
-        // full waveform/spectrogram/loudness for any of them instead of dropping to
-        // a metadata-only view. Codec-agnostic: whatever failed above lands here.
-        try {
-          audioBuffer = await ffmpegDecodeAudio(file, resultsEl);
-          usedFfmpeg = true;
-        } catch (e2) {
-          // Both decode paths failed - genuinely undecodable here. Log the real
-          // reasons (helps diagnose a platform-specific codec gap) and fall back
-          // to the metadata-only view.
-          try { console.error('[audio] decodeAudioData failed:', e); } catch (_) {}
-          try { console.error('[audio] ffmpeg decode failed:', e2); } catch (_) {}
-          resultsEl.innerHTML = '';
-          await renderUndecodableAudio(file, header, resultsEl, playbackFile);
-          return;
-        }
-      }
+    resultsEl.appendChild(el('div', { class: 'anr-info' }, `Decoding "${file.name}"...`));
+    // Let that note actually paint before the main-thread ADTS->M4A rebuild below
+    // blocks the thread on a large file.
+    await afterPaint();
+    try {
+      const dec = await decodeAudioStrategy(file, header, { noteMount: resultsEl });
+      audioBuffer = dec.audioBuffer; playbackFile = dec.playbackFile; usedFfmpeg = dec.usedFfmpeg;
+    } catch (e) {
+      // Nothing could decode it - genuinely undecodable here. Log the reason (helps
+      // diagnose a platform-specific codec gap) and fall back to the metadata view.
+      try { console.error('[audio] decode failed:', e); } catch (_) {}
+      resultsEl.innerHTML = '';
+      await renderUndecodableAudio(file, header, resultsEl, playbackFile);
+      return;
     }
   }
 
   resultsEl.innerHTML = '';
 
-  const mono = getMono(audioBuffer);
-  const stats = computeStats(mono);
+  // Through the serial queue, one at a time: merge to mono, then stats. Each yields
+  // while it runs and bails if this analysis is superseded (renderSignal aborts), so a
+  // replaced file's passes stop instead of running beside the new file's.
+  let mono, stats;
+  try {
+    mono = await runAudioTask(() => getMonoCoop(audioBuffer, renderSignal), renderSignal);
+    stats = await runAudioTask(() => computeStatsCoop(mono, renderSignal), renderSignal);
+  } catch (e) { if (renderSignal.aborted) return; throw e; }
 
   // ---- Forensic DSP (all pure, computed once and reused across cards) ----
   const sampleRate = audioBuffer.sampleRate;
@@ -3247,12 +3627,16 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   const chans = channelOptions(audioBuffer, mono);
   const waveSlot = el('div');
   let curSpecPanel = null;
+  // Resolves once the waveform's reduction has finished - chained AFTER the
+  // spectrogram's firstPaint so the two whole-file passes run one after another, not
+  // together. renderAudio awaits this before starting the DSP queue.
+  let curWaveReady = Promise.resolve();
   // Filled in below when the Stereo analysis card is built (stereo files only). The
   // AI-separation blend, which lives inside the spectrogram panel, pushes its live
   // mix here so the stereo readout tracks the blend; reset() reverts to the file.
   const stereoSink = { update: null, reset: null };
 
-  function renderSignalViews(idx, showLoader) {
+  function renderSignalViews(idx, showLoader, loud) {
     // A user channel switch (showLoader) rebuilds the spectrogram + waveform and
     // their transports; stop playback first so it doesn't carry on under the new
     // views (and the fresh transports show a clean paused state). showLoader is
@@ -3271,13 +3655,19 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     // in the standard inline loader (as elsewhere) until the new panel first paints.
     let loader = null;
     if (showLoader) { loader = inlineLoader('Analysing ' + chans[idx].full + '…'); specSlot.appendChild(loader); }
-    curSpecPanel = makeSpectrogramPanel(sig, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, audioBuffer, statsMount: specStatsMount, stereoSink, soloChannel });
+    curSpecPanel = makeSpectrogramPanel(sig, audioBuffer.sampleRate, { basename, audioEl, signal: renderSignal, audioBuffer, statsMount: specStatsMount, stereoSink, soloChannel, loud });
     if (loader) curSpecPanel.style.visibility = 'hidden';   // keep the blank canvas out of view behind the bar
     specSlot.appendChild(curSpecPanel);
     waveSlot.innerHTML = '';
-    waveSlot.appendChild(buildWaveformCard(file, sig, audioBuffer, audioEl));
+    const waveCard = buildWaveformCard(file, sig, audioBuffer, audioEl, renderSignal);
+    waveSlot.appendChild(waveCard);
+    // Queue the waveform reduction to run only after the spectrogram has painted, so
+    // the two heavy passes are sequential rather than interleaved. (Both are chained
+    // off the same firstPaint promise; startWave itself awaits its yielding chunks.)
+    const panel = curSpecPanel;
+    const startWave = () => (waveCard.renderWave ? waveCard.renderWave() : Promise.resolve());
+    curWaveReady = panel.firstPaint ? panel.firstPaint.then(startWave, startWave) : startWave();
     if (loader) {
-      const panel = curSpecPanel;
       const clear = () => { loader.remove(); panel.style.visibility = ''; };
       if (panel.firstPaint) panel.firstPaint.then(clear).catch(clear);
       else clear();
@@ -3296,7 +3686,9 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     const btns = [];
     const setActive = (i) => {
       btns.forEach((b, j) => b.classList.toggle('is-active', j === i));
-      const s = computeStats(chans[i].data);
+      // The Mix (i=0) IS the mono we already measured - reuse it rather than run a
+      // second full-file pass on load. Other channels compute on demand (a click).
+      const s = i === 0 ? stats : computeStats(chans[i].data);
       stat.textContent = chans[i].full + ' · peak ' + s.peakDb.toFixed(1) + ' dBFS · RMS ' + s.rmsDb.toFixed(1) + ' dBFS';
     };
     chans.forEach((c, i) => {
@@ -3333,9 +3725,9 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   }
   resultsEl.appendChild(coverSlot);
   resultsEl.appendChild(tagSlot);
+  resultsEl.appendChild(lossySlot);
   resultsEl.appendChild(waveSlot);
   resultsEl.appendChild(chanSlot);
-  resultsEl.appendChild(lossySlot);
   resultsEl.appendChild(advSlot);
 
   // Build the spectrogram and WAIT for it to finish before starting anything else.
@@ -3343,8 +3735,16 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // passes below would otherwise compete with its FFT and delay the one thing the
   // reader is actually waiting to see. firstPaint always settles (the panel resolves
   // it in a finally, with a 6 s safety net), so this cannot wedge the render.
-  renderSignalViews(0, true);
+  // Precompute the loudest-moment stat through the queue (a whole-file pass) so the
+  // panel doesn't run it synchronously in its constructor and stall the first paint.
+  let loud0 = null;
+  try { loud0 = await runAudioTask(() => loudestMomentCoop(chans[0].data, sampleRate, renderSignal), renderSignal); }
+  catch (e) { if (renderSignal.aborted) return; }
+  renderSignalViews(0, true, loud0);
+  // Strict order: spectrogram finishes, THEN the waveform reduces, THEN (below) the
+  // DSP queue runs - one whole-file pass at a time, never two at once.
   if (curSpecPanel && curSpecPanel.firstPaint) { try { await curSpecPanel.firstPaint; } catch (_) {} }
+  try { await curWaveReady; } catch (_) {}
 
   // The headline visual is up and File info is complete bar a few pending rows,
   // so the drop popup has nothing left to report - everything below either fills
@@ -3475,15 +3875,22 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     }
   }
   if (!queued) {
-    // Inline fallback - the same passes in the same order, since audio-dsp.js
-    // drives both paths, with a yield between each so the page at least keeps
-    // painting between sweeps. This is also the path for audio too large to copy
-    // across to the worker (see canOffloadDsp). Any row filled before a mid-run
-    // worker failure is simply rewritten here with the same value.
-    for (const [name, value] of audioDspPasses({ channels: channelData, mono, sampleRate, needBpm })) {
-      applyPass(name, value);
-      await yieldToMain();
-    }
+    // Inline fallback - the same passes in the same order, since audio-dsp.js drives
+    // both paths. This is the path for audio too large to copy across to the worker
+    // (see canOffloadDsp) - exactly the huge files that used to freeze the page here.
+    // The WHOLE loop runs as a SINGLE queue task, so no other analysis's passes can
+    // run beside it; onTick yields from inside each pass AND throws the instant this
+    // analysis is replaced, so a stale sweep stops at once and hands the queue over.
+    const dspTick = async () => { if (renderSignal.aborted) throw AbortErr(); await yieldToMain(); };
+    try {
+      await runAudioTask(async () => {
+        for await (const [name, value] of audioDspPasses({ channels: channelData, mono, sampleRate, needBpm, onTick: dspTick })) {
+          if (renderSignal.aborted) throw AbortErr();
+          applyPass(name, value);
+          await yieldToMain();
+        }
+      }, renderSignal);
+    } catch (e) { if (renderSignal.aborted) return; throw e; }
   }
 
   // ---- Lossy-source check (its own card, in the main flow) ----

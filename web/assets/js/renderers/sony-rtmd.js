@@ -472,9 +472,21 @@ export function buildImuTimeline(d, file) {
   function place(follow) {
     const x = (curDur() > 0 ? curTime() / curDur() : 0) * trackW;
     playhead.style.left = x + 'px';
+    // Auto-scroll the same way the spectrogram does (see scrollToLine in audio.js):
+    // when zoomed in so the track overflows the viewport, keep the moving line in view.
+    const vw = scroller.clientWidth;
+    if (trackW <= vw) return;
+    const parked = Math.max(0, Math.min(trackW - vw, x - vw / 5));
     if (follow && video && !video.paused) {
-      const vw = scroller.clientWidth, left = scroller.scrollLeft;
-      if (x < left + vw * 0.1 || x > left + vw * 0.85) scroller.scrollLeft = Math.max(0, x - vw * 0.2);
+      // Playing: park the line a fifth in from the left and slide the graph under it.
+      // It drifts in from the left edge at the start, sits fixed through the middle,
+      // then slides out to the right once the scroll bottoms out.
+      scroller.scrollLeft = parked;
+    } else {
+      // Paused seek: leave the view put unless the line lands off-screen, then bring
+      // it back to the left fifth.
+      const viewLeft = scroller.scrollLeft, viewRight = viewLeft + vw;
+      if (x < viewLeft + 20 || x > viewRight - 20) scroller.scrollLeft = parked;
     }
   }
   function layout() {

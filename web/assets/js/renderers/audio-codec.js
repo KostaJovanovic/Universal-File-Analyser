@@ -50,8 +50,11 @@ export async function peekContainer(file) {
     return base;
   }
   // AAC ADTS - 12-bit sync 0xFFF, layer=0
-  if (head[0] === 0xFF && (head[1] & 0xF0) === 0xF0 && (head[1] & 0x06) === 0x00)
-    return { container: 'AAC', codec: 'AAC (ADTS)' };
+  if (head[0] === 0xFF && (head[1] & 0xF0) === 0xF0 && (head[1] & 0x06) === 0x00) {
+    const base = { container: 'AAC', codec: 'AAC (ADTS)' };
+    try { Object.assign(base, await detailAac(file)); } catch (_) { /* best-effort */ }
+    return base;
+  }
   // Raw MPEG frame (FF Ex/Fx)
   if (head[0] === 0xFF && (head[1] & 0xE0) === 0xE0) {
     const base = { container: 'MP3', codec: 'MPEG audio' };
@@ -235,7 +238,85 @@ async function detailMp3(file) {
   return out;
 }
 
-// --- AAC ADTS → M4A container (browser compat) ---
+// --- AAC ADTS: profile, sample rate, channels, estimated bitrate + duration ---
+// Every ADTS frame header carries the AAC profile, sample-rate index and channel
+// config, so those three come out EXACT from the very first frame - no decode. The
+// duration and bitrate need the average frame size, and scanning every frame of a
+// large file would mean reading the whole thing. Sampling only the FIRST chunk is
+// unreliable: a quiet or low-bitrate intro makes the frames there far smaller than
+// the file's true average, which then extrapolates to a wildly inflated duration.
+// So we sample several small windows spread ACROSS the file and average their frame
+// sizes - representative of the whole regardless of a soft intro. The figure is an
+// estimate (flagged durationEstimated), replaced by the exact value once decoded.
+// Each AAC frame is 1024 samples, hence the *1024.
+const AAC_RATES = [96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350];
+const AAC_PROFILES = { 1: 'Main', 2: 'LC', 3: 'SSR', 4: 'LTP' };
+// Walk ADTS frames in `b`, starting near `from`, requiring a short run of valid
+// consecutive frames before counting so a stray 0xFFF in the payload can't lock a
+// false sync. Returns { first, frames, bytes } over the fully-contained frames.
+function scanAdts(b, from) {
+  for (let start = from; start + 7 <= b.length; start++) {
+    if (b[start] !== 0xFF || (b[start + 1] & 0xF6) !== 0xF0) continue;
+    // Trial-walk from here; accept only if at least 3 frames chain cleanly.
+    let i = start, frames = 0, bytes = 0, first = null;
+    while (i + 7 <= b.length) {
+      if (b[i] !== 0xFF || (b[i + 1] & 0xF6) !== 0xF0) break;
+      const freqIdx = (b[i + 2] >> 2) & 0xF;
+      if (freqIdx >= 13) break;
+      const len = ((b[i + 3] & 3) << 11) | (b[i + 4] << 3) | ((b[i + 5] >> 5) & 7);
+      if (len < 7) break;
+      if (i + len > b.length) break;   // frame runs past the window - stop, keep complete frames
+      if (!first) first = { profile: ((b[i + 2] >> 6) & 3) + 1, freqIdx, chanCfg: ((b[i + 2] & 1) << 2) | ((b[i + 3] >> 6) & 3) };
+      frames++; bytes += len; i += len;
+    }
+    if (frames >= 3) return { first, frames, bytes, start };
+  }
+  return null;
+}
+
+async function detailAac(file) {
+  const WIN = 64 * 1024;
+  // Head window: for the exact first-frame profile / sample rate / channels, past any
+  // leading ID3v2 tag.
+  const head = new Uint8Array(await file.slice(0, WIN).arrayBuffer());
+  let headStart = 0;
+  if (head.length > 10 && head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33)
+    headStart = 10 + (((head[6]&0x7F)<<21)|((head[7]&0x7F)<<14)|((head[8]&0x7F)<<7)|(head[9]&0x7F));
+  const headScan = scanAdts(head, headStart);
+  if (!headScan || !headScan.first) return {};
+  const first = headScan.first;
+  const out = {
+    codec: 'AAC-' + (AAC_PROFILES[first.profile] || ('OT' + first.profile)) + ' (ADTS)',
+    sampleRate: AAC_RATES[first.freqIdx] || 44100,
+  };
+  if (first.chanCfg) out.channels = first.chanCfg;   // 0 = "in the AudioSpecificConfig" - unknown here
+
+  // Average frame size over windows spread across the whole file (head included), so
+  // a soft intro doesn't skew the estimate. Small files fall back to the head window.
+  let totFrames = headScan.frames, totBytes = headScan.bytes;
+  if (file.size > WIN * 2) {
+    const offsets = [0.2, 0.4, 0.6, 0.8].map((f) => Math.floor(file.size * f));
+    const wins = await Promise.all(offsets.map((o) =>
+      file.slice(o, Math.min(file.size, o + WIN)).arrayBuffer().then((ab) => new Uint8Array(ab)).catch(() => null)));
+    for (const w of wins) {
+      if (!w) continue;
+      const s = scanAdts(w, 0);
+      if (s && s.frames >= 3) { totFrames += s.frames; totBytes += s.bytes; }
+    }
+  }
+  if (totFrames >= 3 && totBytes > 0) {
+    const avgFrame = totBytes / totFrames;
+    const totalFrames = file.size / avgFrame;         // frames-per-byte extrapolated to the whole file
+    const dur = totalFrames * 1024 / out.sampleRate;
+    if (dur > 0 && isFinite(dur)) {
+      out.durationEst = dur;
+      out.durationEstimated = true;
+      out.bitrate = Math.round((file.size * 8) / dur);
+    }
+  }
+  return out;
+}
+
 export function adtsToM4a(arrayBuffer) {
   const src = new Uint8Array(arrayBuffer);
   const RATES = [96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350];

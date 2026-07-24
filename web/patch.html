@@ -209,99 +209,135 @@
                - let the newest version here disagree with app.js.
              ===================================================================== -->
 
-        <div class="patch-entry patch-milestone">
-          <p class="patch-version">8.0</p>
-          <p class="patch-name">Gotta Go Fast</p>
+        <div class="patch-entry">
+          <p class="patch-version">8.01</p>
+          <p class="patch-name">Gotta Go Fast 2: Tokyo Drift</p>
           <p class="patch-date">24 July 2026</p>
           <ul class="patch-list">
-            <li><strong>Eighth milestone: analysing a song is close to nine times quicker and the page stays smooth the whole way through. A deep speed pass across sound, photos, documents and folders - plus a new viewer for the .xmp sidecar beside your raw photos, circuit boards you can turn in your hands that finally open offline, and one strict cleaner for anything a dropped file wants to display.</strong></li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Speed</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag is-faster">Faster</span><strong>Nearly nine times faster on a song.</strong> A track that took <em>26 seconds</em> to analyse on my laptop now finishes in about <em>3</em>. The heavy sound reads - loudness, musical key, tempo, spectral shape - moved off the page and onto a background thread, so scrolling, hovering and playback carry on untouched while they run.</li>
-            <li><span class="patch-tag is-faster">Faster</span><strong>The frequency maths itself is much quicker.</strong> The analysis now reuses prepared tables and buffers instead of recalculating the same values millions of times, and a five-minute track no longer holds tens of megabytes of half-finished workings in memory while it thinks.</li>
-            <li><span class="patch-tag is-faster">Faster</span><strong>Answers arrive as they land.</strong> Loudness, tempo, key and the rest each show a small progress bar in place and fill in the moment their number is ready, so nothing sits waiting on the slowest read.</li>
-            <li><span class="patch-tag is-faster">Faster</span><strong>Long documents open far quicker.</strong> Splitting a <a href="/about#ext-docx">Word</a>, ODF, plain-text or <a href="/about#ext-md">Markdown</a> file into pages used to remeasure the whole layout after every single paragraph. It now measures once and works out every page break from that.</li>
-            <li><span class="patch-tag is-faster">Faster</span><strong>Dropped folders read in parallel.</strong> A <a href="/about#where">folder</a>&rsquo;s files are read many at a time rather than one after another, the loading bar counts them as they come in, and <strong>Cancel</strong> now stops the scan partway instead of only after it.</li>
-            <li><span class="patch-tag is-faster">Faster</span><strong>Photos stop paying for tools nobody opened.</strong> The text-extraction canvas and the heavy bit-plane and error-level reads are prepared only when you actually ask for them, instead of on every photo you drop.</li>
-            <li><span class="patch-tag is-faster">Faster</span>The check for <strong>data hidden past a file&rsquo;s end</strong> reads the last few bytes first, so an ordinary photo is cleared at once rather than read from front to back.</li>
-            <li><span class="patch-tag">New</span>Photos and videos put a <strong>decoding</strong> bar in the preview panel straight away, so a slow HEIC, <a href="/about#where">raw</a> or large clip visibly gets to work instead of leaving the panel blank.</li>
-            <li><span class="patch-tag is-fix">Fix</span>Hovering a heading no longer stutters once a big analysis is on the page.</li>
+            <li><strong>Second speed pass: long songs usable ~9&times; quicker. Heavy analysis runs one pass at a time off the main thread so the page never freezes; huge compressed files decode on demand, AAC reads in full, and the touch-tone reader recovers every digit.</strong></li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Sound</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>Reverse</strong> moves into the row of actions under the spectrogram, and playing a sound backwards now runs a complete fresh analysis of the reversed audio - its own spectrogram, waveform, loudness and key - rather than handing you a second player. It takes the place of the Fullscreen button there.</li>
-            <li><span class="patch-tag">New</span>The <strong>lossy-source check</strong> - whether a file claiming to be lossless was really built from an MP3 or AAC - is now a card of its own in the main flow, instead of something to go digging for inside Advanced.</li>
-            <li><span class="patch-tag">New</span><strong>Touch-tones</strong> are redrawn: the dialled number shown large, a timeline of where the tones fall across the whole recording, and one key per tone that plays the call from the moment it was pressed.</li>
-            <li><span class="patch-tag">New</span>Press <strong>space</strong> to play or pause whatever the page is playing - sound, video, a separated stem or a reversed track - unless you are typing or on a button.</li>
-            <li><span class="patch-tag">New</span>The <strong>Advanced</strong> card now reads as one continuous readout: no repeated sub-headings above rows that already explain themselves, just the numbers running on.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>AI separation</strong> gets its own panel beside <strong>Isolate</strong>. It previously opened inside a panel that was itself still closed, so clicking it looked like it did nothing.</li>
-            <li><span class="patch-tag is-fix">Fix</span>The <strong>vocals to instrumental</strong> blend slider stays under your finger on a long track, instead of lagging behind as the picture caught up.</li>
-            <li><span class="patch-tag is-fix">Fix</span>The <strong>loudness graph</strong>&rsquo;s playhead keeps step with the waveform and spectrogram. It was measuring against a slightly different length of the same sound, so on an <a href="/about#ext-mp3">MP3</a> or a video&rsquo;s soundtrack it drifted away from the curve it was pointing at.</li>
-            <li><span class="patch-tag">New</span>A long call&rsquo;s <strong>touch-tone</strong> keypad now waits behind a <code>Show</code> button. Dial enough tones and the grid was pushing the dialled number and the timeline - the answer most people came for - off the screen.</li>
-            <li><strong>Tidied:</strong> playback now runs from the transports under the spectrogram and the waveform, so <strong>File info</strong> is a pure readout; the loudness graph is styled to match the waveform; and which encoder wrote the file moves from Tags into Advanced.</li>
+            <li><span class="patch-tag">New</span><strong>Large compressed audio decodes on demand.</strong> A long <a href="/about#ext-aac">AAC</a> or similar no longer blocks the page unpacking to PCM: header, tags, cover art and native playback show at once; waveform, spectrogram, loudness and forensics sit behind a <strong>Decode and analyse</strong> button with a progress bar and an estimated memory cost.</li>
+            <li><span class="patch-tag">New</span><strong>AAC (ADTS) parsed without decoding.</strong> Profile, sample rate and channel config read exactly from the first frame; duration and bitrate estimated from average frame size sampled across the whole file, so a low-bitrate intro no longer skews them.</li>
+            <li><span class="patch-tag is-faster">Smoother</span><strong>Whole-file passes stay off the critical path.</strong> Waveform reduction, spectrogram STFT and the forensic DSP on buffers too large to offload to the worker now yield mid-loop and run sequentially, so input, scroll and playback stay live throughout.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>DTMF: every digit recovered.</strong> A broken high-group argmax only ever matched the 1336 Hz column (digits 2, 5, 8, 0) and dropped the rest - a 10-digit number could decode as two. All digits resolve now.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>DTMF: fewer false positives.</strong> Twist tolerance tightened 12&rarr;8 dB and minimum tone hold 40&rarr;60 ms, so music transients no longer register as digits.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Show tones</strong> keypad now reveals on click. A class <code>display:grid</code> was overriding the <code>[hidden]</code> attribute, leaving the grid always visible and the button a no-op.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Raw <strong>AAC</strong> transport uses the estimated duration instead of the browser&rsquo;s bogus <code>.duration</code> for index-less ADTS.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Spectrogram recompute is cancellable: changing FFT size, window or mode mid-render aborts the superseded STFT instead of painting it over the current one.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Photos</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span><strong>XMP sidecars.</strong> The <strong>.xmp</strong> file Lightroom, Adobe Camera Raw and darktable write next to a raw photo now opens as the develop recipe it is: the tone curve drawn as a real curve, the Basic-panel sliders as bipolar bars, the colour mixer, and the crop rectangle - along with the editor, the paired raw file, white balance, star rating, keywords and the camera details copied across.</li>
-            <li><span class="patch-tag">New</span><strong>Image to sound</strong> no longer starts playing by itself. <strong>Render</strong> builds the sound and its full analysis, then leaves it to you to press play.</li>
-            <li><span class="patch-tag is-fix">Fix</span>The <strong>thumbnail hidden inside a photo</strong> is now shown the right way up, with a note saying how it was stored. A camera writes that little preview in the sensor&rsquo;s own orientation and records the turn separately, so it used to appear on its side. The file you can save from there is untouched.</li>
-            <li><strong>Tidied:</strong> a photo&rsquo;s <strong>fingerprints</strong> (pHash and SHA-256) move into <strong>Advanced</strong>, alongside the rest of the deep analysis, rather than sitting in a card of their own.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Video</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>The contact sheet stops dropping frames on a big video.</strong> A 1.5 GB clip could come back with two thumbnails out of eight. Each frame now waits for the picture to genuinely arrive rather than giving up early, tries a second time if it does not, and says plainly how many could not be captured instead of quietly repeating the frame before.</li>
-            <li><span class="patch-tag">New</span>The <strong>contact sheet</strong> and <strong>scene detection</strong> both show a progress bar as they work, counting the frames off, so a long scan no longer looks stalled.</li>
-            <li><span class="patch-tag">New</span>The <strong>box tree</strong> - the raw structure dump - drops to the very bottom of <strong>Advanced</strong>. It is by far the longest part and the least often read, so everything you are more likely to want now comes first.</li>
-            <li><span class="patch-tag is-fix">Fix</span>The <strong>content timeline</strong> shows up on a <em>large</em> video. Its colours come from the same pass as scene detection, which is skipped by default at that size - so the card simply never appeared, with nothing on screen to say why. It now sits there with a <strong>Scan the video</strong> button, and one scan fills both.</li>
-            <li><span class="patch-tag">New</span>The player used for the very largest clips draws a <strong>content timeline</strong> too, for the stretch it has loaded.</li>
-            <li><strong>Maintenance:</strong> <strong>Sonify frame</strong> is gone from the row under the player. A grabbed frame can still be turned into sound - send it across with <strong>Analyse frame</strong> and the photo tools do it there.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Circuit boards</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong><a href="/about#ext-kicad_pcb">PCB designs</a> open offline.</strong> The drawing engine both the <strong>KiCad</strong> and <strong>Altium</strong> viewers are built on was never saved for offline use, so circuit boards were the one thing the offline app could not open - and it looked fine right up until the moment you had no connection.</li>
-            <li><span class="patch-tag">New</span>The 3D board gains the <strong>view cube</strong> the 3D-model and toolpath viewers already carry. Drag it to orbit, or click a face, edge or corner to snap the board head-on, edge-on or corner-on.</li>
-            <li><span class="patch-tag">New</span><strong>Auto-rotate</strong> turns the board slowly on the spot. Off to begin with - a board is something you read - and any drag, snap or reset stops it.</li>
-            <li><span class="patch-tag">New</span>The board now opens at a <em>three-quarter angle</em>, like the other 3D viewers, rather than square-on and slightly tilted - so it reads as an object rather than a flat picture knocked askew.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Flip over</strong> turns the board half a turn from wherever it sits, bringing the other side round to the angle you were already looking from. It used to throw your viewing angle away and land the board flat.</li>
-            <li><span class="patch-tag is-fix">Fix</span>A 3D viewer no longer <strong>swallows the page scroll</strong> the moment your pointer crosses it. Scroll zoom starts off and is yours to switch on, on the board, the schematic and the <a href="/about#ext-cube">colour-grade</a> viewer alike.</li>
-          </ul>
-
-          <hr class="patch-rule">
-          <p class="patch-subhead">Safety and privacy</p>
-          <ul class="patch-list">
-            <li><span class="patch-tag is-fix">Fix</span><strong>One cleaner for everything a dropped file wants to display</strong> - an email body, a saved web page, an <a href="/about#ext-epub">e-book</a> chapter, an <a href="/about#ext-svg">SVG</a> drawing. There were four separate ones, they had drifted apart, and three could be slipped past by a link with its instruction broken up to look harmless. They all use the strict one now.</li>
-            <li><span class="patch-tag is-fix">Fix</span>An <strong>e-book chapter</strong> can no longer pull in a picture from the internet while you read it. A book&rsquo;s own images live inside the file, so nothing you would want is lost - a remote one was a quiet call home.</li>
-            <li><span class="patch-tag">New</span>An <a href="/about#ext-svg">SVG</a>&rsquo;s safety report now names <strong>every kind of link that can run code</strong>, not just the obvious one.</li>
+            <li><span class="patch-tag">New</span>Photo <strong>RGB histogram</strong> and <strong>dominant colours</strong> moved to the top, directly under File info.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Photo <strong>fingerprints</strong> (pHash, SHA-256) restored to their own top-level card, out of the collapsed <strong>Advanced</strong> panel.</li>
           </ul>
 
           <hr class="patch-rule">
           <p class="patch-subhead">Elsewhere</p>
           <ul class="patch-list">
-            <li><span class="patch-tag">New</span>Dropping a photo, sound or video now scrolls straight to that section, so the analysis is in front of you instead of leaving you up at the dropzones.</li>
-            <li><span class="patch-tag is-fix">Fix</span>An enormous <a href="/about#where">folder</a> shows its first 100,000 files and says so, rather than appearing to load forever.</li>
-            <li><span class="patch-tag is-fix">Fix</span>A damaged <strong>SPICE</strong> simulation whose header claims far more data than the file actually holds no longer takes the tab down - the points that are really there are plotted, with a note of what was claimed.</li>
-            <li><span class="patch-tag is-fix">Fix</span>A very large <a href="/about#ext-csv">CSV</a> column or a dense circuit-board netlist no longer fails outright partway through the readout.</li>
-            <li><span class="patch-tag">New</span><strong>Clear storage</strong> now removes the offline downloads as well - the cached app, the extra OCR languages and the AI models - so the space really comes back. It used to leave them in place, and nothing else on the site could delete them. Your light/dark choice and <strong>Clear view</strong> still survive.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Searching the page</strong> now opens a folded <strong>Advanced</strong> section to show you the match, instead of scrolling to something closed.</li>
-            <li><span class="patch-tag is-fix">Fix</span>Opening an example from <a href="/samples">samples</a> no longer takes the place of the file you were looking at on the home page.</li>
-            <li><span class="patch-tag is-fix">Fix</span>Dropping a file scrolls to the analysis even when you were reading near the bottom of the page.</li>
-            <li><span class="patch-tag">New</span><strong>Blank sheets hold the space while pages are drawn.</strong> A <a href="/about#ext-pdf">PDF</a>, a <a href="/about#ext-docx">Word</a> or OpenDocument file, a <a href="/about#ext-pptx">slideshow</a> or a <a href="/about#ext-cbz">comic</a> takes a moment to draw its first page - so the rest of the analysis arrived first and the whole thing looked finished, until a tall block of previews landed on top and shoved it all downwards. The empty sheets are there from the start, and the real pages appear in them.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Settings survive a reload.</strong> A tidy-up that runs on every page load, clearing out stale odds and ends, was sweeping away preferences it had no business touching - so some choices did not last as long as reopening the page.</li>
-            <li><span class="patch-tag is-fix">Fix</span><strong>Clear storage</strong> now spares accessibility choices generally, rather than only light/dark and <strong>Clear view</strong>. Everything the site had stored still goes.</li>
-            <li><span class="patch-tag is-fix">Fix</span>A saved web page no longer draws <strong>two lines</strong> under its heading where one belongs.</li>
-            <li><strong>Maintenance:</strong> <strong>Record</strong> and <strong>Live spectrogram</strong> now live only on the dropzone, where they started.</li>
-            <li><strong>Maintenance:</strong> every release is now checked automatically for the fault behind the circuit-board bug above - something the app needs, but never saved for offline use. It is invisible online and only ever bites the moment you lose your connection.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Installed PWA: an in-page hash jump left an untagged history entry that tripped the back-guard into an &ldquo;Are you sure you want to exit?&rdquo; prompt. Now tagged in place.</li>
+            <li><strong>Tidied:</strong> on mobile, <strong>Isolate</strong> and <strong>Separation</strong> share one row; the EQ presets wrap compactly instead of stretching to fill it.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry patch-milestone">
+          <p class="patch-version">8.0</p>
+          <p class="patch-name">Gotta Go Fast</p>
+          <p class="patch-date">24 July 2026</p>
+          <ul class="patch-list">
+            <li><strong>Eighth milestone: ~9&times; faster song analysis with the page responsive throughout - a broad speed and threading pass over sound, photos, documents and folders. Plus an .xmp sidecar viewer, offline KiCad/Altium board rendering, and a single strict sanitiser for all file-supplied markup.</strong></li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Speed</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-faster">Faster</span><strong>Song analysis ~9&times; faster</strong> - <em>26 s</em> to <em>~3 s</em> on my laptop. Loudness, key, tempo and spectral reads run in a Web Worker, keeping the main thread free for scroll, hover and playback.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Faster DSP core:</strong> precomputed FFT twiddle tables and reused buffers replace millions of redundant recomputations, and peak working memory on a 5-minute track drops sharply.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Streamed results:</strong> each read (loudness, tempo, key, and the rest) fills its own row with a progress bar as it completes, rather than blocking on the slowest.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Document pagination linearised:</strong> splitting a <a href="/about#ext-docx">Word</a>, ODF, text or <a href="/about#ext-md">Markdown</a> file measures layout once and derives all page breaks from it, instead of re-measuring per paragraph.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Concurrent folder reads:</strong> a <a href="/about#where">folder</a>&rsquo;s files read many at a time, the loader counts completions, and <strong>Cancel</strong> aborts mid-scan.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Lazy photo tools:</strong> the OCR canvas and the bit-plane / error-level reads are built on demand, not on every drop.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>Trailing-data check reads the tail first,</strong> clearing an ordinary photo without a full front-to-back scan.</li>
+            <li><span class="patch-tag">New</span>Photos and videos show a <strong>decoding</strong> bar in the preview immediately, so slow HEIC, <a href="/about#where">raw</a> or large clips read as working rather than blank.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Heading hover no longer stutters with a large analysis on the page.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Sound</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Reverse</strong> moves to the spectrogram actions row and re-runs a full analysis of the reversed signal (own spectrogram, waveform, loudness, key) instead of opening a second player. Takes the Fullscreen slot.</li>
+            <li><span class="patch-tag">New</span><strong>Lossy-source check</strong> (lossless claim vs an MP3/AAC low-pass) promoted to its own card in the main flow, out of Advanced.</li>
+            <li><span class="patch-tag">New</span><strong>Touch-tones</strong> redrawn: decoded number shown large, a whole-file tone timeline, and per-tone keys that seek playback to each press.</li>
+            <li><span class="patch-tag">New</span><strong>Space</strong> toggles play/pause for the active media (audio, video, stem, reversed track) unless typing or focused on a button.</li>
+            <li><span class="patch-tag">New</span><strong>Advanced</strong> readout de-duplicated: redundant sub-headings dropped from self-describing rows.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Separation</strong> gets its own panel beside <strong>Isolate</strong>; it previously opened into a still-closed panel and appeared to do nothing.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Vocals-to-instrumental blend slider tracks the pointer on long tracks instead of lagging the redraw.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Loudness-graph</strong> playhead re-synced to the waveform and spectrogram - it was scaled against a slightly different sample length and drifted on <a href="/about#ext-mp3">MP3</a> and video soundtracks.</li>
+            <li><span class="patch-tag">New</span>Long-call <strong>touch-tone</strong> keypad now behind a <code>Show</code> button, so the grid stops pushing the number and timeline offscreen.</li>
+            <li><strong>Tidied:</strong> playback driven from the spectrogram/waveform transports (<strong>File info</strong> is now a pure readout); loudness graph restyled to match the waveform; encoder tag moved from Tags to Advanced.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Photos</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>.xmp sidecars</strong> (Lightroom, Adobe Camera Raw, darktable) render as the develop recipe: tone curve, bipolar Basic sliders, colour mixer and crop rectangle, plus editor, paired raw, white balance, rating, keywords and camera.</li>
+            <li><span class="patch-tag">New</span><strong>Image to sound</strong> no longer autoplays - <strong>Render</strong> builds the sound and its analysis, then waits for you to press play.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Embedded photo <strong>thumbnail</strong> orientation-corrected (cameras store it in sensor orientation with a separate rotation tag) and labelled; the saveable file is untouched.</li>
+            <li><strong>Tidied:</strong> photo <strong>fingerprints</strong> (pHash, SHA-256) moved into <strong>Advanced</strong> with the rest of the deep analysis.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Video</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>Contact sheet stops dropping frames on large clips</strong> (a 1.5 GB file could yield 2 of 8): each grab awaits real frame arrival, retries once, and reports uncaptured frames instead of repeating the previous one.</li>
+            <li><span class="patch-tag">New</span><strong>Contact sheet</strong> and <strong>scene detection</strong> show frame-counting progress bars.</li>
+            <li><span class="patch-tag">New</span><strong>Box tree</strong> (raw structure dump) moved to the bottom of <strong>Advanced</strong> - longest and least read.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Content timeline</strong> now appears on large videos: its colour data shares the scene-detection pass (skipped by default at that size), so a <strong>Scan the video</strong> button fills both.</li>
+            <li><span class="patch-tag">New</span>The large-clip player draws a <strong>content timeline</strong> for the loaded span.</li>
+            <li><strong>Maintenance:</strong> <strong>Sonify frame</strong> removed from the player row - grab a frame with <strong>Analyse frame</strong> and sonify it in the photo tools.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Circuit boards</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong><a href="/about#ext-kicad_pcb">PCB</a> viewers open offline.</strong> The shared render engine behind <strong>KiCad</strong> and <strong>Altium</strong> was never added to the offline cache - the one thing the installed app could not open.</li>
+            <li><span class="patch-tag">New</span>3D board gains the <strong>view cube</strong> (orbit by drag; click a face, edge or corner to snap head-on, edge-on or corner-on).</li>
+            <li><span class="patch-tag">New</span><strong>Auto-rotate</strong>, off by default; any drag, snap or reset stops it.</li>
+            <li><span class="patch-tag">New</span>Board opens at a three-quarter angle, matching the other 3D viewers.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Flip over</strong> rotates 180&deg; in place, preserving your viewing angle, instead of resetting the board flat.</li>
+            <li><span class="patch-tag is-fix">Fix</span>3D viewers no longer capture page scroll on pointer-over; scroll-zoom is opt-in on the board, schematic and <a href="/about#ext-cube">LUT</a> viewers.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Safety and privacy</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>Single sanitiser for all file-supplied markup</strong> - email bodies, saved web pages, <a href="/about#ext-epub">e-book</a> chapters, <a href="/about#ext-svg">SVG</a>. Four had drifted apart and three carried a <code>javascript:</code>-scheme bypass; all route through the strict one now.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>E-book</strong> chapters can no longer fetch remote images (a call-home); the book&rsquo;s own embedded images still render.</li>
+            <li><span class="patch-tag">New</span><a href="/about#ext-svg">SVG</a> safety report enumerates every script-capable link type, not just the obvious one.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Elsewhere</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span>Dropping a photo, sound or video scrolls straight to its section.</li>
+            <li><span class="patch-tag is-fix">Fix</span>A huge <a href="/about#where">folder</a> caps at its first 100,000 files and says so, instead of appearing to load forever.</li>
+            <li><span class="patch-tag is-fix">Fix</span>A <strong>SPICE</strong> file whose header over-claims its data size no longer crashes the tab - the real points are plotted with a note of the claim.</li>
+            <li><span class="patch-tag is-fix">Fix</span>A very large <a href="/about#ext-csv">CSV</a> column or dense circuit-board netlist no longer fails mid-readout.</li>
+            <li><span class="patch-tag">New</span><strong>Clear storage</strong> now also evicts offline downloads (cached app, OCR languages, AI models); theme and <strong>Clear view</strong> survive.</li>
+            <li><span class="patch-tag is-fix">Fix</span>In-page <strong>search</strong> expands a collapsed <strong>Advanced</strong> section to reveal the match.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Opening a <a href="/samples">sample</a> no longer replaces the file already open on the home page.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Dropping a file scrolls to the analysis even from near the page bottom.</li>
+            <li><span class="patch-tag">New</span><strong>Paged viewers reserve blank page space up front</strong> - a <a href="/about#ext-pdf">PDF</a>, <a href="/about#ext-docx">Word</a>/ODF, <a href="/about#ext-pptx">slideshow</a> or <a href="/about#ext-cbz">comic</a> - so late-drawn previews don&rsquo;t shove the finished layout downwards.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Settings persist across reload:</strong> a per-load cleanup was evicting preferences it should have left alone.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Clear storage</strong> spares all accessibility settings, not just theme and <strong>Clear view</strong>; everything else still clears.</li>
+            <li><span class="patch-tag is-fix">Fix</span>A saved web page no longer double-draws the rule under its heading.</li>
+            <li><strong>Maintenance:</strong> <strong>Record</strong> and <strong>Live spectrogram</strong> live only on the dropzone.</li>
+            <li><strong>Maintenance:</strong> every release is now checked for offline-manifest gaps - the class of bug behind the PCB regression above.</li>
           </ul>
         </div>
 
@@ -342,6 +378,9 @@
             <li><strong>Maintenance:</strong> the changelog is split - recent updates stay here and load quickly, with the full older history moved to a separate archive page and a tighter tl;dr summary.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
 <div class="patch-entry patch-milestone">
           <p class="patch-version">7.0</p>
@@ -400,9 +439,6 @@
             <li><span class="patch-tag is-fix">Fix</span>The <strong>Mesh integrity</strong> card shows a plain <strong>Watertight</strong> or <strong>Faults found</strong> badge.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">6.38 - 6.52</p>

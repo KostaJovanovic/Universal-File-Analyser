@@ -3460,6 +3460,48 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
 
   resultsEl.appendChild(infoCard);
 
+  // ---- Histogram + Dominant colours (kept near the top, right below File info) ----
+  // The at-a-glance visual summaries lead the analysis, above the heavier metadata
+  // and forensic cards. pixData/hist/palette are all computed up front.
+  const histBlock = el('div', { class: 'anr-card anr-hist-block' });
+  const [histH, histHelp] = h3help('RGB histogram',
+    'A graph of how many pixels sit at each brightness level, plotted separately for red, green and blue - black on the far left (0), white on the far right (255). Click to enlarge.');
+  histBlock.appendChild(histH); histBlock.appendChild(histHelp);
+  const histCanvas = el('canvas', { class: 'anr-histogram' });
+  histCanvas.width = 1024; histCanvas.height = 200;
+  histCanvas.style.cursor = 'zoom-in';
+  histCanvas.addEventListener('click', () => {
+    openLightbox(histCanvas.toDataURL('image/png'), 'RGB Histogram', 'RGB Histogram', null, false, false);
+  });
+  histBlock.appendChild(histCanvas);
+  renderHistogram(histCanvas, hist);
+  resultsEl.appendChild(histBlock);
+
+  const palCard = el('div', { class: 'anr-card' });
+  const [palH, palHelp] = h3help('Dominant colours', 'The picture’s most common colours. Every pixel is sorted into one of 512 colour bins (8 steps each for red, green and blue), the busiest bins are counted, near-identical ones are merged, and the top 8 colours are shown. Click a swatch to copy its hex code.');
+  palCard.appendChild(palH); palCard.appendChild(palHelp);
+  const palDiv = el('div', { class: 'anr-palette' });
+  const totalPx = pixData.width * pixData.height;
+  for (const c of palette) {
+    const hex = toHex(c);
+    const sw = el('div', {
+      class: 'anr-swatch',
+      title: hex + '  ' + ((c.count / totalPx) * 100).toFixed(1) + '% - click to copy',
+      style: 'cursor:pointer;',
+      onclick: () => {
+        navigator.clipboard.writeText(hex).then(() => {
+          const label = sw.querySelector('span');
+          if (label) { label.textContent = 'copied'; setTimeout(() => { label.textContent = hex; }, 800); }
+        });
+      }
+    });
+    sw.style.background = hex;
+    sw.appendChild(el('span', {}, hex));
+    palDiv.appendChild(sw);
+  }
+  palCard.appendChild(palDiv);
+  resultsEl.appendChild(palCard);
+
   // ---- Animated GIF / WebP: frame-by-frame viewer ----
   // A browser plays a GIF or animated WebP in the <img> preview above but won't
   // let you step through it. Decode the frames ourselves and offer the same
@@ -3633,21 +3675,6 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     aiCard.appendChild(el('p', { class: 'anr-hint' }, 'No AI-generation markers found in metadata.'));
     resultsEl.appendChild(aiCard);
   }
-
-  // ---- Histogram (full-width, in the body just above the container structure) ----
-  const histBlock = el('div', { class: 'anr-card anr-hist-block' });
-  const [histH, histHelp] = h3help('RGB histogram',
-    'A graph of how many pixels sit at each brightness level, plotted separately for red, green and blue - black on the far left (0), white on the far right (255). Click to enlarge.');
-  histBlock.appendChild(histH); histBlock.appendChild(histHelp);
-  const histCanvas = el('canvas', { class: 'anr-histogram' });
-  histCanvas.width = 1024; histCanvas.height = 200;
-  histCanvas.style.cursor = 'zoom-in';
-  histCanvas.addEventListener('click', () => {
-    openLightbox(histCanvas.toDataURL('image/png'), 'RGB Histogram', 'RGB Histogram', null, false, false);
-  });
-  histBlock.appendChild(histCanvas);
-  renderHistogram(histCanvas, hist);
-  resultsEl.appendChild(histBlock);
 
   // ---- Forensics panel (JPEG only) ----
   // The JPEG/pixel tamper tools, built as a collapsible panel and stashed in
@@ -3829,32 +3856,6 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
     makeMap(mapDiv, lat, lon, file.name);
   }
 
-  // ---- Palette ----
-  const palCard = el('div', { class: 'anr-card' });
-  const [palH, palHelp] = h3help('Dominant colours', 'The picture’s most common colours. Every pixel is sorted into one of 512 colour bins (8 steps each for red, green and blue), the busiest bins are counted, near-identical ones are merged, and the top 8 colours are shown. Click a swatch to copy its hex code.');
-  palCard.appendChild(palH); palCard.appendChild(palHelp);
-  const palDiv = el('div', { class: 'anr-palette' });
-  const totalPx = pixData.width * pixData.height;
-  for (const c of palette) {
-    const hex = toHex(c);
-    const sw = el('div', {
-      class: 'anr-swatch',
-      title: hex + '  ' + ((c.count / totalPx) * 100).toFixed(1) + '% - click to copy',
-      style: 'cursor:pointer;',
-      onclick: () => {
-        navigator.clipboard.writeText(hex).then(() => {
-          const label = sw.querySelector('span');
-          if (label) { label.textContent = 'copied'; setTimeout(() => { label.textContent = hex; }, 800); }
-        });
-      }
-    });
-    sw.style.background = hex;
-    sw.appendChild(el('span', {}, hex));
-    palDiv.appendChild(sw);
-  }
-  palCard.appendChild(palDiv);
-  resultsEl.appendChild(palCard);
-
   // ---- Embedded images / thumbnails ----
   // Nearly every camera still caches a smaller JPEG copy of itself inside its own
   // metadata: an ordinary JPEG/TIFF stores an EXIF thumbnail (IFD1), and a RAW packs
@@ -3923,24 +3924,23 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   }
 
   // ---- Integrity (fingerprints) ----
-  // Built here, mounted in one of two places. On the normal page it is a part of
-  // the Advanced card (below). On /compare it stays a card of its own: the merge
-  // there finds "Integrity" by its heading to hoist the fingerprints to the very
-  // top of the side-by-side view, and appendHashExtras fills the rest of the hash
-  // set the same way - both would lose it inside a collapsed Advanced card.
+  // Always its own top-level card, never tucked inside the collapsed Advanced
+  // card - the fingerprints must stay visible without expanding anything. On
+  // /compare the merge finds "Integrity" by its heading to hoist it to the top
+  // of the side-by-side view, and appendHashExtras fills the rest of the hash set.
   const INTEG_HELP = '<strong>pHash</strong> (perceptual hash) is a short fingerprint of what the picture looks like. Two images that look alike get similar fingerprints, even after resizing or re-saving - handy for spotting duplicates.<br><strong>SHA-256</strong> is a fingerprint of the exact file data instead. Change even a single bit of the file and this fingerprint changes completely - handy for checking a file has not been altered.';
   const integTbl = el('table', { class: 'anr-readout' });
   integTbl.appendChild(rowHelp('pHash', computePHash(img),
     'Perceptual hash - a short fingerprint of what the picture looks like. Images that look alike get similar fingerprints, even after resizing or compression.'));
-  // sha256Row kicks off its own hash and fills the cell when it lands, so it is
-  // safe to build here even when it ends up inside a collapsed card.
+  // sha256Row kicks off its own hash and fills the cell when it lands.
   integTbl.appendChild(sha256Row(file));
-  if (inline) {
-    const integCard = el('div', { class: 'anr-card' });
-    const [iH, iHelp] = h3help('Integrity', INTEG_HELP);
-    integCard.appendChild(iH); integCard.appendChild(iHelp); integCard.appendChild(integTbl);
-    resultsEl.appendChild(integCard);
-  }
+  const integCard = el('div', { class: 'anr-card' });
+  // [data-integrity] is what findIntegrityCard() looks for, so app.js doesn't
+  // append a second generic one.
+  integCard.setAttribute('data-integrity', '1');
+  const [iH, iHelp] = h3help('Integrity', INTEG_HELP);
+  integCard.appendChild(iH); integCard.appendChild(iHelp); integCard.appendChild(integTbl);
+  resultsEl.appendChild(integCard);
 
   // ---- Advanced (forensic + technical panels, collapsed) ----
   // One card holding the heavier/technical views, sitting where LSB analysis used
@@ -3951,16 +3951,6 @@ export async function renderPhoto(file, resultsEl, opts = {}) {
   advCard.appendChild(el('h3', {}, 'Advanced'));
   advCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:0 0 4px;' },
     'More detailed forensic and technical views.'));
-
-  // -- Integrity (fingerprints) - first, so the hashes stay easy to find --
-  // [data-integrity] is what findIntegrityCard() looks for: without it app.js
-  // would see no Integrity card here and append a second, generic one.
-  if (!inline) {
-    const { det, body } = advPanel('Integrity', INTEG_HELP);
-    det.setAttribute('data-integrity', '1');
-    body.appendChild(integTbl);
-    advCard.appendChild(det);
-  }
 
   // -- Edit history (shown next; the technical panels below follow) --
   if (full) {

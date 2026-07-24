@@ -199,6 +199,77 @@ export function computeSpectrogram(samples, sampleRate, options = {}) {
   return { frames, bins, sampleRate, fftSize, hopSize, data, dbMin, dbMax };
 }
 
+// Cooperative twin of computeSpectrogram: identical maths and output, but the frame
+// loop runs in batches and hands the thread back between them, so a long file's STFT
+// no longer freezes the page for the whole compute. Each batch is a few hundred FFTs
+// (cheap); the yield in between lets input, scrolling and painting take a turn - the
+// "queue it up" behaviour rather than one uninterruptible block. onProgress(frac) is
+// called after each batch; opts.shouldAbort() is polled so a superseded compute (the
+// user changed a setting mid-run) can bail cleanly. Returns the same shape, or null
+// if aborted.
+export async function computeSpectrogramAsync(samples, sampleRate, options = {}) {
+  const fftSize  = options.fftSize  || 2048;
+  const hopSize  = options.hopSize  || Math.floor(fftSize / 4);
+  const winName  = options.window   || 'hann';
+  const win      = (windows[winName] || windows.hann)(fftSize);
+  const onProgress = options.onProgress;
+  const shouldAbort = options.shouldAbort;
+
+  if (samples.length < fftSize) {
+    return { frames: 0, bins: 0, sampleRate, fftSize, hopSize, data: new Float32Array(0), dbMin: -100, dbMax: 0 };
+  }
+
+  const bins   = fftSize / 2;
+  const frames = 1 + Math.floor((samples.length - fftSize) / hopSize);
+  const data   = new Float32Array(frames * bins);
+
+  let winSum = 0;
+  for (let i = 0; i < fftSize; i++) winSum += win[i];
+  const norm = 1 / Math.max(winSum, 1e-9);
+
+  const re = new Float32Array(fftSize);
+  const im = new Float32Array(fftSize);
+  let dbMin = Infinity, dbMax = -Infinity;
+
+  // Batch size: aim for ~8 ms of FFTs per slice so each turn is short enough to keep
+  // 60 fps input handling, but big enough that the per-yield overhead stays tiny.
+  const BATCH = Math.max(64, Math.round(65536 / fftSize) * 32);
+  for (let f = 0; f < frames; f++) {
+    const start = f * hopSize;
+    for (let i = 0; i < fftSize; i++) { re[i] = samples[start + i] * win[i]; im[i] = 0; }
+    fft(re, im);
+    const row = f * bins;
+    for (let b = 0; b < bins; b++) {
+      const mag = Math.hypot(re[b], im[b]) * norm * 2;
+      const db  = 20 * Math.log10(mag + 1e-12);
+      data[row + b] = db;
+      if (db < dbMin) dbMin = db;
+      if (db > dbMax) dbMax = db;
+    }
+    if (f % BATCH === BATCH - 1 || f === frames - 1) {
+      if (onProgress) onProgress((f + 1) / frames);
+      if (f !== frames - 1) {
+        await yieldFrame();
+        if (shouldAbort && shouldAbort()) return null;
+      }
+    }
+  }
+
+  return { frames, bins, sampleRate, fftSize, hopSize, data, dbMin, dbMax };
+}
+
+// Hand the thread back for one frame. rAF when visible (paints first), timeout as the
+// background-tab fallback so a hidden tab still drains the queue rather than stalling.
+function yieldFrame() {
+  return new Promise((r) => {
+    if (typeof document !== 'undefined' && document.hidden) { setTimeout(r, 0); return; }
+    let done = false;
+    const fin = () => { if (!done) { done = true; r(); } };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fin);
+    setTimeout(fin, 32);
+  });
+}
+
 // ---------- REASSIGNED STFT ----------
 /**
  * Reassigned spectrogram (method of reassignment).
