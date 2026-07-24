@@ -199,10 +199,20 @@ consecutive frames by mean per-channel pixel difference; a jump past a
 threshold is marked as a scene change with a thumbnail and confidence
 score.
 
-**How to reach it.** Runs automatically for smaller videos; click **Detect
-scene changes** to run it manually (always required for large videos, which
-skip the automatic run - shown as "Skipped automatically for large videos
-(N MB)"). **Run again (current part)** re-scans just the currently loaded
+**How to reach it.** Runs automatically for light videos; click **Detect
+scene changes** to run it manually otherwise. Three things suppress the
+automatic run: over 150 MB, longer than 10 minutes, or a **bitrate above
+10 Mbps**. Bitrate matters because bitrate is what the scan costs - every
+sample is a seek, and a seek makes the decoder rebuild a whole GOP, on a
+second decoder, while the viewer is trying to watch that same file. Total
+size misses this entirely: camera-original footage (a Sony XAVC-S clip runs
+50+ Mbps with a ~60-frame GOP) is often only tens of MB because it is short,
+yet it is by far the most expensive thing to scan. Note this leaves most
+phone and camera footage on the manual trigger and keeps the automatic run
+for compressed/streaming material. The notice names whichever limit actually
+fired - "Skipped automatically for high-bitrate videos (55 Mbps)" or "for
+large videos (N MB)" - rather than calling a short 56 MB clip large.
+**Run again (current part)** re-scans just the currently loaded
 segment on segmented/salvaged playback. Built in `video.js`.
 
 ```demo
@@ -227,14 +237,18 @@ for **near-black frames** (fades, cuts, leader/trailer black) and
 The readout summarises mean/range brightness, the darkest sample, and the
 black and freeze stretches.
 
-**How to reach it.** Appears just under **Scene changes** whenever scene
-detection runs (automatically for smaller videos, or after you trigger it
-manually for large ones). It has no trigger of its own: the per-sample
-colour and luma series it draws is collected by the scene-detection seek
-loop, so on a large video - where detection is skipped by default - nothing
-appears until you click **Detect scene changes**. The skip notice says so.
-Click anywhere on the barcode to jump the player to that point. Built in
-`video.js` (`buildContentTimelineCard`).
+**How to reach it.** Appears just under **Scene changes**. It has no scan of
+its own - the per-sample colour and luma series it draws is collected by the
+scene-detection seek loop as it passes - so the two always arrive together.
+On light videos that is automatic. Where detection is skipped by default
+(large, long, or high-bitrate - see **Scene changes** above), the card still
+appears in its reserved slot as a
+stand-in explaining where it comes from, with a **Scan the video** button;
+that and **Detect scene changes** are the same one-shot scan, so whichever
+you click fills both cards. The segmented raw-stream player collects the
+series too, scoped to the part currently loaded. Click anywhere on the
+barcode to jump the player to that point. Built in `video.js`
+(`buildContentTimelineCard`).
 
 **Note.** Freeze detection is only as fine as the sampling interval, so it
 catches stretches longer than that, not single dropped frames. On an
@@ -369,6 +383,19 @@ one and the others follow.
 
 **How to reach it.** Automatic wherever multiple synced players exist for
 one clip. Built in `web/assets/js/core/video-sync.js`.
+
+**Only on-screen players decode.** Every synced player is an independent
+decoder of the same clip, so propagating a play to all of them costs a full
+decode each - and the followers are usually far outside the viewport (the
+Sony gyro mini player sits thousands of pixels below the main player). On a
+heavy clip that second decoder is enough to stutter the picture actually
+being watched, for a picture nobody can see. A follower that is off-screen
+therefore stays paused and banks the position it should be at; an
+`IntersectionObserver` (200px margin) starts it, at the current time, when
+it scrolls into view. The same applies to seeks, which a scrub fires
+continuously and which force a decode even on a paused element. Visible
+followers behave exactly as before. Without `IntersectionObserver` every
+player counts as visible, i.e. the old all-play behaviour.
 
 **Notes / limits.** Exclusive audio: since every synced player decodes the
 clip independently, only one may be audible at a time (echo otherwise) -

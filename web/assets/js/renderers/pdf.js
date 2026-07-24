@@ -3,6 +3,7 @@
 
 import { el, row, rowHelp, fmtBytes, errorCard, integrityCard, openOverlayBack, timeAnomalies, timeAnomalyCard } from '../core/util.js';
 import { renderPhoto, revealPhotoSection, pickOcrLanguage, ocrLangPath } from './photo.js';
+import { pagePreviewSkeleton } from './paged.js';
 
 // Resolved against this module's URL so the dynamic import() gets a valid
 // absolute specifier (a bare "assets/..." path is not a resolvable module id).
@@ -151,6 +152,17 @@ export async function renderPdf(file, resultsEl, opts = {}) {
   }
 
   resultsEl.innerHTML = '';
+
+  // Default first 4 pages; the compare view passes previewPages:1 so each file
+  // shows just one page up front (the rest are behind "Show all").
+  const initialPages = Math.min(pdf.numPages, Math.max(1, opts.previewPages || 4));
+
+  // Ghost sheets stand in until the thumbnails below are rendered. Everything
+  // between here and there - metadata, structure, text extraction, and a pdf.js
+  // render pass per page - happens with the info cards already on screen, so
+  // without this the page previews arrive late and push the lot downwards.
+  const thumbSkeleton = pagePreviewSkeleton({ count: initialPages, note: 'Rendering pages…' });
+  resultsEl.appendChild(thumbSkeleton);
 
   // --- Info card ---
   const infoCard = el('div', { class: 'anr-card' });
@@ -305,7 +317,7 @@ export async function renderPdf(file, resultsEl, opts = {}) {
       const pushAction = (k, s) => {
         if (!s) return;
         const src = String(s);
-        const key = k + ' ' + src;
+        const key = k + '\x00' + src;
         if (seen.has(key)) return;
         seen.add(key);
         actions.push({ trigger: k, source: src, flags: PDF_JS_PATTERNS.filter((p) => p.re.test(src)).map((p) => p.label) });
@@ -961,9 +973,6 @@ export async function renderPdf(file, resultsEl, opts = {}) {
     } catch (_) {}
   }
 
-  // Default first 4 pages; the compare view passes previewPages:1 so each file
-  // shows just one page up front (the rest are behind "Show all").
-  const initialPages = Math.min(pdf.numPages, Math.max(1, opts.previewPages || 4));
   for (let i = 1; i <= initialPages; i++) await renderThumb(i);
   thumbsRendered = initialPages;
 
@@ -1005,8 +1014,9 @@ export async function renderPdf(file, resultsEl, opts = {}) {
   thumbCard.appendChild(thumbContainer);
   thumbCard.appendChild(thumbBtnRow);
   // Page previews sit above the "PDF document" info card so the pages are the
-  // first thing you see.
-  resultsEl.insertBefore(thumbCard, infoCard);
+  // first thing you see - which is where the ghost sheets have been holding the
+  // space since before the metadata was read.
+  thumbSkeleton.replaceWith(thumbCard);
 
   // --- Embedded image extraction ---
   const imgCard = el('div', { class: 'anr-card' });

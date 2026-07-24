@@ -56,7 +56,7 @@ rem Version label mirrors analyserVersion() in app.js. RELEASES is the list of
 rem commits crowned as major releases - keep it in sync with RELEASE_COMMITS in
 rem app.js (sorted ascending). Each release reads X.0 and resets the minor counter:
 rem commit 29 = 1.0, commit 60 = 2.0, etc.
-set RELEASES=29,60,100,151,173,195,250
+set RELEASES=29,60,100,151,173,195,250,256
 for /f %%v in ('powershell -NoProfile -Command "$n=%NEXT_COUNT%; $major=0; $base=0; foreach($r in @(%RELEASES%)){ if($n -ge $r){ $major++; $base=$r } else { break } }; if($major -eq 0){ '0.{0:D2}' -f $n } elseif(($n-$base) -eq 0){ '{0}.0' -f $major } else { '{0}.{1:D2}' -f $major,($n-$base) }"') do set VERLABEL=%%v
 echo bump: v%VERLABEL% (commit %NEXT_COUNT%)
 
@@ -129,6 +129,14 @@ rem Wipes and rewrites web/docs.html + web/docs/ each run. Non-fatal.
 echo [gen]  docs site
 node --no-warnings tools/build-docs-html.mjs
 if errorlevel 1 echo [warn] docs site gen failed - keeping existing copies
+
+rem Verify the offline manifests (sw.js SHELL + the Essentials tier) still cover
+rem every module, and that no precached module imports an un-precached one - the
+rem failure mode that only shows up offline, so it never surfaces in dev. Purely a
+rem check, writes nothing. Non-fatal: it reports and the commit continues.
+echo [chk]  offline manifests
+node --no-warnings tools/check-shell.mjs
+if errorlevel 1 echo [warn] offline manifest gaps reported above - see tools/check-shell.mjs
 
 rem Optional read-only stats snapshot to stats-backup\ (gitignored, kept local).
 rem Pulls from the live /api/stats; non-fatal and skipped by default. The full

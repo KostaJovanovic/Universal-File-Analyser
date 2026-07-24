@@ -27,6 +27,15 @@ manually (`offline-tiers.js`'s top comment notes this explicitly: keep
 `TIERS.essentials` in step with `SHELL` when adding a new core/renderer/
 parser module).
 
+`tools/check-shell.mjs`, run by `save.bat` on every commit, is what keeps that
+honest. It fails if any module under `web/assets/js` is missing from `SHELL`,
+and - the part worth having - if a precached module imports one that isn't.
+That second case is invisible in normal use: online the import just fetches
+over the network, so the viewer works perfectly right up until someone opens
+the file offline. `renderers/eda-viewer.js` sat in exactly that state, shared
+by the Altium and KiCad renderers while absent from both manifests, so PCB
+projects were the one thing the offline app couldn't open.
+
 ## VERSION cache epoch
 
 `const VERSION = 'analyser-v' + COMMIT_COUNT` names the cache. Every commit
@@ -81,9 +90,15 @@ across every version bump, so nothing else ever drops them. It:
   `AbortController`s). Skipping this is what used to make a clear look inert -
   the running download simply refilled the cache and re-recorded its tier;
 - wipes `localStorage` and `sessionStorage`, keeping only `anr-theme` (+ its
-  `:ts`) and `anr-a11y`. Those two are *settings* - the light/dark choice and
-  the Clear-view accessibility mode - and resetting them would change how the
-  site looks for someone who only asked to delete stored data. The download
+  `:ts`), `anr-a11y` and `anr-asteroids-settings`. Those are *settings* - the
+  light/dark choice, the Clear-view accessibility mode, and the game's options
+  object (which carries "Reduce flashing", the same kind of promise) - and
+  resetting them would change how the site behaves for someone who only asked
+  to delete stored data. The game's *progress* is not spared: high score, best
+  wave, boss unlock, start wave, the dismissed keyboard-layout hint and the
+  leaderboard name/submit counter all go. Its keys live in
+  `web/assets/js/games/config.js`, not in the module doing the clearing, so
+  they are easy to miss when auditing this. The download
   records (`anr-offline`, `anr-offline-feat`) and the model ready-flags
   (`anr-mdx-ready-*`, `anr-dfn-ready-*`) go with everything else: a record must
   never outlive the cache it describes, or the badges claim a download that
@@ -98,6 +113,33 @@ That is the application itself rather than user data, and the SW repopulates it
 on the next online load; deleting it would only break offline use until then.
 Native builds ship their content as static files, so none of the cache
 deletions affect them.
+
+### The other place keys are deleted: `anrSweep`
+
+Clear storage is not the only thing that removes local state, and auditing it
+alone will mislead you. `anrSweep()` in `core/app.js` runs on **every** boot and
+deletes any `anr-`-prefixed key whose `:ts` companion is missing or older than
+7 days. Only keys written through `anrSet()` get a `:ts`; anything written with
+a raw `setItem` therefore looks expired the instant it is stored, and must be
+listed as permanent to survive at all:
+
+- `ANR_PERMANENT` - exact names (`anr-history`, `anr-a11y`,
+  `anr-analytics-queue`, `anr-offline`, `anr-offline-feat`).
+- `ANR_PERMANENT_PREFIX` - families (`anr-asteroids-`, `anr-mdx-ready-`,
+  `anr-dfn-ready-`).
+
+This was an exact-match list naming only `anr-asteroids-hi` and `-bestwave`, so
+the game's settings object, boss unlock, start-wave choice and dismissed
+keyboard hint were swept on every page load - and since `atari.html` loads
+`app.js` too, a changed setting did not survive reloading the game. The
+prefixes fix that class of bug rather than one instance of it.
+
+So a key must clear **both** gates to persist: be permanent here, and be in the
+`KEEP` list over in `offline-tiers.js`. They answer different questions -
+"should this expire on its own?" and "should a deliberate wipe spare it?" - and
+the answers legitimately differ. The Asteroids high score is permanent here but
+*not* in `KEEP`, because it should never expire by itself yet is stored data
+when someone asks for a clear.
 
 ## Manifest / install flow
 

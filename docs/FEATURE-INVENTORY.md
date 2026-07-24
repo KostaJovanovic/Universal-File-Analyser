@@ -194,7 +194,9 @@ there in Phase D.
 - [x] altium.js - Designator buttons (per BOM row) - jump to and highlight that part on its schematic sheet - eda-nle.md
 - [x] kicad.js - Fit / Reset view - reset schematic/3D view - eda-nle.md
 - [x] kicad.js - Layer chips - toggle PCB layer visibility - eda-nle.md
-- [x] kicad.js - Flip over - flips the 3D board view to the other side - eda-nle.md
+- [x] kicad.js - Flip over - turns the 3D board half a turn onto its other side - eda-nle.md
+- [x] kicad.js - Auto-rotate - turn the 3D board slowly on the spot (off by default) - eda-nle.md
+- [x] kicad.js - View cube - orientation gizmo on the 3D board: drag to orbit, click a face/edge/corner to snap - eda-nle.md
 - [x] kicad.js - Quality (popup) / Supersampling - render-quality toggles - eda-nle.md
 - [x] kicad.js - 3D board / Top / Bottom - switch board view mode - eda-nle.md
 - [x] kicad.js - Symbol select (dropdown) - pick a schematic symbol/footprint to preview - eda-nle.md

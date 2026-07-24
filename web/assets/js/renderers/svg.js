@@ -3,6 +3,7 @@
    colour palette, and text content. */
 
 import { el, row, rowHelp, fmtBytes, errorCard, integrityCard } from '../core/util.js';
+import { urlScheme } from '../core/sanitize.js';
 import { renderPhoto } from './photo.js';
 
 // Scan a parsed SVG document for active/unsafe content, strip it, and return
@@ -45,8 +46,23 @@ function sanitizeSvg(doc) {
       const val = (attr.value || '').trim();
       if (name.startsWith('on')) { node.removeAttribute(attr.name); handlers++; continue; }
       if (name === 'href' || name === 'src' || name.endsWith(':href')) {
-        if (/^javascript:/i.test(val)) { node.removeAttribute(attr.name); jsLinks++; }
-        else if (/^(https?:)?\/\//i.test(val) || /^data:text\/html/i.test(val)) { node.removeAttribute(attr.name); extRefs++; }
+        // Normalise the way the browser's URL parser does before deciding - see
+        // urlScheme() in core/sanitize.js for why a plain /^javascript:/ test is
+        // not enough (`java&#9;script:` slips straight past it).
+        const flat = val.replace(/[\x00-\x20]+/g, '');
+        const scheme = urlScheme(val);
+        // Remote reference: absolute or protocol-relative http(s), or an inline
+        // HTML document. Stripped so a rendered SVG can never call home.
+        if (scheme === 'http' || scheme === 'https' || /^\/\//.test(flat) || /^data:text\/html/i.test(flat)) {
+          node.removeAttribute(attr.name); extRefs++;
+        }
+        // No scheme at all is a relative path or #fragment (both fine), and
+        // data:/mailto:/tel: are the schemes SVG legitimately uses (base64
+        // images, contact links). Anything else that carries a scheme can
+        // execute - javascript:, vbscript:, blob:, filesystem: - so it goes.
+        else if (scheme && !/^(?:data|mailto|tel)$/.test(scheme)) {
+          node.removeAttribute(attr.name); jsLinks++;
+        }
       }
       // Any attribute (style="", fill="url(...)", filter="url(...)", …) that
       // references a remote resource via CSS url() or @import - strip it.
@@ -56,7 +72,7 @@ function sanitizeSvg(doc) {
     }
   }
   if (handlers) findings.push(handlers + ' inline event handler' + (handlers > 1 ? 's' : '') + ' (on*)');
-  if (jsLinks) findings.push(jsLinks + ' javascript: link' + (jsLinks > 1 ? 's' : ''));
+  if (jsLinks) findings.push(jsLinks + ' script-capable link' + (jsLinks > 1 ? 's' : '') + ' (javascript:, vbscript:, ...)');
   if (extRefs) findings.push(extRefs + ' external/remote reference' + (extRefs > 1 ? 's' : ''));
   if (cssRefs) findings.push(cssRefs + ' remote CSS url() reference' + (cssRefs > 1 ? 's' : ''));
 

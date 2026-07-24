@@ -266,6 +266,57 @@ export function openDocLightbox(pages, startIndex, label) {
   show(startIndex);
 }
 
+// Thumbnail width for the preview grid. On phones shrink it so at least two
+// previews sit side by side per row (two tiles + the grid's 16px gap must clear
+// the viewport, less a rough allowance for the card/results padding); capped at
+// 200 and floored so it never gets uselessly tiny. Everything downstream (inner
+// scale, height cap, box width) derives from this, so the tile stays
+// self-consistent at any width - and the ghost sheets below use it too, so the
+// swap from placeholder to real pages doesn't shift the layout.
+export function thumbWidth() {
+  const vw = (typeof window !== 'undefined' && window.innerWidth) || 1024;
+  return vw <= 560 ? Math.max(132, Math.floor((vw - 48 - 16) / 2)) : 200;
+}
+
+// One empty page-shaped tile. Grids that aren't the A4 page grid (PPTX slides,
+// comic pages) build their own `.anr-ghost-sheet` div at their own size - the
+// placeholder is a CSS idiom, so it doesn't need to come through here.
+function ghostSheet(w, h) {
+  const box = el('div', { class: 'anr-ghost-sheet' });
+  box.style.width = w + 'px';
+  box.style.height = h + 'px';
+  return box;
+}
+
+// The stand-in "Page previews" card, shown from the moment a file is known to be
+// paged until its real sheets exist. Getting to them takes a while - unzip, parse
+// and paginate for an Office document, one pdf.js render pass per page for a PDF -
+// and without a placeholder the results look finished, then shove everything down
+// when a tall card lands on top of them. Callers keep the returned node and
+// `.replaceWith()` the real card (or the "nothing to preview" one) onto it.
+// opts: { title, note, count }
+export function pagePreviewSkeleton(opts = {}) {
+  const count = Math.max(1, Math.min(opts.count || 4, 12));
+  const w = thumbWidth();
+  const h = Math.round(w * (PAGE_H / PAGE_W));
+
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, opts.title || 'Page previews'));
+  card.appendChild(el('p', { class: 'anr-hint' }, opts.note || 'Preparing pages…'));
+  const grid = el('div', { class: 'anr-page-grid' });
+  for (let i = 0; i < count; i++) {
+    const fig = el('figure', { class: 'anr-page-fig' });
+    fig.style.width = w + 'px';
+    fig.appendChild(ghostSheet(w, h));
+    // A blank bar rather than "Page 1", "Page 2": the page count is usually still
+    // unknown here, so a numbered caption would promise pages that may not exist.
+    fig.appendChild(el('figcaption', { class: 'anr-page-cap' }, el('span', { class: 'anr-page-cap-ghost' })));
+    grid.appendChild(fig);
+  }
+  card.appendChild(grid);
+  return card;
+}
+
 // Build the "Page previews" card from an array of .anr-page nodes. Pages are
 // revealed in batches so a long document doesn't lay out every sheet up front.
 // opts: { title, label, initial, batch }
@@ -274,13 +325,7 @@ export function pagedPreviewCard(pages, opts = {}) {
   const label = opts.label || 'Page';
   const batch = opts.batch || 12;
   const initial = opts.initial || Math.min(pages.length, 12);
-  // Thumbnail width. On phones shrink it so at least two previews sit side by side
-  // per row (two tiles + the grid's 16px gap must clear the viewport, less a rough
-  // allowance for the card/results padding); capped at 200 and floored so it never
-  // gets uselessly tiny. Everything downstream (inner scale, height cap, box width)
-  // derives from this, so the tile stays self-consistent at any width.
-  const vw = (typeof window !== 'undefined' && window.innerWidth) || 1024;
-  const THUMB_W = vw <= 560 ? Math.max(132, Math.floor((vw - 48 - 16) / 2)) : 200;
+  const THUMB_W = thumbWidth();
 
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, title));

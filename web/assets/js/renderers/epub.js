@@ -3,6 +3,7 @@
    reading with navigation. */
 
 import { el, row, rowHelp, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { sanitizeDoc } from '../core/sanitize.js';
 import { openZip } from './zip.js';
 
 function parseXml(text) {
@@ -21,22 +22,13 @@ function resolvePath(opfPath, href) {
   return out.join('/');
 }
 
-// Strip scripts/handlers from a chapter's body so it can be shown inline.
+// Strip scripts/handlers from a chapter's body so it can be shown inline. The
+// rules live in core/sanitize.js, shared with the email, MHTML and SVG viewers -
+// which also means a chapter can no longer pull a remote image (an EPUB's own
+// images are zip-relative, so they never resolved over the network anyway; an
+// absolute http:// one would have been a silent call home).
 function sanitizeBody(doc) {
-  const body = doc.body || doc.querySelector('body');
-  if (!body) return document.createElement('div');
-  const clone = body.cloneNode(true);
-  clone.querySelectorAll('script, style, link, iframe, object, embed').forEach((n) => n.remove());
-  clone.querySelectorAll('*').forEach((n) => {
-    for (const attr of [...n.attributes]) {
-      if (/^on/i.test(attr.name)) n.removeAttribute(attr.name);
-      if ((attr.name === 'href' || attr.name === 'src') && /^\s*javascript:/i.test(attr.value)) n.removeAttribute(attr.name);
-    }
-  });
-  const div = document.createElement('div');
-  div.className = 'anr-epub-content';
-  while (clone.firstChild) div.appendChild(clone.firstChild);
-  return div;
+  return sanitizeDoc(doc, { className: 'anr-epub-content' });
 }
 
 export async function renderEpub(file, resultsEl) {

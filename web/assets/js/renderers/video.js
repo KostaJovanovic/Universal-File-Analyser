@@ -5,7 +5,7 @@
 
 import { makePlayer, renderAudio } from './audio.js';
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
-import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob, inlineLoader, yieldToMain } from '../core/util.js';
+import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob, inlineLoader, yieldToMain, setPlayerFill } from '../core/util.js';
 import { parseAviHeader, extractAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
 import { registerSyncedVideo, setAudioCompanion } from '../core/video-sync.js';
@@ -1038,8 +1038,12 @@ function buildRawSceneCard(playerEl, signal) {
     out.innerHTML = '';
     out.appendChild(prog.node);
     let changes = [];
+    // Collect the per-sample colour/luma series too. This scan is the only pass
+    // over the loaded part, so not collecting meant the segmented player - the one
+    // path used for the very largest files - never got a Content timeline at all.
+    const contentSamples = [];
     try {
-      changes = await detectSceneChanges(playerEl, 55, signal, null,
+      changes = await detectSceneChanges(playerEl, 55, signal, contentSamples,
         (f) => prog.set(f, 'Scanning for scene changes… ' + Math.round(f * 100) + '%'));
     } catch (_) {}
     try { playerEl.currentTime = 0; playerEl.pause(); } catch (_) {}
@@ -1068,8 +1072,24 @@ function buildRawSceneCard(playerEl, signal) {
       out.appendChild(details);
     }
     const again = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:10px;' }, 'Run again (current part)');
-    again.addEventListener('click', () => card.replaceWith(buildRawSceneCard(playerEl, signal)));
+    again.addEventListener('click', () => {
+      // Drop this run's timeline before the card is swapped out, or the stale one
+      // is left behind as a sibling and the new run adds a second below it.
+      if (card._anrCt) { try { card._anrCt.remove(); } catch (_) {} card._anrCt = null; }
+      card.replaceWith(buildRawSceneCard(playerEl, signal));
+    });
     out.appendChild(again);
+    // Content timeline for the same part, from the samples just collected. Sits
+    // after this card, matching where it lands on the main player.
+    try {
+      const ctCard = buildContentTimelineCard(contentSamples, dur, playerEl);
+      if (ctCard) {
+        ctCard.appendChild(el('p', { class: 'anr-hint', style: 'margin:10px 0 0;' },
+          'Covers only the part currently loaded in the player.'));
+        card._anrCt = ctCard;
+        card.after(ctCard);
+      }
+    } catch (_) {}
   });
   return card;
 }
@@ -1399,41 +1419,64 @@ function extractPcmFromMp4(arrayBuffer) {
     const frameSize = bytesPerSample * channels;
     const bigEndian = codecFcc === 'twos' || codecFcc === 'in16' || codecFcc === 'in24' || codecFcc === 'in32';
 
-    const allSamples = [];
+    // Only these widths decode below; anything else produced no samples in the
+    // old code and fell through to the next trak, so bail here and keep the
+    // sample-count arithmetic below honest (a 0 would divide by zero).
+    if (bytesPerSample !== 2 && bytesPerSample !== 3 && bytesPerSample !== 4) continue;
+
+    // Pass 1: how many samples does the chunk plan yield? Pure arithmetic - no
+    // decoding, no allocation. Knowing the total up front is what lets pass 2
+    // write straight into the AudioBuffer.
+    //
+    // This used to push every sample into a plain JS array and then walk that
+    // array AGAIN to de-interleave into the channel data: two full passes over
+    // ~817k samples for eight seconds of 48kHz stereo, plus a multi-megabyte
+    // temporary that grows by reallocation throughout. It ran on the main thread
+    // at the exact moment the player was starting, which is what chopped playback
+    // in the first second or two on a PCM-audio clip - and it scaled with clip
+    // length, so a longer take stuttered where a shorter one did not.
+    const plan = [];
+    let totalSamples = 0;
     for (const offset of chunkOffsets) {
       const chunkBytes = samplesPerChunk * (chunkSampleSize || frameSize);
       if (offset + chunkBytes > fileEnd) break;
-      for (let i = 0; i < chunkBytes; i += bytesPerSample) {
-        const pos = offset + i;
-        if (pos + bytesPerSample > fileEnd) break;
-        let val;
-        if (bytesPerSample === 2) {
-          val = bigEndian ? view.getInt16(pos) : view.getInt16(pos, true);
-          allSamples.push(val / 0x8000);
-        } else if (bytesPerSample === 3) {
-          const b0 = view.getUint8(pos), b1 = view.getUint8(pos+1), b2 = view.getUint8(pos+2);
-          val = bigEndian ? ((b0 << 24 | b1 << 16 | b2 << 8) >> 8) : ((b2 << 24 | b1 << 16 | b0 << 8) >> 8);
-          allSamples.push(val / 0x800000);
-        } else if (bytesPerSample === 4) {
-          val = bigEndian ? view.getInt32(pos) : view.getInt32(pos, true);
-          allSamples.push(val / 0x80000000);
-        }
-      }
+      const n = Math.floor(Math.min(chunkBytes, fileEnd - offset) / bytesPerSample);
+      if (n <= 0) continue;
+      plan.push(offset, n);
+      totalSamples += n;
     }
 
-    if (allSamples.length === 0) continue;
+    const totalFrames = Math.floor(totalSamples / channels);
+    if (totalFrames <= 0) continue;
 
-    const totalFrames = Math.floor(allSamples.length / channels);
     // Build the buffer via the shared context (createBuffer accepts any rate,
     // regardless of the context's own). Avoids a per-file OfflineAudioContext -
     // which needs a webkit fallback on old Safari and throws RangeError on an
     // out-of-range rate - and guards a mis-parsed/zero rate that would still throw.
     const sr = (sampleRate >= 3000 && sampleRate <= 384000) ? sampleRate : 44100;
     const audioBuf = getAudioCtx().createBuffer(channels, totalFrames, sr);
-    for (let ch = 0; ch < channels; ch++) {
-      const chData = audioBuf.getChannelData(ch);
-      for (let i = 0; i < totalFrames; i++) {
-        chData[i] = allSamples[i * channels + ch];
+    const chans = [];
+    for (let ch = 0; ch < channels; ch++) chans.push(audioBuf.getChannelData(ch));
+
+    // Pass 2: decode each sample once, straight into its channel. `s` is the
+    // running interleaved index, so frame = s / channels and channel = s % channels.
+    let s = 0;
+    for (let p = 0; p < plan.length; p += 2) {
+      const offset = plan[p], n = plan[p + 1];
+      for (let i = 0; i < n; i++, s++) {
+        const frame = (s / channels) | 0;
+        if (frame >= totalFrames) break;
+        const pos = offset + i * bytesPerSample;
+        let val;
+        if (bytesPerSample === 2) {
+          val = (bigEndian ? view.getInt16(pos) : view.getInt16(pos, true)) / 0x8000;
+        } else if (bytesPerSample === 3) {
+          const b0 = view.getUint8(pos), b1 = view.getUint8(pos + 1), b2 = view.getUint8(pos + 2);
+          val = (bigEndian ? ((b0 << 24 | b1 << 16 | b2 << 8) >> 8) : ((b2 << 24 | b1 << 16 | b0 << 8) >> 8)) / 0x800000;
+        } else {
+          val = (bigEndian ? view.getInt32(pos) : view.getInt32(pos, true)) / 0x80000000;
+        }
+        chans[s % channels][frame] = val;
       }
     }
     return audioBuf;
@@ -3904,7 +3947,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
           // (play, Prev/Next, or a direct seek). Time is the frame's own timestamp.
           onFrameShown = (idx) => {
             const t = frameTimeOf(idx);
-            fillEl.style.width = (totalTime > 0 ? Math.min(1, t / totalTime) * 100 : 0) + '%';
+            setPlayerFill(fillEl, totalTime > 0 ? t / totalTime : 0);
             timeEl.textContent = `${fmtTc(t)} / ${fmtTc(totalTime)}`;
           };
           // Tearing down the render (new file / navigation) must kill the loop.
@@ -4368,6 +4411,13 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     sceneOut.appendChild(el('p', { class: 'anr-hint' }, 'Detecting scene changes…'));
     sceneCard.appendChild(sceneOut);
     resultsEl.appendChild(sceneCard);
+    // The Content timeline is drawn from the per-sample colour/luma series the
+    // scene-detection loop collects on the way past, so it has no scan of its own.
+    // It gets a reserved slot here rather than being appended when it happens to
+    // exist: on a large video, where detection doesn't auto-run, the card would
+    // otherwise just never appear, with nothing on screen to say why.
+    const ctSlot = el('div');
+    resultsEl.appendChild(ctSlot);
 
     // Detection seeks a video element around, so it runs on an off-screen element
     // (never the visible player - the user can scrub/play while it runs). Large
@@ -4422,9 +4472,10 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       sceneBadge.remove();
       if (renderSignal.aborted) return;
       renderSceneResults(changes);
+      ctSlot.innerHTML = '';
       try {
         const ctCard = buildContentTimelineCard(contentSamples, dur, playerEl);
-        if (ctCard) sceneCard.after(ctCard);
+        if (ctCard) ctSlot.appendChild(ctCard);
       } catch (_) {}
     }
 
@@ -4441,7 +4492,23 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     }
 
     const BIG_VIDEO_BYTES = 150 * 1024 * 1024;
-    const bigVideo = file.size > BIG_VIDEO_BYTES || (isFinite(dur) && dur > 600);
+    // Bitrate gates the auto-run as well as size, because bitrate is what the scan
+    // actually costs. Every sample is a seek, and a seek makes the decoder rebuild
+    // a whole GOP - so on camera-original footage (a Sony XAVC-S clip runs 50+ Mbps
+    // with a 60-frame GOP) each one is expensive, and they land while the user is
+    // trying to watch that very same file through a second decoder. Total size
+    // misses this entirely: such a clip is often only tens of MB because it is
+    // short. 10 Mbps sits above ordinary streaming/phone-share footage and below
+    // camera originals.
+    const AUTO_SCAN_MAX_BPS = 10e6;
+    const bitrate = (isFinite(dur) && dur > 0) ? (file.size * 8) / dur : 0;
+    const hotBitrate = bitrate > AUTO_SCAN_MAX_BPS;
+    const bigVideo = file.size > BIG_VIDEO_BYTES || (isFinite(dur) && dur > 600) || hotBitrate;
+    // Say which of the two actually stopped it, so the notice matches the file in
+    // front of you rather than claiming a short 40 MB clip is "large".
+    const skipWhy = (hotBitrate && file.size <= BIG_VIDEO_BYTES && !(isFinite(dur) && dur > 600))
+      ? 'high-bitrate videos (' + (bitrate / 1e6).toFixed(0) + ' Mbps)'
+      : 'large videos (' + (file.size / 1048576).toFixed(0) + ' MB)';
     if (bigVideo) {
       // Don't auto-run on big videos: free the probe and offer a manual trigger.
       try { probe.removeAttribute('src'); probe.load(); } catch (_) {}
@@ -4449,11 +4516,18 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       sceneBadge.remove();
       sceneOut.innerHTML = '';
       sceneOut.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:8px;' },
-        'Skipped automatically for large videos (' + (file.size / 1048576).toFixed(0) + ' MB). '
-        + 'The Content timeline (movie barcode and brightness curve) is read from the same scan, so it appears with the results. Run it when you want:'));
-      const runBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Detect scene changes');
-      runBtn.addEventListener('click', () => {
-        runBtn.remove();
+        'Skipped automatically for ' + skipWhy + '. '
+        + 'One scan fills this and the Content timeline below. Run it when you want:'));
+
+      // One scan, two cards. Both triggers call this, and it is one-shot, so
+      // clicking the second button after the first does nothing.
+      let scanStarted = false;
+      function startScan() {
+        if (scanStarted) return;
+        scanStarted = true;
+        sceneRunBtn.remove();
+        ctRunBtn.remove();
+        ctSlot.innerHTML = '';
         const v = makeAnalysisVideo();
         // The 6s timeout is a fallback for a `loadeddata` that never comes, so it
         // must not fire a SECOND run when the event did arrive. Without this guard
@@ -4465,8 +4539,25 @@ export async function renderVideo(file, resultsEl, opts = {}) {
         const go = () => { if (started) return; started = true; detectAndRender(v, true); };
         if (isFinite(v.duration) && v.duration > 0) go();
         else { v.addEventListener('loadeddata', go, { once: true }); setTimeout(go, 6000); }
-      });
-      sceneOut.appendChild(runBtn);
+      }
+
+      const sceneRunBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Detect scene changes');
+      sceneRunBtn.addEventListener('click', startScan);
+      sceneOut.appendChild(sceneRunBtn);
+
+      // Stand-in Content timeline card, so the feature is visible (and runnable)
+      // instead of silently absent on every large video.
+      const ctWait = el('div', { class: 'anr-card' });
+      const [ctH, ctHelp] = h3help('Content timeline',
+        'A movie barcode - every sampled frame squeezed to a single stripe of its average colour, so the whole video reads as a colour-over-time fingerprint - plus a brightness curve flagging near-black frames and frozen or still stretches.');
+      ctWait.appendChild(ctH); ctWait.appendChild(ctHelp);
+      ctWait.appendChild(el('p', { class: 'anr-hint', style: 'margin-bottom:8px;' },
+        'Read from the same scan as Scene changes, which is skipped automatically for '
+        + skipWhy + '. Running either fills both.'));
+      const ctRunBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Scan the video');
+      ctRunBtn.addEventListener('click', startScan);
+      ctWait.appendChild(el('div', { class: 'anr-btn-row' }, [ctRunBtn]));
+      ctSlot.appendChild(ctWait);
     } else {
       (async () => {
         if (renderSignal.aborted) { probe.remove(); return; }

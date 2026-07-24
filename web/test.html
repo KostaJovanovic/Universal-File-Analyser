@@ -242,6 +242,7 @@
 <div class="tst-anim"><span class="tst-anim-box" style="animation:anr-fade-in 1.8s linear infinite"></span><code>anr-fade-in</code></div>
 <div class="tst-anim"><span class="tst-anim-box" style="animation:anr-nav-flash 1.8s linear infinite"></span><code>anr-nav-flash</code></div>
 <div class="tst-anim"><span class="tst-anim-box" style="animation:anr-altium-ping 1.8s linear infinite"></span><code>anr-altium-ping</code></div>
+<div class="tst-anim"><span class="tst-anim-box" style="animation:anr-ghost-sweep 1.8s linear infinite"></span><code>anr-ghost-sweep</code></div>
 <div class="tst-anim"><span class="tst-anim-box" style="animation:sample-more-reveal 1.8s linear infinite"></span><code>sample-more-reveal</code></div>
 </div></div>
 <!-- TOKENS:END -->
@@ -428,6 +429,19 @@
             </table>
           </div>
 
+          <div class="tst-sub">a &lt;details&gt; leading a card (h3 + details) - it drops its own border-top, so the heading rule is the only line. Without that, the two hairlines stack 24px apart</div>
+          <div class="anr-card">
+            <h3>HTML document</h3>
+            <details open>
+              <summary>Rendered preview</summary>
+              <p class="anr-hint">The preview stage sits here, above the readout.</p>
+            </details>
+            <table class="anr-readout">
+              <tr><th>Application</th><td>HTML document</td></tr>
+              <tr><th>Lines</th><td>412</td></tr>
+            </table>
+          </div>
+
           <div class="tst-sub">.anr-card.anr-sig-flag - the accent-bordered flag treatment (signature mismatch, trailing data) with an .anr-sig-flag-note prose line</div>
           <div class="anr-card anr-sig-flag">
             <h3>Signature mismatch</h3>
@@ -572,6 +586,10 @@
                   <span class="anr-dtmf-tick" style="left:28.400%"></span>
                 </div>
                 <p class="anr-dtmf-caption">7 tones across 3:24</p>
+                <!-- In the real card the keypad below starts hidden and this button
+                     reveals it, then removes itself. Both states are shown here so the
+                     key styling stays on the sheet. -->
+                <button type="button" class="anr-btn" style="margin-bottom:12px;">Show 7 tones</button>
                 <div class="anr-dtmf-keys">
                   <button type="button" class="anr-dtmf-key"><span class="anr-dtmf-digit">0</span><span class="anr-dtmf-at">0:25.3</span></button>
                   <button type="button" class="anr-dtmf-key"><span class="anr-dtmf-digit">2</span><span class="anr-dtmf-at">0:30.8</span></button>
@@ -738,6 +756,26 @@
             <span class="anr-inline-loader-label">Building treemap...</span>
             <div class="anr-progress-bar">[<span class="anr-bar-fill">////////</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;]</div>
           </div>
+
+          <div class="tst-sub">Page preview placeholder (paged.js pagePreviewSkeleton - .anr-ghost-sheet tiles holding the space until real pages land)</div>
+          <div class="anr-card">
+            <h3>Page previews</h3>
+            <p class="anr-hint">Reading document...</p>
+            <div class="anr-page-grid">
+              <figure class="anr-page-fig" style="width:200px">
+                <div class="anr-ghost-sheet" style="width:200px;height:283px"></div>
+                <figcaption class="anr-page-cap"><span class="anr-page-cap-ghost"></span></figcaption>
+              </figure>
+              <figure class="anr-page-fig" style="width:200px">
+                <div class="anr-ghost-sheet" style="width:200px;height:283px"></div>
+                <figcaption class="anr-page-cap"><span class="anr-page-cap-ghost"></span></figcaption>
+              </figure>
+              <figure class="anr-page-fig" style="width:200px">
+                <div class="anr-ghost-sheet is-loaded" style="width:200px;height:283px"></div>
+                <figcaption class="anr-page-cap">Settled (.is-loaded)</figcaption>
+              </figure>
+            </div>
+          </div>
         </div>
 
         <h2 class="section-head" id="lists">Lists &amp; tables.</h2>
@@ -812,7 +850,7 @@
         <h2 class="section-head" id="viewer">Viewer chrome.</h2>
         <p class="section-lede">Overlays that live on the always-dark media surfaces (they keep fixed dark styling in both themes). The scroll-zoom toggle and the fullscreen button hide below 700px wide.</p>
         <div class="about-block">
-          <div class="tst-sub">Shared 3D viewer camera stack (.anr-cam - used by the G-code toolpath viewer and the STL/STEP/3MF mesh viewer): view cube (static replica of the attachViewCube DOM) bottom-left; the .anr-cam stack bottom-right - manual zoom pad (hold to zoom), scroll-zoom toggle (off by default) and fullscreen button</div>
+          <div class="tst-sub">Shared 3D viewer camera stack (.anr-cam - used by the G-code toolpath viewer and the STL/STEP/3MF mesh viewer; the view cube is on the KiCad 3D board too): view cube (static replica of the attachViewCube DOM) bottom-left; the .anr-cam stack bottom-right - manual zoom pad (hold to zoom), scroll-zoom toggle (off by default) and fullscreen button</div>
           <div class="tst-stage tst-stage--dark tst-stage--rel" style="height:230px">
             <div class="anr-viewcube" title="View cube (static replica)">
               <div class="anr-viewcube-cube" style="transform:rotateX(-20deg) rotateY(-32deg)">

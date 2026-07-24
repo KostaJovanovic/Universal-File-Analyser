@@ -4,16 +4,17 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 255;
+const COMMIT_COUNT = 256;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
 // major version and resets the counter within its era: commit 29 reads "1.0" (and
 // 30 → "1.01"), commit 60 reads "2.0", commit 100 reads "3.0" (and 101 → "3.01"),
 // commit 151 reads "4.0", commit 173 reads "5.0", commit 195 reads "6.0" and commit
-// 250 reads "7.0". To crown a future 8.0, append its commit number here (keep the
+// 250 reads "7.0" and commit 256 reads "8.0". To crown a future 9.0, append its
+// commit number here (keep the
 // list sorted ascending, and mirror the RELEASES constant in save.bat).
-const RELEASE_COMMITS = [29, 60, 100, 151, 173, 195, 250];
+const RELEASE_COMMITS = [29, 60, 100, 151, 173, 195, 250, 256];
 
 function analyserVersion(n, releases) {
   let major = 0, base = 0;
@@ -1443,25 +1444,39 @@ window._anrReadableText = isReadableText;
     } catch (e) { return null; }
   }
 
+  // Keys that are deliberately PERMANENT: they carry no ':ts' companion because
+  // they are written with a raw setItem (not anrSet), so the sweep's "no
+  // timestamp" branch below would otherwise delete them on every single page
+  // load. Each is either managed by its own module or must never silently
+  // expire:
+  //   anr-history          per-entry 7-day expiry of its own (readHistory)
+  //   anr-a11y             "Clear view" - an accessibility choice must not expire
+  //   anr-analytics-queue  offline-durable analysed-count queue (history.js)
+  //   anr-offline(-feat)   offline cache-tier version records (offline-tiers.js)
+  // Prefixes cover the families, which is what the old exact-match list got
+  // wrong: it named anr-asteroids-hi and -bestwave but not the game's other four
+  // keys, so its settings object, boss unlock, start-wave choice and dismissed
+  // keyboard hint were swept on every load - atari.html loads app.js too, so a
+  // setting did not even survive reloading the game. The model ready-flags had
+  // the same fault; they were harmless only because modelReady() probes the
+  // cache before reading them.
+  var ANR_PERMANENT = ['anr-history', 'anr-a11y', 'anr-analytics-queue',
+    'anr-offline', 'anr-offline-feat'];
+  var ANR_PERMANENT_PREFIX = ['anr-asteroids-', 'anr-mdx-ready-', 'anr-dfn-ready-'];
+  function anrPermanent(k) {
+    if (ANR_PERMANENT.indexOf(k) !== -1) return true;
+    for (var p = 0; p < ANR_PERMANENT_PREFIX.length; p++) {
+      if (k.startsWith(ANR_PERMANENT_PREFIX[p])) return true;
+    }
+    return false;
+  }
+
   function anrSweep() {
     try {
       var now = Date.now();
       for (var i = localStorage.length - 1; i >= 0; i--) {
         var k = localStorage.key(i);
-        // anr-asteroids-hi / -bestwave are permanent records with no :ts companion - skip them,
-        // or the sweep's "no timestamp" branch would delete them on every page load.
-        // anr-history manages its own per-entry 7-day expiry (readHistory), so it has
-        // no :ts companion either and must be exempted the same way. anr-a11y is the
-        // "Clear view" accessibility pref - deliberately permanent (an accessibility
-        // choice must not silently expire), so it too carries no :ts and is exempt.
-        // anr-analytics-queue (offline-durable analysed-count queue, history.js),
-        // anr-offline / anr-offline-feat (offline cache-tier version records,
-        // offline-tiers.js) also carry no :ts and are managed by their own modules -
-        // sweeping them silently defeats the offline-analytics and offline-tier features.
-        if (!k || !k.startsWith('anr-') || k.endsWith(':ts')
-            || k === 'anr-asteroids-hi' || k === 'anr-asteroids-bestwave'
-            || k === 'anr-history' || k === 'anr-a11y'
-            || k === 'anr-analytics-queue' || k === 'anr-offline' || k === 'anr-offline-feat') continue;
+        if (!k || !k.startsWith('anr-') || k.endsWith(':ts') || anrPermanent(k)) continue;
         var ts = parseInt(localStorage.getItem(k + ':ts'), 10);
         if (!ts || now - ts > ANR_TTL) {
           localStorage.removeItem(k);

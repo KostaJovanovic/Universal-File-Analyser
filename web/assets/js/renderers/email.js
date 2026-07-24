@@ -13,6 +13,7 @@
    ============================================================================ */
 
 import { el, row, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '../core/util.js';
+import { sanitizeHtml as sanitizeHtmlShared } from '../core/sanitize.js';
 
 // ---------- header parsing ----------
 function splitHeaderBody(text) {
@@ -114,30 +115,9 @@ function walkMime(head, body, acc, depth = 0) {
 }
 
 // Sanitise an HTML body for inert display (no scripts/styles/network/handlers).
+// The rules live in core/sanitize.js, shared with the MHTML, EPUB and SVG viewers.
 function sanitizeHtml(html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  doc.querySelectorAll('script, style, link, meta, iframe, object, embed, noscript, base, title').forEach((n) => n.remove());
-  for (const node of doc.querySelectorAll('*')) {
-    for (const attr of [...node.attributes]) {
-      const name = attr.name.toLowerCase();
-      if (name.startsWith('on')) node.removeAttribute(attr.name);
-      else if (name === 'href') {
-        // The browser's URL parser strips ASCII whitespace/control chars from a
-        // scheme before executing it, so `java&#9;script:` (tab in the middle)
-        // slips past a simple /^\s*javascript:/ test. Normalise the same way,
-        // then allow-list the scheme (relative/anchor URLs have no scheme).
-        const cleaned = String(attr.value).replace(/[\x00-\x20]+/g, '');
-        const m = /^([a-z][a-z0-9+.-]*):/i.exec(cleaned);
-        if (m && !/^(https?|mailto)$/i.test(m[1])) node.removeAttribute(attr.name);
-      }
-      else if (name === 'src' || name === 'srcset' || name === 'background') node.removeAttribute(attr.name);
-      else if (name === 'style' && /url\s*\(/i.test(attr.value)) node.removeAttribute(attr.name);
-    }
-  }
-  const container = el('div', { class: 'anr-email-html' });
-  const b = doc.body || doc.documentElement;
-  for (const child of [...b.childNodes]) container.appendChild(child);
-  return container;
+  return sanitizeHtmlShared(html, { className: 'anr-email-html' });
 }
 
 function authVerdict(hdrs) {

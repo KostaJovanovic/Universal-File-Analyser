@@ -162,6 +162,16 @@ export async function renderPptx(file, resultsEl) {
 
   const aspect = slideH / slideW;
 
+  // Fill the grid with empty slide-shaped tiles first. Each slide's XML is read
+  // and parsed one at a time below, so on a long deck the card would otherwise
+  // sit empty and then grow a row at a time under everything already on screen;
+  // the ghosts give it its full height from the start and are replaced in place.
+  const slideGhosts = slideOrder.map(() => {
+    const gh = el('div', { class: 'anr-ghost-sheet', style: 'aspect-ratio:' + (slideW / slideH).toFixed(3) + ';' });
+    slidesGrid.appendChild(gh);
+    return gh;
+  });
+
   for (let i = 0; i < slideOrder.length; i++) {
     const slidePath = slideOrder[i];
     const xml = await zip.text(slidePath).catch(() => null);
@@ -286,7 +296,7 @@ export async function renderPptx(file, resultsEl) {
       }
     }
 
-    slidesGrid.appendChild(slideBox);
+    slideGhosts[i].replaceWith(slideBox);
   }
 
   if (!slideOrder.length) slidesCard.appendChild(el('p', { class: 'anr-hint' }, 'No slides found.'));

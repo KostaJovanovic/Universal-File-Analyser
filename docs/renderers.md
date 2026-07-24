@@ -64,7 +64,7 @@ kinds). For full usage detail (buttons, controls, options), see the
 | Module | Handles | Notes |
 |---|---|---|
 | `pdf.js` | PDF viewer | Lazy-loads **pdf.js**; metadata, text, page thumbnails |
-| `paged.js` | Shared "page preview" presentation | Mirrors the PDF page experience for formats with no native page geometry (Word/ODF text, spreadsheets, presentations) |
+| `paged.js` | Shared "page preview" presentation | Mirrors the PDF page experience for formats with no native page geometry (Word/ODF text, spreadsheets, presentations). Also owns `pagePreviewSkeleton()`, the empty page-shaped placeholder card every paged renderer (`pdf.js` included) shows until its real sheets exist |
 | `djvu.js` | DjVu scanned-document viewer | Vendored pure-JS **DjVu.js**; decodes pages to `ImageData`, paints to canvas with prev/next paging |
 | `docx.js` | DOCX (OOXML) viewer | Metadata, formatted text, tables, text extraction |
 | `xlsx.js` | XLSX (OOXML) viewer | Each worksheet as a table with sheet tabs and metadata |

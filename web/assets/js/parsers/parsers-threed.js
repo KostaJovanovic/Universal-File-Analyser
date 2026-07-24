@@ -1097,7 +1097,7 @@ async function parseRevit(file, ext) {
   let bytes = null;
   try { bytes = cfbf.readStream((c) => /BasicFileInfo/i.test(c.name)); } catch (_) {}
   if (bytes && bytes.length) {
-    const txt = utf16(bytes, true).replace(/ /g, '');
+    const txt = utf16(bytes, true).replace(/\x00/g, '');
     const build = (txt.match(/Revit Build:\s*([^\r\n]+)/i) || [])[1];
     if (build) out['Revit build'] = build.trim();
     const ver = (txt.match(/Version Name:\s*([^\r\n]+)/i) || [])[1] ||

@@ -4,7 +4,7 @@
 
 import { el, row, rowHelp, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 import { openZip } from './zip.js';
-import { paginateFlow, pagedPreviewCard, pagedTextCard } from './paged.js';
+import { paginateFlow, pagedPreviewCard, pagedTextCard, pagePreviewSkeleton } from './paged.js';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
@@ -488,7 +488,11 @@ export async function renderDocx(file, container) {
   container.hidden = false;
   container.innerHTML = '';
   revokeDocxImageUrls();   // free the previous document's embedded-image object URLs
-  container.appendChild(el('div', { class: 'anr-info' }, 'Reading document…'));
+  // Ghost sheets rather than a bare "Reading document…" line: unzipping, decoding
+  // the images and laying the flow onto pages all happen before a single real
+  // page exists, and the placeholder shows where they will land.
+  const skeleton = pagePreviewSkeleton({ note: 'Reading document…' });
+  container.appendChild(skeleton);
 
   try {
     // Read generously: embedded images (word/media/*) usually sit after
@@ -509,6 +513,9 @@ export async function renderDocx(file, container) {
     }
 
     container.innerHTML = '';
+    // Put the placeholder straight back: the collaboration card and the image map
+    // below are both awaited, so the pages are still some way off.
+    container.appendChild(skeleton);
 
     const infoCard = el('div', { class: 'anr-card' });
     infoCard.appendChild(el('h3', {}, 'Document info'));
@@ -537,7 +544,7 @@ export async function renderDocx(file, container) {
     const rendered = renderDocumentXml(docXml, imageMap);
     const pages = paginateFlow(rendered);
     const pageTexts = pages.map((p) => p.textContent);
-    container.insertBefore(pagedPreviewCard(pages, { title: 'Page previews', label: 'Page' }), container.firstChild);
+    skeleton.replaceWith(pagedPreviewCard(pages, { title: 'Page previews', label: 'Page' }));
 
     if (pageTexts.some((t) => t.trim())) {
       container.appendChild(pagedTextCard(pageTexts, { label: 'Page' }));
