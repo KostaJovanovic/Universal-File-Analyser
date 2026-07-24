@@ -322,9 +322,10 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
     try {
       const cache = await caches.open('analyser-offline');
       const has = async (url) => !!(url && await cache.match(new Request(url)));
-      // Complete's sentinel is the AI model, which "Clear storage" can deliberately
-      // spare on its own; require an Everything-tier file too, so a lone kept model
-      // is not misread as a full Complete cache.
+      // Complete's sentinel is the AI model, which the audio panel can download on
+      // its own (without the tier) - so require an Everything-tier file too, or a
+      // lone model fetched from the Isolate panel would be misread as a full
+      // Complete cache.
       if (await has(TIERS.complete[TIERS.complete.length - 1])
           && await has(TIERS.everything[TIERS.everything.length - 1])) return 'complete';
       if (await has(TIERS.everything[TIERS.everything.length - 1])) return 'everything';
@@ -766,31 +767,49 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
     });
   }
 
-  // ----- Clear data (analysis history + session/local state and IndexedDB).
-  //        Deliberately spares everything the user has downloaded for offline use,
-  //        on every platform: the preloaded/bundled app content (native builds ship
-  //        the whole Everything tier as static files) AND any optional Complete
-  //        packs (AI model, extra OCR languages) they fetched. The 'analyser-offline'
-  //        Cache Storage bucket and its download records are left untouched, so
-  //        nothing ever has to be re-downloaded; the SW app-shell cache stays too.
-  //        Keeps the dark-mode preference and the Asteroids high score. -----
+  // ----- Clear storage: everything this site has put on the device. -----
+  //        Analysis-side state (history, the queued stats pings, nudge timers, the
+  //        Asteroids scores), every IndexedDB database, all of sessionStorage AND
+  //        the offline downloads - the 'analyser-offline' tier cache plus the two
+  //        model caches ('analyser-mdx', 'analyser-dfn'), together with the records
+  //        that say they are cached. Reclaiming that space was previously
+  //        impossible from inside the site: nothing else deletes those caches (the
+  //        service worker's KEEP_CACHES deliberately preserves all three across
+  //        version bumps), so this button was the only place it could live.
+  //
+  //        TWO things survive, both settings rather than stored data:
+  //          - 'anr-theme' (+ ':ts')  the light/dark choice
+  //          - 'anr-a11y'             Clear view, the low-vision mode
+  //        Wiping either would change how the site LOOKS for someone who only
+  //        asked to delete what it had stored - and app.js marks the accessibility
+  //        key permanent precisely so it can never silently expire.
+  //
+  //        Not touched: the service worker's app-shell cache (keyed by VERSION).
+  //        That is the application itself, not user data, and the SW repopulates
+  //        it on the next online load - deleting it would only break offline use
+  //        until then. The native builds ship their content as static files, so
+  //        they are unaffected by any of the cache deletions here.
   const clearBtn = document.getElementById('offlineClear');
   if (clearBtn) {
     clearBtn.addEventListener('click', async () => {
       clearBtn.textContent = 'Clearing…';
-      // Preserve the kept keys, wipe localStorage + sessionStorage, restore them.
-      // The offline download records ('anr-offline' / 'anr-offline-feat') are kept
-      // alongside the theme + game scores, so the "Cached" badges stay accurate
-      // against the offline cache we deliberately leave in place.
-      const KEEP = ['anr-theme', 'anr-theme:ts', 'anr-asteroids-hi', 'anr-asteroids-bestwave', 'anr-offline', 'anr-offline-feat'];
+      // Stop any tier/pack download still running FIRST. Left alone it would carry
+      // on writing into the cache we are about to delete and re-record its tier as
+      // cached, which is what makes a clear look inert (see activeDownloads above).
+      for (const abort of activeDownloads) { try { abort.abort(); } catch (_) {} }
+      activeDownloads.clear();
+      // Preserve the two settings, wipe localStorage + sessionStorage, restore them.
+      // Everything else goes, the download records ('anr-offline' /
+      // 'anr-offline-feat') and the model ready-flags ('anr-mdx-ready-*' /
+      // 'anr-dfn-ready-*') included - they must not outlive the caches they
+      // describe, or the badges would claim a download that is no longer there.
+      const KEEP = ['anr-theme', 'anr-theme:ts', 'anr-a11y'];
       const kept = {};
       for (const k of KEEP) { const v = localStorage.getItem(k); if (v !== null) kept[k] = v; }
       try { localStorage.clear(); } catch (_) {}
       try { sessionStorage.clear(); } catch (_) {}
       for (const k in kept) { try { localStorage.setItem(k, kept[k]); } catch (_) {} }
-      // Drop any IndexedDB databases (analysis-side state). Never the downloaded
-      // assets - those live in the 'analyser-offline' Cache Storage bucket, which
-      // we do not touch.
+      // Every IndexedDB database (analysis-side state).
       try {
         if (indexedDB.databases) {
           const dbs = await indexedDB.databases();
@@ -800,8 +819,14 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
           })));
         }
       } catch (_) {}
-      // Downloads and their records survived, so the tier/pack badges just repaint
-      // as they were.
+      // The downloads themselves. Each delete is independently caught so a bucket
+      // that does not exist (nothing was ever downloaded) can't abort the rest.
+      try {
+        await Promise.all(['analyser-offline', 'analyser-mdx', 'analyser-dfn']
+          .map((name) => caches.delete(name).catch(() => false)));
+      } catch (_) {}
+      // Records and caches are both gone, so the tier/pack badges repaint as
+      // un-cached - detectCachedTier()'s sentinel probe now finds nothing.
       refreshTierButtons();
       refreshFeatureButtons();
       renderHistoryPanel();   // history lived in localStorage - now wiped

@@ -13,8 +13,13 @@ analysis features, and for engineers extending them. Source: `photo.js`,
 **What it does.** Drop a photo and Analyser shows file info (size, MIME,
 dimensions, exact aspect ratio, megapixels, an "≈3:2"-style common-ratio
 label), then every EXIF/IPTC/XMP/ICC field the file carries, grouped into
-Camera & lens, Exposure, Date/time, Image, Description (IPTC/XMP) and ICC
-profile sections.
+Camera & lens, Exposure, Date/time, Image, Privacy and ICC profile
+sections. **Privacy** reports the identifying metadata the file carries
+(GPS, camera/lens serials, owner, unique IDs); it replaced the old
+Description (IPTC/XMP) block and used to live in the Advanced card.
+Stripping it is the **Remove metadata** control on the same card
+(`scrub.js`), which losslessly rebuilds the file with its metadata segments
+removed - pixels and colour profile untouched.
 
 **How to reach it.** Drop any recognised photo extension (JPEG, PNG, HEIC,
 RAW, etc.) - the metadata table appears automatically in the Photo section.
@@ -121,12 +126,18 @@ QR fallback for browsers without it.
 shown). Firefox/Safari desktop lack BarcodeDetector, so there only QR codes
 are read (via jsQR).
 
-### Advanced forensics (ELA, quantization fingerprint, JPEG ghosts, steganalysis, privacy, edit history)
+### Advanced forensics (integrity, ELA, quantization fingerprint, JPEG ghosts, steganalysis, edit history)
 
 **What it does.** A collapsible **Advanced** card (where LSB analysis used
-to sit) groups the deeper forensic and technical views, each as a panel
-collapsed by default:
+to sit) groups the deeper forensic and technical views, each as a flat part:
 
+- **Integrity**: the **pHash** (perceptual fingerprint - alike pictures get
+  alike fingerprints, so it spots duplicates across a resize or re-save) and
+  the **SHA-256** of the exact file bytes. This used to be a card of its own
+  above Advanced; it still is on [`/compare`](../pages.md), where the merge
+  hoists "Integrity" to the top of the side-by-side view by its heading. The
+  part carries `[data-integrity]` so `forensics.js`'s `findIntegrityCard()`
+  still finds it and `app.js` does not append a second, generic one.
 - **Forensics** (JPEG only): **Error-level analysis** (re-save + amplified
   difference, with quality/amplify sliders and a lightbox), the
   **quantization-table fingerprint** (effective quality recovered from the
@@ -137,11 +148,6 @@ collapsed by default:
 - **Edit history**: the XMP `xmpMM:History` timeline (Lightroom/Photoshop
   action log) plus the Photoshop **IPTC-digest** check that flags when the
   caption/keyword block was changed after Photoshop last saved the file.
-- **Privacy**: a report of identifying metadata (GPS, camera/lens serials,
-  owner, unique IDs) present in the file. Stripping it is the **Remove
-  metadata** control on the Metadata card (`scrub.js`), which losslessly
-  rebuilds the file with its metadata segments removed (pixels and colour
-  profile untouched) - not duplicated here.
 - **LSB analysis**: a chi-square (Westfeld-Pfitzmann) estimate of the
   likelihood that least-significant-bit data has been embedded, plus a
   browser for all eight bit planes (0 = LSB to 7 = MSB) per channel.
@@ -374,6 +380,20 @@ the full photo pipeline on that one extracted image.
 btn: Analyse
 btn: Download
 ```
+
+**Orientation.** An extracted thumbnail or preview is a *bare* JPEG - the
+carved bytes carry no metadata of their own, so a browser paints them in
+stored order, which is sideways for anything shot in portrait even while
+the main photo above sits upright (the browser rotates that one from its
+own EXIF). `extractRawJpegs` therefore also reads the Orientation tag
+(0x0112) of the IFD that pointed at each JPEG, falling back to IFD0's -
+most cameras record the rotation once, against the main image, and store
+the thumbnail in that same physical orientation. `embedded-images.js`
+repaints the picture through a canvas so it shows the right way up, and
+captions it "stored rotated 90 degrees, shown upright". The **stated
+dimensions stay as stored** (that pairing is the finding), and the
+**Download stays byte-identical** to what was carved out - the correction
+is display-only.
 
 **Notes / limits.** ICO extraction rebuilds a minimal single-image icon
 blob per directory entry so the browser's native decoder paints exactly

@@ -70,6 +70,35 @@ Downloaded tiers are cached under the persistent `analyser-offline` cache
 name (surviving service-worker version bumps, per above) and refreshed in
 place - not wiped - when a new version's files change.
 
+## Clear storage
+
+The footer's **Clear storage** button removes everything the site has put on
+the device, and is the *only* route to deleting a download from inside the
+site - `sw.js`'s `KEEP_CACHES` deliberately preserves the download buckets
+across every version bump, so nothing else ever drops them. It:
+
+- aborts any in-flight tier/pack download first (the `activeDownloads` set of
+  `AbortController`s). Skipping this is what used to make a clear look inert -
+  the running download simply refilled the cache and re-recorded its tier;
+- wipes `localStorage` and `sessionStorage`, keeping only `anr-theme` (+ its
+  `:ts`) and `anr-a11y`. Those two are *settings* - the light/dark choice and
+  the Clear-view accessibility mode - and resetting them would change how the
+  site looks for someone who only asked to delete stored data. The download
+  records (`anr-offline`, `anr-offline-feat`) and the model ready-flags
+  (`anr-mdx-ready-*`, `anr-dfn-ready-*`) go with everything else: a record must
+  never outlive the cache it describes, or the badges claim a download that
+  isn't there;
+- deletes every IndexedDB database;
+- deletes the three download caches - `analyser-offline`, `analyser-mdx`,
+  `analyser-dfn` - each `catch`ed independently so a bucket that was never
+  created can't abort the rest.
+
+It does **not** touch the service-worker app-shell cache (keyed by `VERSION`).
+That is the application itself rather than user data, and the SW repopulates it
+on the next online load; deleting it would only break offline use until then.
+Native builds ship their content as static files, so none of the cache
+deletions affect them.
+
 ## Manifest / install flow
 
 `web/manifest.json` declares the PWA: name/short_name, `start_url`/`scope`

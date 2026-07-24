@@ -15,7 +15,11 @@ import { el } from './util.js';
 // newest group's notes, or - once that group holds five versions - start a new
 // group above it (and never fold an X.0 milestone into a range).
 const PATCH_DIGEST = [
-  { range: '7.01 - 7.02', notes: [
+  { range: '7.01 - 7.05', notes: [
+    'A song that took **26 seconds** to analyse now takes **3** - the heavy sound reads moved to a background thread, the frequency maths rewritten, and each answer filling in as it lands.',
+    'The same speed pass reaches **long documents** (measured once instead of per paragraph), **dropped folders** (read in parallel, cancellable, counted as they arrive) and **photos** (the heavy forensic reads prepared only when opened).',
+    'New **XMP sidecar** viewer: the develop recipe Lightroom, Camera Raw and darktable write beside a raw photo, with the tone curve, sliders, colour mixer and crop drawn out.',
+    'Sound gains a **Reverse** that re-analyses the reversed track in full, a **lossy-source check** promoted to its own card, redrawn **touch-tones** you can click to hear, and **space** to play or pause anywhere.',
     'The deep **Advanced** forensic analysis is gathered into one tidy section - each panel now a sub-heading rather than a separate card - and dropped to the **very bottom** of every photo, video and sound, below everything else.',
     'Sound\'s **loudness graph** (EBU R128, with true peak) becomes playable like the waveform - a playhead tracks the sound and you can click or drag anywhere on it to seek.',
     'A photo\'s **privacy report** (GPS, serial, owner, copyright, unique IDs) moves up into the main metadata, and a copyright field that used to misread is fixed.',

@@ -644,7 +644,11 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
   // player. Only offered where we hold the decoded buffer (the mic/live panel
   // below builds its own action row and has none).
   const revBtn = opts.audioBuffer
-    ? el('button', { type: 'button', class: 'anr-btn' }, [sIco('<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 2.5 7.5 7l5 4.5"/><path d="M6.5 2.5 1.5 7l5 4.5"/></svg>'), 'Reverse'])
+    // Anticlockwise circling arrow. Geometry is a 4.3 radius about (7,7) with a
+    // 2.4 arrowhead, which keeps every point inside 1.95..13.68 - so with the 1.5
+    // stroke (0.75 either side) nothing touches the 14x14 box. The first attempt
+    // clipped along the top because its arc ran to the very edge of the viewBox.
+    ? el('button', { type: 'button', class: 'anr-btn' }, [sIco('<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2.7A4.3 4.3 0 1 0 11.04 5.53"/><path d="M10.54 7.88 11.04 5.53 12.93 7.01"/></svg>'), 'Reverse'])
     : null;
   if (revBtn) {
     revBtn.addEventListener('click', () => {
@@ -1173,20 +1177,27 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     const aiBtn = el('button', { type: 'button', class: 'anr-btn anr-iso-ai' }, 'AI separation');
     const aiStatus = el('div', { class: 'anr-iso-aistatus', hidden: true });
     const aiStems = el('div', { class: 'anr-iso-stems' });
-    // Explanation tucked behind a [?] next to the "Separate" label (site's
-    // standard info-toggle idiom, same as h3help) so the section stays compact.
-    // The section holds both approaches now (EQ presets + the AI model), so the
-    // help covers both rather than just the AI part.
-    const aiHelpBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'About separating parts' }, '[?]');
+    // Each panel's explanation sits behind a [?] next to its section label (the
+    // site's standard info-toggle idiom, same as h3help) so the panel stays compact.
+    // One panel, one approach: the presets are EQ, exactly like the manual bands
+    // beside them, so they belong to Isolate; the AI panel covers only the models.
+    const isoHelpBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'About isolating frequencies' }, '[?]');
+    const isoHelpPanel = el('div', { class: 'anr-info-panel is-hidden', html:
+      'Keep or cut ranges of pitch across the whole track. The <strong>presets</strong> are one-tap character filters: a muffled low-pass (<strong>Underwater</strong>), a tinny band-pass (<strong>Radio</strong>) or a scooped mid notch (<strong>Hollow</strong>). <strong>Add band</strong> - or dragging vertically on the spectrogram - cuts an exact range you choose, and you can stack as many bands as you like. This is ordinary EQ, so it is instant, but rough: it cannot tell a voice from a guitar playing the same notes. For a true split, use <strong>AI separation</strong> in the Actions row. <strong>Export</strong> writes whatever you are hearing to a WAV file.' });
+    wireInfoToggle(isoHelpBtn, isoHelpPanel);
+    const isoLabel = el('span', { class: 'anr-iso-seclabel' }, 'Isolate');
+    isoLabel.appendChild(isoHelpBtn);
+
+    const aiHelpBtn = el('button', { type: 'button', class: 'anr-info-btn', title: 'About AI separation' }, '[?]');
     const aiHelpPanel = el('div', { class: 'anr-info-panel is-hidden', html:
-      'Two ways to pull a single part out of the mix. The <strong>presets</strong> (Underwater, Radio, Hollow) are one-tap character filters - they keep or cut ranges of pitch to colour the whole track: a muffled low-pass (<strong>Underwater</strong>), a tinny band-pass (<strong>Radio</strong>) or a scooped mid notch (<strong>Hollow</strong>). They are instant but rough. <strong>AI separation</strong> opens a row of real on-device AI tools. Pick <strong>Standard</strong> or <strong>Lite</strong> to split the track into a clean vocal and a clean backing track (separate "stems") - far cleaner than the presets, and a true separation rather than just a pitch cut; Standard is the cleanest, Lite is about half the download and lighter to run, for phones. <strong>Denoise</strong> (in the same row) does something different: instead of splitting vocals from music, it removes background noise and hiss while keeping the full sound, and shows the result as a Clean to Noise blend. The AI runs entirely on your device and nothing is uploaded; the first run downloads the chosen model once, then works offline.' });
+      'Real on-device AI that pulls a single part out of the mix. Unlike the Isolate presets this is a true separation rather than a pitch cut, so it can tell a voice from music playing the same notes. Pick <strong>Standard</strong> or <strong>Lite</strong> to split the track into a clean vocal and a clean backing track (separate "stems"); Standard is the cleanest, Lite is about half the download and lighter to run, meant for phones. <strong>Denoise</strong> does something different: instead of splitting vocals from music it strips background noise and hiss while keeping the full sound, and shows the result as a Clean to Noise blend. It all runs on your device and nothing is uploaded; the first run downloads the chosen model once, then works offline.' });
     wireInfoToggle(aiHelpBtn, aiHelpPanel);
-    const aiLabel = el('span', { class: 'anr-iso-seclabel' }, 'Separate');
+    const aiLabel = el('span', { class: 'anr-iso-seclabel' }, 'AI separation');
     aiLabel.appendChild(aiHelpBtn);
-    // The AI separator used to lead this row; it now lives in the Actions row beside
-    // Isolate, so what is left here is just the rough EQ presets
-    // (Underwater/Radio/Hollow). Clear is appended later and pushed to the far right.
-    const aiRow = el('div', { class: 'anr-iso-ai-row' }, [presetBar]);
+    // The rough EQ presets (Underwater/Radio/Hollow). They sit in the Isolate panel
+    // below, not with the AI models: they are band filters, the same tool as the
+    // manual bands. Clear is appended later and pushed to the far right.
+    const presetRow = el('div', { class: 'anr-iso-preset-row' }, [presetBar]);
 
     // ---- Actions row mount ----
     // Sit AI separation directly beside Isolate: both pull a part out of the mix, so
@@ -1247,7 +1258,9 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // Isolate button, so clicking it appeared to do nothing.
     const isoPanel = el('div', { class: 'anr-iso-panel is-hidden' }, [
       el('div', { class: 'anr-iso-sec' }, [
-        el('span', { class: 'anr-iso-seclabel' }, 'Isolate'),
+        isoLabel,
+        isoHelpPanel,
+        presetRow,
         el('div', { class: 'anr-iso-rule' }),
         el('div', { class: 'anr-iso-actions' }, [
           addBtn,
@@ -1261,7 +1274,6 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       el('div', { class: 'anr-iso-sec anr-iso-sec-ai' }, [
         aiLabel,
         aiHelpPanel,
-        aiRow,
         aiModelRow,
         aiStatus,
         aiStems,
@@ -1507,6 +1519,11 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // --- toggle ---
     function setIsoActive(on) {
       isoActive = on;
+      // Isolate and AI separation are alternatives, not layers - both take over the
+      // picture and the sound - so opening one closes the other. closeAiPanel is a
+      // function declaration in the AI block below, hoisted to the top of this same
+      // block, so it is callable from here.
+      if (isoActive) closeAiPanel();
       isoBtn.classList.toggle('is-active', isoActive);
       isoPanel.classList.toggle('is-hidden', !isoActive);
       bandLayer.style.display = isoActive ? '' : 'none';
@@ -1582,7 +1599,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       });
       presetBar.appendChild(b);
     }
-    aiRow.appendChild(presetClear);
+    presetRow.appendChild(presetClear);
 
     // --- export the current isolate result as a WAV ---
     // Re-render the whole clip offline through the SAME processing that's live now,
@@ -2243,15 +2260,19 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     // tier) just re-renders it. Clicking AI separation again closes the panel,
     // dismissing any open card. While a result is showing it is the master "off" -
     // clear the stems and revert to the original track.
+    // Shut the AI panel, dropping any confirm card with it. Shared by the button's
+    // own toggle and by setIsoActive above, since the two panels are alternatives.
+    function closeAiPanel() {
+      if (aiPanel.classList.contains('is-hidden')) return;
+      if (aiConfirming && aiConfirmCancel) aiConfirmCancel();
+      aiPanel.classList.add('is-hidden');
+      aiBtn.classList.remove('is-active');
+    }
     aiBtn.addEventListener('click', () => {
       if (aiRunning) return;
       if (aiOn) { clearStems(); return; }
-      if (!aiPanel.classList.contains('is-hidden')) {  // open -> close, dropping any card
-        if (aiConfirming && aiConfirmCancel) aiConfirmCancel();
-        aiPanel.classList.add('is-hidden');
-        aiBtn.classList.remove('is-active');
-        return;
-      }
+      if (!aiPanel.classList.contains('is-hidden')) { closeAiPanel(); return; }
+      if (isoActive) setIsoActive(false);              // the two are alternatives
       aiPanel.classList.remove('is-hidden');           // closed -> open with the default card
       aiBtn.classList.add('is-active');
       pendingKind = 'separate';
@@ -3291,14 +3312,23 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // still on its way, instead of cards silently appearing well after the page has
   // stopped looking busy.
   const lossySlot = el('div', {}, [inlineLoader('Checking for a lossy source…')]);
-  const stereoSlot = el('div', {}, audioBuffer.numberOfChannels >= 2
-    ? [inlineLoader('Measuring the stereo image…')] : []);
   const advSlot = el('div', {}, [inlineLoader('Running the deeper forensic reads…')]);
+  // The channel picker is a live CONTROL - it drives the spectrogram and waveform
+  // above - not a reading, so there is nothing to wait for and it goes in straight
+  // away, directly under the two views it changes. It used to ride at the foot of
+  // the Stereo analysis card; that card is now a section of Advanced, which is
+  // collapsed by default, and a control is no use behind a disclosure.
+  const chanSlot = el('div');
+  if (chanSeg) {
+    const chanCard = el('div', { class: 'anr-card' });
+    chanCard.append(chanHead, chanHelpPanel, chanSeg, chanStat);
+    chanSlot.appendChild(chanCard);
+  }
   resultsEl.appendChild(coverSlot);
   resultsEl.appendChild(tagSlot);
   resultsEl.appendChild(waveSlot);
+  resultsEl.appendChild(chanSlot);
   resultsEl.appendChild(lossySlot);
-  resultsEl.appendChild(stereoSlot);
   resultsEl.appendChild(advSlot);
 
   // Build the spectrogram and WAIT for it to finish before starting anything else.
@@ -3490,13 +3520,16 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   // the full EBU R128 loudness set and the spectral checks - out of the way of the
   // everyday File info readout above, exactly as the video Advanced card does.
   // Built here (data is in scope) but appended last, below every other card.
-  let advCardEl = null;
+  // Declared outside the block below so the Stereo analysis section - built much
+  // further down, where its channel data and the separation sink are in scope -
+  // can append itself here too. It lands after the touch-tones, which is where it
+  // reads: the last of the deeper sections.
+  const advCard = el('div', { class: 'anr-card anr-adv anr-adv--flow anr-collapsible is-collapsed' });
+  let advCount = 0;
   {
-    const advCard = el('div', { class: 'anr-card anr-adv anr-adv--flow anr-collapsible is-collapsed' });
     const [advH, advHelp] = h3help('Advanced',
       'Deep forensic analysis of the sound, computed from the decoded audio. Each panel below is collapsed until you open it.');
     advCard.appendChild(advH); advCard.appendChild(advHelp);
-    let advCount = 0;
 
     // -- Loudness meter (EBU R128) --
     if (r128 && isFinite(r128.integrated)) {
@@ -3628,8 +3661,6 @@ export async function renderAudio(file, resultsEl, opts = {}) {
       body.appendChild(keys);
       advCard.appendChild(det); advCount++;
     }
-
-    if (advCount) advCardEl = advCard;
   }
 
   // (Reverse playback used to be its own card here. It is now the Reverse button
@@ -3671,14 +3702,16 @@ export async function renderAudio(file, resultsEl, opts = {}) {
   }).catch(() => {});
 
 
-  // ---- Stereo Width / Vectorscope card (stereo files only) ----
+  // ---- Stereo Width / Vectorscope (stereo files only) ----
+  // A section of the Advanced card rather than a card of its own: it is a deeper
+  // read than the everyday File info rows, and it sits under the touch-tones as
+  // the last of the titled sections. Titled, not flowing, because it ends in a
+  // vectorscope - the same reason the touch-tones keep a heading.
   if (audioBuffer.numberOfChannels >= 2) {
     const origLeft  = audioBuffer.getChannelData(0);
     const origRight = audioBuffer.getChannelData(1);
 
-    const stereoCard = el('div', { class: 'anr-card' });
-    const [stH, stHelp] = h3help('Stereo analysis', '<strong>Phase correlation</strong> measures how alike the left and right channels are. +1 means identical (effectively mono), 0 means unrelated, and negative means they fight each other (out of phase, which can cancel out on a single mono speaker).<br><strong>Stereo width</strong> comes from that correlation. Higher means a wider stereo image.<br><strong>Mid/Side</strong> splits the sound into its centre (mid) and its left-right difference (side).<br>The <strong>vectorscope</strong> plots the left channel against the right. A vertical line means mono; a rounded blob means wide stereo; a horizontal line means out of phase.<br>These describe the file&#39;s original Left/Right pair, so they do not change when you switch Channel below (which only affects the spectrogram and waveform). After AI vocal separation they follow the current blend mix instead.');
-    stereoCard.appendChild(stH); stereoCard.appendChild(stHelp);
+    const { det: stDet, body: stereoCard } = aAdvSection('Stereo analysis', '<strong>Phase correlation</strong> measures how alike the left and right channels are. +1 means identical (effectively mono), 0 means unrelated, and negative means they fight each other (out of phase, which can cancel out on a single mono speaker).<br><strong>Stereo width</strong> comes from that correlation. Higher means a wider stereo image.<br><strong>Mid/Side</strong> splits the sound into its centre (mid) and its left-right difference (side).<br>The <strong>vectorscope</strong> plots the left channel against the right. A vertical line means mono; a rounded blob means wide stereo; a horizontal line means out of phase.<br>These describe the file&#39;s original Left/Right pair, so they do not change when you switch Channel (which only affects the spectrogram and waveform). After AI vocal separation they follow the current blend mix instead.');
     // Muted source line: shows when the readout reflects the separation blend rather
     // than the file itself (hidden by default = the file's own Left/Right).
     const stereoSrc = el('div', { class: 'anr-sel-label', style: 'margin:0 0 10px;', hidden: true });
@@ -3723,18 +3756,12 @@ export async function renderAudio(file, resultsEl, opts = {}) {
     stereoSink.update = (stats, left, right) => paintStereo(stats, left, right, 'Reflecting the current vocal-instrumental blend');
     stereoSink.reset = () => paintStereo(computeStereoStats(origLeft, origRight), origLeft, origRight, null);
 
-    // Channel selector (Mix/L/R) folded in here as a sub-section - it drives the
-    // spectrogram + waveform higher up the page. The 'Channel' h3 gives the same
-    // visual break between it and the stereo stats above.
-    if (chanSeg) stereoCard.append(chanHead, chanHelpPanel, chanSeg, chanStat);
-
-    stereoSlot.innerHTML = '';
-    stereoSlot.appendChild(stereoCard);
+    advCard.appendChild(stDet); advCount++;
   }
 
   // Advanced sits last, below every other card.
   advSlot.innerHTML = '';
-  if (advCardEl) advSlot.appendChild(advCardEl);
+  if (advCount) advSlot.appendChild(advCard);
 
   // (The spectrogram's first paint was already awaited before the forensic passes
   // began, so there is nothing left to wait for here.)

@@ -304,11 +304,22 @@ export function trailingCard(info, file) {
   return card;
 }
 
-// Find the renderer's "Integrity" card (a plain .anr-card led by an <h3> whose
-// text starts with "Integrity" - the plain or h3help "Integrity[?]" form). Used
-// to slot the trailing-data card in just above it, since integrity is the last
-// card most renderers append.
+// Find the renderer's integrity readout and return the .anr-card holding it.
+// Used both to avoid appending a second, generic Integrity card over the top of a
+// renderer's own, and to slot the trailing-data card in just above it (integrity
+// is the last card most renderers append).
+//
+// Two shapes count. Most renderers give it a card of its own, led by an <h3>
+// starting with "Integrity" (plain or the h3help "Integrity[?]" form). photo.js
+// instead keeps the fingerprints as a part inside its Advanced card, which marks
+// itself [data-integrity] so it is still found - and since Advanced is the last
+// card on the page, "just above it" stays the right place for trailing data.
 export function findIntegrityCard(root) {
+  const part = root.querySelector('[data-integrity]');
+  if (part) {
+    const card = part.closest('.anr-card');
+    if (card) return card;
+  }
   for (const card of root.querySelectorAll('.anr-card')) {
     const h = card.querySelector('h3');
     if (h && h.textContent.trim().startsWith('Integrity')) return card;

@@ -97,9 +97,10 @@ upkeep checklist for when you add/change a format.
 
 `docs/` (repo root) is the project's own reference documentation: an
 architecture set (architecture, pipeline, renderers, parsers-and-libs, pages,
-pwa-offline, tooling, worker, design-system) and a usage-oriented `features/`
-set, mapped in `docs/README.md`. It is both the working reference *and* the
-source for a public docs site.
+pwa-offline, tooling, worker, design-system), a "start here" pair
+(`user-guide.md`, `faq.md`), a usage-oriented `features/` set, and a reference
+pair (`FEATURE-INVENTORY.md`, `PROGRESS.md`), mapped in `docs/README.md`. It is
+both the working reference *and* the source for a public docs site.
 
 `tools/build-docs-html.mjs` (run by save.bat) converts the Markdown to on-brand
 HTML with its own tiny converter - no npm deps:
@@ -181,6 +182,9 @@ README.md           — public GitHub readme (visitor-facing overview; this
                       file is the real working guidance)
 AGENTS.md           — condensed agent guidance for other tools. Overlaps this
                       file; keep the two consistent when changing conventions.
+FEATURES.md         — plain-language inventory of everything the app does
+                      (visitor-readable; not generated, not served)
+FEATURE-IDEAS.md    — backlog checklist of unbuilt ideas with effort estimates
 docs/               — project reference docs (Markdown). SOURCE for the public
                       /docs site - see "The docs site" above. Never edit the
                       generated web/docs*.html; edit these.
@@ -188,6 +192,17 @@ docs/               — project reference docs (Markdown). SOURCE for the public
 tools/              — Node generator scripts (dev-only, never served). They read
                       website files via a WEB = join(ROOT, 'web') constant, while
                       tools/ + worker/ + stats-backup/ paths stay under the root.
+                      Eight are the save.bat chain (see Commands); the rest are
+                      inputs or standalone: prerender-common.mjs (shared esc/
+                      THEME_SCRIPT/badge helpers), format-page-content.mjs +
+                      dyk-extra.json + sample-content.mjs (hand-curated per-
+                      extension copy the prerenderers pull in - a full-analysis
+                      ext missing from format-page-content.mjs gets a thin generic
+                      page and is warned about at generation time),
+                      backup-stats.mjs (read-only D1 stats snapshot to
+                      stats-backup/*.csv; run from the save.bat menu, not the
+                      commit path) and disperse-unsupported.mjs (re-checks the
+                      stats "unsupported" dogpile against the live catalog).
 worker/             — Cloudflare Worker: anonymous analysed-count stats API
                       (index.js + schema.sql + disperse-unsupported.sql). The only
                       server-side code; the analyser itself stays browser-only.
@@ -222,7 +237,7 @@ web/                — THE WEBSITE, served at "/" by Cloudflare (assets.directo
                         consumed by the deploy, never served, not applied by serve.py)
   assets/             — css / fonts / img / vendor + all the app JS; detailed below
 
-web/assets/ in detail (the app's CSS, fonts, images, third-party libs, and JS):
+web/assets/ in detail (the app's CSS, fonts, images and third-party libs):
 assets/
   css/
     analyser.css    — all styles for the app + main pages
@@ -231,93 +246,7 @@ assets/
   fonts/            — Geist woff2 files
   img/              — banner, favicons, app icons
   vendor/           — third-party libraries (exifr, ffmpeg, imagemagick, ...)
-  js/
-    core/
-      app.js        — entry point: ROUTES table, resolveKind()/handleFile
-                      analysis pipeline, boot(). COMMIT_COUNT lives here.
-      classify.js   — classifyFile(file): name/extension/MIME → a ROUTES kind
-                      (no byte sniffing). Exposed as window._anrClassify.
-      file-sniff.js — content-based sniffing: what a file ACTUALLY is from its
-                      leading bytes; drives handleFile reroutes and the folder scan
-      forensics.js  — forensic integrity cards (signature mismatch, trailing data)
-                      built on the file-sniff.js result
-      formats.js    — central format catalog (sets + display tables + catalogGrouped())
-      format-overlay.js — renders the catalog into the help overlay / about / hub,
-                      stamps [data-fmt-count], wires the format search + deep-links
-      search.js     — metadata search
-      navigate.js   — SPA router (View Transitions API)
-      effects.js    — page atmosphere/glow/transition effects
-      overlays.js   — transient chrome shared by the drop pipeline (confirm modal,
-                      drop loader bar, type-suggestion nudge, link-leave confirm)
-      popups.js     — modal, suggestion + share-nudge popups
-      osint.js      — network-indicator (OSINT) extraction: pulls URLs/IPs/domains/
-                      emails from a file's text into a card of click-to-open lookup
-                      links (nothing sent automatically — the no-upload promise holds)
-      history.js    — anonymous analysed-count stats ping (the only network call)
-                      + on-device "Recently analysed" localStorage history (metadata only)
-      offline-tiers.js — "Download for offline use" footer: cumulative cache tiers,
-                      PWA install prompt, clear-storage button
-      stats-page.js — the /stats page (totals, per-ext table, leaderboard, trend chart)
-      patch-tldr.js — the /patch "tl;dr" release-group digest toggle
-      docs.js       — client behaviour for the generated /docs pages (theme
-                      toggle, sidebar filter, footer contact). The docs pages
-                      don't load app.js, so this stands in for it there.
-      export-data.js — "export analysis data" (JSON/hash) builder
-      video-sync.js — shared video↔analysis scrubbing/sync helpers
-      util.js       — shared DOM helpers (el, fileExt, …) and formatters
-      binutil.js    — shared binary toolkit (cursor reader, decoders, magic)
-    renderers/      — one module per top-level type (classifyFile() routes to these
-                      via ROUTES in app.js). Inventory by domain:
-      photo.js · photo-convert.js · photo-recover.js · sonify.js · tiff.js · mpo.js · ico · embedded-images.js
-        — photo analysis (EXIF, histogram, OCR), HEIC/RAW conversion, multi-image;
-        photo-recover.js salvages broken/truncated/corrupt stills (repair a cut-off
-        JPEG/PNG, rebuild a damaged JPEG header from a reference photo, carve
-        embedded images out of a blob) - the stills twin of video-recover.js.
-        sonify.js is the inverse of spectrogram.js (image → sound, oscillator-bank
-        or Griffin-Lim) - not a top-level type but lazy-imported by photo.js's
-        "Sonify" button, so it lives in renderers/ and ships in sw.js SHELL
-      audio.js · audio-analysis.js · audio-codec.js · audio-player.js · spectrogram.js
-        · media-reverse.js — audio playback, codec/loudness analysis, spectrogram
-      video.js · video-avi.js · video-recover.js — video player + per-frame/stream
-        analysis; video-recover.js salvages truncated/unfinalised MP4-MOV with no
-        moov index (carves H.264/H.265 NALs from the mdat, borrows SPS/PPS in-band
-        or from a reference clip, plays via the raw-stream segmented player)
-      pdf.js · paged.js · djvu.js — PDF (pdf.js), paginated docs, DjVu scans
-      docx.js · xlsx.js · xlsb.js · pptx.js · odf.js · legacy-office.js · textdoc.js
-        · iwork.js · epub.js · mobi.js · mdb.js · notebook.js · markdown.js
-        — office/document/e-book/notebook viewers
-      svg.js · illustrator.js · psd.js · paint.js · diagram.js · lut.js · font.js
-        — vector/raster design files, colour LUTs, font specimens
-      stl.js · model3d.js · gcode.js · unity.js — 3D viewers + G-code toolpath + Unity assets
-      dwg.js · model3d.js · solidworks.js · f3d.js — CAD (DWG 2D drawing; STEP/IGES/BREP
-        via OpenCASCADE; SolidWorks .sldprt/.sldasm/.slddrw - OLE2 preview+metadata
-        for older files, identify-only for modern encrypted ones; f3d.js reads
-        Autodesk Fusion 360 .f3d/.f3z packages - a Zstd ZIP whose BREP geometry is
-        proprietary, so it reports the manifest/contents rather than rendering)
-      altium.js · kicad.js · spice.js · ipcnet.js — EDA/electronics (PCB projects, SPICE netlists, IPC netlists)
-      aftereffects.js · premiere.js · davinci.js · vegas.js · sony-rtmd.js · timeline.js
-        — NLE/VFX project files (AE/Premiere/Resolve/VEGAS) + EDL/FCPXML/OTIO timelines
-      midi.js · subtitles.js · lrc.js — MIDI score, SRT/VTT/ASS subs, LRC lyrics
-      csv.js · gcsv.js · dataview.js · gitobject.js · email.js — tabular/IMU/data/git/email
-      gif-encode.js · gif-frames.js · webp-frames.js — animated-image frame tooling
-      lottie.js — Lottie/Bodymovin JSON vector animation player (also dotLottie
-        .lottie ZIPs and Telegram .tgs gzip stickers), via the vendored lottie-web
-      archive.js · zip.js · folder.js · treemap.js · folder-archive-shared.js · comic.js
-        — archive/folder browsing + treemap breakdown + comic (CBZ/CBR) reader
-      vssolution.js · geo.js — VS solution manifests, GPX/KML/GeoJSON maps
-      compare.js    — the /compare side-by-side view (see "The /compare page")
-      unknown.js    — hex dump and basic identification (the 'unknown' fallback)
-      proprietary.js — 200+ format identification by magic bytes (lazy chunk dispatch);
-                      proprietary-formats.js holds the large FORMATS reference table
-    parsers/        — parsers-<domain>.js, lazy metadata parser chunks dispatched
-                      by proprietary.js (audio, video, image, raw, docs, dev,
-                      archive, gaming, threed, geodata, sci, security, email,
-                      disk, osmisc) + parser-util.js shared helpers
-    lib/            — shared binary + WASM loader helpers: plist · cfbf · nrbf ·
-                      sqlite · sevenzip · legacy-decompress · *-loader (libarchive,
-                      xz, lzma, occt, ghostscript, openjpeg). Also the MDX-Net
-                      on-device vocal-separation subsystem (mdx-client/-model/
-                      -separate/-stft/-worker.js) that powers audio.js's isolate
-                      panel and the spectrogram vocal/instrumental blend slider.
-    games/          — Asteroids easter-egg game (loaded by atari.html only)
+  js/               — all the app JS (core / renderers / parsers / lib / games).
+                      Module-by-module inventory: web/assets/js/CLAUDE.md,
+                      which loads automatically when you work in that tree.
 ```

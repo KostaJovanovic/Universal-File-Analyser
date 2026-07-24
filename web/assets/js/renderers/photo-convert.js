@@ -146,6 +146,12 @@ export async function extractRawJpegs(file, { max = 12 } = {}) {
   if (u16(base + 2) !== 42) return [];
   const TS = { 1:1, 2:1, 3:2, 4:4, 5:8, 6:1, 7:1, 8:2, 9:4, 10:8, 11:4, 12:8 };
   const visited = new Set(), queue = [base + u32(base + 4)], res = [];
+  // Orientation of the first IFD that declares one - IFD0, since that's what the
+  // queue starts on. Used as the fallback for any IFD that points at a JPEG
+  // without tagging its own rotation, which is the common case: most cameras
+  // record the rotation once, against the main image, and store the thumbnail
+  // and previews in that same physical orientation.
+  let ifd0Ori = 0;
   while (queue.length && res.length < 64) {
     const ifd = queue.shift();
     if (ifd <= 0 || ifd + 2 > len || visited.has(ifd)) continue;
@@ -160,9 +166,20 @@ export async function extractRawJpegs(file, { max = 12 } = {}) {
       const size = (TS[type] || 1) * count;
       tags[tag] = { count, size, valOff: size <= 4 ? e + 8 : base + u32(e + 8) };
     }
+    // Orientation (0x0112) of THIS IFD. The JPEG it points at is a bare stream
+    // with no metadata of its own, so this tag is the only record of which way up
+    // the picture goes - without it a viewer paints the thumbnail sideways for
+    // anything shot in portrait. (SHORT, count 1, so the value sits in the
+    // 4-byte inline field and u16 reads it correctly in either endianness.)
+    const oriTag = tags[0x0112];
+    let ori = (oriTag && oriTag.count === 1) ? u16(oriTag.valOff) : 0;
+    if (!(ori >= 1 && ori <= 8)) ori = 0;
+    if (!ifd0Ori && ori) ifd0Ori = ori;
     if (tags[0x0201] && tags[0x0202]) {
       const s = base + u32(tags[0x0201].valOff), l = u32(tags[0x0202].valOff);
-      if (s > 0 && l > 0 && s + l <= len && dv.getUint8(s) === 0xFF && dv.getUint8(s + 1) === 0xD8) res.push({ offset: s, length: l });
+      if (s > 0 && l > 0 && s + l <= len && dv.getUint8(s) === 0xFF && dv.getUint8(s + 1) === 0xD8) {
+        res.push({ offset: s, length: l, orientation: ori || ifd0Ori || 1 });
+      }
     }
     const sub = tags[0x014A];
     if (sub) for (let i = 0; i < sub.count; i++) { const o = u32(sub.size <= 4 ? sub.valOff : sub.valOff + i * 4); if (o) queue.push(base + o); }
@@ -174,7 +191,10 @@ export async function extractRawJpegs(file, { max = 12 } = {}) {
     .filter((r) => !seen.has(r.offset) && seen.add(r.offset))
     .sort((a, c) => c.length - a.length)
     .slice(0, max)
-    .map((r) => ({ offset: r.offset, length: r.length, blob: new Blob([u8.slice(r.offset, r.offset + r.length)], { type: 'image/jpeg' }) }));
+    .map((r) => ({
+      offset: r.offset, length: r.length, orientation: r.orientation || 1,
+      blob: new Blob([u8.slice(r.offset, r.offset + r.length)], { type: 'image/jpeg' }),
+    }));
 }
 
 let magickReady = null;
