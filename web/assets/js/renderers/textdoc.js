@@ -18,7 +18,7 @@ import { el, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '.
 // Saved web pages arrive as untrusted markup - sanitised with the shared rules.
 import { sanitizeHtml } from '../core/sanitize.js';
 import { buildOsintCard } from '../core/osint.js';
-import { SCAN_LARGE } from '../core/limits.js';
+import { SCAN_LARGE, HASH_FILE_MAX } from '../core/limits.js';
 import { openZip } from './zip.js';
 import { paginateText, paginateFlow, pagedPreviewCard, pagedTextCard, pagePreviewSkeleton } from './paged.js';
 
@@ -237,7 +237,7 @@ export async function renderTextDoc(file, container, kind, ext) {
     // Network indicators (URLs / IPs / domains / emails) lifted from the source text.
     try { const oc = buildOsintCard(pageTexts.join('\n'), { limit: 100 }); if (oc) container.appendChild(oc); } catch (_) { /* ignore */ }
 
-    if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
+    if (file.size <= HASH_FILE_MAX) container.appendChild(integrityCard(file));
   } catch (e) {
     container.innerHTML = '';
     container.appendChild(errorCard('Could not read document: ' + (e && e.message || 'unknown error')));

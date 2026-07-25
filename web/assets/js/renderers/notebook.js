@@ -10,6 +10,7 @@
    ============================================================================ */
 
 import { el, row, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '../core/util.js';
+import { HASH_FILE_MAX } from '../core/limits.js';
 
 function esc(s) {
   // Escape quotes too: mdInline() emits already-esc()'d text into href="..."
@@ -195,5 +196,5 @@ export async function renderNotebook(file, container) {
   reveal(Math.min(cells.length, BATCH));
   container.insertBefore(card, container.firstChild);
 
-  if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
+  if (file.size <= HASH_FILE_MAX) container.appendChild(integrityCard(file));
 }

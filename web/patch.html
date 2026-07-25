@@ -135,8 +135,10 @@
                2. Move what is now the 4th-from-top entry down into the
                   <details class="about-formats"> "Older updates" block, so that
                   EXACTLY the latest 3 entries stay visible above the fold.
-               3. Fold this release into the PATCH_DIGEST in app.js (which drives
-                  the "tl;dr" button): add a short note to the newest group, or -
+               3. Fold this release into PATCH_DIGEST_NEW in core/patch-tldr.js
+                  (which drives the "tl;dr" button on THIS page - the plain
+                  PATCH_DIGEST above it is frozen data for the archived
+                  /patch_old): add a short note to the newest group, or -
                   once that group spans five versions - start a new group above it.
                   Keep the 1.0 and 2.0 milestones on their own; no specifics unless
                   they really matter.
@@ -210,11 +212,37 @@
              ===================================================================== -->
 
         <div class="patch-entry">
-          <p class="patch-version">8.02 - 8.03</p>
-          <p class="patch-name">Housekeeping</p>
+          <p class="patch-version">8.02 - 8.04</p>
+          <p class="patch-name">Belt and Braces</p>
           <p class="patch-date">25 July 2026</p>
           <ul class="patch-list">
-            <li><strong>Maintenance - internal tidying and groundwork, with no change to how anything works.</strong></li>
+            <li><strong>A safety and smoothness pass: the cleaner that handles markup out of a dropped file got stricter, searching and very large files stopped stuttering, and a handful of small annoyances went away.</strong></li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Safety</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>Animation tricks are stripped from previews.</strong> An <a href="/about#ext-eml">email</a>, a saved web page or an <a href="/about#ext-epub">e-book</a> chapter can carry an animation that rewrites a harmless-looking link into a script <em>after</em> the page has already checked it. The SVG viewer has always removed those; the shared cleaner every other preview uses now does too.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Nothing in a preview reaches out to the internet.</strong> A picture or shape reference inside one of those previews can no longer quietly fetch a remote file - only links you can actually click stay live, and a file&rsquo;s own internal references keep working.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Exported reports</strong> escape every embedded picture address, so nothing carried in by the analysed file can slip out of place in the report or its print preview.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Speed</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-faster">Faster</span><strong>Format search</strong> keeps up with fast typing. It now waits for a short pause instead of re-checking every supported type on each keystroke.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>A very large file no longer freezes the page</strong> working out its fingerprints. <strong>MD5</strong> and <strong>CRC-32</strong> have no hardware acceleration, so past 512 MB they are skipped and say so in their own row; the <strong>SHA</strong> fingerprints still compute as normal.</li>
+            <li><span class="patch-tag is-faster">Faster</span>Sorting a folder or archive that holds tens of thousands of entries in one place.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Elsewhere</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span>Analysing several <a href="/about#ext-cube">colour LUTs</a> in a row no longer holds on to every earlier file&rsquo;s preview frames. The full-size viewer is shared now instead of being rebuilt for each one.</li>
+            <li><span class="patch-tag is-fix">Fix</span>The <strong>Sound</strong> button in the navigation bar re-measures when you resize the window, instead of keeping a width from whatever size the page opened at.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Switching to another tab mid-analysis and coming back no longer jumps you down to results you had already cancelled.</li>
+            <li><span class="patch-tag is-fix">Fix</span>A <strong>very complex SVG</strong> that is too large to display safely now says exactly that, instead of claiming the file is invalid.</li>
+            <li><strong>Tidied:</strong> the archive <strong>Timing &amp; integrity</strong> card explains its CRC check in the <code>[?]</code> rather than in a line above the button; the amplitude histogram has been dropped from sound and video analysis; submitting an Asteroids score no longer repeats a one-off database step every time.</li>
           </ul>
         </div>
 

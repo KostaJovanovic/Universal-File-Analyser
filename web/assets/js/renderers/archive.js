@@ -2,7 +2,7 @@
    Lazy-loads fflate from CDN to inspect ZIP archives without full extraction.
    Uses the shared folder/archive modules for treemap, breakdown, and tree. */
 
-import { el, row, rowHelp, fmtBytes, buildFileTree, isUnreadableError, cloudFileWarning, errorCard, integrityCard, loadScript, asciiBar } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, buildFileTree, isUnreadableError, cloudFileWarning, errorCard, integrityCard, loadScript, asciiBar } from '../core/util.js';
 import { normalizeArchive, renderBreakdownCards, renderViewToggle, categorizeExt } from './folder-archive-shared.js';
 import { ARCHIVE_EXTS } from '../core/formats.js';
 import { WALL_INDEX } from '../core/limits.js';
@@ -243,7 +243,10 @@ function buildArchiveForensics(buf, fileEntries) {
   if (!dated.length && !verifiable.length) return null;
 
   const card = el('div', { class: 'anr-card' });
-  card.appendChild(el('h3', {}, 'Timing & integrity'));
+  const [tiHead, tiHelp] = h3help('Timing & integrity',
+    'The "Verify entry CRCs" button below recomputes each file\'s CRC-32 - a short fingerprint worked out from its contents - and compares it to the value stored in the archive, so you can spot any entry whose data was damaged or changed after the archive was made.');
+  card.appendChild(tiHead);
+  card.appendChild(tiHelp);
 
   if (dated.length) {
     const min = dated[0], max = dated[dated.length - 1], span = max - min;
@@ -274,10 +277,8 @@ function buildArchiveForensics(buf, fileEntries) {
     card.appendChild(buildTimeHistogram(dated, min, max));
   }
 
-  // On-demand CRC verification.
+  // On-demand CRC verification. (The explanation lives in the card's [?].)
   const crcWrap = el('div', { style: 'margin-top:14px;' });
-  crcWrap.appendChild(el('div', { class: 'anr-hint', style: 'margin:0 0 6px;' },
-    'Recompute each entry’s CRC-32 and compare it to the value stored in the archive.'));
   const btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' },
     `Verify entry CRCs (${verifiable.length} file${verifiable.length === 1 ? '' : 's'})`);
   const out = el('div', { style: 'margin-top:8px;' });

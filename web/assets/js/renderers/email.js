@@ -13,6 +13,7 @@
    ============================================================================ */
 
 import { el, row, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '../core/util.js';
+import { HASH_FILE_MAX } from '../core/limits.js';
 import { sanitizeHtml as sanitizeHtmlShared } from '../core/sanitize.js';
 
 // ---------- header parsing ----------
@@ -200,7 +201,7 @@ export async function renderEml(file, container) {
     info.appendChild(buildReadout([['File', file.name], ['Size', fmtBytes(file.size)]]));
     container.appendChild(info);
     container.insertBefore(messageCard(text), container.firstChild);
-    if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
+    if (file.size <= HASH_FILE_MAX) container.appendChild(integrityCard(file));
   } catch (e) {
     container.innerHTML = '';
     container.appendChild(errorCard('Could not read message: ' + (e && e.message || 'unknown error')));
@@ -243,7 +244,7 @@ export async function renderMbox(file, container) {
     moreBtn.addEventListener('click', () => reveal(shown + BATCH));
     reveal(Math.min(chunks.length, BATCH));
 
-    if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
+    if (file.size <= HASH_FILE_MAX) container.appendChild(integrityCard(file));
   } catch (e) {
     container.innerHTML = '';
     container.appendChild(errorCard('Could not read mailbox: ' + (e && e.message || 'unknown error')));

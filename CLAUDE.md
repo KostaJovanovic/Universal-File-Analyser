@@ -72,7 +72,13 @@ touches some part of this path:
 3. The kind indexes **`ROUTES`** in app.js. Every entry is
    `lazy('../renderers/x.js', 'renderX')`, so renderers are dynamic imports and
    stay out of the initial module graph; photo/audio/video are lazy in `boot()`
-   too, since they pull the heaviest dependency chains.
+   too, since they pull the heaviest dependency chains. The row shape and the
+   renderer contract are defined at the `ROUTES` table itself (`core/app.js`,
+   ~line 218): a row is `{ render }`, and only photo/audio/video need the full
+   `{ render, results, nav, analysed }` (they target their own page sections and
+   light their own nav links) — everything else defaults into `#unknownResults`.
+   The renderer's own export is `renderX(file, resultsEl)`, async, drawing into
+   the element it is handed.
 4. **`renderFileExtras()`** wraps the shared cards *around* whatever the renderer
    builds: the dotenv secrets warning, the signature-vs-extension and
    trailing-data forensic cards (`core/forensics.js`), and the browse-as-archive
@@ -97,7 +103,19 @@ automatically when you work in that tree.
 - **Every new module under `assets/js/` must be added to `SHELL` in `web/sw.js`.**
   That list enumerates the precached shell by path — a module missing from it
   silently breaks offline use, and `check-shell` only reports the gap at commit
-  time (non-fatally).
+  time (non-fatally). Add it to the inventory in `web/assets/js/CLAUDE.md` in the
+  same pass — that file is the map the next session reads first, and it drifts
+  silently otherwise.
+- **The missing CSP in `web/_headers` is a decision, not an oversight.** The app
+  lazy-loads WASM, spawns blob/module workers and uses `data:` URIs, so a
+  wrong policy silently breaks individual viewers with no build-time signal.
+  Don't add one as a drive-by hardening fix; it needs per-renderer testing first.
+  (`sanitize.js` is what stands in for it — see above.)
+- **`app.js` and `analyser.css` must never get immutable HTTP caching.** Their
+  filenames are unversioned and busting relies entirely on the service-worker
+  cache epoch (`VERSION` in `sw.js`). Only `/assets/fonts/*` — content-stable —
+  carries `max-age=31536000, immutable` in `_headers`. Widening that glob makes
+  deploys serve stale code with no local symptom.
 
 ## Site-content writing convention
 
@@ -224,9 +242,14 @@ tools/              — Node generator scripts (dev-only, never served). They re
                       ext missing from format-page-content.mjs gets a thin generic
                       page and is warned about at generation time),
                       backup-stats.mjs (read-only D1 stats snapshot to
-                      stats-backup/*.csv; run from the save.bat menu, not the
-                      commit path) and disperse-unsupported.mjs (re-checks the
-                      stats "unsupported" dogpile against the live catalog).
+                      stats-backup/*.csv - gitignored and absent until you run it,
+                      so a missing stats-backup/ is normal; run from the save.bat
+                      menu, not the commit path) and disperse-unsupported.mjs
+                      (re-checks the stats "unsupported" dogpile against the live
+                      catalog). Two subfolders: partials/ (footer-shared.html, the
+                      single-sourced footer block - see the shared-partials skill)
+                      and readme-assets/ (screenshots/GIFs for README.md only,
+                      never served).
 worker/             — Cloudflare Worker: anonymous analysed-count stats API
                       (index.js + schema.sql + disperse-unsupported.sql). The only
                       server-side code; the analyser itself stays browser-only.

@@ -13,6 +13,17 @@ import { setupFmtHeaderFx } from './effects.js';
 
 function $(id) { return document.getElementById(id); }
 
+// Coalesce rapid input events. The catalog filter re-checks ~1,359 entries and
+// re-parses their innerHTML for highlighting on every keystroke; without this a
+// fast typist queues a full sweep per character and the overlay janks.
+function debounce(fn, ms) {
+  let t;
+  return function (...args) {
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(this, args), ms);
+  };
+}
+
 // Persist across SPA navigations (the module loads once) so the window listeners
 // below are added a single time, matching the old boot._hashWired / _fmtKeyWired guards.
 let hashWired = false;
@@ -257,7 +268,7 @@ export function setupFormatOverlay() {
         }
       });
     }
-    if (fmtSearch && !fmtSearch._wired) { fmtSearch._wired = true; fmtSearch.addEventListener('input', applyFilter); }
+    if (fmtSearch && !fmtSearch._wired) { fmtSearch._wired = true; fmtSearch.addEventListener('input', debounce(applyFilter, 120)); }
 
     // Sitelinks searchbox / deep-link: /?q=foo (the WebSite schema's SearchAction
     // target) and /formats?q=foo open the formats overlay pre-filtered, so a query
@@ -348,6 +359,6 @@ export function setupFormatOverlay() {
           : 'No formats match “' + raw + '”.';
       }
     };
-    fmtPageSearch.addEventListener('input', applyPageFilter);
+    fmtPageSearch.addEventListener('input', debounce(applyPageFilter, 120));
   }
 }

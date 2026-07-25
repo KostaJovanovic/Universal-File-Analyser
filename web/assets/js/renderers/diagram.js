@@ -16,6 +16,7 @@
    ============================================================================ */
 
 import { el, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { HASH_FILE_MAX } from '../core/limits.js';
 import { inflate } from '../core/binutil.js';
 
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -147,7 +148,7 @@ export async function renderDrawio(file, container) {
     }
     if (!drewAny && diagrams.length) { /* messages already shown per page */ }
 
-    if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
+    if (file.size <= HASH_FILE_MAX) container.appendChild(integrityCard(file));
   } catch (e) {
     container.innerHTML = '';
     container.appendChild(errorCard('Could not read diagram: ' + (e && e.message || 'unknown error')));
@@ -251,7 +252,7 @@ export async function renderDxf(file, container) {
       info.appendChild(buildReadout([['File', file.name], ['Size', fmtBytes(file.size)], ['Variant', 'Binary DXF']]));
       container.appendChild(info);
       container.appendChild(el('div', { class: 'anr-card' }, [el('h3', {}, 'Preview'), el('p', { class: 'anr-hint' }, 'This is a binary DXF. Analyser previews ASCII DXF drawings; the binary variant is identified only.')]));
-      if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
+      if (file.size <= HASH_FILE_MAX) container.appendChild(integrityCard(file));
       return;
     }
 
@@ -273,7 +274,7 @@ export async function renderDxf(file, container) {
     if (r.svg) container.insertBefore(svgCard('Drawing preview', r.svg), container.firstChild);
     else container.appendChild(el('div', { class: 'anr-card' }, [el('h3', {}, 'Preview'), el('p', { class: 'anr-hint' }, entities.length ? 'No drawable geometry in the ENTITIES section (it may use blocks/inserts only).' : 'No entities found to draw.')]));
 
-    if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
+    if (file.size <= HASH_FILE_MAX) container.appendChild(integrityCard(file));
   } catch (e) {
     container.innerHTML = '';
     container.appendChild(errorCard('Could not read DXF: ' + (e && e.message || 'unknown error')));

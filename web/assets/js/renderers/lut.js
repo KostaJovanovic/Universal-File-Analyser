@@ -470,9 +470,14 @@ function buildTryout(sample) {
   // graded version), shared by the thumbnails and the lightbox.
   let items = [];
 
-  // --- Lightbox (built lazily, reused) - mirrors the comic/photo reader ---
-  let overlay;
+  // --- Lightbox: chrome built ONCE PER PAGE, re-pointed at this render's items ---
+  // The overlay is looked up by id, the way the comic and document readers do it,
+  // rather than being a local of buildTryout(). As a per-render local it left one
+  // more #anr-lut-lightbox in document.body and one more permanent keydown listener
+  // behind for every LUT analysed, each closure pinning that render's whole set of
+  // original+graded preview bitmaps for the life of the page.
   function openLightbox(start) {
+    let overlay = document.getElementById('anr-lut-lightbox');
     if (!overlay) {
       overlay = el('div', { id: 'anr-lut-lightbox', class: 'lightbox' });
       const closeBtn = el('button', { type: 'button', class: 'lightbox-close' }, 'Close');
@@ -481,8 +486,8 @@ function buildTryout(sample) {
       const img = el('img', { alt: '', style: 'max-width:92vw;max-height:82vh;display:block;' });
       imgWrap.appendChild(img);
       const toolbar = el('div', { class: 'lightbox-toolbar' });
-      const prevBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' }, '← Prev');
-      const nextBtn = el('button', { type: 'button', class: 'lightbox-tool-btn' }, 'Next →');
+      const prevBtn = el('button', { type: 'button', class: 'lightbox-tool-btn anr-lut-prev' }, '← Prev');
+      const nextBtn = el('button', { type: 'button', class: 'lightbox-tool-btn anr-lut-next' }, 'Next →');
       const meta = el('p', { class: 'lightbox-meta' });
       toolbar.appendChild(prevBtn); toolbar.appendChild(nextBtn);
       center.appendChild(imgWrap); center.appendChild(toolbar); center.appendChild(meta);
@@ -490,17 +495,8 @@ function buildTryout(sample) {
       overlay._zoom = attachZoomPan(imgWrap);
       overlay._hide = () => { overlay.hidden = true; document.body.style.overflow = ''; overlay._backClose = null; };
       const close = () => { if (overlay._backClose) overlay._backClose(); else overlay._hide(); };
-      function show(i) {
-        overlay._i = i;
-        if (overlay._zoom) overlay._zoom.reset();
-        img.src = itemUrl(items[i]);
-        meta.textContent = items[i].caption + '  (' + (i + 1) + ' / ' + items.length + ')';
-        prevBtn.style.visibility = i > 0 ? 'visible' : 'hidden';
-        nextBtn.style.visibility = i < items.length - 1 ? 'visible' : 'hidden';
-      }
-      overlay._show = show;
-      overlay._prev = () => { if (overlay._i > 0) show(overlay._i - 1); };
-      overlay._next = () => { if (overlay._i < items.length - 1) show(overlay._i + 1); };
+      // Every handler here routes through overlay._prev/_next, which the block
+      // below re-points on each open - so none of them capture a render's items.
       prevBtn.addEventListener('click', (e) => { e.stopPropagation(); overlay._prev(); });
       nextBtn.addEventListener('click', (e) => { e.stopPropagation(); overlay._next(); });
       closeBtn.addEventListener('click', close);
@@ -513,6 +509,26 @@ function buildTryout(sample) {
       });
       document.body.appendChild(overlay);
     }
+
+    // Bind the shared chrome to THIS render's items. Re-done on every open, so a
+    // second LUT analysed on the same page drives the same overlay with its own
+    // frames instead of the first one's.
+    const img = overlay.querySelector('.lightbox-img-wrap img');
+    const meta = overlay.querySelector('.lightbox-meta');
+    const prevBtn = overlay.querySelector('.anr-lut-prev');
+    const nextBtn = overlay.querySelector('.anr-lut-next');
+    const show = (i) => {
+      overlay._i = i;
+      if (overlay._zoom) overlay._zoom.reset();
+      img.src = itemUrl(items[i]);
+      meta.textContent = items[i].caption + '  (' + (i + 1) + ' / ' + items.length + ')';
+      prevBtn.style.visibility = i > 0 ? 'visible' : 'hidden';
+      nextBtn.style.visibility = i < items.length - 1 ? 'visible' : 'hidden';
+    };
+    overlay._show = show;
+    overlay._prev = () => { if (overlay._i > 0) show(overlay._i - 1); };
+    overlay._next = () => { if (overlay._i < items.length - 1) show(overlay._i + 1); };
+
     const wasHidden = overlay.hidden;
     overlay.hidden = false;
     document.body.style.overflow = 'hidden';

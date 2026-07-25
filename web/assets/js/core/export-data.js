@@ -319,6 +319,10 @@ async function buildJson(sections) {
 }
 
 // ---------- HTML ----------
+// EVERY interpolated value goes through this, image src= included. The PDF path
+// streams this same markup into a window.open('') tab, and about:blank inherits
+// this page's origin - so an unescaped quote in a src= is script execution here,
+// not in a sandbox.
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -378,7 +382,7 @@ const REPORT_CSS = [
   'footer{border-top:1px solid var(--rule);margin-top:48px;padding-top:16px;color:var(--muted);font-size:12px}',
   'a{color:var(--accent)}',
   'code{font:12px/1.4 ui-monospace,Consolas,monospace;word-break:break-all}',
-  '.verify{border:1px solid var(--rule);background:#fafafa;padding:16px 18px;border-radius:6px}',
+  '.verify{border:1px solid var(--rule);background:#fafafa;padding:16px 18px;border-radius:0}',
   '.verify h2{margin-top:0}',
   '.verify-note{margin:10px 0 0;color:var(--muted);font-size:12px}',
   // Phones: tighten the margins, and reflow key-value tables (everything except the
@@ -433,7 +437,7 @@ async function buildHtml(sections) {
       } else if (b.type === 'image') {
         let url = b.dataUrl;
         if (!url && b.imgEl) url = await imgToDataUrl(b.imgEl);
-        if (url) parts.push('<img alt="' + esc(b.heading || 'image') + '" src="' + url + '">');
+        if (url) parts.push('<img alt="' + esc(b.heading || 'image') + '" src="' + esc(url) + '">');
       } else if (b.type === 'gallery') {
         const figs = [];
         for (const it of b.items) {
@@ -442,7 +446,7 @@ async function buildHtml(sections) {
           if (!url) continue;
           figs.push('<figure class="gfig">'
             + (it.label ? '<figcaption>' + esc(it.label) + '</figcaption>' : '')
-            + '<img alt="' + esc(it.label || b.heading || 'image') + '" src="' + url + '"></figure>');
+            + '<img alt="' + esc(it.label || b.heading || 'image') + '" src="' + esc(url) + '"></figure>');
         }
         if (figs.length) parts.push('<div class="gallery">' + figs.join('') + '</div>');
       }

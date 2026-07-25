@@ -6,6 +6,7 @@
 import { makePlayer, renderAudio } from './audio.js';
 import { renderPhoto, revealPhotoSection, openLightbox } from './photo.js';
 import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrityCard, roundFps, asciiBar, downloadBlob, inlineLoader, yieldToMain, setPlayerFill } from '../core/util.js';
+import { HASH_FILE_MAX } from '../core/limits.js';
 import { parseAviHeader, extractAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
 import { registerSyncedVideo, setAudioCompanion } from '../core/video-sync.js';
@@ -3117,7 +3118,7 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
   resultsEl.appendChild(buildReverseVideoCard(file, signal));
 
   // SHA-256
-  if (file.size <= 500 * 1024 * 1024) {
+  if (file.size <= HASH_FILE_MAX) {
     resultsEl.appendChild(integrityCard(file));
   }
 
@@ -4031,7 +4032,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       });
 
       // SHA-256
-      if (file.size <= 500 * 1024 * 1024) {
+      if (file.size <= HASH_FILE_MAX) {
         resultsEl.appendChild(integrityCard(file));
       }
 
@@ -4631,7 +4632,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // ---- SHA-256 ----
   // Hash the ORIGINAL bytes (the raw .h264), not the remuxed MP4 wrapper.
   const hashFile = opts.sourceFile || file;
-  if (hashFile.size <= 500 * 1024 * 1024) {
+  if (hashFile.size <= HASH_FILE_MAX) {
     const hashCard = el('div', { class: 'anr-card' });
     const [vhH, vhHelp] = h3help('Integrity', '<strong>SHA-256</strong> is a cryptographic hash - a short fingerprint calculated from the file’s exact contents. Change even a single bit and the fingerprint comes out completely different, which makes it a reliable way to check a file has not been tampered with.');
     hashCard.appendChild(vhH); hashCard.appendChild(vhHelp);

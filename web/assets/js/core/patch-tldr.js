@@ -337,7 +337,10 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
-  { range: '8.01 - 8.02', notes: [
+  { range: '8.01 - 8.04', notes: [
+    'The cleaner that handles anything a dropped file wants to display - an email body, a saved web page, an e-book chapter - now strips **animation tricks** that could turn a safe-looking link into a script after the fact, and stops a preview quietly fetching anything from the internet.',
+    'The **format search** keeps up with fast typing, and a very large file no longer freezes the page while its fingerprints are worked out.',
+    'Opening several **colour LUTs** in a row no longer holds on to every earlier file\'s preview frames.',
     'A **four-stem split** (vocals, drums, bass and a leftover other) now runs entirely in your browser on a desktop, with a **mixing desk** to fade and solo each part while the spectrogram reshapes live.',
     'The **motion (gyro) graph** under a video with motion data now follows the playhead smoothly as it plays, the way the spectrogram already does.',
     'A **long compressed song** (AAC and the like) opens without freezing the page - details, cover art and a player show at once, with the full analysis behind a **Decode and analyse** button.',

@@ -6,6 +6,7 @@
    normal <video> path fails on an AVI. No DOM or cross-module dependencies. */
 
 import { roundFps } from '../core/util.js';
+import { AVI_EXTRACT_MAX } from '../core/limits.js';
 
 // Shared, lazily-created AudioContext used only as a createBuffer factory. A
 // fresh one per file would exhaust iOS Safari's ~4-context cap across a session.
@@ -73,7 +74,7 @@ export async function parseAviHeader(file) {
 // (formatTag 1), decode it into an AudioBuffer. Returns { videoFrames, audioBuffer? }
 // or null. Capped at 500 MB since it reads the whole file into memory.
 export async function extractAviData(file, aviInfo) {
-  if (file.size > 500 * 1024 * 1024) return null;
+  if (file.size > AVI_EXTRACT_MAX) return null;
   const buf = await file.arrayBuffer();
   const view = new DataView(buf);
   const u8 = new Uint8Array(buf);

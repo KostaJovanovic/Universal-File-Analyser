@@ -90,9 +90,14 @@ If the format isn't photo/audio/video/csv/svg and needs its own renderer:
   `git log -1 --format=%ai`, then `<ul class="patch-list">` of concrete changes),
   move what is now the 4th-from-top entry into the `<details class="about-formats">`
   "Older updates" block (exactly the latest 3 stay visible), and fold the release
-  into `PATCH_DIGEST` in `app.js` (the "tl;dr" button data) — a short note in the
-  newest group, starting a fresh group every 5 versions and keeping the `1.0`/`2.0`
-  milestones standalone.
+  into the "tl;dr" button data in `web/assets/js/core/patch-tldr.js` — a short note
+  in the newest group, starting a fresh group every 5 versions and keeping the
+  `1.0`/`2.0` milestones standalone. That file holds **two** digest arrays: edit
+  `PATCH_DIGEST_NEW`, which is what the live `/patch` page uses (it carries the
+  `#when` marker, so `setupPatchTldr` picks it via `dataset.tldrVariant === 'new'`);
+  the plain `PATCH_DIGEST` above it is frozen data for the archived `/patch_old`.
+  (`app.js` only carries a pointer comment to this file - the digest itself has not
+  lived there for some time.)
   An in-file HTML comment at the top of that section is the authoritative style
   guide (tags, naming, tone, hyperlink rules). The newest entry's version **must**
   equal the version computed by `analyserVersion()` in `app.js` — never let them
