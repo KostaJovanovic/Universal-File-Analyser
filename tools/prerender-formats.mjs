@@ -24,7 +24,7 @@ import { esc, escAttr, buildFullKeys, makeHrefOf, DEPTH_BADGE } from './prerende
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');   // the website source (formats.html + catalog live under web/)
 const PAGE = join(WEB, 'formats.html');
-const SITE = 'https://lab.valjdakosta.com';
+const SITE = 'https://analyser.valjdakosta.com';
 
 // pathToFileURL: a bare Windows path (C:\…) is not a valid ESM specifier.
 const { catalogGrouped, formatCount } = await import(

@@ -2646,15 +2646,18 @@ export async function renderGcode(file, resultsEl, opts) {
             ctx.fillStyle = 'rgba(10, 12, 16, 0.78)'; ctx.fillRect(x, y, w, chipH);
             ctx.fillStyle = '#eef2ff'; ctx.fillText(txt, x + pad, y + chipH / 2 + 1);
           };
+          const SITE_TAG = 'analyser.valjdakosta.com';
           if (withInfo) {
             const tail = ' · ' + Math.round(t * 100) + '%' + (s.restValid ? ' · Z ' + s.restZ.toFixed(u === 'mm' ? 1 : 2) + ' ' + u : '');
-            // Ellipsize a long file name so the left chip never collides with the tag.
+            // Ellipsize a long file name so the left chip never collides with the tag:
+            // budget = frame minus both margins, the tag chip and a gap between the two.
+            const leftMax = W - m * 3 - (Math.ceil(ctx.measureText(SITE_TAG).width) + pad * 2);
             let name = file.name;
-            while (name.length > 6 && ctx.measureText(name + tail).width + pad * 2 > W * 0.6) name = name.slice(0, -2);
+            while (name.length > 6 && ctx.measureText(name + tail).width + pad * 2 > leftMax) name = name.slice(0, -2);
             if (name !== file.name) name += '…';
             chip(name + tail, false);
           }
-          chip('lab.valjdakosta.com', true);   // always: the site watermark on every clip
+          chip(SITE_TAG, true);   // always: the site watermark on every clip
         };
 
         let clipBusy = false;

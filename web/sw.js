@@ -2,11 +2,11 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v262';
+const VERSION = 'analyser-v263';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
-// latest edits, with no manual cache clearing. Production (lab.valjdakosta.com)
+// latest edits, with no manual cache clearing. Production (analyser.valjdakosta.com)
 // is none of these hosts, so it keeps the full offline-first behaviour below.
 const HOST = self.location.hostname;
 const DEV = HOST === 'localhost' || HOST === '127.0.0.1' || HOST === '0.0.0.0' ||

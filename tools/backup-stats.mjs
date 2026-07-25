@@ -24,7 +24,7 @@ import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'stats-backup');
-const SITE = (process.argv[2] || process.env.ANALYSER_SITE || 'https://lab.valjdakosta.com').replace(/\/$/, '');
+const SITE = (process.argv[2] || process.env.ANALYSER_SITE || 'https://analyser.valjdakosta.com').replace(/\/$/, '');
 
 // RFC-4180-ish CSV: quote a cell only when it contains a comma, quote or newline.
 const csvCell = (v) => {

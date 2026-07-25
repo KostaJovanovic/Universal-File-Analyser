@@ -2,7 +2,7 @@
 """Local dev server that mirrors the production Cloudflare routing.
 
 `python -m http.server` only serves files literally, so /about would 404 and
-/about.html would NOT redirect - the opposite of how lab.valjdakosta.com behaves
+/about.html would NOT redirect - the opposite of how analyser.valjdakosta.com behaves
 (default html_handling = "auto-trailing-slash"). This tiny server replicates it:
 
   /about.html  -> 308 redirect to /about        (and /index.html -> /)

@@ -41,7 +41,7 @@ import { esc, escAttr, buildFullKeys, makeHrefOf, THEME_SCRIPT, DEPTH_BADGE, sma
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');   // the website source; content sidecars stay under tools/
 const OUTDIR = join(WEB, 'formats');
-const SITE = 'https://lab.valjdakosta.com';
+const SITE = 'https://analyser.valjdakosta.com';
 
 // Build date, YYYY-MM-DD (local) - stamped as <lastmod> on every per-format URL so
 // the formats sitemap advertises freshness like the main sitemap does. Plain node

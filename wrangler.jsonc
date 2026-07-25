@@ -20,7 +20,14 @@
   // so /api/* is mocked by serve.py for local page previews.
   // ────────────────────────────────────────────────────────────────────────────
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "lab",
+  // Worker service name. Renamed from "lab" to "analyser" on 2026-07-25 when the
+  // site's canonical host became analyser.valjdakosta.com. Both custom domains -
+  // analyser.valjdakosta.com (canonical: every canonical tag, sitemap, share URL
+  // and absolute link points there) and the legacy lab.valjdakosta.com, which
+  // still serves the same content as a silent mirror - are attached to THIS
+  // service. Changing this name again means re-attaching both custom domains,
+  // re-adding the IP_SALT secret and re-connecting the GitHub build, so don't.
+  "name": "analyser",
   "main": "worker/index.js",
   "compatibility_date": "2026-06-03",
   "observability": { "enabled": true },
