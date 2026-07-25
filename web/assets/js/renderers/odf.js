@@ -8,6 +8,7 @@
    ============================================================================ */
 
 import { el, rowHelp, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { HASH_FILE_MAX } from '../core/limits.js';
 import { openZip } from './zip.js';
 import { paginateFlow, pagedPreviewCard, pagedTextCard, makePage, pagePreviewSkeleton } from './paged.js';
 
@@ -523,7 +524,7 @@ export async function renderOdf(file, container, kind) {
       container.appendChild(pagedTextCard(pageTexts, { label: pageLabel }));
     }
 
-    if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
+    if (file.size <= HASH_FILE_MAX) container.appendChild(integrityCard(file));
   } catch (e) {
     container.innerHTML = '';
     container.appendChild(errorCard('Could not read document: ' + (e && e.message || 'unknown error')));

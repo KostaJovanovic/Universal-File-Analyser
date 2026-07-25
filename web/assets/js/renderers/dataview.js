@@ -13,6 +13,7 @@
    ============================================================================ */
 
 import { el, row, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '../core/util.js';
+import { HASH_FILE_MAX } from '../core/limits.js';
 import { cp437 } from '../core/binutil.js';
 
 // ---------- JSON value tree (objects/arrays collapsible) ----------
@@ -147,7 +148,7 @@ export async function renderHar(file, container) {
   reveal(Math.min(entries.length, BATCH));
   container.appendChild(card);
 
-  if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
+  if (file.size <= HASH_FILE_MAX) container.appendChild(integrityCard(file));
 }
 
 // ---------- JSON supersets (JSON5 / JSONC / Hjson) ----------
@@ -201,7 +202,7 @@ export async function renderJsonData(file, container) {
     }
     container.appendChild(srcCard);
 
-    if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
+    if (file.size <= HASH_FILE_MAX) container.appendChild(integrityCard(file));
   } catch (e) {
     container.innerHTML = '';
     container.appendChild(errorCard('Could not read file: ' + (e && e.message || 'unknown error')));
@@ -233,7 +234,7 @@ export async function renderNfo(file, container) {
     art.appendChild(pre);
     container.appendChild(art);
 
-    if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
+    if (file.size <= HASH_FILE_MAX) container.appendChild(integrityCard(file));
   } catch (e) {
     container.innerHTML = '';
     container.appendChild(errorCard('Could not read file: ' + (e && e.message || 'unknown error')));

@@ -86,3 +86,33 @@ export const ROW_PREVIEW = 500;            // rows shown in a table preview
 export const LIST_ENTRIES_MAX = 100000;    // max filesystem/archive entries enumerated
 export const PREVIEW_EDGE = 1024;          // decoded-preview longest edge (px)
 export const CONVERT_TIMEOUT_MS = 45000;   // per-file conversion timeout in a folder scan
+
+// ---- whole-file hashing ----
+// Above this size the Integrity card is skipped entirely: producing it streams the
+// WHOLE file through crypto.subtle for the SHA-256, which on a multi-hundred-MB
+// file costs more than the fingerprint is worth mid-analysis. Every renderer that
+// appends an integrity card gates on this - it was the same literal copy-pasted
+// into 17 call sites before it moved here. Sits just below HASH_JS_MAX, which caps
+// the *extra* JS-only rows inside a card that is already being built.
+export const HASH_FILE_MAX = 500 * MB;
+
+// ---- full in-memory reads ----
+// extractAviData() pulls an entire AVI into an ArrayBuffer to carve its MJPEG
+// frames and PCM audio, so it declines above this. Deliberately flat, NOT tiered:
+// this is the historical wall, and dropping it to WALL_PARSE's low tier would stop
+// low-memory devices opening AVIs they handle fine today.
+export const AVI_EXTRACT_MAX = 500 * MB;
+
+// ---- compute-cost guards (bound main-thread work, not memory) ----
+// Above this size the pure-JS MD5 / CRC-32 in extraHashRows() are skipped: they
+// walk the file byte-by-byte (no crypto.subtle equivalent exists) and would freeze
+// the tab for several seconds on a multi-hundred-MB file. The SHA-1/SHA-512 rows,
+// which run natively, still compute. Normal files are far below this, so day-to-day
+// behaviour is unchanged; only the rare very large file loses the two JS-only rows.
+export const HASH_JS_MAX = 512 * MB;
+// Node-count ceiling for inline SVG sanitisation. Above this an untrusted SVG is
+// declined for preview rather than walked attribute-by-attribute (an O(nodes) scan
+// with regexes that freezes on a 100k+ element file, e.g. a DWG-derived drawing).
+// Purely a responsiveness guard - it never weakens sanitisation; an oversized SVG
+// simply is not inlined.
+export const SVG_MAX_NODES = 150000;

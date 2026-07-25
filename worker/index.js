@@ -104,7 +104,14 @@ async function topScores(env, limit = 5) {
 // Lazily add the wave/cause columns to an existing scores table (idempotent;
 // "duplicate column" errors are swallowed). Lets a new deploy self-migrate
 // without a manual `wrangler d1 execute` step.
+//
+// Memoised per isolate, exactly like ensureDaily above: the work here is two
+// ALTER TABLEs, a whole-table dedup DELETE and a CREATE INDEX, and it is a
+// one-time migration - running it on every single score submit spent four D1
+// statements re-proving a fact that cannot change back.
+let _scoreColumnsReady = false;
 async function ensureScoreColumns(env) {
+  if (_scoreColumnsReady) return;
   for (const col of ['wave INTEGER', 'cause TEXT']) {
     try { await env.DB.prepare('ALTER TABLE scores ADD COLUMN ' + col).run(); } catch (_) { /* already present */ }
   }
@@ -119,7 +126,11 @@ async function ensureScoreColumns(env) {
       + '(SELECT MAX(id) FROM scores WHERE iphash IS NOT NULL GROUP BY iphash, name)',
     ).run();
     await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_scores_identity ON scores(iphash, name)').run();
-  } catch (_) { /* index optional */ }
+    // Latch only once the index is actually there. If it could not be created,
+    // handleScore is running on the non-atomic fallback path, so the next submit
+    // should try the migration again rather than assume it is done.
+    _scoreColumnsReady = true;
+  } catch (_) { /* index optional - retry on the next submit */ }
 }
 
 // Normalise the "final blow" tag: a file extension like '.pdf' or the literal
@@ -258,7 +269,9 @@ async function handleAnalysed(request, env) {
   return json({ ok: true });
 }
 
-// GET /api/stats - totals plus the per-extension tally (highest first).
+// GET /api/stats - totals, the per-extension tally (highest first), the per-day
+// trend series and the leaderboard (top 100 - the /stats board lists far more
+// than the 5 /api/leaderboard returns for the in-game panel).
 // Supported extensions are listed individually (top 500 by count). Every
 // UNSUPPORTED extension is collapsed into a single "(unsupported)" bucket and
 // only its aggregate count is returned: an unsupported ext is the raw,

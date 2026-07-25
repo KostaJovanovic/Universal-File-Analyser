@@ -23,7 +23,16 @@
 // scoped to the fragment - its rules apply document-wide (CSS injection / UI
 // redress) and can pull remote fonts and images via url()/@import. <base> and
 // <meta> go because either can redirect or re-target the whole page.
-const DROP_ELEMENTS = 'script, style, link, meta, iframe, frame, frameset, object, embed, applet, noscript, base, title';
+//
+// The SMIL group at the end is the one that is easy to miss: the attribute scan
+// below is STATIC, so it can only judge the values a document carries at sanitise
+// time. <animate attributeName="href" to="javascript:..."> carries no URL in any
+// attribute the scan inspects - it installs one AFTER insertion, at which point
+// clicking the parent <a> executes it. So the animation elements go outright
+// rather than being reasoned about. (svg.js:sanitizeSvg strips exactly the same
+// set for exactly this reason; if you change one, change both.)
+const DROP_ELEMENTS = 'script, style, link, meta, iframe, frame, frameset, object, embed, applet, noscript, base, title,'
+  + ' animate, animateMotion, animateTransform, set';
 
 // Attributes that make the browser fetch something. Removed unless the caller
 // opts into remote content (no viewer does today).
@@ -85,6 +94,23 @@ export function sanitizeDoc(doc, opts = {}) {
       if (name.startsWith('on')) { node.removeAttribute(attr.name); continue; }
 
       if (URL_ATTRS.has(name)) {
+        // An href only stays navigable on something the user can actually follow.
+        // On <use>/<image> and friends the same attribute is a FETCH, so an
+        // https: value there is a silent call home - allowed by the scheme
+        // allow-list below, but exactly what NETWORK_ATTRS exists to prevent.
+        // Judge those by whether the value would hit the network at all, which
+        // leaves relative paths and #fragment refs (how an SVG points at its own
+        // <defs>) working untouched.
+        const navigable = name === 'action' || name === 'formaction'
+          || node.localName === 'a' || node.localName === 'area';
+        if (!navigable && !allowRemote) {
+          const scheme = urlScheme(val);
+          const protocolRelative = /^\/\//.test(String(val).replace(/[\x00-\x20]+/g, ''));
+          if (scheme === 'http' || scheme === 'https' || protocolRelative) {
+            node.removeAttribute(attr.name);
+            continue;
+          }
+        }
         if (isUnsafeUrl(val)) node.removeAttribute(attr.name);
         continue;
       }

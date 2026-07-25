@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 259;
+const COMMIT_COUNT = 260;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -307,6 +307,7 @@ function hasFiles(e) {
 
 let _handleFile = null;
 let _scrollHandler = null;
+let _alignSoundNav = null;
 
 
 
@@ -812,6 +813,12 @@ function boot() {
       };
       requestAnimationFrame(() => {
         if (userTookScroll) return;
+        // Same guard as every other continuation in here. A backgrounded tab does
+        // not run rAF at all, so this can still be queued long after the load was
+        // cancelled or superseded - at which point stopScrollWatch() has already
+        // run, and the listener added below would never be taken off again (and it
+        // would scroll to an analysis the user abandoned).
+        if (token.cancelled || _currentToken !== token) return;
         doAutoScroll();
         // Only NOW start treating a bare 'scroll' as the user. A plain scroll event
         // is not proof of intent: handleFile has just hidden the page-drop overlay
@@ -1918,7 +1925,7 @@ window._anrReadableText = isReadableText;
   const soundLink = document.querySelector('.site-nav a[href="#audio"]');
   const soundDrop = $('audioDrop');
   if (soundLink && soundDrop) {
-    const alignSoundNav = () => {
+    _alignSoundNav = () => {
       if (window.innerWidth > 700) {
         const w = soundDrop.getBoundingClientRect().width - 2;
         if (w > 0) soundLink.style.flex = '0 0 ' + w + 'px';
@@ -1926,7 +1933,17 @@ window._anrReadableText = isReadableText;
         soundLink.style.flex = '';
       }
     };
-    alignSoundNav();
+    _alignSoundNav();
+    // The width is a pixel value read off the dropzone, so it goes stale the
+    // moment the window changes size - and the narrow branch, which clears it
+    // again, could never run at all while this was a one-shot call. Bound once;
+    // calls whatever the latest boot() installed, like the stuck-nav resize above.
+    if (!boot._soundNavResizeWired) {
+      boot._soundNavResizeWired = true;
+      window.addEventListener('resize', () => { if (_alignSoundNav) _alignSoundNav(); }, { passive: true });
+    }
+  } else {
+    _alignSoundNav = null;   // page without the audio dropzone - nothing to align
   }
 
   // Offline download tiers + PWA install + clear-storage - see ./offline-tiers.js.

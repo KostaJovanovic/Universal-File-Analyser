@@ -1,6 +1,8 @@
 /* Analyser - shared utilities
    DOM helpers and small formatters used by every module. */
 
+import { HASH_JS_MAX } from './limits.js';
+
 // Origin to prefix onto /api/... calls. Always same-origin - the site calls
 // /api/* on its own domain.
 export const API_ORIGIN = '';
@@ -910,15 +912,23 @@ export async function extraHashRows(file) {
     subtleHex('SHA-1', buf),
     subtleHex('SHA-512', buf),
   ]);
-  const bytes = new Uint8Array(buf);
-  const md5 = md5Hex(bytes);
-  const crc = crc32Hex(bytes);
-  return [
-    ['CRC-32', crc, 'CRC-32 is a fast check number, not a security fingerprint - the same one built into ZIP, PNG and gzip files, and stored in SFV checksum files. It reliably catches accidental damage, but it can be fooled on purpose (it is not collision-resistant), so unlike the hashes below it is not proof against deliberate tampering.'],
-    ['MD5', md5],
-    ['SHA-1', sha1 || 'unavailable'],
-    ['SHA-512', sha512 || 'unavailable'],
-  ];
+  const crcDesc = 'CRC-32 is a fast check number, not a security fingerprint - the same one built into ZIP, PNG and gzip files, and stored in SFV checksum files. It reliably catches accidental damage, but it can be fooled on purpose (it is not collision-resistant), so unlike the hashes below it is not proof against deliberate tampering.';
+  const rows = [];
+  // MD5 and CRC-32 have no crypto.subtle equivalent, so they run in pure JS,
+  // byte-by-byte. On a very large file that is a multi-second main-thread freeze,
+  // so skip them past HASH_JS_MAX; the two native SHA rows below still compute.
+  if (buf.byteLength <= HASH_JS_MAX) {
+    const bytes = new Uint8Array(buf);
+    rows.push(['CRC-32', crc32Hex(bytes), crcDesc]);
+    rows.push(['MD5', md5Hex(bytes), 'MD5 is a legacy 128-bit checksum still keyed on by forensic databases (NSRL) and old checksum files. It is not collision-resistant, so treat it as a lookup key, not tamper-evidence.']);
+  } else {
+    const skip = `not computed - file over ${Math.round(HASH_JS_MAX / (1024 * 1024))} MB (MD5/CRC-32 run without hardware acceleration and would freeze the page; the SHA rows below still apply)`;
+    rows.push(['CRC-32', skip, crcDesc]);
+    rows.push(['MD5', skip, 'MD5 is a legacy 128-bit checksum. It was skipped here because computing it on a file this large would lock up the page.']);
+  }
+  rows.push(['SHA-1', sha1 || 'unavailable']);
+  rows.push(['SHA-512', sha512 || 'unavailable']);
+  return rows;
 }
 
 // Above this size SHA-256 isn't computed automatically (hashing reads the whole
@@ -1014,6 +1024,12 @@ export function isHiddenFileName(name) {
   return SYSTEM_HIDDEN_NAMES.has(name.toLowerCase());
 }
 
+// Reused by the file-tree key sort. Building the collator once and calling
+// .compare() is ~10x cheaper than a.localeCompare(b), which constructs a fresh
+// collator on every call - a real cost when a flat container has tens of
+// thousands of sibling entries. No options = the same ordering localeCompare gave.
+const _treeCollator = (typeof Intl !== 'undefined' && Intl.Collator) ? new Intl.Collator() : null;
+
 // Build a collapsible directory tree from a nested object. Directories are
 // rendered as <details>/<summary> nodes (closed by default, children rendered
 // lazily on first expand); files as plain rows. Shared by folder.js and
@@ -1037,7 +1053,10 @@ export function buildFileTree(obj, opts) {
     return Object.keys(node).sort((a, b) => {
       const ad = isDir(node[a]), bd = isDir(node[b]);
       if (ad !== bd) return ad ? -1 : 1;
-      return a.localeCompare(b);
+      // Same ordering as a.localeCompare(b), but the collator is built once
+      // (module scope) instead of per comparison - localeCompare rebuilds it on
+      // every call, ~10x the cost, which shows on a flat container of 65k+ entries.
+      return _treeCollator ? _treeCollator.compare(a, b) : a.localeCompare(b);
     });
   }
 

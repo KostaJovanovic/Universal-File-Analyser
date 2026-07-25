@@ -14,6 +14,7 @@
    ============================================================================ */
 
 import { el, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { HASH_FILE_MAX } from '../core/limits.js';
 import { openCfbf } from '../lib/cfbf.js';
 import { paginateFlow, pagedPreviewCard, pagedTextCard, makePage, pagePreviewSkeleton } from './paged.js';
 
@@ -484,7 +485,7 @@ export async function renderLegacyOffice(file, container, kind) {
       ]));
     }
 
-    if (file.size <= 500 * 1024 * 1024) container.appendChild(integrityCard(file));
+    if (file.size <= HASH_FILE_MAX) container.appendChild(integrityCard(file));
   } catch (e) {
     container.innerHTML = '';
     container.appendChild(errorCard('Could not read document: ' + (e && e.message || 'unknown error')));

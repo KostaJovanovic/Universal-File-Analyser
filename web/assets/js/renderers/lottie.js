@@ -13,6 +13,7 @@
    guarded so a malformed file degrades to an error card. */
 
 import { el, row, rowHelp, fmtBytes, integrityCard, errorCard, loadScript } from '../core/util.js';
+import { HASH_FILE_MAX } from '../core/limits.js';
 import { gunzip } from '../core/binutil.js';
 
 const LOTTIE_URL = 'assets/vendor/lottie/lottie.min.js';
@@ -143,5 +144,5 @@ export async function renderLottie(file, resultsEl) {
   }
   resultsEl.innerHTML = '';
   await renderLottieData(data, resultsEl, file);
-  if (file.size <= 500 * 1024 * 1024) resultsEl.appendChild(integrityCard(file));
+  if (file.size <= HASH_FILE_MAX) resultsEl.appendChild(integrityCard(file));
 }

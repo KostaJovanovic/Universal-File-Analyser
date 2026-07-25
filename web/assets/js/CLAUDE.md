@@ -54,7 +54,7 @@ js/
                     and three carried a javascript:-scheme bypass
   renderers/      — one module per top-level type (classifyFile() routes to these
                     via ROUTES in app.js). Inventory by domain:
-    photo.js · photo-convert.js · photo-recover.js · sonify.js · tiff.js · mpo.js · ico · embedded-images.js
+    photo.js · photo-convert.js · photo-recover.js · sonify.js · tiff.js · mpo.js · ico.js · embedded-images.js
       — photo analysis (EXIF, histogram, OCR), HEIC/RAW conversion, multi-image;
       photo-recover.js salvages broken/truncated/corrupt stills (repair a cut-off
       JPEG/PNG, rebuild a damaged JPEG header from a reference photo, carve

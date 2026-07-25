@@ -3,6 +3,7 @@
    colour palette, and text content. */
 
 import { el, row, rowHelp, fmtBytes, errorCard, integrityCard } from '../core/util.js';
+import { SVG_MAX_NODES } from '../core/limits.js';
 import { urlScheme } from '../core/sanitize.js';
 import { renderPhoto } from './photo.js';
 
@@ -17,6 +18,15 @@ function sanitizeSvg(doc) {
   const findings = [];
   const root = doc.querySelector('svg');
   if (!root) return { findings, safe: null };
+
+  // The attribute walk below is O(nodes) with per-attribute regexes. A
+  // pathologically large SVG (e.g. a DWG-derived drawing with 100k+ elements)
+  // would freeze the tab, so decline to inline it rather than sanitising every
+  // node. This never weakens sanitisation - an oversized SVG is simply not
+  // rendered (safe:null), the same fail-closed path as a missing <svg> root.
+  if (doc.querySelectorAll('*').length > SVG_MAX_NODES) {
+    return { findings, safe: null, tooComplex: true };
+  }
 
   const scripts = doc.querySelectorAll('script');
   if (scripts.length) findings.push(scripts.length + ' <script> element' + (scripts.length > 1 ? 's' : ''));
@@ -133,7 +143,7 @@ export async function renderSvg(file, resultsEl) {
   const doc = parser.parseFromString(svgText, 'image/svg+xml');
   const parseErr = doc.querySelector('parsererror');
   const svgRoot = doc.querySelector('svg');
-  const { findings, safe } = sanitizeSvg(doc);
+  const { findings, safe, tooComplex } = sanitizeSvg(doc);
 
   // --- Preview card: render the (sanitised) SVG, capped so it doesn't dominate ---
   const previewCard = el('div', { class: 'anr-card' });
@@ -144,7 +154,10 @@ export async function renderSvg(file, resultsEl) {
     svgContainer.style.overflow = 'auto';
     previewCard.appendChild(svgContainer);
   } else {
-    previewCard.appendChild(el('p', { class: 'anr-hint' }, 'Could not safely render this SVG (invalid XML).'));
+    previewCard.appendChild(el('p', { class: 'anr-hint' },
+      tooComplex
+        ? 'This SVG has too many elements to render safely here, so the preview is skipped. The statistics below still apply.'
+        : 'Could not safely render this SVG (invalid XML).'));
   }
   resultsEl.appendChild(previewCard);
 

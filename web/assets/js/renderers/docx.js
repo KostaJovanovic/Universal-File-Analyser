@@ -3,6 +3,7 @@
    with metadata, formatted text, tables, and text extraction. */
 
 import { el, row, rowHelp, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
+import { HASH_FILE_MAX } from '../core/limits.js';
 import { openZip } from './zip.js';
 import { paginateFlow, pagedPreviewCard, pagedTextCard, pagePreviewSkeleton } from './paged.js';
 
@@ -550,7 +551,7 @@ export async function renderDocx(file, container) {
       container.appendChild(pagedTextCard(pageTexts, { label: 'Page' }));
     }
 
-    if (file.size <= 500 * 1024 * 1024) {
+    if (file.size <= HASH_FILE_MAX) {
       container.appendChild(integrityCard(file));
     }
   } catch (e) {

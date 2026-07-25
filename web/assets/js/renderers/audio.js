@@ -3173,57 +3173,6 @@ export function buildWaveformCard(file, mono, audioBuffer, audioEl, signal) {
   return waveCard;
 }
 
-// --- Amplitude histogram card (shared by the audio + video modules) ---
-export function buildHistogramCard(samples) {
-  const histCard = el('div', { class: 'anr-card' });
-  const [ahH, ahHelp] = h3help('Histogram',
-    'How often each loudness level shows up across the whole clip. ' +
-    'The horizontal axis is the sample value from −1 to +1 (0 = silence, marked by the red line; ' +
-    '±1 = the loudest the format allows). The vertical axis is how many samples sit at each level. ' +
-    'A tall spike in the centre means lots of quiet moments; energy spread toward the edges means a loud, dynamic signal.');
-  histCard.appendChild(ahH); histCard.appendChild(ahHelp);
-  const histCanvas = el('canvas', { class: 'anr-histogram' });
-  histCanvas.width = 1024; histCanvas.height = 100;
-  histCard.appendChild(histCanvas);
-
-  const bins = 256;
-  const counts = new Uint32Array(bins);
-  for (let i = 0; i < samples.length; i++) {
-    const idx = Math.min(bins - 1, Math.max(0, Math.floor((samples[i] + 1) * 0.5 * bins)));
-    counts[idx]++;
-  }
-  let maxCount = 0;
-  for (let i = 0; i < bins; i++) if (counts[i] > maxCount) maxCount = counts[i];
-  const hctx = histCanvas.getContext('2d');
-  const cw = histCanvas.width, ch = histCanvas.height;
-  hctx.fillStyle = '#0a0a0a';
-  hctx.fillRect(0, 0, cw, ch);
-  const barW = cw / bins;
-  for (let i = 0; i < bins; i++) {
-    const h = maxCount > 0 ? (counts[i] / maxCount) * ch : 0;
-    const t = i / bins;
-    const g = Math.round(180 + t * 75);
-    hctx.fillStyle = `rgb(${g},${g},${g})`;
-    hctx.fillRect(i * barW, ch - h, barW, h);
-  }
-  hctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#e60023';
-  hctx.lineWidth = 1;
-  const center = Math.floor(bins / 2) * barW;
-  hctx.beginPath();
-  hctx.moveTo(center, 0);
-  hctx.lineTo(center, ch);
-  hctx.stroke();
-
-  // Axis markings: amplitude ticks under the canvas + a units caption.
-  histCard.appendChild(el('div', { class: 'anr-hist-axis' }, [
-    el('span', {}, '−1.0'), el('span', {}, '−0.5'), el('span', {}, '0'),
-    el('span', {}, '+0.5'), el('span', {}, '+1.0')
-  ]));
-  histCard.appendChild(el('p', { class: 'anr-hist-caption' },
-    'Amplitude (0 = silence)  ·  height = relative sample count'));
-  return histCard;
-}
-
 // Tears down the previous render's persistent spectrogram listeners when a new
 // audio file is analysed.
 let audioRenderAbort = null;
