@@ -2,7 +2,7 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v261';
+const VERSION = 'analyser-v262';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -89,6 +89,7 @@ const SHELL = [
   './assets/js/renderers/video-recover.js',
   './assets/js/renderers/video-forensics.js',
   './assets/js/renderers/video-telemetry.js',
+  './assets/js/renderers/video-bitstream.js',
   './assets/js/renderers/sony-rtmd.js',
   './assets/js/renderers/gcsv.js',
   './assets/js/core/video-sync.js',

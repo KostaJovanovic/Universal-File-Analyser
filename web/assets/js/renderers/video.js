@@ -13,6 +13,10 @@ import { registerSyncedVideo, setAudioCompanion } from '../core/video-sync.js';
 import { detectMoovlessMp4, extractMp4ParamSets, findInbandParamSets, carveAvccToAnnexB } from './video-recover.js';
 import { analyzeMp4Structure, analyzeBitstream, BOX_GLOSS } from './video-forensics.js';
 import { appendTelemetryCards } from './video-telemetry.js';
+import {
+  parseHvcC, parseAvcC, parseAnnexBStreamInfo, parseMatroskaTracks,
+  COLOUR_PRIMARIES, TRANSFER_CHARS, MATRIX_COEFFS, isSpecifiedColourCode
+} from './video-bitstream.js';
 
 // iOS (iPhone/iPad) detection. On iOS the custom scrubber's touch handling is
 // unreliable, so we show the native <video> controls there; everywhere else the
@@ -718,7 +722,12 @@ function buildReverseVideoCard(file, signal) {
 // using FFmpeg WASM. Stream copy only (-c copy) - the bitstream is unchanged, so
 // it's fast and lossless; it just gains an MP4 container the browser can play.
 // faststart moves the moov atom to the front so it plays without a full read.
-// A raw stream carries no timing, so FFmpeg's h264/h265 demuxer assumes 25 fps.
+//
+// A raw stream carries no container timing, so FFmpeg's h264/h265 demuxer falls
+// back to 25 fps - which then propagates into the duration and the whole-file
+// bitrate we derive from it. The SPS usually DOES state a frame rate in its VUI
+// timing info, so the caller passes it as `fps` and we force the input rate with
+// -r; the duration and bitrate readouts are then real rather than assumed.
 //
 // rawKind ('h264' | 'h265') forces the input demuxer with -f. A bare elementary
 // stream has no container and no useful extension for FFmpeg to probe, so without
@@ -730,11 +739,13 @@ function buildReverseVideoCard(file, signal) {
 // the captured FFmpeg output so the caller can show WHY a remux didn't produce a
 // file instead of silently dropping to the unplayable card. Large inputs are
 // mounted via WORKERFS (read by seeking) rather than copied whole into WASM heap.
-async function ffmpegRemuxToMp4(file, signal, rawKind) {
+async function ffmpegRemuxToMp4(file, signal, rawKind, fps) {
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return { blob: null, log: '' };
   const demuxer = rawKind === 'h265' ? 'hevc' : 'h264';
   const outName = 'out.mp4';
+  // -r before -i sets the INPUT frame rate the raw demuxer assumes.
+  const rate = (fps > 0 && fps < 1000) ? ['-r', String(Number(fps.toFixed(6)))] : [];
 
   let log = '';
   const onLog = ({ message }) => { log += message + '\n'; };
@@ -765,7 +776,7 @@ async function ffmpegRemuxToMp4(file, signal, rawKind) {
     const reencode = async () => {
       try { await ff.deleteFile(outName); } catch (_) {}
       try {
-        await ff.exec(['-fflags', '+genpts', '-f', demuxer, '-i', inName,
+        await ff.exec(['-fflags', '+genpts', '-f', demuxer, ...rate, '-i', inName,
           '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
           '-movflags', '+faststart', outName]);
       } catch (_) {}
@@ -780,7 +791,7 @@ async function ffmpegRemuxToMp4(file, signal, rawKind) {
       data = await reencode();
     } else {
       try {
-        await ff.exec(['-fflags', '+genpts', '-f', demuxer, '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName]);
+        await ff.exec(['-fflags', '+genpts', '-f', demuxer, ...rate, '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName]);
       } catch (_) { /* exec may resolve with a non-zero code instead of throwing */ }
       try { data = await ff.readFile(outName); } catch (_) { data = null; }
       if (!data || !data.length) {
@@ -911,25 +922,34 @@ async function extractRawParamSets(file, h265, signal) {
   return out;
 }
 
-// Human-readable codec / profile from the captured parameter sets. An H.264 SPS
-// carries profile_idc and level_idc right after the NAL header byte; HEVC profile
-// parsing is far more involved, so it's reported generically.
-function describeRawCodec(paramSets, h265) {
-  let i = 0;
-  while (i + 5 <= paramSets.length) {
-    if (paramSets[i] === 0 && paramSets[i + 1] === 0 && paramSets[i + 2] === 1) {
-      const s = i + 3;
-      const t = nalTypeOf(paramSets[s], h265);
-      if (!h265 && t === 7) {
-        const profile = paramSets[s + 1], level = paramSets[s + 3];
-        const names = { 66: 'Baseline', 77: 'Main', 88: 'Extended', 100: 'High', 110: 'High 10', 122: 'High 4:2:2', 244: 'High 4:4:4' };
-        return 'H.264 / AVC (' + (names[profile] || ('profile ' + profile)) + ', level ' + (level / 10).toFixed(1) + ')';
-      }
-      if (h265 && t === 33) return 'H.265 / HEVC';
-      i = s;
-    } else i++;
-  }
-  return h265 ? 'H.265 / HEVC' : 'H.264 / AVC';
+// Reshape a parsed SPS into the same video-track object the container walks
+// produce, so a raw elementary stream reads out through appendTrackRows() exactly
+// like an MP4 or Matroska file instead of having its own second set of rows.
+function videoTrackFromStream(info) {
+  if (!info) return null;
+  const hevc = info.codec === 'hevc';
+  const v = {
+    codec: hevc ? 'hvc1' : 'avc1',
+    codecName: hevc ? 'H.265 / HEVC' : 'H.264 / AVC',
+    width: info.width, height: info.height
+  };
+  if (info.profile) v.profile = (hevc && info.tier) ? info.profile + ' (' + info.tier + ')' : info.profile;
+  if (info.level) v.level = info.level.replace(/\.0$/, '');
+  if (info.chroma) v.chroma = info.chroma;
+  if (info.bitDepthLuma) v.bitDepth = Math.max(info.bitDepthLuma, info.bitDepthChroma || 0);
+  if (info.fps) { v.fps = info.fps; v.fpsSource = info.fpsSource; }
+  if (info.temporalLayers > 1) v.temporalLayers = info.temporalLayers;
+  if (info.sarWidth && info.sarHeight && info.sarWidth !== info.sarHeight) v.pixelAspect = info.sarWidth + ':' + info.sarHeight;
+  if (isSpecifiedColourCode(info.primaries)) v.primaries = COLOUR_PRIMARIES[info.primaries] || ('code ' + info.primaries);
+  if (isSpecifiedColourCode(info.transfer)) v.transfer = TRANSFER_CHARS[info.transfer] || ('code ' + info.transfer);
+  if (isSpecifiedColourCode(info.matrix)) v.matrixName = MATRIX_COEFFS[info.matrix] || ('code ' + info.matrix);
+  if (info.fullRange !== undefined) v.range = info.fullRange ? 'Full (PC)' : 'Limited (TV)';
+  if (info.transfer === 16) v.hdr = 'PQ (' + (v.primaries || 'BT.2020') + ')';
+  else if (info.transfer === 18) v.hdr = 'HLG (' + (v.primaries || 'BT.2020') + ')';
+  const sets = [(hevc && info.hasVps) ? 'VPS' : '', 'SPS', info.hasPps ? 'PPS' : ''].filter(Boolean);
+  v.paramSets = sets.join(' + ') + ' carried in the stream';
+  if (info.partial) v.partialParse = true;
+  return v;
 }
 
 // Byte offset of the next IDR start code at or after `from`, scanning the file in
@@ -973,18 +993,23 @@ async function planRawSegments(file, h265, signal) {
   }
   boundaries.push(file.size);
   if (boundaries.length < 3) return null;   // couldn't actually split it
-  return { paramSets, boundaries };
+  // The parameter sets carry the SPS, so the stream's real profile / geometry /
+  // bit depth / colour / frame rate come free with the split plan.
+  let info = null;
+  try { info = parseAnnexBStreamInfo(paramSets, h265); } catch (_) {}
+  return { paramSets, boundaries, info };
 }
 
 // Remux one [start,end) byte range into a self-contained MP4: parameter sets
 // prepended (so the chunk decodes even though it starts mid-file), stream-copied.
 // loaderLabel (optional): when set, the bottom loader bar shows that text while
 // this part is being read + remuxed (foreground parts only - not prefetches).
-async function remuxRawSegment(file, start, end, paramSets, h265, signal, loaderLabel) {
+async function remuxRawSegment(file, start, end, paramSets, h265, signal, loaderLabel, fps) {
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return null;
   if (loaderLabel) showFfmpegLoader(loaderLabel, true);
   const demuxer = h265 ? 'hevc' : 'h264';
+  const rate = (fps > 0 && fps < 1000) ? ['-r', String(Number(fps.toFixed(6)))] : [];
   const inName = 'seg.' + (h265 ? 'h265' : 'h264'), outName = 'seg.mp4';
   let blob = null;
   try {
@@ -998,9 +1023,9 @@ async function remuxRawSegment(file, start, end, paramSets, h265, signal, loader
     // Chromium without hardware support) plays them black. Re-encode those segments
     // to H.264 - slower per part, but the only way the segmented player shows video.
     if (h265 && !canPlayHevc()) {
-      try { await ff.exec(['-fflags', '+genpts', '-f', demuxer, '-i', inName, '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', outName]); } catch (_) {}
+      try { await ff.exec(['-fflags', '+genpts', '-f', demuxer, ...rate, '-i', inName, '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', outName]); } catch (_) {}
     } else {
-      try { await ff.exec(['-fflags', '+genpts', '-f', demuxer, '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName]); } catch (_) {}
+      try { await ff.exec(['-fflags', '+genpts', '-f', demuxer, ...rate, '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName]); } catch (_) {}
     }
     let data = null;
     try { data = await ff.readFile(outName); } catch (_) { data = null; }
@@ -1114,8 +1139,9 @@ async function renderSegmentedRawVideo(file, header, resultsEl, kind, signal) {
     return;
   }
 
-  const { paramSets, boundaries } = plan;
+  const { paramSets, boundaries, info } = plan;
   const N = boundaries.length - 1;
+  const streamFps = (info && info.fps) || null;
   resultsEl.innerHTML = '';
 
   const playerCard = el('div', { class: 'anr-card', style: 'position:relative;' });
@@ -1128,8 +1154,9 @@ async function renderSegmentedRawVideo(file, header, resultsEl, kind, signal) {
   playerCard.appendChild(makePlayer(playerEl));
 
   // Frame-by-frame nav, editable timecode, capture-to-photo and frame-grab - the
-  // same tools the normal player gets. Raw streams carry no timing, so 25 fps.
-  const frameTools = buildFrameControls(playerEl, () => 25, file);
+  // same tools the normal player gets. Step at the rate the SPS states, falling
+  // back to the demuxer's 25 fps assumption only when it states none.
+  const frameTools = buildFrameControls(playerEl, () => streamFps || 25, file);
   playerCard.appendChild(frameTools.wrap);
 
   const status = el('span', { class: 'anr-hint', style: 'align-self:center;' }, '');
@@ -1154,12 +1181,24 @@ async function renderSegmentedRawVideo(file, header, resultsEl, kind, signal) {
   tbl.appendChild(row('Name', file.name));
   tbl.appendChild(row('Size', fmtBytes(file.size) + '   (' + file.size.toLocaleString() + ' bytes)'));
   if (header && header.container) tbl.appendChild(row('Container', header.container));
-  tbl.appendChild(row('Codec', describeRawCodec(paramSets, h265)));
-  const resRow = row('Resolution', '-');
+  // The SPS states the geometry, so resolution no longer has to wait for a part
+  // to decode - it just gets confirmed by the player when one does.
+  const resRow = row('Resolution', info && info.width ? info.width + ' × ' + info.height + ' px' : '-');
   tbl.appendChild(resRow);
-  const arRow = row('Aspect ratio', '-');
+  const arRow = row('Aspect ratio', info && info.width ? aspectRatio(info.width, info.height) : '-');
   tbl.appendChild(arRow);
-  tbl.appendChild(row('Frame rate', '25 fps (assumed - a raw stream carries no timing)'));
+  tbl.appendChild(row('Frame rate', streamFps
+    ? roundFps(streamFps) + ' fps  (from the stream’s own timing information)'
+    : '25 fps (assumed - this stream states no timing)'));
+  // Duration and bitrate can't be read from a raw stream without decoding it all,
+  // but the first part gives a real bytes-per-second figure to scale up from.
+  const durRow = row('Duration', streamFps ? 'measuring…' : '-');
+  tbl.appendChild(durRow);
+  const brRow = rowHelp('Bitrate (total)', 'measuring…',
+    'How much data the file uses per second of playback. A raw stream carries no length, so this is measured from the first part that plays - its byte range divided by its running time - and applied across the whole file.');
+  tbl.appendChild(brRow);
+  // Bit depth, chroma, colour, HDR and the parameter sets, straight from the SPS.
+  try { appendTrackRows(tbl, { video: videoTrackFromStream(info) }); } catch (_) {}
   tbl.appendChild(row('Parts', N + ' × ~' + fmtBytes(Math.round(file.size / N)) + ', split at keyframes'));
   infoCard.appendChild(tbl);
   infoCard.appendChild(el('p', { class: 'anr-hint' },
@@ -1179,16 +1218,17 @@ async function renderSegmentedRawVideo(file, header, resultsEl, kind, signal) {
 
   resultsEl.appendChild(buildRawSceneCard(playerEl, signal));
 
-  const cache = new Map();   // i -> { url }
+  const cache = new Map();   // i -> { url, bytes }
   let cur = -1;
   let gen = 0;
+  let measured = false;      // whether a part has yielded a real bitrate yet
 
   async function ensureSegment(i, loaderLabel) {
     if (i < 0 || i >= N) return null;
     if (cache.has(i)) return cache.get(i);
-    const blob = await remuxRawSegment(file, boundaries[i], boundaries[i + 1], paramSets, h265, signal, loaderLabel);
+    const blob = await remuxRawSegment(file, boundaries[i], boundaries[i + 1], paramSets, h265, signal, loaderLabel, streamFps);
     if (!blob) return null;
-    const entry = { url: URL.createObjectURL(blob) };
+    const entry = { url: URL.createObjectURL(blob), bytes: boundaries[i + 1] - boundaries[i] };
     cache.set(i, entry);
     // Keep only the neighbours of the current part so memory stays bounded.
     for (const key of [...cache.keys()]) {
@@ -1213,6 +1253,17 @@ async function renderSegmentedRawVideo(file, header, resultsEl, kind, signal) {
       if (playerEl.videoWidth) {
         resRow.lastChild.textContent = playerEl.videoWidth + ' × ' + playerEl.videoHeight + ' px';
         arRow.lastChild.textContent = aspectRatio(playerEl.videoWidth, playerEl.videoHeight);
+      }
+      // This part's byte range over its playing time is a real bitrate; scaling it
+      // by the file size gives the whole stream's length. Measured once, from the
+      // first part that reports a duration.
+      if (!measured && entry.bytes && isFinite(playerEl.duration) && playerEl.duration > 0) {
+        measured = true;
+        const bps = entry.bytes * 8 / playerEl.duration;
+        const totalSec = file.size * 8 / bps;
+        durRow.lastChild.textContent = formatDuration(totalSec) + '   (estimated from part ' + (i + 1) + ')';
+        brRow.lastChild.textContent = Math.round(bps / 1000).toLocaleString() + ' kbps  ('
+          + (bps / 1_000_000).toFixed(2) + ' Mbps)';
       }
       frameTools.refresh();
     };
@@ -1351,6 +1402,57 @@ function findAllBoxes(view, start, end, type) {
     }
   }
   return result;
+}
+
+// The codec-config boxes (avcC, hvcC, colr, btrt, dvcC, pasp, ...) live inside a
+// sample entry inside stsd, and NEITHER can be walked by findAllBoxes: stsd puts
+// a version/flags + entry-count header before its children, and a sample entry
+// puts a fixed-size record before its own. Walking them as plain containers reads
+// that record as box headers and finds nothing - which is exactly what used to
+// happen, leaving every MP4 without a profile, bit-depth, chroma or HDR readout.
+//
+// Returns the child boxes of ONE sample entry. `entryStart` is the sample entry's
+// own box offset; the fixed record is 78 bytes for video and 28 (+16 / +36 for
+// the QuickTime v1 / v2 layouts) for audio.
+function sampleEntryChildren(view, entryStart, entryEnd, isAudio) {
+  let dataStart = entryStart + 8 + 78;
+  if (isAudio) {
+    let extra = 0;
+    try {
+      const version = view.getUint16(entryStart + 8 + 8);
+      extra = version === 1 ? 16 : version === 2 ? 36 : 0;
+    } catch (_) { /* fall back to the v0 layout */ }
+    dataStart = entryStart + 8 + 28 + extra;
+  }
+  if (dataStart >= entryEnd) return [];
+  return parseBoxes(view, dataStart, entryEnd);
+}
+
+// First child box of `type` within a sample entry. Falls back to a bounded scan
+// for the FourCC when the fixed-record walk comes up empty, so an unusual or
+// vendor-padded sample entry still yields its codec config rather than nothing.
+function findSampleEntryBox(view, entryStart, entryEnd, type, isAudio) {
+  for (const b of sampleEntryChildren(view, entryStart, entryEnd, isAudio)) {
+    if (b.type === type) return b;
+  }
+  const want = [type.charCodeAt(0), type.charCodeAt(1), type.charCodeAt(2), type.charCodeAt(3)];
+  for (let p = entryStart + 12; p + 8 <= entryEnd; p++) {
+    if (view.getUint8(p) !== want[0] || view.getUint8(p + 1) !== want[1] ||
+        view.getUint8(p + 2) !== want[2] || view.getUint8(p + 3) !== want[3]) continue;
+    const size = view.getUint32(p - 4);
+    if (size >= 8 && p - 4 + size <= entryEnd) return { type, offset: p - 4, size, headerSize: 8 };
+  }
+  return null;
+}
+
+// Copy a box's payload out of the moov DataView as a Uint8Array, for the parsers
+// in video-bitstream.js (which work on bytes, not boxes).
+function boxPayload(view, box, limit) {
+  if (!box) return null;
+  const start = box.offset + box.headerSize;
+  const end = Math.min(box.offset + box.size, view.byteLength, start + (limit || box.size));
+  if (end <= start) return null;
+  return new Uint8Array(view.buffer, view.byteOffset + start, end - start);
 }
 
 function extractPcmFromMp4(arrayBuffer) {
@@ -1646,38 +1748,18 @@ async function peekVideoContainer(file) {
 
 // ---------- authoring software (container metadata) ----------
 
-// Matroska / WebM store the writing app + muxing library as UTF-8 in the Segment
-// Info element (WritingApp = element id 0x5741, MuxingApp = 0x4D80). Rather than
-// fully parse EBML, scan the head for those two-byte ids, read the following data
-// size (an EBML vint) and pull the string. The ids are distinctive and the Info
-// element sits near the file start, so this is cheap and reliable.
+// Matroska / WebM record the writing app and muxing library in the Segment Info
+// element. This used to blind-scan the first 4 MB for the two-byte element ids,
+// which both over-read and could match the same bytes anywhere in the file; the
+// EBML walk seeks straight to Info and reads the title and creation date too.
 async function readMatroskaApps(file) {
-  const n = Math.min(file.size, 4 * 1024 * 1024);
-  const b = new Uint8Array(await file.slice(0, n).arrayBuffer());
-  const readVint = (p) => {
-    let first = b[p], mask = 0x80, len = 1;
-    while (len <= 8 && !(first & mask)) { mask >>= 1; len++; }
-    if (len > 8 || first === undefined) return null;
-    let val = first & (mask - 1);
-    for (let i = 1; i < len; i++) val = val * 256 + b[p + i];
-    return { len, val };
-  };
-  const grab = (id0, id1) => {
-    for (let i = 0; i + 3 < b.length; i++) {
-      if (b[i] !== id0 || b[i + 1] !== id1) continue;
-      const v = readVint(i + 2);
-      if (!v || v.val <= 0 || v.val > 256) continue;
-      const s = i + 2 + v.len;
-      if (s + v.val > b.length) continue;
-      const str = new TextDecoder('utf-8').decode(b.slice(s, s + v.val)).replace(/\0+$/, '').trim();
-      if (str && /^[ -~].*$/.test(str)) return str;
-    }
-    return '';
-  };
+  const mkv = await detectVideoTracks(file);
+  if (!mkv) return {};
   const out = {};
-  const w = grab(0x57, 0x41), m = grab(0x4D, 0x80);
-  if (w) out.writingApp = w;
-  if (m) out.muxingApp = m;
+  if (mkv.writingApp) out.writingApp = mkv.writingApp;
+  if (mkv.muxingApp) out.muxingApp = mkv.muxingApp;
+  if (mkv.title) out.title = mkv.title;
+  if (mkv.dateUtc) out.created = mkv.dateUtc;
   return out;
 }
 
@@ -1746,6 +1828,12 @@ function appendCreatorRows(tbl, header) {
   if (header.muxingApp && header.muxingApp !== header.writingApp)
     tbl.appendChild(rowHelp('Muxer', header.muxingApp,
       'The tool that packaged (multiplexed) the separate video and audio streams together into this container file. It can differ from the app that created the content - for example, an edit finished in one program but wrapped into the file by another.'));
+  if (header.title)
+    tbl.appendChild(rowHelp('Title', header.title,
+      'A name stored inside the file itself, separate from the filename. Players show it instead of the filename when it is set.'));
+  if (header.created)
+    tbl.appendChild(rowHelp('Created', fmtDate(header.created),
+      'When the file was packaged, as recorded inside the file. This is the muxing date, not necessarily when the video was filmed, and it survives copying and renaming - unlike the date the operating system shows.'));
 }
 
 // ---------- frame rate detection ----------
@@ -1754,6 +1842,20 @@ async function detectFpsFromContainer(file) {
   if (file.size < 12) return null;
   const headBuf = await file.slice(0, Math.min(file.size, 64)).arrayBuffer();
   const hv = new DataView(headBuf);
+
+  // Matroska / WebM: the frame rate is in the track's DefaultDuration (and in the
+  // hvcC/avcC CodecPrivate behind it). Reading it here matters a lot - without it
+  // detectFps() falls through to the FFmpeg probe, which copies the WHOLE file
+  // into WASM memory. On a multi-GB MKV that alone is a 20-second stall for a
+  // number that is sitting in the first few kilobytes.
+  if (hv.getUint8(0) === 0x1A && hv.getUint8(1) === 0x45 && hv.getUint8(2) === 0xDF && hv.getUint8(3) === 0xA3) {
+    try {
+      const mkv = await detectVideoTracks(file);
+      const fps = mkv && mkv.video && mkv.video.fps;
+      return fps ? roundFps(fps) : null;
+    } catch (_) { return null; }
+  }
+
   const ftyp = String.fromCharCode(hv.getUint8(4), hv.getUint8(5), hv.getUint8(6), hv.getUint8(7));
   if (ftyp !== 'ftyp') return null;
 
@@ -1843,16 +1945,8 @@ const AUDIO_CODEC_NAMES = {
   'ec-3': 'Dolby Digital Plus (E-AC-3)', 'Opus': 'Opus', sowt: 'PCM', twos: 'PCM',
   lpcm: 'PCM', 'in24': 'PCM (24-bit)', 'in32': 'PCM (32-bit)', samr: 'AMR'
 };
-// H.264 profile_idc -> friendly name (subset that matters for consumer video).
-const H264_PROFILES = {
-  66: 'Baseline', 77: 'Main', 88: 'Extended', 100: 'High',
-  110: 'High 10', 122: 'High 4:2:2', 244: 'High 4:4:4'
-};
-// chroma_format_idc (HEVC hvcC / H.264 avcC extension): 0 mono, 1 4:2:0, 2 4:2:2, 3 4:4:4.
-const CHROMA_FORMATS = { 0: 'monochrome', 1: '4:2:0', 2: '4:2:2', 3: '4:4:4' };
-// ISO/IEC 23001-8 colour primaries / transfer characteristics codes we care about.
-const COLOUR_PRIMARIES = { 1: 'BT.709', 5: 'BT.601 (PAL)', 6: 'BT.601 (NTSC)', 9: 'BT.2020' };
-const TRANSFER_CHARS = { 1: 'BT.709', 6: 'BT.601', 16: 'PQ', 18: 'HLG' };
+// Profile / chroma / colour code-point tables live in video-bitstream.js, which
+// also owns the avcC / hvcC / SPS parsing they describe - see the imports above.
 
 function fcc(view, p) {
   return String.fromCharCode(view.getUint8(p), view.getUint8(p + 1), view.getUint8(p + 2), view.getUint8(p + 3));
@@ -1949,125 +2043,144 @@ async function detectIsobmffTracks(file) {
         }
       } catch (_) {}
 
-      // Profile/level from avcC (H.264) or hvcC (HEVC), searched within stbl.
+      const entryEnd = Math.min(entryStart + sampleEntryBox, moovSize);
+
+      // Codec configuration: the avcC / hvcC record inside the sample entry.
+      // Beyond profile / level / bit depth / chroma, both records embed the SPS
+      // itself, so the shared parser also recovers the frame rate and the colour
+      // description straight from the bitstream - fields the container boxes
+      // often leave out entirely.
+      let cfg = null;
       try {
         if (codecFcc === 'avc1' || codecFcc === 'avc3') {
-          const avcc = findAllBoxes(view, trakStart, trakEnd, 'avcC')[0];
-          if (avcc) {
-            const d = avcc.offset + avcc.headerSize; // configVer(1) profile(1) compat(1) level(1)
-            const avccEnd = Math.min(avcc.offset + avcc.size, moovSize);
-            const profileIdc = view.getUint8(d + 1);
-            const levelIdc = view.getUint8(d + 3);
-            if (H264_PROFILES[profileIdc]) v.profile = H264_PROFILES[profileIdc];
-            if (levelIdc) v.level = (levelIdc / 10).toFixed(1).replace(/\.0$/, '');
-            // profile_idc alone is definitive for the 4:2:2 / 4:4:4 High profiles,
-            // and browsers ship no decoder for either. Sony XAVC S-I / All-Intra
-            // avcC boxes (High 4:2:2, profile 122) don't reliably carry the
-            // optional chroma extension parsed below, so set chroma from the
-            // profile up front - otherwise these files fall through the "can't
-            // play" gate and only paint a black player. (High 4:2:2 Intra = 122,
-            // High 4:4:4 Predictive = 244.)
-            if (profileIdc === 122) v.chroma = '4:2:2';
-            else if (profileIdc === 244) v.chroma = '4:4:4';
-            // Bit depth / chroma live in the avcC extension that High-10, High
-            // 4:2:2 and High 4:4:4 profiles append after the SPS/PPS NAL arrays.
-            // Walk past those arrays (bounded by the box) to reach it.
-            if ([100, 110, 122, 144, 244].includes(profileIdc)) {
-              let p = d + 5;
-              const numSps = view.getUint8(p) & 0x1f; p += 1;
-              for (let i = 0; i < numSps && p + 2 <= avccEnd; i++) p += 2 + view.getUint16(p);
-              if (p < avccEnd) { const numPps = view.getUint8(p); p += 1;
-                for (let i = 0; i < numPps && p + 2 <= avccEnd; i++) p += 2 + view.getUint16(p);
-              }
-              if (p + 3 <= avccEnd) {
-                const b0 = view.getUint8(p), b1 = view.getUint8(p + 1), b2 = view.getUint8(p + 2);
-                // The avcC chroma/bit-depth extension is OPTIONAL even on High
-                // profile (100); many ordinary 8-bit 4:2:0 files omit it. Its
-                // reserved bits are all 1s (chroma byte: top 6; depth bytes: top
-                // 5), so validate them before trusting the values - otherwise
-                // trailing/padding bytes get misread as 4:2:2/4:4:4 or 12-bit+,
-                // wrongly routing a perfectly playable file to the "can't play"
-                // banner.
-                if ((b0 & 0xFC) === 0xFC && (b1 & 0xF8) === 0xF8 && (b2 & 0xF8) === 0xF8) {
-                  const chromaIdc = b0 & 0x03;
-                  const depthLuma = (b1 & 0x07) + 8;
-                  const depthChroma = (b2 & 0x07) + 8;
-                  // Don't let a stray-but-valid-looking extension override the
-                  // profile-derived chroma (122/244 are fixed at 4:2:2 / 4:4:4).
-                  if (v.chroma === undefined && CHROMA_FORMATS[chromaIdc] !== undefined) v.chroma = CHROMA_FORMATS[chromaIdc];
-                  if (depthLuma >= 8 && depthLuma <= 16) v.bitDepth = Math.max(depthLuma, depthChroma);
-                }
-              }
-            }
-          }
+          cfg = parseAvcC(boxPayload(view, findSampleEntryBox(view, entryStart, entryEnd, 'avcC', false)));
         } else if (codecFcc === 'hvc1' || codecFcc === 'hev1' || codecFcc === 'dvh1' || codecFcc === 'dvhe') {
-          const hvcc = findAllBoxes(view, trakStart, trakEnd, 'hvcC')[0];
-          if (hvcc) {
-            const d = hvcc.offset + hvcc.headerSize; // configVer(1) then profile space/tier/idc byte
-            const hvccEnd = Math.min(hvcc.offset + hvcc.size, moovSize);
-            const b1 = view.getUint8(d + 1);
-            const tier = (b1 & 0x20) ? 'High' : 'Main';
-            const profileIdc = b1 & 0x1f;
-            const HEVC_PROFILES = { 1: 'Main', 2: 'Main 10', 3: 'Main Still Picture', 4: 'Range Ext' };
-            if (HEVC_PROFILES[profileIdc]) v.profile = HEVC_PROFILES[profileIdc] + ' (' + tier + ')';
-            // general_level_idc is at offset d+12 in hvcC.
-            const levelIdc = view.getUint8(d + 12);
-            if (levelIdc) v.level = (levelIdc / 30).toFixed(1);
-            // chroma_format_idc (d+16, low 2 bits) and bit_depth_luma/chroma_minus8
-            // (d+17 / d+18, low 3 bits each) are at fixed offsets in the hvcC record.
-            if (d + 19 <= hvccEnd) {
-              const b0 = view.getUint8(d + 16), b1 = view.getUint8(d + 17), b2 = view.getUint8(d + 18);
-              // Reserved bits are all 1s in a real hvcC record; validating them
-              // guards against misreading a truncated/odd box as exotic chroma or
-              // high bit depth and wrongly flagging a playable file unplayable.
-              if ((b0 & 0xFC) === 0xFC && (b1 & 0xF8) === 0xF8 && (b2 & 0xF8) === 0xF8) {
-                const chromaIdc = b0 & 0x03;
-                const depthLuma = (b1 & 0x07) + 8;
-                const depthChroma = (b2 & 0x07) + 8;
-                if (CHROMA_FORMATS[chromaIdc] !== undefined) v.chroma = CHROMA_FORMATS[chromaIdc];
-                if (depthLuma >= 8 && depthLuma <= 16) v.bitDepth = Math.max(depthLuma, depthChroma);
-              }
-            }
+          cfg = parseHvcC(boxPayload(view, findSampleEntryBox(view, entryStart, entryEnd, 'hvcC', false)));
+        }
+      } catch (_) { cfg = null; }
+      if (cfg) {
+        v.profile = cfg.tier ? cfg.profile + ' (' + cfg.tier + ')' : cfg.profile;
+        if (cfg.level) v.level = cfg.level.replace(/\.0$/, '');
+        if (cfg.chroma) v.chroma = cfg.chroma;
+        if (cfg.bitDepthLuma) v.bitDepth = Math.max(cfg.bitDepthLuma, cfg.bitDepthChroma || 0);
+        if (cfg.fps) { v.fps = cfg.fps; v.fpsSource = cfg.fpsSource; }
+        if (cfg.temporalLayers > 1) v.temporalLayers = cfg.temporalLayers;
+        // hev1 keeps its parameter sets in the stream, hvc1 only in the sample
+        // entry - which decides whether a carved segment can decode standalone.
+        if (codecFcc === 'hev1' || codecFcc === 'hvc1') v.paramSets = codecFcc === 'hvc1' ? 'out-of-band (hvc1)' : 'in-band (hev1)';
+      }
+
+      // Encoder-declared bitrate from a btrt box, when the muxer wrote one. This
+      // is the encoder's own average/peak for THIS track, not the file-size-over-
+      // duration figure the File info table derives.
+      try {
+        const btrt = findSampleEntryBox(view, entryStart, entryEnd, 'btrt', false);
+        if (btrt) {
+          const d = btrt.offset + btrt.headerSize;
+          if (d + 12 <= moovSize) {
+            const maxBitrate = view.getUint32(d + 4), avgBitrate = view.getUint32(d + 8);
+            if (avgBitrate > 0 && avgBitrate < 4e9) v.avgBitrate = avgBitrate;
+            if (maxBitrate > 0 && maxBitrate < 4e9) v.maxBitrate = maxBitrate;
+          }
+        }
+      } catch (_) {}
+
+      // Dolby Vision configuration (dvcC for profiles 5/8, dvvC for 10).
+      try {
+        const dv = findSampleEntryBox(view, entryStart, entryEnd, 'dvcC', false)
+                || findSampleEntryBox(view, entryStart, entryEnd, 'dvvC', false);
+        if (dv) {
+          const d = dv.offset + dv.headerSize;
+          if (d + 4 <= moovSize) {
+            const b2 = view.getUint8(d + 2), b3 = view.getUint8(d + 3);
+            v.dvProfile = (b2 >> 1) & 0x7f;
+            v.dvLevel = ((b2 & 0x01) << 5) | ((b3 >> 3) & 0x1f);
+            v.dvBlCompatible = !!((b3 >> 1) & 0x01);
           }
         }
       } catch (_) {}
 
       // Colour / HDR from a 'colr' box (nclx variant) within the sample entry,
       // plus presence of mastering-display (mdcv) / content-light (clli) boxes.
+      // Falls back to the colour description carried in the SPS when the muxer
+      // wrote no colr box at all.
       try {
-        // The sample-entry box spans [entryStart, entryStart+sampleEntryBox); colr/
-        // mdcv/clli live inside it. Search the whole trak (cheap, harmless).
-        const colr = findAllBoxes(view, entryStart, Math.min(entryStart + sampleEntryBox, moovSize), 'colr')[0]
-                  || findAllBoxes(view, trakStart, trakEnd, 'colr')[0];
+        const colr = findSampleEntryBox(view, entryStart, entryEnd, 'colr', false);
+        let primaries, transfer, matrix, fullRange;
         if (colr) {
           const d = colr.offset + colr.headerSize;
           const colourType = fcc(view, d);
-          if (colourType === 'nclx' && d + 10 <= moovSize) {
-            const primaries = view.getUint16(d + 4);
-            const transfer = view.getUint16(d + 6);
-            const matrix = view.getUint16(d + 8);
-            v.primaries = COLOUR_PRIMARIES[primaries] || ('code ' + primaries);
-            v.transfer = TRANSFER_CHARS[transfer] || ('code ' + transfer);
-            v.matrixCoef = matrix;
-            // HDR detection: PQ (16) or HLG (18) transfer, typically with BT.2020.
-            if (transfer === 16) v.hdr = 'PQ (' + (v.primaries) + ')';
-            else if (transfer === 18) v.hdr = 'HLG (' + (v.primaries) + ')';
+          if ((colourType === 'nclx' || colourType === 'nclc') && d + 10 <= moovSize) {
+            primaries = view.getUint16(d + 4);
+            transfer = view.getUint16(d + 6);
+            matrix = view.getUint16(d + 8);
+            // nclx adds a full_range_flag in the top bit of the following byte.
+            if (colourType === 'nclx' && d + 11 <= moovSize) fullRange = !!(view.getUint8(d + 10) & 0x80);
           }
         }
-        if (findAllBoxes(view, trakStart, trakEnd, 'mdcv').length) v.mdcv = true;
-        if (findAllBoxes(view, trakStart, trakEnd, 'clli').length) v.clli = true;
+        if (cfg) {
+          if (primaries === undefined) primaries = cfg.primaries;
+          if (transfer === undefined) transfer = cfg.transfer;
+          if (matrix === undefined) matrix = cfg.matrix;
+          if (fullRange === undefined) fullRange = cfg.fullRange;
+        }
+        if (isSpecifiedColourCode(primaries)) v.primaries = COLOUR_PRIMARIES[primaries] || ('code ' + primaries);
+        if (isSpecifiedColourCode(transfer)) v.transfer = TRANSFER_CHARS[transfer] || ('code ' + transfer);
+        if (isSpecifiedColourCode(matrix)) v.matrixName = MATRIX_COEFFS[matrix] || ('code ' + matrix);
+        if (fullRange !== undefined) v.range = fullRange ? 'Full (PC)' : 'Limited (TV)';
+        // HDR detection: PQ (16) or HLG (18) transfer, typically with BT.2020.
+        if (transfer === 16) v.hdr = 'PQ (' + (v.primaries || 'BT.2020') + ')';
+        else if (transfer === 18) v.hdr = 'HLG (' + (v.primaries || 'BT.2020') + ')';
+
+        const mdcv = findSampleEntryBox(view, entryStart, entryEnd, 'mdcv', false);
+        const clli = findSampleEntryBox(view, entryStart, entryEnd, 'clli', false);
+        if (mdcv) v.mdcv = true;
+        if (clli) {
+          v.clli = true;
+          const d = clli.offset + clli.headerSize;
+          if (d + 4 <= moovSize) { v.maxCll = view.getUint16(d); v.maxFall = view.getUint16(d + 2); }
+        }
+      } catch (_) {}
+
+      // Pixel aspect ratio: a non-square 'pasp' means the stored frame is
+      // anamorphic and the displayed shape differs from width x height.
+      try {
+        const pasp = findSampleEntryBox(view, entryStart, entryEnd, 'pasp', false);
+        if (pasp) {
+          const d = pasp.offset + pasp.headerSize;
+          if (d + 8 <= moovSize) {
+            const hs = view.getUint32(d), vs = view.getUint32(d + 4);
+            if (hs > 0 && vs > 0 && hs !== vs) v.pixelAspect = hs + ':' + vs;
+          }
+        }
       } catch (_) {}
 
       result.video = v;
     } else if (isAudio && !result.audio) {
       const a = { codec: codecFcc, codecName: AUDIO_CODEC_NAMES[codecFcc] || codecFcc };
       try {
-        // Audio sample entry: after the 8-byte box hdr + 8 reserved, channelcount
-        // is a uint16, then samplesize, predefined, reserved, then sample rate.
-        const base = entryStart + 8 + 8;
-        if (base + 4 <= moovSize) {
+        // AudioSampleEntry: box hdr(8) + reserved(6) + data_ref_index(2) +
+        // version(2) + revision(2) + vendor(4), then channelcount(2),
+        // samplesize(2), compressionID(2), packetsize(2) and a 16.16 sample rate.
+        const base = entryStart + 24;
+        if (base + 12 <= moovSize) {
           const channels = view.getUint16(base);
-          if (channels > 0 && channels <= 24) a.channels = channels;
+          if (channels > 0 && channels <= 64) a.channels = channels;
+          const bits = view.getUint16(base + 2);
+          if (bits >= 8 && bits <= 64) a.bitDepth = bits;
+          // Integer part of the 16.16 value, so rates above 65535 Hz read as 0 here.
+          const rate = view.getUint16(base + 8);
+          if (rate >= 8000 && rate <= 65535) a.sampleRate = rate;
+        }
+      } catch (_) {}
+      try {
+        const btrt = findSampleEntryBox(view, entryStart, Math.min(entryStart + sampleEntryBox, moovSize), 'btrt', true);
+        if (btrt) {
+          const d = btrt.offset + btrt.headerSize;
+          if (d + 12 <= moovSize) {
+            const avgBitrate = view.getUint32(d + 8);
+            if (avgBitrate > 0 && avgBitrate < 4e9) a.avgBitrate = avgBitrate;
+          }
         }
       } catch (_) {}
       result.audio = a;
@@ -2097,6 +2210,40 @@ async function detectIsobmffTracks(file) {
   return result;
 }
 
+// Track metadata for ANY container we can read without decoding: the ISOBMFF
+// moov walk above for MP4/MOV/3GP, the EBML walk in video-bitstream.js for
+// Matroska/WebM. Both return the same { video, audio, durationSec } shape, so
+// every readout below works the same way whichever container it came from.
+// Matroska used to fall through here with nothing but its WritingApp string.
+//
+// A single render asks for this from four places (the early playability gate, the
+// frame-rate detector, File info, and the unplayable readout), so the result is
+// memoised per File - the walk is cheap but it is not free on a multi-GB file.
+// Dispatch on the file's OWN magic bytes rather than a container string passed
+// in: after a convert or remux the header describes the proxy MP4 we built while
+// the file being described is still the original, so trusting the caller's label
+// would read an MKV with the MP4 walk and come back with nothing.
+const trackCache = new WeakMap();
+async function detectVideoTracks(file) {
+  if (!file || file.size < 12) return null;
+  if (trackCache.has(file)) return trackCache.get(file);
+  const pending = (async () => {
+    try {
+      const m = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+      if (m[0] === 0x1A && m[1] === 0x45 && m[2] === 0xDF && m[3] === 0xA3) return await parseMatroskaTracks(file);
+      return await detectIsobmffTracks(file);
+    } catch (_) { return null; }
+  })();
+  trackCache.set(file, pending);
+  return pending;
+}
+
+// A "12.5 Mbps" / "640 kbps" label for a bits-per-second figure.
+function fmtBitrate(bps) {
+  if (!(bps > 0)) return '-';
+  return bps >= 1_000_000 ? (bps / 1_000_000).toFixed(2) + ' Mbps' : Math.round(bps / 1000) + ' kbps';
+}
+
 // Append codec/rotation/HDR/audio-codec rows to an existing readout <table>,
 // next to the resolution/fps rows. Only adds rows that were actually found.
 // Wrapped by the caller in try/catch; itself defends against partial data.
@@ -2111,13 +2258,24 @@ function appendTrackRows(tbl, tracks) {
       if (v.level) extra.push('L' + v.level);
       if (extra.length) label += '  (' + extra.join(', ') + ')';
       tbl.appendChild(rowHelp('Video codec', label,
-        'The recipe used to squeeze the picture down to a manageable size, such as H.264, and where available its profile and level. Read from the file’s codec settings (the MP4/MOV sample-description and codec-config boxes), the profile and level show which encoding features and quality ceiling were used.'));
+        'The recipe used to squeeze the picture down to a manageable size, such as H.264, and where available its profile and level. Read from the file’s codec settings (the MP4/MOV sample-description and codec-config boxes, or the Matroska CodecPrivate), the profile and level show which encoding features and quality ceiling were used.'));
+    }
+    if (v.avgBitrate || v.maxBitrate) {
+      const parts = [];
+      if (v.avgBitrate) parts.push(fmtBitrate(v.avgBitrate) + ' average');
+      if (v.maxBitrate && v.maxBitrate !== v.avgBitrate) parts.push(fmtBitrate(v.maxBitrate) + ' peak');
+      tbl.appendChild(rowHelp('Bitrate (video track)', parts.join('  ·  '),
+        'How much data the picture alone uses per second, as the encoder itself recorded it in the file. This is the video track on its own, so it is lower than the whole-file bitrate, which also counts the sound and the packaging.'));
     }
     if (v.bitDepth) {
       let depthText = v.bitDepth + '-bit';
       if (v.chroma) depthText += '  ·  ' + v.chroma + ' chroma';
       tbl.appendChild(rowHelp('Bit depth', depthText,
         'How many shades of colour each pixel can hold, plus how much colour detail is kept (the chroma subsampling), read from the codec settings. 8-bit is standard; 10-bit (e.g. Sony XAVC HS, HLG/HDR) stores smoother gradients. 4:2:0 is normal for delivery, 4:2:2 keeps more colour detail for editing. Browsers have no built-in player for 10-bit 4:2:2, so those files can be identified here but not played.'));
+    }
+    if (v.pixelAspect) {
+      tbl.appendChild(rowHelp('Pixel aspect', v.pixelAspect,
+        'The shape of each stored pixel. Normally pixels are square (1:1); anything else means the picture is squeezed in the file and stretched back out on playback, so the stored width and height are not the shape you see.'));
     }
     if (v.rotation) {
       const orient = (v.rotation === 90 || v.rotation === 270) ? 'portrait' : 'landscape';
@@ -2127,18 +2285,69 @@ function appendTrackRows(tbl, tracks) {
     if (v.hdr) {
       let hdrText = v.hdr;
       if (v.mdcv || v.clli) hdrText += '  · ' + [v.mdcv ? 'mastering display' : '', v.clli ? 'content-light' : ''].filter(Boolean).join(' + ') + ' metadata';
+      if (v.maxCll) hdrText += '  · MaxCLL ' + v.maxCll + ' nits';
+      if (v.maxFall) hdrText += ', MaxFALL ' + v.maxFall + ' nits';
       tbl.appendChild(rowHelp('HDR', hdrText,
-        'A flag marking the video as HDR (High Dynamic Range), which allows brighter highlights and a wider range of colour than normal video. The type is PQ (HDR10/Dolby Vision) or HLG, usually with the wide BT.2020 colour range; mastering-display and content-light data describe the HDR grade in more detail.'));
-    } else if (v.primaries && v.transfer && (v.primaries !== '-' || v.transfer !== '-')) {
-      tbl.appendChild(rowHelp('Colour', v.primaries + ' · ' + v.transfer,
-        'Instructions that tell a player how to turn the stored numbers into the colours you see on screen (the colour primaries and gamma). BT.709 is standard HD; BT.2020 is the wider range used for UHD.'));
+        'A flag marking the video as HDR (High Dynamic Range), which allows brighter highlights and a wider range of colour than normal video. The type is PQ (HDR10/Dolby Vision) or HLG, usually with the wide BT.2020 colour range; mastering-display and content-light data describe the HDR grade in more detail. MaxCLL is the brightest single pixel in the whole video and MaxFALL the brightest average frame, both in nits.'));
+    }
+    if (v.dvProfile != null) {
+      tbl.appendChild(rowHelp('Dolby Vision', 'Profile ' + v.dvProfile + ', level ' + v.dvLevel
+        + (v.dvBlCompatible ? '  ·  plays on non-Dolby screens' : '  ·  needs a Dolby Vision display'),
+        'Dolby Vision adds scene-by-scene brightness and colour instructions on top of the picture. The profile says how it is packaged; a base-layer-compatible profile still looks correct on an ordinary HDR or SDR screen, while the others need Dolby Vision support to show properly.'));
+    }
+    if (v.primaries || v.transfer || v.matrixName || v.range) {
+      const bits = [];
+      if (v.primaries) bits.push(v.primaries);
+      if (v.transfer) bits.push(v.transfer);
+      if (v.matrixName) bits.push(v.matrixName);
+      if (v.range) bits.push(v.range + ' range');
+      tbl.appendChild(rowHelp(v.hdr ? 'Colour details' : 'Colour', bits.join(' · '),
+        'Instructions that tell a player how to turn the stored numbers into the colours you see on screen: the colour primaries, the gamma (transfer), the maths used to split colour from brightness, and whether the values use the full 0-255 range or the narrower broadcast range. BT.709 is standard HD; BT.2020 is the wider range used for UHD. Getting these wrong is what makes a video look washed out or over-contrasty.'));
+    }
+    if (v.temporalLayers > 1) {
+      tbl.appendChild(rowHelp('Temporal layers', String(v.temporalLayers),
+        'The video is encoded in nested layers so a player can drop frames and show it at a lower frame rate without re-encoding - used for streaming and for slow-motion recordings that must also play at normal speed.'));
+    }
+    if (v.paramSets) {
+      tbl.appendChild(rowHelp('Parameter sets', v.paramSets,
+        'Where the decoder settings that describe the picture are kept. Out-of-band means the file header holds them, so a chunk cut out of the middle will not decode on its own; in-band means they repeat through the stream, so any part can be decoded standalone. A raw stream has no header, so it always carries them inline.'));
+    }
+    if (v.partialParse) {
+      tbl.appendChild(rowHelp('Note', 'The stream header parsed only partially - some details may be missing.',
+        'Analyser reads the picture settings straight out of the video stream. This one did not follow the expected layout all the way through, so what is shown is what was read before that point; the rest is left out rather than guessed at.'));
     }
   }
   if (a && a.codecName) {
     let label = a.codecName;
-    if (a.channels) label += '  (' + (a.channels === 1 ? 'mono' : a.channels === 2 ? 'stereo' : a.channels + 'ch') + ')';
+    const bits = [];
+    if (a.channels) bits.push(a.channels === 1 ? 'mono' : a.channels === 2 ? 'stereo' : a.channels + 'ch');
+    if (a.sampleRate) bits.push((a.sampleRate / 1000).toFixed(a.sampleRate % 1000 ? 1 : 0) + ' kHz');
+    if (a.bitDepth) bits.push(a.bitDepth + '-bit');
+    if (a.avgBitrate) bits.push(fmtBitrate(a.avgBitrate));
+    if (bits.length) label += '  (' + bits.join(', ') + ')';
     tbl.appendChild(rowHelp('Audio codec', label,
-      'The recipe used to compress the sound, such as AAC, and how many channels it has, read from the file’s own audio settings (the MP4/MOV sample-description box).'));
+      'The recipe used to compress the sound, such as AAC, with its channel count, sample rate and - where the file records them - bit depth and bitrate. Read from the file’s own audio settings.'));
+  }
+  // Matroska routinely carries several audio and subtitle tracks; an MP4 rarely
+  // does. Only list them when there is more than the one video + one audio pair
+  // already described above.
+  if (Array.isArray(tracks.tracks) && tracks.tracks.length > 2) {
+    const lines = tracks.tracks.map((t) => {
+      const bits = [t.kindName, t.codecLabel];
+      if (t.width && t.height) bits.push(t.width + '×' + t.height);
+      if (t.channels) bits.push(t.channels + 'ch');
+      if (t.language && t.language !== 'und') bits.push(t.language);
+      if (t.name) bits.push('“' + t.name + '”');
+      if (t.isDefault) bits.push('default');
+      if (t.forced) bits.push('forced');
+      return bits.filter(Boolean).join(' · ');
+    });
+    const trackRow = rowHelp('Tracks (' + tracks.tracks.length + ')', '-',
+      'Every stream packaged inside this file. Matroska files often hold more than one soundtrack (different languages or mixes) and several subtitle tracks alongside the picture.');
+    const cell = trackRow.lastChild;
+    cell.textContent = '';
+    for (const line of lines) cell.appendChild(el('div', {}, line));
+    tbl.appendChild(trackRow);
   }
 }
 
@@ -2301,11 +2510,11 @@ async function renderMoovlessRecovery(file, header, det, resultsEl, signal) {
 // metadata read straight from the file, with a plain explanation of why it won't
 // play and how to make it playable. Degrades gracefully for non-ISOBMFF files
 // (shows name / size / container only).
-async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
+async function renderUnplayableVideoInfo(file, header, resultsEl, signal, rawInfo) {
   clearVideoPreviewBoot();
   const ctx = curVctx();
   let tracks = null;
-  try { tracks = await detectIsobmffTracks(file); } catch (_) {}
+  try { tracks = await detectVideoTracks(file); } catch (_) {}
   const v = tracks && tracks.video;
   const isPro = !!(v && PRO_VIDEO_CODECS.has(v.codec));
   const named = !!(v && v.codecName && v.codecName !== v.codec);
@@ -2336,9 +2545,13 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
   tbl.appendChild(rowHelp('MIME', file.type || '-', "The standard label for a file's format, such as image/jpeg or audio/mpeg. The browser takes it from the file's name or the operating system, so it's a hint about the format, not proof."));
   if (header && header.container) tbl.appendChild(row('Container', header.container + (header.brand ? '  (' + header.brand + ')' : '')));
   appendCreatorRows(tbl, header);
-  if (v && v.width && v.height) {
-    tbl.appendChild(row('Resolution', `${v.width} × ${v.height} px`));
-    tbl.appendChild(row('Aspect ratio', aspectRatio(v.width, v.height)));
+  // A raw elementary stream has no container to read, so the SPS supplies the
+  // geometry the moov/EBML walk would otherwise give (and the codec rows below).
+  const dispW = (v && v.width) || (rawInfo && rawInfo.width);
+  const dispH = (v && v.height) || (rawInfo && rawInfo.height);
+  if (dispW && dispH) {
+    tbl.appendChild(row('Resolution', `${dispW} × ${dispH} px`));
+    tbl.appendChild(row('Aspect ratio', aspectRatio(dispW, dispH)));
   }
   const dur = tracks && tracks.durationSec;
   if (dur && dur > 0) {
@@ -2346,11 +2559,22 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal) {
     const bitrate = (file.size * 8 / dur / 1000).toFixed(0) + ' kbps  (' + (file.size * 8 / dur / 1_000_000).toFixed(2) + ' Mbps)';
     tbl.appendChild(rowHelp('Bitrate (total)', bitrate, 'How much data the whole file uses per second of playback - video, audio and packaging combined. Worked out as file size ÷ duration, so it is an overall average rather than the encoder’s target.'));
   }
-  if (v && v.width && v.height) {
-    tbl.appendChild(rowHelp('Frame size', ((v.width * v.height) / 1_000_000).toFixed(2) + ' MP', 'How many pixels make up each frame, in megapixels (width × height ÷ 1,000,000). A rough guide to how much detail each frame holds before compression.'));
+  // Frame rate: the container's own figure where there is one, otherwise the rate
+  // the bitstream states (which for a raw stream is the only source there is).
+  const declaredFps = (v && v.fps) || (rawInfo && rawInfo.fps);
+  const fpsFrom = (v && v.fpsSource) || (rawInfo && rawInfo.fpsSource);
+  if (declaredFps) {
+    tbl.appendChild(rowHelp('Frame rate', roundFps(declaredFps) + ' fps' + (fpsFrom ? '   (' + fpsFrom + ')' : ''),
+      'How many pictures per second the file is meant to play at, read from the video’s own settings rather than measured by playing it. Where the file states it in more than one place the source is named, since those can disagree - a mismatch is itself a tell that the file was re-wrapped or re-timed.'));
   }
-  // Codec / rotation / HDR / audio-codec rows from the moov walk (best-effort).
-  try { appendTrackRows(tbl, tracks); } catch (_) {}
+  if (dispW && dispH) {
+    tbl.appendChild(rowHelp('Frame size', ((dispW * dispH) / 1_000_000).toFixed(2) + ' MP', 'How many pixels make up each frame, in megapixels (width × height ÷ 1,000,000). A rough guide to how much detail each frame holds before compression.'));
+  }
+  // Codec / rotation / HDR / audio-codec rows from the container walk, or from the
+  // bitstream itself when there is no container to walk.
+  try {
+    appendTrackRows(tbl, (!tracks && rawInfo) ? { video: videoTrackFromStream(rawInfo) } : tracks);
+  } catch (_) {}
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
 
@@ -2901,12 +3125,10 @@ async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) 
   const fpsRow = row('Frame rate', 'detecting…');
   tbl.appendChild(fpsRow);
   if (vw && vh) tbl.appendChild(rowHelp('Frame size', ((vw * vh) / 1_000_000).toFixed(2) + ' MP', 'How many pixels make up each frame, in megapixels (width × height ÷ 1,000,000). A rough guide to how much detail each frame holds before compression.'));
-  // Codec / rotation / HDR / audio-codec from the ISOBMFF moov walk (best-effort).
+  // Codec / rotation / HDR / audio-codec from the container walk (best-effort).
   try {
-    if (header && (/^(MP4|M4V|QuickTime MOV|3GP|3G2)/.test(header.container || '') || /MP4 \//.test(header.container || ''))) {
-      const tracks = await detectIsobmffTracks(file);
-      appendTrackRows(tbl, tracks);
-    }
+    const tracks = await detectVideoTracks(file);
+    appendTrackRows(tbl, tracks);
   } catch (_) {}
   infoCard.appendChild(tbl);
   resultsEl.insertBefore(infoCard, playerCard);
@@ -3501,6 +3723,17 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     /\.(h?264|avc|h?265|hevc)$/i.test(file.name || '');
   if (!opts.remuxed && looksRaw) {
     const kind = header.raw === 'h265' || /\.(h?265|hevc)$/i.test(file.name || '') ? 'H.265' : 'H.264';
+    // Read the sequence parameter set out of the stream head BEFORE anything else.
+    // It states the profile, tier, level, geometry, bit depth, chroma, colour and -
+    // the field everything downstream depends on - the real frame rate. Without it
+    // the raw demuxer assumes 25 fps and every duration and bitrate derived from
+    // that assumption is wrong by the ratio of the true rate to 25.
+    let rawInfo = null;
+    try {
+      const headBytes = new Uint8Array(await file.slice(0, Math.min(file.size, 1024 * 1024)).arrayBuffer());
+      rawInfo = parseAnnexBStreamInfo(headBytes, kind === 'H.265');
+    } catch (_) { rawInfo = null; }
+    if (renderSignal.aborted) return;
     // The remux holds the whole input AND the whole output MP4 in WASM memory, so
     // very large streams can't fit (the 32-bit core caps out near ~2 GB). Above the
     // limit, split the stream at keyframes and play it part-by-part instead.
@@ -3526,7 +3759,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     let mp4Blob = null, remuxLog = '';
     const rawKind = kind === 'H.265' ? 'h265' : 'h264';
     try {
-      const r = await ffmpegRemuxToMp4(file, renderSignal, rawKind);
+      const r = await ffmpegRemuxToMp4(file, renderSignal, rawKind, rawInfo && rawInfo.fps);
       mp4Blob = r && r.blob;
       remuxLog = (r && r.log) || '';
     } catch (e) {
@@ -3536,10 +3769,13 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     if (mp4Blob) {
       const base = (file.name || 'video').replace(/\.[^/.]+$/, '');
       const mp4File = new File([mp4Blob], base + '.mp4', { type: 'video/mp4' });
-      return renderVideo(mp4File, resultsEl, { remuxed: true, sourceFile: file, sourceKind: kind, noAudio: true, inline, compare: !!opts.compare });
+      return renderVideo(mp4File, resultsEl, {
+        remuxed: true, sourceFile: file, sourceKind: kind, sourceStream: rawInfo,
+        noAudio: true, inline, compare: !!opts.compare
+      });
     }
     resultsEl.innerHTML = '';
-    await renderUnplayableVideoInfo(file, header, resultsEl, renderSignal);
+    await renderUnplayableVideoInfo(file, header, resultsEl, renderSignal, rawInfo);
     // Surface WHY the remux produced nothing instead of failing silently - the
     // FFmpeg log (or load error) makes a genuine failure diagnosable.
     if (!renderSignal.aborted) {
@@ -3611,10 +3847,17 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // (10-bit 4:2:0 and pro/intermediate codecs still go through the probe, since
   // some browsers/devices can decode them.)
   try {
-    if (/MP4|MOV|M4V|3GP|3G2|QuickTime/i.test(header.container || '')) {
-      const earlyTracks = await detectIsobmffTracks(file);
+    if (/MP4|MOV|M4V|3GP|3G2|QuickTime|Matroska|WebM/i.test(header.container || '')) {
+      const earlyTracks = await detectVideoTracks(file);
       const ev = earlyTracks && earlyTracks.video;
-      if (ev && (ev.chroma === '4:2:2' || ev.chroma === '4:4:4' || (ev.bitDepth && ev.bitDepth >= 12))) {
+      // HEVC inside Matroska plays in NO browser - the ones that can decode HEVC
+      // won't demux MKV, and the ones that demux MKV only handle WebM codecs. The
+      // probe below can't tell, so it waits out its 8s timeout and then the visible
+      // fallback waits out its own 12s before anyone looks at the metadata. Since
+      // the EBML walk has already told us the codec, skip straight to the readout.
+      const hevcInMkv = /Matroska|WebM/i.test(header.container || '') && ev
+        && /HEVC|H\.265/i.test(ev.codecName || '');
+      if (hevcInMkv || (ev && (ev.chroma === '4:2:2' || ev.chroma === '4:4:4' || (ev.bitDepth && ev.bitDepth >= 12)))) {
         resultsEl.innerHTML = '';
         await renderUnplayableVideoInfo(file, header, resultsEl, renderSignal);
         return;
@@ -4171,6 +4414,10 @@ export async function renderVideo(file, resultsEl, opts = {}) {
   // For a remuxed raw stream, show the ORIGINAL file's name/size/MIME (and base
   // the bitrate on it) - the .mp4 we built is just a playback wrapper.
   const infoFile = opts.sourceFile || file;
+  // The SPS of the ORIGINAL raw stream, when we came in through the remux path.
+  // The MP4 we built is FFmpeg's packaging, so this is the only description of
+  // the actual encode - profile, tier, level, bit depth, chroma, colour, fps.
+  const rawStream = opts.sourceStream || null;
   const infoCard = el('div', { class: 'anr-card' });
   infoCard.appendChild(el('h3', {}, 'File info'));
   const tbl = el('table', { class: 'anr-readout' });
@@ -4182,30 +4429,36 @@ export async function renderVideo(file, resultsEl, opts = {}) {
       'Your browser could not play the original format, so Analyser converted it to H.264 (MP4) on your device using FFmpeg. Converting loses a little quality, so this copy is for viewing and analysis, not for keeping as a master.'));
   else if (opts.sourceFile)
     tbl.appendChild(rowHelp('Source', 'Raw ' + (opts.sourceKind || 'H.264') + ' (Annex B)',
-      'A raw ' + (opts.sourceKind || 'H.264') + ' stream has no container to hold it, so Analyser wrapped it in an MP4 on your device without re-encoding, just to play it. The stream carries no timing information, so the frame rate and length are assumed to be 25 fps.'));
+      'A raw ' + (opts.sourceKind || 'H.264') + ' stream has no container to hold it, so Analyser wrapped it in an MP4 on your device without re-encoding, just to play it. '
+      + (rawStream && rawStream.fps
+        ? 'The stream states its own frame rate, so the length and bitrate shown are real.'
+        : 'This stream states no frame rate, so the length and bitrate are worked out from an assumed 25 fps and are only a guide.')));
   if (header.container)
     tbl.appendChild(row('Container', (
       opts.sourceFile && opts.converted ? (opts.sourceCodec || 'Original') + ' → H.264 / MP4 (converted)'
         : opts.sourceFile ? 'Raw ' + (opts.sourceKind || 'H.264') + ' → MP4 (remuxed)'
           : header.container + (header.brand ? '  (' + header.brand + ')' : ''))));
   appendCreatorRows(tbl, header);
-  // Codec / dimensions / rotation / HDR from the ISOBMFF moov walk of the ORIGINAL
-  // file. Best-effort and guarded so it never affects fps/preview.
+  // Codec / dimensions / rotation / HDR from the container walk of the ORIGINAL
+  // file - the moov for MP4/MOV, the EBML tracks for Matroska/WebM. Best-effort
+  // and guarded so it never affects fps/preview.
   let isoTracks = null;
-  try {
-    if (/^(MP4|M4V|QuickTime MOV|3GP|3G2)/.test(header.container || '') || /MP4 \//.test(header.container || ''))
-      isoTracks = await detectIsobmffTracks(analysisFile);
-  } catch (_) {}
+  try { isoTracks = await detectVideoTracks(analysisFile); } catch (_) {}
   // For a converted proxy (which may be downscaled), show the ORIGINAL stored
   // dimensions, not the decoded proxy frame size. For a normal file keep the
   // player's dimensions (they already reflect any rotation).
   const origV = isoTracks && isoTracks.video;
   const useOrigDim = analysisFile !== file && origV && origV.width;
-  const dispW = useOrigDim ? origV.width : vw;
-  const dispH = useOrigDim ? origV.height : vh;
+  const dispW = useOrigDim ? origV.width : (vw || (rawStream && rawStream.width));
+  const dispH = useOrigDim ? origV.height : (vh || (rawStream && rawStream.height));
   tbl.appendChild(row('Resolution', dispW && dispH ? `${dispW} × ${dispH} px` : '-'));
   tbl.appendChild(row('Aspect ratio', aspectRatio(dispW, dispH)));
-  tbl.appendChild(row('Duration', isFinite(dur) ? formatDuration(dur) + (opts.sourceFile && !opts.converted ? ' (assumed 25 fps)' : '') : '-'));
+  // A remuxed raw stream is only timed as accurately as the frame rate we gave
+  // FFmpeg, so say which it was rather than silently presenting either as fact.
+  const rawTimingNote = (opts.sourceFile && !opts.converted)
+    ? (rawStream && rawStream.fps ? ' (at ' + roundFps(rawStream.fps) + ' fps, from the stream)' : ' (assumed 25 fps)')
+    : '';
+  tbl.appendChild(row('Duration', isFinite(dur) ? formatDuration(dur) + rawTimingNote : '-'));
   const bitrate = isFinite(dur) && dur > 0
     ? (infoFile.size * 8 / dur / 1000).toFixed(0) + ' kbps  (' + (infoFile.size * 8 / dur / 1_000_000).toFixed(2) + ' Mbps)'
     : '-';
@@ -4216,7 +4469,11 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     const mp = ((dispW * dispH) / 1_000_000).toFixed(2);
     tbl.appendChild(rowHelp('Frame size', mp + ' MP', 'How many pixels make up each frame, in megapixels (width × height ÷ 1,000,000). A rough guide to how much detail each frame holds before compression.'));
   }
-  try { appendTrackRows(tbl, isoTracks); } catch (_) {}
+  // For a remuxed raw stream the MP4 we built is FFmpeg's packaging - and on a
+  // browser with no HEVC decoder it is an H.264 re-encode - so its codec boxes
+  // describe the wrapper, not the file the user dropped. The original stream's
+  // own SPS is the accurate description, so it takes over the codec rows.
+  try { appendTrackRows(tbl, rawStream ? { video: videoTrackFromStream(rawStream), audio: isoTracks && isoTracks.audio } : isoTracks); } catch (_) {}
   infoCard.appendChild(tbl);
   resultsEl.appendChild(infoCard);
 
