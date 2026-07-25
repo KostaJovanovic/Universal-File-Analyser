@@ -27,7 +27,7 @@
   // still serves the same content as a silent mirror - are attached to THIS
   // service. Changing this name again means re-attaching both custom domains,
   // re-adding the IP_SALT secret and re-connecting the GitHub build, so don't.
-  "name": "analyser",
+  "name": "lab",
   "main": "worker/index.js",
   "compatibility_date": "2026-06-03",
   "observability": { "enabled": true },
