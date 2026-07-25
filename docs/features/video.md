@@ -2,21 +2,52 @@
 
 Playback, container/codec analysis, frame-level tools, scene detection,
 truncated/unfinalised recording recovery, AVI handling, and reversed
-playback. Source: `video.js`, `video-avi.js`, `video-recover.js`,
-`video-forensics.js`, `video-telemetry.js`, `sony-rtmd.js`,
-`web/assets/js/core/video-sync.js`.
+playback. Source: `video.js`, `video-avi.js`, `video-bitstream.js`,
+`video-recover.js`, `video-forensics.js`, `video-telemetry.js`,
+`sony-rtmd.js`, `web/assets/js/core/video-sync.js`.
 
 ### Playback and container/codec info
 
 **What it does.** Plays the video with a synced transport and reports
-container/codec, resolution, frame rate, and bitrate.
+container, codec (with profile, tier and level), resolution, pixel aspect,
+frame rate, duration, whole-file bitrate, bit depth and chroma
+subsampling, colour primaries / transfer / matrix / range, HDR type with
+MaxCLL and MaxFALL, Dolby Vision profile and level, rotation, and the
+audio codec with its channel count, sample rate and bit depth. Where the
+muxer recorded the encoder's own average and peak video bitrate (a `btrt`
+box), that is shown too, separately from the file-size-over-duration
+figure.
 
 **How to reach it.** Drop any recognised video file. Built in
-`web/assets/js/renderers/video.js`.
+`web/assets/js/renderers/video.js`, on the parsers in
+`video-bitstream.js`.
 
-**Notes / limits.** Frame rate is parsed from MP4 container metadata with
-an FFmpeg fallback for containers the browser can't introspect natively
-(per the repo root `README.md`).
+**Notes / limits.** The codec detail comes from the `avcC` / `hvcC`
+codec-configuration record, and from the H.264 / H.265 **SPS** embedded
+inside it - so colour and frame rate are read even when the container
+writes no `colr` box. Frame rate is taken from the container (MP4 sample
+tables, Matroska `DefaultDuration`, or the `hvcC` average frame rate) and
+falls back to an FFmpeg probe only for containers none of those cover.
+
+### Matroska / WebM (.mkv, .webm)
+
+**What it does.** Walks the EBML structure - seeking past the clusters
+rather than reading them - for the Segment Info (duration, timecode
+scale, title, muxing and writing app, creation date) and the full Tracks
+list. Every track is listed with its type, codec, resolution or channel
+count, language, name and default / forced flags, which matters because a
+Matroska file routinely carries several soundtracks and subtitle tracks.
+The video track's `CodecPrivate` is a verbatim `hvcC` or `avcC` record for
+HEVC and H.264, so it yields the same profile / level / bit depth / chroma
+/ colour readout an MP4 gets.
+
+**How to reach it.** Drop any `.mkv` or `.webm`. Built on
+`parseMatroskaTracks()` in `video-bitstream.js`.
+
+**Notes / limits.** HEVC inside Matroska plays in no browser - the ones
+that can decode HEVC will not demux MKV, and the ones that demux MKV only
+handle WebM codecs - so those files skip the playback attempt entirely and
+go straight to the metadata readout and the convert-to-H.264 offer.
 
 ### Advanced: container structure and stream forensics
 
@@ -44,7 +75,10 @@ card, in this order:
   fingerprint** carved from the first frame's unregistered SEI (exact build +
   encode settings); **HDR** mastering-display (`mdcv`) and content-light
   (`clli`) values plus Dolby Vision config; and detection of a **C2PA /
-  Content Credentials** manifest. Built on `analyzeBitstream()`.
+  Content Credentials** manifest. Built on `analyzeBitstream()`, over the
+  shared SPS parsers in `video-bitstream.js` - which is what lets the
+  consistency verdict work for HEVC as well as H.264, since an H.265 SPS
+  only reaches its VUI past the short-term reference picture sets.
 - **Box tree** - the recursive atom tree (4CC, size, byte offset, one-line
   gloss); container boxes expand. Deliberately last: it is the longest part
   by far and the least often read, so above the findings it buried them.
@@ -257,10 +291,34 @@ barcode and brightness read the decoded proxy frames (the only ones that
 can be decoded), while all container/metadata analysis stays on the
 original file.
 
+### Raw elementary streams (.h264, .h265, .hevc, .avc, .264, .265)
+
+**What it does.** A raw Annex B stream has no container at all, so there
+is nothing to read a codec, size or length out of. Analyser parses the
+stream's own **sequence parameter set** instead, which gives the profile,
+tier and level, the coded size and conformance window, bit depth, chroma
+subsampling, colour primaries / transfer / matrix / range, and the frame
+rate from the VUI timing information. The stream is then wrapped in an MP4
+with FFmpeg (a copy, not a re-encode) so it plays.
+
+**How to reach it.** Drop the file. Built on `parseAnnexBStreamInfo()` in
+`video-bitstream.js`.
+
+**Notes / limits.** The frame rate matters more than it looks: FFmpeg's
+raw demuxer assumes 25 fps when nothing tells it otherwise, and the
+duration and whole-file bitrate are both derived from that. Reading the
+rate out of the SPS first and passing it to the demuxer is what makes
+those two figures real rather than assumed. A stream whose SPS states no
+timing still falls back to 25 fps, and the readout says so.
+
 ### Segmented playback
 
 **What it does.** For very large or specially-loaded videos, plays through
-the content in segments rather than loading it all at once.
+the content in segments rather than loading it all at once. Raw streams
+over 1.4 GB use this: they are split at keyframes, each part remuxed on
+demand. Because a raw stream carries no length, the duration and bitrate
+are measured from the first part that plays - its byte range over its
+running time - and scaled across the file.
 
 **How to reach it.** **Prev**/**Next** step between segments. Built in
 `video.js`.

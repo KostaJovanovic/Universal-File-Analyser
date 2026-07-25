@@ -66,8 +66,14 @@ js/
       · media-reverse.js · audio-dsp.js/-client.js/-worker.js — audio playback,
       codec/loudness analysis, spectrogram; the audio-dsp trio runs the heavy
       forensic pass sequence off the main thread
-    video.js · video-avi.js · video-recover.js · video-telemetry.js — video player +
-      per-frame/stream analysis; video-recover.js salvages truncated/unfinalised
+    video.js · video-avi.js · video-bitstream.js · video-recover.js · video-telemetry.js
+      — video player + per-frame/stream analysis; video-bitstream.js is the DOM-free
+      metadata layer below the container: H.264/H.265 SPS parsing (profile, tier,
+      level, geometry, bit depth, chroma, VUI colour + frame rate), the avcC/hvcC
+      config records MP4 and Matroska both wrap an SPS in, and the Matroska/WebM
+      EBML track walk - it returns the same { video, audio, durationSec } shape for
+      every container so video.js has one readout path;
+      video-recover.js salvages truncated/unfinalised
       MP4-MOV with no moov index (carves H.264/H.265 NALs from the mdat, borrows
       SPS/PPS in-band or from a reference clip, plays via the raw-stream segmented
       player); video-telemetry.js reads timed-metadata tracks (GoPro GPMF,

@@ -124,7 +124,14 @@ can expand into prose. British spelling, no em-dashes (site house style).
   exact seeking, shared volume.
 - **Technical readout** - container (MP4, MOV, MKV/WebM, AVI, FLV, MPEG-TS, etc.),
   resolution, aspect ratio, frame rate (snapped to standard PAL/NTSC/cinema
-  rates), duration, codec/profile, and what app/muxer created it.
+  rates), duration, bitrate, codec with its profile/tier/level, bit depth and
+  chroma subsampling, colour primaries/gamma/range, HDR type with MaxCLL and
+  MaxFALL, Dolby Vision profile, and what app/muxer created it. Read from the
+  codec settings and from the video stream's own header, so it works even for
+  files the browser cannot play.
+- **Every track listed** - Matroska files usually carry several soundtracks and
+  subtitle tracks; each is shown with its codec, language, name and default or
+  forced flag.
 - **Frame capture** - grab the current frame as a PNG, or send it to the full
   photo analyser (histogram, colours, OCR and so on).
 - **Audio track tools** - waveform, spectrogram and loudness for the video's
@@ -132,8 +139,11 @@ can expand into prose. British spelling, no em-dashes (site house style).
 - **Plays formats browsers normally can't** - HEVC, ProRes, DNxHD, AV1, VC-1 and
   others are transcoded on-device with FFmpeg (WebAssembly), with a progress bar
   and offline caching.
-- **Raw H.264/H.265 streams** - parses the parameter sets and re-wraps them into a
-  playable MP4, handling huge files in memory-bounded chunks.
+- **Raw H.264/H.265 streams** - reads the stream's own sequence parameter set for
+  the codec profile, size, bit depth, colour and frame rate, then re-wraps it into
+  a playable MP4, handling huge files in memory-bounded chunks. Because the frame
+  rate comes from the stream rather than being assumed, the length and bitrate are
+  real figures.
 - **Scene-change detection** - finds cuts and shows a clickable thumbnail grid.
 - **Reverse video** - re-encodes the clip backwards (chunked so it doesn't run out
   of memory) and lets you download it.

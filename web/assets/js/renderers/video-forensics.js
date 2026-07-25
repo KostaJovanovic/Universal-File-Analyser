@@ -16,6 +16,11 @@
    - a GOP / keyframe / per-second bitrate map from the sample tables, plus a
      VFR-vs-CFR verdict and true average frame rate - all with zero decoding. */
 
+import {
+  parseHevcSps, parseAvcSps, stripEpb,
+  COLOUR_PRIMARIES, TRANSFER_CHARS, MATRIX_COEFFS
+} from './video-bitstream.js';
+
 // ---------- low-level box reading ----------
 
 function fourcc(view, p) {
@@ -620,119 +625,35 @@ export async function analyzeMp4Structure(file) {
 // the HDR mastering-display / content-light values, Dolby Vision config, and any
 // C2PA / Content Credentials manifest. All best-effort; returns null on non-H.26x.
 
-// A bit reader over an RBSP byte array. bits() returns a Number (safe to 32 bits).
-class BitReader {
-  constructor(bytes) { this.b = bytes; this.pos = 0; }
-  bit() { const i = this.pos >> 3; if (i >= this.b.length) { this.pos++; return 0; } const o = 7 - (this.pos & 7); this.pos++; return (this.b[i] >> o) & 1; }
-  bits(n) { let v = 0; while (n-- > 0) v = v * 2 + this.bit(); return v; }
-  ue() { let z = 0; while (this.bit() === 0 && z < 32 && this.pos < this.b.length * 8) z++; return (2 ** z - 1) + (z ? this.bits(z) : 0); }
-  se() { const u = this.ue(); return (u & 1) ? (u + 1) / 2 : -(u / 2); }
-}
+const PRIMARIES = COLOUR_PRIMARIES;
+const TRANSFER = TRANSFER_CHARS;
+const MATRIX = MATRIX_COEFFS;
 
-// Strip emulation-prevention 0x03 bytes (00 00 03 -> 00 00) to get the RBSP.
-function ebsp2rbsp(d) {
-  const o = [];
-  for (let i = 0; i < d.length; i++) {
-    if (i >= 2 && d[i] === 3 && d[i - 1] === 0 && d[i - 2] === 0) continue;
-    o.push(d[i]);
-  }
-  return Uint8Array.from(o);
-}
-
-function skipScalingList(r, size) {
-  let last = 8, next = 8;
-  for (let j = 0; j < size; j++) {
-    if (next !== 0) { const delta = r.se(); next = (last + delta + 256) % 256; }
-    last = (next === 0) ? last : next;
-  }
-}
-
-const H264_HIGH_PROFILES = new Set([100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135]);
-const H264_PROFILE_NAMES = { 66: 'Baseline', 77: 'Main', 88: 'Extended', 100: 'High', 110: 'High 10', 122: 'High 4:2:2', 244: 'High 4:4:4' };
-const HEVC_PROFILE_NAMES = { 1: 'Main', 2: 'Main 10', 3: 'Main Still Picture', 4: 'Range Extensions' };
-const CHROMA = { 0: 'monochrome', 1: '4:2:0', 2: '4:2:2', 3: '4:4:4' };
-const PRIMARIES = { 1: 'BT.709', 4: 'BT.470M', 5: 'BT.601 (PAL)', 6: 'BT.601 (NTSC)', 9: 'BT.2020' };
-const TRANSFER = { 1: 'BT.709', 6: 'BT.601', 8: 'Linear', 14: 'BT.2020 (10-bit)', 15: 'BT.2020 (12-bit)', 16: 'PQ (HDR10)', 18: 'HLG' };
-const MATRIX = { 0: 'RGB', 1: 'BT.709', 5: 'BT.601 (PAL)', 6: 'BT.601 (NTSC)', 9: 'BT.2020 NCL' };
-
-// Parse a H.264 SPS NAL (including its 1-byte header) into key fields.
-function parseSpsH264(nal) {
-  const r = new BitReader(ebsp2rbsp(nal.subarray(1)));
-  const profileIdc = r.bits(8); r.bits(8); const levelIdc = r.bits(8);
-  r.ue();   // seq_parameter_set_id
-  let chroma = 1, bitLuma = 8, bitChroma = 8;
-  if (H264_HIGH_PROFILES.has(profileIdc)) {
-    chroma = r.ue();
-    if (chroma === 3) r.bit();
-    bitLuma = 8 + r.ue(); bitChroma = 8 + r.ue();
-    r.bit();   // qpprime_y_zero_transform_bypass_flag
-    if (r.bit()) { const n = chroma !== 3 ? 8 : 12; for (let i = 0; i < n; i++) if (r.bit()) skipScalingList(r, i < 6 ? 16 : 64); }
-  }
-  r.ue();   // log2_max_frame_num_minus4
-  const poc = r.ue();
-  if (poc === 0) r.ue();
-  else if (poc === 1) { r.bit(); r.se(); r.se(); const n = r.ue(); for (let i = 0; i < n; i++) r.se(); }
-  r.ue(); r.bit();   // max_num_ref_frames, gaps_in_frame_num
-  const wMbs = r.ue() + 1;
-  const hMap = r.ue() + 1;
-  const frameMbsOnly = r.bit();
-  if (!frameMbsOnly) r.bit();
-  r.bit();   // direct_8x8_inference_flag
-  let cl = 0, cr = 0, ct = 0, cb = 0;
-  if (r.bit()) { cl = r.ue(); cr = r.ue(); ct = r.ue(); cb = r.ue(); }
-  let width = wMbs * 16, height = hMap * 16 * (2 - frameMbsOnly);
-  const subW = (chroma === 1 || chroma === 2) ? 2 : 1;
-  const subH = (chroma === 1) ? 2 : 1;
-  const cropX = chroma === 0 ? 1 : subW;
-  const cropY = (chroma === 0 ? 1 : subH) * (2 - frameMbsOnly);
-  width -= (cl + cr) * cropX; height -= (ct + cb) * cropY;
-  const colour = {}; let fps = null;
-  if (r.bit()) {   // VUI
-    if (r.bit()) { if (r.bits(8) === 255) { r.bits(16); r.bits(16); } }   // aspect_ratio
-    if (r.bit()) r.bit();   // overscan
-    if (r.bit()) { r.bits(3); colour.fullRange = !!r.bit(); if (r.bit()) { colour.primaries = r.bits(8); colour.transfer = r.bits(8); colour.matrix = r.bits(8); } }
-    if (r.bit()) { r.ue(); r.ue(); }   // chroma_loc
-    if (r.bit()) { const nuit = r.bits(32); const ts = r.bits(32); r.bit(); if (nuit > 0) fps = ts / (2 * nuit); }
-  }
+// Adapt a shared SPS parse to the shape this module's consistency check and the
+// Advanced card expect. There used to be a second SPS parser in this file; it
+// stopped at the bit depth for H.265, so an HEVC file never produced a frame
+// rate or a colour description and the stream-vs-container verdict silently had
+// nothing to compare. `nal` includes the NAL header byte(s).
+function spsFacts(nal, h265) {
+  const parsed = h265
+    ? parseHevcSps(stripEpb(nal.subarray(2)))
+    : parseAvcSps(stripEpb(nal.subarray(1)));
+  if (!parsed) return null;
+  const colour = {};
+  if (parsed.primaries != null) colour.primaries = parsed.primaries;
+  if (parsed.transfer != null) colour.transfer = parsed.transfer;
+  if (parsed.matrix != null) colour.matrix = parsed.matrix;
+  if (parsed.fullRange !== undefined) colour.fullRange = parsed.fullRange;
   return {
-    codec: 'H.264', profile: H264_PROFILE_NAMES[profileIdc] || ('profile ' + profileIdc), profileIdc,
-    level: (levelIdc / 10).toFixed(1).replace(/\.0$/, ''), chroma: CHROMA[chroma], bitDepth: Math.max(bitLuma, bitChroma),
-    progressive: !!frameMbsOnly, width, height, colour, fps,
-  };
-}
-
-// Profile/tier/level for HEVC (enough to skip to the SPS body).
-function parsePTL(r, maxSub) {
-  r.bits(2); const tier = r.bit(); const profile = r.bits(5);
-  r.bits(32);   // compatibility flags
-  const prog = r.bit(); r.bit(); r.bit(); r.bit();
-  r.bits(32); r.bits(12);   // 44 reserved bits
-  const level = r.bits(8);
-  const sp = [], sl = [];
-  for (let i = 0; i < maxSub; i++) { sp.push(r.bit()); sl.push(r.bit()); }
-  if (maxSub > 0) for (let i = maxSub; i < 8; i++) r.bits(2);
-  for (let i = 0; i < maxSub; i++) { if (sp[i]) { r.bits(2); r.bit(); r.bits(5); r.bits(32); r.bit(); r.bit(); r.bit(); r.bit(); r.bits(32); r.bits(12); } if (sl[i]) r.bits(8); }
-  return { profile, tier: tier ? 'High' : 'Main', level };
-}
-
-// Parse a H.265 SPS NAL (including its 2-byte header) - dims/chroma/depth/PTL.
-function parseSpsH265(nal) {
-  const r = new BitReader(ebsp2rbsp(nal.subarray(2)));
-  r.bits(4);   // sps_video_parameter_set_id
-  const maxSub = r.bits(3); r.bit();
-  const ptl = parsePTL(r, maxSub);
-  r.ue();   // sps_seq_parameter_set_id
-  const chroma = r.ue();
-  if (chroma === 3) r.bit();
-  const w = r.ue(), h = r.ue();
-  let cl = 0, cr = 0, ct = 0, cb = 0;
-  if (r.bit()) { cl = r.ue(); cr = r.ue(); ct = r.ue(); cb = r.ue(); }
-  const bitLuma = 8 + r.ue(), bitChroma = 8 + r.ue();
-  const subW = (chroma === 1 || chroma === 2) ? 2 : 1, subH = (chroma === 1) ? 2 : 1;
-  return {
-    codec: 'H.265', profile: (HEVC_PROFILE_NAMES[ptl.profile] || ('profile ' + ptl.profile)) + ' (' + ptl.tier + ')', profileIdc: ptl.profile,
-    level: (ptl.level / 30).toFixed(1), chroma: CHROMA[chroma], bitDepth: Math.max(bitLuma, bitChroma),
-    progressive: true, width: w - (cl + cr) * subW, height: h - (ct + cb) * subH, colour: {}, fps: null,
+    codec: h265 ? 'H.265' : 'H.264',
+    profile: (h265 && parsed.tier) ? parsed.profile + ' (' + parsed.tier + ')' : parsed.profile,
+    profileIdc: parsed.profileIdc,
+    level: parsed.level ? parsed.level.replace(/\.0$/, '') : null,
+    chroma: parsed.chroma,
+    bitDepth: Math.max(parsed.bitDepthLuma || 8, parsed.bitDepthChroma || 8),
+    progressive: parsed.progressive !== undefined ? parsed.progressive : true,
+    width: parsed.width, height: parsed.height,
+    colour, fps: parsed.fps || null, partial: !!parsed.partial,
   };
 }
 
@@ -770,7 +691,7 @@ function findEncoderSei(bytes, lenSize, h265) {
     const nal = bytes.subarray(p, p + len);
     const type = h265 ? (nal[0] >> 1) & 0x3f : nal[0] & 0x1f;
     if ((h265 && (type === 39 || type === 40)) || (!h265 && type === 6)) {
-      const rb = ebsp2rbsp(nal.subarray(h265 ? 2 : 1));
+      const rb = stripEpb(nal.subarray(h265 ? 2 : 1));
       let i = 0;
       while (i < rb.length) {
         let pt = 0; while (i < rb.length && rb[i] === 0xff) { pt += 255; i++; } if (i < rb.length) { pt += rb[i]; i++; }
@@ -920,7 +841,8 @@ export async function analyzeBitstream(file) {
     try {
       const { lenSize, sps } = readParamSets(view, cfgBox, isAvc ? 'avc' : 'hvc');
       if (sps.length) {
-        result.sps = isAvc ? parseSpsH264(sps[0]) : parseSpsH265(sps[0]);
+        result.sps = spsFacts(sps[0], !isAvc);
+        if (!result.sps) throw new Error('sps');
         result.lenSize = lenSize;
         const c = result.sps.colour;
         if (c && c.primaries != null) {
