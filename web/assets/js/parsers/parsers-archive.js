@@ -12,7 +12,7 @@
    formats we cannot decode natively (7z/rar bodies, squashfs, snap, stuffit,
    ace, …) stay identification-only. No top-level side effects. */
 
-import { el, row, fmtBytes, preBlock, fmtDate, loadScript, readSlice } from '../core/util.js';
+import { fmtBytes, preBlock, fmtDate, loadScript, readSlice } from '../core/util.js';
 import { Reader, ascii, matchMagic, latin1, utf8, gunzip, inflate, hexBytes } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 import { xzDecompress } from '../lib/xz-loader.js';
@@ -809,13 +809,6 @@ async function parseCab(file) {
 
 async function zipText(zip, name) { try { return await zip.text(name); } catch (_) { return null; } }
 function jsonTry(s) { try { return JSON.parse(s); } catch (_) { return null; } }
-function depList(out, obj, key, label) {
-  if (obj && obj[key] && typeof obj[key] === 'object') {
-    const keys = Object.keys(obj[key]);
-    if (keys.length) out[label] = keys.length + ': ' + keys.slice(0, 25).join(', ');
-  }
-}
-
 // .whl (Python wheel)
 async function parseWhl(file) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }

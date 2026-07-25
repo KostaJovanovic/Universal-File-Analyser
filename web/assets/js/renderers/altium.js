@@ -22,7 +22,7 @@
      Pad   (2): pascal-name block + main block (layer@0 x@13 y@17 sizeX@21 sizeY@25 hole@45 shape@49 rot@52(f64))
 */
 
-import { el, row, rowHelp, h3help, fmtBytes, errorCard, wheelZoomToggle } from '../core/util.js';
+import { el, row, rowHelp, h3help, fmtBytes, errorCard } from '../core/util.js';
 import { openCfbf } from '../lib/cfbf.js';
 import { buildViewer, fitBox, grow, safeBox } from './eda-viewer.js';
 
@@ -756,13 +756,6 @@ const extOfName = (n) => (n.split('.').pop() || '').toLowerCase();
 
 // True for any file that belongs to an Altium project (used by folder.js to
 // decide whether to offer the combined view).
-export function isAltiumProjectFile(name) {
-  const ext = extOfName(name);
-  return ext === 'prjpcb' || ext === 'prjpcbstructure'
-    || ext === 'schdoc' || ext === 'schlib' || ext === 'pcbdoc' || ext === 'pcblib'
-    || ext === 'epw' || /preview$/.test(ext);
-}
-
 // Pull a parameter value by trying each name pattern in priority order.
 function paramVal(params, patterns) {
   for (const re of patterns) {

@@ -5,7 +5,7 @@
    pages to ImageData and paint them to a canvas, with prev/next paging. Decoding
    a scanned page can take a moment, so the pager is disabled while a page renders. */
 
-import { el, row, rowHelp, h3help, fmtBytes, errorCard, loadScript, isLowMemoryDevice } from '../core/util.js';
+import { el, row, h3help, fmtBytes, errorCard, loadScript, isLowMemoryDevice } from '../core/util.js';
 
 const DJVU_URL = 'assets/vendor/djvu/djvu.js';
 

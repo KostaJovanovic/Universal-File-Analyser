@@ -16,7 +16,7 @@
    effects. */
 
 import { el, row, fmtBytes, preBlock, loadScript, readSlice, readText } from '../core/util.js';
-import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, utf8, hexByte } from '../core/binutil.js';
+import { Reader, ascii, findBytes, latin1, hexByte } from '../core/binutil.js';
 
 // ---------- shared helpers ----------
 

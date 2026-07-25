@@ -17,10 +17,6 @@
 import { el, row, rowHelp, wireInfoToggle } from '../core/util.js';
 import { ascii, utf8 } from '../core/binutil.js';
 
-// The 12-byte suffix shared by all C2PA/JUMBF box type UUIDs; the first 4 bytes
-// are an ASCII tag ("c2pa", "c2ma", "c2as", "c2cl", "c2cs", "cbor", "json", ...).
-const JUMBF_SUFFIX = [0x00, 0x11, 0x00, 0x10, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71];
-
 // ---------- extraction: pull the JUMBF manifest-store bytes out of a file ----------
 
 // JPEG: reassemble the C2PA JUMBF from its APP11 (FFEB) fragments. Each APP11

@@ -1194,20 +1194,6 @@ function buildRawDump(exif) {
   return rows;
 }
 
-function rgbToHsl(r, g, b) {
-  r /= 255; g /= 255; b /= 255;
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-  let h = 0, s = 0, l = (mx + mn) / 2;
-  if (mx !== mn) {
-    const d = mx - mn;
-    s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
-    if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-    else if (mx === g) h = ((b - r) / d + 2) / 6;
-    else h = ((r - g) / d + 4) / 6;
-  }
-  return Math.round(h * 360) + '°,' + Math.round(s * 100) + '%,' + Math.round(l * 100) + '%';
-}
-
 // ---------- optics (derived from EXIF exposure/lens data) ----------
 // Field of view, hyperfocal distance and depth of field, plus the exposure value
 // at ISO 100 with a plain-language lighting label - all pure arithmetic over tags

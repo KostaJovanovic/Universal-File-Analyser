@@ -9,8 +9,8 @@
    HEADER / METADATA extraction only - no WebGL viewer, no mesh render. Just
    counts and metadata. Dependency-free. */
 
-import { el, row, fmtBytes, preBlock } from '../core/util.js';
-import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, utf8, utf16, gunzip } from '../core/binutil.js';
+import { fmtBytes, preBlock } from '../core/util.js';
+import { Reader, ascii, latin1, utf8, utf16, gunzip } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 import { openCfbf } from '../lib/cfbf.js';
 

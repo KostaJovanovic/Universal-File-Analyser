@@ -176,21 +176,6 @@ async function decodeEntry(file, buf, entry) {
   return null;
 }
 
-// Legacy helpers kept for callers that already hold a sequential-walk buffer +
-// entry (buf/dataStart model). New code should prefer openZip's text()/bytes().
-export async function inflateToBytes(buf, entry) {
-  const raw = buf.slice(entry.dataStart, entry.dataStart + entry.compSize);
-  if (entry.method === 0) return raw;
-  if (entry.method === 8) return inflateRaw(raw);
-  if (entry.method === 93) return zstdInflate(raw);
-  return null;
-}
-
-export async function inflateToText(buf, entry) {
-  const bytes = await inflateToBytes(buf, entry);
-  return bytes ? new TextDecoder().decode(bytes) : null;
-}
-
 // Open an archive as a name -> entry map. Reads the central directory first
 // (order-independent, ranged), falling back to the sequential local-header walk.
 // `maxBytes` bounds only the fallback buffer read.

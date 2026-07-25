@@ -7,8 +7,8 @@
    for a decoded preview. Return null to fall back to the generic identification
    card. Dependency-free: only the shared toolkit + zip reader. */
 
-import { el, row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
-import { Reader, ascii, cleanAscii, findBytes, matchMagic, startsWithAscii, latin1, gunzip, fmtGuid, hexBytes, hexU32 } from '../core/binutil.js';
+import { fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
+import { Reader, ascii, cleanAscii, findBytes, matchMagic, startsWithAscii, latin1, gunzip, hexBytes, hexU32 } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 
 // ---------- small helpers ----------
@@ -1314,7 +1314,6 @@ async function parse3dsx(file) {
 }
 
 // ---------- Atari ROMs (.a78 / .lnx / .a26 / .j64) ----------
-const A78_MAPPER = ['Linear (no bank)', 'Atari SuperGame', 'Activision', 'Absolute'];
 async function parseAtari(file, ext) {
   const head = await readSlice(file, 0, 128);
   if (ext === 'a78') {

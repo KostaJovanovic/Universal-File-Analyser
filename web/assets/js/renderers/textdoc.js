@@ -34,8 +34,6 @@ const LABELS = {
   rels: 'OPC relationships (XML)', md5: 'MD5 checksum',
 };
 
-const MONO_KINDS = new Set(['dita', 'ditamap', 'tei', 'jats', 'nxml', 'rst', 'adoc', 'asciidoc', 'org', 'textile', 'tex', 'latex', 'ltx', 'sty', 'cls', 'bib']);
-
 function parseXml(text) {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   return doc.querySelector('parsererror') ? null : doc;

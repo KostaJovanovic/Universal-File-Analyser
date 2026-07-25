@@ -14,7 +14,7 @@
    card. */
 
 import { el, row, fmtBytes, preBlock, readSlice } from '../core/util.js';
-import { Reader, ascii, findBytes, latin1, utf8, utf16, filetimeToDate } from '../core/binutil.js';
+import { findBytes, latin1, utf8, utf16, filetimeToDate } from '../core/binutil.js';
 import { parsePlist } from '../lib/plist.js';
 import { openCfbf } from '../lib/cfbf.js';
 import { openZip } from '../renderers/zip.js';

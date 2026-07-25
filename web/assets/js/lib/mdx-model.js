@@ -168,4 +168,6 @@ export const MDX_PRO = {
 // On-demand only: the ~90 MB of Pro models are NOT added to the Complete offline
 // tier (MDX_OFFLINE_URLS) - they download on first Pro run and live in the worker's
 // own MDX_CACHE bucket, like the lite model does on the web.
+// Unreferenced while MDX_PRO_ENABLED is false: kept deliberately, with the rest of
+// the parked Heavy tier, so flipping that flag is still the only edit needed.
 export const MDX_PRO_URLS = MDX_PRO_MODELS.map((m) => m.url);

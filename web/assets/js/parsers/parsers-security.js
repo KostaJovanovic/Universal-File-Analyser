@@ -10,8 +10,8 @@
    the platform crypto.subtle. p12/pfx, kdbx, evtx, pf, hive, dmp, e01, etl are
    identification-only because they need real ASN.1 / proprietary binary walkers. */
 
-import { el, row, fmtBytes, preBlock, fmtDate, readSlice } from '../core/util.js';
-import { Reader, ascii, findBytes, latin1, utf8, fmtGuid, filetimeToDate, hexBytes } from '../core/binutil.js';
+import { fmtBytes, preBlock, fmtDate, readSlice } from '../core/util.js';
+import { Reader, ascii, latin1, utf8, hexBytes } from '../core/binutil.js';
 import { parsePlist } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
 

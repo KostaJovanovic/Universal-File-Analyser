@@ -1574,14 +1574,6 @@ function bomCard(bom, onSch, onPcb) {
 const base = (p) => p.split(/[\\/]/).pop();
 const extOfName = (n) => (n.split('.').pop() || '').toLowerCase();
 
-export function isKicadProjectFile(name) {
-  const lower = base(name).toLowerCase();
-  const ext = extOfName(lower);
-  return /^kicad_(pcb|sch|sym|mod|pro|prl)$/.test(ext) || ext === 'wbk'
-    || lower === 'fp-lib-table' || lower === 'sym-lib-table' || lower === 'fp-info-cache'
-    || (ext === 'bak' && /kicad|sym/.test(lower));
-}
-
 export async function buildKicadProjectCard(kiFiles, folderName) {
   // Categorise.
   let proFile = null, schFile = null, pcbFile = null, symFile = null;

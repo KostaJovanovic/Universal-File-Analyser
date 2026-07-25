@@ -22,8 +22,6 @@
 
 // Special FAT sector values.
 const MAXREGSECT = 0xFFFFFFFA;   // last regular sector id
-const DIFSECT    = 0xFFFFFFFC;   // FAT sector used by the DIFAT itself
-const FATSECT    = 0xFFFFFFFD;   // FAT sector
 const ENDOFCHAIN = 0xFFFFFFFE;   // end of a sector chain
 const FREESECT   = 0xFFFFFFFF;   // unallocated sector
 const NOSTREAM   = 0xFFFFFFFF;   // "no child/sibling" directory pointer

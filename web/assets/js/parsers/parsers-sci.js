@@ -8,7 +8,7 @@
    identification card. Dependency-free: only the shared toolkit. */
 
 import { el, row, fmtBytes, preBlock, readSlice } from '../core/util.js';
-import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, utf8, gunzip } from '../core/binutil.js';
+import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, gunzip } from '../core/binutil.js';
 
 // ---------- small helpers ----------
 
