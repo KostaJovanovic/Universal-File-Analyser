@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Changelog - new file formats & viewers - Analyser</title>
   <meta name="description" content="Every update to Analyser, newest first - new file formats, viewers, bug fixes and offline improvements. Free, in-browser, nothing uploaded.">
-  <link rel="canonical" href="https://lab.valjdakosta.com/patch">
+  <link rel="canonical" href="https://analyser.valjdakosta.com/patch">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
   <meta property="og:type" content="website">
@@ -13,15 +13,15 @@
   <meta property="og:locale" content="en_GB">
   <meta property="og:title" content="Changelog - new file formats & viewers - Analyser">
   <meta property="og:description" content="Every update to Analyser, newest first - new file formats, viewers, bug fixes and offline improvements. Free, in-browser, nothing uploaded.">
-  <meta property="og:url" content="https://lab.valjdakosta.com/patch">
-  <meta property="og:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
+  <meta property="og:url" content="https://analyser.valjdakosta.com/patch">
+  <meta property="og:image" content="https://analyser.valjdakosta.com/assets/img/banner.jpg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Changelog - new file formats & viewers - Analyser">
   <meta name="twitter:description" content="Every update to Analyser, newest first - new file formats, viewers, bug fixes and offline improvements. Free, in-browser, nothing uploaded.">
-  <meta name="twitter:image" content="https://lab.valjdakosta.com/assets/img/banner.jpg">
+  <meta name="twitter:image" content="https://analyser.valjdakosta.com/assets/img/banner.jpg">
   <meta name="twitter:image:alt" content="The Analyser wordmark on a faint grid - a free, local, in-browser file metadata and forensics tool.">
   <link rel="icon" href="assets/img/favicon.png" type="image/png">
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
@@ -32,8 +32,8 @@
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     "itemListElement": [
-      { "@type": "ListItem", "position": 1, "name": "Analyser", "item": "https://lab.valjdakosta.com/" },
-      { "@type": "ListItem", "position": 2, "name": "Changelog", "item": "https://lab.valjdakosta.com/patch" }
+      { "@type": "ListItem", "position": 1, "name": "Analyser", "item": "https://analyser.valjdakosta.com/" },
+      { "@type": "ListItem", "position": 2, "name": "Changelog", "item": "https://analyser.valjdakosta.com/patch" }
     ]
   }
   </script>
@@ -43,9 +43,9 @@
     "@type": "TechArticle",
     "headline": "Analyser changelog",
     "description": "Every update to Analyser, newest first - new file formats, viewers, bug fixes and offline improvements.",
-    "url": "https://lab.valjdakosta.com/patch",
-    "mainEntityOfPage": "https://lab.valjdakosta.com/patch",
-    "image": "https://lab.valjdakosta.com/assets/img/banner.jpg",
+    "url": "https://analyser.valjdakosta.com/patch",
+    "mainEntityOfPage": "https://analyser.valjdakosta.com/patch",
+    "image": "https://analyser.valjdakosta.com/assets/img/banner.jpg",
     "author": { "@type": "Person", "name": "valjdakosta", "url": "https://valjdakosta.com/" },
     "publisher": { "@type": "Organization", "name": "valjdakosta", "url": "https://valjdakosta.com/" }
   }
@@ -210,6 +210,57 @@
                - leave a commit undocumented;
                - let the newest version here disagree with app.js.
              ===================================================================== -->
+
+        <div class="patch-entry">
+          <p class="patch-version">8.07</p>
+          <p class="patch-name">New Address</p>
+          <p class="patch-date">26 July 2026</p>
+          <ul class="patch-list">
+            <li><strong>Analyser has moved to <u>analyser.valjdakosta.com</u>. The old address still works and serves exactly the same site, so nothing you have saved stops working.</strong></li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">The move</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>The site now lives at analyser.valjdakosta.com</strong> - a name that says what it actually is. Every link, share and page on the site points there from now on.</li>
+            <li><strong>The old lab.valjdakosta.com address keeps working</strong> and shows the same pages, so old bookmarks, links you have shared, and a copy you installed to your home screen all carry on as before. There is no redirect and no rush: use whichever you like, though the new one is the one to keep.</li>
+            <li>Sharing the site, <a href="/about#what">exporting an analysis</a> and the watermark on a saved <a href="/about#ext-gcode">G-code</a> clip all carry the new address now.</li>
+            <li><strong>Nothing else changed.</strong> The app itself is exactly as it was, still doing every bit of the work on your own device, with nothing uploaded.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">8.06</p>
+          <p class="patch-name">True Colours</p>
+          <p class="patch-date">25 July 2026</p>
+          <ul class="patch-list">
+            <li><strong>Video now reports what is genuinely inside it: exact codec profile and level, bit depth, colour and HDR detail, every soundtrack and subtitle track in an MKV, and the real frame rate of a raw stream - all read from the picture data itself rather than from the file&rsquo;s own summary of it.</strong></li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Video</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag">New</span><strong>Codec detail read from the video itself</strong> - profile, tier and level, bit depth, and chroma subsampling. These are read out of the picture data, so they appear even when the file&rsquo;s own summary leaves them out or gets them wrong.</li>
+            <li><span class="patch-tag">New</span><strong>Colour and HDR.</strong> Colour primaries, transfer, matrix and range; the <strong>HDR</strong> type with its MaxCLL and MaxFALL brightness figures; and <strong>Dolby Vision</strong> profile and level where the file carries them.</li>
+            <li><span class="patch-tag">New</span><strong>Every track in an <a href="/about#ext-mkv">MKV</a> or <a href="/about#ext-webm">WebM</a> is listed</strong> - kind, codec, size or channel count, language, name, and whether it is the default or forced one. Those files routinely hold several soundtracks and subtitle tracks, and now you can see all of them at a glance.</li>
+            <li><span class="patch-tag">New</span><strong>The encoder&rsquo;s own average and peak bitrate</strong>, where the file records them, shown separately from the rough file-size-over-length figure.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A raw video stream reads its true frame rate.</strong> A bare <strong>.h264</strong> or <strong>.h265</strong> file has no container to ask, and was simply assumed to run at 25 frames per second - which then threw off the length and the bitrate as well. The rate is read from the stream itself now.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>HEVC inside an MKV</strong> goes straight to the readout and the offer to convert, instead of attempting a playback that no browser can manage.</li>
+            <li>The consistency check in <strong>Advanced</strong> now covers <strong>HEVC</strong> as well as H.264.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">8.05</p>
+          <p class="patch-name">Dust Off</p>
+          <p class="patch-date">25 July 2026</p>
+          <ul class="patch-list">
+            <li><strong>Maintenance:</strong> styles and code left behind by features that have since changed were removed across the site. Nothing looks or behaves any differently; the download is a little smaller.</li>
+          </ul>
+        </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">8.02 - 8.04</p>
@@ -378,8 +429,6 @@
           </ul>
         </div>
 
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">7.01 - 7.02</p>

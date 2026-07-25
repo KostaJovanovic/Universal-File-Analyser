@@ -337,6 +337,11 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+  { range: '8.05 - 8.07', notes: [
+    'Video now reports what is genuinely inside it - exact **codec profile and level**, bit depth, **colour and HDR** detail including Dolby Vision, and every soundtrack and subtitle track in an **MKV** - all read from the picture data rather than from the summary the file gives of itself.',
+    'A bare **.h264 or .h265 stream** reads its true frame rate instead of being assumed to run at 25 frames per second, which had been skewing its length and bitrate too.',
+    'The site **moved to analyser.valjdakosta.com** - the old lab.valjdakosta.com address still works and serves the same pages, so nothing saved or installed breaks.',
+  ] },
   { range: '8.01 - 8.04', notes: [
     'The cleaner that handles anything a dropped file wants to display - an email body, a saved web page, an e-book chapter - now strips **animation tricks** that could turn a safe-looking link into a script after the fact, and stops a preview quietly fetching anything from the internet.',
     'The **format search** keeps up with fast typing, and a very large file no longer freezes the page while its fingerprints are worked out.',

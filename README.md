@@ -8,7 +8,7 @@
 
 Drop in any file and it is classified, parsed and visualised on your device. Nothing is uploaded, ever.
 
-[**Open Analyser**](https://lab.valjdakosta.com) · [Supported formats](https://lab.valjdakosta.com/formats) · [Samples](https://lab.valjdakosta.com/samples) · [About](https://lab.valjdakosta.com/about) · [Changelog](https://lab.valjdakosta.com/patch)
+[**Open Analyser**](https://analyser.valjdakosta.com) · [Supported formats](https://analyser.valjdakosta.com/formats) · [Samples](https://analyser.valjdakosta.com/samples) · [About](https://analyser.valjdakosta.com/about) · [Changelog](https://analyser.valjdakosta.com/patch)
 
 <img src="tools/readme-assets/samples.jpg" alt="See it work, before you drop a thing, the samples gallery" width="720">
 
@@ -24,7 +24,7 @@ Most "file inspector" sites work by uploading your file to a server, which is ex
 
 Analyser recognises **over 1,350 file types**. The depth varies by format: photos, audio, video, documents, 3D models, archives, maps and databases get full viewers and deep analysis, while hundreds of proprietary formats are identified by magic bytes with their header metadata decoded. Anything still unknown gets a hex dump and best-effort identification.
 
-The full, searchable list is at [lab.valjdakosta.com/formats](https://lab.valjdakosta.com/formats), with a guide page for every supported extension. There is also a [compare page](https://lab.valjdakosta.com/compare) that runs two files through the same analysis side by side and highlights every field where they differ, and a [samples gallery](https://lab.valjdakosta.com/samples) of example files to try without needing your own.
+The full, searchable list is at [analyser.valjdakosta.com/formats](https://analyser.valjdakosta.com/formats), with a guide page for every supported extension. There is also a [compare page](https://analyser.valjdakosta.com/compare) that runs two files through the same analysis side by side and highlights every field where they differ, and a [samples gallery](https://analyser.valjdakosta.com/samples) of example files to try without needing your own.
 
 ## Beyond identification
 
@@ -98,7 +98,7 @@ Browse ZIP, 7z, RAR and whole dropped folders, with a treemap that breaks down w
 - Works fully offline once installed; the service worker precaches the app shell and keeps the WASM engines after first use.
 - Private keys and secrets found inside files are flagged, not transmitted.
 
-The only network call the site ever makes on its own is a single anonymous "file analysed" ping carrying nothing but a lowercase extension string. Those counts feed the public [live-usage page](https://lab.valjdakosta.com/stats), an honest tally of what people drop, with unrecognised types pooled into one row so their names are never shown or stored.
+The only network call the site ever makes on its own is a single anonymous "file analysed" ping carrying nothing but a lowercase extension string. Those counts feed the public [live-usage page](https://analyser.valjdakosta.com/stats), an honest tally of what people drop, with unrecognised types pooled into one row so their names are never shown or stored.
 
 <div align="center">
 <img src="tools/readme-assets/stats.png" alt="The live-usage stats page" width="640">
@@ -157,7 +157,7 @@ This starts a local instance on localhost:3000 and opens it in a browser. It kee
 
 ## Versioning
 
-Every commit is its own version (currently in the 5.x era), stamped automatically at commit time. The full history, one entry per commit, is on the [changelog](https://lab.valjdakosta.com/patch).
+Every commit is its own version (currently in the 5.x era), stamped automatically at commit time. The full history, one entry per commit, is on the [changelog](https://analyser.valjdakosta.com/patch).
 
 ## Credits
 
@@ -173,4 +173,4 @@ This licence covers the code I wrote. Third-party libraries under `web/assets/ve
 
 ## Documentation
 
-For a deeper look at the codebase, architecture, the drop-to-render pipeline, every renderer module, and a full usage reference for every feature on the site, see [`lab.valjdakosta.com/docs`](documentation).
+For a deeper look at the codebase, architecture, the drop-to-render pipeline, every renderer module, and a full usage reference for every feature on the site, see [`analyser.valjdakosta.com/docs`](documentation).

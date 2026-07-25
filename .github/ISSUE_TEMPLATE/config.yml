@@ -4,5 +4,5 @@ contact_links:
     url: https://github.com/KostaJovanovic/Universal-File-Analyser/security/advisories/new
     about: Please report security issues privately, not as a public issue. See SECURITY.md.
   - name: Try Analyser
-    url: https://lab.valjdakosta.com
+    url: https://analyser.valjdakosta.com
     about: The live site, with the full list of supported formats.

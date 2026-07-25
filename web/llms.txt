@@ -2,14 +2,14 @@
 
 > Free, in-browser file analysis and metadata forensics for 1,000+ file types. View EXIF, audio spectrograms, video frames, document internals and more - everything runs locally in your browser. No ads, no telemetry, nothing is ever uploaded.
 
-Analyser is a static, offline-capable web app (PWA) hosted at https://lab.valjdakosta.com/. You drop or pick a file and it identifies the format from its bytes, decodes the metadata, and renders type-specific views entirely client-side. No file ever leaves the device - there is no server, no account, no upload, and no tracking.
+Analyser is a static, offline-capable web app (PWA) hosted at https://analyser.valjdakosta.com/. You drop or pick a file and it identifies the format from its bytes, decodes the metadata, and renders type-specific views entirely client-side. No file ever leaves the device - there is no server, no account, no upload, and no tracking.
 
 ## Pages
 
-- [Analyser (app)](https://lab.valjdakosta.com/): The main tool. Drop or pick a file to analyse photos, audio, video, documents, archives and more, fully in-browser.
-- [About](https://lab.valjdakosta.com/about): Why Analyser exists, how the local-only processing works, and the full table of supported file types.
-- [Supported file types](https://lab.valjdakosta.com/formats): The complete catalog of every file format Analyser opens, grouped by category, with what it extracts from each.
-- [Changelog](https://lab.valjdakosta.com/patch): Every release, newest first - new formats, viewers, and fixes.
+- [Analyser (app)](https://analyser.valjdakosta.com/): The main tool. Drop or pick a file to analyse photos, audio, video, documents, archives and more, fully in-browser.
+- [About](https://analyser.valjdakosta.com/about): Why Analyser exists, how the local-only processing works, and the full table of supported file types.
+- [Supported file types](https://analyser.valjdakosta.com/formats): The complete catalog of every file format Analyser opens, grouped by category, with what it extracts from each.
+- [Changelog](https://analyser.valjdakosta.com/patch): Every release, newest first - new formats, viewers, and fixes.
 
 ## What it analyses
 

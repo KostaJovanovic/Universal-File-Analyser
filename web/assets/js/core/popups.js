@@ -247,7 +247,7 @@ export function wireFooterContact() {
 // The nav "Share" button opens a centred modal (same .anr-modal overlay) with
 // the canonical URL, a one-tap copy, native share on devices that support it,
 // and a few quick share targets. Everything is local - no tracking, no backend.
-const SHARE_URL = 'https://lab.valjdakosta.com/';
+const SHARE_URL = 'https://analyser.valjdakosta.com/';
 const SHARE_TITLE = 'Analyser';
 const SHARE_TEXT = 'This website helped me analyse metadata of a file and reveal some cool info. Nothing was ever uploaded and it even works offline!';
 

@@ -32,6 +32,8 @@ Reuse existing CSS tokens and component classes. New UI must keep the intentiona
 
 Do not manually edit generated `web/formats/` pages or marker-delimited generated sections. Update their source data and run the appropriate script. Do not hand-edit `COMMIT_COUNT` in `app.js` or the service-worker `VERSION`; `save.bat` maintains both. Keep `wrangler.jsonc` aligned with the static `web/` deployment layout.
 
+The canonical host is `analyser.valjdakosta.com`; the older `lab.valjdakosta.com` still serves the same Worker but must not appear in any absolute URL (canonical tags, og/twitter images, JSON-LD, sitemaps, `robots.txt`, `llms.txt`, share/export links, the `SITE` constants in `tools/`).
+
 ## Commit & Pull Request Guidelines
 
 Recent history commonly uses short `update` messages, while substantive commits use imperative summaries (for example, `Fix ...` or `AI vocal separation ...`). Prefer a concise, specific imperative subject. Do not commit, push, or edit public patch notes unless explicitly requested. For pull requests, explain the user-visible change, note regenerated files, link relevant issues, and include screenshots for UI changes.
