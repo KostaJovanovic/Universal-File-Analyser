@@ -10,8 +10,8 @@
    HEADER / METADATA ONLY - there is a separate map renderer (geo.js) for
    gpx/kml/geojson; this chunk covers the *other* geospatial formats with no map. */
 
-import { el, row, fmtBytes, preBlock } from '../core/util.js';
-import { Reader, ascii, findBytes, latin1, utf8 } from '../core/binutil.js';
+import { row, fmtBytes, preBlock } from '../core/util.js';
+import { Reader, ascii, latin1 } from '../core/binutil.js';
 import { sqliteSummary } from '../lib/sqlite.js';
 
 // ---------- small helpers ----------

@@ -7,7 +7,7 @@
    Return null to fall back to the generic identification card. */
 
 import { el, row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
-import { Reader, ascii, findBytes } from '../core/binutil.js';
+import { Reader, ascii } from '../core/binutil.js';
 import { SCAN_SMALL } from '../core/limits.js';
 import { parsePlist } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
@@ -24,12 +24,6 @@ function b64urlToBytes(s) {
 const b64urlToStr = (s) => new TextDecoder('utf-8').decode(b64urlToBytes(s));
 
 // A simple two-column readout table from an array of [label, value] pairs.
-function rowsTable(pairs) {
-  const t = el('table', { class: 'anr-readout' });
-  for (const [k, v] of pairs) t.appendChild(row(k, String(v)));
-  return t;
-}
-
 // Unsigned LEB128 from a byte array at cursor {i}.
 function uleb(b, cur) { let r = 0, sh = 0, x; do { x = b[cur.i++]; r += (x & 0x7f) * Math.pow(2, sh); sh += 7; } while (x & 0x80); return r; }
 

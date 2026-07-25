@@ -13,8 +13,8 @@
    PageMaker/LIT/AZW/KFX, and CFBF-backed .pub/.hwp) stay identification-only.
    No top-level side effects. */
 
-import { el, row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
-import { Reader, ascii, findBytes, latin1, utf8, utf16, inflate } from '../core/binutil.js';
+import { el, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
+import { Reader, ascii, latin1, utf8, utf16, inflate } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 
 // Lazily imported on first OLE/CFBF document; cached at module scope.

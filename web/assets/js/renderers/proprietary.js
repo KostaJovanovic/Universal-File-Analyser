@@ -3273,7 +3273,6 @@ const UK_WEAPONS = { rev: 'Revolver', sho: 'Shotgun', nai: 'Nailgun', rai: 'Rail
 
 const isArr = (v) => Array.isArray(v);
 const countTruthy = (a) => isArr(a) ? a.filter((x) => x && x !== 0 && x !== -1).length : 0;
-const sumArr = (a) => isArr(a) ? a.reduce((s, x) => s + (Number(x) || 0), 0) : 0;
 function maxWithIndex(a) {
   if (!isArr(a) || !a.length) return null;
   let bi = -1, bv = -Infinity;

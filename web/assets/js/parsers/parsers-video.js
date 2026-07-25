@@ -14,8 +14,8 @@
    MPEG PS/TS); recordings (wtv, dvr-ms, trp/tp PVR, ogm); other containers (nut);
    plus identification-only for the rare+hard ones (dpx, cin, dav, yuv). */
 
-import { el, row, fmtBytes, preBlock, readSlice } from '../core/util.js';
-import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, utf8 } from '../core/binutil.js';
+import { row, fmtBytes, preBlock, readSlice } from '../core/util.js';
+import { Reader, ascii, findBytes, matchMagic, latin1 } from '../core/binutil.js';
 
 // ---------- small helpers ----------
 

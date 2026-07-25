@@ -2,7 +2,7 @@
    Recursively walks a dropped folder via webkitGetAsEntry
    and renders a treemap + summary using the shared folder/archive modules. */
 
-import { el, row, fmtBytes, buildFileTree, inlineLoader, probeReadable, asciiBar, copyText } from '../core/util.js';
+import { el, row, inlineLoader, probeReadable, asciiBar, copyText } from '../core/util.js';
 import { normalizeFolder, renderBreakdownCards, renderViewToggle } from './folder-archive-shared.js';
 import { ARCHIVE_EXTS, RAW_EXTS, HEIC_EXTS, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS, CSV_EXTS } from '../core/formats.js';
 import { FORMATS } from './proprietary-formats.js';

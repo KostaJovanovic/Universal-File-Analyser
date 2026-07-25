@@ -15,9 +15,8 @@
    zstd/gzip; esd uses LZMS) stay metadata-only. Anything rated rare AND hard is
    identification-only. No top-level side effects. */
 
-import { el, row, fmtBytes, preBlock, fmtDate } from '../core/util.js';
-import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, utf8, utf16, fmtGuid } from '../core/binutil.js';
-import { openZip } from '../renderers/zip.js';
+import { fmtBytes, preBlock, fmtDate } from '../core/util.js';
+import { Reader, ascii, findBytes, latin1, utf8, utf16, fmtGuid } from '../core/binutil.js';
 
 // ---------- small shared helpers ----------
 
@@ -999,7 +998,6 @@ async function parseUbi(file) {
 }
 
 // ---------- Android sparse image (simg, 0x3AFF26ED) ----------
-const SPARSE_CHUNK = { 0xcac1: 'raw', 0xcac2: 'fill', 0xcac3: 'don\'t care', 0xcac4: 'CRC32' };
 async function parseAndroidSparse(file) {
   const b = await readBytes(file, 28);
   // magic 0xED26FF3A little-endian at offset 0.

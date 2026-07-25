@@ -7,11 +7,10 @@
    open?}]` for collapsible blocks or `_previewNode`. Return null to fall back to
    the generic identification card.
 
-   Dependency-free: only the shared toolkit (util/binutil/plist) is imported. */
+   Dependency-free: only the shared toolkit (util/binutil) is imported. */
 
-import { el, row, fmtBytes, preBlock, fmtDate, readSlice, readText } from '../core/util.js';
-import { Reader, ascii, cp437, latin1, utf8, filetimeToDate } from '../core/binutil.js';
-import { parsePlist } from '../lib/plist.js';
+import { el, fmtBytes, preBlock, fmtDate, readSlice, readText } from '../core/util.js';
+import { Reader, ascii, cp437, latin1, utf8 } from '../core/binutil.js';
 
 // ---------- small helpers ----------
 // A monospace block that preserves ASCII art (no wrapping, horizontal scroll).

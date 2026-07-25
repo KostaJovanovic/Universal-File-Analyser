@@ -91,11 +91,6 @@ function stepLoader(text) {
 
 // Smooth-scroll to the photo section. Called after the user explicitly clicks an
 // "Analyse frame" button (not on the silent auto-analysis of the first frame).
-function scrollToPhoto() {
-  const sec = document.getElementById('photo');
-  if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
 // The frame controls shown under a video player: an editable, button-styled
 // timecode (click to set hours/minutes/seconds/frame individually and seek
 // there) on top, then a 2×2 grid of Prev/Next frame and Analyse/Frame-grab.

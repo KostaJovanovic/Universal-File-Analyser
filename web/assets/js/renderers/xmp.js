@@ -14,7 +14,7 @@
    as bipolar bars, the HSL colour mixer, the crop rectangle. A sidecar we can't
    read as XMP is handed back to the generic identifier so it is never worse off. */
 
-import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard, buildReadout } from '../core/util.js';
+import { el, rowHelp, h3help, fmtBytes, integrityCard, errorCard, buildReadout } from '../core/util.js';
 
 // ---- small value helpers -----------------------------------------------------
 const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : null; };

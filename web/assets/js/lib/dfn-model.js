@@ -22,8 +22,8 @@
 // Reuse the exact ONNX Runtime the MDX separator uses (same pinned version, same
 // WebGPU/WASM entry + wasm files). Sharing means the ~21 MB runtime is downloaded
 // and cached once for both AI audio features.
-import { ORT_BASE, ORT_ENTRY, ORT_FILES } from './mdx-model.js';
-export { ORT_BASE, ORT_ENTRY, ORT_FILES };
+import { ORT_BASE, ORT_ENTRY } from './mdx-model.js';
+export { ORT_BASE, ORT_ENTRY };
 
 // The single combined DeepFilterNet3 graph. Inputs feat_erb [1,1,T,32] and
 // feat_spec [1,2,T,96] (real then imag); outputs erb_mask [1,1,T,32] and
@@ -39,10 +39,3 @@ export const DFN_MODEL = {
   tierMb: 30,            // model ~9 + shared ORT runtime ~21, shown in the prompt
 };
 
-// Everything the offline tier must cache for offline denoising. The ORT files are
-// shared with MDX_OFFLINE_URLS; offline-tiers.js dedupes the overlap.
-export const DFN_OFFLINE_URLS = [...ORT_FILES, DFN_MODEL.url];
-
-// Approx download footprint of the denoise feature in MB (runtime ~21 + model
-// ~8.6 + glue). Used to size the offline tier and the one-off size warning.
-export const DFN_TIER_MB = 30;

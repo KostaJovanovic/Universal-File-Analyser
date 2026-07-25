@@ -8,8 +8,8 @@
    Return null to fall back to the generic identification card. Dependency-free:
    only the shared toolkit. */
 
-import { el, row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
-import { Reader, ascii, cleanAscii, findBytes, matchMagic, startsWithAscii, latin1, utf8, gunzip, hexByte } from '../core/binutil.js';
+import { row, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
+import { Reader, ascii, cleanAscii, findBytes, startsWithAscii, latin1, utf8, gunzip, hexByte } from '../core/binutil.js';
 import { sqliteSummary } from '../lib/sqlite.js';
 
 // ---------- small helpers ----------
