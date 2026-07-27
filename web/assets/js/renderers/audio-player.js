@@ -37,6 +37,9 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
   // The section-03 mini player passes noVolume: its narrow transport has no room
   // for a slider. It still joins the shared registry below (so the shared level
   // applies when it becomes the audio owner) - it just has no volume UI.
+  // mutedPreview goes further: a standalone silent preview (the section-meta mini)
+  // that never owns the audio, so it stays OUT of the shared registry entirely and
+  // keeps whatever muted state it was built with.
   const vol = opts.noVolume ? null : makeVolume(mediaEl);
   const container = el('div', { class: 'anr-player' }, [playBtn, trackEl, timeEl, vol]);
   // When a controller is attached (see container._anrTransport below), this
@@ -47,7 +50,7 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
   let controller = null;
   // A volume-less synced player still needs to track the shared level/mute, so
   // register it directly (makeVolume already registers the ones that have a UI).
-  if (opts.noVolume) registerVolPlayer(mediaEl, container, () => {});
+  if (opts.noVolume && !opts.mutedPreview) registerVolPlayer(mediaEl, container, () => {});
 
   playBtn.addEventListener('click', () => {
     if (controller) { controller.toggle(); return; }
