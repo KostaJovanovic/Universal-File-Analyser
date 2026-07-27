@@ -9,7 +9,7 @@ import { el, row, rowHelp, fmtBytes, h3help, wireInfoToggle, sha256Row, integrit
 import { HASH_FILE_MAX } from '../core/limits.js';
 import { parseAviHeader, extractAviData, encodeWav } from './video-avi.js';
 import { appendSonyGyroCard } from './sony-rtmd.js';
-import { registerSyncedVideo, setAudioCompanion } from '../core/video-sync.js';
+import { registerSyncedVideo, registerExclusiveVideo, setAudioCompanion } from '../core/video-sync.js';
 import { detectMoovlessMp4, extractMp4ParamSets, findInbandParamSets, carveAvccToAnnexB } from './video-recover.js';
 import { analyzeMp4Structure, analyzeBitstream, BOX_GLOSS } from './video-forensics.js';
 import { appendTelemetryCards } from './video-telemetry.js';
@@ -44,6 +44,7 @@ const DEFAULT_VCTX = {
   afterPhoto: () => { const sec = document.getElementById('photo'); if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
   photoOpts: (base) => base,
   sync: (playerEl) => registerSyncedVideo(playerEl),
+  exclusive: (playerEl) => registerExclusiveVideo(playerEl),
   companion: (c) => setAudioCompanion(c),
 };
 let videoCtx = DEFAULT_VCTX;
@@ -51,16 +52,21 @@ const curVctx = () => videoCtx;
 
 // Apply the right playback affordance to a visible <video>: native controls on
 // iOS, click-to-toggle play/pause elsewhere (the makePlayer scrubber does the rest).
-function applyVideoControls(playerEl) {
+function applyVideoControls(playerEl, opts = {}) {
   if (isIOS()) {
     playerEl.setAttribute('controls', '');
   } else {
     playerEl.style.cursor = 'pointer';
     playerEl.addEventListener('click', () => { if (playerEl.paused) playerEl.play(); else playerEl.pause(); });
   }
-  // Keep every player of this clip (main player, gyro mini-player, ...) in sync -
-  // but not in inline/compare mode, where each panel's players stay independent.
-  curVctx().sync(playerEl);
+  // Main players (the body Player, the gyro mini) stay in sync so the graph
+  // playheads keep following the main clip. A standalone preview (opts.exclusive -
+  // the section-meta mini) instead only enforces one-at-a-time playback: it pauses
+  // the main clip when played and pauses itself when the main plays, without ever
+  // co-playing, owning the audio, or driving a playhead. Neither happens in
+  // inline/compare mode, where each panel's players are already isolated.
+  if (opts.exclusive) curVctx().exclusive(playerEl);
+  else curVctx().sync(playerEl);
 }
 
 // A generated contact-sheet image. Click opens it full-size in the shared
@@ -3666,6 +3672,7 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     // the compare flag into the inline photo render.
     photoOpts: (base) => Object.assign({ inline: true, compare: !!opts.compare }, base),
     sync: () => {},
+    exclusive: () => {},
     companion: () => {},
   } : DEFAULT_VCTX;
   videoCtx = vctx;   // helpers/handlers capture this synchronously at build time
@@ -4318,11 +4325,12 @@ export async function renderVideo(file, resultsEl, opts = {}) {
     const thumb = el('div', { class: 'section-meta-preview' });
     const mini = el('video', { src: url, poster: posterUrl, playsinline: '', preload: 'metadata' });
     mini.setAttribute('webkit-playsinline', '');
-    mini.muted = true;                   // muted: only the main Player makes sound (avoids echo)
-    applyVideoControls(mini);            // click-to-play + registers it for cross-player sync
+    mini.muted = true;                   // muted: it's a silent preview - only the main Player makes sound
+    applyVideoControls(mini, { exclusive: true });   // click-to-play + standalone one-at-a-time playback
     // Site-styled transport (no volume control), overlaid on the video and shown on hover.
+    // mutedPreview keeps it out of the shared-volume registry so it stays muted.
     const miniPlayer = el('div', { class: 'section-meta-player anr-video-hoverui' },
-      [mini, makePlayer(mini, undefined, { noVolume: true })]);
+      [mini, makePlayer(mini, undefined, { noVolume: true, mutedPreview: true })]);
     thumb.appendChild(miniPlayer);
     thumb.appendChild(el('p', { class: 'section-meta-preview-caption' },
       `${vw} × ${vh} · ${formatDuration(dur)} · ${fmtBytes(file.size)}`));

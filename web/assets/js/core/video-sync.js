@@ -30,6 +30,41 @@ function live() {
 }
 function others(self) { return live().filter((v) => v !== self); }
 
+// --- standalone (exclusive) players -----------------------------------------
+// A "loner" is a player that must NOT join the synced group above: it never
+// co-plays, never owns the audio, and never drives the graph playheads - it is a
+// self-contained preview (the section-meta mini). Playback is still one-at-a-time,
+// though: starting a loner pauses the synced group, and starting any synced player
+// pauses the loners. That is the whole relationship - "either this one or that one,
+// never both", with nothing shared between them.
+const loners = new Set();
+
+function pauseLoners() {
+  for (const v of loners) {
+    if (!v.isConnected) { loners.delete(v); continue; }
+    if (!v.paused) try { v.pause(); } catch (_) {}
+  }
+}
+function pauseSynced() {
+  for (const v of live()) if (!v.paused) try { v.pause(); } catch (_) {}
+}
+
+// Register a <video> as a standalone exclusive preview. Returns an unregister fn.
+export function registerExclusiveVideo(video) {
+  if (!video || loners.has(video)) return () => {};
+  loners.add(video);
+  const onPlay = () => {
+    // Starting the preview stops everything else - the synced group (whose natural
+    // pause handlers also stop the audio companion) and any other loner.
+    pauseSynced();
+    for (const o of loners) if (o !== video && !o.paused) try { o.pause(); } catch (_) {}
+  };
+  const onGone = () => { loners.delete(video); video.removeEventListener('play', onPlay); };
+  video.addEventListener('play', onPlay);
+  video.addEventListener('emptied', onGone);
+  return onGone;
+}
+
 // --- decode only what is on screen ------------------------------------------
 // Every synced player is an INDEPENDENT decoder of the same clip. Propagating a
 // play to all of them therefore costs one full decode each, and the followers are
@@ -157,6 +192,7 @@ export function registerSyncedVideo(video) {
     if (video.__syncPlay) { video.__syncPlay = false; return; }      // echo of a synced play
     claimAudio(video);          // a user-started play takes over the audio
     shadow(video.currentTime, true);   // start the companion audio alongside it
+    pauseLoners();              // a synced play stops the standalone preview(s)
     for (const v of others(video)) {
       // Off-screen followers bank the time instead of decoding it - see the
       // "decode only what is on screen" note above.
