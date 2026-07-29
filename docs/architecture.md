@@ -102,7 +102,7 @@ makes up the "app shell" - on install it is precached into a version-epoched
 cache (`analyser-v<COMMIT_COUNT>`). Requests are served from that cache first;
 only a miss touches the network. `activate` deletes any cache whose name isn't
 in `KEEP_CACHES` (the current `VERSION`, plus the persistent
-`analyser-offline` and `analyser-mdx` caches used by the offline-tiers and
+`analyser-offline` and `analyser-mdx-v2` caches used by the offline-tiers and
 vocal-separation features), so old versioned shells are cleaned up on each
 deploy without disturbing user-downloaded offline content. Localhost/LAN
 hosts (`server.bat`) are detected via `DEV` and skip caching entirely so

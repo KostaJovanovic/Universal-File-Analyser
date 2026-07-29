@@ -41,10 +41,12 @@ projects were the one thing the offline app couldn't open.
 `const VERSION = 'analyser-v' + COMMIT_COUNT` names the cache. Every commit
 bumps `COMMIT_COUNT` (via `save.bat`, see [`tooling.md`](tooling.md)), so every deploy
 gets a fresh cache name. On `activate`, any cache not in `KEEP_CACHES`
-(`[VERSION, 'analyser-offline', 'analyser-mdx']`) is deleted - so the
+(`[VERSION, 'analyser-offline', 'analyser-mdx-v2', 'analyser-dfn']`) is deleted - so the
 previous version's shell is dropped, but the user's chosen offline-tier
 downloads (`analyser-offline`) and the cached vocal-separation model
-(`analyser-mdx`) survive across deploys untouched. Requests are served
+(`analyser-mdx-v2`) survive across deploys untouched. The legacy
+`analyser-mdx` cache is deliberately not preserved, which removes models from
+the retired Heavy tier. Requests are served
 cache-first: the current `VERSION` cache is checked explicitly first (not a
 bare `caches.match()`, which would search every cache in creation order and
 could return a stale copy of an app module from the persistent
@@ -104,8 +106,8 @@ across every version bump, so nothing else ever drops them. It:
   never outlive the cache it describes, or the badges claim a download that
   isn't there;
 - deletes every IndexedDB database;
-- deletes the three download caches - `analyser-offline`, `analyser-mdx`,
-  `analyser-dfn` - each `catch`ed independently so a bucket that was never
+- deletes the download caches - `analyser-offline`, `analyser-mdx-v2`, legacy
+  `analyser-mdx`, and `analyser-dfn` - each `catch`ed independently so a bucket that was never
   created can't abort the rest.
 
 It does **not** touch the service-worker app-shell cache (keyed by `VERSION`).

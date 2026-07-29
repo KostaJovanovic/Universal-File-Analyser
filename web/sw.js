@@ -2,7 +2,7 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v264';
+const VERSION = 'analyser-v265';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -246,10 +246,12 @@ self.addEventListener('install', (e) => {
 // or every deploy (and, in dev, every SW re-activation) would silently wipe the
 // downloads the user chose to keep. Its files are refreshed in place by the
 // version-aware re-download in offline-tiers.js, not by this cleanup.
-// 'analyser-mdx' - the day-cached AI separation model (see mdx-worker.js) - also
-// survives, so a service-worker update doesn't force a multi-MB model re-download.
+// 'analyser-mdx-v2' - the immutable Standard/Lite AI separation models (see
+// mdx-worker.js) - also survives, so a service-worker update doesn't force a
+// multi-MB model re-download. The old 'analyser-mdx' bucket is intentionally
+// omitted so activate deletes any removed Heavy models still stored there.
 // 'analyser-dfn' - the day-cached denoise model (see dfn-worker.js) - likewise.
-const KEEP_CACHES = [VERSION, 'analyser-offline', 'analyser-mdx', 'analyser-dfn'];
+const KEEP_CACHES = [VERSION, 'analyser-offline', 'analyser-mdx-v2', 'analyser-dfn'];
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
@@ -299,7 +301,12 @@ self.addEventListener('fetch', (e) => {
       return caches.match(req).then((fallback) => {
         if (fallback) return fallback;
         return fetch(req).then((res) => {
-          if (res && (res.status === 200 || res.type === 'opaque')) {
+          // AI models have their own persistent, validated caches. Keeping the
+          // same large response here too doubles storage and can strand removed
+          // models until the next application release.
+          const isModelRequest = url.hostname === 'huggingface.co'
+            || url.hostname.endsWith('.huggingface.co');
+          if (!isModelRequest && res && (res.status === 200 || res.type === 'opaque')) {
             const copy = res.clone();
             caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
           }

@@ -3130,46 +3130,54 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   flex: 1 1 auto;
   min-width: 0;
 }
-.anr-blend-slider { flex: 1 1 auto; width: 100%; min-width: 0; }
+.anr-blend-slider {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  touch-action: pan-y;
+}
+/* Keep the site's thin square marker visually, but make the real WebKit thumb a
+   finger-sized target. iOS could tap the track but could not hold the old 4px
+   thumb long enough to drag it. */
+.anr-blend-slider::-webkit-slider-thumb {
+  width: 28px;
+  height: 28px;
+  margin-top: -12.5px;
+  background: linear-gradient(to right,
+    transparent calc(50% - 2px),
+    var(--accent) calc(50% - 2px),
+    var(--accent) calc(50% + 2px),
+    transparent calc(50% + 2px));
+}
+.anr-blend-slider::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(to right,
+    transparent calc(50% - 2px),
+    var(--accent) calc(50% - 2px),
+    var(--accent) calc(50% + 2px),
+    transparent calc(50% + 2px));
+}
+.anr-blend-slider:hover::-webkit-slider-thumb {
+  background: linear-gradient(to right,
+    transparent calc(50% - 2px),
+    var(--fg) calc(50% - 2px),
+    var(--fg) calc(50% + 2px),
+    transparent calc(50% + 2px));
+}
+.anr-blend-slider:hover::-moz-range-thumb {
+  background: linear-gradient(to right,
+    transparent calc(50% - 2px),
+    var(--fg) calc(50% - 2px),
+    var(--fg) calc(50% + 2px),
+    transparent calc(50% + 2px));
+}
 /* Centre slit lights up when the pointer is over its snap zone (class toggled in
    renderBlend, since the tick is pointer-events:none and can't :hover itself). */
 .anr-blend-wrap .anr-range-tick { transition: height .12s ease, background-color .12s ease; }
 .anr-blend-wrap.is-mid-hover { cursor: pointer; }
 .anr-blend-wrap.is-mid-hover .anr-range-tick { height: 16px; background: var(--accent); }
-
-/* ---- Pro 4-stem mixer: a mixing-desk stack of per-stem fader rows that morph
-   the MAIN spectrogram and crossfade the stems - the N-stem generalisation of the
-   two-stem blend above. It reuses .anr-blend for the head/transport shell and adds
-   the fader-row grid below (each fader is a plain .anr-range, so it matches the
-   spectrogram sliders exactly). ---- */
-.anr-mixer .anr-blend-head { align-items: center; }
-/* Push the transport (Play + clock) to the right edge, mixing-desk style. */
-.anr-mixer .anr-blend-head .anr-btn { margin-left: auto; }
-.anr-mixer-rows { display: flex; flex-direction: column; gap: 9px; margin-top: 2px; }
-.anr-mixer-row { display: flex; align-items: center; gap: 10px; }
-/* Fixed label + level columns so every fader shares one left edge and the numbers
-   sit in a clean right-aligned column (same idiom as .anr-iso-stem-label and
-   .anr-range-readout). */
-.anr-mixer-label {
-  flex: 0 0 68px;
-  font-family: var(--font-mono);
-  font-size: var(--t-small);
-  color: var(--fg);
-}
-.anr-mixer-fader { flex: 1 1 auto; width: 100%; min-width: 40px; }
-.anr-mixer-pct {
-  flex: 0 0 auto;
-  min-width: 38px;
-  text-align: right;
-  font-family: var(--font-mono);
-  font-size: var(--t-small);
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-/* Solo toggle: content-sized (identical "Solo" text on every row, so the buttons
-   line up as a column on their own); active state uses the standard
-   .anr-btn.is-active accent fill. */
-.anr-mixer-btn { flex: 0 0 auto; }
 
 /* Segmented control groups (View / Resolution / Actions) - a captioned cluster
    with a hairline divider on its left edge. align-self:stretch makes the divider
