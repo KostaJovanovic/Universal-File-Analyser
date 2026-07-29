@@ -771,9 +771,10 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   // ----- Clear storage: everything this site has put on the device. -----
   //        Analysis-side state (history, the queued stats pings, nudge timers, the
   //        Asteroids scores), every IndexedDB database, all of sessionStorage AND
-  //        the offline downloads - the 'analyser-offline' tier cache plus the two
-  //        model caches ('analyser-mdx', 'analyser-dfn'), together with the records
-  //        that say they are cached. Reclaiming that space was previously
+  //        the offline downloads - the 'analyser-offline' tier cache plus the model
+  //        caches ('analyser-mdx-v2', its legacy 'analyser-mdx' predecessor, and
+  //        'analyser-dfn'), together with the records that say they are cached.
+  //        Reclaiming that space was previously
   //        impossible from inside the site: nothing else deletes those caches (the
   //        service worker's KEEP_CACHES deliberately preserves all three across
   //        version bumps), so this button was the only place it could live.
@@ -830,7 +831,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       // The downloads themselves. Each delete is independently caught so a bucket
       // that does not exist (nothing was ever downloaded) can't abort the rest.
       try {
-        await Promise.all(['analyser-offline', 'analyser-mdx', 'analyser-dfn']
+        await Promise.all(['analyser-offline', 'analyser-mdx-v2', 'analyser-mdx', 'analyser-dfn']
           .map((name) => caches.delete(name).catch(() => false)));
       } catch (_) {}
       // Records and caches are both gone, so the tier/pack badges repaint as

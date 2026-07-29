@@ -22,9 +22,8 @@ import { makeStftEngine } from './mdx-stft.js';
 
 export const MDX_SR = 44100;   // MDX-Net models are trained at 44.1 kHz
 
-// Normalise to exactly two channels the way MDX expects: duplicate mono, drop
-// extras. Shared so a single-model split and a multi-model (Pro) run frame the
-// SAME stereo source - which is what makes the residual "other" stem exact.
+// Normalise to exactly two channels the way MDX expects: duplicate mono and
+// drop extras.
 export function normStereo(channels) {
   let ch = channels;
   if (ch.length === 1) ch = [ch[0], ch[0]];
@@ -32,12 +31,9 @@ export function normStereo(channels) {
   return ch;
 }
 
-// Run ONE per-stem MDX model over pre-normalised stereo `ch` and return that
-// model's PRIMARY stem as [L, R] at the original sample length, magnitude
-// compensation applied. No residual is derived here - the caller does that
-// (2-stem: original - primary; Pro: original - sum of the three primaries). This
-// is the exact framing/demix the file used to inline; splitting it out lets the
-// Pro path call it once per model with no change to the DSP.
+// Run one MDX model over pre-normalised stereo `ch` and return its primary stem
+// as [L, R] at the original sample length, with magnitude compensation applied.
+// The caller derives the residual stem from the original signal.
 export async function runStemModel({ ch, model, runModel, onProgress }) {
   const { nFft, hop, dimF, dimT, compensate } = model;
   const eng = makeStftEngine(nFft, hop);
@@ -75,7 +71,9 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
       const imBase = (cc * 2 + 1) * dimF * dimT; // imag plane
       for (let t = 0; t < frames; t++) {
         const sb = t * nBins;
-        for (let f = 0; f < dimF; f++) {
+        // UVR deliberately removes the first three frequency bins before MDX
+        // inference. Matching that preprocessing avoids low-frequency leakage.
+        for (let f = 3; f < dimF; f++) {
           input[reBase + f * dimT + t] = S.re[sb + f];
           input[imBase + f * dimT + t] = S.im[sb + f];
         }

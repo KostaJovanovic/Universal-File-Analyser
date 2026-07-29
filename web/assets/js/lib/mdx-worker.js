@@ -1,146 +1,159 @@
 /* Analyser - MDX-Net vocal separation Web Worker (module worker).
 
-   Runs entirely off the main thread: loads onnxruntime-web (WASM, single-thread -
-   the site is not cross-origin isolated so SharedArrayBuffer threading is out),
-   downloads the pinned model with byte progress, then drives the pure framing
-   pipeline in mdx-separate.js, feeding each [1,4,dim_f,dim_t] tensor through the
-   ONNX session. Posts { progress | done | error } back to mdx-client.js.
+   Runs entirely off the main thread: loads onnxruntime-web, downloads or reads
+   the revision-pinned model, initialises one warm inference session, then drives
+   the framing pipeline in mdx-separate.js. Every long phase is reported so the
+   UI never leaves a completed download masquerading as a frozen job. */
 
-   Everything heavy (ORT runtime + model) is fetched from the URLs the Complete
-   offline tier caches, so once downloaded the whole thing works offline. */
+import { ORT_BASE, ORT_ENTRY, MDX_MODELS, MDX_MODEL } from './mdx-model.js';
+import { separateVocals, MDX_SR } from './mdx-separate.js';
 
-import { ORT_BASE, ORT_ENTRY, MDX_MODELS, MDX_MODEL, MDX_PRO_STEMS } from './mdx-model.js';
-import { separateVocals, runStemModel, normStereo, MDX_SR } from './mdx-separate.js';
+let ortMod = null;
+let session = null;
+let loadedModelId = null;
 
-let ortMod = null;        // the onnxruntime-web module namespace
-let session = null;       // the InferenceSession (kept warm across runs)
-let loadedModelId = null; // which model `session` holds, so a model switch re-inits
-
-// True on any WebKit engine (iOS Safari/Chrome/Edge - all WebKit under the hood -
-// plus desktop Safari). ORT's WebGPU (jsep) backend
-// is unstable on WebKit: iOS 18 Safari now exposes navigator.gpu, so ORT tries to
-// init WebGPU and hard-crashes the GPU/tab process the instant separation starts.
-// We force the single-threaded WASM path there - which is what mdx-model.js's
-// header already documents as the intended Safari behaviour. Chrome/Edge keep the
-// fast GPU path. Firefox never exposes navigator.gpu, so ORT falls to WASM anyway.
+// All iOS browsers use WebKit. ORT's WebGPU/JSEP path can crash the GPU or tab
+// there, so Apple engines stay on the stable single-threaded WASM backend.
 function isWebKit() {
   try {
     const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
     const iOS = /iP(hone|ad|od)/.test(ua)
-      || (/Macintosh/.test(ua) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
+      || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
     const appleWebKit = /AppleWebKit/.test(ua) && !/Chrom(e|ium)|Android/.test(ua);
     return iOS || appleWebKit;
   } catch (_) { return false; }
 }
 
-// Persist the downloaded model in our own Cache Storage bucket. Unlike the HTTP
-// disk cache (which a hard refresh bypasses, forcing a re-download), a Cache
-// Storage entry survives reloads; we keep it for a day, then re-fetch so an
-// updated upstream model is eventually picked up. The bucket is in sw.js's
-// KEEP_CACHES so a service-worker update doesn't wipe it.
-const MDX_CACHE = 'analyser-mdx';
-const MDX_TTL_MS = 24 * 60 * 60 * 1000;   // 1 day
+// The old analyser-mdx bucket could contain the removed Heavy models. sw.js drops
+// it during activation; this new bucket contains only immutable Standard/Lite URLs.
+const MDX_CACHE = 'analyser-mdx-v2';
 
-async function cachedModel(url) {
+async function cachedModel(model) {
   try {
     const cache = await caches.open(MDX_CACHE);
-    const resp = await cache.match(url);
+    // Complete may already hold Standard in analyser-offline. Search our own
+    // bucket first, then all caches, so first use does not duplicate another
+    // full model merely to initialise the worker.
+    const owned = await cache.match(model.url);
+    const resp = owned || await caches.match(model.url);
     if (!resp) return null;
-    const at = Number(resp.headers.get('x-cached-at')) || 0;
-    if (!at || Date.now() - at > MDX_TTL_MS) { await cache.delete(url); return null; }
-    return new Uint8Array(await resp.arrayBuffer());
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+    if (model.bytes && bytes.length !== model.bytes) {
+      if (owned) await cache.delete(model.url);
+      return null;
+    }
+    return bytes;
   } catch (_) { return null; }
 }
 
 async function storeModel(url, bytes) {
   try {
     const cache = await caches.open(MDX_CACHE);
-    // The Response constructor copies the bytes, so `bytes` stays usable for the
-    // session; the timestamp header drives the one-day expiry above.
-    await cache.put(url, new Response(bytes, { headers: { 'x-cached-at': String(Date.now()) } }));
+    await cache.put(url, new Response(bytes));
   } catch (_) {}
 }
 
-// Stream the model into memory with progress, so the 60 MB+ download drives a
-// real bar instead of a dead spinner. Falls back to a plain arrayBuffer() if the
-// body isn't streamable or the length is unknown.
-async function fetchWithProgress(url, approxTotal, onProg) {
+// Fill one pre-sized buffer directly. The former chunks[] + concat path held two
+// full model copies at 100%, exactly when mobile memory pressure is highest.
+async function fetchWithProgress(url, expectedBytes, onProgress) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error('model download failed (' + resp.status + ')');
-  const total = Number(resp.headers.get('content-length')) || approxTotal || 0;
-  if (!resp.body || !total) {
-    const buf = await resp.arrayBuffer();
-    return new Uint8Array(buf);
+  const reportedBytes = Number(resp.headers.get('content-length')) || 0;
+  const expected = expectedBytes || reportedBytes;
+  const progressTotal = reportedBytes || expected;
+
+  if (!resp.body || !expected) {
+    const out = new Uint8Array(await resp.arrayBuffer());
+    if (expectedBytes && out.length !== expectedBytes) throw new Error('model download was incomplete');
+    if (onProgress) onProgress(1);
+    return out;
   }
+
   const reader = resp.body.getReader();
-  const chunks = [];
+  let out = new Uint8Array(expected);
   let received = 0;
-  for (;;) {
+  while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    chunks.push(value);
+    if (!value || !value.length) continue;
+    if (received + value.length > out.length) {
+      const grown = new Uint8Array(Math.max(received + value.length, out.length * 2));
+      grown.set(out);
+      out = grown;
+    }
+    out.set(value, received);
     received += value.length;
-    if (onProg) onProg(Math.min(1, received / total));
+    if (onProgress && progressTotal) onProgress(Math.min(1, received / progressTotal));
   }
-  const out = new Uint8Array(received);
-  let off = 0;
-  for (const c of chunks) { out.set(c, off); off += c.length; }
-  return out;
+  if (expectedBytes && received !== expectedBytes) throw new Error('model download was incomplete');
+  if (onProgress) onProgress(1);
+  return received === out.length ? out : out.slice(0, received);
 }
 
-async function ensureModel(model, onDownload) {
+async function ensureModel(model, report) {
   if (!ortMod) {
+    if (report) report('runtime', 0);
     ortMod = await import(/* @vite-ignore */ ORT_ENTRY);
     ortMod.env.wasm.wasmPaths = ORT_BASE;
-    ortMod.env.wasm.numThreads = 1;   // no COOP/COEP -> no SharedArrayBuffer threads
+    ortMod.env.wasm.numThreads = 1;
     ortMod.env.wasm.simd = true;
     ortMod.env.wasm.proxy = false;
     try { ortMod.env.logLevel = 'error'; } catch (_) {}
+    if (report) report('runtime', 0.1);
   }
-  // Already warm with the requested model - reuse it. A different model (the user
-  // switched tier) drops the old session and loads the new one.
+
   if (session && loadedModelId === model.id) return;
-  if (session) { try { session.release && session.release(); } catch (_) {} session = null; loadedModelId = null; }
-  // Reuse the day-cached copy when present (fills the progress bar instantly),
-  // otherwise download it and store it for next time.
-  let bytes = await cachedModel(model.url);
-  if (bytes) { if (onDownload) onDownload(1); }
-  else {
-    bytes = await fetchWithProgress(model.url, model.bytes, onDownload);
-    await storeModel(model.url, bytes);
+  if (session) {
+    try { if (session.release) session.release(); } catch (_) {}
+    session = null;
+    loadedModelId = null;
   }
-  // Prefer the GPU (WebGPU) where available - typically many times faster - and
-  // fall back to single-threaded WASM automatically on browsers without it. On
-  // WebKit (iOS/Safari), skip WebGPU entirely: ORT's jsep backend crashes the tab
-  // there (see isWebKit above), so we only ever offer the stable WASM path.
-  const executionProviders = isWebKit() ? ['wasm'] : ['webgpu', 'wasm'];
-  session = await ortMod.InferenceSession.create(bytes, { executionProviders });
+
+  let bytes = await cachedModel(model);
+  if (bytes) {
+    if (report) report('model', 1);
+  } else {
+    bytes = await fetchWithProgress(model.url, model.bytes,
+      (frac) => { if (report) report('model', frac); });
+    if (report) report('cache', 0);
+    await storeModel(model.url, bytes);
+    if (report) report('cache', 1);
+  }
+
+  if (report) report('runtime', 0.25);
+  const canUseWebGpu = !isWebKit() && !!(self.navigator && self.navigator.gpu);
+  try {
+    session = await ortMod.InferenceSession.create(bytes, {
+      executionProviders: canUseWebGpu ? ['webgpu', 'wasm'] : ['wasm'],
+    });
+  } catch (err) {
+    // Some Android devices advertise WebGPU but cannot initialise this graph.
+    // Retry on WASM rather than leaving the final model-download state visible.
+    if (!canUseWebGpu) throw err;
+    session = await ortMod.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
+  }
   loadedModelId = model.id;
+  if (report) report('runtime', 1);
 }
 
-// One model pass over a packed [1,4,dim_f,dim_t] tensor -> predicted vocal
-// spectrogram (same shape, as a Float32Array). Input/output tensor names are
-// read from the session so we don't hard-code the model's export names.
 async function runModel(input, dims) {
-  const t = new ortMod.Tensor('float32', input, dims);
+  const tensor = new ortMod.Tensor('float32', input, dims);
   const feeds = {};
-  feeds[session.inputNames[0]] = t;
-  const res = await session.run(feeds);
-  const out = res[session.outputNames[0]];
-  // On the WASM path .data is already the CPU Float32Array; on WebGPU the output
-  // defaults to a CPU tensor too, but guard with getData() in case a build returns
-  // a GPU-resident tensor that needs an explicit download.
+  feeds[session.inputNames[0]] = tensor;
+  const results = await session.run(feeds);
+  const out = results[session.outputNames[0]];
   if (out.data && out.data.length) return out.data;
   if (typeof out.getData === 'function') return await out.getData();
   return out.data;
 }
 
-// 2-stem job (Standard / Lite): one model -> vocals + instrumental.
 async function handleSeparate(msg) {
   const jobId = msg.jobId;
   try {
     const model = MDX_MODELS[msg.modelId] || MDX_MODEL;
-    await ensureModel(model, (frac) => self.postMessage({ type: 'progress', phase: 'model', frac, jobId }));
+    await ensureModel(model, (phase, frac) => {
+      self.postMessage({ type: 'progress', phase, frac, jobId });
+    });
     self.postMessage({ type: 'progress', phase: 'infer', frac: 0, jobId });
     const result = await separateVocals({
       channels: msg.channels,
@@ -148,68 +161,27 @@ async function handleSeparate(msg) {
       runModel,
       onProgress: (frac) => self.postMessage({ type: 'progress', phase: 'infer', frac, jobId }),
     });
-    const transfer = [];
-    for (const a of result.vocals) transfer.push(a.buffer);
-    for (const a of result.instrumental) transfer.push(a.buffer);
     self.postMessage({
       type: 'done',
       vocals: result.vocals,
       instrumental: result.instrumental,
-      sampleRate: result.sampleRate,
-      stem: model.stem,
+      sampleRate: MDX_SR,
+      stem: result.stem,
       jobId,
-    }, transfer);
+    }, [
+      result.vocals[0].buffer, result.vocals[1].buffer,
+      result.instrumental[0].buffer, result.instrumental[1].buffer,
+    ]);
   } catch (err) {
     self.postMessage({ type: 'error', message: (err && err.message) || String(err), jobId });
   }
 }
 
-// 4-stem "Pro" job: run each per-stem model in turn (one session resident at a
-// time -> low peak memory), then derive "other" as the residual. Progress spans
-// all passes as (passIndex + passFrac)/N, tagged with the stem being separated so
-// the UI can say "Separating drums…". Stems come back in MDX_PRO_STEMS order.
-async function handleSeparateMulti(msg) {
-  const jobId = msg.jobId;
-  try {
-    const ch = normStereo(msg.channels);
-    const nSample = ch[0].length;
-    const stemModels = MDX_PRO_STEMS.filter((s) => s.model);
-    const N = stemModels.length;
-    const primaries = {};
-    for (let i = 0; i < N; i++) {
-      const { key, label, model } = stemModels[i];
-      await ensureModel(model, (frac) => self.postMessage({ type: 'progress', phase: 'model', frac, stem: label, jobId }));
-      self.postMessage({ type: 'progress', phase: 'infer', frac: i / N, stem: label, jobId });
-      primaries[key] = await runStemModel({
-        ch, model, runModel,
-        onProgress: (frac) => self.postMessage({ type: 'progress', phase: 'infer', frac: (i + frac) / N, stem: label, jobId }),
-      });
-    }
-    // Residual "other" = original - sum of the separated primaries. Exact by
-    // construction, so the four stems always sum back to the source.
-    const otherL = new Float32Array(nSample), otherR = new Float32Array(nSample);
-    for (let s = 0; s < nSample; s++) {
-      let l = ch[0][s], r = ch[1][s];
-      for (const k in primaries) { l -= primaries[k][0][s]; r -= primaries[k][1][s]; }
-      otherL[s] = l; otherR[s] = r;
-    }
-    const stems = {}, order = [], transfer = [];
-    for (const st of MDX_PRO_STEMS) {
-      order.push(st.key);
-      stems[st.key] = st.residual ? [otherL, otherR] : primaries[st.key];
-      transfer.push(stems[st.key][0].buffer, stems[st.key][1].buffer);
-    }
-    self.postMessage({ type: 'done', multi: true, stems, order, sampleRate: MDX_SR, jobId }, transfer);
-  } catch (err) {
-    self.postMessage({ type: 'error', message: (err && err.message) || String(err), jobId });
-  }
-}
-
+// One mutable ONNX session serves the worker. Serialisation protects compare and
+// inline panels that can otherwise post two jobs before either one finishes.
+let jobQueue = Promise.resolve();
 self.onmessage = (e) => {
   const msg = e.data;
-  if (!msg) return;
-  // Echo the caller's jobId on every reply (in the handlers) so the client can
-  // ignore messages from a different (e.g. overlapping) job on this shared worker.
-  if (msg.type === 'separate') handleSeparate(msg);
-  else if (msg.type === 'separateMulti') handleSeparateMulti(msg);
+  if (!msg || msg.type !== 'separate') return;
+  jobQueue = jobQueue.then(() => handleSeparate(msg), () => handleSeparate(msg));
 };

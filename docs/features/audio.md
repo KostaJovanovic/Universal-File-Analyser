@@ -182,9 +182,9 @@ using an on-device neural network (MDX-Net "Kim Vocal 2" from Ultimate
 Vocal Remover), entirely in-browser via ONNX Runtime Web.
 
 **How to reach it.** Click **Separation** in the audio actions row under
-the spectrogram (next to **Isolate**) to open the AI options row (on desktop:
-Heavy / Standard / Lite / denoise; **Heavy** is hidden on the mobile layout),
-then click a model tier to run. Built in `audio.js`, backed by the MDX-Net subsystem in
+the spectrogram (next to **Isolate**) to open the AI options row, then click
+**Standard**, **Lite**, or **Denoise**. Lite is selected by default on phones
+and lower-memory devices. Built in `audio.js`, backed by the MDX-Net subsystem in
 `web/assets/js/lib/mdx-*.js` (see [`parsers-and-libs.md`](../parsers-and-libs.md)).
 
 **How to use it.** Click **Standard** or **Lite** (mobile-friendlier) to
@@ -219,45 +219,15 @@ btn: Analyse
 btn: Download WAV
 ```
 
-**Notes / limits.** Runs on GPU via WebGPU where available, WASM otherwise;
-the model (~85MB) is part of the "Complete" offline tier (see
+**Notes / limits.** Runs on GPU via WebGPU where available, WASM otherwise.
+WebGPU automatically falls back to WASM if initialisation fails. Download,
+cache, runtime initialisation and inference are reported as separate progress
+phases, so a completed download is not mistaken for a completed separation.
+The Standard model and runtime (~85MB total) are part of the "Complete" offline tier (see
 [`pwa-offline.md`](../pwa-offline.md)). The isolate band-stop cuts are re-applied to
 separated stems in parallel (nodes can't be shared across the file
 player's audio context and the stem-blend context), so Isolate edits and
 Separation compose rather than one bypassing the other.
-
-### Heavy (4-stem) separation - desktop only
-
-**What it does.** Splits a track into **four** stems - vocals, drums, bass
-and "other" (everything left over) - instead of the two-way vocal / instrumental
-split. It runs three per-stem MDX-Net models (KUIELab vocals, drums and bass)
-in turn, then derives "other" as the residual (original minus the three
-separated stems). Because the four stems sum back to the original by
-construction, the spectrogram morph stays exact - all four faders at 100%
-reproduces the file's own spectrogram, just like the two-stem blend at centre.
-
-**How to reach it.** Click **Separation**, then **Heavy** - the leftmost tier in
-the AI options row. It is shown only on the desktop layout (hidden on a coarse
-pointer / narrow screen), since it downloads three models (~90 MB total on top
-of the shared runtime) and runs three inference passes, which is heavy for a
-phone.
-
-**How to use it.** The first run confirms the ~90 MB download. Once separated,
-the two-stem blend slider is replaced by a **mixer** - one fader per stem
-(Vocals / Drums / Bass / Other), each 0 - 100%, with a **Solo** toggle (solo any
-set of stems to hear just them; drag a fader to 0 to silence a stem). Moving any
-fader morphs the main spectrogram live and crossfades that stem in the audio,
-exactly the way the single blend slider does. Each stem also gets its own
-**Play**, **Analyse** and **Download WAV** below, producing `song_vocals.wav`,
-`_drums`, `_bass` and `_other`.
-
-**Notes / limits.** The three Heavy models are **not** part of the "Complete"
-offline tier - they download on first Heavy run and live in the worker's own
-model cache (like the Lite model on the web). The whole feature is driven by a
-single ordered `MDX_PRO_STEMS` list in `mdx-model.js`, so it generalises to N
-stems - the mixer, worker loop, spectrogram recombine and export all read that
-one array. "Other" being a residual means any leftover a model misses (some
-drum or bass bleed) lands there.
 
 ### AI denoise
 

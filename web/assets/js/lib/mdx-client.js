@@ -1,119 +1,148 @@
-/* Analyser - main-thread client for the MDX-Net vocal separation worker.
+/* Analyser - main-thread client for the MDX-Net vocal-separation worker.
 
-   Resamples the decoded audio to 44.1 kHz (what the model expects), hands the
-   channel data to the worker, and relays progress. Returns the vocal and
-   instrumental stems as channel Float32Arrays plus the sample rate, ready to be
-   wrapped in an AudioBuffer for playback / WAV export.
-
-   The worker is created lazily and kept alive between runs so the model stays
-   resident (a second separation skips the download + init). */
+   Resamples decoded audio to 44.1 kHz, transfers detachable channel arrays to one
+   serial worker, and converts worker/runtime failures into visible rejections. */
 
 import { MDX_SR } from './mdx-separate.js';
 
+const STALL_MS = 5 * 60 * 1000;
 let worker = null;
+let jobSeq = 0;
+let jobQueue = Promise.resolve();
+
+function abortError() {
+  return new DOMException('separation aborted', 'AbortError');
+}
+
+function throwIfAborted(signal) {
+  if (signal && signal.aborted) throw abortError();
+}
+
 function getWorker() {
   if (!worker) worker = new Worker(new URL('./mdx-worker.js', import.meta.url), { type: 'module' });
   return worker;
 }
-// Monotonic id so replies from the shared worker can be matched to their request.
-// Two overlapping separations would otherwise each consume the other's progress/
-// done/error messages and both resolve with the first job's result.
-let _jobSeq = 0;
 
-// Resample to 44.1 kHz (stereo, or mono if that's all there is) via an
-// OfflineAudioContext, returning detachable Float32Array channels.
-async function toModelChannels(audioBuffer) {
-  const nCh = Math.min(2, audioBuffer.numberOfChannels);
-  if (audioBuffer.sampleRate === MDX_SR) {
-    const chs = [];
-    for (let c = 0; c < nCh; c++) chs.push(audioBuffer.getChannelData(c).slice());
-    return { channels: chs, sampleRate: MDX_SR };
-  }
-  const OAC = self.OfflineAudioContext || self.webkitOfflineAudioContext;
-  const len = Math.max(1, Math.ceil(audioBuffer.duration * MDX_SR));
-  const off = new OAC(nCh, len, MDX_SR);
-  const src = off.createBufferSource();
-  src.buffer = audioBuffer;
-  src.connect(off.destination);
-  src.start();
-  const rendered = await off.startRendering();
-  const chs = [];
-  for (let c = 0; c < rendered.numberOfChannels; c++) chs.push(rendered.getChannelData(c).slice());
-  return { channels: chs, sampleRate: MDX_SR };
+// Serialise callers before they resample: compare/inline panels share one worker
+// and its single mutable ONNX session.
+function enqueue(task) {
+  const queued = jobQueue.then(task, task);
+  jobQueue = queued.catch(() => {});
+  return queued;
 }
 
-/**
- * Separate an AudioBuffer into vocal + instrumental stems using the MDX-Net model.
- * @param {AudioBuffer} audioBuffer
- * @param {{ onProgress?: (phase:'model'|'infer', frac:number)=>void, signal?: AbortSignal, modelId?: string }} [opts]
- * @returns {Promise<{ vocals: Float32Array[], instrumental: Float32Array[], sampleRate: number, stem: string }>}
- */
-export async function separateStems(audioBuffer, { onProgress, signal, modelId } = {}) {
-  const { channels, sampleRate } = await toModelChannels(audioBuffer);
+async function toModelChannels(audioBuffer, signal) {
+  throwIfAborted(signal);
+  const nCh = Math.min(2, audioBuffer.numberOfChannels);
+  if (audioBuffer.sampleRate === MDX_SR) {
+    const channels = [];
+    for (let c = 0; c < nCh; c++) {
+      throwIfAborted(signal);
+      channels.push(audioBuffer.getChannelData(c).slice());
+    }
+    return { channels, sampleRate: MDX_SR };
+  }
+
+  const OAC = self.OfflineAudioContext || self.webkitOfflineAudioContext;
+  const len = Math.max(1, Math.ceil(audioBuffer.duration * MDX_SR));
+  const offline = new OAC(nCh, len, MDX_SR);
+  const source = offline.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(offline.destination);
+  source.start();
+  const rendered = await offline.startRendering();
+  throwIfAborted(signal);
+  const channels = [];
+  for (let c = 0; c < rendered.numberOfChannels; c++) {
+    throwIfAborted(signal);
+    channels.push(rendered.getChannelData(c).slice());
+  }
+  return { channels, sampleRate: MDX_SR };
+}
+
+function runWorker(channels, sampleRate, { onProgress, signal, modelId }) {
   const w = getWorker();
-  const jobId = ++_jobSeq;
+  const jobId = ++jobSeq;
   return new Promise((resolve, reject) => {
-    const onMsg = (e) => {
-      const m = e.data;
-      if (!m || m.jobId !== jobId) return;   // ignore replies belonging to another job
-      if (m.type === 'progress') { if (onProgress) onProgress(m.phase, m.frac); }
-      else if (m.type === 'done') { cleanup(); resolve(m); }
-      else if (m.type === 'error') { cleanup(); reject(new Error(m.message || 'separation failed')); }
+    let settled = false;
+    let stallTimer = 0;
+
+    const armStallTimer = () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => failWorker(
+        new Error('AI worker stopped responding during model initialisation or separation')
+      ), STALL_MS);
+    };
+    const detachWorker = () => {
+      try { w.terminate(); } catch (_) {}
+      if (worker === w) worker = null;
+    };
+    const cleanup = () => {
+      clearTimeout(stallTimer);
+      w.removeEventListener('message', onMessage);
+      w.removeEventListener('error', onError);
+      w.removeEventListener('messageerror', onMessageError);
+      if (signal) signal.removeEventListener('abort', onAbort);
+    };
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      fn(value);
+    };
+    const failWorker = (err) => {
+      detachWorker();
+      finish(reject, err);
+    };
+    const onMessage = (e) => {
+      const msg = e.data;
+      if (!msg || msg.jobId !== jobId) return;
+      armStallTimer();
+      if (msg.type === 'progress') {
+        if (onProgress) onProgress(msg.phase, msg.frac);
+      } else if (msg.type === 'done') {
+        finish(resolve, msg);
+      } else if (msg.type === 'error') {
+        finish(reject, new Error(msg.message || 'separation failed'));
+      }
+    };
+    const onError = (e) => {
+      if (e && e.preventDefault) e.preventDefault();
+      failWorker(new Error((e && e.message) || 'AI worker crashed'));
+    };
+    const onMessageError = () => {
+      failWorker(new Error('AI worker returned an unreadable result'));
     };
     const onAbort = () => {
-      cleanup();
-      // Kill the worker so an in-flight inference actually stops; next run re-inits.
-      try { if (worker) { worker.terminate(); worker = null; } } catch (_) {}
-      reject(new DOMException('separation aborted', 'AbortError'));
+      detachWorker();
+      finish(reject, abortError());
     };
-    function cleanup() {
-      w.removeEventListener('message', onMsg);
-      if (signal) signal.removeEventListener('abort', onAbort);
+
+    if (signal && signal.aborted) { onAbort(); return; }
+    w.addEventListener('message', onMessage);
+    w.addEventListener('error', onError);
+    w.addEventListener('messageerror', onMessageError);
+    if (signal) signal.addEventListener('abort', onAbort);
+    armStallTimer();
+    try {
+      w.postMessage({ type: 'separate', channels, sampleRate, modelId, jobId },
+        channels.map((channel) => channel.buffer));
+    } catch (err) {
+      failWorker(err instanceof Error ? err : new Error(String(err)));
     }
-    if (signal) {
-      if (signal.aborted) { onAbort(); return; }
-      signal.addEventListener('abort', onAbort);
-    }
-    w.addEventListener('message', onMsg);
-    w.postMessage({ type: 'separate', channels, sampleRate, modelId, jobId }, channels.map((c) => c.buffer));
   });
 }
 
 /**
- * "Pro" 4-stem separation: runs the per-stem MDX models (vocals, drums, bass) and
- * derives "other" as the residual, all in the worker. Mirrors separateStems (one
- * 44.1 kHz resample up front, jobId matching, abort kills the worker), but returns
- * a keyed map of stems rather than a fixed vocals/instrumental pair.
+ * Separate an AudioBuffer into vocal and instrumental stems.
  * @param {AudioBuffer} audioBuffer
- * @param {{ onProgress?: (phase:'model'|'infer', frac:number, stem?:string)=>void, signal?: AbortSignal }} [opts]
- * @returns {Promise<{ stems: Record<string, Float32Array[]>, order: string[], sampleRate: number }>}
+ * @param {{ onProgress?: (phase:'model'|'cache'|'runtime'|'infer', frac:number)=>void, signal?: AbortSignal, modelId?: string }} [opts]
  */
-export async function separateStemsMulti(audioBuffer, { onProgress, signal } = {}) {
-  const { channels, sampleRate } = await toModelChannels(audioBuffer);
-  const w = getWorker();
-  const jobId = ++_jobSeq;
-  return new Promise((resolve, reject) => {
-    const onMsg = (e) => {
-      const m = e.data;
-      if (!m || m.jobId !== jobId) return;
-      if (m.type === 'progress') { if (onProgress) onProgress(m.phase, m.frac, m.stem); }
-      else if (m.type === 'done') { cleanup(); resolve({ stems: m.stems, order: m.order, sampleRate: m.sampleRate }); }
-      else if (m.type === 'error') { cleanup(); reject(new Error(m.message || 'separation failed')); }
-    };
-    const onAbort = () => {
-      cleanup();
-      try { if (worker) { worker.terminate(); worker = null; } } catch (_) {}
-      reject(new DOMException('separation aborted', 'AbortError'));
-    };
-    function cleanup() {
-      w.removeEventListener('message', onMsg);
-      if (signal) signal.removeEventListener('abort', onAbort);
-    }
-    if (signal) {
-      if (signal.aborted) { onAbort(); return; }
-      signal.addEventListener('abort', onAbort);
-    }
-    w.addEventListener('message', onMsg);
-    w.postMessage({ type: 'separateMulti', channels, sampleRate, jobId }, channels.map((c) => c.buffer));
+export function separateStems(audioBuffer, { onProgress, signal, modelId } = {}) {
+  return enqueue(async () => {
+    throwIfAborted(signal);
+    const { channels, sampleRate } = await toModelChannels(audioBuffer, signal);
+    throwIfAborted(signal);
+    return runWorker(channels, sampleRate, { onProgress, signal, modelId });
   });
 }
