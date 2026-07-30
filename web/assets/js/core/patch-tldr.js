@@ -337,6 +337,11 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
+  { range: '8.08 - 8.09', notes: [
+    'AI sound tools are safer on phones: **stalled GPU separation recovers on WASM**, stem downloads no longer double memory at completion, and the blend slider remains draggable on iPhone.',
+    'The desktop-only **four-stem Heavy experiment is retired completely** - Standard and Lite remain, and its old model files are removed from offline storage.',
+    '**Denoise downloads are pinned and validated**, workers fail visibly instead of hanging, and the shared AI runtime now remains available offline across updates.',
+  ] },
   { range: '8.05 - 8.07', notes: [
     'Video now reports what is genuinely inside it - exact **codec profile and level**, bit depth, **colour and HDR** detail including Dolby Vision, and every soundtrack and subtitle track in an **MKV** - all read from the picture data rather than from the summary the file gives of itself.',
     'A bare **.h264 or .h265 stream** reads its true frame rate instead of being assumed to run at 25 frames per second, which had been skewing its length and bitrate too.',

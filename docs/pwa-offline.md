@@ -41,12 +41,13 @@ projects were the one thing the offline app couldn't open.
 `const VERSION = 'analyser-v' + COMMIT_COUNT` names the cache. Every commit
 bumps `COMMIT_COUNT` (via `save.bat`, see [`tooling.md`](tooling.md)), so every deploy
 gets a fresh cache name. On `activate`, any cache not in `KEEP_CACHES`
-(`[VERSION, 'analyser-offline', 'analyser-mdx-v2', 'analyser-dfn']`) is deleted - so the
-previous version's shell is dropped, but the user's chosen offline-tier
-downloads (`analyser-offline`) and the cached vocal-separation model
-(`analyser-mdx-v2`) survive across deploys untouched. The legacy
-`analyser-mdx` cache is deliberately not preserved, which removes models from
-the retired Heavy tier. Requests are served
+(`[VERSION, 'analyser-offline', 'analyser-mdx-v2', 'analyser-dfn-v2',
+'analyser-ai-runtime']`) is deleted - so the previous version's shell is
+dropped, but chosen offline tiers, both immutable AI model caches and the
+pinned ONNX runtime survive across deploys. The legacy `analyser-mdx` and
+`analyser-dfn` buckets are deliberately not preserved. The offline manager
+also removes the exact former Heavy-model and mutable model URLs from every
+surviving cache. Requests are served
 cache-first: the current `VERSION` cache is checked explicitly first (not a
 bare `caches.match()`, which would search every cache in creation order and
 could return a stale copy of an app module from the persistent
@@ -72,11 +73,12 @@ Three cumulative tiers (`TIER_ORDER = ['essentials', 'everything',
 |---|---|---|
 | **Essentials** | ~50 MB | The whole app - open, inspect and analyse any file, fully offline |
 | **Everything** | ~120 MB | Text in images/PDFs (OCR), photo-location maps, QR scanning, HEIC photos, archives, EPS/PostScript, CAD drawings, the sample gallery |
-| **Complete** | ~345 MB + the MDX model size | Opens a popup for optional extras on top of Everything: OCR in 30+ languages, and on-device AI vocal separation (either or both) |
+| **Complete** | ~345 MB + the AI model/runtime sizes | Opens a popup for optional extras on top of Everything: OCR in 30+ languages, and on-device AI separation/denoise (either or both) |
 
 `TIER_MB` is the single source of truth for the sizes shown on every button
 and in the footer's help panel; `complete`'s size additionally includes
-`MDX_TIER_MB` from `../lib/mdx-model.js` (see [`parsers-and-libs.md`](parsers-and-libs.md)).
+`MDX_TIER_MB` and the DeepFilterNet model size from the AI manifests (see
+[`parsers-and-libs.md`](parsers-and-libs.md)).
 Downloaded tiers are cached under the persistent `analyser-offline` cache
 name (surviving service-worker version bumps, per above) and refreshed in
 place - not wiped - when a new version's files change.
@@ -100,22 +102,20 @@ across every version bump, so nothing else ever drops them. It:
   wave, boss unlock, start wave, the dismissed keyboard-layout hint and the
   leaderboard name/submit counter all go. Its keys live in
   `web/assets/js/games/config.js`, not in the module doing the clearing, so
-  they are easy to miss when auditing this. The download
-  records (`anr-offline`, `anr-offline-feat`) and the model ready-flags
-  (`anr-mdx-ready-*`, `anr-dfn-ready-*`) go with everything else: a record must
+  they are easy to miss when auditing this. The download records
+  (`anr-offline`, `anr-offline-feat`) go with everything else: a record must
   never outlive the cache it describes, or the badges claim a download that
-  isn't there;
+  isn't there. Model readiness is probed directly from Cache Storage and has
+  no separate ready flag;
 - deletes every IndexedDB database;
-- deletes the download caches - `analyser-offline`, `analyser-mdx-v2`, legacy
-  `analyser-mdx`, and `analyser-dfn` - each `catch`ed independently so a bucket that was never
-  created can't abort the rest.
+- deletes the download caches - `analyser-offline`, `analyser-mdx-v2`,
+  `analyser-dfn-v2`, `analyser-ai-runtime`, and the two legacy model buckets -
+  each `catch`ed independently so a bucket that was never created cannot stop
+  the rest.
 
 It does **not** touch the service-worker app-shell cache (keyed by `VERSION`).
 That is the application itself rather than user data, and the SW repopulates it
 on the next online load; deleting it would only break offline use until then.
-Native builds ship their content as static files, so none of the cache
-deletions affect them.
-
 ### The other place keys are deleted: `anrSweep`
 
 Clear storage is not the only thing that removes local state, and auditing it
@@ -127,8 +127,7 @@ listed as permanent to survive at all:
 
 - `ANR_PERMANENT` - exact names (`anr-history`, `anr-a11y`,
   `anr-analytics-queue`, `anr-offline`, `anr-offline-feat`).
-- `ANR_PERMANENT_PREFIX` - families (`anr-asteroids-`, `anr-mdx-ready-`,
-  `anr-dfn-ready-`).
+- `ANR_PERMANENT_PREFIX` - the `anr-asteroids-` family.
 
 This was an exact-match list naming only `anr-asteroids-hi` and `-bestwave`, so
 the game's settings object, boss unlock, start-wave choice and dismissed

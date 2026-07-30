@@ -15,8 +15,8 @@
        original - vocal.
 
    The ONNX inference is passed in as runModel(inputF32, [1,4,dim_f,dim_t]) =>
-   Float32Array, so this module has no browser/ORT dependency and is unit-tested
-   in Node (scratchpad/test-separate.mjs) with an identity model. */
+   Float32Array, so this module has no browser/ORT dependency and can be exercised
+   directly in Node with an injected identity model. */
 
 import { makeStftEngine } from './mdx-stft.js';
 
@@ -44,15 +44,10 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
   const nSample = ch[0].length;
 
   const numChunks = Math.max(1, Math.ceil(nSample / genSize));
-  const paddedLen = trim + numChunks * genSize + trim;   // covers every chunk window
-  // Build the padded stereo signal once per channel.
-  const padded = ch.map((data) => {
-    const p = new Float32Array(paddedLen);
-    p.set(data.subarray(0, nSample), trim);
-    return p;
-  });
-
-  const stem = [new Float32Array(numChunks * genSize), new Float32Array(numChunks * genSize)];
+  // Write straight into the final-length stem. Reading source samples by index
+  // gives the same trim padding as a full padded copy, without retaining another
+  // whole-song stereo allocation on memory-constrained phones.
+  const stem = [new Float32Array(nSample), new Float32Array(nSample)];
   const dims = [1, 4, dimF, dimT];
   const input = new Float32Array(4 * dimF * dimT);
   const chunk = new Float64Array(chunkSize);
@@ -60,13 +55,17 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
   for (let i = 0; i < numChunks; i++) {
     input.fill(0);
     // Per channel: STFT the chunk, crop to dim_f, pack real/imag planes.
-    const specs = [];
+    const frameCounts = [];
     for (let cc = 0; cc < 2; cc++) {
       const start = i * genSize;
-      for (let s = 0; s < chunkSize; s++) chunk[s] = padded[cc][start + s];
+      const source = ch[cc];
+      for (let s = 0; s < chunkSize; s++) {
+        const sourceIndex = start + s - trim;
+        chunk[s] = sourceIndex >= 0 && sourceIndex < nSample ? source[sourceIndex] : 0;
+      }
       const S = eng.stft(chunk);                // { re, im, frames } , frames === dimT
-      specs.push(S);
       const frames = Math.min(S.frames, dimT);
+      frameCounts.push(frames);
       const reBase = (cc * 2) * dimF * dimT;     // real plane for this channel
       const imBase = (cc * 2 + 1) * dimF * dimT; // imag plane
       for (let t = 0; t < frames; t++) {
@@ -85,7 +84,7 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
 
     // ISTFT each channel back to the time domain, keep the middle gen_size.
     for (let cc = 0; cc < 2; cc++) {
-      const frames = Math.min(specs[cc].frames, dimT);
+      const frames = frameCounts[cc];
       const preRe = new Float32Array(frames * nBins);
       const preIm = new Float32Array(frames * nBins);
       const reBase = (cc * 2) * dimF * dimT;
@@ -100,17 +99,20 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
       const rec = eng.istft(preRe, preIm, frames, chunkSize);
       const dst = stem[cc];
       const outStart = i * genSize;
-      for (let s = 0; s < genSize; s++) dst[outStart + s] = rec[trim + s];
+      const keep = Math.min(genSize, nSample - outStart);
+      for (let s = 0; s < keep; s++) dst[outStart + s] = rec[trim + s];
     }
 
     if (onProgress) onProgress((i + 1) / numChunks);
   }
 
-  // Trim to the original length, apply magnitude compensation.
+  // Preserve the reference pipeline's Float32 rounding order: reconstructed
+  // samples land in the stem first, then compensation is applied in place.
   const comp = compensate || 1;
-  const outL = new Float32Array(nSample), outR = new Float32Array(nSample);
-  for (let s = 0; s < nSample; s++) { outL[s] = stem[0][s] * comp; outR[s] = stem[1][s] * comp; }
-  return [outL, outR];
+  for (let cc = 0; cc < 2; cc++) {
+    for (let s = 0; s < nSample; s++) stem[cc][s] *= comp;
+  }
+  return stem;
 }
 
 // 2-stem split (the existing Standard / Lite path): the model's primary stem plus

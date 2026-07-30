@@ -9,6 +9,7 @@ import { el, setPlayerFill } from '../core/util.js';
 import { isSynced, getAudioOwner, onAudioOwner, getAudioCompanion } from '../core/video-sync.js';
 
 export function makePlayer(mediaEl, knownDuration, opts = {}) {
+  const listenerOpts = opts.signal ? { signal: opts.signal } : undefined;
   // MediaRecorder blobs (recorded audio) are written without a duration header, so
   // mediaEl.duration is Infinity until the clip is played/seeked to the end. When the
   // caller knows the real length (e.g. from decodeAudioData), use it as a fallback so
@@ -40,7 +41,7 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
   // mutedPreview goes further: a standalone silent preview (the section-meta mini)
   // that never owns the audio, so it stays OUT of the shared registry entirely and
   // keeps whatever muted state it was built with.
-  const vol = opts.noVolume ? null : makeVolume(mediaEl);
+  const vol = opts.noVolume ? null : makeVolume(mediaEl, opts.signal);
   const container = el('div', { class: 'anr-player' }, [playBtn, trackEl, timeEl, vol]);
   // When a controller is attached (see container._anrTransport below), this
   // transport stops driving its own <audio> and instead delegates play/pause and
@@ -50,13 +51,23 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
   let controller = null;
   // A volume-less synced player still needs to track the shared level/mute, so
   // register it directly (makeVolume already registers the ones that have a UI).
-  if (opts.noVolume && !opts.mutedPreview) registerVolPlayer(mediaEl, container, () => {});
+  const unregisterVol = opts.noVolume && !opts.mutedPreview
+    ? registerVolPlayer(mediaEl, container, () => {})
+    : null;
+  if (opts.signal && unregisterVol) opts.signal.addEventListener('abort', unregisterVol, { once: true });
 
+  function playMedia() {
+    // Result stems use this hook to create their WAV URL only when playback is
+    // actually requested, avoiding two whole-song encodes at separation finish.
+    if (opts.beforePlay) opts.beforePlay();
+    const pending = mediaEl.play();
+    if (pending && pending.catch) pending.catch(() => {});
+  }
   playBtn.addEventListener('click', () => {
     if (controller) { controller.toggle(); return; }
     // Once playback has ended the button is a replay control: restart from 0.
-    if (mediaEl.ended) { mediaEl.currentTime = 0; mediaEl.play(); }
-    else if (mediaEl.paused) mediaEl.play();
+    if (mediaEl.ended) { mediaEl.currentTime = 0; playMedia(); }
+    else if (mediaEl.paused) playMedia();
     else mediaEl.pause();
   });
   mediaEl.addEventListener('play', () => {
@@ -64,15 +75,15 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
     playBtn.textContent = '❚❚'; playBtn.classList.remove('is-replay');
     playBtn.setAttribute('aria-label', 'Pause');
     tick();
-  });
+  }, listenerOpts);
   // On a natural end some browsers fire 'pause' too; don't let it overwrite the
   // replay glyph (guard on mediaEl.ended, which is already true by then).
-  mediaEl.addEventListener('pause', () => { if (!controller && !mediaEl.ended) { playBtn.textContent = '▶'; playBtn.setAttribute('aria-label', 'Play'); } });
+  mediaEl.addEventListener('pause', () => { if (!controller && !mediaEl.ended) { playBtn.textContent = '▶'; playBtn.setAttribute('aria-label', 'Play'); } }, listenerOpts);
   mediaEl.addEventListener('ended', () => {
     if (controller) return;
     playBtn.textContent = '↻'; playBtn.classList.add('is-replay');
     playBtn.setAttribute('aria-label', 'Replay from start');
-  });
+  }, listenerOpts);
 
   let dragging = false;
   function scrub(clientX) {
@@ -117,6 +128,7 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
     window.addEventListener('touchmove', onTouchMove, { passive: false });
     window.addEventListener('touchend', onTouchEnd);
   }, { passive: false });
+  if (opts.signal) opts.signal.addEventListener('abort', () => { onMouseUp(); onTouchEnd(); }, { once: true });
 
   let lastLabel = '';
   function tick() {
@@ -130,9 +142,9 @@ export function makePlayer(mediaEl, knownDuration, opts = {}) {
     if (label !== lastLabel) { lastLabel = label; timeEl.textContent = label; }
     if (!mediaEl.paused) requestAnimationFrame(tick);
   }
-  mediaEl.addEventListener('seeked', tick);
-  mediaEl.addEventListener('loadedmetadata', tick);
-  mediaEl.addEventListener('durationchange', tick);
+  mediaEl.addEventListener('seeked', tick, listenerOpts);
+  mediaEl.addEventListener('loadedmetadata', tick, listenerOpts);
+  mediaEl.addEventListener('durationchange', tick, listenerOpts);
   tick();
 
   // Transport delegation hooks. attach() hands play/pause + scrubbing to an external
@@ -268,7 +280,9 @@ function applyVolumeTo(mediaEl, level) {
 // Register a media element with the shared-volume system. Both makeVolume (UI
 // players) and the noVolume path (section-03 mini) funnel through here.
 function registerVolPlayer(mediaEl, wrap, sync) {
-  volPlayers.add({ mediaEl, wrap, sync });
+  const entry = { mediaEl, wrap, sync };
+  volPlayers.add(entry);
+  return () => volPlayers.delete(entry);
 }
 // Pruning keys on isConnected, which is only reliable once the DOM has settled -
 // so it happens HERE (applyShared runs on user interaction, well after render),
@@ -323,7 +337,7 @@ function setShared(v, m) {
 // above. The track mirrors the seek track's press/drag pattern (listeners
 // attached on press, removed on release), just along the Y axis and scaled to
 // MAX_VOL instead of 0-1.
-function makeVolume(mediaEl) {
+function makeVolume(mediaEl, signal) {
   const muteBtn = el('button', { type: 'button', class: 'anr-player-mute', 'aria-label': 'Mute', html: ICON_HI });
   const pctEl = el('div', { class: 'anr-player-volpct' }, '100%');
   const volFill = el('div', { class: 'anr-player-volfill' });
@@ -383,7 +397,7 @@ function makeVolume(mediaEl) {
       if (!wrap.isConnected) { document.removeEventListener('pointerdown', onDocPointerDown); return; }
       if (!wrap.contains(e.target)) closeNow();
     }
-    document.addEventListener('pointerdown', onDocPointerDown);
+    document.addEventListener('pointerdown', onDocPointerDown, signal ? { signal } : undefined);
   }
 
   muteBtn.addEventListener('click', () => {
@@ -422,6 +436,7 @@ function makeVolume(mediaEl) {
     dragging = true; setVol(e.touches[0].clientY); e.preventDefault();
     window.addEventListener('touchmove', onTMove, { passive: false }); window.addEventListener('touchend', onTEnd);
   }, { passive: false });
+  if (signal) signal.addEventListener('abort', () => { onUp(); onTEnd(); }, { once: true });
 
   // Reflect a change made outside our UI (e.g. native iOS/desktop controls) back
   // into the shared state. The epsilon guard stops a feedback loop with applyShared.
@@ -435,9 +450,10 @@ function makeVolume(mediaEl) {
     const muteChanged = !isSynced(mediaEl) && mediaEl.muted !== sharedMuted;
     if (Math.abs(mediaEl.volume - sharedVol) > 0.001 || muteChanged) setShared(mediaEl.volume, isSynced(mediaEl) ? sharedMuted : mediaEl.muted);
     else sync();
-  });
+  }, signal ? { signal } : undefined);
 
-  registerVolPlayer(mediaEl, wrap, sync);
+  const unregister = registerVolPlayer(mediaEl, wrap, sync);
+  if (signal) signal.addEventListener('abort', unregister, { once: true });
   // Adopt the shared level now. Synced videos keep the muted state they were built
   // with (main unmuted, gyro/mini muted) until the user picks an audio owner; a
   // plain audio player just takes the shared mute directly.

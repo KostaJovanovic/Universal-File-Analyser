@@ -36,15 +36,14 @@ library dependency).
 **How to reach it.** Automatic below the waveform for any decoded audio.
 
 **How to use it.** Linear or logarithmic frequency axis, adjustable FFT size
-and window function, choice of colourmap, **Save PNG** to export the canvas,
-**Fullscreen** to expand it. `computeReassignedSpectrogram()` offers a
-sharper reassigned-spectrogram mode; `computeStftComplex()`/
+and window function, choice of colourmap, and **Save PNG** to export the
+canvas. `computeReassignedSpectrogram()` offers a sharper
+reassigned-spectrogram mode; `computeStftComplex()`/
 `combineStftToDb()` support blending two signals' spectra (used by the AI
 separation blend slider below).
 
 ```demo
 btn: Save PNG
-btn: Fullscreen
 ```
 
 The frequency axis is a segmented toggle (the selected option carries the
@@ -220,14 +219,19 @@ btn: Download WAV
 ```
 
 **Notes / limits.** Runs on GPU via WebGPU where available, WASM otherwise.
-WebGPU automatically falls back to WASM if initialisation fails. Download,
-cache, runtime initialisation and inference are reported as separate progress
-phases, so a completed download is not mistaken for a completed separation.
+WebGPU automatically falls back to WASM if initialisation or inference fails;
+a stalled/crashed GPU worker is also replaced and retried once on WASM.
+Download, cache, runtime initialisation and inference are reported as separate
+monotonic progress phases, so a completed download is not mistaken for a
+completed separation. Model downloads and cached entries are checked against
+the pinned byte size, and a bad cached object is removed before retrying.
 The Standard model and runtime (~85MB total) are part of the "Complete" offline tier (see
 [`pwa-offline.md`](../pwa-offline.md)). The isolate band-stop cuts are re-applied to
 separated stems in parallel (nodes can't be shared across the file
 player's audio context and the stem-blend context), so Isolate edits and
-Separation compose rather than one bypassing the other.
+Separation compose rather than one bypassing the other. Whole-song padding
+and eager WAV copies are avoided; a stem WAV is encoded only when its Play or
+Download button is used, which reduces peak memory on phones.
 
 ### AI denoise
 
@@ -258,9 +262,11 @@ btn: denoise
 
 **Notes / limits.** Unlike separation, this is noise suppression, not source
 separation - it is aimed at cleaning up recordings (voice, ambience, hiss),
-not splitting a musical mix. Runs on GPU via WebGPU where available, WASM
-otherwise; the model (~9MB on top of the shared ONNX runtime) is part of the
-"Complete" offline tier (see [`pwa-offline.md`](../pwa-offline.md)). All the
+not splitting a musical mix. It deliberately uses single-threaded WASM on
+every browser because the recurrent graph produced incorrect output on the
+WebGPU backend. The immutable, exact-size-validated model (~9MB on top of the
+shared ONNX runtime) is part of the "Complete" offline tier (see
+[`pwa-offline.md`](../pwa-offline.md)). All the
 DSP around the model (STFT, ERB features, the gain mask and the deep filter)
 is reimplemented on-device in `dfn-dsp.js`/`dfn-enhance.js`, mirroring libDF;
 long audio is processed in overlapping segments to bound memory.

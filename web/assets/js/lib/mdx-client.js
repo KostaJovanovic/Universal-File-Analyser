@@ -6,12 +6,19 @@
 import { MDX_SR } from './mdx-separate.js';
 
 const STALL_MS = 5 * 60 * 1000;
+const RUNTIME_STALL_MS = 2 * 60 * 1000;
 let worker = null;
 let jobSeq = 0;
 let jobQueue = Promise.resolve();
 
 function abortError() {
   return new DOMException('separation aborted', 'AbortError');
+}
+
+function workerError(message, code) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
 }
 
 function throwIfAborted(signal) {
@@ -60,18 +67,18 @@ async function toModelChannels(audioBuffer, signal) {
   return { channels, sampleRate: MDX_SR };
 }
 
-function runWorker(channels, sampleRate, { onProgress, signal, modelId }) {
+function runWorker(channels, sampleRate, { onProgress, signal, modelId, forceWasm = false }) {
   const w = getWorker();
   const jobId = ++jobSeq;
   return new Promise((resolve, reject) => {
     let settled = false;
     let stallTimer = 0;
 
-    const armStallTimer = () => {
+    const armStallTimer = (phase) => {
       clearTimeout(stallTimer);
       stallTimer = setTimeout(() => failWorker(
-        new Error('AI worker stopped responding during model initialisation or separation')
-      ), STALL_MS);
+        workerError('AI worker stopped responding during model initialisation or separation', 'AI_STALL')
+      ), phase === 'runtime' ? RUNTIME_STALL_MS : STALL_MS);
     };
     const detachWorker = () => {
       try { w.terminate(); } catch (_) {}
@@ -97,21 +104,21 @@ function runWorker(channels, sampleRate, { onProgress, signal, modelId }) {
     const onMessage = (e) => {
       const msg = e.data;
       if (!msg || msg.jobId !== jobId) return;
-      armStallTimer();
+      armStallTimer(msg.type === 'progress' ? msg.phase : '');
       if (msg.type === 'progress') {
         if (onProgress) onProgress(msg.phase, msg.frac);
       } else if (msg.type === 'done') {
         finish(resolve, msg);
       } else if (msg.type === 'error') {
-        finish(reject, new Error(msg.message || 'separation failed'));
+        failWorker(new Error(msg.message || 'separation failed'));
       }
     };
     const onError = (e) => {
       if (e && e.preventDefault) e.preventDefault();
-      failWorker(new Error((e && e.message) || 'AI worker crashed'));
+      failWorker(workerError((e && e.message) || 'AI worker crashed', 'AI_WORKER_CRASH'));
     };
     const onMessageError = () => {
-      failWorker(new Error('AI worker returned an unreadable result'));
+      failWorker(workerError('AI worker returned an unreadable result', 'AI_WORKER_CRASH'));
     };
     const onAbort = () => {
       detachWorker();
@@ -123,9 +130,9 @@ function runWorker(channels, sampleRate, { onProgress, signal, modelId }) {
     w.addEventListener('error', onError);
     w.addEventListener('messageerror', onMessageError);
     if (signal) signal.addEventListener('abort', onAbort);
-    armStallTimer();
+    armStallTimer('');
     try {
-      w.postMessage({ type: 'separate', channels, sampleRate, modelId, jobId },
+      w.postMessage({ type: 'separate', channels, sampleRate, modelId, forceWasm, jobId },
         channels.map((channel) => channel.buffer));
     } catch (err) {
       failWorker(err instanceof Error ? err : new Error(String(err)));
@@ -136,13 +143,25 @@ function runWorker(channels, sampleRate, { onProgress, signal, modelId }) {
 /**
  * Separate an AudioBuffer into vocal and instrumental stems.
  * @param {AudioBuffer} audioBuffer
- * @param {{ onProgress?: (phase:'model'|'cache'|'runtime'|'infer', frac:number)=>void, signal?: AbortSignal, modelId?: string }} [opts]
+ * @param {{ onProgress?: (phase:'model'|'model-cache'|'cache'|'cache-warning'|'runtime'|'fallback'|'infer', frac:number)=>void, signal?: AbortSignal, modelId?: string }} [opts]
  */
 export function separateStems(audioBuffer, { onProgress, signal, modelId } = {}) {
   return enqueue(async () => {
     throwIfAborted(signal);
-    const { channels, sampleRate } = await toModelChannels(audioBuffer, signal);
-    throwIfAborted(signal);
-    return runWorker(channels, sampleRate, { onProgress, signal, modelId });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const { channels, sampleRate } = await toModelChannels(audioBuffer, signal);
+      throwIfAborted(signal);
+      try {
+        return await runWorker(channels, sampleRate, {
+          onProgress, signal, modelId, forceWasm: attempt > 0,
+        });
+      } catch (err) {
+        const recoverable = err && (err.code === 'AI_STALL' || err.code === 'AI_WORKER_CRASH');
+        if (!recoverable || attempt > 0) throw err;
+        if (onProgress) onProgress('fallback', 0);
+        throwIfAborted(signal);
+      }
+    }
+    throw new Error('separation failed');
   });
 }

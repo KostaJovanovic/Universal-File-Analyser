@@ -31,48 +31,73 @@ function isWebKit() {
   } catch (_) { return false; }
 }
 
-// Persist the model in our own Cache Storage bucket (survives reloads, kept a day).
-// In sw.js's KEEP_CACHES so a service-worker update doesn't wipe it.
-const DFN_CACHE = 'analyser-dfn';
-const DFN_TTL_MS = 24 * 60 * 60 * 1000;
+// The URL is immutable, so this cache can safely survive reloads and releases.
+const DFN_CACHE = 'analyser-dfn-v2';
 
-async function cachedModel(url) {
+async function deleteCachedUrl(url) {
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(async (key) => {
+      try { await (await caches.open(key)).delete(url); } catch (_) {}
+    }));
+  } catch (_) {}
+}
+
+async function cachedModel(model) {
   try {
     const cache = await caches.open(DFN_CACHE);
-    const resp = await cache.match(url);
+    const owned = await cache.match(model.url);
+    const resp = owned || await caches.match(model.url);
     if (!resp) return null;
-    const at = Number(resp.headers.get('x-cached-at')) || 0;
-    if (!at || Date.now() - at > DFN_TTL_MS) { await cache.delete(url); return null; }
-    return new Uint8Array(await resp.arrayBuffer());
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+    if (model.bytes && bytes.length !== model.bytes) {
+      await deleteCachedUrl(model.url);
+      return null;
+    }
+    return bytes;
   } catch (_) { return null; }
 }
 
 async function storeModel(url, bytes) {
   try {
     const cache = await caches.open(DFN_CACHE);
-    await cache.put(url, new Response(bytes, { headers: { 'x-cached-at': String(Date.now()) } }));
-  } catch (_) {}
+    await cache.put(url, new Response(bytes));
+    return true;
+  } catch (_) { return false; }
 }
 
-// Stream the model into memory with progress, falling back to arrayBuffer().
-async function fetchWithProgress(url, approxTotal, onProg) {
+// Stream directly into one exact-sized allocation so a corrupt or replaced
+// remote object fails before it can double memory use at 100%.
+async function fetchWithProgress(url, expectedBytes, onProg) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error('model download failed (' + resp.status + ')');
-  const total = Number(resp.headers.get('content-length')) || approxTotal || 0;
-  if (!resp.body || !total) return new Uint8Array(await resp.arrayBuffer());
+  const reportedBytes = Number(resp.headers.get('content-length')) || 0;
+  if (expectedBytes && reportedBytes && reportedBytes !== expectedBytes) {
+    throw new Error('model download size did not match the pinned revision');
+  }
+  if (!resp.body || !expectedBytes) {
+    const out = new Uint8Array(await resp.arrayBuffer());
+    if (expectedBytes && out.length !== expectedBytes) throw new Error('model download was incomplete');
+    if (onProg) onProg(1);
+    return out;
+  }
   const reader = resp.body.getReader();
-  const chunks = [];
+  const out = new Uint8Array(expectedBytes);
   let received = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    chunks.push(value);
+    if (!value || !value.length) continue;
+    if (received + value.length > out.length) {
+      try { await reader.cancel(); } catch (_) {}
+      throw new Error('model download exceeded the pinned size');
+    }
+    out.set(value, received);
     received += value.length;
-    if (onProg) onProg(Math.min(1, received / total));
+    if (onProg) onProg(Math.min(1, received / expectedBytes));
   }
-  const out = new Uint8Array(received);
-  let off = 0;
-  for (const c of chunks) { out.set(c, off); off += c.length; }
+  if (received !== expectedBytes) throw new Error('model download was incomplete');
+  if (onProg) onProg(1);
   return out;
 }
 
@@ -90,21 +115,32 @@ function resolveIo(sess) {
   return { erbIn, specIn, maskOut, coefOut };
 }
 
-async function ensureModel(onDownload) {
+async function ensureModel(report) {
+  if (session) return;
+  let bytes = await cachedModel(DFN_MODEL);
+  if (bytes) {
+    if (report) report('model-cache', 1);
+  }
+  else {
+    bytes = await fetchWithProgress(
+      DFN_MODEL.url,
+      DFN_MODEL.bytes,
+      (frac) => { if (report) report('model', frac); }
+    );
+    if (report) report('cache', 0);
+    const stored = await storeModel(DFN_MODEL.url, bytes);
+    if (report) report(stored ? 'cache' : 'cache-warning', stored ? 1 : 0);
+  }
+
   if (!ortMod) {
+    if (report) report('runtime', 0);
     ortMod = await import(/* @vite-ignore */ ORT_ENTRY);
     ortMod.env.wasm.wasmPaths = ORT_BASE;
     ortMod.env.wasm.numThreads = 1;
     ortMod.env.wasm.simd = true;
     ortMod.env.wasm.proxy = false;
     try { ortMod.env.logLevel = 'error'; } catch (_) {}
-  }
-  if (session) return;
-  let bytes = await cachedModel(DFN_MODEL.url);
-  if (bytes) { if (onDownload) onDownload(1); }
-  else {
-    bytes = await fetchWithProgress(DFN_MODEL.url, DFN_MODEL.bytes, onDownload);
-    await storeModel(DFN_MODEL.url, bytes);
+    if (report) report('runtime', 0.1);
   }
   // Force the WASM backend for DeepFilterNet3 on every engine, not just WebKit.
   // DFN3 is a GRU-based recurrent graph, and ORT-web's WebGPU (jsep) backend
@@ -117,8 +153,10 @@ async function ensureModel(onDownload) {
   // (now redundant) documentation of why WebKit also avoids WebGPU.
   void isWebKit;
   const executionProviders = ['wasm'];
+  if (report) report('runtime', 0.25);
   session = await ortMod.InferenceSession.create(bytes, { executionProviders });
   ioMap = resolveIo(session);
+  if (report) report('runtime', 1);
 }
 
 // One graph pass over P frames: feat_erb [1,1,P,32], feat_spec [1,2,P,96] ->
@@ -137,12 +175,12 @@ async function runModel(featErb, featSpec, P) {
   return { erbMask, dfCoefs };
 }
 
-self.onmessage = async (e) => {
-  const msg = e.data;
-  if (!msg || msg.type !== 'denoise') return;
+async function handleDenoise(msg) {
   const jobId = msg.jobId;
   try {
-    await ensureModel((frac) => self.postMessage({ type: 'progress', phase: 'model', frac, jobId }));
+    await ensureModel((phase, frac) => {
+      self.postMessage({ type: 'progress', phase, frac, jobId });
+    });
     self.postMessage({ type: 'progress', phase: 'infer', frac: 0, jobId });
     const result = await enhanceAudio({
       channels: msg.channels,
@@ -162,4 +200,11 @@ self.onmessage = async (e) => {
   } catch (err) {
     self.postMessage({ type: 'error', message: (err && err.message) || String(err), jobId });
   }
+}
+
+let jobQueue = Promise.resolve();
+self.onmessage = (e) => {
+  const msg = e.data;
+  if (!msg || msg.type !== 'denoise') return;
+  jobQueue = jobQueue.then(() => handleDenoise(msg), () => handleDenoise(msg));
 };

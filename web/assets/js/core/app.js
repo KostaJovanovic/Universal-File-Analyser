@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 265;
+const COMMIT_COUNT = 266;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1464,12 +1464,10 @@ window._anrReadableText = isReadableText;
   // wrong: it named anr-asteroids-hi and -bestwave but not the game's other four
   // keys, so its settings object, boss unlock, start-wave choice and dismissed
   // keyboard hint were swept on every load - atari.html loads app.js too, so a
-  // setting did not even survive reloading the game. The model ready-flags had
-  // the same fault; they were harmless only because modelReady() probes the
-  // cache before reading them.
+  // setting did not even survive reloading the game.
   var ANR_PERMANENT = ['anr-history', 'anr-a11y', 'anr-analytics-queue',
     'anr-offline', 'anr-offline-feat'];
-  var ANR_PERMANENT_PREFIX = ['anr-asteroids-', 'anr-mdx-ready-', 'anr-dfn-ready-'];
+  var ANR_PERMANENT_PREFIX = ['anr-asteroids-'];
   function anrPermanent(k) {
     if (ANR_PERMANENT.indexOf(k) !== -1) return true;
     for (var p = 0; p < ANR_PERMANENT_PREFIX.length; p++) {
