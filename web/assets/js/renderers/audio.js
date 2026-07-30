@@ -1848,11 +1848,19 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       }
       return b;
     }
-    function stemMono(channels) {
-      if (channels.length === 1) return channels[0];
-      const n = channels[0].length, out = new Float32Array(n), k = 1 / channels.length;
-      for (const ch of channels) for (let i = 0; i < n; i++) out[i] += ch[i] * k;
-      return out;
+    function stemMonoAccessor(channels) {
+      const left = channels[0], right = channels[1];
+      if (!right) return (i) => left[i];
+      if (channels.length === 2) {
+        // Match the old Float32Array accumulator's rounding exactly.
+        return (i) => Math.fround(Math.fround(left[i] * 0.5) + right[i] * 0.5);
+      }
+      const k = 1 / channels.length;
+      return (i) => {
+        let sum = 0;
+        for (const channel of channels) sum = Math.fround(sum + channel[i] * k);
+        return sum;
+      };
     }
     // The blend playground: one horizontal slider that fades vocals <-> original
     // <-> instrumental, with a spectrogram that morphs in real time. The trick
@@ -1883,17 +1891,10 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         const hop = Math.max(Math.floor(fftSize / 4), Math.ceil((L - fftSize) / (FRAME_CAP - 1)));
         return { fftSize, hopSize: hop, window: state.winName };
       }
-      // Mix directly from the stereo stems so mobile browsers do not keep two
-      // additional track-length mono copies alive for the whole result view.
-      function mixStems(a, b) {
-        const vL = result.vocals[0], vR = result.vocals[1] || vL;
-        const iL = result.instrumental[0], iR = result.instrumental[1] || iL;
-        const m = new Float32Array(L);
-        for (let i = 0; i < L; i++) {
-          m[i] = 0.5 * (a * (vL[i] + vR[i]) + b * (iL[i] + iR[i]));
-        }
-        return m;
-      }
+      const vocalsMonoAt = stemMonoAccessor(result.vocals);
+      const instrumentalMonoAt = stemMonoAccessor(result.instrumental);
+      const blendVL = result.vocals[0], blendVR = result.vocals[1] || blendVL;
+      const blendIL = result.instrumental[0], blendIR = result.instrumental[1] || blendIL;
 
       // Feed the Stereo analysis card the current blend mix (stems are always stereo
       // - see mdx-separate). Correlation/mid/side are accumulated allocation-free over
@@ -2101,7 +2102,6 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       // blend reacts to those controls exactly like the file's own spectrogram.
       function paintSettled() {
         const { a, b } = gainsFor(sliderS());
-        const mix = mixStems(a, b);
         // renderSpectrogram samples ONE column per output pixel, so computing more
         // time frames than the canvas is wide is pure wasted STFT work - and doing
         // the full-length mix at hop = fftSize/4 froze the main thread for hundreds
@@ -2112,18 +2112,28 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         const fftSize = (state.fftSize | 0) || 2048;
         const targetFrames = Math.max(FRAME_CAP, canvas.width || FRAME_CAP);
         const hopSize = Math.max(Math.floor(fftSize / 4), Math.ceil((L - fftSize) / Math.max(1, targetFrames - 1)));
-        const params = { fftSize, hopSize, window: state.winName };
+        // Read the mix inside each FFT frame rather than materialising another
+        // full-track array just as iOS receives all separated channels.
+        const params = {
+          fftSize,
+          hopSize,
+          window: state.winName,
+          // Match the former Float32Array mix's single write-rounding.
+          sampleAt: (i) => Math.fround(0.5 * (
+            a * (blendVL[i] + blendVR[i]) + b * (blendIL[i] + blendIR[i])
+          )),
+        };
         blendSpec = state.mode === 'reassigned'
-          ? computeReassignedSpectrogram(mix, sr, params)
-          : computeSpectrogram(mix, sr, params);
+          ? computeReassignedSpectrogram(result.vocals[0], sr, params)
+          : computeSpectrogram(result.vocals[0], sr, params);
         renderOnly();
       }
       // Re-run the drag-path STFTs (new window / capped fftSize) and repaint settled.
       // Wired to blendReanalyse so the FFT/window/mode controls drive it while active.
       function reanalyse() {
         const o = dragStftOpts();
-        A = computeStftComplex(stemMono(result.vocals), sr, o);
-        B = computeStftComplex(stemMono(result.instrumental), sr, o);
+        A = computeStftComplex(result.vocals[0], sr, { ...o, sampleAt: vocalsMonoAt });
+        B = computeStftComplex(result.instrumental[0], sr, { ...o, sampleAt: instrumentalMonoAt });
         out = new Float32Array(A.frames * A.bins);
         paintSettled();
       }
@@ -2349,8 +2359,9 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
             specRaf2 = requestAnimationFrame(() => {
               specRaf2 = 0;
               if (stemDisposed) return;
-              const spec = computeSpectrogram(stemMono(s.channels), result.sampleRate, {
+              const spec = computeSpectrogram(s.channels[0], result.sampleRate, {
                 fftSize: state.fftSize, hopSize: Math.floor(state.fftSize / 4), window: state.winName,
+                sampleAt: stemMonoAccessor(s.channels),
               });
               const cv = el('canvas', { class: 'anr-iso-stem-canvas' });
               cv.width = Math.min(1600, Math.max(320, spec.frames));
@@ -2395,8 +2406,9 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
           : phase === 'cache' ? 'Saving model for offline use… ' + pct + '%'
             : phase === 'cache-warning' ? 'Model could not be saved offline - continuing…'
               : phase === 'runtime' ? 'Initialising AI runtime… ' + pct + '%'
-              : phase === 'fallback' ? 'GPU unavailable - retrying with the compatible runtime…'
-                  : action + '… ' + pct + '%';
+                : phase === 'audio' ? 'Preparing audio… ' + pct + '%'
+                  : phase === 'fallback' ? 'GPU unavailable - retrying with the compatible runtime…'
+                    : action + '… ' + pct + '%';
       // The percentage in the label is phase-local, so the bar must be too.
       // Inference therefore begins at an empty bar and reaches 100% in lockstep
       // with "Separating…" / "Denoising…" rather than inheriting prior phases.

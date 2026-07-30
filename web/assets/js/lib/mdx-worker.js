@@ -153,6 +153,11 @@ async function ensureModel(model, report, forceWasm = false) {
     session = await ortMod.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
     loadedProvider = 'wasm';
   }
+  // ORT has copied/compiled the graph into its session. Drop the JS-side model
+  // bytes and yield once before allocating song-sized inference buffers, giving
+  // WebKit an opportunity to reclaim the 28-64 MB download buffer.
+  bytes = null;
+  await new Promise((resolve) => setTimeout(resolve, 0));
   loadedModelId = model.id;
   if (report) report('runtime', 1);
 }
@@ -166,6 +171,20 @@ async function runModel(input, dims) {
   if (out.data && out.data.length) return out.data;
   if (typeof out.getData === 'function') return await out.getData();
   return out.data;
+}
+
+async function handlePrepare(msg) {
+  const jobId = msg.jobId;
+  try {
+    const model = MDX_MODELS[msg.modelId] || MDX_MODEL;
+    const report = (phase, frac) => {
+      self.postMessage({ type: 'progress', phase, frac, jobId });
+    };
+    await ensureModel(model, report, !!msg.forceWasm);
+    self.postMessage({ type: 'ready', jobId });
+  } catch (err) {
+    self.postMessage({ type: 'error', message: (err && err.message) || String(err), jobId });
+  }
 }
 
 async function handleSeparate(msg) {
@@ -207,6 +226,10 @@ async function handleSeparate(msg) {
       instrumental: result.instrumental,
       sampleRate: MDX_SR,
       stem: result.stem,
+      // A persistent ORT WASM heap plus four returned song channels can exceed
+      // WebKit's tab budget. The client retires this worker after receiving the
+      // transferred result; another run creates a clean worker from the cache.
+      retireWorker: isWebKit(),
       jobId,
     }, [
       result.vocals[0].buffer, result.vocals[1].buffer,
@@ -222,6 +245,7 @@ async function handleSeparate(msg) {
 let jobQueue = Promise.resolve();
 self.onmessage = (e) => {
   const msg = e.data;
-  if (!msg || msg.type !== 'separate') return;
-  jobQueue = jobQueue.then(() => handleSeparate(msg), () => handleSeparate(msg));
+  if (!msg || (msg.type !== 'prepare' && msg.type !== 'separate')) return;
+  const handle = msg.type === 'prepare' ? handlePrepare : handleSeparate;
+  jobQueue = jobQueue.then(() => handle(msg), () => handle(msg));
 };

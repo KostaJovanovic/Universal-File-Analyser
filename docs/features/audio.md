@@ -224,17 +224,19 @@ btn: Download WAV
 **Notes / limits.** Runs on GPU via WebGPU where available, WASM otherwise.
 WebGPU automatically falls back to WASM if initialisation or inference fails;
 a stalled/crashed GPU worker is also replaced and retried once on WASM.
-Download, cache, runtime initialisation and inference are reported as separate
-progress phases, each with a matching percentage and bar, so a completed
-download is not mistaken for a completed separation. Model downloads and
-cached entries are checked against
-the pinned byte size, and a bad cached object is removed before retrying.
+Download, cache, runtime initialisation, audio preparation and inference are
+reported as separate progress phases, each with a matching percentage and bar,
+so a completed download is not mistaken for a completed separation. Model
+downloads and cached entries are checked against the pinned byte size, and a
+bad cached object is removed before retrying.
 The Standard model and runtime (~85MB total) are part of the "Complete" offline tier (see
 [`pwa-offline.md`](../pwa-offline.md)). The isolate band-stop cuts are re-applied to
 separated stems in parallel (nodes can't be shared across the file
 player's audio context and the stem-blend context), so Isolate edits and
-Separation compose rather than one bypassing the other. Whole-song padding
-and eager WAV copies are avoided; a stem WAV is encoded only when its Play or
+Separation compose rather than one bypassing the other. Whole-song padding,
+per-window FFT allocations and eager WAV copies are avoided; the model is
+prepared before song-sized channel copies are made, and WebKit releases the AI
+worker after returning a result. A stem WAV is encoded only when its Play or
 Download button is used, which reduces peak memory on phones.
 
 ### AI denoise
