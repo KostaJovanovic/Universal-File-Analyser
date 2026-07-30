@@ -3137,44 +3137,11 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
+  /* The input keeps a finger-height interaction box, while its visible thumb
+     inherits the normal 4x14px .anr-range marker. renderBlend maps touch movement
+     across the whole wrapper, so the hit area does not need an oversized thumb. */
   height: 32px;
   touch-action: pan-y;
-}
-/* Keep the site's thin square marker visually, but make the real WebKit thumb a
-   finger-sized target. iOS could tap the track but could not hold the old 4px
-   thumb long enough to drag it. */
-.anr-blend-slider::-webkit-slider-thumb {
-  width: 28px;
-  height: 28px;
-  margin-top: -12.5px;
-  background: linear-gradient(to right,
-    transparent calc(50% - 2px),
-    var(--accent) calc(50% - 2px),
-    var(--accent) calc(50% + 2px),
-    transparent calc(50% + 2px));
-}
-.anr-blend-slider::-moz-range-thumb {
-  width: 28px;
-  height: 28px;
-  background: linear-gradient(to right,
-    transparent calc(50% - 2px),
-    var(--accent) calc(50% - 2px),
-    var(--accent) calc(50% + 2px),
-    transparent calc(50% + 2px));
-}
-.anr-blend-slider:hover::-webkit-slider-thumb {
-  background: linear-gradient(to right,
-    transparent calc(50% - 2px),
-    var(--fg) calc(50% - 2px),
-    var(--fg) calc(50% + 2px),
-    transparent calc(50% + 2px));
-}
-.anr-blend-slider:hover::-moz-range-thumb {
-  background: linear-gradient(to right,
-    transparent calc(50% - 2px),
-    var(--fg) calc(50% - 2px),
-    var(--fg) calc(50% + 2px),
-    transparent calc(50% + 2px));
 }
 /* Centre slit lights up when the pointer is over its snap zone (class toggled in
    renderBlend, since the tick is pointer-events:none and can't :hover itself). */
