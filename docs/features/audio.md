@@ -192,7 +192,10 @@ separate with that model. First use prompts to confirm the model download
 back out) unless already cached. Once separated, each stem gets **Play**
 (in a blend row that can mix vocal/instrumental live), **Analyse** (runs
 the stem through the full audio analyser), and **Download WAV**. A `[?]`
-info button next to "Separate" explains the approach.
+info button next to "Separate" explains the approach. The model options
+collapse and **Separation** is deselected when the result is ready. Press
+**Separation** again to choose a model and confirm a new run against the
+original file; cancelling keeps the current result.
 
 ```demo
 btn: Separation
@@ -222,8 +225,9 @@ btn: Download WAV
 WebGPU automatically falls back to WASM if initialisation or inference fails;
 a stalled/crashed GPU worker is also replaced and retried once on WASM.
 Download, cache, runtime initialisation and inference are reported as separate
-monotonic progress phases, so a completed download is not mistaken for a
-completed separation. Model downloads and cached entries are checked against
+progress phases, each with a matching percentage and bar, so a completed
+download is not mistaken for a completed separation. Model downloads and
+cached entries are checked against
 the pinned byte size, and a bad cached object is removed before retrying.
 The Standard model and runtime (~85MB total) are part of the "Complete" offline tier (see
 [`pwa-offline.md`](../pwa-offline.md)). The isolate band-stop cuts are re-applied to

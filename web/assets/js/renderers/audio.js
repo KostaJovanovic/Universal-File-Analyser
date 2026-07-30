@@ -1804,11 +1804,12 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       separate: { leftKey: 'vocals', leftLabel: 'Vocals', rightKey: 'instrumental', rightLabel: 'Instrumental', toward: ['vocals', 'instrumental'], aria: 'Blend vocals to instrumental' },
       denoise: { leftKey: 'clean', leftLabel: 'Clean', rightKey: 'noise', rightLabel: 'Noise', toward: ['clean', 'noise'], aria: 'Blend clean to noise' },
     };
-    // Separate button is a toggle: clicking it reveals the model picker and opens the
-    // model prompt (download-or-start), and clicking it again once a separation is
-    // showing clears it. aiOn tracks whether results are showing. aiConfirming marks
-    // the prompt open; aiConfirmRender re-renders it for the current model (called by
-    // the picker so switching Standard/Lite updates the prompt in real time).
+    // Separate opens the model picker and its download-or-start prompt. Once a result
+    // is ready, the picker collapses and the button is deselected; pressing it again
+    // opens a fresh separation prompt while keeping that result until confirmation.
+    // aiOn tracks whether results are showing. aiConfirming marks the prompt open;
+    // aiConfirmRender re-renders it for the current model (called by the picker so
+    // switching Standard/Lite updates the prompt in real time).
     let aiOn = false, aiConfirming = false, aiConfirmRender = null;
     // Dismiss an open confirm prompt from outside (e.g. the AI separation button
     // closing the panel). Resolves the pending confirmDownload() as cancelled so
@@ -2283,11 +2284,13 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       // instead of the original track carrying on underneath it.
       if (opts.audioEl) { try { opts.audioEl.pause(); } catch (_) {} }
       if (blendCleanup) { try { blendCleanup(); } catch (_) {} blendCleanup = null; }
-      // Separation done: the results below replace the pitch, so drop the
-      // description ([?] + panel). The Separate button stays visible so the run
-      // can be repeated (it is re-enabled and relabelled by the click handler).
+      // Separation done: the results below replace the pitch, so collapse the
+      // description and model picker. The Separate button stays visible but no
+      // longer selected, ready to prompt for another run against the source file.
       aiHelpBtn.hidden = true;
       aiHelpPanel.classList.add('is-hidden');
+      aiModelRow.hidden = true;
+      aiBtn.classList.remove('is-active');
       aiStems.textContent = '';
       blendMount.textContent = '';
       const blend = renderBlend(result, resume, cfg);
@@ -2383,27 +2386,21 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       aiStatus.appendChild(el('span', { class: 'anr-iso-aimsg' }, text));
       if (typeof frac === 'number') { aiStatus.appendChild(aiBar); aiBar.set(frac); }
     }
-    let lastAiProgress = 0;
     function setAiProgress(kind, phase, frac) {
       const safeFrac = Math.max(0, Math.min(1, Number(frac) || 0));
       const pct = Math.round(safeFrac * 100);
-      const mapped = phase === 'model' ? safeFrac * 0.45
-        : phase === 'model-cache' ? 0.45
-          : phase === 'cache' ? 0.45 + safeFrac * 0.05
-            : phase === 'cache-warning' ? 0.5
-              : phase === 'runtime' ? 0.5 + safeFrac * 0.12
-                : phase === 'fallback' ? 0.5
-                  : 0.62 + safeFrac * 0.38;
-      lastAiProgress = Math.max(lastAiProgress, mapped);
       const action = kind === 'denoise' ? 'Denoising' : 'Separating';
       const message = phase === 'model' ? 'Downloading model… ' + pct + '%'
         : phase === 'model-cache' ? 'Loading cached model…'
           : phase === 'cache' ? 'Saving model for offline use… ' + pct + '%'
             : phase === 'cache-warning' ? 'Model could not be saved offline - continuing…'
               : phase === 'runtime' ? 'Initialising AI runtime… ' + pct + '%'
-                : phase === 'fallback' ? 'GPU unavailable - retrying with the compatible runtime…'
+              : phase === 'fallback' ? 'GPU unavailable - retrying with the compatible runtime…'
                   : action + '… ' + pct + '%';
-      setAiStatus(message, lastAiProgress);
+      // The percentage in the label is phase-local, so the bar must be too.
+      // Inference therefore begins at an empty bar and reaches 100% in lockstep
+      // with "Separating…" / "Denoising…" rather than inheriting prior phases.
+      setAiStatus(message, safeFrac);
     }
     // One-off size prompt, skipped once the chosen model is already cached. The
     // model picker stays live while this is up (aiConfirmSizeEl), so the user can
@@ -2471,7 +2468,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         render();
       });
     }
-    // Toggle OFF: tear down whatever job is showing and return to the original track.
+    // Tear down the current result before a confirmed replacement or renderer abort.
     function clearStems() {
       revokeAiUrls();
       if (blendCleanup) { try { blendCleanup(); } catch (_) {} blendCleanup = null; }
@@ -2479,6 +2476,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       blendMount.textContent = '';
       aiStatus.hidden = true; aiStatus.textContent = '';
       aiHelpBtn.hidden = false;   // bring the [?] description back
+      aiModelRow.hidden = false;
       aiOn = false; activeKind = null;
       // Note: the radio-group highlight (setAiSelection) is left as-is, like the
       // model tiers - the last-picked tool stays highlighted after a result clears.
@@ -2488,15 +2486,24 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     async function modelReady(model) {
       try { return !!(await caches.match(model.url)); } catch (_) { return false; }
     }
-    // Shared runner for both AI jobs. Toggles off if its own job is showing; tears
-    // down the other job first if switching; otherwise confirms, runs, and renders.
+    // Shared runner for both AI jobs. It confirms first, then replaces any completed
+    // result and runs the final model selection against the original decoded source.
     async function startStems() {
       if (aiRunning || aiConfirming) return;
-      // A result already showing is torn down before the new job (one blend owns the
-      // view at a time). Turning a result fully OFF is the AI-separation button's job.
-      if (aiOn) clearStems();
+      // Keep an existing result in place while its replacement is only a prompt.
+      // A cancel therefore returns to the completed view unchanged; confirmation
+      // clears it immediately before the new run starts from sourceBuffer().
+      const replacingResult = aiOn;
       const ok = await confirmDownload();
-      if (!ok) return;   // cancelled -> idle
+      if (!ok) {
+        if (replacingResult) {
+          aiModelRow.hidden = true;
+          aiHelpBtn.hidden = true;
+          aiBtn.classList.remove('is-active');
+        }
+        return;
+      }
+      if (aiOn) clearStems();
       // The user can switch Standard/Lite/denoise while the prompt is open (the whole
       // row is one radio group), so read the FINAL choice now, after they confirm.
       const kind = pendingKind;
@@ -2506,7 +2513,6 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       const orig = btn.textContent;
       try {
         aiRunning = true;
-        lastAiProgress = 0;
         btn.disabled = true;
         setAiStatus('Preparing…', 0);
         let result;
@@ -2530,7 +2536,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         }
         aiStatus.hidden = true; aiStatus.textContent = '';
         renderStems(result, cfg);
-        // Stays ON (button is-active, results shown) until the next click clears it.
+        // Results stay visible, but the picker and action-button selection collapse.
+        // Pressing Separation again opens a fresh prompt against the original source.
       } catch (err) {
         aiOn = false; activeKind = null;
         if (err && err.name === 'AbortError') { aiStatus.hidden = true; aiStatus.textContent = ''; }
@@ -2545,12 +2552,12 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       // Restore the button label/enabled state; it must never be left hidden.
       btn.textContent = orig; btn.disabled = false; btn.hidden = false; aiRunning = false;
     }
-    // AI separation is the panel toggle. Opening it reveals the options row (Standard
-    // / Lite / denoise) AND pops the confirm card for the default selection straight
-    // away; because that card is a live radio group, clicking denoise (or the other
-    // tier) just re-renders it. Clicking AI separation again closes the panel,
-    // dismissing any open card. While a result is showing it is the master "off" -
-    // clear the stems and revert to the original track.
+    // AI separation opens the options row (Standard / Lite / denoise) and its confirm
+    // card straight away. Because that card is a live radio group, clicking denoise
+    // or another tier re-renders it. Before a result exists, pressing Separation
+    // again closes the panel. After completion the result remains visible; pressing
+    // Separation opens a fresh source-file prompt, and pressing it again cancels that
+    // prompt and returns to the collapsed completed-result view.
     // Shut the AI panel, dropping any confirm card with it. Shared by the button's
     // own toggle and by setIsoActive above, since the two panels are alternatives.
     function closeAiPanel() {
@@ -2561,7 +2568,23 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     }
     aiBtn.addEventListener('click', () => {
       if (aiRunning) return;
-      if (aiOn) { clearStems(); return; }
+      if (aiOn) {
+        if (aiConfirming) {
+          if (aiConfirmCancel) aiConfirmCancel();
+          aiModelRow.hidden = true;
+          aiHelpBtn.hidden = true;
+          aiBtn.classList.remove('is-active');
+          return;
+        }
+        if (isoActive) setIsoActive(false);
+        aiPanel.classList.remove('is-hidden');
+        aiModelRow.hidden = false;
+        aiBtn.classList.add('is-active');
+        pendingKind = 'separate';
+        setAiSelection(aiModelBtns[aiModelId] || aiModelBtns.standard);
+        startStems();
+        return;
+      }
       if (!aiPanel.classList.contains('is-hidden')) { closeAiPanel(); return; }
       if (isoActive) setIsoActive(false);              // the two are alternatives
       aiPanel.classList.remove('is-hidden');           // closed -> open with the default card
