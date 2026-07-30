@@ -34,8 +34,11 @@ export const DFN_MODEL = {
   label: 'Denoise',
   // Shown in the download prompt so the tier explains itself.
   blurb: 'removes background noise and hiss while keeping the full sound, all on your device',
-  url: 'https://huggingface.co/aufklarer/DeepFilterNet3-ONNX/resolve/main/deepfilter.onnx',
-  bytes: 9028975,        // ~8.6 MB, for the download progress bar fallback
+  url: 'https://huggingface.co/aufklarer/DeepFilterNet3-ONNX/resolve/63d8ba442ba900143c468b798e94a04009b2f0c9/deepfilter.onnx',
+  bytes: 8608859,        // verified DeepFilterNet3 v0.5.6 export
   tierMb: 30,            // model ~9 + shared ORT runtime ~21, shown in the prompt
 };
 
+export const DFN_RETIRED_URLS = [
+  'https://huggingface.co/aufklarer/DeepFilterNet3-ONNX/resolve/main/deepfilter.onnx',
+];

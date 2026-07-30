@@ -3129,6 +3129,9 @@ select.anr-select option { background: var(--bg); color: var(--fg); }
   align-items: center;
   flex: 1 1 auto;
   min-width: 0;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .anr-blend-slider {
   flex: 1 1 auto;

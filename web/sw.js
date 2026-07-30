@@ -2,7 +2,7 @@
    Precache the app shell; serve everything cache-first (version-epoched cache, so
    a hit needs no revalidation), falling back to the network only on a miss. */
 
-const VERSION = 'analyser-v265';
+const VERSION = 'analyser-v266';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) skips all
 // caching: the SW becomes a network pass-through so a single refresh shows the
@@ -250,8 +250,12 @@ self.addEventListener('install', (e) => {
 // mdx-worker.js) - also survives, so a service-worker update doesn't force a
 // multi-MB model re-download. The old 'analyser-mdx' bucket is intentionally
 // omitted so activate deletes any removed Heavy models still stored there.
-// 'analyser-dfn' - the day-cached denoise model (see dfn-worker.js) - likewise.
-const KEEP_CACHES = [VERSION, 'analyser-offline', 'analyser-mdx-v2', 'analyser-dfn'];
+// 'analyser-dfn-v2' holds the immutable denoise model. 'analyser-ai-runtime'
+// keeps the pinned ONNX runtime across releases even when Complete is not installed.
+const AI_RUNTIME_CACHE = 'analyser-ai-runtime';
+const KEEP_CACHES = [
+  VERSION, 'analyser-offline', 'analyser-mdx-v2', 'analyser-dfn-v2', AI_RUNTIME_CACHE,
+];
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
@@ -277,6 +281,8 @@ self.addEventListener('fetch', (e) => {
   // this also lets GET /api/stats hit the network (and fail cleanly when offline,
   // which the /stats page handles) instead of being served a stale cached copy.
   if (url.pathname.startsWith('/api/')) return;
+  const isOrtRuntime = url.hostname === 'cdn.jsdelivr.net'
+    && /\/npm\/onnxruntime-web@[^/]+\/dist\/ort[-.]/.test(url.pathname);
 
   // Cache-FIRST, not stale-while-revalidate: a cache hit is returned without any
   // background network fetch. The cache is version-epoched (VERSION bumps every
@@ -306,7 +312,10 @@ self.addEventListener('fetch', (e) => {
           // models until the next application release.
           const isModelRequest = url.hostname === 'huggingface.co'
             || url.hostname.endsWith('.huggingface.co');
-          if (!isModelRequest && res && (res.status === 200 || res.type === 'opaque')) {
+          if (res && (res.status === 200 || res.type === 'opaque') && isOrtRuntime) {
+            const copy = res.clone();
+            caches.open(AI_RUNTIME_CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          } else if (!isModelRequest && res && (res.status === 200 || res.type === 'opaque')) {
             const copy = res.clone();
             caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
           }

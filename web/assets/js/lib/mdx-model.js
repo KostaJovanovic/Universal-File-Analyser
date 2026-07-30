@@ -17,10 +17,8 @@
 
 export const ORT_VERSION = '1.20.1';
 
-// The runtime + model stream from the CDN on demand - on the web and in the native
-// shell alike (the native app loads the heavy WASM/models on demand just like the
-// website, rather than bundling them; see build-dist.mjs). Keep ORT_VERSION + the
-// model URLs below in step with build-dist.mjs's ORT constant.
+// The runtime + model stream from the CDN on demand. Keeping the version and
+// model URLs here gives the workers and offline tier one source of truth.
 export const ORT_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@' + ORT_VERSION + '/dist/';
 
 // The WebGPU-capable ESM entry (the "jsep" build). The worker requests
@@ -83,9 +81,18 @@ export const MDX_MODELS = {
 export const MDX_MODEL = MDX_MODELS.standard;
 
 // Everything the Complete offline tier must cache for offline AI separation. Only
-// the default (standard) model is pre-cached; the lite model downloads on demand
-// on the web and is vendored into the native bundle.
+// the default (standard) model is pre-cached; the lite model downloads on demand.
 export const MDX_OFFLINE_URLS = [...ORT_FILES, MDX_MODEL.url];
+
+// Mutable and retired model URLs used by earlier releases. The offline manager
+// removes these exact entries without touching any current user download.
+export const MDX_RETIRED_URLS = [
+  'https://huggingface.co/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx',
+  'https://huggingface.co/seanghay/uvr_models/resolve/main/UVR_MDXNET_1_9703.onnx',
+  'https://huggingface.co/Politrees/UVR_resources/resolve/main/models/MDXNet/kuielab_a_vocals.onnx',
+  'https://huggingface.co/Politrees/UVR_resources/resolve/main/models/MDXNet/kuielab_b_drums.onnx',
+  'https://huggingface.co/Politrees/UVR_resources/resolve/main/models/MDXNet/kuielab_a_bass.onnx',
+];
 
 // Approx download footprint of the AI feature, in MB (WebGPU/jsep runtime wasm
 // ~20.7 + model ~63.7 + small glue). Used to bump the Complete tier's advertised

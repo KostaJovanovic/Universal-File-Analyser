@@ -11,6 +11,7 @@ import { separateVocals, MDX_SR } from './mdx-separate.js';
 let ortMod = null;
 let session = null;
 let loadedModelId = null;
+let loadedProvider = null;
 
 // All iOS browsers use WebKit. ORT's WebGPU/JSEP path can crash the GPU or tab
 // there, so Apple engines stay on the stable single-threaded WASM backend.
@@ -28,6 +29,15 @@ function isWebKit() {
 // it during activation; this new bucket contains only immutable Standard/Lite URLs.
 const MDX_CACHE = 'analyser-mdx-v2';
 
+async function deleteCachedUrl(url) {
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(async (key) => {
+      try { await (await caches.open(key)).delete(url); } catch (_) {}
+    }));
+  } catch (_) {}
+}
+
 async function cachedModel(model) {
   try {
     const cache = await caches.open(MDX_CACHE);
@@ -39,7 +49,7 @@ async function cachedModel(model) {
     if (!resp) return null;
     const bytes = new Uint8Array(await resp.arrayBuffer());
     if (model.bytes && bytes.length !== model.bytes) {
-      if (owned) await cache.delete(model.url);
+      await deleteCachedUrl(model.url);
       return null;
     }
     return bytes;
@@ -50,7 +60,8 @@ async function storeModel(url, bytes) {
   try {
     const cache = await caches.open(MDX_CACHE);
     await cache.put(url, new Response(bytes));
-  } catch (_) {}
+    return true;
+  } catch (_) { return false; }
 }
 
 // Fill one pre-sized buffer directly. The former chunks[] + concat path held two
@@ -61,6 +72,9 @@ async function fetchWithProgress(url, expectedBytes, onProgress) {
   const reportedBytes = Number(resp.headers.get('content-length')) || 0;
   const expected = expectedBytes || reportedBytes;
   const progressTotal = reportedBytes || expected;
+  if (expectedBytes && reportedBytes && reportedBytes !== expectedBytes) {
+    throw new Error('model download size did not match the pinned revision');
+  }
 
   if (!resp.body || !expected) {
     const out = new Uint8Array(await resp.arrayBuffer());
@@ -70,16 +84,15 @@ async function fetchWithProgress(url, expectedBytes, onProgress) {
   }
 
   const reader = resp.body.getReader();
-  let out = new Uint8Array(expected);
+  const out = new Uint8Array(expected);
   let received = 0;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     if (!value || !value.length) continue;
     if (received + value.length > out.length) {
-      const grown = new Uint8Array(Math.max(received + value.length, out.length * 2));
-      grown.set(out);
-      out = grown;
+      try { await reader.cancel(); } catch (_) {}
+      throw new Error('model download exceeded the pinned size');
     }
     out.set(value, received);
     received += value.length;
@@ -87,10 +100,33 @@ async function fetchWithProgress(url, expectedBytes, onProgress) {
   }
   if (expectedBytes && received !== expectedBytes) throw new Error('model download was incomplete');
   if (onProgress) onProgress(1);
-  return received === out.length ? out : out.slice(0, received);
+  return out;
 }
 
-async function ensureModel(model, report) {
+function releaseSession() {
+  if (session) {
+    try { if (session.release) session.release(); } catch (_) {}
+  }
+  session = null;
+  loadedModelId = null;
+  loadedProvider = null;
+}
+
+async function ensureModel(model, report, forceWasm = false) {
+  if (session && loadedModelId === model.id && (!forceWasm || loadedProvider === 'wasm')) return;
+  releaseSession();
+
+  let bytes = await cachedModel(model);
+  if (bytes) {
+    if (report) report('model-cache', 1);
+  } else {
+    bytes = await fetchWithProgress(model.url, model.bytes,
+      (frac) => { if (report) report('model', frac); });
+    if (report) report('cache', 0);
+    const stored = await storeModel(model.url, bytes);
+    if (report) report(stored ? 'cache' : 'cache-warning', stored ? 1 : 0);
+  }
+
   if (!ortMod) {
     if (report) report('runtime', 0);
     ortMod = await import(/* @vite-ignore */ ORT_ENTRY);
@@ -102,35 +138,20 @@ async function ensureModel(model, report) {
     if (report) report('runtime', 0.1);
   }
 
-  if (session && loadedModelId === model.id) return;
-  if (session) {
-    try { if (session.release) session.release(); } catch (_) {}
-    session = null;
-    loadedModelId = null;
-  }
-
-  let bytes = await cachedModel(model);
-  if (bytes) {
-    if (report) report('model', 1);
-  } else {
-    bytes = await fetchWithProgress(model.url, model.bytes,
-      (frac) => { if (report) report('model', frac); });
-    if (report) report('cache', 0);
-    await storeModel(model.url, bytes);
-    if (report) report('cache', 1);
-  }
-
   if (report) report('runtime', 0.25);
-  const canUseWebGpu = !isWebKit() && !!(self.navigator && self.navigator.gpu);
+  const canUseWebGpu = !forceWasm && !isWebKit() && !!(self.navigator && self.navigator.gpu);
   try {
     session = await ortMod.InferenceSession.create(bytes, {
       executionProviders: canUseWebGpu ? ['webgpu', 'wasm'] : ['wasm'],
     });
+    loadedProvider = canUseWebGpu ? 'webgpu' : 'wasm';
   } catch (err) {
     // Some Android devices advertise WebGPU but cannot initialise this graph.
     // Retry on WASM rather than leaving the final model-download state visible.
     if (!canUseWebGpu) throw err;
+    if (report) report('fallback', 0);
     session = await ortMod.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
+    loadedProvider = 'wasm';
   }
   loadedModelId = model.id;
   if (report) report('runtime', 1);
@@ -151,16 +172,35 @@ async function handleSeparate(msg) {
   const jobId = msg.jobId;
   try {
     const model = MDX_MODELS[msg.modelId] || MDX_MODEL;
-    await ensureModel(model, (phase, frac) => {
+    const report = (phase, frac) => {
       self.postMessage({ type: 'progress', phase, frac, jobId });
-    });
+    };
+    await ensureModel(model, report, !!msg.forceWasm);
     self.postMessage({ type: 'progress', phase: 'infer', frac: 0, jobId });
-    const result = await separateVocals({
-      channels: msg.channels,
-      model,
-      runModel,
-      onProgress: (frac) => self.postMessage({ type: 'progress', phase: 'infer', frac, jobId }),
-    });
+    let result;
+    try {
+      result = await separateVocals({
+        channels: msg.channels,
+        model,
+        runModel,
+        onProgress: (frac) => report('infer', frac),
+      });
+    } catch (err) {
+      // WebGPU can initialise successfully and still fail on the first graph run.
+      // Recreate on WASM and retry the same job once while its source arrays are
+      // still owned by this worker.
+      if (loadedProvider !== 'webgpu') throw err;
+      report('fallback', 0);
+      releaseSession();
+      await ensureModel(model, report, true);
+      report('infer', 0);
+      result = await separateVocals({
+        channels: msg.channels,
+        model,
+        runModel,
+        onProgress: (frac) => report('infer', frac),
+      });
+    }
     self.postMessage({
       type: 'done',
       vocals: result.vocals,

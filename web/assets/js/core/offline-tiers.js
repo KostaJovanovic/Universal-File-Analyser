@@ -12,8 +12,8 @@
 
 import { el } from './util.js';
 import { renderHistoryPanel } from './history.js';
-import { MDX_OFFLINE_URLS, MDX_TIER_MB } from '../lib/mdx-model.js';
-import { DFN_MODEL } from '../lib/dfn-model.js';
+import { MDX_OFFLINE_URLS, MDX_RETIRED_URLS, MDX_TIER_MB } from '../lib/mdx-model.js';
+import { DFN_MODEL, DFN_RETIRED_URLS } from '../lib/dfn-model.js';
 // The denoise model on its own (its ONNX runtime is shared with MDX, already in
 // MDX_OFFLINE_URLS), so the AI pack adds only this model file on top of the vocal
 // separator, and the Complete tier the same on top of MDX.
@@ -67,6 +67,24 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   // ----- Offline download buttons -----
   const TESS_DATA = 'assets/vendor/tesseract';
   const TESS_WORKER = 'assets/vendor/tesseract/worker.min.js';
+
+  // Remove only known retired/mutable AI objects. This includes every former
+  // Heavy stem model and the replaced branch URLs, while preserving current
+  // immutable models and every unrelated offline file.
+  async function pruneRetiredAiStorage() {
+    try {
+      const retired = MDX_RETIRED_URLS.concat(DFN_RETIRED_URLS);
+      const keys = await caches.keys();
+      await Promise.all(keys.map(async (key) => {
+        const cache = await caches.open(key);
+        await Promise.all(retired.map((url) => cache.delete(url).catch(() => false)));
+      }));
+      await Promise.all([
+        caches.delete('analyser-mdx').catch(() => false),
+        caches.delete('analyser-dfn').catch(() => false),
+      ]);
+    } catch (_) {}
+  }
 
   // Canonical per-tier download sizes - the SINGLE source of truth. Tiers are
   // cumulative (each includes every lower tier's files), so TIER_MB are totals in MB.
@@ -702,6 +720,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   // an older version (i.e. the app updated since they were downloaded). Files
   // that did not change come cheaply from the HTTP cache, so the refresh is light.
   (async () => {
+    await pruneRetiredAiStorage();
     let state = readOfflineState();
     const buttons = {};
     document.querySelectorAll('.offline-btn').forEach(b => { buttons[b.dataset.tier] = b; });
@@ -772,8 +791,9 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   //        Analysis-side state (history, the queued stats pings, nudge timers, the
   //        Asteroids scores), every IndexedDB database, all of sessionStorage AND
   //        the offline downloads - the 'analyser-offline' tier cache plus the model
-  //        caches ('analyser-mdx-v2', its legacy 'analyser-mdx' predecessor, and
-  //        'analyser-dfn'), together with the records that say they are cached.
+  //        caches ('analyser-mdx-v2', 'analyser-dfn-v2', the shared runtime cache,
+  //        and their legacy predecessors), together with the records that say they
+  //        are cached.
   //        Reclaiming that space was previously
   //        impossible from inside the site: nothing else deletes those caches (the
   //        service worker's KEEP_CACHES deliberately preserves all three across
@@ -806,10 +826,10 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       for (const abort of activeDownloads) { try { abort.abort(); } catch (_) {} }
       activeDownloads.clear();
       // Preserve the settings keys, wipe localStorage + sessionStorage, restore
-      // them. Everything else goes, the download records ('anr-offline' /
-      // 'anr-offline-feat') and the model ready-flags ('anr-mdx-ready-*' /
-      // 'anr-dfn-ready-*') included - they must not outlive the caches they
-      // describe, or the badges would claim a download that is no longer there.
+      // them. Everything else goes, including the download records
+      // ('anr-offline' / 'anr-offline-feat') - they must not outlive the caches
+      // they describe, or the badges would claim a download that is no longer
+      // there. Model readiness itself is probed directly from Cache Storage.
       // The game's keys live in games/config.js; only its options object is
       // listed here, deliberately - see the note above.
       const KEEP = ['anr-theme', 'anr-theme:ts', 'anr-a11y', 'anr-asteroids-settings'];
@@ -831,7 +851,10 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       // The downloads themselves. Each delete is independently caught so a bucket
       // that does not exist (nothing was ever downloaded) can't abort the rest.
       try {
-        await Promise.all(['analyser-offline', 'analyser-mdx-v2', 'analyser-mdx', 'analyser-dfn']
+        await Promise.all([
+          'analyser-offline', 'analyser-mdx-v2', 'analyser-mdx',
+          'analyser-dfn-v2', 'analyser-dfn', 'analyser-ai-runtime',
+        ]
           .map((name) => caches.delete(name).catch(() => false)));
       } catch (_) {}
       // Records and caches are both gone, so the tier/pack badges repaint as
