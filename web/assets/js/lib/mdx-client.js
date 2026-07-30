@@ -30,6 +30,14 @@ function getWorker() {
   return worker;
 }
 
+function isAppleWebKit() {
+  try {
+    const ua = (self.navigator && self.navigator.userAgent) || '';
+    return /iP(hone|ad|od)/.test(ua)
+      || (/Macintosh/.test(ua) && self.navigator.maxTouchPoints > 1);
+  } catch (_) { return false; }
+}
+
 // Serialise callers before they resample: compare/inline panels share one worker
 // and its single mutable ONNX session.
 function enqueue(task) {
@@ -67,7 +75,7 @@ async function toModelChannels(audioBuffer, signal) {
   return { channels, sampleRate: MDX_SR };
 }
 
-function runWorker(channels, sampleRate, { onProgress, signal, modelId, forceWasm = false }) {
+function workerRequest(payload, transfer, { onProgress, signal, doneType }) {
   const w = getWorker();
   const jobId = ++jobSeq;
   return new Promise((resolve, reject) => {
@@ -107,7 +115,8 @@ function runWorker(channels, sampleRate, { onProgress, signal, modelId, forceWas
       armStallTimer(msg.type === 'progress' ? msg.phase : '');
       if (msg.type === 'progress') {
         if (onProgress) onProgress(msg.phase, msg.frac);
-      } else if (msg.type === 'done') {
+      } else if (msg.type === doneType) {
+        if (msg.retireWorker) detachWorker();
         finish(resolve, msg);
       } else if (msg.type === 'error') {
         failWorker(new Error(msg.message || 'separation failed'));
@@ -132,32 +141,63 @@ function runWorker(channels, sampleRate, { onProgress, signal, modelId, forceWas
     if (signal) signal.addEventListener('abort', onAbort);
     armStallTimer('');
     try {
-      w.postMessage({ type: 'separate', channels, sampleRate, modelId, forceWasm, jobId },
-        channels.map((channel) => channel.buffer));
+      w.postMessage({ ...payload, jobId }, transfer || []);
     } catch (err) {
       failWorker(err instanceof Error ? err : new Error(String(err)));
     }
   });
 }
 
+function prepareWorker({ onProgress, signal, modelId, forceWasm = false }) {
+  return workerRequest(
+    { type: 'prepare', modelId, forceWasm },
+    [],
+    { onProgress, signal, doneType: 'ready' }
+  );
+}
+
+function runWorker(channels, sampleRate, { onProgress, signal, modelId, forceWasm = false }) {
+  return workerRequest(
+    { type: 'separate', channels, sampleRate, modelId, forceWasm },
+    channels.map((channel) => channel.buffer),
+    { onProgress, signal, doneType: 'done' }
+  );
+}
+
 /**
  * Separate an AudioBuffer into vocal and instrumental stems.
  * @param {AudioBuffer} audioBuffer
- * @param {{ onProgress?: (phase:'model'|'model-cache'|'cache'|'cache-warning'|'runtime'|'fallback'|'infer', frac:number)=>void, signal?: AbortSignal, modelId?: string }} [opts]
+ * @param {{ onProgress?: (phase:'model'|'model-cache'|'cache'|'cache-warning'|'runtime'|'audio'|'fallback'|'infer', frac:number)=>void, signal?: AbortSignal, modelId?: string }} [opts]
  */
 export function separateStems(audioBuffer, { onProgress, signal, modelId } = {}) {
   return enqueue(async () => {
     throwIfAborted(signal);
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const { channels, sampleRate } = await toModelChannels(audioBuffer, signal);
-      throwIfAborted(signal);
+    // A worker crash on iOS is usually memory pressure. Rebuilding the same ORT
+    // heap and full-song channel copies immediately makes a second tab kill more
+    // likely, while Apple devices already use WASM and gain nothing from the
+    // WebGPU-to-WASM retry used elsewhere.
+    const attempts = isAppleWebKit() ? 1 : 2;
+    for (let attempt = 0; attempt < attempts; attempt++) {
       try {
+        // Finish downloading/caching/compiling the model before making full-song
+        // channel copies. On first use this keeps the model byte buffer and the
+        // resampled PCM from occupying Mobile Safari's heap at the same time.
+        await prepareWorker({
+          onProgress, signal, modelId, forceWasm: attempt > 0,
+        });
+        if (onProgress) onProgress('audio', 0);
+        const { channels, sampleRate } = await toModelChannels(audioBuffer, signal);
+        throwIfAborted(signal);
+        if (onProgress) onProgress('audio', 1);
+        // OfflineAudioContext and its rendered AudioBuffer are now out of scope.
+        // Yield before transferring the owned copies so WebKit can reclaim them.
+        await new Promise((resolve) => setTimeout(resolve, 0));
         return await runWorker(channels, sampleRate, {
           onProgress, signal, modelId, forceWasm: attempt > 0,
         });
       } catch (err) {
         const recoverable = err && (err.code === 'AI_STALL' || err.code === 'AI_WORKER_CRASH');
-        if (!recoverable || attempt > 0) throw err;
+        if (!recoverable || attempt + 1 >= attempts) throw err;
         if (onProgress) onProgress('fallback', 0);
         throwIfAborted(signal);
       }

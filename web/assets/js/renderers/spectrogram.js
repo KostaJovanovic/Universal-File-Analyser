@@ -159,6 +159,9 @@ export function computeSpectrogram(samples, sampleRate, options = {}) {
   const hopSize  = options.hopSize  || Math.floor(fftSize / 4);
   const winName  = options.window   || 'hann';
   const win      = (windows[winName] || windows.hann)(fftSize);
+  // Optional accessor lets callers analyse a derived signal (for example a
+  // stereo stem blend) without materialising another full-track Float32Array.
+  const sampleAt = typeof options.sampleAt === 'function' ? options.sampleAt : null;
 
   if (samples.length < fftSize) {
     return { frames: 0, bins: 0, sampleRate, fftSize, hopSize, data: new Float32Array(0), dbMin: -100, dbMax: 0 };
@@ -181,7 +184,7 @@ export function computeSpectrogram(samples, sampleRate, options = {}) {
   for (let f = 0; f < frames; f++) {
     const start = f * hopSize;
     for (let i = 0; i < fftSize; i++) {
-      re[i] = samples[start + i] * win[i];
+      re[i] = (sampleAt ? sampleAt(start + i) : samples[start + i]) * win[i];
       im[i] = 0;
     }
     fft(re, im);
@@ -305,6 +308,7 @@ export function computeReassignedSpectrogram(samples, sampleRate, options = {}) 
   const hopSize  = options.hopSize || Math.floor(N / 4);
   const winName  = options.window  || 'hann';
   const w        = (windows[winName] || windows.hann)(N);
+  const sampleAt = typeof options.sampleAt === 'function' ? options.sampleAt : null;
 
   if (samples.length < N) {
     return { frames: 0, bins: 0, sampleRate, fftSize: N, hopSize, data: new Float32Array(0), dbMin: -120, dbMax: 0 };
@@ -341,7 +345,7 @@ export function computeReassignedSpectrogram(samples, sampleRate, options = {}) 
   for (let f = 0; f < frames; f++) {
     const start = f * hopSize;
     for (let i = 0; i < N; i++) {
-      const s = samples[start + i];
+      const s = sampleAt ? sampleAt(start + i) : samples[start + i];
       reH[i] = s * w[i];  imH[i] = 0;
       reT[i] = s * wt[i]; imT[i] = 0;
       reD[i] = s * wd[i]; imD[i] = 0;
@@ -424,6 +428,7 @@ export function computeStftComplex(samples, sampleRate, options = {}) {
   const hopSize = options.hopSize || Math.floor(fftSize / 4);
   const winName = options.window  || 'hann';
   const win     = (windows[winName] || windows.hann)(fftSize);
+  const sampleAt = typeof options.sampleAt === 'function' ? options.sampleAt : null;
 
   if (samples.length < fftSize) {
     return { frames: 0, bins: 0, sampleRate, fftSize, hopSize, re: new Float32Array(0), im: new Float32Array(0), norm: 1 };
@@ -443,7 +448,10 @@ export function computeStftComplex(samples, sampleRate, options = {}) {
 
   for (let f = 0; f < frames; f++) {
     const start = f * hopSize;
-    for (let i = 0; i < fftSize; i++) { fr[i] = samples[start + i] * win[i]; fi[i] = 0; }
+    for (let i = 0; i < fftSize; i++) {
+      fr[i] = (sampleAt ? sampleAt(start + i) : samples[start + i]) * win[i];
+      fi[i] = 0;
+    }
     fft(fr, fi);
     const row = f * bins;
     for (let b = 0; b < bins; b++) { re[row + b] = fr[b]; im[row + b] = fi[b]; }

@@ -51,11 +51,16 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
   const dims = [1, 4, dimF, dimT];
   const input = new Float32Array(4 * dimF * dimT);
   const chunk = new Float64Array(chunkSize);
+  // The model always returns the same frame geometry. Reuse one expanded
+  // spectrum pair for both channels and every window; Mobile Safari otherwise
+  // accumulates another ~13 MB of short-lived arrays per Lite window.
+  const preRe = new Float32Array(dimT * nBins);
+  const preIm = new Float32Array(dimT * nBins);
 
   for (let i = 0; i < numChunks; i++) {
     input.fill(0);
     // Per channel: STFT the chunk, crop to dim_f, pack real/imag planes.
-    const frameCounts = [];
+    const frameCounts = [0, 0];
     for (let cc = 0; cc < 2; cc++) {
       const start = i * genSize;
       const source = ch[cc];
@@ -65,7 +70,7 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
       }
       const S = eng.stft(chunk);                // { re, im, frames } , frames === dimT
       const frames = Math.min(S.frames, dimT);
-      frameCounts.push(frames);
+      frameCounts[cc] = frames;
       const reBase = (cc * 2) * dimF * dimT;     // real plane for this channel
       const imBase = (cc * 2 + 1) * dimF * dimT; // imag plane
       for (let t = 0; t < frames; t++) {
@@ -85,8 +90,6 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
     // ISTFT each channel back to the time domain, keep the middle gen_size.
     for (let cc = 0; cc < 2; cc++) {
       const frames = frameCounts[cc];
-      const preRe = new Float32Array(frames * nBins);
-      const preIm = new Float32Array(frames * nBins);
       const reBase = (cc * 2) * dimF * dimT;
       const imBase = (cc * 2 + 1) * dimF * dimT;
       for (let t = 0; t < frames; t++) {
@@ -116,13 +119,20 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
 }
 
 // 2-stem split (the existing Standard / Lite path): the model's primary stem plus
-// the instrumental (= original - primary). Behaviour is unchanged - the framing/
-// demix now lives in runStemModel and this just derives the complement.
+// the instrumental (= original - primary). The worker owns the transferred input
+// arrays, so turn those into the residual in place instead of allocating another
+// full-song stereo pair. Mono input needs one extra right channel because normStereo
+// deliberately aliases its single source channel into both model inputs.
 export async function separateVocals({ channels, model, runModel, onProgress }) {
   const ch = normStereo(channels);
   const nSample = ch[0].length;
   const [vL, vR] = await runStemModel({ ch, model, runModel, onProgress });
-  const iL = new Float32Array(nSample), iR = new Float32Array(nSample);
-  for (let s = 0; s < nSample; s++) { iL[s] = ch[0][s] - vL[s]; iR[s] = ch[1][s] - vR[s]; }
+  const monoInput = ch[0] === ch[1];
+  const iL = ch[0], iR = monoInput ? new Float32Array(nSample) : ch[1];
+  for (let s = 0; s < nSample; s++) {
+    const left = ch[0][s], right = ch[1][s];
+    iL[s] = left - vL[s];
+    iR[s] = right - vR[s];
+  }
   return { vocals: [vL, vR], instrumental: [iL, iR], sampleRate: MDX_SR };
 }
