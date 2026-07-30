@@ -212,6 +212,62 @@
              ===================================================================== -->
 
         <div class="patch-entry">
+          <p class="patch-version">8.09 - 8.11</p>
+          <p class="patch-name">Steady Hands</p>
+          <p class="patch-date">30 July 2026</p>
+          <ul class="patch-list">
+            <li><strong>A thorough reliability pass over the on-device AI sound tools: they recover from a stuck graphics card, keep a downloaded model instead of fetching it all over again, need far less memory on a phone, and no longer throw away a finished separation the moment you ask for another.</strong></li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">The separation panel</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>Separating a second time.</strong> With a result on screen, pressing <strong>Separation</strong> now opens a fresh prompt - pick a model, confirm, and it runs again on the original track. Change your mind and the finished result is still there, untouched. Before, pressing it simply wiped what you had.</li>
+            <li><strong>The model choices fold away once a separation is ready</strong>, leaving the vocal and instrumental blend the whole panel.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>Progress says which stage it is at</strong> - downloading the model, saving it for offline use, starting the AI engine, then separating - so a finished download is no longer mistaken for a finished separation. The bar now fills from empty to full in step with the percentage beside it, rather than the two disagreeing.</li>
+            <li><strong>Lite is chosen for you on more devices</strong> - any touch device, or one reporting 4 GB of memory or less, not just a narrow window.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">When things go wrong</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>A stalled graphics card no longer ends the run.</strong> If the fast path hangs or crashes partway through, it is torn down and tried once more on the compatible one, saying <code>GPU unavailable - retrying with the compatible runtime&hellip;</code> while it does. If it cannot start at all, the job simply carries on without it instead of giving up.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A job that stops responding is reported.</strong> Both tools now watch for silence and fail with a message, instead of leaving a progress bar sitting at the same place indefinitely.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>AI denoise runs where it gives correct results.</strong> On the graphics-card path the network produced wrong output, so denoise now deliberately uses the compatible engine on every browser.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>A truncated or damaged model download is caught.</strong> Model files are checked against their exact expected size, both as they arrive and when read back from storage; a bad copy is discarded and fetched again rather than failing the run.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The download prompt tells the truth.</strong> Whether a model is already saved is checked against storage itself, so it can no longer offer to fetch something you have or skip something you do not.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">On a phone</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-faster">Faster</span><strong>Separation needs much less memory.</strong> A separated part is turned into a sound file only when you press its <strong>Play</strong> or <strong>Download</strong>, rather than every part being built the instant the separation finished.</li>
+            <li><span class="patch-tag is-fix">Fix</span><strong>The vocal and instrumental blend slider can be dragged on iPhone.</strong> Your finger is now followed across the whole slider, instead of the value only jumping to where you tapped. With that in place the slider wears the site&rsquo;s thin marker again, rather than the oversized grab handle it used to need.</li>
+            <li><span class="patch-tag is-fix">Fix</span>Leaving the page or dropping another file mid-run shuts the AI work down cleanly, rather than leaving it painting in the background.</li>
+          </ul>
+
+          <hr class="patch-rule">
+          <p class="patch-subhead">Downloads and storage</p>
+          <ul class="patch-list">
+            <li><span class="patch-tag is-fix">Fix</span><strong>A downloaded model stays downloaded.</strong> It used to be dropped after a day, quietly costing another ~85 MB the next time you asked for a separation. It is kept for good now, somewhere that survives site updates. This update moves it, so it is fetched once more and then stays.</li>
+            <li><span class="patch-tag is-faster">Faster</span><strong>A model is no longer stored twice.</strong> The browser was keeping a second copy alongside the app&rsquo;s own, doubling the space a separation cost you.</li>
+            <li><strong>The shared AI engine is kept on its own</strong>, so it survives a site update even if you have not taken the <a href="/about#where">Complete offline download</a>.</li>
+            <li>Leftover model files from an experiment that never shipped are cleared out of offline storage, handing the space back.</li>
+            <li><strong>Maintenance:</strong> an unfinished four-way split (vocals, drums, bass and everything else) that was never switched on has been removed for good, along with its model files.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
+          <p class="patch-version">8.08</p>
+          <p class="patch-name">One at a Time</p>
+          <p class="patch-date">27 July 2026</p>
+          <ul class="patch-list">
+            <li><strong>The small silent video preview beside the file details and the main player no longer run at once - starting either one pauses the other.</strong></li>
+            <li><span class="patch-tag is-fix">Fix</span>That preview also stays out of the shared volume control, so it cannot be un-muted by accident and echo the main player.</li>
+          </ul>
+        </div>
+
+        <div class="patch-entry">
           <p class="patch-version">8.07</p>
           <p class="patch-name">New Address</p>
           <p class="patch-date">26 July 2026</p>
@@ -228,6 +284,9 @@
             <li><strong>Nothing else changed.</strong> The app itself is exactly as it was, still doing every bit of the work on your own device, with nothing uploaded.</li>
           </ul>
         </div>
+
+        <details class="about-formats">
+          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">8.06</p>
@@ -258,9 +317,6 @@
             <li><strong>Maintenance:</strong> styles and code left behind by features that have since changed were removed across the site. Nothing looks or behaves any differently; the download is a little smaller.</li>
           </ul>
         </div>
-
-        <details class="about-formats">
-          <summary>Older updates</summary>
 
         <div class="patch-entry">
           <p class="patch-version">8.02 - 8.04</p>

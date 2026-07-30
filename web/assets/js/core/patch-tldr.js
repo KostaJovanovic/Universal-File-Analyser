@@ -337,15 +337,17 @@ const PATCH_DIGEST = [
 // notes; small ranges stay at one or two. The archived /patch_old page carries
 // no marker, so it keeps the original PATCH_DIGEST above.
 const PATCH_DIGEST_NEW = [
-  { range: '8.08 - 8.09', notes: [
-    'AI sound tools are safer on phones: **stalled GPU separation recovers on WASM**, stem downloads no longer double memory at completion, and the blend slider remains draggable on iPhone.',
-    'The desktop-only **four-stem Heavy experiment is retired completely** - Standard and Lite remain, and its old model files are removed from offline storage.',
-    '**Denoise downloads are pinned and validated**, workers fail visibly instead of hanging, and the shared AI runtime now remains available offline across updates.',
+  { range: '8.07 - 8.11', notes: [
+    'The site **moved to analyser.valjdakosta.com** - the old lab.valjdakosta.com address still works and serves the same pages, so nothing saved or installed breaks.',
+    'The on-device **AI sound tools** got much harder to break - a stalled graphics card is retried on the compatible engine, a job that stops responding reports a failure instead of hanging for ever, and every model file is checked against its exact size before it is used.',
+    'A downloaded **separation model no longer expires after a day** or gets stored twice, and the shared AI engine now survives a site update on its own.',
+    'Separation **uses far less memory on a phone** - a separated part is only turned into a sound file when you play or download it - and the vocal/instrumental **blend slider can finally be dragged on an iPhone**.',
+    'Asking for **another separation keeps the result you already have** until you confirm the new run, and each progress stage fills the bar in step with its own percentage.',
+    'A small **video preview** and the main player no longer play at the same time, and an unfinished four-way split that was never switched on is gone along with its model files.',
   ] },
-  { range: '8.05 - 8.07', notes: [
+  { range: '8.05 - 8.06', notes: [
     'Video now reports what is genuinely inside it - exact **codec profile and level**, bit depth, **colour and HDR** detail including Dolby Vision, and every soundtrack and subtitle track in an **MKV** - all read from the picture data rather than from the summary the file gives of itself.',
     'A bare **.h264 or .h265 stream** reads its true frame rate instead of being assumed to run at 25 frames per second, which had been skewing its length and bitrate too.',
-    'The site **moved to analyser.valjdakosta.com** - the old lab.valjdakosta.com address still works and serves the same pages, so nothing saved or installed breaks.',
   ] },
   { range: '8.01 - 8.04', notes: [
     'The cleaner that handles anything a dropped file wants to display - an email body, a saved web page, an e-book chapter - now strips **animation tricks** that could turn a safe-looking link into a script after the fact, and stops a preview quietly fetching anything from the internet.',
