@@ -21,18 +21,29 @@ export const ORT_VERSION = '1.20.1';
 // model URLs here gives the workers and offline tier one source of truth.
 export const ORT_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@' + ORT_VERSION + '/dist/';
 
-// The WebGPU-capable ESM entry (the "jsep" build). The worker requests
-// ['webgpu', 'wasm'], so inference runs on the GPU where it's available
-// (Chrome / Edge - typically many times faster) and transparently falls back to
-// single-threaded WASM elsewhere (Firefox / Safari). We stay single-threaded on
-// the WASM path because the site is not cross-origin isolated (no COOP/COEP), so
-// SharedArrayBuffer threads are unavailable. The .jsep.wasm carries both paths.
+// The WebGPU-capable ESM entry (the "jsep" build). Non-WebKit workers request
+// ['webgpu', 'wasm'], so inference runs on the GPU where available and falls back
+// to single-threaded WASM. The site is not cross-origin isolated (no COOP/COEP),
+// so SharedArrayBuffer threads are unavailable. WebKit uses the smaller dedicated
+// WASM entry below instead of paying for JSEP support it cannot use here.
 export const ORT_ENTRY = ORT_BASE + 'ort.webgpu.min.mjs';
-export const ORT_FILES = [
+export const ORT_JSEP_FILES = [
   ORT_ENTRY,
   ORT_BASE + 'ort-wasm-simd-threaded.jsep.mjs',
   ORT_BASE + 'ort-wasm-simd-threaded.jsep.wasm',
 ];
+// iOS cannot use WebGPU in this pipeline. Loading the JSEP build there paid for
+// a ~20.7 MB WebGPU-capable WASM binary before the first inference; the plain
+// WASM build is ~10.7 MB and avoids that fixed cost on lower-memory iPhones.
+export const ORT_WASM_ENTRY = ORT_BASE + 'ort.min.mjs';
+export const ORT_WASM_FILES = [
+  ORT_WASM_ENTRY,
+  ORT_BASE + 'ort-wasm-simd-threaded.mjs',
+  ORT_BASE + 'ort-wasm-simd-threaded.wasm',
+];
+// Complete offline support includes both variants because the execution path is
+// chosen at runtime: JSEP for WebGPU-capable browsers, plain WASM for WebKit.
+export const ORT_FILES = [...ORT_JSEP_FILES, ...ORT_WASM_FILES];
 
 // Two selectable models, a quality/size trade-off. Both are Vocals-primary
 // MDX-Net separators from the same CORS-enabled HuggingFace mirror, so the
@@ -94,7 +105,7 @@ export const MDX_RETIRED_URLS = [
   'https://huggingface.co/Politrees/UVR_resources/resolve/main/models/MDXNet/kuielab_a_bass.onnx',
 ];
 
-// Approx download footprint of the AI feature, in MB (WebGPU/jsep runtime wasm
-// ~20.7 + model ~63.7 + small glue). Used to bump the Complete tier's advertised
-// size and shown in the one-off size warning before the first run.
-export const MDX_TIER_MB = 85;
+// Approx Complete-offline footprint in MB: Standard model ~63.7 + JSEP runtime
+// ~20.7 + WebKit's plain WASM runtime ~10.7 + glue. An individual browser only
+// loads its own runtime; Complete caches both so separation remains offline.
+export const MDX_TIER_MB = 96;

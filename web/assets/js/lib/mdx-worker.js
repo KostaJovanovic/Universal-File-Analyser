@@ -5,7 +5,7 @@
    the framing pipeline in mdx-separate.js. Every long phase is reported so the
    UI never leaves a completed download masquerading as a frozen job. */
 
-import { ORT_BASE, ORT_ENTRY, MDX_MODELS, MDX_MODEL } from './mdx-model.js';
+import { ORT_BASE, ORT_ENTRY, ORT_WASM_ENTRY, MDX_MODELS, MDX_MODEL } from './mdx-model.js';
 import { separateVocals, MDX_SR } from './mdx-separate.js';
 
 let ortMod = null;
@@ -127,9 +127,12 @@ async function ensureModel(model, report, forceWasm = false) {
     if (report) report(stored ? 'cache' : 'cache-warning', stored ? 1 : 0);
   }
 
+  const webkit = isWebKit();
   if (!ortMod) {
     if (report) report('runtime', 0);
-    ortMod = await import(/* @vite-ignore */ ORT_ENTRY);
+    // WebKit never takes the WebGPU path, so use ORT's plain WASM bundle there.
+    // Its binary is roughly half the JSEP build loaded by WebGPU-capable browsers.
+    ortMod = await import(/* @vite-ignore */ (webkit ? ORT_WASM_ENTRY : ORT_ENTRY));
     ortMod.env.wasm.wasmPaths = ORT_BASE;
     ortMod.env.wasm.numThreads = 1;
     ortMod.env.wasm.simd = true;
@@ -139,10 +142,11 @@ async function ensureModel(model, report, forceWasm = false) {
   }
 
   if (report) report('runtime', 0.25);
-  const canUseWebGpu = !forceWasm && !isWebKit() && !!(self.navigator && self.navigator.gpu);
+  const canUseWebGpu = !forceWasm && !webkit && !!(self.navigator && self.navigator.gpu);
+  const wasmOptions = { executionProviders: ['wasm'] };
   try {
     session = await ortMod.InferenceSession.create(bytes, {
-      executionProviders: canUseWebGpu ? ['webgpu', 'wasm'] : ['wasm'],
+      ...(canUseWebGpu ? { executionProviders: ['webgpu', 'wasm'] } : wasmOptions),
     });
     loadedProvider = canUseWebGpu ? 'webgpu' : 'wasm';
   } catch (err) {
@@ -150,7 +154,7 @@ async function ensureModel(model, report, forceWasm = false) {
     // Retry on WASM rather than leaving the final model-download state visible.
     if (!canUseWebGpu) throw err;
     if (report) report('fallback', 0);
-    session = await ortMod.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
+    session = await ortMod.InferenceSession.create(bytes, wasmOptions);
     loadedProvider = 'wasm';
   }
   // ORT has copied/compiled the graph into its session. Drop the JS-side model
@@ -195,7 +199,7 @@ async function handleSeparate(msg) {
       self.postMessage({ type: 'progress', phase, frac, jobId });
     };
     await ensureModel(model, report, !!msg.forceWasm);
-    self.postMessage({ type: 'progress', phase: 'infer', frac: 0, jobId });
+    report('infer-start', 0);
     let result;
     try {
       result = await separateVocals({
@@ -212,7 +216,7 @@ async function handleSeparate(msg) {
       report('fallback', 0);
       releaseSession();
       await ensureModel(model, report, true);
-      report('infer', 0);
+      report('infer-start', 0);
       result = await separateVocals({
         channels: msg.channels,
         model,

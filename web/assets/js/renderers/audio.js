@@ -2321,7 +2321,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         // a stem after a separation. Space stays on the main track; stems have their
         // own play buttons.
         const audioEl = el('audio', { preload: 'metadata', style: 'display:none;', 'data-anr-stem': '1' });
-        let blob = null, url = null, stemDisposed = false, specRaf1 = 0, specRaf2 = 0;
+        let blob = null, url = null, downloadUrl = null;
+        let stemDisposed = false, specRaf1 = 0, specRaf2 = 0;
         function ensureStemWav() {
           if (blob) return blob;
           if (stemDisposed) throw new Error('stem result is no longer available');
@@ -2338,10 +2339,32 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
           audioEl.src = url;
           return blob;
         }
+        function ensureStemDownloadUrl() {
+          ensureStemWav();
+          if (downloadUrl) return downloadUrl;
+          let appleTouch = false;
+          try {
+            const ua = navigator.userAgent || '';
+            appleTouch = /iPad|iPhone|iPod/.test(ua)
+              || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+          } catch (_) {}
+          if (!appleTouch) return url;
+          // WebKit's download path is more reliable for attachment data than a
+          // previewable audio Blob. This wrapper shares the WAV's backing bytes.
+          downloadUrl = URL.createObjectURL(new Blob([blob], { type: 'application/octet-stream' }));
+          aiUrls.push(downloadUrl);
+          return downloadUrl;
+        }
         const player = makePlayer(audioEl, dur, { beforePlay: ensureStemWav, signal: opts.signal });
         const specBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Analyse');
-        const dl = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Download WAV');
-        dl.addEventListener('click', () => downloadBlob(base + '_' + s.key + '.wav', ensureStemWav()));
+        const filename = base + '_' + s.key + '.wav';
+        // Keep the browser's default action attached to the user's real click.
+        // A nested synthetic anchor click is unreliable in Mobile Safari.
+        const dl = el('a', { class: 'anr-btn anr-btn-sm', href: '#', download: filename }, 'Download WAV');
+        dl.addEventListener('click', (e) => {
+          try { dl.href = ensureStemDownloadUrl(); }
+          catch (_) { e.preventDefault(); }
+        });
         // Lazy spectrogram of this stem, drawn with the main panel's current
         // FFT / scale / colour settings so it reads the same as the view above.
         const specWrap = el('div', { class: 'anr-iso-stem-spec', hidden: true });
@@ -2379,7 +2402,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
           try { audioEl.pause(); } catch (_) {}
           audioEl.removeAttribute('src');
           try { audioEl.load(); } catch (_) {}
-          blob = null; url = null;
+          blob = null; url = null; downloadUrl = null;
         });
         aiStems.appendChild(el('div', { class: 'anr-iso-stem' }, [
           el('div', { class: 'anr-iso-stem-head' }, [
@@ -2398,6 +2421,10 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
       if (typeof frac === 'number') { aiStatus.appendChild(aiBar); aiBar.set(frac); }
     }
     function setAiProgress(kind, phase, frac) {
+      if (phase === 'infer-start') {
+        setAiStatus(kind === 'denoise' ? 'Starting first AI pass…' : 'Starting first separation pass…');
+        return;
+      }
       const safeFrac = Math.max(0, Math.min(1, Number(frac) || 0));
       const pct = Math.round(safeFrac * 100);
       const action = kind === 'denoise' ? 'Denoising' : 'Separating';
@@ -2410,8 +2437,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
                   : phase === 'fallback' ? 'GPU unavailable - retrying with the compatible runtime…'
                     : action + '… ' + pct + '%';
       // The percentage in the label is phase-local, so the bar must be too.
-      // Inference therefore begins at an empty bar and reaches 100% in lockstep
-      // with "Separating…" / "Denoising…" rather than inheriting prior phases.
+      // Inference shows an indeterminate first-pass state until the first model
+      // window returns, then advances to 100% in lockstep with the label.
       setAiStatus(message, safeFrac);
     }
     // One-off size prompt, skipped once the chosen model is already cached. The

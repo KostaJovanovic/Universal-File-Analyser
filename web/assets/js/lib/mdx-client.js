@@ -7,6 +7,7 @@ import { MDX_SR } from './mdx-separate.js';
 
 const STALL_MS = 5 * 60 * 1000;
 const RUNTIME_STALL_MS = 2 * 60 * 1000;
+const FIRST_INFER_STALL_MS = 2 * 60 * 1000;
 let worker = null;
 let jobSeq = 0;
 let jobQueue = Promise.resolve();
@@ -84,9 +85,12 @@ function workerRequest(payload, transfer, { onProgress, signal, doneType }) {
 
     const armStallTimer = (phase) => {
       clearTimeout(stallTimer);
+      const timeout = phase === 'runtime' ? RUNTIME_STALL_MS
+        : phase === 'infer-start' && isAppleWebKit() ? FIRST_INFER_STALL_MS
+          : STALL_MS;
       stallTimer = setTimeout(() => failWorker(
         workerError('AI worker stopped responding during model initialisation or separation', 'AI_STALL')
-      ), phase === 'runtime' ? RUNTIME_STALL_MS : STALL_MS);
+      ), timeout);
     };
     const detachWorker = () => {
       try { w.terminate(); } catch (_) {}
@@ -167,7 +171,7 @@ function runWorker(channels, sampleRate, { onProgress, signal, modelId, forceWas
 /**
  * Separate an AudioBuffer into vocal and instrumental stems.
  * @param {AudioBuffer} audioBuffer
- * @param {{ onProgress?: (phase:'model'|'model-cache'|'cache'|'cache-warning'|'runtime'|'audio'|'fallback'|'infer', frac:number)=>void, signal?: AbortSignal, modelId?: string }} [opts]
+ * @param {{ onProgress?: (phase:'model'|'model-cache'|'cache'|'cache-warning'|'runtime'|'audio'|'fallback'|'infer-start'|'infer', frac:number)=>void, signal?: AbortSignal, modelId?: string }} [opts]
  */
 export function separateStems(audioBuffer, { onProgress, signal, modelId } = {}) {
   return enqueue(async () => {
