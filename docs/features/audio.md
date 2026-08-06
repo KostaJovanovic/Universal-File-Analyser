@@ -224,13 +224,17 @@ btn: Download WAV
 **Notes / limits.** Runs on GPU via WebGPU where available, WASM otherwise.
 WebGPU automatically falls back to WASM if initialisation or inference fails;
 a stalled/crashed GPU worker is also replaced and retried once on WASM.
+WebKit loads the smaller WASM-only runtime, reducing fixed runtime memory on
+older iPhones while retaining ORT's normal inference allocation strategy.
 Download, cache, runtime initialisation, audio preparation and inference are
-reported as separate progress phases, each with a matching percentage and bar,
-so a completed download is not mistaken for a completed separation. Model
+reported as separate progress phases. The first inference window has a distinct
+starting state because no measured percentage exists until it returns; later
+windows show a matching percentage and bar. A completed download is therefore
+not mistaken for a completed separation. Model
 downloads and cached entries are checked against the pinned byte size, and a
 bad cached object is removed before retrying.
-The Standard model and runtime (~85MB total) are part of the "Complete" offline tier (see
-[`pwa-offline.md`](../pwa-offline.md)). The isolate band-stop cuts are re-applied to
+The Standard model and both runtime variants (~96MB total) are part of the
+"Complete" offline tier (see [`pwa-offline.md`](../pwa-offline.md)). The isolate band-stop cuts are re-applied to
 separated stems in parallel (nodes can't be shared across the file
 player's audio context and the stem-blend context), so Isolate edits and
 Separation compose rather than one bypassing the other. Whole-song padding,

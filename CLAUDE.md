@@ -9,7 +9,8 @@ it classifies and analyses it entirely on-device (File API + lazy-loaded WASM),
 uploading nothing. It's vanilla HTML/CSS/ES-module JS — **no framework, no build
 step, no `node_modules`, no tests**. Deployed as static assets to Cloudflare
 (`analyser.valjdakosta.com`) and installable as an offline PWA. The older
-`lab.valjdakosta.com` is still live and serves the same Worker, but
+`lab.valjdakosta.com` is attached to the same Worker but 307-redirects every
+non-`/api/*` request to the canonical host (see `worker/index.js`);
 **`analyser.valjdakosta.com` is the canonical host** - every absolute URL in the
 repo (canonical tags, og/twitter images, JSON-LD, sitemaps, `robots.txt`,
 `llms.txt`, share/export links, the generators' `SITE` constants) must use it.

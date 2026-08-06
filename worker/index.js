@@ -16,10 +16,12 @@
 //   ANALYSED_LIMIT - rate-limit binding: 15 writes / 60s, keyed by hashed IP
 //   IP_SALT        - secret salt for the IP hash (set with `wrangler secret put`)
 //
-// Routing: with a Worker + static assets, requests that match a static file are
-// served directly by Cloudflare and never reach this Worker. Only paths with no
-// matching asset invoke it - so this handler only ever sees /api/* and unknown
-// (SPA) paths, the latter handed straight back to the assets system.
+// Routing: wrangler.jsonc sets run_worker_first for everything except /assets/*,
+// so this handler sees every page request (including ones that match a static
+// file) and hands the non-/api ones back to the assets system via env.ASSETS.
+// That is what makes the legacy-host redirect below possible - without it,
+// lab.valjdakosta.com/about would be served straight from the asset store and
+// never reach this code.
 
 const VISIT_WINDOW = 3 * 24 * 60 * 60; // seconds - one counted visit per IP / 3 days
 
@@ -361,10 +363,28 @@ async function handleLeaderboard(env) {
   return json({ top: await topScores(env) });
 }
 
+// The legacy host. Everything on it (except /api/*, see below) is redirected to
+// the canonical host, path and query preserved.
+const LEGACY_HOST = 'lab.valjdakosta.com';
+const CANONICAL_HOST = 'analyser.valjdakosta.com';
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
+
+    // Legacy-host redirect. 307 (temporary, method-preserving) rather than 301/308
+    // on purpose: browsers cache a permanent redirect indefinitely, so it can't be
+    // undone if the old host ever has to serve something again.
+    //
+    // /api/* is deliberately NOT redirected. Visitors who installed the PWA from
+    // the old host still run a service worker on that origin and post their counts
+    // to lab.../api/*; a cross-origin redirect would fail CORS and silently lose
+    // those stats, so the API keeps answering on both hosts.
+    if (url.hostname === LEGACY_HOST && !path.startsWith('/api/')) {
+      url.hostname = CANONICAL_HOST;
+      return Response.redirect(url.toString(), 307);
+    }
 
     // Everything that isn't an API call is a page/asset (or an SPA deep link) -
     // hand it straight back to the assets system, which applies the same

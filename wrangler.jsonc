@@ -24,8 +24,8 @@
   // site's canonical host became analyser.valjdakosta.com. Both custom domains -
   // analyser.valjdakosta.com (canonical: every canonical tag, sitemap, share URL
   // and absolute link points there) and the legacy lab.valjdakosta.com, which
-  // still serves the same content as a silent mirror - are attached to THIS
-  // service. Changing this name again means re-attaching both custom domains,
+  // now 307-redirects to the canonical host (see worker/index.js) - are attached
+  // to THIS service. Changing this name again means re-attaching both domains,
   // re-adding the IP_SALT secret and re-connecting the GitHub build, so don't.
   "name": "analyser",
   "main": "worker/index.js",
@@ -42,7 +42,16 @@
     // and the service-worker precache use the clean form to match, and the local
     // dev server (serve.py) mirrors this exact routing. not_found_handling serves
     // the custom 404 page (web/404.html) with a 404 status for any unknown path.
-    "not_found_handling": "404-page"
+    "not_found_handling": "404-page",
+    // Normally a request that matches a static file is served straight from the
+    // asset store and never reaches the Worker - which would leave the legacy-host
+    // redirect in worker/index.js unable to see page requests like
+    // lab.valjdakosta.com/about. This routes everything through the Worker first,
+    // which then hands non-/api requests back via env.ASSETS.fetch (same clean
+    // URLs, _headers and 404 handling as before). /assets/* is excluded: it is the
+    // bulk of the requests (js, css, fonts, wasm, vendor) and subresources don't
+    // need redirecting, so they keep bypassing the Worker entirely.
+    "run_worker_first": ["/*", "!/assets/*"]
   },
   "compatibility_flags": ["nodejs_compat"],
   // D1 database backing the counters. database_id is filled in during SETUP above.

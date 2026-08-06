@@ -678,11 +678,25 @@ export function attachViewCube(viewer) {
 // Trigger a browser download of `blob` as `filename` via a throwaway <a>, then
 // revoke the object URL. One revoke policy for the many ad-hoc copies of this.
 export function downloadBlob(filename, blob) {
-  const url = URL.createObjectURL(blob);
+  let appleTouch = false;
+  try {
+    const ua = navigator.userAgent || '';
+    appleTouch = /iPad|iPhone|iPod/.test(ua)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  } catch (_) {}
+  // iOS WebKit can try to preview a typed blob instead of honouring `download`,
+  // or ignore the synthetic link entirely. An attachment MIME type takes its
+  // file-download path; wrapping a Blob does not duplicate its backing bytes.
+  const payload = appleTouch && blob.type !== 'application/octet-stream'
+    ? new Blob([blob], { type: 'application/octet-stream' })
+    : blob;
+  const url = URL.createObjectURL(payload);
   const a = el('a', { href: url, download: filename });
   document.body.appendChild(a);
   a.click();
-  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+  // WebKit may hand the URL to its download process after the click stack ends.
+  // Keep it alive a little longer there; other engines need only the old delay.
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, appleTouch ? 10000 : 1000);
 }
 
 // Create an <img> from a Blob (or an existing object-URL string) whose object URL

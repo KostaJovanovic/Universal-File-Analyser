@@ -47,7 +47,10 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
   // Write straight into the final-length stem. Reading source samples by index
   // gives the same trim padding as a full padded copy, without retaining another
   // whole-song stereo allocation on memory-constrained phones.
-  const stem = [new Float32Array(nSample), new Float32Array(nSample)];
+  // Do not reserve both full-song output channels before the first model call.
+  // That call is ORT's peak start-up allocation and was where 4 GB iPhones lost
+  // the Safari process. Allocate the persistent result only after it succeeds.
+  let stem = null;
   const dims = [1, 4, dimF, dimT];
   const input = new Float32Array(4 * dimF * dimT);
   const chunk = new Float64Array(chunkSize);
@@ -86,6 +89,7 @@ export async function runStemModel({ ch, model, runModel, onProgress }) {
 
     // Run the model -> predicted primary-stem spectrogram (same [1,4,dimF,dimT]).
     const out = await runModel(input, dims);
+    if (!stem) stem = [new Float32Array(nSample), new Float32Array(nSample)];
 
     // ISTFT each channel back to the time domain, keep the middle gen_size.
     for (let cc = 0; cc < 2; cc++) {

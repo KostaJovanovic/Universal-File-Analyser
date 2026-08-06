@@ -1254,6 +1254,7 @@ body.anr-has-file .nav-search { display: flex; }
   border: var(--bd-hairline);
   background: var(--bg);
   color: var(--fg);
+  text-decoration: none;
   cursor: pointer;
   border-radius: 0;
   transition: background var(--dur-fast) ease, color var(--dur-fast) ease, border-color var(--dur-fast) ease;
