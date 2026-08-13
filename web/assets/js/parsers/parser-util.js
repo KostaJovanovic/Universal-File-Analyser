@@ -9,11 +9,16 @@
    _sections, _font). Return null (or a falsy value) to decline and fall through
    to generic handling. A parser should never need to throw - `safe()` turns a
    throw into a graceful decline so one bad parser can't reject the whole render. */
-
 // Wrap a parser so a throw becomes null instead of rejecting renderProprietary.
 // Applied uniformly to both the built-in PARSERS map and the lazy chunk maps, so
 // a built-in parser throw is swallowed the same way a chunk parser throw already
 // was. (undefined and null are treated identically by the renderer downstream.)
 export function safe(fn) {
-  return async (c) => { try { return await fn(c); } catch (_) { return null; } };
+    return async (c) => { try {
+        return await fn(c);
+    }
+    catch (_) {
+        return null;
+    } };
 }
+//# sourceMappingURL=parser-util.js.map

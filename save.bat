@@ -48,9 +48,20 @@ echo.
 
 set SAVE_ERROR=0
 
-for /f %%i in ('git rev-list --count HEAD 2^>nul') do set COMMIT_COUNT=%%i
-if not defined COMMIT_COUNT set COMMIT_COUNT=0
+rem The commit count is the PROJECT's counter, not a property of this clone.
+rem It used to come from `git rev-list --count HEAD`, which is per-device: it
+rem collapses whenever history is squashed, re-initialised, or cloned shallow.
+rem That is exactly what happened - rev-list returned 1, so the next count was
+rem computed as 2 and the public version fell from 8.14 to 0.02.
+rem
+rem Read the committed value out of the source instead. It lives in
+rem src/core/app.ts, which is in the repo, so it is identical on every machine
+rem and only ever moves forward. If it cannot be read we ABORT rather than
+rem guess - a wrong value here sends the public version number backwards.
+for /f %%i in ('powershell -NoProfile -Command "$m=[regex]::Match((Get-Content 'src/core/app.ts' -Raw -Encoding UTF8),'const COMMIT_COUNT = (\d+);'); if($m.Success){$m.Groups[1].Value}"') do set COMMIT_COUNT=%%i
+if not defined COMMIT_COUNT goto countfail
 set /a NEXT_COUNT=%COMMIT_COUNT%+1
+if %NEXT_COUNT% LEQ %COMMIT_COUNT% goto countfail
 
 rem Version label mirrors analyserVersion() in app.js. RELEASES is the list of
 rem commits crowned as major releases - keep it in sync with RELEASE_COMMITS in
@@ -64,14 +75,85 @@ rem -Encoding UTF8 on BOTH ends is required: without it, Get-Content defaults to
 rem the ANSI code page and reads this UTF-8 file as Windows-1252, mangling every
 rem non-ASCII char (e.g. the ellipsis in "Reading file..." became "...â€¦...") a
 rem little more on every commit. Read and write UTF-8 explicitly so it round-trips.
-rem \d* (not \d+) so a previously-blanked "const COMMIT_COUNT = ;" still matches
-rem and self-heals - with \d+ a blank value can never be repaired by this script.
-powershell -Command "(Get-Content 'web/assets/js/core/app.js' -Encoding UTF8) -replace 'const COMMIT_COUNT = \d*;', 'const COMMIT_COUNT = %NEXT_COUNT%;' | Set-Content 'web/assets/js/core/app.js' -Encoding utf8"
+rem NB: COMMIT_COUNT now lives in the TypeScript SOURCE (src/core/app.ts);
+rem web/assets/js/core/app.js is generated and is rewritten by the build below.
+rem \d* (not \d+) so a previously-blanked "const COMMIT_COUNT = ;" is still
+rem rewritten here. Reading the count above uses \d+ and aborts on a blank, so
+rem a damaged value stops the commit rather than silently restarting from 1.
+powershell -Command "(Get-Content 'src/core/app.ts' -Encoding UTF8) -replace 'const COMMIT_COUNT = \d*;', 'const COMMIT_COUNT = %NEXT_COUNT%;' | Set-Content 'src/core/app.ts' -Encoding utf8"
 
 rem Bump the service-worker cache epoch too, so every commit ships fresh JS/CSS
 rem instead of leaving cached clients on a stale shell (stale-while-revalidate
 rem otherwise keeps serving the old code until VERSION changes).
 powershell -Command "(Get-Content 'web/sw.js' -Encoding UTF8) -replace 'const VERSION = ''analyser-v\d+'';', 'const VERSION = ''analyser-v%NEXT_COUNT%'';' | Set-Content 'web/sw.js' -Encoding utf8"
+
+rem ---------------------------------------------------------------------------
+rem Compile src/*.ts -> web/assets/js/*.js BEFORE any generator runs. Four
+rem generators (prerender-samples/formats/format-pages, stamp-counts) import the
+rem emitted web/assets/js/core/formats.js into Node, so they must see fresh output.
+rem
+rem tsc exits non-zero for TYPE errors even though it still emits correct JS.
+rem During the TS migration there are outstanding type errors by design, so the
+rem exit code is not the gate - tools/check-build.mjs is. It verifies every
+rem source has fresh output, which is the failure that actually ships bad code.
+rem (Once the migration reaches full strict, make these two calls fatal too.)
+rem TS1xxx vs TS2xxx matters here. TS2xxx are TYPE errors: tsc still emits
+rem correct JS, and there are plenty of them mid-migration, so they must not
+rem block a commit. TS1xxx are SYNTAX/grammar errors: the parse failed, so the
+rem emitted JS for that file may be wrong or truncated - that must never ship.
+echo [build] tsc src -^> web/assets/js
+call npx tsc -p tsconfig.json > "%TEMP%\anr-tsc.log" 2>&1
+call npx tsc -p tsconfig.worker.json > "%TEMP%\anr-tsc-w.log" 2>&1
+copy /b "%TEMP%\anr-tsc.log"+"%TEMP%\anr-tsc-w.log" "%TEMP%\anr-tsc-all.log" >nul 2>&1
+
+rem Syntax errors first - the parse failed, so the emitted JS may be wrong.
+findstr /R /C:"error TS1[0-9][0-9][0-9]:" "%TEMP%\anr-tsc-all.log" >nul
+if not errorlevel 1 goto syntaxfail
+
+rem Type errors are expected while the migration to full strict is in progress.
+rem Print a one-line count instead of thousands of lines of console noise; the
+rem full log stays on disk for when you actually want to work through them.
+rem NB: goto rather than an if(...) block - see the parenthesis note further down.
+set TSERRS=0
+for /f %%c in ('type "%TEMP%\anr-tsc-all.log" ^| find /c "error TS"') do set TSERRS=%%c
+if "%TSERRS%"=="0" goto tsclean
+echo [build] emitted OK - %TSERRS% type error(s) outstanding, see %TEMP%\anr-tsc-all.log
+goto tsdone
+:tsclean
+echo [build] emitted OK - no type errors
+:tsdone
+
+echo [chk]  build freshness
+node --no-warnings tools/check-build.mjs
+if errorlevel 1 goto buildfail
+goto buildok
+:syntaxfail
+echo.
+echo [FATAL] TypeScript SYNTAX errors - aborting commit.
+echo         These are parse failures, so the emitted JS may be wrong or
+echo         truncated. Type errors are expected mid-migration and do NOT stop
+echo         a commit; only these do:
+echo.
+findstr /R /C:"error TS1[0-9][0-9][0-9]:" "%TEMP%\anr-tsc-all.log"
+pause
+exit /b 1
+:countfail
+echo.
+echo [FATAL] Could not read COMMIT_COUNT from src/core/app.ts - aborting.
+echo         Expected a line of the form:  const COMMIT_COUNT = 270;
+echo         Refusing to guess: a wrong value sends the public version number
+echo         backwards (a bad count once turned 8.14 into 0.02).
+pause
+exit /b 1
+:buildfail
+echo.
+echo [FATAL] Build output is missing or stale - aborting commit.
+echo         Committing now would ship the previous build against new sources.
+echo         Fix the build, then run save.bat again.
+echo         (Nothing was staged or committed.)
+pause
+exit /b 1
+:buildok
 
 rem Rebuild the /samples gallery from the files in the samples/ directory, so the
 rem clickable example cards always match the folder. Run first, before every other

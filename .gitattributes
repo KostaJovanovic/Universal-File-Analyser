@@ -35,3 +35,7 @@
 *.webm  binary
 *.zip   binary
 *.gz    binary
+
+# TypeScript sources (src/) - LF like everything else.
+*.ts text eol=lf
+*.d.ts text eol=lf

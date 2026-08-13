@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "name": "analyser",
+  "description": "Build tooling for Analyser. The site itself ships no runtime dependencies - this exists only so tsc can compile src/*.ts into web/assets/js/.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
+    "watch": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.worker.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

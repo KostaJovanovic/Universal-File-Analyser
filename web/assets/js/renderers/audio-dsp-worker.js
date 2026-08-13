@@ -15,24 +15,25 @@
    jobId is echoed on every reply because the client keeps ONE worker alive for
    the page - the compare view analyses two files at once, and without the id
    each job would consume the other's results. */
-
 import { audioDspPasses } from './audio-dsp.js';
-
 self.addEventListener('message', async (e) => {
-  const m = e.data;
-  if (!m || m.type !== 'run') return;
-  const { jobId, channels, sampleRate, needBpm } = m;
-  try {
-    // No onTick in the worker: the passes run straight through (blocking this thread
-    // is the point). audioDspPasses is an async generator, so drain it with for-await.
-    for await (const [name, value] of audioDspPasses({ channels, sampleRate, needBpm })) {
-      self.postMessage({ type: 'pass', jobId, name, value });
+    const m = e.data;
+    if (!m || m.type !== 'run')
+        return;
+    const { jobId, channels, sampleRate, needBpm } = m;
+    try {
+        // No onTick in the worker: the passes run straight through (blocking this thread
+        // is the point). audioDspPasses is an async generator, so drain it with for-await.
+        for await (const [name, value] of audioDspPasses({ channels, sampleRate, needBpm })) {
+            self.postMessage({ type: 'pass', jobId, name, value });
+        }
+        self.postMessage({ type: 'done', jobId });
     }
-    self.postMessage({ type: 'done', jobId });
-  } catch (err) {
-    // Individual passes catch their own failures, so reaching here means
-    // something structural went wrong (bad input, out of memory). Report it and
-    // let the client fall back to the inline path.
-    self.postMessage({ type: 'error', jobId, message: (err && err.message) || String(err) });
-  }
+    catch (err) {
+        // Individual passes catch their own failures, so reaching here means
+        // something structural went wrong (bad input, out of memory). Report it and
+        // let the client fall back to the inline path.
+        self.postMessage({ type: 'error', jobId, message: (err && err.message) || String(err) });
+    }
 });
+//# sourceMappingURL=audio-dsp-worker.js.map

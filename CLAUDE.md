@@ -27,10 +27,32 @@ overrides any default tendency to wrap up a task by committing or changelogging.
 
 ## Commands
 
-There is no build, lint, or test pipeline — editing a file *is* the dev loop.
-There is nothing to run to verify a change except loading it in the browser, and
-**the user does that themselves** — don't spin up dev servers, headless browsers,
-or automated checks to "confirm it works". Make the change and hand it back.
+> **The app JS is TypeScript now. Edit `src/`, never `web/assets/js/`.**
+> `web/assets/js/**/*.js` is **generated build output** - `tsc` overwrites it on
+> every build, so an edit there is silently lost on the next compile. The 176
+> sources live in `src/` (same tree shape: `core/`, `renderers/`, `parsers/`,
+> `lib/`, `games/`), and the module inventory moved to `src/CLAUDE.md`.
+
+There is still no lint or test pipeline, and there is nothing to run to verify a
+change except loading it in the browser - and **the user does that themselves**.
+Don't spin up dev servers, headless browsers, or automated checks to "confirm it
+works". Make the change and hand it back.
+
+The one thing that *is* required now: **`src/` edits do nothing until `tsc`
+recompiles.** `server.bat` starts two watcher windows for this. To build once by
+hand: `npx tsc -p tsconfig.json && npx tsc -p tsconfig.worker.json`.
+(Two configs because `lib.dom` and `lib.webworker` can't share one program - the
+three module workers compile under `tsconfig.worker.json`.)
+
+The migration is mid-flight: `strict` is off and there are outstanding type
+errors by design. They do **not** block the build - `tsc` still emits correct JS
+- so don't treat a red `tsc` as a broken build, and `save.bat` prints only a
+count rather than the whole dump (full log path is printed with the count).
+
+Two things *are* fatal at commit time. **Syntax errors (TS1xxx)** mean the parse
+failed, so the emitted JS may be wrong or truncated - `save.bat` prints those
+lines and aborts. And `tools/check-build.mjs` fails when output is missing or
+stale relative to `src/`. Everything else is advisory.
 
 - **Run locally**: `server.bat` launches
   `serve.py` on port **3000** and opens a browser. Use this, not
@@ -105,12 +127,14 @@ automatically when you work in that tree.
   device tiering, "too large" walls, mobile OOM guards, decompression-bomb
   ceilings, first-N-byte read budgets. Don't hardcode a new threshold in a
   renderer; add it there.
-- **Every new module under `assets/js/` must be added to `SHELL` in `web/sw.js`.**
+- **Every new module under `src/` must be added to `SHELL` in `web/sw.js`.**
   That list enumerates the precached shell by path — a module missing from it
   silently breaks offline use, and `check-shell` only reports the gap at commit
-  time (non-fatally). Add it to the inventory in `web/assets/js/CLAUDE.md` in the
-  same pass — that file is the map the next session reads first, and it drifts
-  silently otherwise.
+  time (non-fatally). List it by its **emitted** path (`assets/js/<...>.js`), not
+  its `.ts` source path: `sw.js`, `offline-tiers.js` and `check-shell.mjs` all
+  operate on the compiled output. Add it to the inventory in `src/CLAUDE.md` in
+  the same pass — that file is the map the next session reads first, and it
+  drifts silently otherwise.
 - **The missing CSP in `web/_headers` is a decision, not an oversight.** The app
   lazy-loads WASM, spawns blob/module workers and uses `data:` URIs, so a
   wrong policy silently breaks individual viewers with no build-time signal.
@@ -209,11 +233,24 @@ stamp-head and stamp-footer `PAGES`.
 REPO ROOT           — deploy config, dev/app scripts, and the folders below.
                       The website itself lives entirely in web/.
 save.bat            — commit + version bump + push (the only way to commit; bumps
-                      COMMIT_COUNT in web/assets/js/core/app.js and the cache epoch
-                      in web/sw.js)
-server.bat          — launch serve.py on :3000 (opens browser)
+                      COMMIT_COUNT in src/core/app.ts and the cache epoch in
+                      web/sw.js, then runs the tsc build before every generator)
+server.bat          — launch serve.py on :3000 + two tsc --watch windows
 serve.py            — local dev server mirroring Cloudflare clean-URL routing
                       (its document root is web/)
+src/                — THE APP SOURCE (TypeScript). Mirrors the old
+                      web/assets/js/ tree exactly: core/ renderers/ parsers/
+                      lib/ games/. tsc compiles it 1:1 into web/assets/js/.
+                      Module inventory: src/CLAUDE.md (loads automatically).
+types/              — ambient .d.ts (window._anr* channel + UMD vendor globals)
+tsconfig.json       — main compile (DOM lib) -> web/assets/js/
+tsconfig.worker.json— the 3 module workers (WebWorker lib; can't share a program
+                      with DOM). Both must run to produce a complete build.
+package.json        — dev-only; ONE devDependency (typescript). MUST keep
+                      "type": "module" - without it Node treats the emitted
+                      browser ESM as CommonJS and every generator that imports
+                      core/formats.js dies with a syntax error.
+node_modules/       — gitignored; exists only so tsc can run
 wrangler.jsonc      — Cloudflare static-asset deploy config (assets.directory = "web")
 README.md           — public GitHub readme (visitor-facing overview; this
                       file is the real working guidance)
@@ -291,6 +328,8 @@ web/                — THE WEBSITE, served at "/" by Cloudflare (assets.directo
                         headers site-wide + immutable caching for /assets/fonts;
                         consumed by the deploy, never served, not applied by serve.py)
   assets/             — css / fonts / img / vendor + all the app JS.
+                        NB: assets/js/ is GENERATED from src/ by tsc - never
+                        edit or add a module there; edit src/ instead.
                         analyser.css is the central stylesheet (docs.css layers
                         on it for /docs only); vendor/ is third-party code
                         (exifr, ffmpeg, imagemagick, ...). Module-by-module JS

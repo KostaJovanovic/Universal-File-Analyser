@@ -1,0 +1,1457 @@
+/* Analyser - shared utilities
+   DOM helpers and small formatters used by every module. */
+
+import { HASH_JS_MAX } from './limits.js';
+
+// Origin to prefix onto /api/... calls. Always same-origin - the site calls
+// /api/* on its own domain.
+export const API_ORIGIN = '';
+
+/** Anything el() accepts as a child: text, a node, or a skipped falsy slot. */
+export type ElChild = string | Node | null | undefined | false;
+/** Attribute bag. `class` sets className, `html` sets innerHTML, `onX` binds a
+    listener, everything else becomes a plain attribute - see the loop below. */
+export type ElAttrs = Record<string, any>;
+
+// Overloads only - the implementation signature below is deliberately loose and
+// is NOT visible to callers. The tag-name overload is what makes `el('canvas')`
+// return an HTMLCanvasElement rather than a bare HTMLElement, which is worth a
+// lot across ~225 call sites; the string overload keeps computed tags working.
+export function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K, attrs?: ElAttrs, children?: ElChild | ElChild[],
+): HTMLElementTagNameMap[K];
+export function el(
+  tag: string, attrs?: ElAttrs, children?: ElChild | ElChild[],
+): HTMLElement;
+export function el(tag: string, attrs: ElAttrs = {}, children: any = []) {
+  const e = document.createElement(tag);
+  for (const k in attrs) {
+    if (k === 'class') e.className = attrs[k];
+    else if (k === 'html') e.innerHTML = attrs[k];
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), attrs[k]);
+    else e.setAttribute(k, attrs[k]);
+  }
+  for (const c of (Array.isArray(children) ? children : [children])) {
+    if (c == null) continue;
+    e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+  return e;
+}
+
+// Plain-language explanations for non-obvious readout labels. Any row() whose
+// label is a key here automatically gains the standard [?] tooltip - the same
+// affordance rowHelp adds explicitly - so the renderer tables and the
+// proprietary-parser `fields` readouts (rendered through row()) stay consistent
+// without touching hundreds of call sites. Only labels whose meaning is the same
+// everywhere they appear are listed; generic/ambiguous labels (Type, Format,
+// Name, Title, Size, Date, Version, Resolution…) are intentionally left plain.
+export const LABEL_HELP = {
+  // --- Media: containers, codecs, streams ---
+  'Container': 'The kind of file that wraps the video and sound together and keeps them in step - for example MP4, MKV or WebM. It is separate from the recipe (codec) used to squeeze the picture and sound, so the same kind of file can hold different codecs.',
+  'Codec': 'The recipe used to squeeze the picture or sound down to a manageable size - for example H.264 for video or AAC for audio. It is chosen separately from the container file that holds it.',
+  'Audio codec': 'The recipe used to squeeze the sound down to a manageable size - for example AAC, MP3 or Opus. It is chosen separately from the file that holds it.',
+  'Video codec': 'The recipe used to squeeze the picture down to a manageable size - for example H.264, HEVC or AV1. It is chosen separately from the file that holds it.',
+  'Aspect ratio': 'The shape of the picture - how wide it is compared with how tall, for example 16:9 (a typical widescreen shape). Shown as the exact pixel ratio, sometimes next to the nearest standard shape.',
+  'Frame rate': 'How many still pictures are shown each second to make the moving image (measured in fps, frames per second). Higher numbers look smoother; 24, 25, 30 and 60 are common.',
+  'Bitrate': 'How much data is spent on each second of audio or video. More data usually means better quality and a bigger file.',
+  'Sample rate': 'How many times per second the sound was measured when recorded (44,100 times a second is CD quality). Higher numbers can capture higher-pitched sound.',
+  'Bit depth': 'How finely each sound measurement, or each colour, is recorded - counted in bits. More bits give smoother sound and finer colour shades, but a slightly bigger file.',
+  'Channels': 'How many separate sound signals are stored (1 is mono, 2 is stereo, 6 is 5.1 surround, and so on).',
+  'Compression': 'The way the file’s data has been shrunk to save space. Lossless keeps every last detail; lossy throws away some detail you are unlikely to notice in order to make the file smaller.',
+  // --- Text & encoding ---
+  'Encoding': 'The system used to turn the text into the raw data stored in the file (for example UTF-8 or UTF-16). Read it with the wrong system and the characters come out garbled.',
+  'Code page': 'An older table for turning stored data back into letters and symbols (for example Windows-1252). Read the text with the wrong code page and you get garbled characters.',
+  'Line endings': 'The hidden marker that shows where each line stops - LF on Mac and Linux, CRLF on Windows. It often hints at which kind of computer made the file.',
+  'Units': 'The units the file uses for its sizes and coordinates, such as millimetres or inches.',
+  // --- Photo / EXIF ---
+  'Orientation': 'Which way up the camera was held for the shot, recorded in the photo’s hidden EXIF details. Viewers use it to turn the picture upright automatically.',
+  'Temperature': 'The colour of the light the camera set itself for (its white balance), measured in kelvin. Lower numbers are warmer and more orange, higher numbers are cooler and more blue.',
+  // --- Detection / sniffing ---
+  'Detected original format': 'What the file really is, worked out from its actual contents rather than its name - the two can differ if a file has been renamed.',
+  'Confidence': 'How sure the tool is about its answer, based on how closely the file’s contents match a known format’s tell-tale pattern.',
+  'Recognised tokens': 'How many familiar keywords or markers turned up while scanning the file - the clues used to work out its format.',
+  'DHT': 'A section inside a JPEG (its ‘Define Huffman Table’) that stores the lookup tables used to shrink the picture.',
+  // --- Documents / office ---
+  'Tracked changes': 'Whether the document has been keeping a record of edits - every insertion and deletion - made while revision tracking was switched on.',
+  'Track changes': 'Whether the document has been keeping a record of edits - every insertion and deletion - made while revision tracking was switched on.',
+  'Macros': 'Small programs saved inside the document that can run automatically. They can be useful, but are also a common way to hide malware - so treat unexpected ones with caution.',
+  'Document protection': 'Limits the author placed on the document, such as blocking editing, formatting or printing.',
+  'Restricted actions': 'Things the author has locked in this document, such as editing, copying or printing.',
+  'Hidden slides': 'Slides that are still in the file but set not to appear when the presentation is played.',
+  'Hidden slides (declared)': 'Slides that are still in the file but set not to appear when the presentation is played.',
+  'Hidden sheets': 'Worksheets that are in the workbook but hidden from view in the spreadsheet.',
+  'Named ranges': 'Groups of spreadsheet cells given a name, so formulas can point to them by that name instead of grid coordinates like B2:B20.',
+  'External workbook links': 'Links to data kept in other files or on the web, which this document pulls in when it is opened.',
+  'External links': 'Links to data kept in other files or on the web, which this document pulls in when it is opened.',
+  'Editing time': 'The total time the document reports having been open for editing, added up and kept in its own hidden details.',
+  'Reading direction': 'Which way the content flows - left to right, or right to left (as in Arabic and Hebrew text, or manga).',
+  'TOC entries': 'How many items are listed in the document’s table of contents.',
+  // --- Subtitles / lyrics ---
+  'Cues': 'A cue is one timed subtitle - a line of text plus the moment it appears on screen and the moment it disappears.',
+  'Timestamped': 'Whether each line comes with timing information, so the lyrics or subtitles can be kept in step with playback.',
+  // --- CSV / tabular ---
+  'Delimiter confidence': 'How sure the tool is that it spotted the right character separating the columns (often a comma, tab or semicolon).',
+  'Data rows': 'How many rows hold actual data, not counting the header row at the top.',
+  // --- Fitness / GPS tracks ---
+  'Cadence': 'How fast you were pedalling or stepping during the activity, usually counted per minute.',
+  'Average pace': 'The average time taken to cover each unit of distance, such as minutes per kilometre.',
+  'Total descent': 'The total height dropped over the route, adding up every downhill stretch.',
+  // --- 3D printing / slicing ---
+  'Layer height': 'How thick each printed layer is. Thinner layers capture finer detail but take longer to print.',
+  'Nozzle temp': 'How hot the printer heats its nozzle to melt the plastic filament.',
+  'Bed temp': 'How warm the print bed is kept, which helps the first layer stick and stops the print warping.',
+  'Nozzle': 'The nozzle width the file was prepared (sliced) for, which sets how wide each line of melted plastic is laid down.',
+  'Slicer': 'The software that turned the 3D model into step-by-step printer instructions (G-code), such as Cura or PrusaSlicer.',
+  'Print size': 'How much space the finished print takes up - its width, depth and height.',
+  'Layout': 'How the data is arranged inside the file.',
+  // --- CNC / G-code ---
+  'G-code type': 'Which style of G-code (the instruction language a machine follows) this is - it varies between different machines and controllers, such as a 3D printer, CNC mill or laser cutter.',
+  'CAM software': 'The program that worked out the cutting paths (the G-code) from a CAD design - its CAM, or computer-aided-manufacturing, software.',
+  'Controller': 'The machine’s control box or firmware the G-code is written for, which decides which commands it will understand.',
+  'Likely machine': 'A best guess at what kind of machine this G-code drives - a 3D printer, CNC router or laser cutter - worked out from the commands it uses.',
+  'Coolant': 'Whether and how the program turns on cutting coolant - the fluid used in machining to cool the tool and wash away chips.',
+  'Max feed rate': 'The fastest movement speed (the feed rate) commanded anywhere in the program.',
+  'Max spindle / power': 'The highest speed of the spinning cutting tool (on a mill or router), or the highest laser power, asked for anywhere in the program.',
+  'Work offsets': 'Saved reference points (G54-G59) a CNC program switches between to know where the workpiece sits on the table.',
+  'Canned cycles': 'Built-in machining routines, such as drilling or tapping, each done with a single G-code command instead of spelling out every move.',
+  'Arc moves': 'How many curved tool movements (G2/G3) the program uses, as opposed to straight-line ones.',
+  'Tool': 'The cutting tool the program picks, named by its number in the tool changer.',
+  'Tools used': 'The set of cutting tools the program calls on, named by their numbers in the tool changer.',
+  // --- MIDI / music ---
+  'PPQ (ticks/beat)': 'How finely the MIDI file measures time within each beat - its pulses per quarter note. Higher numbers allow more precise timing.',
+  'Tempo': 'How fast the music plays, in beats per minute (BPM).',
+  'Time signature': 'How the beats are grouped into bars, written like a fraction such as 4/4 or 3/4.',
+  // --- Torrents ---
+  'Piece size': 'The size of each equal chunk a torrent splits its data into for sharing and checking.',
+  'Pieces': 'How many equal-sized chunks the torrent’s data is split into; each one is checked on its own as it downloads.',
+  'Tracker': 'A server that helps a torrent’s downloaders find one another so they can swap pieces.',
+  'Trackers': 'Servers that help a torrent’s downloaders find one another so they can swap pieces.',
+  // --- CAD exchange (STEP / IGES) ---
+  'Implementation level': 'For a STEP or IGES CAD file, which portion of the standard the file keeps to.',
+  'Originating system': 'The CAD program that first created this exchange file.',
+  'Sending system': 'The system that exported or sent out this exchange file.',
+  'Schema': 'The rulebook the file follows (for example AP203 or AP214 for STEP), which sets out what kinds of information it may contain.',
+  'Schema version': 'Which version of that rulebook the file follows.',
+  // --- Disk images ---
+  'Disk GUID': 'A unique identifier stored on a GPT-formatted disk so it can be told apart from any other disk.',
+  'Partitioning': 'How the disk is divided into sections - MBR (the older scheme) or GPT (the modern one).',
+  'Partitions': 'How many separate storage sections (partitions) the disk image is divided into.',
+  // --- Logs ---
+  'Log format': 'The recognised layout of the log lines, such as Apache combined, JSON or syslog.',
+  'Log levels (sample)': 'A sample of the importance levels seen in the log, such as INFO, WARN and ERROR.',
+  'IPs (sample)': 'A sample of the IP addresses (network addresses) that appear in the log.',
+  // --- Windows shortcut (.lnk) / OS links ---
+  'Relative path': "Where the target file sits, written in relation to the shortcut's own folder - so the link still works if the pair is moved together.",
+  'Working directory': 'The folder the target program treats as its home base when it is launched from this shortcut.',
+  'Arguments': 'Extra command-line instructions handed to the target program each time you run the shortcut.',
+  'Window': 'How the program’s window opens when you run the shortcut - normal, maximised or minimised.',
+  'Icon location': 'The file the shortcut takes its displayed icon from.',
+  'Hotkey': 'A keyboard shortcut set to launch this link from anywhere.',
+  // --- Certificates / keys / crypto ---
+  'Issuer': 'The trusted authority that issued this certificate and signed it, vouching for who it belongs to.',
+  'Valid from': 'The date the certificate starts being valid; before this date it is not yet trusted.',
+  'Valid to': 'The date the certificate expires; after this it is no longer trusted and software will warn you.',
+  'Serial': 'The serial number the issuing authority gave this certificate, unique among the ones that authority issues.',
+  'Signature': 'The maths used to cryptographically sign the certificate or file, tying its contents to the signer so any later change would show.',
+  'Key size': 'The length of the cryptographic key, measured in bits. Longer keys are harder to break but a little slower; 2048-bit RSA or 256-bit elliptic-curve are typical.',
+  'Key type': 'The family of cryptographic maths the key uses, such as RSA, ECDSA or Ed25519.',
+  'Recovery ID': 'A small extra value kept with some signatures that lets the signer’s public key be worked out from the signature itself.',
+};
+
+// Build a <th> for a readout row. If `helpText` is given (passed explicitly via
+// rowHelp, or looked up in LABEL_HELP by row()), the label gets the standard [?]
+// info button + click-to-reveal tooltip - the same affordance everywhere, so the
+// renderer tables and the proprietary-parser readouts stay consistent.
+function helpTh(label, helpText) {
+  const th = el('th', {});
+  if (!helpText) { th.textContent = label; return th; }
+  if (!helpTh._init) {
+    helpTh._init = true;
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.anr-tip.is-active').forEach(t => t.classList.remove('is-active'));
+    });
+  }
+  th.appendChild(document.createTextNode(label + ' '));
+  const btn = el('button', { type: 'button', class: 'anr-tip-btn', title: 'Info' }, '[?]');
+  const tip = el('div', { class: 'anr-tip' }, helpText);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasActive = tip.classList.contains('is-active');
+    document.querySelectorAll('.anr-tip.is-active').forEach(t => t.classList.remove('is-active'));
+    if (!wasActive) tip.classList.add('is-active');
+  });
+  th.appendChild(btn);
+  th.appendChild(tip);
+  return th;
+}
+
+export function row(label, value) {
+  return el('tr', {}, [
+    helpTh(label, LABEL_HELP[label]),
+    el('td', {}, value == null || value === '' ? '-' : String(value))
+  ]);
+}
+
+// True when a read failure looks like an unavailable/cloud-only file rather than
+// a corrupt/unsupported one. OneDrive/iCloud/etc. "online-only" placeholders
+// throw NotReadableError/NotFoundError when their sync app can't hydrate them.
+export function isUnreadableError(e) {
+  if (!e) return false;
+  const name = e.name || '';
+  const msg = (e.message || '').toLowerCase();
+  return name === 'NotReadableError' || name === 'NotFoundError' ||
+    msg.includes('could not be read') ||
+    msg.includes('a requested file or directory could not be found') ||
+    (msg.includes('permission') && msg.includes('file'));
+}
+
+// Probe whether a File's bytes are actually readable. Returns null on success,
+// or the thrown error on failure. Used to detect cloud-only placeholders before
+// a renderer fails deep in its pipeline. Reads the head AND the last byte: a
+// OneDrive/iCloud "online-only" file often serves a cached header (so a 1-byte
+// head read passes) while the body/tail isn't on disk, so the tail read is what
+// reliably trips. (Any successful read also triggers the sync app to hydrate the
+// whole file, which is what a renderer would do anyway.)
+export async function probeReadable(file) {
+  if (!file || file.size === 0) return null;
+  try {
+    await file.slice(0, Math.min(file.size, 65536)).arrayBuffer();
+    if (file.size > 65536) await file.slice(file.size - 1, file.size).arrayBuffer();
+    return null;
+  } catch (e) {
+    return e;
+  }
+}
+
+// A friendly "this file can't be read" card body, tailored to the cloud-only
+// case (the overwhelmingly common cause of an otherwise-valid File failing).
+export function cloudFileWarning(file) {
+  const box = el('div', { class: 'anr-error anr-cloud-warning' });
+  box.appendChild(el('p', { style: 'margin:0 0 10px; font-weight:600;' },
+    'Couldn’t read “' + ((file && file.name) || 'this file') + '”.'));
+  box.appendChild(el('p', { style: 'margin:0 0 10px;' },
+    'It looks like a cloud-only file (OneDrive, iCloud Drive, Google Drive, Dropbox…) whose contents aren’t on this device yet, or whose sync app isn’t running. The name and size are known, but the actual bytes couldn’t be downloaded.'));
+  const ul = el('ul', { style: 'margin:0; padding-left:18px;' }, [
+    el('li', {}, 'Make sure OneDrive (or your sync app) is running and signed in.'),
+    el('li', {}, 'In the file manager, right-click the file → “Always keep on this device”, wait for the download to finish, then try again.'),
+  ]);
+  box.appendChild(ul);
+  return box;
+}
+
+// A friendly "this file is empty" card body. A zero-length file passes the read
+// probe (there's nothing to read) but every renderer then fails deep in its
+// pipeline with a cryptic "unexpected end"/blank result - so we intercept it
+// up front and explain plainly that the file holds no data.
+export function emptyFileWarning(file) {
+  const box = el('div', { class: 'anr-error anr-empty-warning' });
+  box.appendChild(el('p', { style: 'margin:0 0 10px; font-weight:600;' },
+    '“' + ((file && file.name) || 'This file') + '” is empty - it’s 0 bytes, so there’s nothing to open or analyse.'));
+  box.appendChild(el('p', { style: 'margin:0 0 10px;' },
+    'This isn’t something Analyser can fix: a zero-length file contains no data at all, so it can’t be viewed or repaired. It usually means the file never finished being written.'));
+  const ul = el('ul', { style: 'margin:0; padding-left:18px;' }, [
+    el('li', {}, 'A download, copy or save that was interrupted before any bytes were written.'),
+    el('li', {}, 'A placeholder left behind by a recovery, carving or export tool when it couldn’t extract the file.'),
+    el('li', {}, 'A cloud sync app (OneDrive, iCloud Drive, Google Drive…) that created the file but hasn’t filled it in yet.'),
+  ]);
+  box.appendChild(ul);
+  box.appendChild(el('p', { style: 'margin:10px 0 0;' },
+    'Look for another copy of the same file - a working version is often saved right alongside it (for example with a “(1)” suffix). If this is the only copy, the data is gone and can’t be recovered from an empty file.'));
+  return box;
+}
+
+// Standard inline error notice (styled by .anr-error). The canonical way for a
+// renderer to report that a file couldn't be read or parsed.
+export function errorCard(message) {
+  return el('div', { class: 'anr-error' }, message);
+}
+
+// Monospace ASCII progress bar - the [////////        ] look used everywhere a
+// loading bar appears. Two modes share the same glyphs so every loader reads the
+// same way:
+//   bar.set(frac)        determinate fill (0–1), left-to-right
+//   bar.indeterminate()  a window of slashes that bounces left↔right, for work
+//                        whose length isn't known up front
+//   bar.stop()           halt the animation
+// The indeterminate animation runs on rAF and stops itself once the element is
+// detached from the DOM, so callers don't have to tear it down.
+export function asciiBar(opts: any = {}) {
+  if (typeof opts === 'number') opts = { width: opts };   // back-compat
+  const fit = !!opts.fit;            // size to fill the parent (e.g. popup card)
+  const SWEEP = 1900;                // ms for one left→right pass (indeterminate)
+  let W = opts.width || 20;
+  let win = Math.max(4, Math.round(W * 0.25));
+  const bar = el('div', { class: 'anr-progress-bar' });
+  let raf = null, seen = false, t0 = null;
+
+  // fit:true → recompute the character count so the bar spans its container.
+  // Measured lazily, once the bar is actually in the DOM (clientWidth is 0
+  // before that). Uses the same font-size×0.6 monospace estimate as the app's
+  // other progress bars.
+  function measure() {
+    if (!fit || !bar.parentElement) return;
+    const ch = (parseFloat(getComputedStyle(bar).fontSize) || 13) * 0.6;
+    // Measure the bar's own content box, not the parent's clientWidth - the
+    // latter includes the container padding, which would over-count characters
+    // and overflow the box, clipping the trailing "]".
+    const avail = bar.clientWidth || bar.parentElement.clientWidth;
+    const n = Math.floor(avail / ch) - 2; // minus brackets
+    W = Math.max(10, Math.min(80, n));
+    win = Math.max(4, Math.round(W * 0.25));
+  }
+  function paintRange(start, len) {
+    start = Math.max(0, Math.min(W - len, start));
+    bar.innerHTML = '[' + ' '.repeat(start) +
+      '<span class="anr-bar-fill">' + '/'.repeat(len) + '</span>' +
+      ' '.repeat(Math.max(0, W - len - start)) + ']';
+  }
+  bar.set = (frac) => {
+    bar.stop();
+    measure();
+    const filled = Math.round(Math.max(0, Math.min(1, frac)) * W);
+    bar.innerHTML = '[<span class="anr-bar-fill">' + '/'.repeat(filled) + '</span>' +
+      ' '.repeat(Math.max(0, W - filled)) + ']';
+  };
+  bar.indeterminate = () => {
+    if (raf) return;
+    let measured = false;
+    const loop = (ts) => {
+      if (bar.isConnected) seen = true;
+      else if (seen) { raf = null; return; }   // removed from DOM → self-stop
+      if (!measured && bar.isConnected) { measure(); measured = true; }
+      if (t0 == null) t0 = ts;
+      const span = Math.max(1, W - win);
+      const u = ((ts - t0) % (2 * SWEEP)) / SWEEP;   // 0..2 over a full cycle
+      const tri = u <= 1 ? u : 2 - u;                // 0→1→0 triangle (bounce)
+      paintRange(Math.round(tri * span), win);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+  };
+  bar.stop = () => { if (raf) { cancelAnimationFrame(raf); raf = null; } };
+  bar.set(0);
+  return bar;
+}
+
+// Small inline "working…" indicator with an indeterminate ASCII bar. Used to
+// fill a card while a slower piece (e.g. a treemap for a huge folder) builds.
+export function inlineLoader(text) {
+  const bar = asciiBar();
+  bar.indeterminate();
+  return el('div', { class: 'anr-inline-loader' }, [
+    el('span', { class: 'anr-inline-loader-label' }, text || 'Loading…'),
+    bar
+  ]);
+}
+
+// Hand the thread back to the browser so queued input, scrolling and painting get
+// a turn before the next slice of a long job. Without this a chain of heavy
+// synchronous passes locks the page up completely - the tab stops scrolling and
+// clicks queue until the whole chain finishes.
+//
+// rAF is the right wake-up when the page is visible (the browser gets to paint
+// first), but it never fires in a background tab, so fall back to a timeout there
+// and keep working rather than stalling until the user returns.
+// Both helpers below race their rAF against a timeout. rAF is not guaranteed to
+// fire: a background tab stops it (caught by document.hidden), but so does an
+// occluded window and some iOS low-power states, where document.hidden can still
+// read false. Without the race an await here would never resolve and the whole
+// render would wedge with the drop loader stuck on screen. The timeout only ever
+// makes us continue early, never late, so it is safe to lose the race.
+export function yieldToMain(timeoutMs = 200) {
+  return new Promise((r) => {
+    if (document.hidden) { setTimeout(r, 0); return; }
+    let done = false;
+    const finish = () => { if (done) return; done = true; r(); };
+    requestAnimationFrame(finish);
+    setTimeout(finish, timeoutMs);
+  });
+}
+
+// Resolve only once the browser has actually PAINTED. Subtle but important: a
+// single requestAnimationFrame callback runs *before* the paint of that frame, so
+// `await yieldToMain()` guarantees the DOM change is queued, not that anyone can
+// see it - if heavy synchronous work follows, it blocks the paint and the loader
+// you just inserted never appears at all. Two rAFs in a row put us on the far side
+// of a real paint. Use this before handing the thread to a long blocking job whose
+// "working…" indicator has to be visible while it runs.
+export function afterPaint(timeoutMs = 400) {
+  return new Promise((r) => {
+    if (document.hidden) { setTimeout(r, 0); return; }
+    let done = false;
+    const finish = () => { if (done) return; done = true; r(); };
+    requestAnimationFrame(() => requestAnimationFrame(finish));
+    setTimeout(finish, timeoutMs);
+  });
+}
+
+export function rowHelp(label, value, helpText) {
+  return el('tr', {}, [
+    helpTh(label, helpText),
+    el('td', {}, value == null || value === '' ? '-' : String(value))
+  ]);
+}
+
+// Build a standard .anr-readout table from a list of rows. Each row is either a
+// [label, value] pair (rendered via row(), so LABEL_HELP tooltips and the '-'
+// empty placeholder apply) or an already-built <tr> node (e.g. rowHelp(),
+// sha256Row()). Falsy entries are skipped, so conditional rows can be written
+// inline as `cond && ['Label', value]`.
+export function buildReadout(rows) {
+  const tbl = el('table', { class: 'anr-readout' });
+  for (const r of rows) {
+    if (!r) continue;
+    tbl.appendChild(Array.isArray(r) ? row(r[0], r[1]) : r);
+  }
+  return tbl;
+}
+
+export function fmtBytes(n) {
+  if (n == null) return '-';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(2) + ' MB';
+  return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+// Detect impossible or internally-inconsistent timestamps across a file's dates.
+// Pass any of { captured, created, modified, filesystem } as Date objects (others
+// omitted/null). Returns an array of plain-language anomaly strings (empty = none).
+// A generous skew margin keeps timezone-naive metadata and copy-resets from
+// false-positiving - only clearly wrong relationships are reported.
+export function timeAnomalies(opts: any = {}) {
+  const now = opts.now || new Date();
+  const DAY = 86400000;
+  const SKEW = 2 * DAY;   // tolerate clock/timezone slop on "in the future" checks
+  const ok = (d) => d instanceof Date && !isNaN(d) && d.getTime() > 0;
+  const stamp = (d) => d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  const out = [];
+  const labels = { captured: 'Capture date', created: 'Creation date', modified: 'Modification date' };
+  for (const k of ['captured', 'created', 'modified']) {
+    if (ok(opts[k]) && opts[k].getTime() - now.getTime() > SKEW) {
+      out.push(labels[k] + ' is in the future (' + stamp(opts[k]) + ') - the clock was wrong or the date was edited.');
+    }
+  }
+  const origin = ok(opts.captured) ? opts.captured : (ok(opts.created) ? opts.created : null);
+  const originWord = ok(opts.captured) ? 'capture' : 'creation';
+  if (ok(origin) && ok(opts.modified) && origin.getTime() - opts.modified.getTime() > DAY) {
+    out.push('Modification date is earlier than the ' + originWord + ' date - inconsistent edit history.');
+  }
+  if (ok(origin) && ok(opts.filesystem) && origin.getTime() - opts.filesystem.getTime() > DAY + 3600000) {
+    out.push('The file was last saved before its ' + originWord + ' date - it predates the content it carries (possible backdated metadata).');
+  }
+  return out;
+}
+
+// Build a forensic card from timeAnomalies() output, or null when there's nothing
+// to flag. Styled like the other alert cards (.anr-sig-flag).
+export function timeAnomalyCard(anomalies) {
+  if (!anomalies || !anomalies.length) return null;
+  const card = el('div', { class: 'anr-card anr-sig-flag', role: 'alert' });
+  card.appendChild(el('h3', {}, 'Timestamp anomaly'));
+  const ul = el('ul', { style: 'margin:6px 0 0;padding-left:20px;' });
+  for (const a of anomalies) ul.appendChild(el('li', { style: 'margin:3px 0;' }, a));
+  card.appendChild(ul);
+  return card;
+}
+
+// A scrollable, wrapping <pre> for raw text payloads (hex dumps, headers, etc.).
+// Shared by the lazy parser chunks so every readout block looks the same.
+export function preBlock(text, cls?) {
+  return el('pre', {
+    class: cls || 'anr-code',
+    style: 'max-height:360px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;',
+  }, text || '');
+}
+
+// Format a Date for display, tolerating non-Date / invalid values.
+export const fmtDate = (d) => (d instanceof Date && !isNaN(d)) ? d.toLocaleString() : String(d);
+
+// Copy text to the clipboard, with an execCommand fallback for insecure/old
+// contexts where navigator.clipboard is absent. Resolves true on success.
+export async function copyText(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (_) { /* fall through to the legacy path */ }
+  try {
+    const ta = el('textarea', { style: 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;' });
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch (_) { return false; }
+}
+
+// Centred popup showing a single table cell's full value - used by the CSV and
+// XLSX viewers, whose cells are clipped to one line so a long value is cut off.
+// Clicking a cell calls this with the whole text and an optional label (the cell
+// reference, e.g. "B12", or the column header). Reuses the .anr-modal overlay so
+// it matches the contact/share modals: click the backdrop, the close button, or
+// Escape to dismiss; a Copy button lifts the value to the clipboard. Only one is
+// ever open at a time. Empty cells show a muted "(empty cell)" note.
+let _cellPopOpen = false;
+export function showCellPopup(value, label) {
+  if (_cellPopOpen) return;
+  _cellPopOpen = true;
+
+  const text = value == null ? '' : String(value);
+  const isEmpty = text.trim() === '';
+
+  const body = isEmpty
+    ? el('p', { class: 'anr-cell-empty' }, '(empty cell)')
+    : el('div', { class: 'anr-cell-value' }, text);
+
+  const copyBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-ok' }, 'Copy');
+  const closeBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, 'Close');
+
+  const kids = [];
+  kids.push(el('p', { class: 'anr-modal-kicker' }, label || 'Cell value'));
+  kids.push(body);
+  const actions = isEmpty ? [closeBtn] : [copyBtn, closeBtn];
+  kids.push(el('div', { class: 'anr-modal-actions' }, actions));
+
+  const card = el('div', { class: 'anr-modal-card anr-cell-card', role: 'document' }, kids);
+  const overlay = el('div', { class: 'anr-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Cell value' }, card);
+  document.body.appendChild(overlay);
+
+  let settled = false;
+  const close = () => {
+    if (settled) return;
+    settled = true;
+    _cellPopOpen = false;
+    overlay.classList.remove('is-open');
+    setTimeout(() => overlay.remove(), 200);
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onKey);
+
+  if (!isEmpty) {
+    copyBtn.addEventListener('click', async () => {
+      const ok = await copyText(text);
+      copyBtn.textContent = ok ? 'Copied!' : 'Hit Ctrl+C';
+      copyBtn.classList.toggle('is-done', ok);
+      setTimeout(() => { copyBtn.textContent = 'Copy'; copyBtn.classList.remove('is-done'); }, 1600);
+    });
+  }
+
+  requestAnimationFrame(() => overlay.classList.add('is-open'));
+}
+
+// OrcaSlicer-style orientation gizmo for a WebGL 3D viewer: a small CSS-3D cube
+// pinned to the lower-left of the viewport that rotates in lock-step with the
+// camera. Its faces, edges and corners are all clickable hotspots that snap the
+// view head-on / edge-on / corner-on, and dragging the cube orbits the camera just
+// like dragging the canvas. Works with any viewer exposing { wrap, state:{yaw,
+// pitch}, markDirty(), setSpin? } - shared by the STL/model and G-code viewers,
+// and by the KiCad 3D board, which is CSS 3D rather than WebGL and adapts its
+// degrees-and-Y-down camera to this one behind a getter/setter state object.
+// Yaw/pitch are radians; the model is rotated rotX(pitch)*rotY(yaw) with +pitch
+// looking down from above, so a hotspot pointing outward along d=(dx,dy,dz) snaps
+// to yaw=atan2(-dx,dz), pitch=asin(dy). The CSS cube (Y-down) mirrors the camera as
+// rotateX(-pitch) rotateY(yaw), derived so each hotspot's own face comes head-on.
+export function attachViewCube(viewer) {
+  const wrap = viewer && viewer.wrap, state = viewer && viewer.state;
+  if (!wrap || !state) return;
+  const H = 27;  // half the cube edge (px)
+  const Q = Math.PI / 2, R2D = 180 / Math.PI;
+  // For a hotspot pointing outward along model-space d, the camera orientation that
+  // brings it head-on (yaw=atan2(-dx,dz), pitch=asin(dy)).
+  const target = (dx, dy, dz) => { const l = Math.hypot(dx, dy, dz) || 1; return { yaw: Math.atan2(-dx, dz), pitch: Math.asin(dy / l) }; };
+
+  // The six faces, each with its model-space outward normal F and the in-plane
+  // right/up axes (u,v) that match how it's displayed - so a corner/edge zone at a
+  // given screen position maps to the right cube corner/edge.
+  const FACES = [
+    { name: 'Front', F: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] },
+    { name: 'Back', F: [0, 0, -1], u: [-1, 0, 0], v: [0, 1, 0] },
+    { name: 'Right', F: [1, 0, 0], u: [0, 0, -1], v: [0, 1, 0] },
+    { name: 'Left', F: [-1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] },
+    { name: 'Top', F: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1] },
+    { name: 'Bot', F: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] },
+  ];
+  const cube = el('div', { class: 'anr-viewcube-cube' });
+  const hotspots = [];
+  // A direction signature shared by every hotspot at the same cube feature: a
+  // corner is one zone on each of its 3 faces, an edge one on each of its 2 - all
+  // carry the same key, so hovering any lights the whole corner/edge.
+  const sgn = (v) => (v > 0.5 ? 1 : v < -0.5 ? -1 : 0);
+  const setTarget = (node, dx, dy, dz) => { const t = target(dx, dy, dz); node._yaw = t.yaw; node._pitch = t.pitch; node._key = sgn(dx) + ',' + sgn(dy) + ',' + sgn(dz); hotspots.push(node); };
+  for (const f of FACES) {
+    const [fx, fy, fz] = f.F;
+    const yawCss = Math.atan2(fx, fz) * R2D, pitchCss = Math.asin(fy) * R2D;
+    const face = el('div', { class: 'anr-viewcube-face' }, f.name);
+    face.style.transform = `rotateY(${yawCss}deg) rotateX(${pitchCss}deg) translateZ(${H}px)`;
+    setTarget(face, fx, fy, fz);
+    // Edge + corner zones live as children painted on top of the face, so they
+    // catch clicks the full face can't steal (no 3D occlusion to fight).
+    const O = 38;   // zone offset from face centre, in %
+    const zone = (cls, left, top, dir) => { const z = el('div', { class: cls }); z.style.left = left + '%'; z.style.top = top + '%'; setTarget(z, dir[0], dir[1], dir[2]); face.appendChild(z); };
+    for (const su of [-1, 1]) for (const sv of [-1, 1]) {
+      zone('anr-viewcube-corner', 50 + su * O, 50 - sv * O, [fx + su * f.u[0] + sv * f.v[0], fy + su * f.u[1] + sv * f.v[1], fz + su * f.u[2] + sv * f.v[2]]);
+    }
+    for (const su of [-1, 1]) zone('anr-viewcube-edge', 50 + su * O, 50, [fx + su * f.u[0], fy + su * f.u[1], fz + su * f.u[2]]);
+    for (const sv of [-1, 1]) zone('anr-viewcube-edge', 50, 50 - sv * O, [fx + sv * f.v[0], fy + sv * f.v[1], fz + sv * f.v[2]]);
+    cube.appendChild(face);
+  }
+  const box = el('div', { class: 'anr-viewcube', title: 'Drag to orbit; click a face, edge or corner to snap the view' }, cube);
+  wrap.appendChild(box);
+
+  // Tween the camera to a target orientation (shortest yaw path, ease-in-out).
+  let anim = 0;
+  function orientTo(ty, tp) {
+    const sy = state.yaw, sp = state.pitch;
+    let dy = ty - sy;
+    while (dy > Math.PI) dy -= 2 * Math.PI;
+    while (dy < -Math.PI) dy += 2 * Math.PI;
+    const dp = tp - sp, dur = 320;
+    let t0 = 0;
+    if (anim) cancelAnimationFrame(anim);
+    const tick = (ts) => {
+      if (!t0) t0 = ts;
+      const k = Math.min(1, (ts - t0) / dur);
+      const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      state.yaw = sy + dy * e; state.pitch = sp + dp * e;
+      viewer.markDirty();
+      anim = k < 1 ? requestAnimationFrame(tick) : 0;
+    };
+    anim = requestAnimationFrame(tick);
+  }
+
+  // Grab the cube to orbit (same feel as dragging the canvas); a press that doesn't
+  // move snaps to whichever hotspot was clicked.
+  let drag = false, moved = false, lx = 0, ly = 0;
+  const dn = (x, y) => { drag = true; moved = false; lx = x; ly = y; if (anim) { cancelAnimationFrame(anim); anim = 0; } if (viewer.setSpin) viewer.setSpin(false); };
+  const mv = (x, y) => {
+    if (!drag) return;
+    if (Math.abs(x - lx) + Math.abs(y - ly) > 3) moved = true;
+    state.yaw += (x - lx) * 0.01;
+    state.pitch += (y - ly) * 0.01;
+    state.pitch = Math.max(-Q, Math.min(Q, state.pitch));
+    lx = x; ly = y; viewer.markDirty();
+  };
+  const en = () => { drag = false; };
+  const onWinMove = (e) => mv(e.clientX, e.clientY);
+  const onWinUp = en;
+  box.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); dn(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', onWinMove);
+  window.addEventListener('mouseup', onWinUp);
+  // These are window-level, so they outlive the viewer unless removed. Every
+  // STL/model/G-code viewer attaches a cube; without this each one leaks a
+  // permanent mousemove/mouseup handler across re-renders and SPA navigation.
+  // Drop them once the cube is detached from the DOM.
+  const cubeCleanup = new MutationObserver(() => {
+    if (!box.isConnected) {
+      window.removeEventListener('mousemove', onWinMove);
+      window.removeEventListener('mouseup', onWinUp);
+      cubeCleanup.disconnect();
+    }
+  });
+  cubeCleanup.observe(document.documentElement, { childList: true, subtree: true });
+  box.addEventListener('touchstart', (e) => { e.stopPropagation(); if (e.touches[0]) dn(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+  box.addEventListener('touchmove', (e) => { if (e.touches[0]) { mv(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
+  box.addEventListener('touchend', en);
+  for (const hs of hotspots) {
+    hs.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (moved) { moved = false; return; }
+      if (viewer.setSpin) viewer.setSpin(false);
+      orientTo(hs._yaw, hs._pitch);
+    });
+  }
+
+  // Highlight the whole feature under the pointer - the one a click will snap to.
+  // Driven from JS (not :hover): a hovered edge/corner zone is a child of a face
+  // (so :hover would also light the face), and one corner/edge spans several faces,
+  // so we light every hotspot sharing the target's direction key.
+  let hotKey = null;
+  const setHot = (hs) => {
+    const key = hs ? hs._key : null;
+    if (key === hotKey) return;
+    hotKey = key;
+    for (const h of hotspots) h.classList.toggle('is-hot', key != null && h._key === key);
+  };
+  box.addEventListener('mouseover', (e) => setHot(e.target.closest('.anr-viewcube-face, .anr-viewcube-edge, .anr-viewcube-corner')));
+  box.addEventListener('mouseleave', () => setHot(null));
+
+  // Keep the cube's orientation in lock-step with the camera.
+  const sync = () => {
+    if (!wrap.isConnected) return;
+    const yd = state.yaw * R2D, pd = state.pitch * R2D;
+    cube.style.transform = `rotateX(${-pd}deg) rotateY(${yd}deg)`;
+    requestAnimationFrame(sync);
+  };
+  requestAnimationFrame(sync);
+}
+
+// Trigger a browser download of `blob` as `filename` via a throwaway <a>, then
+// revoke the object URL. One revoke policy for the many ad-hoc copies of this.
+export function downloadBlob(filename, blob) {
+  let appleTouch = false;
+  try {
+    const ua = navigator.userAgent || '';
+    appleTouch = /iPad|iPhone|iPod/.test(ua)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  } catch (_) {}
+  // iOS WebKit can try to preview a typed blob instead of honouring `download`,
+  // or ignore the synthetic link entirely. An attachment MIME type takes its
+  // file-download path; wrapping a Blob does not duplicate its backing bytes.
+  const payload = appleTouch && blob.type !== 'application/octet-stream'
+    ? new Blob([blob], { type: 'application/octet-stream' })
+    : blob;
+  const url = URL.createObjectURL(payload);
+  const a = el('a', { href: url, download: filename });
+  document.body.appendChild(a);
+  a.click();
+  // WebKit may hand the URL to its download process after the click stack ends.
+  // Keep it alive a little longer there; other engines need only the old delay.
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, appleTouch ? 10000 : 1000);
+}
+
+// Create an <img> from a Blob (or an existing object-URL string) whose object URL
+// is revoked as soon as the browser has decoded it (load) or given up (error), so
+// a preview image doesn't pin its backing Blob for the page's lifetime. Extra
+// attributes (alt, class, ...) pass through to el(). One revoke policy for the many
+// ad-hoc "createObjectURL into an <img> and never revoke" copies across renderers.
+export function blobImg(blob, attrs: any = {}) {
+  const url = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
+  const img = el('img', { ...attrs, src: url });
+  const done = () => { try { URL.revokeObjectURL(url); } catch (_) {} };
+  img.addEventListener('load', done, { once: true });
+  img.addEventListener('error', done, { once: true });
+  return img;
+}
+
+// Read up to `n` bytes from a File starting at `off`. Returns a Uint8Array
+// (empty when the offset is past EOF). Shared by the binary parser chunks.
+export async function readSlice(file, off, n) {
+  const end = Math.min(file.size, off + n);
+  if (off >= file.size || end <= off) return new Uint8Array(0);
+  return new Uint8Array(await file.slice(off, end).arrayBuffer());
+}
+
+// Read up to `cap` bytes from the head of a File as decoded text. The text twin
+// of readSlice - replaces the `await file.slice(0, Math.min(size, cap)).text()`
+// idiom hand-rolled across the parser chunks. Defaults to a 256 KB head, enough
+// for the metadata/header sniffing these parsers do without pulling a huge file
+// fully into memory.
+export async function readText(file, cap = 262144) {
+  return file.slice(0, Math.min(file.size, cap)).text();
+}
+
+// Wire a [?] info button to its help panel (.anr-info-panel). The [?] opens a
+// floating popup anchored to the button - the same affordance as the row-help
+// tips (helpTh) - so every [?] across the site behaves identically: it pops up,
+// it never pushes content down, the label stays [?] (no [-] flip), and clicking
+// anywhere else closes it. The panel is anchored to the button lazily on first
+// open, which works whether the caller wired before or after inserting the
+// button into the DOM (h3help wires before; most manual sites wire after).
+export function wireInfoToggle(btn, panel) {
+  if (!wireInfoToggle._init) {
+    wireInfoToggle._init = true;
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.anr-info-panel.is-active').forEach(p => p.classList.remove('is-active'));
+    });
+    // A viewport-pinned (fixed) popup is placed once at its button; keep it glued
+    // to the button as the page or an inner overflow column scrolls, and on resize
+    // - otherwise it floats away. Capture phase so scrolls inside scroll containers
+    // (which don't bubble) are still caught. No-op unless a fixed popup is open.
+    const reflowInfoPops = () => {
+      document.querySelectorAll('.anr-info-panel.anr-info-pop-fixed.is-active').forEach((p) => {
+        if (p._anrInfoBtn) placeInfoPop(p._anrInfoBtn, p);
+      });
+    };
+    window.addEventListener('scroll', reflowInfoPops, { capture: true, passive: true });
+    window.addEventListener('resize', reflowInfoPops, { passive: true });
+  }
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!panel.classList.contains('anr-info-pop')) {
+      // First open: float the panel as an overlay anchored to the heading/row that
+      // holds the [?] button, rather than the old inline drop-down. Anchoring to the
+      // button's own parent leaves the button's layout untouched and opens the popup
+      // right where the drop-down used to appear (just below the heading).
+      const anchor = btn.parentElement || btn;
+      anchor.classList.add('anr-info-pop-anchor');
+      panel.remove();
+      panel.classList.add('anr-info-pop');
+      panel.classList.remove('is-hidden'); // visibility is now governed by .is-active
+      anchor.appendChild(panel);
+    }
+    const wasActive = panel.classList.contains('is-active');
+    document.querySelectorAll('.anr-info-panel.is-active').forEach(p => p.classList.remove('is-active'));
+    if (!wasActive) {
+      panel.classList.add('is-active');
+      placeInfoPop(btn, panel);
+    }
+  });
+}
+
+// The popup is normally absolutely positioned inside the heading/row that holds its
+// [?] button. That breaks when an ancestor clips overflow (the compare view's
+// side-by-side columns use overflow:auto, which also clips vertically) - the popup
+// gets cut off / "stuck behind a scroll". When such a clipping ancestor exists, pin
+// the popup to the viewport at the button instead so it escapes the clip. No-op on
+// ordinary pages: without a clipping ancestor it stays exactly as before.
+function anrHasClippingAncestor(elm) {
+  let n = elm.parentElement;
+  while (n && n !== document.body && n.nodeType === 1) {
+    const s = getComputedStyle(n);
+    if (/(auto|scroll|hidden|clip)/.test(s.overflowX + ' ' + s.overflowY)) return true;
+    n = n.parentElement;
+  }
+  return false;
+}
+function placeInfoPop(btn, panel) {
+  panel._anrInfoBtn = btn;   // remembered so the scroll/resize reflow can re-place it
+  panel.classList.remove('anr-info-pop-fixed');
+  panel.style.left = ''; panel.style.top = '';
+  if (!anrHasClippingAncestor(btn)) return;
+  const r = btn.getBoundingClientRect();
+  const w = Math.min(380, window.innerWidth - 16);
+  let left = r.left;
+  if (left + w > window.innerWidth - 8) left = window.innerWidth - 8 - w;
+  panel.classList.add('anr-info-pop-fixed');
+  panel.style.left = Math.max(8, left) + 'px';
+  panel.style.top = (r.bottom + 6) + 'px';
+}
+
+export function h3help(title, helpHtml) {
+  const h = el('h3', {});
+  h.appendChild(document.createTextNode(title));
+  const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
+  const panel = el('div', { class: 'anr-info-panel is-hidden', html: helpHtml });
+  wireInfoToggle(btn, panel);
+  h.appendChild(btn);
+  return [h, panel];
+}
+
+export function fileExt(name) {
+  // Strip a trailing copy marker that file managers append AFTER the real
+  // extension, which would otherwise hide it: "ut.c (1)" -> "ut.c",
+  // "report.pdf - Copy" -> "report.pdf". Done before the extension is read so
+  // the duplicate still classifies as its real type.
+  const n = (name || '').replace(/ (?:\(\d+\)|-\s*[Cc]opy)$/, '');
+  const m = n.match(/\.([^.]+)$/);
+  return m ? m[1].toLowerCase() : '';
+}
+
+function hex(buf) {
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function sha256Hex(file) {
+  if (!crypto.subtle) return null;
+  const buf = await file.arrayBuffer();
+  return hex(await crypto.subtle.digest('SHA-256', buf));
+}
+
+// Memory-constrained-device heuristic. Now defined alongside the rest of the
+// resource-limit policy in core/limits.js and re-exported here so existing
+// callers keep importing it from util.js unchanged.
+export { isLowMemoryDevice } from './limits.js';
+
+// SubtleCrypto covers SHA-1/256/384/512 but not MD5. subtleHex hashes an already
+// in-memory ArrayBuffer (so a multi-hash pass reads the file just once).
+async function subtleHex(algo, buf) {
+  if (!crypto.subtle) return null;
+  return hex(await crypto.subtle.digest(algo, buf));
+}
+
+// Compact MD5 (RFC 1321) - browsers don't expose it, but forensic toolchains
+// (NSRL, VirusTotal, old checksum files) still key on it. Operates on a
+// Uint8Array; pure integer maths, no dependency.
+export function md5Hex(bytes) {
+  const rotl = (x, c) => (x << c) | (x >>> (32 - c));
+  const add = (a, b) => (a + b) | 0;
+  const S = [7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+    5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+    6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21];
+  const K = new Int32Array(64);
+  for (let i = 0; i < 64; i++) K[i] = (Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296)) | 0;
+
+  const origLen = bytes.length;
+  const bitLen = origLen * 8;
+  // Pad to 56 mod 64, then append the 64-bit little-endian length.
+  const padded = new Uint8Array((((origLen + 8) >> 6) + 1) * 64);
+  padded.set(bytes);
+  padded[origLen] = 0x80;
+  const dv = new DataView(padded.buffer);
+  dv.setUint32(padded.length - 8, bitLen >>> 0, true);
+  dv.setUint32(padded.length - 4, Math.floor(bitLen / 4294967296), true);
+
+  let a0 = 0x67452301, b0 = 0xefcdab89, c0 = 0x98badcfe, d0 = 0x10325476;
+  const M = new Int32Array(16);
+  for (let off = 0; off < padded.length; off += 64) {
+    for (let i = 0; i < 16; i++) M[i] = dv.getUint32(off + i * 4, true);
+    let A = a0, B = b0, C = c0, D = d0;
+    for (let i = 0; i < 64; i++) {
+      let F, g;
+      if (i < 16) { F = (B & C) | (~B & D); g = i; }
+      else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) & 15; }
+      else if (i < 48) { F = B ^ C ^ D; g = (3 * i + 5) & 15; }
+      else { F = C ^ (B | ~D); g = (7 * i) & 15; }
+      F = add(add(add(F, A), K[i]), M[g]);
+      A = D; D = C; C = B;
+      B = add(B, rotl(F, S[i]));
+    }
+    a0 = add(a0, A); b0 = add(b0, B); c0 = add(c0, C); d0 = add(d0, D);
+  }
+  const out = new Uint8Array(16);
+  const odv = new DataView(out.buffer);
+  odv.setUint32(0, a0 >>> 0, true); odv.setUint32(4, b0 >>> 0, true);
+  odv.setUint32(8, c0 >>> 0, true); odv.setUint32(12, d0 >>> 0, true);
+  return hex(out);
+}
+
+// CRC-32 (IEEE 802.3, polynomial 0xEDB88320) - the same checksum ZIP, PNG and
+// gzip embed, and what SFV/.sfv checksum files key on. Fast and non-cryptographic
+// (not collision-resistant), so it lives alongside the real hashes for matching
+// checksum files, not for tamper-evidence. Operates on a Uint8Array; returns 8
+// lowercase hex digits. Table built once on first use.
+let _crc32Table = null;
+export function crc32Hex(bytes) {
+  if (!_crc32Table) {
+    _crc32Table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      _crc32Table[n] = c >>> 0;
+    }
+  }
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ _crc32Table[(crc ^ bytes[i]) & 0xFF];
+  return ((crc ^ 0xFFFFFFFF) >>> 0).toString(16).padStart(8, '0');
+}
+
+// CRC-32 + MD5 + SHA-1 + SHA-512 over one in-memory read, returned as
+// [label, hex, description?] tuples. Used by the "Show more hashes" affordance in
+// sha256Row(). CRC-32 carries its own description since it isn't a hash.
+export async function extraHashRows(file) {
+  const buf = await file.arrayBuffer();
+  const [sha1, sha512] = await Promise.all([
+    subtleHex('SHA-1', buf),
+    subtleHex('SHA-512', buf),
+  ]);
+  const crcDesc = 'CRC-32 is a fast check number, not a security fingerprint - the same one built into ZIP, PNG and gzip files, and stored in SFV checksum files. It reliably catches accidental damage, but it can be fooled on purpose (it is not collision-resistant), so unlike the hashes below it is not proof against deliberate tampering.';
+  const rows = [];
+  // MD5 and CRC-32 have no crypto.subtle equivalent, so they run in pure JS,
+  // byte-by-byte. On a very large file that is a multi-second main-thread freeze,
+  // so skip them past HASH_JS_MAX; the two native SHA rows below still compute.
+  if (buf.byteLength <= HASH_JS_MAX) {
+    const bytes = new Uint8Array(buf);
+    rows.push(['CRC-32', crc32Hex(bytes), crcDesc]);
+    rows.push(['MD5', md5Hex(bytes), 'MD5 is a legacy 128-bit checksum still keyed on by forensic databases (NSRL) and old checksum files. It is not collision-resistant, so treat it as a lookup key, not tamper-evidence.']);
+  } else {
+    const skip = `not computed - file over ${Math.round(HASH_JS_MAX / (1024 * 1024))} MB (MD5/CRC-32 run without hardware acceleration and would freeze the page; the SHA rows below still apply)`;
+    rows.push(['CRC-32', skip, crcDesc]);
+    rows.push(['MD5', skip, 'MD5 is a legacy 128-bit checksum. It was skipped here because computing it on a file this large would lock up the page.']);
+  }
+  rows.push(['SHA-1', sha1 || 'unavailable']);
+  rows.push(['SHA-512', sha512 || 'unavailable']);
+  return rows;
+}
+
+// Above this size SHA-256 isn't computed automatically (hashing reads the whole
+// file and is slow for big media); the user can trigger it with a button instead.
+const SHA256_AUTO_LIMIT = 50 * 1024 * 1024; // 50 MB
+
+export function sha256Row(file) {
+  const hashRow = rowHelp('SHA-256', '',
+    "SHA-256 is a cryptographic fingerprint of the file’s exact contents - a short code where two identical files always match, and changing even a single byte changes it completely. That makes it a reliable way to check a file hasn’t been altered, or that it matches a known copy.");
+  const td = hashRow.querySelector('td');
+  td.textContent = '';
+
+  // Once SHA-256 is shown, offer the forensic-standard extras (MD5/SHA-1/SHA-512)
+  // on demand, inserted as sibling rows below this one so every renderer that uses
+  // sha256Row()/integrityCard() gets them with no per-renderer change.
+  function appendMoreHashesControl() {
+    const tbody = hashRow.parentNode;
+    if (!tbody) return;
+    const cell = el('td', { colspan: '2', style: 'padding-top:4px;' });
+    const btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Show CRC-32 / MD5 / SHA-1 / SHA-512');
+    cell.appendChild(btn);
+    const ctrlRow = el('tr', { class: 'anr-morehash-row' }, cell);
+    hashRow.after(ctrlRow);
+    btn.addEventListener('click', () => {
+      const bar = asciiBar();
+      bar.indeterminate();
+      cell.textContent = '';
+      cell.appendChild(bar);
+      extraHashRows(file).then(rows => {
+        bar.stop();
+        let anchor = ctrlRow;
+        rows.forEach(([label, value, desc]) => {
+          const tr = rowHelp(label, value, desc || (label + ' is a cryptographic fingerprint of the file’s exact contents, used to match it against forensic databases and checksum files.'));
+          const vtd = tr.querySelector('td');
+          if (vtd) vtd.style.wordBreak = 'break-all';
+          anchor.after(tr);
+          anchor = tr;
+        });
+        ctrlRow.remove();
+      }).catch(() => { bar.stop(); cell.textContent = 'unavailable'; });
+    }, { once: true });
+  }
+
+  function compute() {
+    const bar = asciiBar();
+    bar.indeterminate();
+    td.textContent = '';
+    td.appendChild(bar);
+    sha256Hex(file).then(h => {
+      bar.stop();
+      td.textContent = h || 'unavailable';
+      td.style.wordBreak = 'break-all';
+      if (h) appendMoreHashesControl();
+    }).catch(() => { bar.stop(); td.textContent = 'unavailable'; });
+  }
+
+  if (file && file.size > SHA256_AUTO_LIMIT) {
+    const btn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Calculate SHA-256');
+    btn.addEventListener('click', () => compute(), { once: true });
+    td.appendChild(btn);
+    td.appendChild(el('span', { class: 'anr-hint', style: 'margin-left:8px;' }, `not computed automatically over ${fmtBytes(SHA256_AUTO_LIMIT)}`));
+  } else {
+    compute();
+  }
+  return hashRow;
+}
+
+// Standard "Integrity" card: a heading + readout table whose last row is the
+// (async) SHA-256. Pass extraRows as [[label, value], …] to prepend rows.
+export function integrityCard(file, extraRows = []) {
+  const card = el('div', { class: 'anr-card' });
+  card.appendChild(el('h3', {}, 'Integrity'));
+  card.appendChild(buildReadout([...extraRows, sha256Row(file)]));
+  return card;
+}
+
+// Well-known hidden/system files that DON'T start with a dot, so the dotfile
+// convention alone misses them. The File API can't read a platform hidden/system
+// attribute, so - as with dotfiles - we match by name (case-insensitive). Covers
+// the common Windows (Thumbs.db, desktop.ini, ntuser.*, *.sys) and macOS (Icon\r)
+// tell-tales that litter dropped folders.
+const SYSTEM_HIDDEN_NAMES = new Set([
+  'thumbs.db', 'ehthumbs.db', 'ehthumbs_vista.db', 'desktop.ini', 'iconcache.db',
+  'ntuser.dat', 'ntuser.ini', 'ntuser.dat.log', 'pagefile.sys', 'hiberfil.sys',
+  'swapfile.sys', 'icon\r',
+]);
+
+// Whether a file NAME reads as hidden: a leading-dot dotfile (the portable signal),
+// or a known hidden/system filename. Used to hatch these rows in the file tree.
+export function isHiddenFileName(name) {
+  if (!name) return false;
+  if (name.charAt(0) === '.') return true;
+  return SYSTEM_HIDDEN_NAMES.has(name.toLowerCase());
+}
+
+// Reused by the file-tree key sort. Building the collator once and calling
+// .compare() is ~10x cheaper than a.localeCompare(b), which constructs a fresh
+// collator on every call - a real cost when a flat container has tens of
+// thousands of sibling entries. No options = the same ordering localeCompare gave.
+const _treeCollator = (typeof Intl !== 'undefined' && Intl.Collator) ? new Intl.Collator() : null;
+
+// Build a collapsible directory tree from a nested object. Directories are
+// rendered as <details>/<summary> nodes (closed by default, children rendered
+// lazily on first expand); files as plain rows. Shared by folder.js and
+// archive.js. Callers supply:
+//   isDir(value)   - true if value is a directory node (a sub-object)
+//   fileSize(value) - byte size for a file node (number)
+export function buildFileTree(obj, opts) {
+  const isDir = opts.isDir;
+  const fileSize = opts.fileSize;
+
+  function countAndSize(node) {
+    let files = 0, bytes = 0;
+    for (const v of Object.values(node)) {
+      if (isDir(v)) { const r = countAndSize(v); files += r.files; bytes += r.bytes; }
+      else { files++; bytes += fileSize(v) || 0; }
+    }
+    return { files, bytes };
+  }
+
+  function sortedKeys(node) {
+    return Object.keys(node).sort((a, b) => {
+      const ad = isDir(node[a]), bd = isDir(node[b]);
+      if (ad !== bd) return ad ? -1 : 1;
+      // Same ordering as a.localeCompare(b), but the collator is built once
+      // (module scope) instead of per comparison - localeCompare rebuilds it on
+      // every call, ~10x the cost, which shows on a flat container of 65k+ entries.
+      return _treeCollator ? _treeCollator.compare(a, b) : a.localeCompare(b);
+    });
+  }
+
+  function renderNode(node) {
+    const frag = document.createDocumentFragment();
+    for (const key of sortedKeys(node)) {
+      const val = node[key];
+      if (isDir(val)) {
+        const { files, bytes } = countAndSize(val);
+        const details = el('details', { class: 'anr-tree-dir' });
+        const summary = el('summary', { class: 'anr-tree-summary' }, [
+          el('span', { class: 'anr-tree-icon' }, '▸'),
+          el('span', { class: 'anr-tree-name' }, key),
+          el('span', { class: 'anr-tree-meta' }, files + (files === 1 ? ' file · ' : ' files · ') + fmtBytes(bytes))
+        ]);
+        details.appendChild(summary);
+        let filled = false;
+        details.addEventListener('toggle', () => {
+          if (details.open && !filled) {
+            filled = true;
+            const kids = el('div', { class: 'anr-tree-children' });
+            kids.appendChild(renderNode(val));
+            details.appendChild(kids);
+          }
+        });
+        frag.appendChild(details);
+      } else {
+        // Dotfiles and known hidden/system files (Thumbs.db, desktop.ini, ...) are
+        // marked so the CSS can hatch them over with diagonal grey lines. The File
+        // API exposes no hidden/system attribute, so name convention is all we have.
+        const hidden = isHiddenFileName(key);
+        let cls = opts.onFileClick ? 'anr-tree-file is-clickable' : 'anr-tree-file';
+        if (hidden) cls += ' is-hidden';
+        const lead = el('span', { class: 'anr-tree-lead' });
+        if (opts.fileAccent) {
+          const color = opts.fileAccent(key, val);
+          if (color) lead.appendChild(el('span', { class: 'anr-tree-dot', style: 'background:' + color }));
+        }
+        const fileDiv = el('div', { class: cls }, [
+          lead,
+          el('span', { class: 'anr-tree-name' }, key),
+          el('span', { class: 'anr-tree-meta' }, fmtBytes(fileSize(val) || 0))
+        ]);
+        if (opts.copyPath) {
+          const path = opts.copyPath(key, val);
+          if (path) {
+            const copyBtn = el('button', { class: 'anr-tree-copy', type: 'button', title: 'Copy path' }, '⧉');
+            copyBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const done = () => { copyBtn.textContent = '✓'; setTimeout(() => { copyBtn.textContent = '⧉'; }, 1000); };
+              copyText(path).then((ok) => { if (ok) done(); });
+            });
+            fileDiv.appendChild(copyBtn);
+          }
+        }
+        if (opts.onFileClick) {
+          fileDiv.addEventListener('click', () => opts.onFileClick(key, val));
+        }
+        frag.appendChild(fileDiv);
+      }
+    }
+    return frag;
+  }
+
+  const rootTotals = countAndSize(obj);
+  const wrap = el('div', { class: 'anr-tree' });
+  wrap.appendChild(renderNode(obj));
+  wrap._totals = rootTotals;
+  return wrap;
+}
+
+// Lazy-load an external stylesheet/script by injecting a <link>/<script> tag,
+// resolving once it's ready (and immediately if already present). Used to pull
+// in heavy optional libraries (Leaflet, Tesseract, heic2any, jsQR) on demand.
+export function loadCss(href) {
+  return new Promise((resolve) => {
+    if (document.querySelector(`link[href="${href}"]`)) return resolve();
+    const l = document.createElement('link');
+    l.rel = 'stylesheet'; l.href = href;
+    l.onload = resolve; l.onerror = resolve;
+    document.head.appendChild(l);
+  });
+}
+export function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+// Snap a measured frame rate to the nearest standard rate when it's within
+// 0.5 fps (so 29.96 reads as 29.97), otherwise keep two decimals. Shared by the
+// video module and its container parser.
+export function roundFps(raw) {
+  const standard = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120, 240];
+  let closest = raw, minDiff = Infinity;
+  for (const s of standard) {
+    const d = Math.abs(raw - s);
+    if (d < minDiff) { minDiff = d; closest = s; }
+  }
+  return minDiff < 0.5 ? closest : Math.round(raw * 100) / 100;
+}
+
+// Pan + zoom for a lightbox media wrapper (an element with class
+// .lightbox-img-wrap). A single CSS transform is applied to `wrap`, so whatever
+// it contains - an <img>, a <canvas>, the photo overlay layers - zooms and pans
+// as one. Wheel and pinch zoom toward the pointer/midpoint, drag pans once
+// zoomed, and double-click toggles a 2.5x view at the clicked point. Returns
+// { reset } so the caller can clear the zoom when the shown content changes
+// (next page, new image). Used by photo/video, pdf and comic lightboxes.
+export function attachZoomPan(wrap, opts: any = {}) {
+  const MAX = opts.max || 8;
+  let scale = 1, tx = 0, ty = 0;
+  const center = wrap.closest('.lightbox-center');
+
+  function apply() {
+    wrap.style.transform = scale === 1 ? '' : `translate(${tx}px, ${ty}px) scale(${scale})`;
+    wrap.style.cursor = scale > 1 ? 'grab' : 'zoom-in';
+    wrap.style.touchAction = 'none';   // let us own pinch / drag gestures
+    // .lightbox-center clips with overflow:hidden; lift that while zoomed so the
+    // enlarged content can fill the screen instead of being cropped to its box.
+    if (center) center.style.overflow = scale > 1 ? 'visible' : '';
+  }
+  function clampPan() {
+    // Keep the scaled content overlapping the viewport so it can't be flung away.
+    const baseW = wrap.offsetWidth || 1, baseH = wrap.offsetHeight || 1;
+    const maxX = Math.max(0, (baseW * scale - window.innerWidth) / 2) + 40;
+    const maxY = Math.max(0, (baseH * scale - window.innerHeight) / 2) + 40;
+    tx = Math.max(-maxX, Math.min(maxX, tx));
+    ty = Math.max(-maxY, Math.min(maxY, ty));
+  }
+  // Zoom to `ns`, keeping the content point under (clientX, clientY) fixed.
+  // With the default transform-origin (centre), the translation correction is
+  // tx += (cursor - centre) * (1 - ns/scale).
+  function zoomTo(ns, clientX, clientY) {
+    ns = Math.max(1, Math.min(MAX, ns));
+    if (ns === scale) return;
+    const rect = wrap.getBoundingClientRect();
+    const dx = clientX - (rect.left + rect.width / 2);
+    const dy = clientY - (rect.top + rect.height / 2);
+    tx += dx * (1 - ns / scale);
+    ty += dy * (1 - ns / scale);
+    scale = ns;
+    if (scale === 1) { tx = 0; ty = 0; }
+    clampPan();
+    apply();
+  }
+
+  wrap.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomTo(scale * Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY);
+  }, { passive: false });
+
+  const CLICK_ZOOM = opts.clickZoom || 2;   // modest zoom applied on a plain click / tap
+
+  const pointers = new Map();
+  let pinchDist = 0, pinchScale = 1, lastX = 0, lastY = 0, dragging = false;
+  let downX = 0, downY = 0, suppressClick = false;
+  wrap.addEventListener('pointerdown', (e) => {
+    wrap.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) { downX = e.clientX; downY = e.clientY; suppressClick = false; }
+    if (pointers.size === 2) {
+      const p = [...pointers.values()];
+      pinchDist = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+      pinchScale = scale;
+      dragging = false;
+      suppressClick = true;            // a pinch must not also toggle via click
+    } else if (scale > 1) {
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+      wrap.style.cursor = 'grabbing';
+    }
+  });
+  wrap.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    // Past a small threshold this gesture is a drag/pinch, not a click.
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) suppressClick = true;
+    if (pointers.size === 2 && pinchDist) {
+      const p = [...pointers.values()];
+      const dist = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+      zoomTo(pinchScale * (dist / pinchDist), (p[0].x + p[1].x) / 2, (p[0].y + p[1].y) / 2);
+    } else if (dragging) {
+      tx += e.clientX - lastX; ty += e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      clampPan(); apply();
+    }
+  });
+  function endPointer(e) {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinchDist = 0;
+    if (pointers.size === 0) { dragging = false; if (scale > 1) wrap.style.cursor = 'grab'; }
+  }
+  wrap.addEventListener('pointerup', endPointer);
+  wrap.addEventListener('pointercancel', endPointer);
+  // The native image drag ("ghost" grab) fires dragstart, which cancels our
+  // pointer capture mid-pan - so panning a large zoomed image fails. Suppress it
+  // so the pointer gesture stays ours.
+  wrap.addEventListener('dragstart', (e) => e.preventDefault());
+
+  // A plain click / tap toggles a modest zoom at the point; the next one restores
+  // the original size. A drag or pinch flags suppressClick so its trailing click
+  // is ignored. Using `click` (not dblclick) means the same gesture works on
+  // touch, where dblclick is unreliable under touch-action:none.
+  wrap.addEventListener('click', (e) => {
+    if (suppressClick) { suppressClick = false; return; }
+    e.stopPropagation();
+    zoomTo(scale > 1 ? 1 : CLICK_ZOOM, e.clientX, e.clientY);
+  });
+
+  function reset() { scale = 1; tx = 0; ty = 0; pointers.clear(); dragging = false; pinchDist = 0; suppressClick = false; apply(); }
+  reset();
+  return { reset };
+}
+
+// Scroll-zoom toggle button for viewers that zoom on a plain (unmodified) wheel
+// scroll - STL 3D, the LUT cubes, the PCB boards. Those viewers swallow
+// the wheel whenever the pointer crosses them, which hijacks page scrolling;
+// this gives the user an off switch. Returns { el, enabled }: append `el`
+// bottom-right of a position:relative stage (it carries the .anr-wheelzoom
+// overlay styling) and gate the wheel handler on enabled() BEFORE calling
+// preventDefault, so a disabled viewer lets the wheel scroll the page.
+// Paint a .anr-player-fill scrubber bar to `frac` (0..1). Every transport on the
+// site goes through this, and it is the one piece of UI updated on EVERY
+// animation frame while something plays - so it must not cost a layout. Setting a
+// percentage width does exactly that, and reflowing a finished analysis (box
+// tree, timelines, contact sheet, telemetry traces) 60 times a second is enough
+// to take frames off a heavy video. A scaleX is handled by the compositor: no
+// layout, no paint. The CSS pairs this with width:100% and a left origin.
+export function setPlayerFill(fillEl, frac) {
+  if (!fillEl) return;
+  const f = frac > 0 ? (frac < 1 ? frac : 1) : 0;      // also coerces NaN to 0
+  fillEl.style.transform = 'scaleX(' + f + ')';
+}
+
+// Off by default, matching the STL/model and G-code viewers' own copy of this
+// control: a viewer that eats the wheel the moment the pointer crosses it traps
+// the page scroll, so arming it is the user's call, not the page's.
+export function wheelZoomToggle(extraClass?) {
+  let on = false;
+  const btn = el('button', { type: 'button', class: 'anr-wheelzoom' + (extraClass ? ' ' + extraClass : '') });
+  const paint = () => {
+    btn.textContent = on ? 'Scroll zoom on' : 'Scroll zoom off';
+    btn.title = on ? 'Scrolling over the viewer zooms it. Click to let the wheel scroll the page instead.'
+                   : 'Scrolling over the viewer moves the page. Click to zoom with the scroll wheel again.';
+    btn.classList.toggle('is-off', !on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  };
+  btn.addEventListener('click', (e) => { e.stopPropagation(); on = !on; paint(); });
+  // The stages under this pill own drag / double-click gestures - keep a press
+  // on the button from also starting an orbit or triggering a view reset.
+  btn.addEventListener('pointerdown', (e) => e.stopPropagation());
+  btn.addEventListener('mousedown', (e) => e.stopPropagation());
+  btn.addEventListener('dblclick', (e) => e.stopPropagation());
+  paint();
+  return { el: btn, enabled: () => on };
+}
+
+// ===========================================================================
+// Back-button handling: close overlays, and confirm before exiting a PWA.
+// ---------------------------------------------------------------------------
+// Every full-screen pop-up (lightbox, viewer, search overlay, modal) calls
+// openOverlayBack(hide) when it opens and the returned close() when it is
+// dismissed by other means. Opening pushes a throwaway history entry so the
+// device / browser Back button (Android system back, browser back, swipe)
+// closes the top overlay instead of leaving the page; close() unwinds that
+// entry so history stays balanced and stacked overlays close one at a time.
+//
+// In an installed PWA we also arm a guard entry on load, so the Back that would
+// otherwise quit the app lands on a popstate we intercept to ask "Are you sure
+// you want to exit?" first.
+var _ovStack = [];          // open overlays, top last: each { hide }
+var _ovIgnorePop = false;   // true while WE call history.back() to unwind
+var _backReady = false;
+
+function _isStandalone() {
+  try {
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+           window.navigator.standalone === true;
+  } catch (_) { return false; }
+}
+
+function _initBackButton() {
+  if (_backReady || typeof window === 'undefined') return;
+  _backReady = true;
+  // The exit guard only makes sense when SPA navigation is active (navigate.js,
+  // gated on View Transitions): then in-app pages carry an anrNav state and only
+  // the app's base entry is untagged, so we can tell "Back would exit" apart from
+  // ordinary in-app Back. Without SPA, navigation is full reloads and native Back
+  // is correct, so we leave the exit path alone (overlay-closing still works).
+  var exitGuard = _isStandalone() && !!document.startViewTransition;
+  if (exitGuard) {
+    // Arm the guard: an extra entry the first "would-exit" Back lands on.
+    try { history.pushState({ anrGuard: 1 }, ''); } catch (_) {}
+  }
+  window.addEventListener('popstate', function (e) {
+    if (_ovIgnorePop) { _ovIgnorePop = false; return; }
+    // 1) An overlay is open: Back closes the topmost one and is consumed.
+    if (_ovStack.length) {
+      var top = _ovStack.pop();
+      try { top.hide(); } catch (_) {}
+      return;
+    }
+    // 2) No overlay, and we've fallen past our app history (no tagged state) -
+    // this Back was about to quit the installed app. Confirm first.
+    var tagged = e.state && (e.state.anrGuard || e.state.anrNav || e.state.anrOverlay);
+    if (exitGuard && !tagged) {
+      _confirmExit(function () {
+        _ovIgnorePop = false;
+        history.back();                                  // let the exit proceed
+      }, function () {
+        try { history.pushState({ anrGuard: 1 }, ''); } catch (_) {}   // stay
+      });
+    }
+  });
+}
+
+export function openOverlayBack(hide) {
+  _initBackButton();
+  var entry = { hide: hide };
+  _ovStack.push(entry);
+  try { history.pushState({ anrOverlay: 1 }, ''); } catch (_) {}
+  return function close() {
+    var i = _ovStack.indexOf(entry);
+    if (i === -1) return;                  // already closed (e.g. via Back)
+    _ovStack.splice(i, 1);
+    try { hide(); } catch (_) {}
+    _ovIgnorePop = true;
+    try { history.back(); } catch (_) { _ovIgnorePop = false; }   // unwind our entry
+  };
+}
+
+function _confirmExit(onYes, onNo) {
+  if (document.getElementById('anr-exit-confirm')) return;   // already asking
+  var ov = document.createElement('div');
+  ov.id = 'anr-exit-confirm';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,0.6);' +
+    'display:flex;align-items:center;justify-content:center;padding:20px;';
+  var box = document.createElement('div');
+  box.style.cssText = 'background:var(--bg,#fff);color:var(--fg,#111);max-width:340px;width:100%;' +
+    'border:1px solid var(--hairline,#ccc);padding:24px;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,0.4);';
+  var msg = document.createElement('p');
+  msg.textContent = 'Are you sure you want to exit?';
+  msg.style.cssText = 'margin:0 0 20px;font-size:16px;';
+  var btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;gap:10px;justify-content:center;';
+  var yes = document.createElement('button');
+  yes.type = 'button'; yes.className = 'anr-btn'; yes.textContent = 'Exit';
+  var cancel = document.createElement('button');
+  cancel.type = 'button'; cancel.className = 'anr-btn'; cancel.textContent = 'Cancel';
+  btns.appendChild(yes); btns.appendChild(cancel);
+  box.appendChild(msg); box.appendChild(btns);
+  ov.appendChild(box);
+  function done(fn) { ov.remove(); document.removeEventListener('keydown', onKey); fn(); }
+  function onKey(e) { if (e.key === 'Escape') done(onNo); }
+  yes.addEventListener('click', function () { done(onYes); });
+  cancel.addEventListener('click', function () { done(onNo); });
+  ov.addEventListener('click', function (e) { if (e.target === ov) done(onNo); });
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(ov);
+  cancel.focus();
+}
+
+// Arm on load so the PWA exit guard is in place even before any overlay opens.
+_initBackButton();

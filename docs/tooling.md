@@ -32,8 +32,18 @@ locally - without this, `/api/*` would fall through to the SPA handler and
 break the visitor badge and the `/stats`/`/atari` pages. Binds `0.0.0.0` so
 the printed Network URL works for phone testing on the same Wi-Fi.
 
-There is no build step: editing a file and refreshing is the entire dev
-loop.
+The app source is TypeScript under `src/`, compiled 1:1 into
+`web/assets/js/` - so the dev loop is now "edit `src/`, let the watcher
+recompile, refresh". `server.bat` starts two `tsc --watch` windows alongside
+the server for exactly this; without one running, edits to `src/` have no
+effect on the served page. To build once by hand:
+`npx tsc -p tsconfig.json && npx tsc -p tsconfig.worker.json` (two configs,
+because the three module workers need the WebWorker lib, which cannot share a
+program with the DOM lib).
+
+`web/assets/js/` is generated output and is committed, like `web/formats/`
+and `web/docs/` - which keeps the Cloudflare deploy a pure static upload of
+`web/` with no build configured on their side.
 
 ## Commit / version-bump flow (save.bat)
 
@@ -43,14 +53,48 @@ menu: Save / Commit / Push / Pull / Backup / Samples / Quit) or with an
 action argument (`save.bat save`, `save.bat commit` for commit-without-push,
 `save.bat --force` for commit + force-push). The `:save` path:
 
-1. Computes the next commit count (`git rev-list --count HEAD` + 1) and the
+1. Computes the next commit count by reading the current
+   `const COMMIT_COUNT = N;` out of `src/core/app.ts` and adding 1, then the
    version label via the same major/minor logic as `analyserVersion()` in
    `app.js` (a `RELEASES` list in the batch file that must stay in sync with
    `RELEASE_COMMITS` - see "Version numbering" below).
-2. Bumps `const COMMIT_COUNT = N;` in `web/assets/js/core/app.js` and `const
+
+   The count is read from the **source**, not from `git rev-list --count HEAD`,
+   because that is a property of the individual clone rather than the project:
+   it collapses whenever history is squashed, re-initialised or cloned shallow.
+   That is not hypothetical - it once returned 1 on a squashed history, so the
+   next count came out as 2 and the public version fell from 8.14 to 0.02. The
+   value in `src/core/app.ts` is committed, so it is the same on every machine
+   and only moves forward. If it cannot be read, `save.bat` **aborts** rather
+   than guessing, since a wrong count sends the public version backwards.
+2. Bumps `const COMMIT_COUNT = N;` in `src/core/app.ts` and `const
    VERSION = 'analyser-vN';` in `web/sw.js` via UTF-8-safe PowerShell regex
    replacements (explicit `-Encoding UTF8` on both read and write, otherwise
    Windows' ANSI code page default mangles non-ASCII characters in the file).
+   The count lives in the TypeScript **source**: bumping the generated
+   `web/assets/js/core/app.js` would be overwritten by the build in the next
+   step, silently freezing the version. For the same reason the declaration
+   must stay a bare numeric literal - annotating it (`: number`, `as const`)
+   stops the regex matching, and it fails silently.
+2b. Compiles `src/` to `web/assets/js/`, then gates on two things. The build
+   runs before the generators because four of them import the emitted
+   `core/formats.js` into Node.
+
+   `tsc`'s own exit code is deliberately **not** the gate - it is non-zero
+   while the migration to full `strict` is in progress even though the emitted
+   JS is correct. Instead the two error classes are treated differently:
+
+   - **Syntax errors (TS1xxx)** are **fatal**. The parse failed, so the
+     emitted JS for that file may be wrong or truncated and must never ship.
+     The offending lines are printed and the commit aborts.
+   - **Type errors (TS2xxx)** do not block a commit. They are expected
+     mid-migration, so the console shows only a one-line count rather than
+     thousands of lines; the full log stays at `%TEMP%\anr-tsc-all.log` for
+     when you want to work through them.
+
+   `tools/check-build.mjs` is the second gate and is also **fatal** (unlike
+   every generator below): it verifies each source has output no older than
+   it, so a stale build can't be committed against new sources.
 3. Runs the generator scripts, in order (each non-fatal - a failure just
    commits the previous generated output with a warning): rebuild
    `/samples` from `samples/`, prerender `/formats` from the catalog,

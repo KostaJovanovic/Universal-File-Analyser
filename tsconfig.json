@@ -1,0 +1,40 @@
+{
+  // Analyser - main compile. src/*.ts -> web/assets/js/*.js, 1:1, never bundled.
+  // The emitted tree IS what ships and what sw.js's SHELL, check-shell.mjs and
+  // the prerender generators all read, so the module graph must survive intact:
+  // every import specifier is written with a .js extension in source and is
+  // emitted verbatim.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Preserve",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+
+    "rootDir": "src",
+    "outDir": "web/assets/js",
+
+    "sourceMap": true,
+    "inlineSources": true,
+
+    // Phase 1 posture: loosest settings that still catch arity and
+    // property-existence errors. Tightened per-directory in Phase 3.
+    "strict": false,
+    "noImplicitAny": false,
+
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowJs": false
+  },
+  "include": ["src", "types"],
+  "exclude": [
+    "node_modules",
+    "web",
+    "tools",
+    "worker",
+    // Compiled by tsconfig.worker.json instead - they need the WebWorker lib,
+    // which collides with DOM (both declare self/postMessage).
+    "src/lib/dfn-worker.ts",
+    "src/lib/mdx-worker.ts",
+    "src/renderers/audio-dsp-worker.ts"
+  ]
+}

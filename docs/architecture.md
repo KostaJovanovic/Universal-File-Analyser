@@ -8,8 +8,11 @@ pipeline, renderer, or page docs.
 ## Zero-backend model
 
 Analyser has no application server. It is plain HTML/CSS/ES-module JavaScript
-with no framework, no build step and no `node_modules` (see the repo root
-`CLAUDE.md`). Every file a user drops is read locally through the browser's
+with no framework and no runtime dependencies (see the repo root `CLAUDE.md`).
+The app source is TypeScript in `src/`, compiled 1:1 by `tsc` into the
+`web/assets/js/` modules the browser loads - a type-checking step only, which
+adds no framework, no bundler and nothing to the shipped page. The compiled
+output is committed, so deployment stays a static upload. Every file a user drops is read locally through the browser's
 File API and analysed with on-device code and lazy-loaded WebAssembly - nothing
 is uploaded. The only server-side code in the whole project is the Cloudflare
 Worker described in [`worker.md`](worker.md), which powers an anonymous

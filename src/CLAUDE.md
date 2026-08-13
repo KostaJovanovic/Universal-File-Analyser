@@ -1,7 +1,20 @@
-# web/assets/js - module inventory
+# src - module inventory
 
-The app JS. This file loads only when Claude works with files under
-`web/assets/js/`; the repo-wide rules live in the root `CLAUDE.md`.
+The app source. This file loads only when Claude works with files under `src/`;
+the repo-wide rules live in the root `CLAUDE.md`.
+
+**These are TypeScript sources.** `tsc` compiles them 1:1 into
+`web/assets/js/**/*.js`, which is generated output - never edit it, and never
+add a module there. The tree shape and every filename below are unchanged apart
+from the extension (`core/app.ts` -> `web/assets/js/core/app.js`), so the paths
+in `sw.js`'s `SHELL`, `core/offline-tiers.ts` and `check-shell.mjs` still refer
+to the emitted `.js`. Import specifiers are written with a **`.js`** extension in
+source (`import { el } from '../core/util.js'`) - TypeScript resolves that to the
+`.ts` file and emits the specifier verbatim, which is what keeps the module graph
+and the offline manifest intact. Keep writing them that way.
+
+The migration to full type coverage is in progress: `strict` is off and there are
+outstanding type errors. They don't block the build - see the root `CLAUDE.md`.
 
 One module per top-level type: `classify.js` maps a dropped file to a kind,
 `ROUTES` in `core/app.js` maps that kind to a renderer here.
