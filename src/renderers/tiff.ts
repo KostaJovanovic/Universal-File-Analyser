@@ -10,7 +10,7 @@ import { readImagesAsPngs } from './photo-convert.js';
 
 // Walk the TIFF IFD chain. Returns [{ w, h }, ...] (one per page) or null if the
 // bytes aren't a classic TIFF. Dimensions are best-effort (0 if not inline).
-export function tiffPages(buf) {
+export function tiffPages(buf: ArrayBuffer | null | undefined) {
   if (!buf || buf.byteLength < 8) return null;
   const dv = new DataView(buf);
   const bo = dv.getUint16(0, false);
@@ -20,10 +20,10 @@ export function tiffPages(buf) {
   if (magic !== 0x002A) return null;             // 0x002B = BigTIFF, not walked here
   const n = buf.byteLength;
 
-  const sizeOf = (type) => (type === 3 ? 2 : type === 4 || type === 13 ? 4 : type === 1 || type === 2 || type === 6 || type === 7 ? 1 : 0);
-  const readVal = (pos, type) => (type === 3 ? dv.getUint16(pos, le) : dv.getUint32(pos, le));
+  const sizeOf = (type: number) => (type === 3 ? 2 : type === 4 || type === 13 ? 4 : type === 1 || type === 2 || type === 6 || type === 7 ? 1 : 0);
+  const readVal = (pos: number, type: number) => (type === 3 ? dv.getUint16(pos, le) : dv.getUint32(pos, le));
 
-  const pages = [];
+  const pages: { w: number; h: number }[] = [];
   let ifd = dv.getUint32(4, le);
   const seen = new Set();
   while (ifd && ifd + 2 <= n && !seen.has(ifd) && pages.length < 4096) {
@@ -49,7 +49,7 @@ export function tiffPages(buf) {
 
 // Build the "Embedded images" card for a multi-page TIFF, or null if it's a single
 // page (or not a walkable TIFF). Decodes via ImageMagick only when worthwhile.
-export async function buildTiffPagesCard(file, signal, container) {
+export async function buildTiffPagesCard(file: File, signal: AbortSignal | null | undefined, container: HTMLElement) {
   let pages = null;
   try { pages = tiffPages(await file.arrayBuffer()); } catch (_) { pages = null; }
   if (!pages || pages.length < 2) return null;   // single-page TIFF: nothing extra to show

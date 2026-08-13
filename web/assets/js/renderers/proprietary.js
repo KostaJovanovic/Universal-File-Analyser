@@ -2334,7 +2334,7 @@ async function parseTorrent(file) {
                 const total = info.files.reduce((s, f) => s + (f.length || 0), 0);
                 fields['Total size'] = fmtBytes(total);
                 fields['Files'] = info.files.length;
-                const fileList = info.files.slice(0, 20).map(f => {
+                const fileList = info.files.slice(0, 20).map((f) => {
                     const path = Array.isArray(f.path) ? f.path.join('/') : f.path;
                     return path + '  (' + fmtBytes(f.length) + ')';
                 });

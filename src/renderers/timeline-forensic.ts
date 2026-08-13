@@ -26,7 +26,7 @@ const MAC_EPOCH = 2082844800; // seconds between 1904-01-01 and 1970-01-01 (UTC)
 const okDate = (d) => d instanceof Date && !isNaN(d.getTime()) && d.getTime() > 0;
 
 // ---------- MP4 / QuickTime movie header ----------
-async function readBoxHeader(file, pos) {
+async function readBoxHeader(file: File, pos) {
   const hdr = new Uint8Array(await file.slice(pos, pos + 16).arrayBuffer());
   if (hdr.length < 8) return null;
   const dv = new DataView(hdr.buffer);
@@ -61,7 +61,7 @@ function mvhdFromMoov(moov) {
   return null;
 }
 
-async function mp4Dates(file) {
+async function mp4Dates(file: File) {
   let pos = 0, guard = 0;
   while (pos < file.size && guard++ < 200) {
     const box = await readBoxHeader(file, pos);
@@ -78,7 +78,7 @@ async function mp4Dates(file) {
 }
 
 // ---------- PNG tIME ----------
-async function pngTime(file) {
+async function pngTime(file: File) {
   const b = new Uint8Array(await file.slice(0, Math.min(file.size, 1 << 20)).arrayBuffer());
   if (b[0] !== 0x89 || b[1] !== 0x50) return null;
   const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
@@ -105,7 +105,7 @@ function pickTag(xml, tag) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-async function zipDocDates(file) {
+async function zipDocDates(file: File) {
   const { openZip } = await import('./zip.js');
   const zip = await openZip(file);
   const out: any = {};
@@ -126,7 +126,7 @@ async function zipDocDates(file) {
 }
 
 // ---------- gather every timestamp ----------
-export async function collectTimestamps(file) {
+export async function collectTimestamps(file: File) {
   // stamps: what we list. probe: the named dates fed to the anomaly detector.
   const stamps = [];
   const probe: any = {};
@@ -160,7 +160,7 @@ export async function collectTimestamps(file) {
 // ---------- card ----------
 const TL_HELP = 'A file can carry several dates: the "last modified" time your computer reports, and the dates the file records inside itself (a document’s created and modified dates, a video’s movie-header times, a PNG’s tIME). This card lists them in order and flags combinations that should be impossible - a file modified before it was created, or a document dated earlier than its own last save - which can point to a date that was faked or edited by hand. Every date is read on your device.';
 
-export async function forensicTimelineCard(file) {
+export async function forensicTimelineCard(file: File) {
   let stamps, probe;
   try { ({ stamps, probe } = await collectTimestamps(file)); } catch (_) { return null; }
   const anomalies = timeAnomalies(probe);

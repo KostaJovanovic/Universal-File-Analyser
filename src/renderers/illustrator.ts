@@ -7,7 +7,7 @@
 
 import { renderPdf } from './pdf.js';
 
-export async function renderAi(file, resultsEl) {
+export async function renderAi(file: File, resultsEl: HTMLElement) {
   let isPdf = false;
   try {
     const head = new Uint8Array(await file.slice(0, 5).arrayBuffer());

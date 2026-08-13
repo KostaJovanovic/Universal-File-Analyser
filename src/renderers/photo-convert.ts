@@ -35,7 +35,7 @@ async function fetchWithProgress(url, onProgress) {
 }
 
 // HEIC/HEIF -> JPEG via heic2any.
-export async function convertHeic(file) {
+export async function convertHeic(file: File) {
   await loadScript(HEIC2ANY_URL);
   const blob = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
   const out = Array.isArray(blob) ? blob[0] : blob;
@@ -50,7 +50,7 @@ export async function convertHeic(file) {
 // the SECd directory at EOF, find the image (IMA2) sections whose format is 18
 // (JPEG), and return the highest-resolution one. The preview carries EXIF too, so
 // exifr still works. Throws if the file isn't X3F or has no JPEG preview.
-export async function extractX3fPreview(file) {
+export async function extractX3fPreview(file: File) {
   const buf = new Uint8Array(await file.arrayBuffer());
   const dv = new DataView(buf.buffer);
   const len = buf.length;
@@ -90,7 +90,7 @@ export async function extractX3fPreview(file) {
 // requiring a real SOI: a genuine JPEG always follows FFD8 with another marker
 // (FF Cx/Dx/Ex...), i.e. byte[i+2] === 0xFF. Stray matches in sensor data
 // almost never satisfy that, so they're skipped.
-export async function extractRawPreview(file) {
+export async function extractRawPreview(file: File) {
   const buf = new Uint8Array(await file.arrayBuffer());
   const jpegs = [];
   for (let i = 0; i < buf.length - 1; i++) {
@@ -119,7 +119,7 @@ export async function extractRawPreview(file) {
 // embedded JPEG; we follow the IFD0->IFD1 chain (thumbnail) and recurse into
 // SubIFDs (0x014A, where DNG and others keep previews). Returns
 // [{ offset, length, blob }], largest first. RAW/TIFF only (CR3 etc. aren't TIFF).
-export async function extractRawJpegs(file, { max = 12 } : any = {}) {
+export async function extractRawJpegs(file: File, { max = 12 } : any = {}) {
   const u8 = new Uint8Array(await file.arrayBuffer());
   const buf = u8.buffer, dv = new DataView(buf), len = u8.length;
   if (len < 8) return [];
@@ -201,7 +201,7 @@ let magickReady = null;
 
 // Full RAW -> JPEG decode via ImageMagick-WASM (~15 MB, loaded once). Renders an
 // ASCII progress bar into `container` while the wasm downloads/initialises.
-export async function convertWithImageMagick(file, container, label?) {
+export async function convertWithImageMagick(file: File, container, label?) {
   const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const labelEl = el('div', { class: 'anr-progress-label' }, 'loading imagemagick (~15 mb)');
   const wrap = el('div', { class: 'anr-progress' }, [barEl, labelEl]);
@@ -248,7 +248,7 @@ export async function convertWithImageMagick(file, container, label?) {
 // Decode EVERY frame/page of a multi-image file (multi-page TIFF, etc.) to PNG via
 // ImageMagick-WASM. Returns [{ width, height, blob /* image/png */ }, ...] in file
 // order, or [] on failure. Renders the same ASCII load bar into `container`.
-export async function readImagesAsPngs(file, container) {
+export async function readImagesAsPngs(file: File, container) {
   const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const labelEl = el('div', { class: 'anr-progress-label' }, 'loading imagemagick');
   const wrap = el('div', { class: 'anr-progress' }, [barEl, labelEl]);
@@ -298,7 +298,7 @@ let librawMod = null;
 // libraw demosaics, white-balances and gamma-corrects it to an 8-bit (or 16-bit)
 // RGB buffer, which we paint to a canvas and hand back as a full-resolution JPEG.
 // Renders an ASCII progress bar into `container` while the decoder loads.
-export async function demosaicRaw(file, container) {
+export async function demosaicRaw(file: File, container) {
   const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const labelEl = el('div', { class: 'anr-progress-label' }, 'loading raw decoder');
   const wrap = el('div', { class: 'anr-progress' }, [barEl, labelEl]);

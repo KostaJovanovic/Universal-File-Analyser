@@ -46,7 +46,7 @@ async function readLottieData(file, ext) {
         let target = null;
         try {
             if (zip.has('manifest.json')) {
-                const man = JSON.parse(await zip.text('manifest.json'));
+                const man = JSON.parse((await zip.text('manifest.json')));
                 const id = man && man.animations && man.animations[0] && man.animations[0].id;
                 if (id && zip.has('animations/' + id + '.json'))
                     target = 'animations/' + id + '.json';
@@ -59,7 +59,7 @@ async function readLottieData(file, ext) {
         }
         if (!target)
             throw new Error('no animation JSON inside this .lottie');
-        return JSON.parse(await zip.text(target));
+        return JSON.parse((await zip.text(target)));
     }
     return JSON.parse(await file.text());
 }

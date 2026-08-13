@@ -17,14 +17,14 @@
 
 import { fmtBytes, preBlock, fmtDate } from '../core/util.js';
 import { Reader, ascii, findBytes, latin1, utf8, utf16, fmtGuid } from '../core/binutil.js';
-import type { Row } from '../core/types.js';
+import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- small shared helpers ----------
 
-async function readBytes(file, n) {
+async function readBytes(file: File, n) {
   return new Uint8Array(await file.slice(0, Math.min(file.size, n)).arrayBuffer());
 }
-async function readRange(file, start, end) {
+async function readRange(file: File, start, end) {
   start = Math.max(0, start);
   end = Math.min(end, file.size);
   if (end <= start) return new Uint8Array(0);
@@ -94,7 +94,7 @@ function parseOvfXml(xml) {
   if (sections.length) out._sections = sections;
   return out;
 }
-async function parseOvf(file) {
+async function parseOvf(file: File) {
   const text = await file.slice(0, Math.min(file.size, 2 * 1024 * 1024)).text();
   if (!/<\s*(?:\w+:)?Envelope/i.test(text)) return null;
   try { return parseOvfXml(text); } catch (_) { return null; }
@@ -116,7 +116,7 @@ function tarOctal(bytes, off, len) {
   }
   return s ? parseInt(s, 8) : 0;
 }
-async function parseOva(file) {
+async function parseOva(file: File) {
   // Walk the tar members; the .ovf member tends to be first and small.
   const cap = Math.min(file.size, 4 * 1024 * 1024);
   const b = await readBytes(file, cap);
@@ -151,7 +151,7 @@ async function parseOva(file) {
 }
 
 // ---------- VirtualBox settings (.vbox XML) ----------
-async function parseVbox(file) {
+async function parseVbox(file: File) {
   const text = await file.slice(0, Math.min(file.size, 2 * 1024 * 1024)).text();
   if (!/<VirtualBox\b/i.test(text) && !/<Machine\b/i.test(text)) return null;
   const out: Row = { 'Format': 'VirtualBox machine settings (.vbox)' };
@@ -189,7 +189,7 @@ async function parseVbox(file) {
 }
 
 // ---------- VMware VM config (.vmx key=value) ----------
-async function parseVmx(file) {
+async function parseVmx(file: File) {
   const text = await file.slice(0, Math.min(file.size, 1024 * 1024)).text();
   const kv: Record<string, string> = {};
   let lines = 0;
@@ -230,7 +230,7 @@ async function parseVmx(file) {
 // ===================================================================
 
 // ---------- cue sheet (text) ----------
-async function parseCue(file) {
+async function parseCue(file: File) {
   const text = await file.slice(0, Math.min(file.size, 512 * 1024)).text();
   if (!/^\s*(FILE|REM|TRACK)\b/im.test(text)) return null;
   const files = [];
@@ -261,11 +261,11 @@ async function parseCue(file) {
 }
 
 // ---------- CloneCD control (.ccd INI) ----------
-async function parseCcd(file) {
+async function parseCcd(file: File) {
   const text = await file.slice(0, Math.min(file.size, 512 * 1024)).text();
   if (!/\[CloneCD\]/i.test(text) && !/\[Disc\]/i.test(text)) return null;
   const get = (k) => { const m = text.match(new RegExp('^' + k + '\\s*=\\s*(.+)$', 'im')); return m ? m[1].trim() : null; };
-  const out = { 'Format': 'CloneCD control file (.ccd)' };
+  const out: Row = { 'Format': 'CloneCD control file (.ccd)' };
   const ver = (text.match(/\[CloneCD\][\s\S]*?Version\s*=\s*(\d+)/i) || [])[1];
   if (ver) out['Version'] = ver;
   const sessions = get('Sessions');
@@ -280,9 +280,9 @@ async function parseCcd(file) {
 }
 
 // ---------- Nero image (.nrg, trailer-based) ----------
-async function parseNrg(file) {
+async function parseNrg(file: File) {
   // Footer holds NER5 (v2, 8-byte offset) or NERO (v1, 4-byte offset).
-  const out = { 'Format': 'Nero CD/DVD image (.nrg)' };
+  const out: Row = { 'Format': 'Nero CD/DVD image (.nrg)' };
   try {
     const tail = await readRange(file, file.size - 12, file.size);
     if (ascii(tail, 0, 4) === 'NER5') {
@@ -304,7 +304,7 @@ async function parseNrg(file) {
 }
 
 // ---------- Alcohol 120% (.mds / .mdf) ----------
-async function parseMds(file, ext) {
+async function parseMds(file: File, ext: string) {
   if (ext === 'mdf') {
     return { 'Format': 'Alcohol 120% media data (.mdf)', 'Note': 'Raw track payload; metadata lives in the companion .mds descriptor.', 'Size': fmtBytes(file.size) };
   }
@@ -314,7 +314,7 @@ async function parseMds(file, ext) {
   const r = new Reader(b, true); r.seek(16);
   const verMajor = r.u8(), verMinor = r.u8();
   const mediaType = r.u16();
-  const MEDIA = { 0: 'CD-ROM', 1: 'CD-R', 2: 'CD-RW', 16: 'DVD-ROM', 18: 'DVD-R' };
+  const MEDIA: Record<number, string> = { 0: 'CD-ROM', 1: 'CD-R', 2: 'CD-RW', 16: 'DVD-ROM', 18: 'DVD-R' };
   const out = {
     'Format': 'Alcohol 120% media descriptor (.mds)',
     'Version': verMajor + '.' + verMinor,
@@ -328,7 +328,7 @@ async function parseMds(file, ext) {
 // ===================================================================
 
 // ---------- Intel HEX (text) ----------
-async function parseIntelHex(file) {
+async function parseIntelHex(file: File) {
   const text = await file.slice(0, Math.min(file.size, 8 * 1024 * 1024)).text();
   const lines = text.split(/\r?\n/);
   if (!/^:[0-9A-Fa-f]{8}/.test(lines.find((l) => l.trim()) || '')) return null;
@@ -360,8 +360,8 @@ async function parseIntelHex(file) {
     if (records > 2000000) break;
   }
   if (!records) return null;
-  const TNAMES = { 0: 'Data', 1: 'EOF', 2: 'Ext seg addr', 3: 'Start seg addr', 4: 'Ext linear addr', 5: 'Start linear addr' };
-  const out = {
+  const TNAMES: Record<string, string> = { 0: 'Data', 1: 'EOF', 2: 'Ext seg addr', 3: 'Start seg addr', 4: 'Ext linear addr', 5: 'Start linear addr' };
+  const out: Row = {
     'Format': 'Intel HEX',
     'Records': records.toLocaleString(),
     'Data bytes': dataBytes.toLocaleString(),
@@ -373,14 +373,14 @@ async function parseIntelHex(file) {
 }
 
 // ---------- Motorola S-record (text) ----------
-async function parseSrec(file) {
+async function parseSrec(file: File) {
   const text = await file.slice(0, Math.min(file.size, 8 * 1024 * 1024)).text();
   const lines = text.split(/\r?\n/);
   const first = lines.find((l) => l.trim());
   if (!first || first[0] !== 'S' || !/^S[0-9]/.test(first)) return null;
   const counts: any = {}; let dataBytes = 0, records = 0, badCksum = 0;
   let minAddr = Infinity, maxAddr = -Infinity, headerText = null;
-  const ADDR_WIDTH = { '1': 2, '2': 3, '3': 4, '5': 2, '6': 3, '7': 4, '8': 3, '9': 2 };
+  const ADDR_WIDTH: Record<string, number> = { '1': 2, '2': 3, '3': 4, '5': 2, '6': 3, '7': 4, '8': 3, '9': 2 };
   for (const line of lines) {
     const l = line.trim();
     if (l.length < 4 || l[0] !== 'S') continue;
@@ -413,7 +413,7 @@ async function parseSrec(file) {
   }
   if (!records) return null;
   const dataType = counts['3'] ? '32-bit (S3)' : counts['2'] ? '24-bit (S2)' : '16-bit (S1)';
-  const out = {
+  const out: Row = {
     'Format': 'Motorola S-record',
     'S0 header': headerText || '-',
     'Address width': dataType,
@@ -427,7 +427,7 @@ async function parseSrec(file) {
 }
 
 // ---------- UF2 (binary, 512-byte blocks) ----------
-async function parseUf2(file) {
+async function parseUf2(file: File) {
   const head = await readBytes(file, 512);
   // First magic 0x0A324655 ("UF2\n") at offset 0, second 0x9E5D5157 at 4.
   if (!(head[0] === 0x55 && head[1] === 0x46 && head[2] === 0x32 && head[3] === 0x0a)) return null;
@@ -439,7 +439,7 @@ async function parseUf2(file) {
   r.u32(); // blockNo
   const numBlocks = r.u32();
   const familyId = r.u32(); // or fileSize, depending on flags
-  const out = {
+  const out: Row = {
     'Format': 'UF2 (USB Flashing Format)',
     'Blocks': numBlocks.toLocaleString(),
     'First flash address': hex(firstAddr),
@@ -461,14 +461,14 @@ async function parseUf2(file) {
 }
 
 // ---------- ELF (binary header) ----------
-const ELF_TYPE = { 0: 'none', 1: 'relocatable (.o)', 2: 'executable', 3: 'shared object (.so)', 4: 'core dump' };
-const ELF_MACHINE = {
+const ELF_TYPE: Record<number, string> = { 0: 'none', 1: 'relocatable (.o)', 2: 'executable', 3: 'shared object (.so)', 4: 'core dump' };
+const ELF_MACHINE: Record<number, string> = {
   0: 'none', 2: 'SPARC', 3: 'x86', 8: 'MIPS', 0x14: 'PowerPC', 0x15: 'PowerPC64',
   0x16: 'S390', 0x28: 'ARM', 0x2a: 'SuperH', 0x32: 'IA-64', 0x3e: 'x86-64',
   0x53: 'AVR', 0xb7: 'AArch64 (ARM64)', 0xf3: 'RISC-V', 0x5441: 'PowerPC (cygnus)',
   0xdc: 'Renesas RX', 0x18: 'PA-RISC', 0x4c: 'Renesas H8/300', 0x52: 'Motorola M32C',
 };
-const ELF_OSABI = {
+const ELF_OSABI: Record<string, string> = {
   0: 'System V', 1: 'HP-UX', 2: 'NetBSD', 3: 'Linux', 6: 'Solaris', 7: 'AIX',
   9: 'FreeBSD', 0x0c: 'OpenBSD', 0x40: 'ARM EABI', 0x61: 'ARM',
 };
@@ -509,7 +509,7 @@ function parseElf(head) {
 }
 
 // ---------- Device Tree Blob (.dtb / .dtbo) ----------
-async function parseDtb(file) {
+async function parseDtb(file: File) {
   const head = await readBytes(file, 4096);
   // FDT magic 0xD00DFEED (big-endian).
   if (!(head[0] === 0xd0 && head[1] === 0x0d && head[2] === 0xfe && head[3] === 0xed)) return null;
@@ -521,7 +521,7 @@ async function parseDtb(file) {
   r.u32(); // off_mem_rsvmap
   const version = r.u32();
   const lastCompVersion = r.u32();
-  const out = {
+  const out: Row = {
     'Format': 'Device Tree Blob (FDT)',
     'Version': version + ' (last compat ' + lastCompVersion + ')',
     'Total size': fmtBytes(totalsize),
@@ -539,11 +539,11 @@ async function parseDtb(file) {
 }
 
 // ---------- U-Boot uImage ----------
-const UIMG_OS = { 0: 'invalid', 1: 'OpenBSD', 2: 'NetBSD', 3: 'FreeBSD', 4: '4.4BSD', 5: 'Linux', 6: 'SVR4', 7: 'Esix', 8: 'Solaris', 17: 'QNX', 18: 'U-Boot', 19: 'RTEMS', 22: 'VxWorks' };
-const UIMG_ARCH = { 0: 'invalid', 1: 'Alpha', 2: 'ARM', 3: 'x86', 4: 'IA64', 5: 'MIPS', 6: 'MIPS64', 7: 'PowerPC', 8: 'S390', 9: 'SuperH', 10: 'SPARC', 11: 'SPARC64', 12: 'M68K', 16: 'MicroBlaze', 17: 'Nios2', 22: 'AArch64', 26: 'RISC-V' };
-const UIMG_TYPE = { 0: 'invalid', 1: 'standalone', 2: 'kernel', 3: 'ramdisk', 4: 'multi', 5: 'firmware', 6: 'script', 7: 'filesystem', 8: 'flat DT' };
-const UIMG_COMP = { 0: 'none', 1: 'gzip', 2: 'bzip2', 3: 'lzma', 4: 'lzo', 5: 'lz4', 6: 'zstd' };
-async function parseUImage(file) {
+const UIMG_OS: Record<number, string> = { 0: 'invalid', 1: 'OpenBSD', 2: 'NetBSD', 3: 'FreeBSD', 4: '4.4BSD', 5: 'Linux', 6: 'SVR4', 7: 'Esix', 8: 'Solaris', 17: 'QNX', 18: 'U-Boot', 19: 'RTEMS', 22: 'VxWorks' };
+const UIMG_ARCH: Record<number, string> = { 0: 'invalid', 1: 'Alpha', 2: 'ARM', 3: 'x86', 4: 'IA64', 5: 'MIPS', 6: 'MIPS64', 7: 'PowerPC', 8: 'S390', 9: 'SuperH', 10: 'SPARC', 11: 'SPARC64', 12: 'M68K', 16: 'MicroBlaze', 17: 'Nios2', 22: 'AArch64', 26: 'RISC-V' };
+const UIMG_TYPE: Record<number, string> = { 0: 'invalid', 1: 'standalone', 2: 'kernel', 3: 'ramdisk', 4: 'multi', 5: 'firmware', 6: 'script', 7: 'filesystem', 8: 'flat DT' };
+const UIMG_COMP: Record<number, string> = { 0: 'none', 1: 'gzip', 2: 'bzip2', 3: 'lzma', 4: 'lzo', 5: 'lz4', 6: 'zstd' };
+async function parseUImage(file: File) {
   const head = await readBytes(file, 64);
   if (!(head[0] === 0x27 && head[1] === 0x05 && head[2] === 0x19 && head[3] === 0x56)) return null;
   const r = new Reader(head); // big-endian
@@ -576,7 +576,7 @@ async function parseUImage(file) {
 //                       Partition tables
 // ===================================================================
 
-const MBR_TYPES = {
+const MBR_TYPES: Record<string, string> = {
   0x00: 'empty', 0x05: 'extended (CHS)', 0x07: 'NTFS / exFAT', 0x0b: 'FAT32 (CHS)',
   0x0c: 'FAT32 (LBA)', 0x0e: 'FAT16 (LBA)', 0x0f: 'extended (LBA)', 0x82: 'Linux swap',
   0x83: 'Linux', 0x8e: 'Linux LVM', 0xa5: 'FreeBSD', 0xa8: 'macOS UFS', 0xaf: 'HFS / HFS+',
@@ -606,17 +606,17 @@ function parseMbrEntries(b, out) {
   }
   return parts;
 }
-async function parseMbr(file) {
+async function parseMbr(file: File) {
   const b = await readBytes(file, 512);
   if (b.length < 512 || !(b[510] === 0x55 && b[511] === 0xaa)) return null;
-  const out = { 'Format': 'Master Boot Record (MBR)' };
+  const out: Row = { 'Format': 'Master Boot Record (MBR)' };
   const sig = (b[440] | (b[441] << 8) | (b[442] << 16) | (b[443] << 24)) >>> 0;
   if (sig) out['Disk signature'] = hex(sig);
   const parts = parseMbrEntries(b, out);
   if (parts.some((p) => p.type === 0xee)) out['Note'] = 'Protective MBR - disk is GPT-partitioned (see .gpt).';
   return out;
 }
-async function parseGpt(file) {
+async function parseGpt(file: File) {
   // Primary GPT header lives in LBA 1 (offset 512). The image might also start
   // directly at the header. Probe both.
   const b = await readBytes(file, 512 * 40 + 512);
@@ -691,7 +691,7 @@ async function parseGpt(file) {
 // ===================================================================
 
 // ---------- ext2/3/4 superblock @1024 ----------
-async function parseExt(file) {
+async function parseExt(file: File) {
   const b = await readRange(file, 1024, 1024 + 1024);
   if (b.length < 256) return null;
   const r = new Reader(b, true);
@@ -722,7 +722,7 @@ async function parseExt(file) {
   let type = 'ext2';
   if (featIncompat & 0x40 || featRoCompat & 0x8) type = 'ext4';
   else if (featCompat & 0x4) type = 'ext3';
-  const out = {
+  const out: Row = {
     'Format': type + ' filesystem',
     'Block size': fmtBytes(blockSize),
     'Total blocks': blocksCountLo.toLocaleString(),
@@ -738,8 +738,8 @@ async function parseExt(file) {
 }
 
 // ---------- SquashFS ----------
-const SQ_COMP = { 1: 'gzip', 2: 'lzma', 3: 'lzo', 4: 'xz', 5: 'lz4', 6: 'zstd' };
-async function parseSquashfs(file) {
+const SQ_COMP: Record<number, string> = { 1: 'gzip', 2: 'lzma', 3: 'lzo', 4: 'xz', 5: 'lz4', 6: 'zstd' };
+async function parseSquashfs(file: File) {
   const b = await readBytes(file, 96);
   // 'hsqs' (LE) or 'sqsh' (BE).
   let little;
@@ -761,7 +761,7 @@ async function parseSquashfs(file) {
   r.u64(); // root inode
   let bytesUsed = null;
   if (r.remaining() >= 8) bytesUsed = Number(r.u64());
-  const out = {
+  const out: Row = {
     'Format': 'SquashFS' + (little ? '' : ' (big-endian)'),
     'Version': verMajor + '.' + verMinor,
     'Compression': SQ_COMP[compId] != null ? SQ_COMP[compId] : ('id ' + compId),
@@ -776,7 +776,7 @@ async function parseSquashfs(file) {
 }
 
 // ---------- cramfs ----------
-async function parseCramfs(file) {
+async function parseCramfs(file: File) {
   const b = await readBytes(file, 76);
   // magic 0x28cd3d45 (LE) at 0, or BE.
   let little;
@@ -808,7 +808,7 @@ async function parseCramfs(file) {
 }
 
 // ---------- romfs ----------
-async function parseRomfs(file) {
+async function parseRomfs(file: File) {
   const b = await readBytes(file, 128);
   if (ascii(b, 0, 8) !== '-rom1fs-') return null;
   const r = new Reader(b); // big-endian
@@ -835,7 +835,7 @@ const WIM_COMP = (flags) => {
   if (flags & 0x00000002) return 'none (FLAG_COMPRESSION)';
   return 'none';
 };
-async function parseWim(file, ext) {
+async function parseWim(file: File, ext: string) {
   const b = await readBytes(file, 208);
   if (ascii(b, 0, 8) !== 'MSWIM\0\0\0') return null;
   const r = new Reader(b, true);
@@ -850,7 +850,7 @@ async function parseWim(file, ext) {
   const partNumber = r.u16();
   const totalParts = r.u16();
   const imageCount = r.u32();
-  const out = {
+  const out: Row = {
     'Format': (ext === 'esd' ? 'Windows ESD' : ext === 'swm' ? 'Split WIM (.swm)' : 'Windows Imaging (.wim)'),
     'Version': hex(version, 8),
     'Header size': headerSize,
@@ -869,7 +869,7 @@ async function parseWim(file, ext) {
 // ===================================================================
 
 // ---------- TRX firmware (Broadcom / OpenWrt, 'HDR0') ----------
-async function parseTrx(file) {
+async function parseTrx(file: File) {
   const b = await readBytes(file, 32);
   // magic 'HDR0' (0x30524448 LE) at offset 0.
   if (!(b[0] === 0x48 && b[1] === 0x44 && b[2] === 0x52 && b[3] === 0x30)) return null;
@@ -896,8 +896,8 @@ async function parseTrx(file) {
 }
 
 // ---------- DFU image (STMicro DfuSe / plain DFU suffix) ----------
-async function parseDfu(file) {
-  const out = { 'Format': 'USB DFU firmware' };
+async function parseDfu(file: File) {
+  const out: Row = { 'Format': 'USB DFU firmware' };
   // DfuSe images start with the ASCII prefix 'DfuSe'.
   try {
     const head = await readBytes(file, 11);
@@ -938,7 +938,7 @@ async function parseDfu(file) {
 }
 
 // ---------- UEFI / BIOS firmware volume (fd / rom) ----------
-async function parseUefiFv(file) {
+async function parseUefiFv(file: File) {
   const b = await readBytes(file, 72);
   // EFI Firmware Volume header: 16-byte zero vector, 16-byte FS GUID,
   // then u64 FvLength, then signature '_FVH' at offset 40.
@@ -960,7 +960,7 @@ async function parseUefiFv(file) {
   r.seek(44);
   r.u32(); // skip Attributes (u32 at offset 44); header length/checksum/ext-offset follow
   const revision = b[55];
-  const KNOWN = {
+  const KNOWN: Record<string, string> = {
     '8C8CE578-8A3D-4F1C-9935-896185C32DD3': 'FFS v2',
     '5473C07A-3DCB-4DCA-BD6F-1E9689E7349A': 'FFS v3',
   };
@@ -974,7 +974,7 @@ async function parseUefiFv(file) {
 }
 
 // ---------- UBI volume ('UBI#' erase-counter header) ----------
-async function parseUbi(file) {
+async function parseUbi(file: File) {
   const b = await readBytes(file, 64);
   // EC header magic 'UBI#' (0x55424923 BE) at offset 0.
   if (ascii(b, 0, 4) !== 'UBI#') return null;
@@ -999,7 +999,7 @@ async function parseUbi(file) {
 }
 
 // ---------- Android sparse image (simg, 0x3AFF26ED) ----------
-async function parseAndroidSparse(file) {
+async function parseAndroidSparse(file: File) {
   const b = await readBytes(file, 28);
   // magic 0xED26FF3A little-endian at offset 0.
   if (!(b[0] === 0x3a && b[1] === 0xff && b[2] === 0x26 && b[3] === 0xed)) return null;
@@ -1029,18 +1029,18 @@ async function parseAndroidSparse(file) {
 //                       Raw floppy / disk images (FAT BPB)
 // ===================================================================
 
-const FAT_MEDIA = {
+const FAT_MEDIA: Record<number, string> = {
   0xf0: '3.5" 1.44/2.88 MB', 0xf8: 'fixed disk', 0xf9: '3.5" 720 KB / 5.25" 1.2 MB',
   0xfa: '5.25" 320 KB', 0xfb: '3.5" 640 KB', 0xfc: '5.25" 180 KB', 0xfd: '5.25" 360 KB',
   0xfe: '5.25" 160 KB', 0xff: '5.25" 320 KB',
 };
-const FLOPPY_GEOMETRY = {
+const FLOPPY_GEOMETRY: Record<number, string> = {
   368640: '5.25" 360 KB', 737280: '3.5" 720 KB', 1228800: '5.25" 1.2 MB',
   1474560: '3.5" 1.44 MB', 2949120: '3.5" 2.88 MB', 1638400: '5.25" 1.6 MB',
 };
-async function parseFloppy(file, ext) {
+async function parseFloppy(file: File, ext: string) {
   const b = await readBytes(file, 512);
-  const out = { 'Format': 'Raw disk / floppy image (.' + ext + ')' };
+  const out: Row = { 'Format': 'Raw disk / floppy image (.' + ext + ')' };
   if (FLOPPY_GEOMETRY[file.size]) out['Geometry (by size)'] = FLOPPY_GEOMETRY[file.size];
   out['Image size'] = fmtBytes(file.size);
   if (b.length < 512) return out;
@@ -1089,7 +1089,7 @@ async function parseFloppy(file, ext) {
 // ===================================================================
 
 // ---------- VMware snapshot metadata (.vmsd key=value) ----------
-async function parseVmsd(file) {
+async function parseVmsd(file: File) {
   const text = await file.slice(0, Math.min(file.size, 512 * 1024)).text();
   const kv: any = {};
   let lines = 0;
@@ -1113,9 +1113,9 @@ async function parseVmsd(file) {
 }
 
 // ---------- VMware NVRAM (BIOS / UEFI variable store) ----------
-async function parseNvram(file) {
+async function parseNvram(file: File) {
   const b = await readBytes(file, 64);
-  const out = { 'Format': 'VMware NVRAM', 'Size': fmtBytes(file.size) };
+  const out: Row = { 'Format': 'VMware NVRAM', 'Size': fmtBytes(file.size) };
   // VMware NVRAM begins with 'MRVN' tag; UEFI builds embed an EFI FV later.
   if (ascii(b, 0, 4) === 'MRVN') {
     out['Signature'] = 'MRVN (VMware NVRAM)';
@@ -1133,7 +1133,7 @@ async function parseNvram(file) {
 }
 
 // ---------- Parallels disk descriptor / config (pvm bundle, hdd) ----------
-async function parseParallels(file, ext) {
+async function parseParallels(file: File, ext: string) {
   // .pvm is a bundle directory; a dropped file is usually DiskDescriptor.xml,
   // config.pvs, or the .hdd disk. Probe the leading bytes for each shape.
   const head = await readBytes(file, Math.min(file.size, 64 * 1024));
@@ -1160,7 +1160,7 @@ async function parseParallels(file, ext) {
   }
   // XML descriptor (DiskDescriptor.xml or config.pvs).
   if (/<Parallels_disk_image/i.test(text) || /<ParallelsSavedStates/i.test(text) || /<ParallelsVirtualMachine/i.test(text)) {
-    const out = { 'Format': ext === 'hdd' ? 'Parallels disk descriptor' : 'Parallels VM bundle (.pvm)' };
+    const out: Row = { 'Format': ext === 'hdd' ? 'Parallels disk descriptor' : 'Parallels VM bundle (.pvm)' };
     const cyl = xmlText(text, 'Cylinders');
     const heads = xmlText(text, 'Heads');
     const sectors = xmlText(text, 'Sectors');
@@ -1197,7 +1197,7 @@ async function parseParallels(file, ext) {
 // ===================================================================
 
 // ---------- OVF manifest (.mf, 'SHA256(file)= hash' lines) ----------
-async function parseOvfManifest(file) {
+async function parseOvfManifest(file: File) {
   const text = await file.slice(0, Math.min(file.size, 256 * 1024)).text();
   // Lines look like: SHA256(disk.vmdk)= 9f86d0...
   const re = /^(SHA\d+|MD5)\s*\(([^)]+)\)\s*=\s*([0-9a-fA-F]+)\s*$/gm;
@@ -1220,7 +1220,7 @@ async function parseOvfManifest(file) {
 }
 
 // ---------- Veeam backup (.vbk, identification) ----------
-async function parseVbk(file) {
+async function parseVbk(file: File) {
   const out = {
     'Format': 'Veeam backup file (.vbk)',
     'Image size': fmtBytes(file.size),
@@ -1238,7 +1238,7 @@ async function parseVbk(file) {
 // carrying a packed version word. Files usually have a generic .bin extension, so
 // they reach here via the magic route in app.js (sniffedExt 'djifw'). The module
 // payloads are encrypted/signed, so this is header identification only.
-async function parseDjiFirmware(file) {
+async function parseDjiFirmware(file: File) {
   const b = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
   if (b.length < 0x48) return null;
   const isDji = b[0] === 0x78 && b[1] === 0x56 && b[2] === 0x34 && b[3] === 0x12 &&
@@ -1253,7 +1253,7 @@ async function parseDjiFirmware(file) {
   // First module entry begins at 0x40; its version word sits at +4. This is the
   // firmware's headline version (matches the v.. in DJI's filenames).
   const fwVersion = verStr(dv.getUint32(0x44, true));
-  const out = {
+  const out: Row = {
     'Format': 'DJI firmware image',
     'Manufacturer': 'DJI',
     'Target / model': model || 'unknown',
@@ -1281,7 +1281,7 @@ function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
 // ===================================================================
 //                       dispatch
 // ===================================================================
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   // DJI firmware (.bin routed here by magic - sniffedExt 'djifw')
   djifw: (c) => parseDjiFirmware(c.file),
   // Virtualization

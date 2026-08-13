@@ -485,7 +485,7 @@ async function buildCollabCard(zip) {
 
 // ---------- Main render ----------
 
-export async function renderDocx(file, container) {
+export async function renderDocx(file: File, container) {
   container.hidden = false;
   container.innerHTML = '';
   revokeDocxImageUrls();   // free the previous document's embedded-image object URLs

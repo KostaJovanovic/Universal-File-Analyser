@@ -3,12 +3,12 @@
    Extracted from app.js as a pure move; setupStatsPage() is called once from
    boot() and is a no-op on every page but /stats. */
 
-import { el, API_ORIGIN } from './util.js';
+import { el, API_ORIGIN, type ElChild } from './util.js';
 import { setupSectionFx } from './effects.js';
 import { hasFormatPage, formatPageHref } from './formats.js';
 
 // Local getElementById shorthand (mirrors app.js).
-function $(id) { return document.getElementById(id); }
+function $(id: string) { return document.getElementById(id); }
 
 // ---------- /stats page ----------
 // Populates the stats page from GET /api/stats: the two totals, plus a
@@ -73,8 +73,8 @@ export async function setupStatsPage() {
       // "think you can beat it?" invitation on the highest high score.
       const launchGame = () => { import('../games/asteroids.js').then((m) => m.launchAsteroids()).catch(() => {}); };
       // The "final blow" tag: a file extension ('.pdf') or the literal 'nuke'.
-      const causeText = (c) => !c ? '' : (c === 'nuke' ? 'nuclear bomb' : c);
-      const scoreRow = (s, i) => {
+      const causeText = (c: string) => !c ? '' : (c === 'nuke' ? 'nuclear bomb' : c);
+      const scoreRow = (s, i: number) => {
         const top = i === 0;
         const num = el('span', { class: 'stats-score-num' + (top ? ' stats-score-num--play' : '') }, Number(s.score).toLocaleString());
         // Only the reigning #1 score number launches Asteroids.
@@ -99,7 +99,7 @@ export async function setupStatsPage() {
       let scoresShown = SCORES_TOP;
       const renderScores = () => {
         scoreList.innerHTML = '';
-        scores.slice(0, scoresShown).forEach((s, i) => scoreList.appendChild(scoreRow(s, i)));
+        scores.slice(0, scoresShown).forEach((s, i: number) => scoreList.appendChild(scoreRow(s, i)));
         if (!scoreToggle) return;
         const remaining = scores.length - scoresShown;
         if (remaining <= 0) { scoreToggle.hidden = true; return; }
@@ -142,7 +142,7 @@ export async function setupStatsPage() {
   // truncated to the top entries.
   const total = data.files || rawExts.reduce((s, e) => s + e.count, 0) || 1;
 
-  const row = (e, i) => {
+  const row = (e, i: number) => {
     // Supported extensions link to their own /formats/<ext> guide page (the same
     // full-wins routing the generator used, so the link can't 404); ones not in the
     // catalog stay plain text. The server pools every unsupported extension into one
@@ -190,7 +190,7 @@ export async function setupStatsPage() {
 
 // "Nice" upper bound at or above v from the {1,2,2.5,5,10}*10^n ladder, so axis
 // ticks land on readable numbers.
-function niceCeil(v) {
+function niceCeil(v: number) {
   if (!(v > 0)) return 1;
   const p = Math.pow(10, Math.floor(Math.log10(v)));
   const f = v / p;
@@ -199,7 +199,7 @@ function niceCeil(v) {
 }
 
 const _SVGNS = 'http://www.w3.org/2000/svg';
-function svgEl(tag, attrs, kids?) {
+function svgEl(tag: string, attrs, kids?: string|null|undefined) {
   const n = document.createElementNS(_SVGNS, tag);
   if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
   if (kids != null) (Array.isArray(kids) ? kids : [kids]).forEach((c) => {
@@ -208,7 +208,7 @@ function svgEl(tag, attrs, kids?) {
   return n;
 }
 
-const _fmtDay = (s, opts?) => {
+const _fmtDay = (s: string, opts?) => {
   const d = new Date(s + 'T00:00:00Z');
   return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', opts || { day: 'numeric', month: 'short' });
 };
@@ -225,9 +225,9 @@ let _trendResizeHandler = null;
 // In cumulative mode `baseline` seeds the running total with the all-time count
 // that existed before the first tracked day, so the line continues from the real
 // figure instead of restarting at zero.
-function trendSeries(daily, mode, baseline) {
+function trendSeries(daily: any[], mode: string, baseline) {
   const cumulative = mode === 'cumulative';
-  const out = { visitors: [], files: [] };
+  const out: { visitors: number[]; files: number[] } = { visitors: [], files: [] };
   let cv = cumulative && baseline ? (Number(baseline.visitors) || 0) : 0;
   let cf = cumulative && baseline ? (Number(baseline.files) || 0) : 0;
   for (const d of daily) {
@@ -265,7 +265,7 @@ function renderStatsTrends(daily, totals) {
   const visible = { visitors: true, files: true };
   let layout = trendLayout();
   let chart = buildTrendChart(chartEl, rows, baseline, layout);   // builds the SVG once; we only tween attributes after
-  let drawnMax = null;   // y-scale currently rendered, tweened for a smooth resize
+  let drawnMax: number|null = null;   // y-scale currently rendered, tweened for a smooth resize
   let raf = 0;
   let modeSeq = 0;       // guards against overlapping mode cross-fades
 
@@ -282,14 +282,14 @@ function renderStatsTrends(daily, totals) {
   // Tween the y-scale from its current value to `to`, updating attributes each
   // frame (no DOM rebuild, so it stays smooth), then run `done`. Hiding the
   // larger series grows the smaller one to fill the chart.
-  const animateTo = (to, done?) => {
+  const animateTo = (to: number, done?) => {
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
     if (drawnMax == null || reduceMotion || Math.abs(to - drawnMax) < 0.5) {
       drawnMax = to; chart.apply(mode, drawnMax, visible); if (done) done();
       return;
     }
     const from = drawnMax; const dur = 480; let start = 0;
-    const tick = (ts) => {
+    const tick = (ts: number) => {
       if (!start) start = ts;
       const t = Math.min(1, (ts - start) / dur);
       const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;   // easeInOutCubic
@@ -399,7 +399,7 @@ function trendLayout() {
 // series via CSS opacity; a transparent overlay drives a custom hover tooltip
 // that snaps to the nearest day. `layout` comes from trendLayout(); the chart is
 // rebuilt (not resized) when the viewport crosses the narrow/wide breakpoint.
-function buildTrendChart(chartEl, daily, baseline, layout) {
+function buildTrendChart(chartEl: HTMLElement|null, daily: any[], baseline, layout) {
   if (!chartEl) return { apply() {}, setShown() {}, fade() {} };
   const n = daily.length;
   const L = layout || trendLayout();
@@ -407,13 +407,13 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
   const padL = L.padL; const padR = L.padR; const padT = L.padT; const padB = L.padB;
   const plotW = W - padL - padR; const plotH = H - padT - padB;
   const TICKS = 4;
-  const xFor = (i) => (n > 1 ? padL + (i / (n - 1)) * plotW : padL + plotW / 2);
-  const fmtY = (v) => (v >= 1e6 ? (v / 1e6).toFixed(v % 1e6 ? 1 : 0) + 'M'
+  const xFor = (i: number) => (n > 1 ? padL + (i / (n - 1)) * plotW : padL + plotW / 2);
+  const fmtY = (v: number) => (v >= 1e6 ? (v / 1e6).toFixed(v % 1e6 ? 1 : 0) + 'M'
     : v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0) + 'k' : String(v));
 
   const svg = svgEl('svg', { class: 'stats-trend-svg', viewBox: '0 0 ' + W + ' ' + H, role: 'img' });
 
-  const gridLines = []; const yLabels = [];
+  const gridLines: any[] = []; const yLabels: any[] = [];
   for (let k = 0; k <= TICKS; k++) {
     const line = svgEl('line', { class: 'stats-trend-grid', x1: padL, x2: W - padR, y1: 0, y2: 0 });
     const text = svgEl('text', { class: 'stats-trend-axis stats-trend-axis--y', x: padL - 8, y: 0 }, '');
@@ -435,7 +435,7 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
   const vLine = svgEl('path', { class: 'stats-trend-line stats-trend-line--visitors' });
   gVis.appendChild(vArea); gVis.appendChild(vLine);
 
-  const fDots = []; const vDots = [];
+  const fDots: any[] = []; const vDots: any[] = [];
   if (n <= L.dotCap) {
     for (let i = 0; i < n; i++) {
       const fd = svgEl('circle', { class: 'stats-trend-dot stats-trend-dot--files', cx: xFor(i).toFixed(1), cy: 0, r: 2.4 });
@@ -472,12 +472,12 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
   tip.hidden = true;
   chartEl.appendChild(tip);
 
-  const linePath = (s, yFor) => s.map((val, i) => (i ? 'L' : 'M') + xFor(i).toFixed(1) + ' ' + yFor(val).toFixed(1)).join(' ');
-  const areaPath = (s, yFor) => linePath(s, yFor) + ' L ' + xFor(n - 1).toFixed(1) + ' ' + yFor(0).toFixed(1)
+  const linePath = (s: number[], yFor) => s.map((val, i) => (i ? 'L' : 'M') + xFor(i).toFixed(1) + ' ' + yFor(val).toFixed(1)).join(' ');
+  const areaPath = (s: number[], yFor) => linePath(s, yFor) + ' L ' + xFor(n - 1).toFixed(1) + ' ' + yFor(0).toFixed(1)
     + ' L ' + xFor(0).toFixed(1) + ' ' + yFor(0).toFixed(1) + ' Z';
 
   const state = { mode: 'daily', niceMax: 1, visible: { visitors: true, files: true }, series: trendSeries(daily, 'daily', baseline) };
-  const yFor = (val) => padT + plotH - (val / state.niceMax) * plotH;
+  const yFor = (val: number) => padT + plotH - (val / state.niceMax) * plotH;
 
   let hoverI = -1;
   const hideHover = () => {
@@ -502,7 +502,7 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
     if (state.visible.visitors) { vFocus.setAttribute('cx', px.toFixed(1)); vFocus.setAttribute('cy', yFor(state.series.visitors[i]).toFixed(1)); vFocus.style.opacity = '1'; } else vFocus.style.opacity = '0';
     if (state.visible.files) { fFocus.setAttribute('cx', px.toFixed(1)); fFocus.setAttribute('cy', yFor(state.series.files[i]).toFixed(1)); fFocus.style.opacity = '1'; } else fFocus.style.opacity = '0';
 
-    const tipRow = (key, label) => el('div', { class: 'stats-trend-tip-row' }, [
+    const tipRow = (key: string, label: ElChild) => el('div', { class: 'stats-trend-tip-row' }, [
       el('span', { class: 'stats-trend-tip-swatch stats-trend-tip-swatch--' + key }),
       label, el('strong', {}, state.series[key][i].toLocaleString()),
     ]);
@@ -533,7 +533,7 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
 
   return {
     // Lay out everything for `mode` at y-scale `scaleMax` (raw; nice-rounded here).
-    apply(mode, scaleMax, visible) {
+    apply(mode: string, scaleMax: number, visible) {
       const step = Math.max(1, Math.ceil(niceCeil(Math.max(1, scaleMax) / TICKS)));
       state.niceMax = step * TICKS;
       state.mode = mode;
@@ -562,14 +562,14 @@ function buildTrendChart(chartEl, daily, baseline, layout) {
       svg.setAttribute('aria-label', (mode === 'cumulative' ? 'Cumulative' : 'Per-day') + ' ' + shown
         + ' from ' + _fmtDay(daily[0].day) + ' to ' + _fmtDay(daily[n - 1].day) + '.');
     },
-    setShown(key, on) {
+    setShown(key: string|undefined, on: boolean) {
       const g = key === 'visitors' ? gVis : gFiles;
       g.style.opacity = on ? '1' : '0';
       g.style.pointerEvents = on ? '' : 'none';
       if (!on && (key === 'visitors' ? vFocus : fFocus)) (key === 'visitors' ? vFocus : fFocus).style.opacity = '0';
     },
     // Fade the whole plot (CSS transition on the svg); `done` fires after it.
-    fade(to, done?) {
+    fade(to: number, done?: TimerHandler|undefined) {
       if (to < 1) hideHover();   // don't leave a tooltip floating over a faded chart
       svg.style.opacity = String(to);
       if (done) setTimeout(done, 200);   // matches --dur-base on .stats-trend-svg

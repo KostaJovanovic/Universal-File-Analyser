@@ -1215,7 +1215,7 @@ function hexA(hex, a) {
 // Rows are [label, value] or [label, value, helpText]; a help string routes the
 // row through rowHelp so it gets a local [?] tooltip (kept out of the shared
 // LABEL_HELP map, which would mis-attach to same-named rows elsewhere).
-function metaCard(title, help, rows, file, extra?) {
+function metaCard(title, help, rows, file: File, extra?) {
   const card = el('div', { class: 'anr-card' });
   const [h, hp] = h3help(title, help);
   card.appendChild(h); card.appendChild(hp);
@@ -1265,7 +1265,7 @@ function padsTable(pads) {
   return tbl;
 }
 
-export async function renderKicad(file, resultsEl) {
+export async function renderKicad(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading KiCad file "${file.name}"…`));
@@ -1296,7 +1296,7 @@ export async function renderKicad(file, resultsEl) {
   }
 }
 
-function renderSchDoc(file, node, resultsEl) {
+function renderSchDoc(file: File, node, resultsEl: HTMLElement) {
   const parsed = parseSchematic(node);
   resultsEl.appendChild(metaCard('KiCad schematic', 'A circuit diagram from KiCad’s Eeschema editor (.kicad_sch), showing how the parts connect. It is stored as a bracketed text format (an S-expression); Analyser reads the symbols, wires and labels and redraws them as a crisp, zoomable (vector) picture in the browser.', [
     ['Format', 'KiCad schematic'],
@@ -1319,7 +1319,7 @@ function renderSchDoc(file, node, resultsEl) {
   if (bom.length) resultsEl.appendChild(bomCard(bom, null, null));
 }
 
-function renderPcbDoc(file, node, resultsEl) {
+function renderPcbDoc(file: File, node, resultsEl: HTMLElement) {
   const pcb = parsePcb(node);
   const edge = pcb.prims.filter((p) => p.layer === 'Edge.Cuts');
   let bw = null, bh = null;
@@ -1348,7 +1348,7 @@ function renderPcbDoc(file, node, resultsEl) {
   resultsEl.insertBefore(dcard, resultsEl.firstChild);
 }
 
-function renderMod(file, node, resultsEl) {
+function renderMod(file: File, node, resultsEl: HTMLElement) {
   const fp = parseFootprint(node);
   const layers = new Set(fp.prims.map((p) => p.layer));
   resultsEl.appendChild(metaCard('KiCad footprint', 'One component’s footprint - the pattern of solder pads and outline a single part sits on - saved as a bracketed text file (.kicad_mod, an S-expression). Analyser draws its pads to scale along with the printed outline (silkscreen) and the part’s keep-clear boundary (courtyard).', [
@@ -1367,7 +1367,7 @@ function renderMod(file, node, resultsEl) {
   resultsEl.insertBefore(dcard, resultsEl.firstChild);
 }
 
-function renderSymLib(file, node, resultsEl) {
+function renderSymLib(file: File, node, resultsEl: HTMLElement) {
   const syms = kids(node, 'symbol');
   resultsEl.appendChild(metaCard('KiCad symbol library', 'A set of schematic symbols (.kicad_sym) - the diagram pictures that stand for components (a resistor, a chip and so on) in a circuit drawing, saved as a bracketed text file (an S-expression). Analyser draws each symbol from the lines and shapes that make it up.', [
     ['Format', 'KiCad symbol library'],
@@ -1398,7 +1398,7 @@ function renderSymLib(file, node, resultsEl) {
   resultsEl.insertBefore(card, resultsEl.firstChild);
 }
 
-function renderProjectJson(file, text, resultsEl) {
+function renderProjectJson(file: File, text, resultsEl: HTMLElement) {
   let data = null;
   try { data = JSON.parse(text); } catch (_) {}
   const ext = (file.name.split('.').pop() || '').toLowerCase();
@@ -1446,7 +1446,7 @@ function parseFpCache(text) {
   }
   return items;
 }
-function renderFpCache(file, text, resultsEl) {
+function renderFpCache(file: File, text, resultsEl: HTMLElement) {
   const items = parseFpCache(text);
   resultsEl.appendChild(metaCard('KiCad footprint cache', "KiCad's footprint index (fp-info-cache) - a quick lookup list of every component footprint in the project's libraries, storing each one's nickname, name, description and pad count. It lets the Pcbnew board editor show them instantly without re-reading every .kicad_mod file.", [
     ['Format', 'KiCad footprint info cache'],
@@ -1466,7 +1466,7 @@ function renderFpCache(file, text, resultsEl) {
   }
 }
 
-function renderLibTable(file, text, resultsEl) {
+function renderLibTable(file: File, text, resultsEl: HTMLElement) {
   const node = parseSexpr(text);
   const libs = node ? kids(node, 'lib') : [];
   const isFp = /^fp/i.test(file.name);
@@ -1487,7 +1487,7 @@ function renderLibTable(file, text, resultsEl) {
   }
 }
 
-function renderWbk(file, text, resultsEl) {
+function renderWbk(file: File, text, resultsEl: HTMLElement) {
   // ngspice simulation workbook: directives + probe list, minimally interpreted.
   const lines = text.split(/\r?\n/);
   const directive = lines.find((l) => /^\.(tran|ac|dc|op|noise)/i.test(l.trim())) || '';

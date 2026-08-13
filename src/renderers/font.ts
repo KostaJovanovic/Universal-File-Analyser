@@ -317,7 +317,7 @@ function fontMetaCard(font, axes) {
   return card;
 }
 
-export async function renderFont(file, resultsEl) {
+export async function renderFont(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   clearAddedFaces();   // drop the previous font's live FontFaces before loading this one

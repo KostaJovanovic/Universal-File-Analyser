@@ -21,7 +21,7 @@ export interface CodecDetail {
 }
 
 // --- File header peek (sample rate, bit depth, codec hints) ---
-export async function peekContainer(file) {
+export async function peekContainer(file: File) {
   const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
   const ascii = (s, l) => String.fromCharCode(...head.slice(s, s + l));
 
@@ -141,7 +141,7 @@ const MP3_LAME_PRESETS = {
   0xFB: 'V0', 0xF4: 'V2', 0x3C0: 'CBR 320',
 };
 
-async function detailMp3(file) {
+async function detailMp3(file: File) {
   // Read enough for an ID3v2 tag + the first audio frame's Xing/VBRI header.
   const cap = Math.min(file.size, 64 * 1024);
   const buf = new Uint8Array(await file.slice(0, cap).arrayBuffer());
@@ -292,7 +292,7 @@ function scanAdts(b, from) {
   return null;
 }
 
-async function detailAac(file) {
+async function detailAac(file: File) {
   const WIN = 64 * 1024;
   // Head window: for the exact first-frame profile / sample rate / channels, past any
   // leading ID3v2 tag.
@@ -398,7 +398,7 @@ export function adtsToM4a(arrayBuffer) {
 }
 
 // --- Read BPM from file metadata (ID3v2 TBPM / MP4 tmpo) ---
-export async function readTagBPM(file) {
+export async function readTagBPM(file: File) {
   const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
 
   // ID3v2 TBPM frame
@@ -455,7 +455,7 @@ export async function readTagBPM(file) {
 
 // --- Extract embedded cover art (ID3v2 APIC / MP4 covr / FLAC PICTURE) ---
 // Returns { bytes: Uint8Array, mime: string } or null.
-export async function extractCoverArt(file) {
+export async function extractCoverArt(file: File) {
   const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
   if (head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33) return extractId3Pic(file, head);
   if (head[0] === 0x66 && head[1] === 0x4C && head[2] === 0x61 && head[3] === 0x43) return extractFlacPic(file);
@@ -463,7 +463,7 @@ export async function extractCoverArt(file) {
   return null;
 }
 
-async function extractId3Pic(file, head) {
+async function extractId3Pic(file: File, head) {
   const ver = head[3];
   const tagSize = ((head[6] & 0x7F) << 21) | ((head[7] & 0x7F) << 14) |
                   ((head[8] & 0x7F) << 7) | (head[9] & 0x7F);
@@ -507,7 +507,7 @@ async function extractId3Pic(file, head) {
   return null;
 }
 
-async function extractMp4Cover(file) {
+async function extractMp4Cover(file: File) {
   const size = Math.min(file.size, 24 * 1024 * 1024);
   const buf = new Uint8Array(await file.slice(0, size).arrayBuffer());
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -530,7 +530,7 @@ async function extractMp4Cover(file) {
   return null;
 }
 
-async function extractFlacPic(file) {
+async function extractFlacPic(file: File) {
   const size = Math.min(file.size, 24 * 1024 * 1024);
   const buf = new Uint8Array(await file.slice(0, size).arrayBuffer());
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -559,7 +559,7 @@ async function extractFlacPic(file) {
 // --- Read text tags (title/artist/album/.../lyrics) from common containers ---
 // Returns { tags: [[name, value], ...], lyrics: string|null }. Best-effort; an
 // unparseable/absent tag block just yields an empty result.
-export async function readAudioTags(file) {
+export async function readAudioTags(file: File) {
   try {
     const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
     if (head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33) return await readId3Tags(file, head);
@@ -588,7 +588,7 @@ const ID3_NAMES = {
   TEXT: 'Lyricist', TOAL: 'Original album', TLAN: 'Language', WXXX: 'URL', WOAR: 'Artist URL',
 };
 
-async function readId3Tags(file, head) {
+async function readId3Tags(file: File, head) {
   const ver = head[3];
   const tagSize = ((head[6] & 0x7F) << 21) | ((head[7] & 0x7F) << 14) | ((head[8] & 0x7F) << 7) | (head[9] & 0x7F);
   const needed = Math.min(tagSize + 10, file.size, 20 * 1024 * 1024);
@@ -666,7 +666,7 @@ function parseVorbisComments(buf, start, dv) {
   return { tags, lyrics };
 }
 
-async function readFlacTags(file) {
+async function readFlacTags(file: File) {
   const size = Math.min(file.size, 8 * 1024 * 1024);
   const buf = new Uint8Array(await file.slice(0, size).arrayBuffer());
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -685,7 +685,7 @@ async function readFlacTags(file) {
 
 // OGG (Vorbis/Opus): the comment header lives in the 2nd logical page. Rather than
 // fully parse OGG paging, scan for the comment signature and parse from there.
-async function readVorbisLikeTags(file) {
+async function readVorbisLikeTags(file: File) {
   const size = Math.min(file.size, 1 * 1024 * 1024);
   const buf = new Uint8Array(await file.slice(0, size).arrayBuffer());
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -705,7 +705,7 @@ const MP4_NAMES = {
   '©gen': 'Genre', 'gnre': 'Genre', '©wrt': 'Composer', '©cmt': 'Comment', '©too': 'Encoder',
   '©lyr': 'Lyrics', 'cprt': 'Copyright', '©grp': 'Grouping', 'desc': 'Description', 'ldes': 'Long description',
 };
-async function readMp4Tags(file) {
+async function readMp4Tags(file: File) {
   const size = Math.min(file.size, 24 * 1024 * 1024);
   const buf = new Uint8Array(await file.slice(0, size).arrayBuffer());
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);

@@ -25,14 +25,14 @@ async function loadLottie() {
 
 // Does a parsed object look like a Lottie animation? (version + frame-rate +
 // in/out points + a layers array.) Used here and by the JSON inspector's offer.
-export function isLottie(obj) {
+export function isLottie(obj: any) {
   return !!obj && typeof obj === 'object'
     && 'v' in obj && typeof obj.fr === 'number'
     && typeof obj.op === 'number' && Array.isArray(obj.layers);
 }
 
 // Pull the Lottie JSON out of whatever carrier the file is.
-async function readLottieData(file, ext) {
+async function readLottieData(file: File, ext: string) {
   const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
   const isGzip = head[0] === 0x1f && head[1] === 0x8b;
   const isZip = head[0] === 0x50 && head[1] === 0x4b;
@@ -49,7 +49,7 @@ async function readLottieData(file, ext) {
     let target = null;
     try {
       if (zip.has('manifest.json')) {
-        const man = JSON.parse(await zip.text('manifest.json'));
+        const man = JSON.parse((await zip.text('manifest.json'))!);
         const id = man && man.animations && man.animations[0] && man.animations[0].id;
         if (id && zip.has('animations/' + id + '.json')) target = 'animations/' + id + '.json';
       }
@@ -59,14 +59,14 @@ async function readLottieData(file, ext) {
       target = m.length ? m[0].name : null;
     }
     if (!target) throw new Error('no animation JSON inside this .lottie');
-    return JSON.parse(await zip.text(target));
+    return JSON.parse((await zip.text(target))!);
   }
   return JSON.parse(await file.text());
 }
 
 // Build the player + metadata for an already-parsed Lottie object. Exported so the
 // JSON inspector can offer "play as animation" without re-reading the file.
-export async function renderLottieData(data, resultsEl, file) {
+export async function renderLottieData(data: any, resultsEl: HTMLElement, file: File) {
   const lib = await loadLottie();
   if (!lib) { resultsEl.appendChild(errorCard('Could not load the Lottie engine.')); return; }
   if (!isLottie(data)) { resultsEl.appendChild(errorCard('This JSON is not a Lottie animation.')); return; }
@@ -128,7 +128,7 @@ export async function renderLottieData(data, resultsEl, file) {
   resultsEl.insertBefore(card, resultsEl.firstChild);
 }
 
-export async function renderLottie(file, resultsEl) {
+export async function renderLottie(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading animation "${file.name}"…`));

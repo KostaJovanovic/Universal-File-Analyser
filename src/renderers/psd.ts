@@ -205,7 +205,7 @@ function layerTreeCard(psd) {
   return card;
 }
 
-function metaCard(file, header, layerCount) {
+function metaCard(file: File, header, layerCount) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Photoshop document', 'An Adobe Photoshop file. Analyser shows the preview image saved inside it and, where it can, the list of layers it is built from.');
   card.appendChild(h); card.appendChild(help);
@@ -226,7 +226,7 @@ function metaCard(file, header, layerCount) {
   return card;
 }
 
-export async function renderPsd(file, resultsEl) {
+export async function renderPsd(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading Photoshop file "${file.name}"…`));

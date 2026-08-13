@@ -16,10 +16,28 @@ import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '..
 const U_TO_MM = 0.00254;
 const U_TO_IN = 0.0001;
 
-function parseIpc(text) {
+/** One 3xx feature record: a single test point on the bare board. */
+interface IpcRec {
+  code: string;
+  net: string;
+  ref: string;
+  pin: string;
+  x: number | null;
+  y: number | null;
+  kind: 'via' | 'tht' | 'smd' | 'other';
+  drill: number | null;
+  side: number | null;
+  cont: boolean;
+}
+/** A record whose X/Y location parsed - the only kind the map can plot. */
+type PlacedRec = IpcRec & { x: number; y: number };
+/** One end of a net: the component pin the test point sits on. */
+interface NetPin { ref: string; pin: string; }
+
+function parseIpc(text: string) {
   const lines = text.split(/\r?\n/);
-  const params: any = {};
-  const recs = [];
+  const params: Record<string, string> = {};
+  const recs: IpcRec[] = [];
   let metric = false;
 
   for (const raw of lines) {
@@ -51,7 +69,7 @@ function parseIpc(text) {
     // "A01" (SMD access), "MD0157PA00" (mid/buried via drill).
     const desc = loc ? line.slice(17, loc.index) : line.slice(17);
     const drillM = /D(\d{3,5})/.exec(desc);
-    let kind;
+    let kind: IpcRec['kind'];
     if (refRaw === 'VIA' || /^M/.test(desc.trim())) kind = 'via';
     else if (drillM) kind = 'tht';
     else if (/A\d{2}/.test(desc)) kind = 'smd';
@@ -68,7 +86,7 @@ function parseIpc(text) {
 }
 
 // Stable per-net colour (hashed hue), with ground / no-connect pinned to neutrals.
-function netColor(name) {
+function netColor(name: string) {
   const n = name.toUpperCase();
   if (n === '0' || n === 'GND' || n === 'GNDA' || /GROUND/.test(n)) return '#566';
   if (n === 'N/C' || n === 'NC' || n === '') return '#aab';
@@ -77,8 +95,8 @@ function netColor(name) {
   return `hsl(${h % 360} 65% 42%)`;
 }
 
-function fabMap(recs) {
-  const pts = recs.filter((r) => r.x != null && r.y != null);
+function fabMap(recs: IpcRec[]) {
+  const pts = recs.filter((r): r is PlacedRec => r.x != null && r.y != null);
   if (!pts.length) return null;
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const p of pts) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); }
@@ -95,14 +113,14 @@ function fabMap(recs) {
     let node;
     if (p.kind === 'via') {
       node = document.createElementNS(NS, 'circle');
-      node.setAttribute('cx', p.x); node.setAttribute('cy', -p.y); node.setAttribute('r', r * 0.8);
-      node.setAttribute('fill', 'none'); node.setAttribute('stroke', col); node.setAttribute('stroke-width', r * 0.5);
+      node.setAttribute('cx', String(p.x)); node.setAttribute('cy', String(-p.y)); node.setAttribute('r', String(r * 0.8));
+      node.setAttribute('fill', 'none'); node.setAttribute('stroke', col); node.setAttribute('stroke-width', String(r * 0.5));
     } else {
       node = document.createElementNS(NS, 'rect');
       const s = r * 1.6;
-      node.setAttribute('x', p.x - s / 2); node.setAttribute('y', -p.y - s / 2);
-      node.setAttribute('width', s); node.setAttribute('height', s);
-      node.setAttribute('fill', col); node.setAttribute('rx', s * 0.18);
+      node.setAttribute('x', String(p.x - s / 2)); node.setAttribute('y', String(-p.y - s / 2));
+      node.setAttribute('width', String(s)); node.setAttribute('height', String(s));
+      node.setAttribute('fill', col); node.setAttribute('rx', String(s * 0.18));
     }
     const title = document.createElementNS(NS, 'title');
     title.textContent = `${p.net || '(no net)'}  ${p.ref}${p.pin ? '-' + p.pin : ''}`;
@@ -112,7 +130,7 @@ function fabMap(recs) {
   return svg;
 }
 
-export async function renderIpcNetlist(file, resultsEl) {
+export async function renderIpcNetlist(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));
@@ -136,8 +154,8 @@ export async function renderIpcNetlist(file, resultsEl) {
   const { recs, params } = parsed;
 
   // --- aggregate ---
-  const netMap = new Map();      // net -> [{ref,pin,kind}]
-  const compMap = new Map();     // ref -> Set(pin)
+  const netMap = new Map<string, NetPin[]>();      // net -> [{ref,pin}]
+  const compMap = new Map<string, Set<string>>();  // ref -> Set(pin)
   let vias = 0, tht = 0, smd = 0;
   for (const r of recs) {
     if (r.kind === 'via') vias++;
@@ -145,16 +163,16 @@ export async function renderIpcNetlist(file, resultsEl) {
     else if (r.kind === 'smd') smd++;
     if (r.ref && r.ref !== 'VIA') {
       if (!compMap.has(r.ref)) compMap.set(r.ref, new Set());
-      if (r.pin) compMap.get(r.ref).add(r.pin);
+      if (r.pin) compMap.get(r.ref)!.add(r.pin);
     }
     const key = r.net || '(no net)';
     if (!netMap.has(key)) netMap.set(key, []);
-    if (r.ref && r.ref !== 'VIA') netMap.get(key).push({ ref: r.ref, pin: r.pin });
+    if (r.ref && r.ref !== 'VIA') netMap.get(key)!.push({ ref: r.ref, pin: r.pin });
   }
   const realNets = [...netMap.keys()].filter((n) => n !== '0' && n.toUpperCase() !== 'N/C' && n !== '(no net)');
 
   // extents
-  const xs = recs.filter((r) => r.x != null);
+  const xs = recs.filter((r): r is IpcRec & { x: number } => r.x != null);
   let extent = '';
   if (xs.length) {
     // One pass, no spread: Math.min(...) over a record-per-test-point array
@@ -212,7 +230,7 @@ export async function renderIpcNetlist(file, resultsEl) {
   const nt = el('table', { class: 'anr-readout anr-ipc-nets' });
   nt.appendChild(el('tr', {}, [el('th', {}, 'Net'), el('th', {}, 'Pins'), el('th', {}, 'Connections')]));
   const sortedNets = realNets
-    .map((n) => ({ n, pins: netMap.get(n) }))
+    .map((n) => ({ n, pins: netMap.get(n)! }))
     .sort((a, b) => b.pins.length - a.pins.length || a.n.localeCompare(b.n));
   for (const { n, pins } of sortedNets) {
     const conns = pins.map((p) => p.ref + (p.pin ? '.' + p.pin : '')).join(', ');

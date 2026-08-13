@@ -41,7 +41,7 @@ const txt = (e, tag) => { const k = kid(e, tag); return k ? k.textContent.trim()
 
 // Inflate the gzip stream to a string (capped). Premiere also ships the odd
 // uncompressed-XML project, so fall back to reading the file as text.
-async function inflate(file) {
+async function inflate(file: File) {
   const head = new Uint8Array(await file.slice(0, 2).arrayBuffer());
   const gzipped = head[0] === 0x1F && head[1] === 0x8B;
   if (!gzipped) {
@@ -306,7 +306,7 @@ function buildSequenceTimeline(seq) {
   return card;
 }
 
-export async function renderPremiere(file, resultsEl) {
+export async function renderPremiere(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));

@@ -8,9 +8,31 @@
 
 import { el, fmtBytes, h3help } from '../core/util.js';
 
+/** One picture handed to this card by a format extractor (ico.js, mpo.js,
+    tiff.js, photo.js's thumbnail/preview carver). `viewBlob` is the only member
+    the grid genuinely cannot do without. */
+export interface EmbeddedImageItem {
+  /** Pixel size, when the extractor already knows it. Filled in from the
+      decoded <img> when it doesn't. */
+  width?: number | null;
+  height?: number | null;
+  /** Format/tech label, e.g. 'PNG', '32-bit BMP', 'JPEG'. */
+  label?: string;
+  /** Source byte size, for the hint line. */
+  bytes?: number;
+  /** A Blob the browser CAN render (used as the <img> src). */
+  viewBlob: Blob;
+  /** Ready-to-save Blob; when absent the rendered <img> is rasterised to PNG. */
+  downloadBlob?: Blob | null;
+  /** File name for the download link. */
+  downloadName?: string;
+  /** EXIF orientation the PARENT file recorded for these bytes (1-8). */
+  orientation?: number | string | null;
+}
+
 // How each EXIF orientation value reads in plain words, for the caption under a
 // thumbnail we had to turn round. 1 (already upright) is deliberately absent.
-const ORIENT_LABEL = {
+const ORIENT_LABEL: Record<number, string> = {
   2: 'mirrored', 3: 'rotated 180°', 4: 'flipped vertically',
   5: 'mirrored and rotated 90°', 6: 'rotated 90°',
   7: 'mirrored and rotated 270°', 8: 'rotated 270°',
@@ -28,7 +50,7 @@ const ORIENT_LABEL = {
 // The download is left alone on purpose: it stays byte-identical to what was
 // carved out of the source, which is the point of extracting it. Does nothing
 // for orientation 1, and silently gives up rather than showing a broken image.
-function orientImage(imgEl, orientation, signal) {
+function orientImage(imgEl: HTMLImageElement, orientation: number | string | null | undefined, signal?: AbortSignal | null) {
   const o = Number(orientation) || 1;
   if (o < 2 || o > 8) return;
   imgEl.addEventListener('load', () => {
@@ -39,7 +61,7 @@ function orientImage(imgEl, orientation, signal) {
       const cv = document.createElement('canvas');
       cv.width = swap ? h : w;
       cv.height = swap ? w : h;
-      const cx = cv.getContext('2d');
+      const cx = cv.getContext('2d')!;
       switch (o) {
         case 2: cx.transform(-1, 0, 0, 1, w, 0); break;
         case 3: cx.transform(-1, 0, 0, -1, w, h); break;
@@ -78,8 +100,9 @@ function orientImage(imgEl, orientation, signal) {
 // `items` is the only required member; ICO/MPO/TIFF each supply whatever
 // heading and help text their format warrants.
 export function buildEmbeddedImagesCard({ title, hint, help, items, signal, resultsEl, sourceFile }: {
-  items: any;
-  title?: any; hint?: any; help?: any; signal?: any; resultsEl?: any; sourceFile?: any;
+  items: EmbeddedImageItem[];
+  title?: string; hint?: string; help?: string;
+  signal?: AbortSignal | null; resultsEl?: HTMLElement | null; sourceFile?: File | null;
 }) {
   const card = el('div', { class: 'anr-card' });
   if (help) {
@@ -137,7 +160,7 @@ export function buildEmbeddedImagesCard({ title, hint, help, items, signal, resu
           cv.width = imgEl.naturalWidth || it.width || 0;
           cv.height = imgEl.naturalHeight || it.height || 0;
           if (!cv.width || !cv.height) return;
-          cv.getContext('2d').drawImage(imgEl, 0, 0, cv.width, cv.height);
+          cv.getContext('2d')!.drawImage(imgEl, 0, 0, cv.width, cv.height);
           cv.toBlob((b) => {
             if (!b) return;
             dl.href = URL.createObjectURL(b);

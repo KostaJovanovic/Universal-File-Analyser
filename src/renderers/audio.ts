@@ -2750,7 +2750,7 @@ function tagRow(name, value) {
   return TAG_HELP[name] ? rowHelp(name, value, TAG_HELP[name]) : row(name, value);
 }
 
-function buildCoverArtCard(art, file, resultsEl?) {
+function buildCoverArtCard(art, file: File, resultsEl?: HTMLElement) {
   // Embedded cover art is promoted to the dedicated Photo section and given the
   // full photo analysis there (preview, histogram, EXIF, OCR) - the Photo tab is
   // re-enabled for it. A slim pointer card stays here to say where it went.
@@ -2791,7 +2791,7 @@ function buildCoverArtCard(art, file, resultsEl?) {
   return labelCard;
 }
 
-export function buildWaveformCard(file, mono, audioBuffer, audioEl, signal) {
+export function buildWaveformCard(file: File, mono, audioBuffer, audioEl, signal) {
   const sr = audioBuffer.sampleRate;
   // renderWave rides on the card: the resize/zoom paths call it by name.
   const waveCard = el('div', { class: 'anr-card' }) as
@@ -3158,7 +3158,7 @@ const DECODE_DEFER_BYTES = 256 * MB;
 
 // Estimate the size of the decoded Float32 PCM (all channels) from what the header
 // gave, WITHOUT decoding. Returns bytes, or null when we can't estimate reliably.
-function estimateDecodedBytes(file, header) {
+function estimateDecodedBytes(file: File, header) {
   const ch = header.channels || 2;
   if (header.sampleRate && header.durationEst)
     return header.sampleRate * ch * header.durationEst * 4;
@@ -3171,7 +3171,7 @@ function estimateDecodedBytes(file, header) {
   return null;
 }
 
-function shouldDeferDecode(file, header) {
+function shouldDeferDecode(file: File, header) {
   const est = estimateDecodedBytes(file, header);
   if (est != null) return est > DECODE_DEFER_BYTES;
   // No reliable estimate - fall back to a raw-size guard so a very large unknown
@@ -3182,7 +3182,7 @@ function shouldDeferDecode(file, header) {
 // Read a file into one ArrayBuffer in chunks, reporting progress and handing the
 // thread back between chunks - so a large read fuels a real progress bar and doesn't
 // block the page the way a single file.arrayBuffer() of a big file does.
-async function readArrayBufferProgress(file, onProgress) {
+async function readArrayBufferProgress(file: File, onProgress) {
   const size = file.size;
   if (!size) return await file.arrayBuffer();
   const CHUNK = 8 * MB;
@@ -3205,7 +3205,7 @@ async function readArrayBufferProgress(file, onProgress) {
 // spans read (0..0.45) and repack (..0.55); the opaque decodeAudioData tail has no
 // progress of its own, so the caller eases the bar across it. Returns
 // { audioBuffer, playbackFile, usedFfmpeg }; throws if nothing could decode it.
-async function decodeAudioStrategy(file, header, { onProgress, noteMount } : any = {}) {
+async function decodeAudioStrategy(file: File, header, { onProgress, noteMount } : any = {}) {
   const rp = (f) => { if (onProgress) onProgress(f); };
   const buf = await readArrayBufferProgress(file, (f) => rp(f * 0.45));
   let audioBuffer = null, playbackFile = file, usedFfmpeg = false;
@@ -3241,7 +3241,7 @@ async function decodeAudioStrategy(file, header, { onProgress, noteMount } : any
 // it at once, offer immediate native playback, and put the heavy decode behind a
 // button. The decode runs in place (the pulled cards stay on screen, a fill-up bar
 // tracks it) and, when done, hands the decoded buffer to renderAudio for the full view.
-async function renderDeferredAudio(file, header, resultsEl, opts) {
+async function renderDeferredAudio(file: File, header, resultsEl: HTMLElement, opts) {
   const estBytes = estimateDecodedBytes(file, header);
 
   // ---- Full analysis (the decode button) - FIRST, at the top of the section ----
@@ -3376,7 +3376,7 @@ async function renderDeferredAudio(file, header, resultsEl, opts) {
   resultsEl.appendChild(integrityCard(file));
 }
 
-async function renderUndecodableAudio(file, header, resultsEl, playable) {
+async function renderUndecodableAudio(file: File, header, resultsEl: HTMLElement, playable) {
   const infoCard = el('div', { class: 'anr-card' });
   const [infoH, infoHelp] = h3help('Audio file', 'The container details, tags, lyrics, and cover art below were still read straight from the file.');
   infoCard.appendChild(infoH);
@@ -3453,7 +3453,7 @@ async function renderUndecodableAudio(file, header, resultsEl, playable) {
 // throws (so the caller can fall back to the metadata-only view). Source sample
 // rate and channel count are preserved so the spectrogram's frequency axis and
 // the channel readout stay accurate.
-async function ffmpegDecodeAudio(file, resultsEl) {
+async function ffmpegDecodeAudio(file: File, resultsEl: HTMLElement) {
   const note = el('div', { class: 'anr-info' },
     "Your browser can't decode this audio directly - decoding with FFmpeg to build the waveform and spectrogram...");
   resultsEl.appendChild(note);
@@ -3600,7 +3600,7 @@ function aAdvSection(title, helpHtml) {
 }
 
 // --- Render uploaded / recorded audio results ---
-export async function renderAudio(file, resultsEl, opts: any = {}) {
+export async function renderAudio(file: File, resultsEl: HTMLElement, opts: any = {}) {
   // Inline renders (the compare view's side-by-side panels) use an isolated abort
   // controller so two analyses don't cancel each other's in-flight work; only the
   // main single-file flow uses the shared module-level one.
@@ -4515,7 +4515,7 @@ function streamSpectrogram(ac, source, mountEl) {
 }
 
 // --- Recording UI ---
-async function startRecording(resultsEl, recordBtn) {
+async function startRecording(resultsEl: HTMLElement, recordBtn) {
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -4586,7 +4586,7 @@ async function startRecording(resultsEl, recordBtn) {
 }
 
 // --- Live spectrogram (no recording, just visualise the mic) ---
-async function startLive(resultsEl, liveBtn) {
+async function startLive(resultsEl: HTMLElement, liveBtn) {
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -4931,7 +4931,7 @@ async function startLive(resultsEl, liveBtn) {
 export function initAudio({ dropEl, inputEl, recordBtn, liveBtn, resultsEl, onFile }: {
   dropEl?: any; inputEl?: any; recordBtn?: any; liveBtn?: any; resultsEl?: any; onFile?: any;
 }) {
-  const handle = onFile || ((file) => renderAudio(file, resultsEl));
+  const handle = onFile || ((file: File) => renderAudio(file, resultsEl));
 
   if (inputEl) inputEl.addEventListener('change', (e) => {
     const file = e.target.files && e.target.files[0];

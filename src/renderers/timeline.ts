@@ -219,7 +219,7 @@ function buildTimelineCard(model) {
   return card;
 }
 
-function infoCard(file, model) {
+function infoCard(file: File, model) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Sequence'));
   const tbl = el('table', { class: 'anr-readout' });
@@ -235,7 +235,7 @@ function infoCard(file, model) {
   return card;
 }
 
-export async function renderTimeline(file, resultsEl) {
+export async function renderTimeline(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading timeline "${file.name}"…`));

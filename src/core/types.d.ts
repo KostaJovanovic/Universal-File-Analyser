@@ -132,6 +132,29 @@ export interface Row {
   [field: string]: any;
 }
 
+/** What every parser in a `parsers-<domain>` chunk is handed.
+
+   The contract is spelled out at the top of `parsers/parser-util.ts`; naming it
+   here is what lets `safe()` give the ~950 `wrap((c) => ...)` call sites their
+   `c` type contextually, without an annotation at any of them. */
+export interface ParseCtx {
+  /** The first N bytes of the file, already read (see `limits.js` for N). */
+  head: Uint8Array;
+  file: File;
+  /** Lower-case extension, no dot. */
+  ext: string;
+}
+
+/** A parser. Returning null (or anything falsy) declines the file and falls
+    through to generic handling. */
+export type ParseFn = (c: ParseCtx) => Row | null | undefined | Promise<Row | null | undefined>;
+
+/** A writable buffer of real numbers. The DSP helpers (`lib/dfn-dsp.js`,
+    `lib/mdx-stft.js`) are handed a Float32Array by one caller and a Float64Array
+    by another, and only ever index into them - so this names that rather than
+    forcing one precision on every call site. */
+export type FloatBuf = Float32Array | Float64Array | number[];
+
 /* --------------------------------------------------------- worker protocol -- */
 
 /** Messages the DSP/ML clients post to their workers. Both halves of each

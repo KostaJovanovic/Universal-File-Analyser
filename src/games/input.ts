@@ -17,7 +17,7 @@ function trackKonami(key) {
   if (g.konamiPos === KONAMI.length) { g.konamiPos = 0; if (g.revealSandbox) g.revealSandbox(); }
 }
 // The touch combo (left,left,right,right,left,right,left,right,fire,fire) is the mobile equivalent.
-function trackTouchCombo(tok) {
+function trackTouchCombo(tok: string) {
   g.comboPos = (tok === TOUCH_COMBO[g.comboPos]) ? g.comboPos + 1 : (tok === TOUCH_COMBO[0] ? 1 : 0);
   if (g.comboPos === TOUCH_COMBO.length) { g.comboPos = 0; if (g.revealSandbox) g.revealSandbox(); }
 }
@@ -81,9 +81,9 @@ function buildControls() {
   overlay.appendChild(base);
   mobileControls.push(base);
 
-  let joyId = null;
-  const setThumb = (dx, dy) => { thumb.style.transform = 'translate(' + dx + 'px,' + dy + 'px)'; };
-  const onMove = (e) => {
+  let joyId: number|null = null;
+  const setThumb = (dx: string|number, dy: string|number) => { thumb.style.transform = 'translate(' + dx + 'px,' + dy + 'px)'; };
+  const onMove = (e: PointerEvent) => {
     const r = base.getBoundingClientRect();
     const dx = e.clientX - (r.left + JOY_R), dy = e.clientY - (r.top + JOY_R);
     const ang = Math.atan2(dy, dx), cl = Math.min(Math.hypot(dx, dy), JOY_R);
@@ -104,7 +104,7 @@ function buildControls() {
     const fire = document.createElement('button');
     fire.type = 'button'; fire.className = 'anr-game-btn'; fire.textContent = '●';
     fire.style.cssText = 'position:absolute; bottom:' + ctrlBottom + 'px; right:24px; width:' + SQ + 'px; height:' + SQ + 'px; font-size:21px; z-index:2; touch-action:none;';
-    const setFire = (v) => (e) => { e.preventDefault(); if (v) trackTouchCombo('fire'); if (g.gameOver && !g.nameEntry && v) { restart(); return; } input.fire = v; };
+    const setFire = (v: boolean) => (e) => { e.preventDefault(); if (v) trackTouchCombo('fire'); if (g.gameOver && !g.nameEntry && v) { restart(); return; } input.fire = v; };
     fire.addEventListener('pointerdown', setFire(true));
     fire.addEventListener('pointerup', setFire(false));
     fire.addEventListener('pointercancel', setFire(false));
@@ -117,11 +117,11 @@ function buildControls() {
     // steer-vs-legacy scheme, so touch aiming feels the same however desktop is configured.
     const arrows = document.createElement('div');
     arrows.style.cssText = 'position:absolute; bottom:' + ctrlBottom + 'px; left:' + (24 + JOY_R * 2 + 14) + 'px; display:flex; gap:8px; z-index:2;';
-    const mkArrow = (label, prop, tok) => {
+    const mkArrow = (label: string|null, prop: string, tok: string) => {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'anr-game-btn'; b.textContent = label;
       b.style.cssText = 'width:' + SQ + 'px; height:' + SQ + 'px; font-size:20px; touch-action:none;';
-      const set = (v) => (e) => { e.preventDefault(); if (v) trackTouchCombo(tok); input[prop] = v; };
+      const set = (v: boolean) => (e) => { e.preventDefault(); if (v) trackTouchCombo(tok); input[prop] = v; };
       b.addEventListener('pointerdown', set(true));
       b.addEventListener('pointerup', set(false));
       b.addEventListener('pointercancel', set(false));

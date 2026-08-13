@@ -21,7 +21,7 @@ function makeSink() {
   let buf = new Uint8Array(1 << 16);
   let len = 0;
   return {
-    ensure(n) {
+    ensure(n: number) {
       if (len + n > MAX_OUTPUT) throw new Error('output too large');
       if (len + n <= buf.length) return;
       let cap = buf.length;
@@ -30,18 +30,18 @@ function makeSink() {
       nb.set(buf.subarray(0, len));
       buf = nb;
     },
-    push(b) { this.ensure(1); buf[len++] = b; },
-    set(src, from, count) { this.ensure(count); buf.set(src.subarray(from, from + count), len); len += count; },
+    push(b: number) { this.ensure(1); buf[len++] = b; },
+    set(src: Uint8Array, from: number, count: number) { this.ensure(count); buf.set(src.subarray(from, from + count), len); len += count; },
     get pos() { return len; },
-    byte(i) { return buf[i]; },
-    copy(from, count) { this.ensure(count); let s = from; for (let k = 0; k < count; k++) buf[len++] = buf[s++]; },
+    byte(i: string|number) { return buf[i]; },
+    copy(from: number, count: number) { this.ensure(count); let s = from; for (let k = 0; k < count; k++) buf[len++] = buf[s++]; },
     result() { return buf.subarray(0, len); },
   };
 }
 
 // ---- LZ4 frame ----------------------------------------------------------------
 // https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md
-export function unlz4(input) {
+export function unlz4(input: Uint8Array) {
   try {
     const b = input instanceof Uint8Array ? input : new Uint8Array(input);
     if (b.length < 7) return null;
@@ -104,7 +104,7 @@ export function unlz4(input) {
 // Mirrors compress(1): codes are variable-width (9..maxbits), packed LSB-first,
 // and at every code-width increase or table clear the encoder pads to the next
 // (n_bits * 8)-bit group boundary, which the decoder must skip in step.
-export function unlzw(input) {
+export function unlzw(input: Uint8Array) {
   try {
     const b = input instanceof Uint8Array ? input : new Uint8Array(input);
     if (b.length < 3 || b[0] !== 0x1F || b[1] !== 0x9D) return null;

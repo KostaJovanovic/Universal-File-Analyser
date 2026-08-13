@@ -17,7 +17,7 @@ const a11yOn = () => document.documentElement.getAttribute('data-a11y') === 'on'
 // only break at the spaces between words, never mid-word; the spaces themselves
 // are real break opportunities. Returns an array of { el, base } for every letter
 // span. Shared by the header sweep/hover effect and the per-section hover effect.
-function splitText(container, baseWeight) {
+function splitText(container: HTMLElement, baseWeight: number) {
   // Bake letter-spacing as an em ratio of the font size, not the computed px.
   // The title font-size is vw-based, so browser zoom rescales it; a fixed px
   // spacing would not follow, leaving the gaps between the inline-block letters
@@ -28,8 +28,8 @@ function splitText(container, baseWeight) {
   const fsPx = parseFloat(cs.fontSize);
   const spacing = (isNaN(lsPx) || !fsPx) ? 'normal' : (lsPx / fsPx) + 'em';
   const spans = [];
-  let word = null;  // current per-word wrapper; null between words
-  function makeSpan(ch, parent) {
+  let word: HTMLSpanElement|null = null;  // current per-word wrapper; null between words
+  function makeSpan(ch: string|null, parent: ChildNode) {
     if (ch === ' ') {
       // Space ends the word and is the sole wrap point. A plain text space (not a
       // fixed-width inline-block) is used so it collapses at line ends like normal
@@ -50,7 +50,7 @@ function splitText(container, baseWeight) {
     const s = document.createElement('span');
     s.textContent = ch;
     s.style.display = 'inline-block';
-    s.style.fontWeight = baseWeight;
+    s.style.fontWeight = String(baseWeight);
     s.style.letterSpacing = spacing;
     word.appendChild(s);
     spans.push({ el: s, base: baseWeight });
@@ -101,7 +101,7 @@ function splitFrozen(targets) {
 //     rebind on a swapped-in element can clear the previous one.
 // Mouse-enter snaps straight into fixed-speed cursor tracking (no ramp); the 0.4s
 // exit settle still eases the letters back to base.
-function bindSweepFx(mark, letters, opts: any = {}) {
+function bindSweepFx(mark: HTMLElement, letters: any[], opts: any = {})  {
   if (mark._anrFx) return;
   mark._anrFx = true;
   const ivHolder = opts.ivHolder;
@@ -122,7 +122,7 @@ function bindSweepFx(mark, letters, opts: any = {}) {
   // per letter per frame - and each of those scales with however much analysis
   // is on the page, which is what made hovering a heading lock up after a big
   // file. lockWidths() already batches this way.
-  const cxs = [], cys = [];
+  const cxs: any[] = [], cys: any[] = [];
   function readCentres() {
     for (let i = 0; i < letters.length; i++) {
       const r = letters[i].el.getBoundingClientRect();
@@ -130,14 +130,14 @@ function bindSweepFx(mark, letters, opts: any = {}) {
       cys[i] = r.top + r.height / 2;
     }
   }
-  function letterWeight(l, cx, cy) {
+  function letterWeight(l, cx: number, cy: number) {
     let t = 1;
     if (inside) t = Math.min(t, Math.hypot(mx - cx, my - cy) / RADIUS_HOVER);
     if (sweep)  t = Math.min(t, Math.hypot(sweep.vx - cx, sweep.cy - cy) / sweep.radius);
     t = Math.min(1, t);
     return Math.round(l.base * t + 300 * (1 - t));
   }
-  function frame(ts) {
+  function frame(ts: number) {
     if (sweep) {
       if (sweep.t0 == null) sweep.t0 = ts;
       const p = Math.min(1, (ts - sweep.t0) / sweep.duration);
@@ -164,7 +164,7 @@ function bindSweepFx(mark, letters, opts: any = {}) {
     for (const l of letters) { l.el.style.transition = 'font-weight 0.4s ease'; l.el.style.fontWeight = l.base; }
     fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 500);
   }
-  function startSweep(radius) {
+  function startSweep(radius: number) {
     if (a11yOn()) return;
     const rect = mark.getBoundingClientRect();
     sweep = { t0: null, duration: SWEEP_DURATION, sx: rect.left - radius, ex: rect.right + radius,
@@ -202,7 +202,7 @@ function bindSweepFx(mark, letters, opts: any = {}) {
 // navigate.js swaps .site-mark (so the title text changes between pages); the
 // guard on the element keeps it from binding twice to the same header.
 export function setupHeaderFx() {
-  const mark = document.querySelector('.site-mark');
+  const mark = document.querySelector<HTMLElement>('.site-mark');
   const title = document.querySelector('.site-title');
   const byline = document.querySelector('.site-byline');
   if (!mark || !title || !byline || mark._anrFx) return;
@@ -224,7 +224,7 @@ export function setupSectionFx() {
     // /stats render calls this again then, and the fresh letters join this same
     // (persistent) array, so the proximity closures below animate them with no
     // re-binding.
-    const fresh = [...section.querySelectorAll('.section-num, .section-kicker, .section-head, .stats-total-num')]
+    const fresh = [...section.querySelectorAll<HTMLElement>('.section-num, .section-kicker, .section-head, .stats-total-num')]
       .filter(el => !el._anrFxSplit &&
         !(el.classList.contains('stats-total-num') && el.textContent.trim() === '-'));
     if (!fresh.length) return;
@@ -267,7 +267,7 @@ export function setupSectionFx() {
     // Read all centres, then write all weights - see the note on readCentres()
     // in the section-heading effect above. Interleaved, this forced one
     // full-document layout per letter per frame.
-    const cxs = [], cys = [];
+    const cxs: any[] = [], cys: any[] = [];
     const readCentres = () => {
       for (let i = 0; i < letters.length; i++) {
         const r = letters[i].el.getBoundingClientRect();
@@ -275,7 +275,7 @@ export function setupSectionFx() {
         cys[i] = r.top + r.height / 2;
       }
     };
-    const weight = (l, cx, cy) => {
+    const weight = (l, cx: number, cy: number) => {
       const t = inside ? Math.min(1, Math.hypot(mx - cx, my - cy) / RADIUS) : 1;
       return Math.round(l.base * t + 300 * (1 - t));
     };
@@ -321,7 +321,7 @@ export function setupSectionFx() {
 // is swapped each time) and guards on the mark so it binds once per element.
 export function setupFooterFx() {
   if (!window.matchMedia('(hover:hover) and (pointer:fine)').matches) return;
-  const mark = document.querySelector('.footer-mark');
+  const mark = document.querySelector<HTMLElement>('.footer-mark');
   if (mark) bindLetterFx(mark);
 }
 
@@ -331,7 +331,7 @@ export function setupFooterFx() {
 // neighbours (a proximity gradient) rather than lightening all three at once, and
 // the sweep is quicker so it reads as a pass across a short numeral, not a glow.
 export function setupNotFoundFx() {
-  const code = document.querySelector('.notfound-code');
+  const code = document.querySelector<HTMLElement>('.notfound-code');
   if (!code || code._anrFx) return;
   const letters = splitFrozen([{ el: code, weight: 600 }]);
   bindSweepFx(code, letters, { ivHolder: setupNotFoundFx, radiusHover: 160, radiusTouch: 130, sweepDuration: 1800 });
@@ -346,7 +346,7 @@ export function setupNotFoundFx() {
 // own lighter weight and muted colour, then put back after the letters.
 export function setupFmtHeaderFx(root = document) {
   if (!window.matchMedia('(hover:hover) and (pointer:fine)').matches) return;
-  root.querySelectorAll('.fmt-section-label').forEach((label) => {
+  root.querySelectorAll<HTMLElement>('.fmt-section-label').forEach((label) => {
     if (label._anrLetterFx) return;
     const note = label.querySelector('.fmt-section-note');
     if (note) note.remove();
@@ -357,7 +357,7 @@ export function setupFmtHeaderFx(root = document) {
 
 // Bind the per-letter proximity hover to a single element. Splits its text into
 // letters and tracks the cursor, thinning glyphs toward it. Guarded per element.
-function bindLetterFx(mark) {
+function bindLetterFx(mark: HTMLElement) {
   if (!mark || mark._anrLetterFx) return;
   mark._anrLetterFx = true;
 
@@ -380,7 +380,7 @@ function bindLetterFx(mark) {
   let mx = -9999, my = -9999, inside = false, raf = 0, running = false, fxT = 0;
   // Read all centres, then write all weights - see the note on readCentres() in
   // the section-heading effect above.
-  const cxs = [], cys = [];
+  const cxs: any[] = [], cys: any[] = [];
   const readCentres = () => {
     for (let i = 0; i < letters.length; i++) {
       const r = letters[i].el.getBoundingClientRect();
@@ -388,7 +388,7 @@ function bindLetterFx(mark) {
       cys[i] = r.top + r.height / 2;
     }
   };
-  const weight = (l, cx, cy) => {
+  const weight = (l, cx: number, cy: number) => {
     const t = inside ? Math.min(1, Math.hypot(mx - cx, my - cy) / RADIUS) : 1;
     return Math.round(l.base * t + 300 * (1 - t));
   };

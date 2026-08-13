@@ -16,13 +16,20 @@ import { fmtBytes, preBlock, fmtDate, loadScript, readSlice } from '../core/util
 import { Reader, ascii, matchMagic, latin1, utf8, gunzip, inflate, hexBytes } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 import { xzDecompress } from '../lib/xz-loader.js';
-import type { Row } from '../core/types.js';
+import type { Row, ParseFn } from '../core/types.js';
+
+/** One row of a `fileListSection()` listing: a member name plus optional size
+    and a short trailing annotation. */
+interface FileListItem { name: string; size?: number | null; extra?: string | null }
+
+/** The handle `openZip()` resolves to (entry list + per-entry readers). */
+type ZipHandle = Awaited<ReturnType<typeof openZip>>;
 
 // ---------- zstd decompression (lazy fzstd) ----------
 // Decompress a zstd byte buffer using the vendored fzstd UMD library, loaded on
 // demand the first time a .zst/.conda member is opened. Returns the decompressed
 // Uint8Array, or null on any failure (so callers fall back to header-only).
-async function zstdDecompress(bytes) {
+async function zstdDecompress(bytes: Uint8Array) {
   try {
     if (!(window.fzstd && window.fzstd.decompress)) await loadScript('assets/vendor/fzstd.js');
     if (!(window.fzstd && window.fzstd.decompress)) return null;
@@ -36,17 +43,17 @@ async function zstdDecompress(bytes) {
 // ---------- small shared helpers ----------
 
 // Read up to `n` bytes from the file (for parses needing more than the 4KB head).
-async function readBytes(file, n) {
+async function readBytes(file: File, n: number) {
   return await readSlice(file, 0, n);
 }
 
 // Read a byte range from the file.
-async function readRange(file, start, end) {
+async function readRange(file: File, start: number, end: number) {
   return new Uint8Array(await file.slice(start, Math.min(end, file.size)).arrayBuffer());
 }
 
 // Build a file-list section node from rows of {name, size, extra}.
-function fileListSection(title, items, open) {
+function fileListSection(title: string, items: FileListItem[], open?: boolean) {
   const lines = items.map((it) => {
     const sz = it.size != null ? fmtBytes(it.size).padStart(10) : ''.padStart(10);
     return sz + '  ' + (it.extra ? it.extra + '  ' : '') + it.name;
@@ -56,12 +63,12 @@ function fileListSection(title, items, open) {
 
 // ---------- TAR ----------
 // ustar / GNU / old-style 512-byte member headers.
-const TAR_TYPES = {
+const TAR_TYPES: Record<string, string> = {
   '0': 'file', '\0': 'file', '1': 'hardlink', '2': 'symlink', '3': 'char dev',
   '4': 'block dev', '5': 'directory', '6': 'fifo', '7': 'contiguous',
   'g': 'pax global', 'x': 'pax', 'L': 'GNU longname', 'K': 'GNU longlink',
 };
-function octal(bytes, off, len) {
+function octal(bytes: Uint8Array, off: number, len: number) {
   let s = '';
   for (let i = off; i < off + len; i++) {
     const c = bytes[i];
@@ -71,12 +78,12 @@ function octal(bytes, off, len) {
   }
   return s ? parseInt(s, 8) : 0;
 }
-function tarStr(bytes, off, len) {
+function tarStr(bytes: Uint8Array, off: number, len: number) {
   let end = off;
   while (end < off + len && bytes[end] !== 0) end++;
   return ascii(bytes, off, end - off).trim();
 }
-async function parseTar(file) {
+async function parseTar(file: File) {
   // Cap the scan so a giant tar doesn't pull the whole thing into memory.
   const cap = Math.min(file.size, 8 * 1024 * 1024);
   const b = await readBytes(file, cap);
@@ -138,7 +145,7 @@ async function parseTar(file) {
 
 // ---------- GZIP (.gz, .tgz) ----------
 const GZIP_OS = ['FAT', 'Amiga', 'VMS', 'Unix', 'VM/CMS', 'Atari', 'HPFS', 'Macintosh', 'Z-System', 'CP/M', 'TOPS-20', 'NTFS', 'QDOS', 'Acorn'];
-async function parseGzip(file, ext) {
+async function parseGzip(file: File, ext: string) {
   const b = await readBytes(file, 4096);
   if (!(b[0] === 0x1f && b[1] === 0x8b && b[2] === 0x08)) return null;
   const flags = b[3];
@@ -187,7 +194,7 @@ async function parseGzip(file, ext) {
 }
 
 // ---------- bzip2 (.bz2) ----------
-function parseBzip2(head) {
+function parseBzip2(head: Uint8Array) {
   if (!(head[0] === 0x42 && head[1] === 0x5a && head[2] === 0x68)) return null; // "BZh"
   const lvl = String.fromCharCode(head[3]);
   if (lvl < '1' || lvl > '9') return null;
@@ -206,8 +213,8 @@ function parseBzip2(head) {
 // (e.g. .tar.xz), list its members; otherwise we show the decompressed size and
 // the first bytes / detected inner type. Decompression failures leave the
 // header-only result intact.
-const XZ_CHECK = { 0: 'none', 1: 'CRC32', 4: 'CRC64', 10: 'SHA-256' };
-function parseXzHeader(head): Row {
+const XZ_CHECK: Record<number, string> = { 0: 'none', 1: 'CRC32', 4: 'CRC64', 10: 'SHA-256' };
+function parseXzHeader(head: Uint8Array): Row | null {
   // Magic: FD 37 7A 58 5A 00
   if (!matchMagic(head, [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00])) return null;
   const flags = head[7]; // stream flags: low nibble of 2nd byte = check type
@@ -217,7 +224,7 @@ function parseXzHeader(head): Row {
     'Integrity check': XZ_CHECK[check] != null ? XZ_CHECK[check] : 'reserved (' + check + ')',
   };
 }
-async function parseXz(head, file, ext) {
+async function parseXz(head: Uint8Array, file: File, ext: string) {
   const out = parseXzHeader(head);
   if (!out || !file) return out;
   try {
@@ -252,7 +259,7 @@ async function parseXz(head, file, ext) {
 // Header-only parse (kept as the base, always returned even if decompression
 // fails). `file`/`ext` are optional; when present and the inner stream is a tar,
 // we lazily decompress via fzstd and list the tar members.
-async function parseZstd(head, file, ext) {
+async function parseZstd(head: Uint8Array, file: File, ext: string) {
   const out = parseZstdHeader(head);
   if (!out) return out;
   if (!file) return out;
@@ -285,7 +292,7 @@ async function parseZstd(head, file, ext) {
   return out;
 }
 
-function parseZstdHeader(head): Row {
+function parseZstdHeader(head: Uint8Array): Row | null {
   // Frame magic 0x28 0xB5 0x2F 0xFD (LE).
   if (!(head[0] === 0x28 && head[1] === 0xb5 && head[2] === 0x2f && head[3] === 0xfd)) {
     // Skippable frame magic range 0x184D2A50..5F
@@ -320,7 +327,7 @@ function parseZstdHeader(head): Row {
     if (fcsLen === 2) v += 256n;
     contentSize = v;
   }
-  const out = {
+  const out: Row = {
     'Format': 'Zstandard compressed',
     'Checksum': hasChecksum ? 'present (xxHash64)' : 'none',
   };
@@ -332,7 +339,7 @@ function parseZstdHeader(head): Row {
 }
 
 // ---------- lz4 (.lz4) ----------
-function parseLz4(head) {
+function parseLz4(head: Uint8Array) {
   // Frame magic 0x184D2204 (LE).
   if (!(head[0] === 0x04 && head[1] === 0x22 && head[2] === 0x4d && head[3] === 0x18)) {
     if (head[0] === 0x02 && head[1] === 0x21 && head[2] === 0x4c && head[3] === 0x18) {
@@ -349,14 +356,14 @@ function parseLz4(head) {
   const dictId = flg & 0x01;
   const bd = head[5];
   const blockMaxBits = (bd >> 4) & 0x07;
-  const blockMaxMap = { 4: '64 KiB', 5: '256 KiB', 6: '1 MiB', 7: '4 MiB' };
+  const blockMaxMap: Record<number, string> = { 4: '64 KiB', 5: '256 KiB', 6: '1 MiB', 7: '4 MiB' };
   let p = 6, contentSize = null;
   if (contentSizeFlag && p + 8 <= head.length) {
     let v = 0n;
     for (let i = 0; i < 8; i++) v |= BigInt(head[p + i]) << BigInt(8 * i);
     contentSize = v; p += 8;
   }
-  const out = {
+  const out: Row = {
     'Format': 'LZ4 compressed (frame)',
     'Version': version,
     'Block mode': blockIndep ? 'independent' : 'linked',
@@ -370,7 +377,7 @@ function parseLz4(head) {
 }
 
 // ---------- lzma (.lzma) ----------
-function parseLzma(head) {
+function parseLzma(head: Uint8Array) {
   if (head.length < 13) return null;
   const props = head[0];
   if (props >= 225) return null; // lc+lp*9+pb*45 must be < 225
@@ -394,7 +401,7 @@ function parseLzma(head) {
 }
 
 // ---------- compress (.Z) ----------
-function parseCompress(head) {
+function parseCompress(head: Uint8Array) {
   if (!(head[0] === 0x1f && head[1] === 0x9d)) return null;
   const flags = head[2];
   const maxBits = flags & 0x1f;
@@ -407,9 +414,9 @@ function parseCompress(head) {
 }
 
 // ---------- cpio (.cpio) ----------
-function octalAscii(s) { const v = parseInt(s, 8); return isNaN(v) ? 0 : v; }
-function hexAscii(s) { const v = parseInt(s, 16); return isNaN(v) ? 0 : v; }
-async function parseCpio(file) {
+function octalAscii(s: string) { const v = parseInt(s, 8); return isNaN(v) ? 0 : v; }
+function hexAscii(s: string) { const v = parseInt(s, 16); return isNaN(v) ? 0 : v; }
+async function parseCpio(file: File) {
   const cap = Math.min(file.size, 8 * 1024 * 1024);
   const b = await readBytes(file, cap);
   let variant = null;
@@ -462,7 +469,7 @@ async function parseCpio(file) {
 
 // ---------- ar (.a) ----------
 // Also the backbone of .deb. Returns parsed members + buffer.
-async function parseArMembers(file, maxBytes = 16 * 1024 * 1024) {
+async function parseArMembers(file: File, maxBytes = 16 * 1024 * 1024) {
   const b = await readBytes(file, maxBytes);
   // Magic "!<arch>\n" and the per-member terminator "`\n" both end in a control
   // byte, so they must be checked raw - the shared ascii() helper drops bytes < 32.
@@ -481,7 +488,7 @@ async function parseArMembers(file, maxBytes = 16 * 1024 * 1024) {
   }
   return { members, buf: b };
 }
-async function parseAr(file) {
+async function parseAr(file: File) {
   const ar = await parseArMembers(file);
   if (!ar) return null;
   const items = ar.members.map((m) => ({
@@ -503,13 +510,13 @@ async function parseAr(file) {
 // objects (and short-import records) rather than Unix .o files. We tell a static
 // library (real COFF objects) apart from an import library (short-import stubs
 // pointing at a DLL) and read the target architecture and the DLLs it binds to.
-const COFF_MACHINE = {
+const COFF_MACHINE: Record<number, string> = {
   0x014c: 'x86 (i386)', 0x0162: 'MIPS', 0x0166: 'MIPS16', 0x0200: 'Itanium (IA-64)',
   0x8664: 'x64 (AMD64)', 0x01c0: 'ARM', 0x01c2: 'ARM Thumb', 0x01c4: 'ARM Thumb-2',
   0xaa64: 'ARM64', 0x5032: 'RISC-V 32', 0x5064: 'RISC-V 64', 0x5128: 'RISC-V 128',
   0x6232: 'LoongArch32', 0x6264: 'LoongArch64', 0x0ebc: 'EFI byte code',
 };
-async function parseLib(file) {
+async function parseLib(file: File) {
   const ar = await parseArMembers(file);
   if (!ar) return null;
   const b = ar.buf;
@@ -562,7 +569,7 @@ async function parseLib(file) {
 }
 
 // ---------- deb (.deb) ----------
-function parseControlFields(text) {
+function parseControlFields(text: string) {
   const fields: any = {};
   let lastKey = null;
   for (const line of text.split(/\r?\n/)) {
@@ -572,7 +579,7 @@ function parseControlFields(text) {
   }
   return fields;
 }
-async function parseDeb(file) {
+async function parseDeb(file: File) {
   const ar = await parseArMembers(file);
   if (!ar) return null;
   const out: Row = { 'Format': 'Debian package (.deb)' };
@@ -582,7 +589,7 @@ async function parseDeb(file) {
   if (ctrl) {
     out['Control archive'] = ctrl.name;
     try {
-      let tarBytes = ar.buf.subarray(ctrl.dataStart, ctrl.dataStart + ctrl.size);
+      let tarBytes: Uint8Array | null = ar.buf.subarray(ctrl.dataStart, ctrl.dataStart + ctrl.size);
       if (/\.gz$/.test(ctrl.name)) tarBytes = await gunzip(tarBytes);
       else if (/\.xz$/.test(ctrl.name)) tarBytes = await xzDecompress(tarBytes); // lazy LZMA2 (null on failure)
       else if (/\.zst$/.test(ctrl.name)) tarBytes = null; // can't decode natively
@@ -609,7 +616,7 @@ async function parseDeb(file) {
   return out;
 }
 // Find a member's bytes inside an uncompressed tar buffer (used by deb/gem).
-function findTarMember(tarBytes, wantName) {
+function findTarMember(tarBytes: Uint8Array, wantName: string) {
   let pos = 0;
   while (pos + 512 <= tarBytes.length) {
     let allZero = true;
@@ -626,7 +633,7 @@ function findTarMember(tarBytes, wantName) {
 
 // List members of an uncompressed tar buffer: returns { items, members, total }
 // where items is [{name, size, extra}] (capped). Used by the .zst tar path.
-function listTarMembers(tarBytes, cap = 2000) {
+function listTarMembers(tarBytes: Uint8Array, cap = 2000) {
   const items = [];
   let pos = 0, members = 0, total = 0, longName = null;
   while (pos + 512 <= tarBytes.length) {
@@ -655,12 +662,12 @@ function listTarMembers(tarBytes, cap = 2000) {
 }
 
 // ---------- rpm (.rpm) ----------
-const RPM_TAGS = {
+const RPM_TAGS: Record<number, string> = {
   1000: 'Name', 1001: 'Version', 1002: 'Release', 1004: 'Summary', 1005: 'Description',
   1007: 'BuildHost', 1009: 'Size', 1011: 'Vendor', 1014: 'License', 1015: 'Packager',
   1016: 'Group', 1020: 'URL', 1022: 'Arch', 1021: 'OS', 1006: 'BuildTime',
 };
-async function parseRpm(file) {
+async function parseRpm(file: File) {
   const b = await readBytes(file, 65536);
   // Lead magic ED AB EE DB
   if (!(b[0] === 0xed && b[1] === 0xab && b[2] === 0xee && b[3] === 0xdb)) return null;
@@ -678,7 +685,7 @@ async function parseRpm(file) {
   };
   // After 96-byte lead: signature header, then main header. Each header:
   // 8-byte magic (8E AD E8 01 00 00 00 00), u32 nindex, u32 hsize.
-  function readHeader(off) {
+  function readHeader(off: number) {
     if (!(b[off] === 0x8e && b[off + 1] === 0xad && b[off + 2] === 0xe8)) return null;
     const hr = new Reader(b); hr.seek(off + 8);
     const nIndex = hr.u32();
@@ -727,7 +734,7 @@ async function parseRpm(file) {
 }
 
 // ---------- gem (.gem) ----------
-async function parseGem(file) {
+async function parseGem(file: File) {
   const cap = Math.min(file.size, 4 * 1024 * 1024);
   const b = await readBytes(file, cap);
   // A .gem is itself an (uncompressed) tar containing metadata.gz + data.tar.gz.
@@ -737,7 +744,7 @@ async function parseGem(file) {
   if (metaGz) {
     try {
       const yaml = utf8(await gunzip(metaGz) || new Uint8Array());
-      const pick = (k) => { const m = yaml.match(new RegExp('^' + k + ':\\s*(.+)$', 'm')); return m ? m[1].trim() : null; };
+      const pick = (k: string) => { const m = yaml.match(new RegExp('^' + k + ':\\s*(.+)$', 'm')); return m ? m[1].trim() : null; };
       if (pick('name')) out['Name'] = pick('name');
       const ver = yaml.match(/version:\s*!ruby\/object[^\n]*\n\s*version:\s*(.+)/);
       if (ver) out['Version'] = ver[1].trim();
@@ -756,7 +763,7 @@ async function parseGem(file) {
 }
 
 // ---------- cab (.cab) ----------
-async function parseCab(file) {
+async function parseCab(file: File) {
   const b = await readBytes(file, 65536);
   if (ascii(b, 0, 4) !== 'MSCF') return null;
   const r = new Reader(b, true); // little-endian
@@ -808,10 +815,10 @@ async function parseCab(file) {
 
 // ---------- ZIP-based packages (openZip) ----------
 
-async function zipText(zip, name) { try { return await zip.text(name); } catch (_) { return null; } }
-function jsonTry(s) { try { return JSON.parse(s); } catch (_) { return null; } }
+async function zipText(zip: ZipHandle, name: string) { try { return await zip.text(name); } catch (_) { return null; } }
+function jsonTry(s: string | null) { try { return JSON.parse(s!); } catch (_) { return null; } }
 // .whl (Python wheel)
-async function parseWhl(file) {
+async function parseWhl(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const metaEntry = zip.entries.find((e) => /\.dist-info\/METADATA$/.test(e.name));
   const out: Row = { 'Format': 'Python wheel (.whl)' };
@@ -838,14 +845,14 @@ async function parseWhl(file) {
 }
 
 // .nupkg (NuGet)
-async function parseNupkg(file) {
+async function parseNupkg(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const nuspec = zip.entries.find((e) => /\.nuspec$/i.test(e.name) && !e.name.includes('/'));
   const out: Row = { 'Format': 'NuGet package (.nupkg)' };
   if (nuspec) {
     const xml = await zipText(zip, nuspec.name);
     if (xml) {
-      const pick = (t) => { const m = xml.match(new RegExp('<' + t + '>([^<]*)</' + t + '>', 'i')); return m ? m[1].trim() : null; };
+      const pick = (t: string) => { const m = xml.match(new RegExp('<' + t + '>([^<]*)</' + t + '>', 'i')); return m ? m[1].trim() : null; };
       if (pick('id')) out['ID'] = pick('id');
       if (pick('version')) out['Version'] = pick('version');
       if (pick('authors')) out['Authors'] = pick('authors');
@@ -863,7 +870,7 @@ async function parseNupkg(file) {
 }
 
 // .crx (Chrome extension) - Cr24 header then inner ZIP.
-async function parseCrx(file) {
+async function parseCrx(file: File) {
   const head = await readBytes(file, 16);
   if (ascii(head, 0, 4) !== 'Cr24') return null;
   const r = new Reader(head, true); r.seek(4);
@@ -899,7 +906,7 @@ async function parseCrx(file) {
 }
 
 // .xpi (Firefox add-on)
-async function parseXpi(file) {
+async function parseXpi(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const out: Row = { 'Format': 'Firefox add-on (.xpi)' };
   const mtext = await zipText(zip, 'manifest.json');
@@ -923,14 +930,14 @@ async function parseXpi(file) {
 }
 
 // .vsix (VS / VS Code extension)
-async function parseVsix(file) {
+async function parseVsix(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const manEntry = zip.entries.find((e) => /vsixmanifest$/i.test(e.name)) || zip.entries.find((e) => /extension\.vsixmanifest$/i.test(e.name));
-  const out = { 'Format': 'VS / VS Code extension (.vsix)' };
+  const out: Row = { 'Format': 'VS / VS Code extension (.vsix)' };
   if (manEntry) {
     const xml = await zipText(zip, manEntry.name);
     if (xml) {
-      const attr = (re) => { const m = xml.match(re); return m ? m[1] : null; };
+      const attr = (re: RegExp) => { const m = xml.match(re); return m ? m[1] : null; };
       out['ID'] = attr(/<Identity[^>]*\bId="([^"]+)"/i) || '-';
       out['Version'] = attr(/<Identity[^>]*\bVersion="([^"]+)"/i) || '-';
       out['Publisher'] = attr(/<Identity[^>]*\bPublisher="([^"]+)"/i) || '-';
@@ -953,7 +960,7 @@ async function parseVsix(file) {
 }
 
 // .asar (Electron) - pickle header -> JSON file tree.
-function walkAsarTree(node, prefix, out, sizeRef) {
+function walkAsarTree(node: any, prefix: string, out: FileListItem[], sizeRef: { total: number; count: number }) {
   if (!node || !node.files) return;
   for (const [name, info] of Object.entries<any>(node.files)) {
     const path = prefix + name;
@@ -964,7 +971,7 @@ function walkAsarTree(node, prefix, out, sizeRef) {
     }
   }
 }
-async function parseAsar(file) {
+async function parseAsar(file: File) {
   const head = await readBytes(file, 16);
   const r = new Reader(head, true);
   // Pickle: u32 headerSize wrapper. Layout: [u32=4][u32 jsonStrSize][u32 jsonDataSize][u32 actualLen][json...]
@@ -980,7 +987,7 @@ async function parseAsar(file) {
     json = JSON.parse(utf8(jb));
   } catch (_) { return null; }
   if (!json || !json.files) return null;
-  const items = []; const ref = { total: 0, count: 0 };
+  const items: FileListItem[] = []; const ref = { total: 0, count: 0 };
   walkAsarTree(json, '', items, ref);
   const out: Row = {
     'Format': 'Electron ASAR archive',
@@ -1003,12 +1010,12 @@ async function parseAsar(file) {
 }
 
 // .appx / .msix (Windows App Package)
-async function parseAppx(file) {
+async function parseAppx(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const out: Row = { 'Format': 'Windows App Package (.appx / .msix)' };
   const xml = await zipText(zip, 'AppxManifest.xml');
   if (xml) {
-    const attr = (re) => { const m = xml.match(re); return m ? m[1] : null; };
+    const attr = (re: RegExp) => { const m = xml.match(re); return m ? m[1] : null; };
     out['Name'] = attr(/<Identity[^>]*\bName="([^"]+)"/i) || '-';
     out['Version'] = attr(/<Identity[^>]*\bVersion="([^"]+)"/i) || '-';
     out['Publisher'] = attr(/<Identity[^>]*\bPublisher="([^"]+)"/i) || '-';
@@ -1025,9 +1032,9 @@ async function parseAppx(file) {
 }
 
 // .apkg (Anki deck)
-async function parseApkg(file) {
+async function parseApkg(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
-  const out = { 'Format': 'Anki deck package (.apkg)' };
+  const out: Row = { 'Format': 'Anki deck package (.apkg)' };
   const hasNewDb = zip.has('collection.anki21') || zip.entries.some((e) => /collection\.anki2/.test(e.name));
   out['Collection DB'] = hasNewDb ? (zip.has('collection.anki21') ? 'collection.anki21 (newer)' : 'collection.anki2') : 'not found';
   const mediaText = await zipText(zip, 'media');
@@ -1046,7 +1053,7 @@ async function parseApkg(file) {
 //   .apks  (bundletool) - toc.pb (protobuf) + splits/*.apk, no JSON manifest
 // All browse as a normal ZIP (the archive tree is embedded alongside this card);
 // here we surface the app identity and the split/expansion breakdown.
-async function parseXapk(file, ext) {
+async function parseXapk(file: File, ext: string) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const kindLabel = ext === 'apkm' ? 'APKMirror bundle (.apkm)'
     : ext === 'apks' ? 'Android App Set (.apks, bundletool)'
@@ -1102,7 +1109,7 @@ async function parseXapk(file, ext) {
 }
 
 // .conda (zip wrapping zstd-compressed tarballs)
-async function parseConda(file) {
+async function parseConda(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const out: Row = { 'Format': 'Conda package (.conda)' };
   const inner = zip.names().filter((n) => /\.tar\.zst$/.test(n));
@@ -1146,7 +1153,7 @@ async function parseConda(file) {
 // eXtensible ARchive: 28-byte big-endian header followed by a zlib-compressed
 // XML table of contents. Apple's flat .pkg / .mpkg installers are XAR archives.
 // The TOC lists every member (path, type, sizes, checksums, timestamps).
-async function parseXar(file, ext) {
+async function parseXar(file: File, ext: string) {
   const head = await readBytes(file, 28);
   // Magic: 'xar!' (0x78 0x61 0x72 0x21).
   if (ascii(head, 0, 4) !== 'xar!') return null;
@@ -1157,7 +1164,7 @@ async function parseXar(file, ext) {
   const tocComp = Number(r.u64());   // compressed TOC length
   const tocUncomp = Number(r.u64()); // uncompressed TOC length
   const cksumAlg = r.u32();
-  const CKSUM = { 0: 'none', 1: 'SHA-1', 2: 'MD5', 3: 'SHA-256', 4: 'SHA-512' };
+  const CKSUM: Record<number, string> = { 0: 'none', 1: 'SHA-1', 2: 'MD5', 3: 'SHA-256', 4: 'SHA-512' };
   const isPkg = ext === 'pkg' || ext === 'mpkg';
   const out: Row = {
     'Format': isPkg ? 'macOS Installer package (.' + ext + ', XAR)' : 'XAR archive (eXtensible ARchive)',
@@ -1210,8 +1217,8 @@ async function parseXar(file, ext) {
 // package id at 0x10 (the same id hex-encoded in the filename, e.g.
 // w64_sr_audio_02b8_0.pkg -> id 0x02b8), and a u32 Unix build timestamp at 0x20.
 // The entry/block tables that follow are proprietary, so this is a header read.
-const TIGER_PLATFORM = { w64: 'Windows (x64)', w32: 'Windows (x86)', ps4: 'PlayStation 4', ps5: 'PlayStation 5', xb1: 'Xbox One', xbs: 'Xbox Series', xboxone: 'Xbox One' };
-function parseTigerPkg(head, file) {
+const TIGER_PLATFORM: Record<string, string> = { w64: 'Windows (x64)', w32: 'Windows (x86)', ps4: 'PlayStation 4', ps5: 'PlayStation 5', xb1: 'Xbox One', xbs: 'Xbox Series', xboxone: 'Xbox One' };
+function parseTigerPkg(head: Uint8Array, file: File) {
   if (head.length < 0x24) return null;
   const r = new Reader(head, true); // little-endian
   const version = r.u16();           // 0x00 - format version (0x0035 on current D2)
@@ -1223,7 +1230,7 @@ function parseTigerPkg(head, file) {
   const m = /_([0-9a-f]{4})_(\d+)\.pkg$/i.exec(file.name || '');
   const nameId = m ? parseInt(m[1], 16) : null;
   if (nameId !== null && nameId !== pkgId) return null; // not a Tiger package
-  const out = {
+  const out: Row = {
     'Format': 'Bungie Tiger engine package (Destiny / Destiny 2)',
     '_app': 'Destiny package (Bungie Tiger engine)',
     'Header version': '0x' + version.toString(16).padStart(4, '0'),
@@ -1245,7 +1252,7 @@ function parseTigerPkg(head, file) {
 // Dispatcher for the .pkg / .mpkg extension: Apple flat installers are XAR
 // archives; Destiny's same-extension files are Bungie Tiger packages. Sniff the
 // magic and route to whichever the bytes prove (XAR 'xar!' wins, else Tiger).
-async function parsePkg(file, ext, head) {
+async function parsePkg(file: File, ext: string, head: Uint8Array) {
   if (ascii(head, 0, 4) === 'xar!') return parseXar(file, ext);
   const tiger = parseTigerPkg(head, file);
   if (tiger) return tiger;
@@ -1256,8 +1263,8 @@ async function parsePkg(file, ext, head) {
 // lzop file: 9-byte magic, then a big-endian header (version, method, level,
 // flags, optional mtime/mode/name). One of the few LZO-framed formats with a
 // real header worth decoding (the LZO body itself is not decompressed natively).
-const LZOP_METHOD = { 1: 'LZO1X-1', 2: 'LZO1X-1(15)', 3: 'LZO1X-999' };
-async function parseLzo(file) {
+const LZOP_METHOD: Record<number, string> = { 1: 'LZO1X-1', 2: 'LZO1X-1(15)', 3: 'LZO1X-999' };
+async function parseLzo(file: File) {
   const b = await readBytes(file, 4096);
   // Magic: 89 4C 5A 4F 00 0D 0A 1A 0A
   if (!matchMagic(b, [0x89, 0x4c, 0x5a, 0x4f, 0x00, 0x0d, 0x0a, 0x1a, 0x0a])) return null;
@@ -1270,7 +1277,7 @@ async function parseLzo(file) {
   const method = r.u8();
   const level = r.u8();
   const flags = r.u32();
-  const out = {
+  const out: Row = {
     'Format': 'lzop compressed (LZO)',
     'lzop version': (version >> 12 & 0xf) + '.' + (version >> 8 & 0xf).toString(16) + (version >> 4 & 0xf).toString(16) + (version & 0xf).toString(16),
     'LZO library': '0x' + libVersion.toString(16),
@@ -1303,8 +1310,8 @@ async function parseLzo(file) {
 // Snap packages (Canonical) are SquashFS images. The 'hsqs'/'sqsh' superblock
 // carries enough to summarise the image; the file tree needs the (lazy) LZO/XZ
 // metadata decode we don't do here, so this is a rich header read.
-const SQFS_COMP = { 1: 'gzip', 2: 'lzma', 3: 'lzo', 4: 'xz', 5: 'lz4', 6: 'zstd' };
-async function parseSnap(file, ext) {
+const SQFS_COMP: Record<number, string> = { 1: 'gzip', 2: 'lzma', 3: 'lzo', 4: 'xz', 5: 'lz4', 6: 'zstd' };
+async function parseSnap(file: File, ext: string) {
   const b = await readBytes(file, 96);
   let little;
   if (b[0] === 0x68 && b[1] === 0x73 && b[2] === 0x71 && b[3] === 0x73) little = true;       // 'hsqs' LE
@@ -1324,7 +1331,7 @@ async function parseSnap(file, ext) {
   const verMinor = r.u16();
   r.skip(8); // root inode
   const bytesUsed = Number(r.u64());
-  const out = {
+  const out: Row = {
     'Format': ext === 'snap' ? 'Snap package (SquashFS image)' : 'SquashFS image',
     'SquashFS version': verMajor + '.' + verMinor,
     'Compression': SQFS_COMP[compId] || ('id ' + compId),
@@ -1341,7 +1348,7 @@ async function parseSnap(file, ext) {
 // ---------- StuffIt (.sit, .sitx) ----------
 // Classic StuffIt (SIT!/SITD/rLau) and StuffIt X (StuffIt!) magics. The bodies
 // use proprietary codecs with no in-browser decoder, so this is identification.
-function parseSit(head) {
+function parseSit(head: Uint8Array) {
   const tag4 = ascii(head, 0, 4);
   const tag7 = ascii(head, 0, 7);
   if (tag7 === 'StuffIt') {
@@ -1357,11 +1364,11 @@ function parseSit(head) {
 // A single-file Flatpak bundle is an OSTree "static delta" wrapped in a GVariant
 // container (magic 'flatpak' appears in the metadata). No native decoder, so we
 // confirm the ref/metadata strings where visible and otherwise identify.
-async function parseFlatpak(file) {
+async function parseFlatpak(file: File) {
   const b = await readBytes(file, 65536);
   // Bundles embed plain-text metadata; surface the app/runtime ref if present.
   const text = latin1(b);
-  const out = { 'Format': 'Flatpak bundle (OSTree static delta)' };
+  const out: Row = { 'Format': 'Flatpak bundle (OSTree static delta)' };
   const ref = (text.match(/\b((?:app|runtime)\/[A-Za-z0-9._-]+\/[A-Za-z0-9_-]+\/[A-Za-z0-9._-]+)/) || [])[1];
   if (ref) {
     out['Ref'] = ref;
@@ -1377,8 +1384,8 @@ async function parseFlatpak(file) {
 // Raw Brotli has no magic. DecompressionStream support for 'br' is not universal,
 // so we identify by extension and report sizes; we attempt a native decode for
 // the original size + ratio only where the platform supports it.
-async function parseBr(file) {
-  const out = {
+async function parseBr(file: File) {
+  const out: Row = {
     'Format': 'Brotli compressed stream',
     'Compressed size': fmtBytes(file.size),
   };
@@ -1399,7 +1406,7 @@ async function parseBr(file) {
 }
 
 // ---------- identification-only (rare AND hard) ----------
-function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
+function ident(name: string, note: string) { return () => ({ 'Format': name, 'Note': note }); }
 
 // ---------- dispatch ----------
 // ---------- Android OBB (.obb) expansion file ----------
@@ -1407,7 +1414,7 @@ function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
 // (the common case - list it), an encrypted/jobb FAT image, or a game-specific
 // bundle (Unity, custom). Detect the container and, when it is a ZIP, show the
 // member tree; otherwise surface the leading signature.
-async function parseObb(file) {
+async function parseObb(file: File) {
   const head = await readBytes(file, 16);
   const out: Row = { 'Format': 'Android APK expansion file (OBB)', 'Size': fmtBytes(file.size) };
   if (head[0] === 0x50 && head[1] === 0x4B) {
@@ -1432,7 +1439,7 @@ async function parseObb(file) {
   return out;
 }
 
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   obb: (c) => parseObb(c.file),
   tar: (c) => parseTar(c.file),
   gz: (c) => parseGzip(c.file, c.ext),

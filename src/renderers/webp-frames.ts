@@ -17,9 +17,9 @@
 // decoding pixels. Returns { animated, loop, hasAlpha, width, height,
 // durationsMs:number[] } or null if the bytes aren't a WebP. Frame durations and
 // the canvas size come from VP8X + ANMF chunk headers.
-function parseWebpAnim(bytes) {
-  const ascii = (o, n) => { let s = ''; for (let i = 0; i < n; i++) s += String.fromCharCode(bytes[o + i]); return s; };
-  const u24 = (o) => bytes[o] | (bytes[o + 1] << 8) | (bytes[o + 2] << 16);
+function parseWebpAnim(bytes: Uint8Array) {
+  const ascii = (o: number, n: number) => { let s = ''; for (let i = 0; i < n; i++) s += String.fromCharCode(bytes[o + i]); return s; };
+  const u24 = (o: number) => bytes[o] | (bytes[o + 1] << 8) | (bytes[o + 2] << 16);
   if (bytes.length < 30 || ascii(0, 4) !== 'RIFF' || ascii(8, 4) !== 'WEBP') return null;
   if (ascii(12, 4) !== 'VP8X') return { animated: false };
   const flags = bytes[20];
@@ -51,7 +51,7 @@ function parseWebpAnim(bytes) {
 //     get(idx) -> Promise<Uint8ClampedArray /*RGBA*/>, close() }
 // or null. `budget` is the retained decoded-pixel cache window; the LRU keeps at
 // most floor(budget/(w*h)) frames. Async - it awaits the browser's ImageDecoder.
-export async function decodeWebpFrames(file, budget = 120e6) {
+export async function decodeWebpFrames(file: File, budget = 120e6) {
   if (typeof window === 'undefined' || typeof window.ImageDecoder === 'undefined') return null;
   if (file.size > 200 * 1024 * 1024) return null;
 
@@ -84,14 +84,14 @@ export async function decodeWebpFrames(file, budget = 120e6) {
   const L = Math.max(8, Math.floor(budget / px));
   const cv = document.createElement('canvas');
   cv.width = width; cv.height = height;
-  const ctx = cv.getContext('2d', { willReadFrequently: true });
-  const lru = new Map();
+  const ctx = cv.getContext('2d', { willReadFrequently: true })!;
+  const lru = new Map<number, Uint8ClampedArray>();
   let closed = false;
 
-  const get = async (idx) => {
+  const get = async (idx: number) => {
     idx = Math.max(0, Math.min(count - 1, idx | 0));
-    if (lru.has(idx)) { const d = lru.get(idx); lru.delete(idx); lru.set(idx, d); return d; }
-    let data;
+    if (lru.has(idx)) { const d = lru.get(idx)!; lru.delete(idx); lru.set(idx, d); return d; }
+    let data: Uint8ClampedArray;
     if (closed) return new Uint8ClampedArray(px * 4);
     try {
       const { image } = await dec.decode({ frameIndex: idx, completeFramesOnly: true });
@@ -101,7 +101,7 @@ export async function decodeWebpFrames(file, budget = 120e6) {
       data = ctx.getImageData(0, 0, width, height).data;
     } catch (_) { data = new Uint8ClampedArray(px * 4); }    // blank on a malformed frame
     lru.set(idx, data);
-    if (lru.size > L) lru.delete(lru.keys().next().value);
+    if (lru.size > L) lru.delete(lru.keys().next().value!);
     return data;
   };
 

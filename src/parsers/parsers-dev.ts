@@ -11,7 +11,7 @@ import { Reader, ascii } from '../core/binutil.js';
 import { SCAN_SMALL } from '../core/limits.js';
 import { parsePlist } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
-import type { Row, RowSection } from '../core/types.js';
+import type { Row, RowSection, ParseFn } from '../core/types.js';
 
 // ---------- small helpers ----------
 function b64urlToBytes(s) {
@@ -29,7 +29,7 @@ const b64urlToStr = (s) => new TextDecoder('utf-8').decode(b64urlToBytes(s));
 function uleb(b, cur) { let r = 0, sh = 0, x; do { x = b[cur.i++]; r += (x & 0x7f) * Math.pow(2, sh); sh += 7; } while (x & 0x80); return r; }
 
 // ---------- JSON Web Token ----------
-async function parseJwt(file) {
+async function parseJwt(file: File) {
   const text = (await file.text()).trim();
   const parts = text.split('.');
   if (parts.length < 2) return null;
@@ -62,7 +62,7 @@ async function parseJwt(file) {
 }
 
 // ---------- HTTP Archive (.har) ----------
-async function parseHar(file) {
+async function parseHar(file: File) {
   let j; try { j = JSON.parse(await file.text()); } catch (_) { return null; }
   const log = j.log; if (!log) return null;
   const entries = log.entries || [];
@@ -91,10 +91,10 @@ async function parseHar(file) {
 }
 
 // ---------- Jupyter Notebook ----------
-async function parseIpynb(file) {
+async function parseIpynb(file: File) {
   let j; try { j = JSON.parse(await file.text()); } catch (_) { return null; }
   if (!Array.isArray(j.cells)) return null;
-  const out = { 'Format': 'Jupyter Notebook' };
+  const out: Row = { 'Format': 'Jupyter Notebook' };
   out['nbformat'] = (j.nbformat || '?') + '.' + (j.nbformat_minor || 0);
   const ks = (j.metadata && j.metadata.kernelspec) || {};
   const li = (j.metadata && j.metadata.language_info) || {};
@@ -115,7 +115,7 @@ async function parseIpynb(file) {
 }
 
 // ---------- JSON Lines / NDJSON ----------
-async function parseJsonl(file) {
+async function parseJsonl(file: File) {
   const text = await file.text();
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   let valid = 0; const keys = new Set();
@@ -131,7 +131,7 @@ async function parseJsonl(file) {
 }
 
 // ---------- Unified diff / patch ----------
-async function parseDiff(file) {
+async function parseDiff(file: File) {
   const text = await file.text();
   const lines = text.split(/\r?\n/);
   const files = new Set(); let add = 0, del = 0;
@@ -152,11 +152,11 @@ async function parseDiff(file) {
 
 // ---------- WebAssembly binary ----------
 const WASM_SECTIONS = ['Custom', 'Type', 'Import', 'Function', 'Table', 'Memory', 'Global', 'Export', 'Start', 'Element', 'Code', 'Data', 'DataCount', 'Tag'];
-async function parseWasm(file) {
+async function parseWasm(file: File) {
   const b = await readSlice(file, 0, 262144);
   if (!(b[0] === 0x00 && b[1] === 0x61 && b[2] === 0x73 && b[3] === 0x6d)) return null;
   const version = b[4] | (b[5] << 8) | (b[6] << 16) | (b[7] << 24);
-  const out = { 'Format': 'WebAssembly binary', 'Version': version };
+  const out: Row = { 'Format': 'WebAssembly binary', 'Version': version };
   const cur = { i: 8 }; const secCounts: any = {}; const found = []; let producer = null;
   try {
     while (cur.i < b.length) {
@@ -186,7 +186,7 @@ async function parseWasm(file) {
 }
 
 // ---------- Java .class ----------
-const JDK = { 45: '1.1', 46: '1.2', 47: '1.3', 48: '1.4', 49: '5', 50: '6', 51: '7', 52: '8', 53: '9', 54: '10', 55: '11', 56: '12', 57: '13', 58: '14', 59: '15', 60: '16', 61: '17', 62: '18', 63: '19', 64: '20', 65: '21', 66: '22', 67: '23' };
+const JDK: Record<number, string> = { 45: '1.1', 46: '1.2', 47: '1.3', 48: '1.4', 49: '5', 50: '6', 51: '7', 52: '8', 53: '9', 54: '10', 55: '11', 56: '12', 57: '13', 58: '14', 59: '15', 60: '16', 61: '17', 62: '18', 63: '19', 64: '20', 65: '21', 66: '22', 67: '23' };
 function parseClass(head) {
   if (!(head[0] === 0xCA && head[1] === 0xFE && head[2] === 0xBA && head[3] === 0xBE)) return null;
   const r = new Reader(head); r.skip(4);
@@ -200,7 +200,7 @@ function parseClass(head) {
 }
 
 // ---------- NumPy .npy ----------
-async function parseNpy(file) {
+async function parseNpy(file: File) {
   const b = new Uint8Array(await file.slice(0, 256).arrayBuffer());
   if (!(b[0] === 0x93 && b[1] === 0x4e && b[2] === 0x55 && b[3] === 0x4d && b[4] === 0x50 && b[5] === 0x59)) return null;
   const major = b[6];
@@ -221,7 +221,7 @@ async function parseNpy(file) {
 }
 
 // ---------- Safetensors ----------
-async function parseSafetensors(file) {
+async function parseSafetensors(file: File) {
   const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
   const r = new Reader(head, true);
   const n = Number(r.u64());
@@ -245,7 +245,7 @@ async function parseSafetensors(file) {
 }
 
 // ---------- GGUF (llama.cpp) ----------
-async function parseGguf(file) {
+async function parseGguf(file: File) {
   const b = new Uint8Array(await file.slice(0, 64).arrayBuffer());
   if (ascii(b, 0, 4) !== 'GGUF') return null;
   const r = new Reader(b, true); r.seek(4);
@@ -261,7 +261,7 @@ async function parseGguf(file) {
 }
 
 // ---------- Source map ----------
-async function parseSourceMap(file) {
+async function parseSourceMap(file: File) {
   let j; try { j = JSON.parse(await file.text()); } catch (_) { return null; }
   if (j.version == null || !j.mappings) return null;
   return {
@@ -275,7 +275,7 @@ async function parseSourceMap(file) {
 }
 
 // ---------- SQL dump ----------
-async function parseSql(file) {
+async function parseSql(file: File) {
   const LIMIT = SCAN_SMALL;
   const text = await readText(file, LIMIT);
   const truncated = file.size > LIMIT;
@@ -340,7 +340,7 @@ async function parseSql(file) {
 }
 
 // ---------- Visual Studio solution ----------
-async function parseSln(file) {
+async function parseSln(file: File) {
   const text = await file.text();
   const ver = (text.match(/Format Version ([\d.]+)/) || [])[1];
   const projects = Array.from(text.matchAll(/^Project\("\{[^}]+\}"\)\s*=\s*"([^"]+)"/gm)).map((m) => m[1]);
@@ -353,7 +353,7 @@ async function parseSln(file) {
 }
 
 // ---------- .NET project ----------
-async function parseDotnetProj(file) {
+async function parseDotnetProj(file: File) {
   const text = await file.text();
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror')) return null;
@@ -375,7 +375,7 @@ async function parseDotnetProj(file) {
 }
 
 // ---------- Gradle build ----------
-async function parseGradle(file) {
+async function parseGradle(file: File) {
   const text = await file.text();
   const plugins = Array.from(text.matchAll(/(?:id\s*[('"]|apply plugin:\s*['"])([\w.-]+)/g)).map((m) => m[1]);
   const deps = (text.match(/^\s*(implementation|api|compile|testImplementation|runtimeOnly|classpath)\b/gm) || []).length;
@@ -387,7 +387,7 @@ async function parseGradle(file) {
 }
 
 // ---------- Terraform ----------
-async function parseTerraform(file, ext) {
+async function parseTerraform(file: File, ext: string) {
   const text = await file.text();
   if (ext === 'tfstate') {
     let j; try { j = JSON.parse(text); } catch (_) { return null; }
@@ -415,7 +415,7 @@ async function parseTerraform(file, ext) {
 }
 
 // ---------- EditorConfig ----------
-async function parseEditorConfig(file) {
+async function parseEditorConfig(file: File) {
   const text = await file.text();
   const root = /^\s*root\s*=\s*true/im.test(text);
   const sections = Array.from(text.matchAll(/^\[(.+)\]/gm)).map((m) => m[1]);
@@ -428,7 +428,7 @@ async function parseEditorConfig(file) {
 }
 
 // ---------- Protobuf schema ----------
-async function parseProto(file) {
+async function parseProto(file: File) {
   const text = await file.text();
   return {
     'Format': 'Protocol Buffers schema',
@@ -443,7 +443,7 @@ async function parseProto(file) {
 }
 
 // ---------- GraphQL SDL ----------
-async function parseGraphql(file) {
+async function parseGraphql(file: File) {
   const text = await file.text();
   const cnt = (kw) => (text.match(new RegExp('^\\s*' + kw + '\\s+\\w+', 'gm')) || []).length;
   return {
@@ -458,10 +458,10 @@ async function parseGraphql(file) {
 }
 
 // ---------- SARIF ----------
-async function parseSarif(file) {
+async function parseSarif(file: File) {
   let j; try { j = JSON.parse(await file.text()); } catch (_) { return null; }
   if (!j.runs) return null;
-  const out = { 'Format': 'SARIF ' + (j.version || ''), 'Runs': j.runs.length };
+  const out: Row = { 'Format': 'SARIF ' + (j.version || ''), 'Runs': j.runs.length };
   let results = 0; const tools = new Set(); const sev: any = {};
   for (const r of j.runs) {
     const td = r.tool && r.tool.driver; if (td) tools.add(td.name + (td.version ? ' ' + td.version : ''));
@@ -474,7 +474,7 @@ async function parseSarif(file) {
 }
 
 // ---------- Python .pyc ----------
-const PYC_MAGIC = { 3394: '3.7', 3413: '3.7', 3420: '3.8', 3425: '3.8', 3430: '3.9', 3439: '3.9', 3450: '3.10', 3495: '3.11', 3531: '3.12', 3571: '3.13' };
+const PYC_MAGIC: Record<number, string> = { 3394: '3.7', 3413: '3.7', 3420: '3.8', 3425: '3.8', 3430: '3.9', 3439: '3.9', 3450: '3.10', 3495: '3.11', 3531: '3.12', 3571: '3.13' };
 function parsePyc(head) {
   const r = new Reader(head, true);
   const magic = r.u16();
@@ -487,7 +487,7 @@ function parsePyc(head) {
 }
 
 // ---------- Apple plist ----------
-async function parsePlistRows(file) {
+async function parsePlistRows(file: File) {
   const res = await parsePlist(file);
   if (!res) return null;
   const v = res.value;
@@ -503,7 +503,7 @@ async function parsePlistRows(file) {
 }
 
 // ---------- Dependency lockfiles ----------
-async function parseLock(file, ext, name) {
+async function parseLock(file: File, ext: string, name) {
   const LIMIT = 8_000_000;
   const text = await readText(file, LIMIT);
   const truncated = file.size > LIMIT;
@@ -553,7 +553,7 @@ async function parseLock(file, ext, name) {
     if (j && j.nodes) deps = Object.keys(j.nodes).length - 1;                            // minus the synthetic root node
   }
 
-  const out = { 'Format': 'Dependency lockfile' + (truncated ? ' (first 8 MB scanned)' : '') };
+  const out: Row = { 'Format': 'Dependency lockfile' + (truncated ? ' (first 8 MB scanned)' : '') };
   out['Ecosystem'] = ecosystem;
   if (lockVer != null) out['Lockfile version'] = String(lockVer);
   if (deps != null) out['Locked packages'] = deps.toLocaleString();
@@ -563,9 +563,9 @@ async function parseLock(file, ext, name) {
 }
 
 // ---------- JSON supersets (JSON5 / JSONC / Hjson) ----------
-async function parseJsonSuperset(file, ext) {
+async function parseJsonSuperset(file: File, ext: string) {
   const text = await file.text();
-  const labels = { json5: 'JSON5', jsonc: 'JSON with Comments (JSONC)', hjson: 'Hjson' };
+  const labels: Record<string, string> = { json5: 'JSON5', jsonc: 'JSON with Comments (JSONC)', hjson: 'Hjson' };
   // Strip comments crudely so we can count keys without a full lenient parser.
   const stripped = text
     .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -575,7 +575,7 @@ async function parseJsonSuperset(file, ext) {
   const trailingCommas = (text.match(/,\s*[}\]]/g) || []).length;
   // Approximate top-level key count: "key":  /  key:  (Hjson) before first nesting.
   const keys = (stripped.match(/(^|[,{]\s*)("?[A-Za-z_$][\w$-]*"?)\s*:/gm) || []).length;
-  const out = {
+  const out: Row = {
     'Format': labels[ext] || 'JSON superset',
     'Size': fmtBytes(file.size),
     'Comments': (lineComments + blockComments) + (lineComments + blockComments ? ' (' + lineComments + ' line, ' + blockComments + ' block)' : ''),
@@ -595,7 +595,7 @@ function mpTypeName(b) {
   if (b >= 0x80 && b <= 0x8f) return 'fixmap';
   if (b >= 0x90 && b <= 0x9f) return 'fixarray';
   if (b >= 0xa0 && b <= 0xbf) return 'fixstr';
-  const m = {
+  const m: Record<string, string> = {
     0xc0: 'nil', 0xc2: 'false', 0xc3: 'true', 0xc4: 'bin8', 0xc5: 'bin16', 0xc6: 'bin32',
     0xc7: 'ext8', 0xc8: 'ext16', 0xc9: 'ext32', 0xca: 'float32', 0xcb: 'float64',
     0xcc: 'uint8', 0xcd: 'uint16', 0xce: 'uint32', 0xcf: 'uint64', 0xd0: 'int8',
@@ -604,7 +604,7 @@ function mpTypeName(b) {
   };
   return m[b] || ('fixext/0x' + b.toString(16));
 }
-async function parseMsgpack(file) {
+async function parseMsgpack(file: File) {
   const b = await readSlice(file, 0, 65536);
   if (!b.length) return null;
   const r = new Reader(b);            // MessagePack is big-endian
@@ -658,7 +658,7 @@ async function parseMsgpack(file) {
 }
 
 // ---------- CBOR ----------
-async function parseCbor(file) {
+async function parseCbor(file: File) {
   const b = await readSlice(file, 0, 65536);
   if (!b.length) return null;
   const MAJOR = ['unsigned int', 'negative int', 'byte string', 'text string', 'array', 'map', 'tag', 'simple/float'];
@@ -705,13 +705,13 @@ async function parseCbor(file) {
 }
 
 // ---------- BSON ----------
-const BSON_TYPES = {
+const BSON_TYPES: Record<number, string> = {
   0x01: 'double', 0x02: 'string', 0x03: 'document', 0x04: 'array', 0x05: 'binary',
   0x06: 'undefined', 0x07: 'ObjectId', 0x08: 'boolean', 0x09: 'UTC datetime', 0x0a: 'null',
   0x0b: 'regex', 0x0c: 'dbpointer', 0x0d: 'JavaScript', 0x0e: 'symbol', 0x0f: 'JS w/scope',
   0x10: 'int32', 0x11: 'timestamp', 0x12: 'int64', 0x13: 'decimal128', 0xff: 'min key', 0x7f: 'max key',
 };
-async function parseBson(file) {
+async function parseBson(file: File) {
   const b = await readSlice(file, 0, 65536);
   if (b.length < 5) return null;
   const r = new Reader(b, true);      // BSON is little-endian
@@ -794,7 +794,7 @@ function pbWalk(b, start, end, depth, lines, stats) {
   }
   return true;
 }
-async function parsePb(file, ext) {
+async function parsePb(file: File, ext: string) {
   const b = await readSlice(file, 0, 131072);
   if (!b.length) return null;
   const lines = []; const stats = { fields: 0, wires: {} };
@@ -821,12 +821,12 @@ async function parsePb(file, ext) {
 }
 
 // ---------- Python pickle ----------
-const PICKLE_OPS = {
+const PICKLE_OPS: Record<number, string> = {
   0x80: 'PROTO', 0x2e: 'STOP', 0x28: 'MARK', 0x63: 'GLOBAL', 0x93: 'STACK_GLOBAL',
   0x71: 'BINPUT', 0x72: 'LONG_BINPUT', 0x94: 'MEMOIZE', 0x52: 'REDUCE', 0x62: 'BUILD',
   0x6f: 'OBJ', 0x69: 'INST', 0x4e: 'NONE', 0x88: 'NEWTRUE', 0x89: 'NEWFALSE',
 };
-async function parsePickle(file) {
+async function parsePickle(file: File) {
   const b = await readSlice(file, 0, 262144);
   if (!b.length) return null;
   let proto = 0;
@@ -871,7 +871,7 @@ async function parsePickle(file) {
 }
 
 // ---------- NumPy .npz (ZIP of .npy) ----------
-async function parseNpz(file) {
+async function parseNpz(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const members = zip.entries.filter((e) => /\.npy$/i.test(e.name));
   if (!members.length) return null;
@@ -900,7 +900,7 @@ async function parseNpz(file) {
 }
 
 // ---------- Java archive (.jar / .war / .ear) ----------
-async function parseJavaArchive(file, ext) {
+async function parseJavaArchive(file: File, ext: string) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   if (!zip.entries.length) return null;
   const classes = zip.entries.filter((e) => /\.class$/i.test(e.name));
@@ -931,7 +931,7 @@ async function parseJavaArchive(file, ext) {
 }
 
 // ---------- Text IDL schemas: FlatBuffers / Thrift / Cap'n Proto / HCL ----------
-async function parseFbs(file) {
+async function parseFbs(file: File) {
   const text = await file.text();
   const cnt = (kw) => (text.match(new RegExp('^\\s*' + kw + '\\s+\\w+', 'gm')) || []).length;
   return {
@@ -944,7 +944,7 @@ async function parseFbs(file) {
     'root_type': (text.match(/root_type\s+([\w.]+)/) || [])[1] || '-',
   };
 }
-async function parseThrift(file) {
+async function parseThrift(file: File) {
   const text = await file.text();
   const cnt = (kw) => (text.match(new RegExp('^\\s*' + kw + '\\s+\\w+', 'gm')) || []).length;
   const services = Array.from(text.matchAll(/^\s*service\s+(\w+)/gm)).map((m) => m[1]);
@@ -960,7 +960,7 @@ async function parseThrift(file) {
     'Methods': (text.match(/^\s*\w[\w<>, .]*\s+\w+\s*\(/gm) || []).length,
   };
 }
-async function parseCapnp(file) {
+async function parseCapnp(file: File) {
   const text = await file.text();
   const cnt = (kw) => (text.match(new RegExp('^\\s*' + kw + '\\s+\\w+', 'gm')) || []).length;
   return {
@@ -973,7 +973,7 @@ async function parseCapnp(file) {
     'Annotations': cnt('annotation'),
   };
 }
-async function parseHcl(file) {
+async function parseHcl(file: File) {
   const text = await file.text();
   // Generic HCL: count top-level blocks by their leading keyword.
   const blocks: Record<string, number> = {};
@@ -996,7 +996,7 @@ async function parseHcl(file) {
 }
 
 // ---------- MATLAB MAT-file ----------
-async function parseMat(file) {
+async function parseMat(file: File) {
   const b = new Uint8Array(await file.slice(0, 256).arrayBuffer());
   // v7.3 MAT-files are HDF5 (\x89HDF\r\n\x1a\n at offset 0 ... actually MATLAB writes a
   // 128-byte text header then HDF5). Detect by the text header mentioning HDF5.
@@ -1021,7 +1021,7 @@ async function parseMat(file) {
 }
 
 // ---------- Redis RDB dump ----------
-async function parseRdb(file) {
+async function parseRdb(file: File) {
   const b = new Uint8Array(await file.slice(0, 256).arrayBuffer());
   if (ascii(b, 0, 5) !== 'REDIS') return null;
   const ver = ascii(b, 5, 4);
@@ -1057,7 +1057,7 @@ async function parseRdb(file) {
 }
 
 // ---------- Apache Arrow / Feather IPC ----------
-async function parseArrow(file) {
+async function parseArrow(file: File) {
   const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
   // Arrow IPC file: "ARROW1\0\0" at the start (and end). Feather v2 = same. Feather v1 = "FEA1".
   if (ascii(head, 0, 6) === 'ARROW1') {
@@ -1081,7 +1081,7 @@ async function parseArrow(file) {
 }
 
 // ---------- Apache Parquet ----------
-async function parseParquet(file) {
+async function parseParquet(file: File) {
   const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
   const tail = new Uint8Array(await file.slice(Math.max(0, file.size - 8), file.size).arrayBuffer());
   if (ascii(head, 0, 4) !== 'PAR1' && ascii(head, 0, 4) !== 'PARE') return null;
@@ -1102,7 +1102,7 @@ async function parseParquet(file) {
 }
 
 // ---------- Apache ORC ----------
-async function parseOrc(file) {
+async function parseOrc(file: File) {
   // ORC ends with: ...PostScript, then 1 byte = PostScript length, then "ORC".
   const tail = new Uint8Array(await file.slice(Math.max(0, file.size - 4), file.size).arrayBuffer());
   const head = new Uint8Array(await file.slice(0, 3).arrayBuffer());
@@ -1125,7 +1125,7 @@ async function parseOrc(file) {
 // comment-based help synopsis, #Requires directives, function/parameter counts,
 // CmdletBinding and the Authenticode signature marker; .psd1 manifests surface a
 // few well-known keys. The generic text path still shows the source below this.
-async function parsePowerShell(file, ext) {
+async function parsePowerShell(file: File, ext: string) {
   const text = await file.text();
   const out: any = {};
   out['Format'] = ext === 'psm1' ? 'PowerShell module' : ext === 'psd1' ? 'PowerShell data file (manifest)' : 'PowerShell script';
@@ -1172,7 +1172,7 @@ async function parsePowerShell(file, ext) {
 // echo state, label (subroutine / goto target) count, variables set, the
 // external tools it shells out to, and a few common constructs. The generic text
 // path still shows the source below this.
-async function parseBatch(file, ext) {
+async function parseBatch(file: File, ext: string) {
   const text = await file.text();
   const out: any = {};
   out['Format'] = ext === 'cmd' ? 'Windows command script' : 'Windows batch script';
@@ -1207,12 +1207,12 @@ async function parseBatch(file, ext) {
 // scan the top-level fields we care about: ir_version (1, varint), producer_name
 // (2, string), producer_version (3, string), domain (4), model_version (5),
 // opset_import (8). Enough to identify the framework that exported the model.
-const ONNX_IR = { 3: '1.1', 4: '1.5', 5: '1.6', 6: '1.7', 7: '1.9', 8: '1.11', 9: '1.13', 10: '1.15', 11: '1.17' };
-async function parseOnnx(file) {
+const ONNX_IR: Record<number, string> = { 3: '1.1', 4: '1.5', 5: '1.6', 6: '1.7', 7: '1.9', 8: '1.11', 9: '1.13', 10: '1.15', 11: '1.17' };
+async function parseOnnx(file: File) {
   const buf = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
   let p = 0;
   const varint = () => { let shift = 0, v = 0n; while (p < buf.length) { const b = buf[p++]; v |= BigInt(b & 0x7f) << BigInt(shift); if (!(b & 0x80)) break; shift += 7; } return v; };
-  const out = { 'Format': 'ONNX model (.onnx)', 'Type': 'Open Neural Network Exchange' };
+  const out: Row = { 'Format': 'ONNX model (.onnx)', 'Type': 'Open Neural Network Exchange' };
   let opsets = 0;
   try {
     while (p < buf.length) {
@@ -1242,13 +1242,13 @@ async function parseOnnx(file) {
 }
 
 // ---------- Native module (.node) / dynamic library (.dylib) ----------
-const MACHO_CPU = { 7: 'x86', 0x01000007: 'x86-64', 12: 'ARM', 0x0100000c: 'ARM64', 0x01000012: 'PowerPC64' };
-async function parseNativeBinary(file, ext) {
+const MACHO_CPU: Record<number, string> = { 7: 'x86', 0x01000007: 'x86-64', 12: 'ARM', 0x0100000c: 'ARM64', 0x01000012: 'PowerPC64' };
+async function parseNativeBinary(file: File, ext: string) {
   const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
   const dv = new DataView(head.buffer);
   const be = dv.getUint32(0, false);
   const label = ext === 'dylib' ? 'macOS dynamic library (.dylib)' : 'Native add-on module (.node)';
-  const out = { 'Format': label };
+  const out: Row = { 'Format': label };
   if (be === 0xFEEDFACE || be === 0xFEEDFACF) {            // thin Mach-O (BE magic written LE)
     out['Container'] = 'Mach-O (' + (be === 0xFEEDFACF ? '64-bit' : '32-bit') + ')';
     const cpu = dv.getUint32(4, true);
@@ -1272,7 +1272,7 @@ async function parseNativeBinary(file, ext) {
 }
 
 // ---------- LevelDB table (.ldb) ----------
-async function parseLevelDb(file) {
+async function parseLevelDb(file: File) {
   if (file.size < 8) return null;
   const foot = new Uint8Array(await file.slice(file.size - 8, file.size).arrayBuffer());
   // LevelDB/RocksDB table footer magic 0xdb4775248b80fb57 (stored little-endian).
@@ -1287,7 +1287,7 @@ async function parseLevelDb(file) {
 }
 
 // ---------- Git packfile reverse index (.rev) ----------
-async function parseGitRev(file) {
+async function parseGitRev(file: File) {
   const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
   if (ascii(head, 0, 4) !== 'RIDX') return null;
   const dv = new DataView(head.buffer);
@@ -1305,7 +1305,7 @@ async function parseGitRev(file) {
 // Interface Definition Language: COM/OLE type libraries (MIDL) and CORBA/OMG.
 // Walk the declarations and surface interfaces, coclasses, the type library and
 // the import list. The text itself is shown by the parse:'text' source preview.
-async function parseIdl(file) {
+async function parseIdl(file: File) {
   const text = (await file.text()).slice(0, 2_000_000);
   if (!/\b(interface|coclass|library|dispinterface|import|importlib|module|typedef)\b/.test(text)) return null;
   const names = (re) => [...text.matchAll(re)].map((m) => m[1]);
@@ -1336,7 +1336,7 @@ async function parseIdl(file) {
 // Active Server Pages: server-side code blocks (<% %>) plus the server language
 // from the <%@ Language %> directive or <script runat=server>. Distinct from the
 // .NET .aspx page already handled.
-async function parseAsp(file) {
+async function parseAsp(file: File) {
   const text = (await file.text()).slice(0, 2_000_000);
   const codeBlocks = (text.match(/<%[^@=]/g) || []).length;
   const exprBlocks = (text.match(/<%=/g) || []).length;
@@ -1346,7 +1346,7 @@ async function parseAsp(file) {
   const dir = text.match(/<%@\s*([^%]*?)%>/);
   let lang = dir && (dir[1].match(/Language\s*=\s*["']?([A-Za-z]+)/i) || [])[1];
   if (!lang) { const sl = text.match(/<script[^>]*language\s*=\s*["']?([A-Za-z]+)/i); if (sl) lang = sl[1]; }
-  const out = {
+  const out: Row = {
     'Format': 'Classic ASP page (Active Server Pages)',
     'Server language': lang || 'VBScript (default)',
   };
@@ -1359,12 +1359,12 @@ async function parseAsp(file) {
 
 // ---------- pkg-config (.pc) ----------
 // The metadata file pkg-config reads to emit compiler/linker flags for a library.
-async function parsePkgConfig(file) {
+async function parsePkgConfig(file: File) {
   const text = (await file.text()).slice(0, 200_000);
   if (!/^\s*(Name|Description|Version|Cflags|Libs)\s*:/mi.test(text)) return null;
   const field = (k) => { const m = text.match(new RegExp('^\\s*' + k + '\\s*:\\s*(.+)$', 'mi')); return m ? m[1].trim() : null; };
   const vars = [...text.matchAll(/^\s*([A-Za-z_]\w*)\s*=\s*.+$/gm)].map((m) => m[1]);
-  const out = { 'Format': 'pkg-config metadata (.pc)' };
+  const out: Row = { 'Format': 'pkg-config metadata (.pc)' };
   for (const k of ['Name', 'Description', 'Version', 'URL', 'Requires', 'Requires.private', 'Conflicts', 'Libs', 'Libs.private', 'Cflags']) {
     const v = field(k); if (v) out[k] = v;
   }
@@ -1375,11 +1375,11 @@ async function parsePkgConfig(file) {
 // ---------- DraStic shader (.dsd) ----------
 // The Nintendo DS emulator's GLSL ES shader bundle: <vertex> and <fragment>
 // sections wrapping shader source. (Unrelated to DSD audio, which is .dsf/.dff.)
-async function parseDsdShader(file) {
+async function parseDsdShader(file: File) {
   const text = (await file.text()).slice(0, 500_000);
   const hasV = /<vertex>/i.test(text), hasF = /<fragment>/i.test(text);
   if (!hasV && !hasF) return null;
-  const out = {
+  const out: Row = {
     'Format': 'DraStic shader (GLSL ES)',
     'Stages': [hasV && 'vertex', hasF && 'fragment'].filter(Boolean).join(' + '),
   };
@@ -1398,19 +1398,19 @@ async function parseDsdShader(file) {
 // A text file with ${...} / @...@ placeholders meant to be substituted at build
 // time (CMake configure, Meson, autotools, CI templates). Surfaces the engine
 // (Meson recognised by its project() call) and the placeholders it expects.
-async function parseTemplate(file) {
+async function parseTemplate(file: File) {
   const text = (await file.text()).slice(0, 500_000);
   const ph = [...new Set([...text.matchAll(/\$\{(\w+)\}|@(\w+)@/g)].map((m) => m[1] || m[2]))];
   const isMeson = /\bproject\s*\(/.test(text) && /\bmeson|get_compiler|dependency\b/.test(text);
   const isCMake = /@\w+@/.test(text) && /cmake/i.test(text);
-  const out = {
+  const out: Row = {
     'Format': isMeson ? 'Meson build template' : isCMake ? 'CMake configure template' : 'Text template (placeholder substitution)',
   };
   if (ph.length) out['Placeholders'] = ph.length + ': ' + ph.slice(0, 16).join(', ');
   return out;
 }
 
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   idl: (c) => parseIdl(c.file),
   asp: (c) => parseAsp(c.file),
   pc: (c) => parsePkgConfig(c.file),

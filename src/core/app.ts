@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 272;
+const COMMIT_COUNT = 273;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -16,7 +16,7 @@ const COMMIT_COUNT = 272;
 // list sorted ascending, and mirror the RELEASES constant in save.bat).
 const RELEASE_COMMITS = [29, 60, 100, 151, 173, 195, 250, 256];
 
-function analyserVersion(n, releases) {
+function analyserVersion(n: number, releases: number[]) {
   let major = 0, base = 0;
   for (const r of releases) {
     if (n >= r) { major += 1; base = r; } else break;
@@ -32,7 +32,7 @@ function analyserVersion(n, releases) {
 // boot() - so that whole subtree stays out of the initial critical module graph and
 // the page becomes interactive sooner. See the media-init block in boot().
 import { renderArchive, renderArchiveEmbedded } from '../renderers/archive.js';
-import type { RouteTable } from './types.js';
+import type { Kind, RouteTable } from './types.js';
 import { renderUnknown } from '../renderers/unknown.js';
 import { renderProprietary, extractPeIcon } from '../renderers/proprietary.js';
 import { renderSpiceRaw, sniffSpiceRaw } from '../renderers/spice.js';
@@ -56,7 +56,7 @@ import {
   formatPageHref, hasFormatPage, detectVariant
 } from './formats.js';
 
-function $<T extends HTMLElement = HTMLElement>(id): T { return document.getElementById(id) as T; }
+function $<T extends HTMLElement = HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 
 // Transient overlay UI (anrConfirm, drop loader, type-suggestion, link-confirm)
 // lives in ./overlays.js - imported at the top of this file.
@@ -74,7 +74,7 @@ function $<T extends HTMLElement = HTMLElement>(id): T { return document.getElem
 // fallback kind when the bytes prove a different variant: 'plaintext' for a
 // text/source variant, 'unknown' for a binary one (hex + identify). detectVariant()
 // (in formats.js) is the single source of truth for which variant the bytes are.
-const VARIANT_REROUTE = {
+const VARIANT_REROUTE: Record<string, { primary: string; to: Kind }> = {
   ts:  { primary: 'MPEG transport stream',      to: 'plaintext' }, // TypeScript source
   dts: { primary: 'DTS audio',                  to: 'plaintext' }, // Device Tree Source
   key: { primary: 'Apple Keynote presentation', to: 'plaintext' }, // PEM key (text)
@@ -90,14 +90,14 @@ const VARIANT_REROUTE = {
 // passwords and access tokens in plaintext, so we flag them with a loud "never
 // share this" warning. The example/template/sample siblings are meant to be
 // committed and carry no real secrets, so they're deliberately excluded.
-function isEnvFile(name) {
+function isEnvFile(name: string) {
   const n = (name || '').toLowerCase().replace(/^.*[\\/]/, '');   // basename
   if (!/^\.env(\.|$)/.test(n)) return false;
   return !/\.(example|sample|template|dist|defaults?)$/.test(n);
 }
 
 // The red "never share this" banner shown above a dotenv file's analysis.
-function envSecretWarning(file) {
+function envSecretWarning(file: File) {
   const box = el('div', { class: 'anr-env-warning', role: 'alert' });
   box.appendChild(el('div', { class: 'anr-env-warning-title' }, 'Never share this file with anyone, ever'));
   box.appendChild(el('p', { class: 'anr-env-warning-body' }, [
@@ -119,7 +119,7 @@ function envSecretWarning(file) {
 // image with no recognised extension into its real kind. classifyFile alone
 // returns 'unknown' for a .pdf, so anything that routes without this (e.g. the
 // compare view) would fall to the hex-dump renderer. Async; returns a kind key.
-async function resolveKind(file) {
+async function resolveKind(file: File) {
   let kind = classifyFile(file);
   if (kind === 'photo' && fileExt(file.name) === 'raw') {
     try { if (await sniffSpiceRaw(file)) kind = 'spice'; } catch (_) {}
@@ -146,7 +146,7 @@ async function resolveKind(file) {
 // ({ mode, label }), or null when it isn't a browsable archive/compressed stream.
 // Single source for the choice handleFile and renderFileExtras (the compare/folder
 // parity path) both make, so a new container type is wired in exactly one place.
-function pickArchiveEmbed(ext) {
+function pickArchiveEmbed(ext: string) {
   if (ext === 'zip') return { mode: 'zip', label: 'ZIP' };
   if (ext === 'rar') return { mode: 'libarchive', label: 'RAR' };
   if (ext === '7z') return { mode: 'libarchive', label: '7-Zip' };
@@ -156,7 +156,7 @@ function pickArchiveEmbed(ext) {
   // .gz/.xz/.zst/.lz4/.lzma/.Z stream is decompressed to open the file inside (bare
   // .bz2 is identified only - no in-browser decoder).
   if (['tar', 'gz', 'xz', 'zst', 'bz2', 'lz4', 'lzma', 'z'].includes(ext)) {
-    const NICE = { gz: 'GZIP', zst: 'Zstandard', bz2: 'BZIP2', lzma: 'LZMA', z: 'compress (.Z)' };
+    const NICE: Record<string, string> = { gz: 'GZIP', zst: 'Zstandard', bz2: 'BZIP2', lzma: 'LZMA', z: 'compress (.Z)' };
     return { mode: 'compressed', label: NICE[ext] || ext.toUpperCase() };
   }
   return null;
@@ -168,7 +168,7 @@ function pickArchiveEmbed(ext) {
 // JAR, DOCX, ...). Factored out so the compare view renders the same depth as a
 // normal single-file analysis. Renders into `container`; `kind` gates the archive
 // embed exactly as handleFile does (skip media, the dedicated ZIP view, Fusion360).
-async function renderFileExtras(file, container, kind) {
+async function renderFileExtras(file: File, container: HTMLElement, kind: string) {
   if (!container) return;
   const media = kind === 'photo' || kind === 'audio' || kind === 'video';
   try {
@@ -214,7 +214,7 @@ async function renderFileExtras(file, container, kind) {
 // module graph - only the file type actually dropped is fetched. The hot-path
 // renderers (photo/audio/video/archive/proprietary/unknown/folder/compare) stay
 // statically imported above. import() of an already-cached module is instant offline.
-const lazy = (p, name) => (...args) => import(p).then((m) => m[name](...args));
+const lazy = (p: string, name: string) => (...args: any[]) => import(p).then((m) => m[name](...args));
 
 const ROUTES: RouteTable = {
   photo:       { render: lazy('../renderers/photo.js', 'renderPhoto'), results: 'photo', nav: ['#photo'],                     analysed: ['photo'] },
@@ -299,16 +299,16 @@ const ROUTES: RouteTable = {
 };
 
 // ---------- page-wide drag-drop ----------
-function hasFiles(e) {
+function hasFiles(e: DragEvent) {
   const t = e.dataTransfer && e.dataTransfer.types;
   if (!t) return false;
   for (let i = 0; i < t.length; i++) if (t[i] === 'Files') return true;
   return false;
 }
 
-let _handleFile = null;
-let _scrollHandler = null;
-let _alignSoundNav = null;
+let _handleFile: ((file: File, opts?: any) => any) | null = null;
+let _scrollHandler: (() => void) | null = null;
+let _alignSoundNav: (() => void) | null = null;
 
 
 
@@ -322,7 +322,7 @@ let _alignSoundNav = null;
 // touch it), inject it on demand the first time the analysis pipeline needs it.
 // Idempotent and cached; resolves instantly once loaded. The script is precached
 // by the service worker, so the first lazy load is offline-safe and near-instant.
-let _exifrPromise = null;
+let _exifrPromise: Promise<unknown>|null = null;
 function ensureExifr() {
   if (window.exifr) return Promise.resolve(window.exifr);
   if (_exifrPromise) return _exifrPromise;
@@ -372,7 +372,7 @@ function boot() {
   let dragCounter = 0;
   // Token for the load currently in flight. Cancelling marks it so the
   // (uncancellable) renderer's output is suppressed and the loader stays hidden.
-  let _currentToken = null;
+  let _currentToken: { cancelled: boolean } | null = null;
 
   // Reset the result containers, preview slots, and nav/section state back to
   // the pre-load layout. Shared by a fresh load and by cancelLoad().
@@ -426,7 +426,7 @@ function boot() {
   // parent container one level at a time. Container renderers (folder.js,
   // archive.js) call window._anrPushNav right before they open a child; a fresh
   // top-level load calls resetNav so the breadcrumb never leaks across drops.
-  const navStack = [];
+  const navStack: any[] = [];
   function refreshBackBar() {
     const bar = $('anrBackBar');
     if (!bar) return;
@@ -450,7 +450,7 @@ function boot() {
     requestAnimationFrame(() => sec.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
   // Exposed for the container renderers, which run in their own modules.
-  window._anrPushNav = (label, restore) => { navStack.push({ label, restore }); refreshBackBar(); };
+  window._anrPushNav = (label: string, restore: () => void) => { navStack.push({ label, restore }); refreshBackBar(); };
   window._anrResetNav = resetNav;
   const backBarEl = $('anrBackBar');
   if (backBarEl && !backBarEl._wired) { backBarEl._wired = true; backBarEl.addEventListener('click', popNav); }
@@ -515,7 +515,7 @@ function boot() {
 
   // Stop the in-flight load: drop its results and restore the empty page state
   // (the three analysis sections are explainer sections - visible by default).
-  function cancelLoad(token) {
+  function cancelLoad(token: { cancelled: boolean } | null) {
     if (!token || token.cancelled) return;
     token.cancelled = true;
     if (_currentToken === token) _currentToken = null;
@@ -525,7 +525,7 @@ function boot() {
     ['photo', 'audio', 'video'].forEach((id) => { const sec = $(id); if (sec) sec.hidden = false; });
   }
 
-  async function handleFile(file, opts?) {
+  async function handleFile(file: File, opts?: { force?: any; sidecarXmp?: any; sniffedExt?: string; [k: string]: any }) {
     if (!file) return;
     // opts carries either a forced type ({kind, ext}, from the sniff popup) or a
     // paired RAW develop-settings sidecar ({sidecarXmp}, from a RAW+XMP drop).
@@ -702,7 +702,7 @@ function boot() {
       renderHistoryPanel();
     }
 
-    const navMap = { photo: '#photo', audio: '#audio', video: '#video' };
+    const navMap: Record<string, string> = { photo: '#photo', audio: '#audio', video: '#video' };
     const href = navMap[kind];
     if (href) {
       const link = document.querySelector<HTMLElement>('.site-nav a[href="' + href + '"]');
@@ -713,14 +713,14 @@ function boot() {
       }
     }
 
-    function markNav(selector) {
+    function markNav(selector: string) {
       const el = document.querySelector<HTMLElement>('.site-nav a[href="' + selector + '"]');
       if (el) el.classList.add('has-data');
     }
 
     // Mobile only (gated by CSS): flag a section as having analysed a file, which
     // moves its heading up into the numbered card and hides the lede.
-    function markAnalysed(id) { const sec = $(id); if (sec) sec.classList.add('is-analysed'); }
+    function markAnalysed(id: string) { const sec = $(id); if (sec) sec.classList.add('is-analysed'); }
 
     const sectionPhoto = $('photo');
     const sectionAudio = $('audio');
@@ -756,11 +756,11 @@ function boot() {
     });
     document.body.classList.toggle('anr-nav-live', anyNavLive);
 
-    const route = ROUTES[kind] || ROUTES.unknown;
+    const route = ROUTES[kind as Kind] || ROUTES.unknown;
     // Most routes render into the generic #unknownResults block, so 'unknown' is
     // the default target - only photo/audio/video name their own section.
     const results = route.results || 'unknown';
-    const resultsByName = {
+    const resultsByName: Record<string, HTMLElement> = {
       photo: photoResults, audio: audioResults, video: videoResults, unknown: unknownResults,
     };
     (route.nav || []).forEach(markNav);
@@ -805,7 +805,7 @@ function boot() {
     let progScrollUntil = 0;
     const doAutoScroll = () => {
       progScrollUntil = performance.now() + 1200;
-      autoScrollSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      autoScrollSec!.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
     if (autoScrollSec) {
       const onUserScroll = () => { userTookScroll = true; };
@@ -1022,7 +1022,7 @@ window._anrReadableText = isReadableText;
   // in (no button), rendering both full analyses merged field-by-field into
   // #unknownResults via renderers/compare.js. All of this stays inert on any page
   // without the compare zones (the wiring guards on them).
-  let _cmpA = null, _cmpB = null, _cmpBusy = false, _cmpAgain = false;
+  let _cmpA: File | null = null, _cmpB: File | null = null, _cmpBusy = false, _cmpAgain = false;
   // Auto-run once both files are present - and again if either is swapped while a
   // comparison is still rendering. Runs are serialised so two never interleave in
   // the shared results container.
@@ -1037,28 +1037,28 @@ window._anrReadableText = isReadableText;
     finally { _cmpBusy = false; if (_cmpAgain && _cmpA && _cmpB) runCompare(); }
   }
 
-  const wireCompareZone = (dropEl, inputEl, onSet) => {
+  const wireCompareZone = (dropEl: HTMLElement, inputEl: HTMLInputElement, onSet: (f: File) => void) => {
     if (!dropEl || !inputEl || dropEl._cmpWired) return;
     dropEl._cmpWired = true;
     const nameSlot = dropEl.querySelector('[data-cmp-name]');
-    const set = (file) => {
+    const set = (file: File) => {
       if (!file) return;
       onSet(file);
       if (nameSlot) nameSlot.textContent = file.name + ' (' + fmtBytes(file.size) + ')';
       dropEl.classList.add('is-set');
     };
     inputEl.addEventListener('change', () => { if (inputEl.files && inputEl.files[0]) set(inputEl.files[0]); });
-    dropEl.addEventListener('dragover', (e) => {
+    dropEl.addEventListener('dragover', (e: DragEvent) => {
       if (!hasFiles(e)) return;
       e.preventDefault(); e.stopPropagation();   // keep it off the page-wide drop handler
       dropEl.classList.add('is-dragover');
     });
     dropEl.addEventListener('dragleave', () => dropEl.classList.remove('is-dragover'));
-    dropEl.addEventListener('drop', (e) => {
+    dropEl.addEventListener('drop', (e: DragEvent) => {
       if (!hasFiles(e)) return;
       e.preventDefault(); e.stopPropagation();    // do NOT fall through to handleFile
       dropEl.classList.remove('is-dragover');
-      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      const f = e.dataTransfer!.files && e.dataTransfer!.files[0];
       if (f) set(f);
     });
   };
@@ -1207,7 +1207,7 @@ window._anrReadableText = isReadableText;
   // Lazily-created singleton popup that floats above the cursor while a chip is
   // hovered, showing the extension, type, size and a one-line blurb (from the
   // chip's data-* attributes). pointer-events:none, so it never blocks the chip.
-  let samplePop = null;
+  let samplePop: HTMLElement|null = null;
   const ensureSamplePop = () => {
     if (samplePop && document.body.contains(samplePop)) return samplePop;
     samplePop = document.createElement('div');
@@ -1243,10 +1243,10 @@ window._anrReadableText = isReadableText;
           + (size ? '<span class="sample-pop-size"></span>' : '')
           + '</div>'
           + (desc ? '<div class="sample-pop-desc"></div>' : '');
-        if (ext) pop.querySelector('.sample-pop-ext').textContent = ext;
-        if (label) pop.querySelector('.sample-pop-label').textContent = label;
-        if (size) pop.querySelector('.sample-pop-size').textContent = size;
-        if (desc) pop.querySelector('.sample-pop-desc').textContent = desc;
+        if (ext) pop.querySelector('.sample-pop-ext')!.textContent = ext;
+        if (label) pop.querySelector('.sample-pop-label')!.textContent = label;
+        if (size) pop.querySelector('.sample-pop-size')!.textContent = size;
+        if (desc) pop.querySelector('.sample-pop-desc')!.textContent = desc;
         // Anchor centred above the card (the CSS translate puts the popup's
         // bottom-centre at this point), so it sits over the card, not the cursor.
         const r = card.getBoundingClientRect();
@@ -1270,7 +1270,7 @@ window._anrReadableText = isReadableText;
         // "analyses" the wrong file (the classic "works imported, not from samples"), so
         // reject an HTML response for a sample that isn't itself HTML.
         const ctype = res.headers.get('content-type') || '';
-        const sx = (card.dataset.name || '').split('.').pop().toLowerCase();
+        const sx = (card.dataset.name || '').split('.').pop()!.toLowerCase();
         if (/^\s*text\/html/i.test(ctype) && sx !== 'html' && sx !== 'htm' && sx !== 'xhtml') {
           throw new Error('sample not found (got the app shell): ' + url);
         }
@@ -1351,7 +1351,7 @@ window._anrReadableText = isReadableText;
       // Synchronous folder peek so the bottom loading bar can show while the
       // (potentially slow) recursive folder walk reads thousands of File objects.
       let droppedFolderName = null;
-      const dtItems = e.dataTransfer.items;
+      const dtItems = e.dataTransfer!.items;
       if (dtItems) {
         for (let i = 0; i < dtItems.length; i++) {
           const en = dtItems[i].webkitGetAsEntry && dtItems[i].webkitGetAsEntry();
@@ -1363,9 +1363,9 @@ window._anrReadableText = isReadableText;
 
       // The walk polls shouldStop between batches, so Cancel stops it partway
       // instead of only being noticed once the whole tree has been read.
-      const folderFiles = await walkItems(e.dataTransfer, {
+      const folderFiles = await walkItems(e.dataTransfer!, {
         shouldStop: () => folderToken.cancelled,
-        onProgress: (n) => setDropLoaderLabel(
+        onProgress: (n: number) => setDropLoaderLabel(
           'Reading ' + droppedFolderName + '… ' + n.toLocaleString() + ' files'),
       });
       if (folderToken.cancelled) return;   // cancelled during the folder walk
@@ -1415,8 +1415,8 @@ window._anrReadableText = isReadableText;
       }
       if (_handleFile) {
         const list = Array.from(files);
-        const baseOf = (n) => n.replace(/\.[^.]+$/, '').toLowerCase();
-        const extOf = (n) => (n.split('.').pop() || '').toLowerCase();
+        const baseOf = (n: string) => n.replace(/\.[^.]+$/, '').toLowerCase();
+        const extOf = (n: string) => (n.split('.').pop() || '').toLowerCase();
         // Analyse a SINGLE file. Dropping several at once used to start a
         // concurrent analysis per file, and they rendered on top of one another
         // into the same result panels (interleaved, unreadable output). This is a
@@ -1444,16 +1444,16 @@ window._anrReadableText = isReadableText;
   const ANR_TTL = 7 * 24 * 60 * 60 * 1000;
   const ANR_REFRESH = 24 * 60 * 60 * 1000;
 
-  function anrSet(key, value) {
+  function anrSet(key: string, value: string) {
     try {
       localStorage.setItem(key, value);
       localStorage.setItem(key + ':ts', Date.now().toString());
     } catch (e) { /* quota or private mode */ }
   }
 
-  function anrGet(key) {
+  function anrGet(key: string) {
     try {
-      var ts = parseInt(localStorage.getItem(key + ':ts'), 10);
+      var ts = parseInt(localStorage.getItem(key + ':ts') || '', 10);
       if (!ts || Date.now() - ts > ANR_TTL) {
         localStorage.removeItem(key);
         localStorage.removeItem(key + ':ts');
@@ -1480,7 +1480,7 @@ window._anrReadableText = isReadableText;
   var ANR_PERMANENT = ['anr-history', 'anr-a11y', 'anr-analytics-queue',
     'anr-offline', 'anr-offline-feat'];
   var ANR_PERMANENT_PREFIX = ['anr-asteroids-'];
-  function anrPermanent(k) {
+  function anrPermanent(k: string) {
     if (ANR_PERMANENT.indexOf(k) !== -1) return true;
     for (var p = 0; p < ANR_PERMANENT_PREFIX.length; p++) {
       if (k.startsWith(ANR_PERMANENT_PREFIX[p])) return true;
@@ -1494,7 +1494,7 @@ window._anrReadableText = isReadableText;
       for (var i = localStorage.length - 1; i >= 0; i--) {
         var k = localStorage.key(i);
         if (!k || !k.startsWith('anr-') || k.endsWith(':ts') || anrPermanent(k)) continue;
-        var ts = parseInt(localStorage.getItem(k + ':ts'), 10);
+        var ts = parseInt(localStorage.getItem(k + ':ts') || '', 10);
         if (!ts || now - ts > ANR_TTL) {
           localStorage.removeItem(k);
           localStorage.removeItem(k + ':ts');
@@ -1594,7 +1594,7 @@ window._anrReadableText = isReadableText;
     // stays tidy and shareable. replaceState doesn't re-scroll, so the user stays
     // put. We only strip if the hash hasn't changed in the meantime (no new jump).
     const HASH_CLEAN_DELAY = 3000;
-    let hashCleanTimer = null;
+    let hashCleanTimer: number|null|undefined = null;
     const scheduleHashClean = () => {
       if (hashCleanTimer) clearTimeout(hashCleanTimer);
       if (!location.hash) return;
@@ -1873,7 +1873,7 @@ window._anrReadableText = isReadableText;
   // ----- Scroll-spy for the sticky nav (re-binds per page) -----
   const links = Array.from(document.querySelectorAll('.site-nav a[href^="#"]'));
   const sections = links
-    .map((a) => ({ a, el: document.querySelector<HTMLElement>(a.getAttribute('href')) }))
+    .map((a) => ({ a, el: document.querySelector<HTMLElement>(a.getAttribute('href')!) }))
     .filter((s) => s.el);
   // The bar is position:sticky/top:0, so its bounding top reaches 0 exactly when
   // it pins to the viewport top. That drives the inverted palette (together with
@@ -1889,7 +1889,7 @@ window._anrReadableText = isReadableText;
     let active = null;
     const y = window.scrollY + 140;
     for (const s of sections) {
-      if (s.el.offsetTop <= y) active = s;
+      if (s.el!.offsetTop <= y) active = s;
     }
     // A greyed-out (disabled) nav link is never highlighted - its section isn't
     // really on the page for a non-media file.

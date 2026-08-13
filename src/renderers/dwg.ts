@@ -11,7 +11,9 @@ import { sanitizeSvgMarkup } from './svg.js';
 const DIST_URL = new URL('../../vendor/libredwg/dist/libredwg-web.js', import.meta.url).href;
 const WASM_DIR = new URL('../../vendor/libredwg/wasm', import.meta.url).href;
 
-let _lib = null;
+/* The lazily-loaded libredwg-web instance. It is a WASM module handle with no
+   type information of its own, so `any` here is the honest description. */
+let _lib: Promise<{ inst: any; FT: any }> | null = null;
 async function getLib() {
   if (!_lib) _lib = (async () => {
     const mod = await import(DIST_URL);
@@ -21,7 +23,7 @@ async function getLib() {
   return _lib;
 }
 
-export async function renderDwg(file, resultsEl) {
+export async function renderDwg(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading AutoCAD drawing "${file.name}"… the CAD engine is about 6 MB on first use.`));

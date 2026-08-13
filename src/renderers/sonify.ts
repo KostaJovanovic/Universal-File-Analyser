@@ -447,7 +447,7 @@ const SETTINGS_HELP =
  *   opts.source - HTMLImageElement / canvas / ImageBitmap to read pixels from.
  *                 When omitted, the File is decoded with createImageBitmap.
  */
-export async function renderSonify(file, mountEl, opts: any = {}) {
+export async function renderSonify(file: File, mountEl, opts: any = {}) {
   mountEl.innerHTML = '';
   const card = el('div', { class: 'anr-card' });
   const [headH, headHelp] = h3help('Image to sound', SETTINGS_HELP);

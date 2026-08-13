@@ -8,7 +8,7 @@ import { TAU, rand, pick, UFO_PATTERNS, UFO_REWARD_COLOR, UFO_AMBIENT_COLOR } fr
 import { g, immortal, saveHi } from './state.js';
 import { burst, makePowerup, loseLife } from './world.js';
 
-export function ufoPathPos(u) {
+export function ufoPathPos(u: { pattern: string; rot: number; t: number }) {
   const { cx, cy, HW, HH } = g;
   const kx = HW * 0.78, ky = HH * 0.78;   // path fills most of the rectangle
   let nx, ny;
@@ -32,13 +32,13 @@ export function ufoPathPos(u) {
 /** A UFO. As with Asteroid and Boss, the tail of the shape is attached later
  *  by whatever spawned it (boss escorts carry `fromBoss`, ambient ones do not). */
 export interface Ufo {
-  kind: any; pattern: any; rot: number; t: number; period: number;
+  kind: string; pattern: string; rot: number; t: number; period: number;
   radius: number; hp: number; color: string; appear: number;
   leaving: boolean; lvx: number; lvy: number; x: number; y: number;
   [k: string]: any;
 }
 
-export function makeUfo(kind): Ufo {
+export function makeUfo(kind: string): Ufo {
   const u = {
     kind, pattern: pick(UFO_PATTERNS), rot: rand(0, TAU), t: Math.random(),
     period: rand(20, 34), radius: 16 * g.S, hp: kind === 'reward' ? 2 : Infinity,
@@ -65,7 +65,7 @@ export function dismissAmbientUfos() {
 
 // Damage a reward saucer (ambient ones are indestructible and ignore this). On death it
 // pays out points and a guaranteed power-up drop.
-export function damageUfo(ui, dmg) {
+export function damageUfo(ui: number, dmg: number) {
   const u = g.ufos[ui];
   if (!u || u.kind !== 'reward') return;
   u.hp -= dmg;
@@ -84,7 +84,7 @@ export function damageUfo(ui, dmg) {
 
 // Move every UFO (path-follow, or the outward exit run once leaving), fade it in, and
 // check the lethal contact with the ship. No firing - UFOs never attack.
-export function updateUfos(dt) {
+export function updateUfos(dt: number) {
   const { cx, cy, HW, HH, S, ship, ufos } = g;
   for (let i = ufos.length - 1; i >= 0; i--) {
     const u = ufos[i];

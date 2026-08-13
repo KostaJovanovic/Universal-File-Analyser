@@ -14,7 +14,7 @@ async function loadMdb() {
   return window.MDBReader || null;
 }
 
-function cellText(v) {
+function cellText(v: any): string {
   if (v == null) return '';
   if (v instanceof Date) return v.toISOString().slice(0, 19).replace('T', ' ');
   if (typeof v === 'object') {
@@ -24,7 +24,7 @@ function cellText(v) {
   return String(v);
 }
 
-export async function renderMdb(file, resultsEl) {
+export async function renderMdb(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading Access database "${file.name}"…`));
@@ -36,7 +36,7 @@ export async function renderMdb(file, resultsEl) {
     return;
   }
 
-  let reader, names, created = null;
+  let reader, names!: string[], created = null;
   try {
     const u8 = new Uint8Array(await file.arrayBuffer());
     const buf = window.Buffer ? window.Buffer.from(u8) : u8;
@@ -84,14 +84,14 @@ export async function renderMdb(file, resultsEl) {
   resultsEl.appendChild(card);
 
   const ROW_CAP = 200;
-  function renderTable(idx) {
+  function renderTable(idx: number) {
     [...tabRow.children].forEach((c, i) => c.classList.toggle('is-active', i === idx));
     wrap.innerHTML = '';
     const t = tables[idx];
     const info = el('p', { class: 'anr-hint', style: 'margin:0 0 8px;' }, t.cols.length + ' columns · ' + t.rowCount.toLocaleString() + ' rows');
     wrap.appendChild(info);
     if (!t.table || !t.cols.length) { wrap.appendChild(el('p', { class: 'anr-hint' }, 'This table could not be read.')); return; }
-    let data = [];
+    let data: any[] = [];
     try { data = t.table.getData({ rowLimit: ROW_CAP }); } catch (_) { data = []; }
 
     const table = el('table', { class: 'anr-xlsx-table' });

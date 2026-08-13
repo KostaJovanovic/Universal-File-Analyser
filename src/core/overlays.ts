@@ -7,7 +7,7 @@
      - showTypeSuggestion/hideTypeSuggestion : "this looks like a X" re-analyse nudge
      - showLinkConfirm : cursor-anchored "leave the site?" confirm popup */
 
-import { el } from './util.js';
+import { el, type ElChild } from './util.js';
 
 // Swiss-style confirmation modal. Resolves true on confirm, false on
 // cancel/backdrop-dismiss. Used as the mobile "did you mean to upload?" guard
@@ -15,7 +15,7 @@ import { el } from './util.js';
 // opts (all optional): { kicker } overrides the 'Upload' eyebrow, { cancelLabel }
 // the Cancel text, { hideCancel } drops the cancel button (a one-button notice,
 // e.g. the native updater's "up to date" message).
-export function anrConfirm(title, okLabel?, opts?) {
+export function anrConfirm(title: ElChild | ElChild[], okLabel?, opts?) {
   opts = opts || {};
   return new Promise((resolve) => {
     const cancelBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, opts.cancelLabel || 'Cancel');
@@ -29,7 +29,7 @@ export function anrConfirm(title, okLabel?, opts?) {
     document.body.appendChild(overlay);
 
     let settled = false;
-    const close = (val) => {
+    const close = (val: unknown) => {
       if (settled) return;
       settled = true;
       overlay.classList.remove('is-open');
@@ -50,9 +50,9 @@ export function anrConfirm(title, okLabel?, opts?) {
 // (same sliding style as the SHA-256 row) while that happens, then hides it
 // when the renderer settles. A short delay before showing keeps quick files
 // from flashing it.
-let _dropLoaderEl = null;
-let _dropLoaderTimer = null;
-let _dropLoaderHideTimer = null;
+let _dropLoaderEl: HTMLDivElement|null = null;
+let _dropLoaderTimer: number|null|undefined = null;
+let _dropLoaderHideTimer: number|null|undefined = null;
 let _dropLoaderOnCancel = null;
 let _dropLoaderShownAt = 0;
 // Intent flag: true once reveal() commits to showing the bar - set BEFORE the
@@ -62,7 +62,7 @@ let _dropLoaderOpen = false;
 // Latest label text, so a long multi-step read (the folder walk) can report
 // progress even while the bar is still inside its 160ms anti-flash debounce -
 // reveal() picks this up rather than the text captured when it was scheduled.
-let _dropLoaderLabel = null;
+let _dropLoaderLabel: string|null = null;
 // Once the bar is actually on screen, keep it up at least this long so a near-
 // instant render (e.g. a small file opened straight from a folder/zip view,
 // already in memory) doesn't make it flash-and-vanish.
@@ -72,7 +72,9 @@ const DROP_LOADER_MIN_MS = 420;
 // are already in memory (a nested file from a folder/zip/document), where the
 // render finishes before the debounce fires - so without this the bar would
 // never show. Disk-backed drops keep the debounce (they cross 160ms on their own).
-export function showDropLoader(file, onCancel, labelText?, immediate?) {
+// Only the name is read, and the folder-drop path has no File to give - it passes
+// a bare { name } for the folder itself. Typed to what is actually used.
+export function showDropLoader(file: { name?: string }|null, onCancel, labelText?, immediate?: boolean) {
   clearTimeout(_dropLoaderTimer);
   clearTimeout(_dropLoaderHideTimer);
   _dropLoaderOnCancel = onCancel || null;
@@ -117,7 +119,7 @@ export function showDropLoader(file, onCancel, labelText?, immediate?) {
 }
 
 // Retitle the drop loader mid-flight (progress during a long read).
-export function setDropLoaderLabel(text) {
+export function setDropLoaderLabel(text: string|null) {
   _dropLoaderLabel = text || null;
   if (_dropLoaderEl && _dropLoaderEl._label) _dropLoaderEl._label.textContent = text || '';
 }
@@ -153,7 +155,7 @@ window._anrLoader = {
 
 // Bottom-of-window suggestion popup (same look as the drop loader) offering to
 // re-analyse a file as its sniffed true type.
-let _typeSuggestEl = null;
+let _typeSuggestEl: HTMLDivElement|null = null;
 export function hideTypeSuggestion() {
   if (!_typeSuggestEl) return;
   const e = _typeSuggestEl; _typeSuggestEl = null;
@@ -175,7 +177,7 @@ export function showTypeSuggestion(sniff, onAccept) {
 
 // Cursor-style confirm popup (reuses the treemap .anr-treemap-menu look) shown
 // when the "Links" button is clicked, so leaving the site is deliberate.
-export function showLinkConfirm(anchor, opts?) {
+export function showLinkConfirm(anchor: Element, opts?) {
   opts = opts || {};
   document.querySelectorAll('.anr-link-confirm').forEach((n) => n.remove());
   const url = anchor.getAttribute('href');

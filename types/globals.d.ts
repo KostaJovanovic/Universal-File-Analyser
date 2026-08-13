@@ -127,16 +127,25 @@ declare global {
     _carveFile?: any;
     _carveFmt?: any;
     _close?: any;
+    _cmpWired?: any;
     _confirmBound?: any;
     _corrupt?: any;
+    _cta?: any;
     _elaStats?: any;
     _extNavWired?: any;
     _fmtRandWired?: any;
     _fmtWired?: any;
+    _gate?: any;
     _hide?: any;
+    _hideT?: any;
     _i?: any;
     _input?: any;
+    _key?: any;
+    _label?: any;
     _next?: any;
+    _onKey?: any;
+    _orig?: any;
+    _pitch?: any;
     _prev?: any;
     _realFrac?: any;
     _resetZoom?: any;
@@ -144,6 +153,8 @@ declare global {
     _show?: any;
     __syncPause?: any;
     __syncPlay?: any;
+    __syncSeek?: any;
+    _text?: any;
     _thumb?: any;
     _tldrBound?: any;
     _toggleZoom?: any;
@@ -152,6 +163,7 @@ declare global {
     _updatePanCursor?: any;
     _value?: any;
     _wired?: any;
+    _yaw?: any;
     _zoom?: any;
     _zoomBtn?: any;
   }

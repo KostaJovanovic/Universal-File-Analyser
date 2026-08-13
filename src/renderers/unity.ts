@@ -42,7 +42,7 @@ function splitDocs(text) {
 // First `key: value` in a block (value trimmed, quotes/comments left as-is).
 const field = (body, key) => { const m = body.match(new RegExp('^\\s*' + key + ':\\s*(.*)$', 'm')); return m ? m[1].trim() : ''; };
 
-function parseUnity(text, ext, name) {
+function parseUnity(text, ext: string, name) {
   // .meta: a single importer record, not a multi-doc object stream.
   if (ext === 'meta' || (/^fileFormatVersion:/m.test(text) && !/^--- !u!/m.test(text))) {
     const importer = (text.match(/^([A-Za-z]\w*Importer):/m) || [])[1] || (text.match(/^\s{0,2}([A-Za-z]\w+):\s*$/m) || [])[1] || '';
@@ -137,7 +137,7 @@ function typeDetail(primary, docs) {
   return out;
 }
 
-export async function renderUnity(file, resultsEl) {
+export async function renderUnity(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));
@@ -266,7 +266,7 @@ export async function renderUnity(file, resultsEl) {
   resultsEl.appendChild(integrityCard(file));
 }
 
-function unityFormatName(ext, label) {
+function unityFormatName(ext: string, label) {
   const map = {
     unity: 'Unity scene (.unity)', prefab: 'Unity prefab (.prefab)', asset: 'Unity asset (.asset)',
     controller: 'Unity Animator Controller (.controller)', anim: 'Unity animation clip (.anim)',

@@ -28,7 +28,7 @@ const UNITY_EXTS = new Set([
 // gcode viewer (extruded moves drawn as the printed shape, or cut moves for CNC).
 const GCODE_EXTS = new Set(['gcode', 'gco', 'g', 'ngc', 'nc', 'tap', 'cnc']);
 
-export function classifyFile(file) {
+export function classifyFile(file: File) {
   const t = (file.type || '').toLowerCase();
   const ext = fileExt(file.name);
   // SVG before generic image/ MIME so it gets its own handler

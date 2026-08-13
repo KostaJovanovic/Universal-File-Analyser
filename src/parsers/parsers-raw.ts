@@ -6,14 +6,14 @@
 
 import { preBlock, readSlice, readText } from '../core/util.js';
 import { parsePlist } from '../lib/plist.js';
-import type { Row } from '../core/types.js';
+import type { Row, ParseFn } from '../core/types.js';
 
 // Apple Photos .aae adjustments sidecar (XML or binary plist).
-async function parseAae(file) {
+async function parseAae(file: File) {
   const res = await parsePlist(file);
   if (!res || !res.value) return null;
   const v = res.value;
-  const out = { 'Format': 'Apple Photos adjustments (' + res.format + ' plist)' };
+  const out: Row = { 'Format': 'Apple Photos adjustments (' + res.format + ' plist)' };
   if (v.adjustmentFormatVersion != null) out['Format version'] = v.adjustmentFormatVersion;
   if (v.adjustmentBaseVersion != null) out['Base version'] = v.adjustmentBaseVersion;
   if (v.adjustmentFormatIdentifier) out['Adjustment type'] = v.adjustmentFormatIdentifier;
@@ -23,7 +23,7 @@ async function parseAae(file) {
 }
 
 // RawTherapee .pp3 processing profile (INI-style).
-async function parsePp3(file) {
+async function parsePp3(file: File) {
   const text = await file.text();
   if (!/\[(Version|General|Exposure|RAW|White Balance)\]/i.test(text)) return null;
   const ver = (text.match(/AppVersion\s*=\s*([^\r\n]+)/i) || [])[1] || (text.match(/^Version\s*=\s*([^\r\n]+)/im) || [])[1];
@@ -36,32 +36,32 @@ async function parsePp3(file) {
 }
 
 // Capture One .cos settings (XML key/value tree).
-async function parseCos(file) {
+async function parseCos(file: File) {
   const text = await readText(file, 1_000_000);
   if (!/CaptureOne|<SL|<E\s+K=/.test(text)) return null;
   const adjustments = (text.match(/<E\s+K=/g) || []).length;
   const src = (text.match(/(?:RawPath|ImagePath)[^>]*>([^<]+)/) || [])[1];
-  const out = { 'Format': 'Capture One settings (COS)', 'Adjustments': adjustments };
+  const out: Row = { 'Format': 'Capture One settings (COS)', 'Adjustments': adjustments };
   if (src) out['Source image'] = src;
   return out;
 }
 
 // DxO PhotoLab .dop sidecar (Lua-table / text).
-async function parseDop(file) {
+async function parseDop(file: File) {
   const text = await readText(file, 1_000_000);
   const ver = (text.match(/Version\s*=\s*"?([\d.]+)/) || [])[1];
   const tools = Array.from(new Set(text.match(/\b(DeepPRIME|PRIME|Optics|Vignetting|Distortion|ChromaticAberration|Sharpness|Exposure|SmartLighting|ClearView|HotPixel|Moire)\b/g) || []));
-  const out = { 'Format': 'DxO PhotoLab sidecar (DOP)' };
+  const out: Row = { 'Format': 'DxO PhotoLab sidecar (DOP)' };
   if (ver) out['Version'] = ver;
   if (tools.length) out['Corrections'] = tools.join(', ');
   return out;
 }
 
 // Nikon NX Studio .nksc sidecar - locate an embedded XMP packet.
-async function parseNksc(file) {
+async function parseNksc(file: File) {
   const buf = await readSlice(file, 0, 524288);
   const text = new TextDecoder('latin1').decode(buf);
-  const out = { 'Format': 'Nikon NX Studio sidecar (NKSC)' };
+  const out: Row = { 'Format': 'Nikon NX Studio sidecar (NKSC)' };
   const xmp = text.match(/<x:xmpmeta[\s\S]*?<\/x:xmpmeta>/);
   if (xmp) {
     out['Embedded XMP'] = 'yes';
@@ -71,9 +71,9 @@ async function parseNksc(file) {
   return out;
 }
 
-const idOnly = (ext, name) => ({ 'Format': name, 'Note': 'Identified - ' + ext.toUpperCase() + ' camera edit/preview sidecar.' });
+const idOnly = (ext: string, name) => ({ 'Format': name, 'Note': 'Identified - ' + ext.toUpperCase() + ' camera edit/preview sidecar.' });
 
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   aae: (c) => parseAae(c.file),
   pp3: (c) => parsePp3(c.file),
   cos: (c) => parseCos(c.file),

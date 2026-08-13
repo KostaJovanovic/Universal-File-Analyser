@@ -170,7 +170,7 @@ function detectFormat(b) {
   return null;
 }
 
-export function scrubSupportsImage(file) {
+export function scrubSupportsImage(file: File) {
   const ext = fileExt(file.name);
   const type = file.type || '';
   return /^(jpe?g|jpe|png|webp)$/i.test(ext) || /^image\/(jpeg|png|webp)$/i.test(type);
@@ -178,7 +178,7 @@ export function scrubSupportsImage(file) {
 
 // Strip metadata from an image File; returns { out:Uint8Array, removed, format }
 // or null if the bytes don't parse as a supported image.
-export async function stripImage(file) {
+export async function stripImage(file: File) {
   const b = new Uint8Array(await file.arrayBuffer());
   const format = detectFormat(b);
   if (!format) return null;
@@ -193,7 +193,7 @@ export async function stripImage(file) {
 // confirm nothing remains, and offers the clean copy for download.
 const SCRUB_HELP = 'Removes identifying information (EXIF, GPS location, XMP, IPTC and comments) by cutting out only those parts of the file - the actual image and its colour profile are copied across untouched, so the picture itself does not change. The cleaned copy is made here on your device and never uploaded. Colour-management data (ICC) is kept so the image still looks the same.';
 
-export function attachImageScrub(file, cardEl) {
+export function attachImageScrub(file: File, cardEl) {
   if (!scrubSupportsImage(file)) return;
 
   const wrap = el('div', { class: 'anr-scrub', style: 'margin-top:14px;' });

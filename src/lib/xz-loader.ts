@@ -17,7 +17,7 @@ const MAX_OUTPUT = 256 * 1024 * 1024; // 256 MB
 // Decompress an xz byte buffer. Returns the decompressed Uint8Array, or null on
 // any failure (unsupported, corrupt, over the cap, or wasm load error) so callers
 // can fall back to header-only parsing.
-export async function xzDecompress(bytes) {
+export async function xzDecompress(bytes: Uint8Array) {
   try {
     if (!(window.xzwasm && window.xzwasm.XzReadableStream)) {
       await loadScript('assets/vendor/xzwasm/xzwasm.min.js');

@@ -11,13 +11,13 @@ import { el, openOverlayBack } from './util.js';
 import { renderFmtOverlay, renderAboutFormats, formatCount, catalogGrouped, CATEGORIES } from './formats.js';
 import { setupFmtHeaderFx } from './effects.js';
 
-function $<T extends HTMLElement = HTMLElement>(id): T { return document.getElementById(id) as T; }
+function $<T extends HTMLElement = HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 
 // Coalesce rapid input events. The catalog filter re-checks ~1,359 entries and
 // re-parses their innerHTML for highlighting on every keystroke; without this a
 // fast typist queues a full sweep per character and the overlay janks.
-function debounce(fn, ms) {
-  let t;
+function debounce(fn, ms: number|undefined) {
+  let t: number|undefined;
   return function (this: any, ...args) {
     clearTimeout(t);
     t = setTimeout(() => fn.apply(this, args), ms);
@@ -100,11 +100,11 @@ export function setupFormatOverlay() {
       fmtBody.appendChild(fmtEmpty);
     }
 
-    const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const escapeHtml = (s: string) => s.replace(/[&<>]/g, (c: string|number) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     // Wrap every case-insensitive occurrence of `q` in <mark>; restore the plain
     // text when `q` is empty. The original text is cached on the element so the
     // highlight is non-destructive and idempotent across keystrokes.
-    function highlightEl(elm, q) {
+    function highlightEl(elm: HTMLElement|null, q: string) {
       if (elm._orig == null) elm._orig = elm.textContent;
       const text = elm._orig;
       if (!q) { if (elm.innerHTML !== text) elm.textContent = text; return; }
@@ -158,9 +158,9 @@ export function setupFormatOverlay() {
       let visCount = 0;
       const extSet = new Set();
       items.forEach((it) => {
-        const labelEl = it.querySelector('.fmt-item-label');
+        const labelEl = it.querySelector<HTMLElement>('.fmt-item-label');
         const extsEl = it.querySelector('.fmt-item-exts');
-        const descEl = it.querySelector('.fmt-item-desc');
+        const descEl = it.querySelector<HTMLElement>('.fmt-item-desc');
         const catOk = activeCat === 'all' || it.dataset.cat === activeCat;
         const text = (
           labelEl.textContent + ' ' + extsEl.textContent + ' ' +
@@ -172,14 +172,14 @@ export function setupFormatOverlay() {
         it.open = q ? match : false;
         const hq = (q && match) ? q : '';
         highlightEl(labelEl, hq);
-        it.querySelectorAll('.fmt-item-ext').forEach((s) => highlightEl(s, hq));
+        it.querySelectorAll<HTMLElement>('.fmt-item-ext').forEach((s) => highlightEl(s, hq));
         highlightEl(descEl, hq);
         if (match) {
           visCount++;
           extsEl.textContent.split(/\s+/).forEach((t) => { if (t) extSet.add(t.toLowerCase()); });
         }
       });
-      let firstVisibleLabel = null;
+      let firstVisibleLabel: HTMLElement|null = null;
       labels.forEach((label) => {
         const list = label.nextElementSibling;
         const visible = list ? list.querySelectorAll('.fmt-item:not(.is-hidden)').length : 0;
@@ -333,9 +333,9 @@ export function setupFormatOverlay() {
       const tokens = raw.toLowerCase().split(/\s+/).filter(Boolean);
       let vis = 0;
       pItems.forEach((it) => {
-        const labelEl = it.querySelector('.fmt-item-label');
+        const labelEl = it.querySelector<HTMLElement>('.fmt-item-label');
         const extsEl = it.querySelector('.fmt-item-exts');
-        const descEl = it.querySelector('.fmt-item-desc');
+        const descEl = it.querySelector<HTMLElement>('.fmt-item-desc');
         const hay = (
           (labelEl ? labelEl.textContent : '') + ' ' +
           (extsEl ? extsEl.textContent : '') + ' ' +

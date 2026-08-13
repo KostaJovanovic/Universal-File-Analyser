@@ -17,7 +17,7 @@ export function spawnBullet(angle, speed, life, sniper, pierce) {
     g.bullets.push({
         x: ship.x + c * 14 * S, y: ship.y + s * 14 * S,
         vx: c * speed + ship.vx, vy: s * speed + ship.vy, life, sniper: !!sniper,
-        pierce: pierce | 0 // extra asteroids this round punches through before dying
+        pierce: pierce | 0 // extra asteroids this round punches through before dying (omitted -> 0)
     });
 }
 // Like spawnBullet but from an arbitrary origin (the drone), with no inherited ship velocity.
@@ -186,6 +186,9 @@ export function nearestSeekTarget(x, y) {
 // targets are saturated do surplus missiles double up (nearest), so a big burst is
 // never wasted and never dogpiles a single rock it could have spread across.
 // Is this claimed target still a valid thing to fly at?
+// `t` is deliberately untyped: a claimed target is whichever of three unrelated
+// entities (asteroid / reward UFO / boss node) the missile locked on to, and this
+// identifies which by membership rather than by shape.
 function targetAlive(t) {
     if (!t)
         return false;

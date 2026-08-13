@@ -98,7 +98,7 @@ function extractXmp(b) {
 }
 
 // ---------- collect all signals ----------
-export async function collectAiSignals(file, exif, preManifests) {
+export async function collectAiSignals(file: File, exif, preManifests) {
   const b = new Uint8Array(await file.arrayBuffer());
   const signals = [];
 
@@ -156,7 +156,7 @@ export async function collectAiSignals(file, exif, preManifests) {
 // ---------- card ----------
 const AI_HELP = 'Clues in the file that are often left by AI image generators - the name of an AI tool in the metadata, the standard IPTC "AI-generated" marker, or the settings blocks that tools like Stable Diffusion save inside the image. These are hints, not a verdict: metadata can be removed (so a genuine AI image might show nothing here) or added by hand (so a match is not proof either). Everything is read on your device.';
 
-export async function buildAiSignalsCard(file, exif, manifests) {
+export async function buildAiSignalsCard(file: File, exif, manifests) {
   let signals;
   try { signals = await collectAiSignals(file, exif, manifests); } catch (_) { return null; }
   if (!signals || !signals.length) return null;

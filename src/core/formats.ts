@@ -54,7 +54,7 @@
      note  - optional prose shown instead of the ext list on the about page
    ============================================================================ */
 
-import { el } from './util.js';
+import { el, type ElChild } from './util.js';
 
 // ---------- classification extension sets (logic) ----------
 // Lowercase. These route a dropped file to the right renderer in app.js.
@@ -426,16 +426,16 @@ export const EXT_VARIANTS = {
 // (used as the in-app application label), or null when the ext is not ambiguous
 // or nothing matched without a default. The FIRST variant whose `detect` rule
 // matches wins; a { default: true } variant is the fallback.
-export function detectVariant(ext, bytes, text, opts?) {
+export function detectVariant(ext, bytes: Uint8Array, text: string|null, opts?) {
   const entry = EXT_VARIANTS[(ext || '').toLowerCase()];
   if (!entry) return null;
   // specificOnly: return a name only when a real rule matched, not the bare
   // default - so a confident in-app label is shown only when the bytes prove it.
   const specificOnly = opts && opts.specificOnly;
   const b = bytes || new Uint8Array(0);
-  const asc = (off, len) => { let s = ''; for (let i = 0; i < len && off + i < b.length; i++) s += String.fromCharCode(b[off + i]); return s; };
-  const hexAt = (off, hex) => {
-    const want = hex.trim().split(/\s+/).map((h) => parseInt(h, 16));
+  const asc = (off: number, len: number) => { let s = ''; for (let i = 0; i < len && off + i < b.length; i++) s += String.fromCharCode(b[off + i]); return s; };
+  const hexAt = (off: number, hex: string) => {
+    const want = hex.trim().split(/\s+/).map((h: string) => parseInt(h, 16));
     if (off + want.length > b.length) return false;
     for (let i = 0; i < want.length; i++) if (b[off + i] !== want[i]) return false;
     return true;
@@ -600,7 +600,7 @@ export function formatCount() {
 
 // ---------- renderers ----------
 
-const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 // Depth -> badge presentation. Shared by the overlay/about renderer (fmtItem)
 // and mirrored by the static generators (prerender-formats.mjs,
@@ -617,14 +617,14 @@ const DEPTH_BADGE = {
 // viewer page /formats/<ext> or its identification page /formats/id/<ext> - the
 // same full-wins rule tools/prerender-format-pages.mjs uses, so the popup/about
 // links can never point at a page that was not generated.
-let _fullExtSet = null;
+let _fullExtSet: Set<unknown>|null = null;
 function fullExtSet() {
   if (_fullExtSet) return _fullExtSet;
   _fullExtSet = new Set();
   for (const r of FULL_ANALYSIS) for (const t of r.exts.split(/\s+/)) if (t) _fullExtSet.add(t.toLowerCase());
   return _fullExtSet;
 }
-export function formatPageHref(ext) {
+export function formatPageHref(ext: string) {
   const k = ext.toLowerCase();
   return fullExtSet().has(k) ? `/formats/${k}` : `/formats/id/${k}`;
 }
@@ -633,7 +633,7 @@ export function formatPageHref(ext) {
 // landing page exists for it (the generator writes one per catalog extension).
 // Guards callers from linking formatPageHref() of an uncatalogued extension,
 // which would 404.
-let _allExtSet = null;
+let _allExtSet: Set<unknown>|null = null;
 export function hasFormatPage(ext) {
   if (!_allExtSet) {
     _allExtSet = new Set();
@@ -654,8 +654,8 @@ export function hasFormatPage(ext) {
 //                  deep-links resolve and the desc text stays indexable in the
 //                  DOM even while collapsed.
 function fmtItem(r, opts: any = {}) {
-  const extNodes = [];
-  r.exts.split(/\s+/).forEach((t) => {
+  const extNodes: ElChild[] = [];
+  r.exts.split(/\s+/).forEach((t: string) => {
     if (!t) return;
     if (extNodes.length) extNodes.push(' ');
     // Each extension links to its own /formats/<ext> landing page. navigate.js

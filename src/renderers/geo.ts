@@ -246,7 +246,7 @@ function parseGeoJson(text) {
   return g;
 }
 
-export async function renderGeo(file, resultsEl) {
+export async function renderGeo(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
 

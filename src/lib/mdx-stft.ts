@@ -18,7 +18,7 @@
    per model window before its collector caught up. */
 
 // Periodic Hann window (matches torch.hann_window default): w[n]=0.5-0.5cos(2pi n/N).
-export function hann(n) {
+export function hann(n: number) {
   const w = new Float64Array(n);
   for (let i = 0; i < n; i++) w[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / n);
   return w;
@@ -26,7 +26,7 @@ export function hann(n) {
 
 // --- radix-2 FFT for a power-of-two length, in place. inv=true flips the twiddle
 // sign only; scaling by 1/N is the caller's job. ---
-function fftRadix2(re, im, inv) {
+function fftRadix2(re: Float64Array, im: Float64Array, inv: boolean) {
   const n = re.length;
   // bit-reversal permutation
   for (let i = 1, j = 0; i < n; i++) {
@@ -68,13 +68,13 @@ function fftRadix2(re, im, inv) {
      recombine: X[N1*k2 + k1] = Y_k1[k2]
    The inverse conjugates both twiddle stages (the radix-2 kernel handles its own
    sign via inv); the caller scales the inverse by 1/N. */
-export function makeFft(N) {
+export function makeFft(N: number) {
   let N2 = 1, m = N;
   while (m % 2 === 0) { N2 *= 2; m /= 2; }
   const N1 = m;   // odd factor: 3 for 6144, 15 for 7680, 1 if N is a pure power of two
 
   // Direct size-N1 DFT twiddles D[k1][n1] = exp(-2pi i n1 k1 / N1) (forward sign).
-  const DR = [], DI = [];
+  const DR: any[] = [], DI: any[] = [];
   for (let k1 = 0; k1 < N1; k1++) {
     DR.push(new Float64Array(N1)); DI.push(new Float64Array(N1));
     for (let n1 = 0; n1 < N1; n1++) {
@@ -93,14 +93,14 @@ export function makeFft(N) {
   }
   // Reusable per-k1 radix-2 buffers (transform is not re-entrant, which is fine:
   // each engine/worker uses it serially).
-  const br = [], bi = [];
+  const br: Float64Array[] = [], bi: Float64Array[] = [];
   for (let k1 = 0; k1 < N1; k1++) { br.push(new Float64Array(N2)); bi.push(new Float64Array(N2)); }
   // Callers consume the result before the next transform, so keep one output
   // pair as well. For Lite this avoids about 96 MiB of short-lived allocations
   // per model window across the forward and inverse frame loops.
   const outRe = new Float64Array(N), outIm = new Float64Array(N);
 
-  return function transform(inRe, inIm, inv) {
+  return function transform(inRe: Float64Array, inIm: Float64Array, inv: boolean) {
     // Stage 1 + 2: size-N1 DFT over the N1 strided sub-sequences, then twiddle.
     for (let n2 = 0; n2 < N2; n2++) {
       for (let k1 = 0; k1 < N1; k1++) {
@@ -132,7 +132,7 @@ export function makeFft(N) {
 /* Build an STFT/ISTFT engine for a given FFT size and hop. center=True padding
    (nFft/2 each side). stft() returns one-sided spectra as flat Float32Arrays
    [frame*nBins + bin] plus the frame count; istft() is the exact inverse. */
-export function makeStftEngine(nFft, hop) {
+export function makeStftEngine(nFft: number, hop: number) {
   const nBins = (nFft >> 1) + 1;
   const fft = makeFft(nFft);
   const window = hann(nFft);
@@ -144,7 +144,7 @@ export function makeStftEngine(nFft, hop) {
   let istftSignal = new Float64Array(0);
   const istftFr = new Float64Array(nFft), istftFi = new Float64Array(nFft);
 
-  function stft(signal) {
+  function stft(signal: Float32Array) {
     const paddedLen = signal.length + 2 * pad;
     if (padded.length !== paddedLen) padded = new Float64Array(paddedLen);
     else padded.fill(0);
@@ -166,7 +166,7 @@ export function makeStftEngine(nFft, hop) {
     return { re: stftRe, im: stftIm, frames, bins: nBins };
   }
 
-  function istft(re, im, frames, length) {
+  function istft(re: Float32Array, im: Float32Array, frames: number, length: number) {
     const outLen = length + 2 * pad;
     if (istftOut.length !== outLen) {
       istftOut = new Float64Array(outLen);

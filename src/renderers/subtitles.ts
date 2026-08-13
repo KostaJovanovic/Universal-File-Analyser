@@ -196,7 +196,7 @@ function parseSubViewer(text) {
   return cues;
 }
 
-export async function renderSubtitles(file, resultsEl) {
+export async function renderSubtitles(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
 

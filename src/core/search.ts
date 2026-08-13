@@ -20,8 +20,8 @@ type SearchState = typeof initSearch & {
 
     if ((initSearch as SearchState)._resize) { window.removeEventListener('resize', (initSearch as SearchState)._resize); (initSearch as SearchState)._resize = null; }
     const nav = searchWrap.closest('nav');
-    let debounceTimer = null;
-    let matches = [];
+    let debounceTimer: number|null|undefined = null;
+    let matches: any[] = [];
     let matchIdx = -1;
     const isMobile = () => window.innerWidth <= 700;
 
@@ -64,7 +64,7 @@ type SearchState = typeof initSearch & {
     const mobileNext = mobileOverlay.querySelector('.search-overlay-next');
     const mobileClose = mobileOverlay.querySelector('.search-overlay-close');
 
-    function scrollToMatch(i) {
+    function scrollToMatch(i: number) {
       if (!matches.length) return;
       const old = document.querySelector('.anr-search-current');
       if (old) old.classList.remove('anr-search-current');
@@ -401,14 +401,14 @@ type SearchState = typeof initSearch & {
       links: ['links', 'external links'],
     };
 
-    function expandQuery(q) {
+    function expandQuery(q: string) {
       const terms = [q];
       const syn = SYNONYMS[q.replace(/\s+/g, '')];
       if (syn) terms.push(...syn);
       return terms;
     }
 
-    function textMatches(text, terms) {
+    function textMatches(text: string, terms: any[]) {
       const t = text.toLowerCase();
       return terms.some(term => t.includes(term));
     }
@@ -440,7 +440,7 @@ type SearchState = typeof initSearch & {
       if (matches.length) scrollToMatch(0);
     }
 
-    function triggerSearch(input) {
+    function triggerSearch(input: HTMLInputElement|null) {
       searchInput.value = input.value;
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(runSearch, 150);

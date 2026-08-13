@@ -60,7 +60,7 @@ function indexOfTag(buf, tag, end?) {
 // This matters because box order varies wildly: iPhone writes `meta` first, but
 // Samsung writes `mdat` first and `meta` near the END of the file - a fixed
 // front-of-file read would miss it and force the slow decode.
-async function heicDecodableFast(file) {
+async function heicDecodableFast(file: File) {
   try {
     const slice = async (off, len) => new Uint8Array(await file.slice(off, off + len).arrayBuffer());
     const tagAt = (buf, o) => String.fromCharCode(buf[o], buf[o + 1], buf[o + 2], buf[o + 3]);
@@ -103,7 +103,7 @@ const KNOWN_FIXED_EXTS = new Set([
   'srt', 'vtt', 'ass', 'ssa', 'gpx', 'kml', 'geojson', 'md', 'markdown', 'cbz', 'cbr', 'cbt', 'cb7',
 ]);
 
-function extKnown(file) {
+function extKnown(file: File) {
   // Prefer the real drop-path classifier (exposed by app.js as window._anrClassify)
   // so the scan's verdict can never drift from what actually opens - it already
   // knows every dedicated-renderer extension (glb, doc, gltf, pdn, the Office/ODF
@@ -132,7 +132,7 @@ function extKnown(file) {
 // README, Makefile) passes (it opens as text), while a binary with no recognised
 // type is flagged (it opens only as a hex dump). git loose objects are
 // content-detected via sniffGitObject.
-async function sniffKnown(file) {
+async function sniffKnown(file: File) {
   try {
     const head = new Uint8Array(await file.slice(0, 128).arrayBuffer());
     if (!head.length) return false;
@@ -166,7 +166,7 @@ async function sniffKnown(file) {
   } catch (_) { return false; }
 }
 
-async function probeOpenable(file) {
+async function probeOpenable(file: File) {
   if (!file) return { ok: false, reason: 'No file data available', cloud: true };
   if (file.size === 0) return { ok: true };   // opens, just nothing to show
   if (await probeReadable(file)) {
@@ -245,7 +245,7 @@ async function probeOpenable(file) {
 // is absent (folder.js used outside the app). Lets probeOpenable tell an
 // extensionless file (which classifies as 'extensionless', not 'unknown') apart
 // from a file a dedicated renderer handles, so the former gets a content probe.
-function classifyOf(file) {
+function classifyOf(file: File) {
   if (typeof window !== 'undefined' && typeof window._anrClassify === 'function') {
     try { return window._anrClassify(file) || ''; } catch (_) {}
   }
@@ -255,7 +255,7 @@ function classifyOf(file) {
 // Whether a file opens as readable text rather than a raw hex dump - mirrors the
 // unknown/extensionless viewer's rule (UTF-16 BOM, or >85% printable bytes).
 // Prefers the app's shared implementation so the two never diverge.
-async function looksLikeText(file) {
+async function looksLikeText(file: File) {
   if (typeof window !== 'undefined' && window._anrReadableText) {
     try { return await window._anrReadableText(file); } catch (_) {}
   }
@@ -452,7 +452,7 @@ function extOf(name) {
   return m ? m[1].toLowerCase() : '';
 }
 
-export function renderFolder(files, resultsEl) {
+export function renderFolder(files, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
 
@@ -598,7 +598,7 @@ export function renderFolder(files, resultsEl) {
       window._anrPushNav(folderName, () => { resultsEl.hidden = false; renderFolder(files, resultsEl); });
     }
   }
-  function openFile(file) {
+  function openFile(file: File) {
     if (!file) return;
     const ext = extOf(file.name);
     if (ARCHIVE_EXTS.has(ext)) {

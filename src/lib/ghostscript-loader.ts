@@ -22,8 +22,8 @@
 
 const GS_BASE = new URL('../../vendor/ghostscript/', import.meta.url);
 
-let _gsFactoryPromise = null;   // Promise<defaultExport> for gs.mjs
-let _wasmBytesPromise = null;   // Promise<ArrayBuffer> for gs.wasm
+let _gsFactoryPromise: Promise<any>|null = null;   // Promise<defaultExport> for gs.mjs
+let _wasmBytesPromise: Promise<ArrayBuffer>|null = null;   // Promise<ArrayBuffer> for gs.wasm
 
 function loadFactory() {
   if (!_gsFactoryPromise) {
@@ -68,7 +68,7 @@ async function createGs() {
  * @param {string} ext                    lowercase extension (eps/epsf/epsi/ps)
  * @returns {Promise<Blob|null>}          a PNG Blob (first page) or null on any failure
  */
-export async function renderPostScript(bytes, ext) {
+export async function renderPostScript(bytes, ext: string) {
   try {
     const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     if (!u8 || !u8.length) return null;

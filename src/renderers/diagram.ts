@@ -115,7 +115,7 @@ function renderMxModel(model) {
   return { svg, verts: verts.length, edges: edges.length };
 }
 
-export async function renderDrawio(file, container) {
+export async function renderDrawio(file: File, container) {
   container.hidden = false;
   container.innerHTML = '';
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading diagram...'));
@@ -245,7 +245,7 @@ function dxfToSvg(entities) {
   return { svg, counts };
 }
 
-export async function renderDxf(file, container) {
+export async function renderDxf(file: File, container) {
   container.hidden = false;
   container.innerHTML = '';
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading DXF drawing...'));

@@ -31,7 +31,7 @@ function sanitizeBody(doc) {
   return sanitizeDoc(doc, { className: 'anr-epub-content' });
 }
 
-export async function renderEpub(file, resultsEl) {
+export async function renderEpub(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading e-book "${file.name}"…`));

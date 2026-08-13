@@ -205,6 +205,8 @@ export async function renderSolidworks(file, resultsEl) {
         const [ph, phelp] = h3help('Preview', 'The thumbnail image SolidWorks saved inside the file, so it can be shown without opening the full model.');
         pv.appendChild(ph);
         pv.appendChild(phelp);
+        // Cast only: these bytes always come from a File read, never shared memory,
+        // so the ArrayBufferLike backing store is an ArrayBuffer in practice.
         const url = URL.createObjectURL(new Blob([preview.bytes], { type: preview.mime }));
         const img = el('img', {
             src: url, alt: label + ' preview', loading: 'lazy',

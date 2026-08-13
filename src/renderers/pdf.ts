@@ -124,7 +124,7 @@ function scanRawPdf(bytes) {
 }
 
 // ---------- main render ----------
-export async function renderPdf(file, resultsEl, opts: any = {}) {
+export async function renderPdf(file: File, resultsEl: HTMLElement, opts: any = {}) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Loading PDF library…`));

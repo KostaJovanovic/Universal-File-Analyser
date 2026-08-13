@@ -23,15 +23,15 @@ const FILE_TLDS = new Set([
 
 // Extract indicators of compromise / interest from a block of text. Returns
 // { urls, ips, domains, emails }, each a deduped, capped array (insertion order).
-export function extractIndicators(text, opts: any = {}) {
+export function extractIndicators(text: string, opts: any = {}) {
   const cap = opts.cap || 300;
   const out = { urls: [], ips: [], domains: [], emails: [] };
   if (!text) return out;
   const seen = { urls: new Set(), ips: new Set(), domains: new Set(), emails: new Set() };
-  const add = (k, v) => { if (v && !seen[k].has(v) && out[k].length < cap) { seen[k].add(v); out[k].push(v); } };
+  const add = (k: string, v: string) => { if (v && !seen[k].has(v) && out[k].length < cap) { seen[k].add(v); out[k].push(v); } };
 
   // URLs first; strip them out so their host isn't re-counted as a bare domain.
-  let work = text.replace(/\bhttps?:\/\/[^\s"'<>()[\]{}\\|^`]+/gi, (m) => {
+  let work = text.replace(/\bhttps?:\/\/[^\s"'<>()[\]{}\\|^`]+/gi, (m: string) => {
     add('urls', m.replace(/[.,;:'")\]}>]+$/, ''));
     return ' ';
   });
@@ -59,9 +59,9 @@ export function extractIndicators(text, opts: any = {}) {
 // Public lookup links per indicator type. enc keeps query strings safe.
 const enc = encodeURIComponent;
 const LOOKUPS = {
-  url: (v) => [['VirusTotal', 'https://www.virustotal.com/gui/search/' + enc(v)], ['urlscan', 'https://urlscan.io/search/#' + enc(v)]],
-  ip: (v) => [['VirusTotal', 'https://www.virustotal.com/gui/ip-address/' + enc(v)], ['AbuseIPDB', 'https://www.abuseipdb.com/check/' + enc(v)], ['Shodan', 'https://www.shodan.io/host/' + enc(v)]],
-  domain: (v) => [['VirusTotal', 'https://www.virustotal.com/gui/domain/' + enc(v)], ['urlscan', 'https://urlscan.io/domain/' + enc(v)]],
+  url: (v: string|number|boolean) => [['VirusTotal', 'https://www.virustotal.com/gui/search/' + enc(v)], ['urlscan', 'https://urlscan.io/search/#' + enc(v)]],
+  ip: (v: string|number|boolean) => [['VirusTotal', 'https://www.virustotal.com/gui/ip-address/' + enc(v)], ['AbuseIPDB', 'https://www.abuseipdb.com/check/' + enc(v)], ['Shodan', 'https://www.shodan.io/host/' + enc(v)]],
+  domain: (v: string|number|boolean) => [['VirusTotal', 'https://www.virustotal.com/gui/domain/' + enc(v)], ['urlscan', 'https://urlscan.io/domain/' + enc(v)]],
   email: () => [],
 };
 
@@ -79,7 +79,7 @@ export function osintCard(ind, opts: any = {}) {
   card.appendChild(el('p', { class: 'anr-hint' },
     'URLs, IPs, domains and email addresses found in this file’s text. Nothing is sent until you click a lookup link.'));
 
-  const section = (title, items, kind) => {
+  const section = (title: string, items: string|any[], kind: string) => {
     if (!items.length) return;
     card.appendChild(el('div', { class: 'anr-readout-section' }, title + ' (' + items.length + ')'));
     const list = el('div', { class: 'anr-osint-list' });
@@ -102,6 +102,6 @@ export function osintCard(ind, opts: any = {}) {
 }
 
 // Convenience: extract from text and return a ready card (or null). Guarded.
-export function buildOsintCard(text, opts) {
+export function buildOsintCard(text: string, opts) {
   try { return osintCard(extractIndicators(text || '', opts), opts); } catch (_) { return null; }
 }

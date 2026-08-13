@@ -13,7 +13,11 @@ import { openZip } from './zip.js';
 import { renderPdf } from './pdf.js';
 import { parsePlist } from '../lib/plist.js';
 
-const KINDS = {
+/** One member of an opened ZIP package (see openZip in ./zip.js). */
+interface ZipEntry { name: string; uncompSize: number }
+type Zip = Awaited<ReturnType<typeof openZip>>;
+
+const KINDS: Record<string, { app: string; kind: string }> = {
   pages:   { app: 'Apple Pages',   kind: 'Word-processing / page-layout document' },
   numbers: { app: 'Apple Numbers', kind: 'Spreadsheet' },
   key:     { app: 'Apple Keynote', kind: 'Presentation' },
@@ -21,8 +25,8 @@ const KINDS = {
 };
 
 // Largest entry whose name matches the predicate (by uncompressed size), or null.
-function largestMatch(zip, re) {
-  let best = null;
+function largestMatch(zip: Zip, re: RegExp): ZipEntry | null {
+  let best: ZipEntry | null = null;
   for (const e of zip.entries) {
     if (re.test(e.name) && (!best || e.uncompSize > best.uncompSize)) best = e;
   }
@@ -31,9 +35,9 @@ function largestMatch(zip, re) {
 
 // Best-effort "created with" string from Metadata/BuildVersionHistory.plist - a
 // plist array of build strings; the last is the most recent app that wrote it.
-async function buildVersion(zip) {
+async function buildVersion(zip: Zip) {
   try {
-    const entry = zip.entries.find((e) => /BuildVersionHistory\.plist$/i.test(e.name));
+    const entry = zip.entries.find((e: ZipEntry) => /BuildVersionHistory\.plist$/i.test(e.name));
     if (!entry) return '';
     const bytes = await zip.bytes(entry.name);
     if (!bytes) return '';
@@ -45,7 +49,7 @@ async function buildVersion(zip) {
   } catch (_) { return ''; }
 }
 
-export async function renderIwork(file, resultsEl) {
+export async function renderIwork(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));

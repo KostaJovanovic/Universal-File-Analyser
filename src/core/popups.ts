@@ -17,7 +17,7 @@ const TURNSTILE_SITEKEY = '0x4AAAAAADhXFizpfxR6y0hL';
 // nothing loads otherwise, so the offline PWA stays self-contained. Resolves with
 // window.turnstile, or rejects if it can't load (offline / blocked) so callers can
 // fall back to opening the mail client directly.
-let _turnstileLoad = null;
+let _turnstileLoad: Promise<any>|null = null;
 function loadTurnstile() {
   if (window.turnstile) return Promise.resolve(window.turnstile);
   if (_turnstileLoad) return _turnstileLoad;
@@ -50,7 +50,7 @@ function loadTurnstile() {
 // 'failed' (rendered but errored/expired). Callers reveal the address ONLY in the
 // resolve path, so it stays hidden until a real challenge is solved. Mail needs
 // the network regardless, so offline is a hard stop, not a fallback.
-async function turnstileChallenge(box, setStatus) {
+async function turnstileChallenge(box: HTMLDivElement, setStatus) {
   // Real reachability check, not just navigator.onLine - the Turnstile script may
   // be precached and load offline, but the challenge itself needs the network.
   if (!(await probeOnline())) throw 'offline';
@@ -69,8 +69,8 @@ async function turnstileChallenge(box, setStatus) {
   });
 }
 
-let _suggestPopEl = null;
-let _suggestTimer = null;
+let _suggestPopEl: HTMLDivElement|null = null;
+let _suggestTimer: number|null|undefined = null;
 // True from the moment the "suggest this format" popup is shown for a file until
 // it's dismissed/reset. The post-analysis share nudge checks this so the two never
 // compete for the same analysis - the format popup always wins (see scheduleShareNudge).
@@ -130,7 +130,7 @@ export function showSuggestPopup(ext) {
       gate.appendChild(status);
       gate.appendChild(box);
       try {
-        await turnstileChallenge(box, (t) => { status.textContent = t; });
+        await turnstileChallenge(box, (t: string|null) => { status.textContent = t; });
         status.textContent = 'Verified - opening your mail app…';
         cta._busy = false;
         openMailto();
@@ -212,7 +212,7 @@ function openContactModal() {
   requestAnimationFrame(() => overlay.classList.add('is-open'));
 
   // Run the challenge inside the modal; reveal + open mail only on success.
-  turnstileChallenge(box, (t) => { status.textContent = t; })
+  turnstileChallenge(box, (t: string|null) => { status.textContent = t; })
     .then(() => {
       status.textContent = 'Verified - opening your mail app…';
       const addr = ['valjdakosta', 'gmail.com'].join('@');
@@ -380,7 +380,7 @@ function showShareModal(ctx) {
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);
 
-  function flashCopy(btn, ok, idle) {
+  function flashCopy(btn: HTMLButtonElement, ok: boolean, idle: string) {
     btn.textContent = ok ? 'Copied!' : 'Hit Ctrl+C';
     btn.classList.toggle('is-done', ok);
     setTimeout(() => { btn.textContent = idle; btn.classList.remove('is-done'); }, 1600);
@@ -418,8 +418,8 @@ export function wireShareButtons() {
 // the spectrogram - a PNG named after the file - when the share sheet accepts files.
 const NUDGE_DAY_KEY = 'anrShareNudgeDay';
 const NUDGE_HOLD_KEY = 'anrShareNudgeHoldUntil';
-let _shareNudgeEl = null;
-let _shareNudgeTimer = null;
+let _shareNudgeEl: HTMLDivElement|null = null;
+let _shareNudgeTimer: number|null|undefined = null;
 
 function nudgeDayStamp() {
   const d = new Date();
@@ -456,7 +456,7 @@ export function hideShareNudge() {
 // Snapshot the on-page spectrogram canvas to a PNG File named after the audio file.
 // Pre-built when the nudge appears so the eventual navigator.share() call stays
 // inside the click gesture (awaiting toBlob first would break the gesture on Safari).
-function spectrogramFile(name) {
+function spectrogramFile(name): Promise<File|null> {
   return new Promise((resolve) => {
     const canvas = document.querySelector<HTMLCanvasElement>('.anr-spec-canvas');
     if (!canvas || !canvas.width || !canvas.toBlob) { resolve(null); return; }
@@ -498,7 +498,7 @@ function showShareNudge(ctx) {
 
   // For audio, start rendering the spectrogram attachment now so it's ready by the
   // time (if) the user taps Share - keeping the share() call within the gesture.
-  let pendingFile = null;
+  let pendingFile: File|null = null;
   if (ctx && ctx.category === 'audio') spectrogramFile(ctx.name).then((f) => { pendingFile = f; });
 
   const closeBtn = el('button', { type: 'button', class: 'anr-share-nudge-close', 'aria-label': 'Dismiss' }, '×');
@@ -541,7 +541,7 @@ function showShareNudge(ctx) {
 // own-origin (no third party, nothing uploaded). Resolves true if reachable.
 function probeOnline() {
   if (!navigator.onLine) return Promise.resolve(false);
-  let timer;
+  let timer: number|undefined;
   const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   if (ctrl) timer = setTimeout(() => ctrl.abort(), 5000);
   return fetch(location.origin + '/?_anrping=' + performance.now(), {
@@ -549,7 +549,7 @@ function probeOnline() {
   }).then(() => true).catch(() => false).finally(() => { if (timer) clearTimeout(timer); });
 }
 
-function applyNetStatus(online) {
+function applyNetStatus(online: boolean) {
   document.querySelectorAll<HTMLElement>('.net-status').forEach((dd) => {
     dd.classList.toggle('is-offline', !online);
     const label = dd.querySelector('.net-label');

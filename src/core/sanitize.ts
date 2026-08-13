@@ -55,7 +55,7 @@ const SAFE_SCHEMES = /^(?:https?|mailto|tel)$/;
    Normalising the same way the browser does, then allow-listing the result, is
    what closes that hole. Allow-list, never deny-list: data:, blob:, vbscript:,
    filesystem: and friends are all script or exfiltration vectors. */
-export function urlScheme(value) {
+export function urlScheme(value: string|null) {
   const cleaned = String(value == null ? '' : value).replace(/[\x00-\x20]+/g, '');
   const m = /^([a-z][a-z0-9+.-]*):/i.exec(cleaned);
   return m ? m[1].toLowerCase() : null;
@@ -64,7 +64,7 @@ export function urlScheme(value) {
 /* True if `value` carries a scheme that is not on the allow-list. Relative and
    anchor URLs return false (safe). Exported for svg.js, which does its own
    element-level walk but needs the same scheme decision. */
-export function isUnsafeUrl(value, allowed = SAFE_SCHEMES) {
+export function isUnsafeUrl(value: string, allowed = SAFE_SCHEMES) {
   const scheme = urlScheme(value);
   return scheme != null && !allowed.test(scheme);
 }
@@ -76,7 +76,7 @@ export function isUnsafeUrl(value, allowed = SAFE_SCHEMES) {
 
    opts.allowRemote - keep network-loading attributes (default false).
    opts.className   - class for the returned wrapper div. */
-export function sanitizeDoc(doc, opts: any = {}) {
+export function sanitizeDoc(doc: Document, opts: any = {}) {
   const { allowRemote = false, className = '' } = opts;
   const root = doc.body || doc.documentElement;
   const wrapper = document.createElement('div');

@@ -288,7 +288,7 @@ function extractMeta(doc) {
 }
 
 // Common info card + text card builders shared by the three ODF kinds.
-function infoCard(file, kindLabel, meta) {
+function infoCard(file: File, kindLabel, meta) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, kindLabel));
   card.appendChild(buildReadout([
@@ -416,7 +416,7 @@ function destroyOdfTableKits() {
   _odfTkHandles = [];
 }
 
-export async function renderOdf(file, container, kind) {
+export async function renderOdf(file: File, container, kind) {
   container.hidden = false;
   destroyOdfTableKits();
   container.innerHTML = '';
@@ -531,7 +531,7 @@ export async function renderOdf(file, container, kind) {
   }
 }
 
-export const renderOdt = (file, container) => renderOdf(file, container, 'odt');
-export const renderOds = (file, container) => renderOdf(file, container, 'ods');
-export const renderOdp = (file, container) => renderOdf(file, container, 'odp');
-export const renderOdg = (file, container) => renderOdf(file, container, 'odg');
+export const renderOdt = (file: File, container) => renderOdf(file, container, 'odt');
+export const renderOds = (file: File, container) => renderOdf(file, container, 'ods');
+export const renderOdp = (file: File, container) => renderOdf(file, container, 'odp');
+export const renderOdg = (file: File, container) => renderOdf(file, container, 'odg');

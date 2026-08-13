@@ -14,7 +14,7 @@ import { g } from './state.js';
 // The size is quantised to an integer px so the game reuses a small, stable set of font
 // sizes - the old fractional sizes meant every asteroid split introduced a brand-new size
 // string, making every on-screen label re-rasterise for one frame (the "pulse" on destroy).
-export const fitFont = (label, radius) => {
+export const fitFont = (label, radius: number) => {
   const ctx = g.ctx;
   const prevFont = ctx.font;
   let f = Math.max(9, radius * 0.6);
@@ -70,12 +70,12 @@ export function layout() {
 
 // Rescale every live object to the new scope after a resize/zoom: radii, speeds and
 // line lengths scale with S; positions remap into the resized rectangle.
-export function rescaleScene(oldS, oldCx, oldCy, oldHW, oldHH) {
+export function rescaleScene(oldS: number, oldCx: number, oldCy: number, oldHW: number, oldHH: number) {
   const { cx, cy, HW, HH, S, ship } = g;
   const sr = S / oldS;                       // size / speed ratio
   const fx = HW / oldHW, fy = HH / oldHH;    // per-axis position ratio
-  const mapX = (x) => cx + (x - oldCx) * fx;
-  const mapY = (y) => cy + (y - oldCy) * fy;
+  const mapX = (x: number) => cx + (x - oldCx) * fx;
+  const mapY = (y: number) => cy + (y - oldCy) * fy;
   const remap = (o) => {
     o.x = mapX(o.x); o.y = mapY(o.y);
     if (o.vx !== undefined) { o.vx *= sr; o.vy *= sr; }
@@ -102,7 +102,7 @@ export function hardEdges() { return !!(g.boss && g.boss.type === 'megastructure
 // it returns the plain delta there. Written into a reused scratch pair; callers destructure it
 // immediately (like bossNodePos) so the single buffer is safe.
 const _wd = [0, 0];
-export function wrapDelta(ax, ay, bx, by) {
+export function wrapDelta(ax: number, ay: number, bx: number, by: number) {
   let dx = bx - ax, dy = by - ay;
   if (!hardEdges()) {
     const { HW, HH } = g;
@@ -141,7 +141,7 @@ export function edgeReflect(o) {
 }
 
 // Distance from the field border along a ray from (px,py) in unit dir (dx,dy).
-export function rayToRim(px, py, dx, dy) {
+export function rayToRim(px: number, py: number, dx: number, dy: number) {
   const { cx, cy, HW, HH } = g;
   let t = Infinity;
   if (dx > 1e-9) t = Math.min(t, (cx + HW - px) / dx);
@@ -152,7 +152,7 @@ export function rayToRim(px, py, dx, dy) {
 }
 
 // Shortest distance from point P to segment AB.
-export function distToSeg(px, py, ax, ay, bx, by) {
+export function distToSeg(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
   const vx = bx - ax, vy = by - ay, wx = px - ax, wy = py - ay;
   const len2 = vx * vx + vy * vy || 1;
   const t = Math.max(0, Math.min(1, (wx * vx + wy * vy) / len2));
@@ -161,7 +161,7 @@ export function distToSeg(px, py, ax, ay, bx, by) {
 
 // Toroidal render ghost: while an object (radius `extent`) straddles an edge, also
 // paint a copy shifted by the full field width/height so the crossing is seamless.
-export function withWrap(x, y, extent, paint) {
+export function withWrap(x: number, y: number, extent: number, paint) {
   const { cx, cy, HW, HH } = g;
   paint(x, y);
   const ox = (x - extent < cx - HW) ? 2 * HW : (x + extent > cx + HW) ? -2 * HW : 0;

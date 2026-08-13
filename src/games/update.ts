@@ -16,7 +16,7 @@ import { updateDrones } from './drones.js';
 import { updateBoss, hitBossAt, damageBossNode, bossNodeVulnerable, bossNodePos } from './boss.js';
 import { endGame } from './leaderboard.js';
 
-export function update(dt) {
+export function update(dt: number) {
   const { cx, cy, HW, HH, S, ship, input, joy, asteroids, bullets, particles, powerups, lasers, ufos, missiles, ripples } = g;
 
   // Nuclear cinematic: freeze play, keep the scope empty, then respawn or end.
@@ -321,7 +321,7 @@ export function update(dt) {
 // Singularity black holes: each drags nearby asteroids and reward UFOs toward its core and
 // crushes whatever reaches it, and lightly chips a boss's vulnerable nodes (floored at 1 hp,
 // like the nuke, so it can never land the killing blow). The ship is unaffected.
-function updateSingularities(dt) {
+function updateSingularities(dt: number) {
   const S = g.S, sings = g.singularities;
   if (!sings.length) return;
   const reach = SING_REACH * S, core = SING_CORE * S, c = POWERUP_DEF.singularity.color;

@@ -15,20 +15,20 @@ import { sqliteSummary } from '../lib/sqlite.js';
 // ---------- small helpers ----------
 
 // Format seconds as M:SS or H:MM:SS.
-function fmtDuration(sec) {
+function fmtDuration(sec: number) {
   if (!isFinite(sec) || sec < 0) return '-';
   sec = Math.round(sec);
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
-  const pad = (n) => String(n).padStart(2, '0');
+  const pad = (n: number) => String(n).padStart(2, '0');
   return h ? h + ':' + pad(m) + ':' + pad(s) : m + ':' + pad(s);
 }
 
-const fmtRate = (hz) => hz >= 1000 ? (hz / 1000).toFixed(hz % 1000 ? 1 : 0).replace(/\.0$/, '') + ' kHz' : hz + ' Hz';
+const fmtRate = (hz: number) => hz >= 1000 ? (hz / 1000).toFixed(hz % 1000 ? 1 : 0).replace(/\.0$/, '') + ' kHz' : hz + ' Hz';
 
 // ---------- APEv2 tag reader (footer of APE/WavPack/Musepack/etc.) ----------
 // Looks for an APEv2 footer in the last 32+N bytes of the file. Returns a flat
 // map of key->value (text items only), or null.
-async function readApev2(file) {
+async function readApev2(file: File) {
   try {
     const tail = await readSlice(file, Math.max(0, file.size - 65536), 65536);
     // Footer = "APETAGEX" + 4B version + 4B size + 4B item count + 4B flags + 8B reserved
@@ -73,14 +73,14 @@ async function readApev2(file) {
   } catch (_) { return null; }
 }
 
-function apeTagSection(tags) {
+function apeTagSection(tags: Record<string, string> | null) {
   if (!tags) return null;
   const lines = Object.entries(tags).map(([k, v]) => k + ': ' + v);
   return { title: 'APEv2 tags (' + lines.length + ')', node: preBlock(lines.join('\n')) };
 }
 
 // ---------- ID3v2 (used by DSF, MP2) - skip past it / surface a few frames ----------
-function id3v2Size(head, off) {
+function id3v2Size(head: Uint8Array, off: number) {
   // head[off..off+10] is the ID3 header. Returns total tag size incl. header, or 0.
   if (!(head[off] === 0x49 && head[off + 1] === 0x44 && head[off + 2] === 0x33)) return 0;
   const sz = (head[off + 6] << 21) | (head[off + 7] << 14) | (head[off + 8] << 7) | head[off + 9];
@@ -92,8 +92,8 @@ function id3v2Size(head, off) {
 // =====================================================================
 
 // ---------- APE (Monkey's Audio) ----------
-const APE_COMPRESSION = { 1000: 'Fast', 2000: 'Normal', 3000: 'High', 4000: 'Extra High', 5000: 'Insane' };
-async function parseApe(file) {
+const APE_COMPRESSION: Record<number, string> = { 1000: 'Fast', 2000: 'Normal', 3000: 'High', 4000: 'Extra High', 5000: 'Insane' };
+async function parseApe(file: File) {
   const head = await readSlice(file, 0, 128);
   if (ascii(head, 0, 4) !== 'MAC ') return null;
   const r = new Reader(head, true); r.seek(4);
@@ -149,7 +149,7 @@ async function parseApe(file) {
 }
 
 // ---------- WavPack ----------
-async function parseWavpack(file) {
+async function parseWavpack(file: File) {
   const head = await readSlice(file, 0, 32);
   if (ascii(head, 0, 4) !== 'wvpk') return null;
   const r = new Reader(head, true); r.seek(4);
@@ -178,7 +178,7 @@ async function parseWavpack(file) {
 }
 
 // ---------- TAK ----------
-async function parseTak(file) {
+async function parseTak(file: File) {
   const head = await readSlice(file, 0, 64);
   if (ascii(head, 0, 4) !== 'tBaK') return null;
   const out: Row = { 'Format': 'TAK - Tom\'s lossless Audio Kompressor (.tak)' };
@@ -211,7 +211,7 @@ async function parseTak(file) {
 }
 
 // ---------- TTA (True Audio) ----------
-async function parseTta(file) {
+async function parseTta(file: File) {
   const head = await readSlice(file, 0, 32);
   if (ascii(head, 0, 3) !== 'TTA') return null;
   const out: Row = { 'Format': 'True Audio (.tta)' };
@@ -236,7 +236,7 @@ async function parseTta(file) {
 }
 
 // ---------- OptimFROG ----------
-function parseOptimfrog(head, ext) {
+function parseOptimfrog(head: Uint8Array, ext: string) {
   if (ascii(head, 0, 4) !== 'OFR ' && ascii(head, 0, 3) !== 'OFR') return null;
   return {
     'Format': 'OptimFROG (.' + ext + ')',
@@ -246,7 +246,7 @@ function parseOptimfrog(head, ext) {
 }
 
 // ---------- Shorten ----------
-function parseShorten(head) {
+function parseShorten(head: Uint8Array) {
   if (ascii(head, 0, 4) !== 'ajkg') return null;
   return {
     'Format': 'Shorten (.shn)',
@@ -256,10 +256,10 @@ function parseShorten(head) {
 }
 
 // ---------- DSD: DSF (Sony) ----------
-async function parseDsf(file) {
+async function parseDsf(file: File) {
   const head = await readSlice(file, 0, 92);
   if (ascii(head, 0, 4) !== 'DSD ') return null;
-  const out = { 'Format': 'DSD Stream File (.dsf)' };
+  const out: Row = { 'Format': 'DSD Stream File (.dsf)' };
   const r = new Reader(head, true);
   r.seek(12); // DSD chunk: magic(4) + chunkSize(8)
   const totalSize = r.u64();
@@ -285,11 +285,11 @@ async function parseDsf(file) {
 }
 
 // ---------- DSD: DFF (Philips DSDIFF) ----------
-async function parseDff(file) {
+async function parseDff(file: File) {
   const head = await readSlice(file, 0, 4096);
   if (ascii(head, 0, 4) !== 'FRM8') return null;
   if (ascii(head, 12, 4) !== 'DSD ') return null;
-  const out = { 'Format': 'DSDIFF (.dff)' };
+  const out: Row = { 'Format': 'DSDIFF (.dff)' };
   // Walk top-level chunks inside FRM8 (after 12-byte header) to find PROP/FS/CHNL.
   try {
     let p = 16; // after FRM8 + size(8) + "DSD "
@@ -324,7 +324,7 @@ async function parseDff(file) {
 }
 
 // ---------- Musepack ----------
-async function parseMusepack(file, ext) {
+async function parseMusepack(file: File, ext: string) {
   const head = await readSlice(file, 0, 32);
   const sig = ascii(head, 0, 4);
   const out: Row = { 'Format': 'Musepack (.' + ext + ')' };
@@ -362,10 +362,10 @@ async function parseMusepack(file, ext) {
 //  Containers / PCM
 // =====================================================================
 
-const WAVE_CODECS = { 1: 'PCM', 3: 'IEEE float', 6: 'A-law', 7: 'mu-law', 0x55: 'MP3', 0xFFFE: 'Extensible' };
+const WAVE_CODECS: Record<number, string> = { 1: 'PCM', 3: 'IEEE float', 6: 'A-law', 7: 'mu-law', 0x55: 'MP3', 0xFFFE: 'Extensible' };
 
 // Walk RIFF/RF64 chunks in a buffer; calls cb(id, offset, size).
-function walkRiff(buf, start, cb) {
+function walkRiff(buf: Uint8Array, start: number, cb: (id: string, off: number, sz: number) => void) {
   let p = start;
   for (let g = 0; g < 256 && p + 8 <= buf.length; g++) {
     const id = ascii(buf, p, 4);
@@ -379,11 +379,11 @@ function walkRiff(buf, start, cb) {
 }
 
 // ---------- CAF (Core Audio Format) ----------
-const CAF_CODECS = { 'lpcm': 'Linear PCM', 'aac ': 'AAC', 'alac': 'Apple Lossless', 'ima4': 'IMA ADPCM', 'ulaw': 'mu-law', 'alaw': 'A-law', '.mp3': 'MP3', 'opus': 'Opus' };
-async function parseCaf(file) {
+const CAF_CODECS: Record<string, string> = { 'lpcm': 'Linear PCM', 'aac ': 'AAC', 'alac': 'Apple Lossless', 'ima4': 'IMA ADPCM', 'ulaw': 'mu-law', 'alaw': 'A-law', '.mp3': 'MP3', 'opus': 'Opus' };
+async function parseCaf(file: File) {
   const head = await readSlice(file, 0, 256);
   if (ascii(head, 0, 4) !== 'caff') return null;
-  const out = { 'Format': 'Core Audio Format (.caf)' };
+  const out: Row = { 'Format': 'Core Audio Format (.caf)' };
   // After 8-byte file header: chunks of "type"(4) + size(s64 BE) + body.
   let p = 8, rate = 0, frames = 0;
   const r0 = new Reader(head, false); // CAF is big-endian
@@ -418,12 +418,12 @@ async function parseCaf(file) {
 }
 
 // ---------- RF64 / BW64 ----------
-async function parseRf64(file) {
+async function parseRf64(file: File) {
   const head = await readSlice(file, 0, 4096);
   const id = ascii(head, 0, 4);
   if (id !== 'RF64' && id !== 'BW64') return null;
   if (ascii(head, 8, 4) !== 'WAVE') return null;
-  const out = { 'Format': id === 'BW64' ? 'BW64 (Broadcast Wave 64-bit)' : 'RF64 (64-bit RIFF)' };
+  const out: Row = { 'Format': id === 'BW64' ? 'BW64 (Broadcast Wave 64-bit)' : 'RF64 (64-bit RIFF)' };
   let rate = 0, channels = 0, bits = 0, codec = 0, sampleCount64 = 0n;
   walkRiff(head, 12, (cid, off, sz) => {
     if (cid === 'ds64' && off + 24 <= head.length) {
@@ -452,11 +452,11 @@ async function parseRf64(file) {
 // ---------- Wave64 (Sony) ----------
 // Wave64 uses 16-byte GUIDs and 64-bit sizes. riff GUID:
 // 72 69 66 66 2E 91 CF 11 A5 D6 28 DB 04 C1 00 00 ("riff" + GUID tail)
-async function parseWave64(file) {
+async function parseWave64(file: File) {
   const head = await readSlice(file, 0, 4096);
   // First 4 bytes are 'r','i','f','f' of the GUID.
   if (!(head[0] === 0x72 && head[1] === 0x69 && head[2] === 0x66 && head[3] === 0x66)) return null;
-  const out = { 'Format': 'Sony Wave64 (.w64)' };
+  const out: Row = { 'Format': 'Sony Wave64 (.w64)' };
   // Header: riff GUID (16) + riff size (8) + wave GUID (16). Then chunks:
   // chunk GUID (16) + size (8, includes the 24-byte header) + body, padded to 8.
   try {
@@ -486,9 +486,9 @@ async function parseWave64(file) {
 }
 
 // ---------- AU / SND (Sun/NeXT) ----------
-const AU_ENCODINGS = { 1: 'mu-law 8-bit', 2: 'PCM 8-bit', 3: 'PCM 16-bit', 4: 'PCM 24-bit', 5: 'PCM 32-bit', 6: 'float 32-bit', 7: 'double 64-bit', 27: 'A-law 8-bit' };
-const AU_BITS = { 1: 8, 2: 8, 3: 16, 4: 24, 5: 32, 6: 32, 7: 64, 27: 8 };
-async function parseAu(file) {
+const AU_ENCODINGS: Record<number, string> = { 1: 'mu-law 8-bit', 2: 'PCM 8-bit', 3: 'PCM 16-bit', 4: 'PCM 24-bit', 5: 'PCM 32-bit', 6: 'float 32-bit', 7: 'double 64-bit', 27: 'A-law 8-bit' };
+const AU_BITS: Record<number, number> = { 1: 8, 2: 8, 3: 16, 4: 24, 5: 32, 6: 32, 7: 64, 27: 8 };
+async function parseAu(file: File) {
   const head = await readSlice(file, 0, 64);
   // Magic ".snd" = 0x2E736E64 big-endian.
   if (!(head[0] === 0x2E && head[1] === 0x73 && head[2] === 0x6E && head[3] === 0x64)) return null;
@@ -498,7 +498,7 @@ async function parseAu(file) {
   const encoding = r.u32();
   const rate = r.u32();
   const channels = r.u32();
-  const out = { 'Format': 'Sun/NeXT audio (.au/.snd)' };
+  const out: Row = { 'Format': 'Sun/NeXT audio (.au/.snd)' };
   out['Encoding'] = AU_ENCODINGS[encoding] || ('code ' + encoding);
   out['Sample rate'] = fmtRate(rate);
   out['Channels'] = channels;
@@ -512,23 +512,23 @@ async function parseAu(file) {
 }
 
 // ---------- VOC (Creative Voice) ----------
-async function parseVoc(file) {
+async function parseVoc(file: File) {
   const head = await readSlice(file, 0, 32);
   if (!startsWithAscii(head, 'Creative Voice File')) return null;
   const r = new Reader(head, true); r.seek(20);
   const dataOffset = r.u16();
   const version = r.u16();
-  const out = { 'Format': 'Creative Voice File (.voc)' };
+  const out: Row = { 'Format': 'Creative Voice File (.voc)' };
   out['Version'] = (version >> 8) + '.' + (version & 0xFF);
   out['Data block offset'] = '0x' + dataOffset.toString(16);
   return out;
 }
 
 // ---------- Broadcast Wave (.bwf) - RIFF/WAVE with bext chunk ----------
-async function parseBwf(file) {
+async function parseBwf(file: File) {
   const head = await readSlice(file, 0, 4096);
   if (ascii(head, 0, 4) !== 'RIFF' || ascii(head, 8, 4) !== 'WAVE') return null;
-  const out = { 'Format': 'Broadcast Wave Format (.bwf)' };
+  const out: Row = { 'Format': 'Broadcast Wave Format (.bwf)' };
   let rate = 0, channels = 0, bits = 0, codec = 0, hasBext = false;
   walkRiff(head, 12, (cid, off, sz) => {
     if (cid === 'fmt ' && off + 16 <= head.length) {
@@ -563,12 +563,12 @@ async function parseBwf(file) {
 // =====================================================================
 
 // ---------- Speex (Ogg/Speex) ----------
-async function parseSpeex(file) {
+async function parseSpeex(file: File) {
   const head = await readSlice(file, 0, 256);
   if (ascii(head, 0, 4) !== 'OggS') return null;
   const idx = findBytes(head, [0x53, 0x70, 0x65, 0x65, 0x78, 0x20, 0x20, 0x20], 0); // "Speex   "
   if (idx < 0) return null;
-  const out = { 'Format': 'Speex (Ogg/Speex)' };
+  const out: Row = { 'Format': 'Speex (Ogg/Speex)' };
   // Speex header: "Speex   "(8) + version string(20) + version_id(4) + header_size(4)
   //  + rate(4) + mode(4) + mode_bitstream_version(4) + channels(4) + bitrate(4) ...
   const r = new Reader(head, true); r.seek(idx + 8);
@@ -589,7 +589,7 @@ async function parseSpeex(file) {
 }
 
 // ---------- AMR-WB ----------
-function parseAwb(head) {
+function parseAwb(head: Uint8Array) {
   // Single-channel: "#!AMR-WB\n"
   if (startsWithAscii(head, '#!AMR-WB')) {
     return { 'Format': 'AMR-WB (.awb)', 'Codec': 'AMR-WB (G.722.2)', 'Sample rate': '16 kHz', 'Note': 'Adaptive Multi-Rate Wideband speech.' };
@@ -598,10 +598,10 @@ function parseAwb(head) {
 }
 
 // ---------- QCP (Qualcomm PureVoice) ----------
-async function parseQcp(file) {
+async function parseQcp(file: File) {
   const head = await readSlice(file, 0, 80);
   if (ascii(head, 0, 4) !== 'RIFF' || ascii(head, 8, 4) !== 'QLCM') return null;
-  const out = { 'Format': 'QCP (Qualcomm PureVoice)' };
+  const out: Row = { 'Format': 'QCP (Qualcomm PureVoice)' };
   // fmt chunk at 12: "fmt "(4) + size(4) + major(1)+minor(1) + codec GUID(16) + version(2) + codecName(80)...
   if (ascii(head, 12, 4) === 'fmt ') {
     const codecName = cleanAscii(head, 36, 32);
@@ -615,10 +615,10 @@ async function parseQcp(file) {
 }
 
 // ---------- ISO-BMFF box walk (3GA / M4R) ----------
-async function parseIsoAudio(file, ext, label) {
+async function parseIsoAudio(file: File, ext: string, label: string) {
   const head = await readSlice(file, 0, 4096);
   if (ascii(head, 4, 4) !== 'ftyp') return null;
-  const out = { 'Format': label };
+  const out: Row = { 'Format': label };
   out['Major brand'] = cleanAscii(head, 8, 4) || '-';
   // Walk boxes to find moov/trak/mdia/mdhd (timescale+duration) and stsd (codec).
   try {
@@ -641,11 +641,11 @@ async function parseIsoAudio(file, ext, label) {
 }
 
 // ---------- GSM 06.10 raw ----------
-function parseGsm(head, file) {
+function parseGsm(head: Uint8Array, file: File) {
   // No real magic; GSM frames are 33 bytes, first nibble of each = 0xD.
   // Heuristic: first byte high nibble == 0xD.
   if ((head[0] >> 4) !== 0x0D) return null;
-  const out = { 'Format': 'GSM 06.10 raw (.gsm)', 'Codec': 'GSM full-rate', 'Sample rate': '8 kHz (assumed)' };
+  const out: Row = { 'Format': 'GSM 06.10 raw (.gsm)', 'Codec': 'GSM full-rate', 'Sample rate': '8 kHz (assumed)' };
   if (file && file.size) {
     const frames = Math.floor(file.size / 33);
     out['Frames'] = frames;
@@ -659,16 +659,16 @@ function parseGsm(head, file) {
 //  MPEG layer 1/2
 // =====================================================================
 
-const MP_BITRATES = {
+const MP_BITRATES: Record<string, number[]> = {
   // [version][layer] -> array indexed by 4-bit bitrate field
   '1-1': [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448],
   '1-2': [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384],
   '2-1': [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256],
   '2-2': [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
 };
-const MP_RATES = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
+const MP_RATES: Record<number, number[]> = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
 const MP_CHANMODE = ['Stereo', 'Joint stereo', 'Dual channel', 'Mono'];
-async function parseMpeg12(file, ext) {
+async function parseMpeg12(file: File, ext: string) {
   const head = await readSlice(file, 0, 8192);
   // Skip ID3v2 if present.
   let off = 0;
@@ -692,7 +692,7 @@ async function parseMpeg12(file, ext) {
   const brField = (b2 >> 4) & 0x0F;
   const srField = (b2 >> 2) & 0x03;
   const channelMode = (b3 >> 6) & 0x03;
-  const out = { 'Format': 'MPEG-1/2 Audio Layer ' + (layer === 1 ? 'I' : 'II') + ' (.' + ext + ')' };
+  const out: Row = { 'Format': 'MPEG-1/2 Audio Layer ' + (layer === 1 ? 'I' : 'II') + ' (.' + ext + ')' };
   out['MPEG version'] = verBits === 3 ? '1' : verBits === 2 ? '2' : '2.5';
   out['Layer'] = layer === 1 ? 'I' : 'II';
   const brKey = verNum + '-' + layer;
@@ -712,10 +712,10 @@ async function parseMpeg12(file, ext) {
 // =====================================================================
 
 // ---------- SoundFont (.sf2/.sf3) ----------
-async function parseSf2(file, ext) {
+async function parseSf2(file: File, ext: string) {
   const head = await readSlice(file, 0, 65536);
   if (ascii(head, 0, 4) !== 'RIFF' || ascii(head, 8, 4) !== 'sfbk') return null;
-  const out = { 'Format': 'SoundFont ' + (ext === 'sf3' ? '3 (Vorbis-compressed)' : '2') + ' (.' + ext + ')' };
+  const out: Row = { 'Format': 'SoundFont ' + (ext === 'sf3' ? '3 (Vorbis-compressed)' : '2') + ' (.' + ext + ')' };
   // RIFF LIST 'INFO' holds ifil/isng/INAM/IENG/ICRD etc. as sub-chunks.
   const info: any = {};
   let presets = 0, instruments = 0, samples = 0;
@@ -725,7 +725,7 @@ async function parseSf2(file, ext) {
       if (listType === 'INFO') {
         walkRiff(head, off + 4, (sid, soff, ssz) => {
           if (ssz > 0 && ssz < 512) {
-            const map = { INAM: 'Bank name', isng: 'Sound engine', IENG: 'Author/engineer', ICRD: 'Creation date', IPRD: 'Product', ICOP: 'Copyright', ISFT: 'Software', ICMT: 'Comment' };
+            const map: Record<string, string> = { INAM: 'Bank name', isng: 'Sound engine', IENG: 'Author/engineer', ICRD: 'Creation date', IPRD: 'Product', ICOP: 'Copyright', ISFT: 'Software', ICMT: 'Comment' };
             if (map[sid]) info[map[sid]] = cleanAscii(head, soff, ssz);
             if (sid === 'ifil' && soff + 4 <= head.length) { const r = new Reader(head, true); r.seek(soff); info['SoundFont version'] = r.u16() + '.' + r.u16(); }
           }
@@ -751,10 +751,10 @@ async function parseSf2(file, ext) {
 }
 
 // ---------- SFZ ----------
-async function parseSfz(file) {
+async function parseSfz(file: File) {
   const text = await readText(file, 1 << 20);
   if (!/<(region|group|global|control|master)>/i.test(text)) return null;
-  const count = (re) => (text.match(re) || []).length;
+  const count = (re: RegExp) => (text.match(re) || []).length;
   const samples = Array.from(text.matchAll(/sample=([^\r\n]+)/gi)).map((m) => m[1].trim());
   const keys = Array.from(text.matchAll(/(?:lokey|hikey|key)=([A-Ga-g#\d-]+)/gi)).map((m) => m[1]);
   const out: Row = {
@@ -770,17 +770,17 @@ async function parseSfz(file) {
 }
 
 // ---------- DLS ----------
-async function parseDls(file) {
+async function parseDls(file: File) {
   const head = await readSlice(file, 0, 65536);
   if (ascii(head, 0, 4) !== 'RIFF' || ascii(head, 8, 4) !== 'DLS ') return null;
-  const out = { 'Format': 'Downloadable Sounds (.dls)' };
+  const out: Row = { 'Format': 'Downloadable Sounds (.dls)' };
   let instruments = 0;
   walkRiff(head, 12, (cid, off, sz) => {
     if (cid === 'colh' && off + 4 <= head.length) { const r = new Reader(head, true); r.seek(off); instruments = r.u32(); }
     if (cid === 'LIST' && ascii(head, off, 4) === 'INFO') {
       walkRiff(head, off + 4, (sid, soff, ssz) => {
         if (ssz > 0 && ssz < 512) {
-          const map = { INAM: 'Name', IENG: 'Engineer', ICOP: 'Copyright', IART: 'Artist', ISFT: 'Software' };
+          const map: Record<string, string> = { INAM: 'Name', IENG: 'Engineer', ICOP: 'Copyright', IART: 'Artist', ISFT: 'Software' };
           if (map[sid]) out[map[sid]] = cleanAscii(head, soff, ssz);
         }
       });
@@ -791,10 +791,10 @@ async function parseDls(file) {
 }
 
 // ---------- RIFF MIDI (.rmi) ----------
-async function parseRmi(file) {
+async function parseRmi(file: File) {
   const head = await readSlice(file, 0, 4096);
   if (ascii(head, 0, 4) !== 'RIFF' || ascii(head, 8, 4) !== 'RMID') return null;
-  const out = { 'Format': 'RIFF MIDI (.rmi)' };
+  const out: Row = { 'Format': 'RIFF MIDI (.rmi)' };
   walkRiff(head, 12, (cid, off, sz) => {
     if (cid === 'data' && ascii(head, off, 4) === 'MThd') {
       const r = new Reader(head, false); r.seek(off + 8);
@@ -810,7 +810,7 @@ async function parseRmi(file) {
 }
 
 // ---------- SMAF (.mmf) ----------
-async function parseSmaf(file) {
+async function parseSmaf(file: File) {
   const head = await readSlice(file, 0, 256);
   if (ascii(head, 0, 4) !== 'MMMD') return null;
   return {
@@ -821,7 +821,7 @@ async function parseSmaf(file) {
 }
 
 // ---------- GigaStudio (.gig) ----------
-async function parseGig(file) {
+async function parseGig(file: File) {
   const head = await readSlice(file, 0, 64);
   if (ascii(head, 0, 4) !== 'RIFF') return null;
   const form = ascii(head, 8, 4);
@@ -834,7 +834,7 @@ async function parseGig(file) {
 }
 
 // ---------- RTTTL / RTX (ringtone text) ----------
-async function parseRtttl(file) {
+async function parseRtttl(file: File) {
   const text = (await readText(file, 65536)).trim();
   const parts = text.split(':');
   if (parts.length < 3) return null;
@@ -854,10 +854,10 @@ async function parseRtttl(file) {
 }
 
 // ---------- iMelody (.imy) ----------
-async function parseImelody(file) {
+async function parseImelody(file: File) {
   const text = await readText(file, 65536);
   if (!/BEGIN:IMELODY/i.test(text)) return null;
-  const grab = (k) => (text.match(new RegExp('^' + k + ':(.*)$', 'im')) || [])[1];
+  const grab = (k: string) => (text.match(new RegExp('^' + k + ':(.*)$', 'im')) || [])[1];
   const melody = (text.match(/^MELODY:(.*)$/im) || [])[1] || '';
   const out = {
     'Format': 'iMelody ringtone (.imy)',
@@ -870,12 +870,12 @@ async function parseImelody(file) {
 }
 
 // ---------- Atari SAP ----------
-async function parseSap(file) {
+async function parseSap(file: File) {
   const head = await readSlice(file, 0, 1024);
   if (ascii(head, 0, 4) !== 'SAP\r' && !startsWithAscii(head, 'SAP')) return null;
   const text = latin1(head).split('\x00')[0];
-  const grab = (k) => { const m = text.match(new RegExp('^' + k + '\\s+"?([^"\\r\\n]*)"?', 'im')); return m ? m[1].trim() : null; };
-  const out = { 'Format': 'Atari SAP (POKEY music)' };
+  const grab = (k: string) => { const m = text.match(new RegExp('^' + k + '\\s+"?([^"\\r\\n]*)"?', 'im')); return m ? m[1].trim() : null; };
+  const out: Row = { 'Format': 'Atari SAP (POKEY music)' };
   out['Name'] = grab('NAME') || '-';
   out['Author'] = grab('AUTHOR') || '-';
   out['Date'] = grab('DATE') || '-';
@@ -890,11 +890,11 @@ async function parseSap(file) {
 // =====================================================================
 
 // ---------- MOD (Amiga / ProTracker) ----------
-const MOD_TAGS = {
+const MOD_TAGS: Record<string, number> = {
   'M.K.': 4, 'M!K!': 4, 'FLT4': 4, 'FLT8': 8, '4CHN': 4, '6CHN': 6, '8CHN': 8,
   'CD81': 8, 'OKTA': 8, '2CHN': 2, 'OCTA': 8,
 };
-async function parseMod(file) {
+async function parseMod(file: File) {
   if (file.size < 1084) return null;
   const head = await readSlice(file, 0, 1084);
   const tag = ascii(head, 1080, 4);
@@ -921,10 +921,10 @@ async function parseMod(file) {
 }
 
 // ---------- XM (FastTracker 2) ----------
-async function parseXm(file) {
+async function parseXm(file: File) {
   const head = await readSlice(file, 0, 80);
   if (!startsWithAscii(head, 'Extended Module: ')) return null;
-  const out = { 'Format': 'Extended Module (.xm)' };
+  const out: Row = { 'Format': 'Extended Module (.xm)' };
   out['Title'] = cleanAscii(head, 17, 20) || '(none)';
   out['Tracker'] = cleanAscii(head, 38, 20) || '-';
   const r = new Reader(head, true); r.seek(58);
@@ -942,7 +942,7 @@ async function parseXm(file) {
 }
 
 // ---------- IT (Impulse Tracker) ----------
-async function parseIt(file) {
+async function parseIt(file: File) {
   const head = await readSlice(file, 0, 256);
   if (ascii(head, 0, 4) !== 'IMPM') return null;
   const out: Row = { 'Format': 'Impulse Tracker (.it)' };
@@ -974,10 +974,10 @@ async function parseIt(file) {
 }
 
 // ---------- S3M (Scream Tracker 3) ----------
-async function parseS3m(file) {
+async function parseS3m(file: File) {
   const head = await readSlice(file, 0, 96);
   if (ascii(head, 44, 4) !== 'SCRM') return null;
-  const out = { 'Format': 'Scream Tracker 3 (.s3m)' };
+  const out: Row = { 'Format': 'Scream Tracker 3 (.s3m)' };
   out['Title'] = cleanAscii(head, 0, 28) || '(none)';
   const r = new Reader(head, true); r.seek(32);
   const ordNum = r.u16();
@@ -997,11 +997,11 @@ async function parseS3m(file) {
 }
 
 // ---------- STM (Scream Tracker 2) ----------
-async function parseStm(file) {
+async function parseStm(file: File) {
   const head = await readSlice(file, 0, 64);
   const id = cleanAscii(head, 20, 8);
   if (!/!Scream!|BMOD2STM|!SCREAM!/i.test(id) && head[28] !== 0x1A) return null;
-  const out = { 'Format': 'Scream Tracker 2 (.stm)' };
+  const out: Row = { 'Format': 'Scream Tracker 2 (.stm)' };
   out['Title'] = cleanAscii(head, 0, 20) || '(none)';
   out['Tracker'] = id || '-';
   out['Type'] = head[29] === 2 ? 'Module' : 'Song';
@@ -1011,10 +1011,10 @@ async function parseStm(file) {
 }
 
 // ---------- MTM (MultiTracker) ----------
-async function parseMtm(file) {
+async function parseMtm(file: File) {
   const head = await readSlice(file, 0, 64);
   if (ascii(head, 0, 3) !== 'MTM') return null;
-  const out = { 'Format': 'MultiTracker (.mtm)' };
+  const out: Row = { 'Format': 'MultiTracker (.mtm)' };
   out['Version'] = (head[3] >> 4) + '.' + (head[3] & 0x0F);
   out['Title'] = cleanAscii(head, 4, 20) || '(none)';
   const r = new Reader(head, true); r.seek(24);
@@ -1028,7 +1028,7 @@ async function parseMtm(file) {
 }
 
 // ---------- MED / MMD (OctaMED) ----------
-async function parseMed(file) {
+async function parseMed(file: File) {
   const head = await readSlice(file, 0, 64);
   const id = ascii(head, 0, 4);
   if (!/^MMD[0-3]$/.test(id)) return null;
@@ -1040,11 +1040,11 @@ async function parseMed(file) {
 }
 
 // ---------- 669 (Composer 669) ----------
-async function parse669(file) {
+async function parse669(file: File) {
   const head = await readSlice(file, 0, 256);
   const id = ascii(head, 0, 2);
   if (id !== 'if' && id !== 'JN') return null;
-  const out = { 'Format': 'Composer 669 module (.669)' };
+  const out: Row = { 'Format': 'Composer 669 module (.669)' };
   out['Variant'] = id === 'JN' ? 'Extended 669 (UNIS 669)' : 'Original 669';
   out['Message'] = cleanAscii(head, 2, 108) || '-';
   out['Samples'] = head[110];
@@ -1053,17 +1053,17 @@ async function parse669(file) {
 }
 
 // ---------- FAR (Farandole Composer) ----------
-async function parseFar(file) {
+async function parseFar(file: File) {
   const head = await readSlice(file, 0, 128);
   // Magic: "FAR" + 0xFE (bytes 46 41 52 FE), then a 40-byte song name at offset 4.
   if (!(ascii(head, 0, 3) === 'FAR' && head[3] === 0xFE)) return null;
-  const out = { 'Format': 'Farandole Composer module (.far)' };
+  const out: Row = { 'Format': 'Farandole Composer module (.far)' };
   out['Title'] = cleanAscii(head, 4, 40) || '(none)';
   return out;
 }
 
 // ---------- OKT (Oktalyzer) ----------
-async function parseOkt(file) {
+async function parseOkt(file: File) {
   const head = await readSlice(file, 0, 16);
   if (ascii(head, 0, 8) !== 'OKTASONG') return null;
   return {
@@ -1077,11 +1077,11 @@ async function parseOkt(file) {
 // =====================================================================
 
 // ---------- NSF / NSFE ----------
-async function parseNsf(file, ext) {
+async function parseNsf(file: File, ext: string) {
   const head = await readSlice(file, 0, 256);
   if (ext === 'nsfe' || ascii(head, 0, 4) === 'NSFE') {
     if (ascii(head, 0, 4) !== 'NSFE') return null;
-    const out = { 'Format': 'NES Sound Format Extended (.nsfe)' };
+    const out: Row = { 'Format': 'NES Sound Format Extended (.nsfe)' };
     // Walk NSFE chunks: 4B size (LE) + 4B id + body.
     let p = 4;
     for (let g = 0; g < 64 && p + 8 <= head.length; g++) {
@@ -1104,7 +1104,7 @@ async function parseNsf(file, ext) {
   }
   // Classic NSF: "NESM\x1A"
   if (!(ascii(head, 0, 4) === 'NESM' && head[4] === 0x1A)) return null;
-  const out = { 'Format': 'NES Sound Format (.nsf)' };
+  const out: Row = { 'Format': 'NES Sound Format (.nsf)' };
   out['Version'] = head[5];
   out['Songs'] = head[6];
   out['Starting song'] = head[7];
@@ -1125,10 +1125,10 @@ async function parseNsf(file, ext) {
 }
 
 // ---------- SPC (SNES SPC700) ----------
-async function parseSpc(file) {
+async function parseSpc(file: File) {
   const head = await readSlice(file, 0, 0x10200);
   if (!startsWithAscii(head, 'SNES-SPC700 Sound File Data')) return null;
-  const out = { 'Format': 'SNES SPC700 dump (.spc)' };
+  const out: Row = { 'Format': 'SNES SPC700 dump (.spc)' };
   // ID666 tag at 0x2E. Header has tag-present byte at 0x23.
   const hasTag = head[0x23] === 0x1A;
   if (hasTag) {
@@ -1155,7 +1155,7 @@ const VGM_CHIPS: [number, string][] = [
   [0x4C, 'YM2610 (OPNB)'], [0x50, 'YM3812 (OPL2)'], [0x54, 'YM3526 (OPL)'], [0x5C, 'YMF262 (OPL3)'],
   [0x80, 'RF5C164'], [0x98, 'NES APU'], [0xA0, 'MultiPCM'], [0xAC, 'HuC6280'], [0xB8, 'OKIM6258'],
 ];
-async function parseVgm(file, ext) {
+async function parseVgm(file: File, ext: string) {
   let head = await readSlice(file, 0, 256);
   let gd3Buf = null, gd3Off = 0;
   if (ext === 'vgz' || (head[0] === 0x1F && head[1] === 0x8B)) {
@@ -1166,7 +1166,7 @@ async function parseVgm(file, ext) {
     gd3Buf = inflated;
   }
   if (ascii(head, 0, 4) !== 'Vgm ') return null;
-  const out = { 'Format': ext === 'vgz' ? 'VGM (gzip-compressed, .vgz)' : 'Video Game Music log (.vgm)' };
+  const out: Row = { 'Format': ext === 'vgz' ? 'VGM (gzip-compressed, .vgz)' : 'Video Game Music log (.vgm)' };
   const r = new Reader(head, true);
   r.seek(8); const version = r.u32();
   out['Version'] = ((version >> 8) & 0xFF).toString(16) + '.' + hexByte(version & 0xFF);
@@ -1208,10 +1208,10 @@ async function parseVgm(file, ext) {
 }
 
 // ---------- GBS ----------
-async function parseGbs(file) {
+async function parseGbs(file: File) {
   const head = await readSlice(file, 0, 256);
   if (ascii(head, 0, 3) !== 'GBS') return null;
-  const out = { 'Format': 'Game Boy Sound (.gbs)' };
+  const out: Row = { 'Format': 'Game Boy Sound (.gbs)' };
   out['Version'] = head[3];
   out['Songs'] = head[4];
   out['Title'] = cleanAscii(head, 0x10, 32) || '-';
@@ -1221,10 +1221,10 @@ async function parseGbs(file) {
 }
 
 // ---------- AY (ZX Spectrum / Amstrad) ----------
-async function parseAy(file) {
+async function parseAy(file: File) {
   const head = await readSlice(file, 0, 256);
   if (ascii(head, 0, 8) !== 'ZXAYEMUL') return null;
-  const out = { 'Format': 'AY chiptune (.ay)' };
+  const out: Row = { 'Format': 'AY chiptune (.ay)' };
   // Pointers at 0x12 (author) and 0x14 (misc) are relative big-endian offsets.
   const r = new Reader(head, false);
   out['Songs'] = head[0x10] + 1;
@@ -1238,7 +1238,7 @@ async function parseAy(file) {
 }
 
 // ---------- YM (Atari ST YM2149) ----------
-async function parseYm(file) {
+async function parseYm(file: File) {
   let head = await readSlice(file, 0, 64);
   // Often LHA-compressed; raw starts with YM2!/YM3!/YM5!/YM6! or "YMT".
   const id = ascii(head, 0, 4);
@@ -1249,7 +1249,7 @@ async function parseYm(file) {
     }
     return null;
   }
-  const out = { 'Format': 'Atari ST YM chiptune (.ym)' };
+  const out: Row = { 'Format': 'Atari ST YM chiptune (.ym)' };
   out['Version'] = id;
   if (/^YM[56]!$/.test(id) && ascii(head, 4, 8) === 'LeOnArD!') {
     const r = new Reader(head, false); r.seek(12);
@@ -1265,7 +1265,7 @@ async function parseYm(file) {
 // =====================================================================
 
 // ---------- AUP (Audacity XML project) ----------
-async function parseAup(file) {
+async function parseAup(file: File) {
   const text = await readText(file, 1 << 20);
   if (!/<project\b/i.test(text) && !/audacityproject/i.test(text)) return null;
   const out: Row = { 'Format': 'Audacity project (.aup)' };
@@ -1291,7 +1291,7 @@ function aup3IdOnly() {
   };
 }
 
-async function parseAup3(file) {
+async function parseAup3(file: File) {
   const head = await readSlice(file, 0, 16);
   if (!startsWithAscii(head, 'SQLite format 3')) return null;
 
@@ -1358,9 +1358,9 @@ async function parseAup3(file) {
 //  Identification-only (rare AND hard)
 // =====================================================================
 
-async function idOnly(file, ext) {
+async function idOnly(file: File, ext: string) {
   const head = await readSlice(file, 0, 16);
-  const info = {
+  const info: Record<string, string[]> = {
     mo3: ['MO3 compressed module', 'un4seen MO3: a compressed wrapper around MOD/XM/IT/S3M. Header identified; the proprietary MO3 codec is needed to read the inner module.'],
     umx: ['Unreal Music Package', 'Epic Games UMX: an Unreal package wrapping a tracker module. Full parse needs the Unreal package format reader.'],
     psf: ['Portable Sound Format', 'PSF: zlib-compressed program + driver data per platform (PSX, etc.). [TAG] block decode and zlib needed for full info.'],
@@ -1370,7 +1370,7 @@ async function idOnly(file, ext) {
     mqa: ['MQA audio', 'Master Quality Authenticated signalling is embedded inside FLAC/WAV PCM and is not a standalone container; detection needs deep stream analysis.'],
   };
   const [label, note] = info[ext] || [ext.toUpperCase(), 'Identification only.'];
-  const out = { 'Format': label };
+  const out: Row = { 'Format': label };
   const sig = ascii(head, 0, 4).replace(/[^\x20-\x7e]/g, '.');
   if (sig.trim()) out['Header signature'] = sig;
   out['Note'] = note;
@@ -1379,9 +1379,9 @@ async function idOnly(file, ext) {
 
 // ---------- dispatch ----------
 import { safe as wrap } from './parser-util.js';
-import type { Row } from '../core/types.js';
+import type { Row, ParseFn } from '../core/types.js';
 
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   // Lossless / hi-res
   ape: wrap((c) => parseApe(c.file)),
   wv: wrap((c) => parseWavpack(c.file)),

@@ -8,7 +8,7 @@ import { MDX_SR } from './mdx-separate.js';
 const STALL_MS = 5 * 60 * 1000;
 const RUNTIME_STALL_MS = 2 * 60 * 1000;
 const FIRST_INFER_STALL_MS = 2 * 60 * 1000;
-let worker = null;
+let worker: Worker|null = null;
 let jobSeq = 0;
 let jobQueue: Promise<unknown> = Promise.resolve();
 
@@ -16,7 +16,7 @@ function abortError() {
   return new DOMException('separation aborted', 'AbortError');
 }
 
-function workerError(message, code) {
+function workerError(message: string|undefined, code: string) {
   // The renderer switches on err.code to tell 'model download failed' from a
   // genuine processing failure, so the tag rides along on the Error.
   const err = new Error(message) as Error & { code?: any };
@@ -49,7 +49,7 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
   return queued;
 }
 
-async function toModelChannels(audioBuffer, signal) {
+async function toModelChannels(audioBuffer: AudioBuffer|null, signal) {
   throwIfAborted(signal);
   const nCh = Math.min(2, audioBuffer.numberOfChannels);
   if (audioBuffer.sampleRate === MDX_SR) {
@@ -78,14 +78,14 @@ async function toModelChannels(audioBuffer, signal) {
   return { channels, sampleRate: MDX_SR };
 }
 
-function workerRequest(payload, transfer, { onProgress, signal, doneType }) {
+function workerRequest(payload, transfer: never[], { onProgress, signal, doneType }) {
   const w = getWorker();
   const jobId = ++jobSeq;
   return new Promise((resolve, reject) => {
     let settled = false;
     let stallTimer = 0;
 
-    const armStallTimer = (phase) => {
+    const armStallTimer = (phase: string) => {
       clearTimeout(stallTimer);
       const timeout = phase === 'runtime' ? RUNTIME_STALL_MS
         : phase === 'infer-start' && isAppleWebKit() ? FIRST_INFER_STALL_MS
@@ -105,13 +105,13 @@ function workerRequest(payload, transfer, { onProgress, signal, doneType }) {
       w.removeEventListener('messageerror', onMessageError);
       if (signal) signal.removeEventListener('abort', onAbort);
     };
-    const finish = (fn, value) => {
+    const finish = (fn, value: DOMException) => {
       if (settled) return;
       settled = true;
       cleanup();
       fn(value);
     };
-    const failWorker = (err) => {
+    const failWorker = (err: Error) => {
       detachWorker();
       finish(reject, err);
     };
@@ -162,7 +162,7 @@ function prepareWorker({ onProgress, signal, modelId, forceWasm = false }) {
   );
 }
 
-function runWorker(channels, sampleRate, { onProgress, signal, modelId, forceWasm = false }) {
+function runWorker(channels: any[], sampleRate: number, { onProgress, signal, modelId, forceWasm = false }) {
   return workerRequest(
     { type: 'separate', channels, sampleRate, modelId, forceWasm },
     channels.map((channel) => channel.buffer),
@@ -175,7 +175,7 @@ function runWorker(channels, sampleRate, { onProgress, signal, modelId, forceWas
  * @param {AudioBuffer} audioBuffer
  * @param {{ onProgress?: (phase:'model'|'model-cache'|'cache'|'cache-warning'|'runtime'|'audio'|'fallback'|'infer-start'|'infer', frac:number)=>void, signal?: AbortSignal, modelId?: string }} [opts]
  */
-export function separateStems(audioBuffer, { onProgress, signal, modelId } : any = {}) {
+export function separateStems(audioBuffer: AudioBuffer|null, { onProgress, signal, modelId } : any = {}) {
   return enqueue(async () => {
     throwIfAborted(signal);
     // A worker crash on iOS is usually memory pressure. Rebuilding the same ORT

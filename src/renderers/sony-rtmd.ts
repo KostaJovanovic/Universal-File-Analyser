@@ -65,7 +65,7 @@ function findAllBoxes(dv, start, end, type) {
 }
 
 // Locate the moov box, which may sit at the head or the tail of the file.
-async function findMoov(file) {
+async function findMoov(file: File) {
   if (file.size < 12) return null;
   const head = new DataView(await file.slice(0, Math.min(file.size, 64)).arrayBuffer());
   if (fcc(head, 4) !== 'ftyp') return null;
@@ -169,7 +169,7 @@ function scalarFields(dv, tags) {
 }
 
 // Locate the rtmd track and return its sample table { samples, fps }, or null.
-async function openRtmd(file) {
+async function openRtmd(file: File) {
   const moov = await findMoov(file);
   if (!moov || moov.size > MAX_MOOV) return null;
   const dv = new DataView(await file.slice(moov.offset, moov.offset + moov.size).arrayBuffer());
@@ -187,7 +187,7 @@ async function openRtmd(file) {
 }
 
 // Read + decode one rtmd sample into gyro / accel int16 triples + scalar fields.
-async function readImuSample(file, off, len) {
+async function readImuSample(file: File, off, len) {
   let buf;
   try { buf = new Uint8Array(await file.slice(off, off + len).arrayBuffer()); } catch (_) { return null; }
   const { dv, tags } = rtmdTags(buf);
@@ -197,7 +197,7 @@ async function readImuSample(file, off, len) {
 // ---------------------------------------------------------------------------
 // Extract a decimated gyro + accel series (for the on-screen chart). Returns
 // null if there's no rtmd track.
-export async function extractSonyGyro(file) {
+export async function extractSonyGyro(file: File) {
   const table = await openRtmd(file);
   if (!table) return null;
   const total = table.samples.length;
@@ -240,7 +240,7 @@ export async function extractSonyGyro(file) {
 // int16, with the original time stamp. Used by the CSV / Gyroflow exporters.
 const MAX_EXPORT_FRAMES = 36000;   // ~20 min at 30 fps - guards memory on huge clips
 
-export async function collectSonyImu(file, onProgress) {
+export async function collectSonyImu(file: File, onProgress) {
   const table = await openRtmd(file);
   if (!table) return null;
   const fps = table.fps || 30;
@@ -388,7 +388,7 @@ function drawGyroCanvas(canvas, d, trackW, H, duration) {
 // it mounts a small synced video player above the graph and the playhead tracks
 // (and scrubs) playback; without one it's a standalone viewer whose playhead
 // follows the pointer on hover. Styling lives in analyser.css (.anr-imu-*).
-export function buildImuTimeline(d, file) {
+export function buildImuTimeline(d, file: File) {
   const wrap = el('div', { class: 'anr-imu' });
   const duration = d.durationSec || (d.t.length ? d.t[d.t.length - 1] : 1);
 
@@ -572,7 +572,7 @@ export function buildImuTimeline(d, file) {
 // re-reads). `playFile` is what the mini synced player mounts - normally the same
 // file, but when the browser can't decode the original codec the caller hands us
 // a playable H.264 proxy so the Motion timeline still plays.
-export function buildGyroCard(d, file, playFile = file) {
+export function buildGyroCard(d, file: File, playFile = file) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help('Gyro & motion metadata',
     'Sony cameras save a small burst of motion-sensor readings for every frame - from a gyroscope (which senses rotation) and an accelerometer (which senses movement and tilt) - inside the MP4 video file’s "rtmd" timed-metadata track (metadata tied to the timeline). '
@@ -643,7 +643,7 @@ export function buildGyroCard(d, file, playFile = file) {
 }
 
 // Convenience: extract and append the card if a Sony gyro track is present.
-export async function appendSonyGyroCard(file, resultsEl, playFile?) {
+export async function appendSonyGyroCard(file: File, resultsEl: HTMLElement, playFile?) {
   try {
     const d = await extractSonyGyro(file);
     if (d) resultsEl.appendChild(buildGyroCard(d, file, playFile || file));

@@ -18,7 +18,7 @@ import { findBytes, latin1, utf8, utf16, filetimeToDate } from '../core/binutil.
 import { parsePlist } from '../lib/plist.js';
 import { openCfbf } from '../lib/cfbf.js';
 import { openZip } from '../renderers/zip.js';
-import type { Row } from '../core/types.js';
+import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- shared helpers ----------
 
@@ -28,7 +28,7 @@ const SAMPLE = 4 * 1024 * 1024;   // 4 MB
 
 // Decode a slice of a File as text, tolerant of encoding (we only need ASCII-ish
 // headers). Returns '' on failure.
-async function readText(file, max = SAMPLE) {
+async function readText(file: File, max = SAMPLE) {
   try { return await file.slice(0, Math.min(file.size, max)).text(); }
   catch (_) { return ''; }
 }
@@ -196,7 +196,7 @@ function analyseMime(raw) {
   return { out, sections };
 }
 
-async function parseEml(file) {
+async function parseEml(file: File) {
   const raw = await readText(file);
   if (!raw) return null;
   // Sanity: must look like a header block.
@@ -210,7 +210,7 @@ async function parseEml(file) {
 // ---------- emlx (Apple Mail) ----------
 // Layout: first line = decimal byte count of the message, then the raw eml
 // message, then a trailing XML plist of Apple Mail flags.
-async function parseEmlx(file) {
+async function parseEmlx(file: File) {
   const raw = await readText(file);
   if (!raw) return null;
   const nl = raw.indexOf('\n');
@@ -249,7 +249,7 @@ async function parseEmlx(file) {
 }
 
 // ---------- mbox ----------
-async function parseMbox(file) {
+async function parseMbox(file: File) {
   const raw = await readText(file);
   if (!raw) return null;
   // Split on "From " at the start of a line (the mbox separator).
@@ -338,7 +338,7 @@ function icalLine(line) {
   return { name, params, value };
 }
 
-async function parseIcs(file) {
+async function parseIcs(file: File) {
   const text = await readText(file);
   if (!text || !/BEGIN:VCALENDAR/i.test(text)) {
     if (!/BEGIN:V/i.test(text || '')) return null;
@@ -347,7 +347,7 @@ async function parseIcs(file) {
   const out: Row = { 'Format': 'iCalendar' };
 
   let prodid = '', version = '', method = '';
-  const counts = { VEVENT: 0, VTODO: 0, VJOURNAL: 0, VALARM: 0, VFREEBUSY: 0, VTIMEZONE: 0 };
+  const counts: Record<string, number> = { VEVENT: 0, VTODO: 0, VJOURNAL: 0, VALARM: 0, VFREEBUSY: 0, VTIMEZONE: 0 };
   const events = [];
   let cur = null, curType = null;
 
@@ -404,11 +404,11 @@ async function parseIcs(file) {
 }
 
 // ---------- vCalendar 1.0 (.vcs) ----------
-async function parseVcs(file) {
+async function parseVcs(file: File) {
   const text = await readText(file);
   if (!text || !/BEGIN:VCALENDAR/i.test(text)) return null;
   const lines = unfoldIcal(text).map(icalLine).filter(Boolean);
-  const out = { 'Format': 'vCalendar 1.0 (legacy)', 'Legacy': 'yes (superseded by iCalendar/.ics)' };
+  const out: Row = { 'Format': 'vCalendar 1.0 (legacy)', 'Legacy': 'yes (superseded by iCalendar/.ics)' };
   let version = '', events = 0, cur = null;
   for (const l of lines) {
     if (l.name === 'VERSION' && !version) version = l.value;
@@ -432,7 +432,7 @@ async function parseVcs(file) {
 }
 
 // ---------- vCard (.vcf .vcard) ----------
-async function parseVcf(file) {
+async function parseVcf(file: File) {
   const text = await readText(file);
   if (!text || !/BEGIN:VCARD/i.test(text)) return null;
   const lines = unfoldIcal(text);
@@ -497,7 +497,7 @@ async function parseVcf(file) {
 }
 
 // ---------- LDIF (.ldif .ldi) ----------
-async function parseLdif(file) {
+async function parseLdif(file: File) {
   const text = await readText(file);
   if (!text || !/^dn::?\s/im.test(text)) return null;
   // Unfold (LDIF continuation lines start with a single space).
@@ -547,7 +547,7 @@ async function parseLdif(file) {
 }
 
 // ---------- Windows .contact (XML) ----------
-async function parseContact(file) {
+async function parseContact(file: File) {
   const text = await readText(file, 1024 * 1024);
   if (!text || !/<c:contact|<contact/i.test(text)) return null;
   let doc;
@@ -636,7 +636,7 @@ function getMapiTime(cfbf, propid) {
   return filetimeToDate(dv.getUint32(0, true), dv.getUint32(4, true));
 }
 
-async function parseMsg(file) {
+async function parseMsg(file: File) {
   let cfbf;
   try { cfbf = await openCfbf(file); } catch (_) { return null; }
   if (!cfbf || !cfbf.rawEntries) return null;
@@ -698,7 +698,7 @@ async function parseMsg(file) {
 // An .olm is a ZIP whose members are per-folder Messages_*.xml/*.xml plus a
 // Local/Accounts.xml manifest, with attachments under Attachments/. We list the
 // folder tree and count messages without decompressing every blob.
-async function parseOlm(file) {
+async function parseOlm(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   if (!zip || !zip.entries.length) return null;
   const ents = zip.entries;
@@ -752,7 +752,7 @@ const CMS_OIDS = {
   '2a864886f70d010706': 'encrypted-data',
   '2a864886f70d010709100103': 'authenticated-enveloped-data',
 };
-const CMS_OID_LABEL = {
+const CMS_OID_LABEL: Record<string, string> = {
   'data': 'Data',
   'signed-data': 'Signed data (signature)',
   'enveloped-data': 'Enveloped data (encrypted)',
@@ -762,7 +762,7 @@ const CMS_OID_LABEL = {
   'authenticated-enveloped-data': 'Authenticated enveloped data',
 };
 
-async function parseP7(file, ext) {
+async function parseP7(file: File, ext: string) {
   const head = await readSlice(file, 0, 256 * 1024);
   if (!head.length) return null;
 
@@ -795,7 +795,7 @@ async function parseP7(file, ext) {
     if (findBytes(der, needle) >= 0) { contentType = name; if (name !== 'data') break; }
   }
 
-  const out = {
+  const out: Row = {
     'Format': ext === 'p7s'
       ? 'S/MIME signature (PKCS#7 / CMS, .p7s)'
       : 'S/MIME message (PKCS#7 / CMS, .p7m)',
@@ -848,7 +848,7 @@ function parseMork(text) {
   return { atoms, emails, texty, rowCount, tableCount, atomCount: Object.keys(atoms).length };
 }
 
-async function parseMsf(file) {
+async function parseMsf(file: File) {
   const text = await readText(file, 8 * 1024 * 1024);
   if (!text) return null;
   if (!/<!--\s*<mdb:mork|^\/\/\s*<!--\s*<mdb:mork|BeMs/m.test(text.slice(0, 4000)) && text.indexOf('mork') < 0) return null;
@@ -872,7 +872,7 @@ async function parseMsf(file) {
   return out;
 }
 
-async function parseMab(file) {
+async function parseMab(file: File) {
   const text = await readText(file, 8 * 1024 * 1024);
   if (!text) return null;
   if (text.indexOf('mork') < 0 && !/<!--\s*<mdb:mork/.test(text.slice(0, 4000))) return null;
@@ -904,7 +904,7 @@ async function parseMab(file) {
 // A Eudora .mbx is essentially an mbox-style concatenation of RFC 822 messages
 // (separated by "From ???@???" pseudo-envelopes). The .toc is a binary index of
 // fixed-size records; we surface the message count and any plaintext summaries.
-async function parseMbx(file) {
+async function parseMbx(file: File) {
   const raw = await readText(file);
   if (!raw) return null;
   // Eudora separator is "From ???@???" but many .mbx are plain mbox too.
@@ -924,7 +924,7 @@ async function parseMbx(file) {
   return null;
 }
 
-async function parseToc(file) {
+async function parseToc(file: File) {
   const head = await readSlice(file, 0, 256 * 1024);
   if (!head.length) return null;
   const txt = latin1(head);
@@ -946,7 +946,7 @@ async function parseToc(file) {
 }
 
 // ---------- Outlook Template (.oft - CFBF, like .msg) ----------
-async function parseOft(file) {
+async function parseOft(file: File) {
   const res = await parseMsg(file);
   if (res) {
     res['Format'] = 'Outlook Template (.oft, CFBF/OLE)';
@@ -990,7 +990,7 @@ function maybeQp(value, params) {
   return value;
 }
 
-async function parseVmg(file) {
+async function parseVmg(file: File) {
   const text = await readText(file, 1024 * 1024);
   if (!text || !/BEGIN:VMSG/i.test(text)) return null;
   const props = parseVobjectText(text);
@@ -1021,7 +1021,7 @@ async function parseVmg(file) {
   return out;
 }
 
-async function parseVnt(file) {
+async function parseVnt(file: File) {
   const text = await readText(file, 1024 * 1024);
   if (!text || !/BEGIN:VNOTE/i.test(text)) return null;
   const props = parseVobjectText(text);
@@ -1042,7 +1042,7 @@ async function parseVnt(file) {
 }
 
 // ---------- xCal / jCal (XML / JSON iCalendar) ----------
-async function parseXcal(file) {
+async function parseXcal(file: File) {
   const text = await readText(file, 4 * 1024 * 1024);
   if (!text || !/<(icalendar|vcalendar)\b/i.test(text)) return null;
   let doc; try { doc = new DOMParser().parseFromString(text, 'application/xml'); } catch (_) { return null; }
@@ -1062,7 +1062,7 @@ async function parseXcal(file) {
   return out;
 }
 
-async function parseJcal(file) {
+async function parseJcal(file: File) {
   const text = await readText(file, 4 * 1024 * 1024);
   if (!text) return null;
   let data; try { data = JSON.parse(text); } catch (_) { return null; }
@@ -1090,7 +1090,7 @@ async function parseJcal(file) {
 }
 
 // ---------- xCard / jCard (XML / JSON vCard) ----------
-async function parseXcard(file) {
+async function parseXcard(file: File) {
   const text = await readText(file, 4 * 1024 * 1024);
   if (!text || !/<vcards\b|<vcard\b/i.test(text)) return null;
   let doc; try { doc = new DOMParser().parseFromString(text, 'application/xml'); } catch (_) { return null; }
@@ -1112,7 +1112,7 @@ async function parseXcard(file) {
   return out;
 }
 
-async function parseJcard(file) {
+async function parseJcard(file: File) {
   const text = await readText(file, 4 * 1024 * 1024);
   if (!text) return null;
   let data; try { data = JSON.parse(text); } catch (_) { return null; }
@@ -1138,7 +1138,7 @@ async function parseJcard(file) {
 // ---------- identification-only (binary container PIM) ----------
 // These need a proprietary DB engine (pst/ost/nsf/edb/dbx) we don't ship.
 // Surface a minimal identification card.
-const IDENT = {
+const IDENT: Record<string, string> = {
   pst: { Format: 'Outlook Personal Store (.pst)', Note: 'Proprietary !BDN database; requires a PST engine to read folders/messages.' },
   ost: { Format: 'Outlook Offline Store (.ost)', Note: 'Offline cache of an Exchange/Outlook mailbox; same !BDN format as PST.' },
   nsf: { Format: 'IBM/HCL Notes database (.nsf)', Note: 'Notes Storage Facility; on-disk NSF format needs the Notes engine to read documents.' },
@@ -1149,13 +1149,13 @@ const IDENT = {
   abbu: { Format: 'Apple Address Book Backup (.abbu)', Note: 'macOS Contacts backup bundle (a folder/package of AddressBook SQLite + plists); open the bundle to inspect its contents.' },
 };
 
-function identCard(ext) {
+function identCard(ext: string) {
   const e = IDENT[ext];
   return e ? { ...e } : null;
 }
 
 // ---------- dispatch ----------
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   eml: (c) => parseEml(c.file),
   emlx: (c) => parseEmlx(c.file),
   mbox: (c) => parseMbox(c.file),

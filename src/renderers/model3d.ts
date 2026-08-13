@@ -20,7 +20,7 @@ const FFLATE_URL = new URL('../../vendor/fflate.js', import.meta.url).href;
 let fflateLib = null;
 async function fflate() { if (!fflateLib) fflateLib = await import(FFLATE_URL); return fflateLib; }
 
-export async function renderModel3d(file, resultsEl) {
+export async function renderModel3d(file: File, resultsEl: HTMLElement) {
   const ext = (file.name.split('.').pop() || '').toLowerCase();
   if (ext === '3mf') return render3mf(file, resultsEl);
   if (ext === 'amf') return renderAmf(file, resultsEl);
@@ -37,7 +37,7 @@ export async function renderModel3d(file, resultsEl) {
 // per-material colour/shininess/opacity and the texture maps it points at. No
 // geometry, so there's nothing to view in 3D - we list the materials (with colour
 // swatches) and the textures the model expects beside it.
-export async function renderMtl(file, resultsEl) {
+export async function renderMtl(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false; resultsEl.innerHTML = '';
   let text;
   try { text = await file.text(); }
@@ -384,7 +384,7 @@ function partName(obj, idx) {
   return 'Part ' + idx;
 }
 
-async function render3mf(file, resultsEl) {
+async function render3mf(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3MF "${file.name}"…`));
@@ -463,7 +463,7 @@ async function render3mf(file, resultsEl) {
 // No-mesh 3MF: red warning, then (if the archive carries a sliced G-code file, as
 // Bambu/Prusa project 3MFs do) a button to reconstruct it in the G-code viewer, then
 // the document metadata and a full archive browser below.
-async function render3mfNoModel(file, resultsEl, ffl, data, metaCard) {
+async function render3mfNoModel(file: File, resultsEl: HTMLElement, ffl, data, metaCard) {
   resultsEl.innerHTML = '';
   resultsEl.appendChild(errorCard('No 3D models found in this 3MF file.'));
 
@@ -517,7 +517,7 @@ const AMF_UNIT = { millimeter: 'mm', meter: 'm', inch: 'in', feet: 'ft', micron:
 
 // AMF is XML with one or more <object>s, each a <mesh> of <vertices> (nested
 // <coordinates><x/><y/><z/>) and one or more <volume>s of <triangle><v1/v2/v3>.
-async function renderAmf(file, resultsEl) {
+async function renderAmf(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading AMF "${file.name}"…`));
@@ -810,7 +810,7 @@ function parsePlyMesh(buf) {
 }
 
 // Single-mesh formats: parse to a geometry and show the viewer + stats (like STL).
-async function renderMeshFile(file, resultsEl, ext) {
+async function renderMeshFile(file: File, resultsEl: HTMLElement, ext: string) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));
@@ -858,7 +858,7 @@ async function renderMeshFile(file, resultsEl, ext) {
 // OBJ viewer that honours colour. `materials` (parsed .mtl) and `texImage` (a
 // decoded map_Kd image) are supplied on the second pass, once the user picks the
 // sibling files; the first pass shows the model and a picker to add them.
-async function renderObjColoured(file, resultsEl, parsed, materials = null, texImage = null) {
+async function renderObjColoured(file: File, resultsEl: HTMLElement, parsed, materials = null, texImage = null) {
   const geo = buildGeoFromIndexed(parsed.verts, parsed.tris, 'OBJ');
   if (!geo || !geo.count) { resultsEl.innerHTML = ''; resultsEl.appendChild(errorCard('No triangles found in this OBJ.')); return; }
 
@@ -890,7 +890,7 @@ async function renderObjColoured(file, resultsEl, parsed, materials = null, texI
 
 // Prompt + picker to supply the .mtl (and any texture images) that a lone OBJ
 // drop has no access to. Mirrors the RAW+XMP sidecar / video reference-clip flow.
-function objMaterialsPrompt(file, resultsEl, parsed) {
+function objMaterialsPrompt(file: File, resultsEl: HTMLElement, parsed) {
   const card = el('div', { class: 'anr-card' });
   const [mh, mhelp] = h3help('Colours and textures', 'A dropped .obj file can’t read its sibling files, so without the material library its surfaces show above as plain grey shades.');
   card.appendChild(mh); card.appendChild(mhelp);
@@ -1104,7 +1104,7 @@ function gltfToMesh(json, glbBin) {
   return { verts: new Float32Array(verts), tris: new Uint32Array(tris), unresolved, nonTri };
 }
 
-function gltfInfoCard(json, file, ext, mesh) {
+function gltfInfoCard(json, file: File, ext: string, mesh) {
   const a = json.asset || {};
   const [h, help] = h3help(ext === 'glb' ? 'glTF (binary)' : 'glTF', 'glTF ("GL Transmission Format") is a compact 3D scene format built for fast loading on the web, in augmented reality and in game engines. Analyser reads the model’s shape data and scene details from it.');
   const card = el('div', { class: 'anr-card' });
@@ -1128,7 +1128,7 @@ function gltfInfoCard(json, file, ext, mesh) {
   return card;
 }
 
-async function renderGltf(file, resultsEl, ext) {
+async function renderGltf(file: File, resultsEl: HTMLElement, ext: string) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));
@@ -1211,7 +1211,7 @@ function occtMeshesToGeo(meshes) {
   return makeResult('STEP', positions, normals);
 }
 
-async function renderStepIges(file, resultsEl, ext) {
+async function renderStepIges(file: File, resultsEl: HTMLElement, ext: string) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
 
@@ -1457,7 +1457,7 @@ async function parseFbx(buf) {
   return { verts, tris, version, geomCount: rawGeoms.length };
 }
 
-async function renderFbx(file, resultsEl) {
+async function renderFbx(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));

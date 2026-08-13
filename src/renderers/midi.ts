@@ -30,7 +30,7 @@ function fmtDur(sec) {
   return m + ':' + s.toFixed(1).padStart(4, '0');
 }
 
-export async function renderMidi(file, resultsEl) {
+export async function renderMidi(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
 

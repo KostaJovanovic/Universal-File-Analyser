@@ -218,7 +218,7 @@ function drawAsteroid(a) {
 }
 
 // Radiation trefoil as vector paths - three 60° blades around a central dot.
-function drawTrefoil(s) {
+function drawTrefoil(s: number) {
   const ctx = g.ctx;
   const rOut = s * 0.92, rIn = s * 0.34, dot = s * 0.17, h = Math.PI / 6;
   for (let k = 0; k < 3; k++) {
@@ -232,7 +232,7 @@ function drawTrefoil(s) {
 }
 
 // Little drone dart (the same arrowhead the wingmen draw), pointing up and centred in the box.
-function drawDroneIcon(s) {
+function drawDroneIcon(s: number) {
   const ctx = g.ctx;
   const f = s * 0.11;   // wingman units -> box scale
   // The wingman outline rotated to point up and recentred on the origin.
@@ -245,7 +245,7 @@ function drawDroneIcon(s) {
 }
 
 // Singularity: concentric rings collapsing to a solid core. Uses the current fillStyle colour.
-function drawSingularityIcon(s) {
+function drawSingularityIcon(s: number) {
   const ctx = g.ctx;
   ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 1.4;
   ctx.beginPath(); ctx.arc(0, 0, s * 0.62, 0, TAU); ctx.stroke();
@@ -285,7 +285,7 @@ function drawPowerup(p) { withWrap(p.x, p.y, p.radius, (x, y) => drawPowerupAt(p
 // Append a jagged electric polyline from (ax,ay) to (bx,by) to `out` as flat x,y pairs,
 // re-jittered each frame. Building points (rather than path ops) lets the same bolt be
 // re-stroked at wrap offsets so its toroidal ghosts match instead of jittering apart.
-function jaggedPts(ax, ay, bx, by, out) {
+function jaggedPts(ax: number, ay: number, bx: number, by: number, out: any[]) {
   const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
   const nx = -dy / len, ny = dx / len;
   const segs = Math.max(2, Math.round(len / 22));
@@ -308,14 +308,14 @@ function drawLightning() {
   const ca = Math.cos(ship.angle), sa = Math.sin(ship.angle);
   const mx = ship.x + lightningMid.lx * ca - lightningMid.ly * sa;
   const my = ship.y + lightningMid.lx * sa + lightningMid.ly * ca;
-  const pts = [];
+  const pts: string|any[] = [];
   jaggedPts(sx, sy, mx, my, pts);
   jaggedPts(mx, my, lightningEnd.x, lightningEnd.y, pts);   // appends; the shared mid is harmlessly duplicated
   ctx.save();
   ctx.strokeStyle = POWERUP_DEF.lightning.color;
   ctx.shadowColor = POWERUP_DEF.lightning.color; ctx.shadowBlur = 10;
   ctx.lineWidth = 2; ctx.lineJoin = 'round';
-  const strokeAt = (ox, oy) => {
+  const strokeAt = (ox: number, oy: number) => {
     ctx.beginPath();
     ctx.moveTo(pts[0] + ox, pts[1] + oy);
     for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i] + ox, pts[i + 1] + oy);
@@ -472,7 +472,7 @@ function drawParticles() {
 
 // Batch every bullet of one tint into a single filled path, inlining the toroidal ghost
 // copies so an edge-crossing round still shows on both sides. One fill per tint per frame.
-function drawBulletSet(sniper, color) {
+function drawBulletSet(sniper: boolean, color: string) {
   const ctx = g.ctx, { cx, cy, HW, HH } = g;
   const r = (sniper ? 2.8 : 2.2) * g.S;
   let any = false;
@@ -523,7 +523,7 @@ function hud() {
 
 // Massive banner centred on screen while the new wave spawns in: the wave numeral, or - on a
 // boss wave - the boss's name (in the boss colour) instead of the number.
-function waveBanner(graceLeft) {
+function waveBanner(graceLeft: number) {
   const ctx = g.ctx, { W, H, cx, cy, HW } = g, clock = g.clock;
   const FADE = 0.6;
   const elapsed = WAVE_GRACE - graceLeft;
@@ -700,7 +700,7 @@ export function render() {
   ctx.drawImage(cv, cx - HW - g._scopePad, cy - HH - g._scopePad, g._scopeW, g._scopeH);
 
   if (!g.gameOver && !g.splash) {
-    let graceLeft = g.asteroids.reduce((m, a) => (a.solo ? m : Math.max(m, a.grace)), 0);   // solo asteroids don't flash the wave number
+    let graceLeft = g.asteroids.reduce((m: number, a) => (a.solo ? m : Math.max(m, a.grace)), 0);   // solo asteroids don't flash the wave number
     if (boss && boss.grace > 0) graceLeft = Math.max(graceLeft, boss.grace);   // boss waves get the banner too
     if (graceLeft > 0) waveBanner(graceLeft);
   }

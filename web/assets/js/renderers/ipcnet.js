@@ -106,22 +106,22 @@ function fabMap(recs) {
         let node;
         if (p.kind === 'via') {
             node = document.createElementNS(NS, 'circle');
-            node.setAttribute('cx', p.x);
-            node.setAttribute('cy', -p.y);
-            node.setAttribute('r', r * 0.8);
+            node.setAttribute('cx', String(p.x));
+            node.setAttribute('cy', String(-p.y));
+            node.setAttribute('r', String(r * 0.8));
             node.setAttribute('fill', 'none');
             node.setAttribute('stroke', col);
-            node.setAttribute('stroke-width', r * 0.5);
+            node.setAttribute('stroke-width', String(r * 0.5));
         }
         else {
             node = document.createElementNS(NS, 'rect');
             const s = r * 1.6;
-            node.setAttribute('x', p.x - s / 2);
-            node.setAttribute('y', -p.y - s / 2);
-            node.setAttribute('width', s);
-            node.setAttribute('height', s);
+            node.setAttribute('x', String(p.x - s / 2));
+            node.setAttribute('y', String(-p.y - s / 2));
+            node.setAttribute('width', String(s));
+            node.setAttribute('height', String(s));
             node.setAttribute('fill', col);
-            node.setAttribute('rx', s * 0.18);
+            node.setAttribute('rx', String(s * 0.18));
         }
         const title = document.createElementNS(NS, 'title');
         title.textContent = `${p.net || '(no net)'}  ${p.ref}${p.pin ? '-' + p.pin : ''}`;
@@ -152,7 +152,7 @@ export async function renderIpcNetlist(file, resultsEl) {
     resultsEl.innerHTML = '';
     const { recs, params } = parsed;
     // --- aggregate ---
-    const netMap = new Map(); // net -> [{ref,pin,kind}]
+    const netMap = new Map(); // net -> [{ref,pin}]
     const compMap = new Map(); // ref -> Set(pin)
     let vias = 0, tht = 0, smd = 0;
     for (const r of recs) {

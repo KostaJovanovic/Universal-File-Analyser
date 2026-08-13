@@ -183,7 +183,7 @@ function messageCard(text, title?) {
 }
 
 // ---------- entry points ----------
-export async function renderEml(file, container) {
+export async function renderEml(file: File, container) {
   container.hidden = false;
   container.innerHTML = '';
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading message...'));
@@ -208,7 +208,7 @@ export async function renderEml(file, container) {
   }
 }
 
-export async function renderMbox(file, container) {
+export async function renderMbox(file: File, container) {
   container.hidden = false;
   container.innerHTML = '';
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading mailbox...'));

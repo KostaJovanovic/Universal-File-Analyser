@@ -90,7 +90,7 @@ function parseGcsv(text) {
   };
 }
 
-export async function renderGcsv(file, resultsEl) {
+export async function renderGcsv(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));
@@ -220,7 +220,7 @@ function parsePlainGyroCsv(text) {
   };
 }
 
-export async function renderGyroCsv(file, resultsEl, preText) {
+export async function renderGyroCsv(file: File, resultsEl: HTMLElement, preText) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));

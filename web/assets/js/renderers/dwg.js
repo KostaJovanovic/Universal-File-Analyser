@@ -8,6 +8,8 @@ import { el, row, rowHelp, h3help, fmtBytes, errorCard } from '../core/util.js';
 import { sanitizeSvgMarkup } from './svg.js';
 const DIST_URL = new URL('../../vendor/libredwg/dist/libredwg-web.js', import.meta.url).href;
 const WASM_DIR = new URL('../../vendor/libredwg/wasm', import.meta.url).href;
+/* The lazily-loaded libredwg-web instance. It is a WASM module handle with no
+   type information of its own, so `any` here is the honest description. */
 let _lib = null;
 async function getLib() {
     if (!_lib)

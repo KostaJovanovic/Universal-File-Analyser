@@ -5,6 +5,11 @@
    decoders (UTF-16, CP437, latin1), and DecompressionStream wrappers. Keep this
    dependency-free and side-effect-free so it stays cheap to import. */
 
+/** A sequence of bytes. Both forms are passed throughout: a Uint8Array slice of a
+    file, or a plain array literal for a magic/signature (`[0x89, 0x50, ...]`,
+    where a null entry means wildcard). */
+export type Bytes = Uint8Array | number[];
+
 // ---------- cursor reader ----------
 // Sequential reader over an ArrayBuffer / Uint8Array. Big-endian by default
 // (network/most container order); pass little:true for LE formats. Multi-byte
@@ -15,7 +20,7 @@ export class Reader {
   pos: number;
   little: boolean;
   length: number;
-  constructor(buf, little = false) {
+  constructor(buf: Uint8Array|ArrayBuffer|null, little = false) {
     if (buf instanceof Uint8Array) {
       this.bytes = buf;
       this.view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -31,8 +36,8 @@ export class Reader {
   }
   get eof() { return this.pos >= this.length; }
   remaining() { return this.length - this.pos; }
-  seek(p) { this.pos = p; return this; }
-  skip(n) { this.pos += n; return this; }
+  seek(p: number) { this.pos = p; return this; }
+  skip(n: number) { this.pos += n; return this; }
   tell() { return this.pos; }
   le(on = true) { this.little = on; return this; }
 
@@ -46,17 +51,17 @@ export class Reader {
   f32() { const v = this.view.getFloat32(this.pos, this.little); this.pos += 4; return v; }
   f64() { const v = this.view.getFloat64(this.pos, this.little); this.pos += 8; return v; }
 
-  u16At(p) { return this.view.getUint16(p, this.little); }
-  u32At(p) { return this.view.getUint32(p, this.little) >>> 0; }
+  u16At(p: number) { return this.view.getUint16(p, this.little); }
+  u32At(p: number) { return this.view.getUint32(p, this.little) >>> 0; }
 
   // Number from a 64-bit unsigned. Converted to a JS Number, which loses exactness
   // above 2^53 - fine for file sizes / sample counts where that doesn't matter.
   u64num() { return Number(this.u64()); }
 
-  bytes_(n) { const b = this.bytes.subarray(this.pos, this.pos + n); this.pos += n; return b; }
-  ascii(n)  { const s = ascii(this.bytes, this.pos, n); this.pos += n; return s; }
+  bytes_(n: number) { const b = this.bytes.subarray(this.pos, this.pos + n); this.pos += n; return b; }
+  ascii(n: number|undefined)  { const s = ascii(this.bytes, this.pos, n); this.pos += n; return s; }
   // Read a fixed-length latin1 string (advances n).
-  latin1(n) { const s = latin1(this.bytes.subarray(this.pos, this.pos + n)); this.pos += n; return s; }
+  latin1(n: number) { const s = latin1(this.bytes.subarray(this.pos, this.pos + n)); this.pos += n; return s; }
   // Null-terminated ASCII string starting at the cursor (advances past the NUL).
   cstr(max = Infinity) {
     let s = '';
@@ -73,7 +78,7 @@ export class Reader {
 
 // True if `sig` (array/Uint8Array of bytes; null entries = wildcard) matches
 // `buf` at `offset`.
-export function matchMagic(buf, sig, offset = 0) {
+export function matchMagic(buf: Uint8Array, sig: Bytes, offset = 0) {
   if (offset + sig.length > buf.length) return false;
   for (let i = 0; i < sig.length; i++) {
     if (sig[i] == null) continue;
@@ -83,7 +88,7 @@ export function matchMagic(buf, sig, offset = 0) {
 }
 
 // True if the buffer begins with the given ASCII string.
-export function startsWithAscii(buf, str, offset = 0) {
+export function startsWithAscii(buf: Uint8Array, str: string, offset = 0) {
   for (let i = 0; i < str.length; i++) {
     if (buf[offset + i] !== str.charCodeAt(i)) return false;
   }
@@ -92,7 +97,7 @@ export function startsWithAscii(buf, str, offset = 0) {
 
 // Index of the first occurrence of `needle` (array/Uint8Array) in `buf` at or
 // after `start`, or -1. Plain byte scan - fine for headers, not huge files.
-export function findBytes(buf, needle, start = 0, end = buf.length) {
+export function findBytes(buf: Uint8Array, needle: Bytes, start = 0, end = buf.length) {
   const n = needle.length;
   const last = Math.min(end, buf.length) - n;
   outer: for (let i = start; i <= last; i++) {
@@ -103,7 +108,7 @@ export function findBytes(buf, needle, start = 0, end = buf.length) {
 }
 
 // Printable-ASCII slice (control/8-bit chars dropped).
-export function ascii(buf, start = 0, len = buf.length - start) {
+export function ascii(buf: Uint8Array, start = 0, len = buf.length - start) {
   let s = '';
   const end = Math.min(start + len, buf.length);
   for (let i = start; i < end; i++) {
@@ -116,8 +121,8 @@ export function ascii(buf, start = 0, len = buf.length - start) {
 // Lowercase hex. hexByte: a single byte; hexBytes: a (sub)range joined by `sep`
 // (default no separator, e.g. a continuous SHA-style hex string - pass ' ' for a
 // spaced hex dump). Replaces the ad-hoc `b.toString(16).padStart(2,'0')` idiom.
-export function hexByte(b) { return b.toString(16).padStart(2, '0'); }
-export function hexBytes(bytes, sep = '', start = 0, len = bytes.length - start) {
+export function hexByte(b: number) { return b.toString(16).padStart(2, '0'); }
+export function hexBytes(bytes: Uint8Array, sep = '', start = 0, len = bytes.length - start) {
   const end = Math.min(start + len, bytes.length);
   const out = [];
   for (let i = start; i < end; i++) out.push(bytes[i].toString(16).padStart(2, '0'));
@@ -125,26 +130,26 @@ export function hexBytes(bytes, sep = '', start = 0, len = bytes.length - start)
 }
 // A 32-bit number as fixed 8-digit hex (e.g. a CRC-32 or a file offset). Replaces
 // the ad-hoc `(n >>> 0).toString(16).padStart(8, '0')` idiom. `upper` uppercases.
-export function hexU32(n, upper = false) {
+export function hexU32(n: number, upper = false) {
   const s = (n >>> 0).toString(16).padStart(8, '0');
   return upper ? s.toUpperCase() : s;
 }
 
 // Like ascii() but trims surrounding whitespace - for fixed-width ASCII fields
 // padded with spaces or NULs (the padding NULs are already dropped by ascii()).
-export function cleanAscii(buf, start = 0, len = buf.length - start) {
+export function cleanAscii(buf: Uint8Array, start = 0, len = buf.length - start) {
   return ascii(buf, start, len).trim();
 }
 
 // ---------- text decoders ----------
 
-export function latin1(bytes) {
+export function latin1(bytes: AllowSharedBufferSource|Uint8Array|undefined) {
   return new TextDecoder('latin1').decode(bytes);
 }
-export function utf8(bytes) {
+export function utf8(bytes: AllowSharedBufferSource|Uint8Array|undefined) {
   return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
 }
-export function utf16(bytes, little = true) {
+export function utf16(bytes: AllowSharedBufferSource|Uint8Array|undefined, little = true) {
   return new TextDecoder(little ? 'utf-16le' : 'utf-16be').decode(bytes);
 }
 
@@ -160,7 +165,7 @@ const CP437_HIGH = [
   0x03B1,0x00DF,0x0393,0x03C0,0x03A3,0x03C3,0x00B5,0x03C4,0x03A6,0x0398,0x03A9,0x03B4,0x221E,0x03C6,0x03B5,0x2229,
   0x2261,0x00B1,0x2265,0x2264,0x2320,0x2321,0x00F7,0x2248,0x00B0,0x2219,0x00B7,0x221A,0x207F,0x00B2,0x25A0,0x00A0
 ];
-export function cp437(bytes) {
+export function cp437(bytes: Uint8Array) {
   let s = '';
   for (let i = 0; i < bytes.length; i++) {
     const c = bytes[i];
@@ -176,25 +181,25 @@ export function cp437(bytes) {
 // Inflate a stream via the browser's DecompressionStream. `format` is
 // 'gzip' | 'deflate' | 'deflate-raw'. Returns a Uint8Array, or null if the
 // platform lacks DecompressionStream or the data is corrupt.
-export async function inflate(bytes, format: CompressionFormat = 'gzip') {
+export async function inflate(bytes: Uint8Array, format: CompressionFormat = 'gzip') {
   if (typeof DecompressionStream === 'undefined') return null;
   try {
     const ds = new DecompressionStream(format);
-    const stream = new Blob([bytes]).stream().pipeThrough(ds);
+    const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(ds);
     const out = new Uint8Array(await new Response(stream).arrayBuffer());
     return out;
   } catch (_) {
     return null;
   }
 }
-export const gunzip = (bytes) => inflate(bytes, 'gzip');
+export const gunzip = (bytes: Uint8Array) => inflate(bytes, 'gzip');
 
 // ---------- entropy ----------
 
 // Shannon entropy of a byte range, in bits/byte (0 = uniform/repetitive, 8 =
 // maximally random). Compressed or encrypted data sits near 8; text and code
 // well below. `start`/`end` bound the range (defaults to the whole array).
-export function shannonEntropy(bytes, start = 0, end = bytes.length) {
+export function shannonEntropy(bytes: Uint8Array, start = 0, end = bytes.length) {
   const freq = new Uint32Array(256);
   let n = 0;
   for (let i = start; i < end; i++) { freq[bytes[i]]++; n++; }
@@ -212,7 +217,7 @@ export function shannonEntropy(bytes, start = 0, end = bytes.length) {
 // entropy (bits/byte) plus its byte offset - the data behind an entropy heatmap.
 // High flat regions flag packed/encrypted/compressed/stego content; sharp steps
 // flag a boundary between unlike sections (e.g. an appended archive).
-export function entropyProfile(bytes, buckets = 256) {
+export function entropyProfile(bytes: Uint8Array, buckets = 256) {
   const len = bytes.length;
   if (!len) return [];
   const n = Math.max(1, Math.min(buckets, len));
@@ -228,7 +233,7 @@ export function entropyProfile(bytes, buckets = 256) {
 // ---------- misc formatters used by binary parsers ----------
 
 // FILETIME (100-ns ticks since 1601-01-01 UTC) -> JS Date, or null.
-export function filetimeToDate(lo, hi) {
+export function filetimeToDate(lo: number, hi: number) {
   const ticks = (BigInt(hi >>> 0) << 32n) | BigInt(lo >>> 0);
   if (ticks === 0n) return null;
   const ms = ticks / 10000n - 11644473600000n;
@@ -237,8 +242,8 @@ export function filetimeToDate(lo, hi) {
 }
 
 // Format a GUID from 16 bytes (mixed-endian, as stored in MS structures).
-export function fmtGuid(b, off = 0) {
-  const h = (i) => b[off + i].toString(16).padStart(2, '0');
+export function fmtGuid(b: Uint8Array, off = 0) {
+  const h = (i: number) => b[off + i].toString(16).padStart(2, '0');
   return (
     h(3) + h(2) + h(1) + h(0) + '-' + h(5) + h(4) + '-' + h(7) + h(6) + '-' +
     h(8) + h(9) + '-' + h(10) + h(11) + h(12) + h(13) + h(14) + h(15)

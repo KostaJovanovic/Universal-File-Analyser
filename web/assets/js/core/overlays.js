@@ -69,6 +69,8 @@ const DROP_LOADER_MIN_MS = 420;
 // are already in memory (a nested file from a folder/zip/document), where the
 // render finishes before the debounce fires - so without this the bar would
 // never show. Disk-backed drops keep the debounce (they cross 160ms on their own).
+// Only the name is read, and the folder-drop path has no File to give - it passes
+// a bare { name } for the folder itself. Typed to what is actually used.
 export function showDropLoader(file, onCancel, labelText, immediate) {
     clearTimeout(_dropLoaderTimer);
     clearTimeout(_dropLoaderHideTimer);

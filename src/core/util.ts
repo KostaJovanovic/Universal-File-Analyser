@@ -45,7 +45,7 @@ export function el(tag: string, attrs: ElAttrs = {}, children: any = []) {
 // without touching hundreds of call sites. Only labels whose meaning is the same
 // everywhere they appear are listed; generic/ambiguous labels (Type, Format,
 // Name, Title, Size, Date, Version, Resolution…) are intentionally left plain.
-export const LABEL_HELP = {
+export const LABEL_HELP: Record<string, string> = {
   // --- Media: containers, codecs, streams ---
   'Container': 'The kind of file that wraps the video and sound together and keeps them in step - for example MP4, MKV or WebM. It is separate from the recipe (codec) used to squeeze the picture and sound, so the same kind of file can hold different codecs.',
   'Codec': 'The recipe used to squeeze the picture or sound down to a manageable size - for example H.264 for video or AAC for audio. It is chosen separately from the container file that holds it.',
@@ -166,7 +166,7 @@ type OnceWired<F> = F & { _init?: boolean };
 // rowHelp, or looked up in LABEL_HELP by row()), the label gets the standard [?]
 // info button + click-to-reveal tooltip - the same affordance everywhere, so the
 // renderer tables and the proprietary-parser readouts stay consistent.
-function helpTh(label, helpText) {
+function helpTh(label: string|null, helpText: ElChild | ElChild[]) {
   const th = el('th', {});
   if (!helpText) { th.textContent = label; return th; }
   if (!(helpTh as OnceWired<typeof helpTh>)._init) {
@@ -189,7 +189,7 @@ function helpTh(label, helpText) {
   return th;
 }
 
-export function row(label, value) {
+export function row(label: string, value: unknown) {
   return el('tr', {}, [
     helpTh(label, LABEL_HELP[label]),
     el('td', {}, value == null || value === '' ? '-' : String(value))
@@ -199,7 +199,7 @@ export function row(label, value) {
 // True when a read failure looks like an unavailable/cloud-only file rather than
 // a corrupt/unsupported one. OneDrive/iCloud/etc. "online-only" placeholders
 // throw NotReadableError/NotFoundError when their sync app can't hydrate them.
-export function isUnreadableError(e) {
+export function isUnreadableError(e: any) {
   if (!e) return false;
   const name = e.name || '';
   const msg = (e.message || '').toLowerCase();
@@ -216,7 +216,7 @@ export function isUnreadableError(e) {
 // head read passes) while the body/tail isn't on disk, so the tail read is what
 // reliably trips. (Any successful read also triggers the sync app to hydrate the
 // whole file, which is what a renderer would do anyway.)
-export async function probeReadable(file) {
+export async function probeReadable(file: File) {
   if (!file || file.size === 0) return null;
   try {
     await file.slice(0, Math.min(file.size, 65536)).arrayBuffer();
@@ -229,7 +229,7 @@ export async function probeReadable(file) {
 
 // A friendly "this file can't be read" card body, tailored to the cloud-only
 // case (the overwhelmingly common cause of an otherwise-valid File failing).
-export function cloudFileWarning(file) {
+export function cloudFileWarning(file: File) {
   const box = el('div', { class: 'anr-error anr-cloud-warning' });
   box.appendChild(el('p', { style: 'margin:0 0 10px; font-weight:600;' },
     'Couldn’t read “' + ((file && file.name) || 'this file') + '”.'));
@@ -247,7 +247,7 @@ export function cloudFileWarning(file) {
 // probe (there's nothing to read) but every renderer then fails deep in its
 // pipeline with a cryptic "unexpected end"/blank result - so we intercept it
 // up front and explain plainly that the file holds no data.
-export function emptyFileWarning(file) {
+export function emptyFileWarning(file: File) {
   const box = el('div', { class: 'anr-error anr-empty-warning' });
   box.appendChild(el('p', { style: 'margin:0 0 10px; font-weight:600;' },
     '“' + ((file && file.name) || 'This file') + '” is empty - it’s 0 bytes, so there’s nothing to open or analyse.'));
@@ -266,7 +266,7 @@ export function emptyFileWarning(file) {
 
 // Standard inline error notice (styled by .anr-error). The canonical way for a
 // renderer to report that a file couldn't be read or parsed.
-export function errorCard(message) {
+export function errorCard(message: ElChild | ElChild[]) {
   return el('div', { class: 'anr-error' }, message);
 }
 
@@ -298,7 +298,7 @@ export function asciiBar(opts: any = {}): AsciiBar {
   let W = opts.width || 20;
   let win = Math.max(4, Math.round(W * 0.25));
   const bar = el('div', { class: 'anr-progress-bar' }) as AsciiBar;
-  let raf = null, seen = false, t0 = null;
+  let raf: number|null = null, seen = false, t0: number|null = null;
 
   // fit:true → recompute the character count so the bar spans its container.
   // Measured lazily, once the bar is actually in the DOM (clientWidth is 0
@@ -315,7 +315,7 @@ export function asciiBar(opts: any = {}): AsciiBar {
     W = Math.max(10, Math.min(80, n));
     win = Math.max(4, Math.round(W * 0.25));
   }
-  function paintRange(start, len) {
+  function paintRange(start: number, len: number) {
     start = Math.max(0, Math.min(W - len, start));
     bar.innerHTML = '[' + ' '.repeat(start) +
       '<span class="anr-bar-fill">' + '/'.repeat(len) + '</span>' +
@@ -331,7 +331,7 @@ export function asciiBar(opts: any = {}): AsciiBar {
   bar.indeterminate = () => {
     if (raf) return;
     let measured = false;
-    const loop = (ts) => {
+    const loop = (ts: number) => {
       if (bar.isConnected) seen = true;
       else if (seen) { raf = null; return; }   // removed from DOM → self-stop
       if (!measured && bar.isConnected) { measure(); measured = true; }
@@ -351,7 +351,7 @@ export function asciiBar(opts: any = {}): AsciiBar {
 
 // Small inline "working…" indicator with an indeterminate ASCII bar. Used to
 // fill a card while a slower piece (e.g. a treemap for a huge folder) builds.
-export function inlineLoader(text) {
+export function inlineLoader(text: string) {
   const bar = asciiBar();
   bar.indeterminate();
   return el('div', { class: 'anr-inline-loader' }, [
@@ -401,7 +401,7 @@ export function afterPaint(timeoutMs = 400) {
   });
 }
 
-export function rowHelp(label, value, helpText) {
+export function rowHelp(label: string, value: unknown, helpText: string) {
   return el('tr', {}, [
     helpTh(label, helpText),
     el('td', {}, value == null || value === '' ? '-' : String(value))
@@ -413,7 +413,7 @@ export function rowHelp(label, value, helpText) {
 // empty placeholder apply) or an already-built <tr> node (e.g. rowHelp(),
 // sha256Row()). Falsy entries are skipped, so conditional rows can be written
 // inline as `cond && ['Label', value]`.
-export function buildReadout(rows) {
+export function buildReadout(rows: any[]) {
   const tbl = el('table', { class: 'anr-readout' });
   for (const r of rows) {
     if (!r) continue;
@@ -422,7 +422,7 @@ export function buildReadout(rows) {
   return tbl;
 }
 
-export function fmtBytes(n) {
+export function fmtBytes(n: number|null|undefined) {
   if (n == null) return '-';
   if (n < 1024) return n + ' B';
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
@@ -439,10 +439,10 @@ export function timeAnomalies(opts: any = {}) {
   const now = opts.now || new Date();
   const DAY = 86400000;
   const SKEW = 2 * DAY;   // tolerate clock/timezone slop on "in the future" checks
-  const ok = (d) => d instanceof Date && !isNaN(d.getTime()) && d.getTime() > 0;
-  const stamp = (d) => d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  const ok = (d: unknown) => d instanceof Date && !isNaN(d.getTime()) && d.getTime() > 0;
+  const stamp = (d: Date) => d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
   const out = [];
-  const labels = { captured: 'Capture date', created: 'Creation date', modified: 'Modification date' };
+  const labels: Record<string, string> = { captured: 'Capture date', created: 'Creation date', modified: 'Modification date' };
   for (const k of ['captured', 'created', 'modified']) {
     if (ok(opts[k]) && opts[k].getTime() - now.getTime() > SKEW) {
       out.push(labels[k] + ' is in the future (' + stamp(opts[k]) + ') - the clock was wrong or the date was edited.');
@@ -461,7 +461,7 @@ export function timeAnomalies(opts: any = {}) {
 
 // Build a forensic card from timeAnomalies() output, or null when there's nothing
 // to flag. Styled like the other alert cards (.anr-sig-flag).
-export function timeAnomalyCard(anomalies) {
+export function timeAnomalyCard(anomalies: string|any[]) {
   if (!anomalies || !anomalies.length) return null;
   const card = el('div', { class: 'anr-card anr-sig-flag', role: 'alert' });
   card.appendChild(el('h3', {}, 'Timestamp anomaly'));
@@ -473,7 +473,7 @@ export function timeAnomalyCard(anomalies) {
 
 // A scrollable, wrapping <pre> for raw text payloads (hex dumps, headers, etc.).
 // Shared by the lazy parser chunks so every readout block looks the same.
-export function preBlock(text, cls?) {
+export function preBlock(text: string, cls?: string) {
   return el('pre', {
     class: cls || 'anr-code',
     style: 'max-height:360px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;',
@@ -481,11 +481,11 @@ export function preBlock(text, cls?) {
 }
 
 // Format a Date for display, tolerating non-Date / invalid values.
-export const fmtDate = (d) => (d instanceof Date && !isNaN(d.getTime())) ? d.toLocaleString() : String(d);
+export const fmtDate = (d: Date) => (d instanceof Date && !isNaN(d.getTime())) ? d.toLocaleString() : String(d);
 
 // Copy text to the clipboard, with an execCommand fallback for insecure/old
 // contexts where navigator.clipboard is absent. Resolves true on success.
-export async function copyText(text) {
+export async function copyText(text: string) {
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(text);
@@ -511,7 +511,7 @@ export async function copyText(text) {
 // Escape to dismiss; a Copy button lifts the value to the clipboard. Only one is
 // ever open at a time. Empty cells show a muted "(empty cell)" note.
 let _cellPopOpen = false;
-export function showCellPopup(value, label) {
+export function showCellPopup(value: unknown, label: string) {
   if (_cellPopOpen) return;
   _cellPopOpen = true;
 
@@ -544,7 +544,7 @@ export function showCellPopup(value, label) {
     setTimeout(() => overlay.remove(), 200);
     document.removeEventListener('keydown', onKey);
   };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
   closeBtn.addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);
@@ -573,14 +573,14 @@ export function showCellPopup(value, label) {
 // looking down from above, so a hotspot pointing outward along d=(dx,dy,dz) snaps
 // to yaw=atan2(-dx,dz), pitch=asin(dy). The CSS cube (Y-down) mirrors the camera as
 // rotateX(-pitch) rotateY(yaw), derived so each hotspot's own face comes head-on.
-export function attachViewCube(viewer) {
+export function attachViewCube(viewer: any) {
   const wrap = viewer && viewer.wrap, state = viewer && viewer.state;
   if (!wrap || !state) return;
   const H = 27;  // half the cube edge (px)
   const Q = Math.PI / 2, R2D = 180 / Math.PI;
   // For a hotspot pointing outward along model-space d, the camera orientation that
   // brings it head-on (yaw=atan2(-dx,dz), pitch=asin(dy)).
-  const target = (dx, dy, dz) => { const l = Math.hypot(dx, dy, dz) || 1; return { yaw: Math.atan2(-dx, dz), pitch: Math.asin(dy / l) }; };
+  const target = (dx: number, dy: number, dz: number) => { const l = Math.hypot(dx, dy, dz) || 1; return { yaw: Math.atan2(-dx, dz), pitch: Math.asin(dy / l) }; };
 
   // The six faces, each with its model-space outward normal F and the in-plane
   // right/up axes (u,v) that match how it's displayed - so a corner/edge zone at a
@@ -594,12 +594,12 @@ export function attachViewCube(viewer) {
     { name: 'Bot', F: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] },
   ];
   const cube = el('div', { class: 'anr-viewcube-cube' });
-  const hotspots = [];
+  const hotspots: any[] = [];
   // A direction signature shared by every hotspot at the same cube feature: a
   // corner is one zone on each of its 3 faces, an edge one on each of its 2 - all
   // carry the same key, so hovering any lights the whole corner/edge.
-  const sgn = (v) => (v > 0.5 ? 1 : v < -0.5 ? -1 : 0);
-  const setTarget = (node, dx, dy, dz) => { const t = target(dx, dy, dz); node._yaw = t.yaw; node._pitch = t.pitch; node._key = sgn(dx) + ',' + sgn(dy) + ',' + sgn(dz); hotspots.push(node); };
+  const sgn = (v: number) => (v > 0.5 ? 1 : v < -0.5 ? -1 : 0);
+  const setTarget = (node: HTMLDivElement, dx: number, dy: number, dz: number) => { const t = target(dx, dy, dz); node._yaw = t.yaw; node._pitch = t.pitch; node._key = sgn(dx) + ',' + sgn(dy) + ',' + sgn(dz); hotspots.push(node); };
   for (const f of FACES) {
     const [fx, fy, fz] = f.F;
     const yawCss = Math.atan2(fx, fz) * R2D, pitchCss = Math.asin(fy) * R2D;
@@ -609,7 +609,7 @@ export function attachViewCube(viewer) {
     // Edge + corner zones live as children painted on top of the face, so they
     // catch clicks the full face can't steal (no 3D occlusion to fight).
     const O = 38;   // zone offset from face centre, in %
-    const zone = (cls, left, top, dir) => { const z = el('div', { class: cls }); z.style.left = left + '%'; z.style.top = top + '%'; setTarget(z, dir[0], dir[1], dir[2]); face.appendChild(z); };
+    const zone = (cls: string, left: string|number, top: string|number, dir: any[]) => { const z = el('div', { class: cls }); z.style.left = left + '%'; z.style.top = top + '%'; setTarget(z, dir[0], dir[1], dir[2]); face.appendChild(z); };
     for (const su of [-1, 1]) for (const sv of [-1, 1]) {
       zone('anr-viewcube-corner', 50 + su * O, 50 - sv * O, [fx + su * f.u[0] + sv * f.v[0], fy + su * f.u[1] + sv * f.v[1], fz + su * f.u[2] + sv * f.v[2]]);
     }
@@ -622,7 +622,7 @@ export function attachViewCube(viewer) {
 
   // Tween the camera to a target orientation (shortest yaw path, ease-in-out).
   let anim = 0;
-  function orientTo(ty, tp) {
+  function orientTo(ty: number, tp: number) {
     const sy = state.yaw, sp = state.pitch;
     let dy = ty - sy;
     while (dy > Math.PI) dy -= 2 * Math.PI;
@@ -630,7 +630,7 @@ export function attachViewCube(viewer) {
     const dp = tp - sp, dur = 320;
     let t0 = 0;
     if (anim) cancelAnimationFrame(anim);
-    const tick = (ts) => {
+    const tick = (ts: number) => {
       if (!t0) t0 = ts;
       const k = Math.min(1, (ts - t0) / dur);
       const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
@@ -644,8 +644,8 @@ export function attachViewCube(viewer) {
   // Grab the cube to orbit (same feel as dragging the canvas); a press that doesn't
   // move snaps to whichever hotspot was clicked.
   let drag = false, moved = false, lx = 0, ly = 0;
-  const dn = (x, y) => { drag = true; moved = false; lx = x; ly = y; if (anim) { cancelAnimationFrame(anim); anim = 0; } if (viewer.setSpin) viewer.setSpin(false); };
-  const mv = (x, y) => {
+  const dn = (x: number, y: number) => { drag = true; moved = false; lx = x; ly = y; if (anim) { cancelAnimationFrame(anim); anim = 0; } if (viewer.setSpin) viewer.setSpin(false); };
+  const mv = (x: number, y: number) => {
     if (!drag) return;
     if (Math.abs(x - lx) + Math.abs(y - ly) > 3) moved = true;
     state.yaw += (x - lx) * 0.01;
@@ -654,7 +654,7 @@ export function attachViewCube(viewer) {
     lx = x; ly = y; viewer.markDirty();
   };
   const en = () => { drag = false; };
-  const onWinMove = (e) => mv(e.clientX, e.clientY);
+  const onWinMove = (e: PointerEvent) => mv(e.clientX, e.clientY);
   const onWinUp = en;
   box.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); dn(e.clientX, e.clientY); });
   window.addEventListener('mousemove', onWinMove);
@@ -675,7 +675,7 @@ export function attachViewCube(viewer) {
   box.addEventListener('touchmove', (e) => { if (e.touches[0]) { mv(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
   box.addEventListener('touchend', en);
   for (const hs of hotspots) {
-    hs.addEventListener('click', (e) => {
+    hs.addEventListener('click', (e: MouseEvent) => {
       e.stopPropagation();
       if (moved) { moved = false; return; }
       if (viewer.setSpin) viewer.setSpin(false);
@@ -687,8 +687,8 @@ export function attachViewCube(viewer) {
   // Driven from JS (not :hover): a hovered edge/corner zone is a child of a face
   // (so :hover would also light the face), and one corner/edge spans several faces,
   // so we light every hotspot sharing the target's direction key.
-  let hotKey = null;
-  const setHot = (hs) => {
+  let hotKey: string | null = null;
+  const setHot = (hs: HTMLElement | null) => {
     const key = hs ? hs._key : null;
     if (key === hotKey) return;
     hotKey = key;
@@ -709,7 +709,7 @@ export function attachViewCube(viewer) {
 
 // Trigger a browser download of `blob` as `filename` via a throwaway <a>, then
 // revoke the object URL. One revoke policy for the many ad-hoc copies of this.
-export function downloadBlob(filename, blob) {
+export function downloadBlob(filename: string, blob: Blob) {
   let appleTouch = false;
   try {
     const ua = navigator.userAgent || '';
@@ -736,7 +736,7 @@ export function downloadBlob(filename, blob) {
 // a preview image doesn't pin its backing Blob for the page's lifetime. Extra
 // attributes (alt, class, ...) pass through to el(). One revoke policy for the many
 // ad-hoc "createObjectURL into an <img> and never revoke" copies across renderers.
-export function blobImg(blob, attrs: any = {}) {
+export function blobImg(blob: Blob|MediaSource, attrs: any = {}) {
   const url = typeof blob === 'string' ? blob : URL.createObjectURL(blob);
   const img = el('img', { ...attrs, src: url });
   const done = () => { try { URL.revokeObjectURL(url); } catch (_) {} };
@@ -747,7 +747,7 @@ export function blobImg(blob, attrs: any = {}) {
 
 // Read up to `n` bytes from a File starting at `off`. Returns a Uint8Array
 // (empty when the offset is past EOF). Shared by the binary parser chunks.
-export async function readSlice(file, off, n) {
+export async function readSlice(file: File, off: number, n: number) {
   const end = Math.min(file.size, off + n);
   if (off >= file.size || end <= off) return new Uint8Array(0);
   return new Uint8Array(await file.slice(off, end).arrayBuffer());
@@ -758,7 +758,7 @@ export async function readSlice(file, off, n) {
 // idiom hand-rolled across the parser chunks. Defaults to a 256 KB head, enough
 // for the metadata/header sniffing these parsers do without pulling a huge file
 // fully into memory.
-export async function readText(file, cap = 262144) {
+export async function readText(file: File, cap = 262144) {
   return file.slice(0, Math.min(file.size, cap)).text();
 }
 
@@ -769,7 +769,7 @@ export async function readText(file, cap = 262144) {
 // anywhere else closes it. The panel is anchored to the button lazily on first
 // open, which works whether the caller wired before or after inserting the
 // button into the DOM (h3help wires before; most manual sites wire after).
-export function wireInfoToggle(btn, panel) {
+export function wireInfoToggle(btn: HTMLButtonElement, panel: HTMLDivElement) {
   if (!(wireInfoToggle as OnceWired<typeof wireInfoToggle>)._init) {
     (wireInfoToggle as OnceWired<typeof wireInfoToggle>)._init = true;
     document.addEventListener('click', () => {
@@ -780,7 +780,7 @@ export function wireInfoToggle(btn, panel) {
     // - otherwise it floats away. Capture phase so scrolls inside scroll containers
     // (which don't bubble) are still caught. No-op unless a fixed popup is open.
     const reflowInfoPops = () => {
-      document.querySelectorAll('.anr-info-panel.anr-info-pop-fixed.is-active').forEach((p) => {
+      document.querySelectorAll<HTMLElement>('.anr-info-panel.anr-info-pop-fixed.is-active').forEach((p) => {
         if (p._anrInfoBtn) placeInfoPop(p._anrInfoBtn, p);
       });
     };
@@ -817,7 +817,7 @@ export function wireInfoToggle(btn, panel) {
 // gets cut off / "stuck behind a scroll". When such a clipping ancestor exists, pin
 // the popup to the viewport at the button instead so it escapes the clip. No-op on
 // ordinary pages: without a clipping ancestor it stays exactly as before.
-function anrHasClippingAncestor(elm) {
+function anrHasClippingAncestor(elm: HTMLButtonElement) {
   let n = elm.parentElement;
   while (n && n !== document.body && n.nodeType === 1) {
     const s = getComputedStyle(n);
@@ -826,7 +826,7 @@ function anrHasClippingAncestor(elm) {
   }
   return false;
 }
-function placeInfoPop(btn, panel) {
+function placeInfoPop(btn: HTMLButtonElement, panel: HTMLElement) {
   panel._anrInfoBtn = btn;   // remembered so the scroll/resize reflow can re-place it
   panel.classList.remove('anr-info-pop-fixed');
   panel.style.left = ''; panel.style.top = '';
@@ -840,7 +840,7 @@ function placeInfoPop(btn, panel) {
   panel.style.top = (r.bottom + 6) + 'px';
 }
 
-export function h3help(title, helpHtml) {
+export function h3help(title: string, helpHtml: string) {
   const h = el('h3', {});
   h.appendChild(document.createTextNode(title));
   const btn = el('button', { type: 'button', class: 'anr-info-btn', title: 'Info' }, '[?]');
@@ -850,7 +850,7 @@ export function h3help(title, helpHtml) {
   return [h, panel];
 }
 
-export function fileExt(name) {
+export function fileExt(name: string) {
   // Strip a trailing copy marker that file managers append AFTER the real
   // extension, which would otherwise hide it: "ut.c (1)" -> "ut.c",
   // "report.pdf - Copy" -> "report.pdf". Done before the extension is read so
@@ -860,11 +860,11 @@ export function fileExt(name) {
   return m ? m[1].toLowerCase() : '';
 }
 
-function hex(buf) {
+function hex(buf: ArrayBuffer|Uint8Array) {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export async function sha256Hex(file) {
+export async function sha256Hex(file: File) {
   if (!crypto.subtle) return null;
   const buf = await file.arrayBuffer();
   return hex(await crypto.subtle.digest('SHA-256', buf));
@@ -877,7 +877,7 @@ export { isLowMemoryDevice } from './limits.js';
 
 // SubtleCrypto covers SHA-1/256/384/512 but not MD5. subtleHex hashes an already
 // in-memory ArrayBuffer (so a multi-hash pass reads the file just once).
-async function subtleHex(algo, buf) {
+async function subtleHex(algo: AlgorithmIdentifier, buf: BufferSource) {
   if (!crypto.subtle) return null;
   return hex(await crypto.subtle.digest(algo, buf));
 }
@@ -885,9 +885,9 @@ async function subtleHex(algo, buf) {
 // Compact MD5 (RFC 1321) - browsers don't expose it, but forensic toolchains
 // (NSRL, VirusTotal, old checksum files) still key on it. Operates on a
 // Uint8Array; pure integer maths, no dependency.
-export function md5Hex(bytes) {
-  const rotl = (x, c) => (x << c) | (x >>> (32 - c));
-  const add = (a, b) => (a + b) | 0;
+export function md5Hex(bytes: Uint8Array) {
+  const rotl = (x: number, c: number) => (x << c) | (x >>> (32 - c));
+  const add = (a: number, b: number) => (a + b) | 0;
   const S = [7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
     5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
     4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
@@ -934,8 +934,8 @@ export function md5Hex(bytes) {
 // (not collision-resistant), so it lives alongside the real hashes for matching
 // checksum files, not for tamper-evidence. Operates on a Uint8Array; returns 8
 // lowercase hex digits. Table built once on first use.
-let _crc32Table = null;
-export function crc32Hex(bytes) {
+let _crc32Table: number[]|Uint32Array|null = null;
+export function crc32Hex(bytes: Uint8Array) {
   if (!_crc32Table) {
     _crc32Table = new Uint32Array(256);
     for (let n = 0; n < 256; n++) {
@@ -952,7 +952,7 @@ export function crc32Hex(bytes) {
 // CRC-32 + MD5 + SHA-1 + SHA-512 over one in-memory read, returned as
 // [label, hex, description?] tuples. Used by the "Show more hashes" affordance in
 // sha256Row(). CRC-32 carries its own description since it isn't a hash.
-export async function extraHashRows(file) {
+export async function extraHashRows(file: File) {
   const buf = await file.arrayBuffer();
   const [sha1, sha512] = await Promise.all([
     subtleHex('SHA-1', buf),
@@ -981,10 +981,10 @@ export async function extraHashRows(file) {
 // file and is slow for big media); the user can trigger it with a button instead.
 const SHA256_AUTO_LIMIT = 50 * 1024 * 1024; // 50 MB
 
-export function sha256Row(file) {
+export function sha256Row(file: File) {
   const hashRow = rowHelp('SHA-256', '',
     "SHA-256 is a cryptographic fingerprint of the file’s exact contents - a short code where two identical files always match, and changing even a single byte changes it completely. That makes it a reliable way to check a file hasn’t been altered, or that it matches a known copy.");
-  const td = hashRow.querySelector('td');
+  const td = hashRow.querySelector('td')!;
   td.textContent = '';
 
   // Once SHA-256 is shown, offer the forensic-standard extras (MD5/SHA-1/SHA-512)
@@ -1044,7 +1044,7 @@ export function sha256Row(file) {
 
 // Standard "Integrity" card: a heading + readout table whose last row is the
 // (async) SHA-256. Pass extraRows as [[label, value], …] to prepend rows.
-export function integrityCard(file, extraRows = []) {
+export function integrityCard(file: File, extraRows = []) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Integrity'));
   card.appendChild(buildReadout([...extraRows, sha256Row(file)]));
@@ -1064,7 +1064,7 @@ const SYSTEM_HIDDEN_NAMES = new Set([
 
 // Whether a file NAME reads as hidden: a leading-dot dotfile (the portable signal),
 // or a known hidden/system filename. Used to hatch these rows in the file tree.
-export function isHiddenFileName(name) {
+export function isHiddenFileName(name: string) {
   if (!name) return false;
   if (name.charAt(0) === '.') return true;
   return SYSTEM_HIDDEN_NAMES.has(name.toLowerCase());
@@ -1076,17 +1076,21 @@ export function isHiddenFileName(name) {
 // thousands of sibling entries. No options = the same ordering localeCompare gave.
 const _treeCollator = (typeof Intl !== 'undefined' && Intl.Collator) ? new Intl.Collator() : null;
 
+/** A node in the nested object buildFileTree() walks: a directory is a plain
+    object of children, a file is whatever the caller's fileSize() understands. */
+export type TreeNode = { [name: string]: any };
+
 // Build a collapsible directory tree from a nested object. Directories are
 // rendered as <details>/<summary> nodes (closed by default, children rendered
 // lazily on first expand); files as plain rows. Shared by folder.js and
 // archive.js. Callers supply:
 //   isDir(value)   - true if value is a directory node (a sub-object)
 //   fileSize(value) - byte size for a file node (number)
-export function buildFileTree(obj, opts) {
+export function buildFileTree(obj: TreeNode, opts: { isDir: (v: any) => boolean; fileSize: (v: any) => number; [k: string]: any }) {
   const isDir = opts.isDir;
   const fileSize = opts.fileSize;
 
-  function countAndSize(node) {
+  function countAndSize(node: TreeNode) {
     let files = 0, bytes = 0;
     for (const v of Object.values(node)) {
       if (isDir(v)) { const r = countAndSize(v); files += r.files; bytes += r.bytes; }
@@ -1095,7 +1099,7 @@ export function buildFileTree(obj, opts) {
     return { files, bytes };
   }
 
-  function sortedKeys(node) {
+  function sortedKeys(node: TreeNode) {
     return Object.keys(node).sort((a, b) => {
       const ad = isDir(node[a]), bd = isDir(node[b]);
       if (ad !== bd) return ad ? -1 : 1;
@@ -1106,7 +1110,7 @@ export function buildFileTree(obj, opts) {
     });
   }
 
-  function renderNode(node) {
+  function renderNode(node: TreeNode) {
     const frag = document.createDocumentFragment();
     for (const key of sortedKeys(node)) {
       const val = node[key];
@@ -1177,7 +1181,7 @@ export function buildFileTree(obj, opts) {
 // Lazy-load an external stylesheet/script by injecting a <link>/<script> tag,
 // resolving once it's ready (and immediately if already present). Used to pull
 // in heavy optional libraries (Leaflet, Tesseract, heic2any, jsQR) on demand.
-export function loadCss(href) {
+export function loadCss(href: string) {
   return new Promise<void>((resolve) => {
     if (document.querySelector(`link[href="${href}"]`)) return resolve();
     const l = document.createElement('link');
@@ -1186,7 +1190,7 @@ export function loadCss(href) {
     document.head.appendChild(l);
   });
 }
-export function loadScript(src) {
+export function loadScript(src: string) {
   return new Promise<void>((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) return resolve();
     const s = document.createElement('script');
@@ -1199,7 +1203,7 @@ export function loadScript(src) {
 // Snap a measured frame rate to the nearest standard rate when it's within
 // 0.5 fps (so 29.96 reads as 29.97), otherwise keep two decimals. Shared by the
 // video module and its container parser.
-export function roundFps(raw) {
+export function roundFps(raw: number) {
   const standard = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120, 240];
   let closest = raw, minDiff = Infinity;
   for (const s of standard) {
@@ -1216,10 +1220,10 @@ export function roundFps(raw) {
 // zoomed, and double-click toggles a 2.5x view at the clicked point. Returns
 // { reset } so the caller can clear the zoom when the shown content changes
 // (next page, new image). Used by photo/video, pdf and comic lightboxes.
-export function attachZoomPan(wrap, opts: any = {}) {
+export function attachZoomPan(wrap: HTMLDivElement, opts: any = {}) {
   const MAX = opts.max || 8;
   let scale = 1, tx = 0, ty = 0;
-  const center = wrap.closest('.lightbox-center');
+  const center = wrap.closest<HTMLElement>('.lightbox-center');
 
   function apply() {
     wrap.style.transform = scale === 1 ? '' : `translate(${tx}px, ${ty}px) scale(${scale})`;
@@ -1240,7 +1244,7 @@ export function attachZoomPan(wrap, opts: any = {}) {
   // Zoom to `ns`, keeping the content point under (clientX, clientY) fixed.
   // With the default transform-origin (centre), the translation correction is
   // tx += (cursor - centre) * (1 - ns/scale).
-  function zoomTo(ns, clientX, clientY) {
+  function zoomTo(ns: number, clientX: number, clientY: number) {
     ns = Math.max(1, Math.min(MAX, ns));
     if (ns === scale) return;
     const rect = wrap.getBoundingClientRect();
@@ -1294,7 +1298,7 @@ export function attachZoomPan(wrap, opts: any = {}) {
       clampPan(); apply();
     }
   });
-  function endPointer(e) {
+  function endPointer(e: PointerEvent) {
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinchDist = 0;
     if (pointers.size === 0) { dragging = false; if (scale > 1) wrap.style.cursor = 'grab'; }
@@ -1335,7 +1339,7 @@ export function attachZoomPan(wrap, opts: any = {}) {
 // tree, timelines, contact sheet, telemetry traces) 60 times a second is enough
 // to take frames off a heavy video. A scaleX is handled by the compositor: no
 // layout, no paint. The CSS pairs this with width:100% and a left origin.
-export function setPlayerFill(fillEl, frac) {
+export function setPlayerFill(fillEl: HTMLElement, frac: number) {
   if (!fillEl) return;
   const f = frac > 0 ? (frac < 1 ? frac : 1) : 0;      // also coerces NaN to 0
   fillEl.style.transform = 'scaleX(' + f + ')';
@@ -1344,7 +1348,7 @@ export function setPlayerFill(fillEl, frac) {
 // Off by default, matching the STL/model and G-code viewers' own copy of this
 // control: a viewer that eats the wheel the moment the pointer crosses it traps
 // the page scroll, so arming it is the user's call, not the page's.
-export function wheelZoomToggle(extraClass?) {
+export function wheelZoomToggle(extraClass?: string|undefined) {
   let on = false;
   const btn = el('button', { type: 'button', class: 'anr-wheelzoom' + (extraClass ? ' ' + extraClass : '') });
   const paint = () => {
@@ -1377,7 +1381,7 @@ export function wheelZoomToggle(extraClass?) {
 // In an installed PWA we also arm a guard entry on load, so the Back that would
 // otherwise quit the app lands on a popstate we intercept to ask "Are you sure
 // you want to exit?" first.
-var _ovStack = [];          // open overlays, top last: each { hide }
+var _ovStack: { hide: () => void }[] = [];          // open overlays, top last: each { hide }
 var _ovIgnorePop = false;   // true while WE call history.back() to unwind
 var _backReady = false;
 
@@ -1406,7 +1410,7 @@ function _initBackButton() {
     // 1) An overlay is open: Back closes the topmost one and is consumed.
     if (_ovStack.length) {
       var top = _ovStack.pop();
-      try { top.hide(); } catch (_) {}
+      try { top!.hide(); } catch (_) {}
       return;
     }
     // 2) No overlay, and we've fallen past our app history (no tagged state) -
@@ -1423,7 +1427,7 @@ function _initBackButton() {
   });
 }
 
-export function openOverlayBack(hide) {
+export function openOverlayBack(hide: () => void) {
   _initBackButton();
   var entry = { hide: hide };
   _ovStack.push(entry);
@@ -1438,7 +1442,7 @@ export function openOverlayBack(hide) {
   };
 }
 
-function _confirmExit(onYes, onNo) {
+function _confirmExit(onYes: () => void, onNo: () => void) {
   if (document.getElementById('anr-exit-confirm')) return;   // already asking
   var ov = document.createElement('div');
   ov.id = 'anr-exit-confirm';
@@ -1459,8 +1463,8 @@ function _confirmExit(onYes, onNo) {
   btns.appendChild(yes); btns.appendChild(cancel);
   box.appendChild(msg); box.appendChild(btns);
   ov.appendChild(box);
-  function done(fn) { ov.remove(); document.removeEventListener('keydown', onKey); fn(); }
-  function onKey(e) { if (e.key === 'Escape') done(onNo); }
+  function done(fn: () => void) { ov.remove(); document.removeEventListener('keydown', onKey); fn(); }
+  function onKey(e: KeyboardEvent) { if (e.key === 'Escape') done(onNo); }
   yes.addEventListener('click', function () { done(onYes); });
   cancel.addEventListener('click', function () { done(onNo); });
   ov.addEventListener('click', function (e) { if (e.target === ov) done(onNo); });

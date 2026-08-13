@@ -44,7 +44,7 @@ async function inflatePrefix(blob, maxOut) {
 // objects a zlib-header check followed by inflating the first few bytes and
 // matching the "<type> <size>\0" signature (the only reliable test, since loose
 // objects have no extension and the zlib header byte is generic).
-export async function sniffGitObject(file) {
+export async function sniffGitObject(file: File) {
   if (!file || file.size < 4) return null;
   let head;
   try { head = new Uint8Array(await file.slice(0, 4).arrayBuffer()); } catch (_) { return null; }
@@ -102,7 +102,7 @@ function parseTree(content) {
   return entries;
 }
 
-function renderTextObject(content, type, resultsEl) {
+function renderTextObject(content, type, resultsEl: HTMLElement) {
   const text = new TextDecoder().decode(content);
   const blank = text.indexOf('\n\n');
   const headPart = blank >= 0 ? text.slice(0, blank) : text;
@@ -127,7 +127,7 @@ function renderTextObject(content, type, resultsEl) {
   }
 }
 
-function renderTreeObject(content, resultsEl) {
+function renderTreeObject(content, resultsEl: HTMLElement) {
   const entries = parseTree(content);
   const c = el('div', { class: 'anr-card' });
   c.appendChild(el('h3', {}, 'Tree (' + entries.length + ' ' + (entries.length === 1 ? 'entry' : 'entries') + ')'));
@@ -139,7 +139,7 @@ function renderTreeObject(content, resultsEl) {
   resultsEl.appendChild(c);
 }
 
-function renderBlobObject(file, content, resultsEl) {
+function renderBlobObject(file: File, content, resultsEl: HTMLElement) {
   const c = el('div', { class: 'anr-card' });
   c.appendChild(el('h3', {}, 'Blob'));
 
@@ -175,7 +175,7 @@ function renderBlobObject(file, content, resultsEl) {
   resultsEl.appendChild(c);
 }
 
-async function renderPackOrIdx(file, resultsEl, kind) {
+async function renderPackOrIdx(file: File, resultsEl: HTMLElement, kind) {
   if (kind === 'pack') {
     const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
     const dv = new DataView(head.buffer);
@@ -211,7 +211,7 @@ async function renderPackOrIdx(file, resultsEl, kind) {
   ]));
 }
 
-export async function renderGitObject(file, resultsEl) {
+export async function renderGitObject(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   const kind = await sniffGitObject(file);

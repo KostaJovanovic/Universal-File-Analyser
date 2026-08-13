@@ -13,12 +13,35 @@
    Arrays in, plain objects out. */
 
 import { fft } from './spectrogram.js';
+import type { FloatBuf } from '../core/types.js';
+import type { Tick } from './audio-analysis.js';
+
+/** One Welch-averaged power spectrum. This is what `longAverageSpectrum()`
+    returns and what every read below (transcode edge, ultrasonic content, mains
+    hum, musical key) is handed - naming it is what keeps those four in step. */
+export interface Spectrum {
+  /** Linear power per bin, averaged over the windows. */
+  power: Float64Array;
+  /** The same curve in dB, relative to the strongest bin. */
+  db: Float64Array;
+  fftSize: number;
+  /** Number of usable bins (fftSize / 2). */
+  bins: number;
+  sampleRate: number;
+  /** Hz per bin. */
+  binHz: number;
+  /** How many windows were averaged. */
+  windows: number;
+}
 
 // ---------- shared long-average (Welch) power spectrum ----------
 // One high-resolution averaged power spectrum spread across the whole file. A
 // large window keeps low-frequency resolution fine enough for mains hum while
 // still reaching the Nyquist ceiling for the transcode/ultrasonic reads.
-export async function longAverageSpectrum(mono, sampleRate, opts: any = {}) {
+export async function longAverageSpectrum(
+  mono: FloatBuf, sampleRate: number,
+  opts: { fftSize?: number; maxWindows?: number; tick?: Tick } = {},
+): Promise<Spectrum> {
   const N = opts.fftSize || 32768;
   const maxWindows = opts.maxWindows || 160;
   const tick = opts.tick;
@@ -61,14 +84,14 @@ export async function longAverageSpectrum(mono, sampleRate, opts: any = {}) {
   return { power, db, fftSize: N, bins: half, sampleRate, binHz: sampleRate / N, windows };
 }
 
-const binOfHz = (spec, hz) => Math.round(hz / spec.binHz);
-const hzOfBin = (spec, bin) => bin * spec.binHz;
+const binOfHz = (spec: Spectrum, hz: number) => Math.round(hz / spec.binHz);
+const hzOfBin = (spec: Spectrum, bin: number) => bin * spec.binHz;
 
 // ---------- lossy-transcode / "fake lossless" detector ----------
 // Find the frequency where broadband energy collapses (the codec low-pass edge),
 // and - for a file that claims to be lossless - decide whether that edge betrays
 // a lossy source. Maps the cutoff to a probable source bitrate.
-export function analyzeTranscode(spec, opts: any = {}) {
+export function analyzeTranscode(spec: Spectrum, opts: { declaredLossless?: boolean } = {}) {
   const nyquist = spec.sampleRate / 2;
   const { db, binHz } = spec;
 
@@ -107,7 +130,7 @@ export function analyzeTranscode(spec, opts: any = {}) {
   const brickwall = steepDbPerKHz > 30 && fillFrac < 0.96 && cutoffHz < 20800;
 
   // Map the cutoff to a probable MP3/AAC source rate.
-  let sourceGuess = null;
+  let sourceGuess: string | null = null;
   if (brickwall) {
     if (cutoffHz < 11500) sourceGuess = 'MP3 96 kbps or lower';
     else if (cutoffHz < 16500) sourceGuess = 'MP3 128 kbps / AAC ~96 kbps';
@@ -117,7 +140,7 @@ export function analyzeTranscode(spec, opts: any = {}) {
   }
 
   const declaredLossless = !!opts.declaredLossless;
-  let verdict, level;
+  let verdict: string, level: string;
   if (declaredLossless && brickwall) {
     verdict = 'Likely lossy source - declared lossless but hard low-pass at ' + Math.round(cutoffHz).toLocaleString() + ' Hz';
     level = 'bad';
@@ -138,7 +161,7 @@ export function analyzeTranscode(spec, opts: any = {}) {
 // ---------- ultrasonic / near-ultrasonic content ----------
 // Energy above ~18 kHz relative to the whole band, plus any narrowband tones up
 // there (tracking beacons, pairing tones, watermarks).
-export function analyzeUltrasonic(spec, opts: any = {}) {
+export function analyzeUltrasonic(spec: Spectrum, opts: { startHz?: number } = {}) {
   const startHz = opts.startHz || 18000;
   const nyquist = spec.sampleRate / 2;
   if (nyquist <= startHz + 500) return { supported: false, nyquist };
@@ -150,7 +173,7 @@ export function analyzeUltrasonic(spec, opts: any = {}) {
   const ratioDb = 10 * Math.log10((hi + 1e-30) / (tot + 1e-30));
 
   // Narrowband tones: bins that stand well above their local neighbourhood.
-  const peaks = [];
+  const peaks: { hz: number; promDb: number }[] = [];
   const nb = Math.max(2, binOfHz(spec, 200));
   for (let b = startBin; b < power.length - nb; b++) {
     let localMax = true;
@@ -169,9 +192,9 @@ export function analyzeUltrasonic(spec, opts: any = {}) {
 }
 
 // ---------- mains hum / ENF (50 / 60 Hz) ----------
-export function analyzeMainsHum(spec) {
+export function analyzeMainsHum(spec: Spectrum) {
   // Prominence of a candidate frequency = its peak bin above the local median.
-  const prominence = (hz) => {
+  const prominence = (hz: number) => {
     const b = binOfHz(spec, hz);
     if (b < 3 || b >= spec.power.length - 3) return { hz, db: -Infinity, exactHz: hz };
     // Take the strongest of the 3 bins around the target (leakage tolerance).
@@ -188,7 +211,7 @@ export function analyzeMainsHum(spec) {
     return { hz, exactHz: hzOfBin(spec, pk), db: 10 * Math.log10((pv + 1e-30) / (med + 1e-30)) };
   };
 
-  const fam = (base) => {
+  const fam = (base: number) => {
     const parts = [prominence(base), prominence(base * 2), prominence(base * 3)];
     // Strength = fundamental prominence plus a bonus for present harmonics.
     let score = parts[0].db;
@@ -215,7 +238,7 @@ const KS_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.
 const KS_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 const PITCH_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
-export function detectKey(spec) {
+export function detectKey(spec: Spectrum) {
   // Fold spectral power into a 12-bin chroma over the musical range (~C2-C7).
   const chroma = new Float64Array(12);
   const loBin = Math.max(1, binOfHz(spec, 65));
@@ -234,7 +257,7 @@ export function detectKey(spec) {
   let mean = 0; for (let i = 0; i < 12; i++) mean += chroma[i]; mean /= 12;
   const cv = new Float64Array(12); for (let i = 0; i < 12; i++) cv[i] = chroma[i] - mean;
 
-  const corr = (profile, rot) => {
+  const corr = (profile: number[], rot: number) => {
     let pm = 0; for (let i = 0; i < 12; i++) pm += profile[i]; pm /= 12;
     let num = 0, dp = 0, dc = 0;
     for (let i = 0; i < 12; i++) {
@@ -245,7 +268,7 @@ export function detectKey(spec) {
     return den > 1e-12 ? num / den : 0;
   };
 
-  const cands = [];
+  const cands: { name: string; tonic: number; mode: string; score: number }[] = [];
   for (let r = 0; r < 12; r++) {
     cands.push({ name: PITCH_NAMES[r] + ' major', tonic: r, mode: 'major', score: corr(KS_MAJOR, r) });
     cands.push({ name: PITCH_NAMES[r] + ' minor', tonic: r, mode: 'minor', score: corr(KS_MINOR, r) });
@@ -259,8 +282,8 @@ export function detectKey(spec) {
 }
 
 // ---------- EBU R128 loudness (momentary / short-term / integrated + LRA) ----------
-async function kWeight(samples, sampleRate, tick) {
-  const applyBiquad = async (x, b0, b1, b2, a1, a2) => {
+async function kWeight(samples: FloatBuf, sampleRate: number, tick?: Tick) {
+  const applyBiquad = async (x: FloatBuf, b0: number, b1: number, b2: number, a1: number, a2: number) => {
     const y = new Float32Array(x.length);
     let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
     for (let i = 0; i < x.length; i++) {
@@ -288,15 +311,15 @@ async function kWeight(samples, sampleRate, tick) {
 }
 // (kWeight returns the promise from its final applyBiquad; loudnessR128 awaits it.)
 
-const msToLufs = (ms) => -0.691 + 10 * Math.log10(ms + 1e-30);
+const msToLufs = (ms: number) => -0.691 + 10 * Math.log10(ms + 1e-30);
 
-export async function loudnessR128(mono, sampleRate, tick) {
+export async function loudnessR128(mono: FloatBuf, sampleRate: number, tick?: Tick) {
   const f = await kWeight(mono, sampleRate, tick);
 
   // Blocks of a given length with a hop; return per-block mean square.
-  const blockMs = async (blockSec, hopSec) => {
+  const blockMs = async (blockSec: number, hopSec: number) => {
     const bl = Math.round(blockSec * sampleRate), hop = Math.round(hopSec * sampleRate);
-    const out = [];
+    const out: { t: number; ms: number }[] = [];
     if (f.length < bl) return out;
     let bc = 0;
     for (let start = 0; start + bl <= f.length; start += hop) {
@@ -311,7 +334,7 @@ export async function loudnessR128(mono, sampleRate, tick) {
   const shrt = await blockMs(3.0, 1.0);  // short-term: 3 s / 1 s hop
 
   let momentaryMax = -Infinity, shortTermMax = -Infinity;
-  const series = [];
+  const series: { t: number; lufs: number }[] = [];
   for (const b of mom) { const l = msToLufs(b.ms); if (l > momentaryMax) momentaryMax = l; series.push({ t: b.t, lufs: l }); }
   for (const b of shrt) { const l = msToLufs(b.ms); if (l > shortTermMax) shortTermMax = l; }
 
@@ -332,13 +355,13 @@ export async function loudnessR128(mono, sampleRate, tick) {
 
   // Loudness range: 10th-95th percentile spread of short-term blocks, gated -20 LU
   // below their own mean.
-  let lra = null;
+  let lra: number | null = null;
   const stl = shrt.map((b) => msToLufs(b.ms)).filter((l) => l > ABS);
   if (stl.length > 4) {
     const meanSt = msToLufs(shrt.reduce((a, b) => a + b.ms, 0) / shrt.length);
     const gated = stl.filter((l) => l > meanSt - 20).sort((a, b) => a - b);
     if (gated.length > 1) {
-      const pct = (p) => gated[Math.min(gated.length - 1, Math.max(0, Math.round(p * (gated.length - 1))))];
+      const pct = (p: number) => gated[Math.min(gated.length - 1, Math.max(0, Math.round(p * (gated.length - 1))))];
       lra = pct(0.95) - pct(0.10);
     }
   }
@@ -347,7 +370,7 @@ export async function loudnessR128(mono, sampleRate, tick) {
 }
 
 // ---------- true peak (4x oversampled inter-sample peak, dBTP) ----------
-export async function truePeakDb(channels, sampleRate, tick) {
+export async function truePeakDb(channels: FloatBuf[], sampleRate: number, tick?: Tick) {
   const OS = 4, half = 8, L = OS * half * 2; // 64-tap windowed-sinc interpolator
   // Build the interpolation kernel (cutoff at the original Nyquist, i.e. 1/OS).
   const kernel = new Float64Array(L);
@@ -360,7 +383,7 @@ export async function truePeakDb(channels, sampleRate, tick) {
   }
   // Split into OS polyphase sub-filters.
   const taps = half * 2;
-  const phase = [];
+  const phase: Float64Array[] = [];
   for (let p = 0; p < OS; p++) {
     const sub = new Float64Array(taps);
     for (let k = 0; k < taps; k++) sub[k] = kernel[p + OS * k] * OS;
@@ -387,10 +410,10 @@ export async function truePeakDb(channels, sampleRate, tick) {
 }
 
 // ---------- signal health: crest factor, DC offset, effective bit depth ----------
-export async function signalHealth(channels, tick) {
+export async function signalHealth(channels: FloatBuf[], tick?: Tick) {
   let peak = 0, sumSq = 0, count = 0;
   let orAccum = 0; // OR of all sample magnitudes quantised to 24-bit ints
-  const dcPerCh = [];
+  const dcPerCh: number[] = [];
   for (const ch of channels) {
     let sum = 0;
     for (let i = 0; i < ch.length; i++) {
@@ -433,7 +456,7 @@ const DTMF_GRID = [
   ['*', '0', '#', 'D'],
 ];
 
-export async function detectDtmf(mono, sampleRate, tick) {
+export async function detectDtmf(mono: FloatBuf, sampleRate: number, tick?: Tick) {
   const winSec = 0.035, hopSec = 0.015;
   const W = Math.round(winSec * sampleRate), hop = Math.round(hopSec * sampleRate);
   if (mono.length < W) return { digits: [], sequence: '' };
@@ -441,7 +464,7 @@ export async function detectDtmf(mono, sampleRate, tick) {
   const freqs = DTMF_LOW.concat(DTMF_HIGH);
   const coeff = freqs.map((f) => 2 * Math.cos((2 * Math.PI * Math.round((f / sampleRate) * W)) / W));
 
-  const frameDigit = (start) => {
+  const frameDigit = (start: number): string | null => {
     let total = 0;
     for (let i = 0; i < W; i++) { const v = mono[start + i]; total += v * v; }
     if (total < 1e-4) return null; // silence
@@ -469,15 +492,15 @@ export async function detectDtmf(mono, sampleRate, tick) {
   };
 
   // Slide, then debounce into stable digit events (min ~60 ms).
-  const raw = [];
+  const raw: { t: number; d: string | null }[] = [];
   let dc = 0;
   for (let start = 0; start + W <= mono.length; start += hop) {
     if (tick && (dc++ & 0x1F) === 0) await tick();
     raw.push({ t: start / sampleRate, d: frameDigit(start) });
   }
 
-  const digits = [];
-  let cur = null, runStart = 0, runEnd = 0, gap = 0;
+  const digits: { digit: string; tStart: number; tEnd: number }[] = [];
+  let cur: string | null = null, runStart = 0, runEnd = 0, gap = 0;
   // A dialled digit is held ~70-100 ms; a music transient rarely locks a tone pair
   // that long, so requiring ~60 ms of steady tone drops single-frame false hits.
   const MIN_FRAMES = Math.max(2, Math.round(0.06 / hopSec));

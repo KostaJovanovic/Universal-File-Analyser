@@ -77,7 +77,7 @@ const SIG_EXPECT = {
 // bytes. `sniff` is the sniffFileType() result (or null). Returns a descriptor
 // for signatureCard(), or null when the extension is unknown to us or the
 // signature checks out. Reads the first 16 bytes for the hex readout.
-export async function signatureCheck(file, sniff) {
+export async function signatureCheck(file: File, sniff) {
   const ext = (fileExt(file.name) || '').toLowerCase();
   const expect = SIG_EXPECT[ext];
   if (!expect) return null;                                // no expectation - stay quiet
@@ -127,7 +127,7 @@ const TRAIL_MAX_FULL = SCAN_MED;
 
 // ZIP: the End Of Central Directory record is the last structure; anything after
 // it (past its own comment field) is appended. Scan the tail for the last EOCD.
-async function zipLogicalEnd(file) {
+async function zipLogicalEnd(file: File) {
   const readLen = Math.min(file.size, 65557);   // EOCD(22) + max comment(65535)
   const start = file.size - readLen;
   const b = new Uint8Array(await file.slice(start).arrayBuffer());
@@ -148,7 +148,7 @@ async function zipLogicalEnd(file) {
 // that first and read a few bytes instead of up to TRAIL_MAX_FULL. The full scan
 // still runs for the files that actually have something hidden after the end,
 // which is the case worth spending time on.
-async function endsWith(file, sig) {
+async function endsWith(file: File, sig: string|any[]) {
   if (file.size < sig.length) return false;
   const b = new Uint8Array(await file.slice(file.size - sig.length).arrayBuffer());
   for (let i = 0; i < sig.length; i++) if (b[i] !== sig[i]) return false;
@@ -159,7 +159,7 @@ async function endsWith(file, sig) {
 const PNG_IEND = [0, 0, 0, 0, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82];
 
 // PNG: walk length-prefixed chunks from byte 8 to IEND; end is past IEND's CRC.
-async function pngLogicalEnd(file) {
+async function pngLogicalEnd(file: File) {
   if (await endsWith(file, PNG_IEND)) return file.size;
   const b = new Uint8Array(await file.arrayBuffer());
   const dv = new DataView(b.buffer);
@@ -176,7 +176,7 @@ async function pngLogicalEnd(file) {
 
 // JPEG: the real EOI is the last FF D9 (appended data after it has no marker
 // meaning). Scanning from the end under-reports rather than false-flags.
-async function jpegLogicalEnd(file) {
+async function jpegLogicalEnd(file: File) {
   if (await endsWith(file, [0xFF, 0xD9])) return file.size;
   const b = new Uint8Array(await file.arrayBuffer());
   for (let i = b.length - 2; i >= 2; i--) {
@@ -187,7 +187,7 @@ async function jpegLogicalEnd(file) {
 
 // GIF: block walk (screen descriptor -> extensions / image blocks) to the 0x3B
 // trailer; end is the byte after it.
-async function gifLogicalEnd(file) {
+async function gifLogicalEnd(file: File) {
   // A single 0x3B could in principle be the last byte of an appended blob rather
   // than the real trailer, so this can under-report - the same trade-off the JPEG
   // scan above already makes deliberately, and preferable to a false flag.
@@ -219,7 +219,7 @@ async function gifLogicalEnd(file) {
 // Decide whether a file carries data past its logical end. `sniff` (from
 // sniffFileType) names the container. Returns a descriptor for trailingCard() or
 // null. Pure zero-padding is treated as benign and ignored.
-export async function trailingDataCheck(file, sniff) {
+export async function trailingDataCheck(file: File, sniff) {
   if (!sniff) return null;
   const ext = sniff.ext;
   let logicalEnd = null;
@@ -260,7 +260,7 @@ export async function trailingDataCheck(file, sniff) {
 // Forensic readout for appended data, styled like the signature-mismatch card.
 // `file` is supplied so the hidden trailing blob can be extracted (downloaded) or
 // fed straight back into the analyser (browse an appended ZIP, view a smuggled JPEG).
-export function trailingCard(info, file) {
+export function trailingCard(info, file: File) {
   // A plain card (not the red anr-sig-flag alert): trailing data is worth noting
   // but not an integrity failure, and it sits low in the readout, just above the
   // Integrity card, rather than leading the analysis.

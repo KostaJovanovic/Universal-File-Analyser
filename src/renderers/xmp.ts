@@ -144,7 +144,7 @@ function miniBar(n) {
 }
 
 // ------------------------------------------------------------------------------
-export async function renderXmp(file, resultsEl) {
+export async function renderXmp(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));

@@ -52,7 +52,7 @@ function parseXml(text) {
 }
 
 // Read the full file as text, capped to a sane size for text manifests.
-async function readText(file, cap = 4 * 1024 * 1024) {
+async function readText(file: File, cap = 4 * 1024 * 1024) {
   return file.slice(0, Math.min(file.size, cap)).text();
 }
 
@@ -61,7 +61,7 @@ async function readText(file, cap = 4 * 1024 * 1024) {
 // ============================================================================
 
 // ---------- HLS .m3u8 / .m3u ----------
-function parseHls(text, ext) {
+function parseHls(text, ext: string) {
   // Plain (non-HLS) M3U fallback handled by parsePlaylist; require #EXTM3U here.
   if (!/#EXTM3U/.test(text)) return null;
   const isHls = /#EXT-X-/.test(text);
@@ -288,7 +288,7 @@ function parseF4m(text) {
 }
 
 // ---------- Generic playlists .asx / .wpl / .xspf / .pls ----------
-function parsePlaylist(text, ext) {
+function parsePlaylist(text, ext: string) {
   if (ext === 'pls') {
     if (!/\[playlist\]/i.test(text)) return null;
     const files = Array.from(text.matchAll(/^File\d+\s*=\s*(.+)$/gim)).map((m) => m[1].trim());
@@ -356,7 +356,7 @@ function parsePlaylist(text, ext) {
 
 // ---------- MXF .mxf (SMPTE 377) ----------
 const MXF_PARTITION = [0x06, 0x0E, 0x2B, 0x34, 0x02, 0x05, 0x01, 0x01, 0x0D, 0x01, 0x02, 0x01, 0x01];
-async function parseMxf(file) {
+async function parseMxf(file: File) {
   const head = await readSlice(file, 0, 65536);
   // Header partition pack key: 06 0E 2B 34 02 05 01 01 0D 01 02 01 01 ...
   if (!matchMagic(head, MXF_PARTITION)) {
@@ -364,7 +364,7 @@ async function parseMxf(file) {
     const idx = findBytes(head, new Uint8Array(MXF_PARTITION));
     if (idx < 0) return null;
   }
-  const out = { 'Format': 'MXF (Material Exchange Format, SMPTE 377)' };
+  const out: Row = { 'Format': 'MXF (Material Exchange Format, SMPTE 377)' };
   // The partition pack key's byte 14 (index 13) is the partition status; byte 14
   // onward the version. Operational pattern is in byte 14 region of the key.
   let base = matchMagic(head, MXF_PARTITION) ? 0 : findBytes(head, new Uint8Array(MXF_PARTITION));
@@ -409,12 +409,12 @@ async function parseMxf(file) {
 }
 
 // ---------- GXF .gxf (General eXchange Format, SMPTE 360M) ----------
-async function parseGxf(file) {
+async function parseGxf(file: File) {
   const head = await readSlice(file, 0, 64);
   // Packet leader: 00 00 00 00 01 (5 bytes) then packet type.
   if (!(head[0] === 0 && head[1] === 0 && head[2] === 0 && head[3] === 0 && head[4] === 0x01)) return null;
   const pktType = head[5];
-  const out = { 'Format': 'GXF (General eXchange Format, SMPTE 360M)' };
+  const out: Row = { 'Format': 'GXF (General eXchange Format, SMPTE 360M)' };
   out['First packet type'] = pktType === 0xBC ? 'Map packet' : pktType === 0xBF ? 'Media packet' : pktType === 0xFB ? 'End-of-stream' : '0x' + pktType.toString(16);
   out['Vendor'] = 'Grass Valley (Profile/K2 servers)';
   out['Note'] = 'SMPTE 360M video server interchange container.';
@@ -422,10 +422,10 @@ async function parseGxf(file) {
 }
 
 // ---------- LXF .lxf (Leitch eXchange Format) ----------
-async function parseLxf(file) {
+async function parseLxf(file: File) {
   const head = await readSlice(file, 0, 32);
   if (ascii(head, 0, 6) !== 'LEITCH') return null;
-  const out = { 'Format': 'LXF (Leitch eXchange Format)' };
+  const out: Row = { 'Format': 'LXF (Leitch eXchange Format)' };
   out['Signature'] = 'LEITCH';
   out['Vendor'] = 'Leitch / Harris (broadcast servers)';
   out['Note'] = 'Header signature identified; stream/codec detail needs full LXF parsing.';
@@ -433,7 +433,7 @@ async function parseLxf(file) {
 }
 
 // ---------- Raw DV .dv / .dif ----------
-async function parseDv(file) {
+async function parseDv(file: File) {
   const head = await readSlice(file, 0, 480);
   // DIF block: section header (SCT) in top 3 bits of byte 0. Header block id is 0x1F at byte 0? Use DV header section: first block sct=0 (header).
   // DV DIF: byte0 top 3 bits = section type; header section = 000. Validate via the DSF/APT flags in the header block.
@@ -441,7 +441,7 @@ async function parseDv(file) {
   // Header DIF block starts the frame; byte 3 of header section holds DSF (50/60).
   const sct = head[0] >> 5;
   if (sct !== 0) return null; // not a header section
-  const out = { 'Format': 'Raw DV stream (.' + (file.name && /\.dif$/i.test(file.name) ? 'dif' : 'dv') + ')' };
+  const out: Row = { 'Format': 'Raw DV stream (.' + (file.name && /\.dif$/i.test(file.name) ? 'dif' : 'dv') + ')' };
   // DSF bit: byte 3 bit 7. 0 = NTSC (525/60), 1 = PAL (625/50).
   const dsf = (head[3] >> 7) & 1;
   out['Video system'] = dsf ? 'PAL (625/50)' : 'NTSC (525/60)';
@@ -477,7 +477,7 @@ const ASF_CONTENT_DESC = [0x33, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11, 0xA6, 
 const ASF_AUDIO_MEDIA = [0x40, 0x9E, 0x69, 0xF8, 0x4D, 0x5B, 0xCF, 0x11, 0xA8, 0xFD, 0x00, 0x80, 0x5F, 0x5C, 0x44, 0x2B];
 const ASF_VIDEO_MEDIA = [0xC0, 0xEF, 0x19, 0xBC, 0x4D, 0x5B, 0xCF, 0x11, 0xA8, 0xFD, 0x00, 0x80, 0x5F, 0x5C, 0x44, 0x2B];
 
-async function parseAsf(file, ext) {
+async function parseAsf(file: File, ext: string) {
   const head = await readSlice(file, 0, Math.min(file.size, 65536));
   if (!matchMagic(head, ASF_HEADER)) return null;
   const r = new Reader(head, true);
@@ -486,7 +486,7 @@ async function parseAsf(file, ext) {
   const numObjects = r.u32();
   r.skip(2);
   const isWmv = ext === 'wmv' || ext === 'wma' || ext === 'dvr-ms';
-  const out = { 'Format': ext === 'dvr-ms' ? 'Microsoft Recorded TV (.dvr-ms, ASF)' : 'ASF (Advanced Systems Format)' };
+  const out: Row = { 'Format': ext === 'dvr-ms' ? 'Microsoft Recorded TV (.dvr-ms, ASF)' : 'ASF (Advanced Systems Format)' };
   out['Header objects'] = numObjects;
 
   // File properties object.
@@ -553,10 +553,10 @@ async function parseAsf(file, ext) {
 }
 
 // ---------- RealMedia .rm / .rmvb ----------
-async function parseReal(file) {
+async function parseReal(file: File) {
   const head = await readSlice(file, 0, Math.min(file.size, 65536));
   if (ascii(head, 0, 4) !== '.RMF') return null;
-  const out = { 'Format': 'RealMedia (.RMF)' };
+  const out: Row = { 'Format': 'RealMedia (.RMF)' };
   // Chunk walk: each chunk = 4-byte id + 4-byte size (big-endian).
   const streams = [];
   let pos = 0;
@@ -651,8 +651,8 @@ function mp4TrackInfo(buf, moovStart, moovSize) {
   }
   // Find stsd sample entries (avc1/hev1/hvc1/vp09/av01/mp4a etc.).
   let scan = moovStart;
-  const visualCodecs = { avc1: 'H.264/AVC', avc3: 'H.264/AVC', hev1: 'H.265/HEVC', hvc1: 'H.265/HEVC', vp08: 'VP8', vp09: 'VP9', av01: 'AV1', mp4v: 'MPEG-4 Visual', 'jpeg': 'MJPEG', s263: 'H.263' };
-  const audioCodecs = { mp4a: 'AAC', 'ac-3': 'AC-3', 'ec-3': 'E-AC-3', 'Opus': 'Opus', alac: 'ALAC', 'fLaC': 'FLAC' };
+  const visualCodecs: Record<string, string> = { avc1: 'H.264/AVC', avc3: 'H.264/AVC', hev1: 'H.265/HEVC', hvc1: 'H.265/HEVC', vp08: 'VP8', vp09: 'VP9', av01: 'AV1', mp4v: 'MPEG-4 Visual', 'jpeg': 'MJPEG', s263: 'H.263' };
+  const audioCodecs: Record<string, string> = { mp4a: 'AAC', 'ac-3': 'AC-3', 'ec-3': 'E-AC-3', 'Opus': 'Opus', alac: 'ALAC', 'fLaC': 'FLAC' };
   let stsd;
   while ((stsd = findBoxIn(buf, scan, end, 'stsd')) >= 0) {
     const r = new Reader(buf, false); r.seek(stsd + 8);
@@ -690,11 +690,11 @@ function findBoxIn(buf, start, end, type) {
 }
 
 // Generic ISOBMFF/MP4 wrapper readout for f4v/lrv/insv/gifv-as-mp4/divx-as-mp4.
-async function parseMp4Wrapper(file, label, note) {
+async function parseMp4Wrapper(file: File, label, note) {
   const buf = await readSlice(file, 0, Math.min(file.size, 1 << 20));
   const { top, ftyp } = readMp4Boxes(buf);
   if (!top.length || !top.some((b) => b.type === 'ftyp')) return null;
-  const out = { 'Format': label };
+  const out: Row = { 'Format': label };
   if (ftyp) out['Brand'] = ftyp;
   const moov = top.find((b) => b.type === 'moov');
   if (moov) {
@@ -711,13 +711,13 @@ async function parseMp4Wrapper(file, label, note) {
 }
 
 // ---------- DivX (.divx) - RIFF/AVI ----------
-async function parseDivx(file) {
+async function parseDivx(file: File) {
   const head = await readSlice(file, 0, 4096);
   if (ascii(head, 0, 4) !== 'RIFF' || ascii(head, 8, 4) !== 'AVI ') {
     // Some .divx are actually MP4.
     return parseMp4Wrapper(file, 'DivX Media Format (.divx, MP4)', 'DivX-branded MP4 container.');
   }
-  const out = { 'Format': 'DivX Media Format (.divx, RIFF/AVI)' };
+  const out: Row = { 'Format': 'DivX Media Format (.divx, RIFF/AVI)' };
   // avih main header inside hdrl.
   const avih = findBytes(head, new Uint8Array([0x61, 0x76, 0x69, 0x68])); // 'avih'
   if (avih >= 0) {
@@ -744,7 +744,7 @@ async function parseDivx(file) {
 }
 
 // ---------- Insta360 .insv / .insp ----------
-async function parseInsta360(file, ext) {
+async function parseInsta360(file: File, ext: string) {
   const isPhoto = ext === 'insp';
   if (isPhoto) {
     const head = await readSlice(file, 0, 8);
@@ -752,7 +752,7 @@ async function parseInsta360(file, ext) {
     if (!(head[0] === 0xFF && head[1] === 0xD8)) {
       // Some insp are PNG/other; still flag as Insta360.
     }
-    const out = { 'Format': 'Insta360 photo (.insp)', 'Base image': head[0] === 0xFF && head[1] === 0xD8 ? 'JPEG' : 'image' };
+    const out: Row = { 'Format': 'Insta360 photo (.insp)', 'Base image': head[0] === 0xFF && head[1] === 0xD8 ? 'JPEG' : 'image' };
     out['360 content'] = 'yes (dual-fisheye / equirectangular)';
     const tail = await readTrailerString(file);
     if (tail.model) out['Camera model'] = tail.model;
@@ -762,7 +762,7 @@ async function parseInsta360(file, ext) {
   const buf = await readSlice(file, 0, Math.min(file.size, 1 << 20));
   const { top, ftyp } = readMp4Boxes(buf);
   if (!top.some((b) => b.type === 'ftyp')) return null;
-  const out = { 'Format': 'Insta360 video (.insv, MP4)' };
+  const out: Row = { 'Format': 'Insta360 video (.insv, MP4)' };
   if (ftyp) out['Brand'] = ftyp;
   const moov = top.find((b) => b.type === 'moov');
   if (moov) {
@@ -779,7 +779,7 @@ async function parseInsta360(file, ext) {
 }
 
 // Read the file tail and look for an Insta360 magic + model string.
-async function readTrailerString(file) {
+async function readTrailerString(file: File) {
   const res: any = {};
   try {
     const tail = await readSlice(file, Math.max(0, file.size - 64), 64);
@@ -799,7 +799,7 @@ async function readTrailerString(file) {
 // ============================================================================
 
 // ---------- IVF (.ivf) ----------
-async function parseIvf(file) {
+async function parseIvf(file: File) {
   const head = await readSlice(file, 0, 64);
   if (ascii(head, 0, 4) !== 'DKIF') return null;
   const r = new Reader(head, true); r.seek(4);
@@ -809,8 +809,8 @@ async function parseIvf(file) {
   const w = r.seek(12).u16(), h = r.u16();
   const rateNum = r.u32(), rateDen = r.u32();
   const frameCount = r.u32();
-  const codecMap = { VP80: 'VP8', VP90: 'VP9', AV01: 'AV1', 'H264': 'H.264', HEVC: 'H.265' };
-  const out = {
+  const codecMap: Record<string, string> = { VP80: 'VP8', VP90: 'VP9', AV01: 'AV1', 'H264': 'H.264', HEVC: 'H.265' };
+  const out: Row = {
     'Format': 'IVF elementary stream',
     'Codec': (codecMap[fourcc] || fourcc) + ' (FourCC ' + fourcc + ')',
     'Resolution': w + ' x ' + h,
@@ -822,20 +822,20 @@ async function parseIvf(file) {
 }
 
 // ---------- Y4M (.y4m) ----------
-async function parseY4m(file) {
+async function parseY4m(file: File) {
   const head = await readSlice(file, 0, 256);
   if (ascii(head, 0, 9) !== 'YUV4MPEG2') return null;
   // Header is one ASCII line ending in 0x0A.
   let end = 9; while (end < head.length && head[end] !== 0x0A) end++;
   const line = ascii(head, 0, end);
-  const out = { 'Format': 'YUV4MPEG2 (.y4m raw)' };
+  const out: Row = { 'Format': 'YUV4MPEG2 (.y4m raw)' };
   const w = (line.match(/\sW(\d+)/) || [])[1];
   const h = (line.match(/\sH(\d+)/) || [])[1];
   if (w && h) out['Resolution'] = w + ' x ' + h;
   const fr = (line.match(/\sF(\d+):(\d+)/) || []);
   if (fr[1]) { const fps = +fr[1] / (+fr[2] || 1); out['Frame rate'] = (Math.round(fps * 1000) / 1000) + ' fps (' + fr[1] + ':' + fr[2] + ')'; }
   const il = (line.match(/\sI(\w)/) || [])[1];
-  const ilMap = { p: 'Progressive', t: 'Top-field-first', b: 'Bottom-field-first', m: 'Mixed' };
+  const ilMap: Record<string, string> = { p: 'Progressive', t: 'Top-field-first', b: 'Bottom-field-first', m: 'Mixed' };
   if (il) out['Interlacing'] = ilMap[il] || il;
   const ar = (line.match(/\sA(\d+):(\d+)/) || []);
   if (ar[1]) out['Pixel aspect ratio'] = ar[1] + ':' + ar[2];
@@ -845,9 +845,9 @@ async function parseY4m(file) {
 }
 
 // ---------- MPEG-1/2 elementary .m2v / .m1v / .mpv ----------
-const MPEG_AR = { 1: '1:1 (square)', 2: '4:3', 3: '16:9', 4: '2.21:1' };
-const MPEG_FR = { 1: 23.976, 2: 24, 3: 25, 4: 29.97, 5: 30, 6: 50, 7: 59.94, 8: 60 };
-async function parseMpegVideo(file, ext) {
+const MPEG_AR: Record<number, string> = { 1: '1:1 (square)', 2: '4:3', 3: '16:9', 4: '2.21:1' };
+const MPEG_FR: Record<number, number> = { 1: 23.976, 2: 24, 3: 25, 4: 29.97, 5: 30, 6: 50, 7: 59.94, 8: 60 };
+async function parseMpegVideo(file: File, ext: string) {
   const head = await readSlice(file, 0, 4096);
   // Sequence header start code: 00 00 01 B3.
   const idx = findBytes(head, new Uint8Array([0x00, 0x00, 0x01, 0xB3]));
@@ -861,7 +861,7 @@ async function parseMpegVideo(file, ext) {
   const frCode = head[p + 3] & 0x0F;
   // bitrate: 18 bits starting at p+4.
   const bitrate = ((head[p + 4] << 10) | (head[p + 5] << 2) | (head[p + 6] >> 6)) >>> 0;
-  const out = { 'Format': 'MPEG-1/2 elementary video (.' + ext + ')' };
+  const out: Row = { 'Format': 'MPEG-1/2 elementary video (.' + ext + ')' };
   out['Resolution'] = width + ' x ' + height;
   out['Aspect ratio'] = MPEG_AR[arCode] || ('code ' + arCode);
   if (MPEG_FR[frCode]) out['Frame rate'] = MPEG_FR[frCode] + ' fps';
@@ -912,8 +912,8 @@ function findNals(buf, hevc) {
   return nals;
 }
 
-const H264_PROFILES = { 66: 'Baseline', 77: 'Main', 88: 'Extended', 100: 'High', 110: 'High 10', 122: 'High 4:2:2', 244: 'High 4:4:4' };
-async function parseH264(file) {
+const H264_PROFILES: Record<number, string> = { 66: 'Baseline', 77: 'Main', 88: 'Extended', 100: 'High', 110: 'High 10', 122: 'High 4:2:2', 244: 'High 4:4:4' };
+async function parseH264(file: File) {
   const buf = await readSlice(file, 0, 65536);
   const nals = findNals(buf, false);
   const sps = nals.find((n) => n.type === 7);
@@ -957,8 +957,8 @@ async function parseH264(file) {
   };
 }
 
-const H265_PROFILES = { 1: 'Main', 2: 'Main 10', 3: 'Main Still Picture', 4: 'Range Extensions' };
-async function parseH265(file) {
+const H265_PROFILES: Record<number, string> = { 1: 'Main', 2: 'Main 10', 3: 'Main Still Picture', 4: 'Range Extensions' };
+async function parseH265(file: File) {
   const buf = await readSlice(file, 0, 65536);
   const nals = findNals(buf, true);
   const sps = nals.find((n) => n.type === 33);
@@ -1003,7 +1003,7 @@ async function parseH265(file) {
 }
 
 // ---------- AV1 OBU (.obu) ----------
-async function parseObu(file) {
+async function parseObu(file: File) {
   const buf = await readSlice(file, 0, 4096);
   const br = new BitReader(buf);
   // Walk OBUs until sequence header (type 1).
@@ -1063,13 +1063,13 @@ async function parseObu(file) {
 //  MPEG PROGRAM / TRANSPORT STREAMS
 // ============================================================================
 
-const TS_STREAM_TYPES = {
+const TS_STREAM_TYPES: Record<number, string> = {
   0x01: 'MPEG-1 Video', 0x02: 'MPEG-2 Video', 0x03: 'MPEG-1 Audio', 0x04: 'MPEG-2 Audio',
   0x0F: 'AAC Audio (ADTS)', 0x10: 'MPEG-4 Visual', 0x11: 'AAC Audio (LATM)', 0x1B: 'H.264/AVC',
   0x24: 'H.265/HEVC', 0x81: 'AC-3 (ATSC)', 0x87: 'E-AC-3', 0x06: 'PES private (subtitles/AC-3)',
 };
 // Parse an MPEG-2 Transport Stream: find sync, read PAT then PMT for stream types.
-async function parseMpegTs(file, ext) {
+async function parseMpegTs(file: File, ext: string) {
   const buf = await readSlice(file, 0, 1 << 20);
   // Find packet size & sync alignment. Standard 188; M2TS 192 (4-byte TP_extra).
   let pktSize = 188, off = 0;
@@ -1090,7 +1090,7 @@ async function parseMpegTs(file, ext) {
     if (found) break;
   }
   if (!found) return null;
-  const out = { 'Format': (ext === 'trp' || ext === 'tp') ? 'PVR / DVB recording (.' + ext + ', MPEG-TS)' : 'MPEG-2 Transport Stream (.' + ext + ')' };
+  const out: Row = { 'Format': (ext === 'trp' || ext === 'tp') ? 'PVR / DVB recording (.' + ext + ', MPEG-TS)' : 'MPEG-2 Transport Stream (.' + ext + ')' };
   out['Packet size'] = pktSize + (pktSize === 192 ? ' (M2TS/BDAV)' : pktSize === 204 ? ' (with FEC)' : '');
 
   // Collect PMT PIDs from PAT (PID 0), then stream types from PMTs.
@@ -1144,11 +1144,11 @@ async function parseMpegTs(file, ext) {
 }
 
 // Parse an MPEG Program Stream (.m2p / .h2v): pack header 00 00 01 BA, scan PES.
-async function parseMpegPs(file, ext) {
+async function parseMpegPs(file: File, ext: string) {
   const buf = await readSlice(file, 0, 1 << 20);
   const packIdx = findBytes(buf, new Uint8Array([0x00, 0x00, 0x01, 0xBA]));
   if (packIdx < 0) return null;
-  const out = { 'Format': 'MPEG Program Stream (.' + ext + ')' };
+  const out: Row = { 'Format': 'MPEG Program Stream (.' + ext + ')' };
   // Determine MPEG-1 vs MPEG-2 pack header (top bits after BA).
   const marker = buf[packIdx + 4] >> 6;
   out['Variant'] = marker === 0x01 ? 'MPEG-2 PS' : 'MPEG-1 PS';
@@ -1173,10 +1173,10 @@ async function parseMpegPs(file, ext) {
 
 // ---------- Windows Recorded TV .wtv ----------
 const WTV_MAGIC = [0xB7, 0xD8, 0x00, 0x20, 0x37, 0x49, 0xDA, 0x11, 0xA6, 0x4E, 0x00, 0x07, 0xE9, 0x5E, 0xAD, 0x8D];
-async function parseWtv(file) {
+async function parseWtv(file: File) {
   const head = await readSlice(file, 0, Math.min(file.size, 1 << 20));
   if (!matchMagic(head, WTV_MAGIC)) return null;
-  const out = { 'Format': 'Windows Recorded TV (.wtv)' };
+  const out: Row = { 'Format': 'Windows Recorded TV (.wtv)' };
   // WTV stores metadata as UTF-16LE key/value pairs scattered in the file.
   // Scan for known metadata key strings and pull the nearby UTF-16 value.
   const u16 = new TextDecoder('utf-16le').decode(head);
@@ -1200,10 +1200,10 @@ async function parseWtv(file) {
 }
 
 // ---------- Ogg Media .ogm ----------
-async function parseOgm(file) {
+async function parseOgm(file: File) {
   const buf = await readSlice(file, 0, 65536);
   if (ascii(buf, 0, 4) !== 'OggS') return null;
-  const out = { 'Format': 'Ogg Media (.ogm)' };
+  const out: Row = { 'Format': 'Ogg Media (.ogm)' };
   // Walk Ogg pages; first page of each logical stream carries the codec header.
   let video = 0, audio = 0, text2 = 0;
   const codecs = new Set();
@@ -1231,7 +1231,7 @@ async function parseOgm(file) {
 }
 
 // ---------- NUT container (.nut) ----------
-async function parseNut(file) {
+async function parseNut(file: File) {
   const head = await readSlice(file, 0, 64);
   // Main startcode: "nut/multimedia container\0" begins with 'nut\0' style; actual
   // NUT file startcode is 0x4E 0x4D ... The main header startcode is a 64-bit
@@ -1253,14 +1253,14 @@ async function parseNut(file) {
 //  IDENTIFICATION-ONLY (rare AND hard)
 // ============================================================================
 
-async function parseDpx(file) {
+async function parseDpx(file: File) {
   const head = await readSlice(file, 0, 1664);
   const magic = ascii(head, 0, 4);
   const be = magic === 'SDPX';
   const le = magic === 'XPDS';
   if (!be && !le) return null;
   const r = new Reader(head, le);
-  const out = { 'Format': 'DPX (Digital Picture Exchange, SMPTE 268M)' };
+  const out: Row = { 'Format': 'DPX (Digital Picture Exchange, SMPTE 268M)' };
   out['Byte order'] = be ? 'Big-endian (SDPX)' : 'Little-endian (XPDS)';
   try {
     // Image element: pixelsPerLine @0x6C, linesPerElement @0x70 (in generic header).
@@ -1274,7 +1274,7 @@ async function parseDpx(file) {
   return out;
 }
 
-async function parseCin(file) {
+async function parseCin(file: File) {
   const head = await readSlice(file, 0, 256);
   // Cineon magic: 0x80 0x2A 0x5F 0xD7.
   if (!(head[0] === 0x80 && head[1] === 0x2A && head[2] === 0x5F && head[3] === 0xD7)) return null;
@@ -1284,7 +1284,7 @@ async function parseCin(file) {
   };
 }
 
-async function parseDav(file) {
+async function parseDav(file: File) {
   const head = await readSlice(file, 0, 32);
   // Dahua DAV often begins with "DHAV" or a proprietary marker; many are encrypted.
   const s = ascii(head, 0, 8);
@@ -1298,7 +1298,7 @@ async function parseDav(file) {
   };
 }
 
-async function parseYuv(file) {
+async function parseYuv(file: File) {
   return {
     'Format': 'Raw planar YUV (.yuv)',
     'File size': fmtBytes(file.size),
@@ -1311,7 +1311,7 @@ async function parseYuv(file) {
 // ============================================================================
 
 import { safe as wrap } from './parser-util.js';
-import type { Row } from '../core/types.js';
+import type { Row, ParseFn } from '../core/types.js';
 
 // Text-manifest dispatch reads the file once and routes by extension.
 function textParser(fn) {
@@ -1321,7 +1321,7 @@ function textParser(fn) {
   });
 }
 
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   // Streaming manifests
   m3u8: textParser((t, e) => parseHls(t, e) || parsePlaylist(t, e)),
   m3u: textParser((t, e) => parseHls(t, e) || parsePlaylist(t, e)),

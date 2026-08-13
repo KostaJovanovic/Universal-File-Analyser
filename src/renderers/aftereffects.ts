@@ -334,7 +334,7 @@ function buildCompTimeline(comp) {
   return card;
 }
 
-export async function renderAep(file, resultsEl) {
+export async function renderAep(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));

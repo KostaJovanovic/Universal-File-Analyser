@@ -17,7 +17,7 @@
 import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 
 // --- header signature: "Title:" then "Plotname:" / "Flags:", in ASCII or UTF-16LE.
-export async function sniffSpiceRaw(file) {
+export async function sniffSpiceRaw(file: File) {
   try {
     const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
     if (!head.length) return false;
@@ -33,7 +33,7 @@ const SI: [number, string][] = [
   [1e12, 'T'], [1e9, 'G'], [1e6, 'M'], [1e3, 'k'], [1, ''],
   [1e-3, 'm'], [1e-6, 'u'], [1e-9, 'n'], [1e-12, 'p'], [1e-15, 'f'],
 ];
-function fmtSI(v, unit) {
+function fmtSI(v: number, unit: string) {
   if (!isFinite(v)) return String(v);
   if (v === 0) return '0 ' + unit;
   const a = Math.abs(v);
@@ -44,14 +44,29 @@ function fmtSI(v, unit) {
     : Math.abs(scaled) >= 10 ? scaled.toFixed(2) : scaled.toFixed(3);
   return txt.replace(/\.?0+$/, '') + ' ' + pick[1] + unit;
 }
-const unitFor = (type) => /current/.test(type || '') ? 'A' : type === 'time' ? 's'
+const unitFor = (type: string) => /current/.test(type || '') ? 'A' : type === 'time' ? 's'
   : type === 'frequency' ? 'Hz' : type === 'voltage' ? 'V' : type === 'flux' ? 'Wb' : '';
+
+/** One row of the header's "Variables:" table. */
+interface RawVar { idx: number; name: string; type: string; }
+/** A plotted signal: one variable plus its legend chip and draw state. */
+interface Trace {
+  name: string;
+  type: string;
+  unit: string;
+  color: string;
+  data: Float64Array;
+  on: boolean;
+  chip?: HTMLButtonElement;
+}
+/** Everything parseRaw() hands the readout and the plot. */
+type ParsedRaw = ReturnType<typeof parseRaw>;
 
 // ---------------------------------------------------------------------------
 // Parse the raw file into { meta, vars, nPoints, complex, x, data } where data
 // is one Float64Array per variable (magnitude for complex).
 // ---------------------------------------------------------------------------
-function parseRaw(buf) {
+function parseRaw(buf: Uint8Array) {
   const utf16 = buf.length > 1 && buf[1] === 0 && buf[0] !== 0;
   // Decode the whole file as text to locate the header fields and the data
   // marker. For binary data the trailing bytes decode to junk, but we only read
@@ -59,7 +74,7 @@ function parseRaw(buf) {
   const dec = new TextDecoder(utf16 ? 'utf-16le' : 'latin1');
   const text = dec.decode(buf);
 
-  const get = (key) => {
+  const get = (key: string) => {
     const m = new RegExp('^' + key + ':[ \\t]*(.*)$', 'im').exec(text);
     return m ? m[1].trim() : '';
   };
@@ -91,7 +106,7 @@ function parseRaw(buf) {
   const mm = markerRe.exec(text);
   if (varsStart < 0 || !mm) throw new Error('no variables/data marker');
   const varsBlock = text.slice(text.indexOf('\n', varsStart) + 1, mm.index);
-  const vars = [];
+  const vars: RawVar[] = [];
   for (const line of varsBlock.split('\n')) {
     const t = line.trim();
     if (!t) continue;
@@ -149,7 +164,7 @@ function parseRaw(buf) {
     const body = text.slice(dataCharStart);
     const toks = body.split('\n');
     let li = 0, p = 0;
-    const readNum = (s) => {
+    const readNum = (s: string) => {
       s = s.trim();
       if (!s) return NaN;
       if (complex) { const c = s.split(','); return Math.hypot(parseFloat(c[0]), parseFloat(c[1] || '0')); }
@@ -178,12 +193,12 @@ function parseRaw(buf) {
 const TRACE_COLORS = ['#d12f2f', '#1f6fd1', '#1f9f4f', '#c46a00', '#8a3fd1',
   '#0c9aa6', '#c4337f', '#5a7a1f', '#3f5fd1', '#a8551f'];
 
-function buildPlot(parsed) {
+function buildPlot(parsed: ParsedRaw) {
   const { vars, nPoints, x } = parsed;
   const xType = (vars[0] && vars[0].type) || 'time';
   const xUnit = unitFor(xType);
   // Traces = every variable except the sweep axis (var 0).
-  const traces = vars.slice(1).map((v, i) => ({
+  const traces: Trace[] = vars.slice(1).map((v, i) => ({
     name: v.name, type: v.type, unit: unitFor(v.type) || 'V',
     color: TRACE_COLORS[i % TRACE_COLORS.length], data: parsed.data[i + 1],
     on: v.type === 'voltage' || (v.type !== 'current' && i < 4),   // default: voltages (or first few)
@@ -216,7 +231,7 @@ function buildPlot(parsed) {
 
   const PAD = { l: 64, r: 14, t: 12, b: 28 };
   let W = 0, H = 0, dpr = 1;
-  let plot = null;   // { x0,x1,y0,y1, vis }
+  let plot: ReturnType<typeof visibleRange> | null = null;   // { x0,x1,y0,y1, vis }
 
   function visibleRange() {
     const vis = traces.filter((t) => t.on);
@@ -239,14 +254,14 @@ function buildPlot(parsed) {
     W = cssW; H = cssH;
     canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
     canvas.style.height = cssH + 'px';
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
 
     plot = visibleRange();
     const { vis, x0, x1, y0, y1 } = plot;
-    const px = (xv) => PAD.l + (x1 === x0 ? 0 : (xv - x0) / (x1 - x0)) * (W - PAD.l - PAD.r);
-    const py = (yv) => PAD.t + (1 - (yv - y0) / (y1 - y0)) * (H - PAD.t - PAD.b);
+    const px = (xv: number) => PAD.l + (x1 === x0 ? 0 : (xv - x0) / (x1 - x0)) * (W - PAD.l - PAD.r);
+    const py = (yv: number) => PAD.t + (1 - (yv - y0) / (y1 - y0)) * (H - PAD.t - PAD.b);
 
     // Grid + axis ticks.
     ctx.strokeStyle = 'rgba(40,55,85,0.16)';
@@ -300,7 +315,7 @@ function buildPlot(parsed) {
   // Hover readout.
   const guide = el('div', { class: 'anr-spice-guide', hidden: '' });
   track.appendChild(guide);
-  function onMove(e) {
+  function onMove(e: PointerEvent) {
     if (!plot) return;
     const r = track.getBoundingClientRect();
     const mx = e.clientX - r.left;
@@ -335,7 +350,7 @@ function buildPlot(parsed) {
 }
 
 // "Nice" axis ticks (1/2/5 x 10^n) across [lo, hi].
-function niceTicks(lo, hi, target) {
+function niceTicks(lo: number, hi: number, target: number) {
   if (!(hi > lo)) return [lo];
   const span = hi - lo;
   const raw = span / target;
@@ -348,7 +363,7 @@ function niceTicks(lo, hi, target) {
 }
 
 // ---------------------------------------------------------------------------
-export async function renderSpiceRaw(file, resultsEl) {
+export async function renderSpiceRaw(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));

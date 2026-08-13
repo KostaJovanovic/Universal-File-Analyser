@@ -7,8 +7,8 @@
 import { PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, CSV_EXTS, SVG_EXTS, DOC_EXTS, ARCHIVE_EXTS } from '../core/formats.js';
 
 export const TAU = Math.PI * 2;
-export const rand = (a, b) => a + Math.random() * (b - a);
-export const pick = (arr) => arr[(Math.random() * arr.length) | 0];
+export const rand = (a: number, b: number) => a + Math.random() * (b - a);
+export const pick = <T>(arr: readonly T[]): T => arr[(Math.random() * arr.length) | 0];
 
 // Big asteroids = things that contain other files. ARCHIVE_EXTS plus the
 // zip-based document/container formats, which fits the "shatters into its
@@ -52,10 +52,17 @@ export const NUKE_GAP = 1;                            // empty-scope beat before
 export const NUKE_TOTAL = NUKE_WHITE + NUKE_FADE + NUKE_GAP;
 export const WRECK_FADE = 3;                          // wreck fade duration, once it begins (on respawn)
 
+/** One entry in the power-up catalogue below. `dur` is absent on the instants
+ *  (health, singularity, nuke), which fire once on pickup rather than running a
+ *  timer - so it is optional here and the timed weapons assert it. */
+export interface PowerupDef { color: string; letter: string; label: string; dur?: number }
+
 // Power-up catalogue. Each is colour-coded; picked up by flying over it. Weapon
 // power-ups are timed and mutually exclusive (a new one replaces the current);
 // health is instant. Letters keep them readable at small size.
-export const POWERUP_DEF = {
+// Typed as a keyed record (not the literal) because the drop picker, the sandbox
+// panel and the HUD all look entries up by a runtime string.
+export const POWERUP_DEF: Record<string, PowerupDef> = {
   health: { color: '#3fb950', letter: '+', label: 'HEALTH' },
   machine: { color: '#e3b341', letter: 'M', label: 'MACHINE GUN', dur: 10 },
   triple: { color: '#ff7b72', letter: 'T', label: 'TRIPLE SHOT', dur: 12 },
@@ -111,7 +118,7 @@ export const UFO_PATTERNS = ['circle', 'triangle', 'square', 'figure8'];
 // Directional map: each key names the direction it steers (default "steer & glide"
 // controls). Legacy controls reinterpret these in update.js - left/right rotate, up
 // thrusts, down unused - but the key->direction mapping is the same either way.
-export const KEY = {
+export const KEY: Record<string, string> = {
   ArrowLeft: 'left', a: 'left', A: 'left',
   ArrowRight: 'right', d: 'right', D: 'right',
   ArrowUp: 'up', w: 'up', W: 'up',

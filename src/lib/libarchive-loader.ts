@@ -23,7 +23,7 @@
 const WORKER_URL = 'assets/vendor/libarchive/worker-bundle.js';
 const WRAPPER_URL = 'assets/vendor/libarchive/la-archive.js';
 
-let _archiveModPromise = null;
+let _archiveModPromise: Promise<any>|null = null;
 
 // Lazily import the ESM wrapper and run Archive.init exactly once. Cached so
 // repeated extractArchive() calls share the same module + worker config.
@@ -48,7 +48,7 @@ async function loadArchiveModule() {
 
 // Open `file` (File/Blob) and return a handle with a flat entry list and lazy
 // per-entry byte extraction. Throws on any failure (caller catches).
-export async function extractArchive(file) {
+export async function extractArchive(file: File) {
   const { Archive } = await loadArchiveModule();
   const archive = await Archive.open(file);
   let arr;

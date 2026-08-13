@@ -36,7 +36,7 @@ function tarPages(buf) {
 }
 
 // Returns { pages: [{name, getBytes}], comicInfo } for the archive.
-async function extractPages(file, ext) {
+async function extractPages(file: File, ext: string) {
   if (ext === 'cbz') {
     const zip = await openZip(file, Math.min(file.size, 800 * 1024 * 1024));
     const names = zip.names();
@@ -83,7 +83,7 @@ function revokeComicPageUrls() {
   _comicPageUrls.clear();
 }
 
-export async function renderComic(file, resultsEl, extOverride) {
+export async function renderComic(file: File, resultsEl: HTMLElement, extOverride) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   revokeComicPageUrls();   // free the previous comic's page object URLs

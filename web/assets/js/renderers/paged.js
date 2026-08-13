@@ -144,6 +144,9 @@ export function paginateText(text, opts = {}) {
 // The amount a double-click / double-tap zooms the page in.
 const DOC_ZOOM = 2;
 export function openDocLightbox(pages, startIndex, label) {
+    // Cast straight to DocOverlay (not `| null`): the very next branch builds it
+    // when it is missing, so every later reference - including the ones inside the
+    // handlers below, where TypeScript cannot follow the narrowing - is non-null.
     let overlay = document.getElementById('anr-doc-viewer');
     if (!overlay) {
         overlay = el('div', { id: 'anr-doc-viewer', class: 'lightbox anr-doc-lightbox' });
