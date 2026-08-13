@@ -30,3 +30,8 @@ DOCS_PLAN.md
 # README media staging - scratch working folder, not shipped
 README TEMP/
 graphify-out/
+
+# npm: exists only so tsc can build src/*.ts -> web/assets/js/*.js.
+# The compiled output IS committed (like web/formats/ and web/docs/) so the
+# Cloudflare deploy stays a pure static upload of web/ with no build step.
+node_modules/

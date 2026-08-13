@@ -10,10 +10,7 @@
    the requestAnimationFrame loop, and teardown. All game logic lives in sibling modules that
    share the mutable state singleton `g` (state.js). Lazy-imported, so none of this loads
    until the code is entered. */
-
-import {
-  rand, pick, ARCHIVE_POOL, FILE_POOL, WAVE_GRACE, POWERUP_TYPES, POWERUP_DEF, MONO, STARTWAVE_KEY, LAYOUT_HINT_KEY
-} from './config.js';
+import { rand, pick, ARCHIVE_POOL, FILE_POOL, WAVE_GRACE, POWERUP_TYPES, POWERUP_DEF, MONO, STARTWAVE_KEY, LAYOUT_HINT_KEY } from './config.js';
 import { gameCss } from './style.js';
 import { g, initState, maxStartWave } from './state.js';
 import { layout } from './geometry.js';
@@ -26,508 +23,587 @@ import { loadLeaderboard, clearEndPanel } from './leaderboard.js';
 import { installInput } from './input.js';
 import { update } from './update.js';
 import { render } from './render.js';
-
-let active = false;   // singleton guard - the Konami code can't stack instances
-
+let active = false; // singleton guard - the Konami code can't stack instances
 // Detect a keyboard that can't produce WASD (AZERTY, or a non-Latin script like Cyrillic,
 // Greek or Arabic) so the game can point the player at the arrow keys, which steer the ship
 // in every control scheme. Sets g._nonWasd; the frame loop shows the hint once in a run.
 async function detectKeyboardLayout() {
-  if (g.isTouch) return;                        // touch has its own on-screen controls
-  try { if (localStorage.getItem(LAYOUT_HINT_KEY) === '1') return; } catch (_) {}   // already dismissed
-  try {
-    const kb = navigator.keyboard;
-    if (kb && kb.getLayoutMap) {
-      // Keyboard API (Chromium): read what the physical W/A/S/D keys actually type.
-      const map = await kb.getLayoutMap();
-      const need = [['KeyW', 'w'], ['KeyA', 'a'], ['KeyS', 's'], ['KeyD', 'd']];
-      g._nonWasd = need.some(([code, ch]) => { const c = map.get(code); return !c || c.toLowerCase() !== ch; });
-    } else {
-      // No Keyboard API (Firefox/Safari): fall back to the UI language and flag non-Latin
-      // scripts, which can't type WASD at all. (AZERTY on a Latin locale can't be told apart
-      // here, so it's only caught on Chromium above.)
-      const lang = (navigator.language || (navigator.languages && navigator.languages[0]) || '').toLowerCase();
-      g._nonWasd = /^(ru|uk|be|bg|sr|mk|kk|ky|tg|mn|el|ar|fa|ur|ps|he|yi|hy|ka|hi|bn|pa|gu|ta|te|kn|ml|th|lo|km|my)/.test(lang);
+    if (g.isTouch)
+        return; // touch has its own on-screen controls
+    try {
+        if (localStorage.getItem(LAYOUT_HINT_KEY) === '1')
+            return;
     }
-  } catch (_) { /* detection is best-effort; stay silent on failure */ }
+    catch (_) { } // already dismissed
+    try {
+        const kb = navigator.keyboard;
+        if (kb && kb.getLayoutMap) {
+            // Keyboard API (Chromium): read what the physical W/A/S/D keys actually type.
+            const map = await kb.getLayoutMap();
+            const need = [['KeyW', 'w'], ['KeyA', 'a'], ['KeyS', 's'], ['KeyD', 'd']];
+            g._nonWasd = need.some(([code, ch]) => { const c = map.get(code); return !c || c.toLowerCase() !== ch; });
+        }
+        else {
+            // No Keyboard API (Firefox/Safari): fall back to the UI language and flag non-Latin
+            // scripts, which can't type WASD at all. (AZERTY on a Latin locale can't be told apart
+            // here, so it's only caught on Chromium above.)
+            const lang = (navigator.language || (navigator.languages && navigator.languages[0]) || '').toLowerCase();
+            g._nonWasd = /^(ru|uk|be|bg|sr|mk|kk|ky|tg|mn|el|ar|fa|ur|ps|he|yi|hy|ka|hi|bn|pa|gu|ta|te|kn|ml|th|lo|km|my)/.test(lang);
+        }
+    }
+    catch (_) { /* detection is best-effort; stay silent on failure */ }
 }
-
 // The one-time nudge box (desktop only): "use the arrow keys". Auto-hides after a spell,
 // and any close remembers the dismissal so it never nags again.
 function showLayoutHint() {
-  g._layoutHintShown = true;
-  const box = document.createElement('div');
-  box.style.cssText = 'position:absolute; bottom:90px; left:50%; transform:translateX(-50%); z-index:6; ' +
-    'display:flex; align-items:center; gap:12px; max-width:min(92vw,440px); padding:12px 14px; ' +
-    'background:rgba(10,10,10,0.92); border:1px solid ' + g.ACCENT + '; color:' + g.ON_DARK + '; ' +
-    'font-family:' + MONO + '; font-size:13px; line-height:1.5;';
-  const msg = document.createElement('span');
-  msg.innerHTML = 'Your keyboard can&rsquo;t type WASD - steer with the arrow keys ' +
-    '<span style="white-space:nowrap; color:' + g.ACCENT + '">&larr; &uarr; &rarr; &darr;</span> instead.';
-  const x = document.createElement('button');
-  x.type = 'button'; x.className = 'anr-game-btn'; x.textContent = '✕';
-  x.setAttribute('aria-label', 'Dismiss');
-  x.style.cssText = 'width:26px; height:26px; font-size:12px; flex:none;';
-  const done = () => {
-    try { localStorage.setItem(LAYOUT_HINT_KEY, '1'); } catch (_) {}
-    if (g._layoutHintTimer) { clearTimeout(g._layoutHintTimer); g._layoutHintTimer = null; }
-    box.remove();
-  };
-  x.addEventListener('click', done);
-  box.append(msg, x);
-  g.overlay.appendChild(box);
-  g._layoutHintTimer = setTimeout(done, 12000);
+    g._layoutHintShown = true;
+    const box = document.createElement('div');
+    box.style.cssText = 'position:absolute; bottom:90px; left:50%; transform:translateX(-50%); z-index:6; ' +
+        'display:flex; align-items:center; gap:12px; max-width:min(92vw,440px); padding:12px 14px; ' +
+        'background:rgba(10,10,10,0.92); border:1px solid ' + g.ACCENT + '; color:' + g.ON_DARK + '; ' +
+        'font-family:' + MONO + '; font-size:13px; line-height:1.5;';
+    const msg = document.createElement('span');
+    msg.innerHTML = 'Your keyboard can&rsquo;t type WASD - steer with the arrow keys ' +
+        '<span style="white-space:nowrap; color:' + g.ACCENT + '">&larr; &uarr; &rarr; &darr;</span> instead.';
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'anr-game-btn';
+    x.textContent = '✕';
+    x.setAttribute('aria-label', 'Dismiss');
+    x.style.cssText = 'width:26px; height:26px; font-size:12px; flex:none;';
+    const done = () => {
+        try {
+            localStorage.setItem(LAYOUT_HINT_KEY, '1');
+        }
+        catch (_) { }
+        if (g._layoutHintTimer) {
+            clearTimeout(g._layoutHintTimer);
+            g._layoutHintTimer = null;
+        }
+        box.remove();
+    };
+    x.addEventListener('click', done);
+    box.append(msg, x);
+    g.overlay.appendChild(box);
+    g._layoutHintTimer = setTimeout(done, 12000);
 }
-
 export function launchAsteroids() {
-  if (active) return;
-  active = true;
-  window._anrAsteroidsActive = true;   // tells app.js's site-wide Konami listener to stand down
-
-  initState();   // (re)populate every per-run field with its launch default + persisted values
-
-  // Theme: pull the site's own tokens so the easter egg matches Analyser - the dark-control
-  // palette the fullscreen spectrogram uses, sharp corners, and --accent for the vectors.
-  const root = getComputedStyle(document.documentElement);
-  const cssVar = (name, fallback) => (root.getPropertyValue(name) || fallback).trim();
-  g.ACCENT = cssVar('--accent', '#e60023');
-  g.ACCENT_FG = cssVar('--accent-fg', '#ffffff');
-  g.MEDIA_BG = cssVar('--media-bg', '#0a0a0a');
-  g.SURFACE = cssVar('--surface-on-dark', '#1a1a1a');
-  g.ON_DARK = cssVar('--on-dark', '#ffffff');
-  g.BORDER = cssVar('--border-on-dark-ctl', '#444');
-  g.MUTED = cssVar('--muted-on-dark', '#999');
-
-  // ---- DOM scaffold ----
-  g.prevOverflow = document.body.style.overflow;
-  document.body.style.overflow = 'hidden';
-
-  const overlay = document.createElement('div');
-  g.overlay = overlay;
-  overlay.setAttribute('role', 'dialog');
-  overlay.setAttribute('aria-label', 'Asteroids');
-  overlay.style.cssText = 'position:fixed; inset:0; z-index:2147483600; background:' + g.MEDIA_BG + '; ' +
-    'touch-action:none; user-select:none; -webkit-user-select:none;';
-
-  const style = document.createElement('style');
-  style.textContent = gameCss({
-    ACCENT: g.ACCENT, ACCENT_FG: g.ACCENT_FG, MEDIA_BG: g.MEDIA_BG,
-    SURFACE: g.SURFACE, ON_DARK: g.ON_DARK, BORDER: g.BORDER, MUTED: g.MUTED
-  });
-  overlay.appendChild(style);
-
-  const canvas = document.createElement('canvas');
-  g.canvas = canvas;
-  canvas.style.cssText = 'position:absolute; inset:0; width:100%; height:100%; display:block;';
-  overlay.appendChild(canvas);
-
-  // Nuclear flash as a DOM layer (not a canvas fill) so it sits above EVERYTHING - controls,
-  // close button, end panel. Its opacity is driven per frame by nukeFlash(); pointer-events
-  // none so it never traps input.
-  const nukeEl = document.createElement('div');
-  g.nukeEl = nukeEl;
-  nukeEl.style.cssText = 'position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:2147483647;';
-  overlay.appendChild(nukeEl);
-
-  const closeBtn = document.createElement('button');
-  closeBtn.type = 'button';
-  closeBtn.className = 'anr-game-btn';
-  closeBtn.textContent = '✕';
-  closeBtn.setAttribute('aria-label', 'Close game');
-  closeBtn.style.cssText = 'position:absolute; top:14px; right:16px; z-index:2; width:36px; height:36px; font-size:15px;';
-  closeBtn.addEventListener('click', teardown);
-  overlay.appendChild(closeBtn);
-
-  // Dev-only hard reload: clears the cache so code edits actually show up. Hidden in
-  // production - only on localhost, a private LAN IP (phone testing), or the :3000 dev server.
-  const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ||
-    /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname) || location.port === '3000';
-  g.isDev = isDev;
-  if (isDev) {
-    const reloadBtn = document.createElement('button');
-    reloadBtn.type = 'button';
-    reloadBtn.className = 'anr-game-btn';
-    reloadBtn.textContent = '⟳';
-    reloadBtn.title = 'Clear cache and reload (dev)';
-    reloadBtn.setAttribute('aria-label', 'Clear cache and reload');
-    reloadBtn.style.cssText = 'position:absolute; top:14px; right:60px; z-index:2; width:36px; height:36px; font-size:16px;';
-    reloadBtn.addEventListener('click', async () => {
-      reloadBtn.disabled = true;
-      // Mirror a manual "clear cache + hard reload": unregister the PWA service worker and
-      // delete every Cache Storage bucket, then reload so all modules refetch from the server.
-      try {
-        if ('serviceWorker' in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map((r) => r.unregister()));
-        }
-        if (window.caches) {
-          const keys = await caches.keys();
-          await Promise.all(keys.map((k) => caches.delete(k)));
-        }
-      } catch (_) {}
-      location.reload();
+    if (active)
+        return;
+    active = true;
+    window._anrAsteroidsActive = true; // tells app.js's site-wide Konami listener to stand down
+    initState(); // (re)populate every per-run field with its launch default + persisted values
+    // Theme: pull the site's own tokens so the easter egg matches Analyser - the dark-control
+    // palette the fullscreen spectrogram uses, sharp corners, and --accent for the vectors.
+    const root = getComputedStyle(document.documentElement);
+    const cssVar = (name, fallback) => (root.getPropertyValue(name) || fallback).trim();
+    g.ACCENT = cssVar('--accent', '#e60023');
+    g.ACCENT_FG = cssVar('--accent-fg', '#ffffff');
+    g.MEDIA_BG = cssVar('--media-bg', '#0a0a0a');
+    g.SURFACE = cssVar('--surface-on-dark', '#1a1a1a');
+    g.ON_DARK = cssVar('--on-dark', '#ffffff');
+    g.BORDER = cssVar('--border-on-dark-ctl', '#444');
+    g.MUTED = cssVar('--muted-on-dark', '#999');
+    // ---- DOM scaffold ----
+    g.prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const overlay = document.createElement('div');
+    g.overlay = overlay;
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-label', 'Asteroids');
+    overlay.style.cssText = 'position:fixed; inset:0; z-index:2147483600; background:' + g.MEDIA_BG + '; ' +
+        'touch-action:none; user-select:none; -webkit-user-select:none;';
+    const style = document.createElement('style');
+    style.textContent = gameCss({
+        ACCENT: g.ACCENT, ACCENT_FG: g.ACCENT_FG, MEDIA_BG: g.MEDIA_BG,
+        SURFACE: g.SURFACE, ON_DARK: g.ON_DARK, BORDER: g.BORDER, MUTED: g.MUTED
     });
-    overlay.appendChild(reloadBtn);
-  }
-
-  // Touch device: drives the on-screen controls and hides the keyboard-only HUD hints.
-  g.isTouch = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
-
-  // Pause toggle (top-left). Shown only during an active run; mirrors the P key and the
-  // pause menu's Resume button.
-  const pauseBtn = document.createElement('button');
-  g.pauseBtn = pauseBtn;
-  pauseBtn.type = 'button';
-  pauseBtn.className = 'anr-game-btn';
-  pauseBtn.textContent = '❚❚';
-  pauseBtn.title = 'Pause (P)';
-  pauseBtn.setAttribute('aria-label', 'Pause');
-  pauseBtn.style.cssText = 'position:absolute; top:14px; left:14px; z-index:2; width:36px; height:36px; font-size:13px; display:none;';
-  pauseBtn.addEventListener('click', () => { if (g.splash || g.gameOver) return; if (g.menuOpen) closePause(); else openPause(); });
-  overlay.appendChild(pauseBtn);
-
-  document.body.appendChild(overlay);
-
-  // Go fullscreen straight away so the game owns the whole screen. The async dynamic import
-  // may have spent the user gesture, so the request can be rejected; retry on first tap/key.
-  let fsDone = false;
-  function tryFullscreen() {
-    if (fsDone) return;
-    if (document.fullscreenElement) { fsDone = true; return; }
-    const req = overlay.requestFullscreen || overlay.webkitRequestFullscreen;
-    if (!req) { fsDone = true; return; }   // unsupported (e.g. iOS Safari) - drop it quietly
-    try {
-      const p = req.call(overlay);
-      if (p && p.then) p.then(() => { fsDone = true; }).catch(() => {});
-      else fsDone = true;
-    } catch (_) {}
-  }
-  g.tryFullscreen = tryFullscreen;
-  g.teardown = teardown;
-  tryFullscreen();
-  overlay.addEventListener('pointerdown', tryFullscreen);   // first touch retries if needed
-
-  g.ctx = canvas.getContext('2d');
-  layout();
-  loadLeaderboard();   // fetch the top 5 for the left-margin board (fire and forget)
-
-  // Non-WASD keyboards (AZERTY, Cyrillic, Greek, Arabic, ...) can't type WASD; detect that
-  // and, once the player is in a run, nudge them toward the arrow keys (which always steer).
-  g._nonWasd = false; g._layoutHintShown = false; g._layoutHintTimer = null;
-  detectKeyboardLayout();
-
-  // ---- Sandbox (test mode) ----
-  // A panel to spawn anything in the game and toggle invulnerability, with scoring frozen
-  // while it's on. The SB button shows automatically on dev hosts; everywhere else it stays
-  // hidden until the in-game Konami code reveals it (g.revealSandbox).
-  buildSandbox();
-  buildStartToggle();
-
-  // ---- Input ----
-  const keyHandlers = installInput();
-
-  function onResize() { layout(); }
-  window.addEventListener('resize', onResize);
-  // Entering/leaving fullscreen and the mobile address bar showing/hiding both change the
-  // usable size without a window 'resize'; re-layout on those too.
-  document.addEventListener('fullscreenchange', onResize);
-  document.addEventListener('webkitfullscreenchange', onResize);
-  if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
-
-  function onVis() { paused = document.hidden; if (!paused) last = performance.now(); }
-  document.addEventListener('visibilitychange', onVis);
-
-  // Open on the splash screen now that every control exists (so it can hide them and the
-  // pause button until the player presses Play).
-  showSplash();
-
-  // ---- Loop ----
-  let raf = 0, last = performance.now(), paused = false;
-  function frame(t) {
-    if (!active) return;
-    raf = requestAnimationFrame(frame);
-    if (paused) { last = t; return; }
-    let dt = (t - last) / 1000; last = t;
-    if (dt > 0.05) dt = 0.05;
-    if (dt > 0) g.fps = g.fps ? g.fps * 0.92 + (1 / dt) * 0.08 : 1 / dt;   // smoothed, for the FPS readout
-    if (g.settings.bgDetail) updateFlyers(dt);   // ambient background - keeps drifting even on game over
-    else if (g.flyers.length) g.flyers.length = 0; // detail off: drop any squadrons mid-flight
-    updateWreck(dt);                // nuke wreck - drifts on past the cinematic, then fades
-    if (g.splash) driftAsteroids(dt); // splash decor drifts; no real play yet
-    else if (g.menuOpen) { /* paused: freeze the sim, render the held frame */ }
-    else if (!g.gameOver) update(dt);
-    else driftAsteroids(dt);        // keep the field drifting under the game-over screen
-    // Once actually in a run, surface the arrow-keys nudge for non-WASD keyboards (once).
-    if (g._nonWasd && !g._layoutHintShown && !g.splash && !g.gameOver && !g.menuOpen) showLayoutHint();
-    render();
-  }
-  raf = requestAnimationFrame(frame);
-
-  // ---- Sandbox builder ----
-  function buildSandbox() {
-    const { BORDER, ON_DARK, MUTED, SURFACE } = g;
-    const sbSpawnPowerup = (type) => {
-      let x, y, tries = 0;
-      do { x = g.cx + rand(-g.HW, g.HW) * 0.8; y = g.cy + rand(-g.HH, g.HH) * 0.8; }
-      while (Math.hypot(x - g.ship.x, y - g.ship.y) < 80 * g.S && ++tries < 20);
-      g.powerups.push(makePowerup(x, y, type));
-    };
-    const sbSpawnAsteroid = () => {
-      const size = 1 + ((Math.random() * 3) | 0);   // 1..3
-      const label = size === 3 ? pick(ARCHIVE_POOL) : pick(FILE_POOL);
-      let x, y, tries = 0;
-      do { x = g.cx + rand(-g.HW, g.HW) * 0.9; y = g.cy + rand(-g.HH, g.HH) * 0.9; }
-      while (Math.hypot(x - g.ship.x, y - g.ship.y) < 120 * g.S && ++tries < 20);
-      const a = makeAsteroid(x, y, size, label);
-      a.grace = WAVE_GRACE; a.solo = true;   // solo: keep the spawn-grace but don't flash the wave number
-      g.asteroids.push(a);
-    };
-
-    const panel = document.createElement('div');
-    panel.style.cssText = 'position:absolute; top:60px; right:16px; z-index:3; width:188px; display:none; ' +
-      'flex-direction:column; gap:7px; padding:12px; background:rgba(10,10,10,0.92); border:1px solid ' + BORDER +
-      '; font-family:' + MONO + '; color:' + ON_DARK + '; max-height:calc(100vh - 84px); overflow:auto;';
-    const head = (t) => {
-      const h = document.createElement('div');
-      h.textContent = t;
-      h.style.cssText = 'font-size:10px; letter-spacing:.18em; color:' + MUTED + '; margin-top:4px;';
-      return h;
-    };
-    const mkBtn = (label, onClick) => {
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'anr-game-btn';
-      b.textContent = label;
-      b.style.cssText = 'padding:6px 4px; font-size:11px;';
-      b.addEventListener('click', (e) => { e.preventDefault(); onClick(b); b.blur(); });
-      return b;
-    };
-    const gridOf = (btns) => {
-      const grd = document.createElement('div');
-      grd.style.cssText = 'display:grid; grid-template-columns:1fr 1fr; gap:6px;';
-      btns.forEach((b) => grd.appendChild(b));
-      return grd;
-    };
-
-    const invBtn = mkBtn('INVULN: OFF', () => {
-      g.cheatInvuln = !g.cheatInvuln;
-      invBtn.textContent = 'INVULN: ' + (g.cheatInvuln ? 'ON' : 'OFF');
-      invBtn.classList.toggle('on', g.cheatInvuln);
-    });
-    invBtn.style.cssText = 'padding:8px 4px; font-size:11px;';
-
-    const infBtn = mkBtn('INFINITE: OFF', () => {
-      g.sbInfinite = !g.sbInfinite;
-      infBtn.textContent = 'INFINITE: ' + (g.sbInfinite ? 'ON' : 'OFF');
-      infBtn.classList.toggle('on', g.sbInfinite);
-    });
-    const instBtn = mkBtn('INSTANT: OFF', () => {
-      g.sbInstant = !g.sbInstant;
-      instBtn.textContent = 'INSTANT: ' + (g.sbInstant ? 'ON' : 'OFF');
-      instBtn.classList.toggle('on', g.sbInstant);
-    });
-
-    // Header row: title + a close button that just hides the panel (sandbox stays ON).
-    const panelHead = document.createElement('div');
-    panelHead.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px;';
-    const panelTitle = document.createElement('div');
-    panelTitle.textContent = 'SANDBOX';
-    panelTitle.style.cssText = 'font-size:10px; letter-spacing:.18em; color:' + MUTED + ';';
-    const panelClose = document.createElement('button');
-    panelClose.type = 'button'; panelClose.className = 'anr-game-btn'; panelClose.textContent = '✕';
-    panelClose.setAttribute('aria-label', 'Close sandbox menu (stay in sandbox)');
-    panelClose.style.cssText = 'width:26px; height:26px; font-size:12px; flex:none;';
-    panelClose.addEventListener('click', (e) => { e.preventDefault(); panel.style.display = 'none'; });
-    panelHead.appendChild(panelTitle); panelHead.appendChild(panelClose);
-    panel.appendChild(panelHead);
-    panel.appendChild(invBtn);
-    panel.appendChild(head('POWER-UPS'));
-    panel.appendChild(gridOf([infBtn, instBtn]));
-    panel.appendChild(gridOf(POWERUP_TYPES.map((t) =>
-      mkBtn(POWERUP_DEF[t].label, () => { if (g.sbInstant) applyPowerup(t); else sbSpawnPowerup(t); }))));
-    // Wingmen: one button per weapon, spawning a drone with exactly that loadout.
-    panel.appendChild(head('WINGMEN'));
-    panel.appendChild(gridOf([
-      mkBtn('Normal', () => addDrone('normal')),
-      mkBtn('Machine', () => addDrone('machine')),
-      mkBtn('Sniper', () => addDrone('sniper')),
-      mkBtn('Triple', () => addDrone('triple')),
-      mkBtn('Homing', () => addDrone('homing')),
-      mkBtn('Kill all', () => { g.drones.length = 0; })
-    ]));
-    panel.appendChild(head('ENEMIES'));
-    panel.appendChild(gridOf([
-      mkBtn('Reward UFO', () => g.ufos.push(makeUfo('reward'))),
-      mkBtn('Ambient UFO', () => g.ufos.push(makeUfo('ambient')))
-    ]));
-    panel.appendChild(head('BOSSES'));
-    panel.appendChild(gridOf([
-      mkBtn('Mothership', () => { g.boss = null; spawnBoss('mothership'); }),
-      mkBtn('Mega', () => { g.boss = null; spawnBoss('megastructure'); }),
-      mkBtn('Serpent', () => { g.boss = null; spawnBoss('segmented'); })
-    ]));
-    panel.appendChild(head('FIELD'));
-    // Asteroid: tap spawns one; keep holding and after 1s it streams at 35/sec until released.
-    const astStop = () => { if (g.sbAsteroidHold) { clearTimeout(g.sbAsteroidHold); clearInterval(g.sbAsteroidHold); g.sbAsteroidHold = null; } };
-    const astBtn = mkBtn('Asteroid', () => {});   // spawning is driven by the hold handlers below
-    astBtn.addEventListener('pointerdown', (e) => {
-      e.preventDefault(); astStop(); sbSpawnAsteroid();
-      g.sbAsteroidHold = setTimeout(() => { g.sbAsteroidHold = setInterval(sbSpawnAsteroid, 1000 / 35); }, 1000);
-    });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => astBtn.addEventListener(ev, astStop));
-    panel.appendChild(gridOf([
-      astBtn,
-      mkBtn('Clear', () => { astStop(); g.asteroids.length = 0; g.bullets.length = 0; g.ufos.length = 0; g.powerups.length = 0; g.particles.length = 0; g.lasers.length = 0; g.missiles.length = 0; g.boss = null; })
-    ]));
-
-    panel.appendChild(head('WAVE'));
-    const waveInput = document.createElement('input');
-    waveInput.type = 'number'; waveInput.min = '1'; waveInput.value = '5';
-    waveInput.setAttribute('aria-label', 'Wave number');
-    waveInput.style.cssText = 'width:100%; padding:6px 8px; font-family:' + MONO + '; font-size:12px; box-sizing:border-box; ' +
-      'background:' + SURFACE + '; color:' + ON_DARK + '; border:1px solid ' + BORDER + '; border-radius:0; outline:none;';
-    panel.appendChild(waveInput);
-    panel.appendChild(mkBtn('Go to wave', () => {
-      const n = Math.max(1, parseInt(waveInput.value, 10) || 1);
-      g.asteroids.length = 0; g.bullets.length = 0; g.ufos.length = 0; g.powerups.length = 0; g.particles.length = 0; g.lasers.length = 0; g.missiles.length = 0; g.boss = null;
-      g.wave = n - 1; spawnWave();   // spawnWave bumps to n and spawns that wave's content
-    }));
-    overlay.appendChild(panel);
-
-    const sbToggle = document.createElement('button');
-    sbToggle.type = 'button'; sbToggle.className = 'anr-game-btn';
-    sbToggle.textContent = 'SB'; sbToggle.title = 'Sandbox mode';
-    sbToggle.setAttribute('aria-label', 'Toggle sandbox mode');
-    sbToggle.style.cssText = 'position:absolute; top:14px; right:104px; z-index:2; height:36px; padding:0 11px; font-size:13px;' +
-      (isDev ? '' : ' display:none;');   // hidden off-dev until the Konami code reveals it
-    sbToggle.addEventListener('click', () => {
-      const open = panel.style.display !== 'none';
-      if (!g.sandbox) {
-        g.sandbox = true; g.sandboxUsed = true;
-        sbToggle.classList.add('on'); panel.style.display = 'flex';
-      } else if (!open) {
-        panel.style.display = 'flex';   // reopen without changing sandbox state
-      } else {
-        g.sandbox = false; sbToggle.classList.remove('on'); panel.style.display = 'none';
-        restart();   // leaving sandbox starts a clean, scored game
-      }
-    });
-    overlay.appendChild(sbToggle);
-
-    // The in-game Konami code unlocks the sandbox: reveal the SB button and switch it on.
-    g.revealSandbox = () => {
-      sbToggle.style.display = '';
-      if (!g.sandbox) sbToggle.click();
-    };
-  }
-
-  // ---- Start-wave picker (unlock-gated) ----
-  // Once any boss has been beaten, a small remembered picker to begin runs deeper in than
-  // wave 1. The button opens a stepper popup; the ceiling is your best-ever wave minus 2
-  // (maxStartWave). Hidden until unlocked; the choice applies on your next run.
-  function buildStartToggle() {
-    const { BORDER, ON_DARK, MUTED, SURFACE } = g;
-    const btn = document.createElement('button');
-    g.startToggleBtn = btn;
-    btn.type = 'button'; btn.className = 'anr-game-btn';
-    btn.title = 'Choose your starting wave (applies on your next run)';
-    // On mobile it sits next to the pause button (top-left row); on desktop it stacks below it.
-    const btnPos = g.isTouch ? 'top:14px; left:58px;' : 'top:56px; left:14px;';
-    btn.style.cssText = 'position:absolute; ' + btnPos + ' z-index:4; height:30px; padding:0 10px; font-size:11px;' +
-      (g.bossEverBeaten ? '' : ' display:none;');
-
-    // The popup: a labelled - / value / + stepper plus a max/best hint, site-styled like the sandbox.
-    const popTop = g.isTouch ? 'top:52px' : 'top:90px';
-    const pop = document.createElement('div');
-    pop.style.cssText = 'position:absolute; ' + popTop + '; left:14px; z-index:6; width:188px; display:none; ' +
-      'flex-direction:column; gap:9px; padding:12px; background:rgba(10,10,10,0.92); border:1px solid ' + BORDER +
-      '; font-family:' + MONO + '; color:' + ON_DARK + ';';
-    const hd = document.createElement('div');
-    hd.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px;';
-    const ttl = document.createElement('div'); ttl.textContent = 'START WAVE';
-    ttl.style.cssText = 'font-size:10px; letter-spacing:.18em; color:' + MUTED + ';';
-    const close = document.createElement('button');
-    close.type = 'button'; close.className = 'anr-game-btn'; close.textContent = '✕';
-    close.setAttribute('aria-label', 'Close start-wave menu');
-    close.style.cssText = 'width:24px; height:24px; font-size:11px; flex:none;';
-    close.addEventListener('click', (e) => { e.preventDefault(); pop.style.display = 'none'; });
-    hd.append(ttl, close);
-
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex; align-items:stretch; gap:6px;';
-    const dec = document.createElement('button'); dec.type = 'button'; dec.className = 'anr-game-btn'; dec.textContent = '−';
-    dec.style.cssText = 'width:36px; font-size:17px; flex:none;'; dec.setAttribute('aria-label', 'Lower start wave');
-    const val = document.createElement('div');
-    val.style.cssText = 'flex:1; display:flex; align-items:center; justify-content:center; font-size:16px; ' +
-      'border:1px solid ' + BORDER + '; background:' + SURFACE + ';';
-    const inc = document.createElement('button'); inc.type = 'button'; inc.className = 'anr-game-btn'; inc.textContent = '+';
-    inc.style.cssText = 'width:36px; font-size:17px; flex:none;'; inc.setAttribute('aria-label', 'Raise start wave');
-    row.append(dec, val, inc);
-
-    const hint = document.createElement('div');
-    hint.style.cssText = 'font-size:10px; color:' + MUTED + '; text-align:center;';
-
-    const clamp = (n) => Math.max(1, Math.min(maxStartWave(), n | 0));
-    const syncBtn = () => { btn.textContent = 'START W' + g.startWavePref; btn.classList.toggle('on', g.startWavePref > 1); };
-    const syncPop = () => {
-      g.startWavePref = clamp(g.startWavePref);
-      const max = maxStartWave();
-      val.textContent = 'W' + g.startWavePref;
-      hint.textContent = 'max W' + max + ' · best W' + (g.bestWave || 0);
-      dec.disabled = g.startWavePref <= 1; inc.disabled = g.startWavePref >= max;
-      dec.style.opacity = dec.disabled ? '0.4' : ''; inc.style.opacity = inc.disabled ? '0.4' : '';
-    };
-    const setPref = (n) => {
-      g.startWavePref = clamp(n);
-      try { localStorage.setItem(STARTWAVE_KEY, String(g.startWavePref)); } catch (_) {}
-      syncBtn(); syncPop();
-    };
-    dec.addEventListener('click', (e) => { e.preventDefault(); setPref(g.startWavePref - 1); });
-    inc.addEventListener('click', (e) => { e.preventDefault(); setPref(g.startWavePref + 1); });
-
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      if (pop.style.display !== 'none') { pop.style.display = 'none'; return; }
-      syncPop();   // refresh the ceiling from the current best wave before showing
-      pop.style.display = 'flex';
-    });
-
-    // START: end the current run and begin a fresh one at the chosen wave (restart reads startWavePref).
-    const go = document.createElement('button');
-    go.type = 'button'; go.className = 'anr-game-btn';
-    go.textContent = 'START';
-    go.style.cssText = 'padding:9px 4px; font-size:12px; letter-spacing:.12em; margin-top:2px; ' +
-      'background:' + g.ACCENT + '; color:' + g.ACCENT_FG + '; border-color:' + g.ACCENT + ';';
-    go.addEventListener('click', (e) => { e.preventDefault(); pop.style.display = 'none'; restart(); });
-
-    pop.append(hd, row, hint, go);
-    syncBtn();
-    overlay.appendChild(btn);
-    overlay.appendChild(pop);
-  }
-
-  // ---- Teardown ----
-  function teardown() {
-    if (!active) return;
-    active = false;
-    window._anrAsteroidsActive = false;
-    cancelAnimationFrame(raf);
-    if (keyHandlers) {
-      window.removeEventListener('keydown', keyHandlers.onKeyDown, true);
-      window.removeEventListener('keyup', keyHandlers.onKeyUp, true);
+    overlay.appendChild(style);
+    const canvas = document.createElement('canvas');
+    g.canvas = canvas;
+    canvas.style.cssText = 'position:absolute; inset:0; width:100%; height:100%; display:block;';
+    overlay.appendChild(canvas);
+    // Nuclear flash as a DOM layer (not a canvas fill) so it sits above EVERYTHING - controls,
+    // close button, end panel. Its opacity is driven per frame by nukeFlash(); pointer-events
+    // none so it never traps input.
+    const nukeEl = document.createElement('div');
+    g.nukeEl = nukeEl;
+    nukeEl.style.cssText = 'position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:2147483647;';
+    overlay.appendChild(nukeEl);
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'anr-game-btn';
+    closeBtn.textContent = '✕';
+    closeBtn.setAttribute('aria-label', 'Close game');
+    closeBtn.style.cssText = 'position:absolute; top:14px; right:16px; z-index:2; width:36px; height:36px; font-size:15px;';
+    closeBtn.addEventListener('click', teardown);
+    overlay.appendChild(closeBtn);
+    // Dev-only hard reload: clears the cache so code edits actually show up. Hidden in
+    // production - only on localhost, a private LAN IP (phone testing), or the :3000 dev server.
+    const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ||
+        /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname) || location.port === '3000';
+    g.isDev = isDev;
+    if (isDev) {
+        const reloadBtn = document.createElement('button');
+        reloadBtn.type = 'button';
+        reloadBtn.className = 'anr-game-btn';
+        reloadBtn.textContent = '⟳';
+        reloadBtn.title = 'Clear cache and reload (dev)';
+        reloadBtn.setAttribute('aria-label', 'Clear cache and reload');
+        reloadBtn.style.cssText = 'position:absolute; top:14px; right:60px; z-index:2; width:36px; height:36px; font-size:16px;';
+        reloadBtn.addEventListener('click', async () => {
+            reloadBtn.disabled = true;
+            // Mirror a manual "clear cache + hard reload": unregister the PWA service worker and
+            // delete every Cache Storage bucket, then reload so all modules refetch from the server.
+            try {
+                if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(regs.map((r) => r.unregister()));
+                }
+                if (window.caches) {
+                    const keys = await caches.keys();
+                    await Promise.all(keys.map((k) => caches.delete(k)));
+                }
+            }
+            catch (_) { }
+            location.reload();
+        });
+        overlay.appendChild(reloadBtn);
     }
-    window.removeEventListener('resize', onResize);
-    document.removeEventListener('fullscreenchange', onResize);
-    document.removeEventListener('webkitfullscreenchange', onResize);
-    if (window.visualViewport) window.visualViewport.removeEventListener('resize', onResize);
-    document.removeEventListener('visibilitychange', onVis);
-    if (g.sbAsteroidHold) { clearTimeout(g.sbAsteroidHold); clearInterval(g.sbAsteroidHold); g.sbAsteroidHold = null; }
-    if (g._layoutHintTimer) { clearTimeout(g._layoutHintTimer); g._layoutHintTimer = null; }
-    // Drop out of fullscreen if we put ourselves there.
-    try {
-      if (document.fullscreenElement) { const r = (document.exitFullscreen || document.webkitExitFullscreen).call(document); if (r && r.catch) r.catch(() => {}); }
-    } catch (_) {}
-    clearEndPanel();
-    overlay.remove();
-    document.body.style.overflow = g.prevOverflow;
-  }
+    // Touch device: drives the on-screen controls and hides the keyboard-only HUD hints.
+    g.isTouch = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+    // Pause toggle (top-left). Shown only during an active run; mirrors the P key and the
+    // pause menu's Resume button.
+    const pauseBtn = document.createElement('button');
+    g.pauseBtn = pauseBtn;
+    pauseBtn.type = 'button';
+    pauseBtn.className = 'anr-game-btn';
+    pauseBtn.textContent = '❚❚';
+    pauseBtn.title = 'Pause (P)';
+    pauseBtn.setAttribute('aria-label', 'Pause');
+    pauseBtn.style.cssText = 'position:absolute; top:14px; left:14px; z-index:2; width:36px; height:36px; font-size:13px; display:none;';
+    pauseBtn.addEventListener('click', () => { if (g.splash || g.gameOver)
+        return; if (g.menuOpen)
+        closePause();
+    else
+        openPause(); });
+    overlay.appendChild(pauseBtn);
+    document.body.appendChild(overlay);
+    // Go fullscreen straight away so the game owns the whole screen. The async dynamic import
+    // may have spent the user gesture, so the request can be rejected; retry on first tap/key.
+    let fsDone = false;
+    function tryFullscreen() {
+        if (fsDone)
+            return;
+        if (document.fullscreenElement) {
+            fsDone = true;
+            return;
+        }
+        const req = overlay.requestFullscreen || overlay.webkitRequestFullscreen;
+        if (!req) {
+            fsDone = true;
+            return;
+        } // unsupported (e.g. iOS Safari) - drop it quietly
+        try {
+            const p = req.call(overlay);
+            if (p && p.then)
+                p.then(() => { fsDone = true; }).catch(() => { });
+            else
+                fsDone = true;
+        }
+        catch (_) { }
+    }
+    g.tryFullscreen = tryFullscreen;
+    g.teardown = teardown;
+    tryFullscreen();
+    overlay.addEventListener('pointerdown', tryFullscreen); // first touch retries if needed
+    g.ctx = canvas.getContext('2d');
+    layout();
+    loadLeaderboard(); // fetch the top 5 for the left-margin board (fire and forget)
+    // Non-WASD keyboards (AZERTY, Cyrillic, Greek, Arabic, ...) can't type WASD; detect that
+    // and, once the player is in a run, nudge them toward the arrow keys (which always steer).
+    g._nonWasd = false;
+    g._layoutHintShown = false;
+    g._layoutHintTimer = null;
+    detectKeyboardLayout();
+    // ---- Sandbox (test mode) ----
+    // A panel to spawn anything in the game and toggle invulnerability, with scoring frozen
+    // while it's on. The SB button shows automatically on dev hosts; everywhere else it stays
+    // hidden until the in-game Konami code reveals it (g.revealSandbox).
+    buildSandbox();
+    buildStartToggle();
+    // ---- Input ----
+    const keyHandlers = installInput();
+    function onResize() { layout(); }
+    window.addEventListener('resize', onResize);
+    // Entering/leaving fullscreen and the mobile address bar showing/hiding both change the
+    // usable size without a window 'resize'; re-layout on those too.
+    document.addEventListener('fullscreenchange', onResize);
+    document.addEventListener('webkitfullscreenchange', onResize);
+    if (window.visualViewport)
+        window.visualViewport.addEventListener('resize', onResize);
+    function onVis() { paused = document.hidden; if (!paused)
+        last = performance.now(); }
+    document.addEventListener('visibilitychange', onVis);
+    // Open on the splash screen now that every control exists (so it can hide them and the
+    // pause button until the player presses Play).
+    showSplash();
+    // ---- Loop ----
+    let raf = 0, last = performance.now(), paused = false;
+    function frame(t) {
+        if (!active)
+            return;
+        raf = requestAnimationFrame(frame);
+        if (paused) {
+            last = t;
+            return;
+        }
+        let dt = (t - last) / 1000;
+        last = t;
+        if (dt > 0.05)
+            dt = 0.05;
+        if (dt > 0)
+            g.fps = g.fps ? g.fps * 0.92 + (1 / dt) * 0.08 : 1 / dt; // smoothed, for the FPS readout
+        if (g.settings.bgDetail)
+            updateFlyers(dt); // ambient background - keeps drifting even on game over
+        else if (g.flyers.length)
+            g.flyers.length = 0; // detail off: drop any squadrons mid-flight
+        updateWreck(dt); // nuke wreck - drifts on past the cinematic, then fades
+        if (g.splash)
+            driftAsteroids(dt); // splash decor drifts; no real play yet
+        else if (g.menuOpen) { /* paused: freeze the sim, render the held frame */ }
+        else if (!g.gameOver)
+            update(dt);
+        else
+            driftAsteroids(dt); // keep the field drifting under the game-over screen
+        // Once actually in a run, surface the arrow-keys nudge for non-WASD keyboards (once).
+        if (g._nonWasd && !g._layoutHintShown && !g.splash && !g.gameOver && !g.menuOpen)
+            showLayoutHint();
+        render();
+    }
+    raf = requestAnimationFrame(frame);
+    // ---- Sandbox builder ----
+    function buildSandbox() {
+        const { BORDER, ON_DARK, MUTED, SURFACE } = g;
+        const sbSpawnPowerup = (type) => {
+            let x, y, tries = 0;
+            do {
+                x = g.cx + rand(-g.HW, g.HW) * 0.8;
+                y = g.cy + rand(-g.HH, g.HH) * 0.8;
+            } while (Math.hypot(x - g.ship.x, y - g.ship.y) < 80 * g.S && ++tries < 20);
+            g.powerups.push(makePowerup(x, y, type));
+        };
+        const sbSpawnAsteroid = () => {
+            const size = 1 + ((Math.random() * 3) | 0); // 1..3
+            const label = size === 3 ? pick(ARCHIVE_POOL) : pick(FILE_POOL);
+            let x, y, tries = 0;
+            do {
+                x = g.cx + rand(-g.HW, g.HW) * 0.9;
+                y = g.cy + rand(-g.HH, g.HH) * 0.9;
+            } while (Math.hypot(x - g.ship.x, y - g.ship.y) < 120 * g.S && ++tries < 20);
+            const a = makeAsteroid(x, y, size, label);
+            a.grace = WAVE_GRACE;
+            a.solo = true; // solo: keep the spawn-grace but don't flash the wave number
+            g.asteroids.push(a);
+        };
+        const panel = document.createElement('div');
+        panel.style.cssText = 'position:absolute; top:60px; right:16px; z-index:3; width:188px; display:none; ' +
+            'flex-direction:column; gap:7px; padding:12px; background:rgba(10,10,10,0.92); border:1px solid ' + BORDER +
+            '; font-family:' + MONO + '; color:' + ON_DARK + '; max-height:calc(100vh - 84px); overflow:auto;';
+        const head = (t) => {
+            const h = document.createElement('div');
+            h.textContent = t;
+            h.style.cssText = 'font-size:10px; letter-spacing:.18em; color:' + MUTED + '; margin-top:4px;';
+            return h;
+        };
+        const mkBtn = (label, onClick) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'anr-game-btn';
+            b.textContent = label;
+            b.style.cssText = 'padding:6px 4px; font-size:11px;';
+            b.addEventListener('click', (e) => { e.preventDefault(); onClick(b); b.blur(); });
+            return b;
+        };
+        const gridOf = (btns) => {
+            const grd = document.createElement('div');
+            grd.style.cssText = 'display:grid; grid-template-columns:1fr 1fr; gap:6px;';
+            btns.forEach((b) => grd.appendChild(b));
+            return grd;
+        };
+        const invBtn = mkBtn('INVULN: OFF', () => {
+            g.cheatInvuln = !g.cheatInvuln;
+            invBtn.textContent = 'INVULN: ' + (g.cheatInvuln ? 'ON' : 'OFF');
+            invBtn.classList.toggle('on', g.cheatInvuln);
+        });
+        invBtn.style.cssText = 'padding:8px 4px; font-size:11px;';
+        const infBtn = mkBtn('INFINITE: OFF', () => {
+            g.sbInfinite = !g.sbInfinite;
+            infBtn.textContent = 'INFINITE: ' + (g.sbInfinite ? 'ON' : 'OFF');
+            infBtn.classList.toggle('on', g.sbInfinite);
+        });
+        const instBtn = mkBtn('INSTANT: OFF', () => {
+            g.sbInstant = !g.sbInstant;
+            instBtn.textContent = 'INSTANT: ' + (g.sbInstant ? 'ON' : 'OFF');
+            instBtn.classList.toggle('on', g.sbInstant);
+        });
+        // Header row: title + a close button that just hides the panel (sandbox stays ON).
+        const panelHead = document.createElement('div');
+        panelHead.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px;';
+        const panelTitle = document.createElement('div');
+        panelTitle.textContent = 'SANDBOX';
+        panelTitle.style.cssText = 'font-size:10px; letter-spacing:.18em; color:' + MUTED + ';';
+        const panelClose = document.createElement('button');
+        panelClose.type = 'button';
+        panelClose.className = 'anr-game-btn';
+        panelClose.textContent = '✕';
+        panelClose.setAttribute('aria-label', 'Close sandbox menu (stay in sandbox)');
+        panelClose.style.cssText = 'width:26px; height:26px; font-size:12px; flex:none;';
+        panelClose.addEventListener('click', (e) => { e.preventDefault(); panel.style.display = 'none'; });
+        panelHead.appendChild(panelTitle);
+        panelHead.appendChild(panelClose);
+        panel.appendChild(panelHead);
+        panel.appendChild(invBtn);
+        panel.appendChild(head('POWER-UPS'));
+        panel.appendChild(gridOf([infBtn, instBtn]));
+        panel.appendChild(gridOf(POWERUP_TYPES.map((t) => mkBtn(POWERUP_DEF[t].label, () => { if (g.sbInstant)
+            applyPowerup(t);
+        else
+            sbSpawnPowerup(t); }))));
+        // Wingmen: one button per weapon, spawning a drone with exactly that loadout.
+        panel.appendChild(head('WINGMEN'));
+        panel.appendChild(gridOf([
+            mkBtn('Normal', () => addDrone('normal')),
+            mkBtn('Machine', () => addDrone('machine')),
+            mkBtn('Sniper', () => addDrone('sniper')),
+            mkBtn('Triple', () => addDrone('triple')),
+            mkBtn('Homing', () => addDrone('homing')),
+            mkBtn('Kill all', () => { g.drones.length = 0; })
+        ]));
+        panel.appendChild(head('ENEMIES'));
+        panel.appendChild(gridOf([
+            mkBtn('Reward UFO', () => g.ufos.push(makeUfo('reward'))),
+            mkBtn('Ambient UFO', () => g.ufos.push(makeUfo('ambient')))
+        ]));
+        panel.appendChild(head('BOSSES'));
+        panel.appendChild(gridOf([
+            mkBtn('Mothership', () => { g.boss = null; spawnBoss('mothership'); }),
+            mkBtn('Mega', () => { g.boss = null; spawnBoss('megastructure'); }),
+            mkBtn('Serpent', () => { g.boss = null; spawnBoss('segmented'); })
+        ]));
+        panel.appendChild(head('FIELD'));
+        // Asteroid: tap spawns one; keep holding and after 1s it streams at 35/sec until released.
+        const astStop = () => { if (g.sbAsteroidHold) {
+            clearTimeout(g.sbAsteroidHold);
+            clearInterval(g.sbAsteroidHold);
+            g.sbAsteroidHold = null;
+        } };
+        const astBtn = mkBtn('Asteroid', () => { }); // spawning is driven by the hold handlers below
+        astBtn.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            astStop();
+            sbSpawnAsteroid();
+            g.sbAsteroidHold = setTimeout(() => { g.sbAsteroidHold = setInterval(sbSpawnAsteroid, 1000 / 35); }, 1000);
+        });
+        ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => astBtn.addEventListener(ev, astStop));
+        panel.appendChild(gridOf([
+            astBtn,
+            mkBtn('Clear', () => { astStop(); g.asteroids.length = 0; g.bullets.length = 0; g.ufos.length = 0; g.powerups.length = 0; g.particles.length = 0; g.lasers.length = 0; g.missiles.length = 0; g.boss = null; })
+        ]));
+        panel.appendChild(head('WAVE'));
+        const waveInput = document.createElement('input');
+        waveInput.type = 'number';
+        waveInput.min = '1';
+        waveInput.value = '5';
+        waveInput.setAttribute('aria-label', 'Wave number');
+        waveInput.style.cssText = 'width:100%; padding:6px 8px; font-family:' + MONO + '; font-size:12px; box-sizing:border-box; ' +
+            'background:' + SURFACE + '; color:' + ON_DARK + '; border:1px solid ' + BORDER + '; border-radius:0; outline:none;';
+        panel.appendChild(waveInput);
+        panel.appendChild(mkBtn('Go to wave', () => {
+            const n = Math.max(1, parseInt(waveInput.value, 10) || 1);
+            g.asteroids.length = 0;
+            g.bullets.length = 0;
+            g.ufos.length = 0;
+            g.powerups.length = 0;
+            g.particles.length = 0;
+            g.lasers.length = 0;
+            g.missiles.length = 0;
+            g.boss = null;
+            g.wave = n - 1;
+            spawnWave(); // spawnWave bumps to n and spawns that wave's content
+        }));
+        overlay.appendChild(panel);
+        const sbToggle = document.createElement('button');
+        sbToggle.type = 'button';
+        sbToggle.className = 'anr-game-btn';
+        sbToggle.textContent = 'SB';
+        sbToggle.title = 'Sandbox mode';
+        sbToggle.setAttribute('aria-label', 'Toggle sandbox mode');
+        sbToggle.style.cssText = 'position:absolute; top:14px; right:104px; z-index:2; height:36px; padding:0 11px; font-size:13px;' +
+            (isDev ? '' : ' display:none;'); // hidden off-dev until the Konami code reveals it
+        sbToggle.addEventListener('click', () => {
+            const open = panel.style.display !== 'none';
+            if (!g.sandbox) {
+                g.sandbox = true;
+                g.sandboxUsed = true;
+                sbToggle.classList.add('on');
+                panel.style.display = 'flex';
+            }
+            else if (!open) {
+                panel.style.display = 'flex'; // reopen without changing sandbox state
+            }
+            else {
+                g.sandbox = false;
+                sbToggle.classList.remove('on');
+                panel.style.display = 'none';
+                restart(); // leaving sandbox starts a clean, scored game
+            }
+        });
+        overlay.appendChild(sbToggle);
+        // The in-game Konami code unlocks the sandbox: reveal the SB button and switch it on.
+        g.revealSandbox = () => {
+            sbToggle.style.display = '';
+            if (!g.sandbox)
+                sbToggle.click();
+        };
+    }
+    // ---- Start-wave picker (unlock-gated) ----
+    // Once any boss has been beaten, a small remembered picker to begin runs deeper in than
+    // wave 1. The button opens a stepper popup; the ceiling is your best-ever wave minus 2
+    // (maxStartWave). Hidden until unlocked; the choice applies on your next run.
+    function buildStartToggle() {
+        const { BORDER, ON_DARK, MUTED, SURFACE } = g;
+        const btn = document.createElement('button');
+        g.startToggleBtn = btn;
+        btn.type = 'button';
+        btn.className = 'anr-game-btn';
+        btn.title = 'Choose your starting wave (applies on your next run)';
+        // On mobile it sits next to the pause button (top-left row); on desktop it stacks below it.
+        const btnPos = g.isTouch ? 'top:14px; left:58px;' : 'top:56px; left:14px;';
+        btn.style.cssText = 'position:absolute; ' + btnPos + ' z-index:4; height:30px; padding:0 10px; font-size:11px;' +
+            (g.bossEverBeaten ? '' : ' display:none;');
+        // The popup: a labelled - / value / + stepper plus a max/best hint, site-styled like the sandbox.
+        const popTop = g.isTouch ? 'top:52px' : 'top:90px';
+        const pop = document.createElement('div');
+        pop.style.cssText = 'position:absolute; ' + popTop + '; left:14px; z-index:6; width:188px; display:none; ' +
+            'flex-direction:column; gap:9px; padding:12px; background:rgba(10,10,10,0.92); border:1px solid ' + BORDER +
+            '; font-family:' + MONO + '; color:' + ON_DARK + ';';
+        const hd = document.createElement('div');
+        hd.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px;';
+        const ttl = document.createElement('div');
+        ttl.textContent = 'START WAVE';
+        ttl.style.cssText = 'font-size:10px; letter-spacing:.18em; color:' + MUTED + ';';
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'anr-game-btn';
+        close.textContent = '✕';
+        close.setAttribute('aria-label', 'Close start-wave menu');
+        close.style.cssText = 'width:24px; height:24px; font-size:11px; flex:none;';
+        close.addEventListener('click', (e) => { e.preventDefault(); pop.style.display = 'none'; });
+        hd.append(ttl, close);
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:stretch; gap:6px;';
+        const dec = document.createElement('button');
+        dec.type = 'button';
+        dec.className = 'anr-game-btn';
+        dec.textContent = '−';
+        dec.style.cssText = 'width:36px; font-size:17px; flex:none;';
+        dec.setAttribute('aria-label', 'Lower start wave');
+        const val = document.createElement('div');
+        val.style.cssText = 'flex:1; display:flex; align-items:center; justify-content:center; font-size:16px; ' +
+            'border:1px solid ' + BORDER + '; background:' + SURFACE + ';';
+        const inc = document.createElement('button');
+        inc.type = 'button';
+        inc.className = 'anr-game-btn';
+        inc.textContent = '+';
+        inc.style.cssText = 'width:36px; font-size:17px; flex:none;';
+        inc.setAttribute('aria-label', 'Raise start wave');
+        row.append(dec, val, inc);
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:10px; color:' + MUTED + '; text-align:center;';
+        const clamp = (n) => Math.max(1, Math.min(maxStartWave(), n | 0));
+        const syncBtn = () => { btn.textContent = 'START W' + g.startWavePref; btn.classList.toggle('on', g.startWavePref > 1); };
+        const syncPop = () => {
+            g.startWavePref = clamp(g.startWavePref);
+            const max = maxStartWave();
+            val.textContent = 'W' + g.startWavePref;
+            hint.textContent = 'max W' + max + ' · best W' + (g.bestWave || 0);
+            dec.disabled = g.startWavePref <= 1;
+            inc.disabled = g.startWavePref >= max;
+            dec.style.opacity = dec.disabled ? '0.4' : '';
+            inc.style.opacity = inc.disabled ? '0.4' : '';
+        };
+        const setPref = (n) => {
+            g.startWavePref = clamp(n);
+            try {
+                localStorage.setItem(STARTWAVE_KEY, String(g.startWavePref));
+            }
+            catch (_) { }
+            syncBtn();
+            syncPop();
+        };
+        dec.addEventListener('click', (e) => { e.preventDefault(); setPref(g.startWavePref - 1); });
+        inc.addEventListener('click', (e) => { e.preventDefault(); setPref(g.startWavePref + 1); });
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (pop.style.display !== 'none') {
+                pop.style.display = 'none';
+                return;
+            }
+            syncPop(); // refresh the ceiling from the current best wave before showing
+            pop.style.display = 'flex';
+        });
+        // START: end the current run and begin a fresh one at the chosen wave (restart reads startWavePref).
+        const go = document.createElement('button');
+        go.type = 'button';
+        go.className = 'anr-game-btn';
+        go.textContent = 'START';
+        go.style.cssText = 'padding:9px 4px; font-size:12px; letter-spacing:.12em; margin-top:2px; ' +
+            'background:' + g.ACCENT + '; color:' + g.ACCENT_FG + '; border-color:' + g.ACCENT + ';';
+        go.addEventListener('click', (e) => { e.preventDefault(); pop.style.display = 'none'; restart(); });
+        pop.append(hd, row, hint, go);
+        syncBtn();
+        overlay.appendChild(btn);
+        overlay.appendChild(pop);
+    }
+    // ---- Teardown ----
+    function teardown() {
+        if (!active)
+            return;
+        active = false;
+        window._anrAsteroidsActive = false;
+        cancelAnimationFrame(raf);
+        if (keyHandlers) {
+            window.removeEventListener('keydown', keyHandlers.onKeyDown, true);
+            window.removeEventListener('keyup', keyHandlers.onKeyUp, true);
+        }
+        window.removeEventListener('resize', onResize);
+        document.removeEventListener('fullscreenchange', onResize);
+        document.removeEventListener('webkitfullscreenchange', onResize);
+        if (window.visualViewport)
+            window.visualViewport.removeEventListener('resize', onResize);
+        document.removeEventListener('visibilitychange', onVis);
+        if (g.sbAsteroidHold) {
+            clearTimeout(g.sbAsteroidHold);
+            clearInterval(g.sbAsteroidHold);
+            g.sbAsteroidHold = null;
+        }
+        if (g._layoutHintTimer) {
+            clearTimeout(g._layoutHintTimer);
+            g._layoutHintTimer = null;
+        }
+        // Drop out of fullscreen if we put ourselves there.
+        try {
+            if (document.fullscreenElement) {
+                const r = (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+                if (r && r.catch)
+                    r.catch(() => { });
+            }
+        }
+        catch (_) { }
+        clearEndPanel();
+        overlay.remove();
+        document.body.style.overflow = g.prevOverflow;
+    }
 }
+//# sourceMappingURL=asteroids.js.map

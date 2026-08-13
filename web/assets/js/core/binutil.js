@@ -4,238 +4,239 @@
    deepened renderers: a cursor-based DataView reader, byte/magic helpers, text
    decoders (UTF-16, CP437, latin1), and DecompressionStream wrappers. Keep this
    dependency-free and side-effect-free so it stays cheap to import. */
-
 // ---------- cursor reader ----------
 // Sequential reader over an ArrayBuffer / Uint8Array. Big-endian by default
 // (network/most container order); pass little:true for LE formats. Multi-byte
 // reads advance the cursor; the *At variants don't.
 export class Reader {
-  constructor(buf, little = false) {
-    if (buf instanceof Uint8Array) {
-      this.bytes = buf;
-      this.view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-    } else if (buf instanceof ArrayBuffer) {
-      this.bytes = new Uint8Array(buf);
-      this.view = new DataView(buf);
-    } else {
-      throw new TypeError('Reader expects ArrayBuffer or Uint8Array');
+    constructor(buf, little = false) {
+        if (buf instanceof Uint8Array) {
+            this.bytes = buf;
+            this.view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+        }
+        else if (buf instanceof ArrayBuffer) {
+            this.bytes = new Uint8Array(buf);
+            this.view = new DataView(buf);
+        }
+        else {
+            throw new TypeError('Reader expects ArrayBuffer or Uint8Array');
+        }
+        this.pos = 0;
+        this.little = !!little;
+        this.length = this.bytes.length;
     }
-    this.pos = 0;
-    this.little = !!little;
-    this.length = this.bytes.length;
-  }
-  get eof() { return this.pos >= this.length; }
-  remaining() { return this.length - this.pos; }
-  seek(p) { this.pos = p; return this; }
-  skip(n) { this.pos += n; return this; }
-  tell() { return this.pos; }
-  le(on = true) { this.little = on; return this; }
-
-  u8()  { return this.view.getUint8(this.pos++); }
-  i8()  { return this.view.getInt8(this.pos++); }
-  u16() { const v = this.view.getUint16(this.pos, this.little); this.pos += 2; return v; }
-  i16() { const v = this.view.getInt16(this.pos, this.little); this.pos += 2; return v; }
-  u32() { const v = this.view.getUint32(this.pos, this.little); this.pos += 4; return v >>> 0; }
-  i32() { const v = this.view.getInt32(this.pos, this.little); this.pos += 4; return v; }
-  u64() { const v = this.view.getBigUint64(this.pos, this.little); this.pos += 8; return v; }
-  f32() { const v = this.view.getFloat32(this.pos, this.little); this.pos += 4; return v; }
-  f64() { const v = this.view.getFloat64(this.pos, this.little); this.pos += 8; return v; }
-
-  u16At(p) { return this.view.getUint16(p, this.little); }
-  u32At(p) { return this.view.getUint32(p, this.little) >>> 0; }
-
-  // Number from a 64-bit unsigned. Converted to a JS Number, which loses exactness
-  // above 2^53 - fine for file sizes / sample counts where that doesn't matter.
-  u64num() { return Number(this.u64()); }
-
-  bytes_(n) { const b = this.bytes.subarray(this.pos, this.pos + n); this.pos += n; return b; }
-  ascii(n)  { const s = ascii(this.bytes, this.pos, n); this.pos += n; return s; }
-  // Read a fixed-length latin1 string (advances n).
-  latin1(n) { const s = latin1(this.bytes.subarray(this.pos, this.pos + n)); this.pos += n; return s; }
-  // Null-terminated ASCII string starting at the cursor (advances past the NUL).
-  cstr(max = Infinity) {
-    let s = '';
-    while (!this.eof && s.length < max) {
-      const c = this.u8();
-      if (c === 0) break;
-      if (c >= 32 && c < 127) s += String.fromCharCode(c);
+    get eof() { return this.pos >= this.length; }
+    remaining() { return this.length - this.pos; }
+    seek(p) { this.pos = p; return this; }
+    skip(n) { this.pos += n; return this; }
+    tell() { return this.pos; }
+    le(on = true) { this.little = on; return this; }
+    u8() { return this.view.getUint8(this.pos++); }
+    i8() { return this.view.getInt8(this.pos++); }
+    u16() { const v = this.view.getUint16(this.pos, this.little); this.pos += 2; return v; }
+    i16() { const v = this.view.getInt16(this.pos, this.little); this.pos += 2; return v; }
+    u32() { const v = this.view.getUint32(this.pos, this.little); this.pos += 4; return v >>> 0; }
+    i32() { const v = this.view.getInt32(this.pos, this.little); this.pos += 4; return v; }
+    u64() { const v = this.view.getBigUint64(this.pos, this.little); this.pos += 8; return v; }
+    f32() { const v = this.view.getFloat32(this.pos, this.little); this.pos += 4; return v; }
+    f64() { const v = this.view.getFloat64(this.pos, this.little); this.pos += 8; return v; }
+    u16At(p) { return this.view.getUint16(p, this.little); }
+    u32At(p) { return this.view.getUint32(p, this.little) >>> 0; }
+    // Number from a 64-bit unsigned. Converted to a JS Number, which loses exactness
+    // above 2^53 - fine for file sizes / sample counts where that doesn't matter.
+    u64num() { return Number(this.u64()); }
+    bytes_(n) { const b = this.bytes.subarray(this.pos, this.pos + n); this.pos += n; return b; }
+    ascii(n) { const s = ascii(this.bytes, this.pos, n); this.pos += n; return s; }
+    // Read a fixed-length latin1 string (advances n).
+    latin1(n) { const s = latin1(this.bytes.subarray(this.pos, this.pos + n)); this.pos += n; return s; }
+    // Null-terminated ASCII string starting at the cursor (advances past the NUL).
+    cstr(max = Infinity) {
+        let s = '';
+        while (!this.eof && s.length < max) {
+            const c = this.u8();
+            if (c === 0)
+                break;
+            if (c >= 32 && c < 127)
+                s += String.fromCharCode(c);
+        }
+        return s;
     }
-    return s;
-  }
 }
-
 // ---------- byte / magic helpers ----------
-
 // True if `sig` (array/Uint8Array of bytes; null entries = wildcard) matches
 // `buf` at `offset`.
 export function matchMagic(buf, sig, offset = 0) {
-  if (offset + sig.length > buf.length) return false;
-  for (let i = 0; i < sig.length; i++) {
-    if (sig[i] == null) continue;
-    if (buf[offset + i] !== sig[i]) return false;
-  }
-  return true;
+    if (offset + sig.length > buf.length)
+        return false;
+    for (let i = 0; i < sig.length; i++) {
+        if (sig[i] == null)
+            continue;
+        if (buf[offset + i] !== sig[i])
+            return false;
+    }
+    return true;
 }
-
 // True if the buffer begins with the given ASCII string.
 export function startsWithAscii(buf, str, offset = 0) {
-  for (let i = 0; i < str.length; i++) {
-    if (buf[offset + i] !== str.charCodeAt(i)) return false;
-  }
-  return true;
+    for (let i = 0; i < str.length; i++) {
+        if (buf[offset + i] !== str.charCodeAt(i))
+            return false;
+    }
+    return true;
 }
-
 // Index of the first occurrence of `needle` (array/Uint8Array) in `buf` at or
 // after `start`, or -1. Plain byte scan - fine for headers, not huge files.
 export function findBytes(buf, needle, start = 0, end = buf.length) {
-  const n = needle.length;
-  const last = Math.min(end, buf.length) - n;
-  outer: for (let i = start; i <= last; i++) {
-    for (let j = 0; j < n; j++) if (buf[i + j] !== needle[j]) continue outer;
-    return i;
-  }
-  return -1;
+    const n = needle.length;
+    const last = Math.min(end, buf.length) - n;
+    outer: for (let i = start; i <= last; i++) {
+        for (let j = 0; j < n; j++)
+            if (buf[i + j] !== needle[j])
+                continue outer;
+        return i;
+    }
+    return -1;
 }
-
 // Printable-ASCII slice (control/8-bit chars dropped).
 export function ascii(buf, start = 0, len = buf.length - start) {
-  let s = '';
-  const end = Math.min(start + len, buf.length);
-  for (let i = start; i < end; i++) {
-    const c = buf[i];
-    if (c >= 32 && c < 127) s += String.fromCharCode(c);
-  }
-  return s;
+    let s = '';
+    const end = Math.min(start + len, buf.length);
+    for (let i = start; i < end; i++) {
+        const c = buf[i];
+        if (c >= 32 && c < 127)
+            s += String.fromCharCode(c);
+    }
+    return s;
 }
-
 // Lowercase hex. hexByte: a single byte; hexBytes: a (sub)range joined by `sep`
 // (default no separator, e.g. a continuous SHA-style hex string - pass ' ' for a
 // spaced hex dump). Replaces the ad-hoc `b.toString(16).padStart(2,'0')` idiom.
 export function hexByte(b) { return b.toString(16).padStart(2, '0'); }
 export function hexBytes(bytes, sep = '', start = 0, len = bytes.length - start) {
-  const end = Math.min(start + len, bytes.length);
-  const out = [];
-  for (let i = start; i < end; i++) out.push(bytes[i].toString(16).padStart(2, '0'));
-  return out.join(sep);
+    const end = Math.min(start + len, bytes.length);
+    const out = [];
+    for (let i = start; i < end; i++)
+        out.push(bytes[i].toString(16).padStart(2, '0'));
+    return out.join(sep);
 }
 // A 32-bit number as fixed 8-digit hex (e.g. a CRC-32 or a file offset). Replaces
 // the ad-hoc `(n >>> 0).toString(16).padStart(8, '0')` idiom. `upper` uppercases.
 export function hexU32(n, upper = false) {
-  const s = (n >>> 0).toString(16).padStart(8, '0');
-  return upper ? s.toUpperCase() : s;
+    const s = (n >>> 0).toString(16).padStart(8, '0');
+    return upper ? s.toUpperCase() : s;
 }
-
 // Like ascii() but trims surrounding whitespace - for fixed-width ASCII fields
 // padded with spaces or NULs (the padding NULs are already dropped by ascii()).
 export function cleanAscii(buf, start = 0, len = buf.length - start) {
-  return ascii(buf, start, len).trim();
+    return ascii(buf, start, len).trim();
 }
-
 // ---------- text decoders ----------
-
 export function latin1(bytes) {
-  return new TextDecoder('latin1').decode(bytes);
+    return new TextDecoder('latin1').decode(bytes);
 }
 export function utf8(bytes) {
-  return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
 }
 export function utf16(bytes, little = true) {
-  return new TextDecoder(little ? 'utf-16le' : 'utf-16be').decode(bytes);
+    return new TextDecoder(little ? 'utf-16le' : 'utf-16be').decode(bytes);
 }
-
 // CP437 (original IBM PC / OEM code page) - needed for .nfo scene art and other
 // DOS-era text so box-drawing and accented characters survive.
 const CP437_HIGH = [
-  0x00C7,0x00FC,0x00E9,0x00E2,0x00E4,0x00E0,0x00E5,0x00E7,0x00EA,0x00EB,0x00E8,0x00EF,0x00EE,0x00EC,0x00C4,0x00C5,
-  0x00C9,0x00E6,0x00C6,0x00F4,0x00F6,0x00F2,0x00FB,0x00F9,0x00FF,0x00D6,0x00DC,0x00A2,0x00A3,0x00A5,0x20A7,0x0192,
-  0x00E1,0x00ED,0x00F3,0x00FA,0x00F1,0x00D1,0x00AA,0x00BA,0x00BF,0x2310,0x00AC,0x00BD,0x00BC,0x00A1,0x00AB,0x00BB,
-  0x2591,0x2592,0x2593,0x2502,0x2524,0x2561,0x2562,0x2556,0x2555,0x2563,0x2551,0x2557,0x255D,0x255C,0x255B,0x2510,
-  0x2514,0x2534,0x252C,0x251C,0x2500,0x253C,0x255E,0x255F,0x255A,0x2554,0x2569,0x2566,0x2560,0x2550,0x256C,0x2567,
-  0x2568,0x2564,0x2565,0x2559,0x2558,0x2552,0x2553,0x256B,0x256A,0x2518,0x250C,0x2588,0x2584,0x258C,0x2590,0x2580,
-  0x03B1,0x00DF,0x0393,0x03C0,0x03A3,0x03C3,0x00B5,0x03C4,0x03A6,0x0398,0x03A9,0x03B4,0x221E,0x03C6,0x03B5,0x2229,
-  0x2261,0x00B1,0x2265,0x2264,0x2320,0x2321,0x00F7,0x2248,0x00B0,0x2219,0x00B7,0x221A,0x207F,0x00B2,0x25A0,0x00A0
+    0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7, 0x00EA, 0x00EB, 0x00E8, 0x00EF, 0x00EE, 0x00EC, 0x00C4, 0x00C5,
+    0x00C9, 0x00E6, 0x00C6, 0x00F4, 0x00F6, 0x00F2, 0x00FB, 0x00F9, 0x00FF, 0x00D6, 0x00DC, 0x00A2, 0x00A3, 0x00A5, 0x20A7, 0x0192,
+    0x00E1, 0x00ED, 0x00F3, 0x00FA, 0x00F1, 0x00D1, 0x00AA, 0x00BA, 0x00BF, 0x2310, 0x00AC, 0x00BD, 0x00BC, 0x00A1, 0x00AB, 0x00BB,
+    0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556, 0x2555, 0x2563, 0x2551, 0x2557, 0x255D, 0x255C, 0x255B, 0x2510,
+    0x2514, 0x2534, 0x252C, 0x251C, 0x2500, 0x253C, 0x255E, 0x255F, 0x255A, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256C, 0x2567,
+    0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256B, 0x256A, 0x2518, 0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580,
+    0x03B1, 0x00DF, 0x0393, 0x03C0, 0x03A3, 0x03C3, 0x00B5, 0x03C4, 0x03A6, 0x0398, 0x03A9, 0x03B4, 0x221E, 0x03C6, 0x03B5, 0x2229,
+    0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248, 0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x00A0
 ];
 export function cp437(bytes) {
-  let s = '';
-  for (let i = 0; i < bytes.length; i++) {
-    const c = bytes[i];
-    if (c === 0x09 || c === 0x0A || c === 0x0D) { s += String.fromCharCode(c); continue; }
-    if (c < 0x20) continue;                       // drop other control bytes
-    s += c < 0x80 ? String.fromCharCode(c) : String.fromCharCode(CP437_HIGH[c - 0x80]);
-  }
-  return s;
+    let s = '';
+    for (let i = 0; i < bytes.length; i++) {
+        const c = bytes[i];
+        if (c === 0x09 || c === 0x0A || c === 0x0D) {
+            s += String.fromCharCode(c);
+            continue;
+        }
+        if (c < 0x20)
+            continue; // drop other control bytes
+        s += c < 0x80 ? String.fromCharCode(c) : String.fromCharCode(CP437_HIGH[c - 0x80]);
+    }
+    return s;
 }
-
 // ---------- decompression ----------
-
 // Inflate a stream via the browser's DecompressionStream. `format` is
 // 'gzip' | 'deflate' | 'deflate-raw'. Returns a Uint8Array, or null if the
 // platform lacks DecompressionStream or the data is corrupt.
 export async function inflate(bytes, format = 'gzip') {
-  if (typeof DecompressionStream === 'undefined') return null;
-  try {
-    const ds = new DecompressionStream(format);
-    const stream = new Blob([bytes]).stream().pipeThrough(ds);
-    const out = new Uint8Array(await new Response(stream).arrayBuffer());
-    return out;
-  } catch (_) {
-    return null;
-  }
+    if (typeof DecompressionStream === 'undefined')
+        return null;
+    try {
+        const ds = new DecompressionStream(format);
+        const stream = new Blob([bytes]).stream().pipeThrough(ds);
+        const out = new Uint8Array(await new Response(stream).arrayBuffer());
+        return out;
+    }
+    catch (_) {
+        return null;
+    }
 }
 export const gunzip = (bytes) => inflate(bytes, 'gzip');
-
 // ---------- entropy ----------
-
 // Shannon entropy of a byte range, in bits/byte (0 = uniform/repetitive, 8 =
 // maximally random). Compressed or encrypted data sits near 8; text and code
 // well below. `start`/`end` bound the range (defaults to the whole array).
 export function shannonEntropy(bytes, start = 0, end = bytes.length) {
-  const freq = new Uint32Array(256);
-  let n = 0;
-  for (let i = start; i < end; i++) { freq[bytes[i]]++; n++; }
-  if (!n) return 0;
-  let h = 0;
-  for (let i = 0; i < 256; i++) {
-    if (!freq[i]) continue;
-    const p = freq[i] / n;
-    h -= p * Math.log2(p);
-  }
-  return h;
+    const freq = new Uint32Array(256);
+    let n = 0;
+    for (let i = start; i < end; i++) {
+        freq[bytes[i]]++;
+        n++;
+    }
+    if (!n)
+        return 0;
+    let h = 0;
+    for (let i = 0; i < 256; i++) {
+        if (!freq[i])
+            continue;
+        const p = freq[i] / n;
+        h -= p * Math.log2(p);
+    }
+    return h;
 }
-
 // Slice `bytes` into `buckets` equal chunks and return each chunk's Shannon
 // entropy (bits/byte) plus its byte offset - the data behind an entropy heatmap.
 // High flat regions flag packed/encrypted/compressed/stego content; sharp steps
 // flag a boundary between unlike sections (e.g. an appended archive).
 export function entropyProfile(bytes, buckets = 256) {
-  const len = bytes.length;
-  if (!len) return [];
-  const n = Math.max(1, Math.min(buckets, len));
-  const out = new Array(n);
-  for (let i = 0; i < n; i++) {
-    const s = Math.floor(i * len / n);
-    const e = Math.floor((i + 1) * len / n);
-    out[i] = { start: s, end: e, entropy: shannonEntropy(bytes, s, Math.max(e, s + 1)) };
-  }
-  return out;
+    const len = bytes.length;
+    if (!len)
+        return [];
+    const n = Math.max(1, Math.min(buckets, len));
+    const out = new Array(n);
+    for (let i = 0; i < n; i++) {
+        const s = Math.floor(i * len / n);
+        const e = Math.floor((i + 1) * len / n);
+        out[i] = { start: s, end: e, entropy: shannonEntropy(bytes, s, Math.max(e, s + 1)) };
+    }
+    return out;
 }
-
 // ---------- misc formatters used by binary parsers ----------
-
 // FILETIME (100-ns ticks since 1601-01-01 UTC) -> JS Date, or null.
 export function filetimeToDate(lo, hi) {
-  const ticks = (BigInt(hi >>> 0) << 32n) | BigInt(lo >>> 0);
-  if (ticks === 0n) return null;
-  const ms = ticks / 10000n - 11644473600000n;
-  const n = Number(ms);
-  return Number.isFinite(n) ? new Date(n) : null;
+    const ticks = (BigInt(hi >>> 0) << 32n) | BigInt(lo >>> 0);
+    if (ticks === 0n)
+        return null;
+    const ms = ticks / 10000n - 11644473600000n;
+    const n = Number(ms);
+    return Number.isFinite(n) ? new Date(n) : null;
 }
-
 // Format a GUID from 16 bytes (mixed-endian, as stored in MS structures).
 export function fmtGuid(b, off = 0) {
-  const h = (i) => b[off + i].toString(16).padStart(2, '0');
-  return (
-    h(3) + h(2) + h(1) + h(0) + '-' + h(5) + h(4) + '-' + h(7) + h(6) + '-' +
-    h(8) + h(9) + '-' + h(10) + h(11) + h(12) + h(13) + h(14) + h(15)
-  ).toUpperCase();
+    const h = (i) => b[off + i].toString(16).padStart(2, '0');
+    return (h(3) + h(2) + h(1) + h(0) + '-' + h(5) + h(4) + '-' + h(7) + h(6) + '-' +
+        h(8) + h(9) + '-' + h(10) + h(11) + h(12) + h(13) + h(14) + h(15)).toUpperCase();
 }
+//# sourceMappingURL=binutil.js.map

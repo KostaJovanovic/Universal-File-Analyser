@@ -27,6 +27,19 @@ echo   Phone must be on the same Wi-Fi.
 echo ============================================
 echo.
 
+rem ---------------------------------------------------------------------------
+rem TypeScript watchers. The site is served from web/assets/js/, which is BUILD
+rem OUTPUT - editing src/*.ts does nothing until tsc recompiles. These two windows
+rem keep the dev loop as close to the old "edit and reload" as possible: save a
+rem .ts, the watcher emits within a second, refresh the browser.
+rem
+rem Two windows because lib.dom and lib.webworker cannot be loaded into one
+rem program - the three module workers compile under tsconfig.worker.json.
+rem Closing either window just stops that watcher; serve.py keeps running.
+echo   Starting TypeScript watchers (edit src/, not web/assets/js/)...
+start "analyser tsc (app)"    cmd /k npx tsc -p tsconfig.json --watch --preserveWatchOutput
+start "analyser tsc (worker)" cmd /k npx tsc -p tsconfig.worker.json --watch --preserveWatchOutput
+
 start "" "http://localhost:%PORT%"
 rem serve.py mirrors the production Cloudflare routing (clean URLs + .html
 rem redirects + SPA fallback), so local dev matches analyser.valjdakosta.com exactly.

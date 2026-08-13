@@ -9,13 +9,22 @@ Every commit is its own version. The number after the dot is the commit's
 `app.js`) bumps the major version and resets the counter, so that commit shows as
 `X.0` and the commit right after it is `X.01`.
 
-- `COMMIT_COUNT` in `app.js` is the current commit number, bumped automatically by
-  `save.bat` on each commit. Don't change it manually.
-- `RELEASE_COMMITS` in `app.js` is the sorted list of commit numbers crowned as
-  major releases. It is currently `[29, 60, 100, 151, 173]` (commit 29 = `1.0`,
-  60 = `2.0`, 100 = `3.0`, 151 = `4.0`, 173 = `5.0`). To crown a future `6.0`,
-  append that commit's number. The display logic lives in `analyserVersion()` in
-  `app.js`.
+- `COMMIT_COUNT` in `src/core/app.ts` is the current commit number, bumped
+  automatically by `save.bat` on each commit. Don't change it manually.
+
+  It is the **project's** counter and lives in the committed source on purpose.
+  `save.bat` reads it from there and adds 1; it does *not* use
+  `git rev-list --count HEAD`, which is a property of the individual clone and
+  collapses when history is squashed or re-cloned shallow. (That once produced a
+  count of 2 on a squashed history, dropping the public version from 8.14 to
+  0.02.) If the value can't be read, `save.bat` aborts rather than guessing.
+- `RELEASE_COMMITS` in `src/core/app.ts` is the sorted list of commit numbers
+  crowned as major releases. It is currently
+  `[29, 60, 100, 151, 173, 195, 250, 256]` (commit 29 = `1.0`, 60 = `2.0`,
+  100 = `3.0`, 151 = `4.0`, 173 = `5.0`, 195 = `6.0`, 250 = `7.0`, 256 = `8.0`).
+  To crown a future `9.0`, append that commit's number - and keep the `RELEASES`
+  list in `save.bat` in sync, since it mirrors this array. The display logic
+  lives in `analyserVersion()` in `src/core/app.ts`.
 - `save.bat` mirrors this with a `RELEASES=29,60,100,151,173` constant (used only
   to echo the version it's bumping to). **Keep `RELEASES` in sync with
   `RELEASE_COMMITS`** — its PowerShell snippet walks the full list exactly like

@@ -1,0 +1,111 @@
+/* Analyser - MDX-Net vocal-separation model + ONNX Runtime configuration.
+
+   Single source of truth for: which vocal model we run, its STFT geometry, and
+   the exact set of network files the "Complete" offline tier must cache so the
+   whole feature works offline. Imported by both the inference worker (to load
+   the runtime + model) and offline-tiers.js (to list the URLs for download).
+
+   Model: Kim Vocal 2 (UVR MDX-Net). One of the best-quality vocal separators.
+   Geometry (from UVR's model_data.json): n_fft 7680, dim_f 3072, dim_t 2^8=256,
+   hop 1024, compensate 1.009, primary stem Vocals. Our mixed-radix FFT in
+   mdx-stft.js handles the non-power-of-two 7680 (= 15 x 512), verified in Node.
+
+   Hosting: the model is pulled from a HuggingFace mirror (resolve URLs send
+   `access-control-allow-origin: *`, so the worker can actually READ the bytes -
+   a GitHub release download only caches opaquely and can't be read back). The
+   ONNX runtime is jsDelivr-hosted, pinned to ORT_VERSION. */
+
+export const ORT_VERSION = '1.20.1';
+
+// The runtime + model stream from the CDN on demand. Keeping the version and
+// model URLs here gives the workers and offline tier one source of truth.
+export const ORT_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@' + ORT_VERSION + '/dist/';
+
+// The WebGPU-capable ESM entry (the "jsep" build). Non-WebKit workers request
+// ['webgpu', 'wasm'], so inference runs on the GPU where available and falls back
+// to single-threaded WASM. The site is not cross-origin isolated (no COOP/COEP),
+// so SharedArrayBuffer threads are unavailable. WebKit uses the smaller dedicated
+// WASM entry below instead of paying for JSEP support it cannot use here.
+export const ORT_ENTRY = ORT_BASE + 'ort.webgpu.min.mjs';
+export const ORT_JSEP_FILES = [
+  ORT_ENTRY,
+  ORT_BASE + 'ort-wasm-simd-threaded.jsep.mjs',
+  ORT_BASE + 'ort-wasm-simd-threaded.jsep.wasm',
+];
+// iOS cannot use WebGPU in this pipeline. Loading the JSEP build there paid for
+// a ~20.7 MB WebGPU-capable WASM binary before the first inference; the plain
+// WASM build is ~10.7 MB and avoids that fixed cost on lower-memory iPhones.
+export const ORT_WASM_ENTRY = ORT_BASE + 'ort.min.mjs';
+export const ORT_WASM_FILES = [
+  ORT_WASM_ENTRY,
+  ORT_BASE + 'ort-wasm-simd-threaded.mjs',
+  ORT_BASE + 'ort-wasm-simd-threaded.wasm',
+];
+// Complete offline support includes both variants because the execution path is
+// chosen at runtime: JSEP for WebGPU-capable browsers, plain WASM for WebKit.
+export const ORT_FILES = [...ORT_JSEP_FILES, ...ORT_WASM_FILES];
+
+// Two selectable models, a quality/size trade-off. Both are Vocals-primary
+// MDX-Net separators from the same CORS-enabled HuggingFace mirror, so the
+// pipeline (mdx-separate.js) drives either straight from these geometry fields -
+// and the STFT core (mdx-stft.js) already handles both n_fft 7680 and 6144.
+//   - standard (Kim Vocal 2): the cleaner, heavier default.
+//   - lite (UVR-MDX-NET 1): ~half the download and the smaller 6144/2048
+//     geometry, so it needs less memory + compute per chunk - meant for phones
+//     and slower machines, at a small cost in separation quality.
+export const MDX_MODELS = {
+  standard: {
+    id: 'standard',
+    name: 'Kim Vocal 2',
+    label: 'Standard',       // shown in the picker + model prompt
+    // Per-model blurb shown in the Separate prompt so each tier explains itself.
+    blurb: 'the cleanest separation, a little heavier to download and run',
+    url: 'https://huggingface.co/seanghay/uvr_models/resolve/6f4fc0cfb0717c9033ffed12471a53008f145b20/Kim_Vocal_2.onnx',
+    bytes: 66759214,          // ~63.7 MB, for the size-warning popup
+    tierMb: 85,               // model + ORT runtime, shown in the download prompt
+    nFft: 7680,
+    dimF: 3072,               // model input keeps the lowest 3072 freq bins
+    dimT: 256,                // 2^8 frames per segment
+    hop: 1024,
+    compensate: 1.009,        // UVR magnitude compensation for this model
+    stem: 'Vocals',
+  },
+  lite: {
+    id: 'lite',
+    name: 'UVR-MDX-NET 1',
+    label: 'Lite',
+    blurb: 'smaller and quicker and easier on memory - a good fit for phones and slower machines, at a small cost in separation quality',
+    url: 'https://huggingface.co/seanghay/uvr_models/resolve/6f4fc0cfb0717c9033ffed12471a53008f145b20/UVR_MDXNET_1_9703.onnx',
+    bytes: 29704436,          // ~28.3 MB
+    tierMb: 50,               // model ~28 + ORT runtime ~21
+    nFft: 6144,
+    dimF: 2048,
+    dimT: 256,
+    hop: 1024,
+    compensate: 1.035,        // UVR magnitude compensation for the classic MDX-NET
+    stem: 'Vocals',
+  },
+};
+
+// Default model. The offline tier and any caller that doesn't pick explicitly
+// use this; the worker resolves the chosen id against MDX_MODELS.
+export const MDX_MODEL = MDX_MODELS.standard;
+
+// Everything the Complete offline tier must cache for offline AI separation. Only
+// the default (standard) model is pre-cached; the lite model downloads on demand.
+export const MDX_OFFLINE_URLS = [...ORT_FILES, MDX_MODEL.url];
+
+// Mutable and retired model URLs used by earlier releases. The offline manager
+// removes these exact entries without touching any current user download.
+export const MDX_RETIRED_URLS = [
+  'https://huggingface.co/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx',
+  'https://huggingface.co/seanghay/uvr_models/resolve/main/UVR_MDXNET_1_9703.onnx',
+  'https://huggingface.co/Politrees/UVR_resources/resolve/main/models/MDXNet/kuielab_a_vocals.onnx',
+  'https://huggingface.co/Politrees/UVR_resources/resolve/main/models/MDXNet/kuielab_b_drums.onnx',
+  'https://huggingface.co/Politrees/UVR_resources/resolve/main/models/MDXNet/kuielab_a_bass.onnx',
+];
+
+// Approx Complete-offline footprint in MB: Standard model ~63.7 + JSEP runtime
+// ~20.7 + WebKit's plain WASM runtime ~10.7 + glue. An individual browser only
+// loads its own runtime; Complete caches both so separation remains offline.
+export const MDX_TIER_MB = 96;

@@ -6,1683 +6,2069 @@
    `_sections: [{title, node, open?}]` for collapsible blocks and `_previewNode`
    for a decoded preview. Return null to fall back to the generic identification
    card. Dependency-free: only the shared toolkit + zip reader. */
-
 import { fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, cleanAscii, findBytes, matchMagic, startsWithAscii, latin1, gunzip, hexBytes, hexU32 } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
-
 // ---------- small helpers ----------
-
 // CRC32 (IEEE) over a Uint8Array.
 let CRC_TABLE = null;
 function crc32(bytes, start = 0, end = bytes.length) {
-  if (!CRC_TABLE) {
-    CRC_TABLE = new Uint32Array(256);
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-      CRC_TABLE[n] = c >>> 0;
+    if (!CRC_TABLE) {
+        CRC_TABLE = new Uint32Array(256);
+        for (let n = 0; n < 256; n++) {
+            let c = n;
+            for (let k = 0; k < 8; k++)
+                c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+            CRC_TABLE[n] = c >>> 0;
+        }
     }
-  }
-  let c = 0xFFFFFFFF;
-  for (let i = start; i < end; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
-  return (c ^ 0xFFFFFFFF) >>> 0;
+    let c = 0xFFFFFFFF;
+    for (let i = start; i < end; i++)
+        c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
 }
 const hex8 = (n) => hexU32(n, true);
-
 // ---------- iNES / NES 2.0 ----------
 const NES_MIRROR = ['Horizontal', 'Vertical'];
 function parseNes(head) {
-  if (!(head[0] === 0x4E && head[1] === 0x45 && head[2] === 0x53 && head[3] === 0x1A)) return null;
-  const f6 = head[6], f7 = head[7];
-  const isNes2 = (f7 & 0x0C) === 0x08;
-  let prg16 = head[4], chr8 = head[5];
-  let mapper = (f6 >> 4) | (f7 & 0xF0);
-  const out = { 'Format': isNes2 ? 'NES 2.0 ROM' : 'iNES ROM' };
-  if (isNes2) {
-    // upper mapper nibble + submapper
-    mapper |= (head[8] & 0x0F) << 8;
-    const sub = head[8] >> 4;
-    // size MSB nibbles in byte 9
-    const prgMsb = head[9] & 0x0F, chrMsb = head[9] >> 4;
-    if (prgMsb !== 0x0F) prg16 |= prgMsb << 8;
-    if (chrMsb !== 0x0F) chr8 |= chrMsb << 8;
-    out['Mapper'] = mapper + (sub ? ' (submapper ' + sub + ')' : '');
-  } else {
-    out['Mapper'] = mapper;
-  }
-  out['PRG ROM'] = prg16 ? fmtBytes(prg16 * 16384) + ' (' + prg16 + ' x 16KB)' : '0';
-  out['CHR ROM'] = chr8 ? fmtBytes(chr8 * 8192) + ' (' + chr8 + ' x 8KB)' : '0 (uses CHR RAM)';
-  out['Mirroring'] = (f6 & 0x08) ? 'Four-screen' : NES_MIRROR[f6 & 0x01];
-  out['Battery (PRG-RAM)'] = (f6 & 0x02) ? 'yes' : 'no';
-  out['Trainer'] = (f6 & 0x04) ? 'present (512 bytes)' : 'no';
-  if (isNes2) {
-    const tv = head[12] & 0x03;
-    out['Timing'] = ['NTSC', 'PAL', 'Multi-region', 'Dendy'][tv];
-    const ct = ['NES/Famicom', 'Vs. System', 'Playchoice-10', 'Extended'][f7 & 0x03];
-    if (ct) out['Console type'] = ct;
-  } else {
-    out['TV system'] = (f7 & 0x01) || (head[9] & 0x01) ? 'PAL' : 'NTSC';
-    if (f7 & 0x01) out['Console type'] = 'Vs. System';
-  }
-  return out;
+    if (!(head[0] === 0x4E && head[1] === 0x45 && head[2] === 0x53 && head[3] === 0x1A))
+        return null;
+    const f6 = head[6], f7 = head[7];
+    const isNes2 = (f7 & 0x0C) === 0x08;
+    let prg16 = head[4], chr8 = head[5];
+    let mapper = (f6 >> 4) | (f7 & 0xF0);
+    const out = { 'Format': isNes2 ? 'NES 2.0 ROM' : 'iNES ROM' };
+    if (isNes2) {
+        // upper mapper nibble + submapper
+        mapper |= (head[8] & 0x0F) << 8;
+        const sub = head[8] >> 4;
+        // size MSB nibbles in byte 9
+        const prgMsb = head[9] & 0x0F, chrMsb = head[9] >> 4;
+        if (prgMsb !== 0x0F)
+            prg16 |= prgMsb << 8;
+        if (chrMsb !== 0x0F)
+            chr8 |= chrMsb << 8;
+        out['Mapper'] = mapper + (sub ? ' (submapper ' + sub + ')' : '');
+    }
+    else {
+        out['Mapper'] = mapper;
+    }
+    out['PRG ROM'] = prg16 ? fmtBytes(prg16 * 16384) + ' (' + prg16 + ' x 16KB)' : '0';
+    out['CHR ROM'] = chr8 ? fmtBytes(chr8 * 8192) + ' (' + chr8 + ' x 8KB)' : '0 (uses CHR RAM)';
+    out['Mirroring'] = (f6 & 0x08) ? 'Four-screen' : NES_MIRROR[f6 & 0x01];
+    out['Battery (PRG-RAM)'] = (f6 & 0x02) ? 'yes' : 'no';
+    out['Trainer'] = (f6 & 0x04) ? 'present (512 bytes)' : 'no';
+    if (isNes2) {
+        const tv = head[12] & 0x03;
+        out['Timing'] = ['NTSC', 'PAL', 'Multi-region', 'Dendy'][tv];
+        const ct = ['NES/Famicom', 'Vs. System', 'Playchoice-10', 'Extended'][f7 & 0x03];
+        if (ct)
+            out['Console type'] = ct;
+    }
+    else {
+        out['TV system'] = (f7 & 0x01) || (head[9] & 0x01) ? 'PAL' : 'NTSC';
+        if (f7 & 0x01)
+            out['Console type'] = 'Vs. System';
+    }
+    return out;
 }
-
 // ---------- Game Boy / Game Boy Color ----------
 const GB_MBC = {
-  0x00: 'ROM only', 0x01: 'MBC1', 0x02: 'MBC1+RAM', 0x03: 'MBC1+RAM+Battery',
-  0x05: 'MBC2', 0x06: 'MBC2+Battery', 0x08: 'ROM+RAM', 0x09: 'ROM+RAM+Battery',
-  0x0B: 'MMM01', 0x0C: 'MMM01+RAM', 0x0D: 'MMM01+RAM+Battery',
-  0x0F: 'MBC3+Timer+Battery', 0x10: 'MBC3+Timer+RAM+Battery', 0x11: 'MBC3',
-  0x12: 'MBC3+RAM', 0x13: 'MBC3+RAM+Battery', 0x19: 'MBC5', 0x1A: 'MBC5+RAM',
-  0x1B: 'MBC5+RAM+Battery', 0x1C: 'MBC5+Rumble', 0x1D: 'MBC5+Rumble+RAM',
-  0x1E: 'MBC5+Rumble+RAM+Battery', 0x20: 'MBC6', 0x22: 'MBC7+Sensor+Rumble+RAM+Battery',
-  0xFC: 'Pocket Camera', 0xFD: 'Bandai TAMA5', 0xFE: 'HuC3', 0xFF: 'HuC1+RAM+Battery'
+    0x00: 'ROM only', 0x01: 'MBC1', 0x02: 'MBC1+RAM', 0x03: 'MBC1+RAM+Battery',
+    0x05: 'MBC2', 0x06: 'MBC2+Battery', 0x08: 'ROM+RAM', 0x09: 'ROM+RAM+Battery',
+    0x0B: 'MMM01', 0x0C: 'MMM01+RAM', 0x0D: 'MMM01+RAM+Battery',
+    0x0F: 'MBC3+Timer+Battery', 0x10: 'MBC3+Timer+RAM+Battery', 0x11: 'MBC3',
+    0x12: 'MBC3+RAM', 0x13: 'MBC3+RAM+Battery', 0x19: 'MBC5', 0x1A: 'MBC5+RAM',
+    0x1B: 'MBC5+RAM+Battery', 0x1C: 'MBC5+Rumble', 0x1D: 'MBC5+Rumble+RAM',
+    0x1E: 'MBC5+Rumble+RAM+Battery', 0x20: 'MBC6', 0x22: 'MBC7+Sensor+Rumble+RAM+Battery',
+    0xFC: 'Pocket Camera', 0xFD: 'Bandai TAMA5', 0xFE: 'HuC3', 0xFF: 'HuC1+RAM+Battery'
 };
 const GB_RAM = { 0: 'None', 1: '2 KB', 2: '8 KB', 3: '32 KB (4 banks)', 4: '128 KB (16 banks)', 5: '64 KB (8 banks)' };
 function parseGb(head, ext) {
-  if (head.length < 0x150) return null;
-  // Validate Nintendo logo start (0xCE 0xED 0x66 0x66) at 0x104 - cheap sanity check.
-  const logoOk = head[0x104] === 0xCE && head[0x105] === 0xED && head[0x106] === 0x66 && head[0x107] === 0x66;
-  const cgbFlag = head[0x143];
-  const titleLen = (cgbFlag === 0x80 || cgbFlag === 0xC0) ? 15 : 16;
-  let title = cleanAscii(head, 0x134, titleLen);
-  const out = { 'Format': 'Game Boy ROM' };
-  out['Title'] = title || '(none)';
-  if (cgbFlag === 0xC0) out['Format'] = 'Game Boy Color ROM (CGB only)';
-  else if (cgbFlag === 0x80) out['Format'] = 'Game Boy Color ROM (CGB+DMG)';
-  const sgb = head[0x146] === 0x03;
-  out['CGB support'] = cgbFlag === 0xC0 ? 'CGB only' : cgbFlag === 0x80 ? 'CGB enhanced' : 'no (DMG)';
-  out['SGB support'] = sgb ? 'yes' : 'no';
-  out['Cartridge type'] = GB_MBC[head[0x147]] || ('0x' + head[0x147].toString(16));
-  const romCode = head[0x148];
-  out['ROM size'] = romCode <= 8 ? fmtBytes(32768 << romCode) + ' (' + (2 << romCode) + ' banks)' : '0x' + romCode.toString(16);
-  out['RAM size'] = GB_RAM[head[0x149]] || ('0x' + head[0x149].toString(16));
-  out['Region'] = head[0x14A] === 0 ? 'Japan' : 'Non-Japan (overseas)';
-  // Licensee
-  const oldLic = head[0x14B];
-  if (oldLic === 0x33) out['Licensee'] = 'New (' + cleanAscii(head, 0x144, 2) + ')';
-  else out['Licensee'] = 'Old code 0x' + oldLic.toString(16);
-  out['Mask ROM version'] = head[0x14C];
-  // Header checksum: sum over 0x134..0x14C
-  let x = 0;
-  for (let i = 0x134; i <= 0x14C; i++) x = (x - head[i] - 1) & 0xFF;
-  out['Header checksum'] = (x === head[0x14D] ? 'valid' : 'INVALID') + ' (0x' + head[0x14D].toString(16) + ')';
-  out['Nintendo logo'] = logoOk ? 'valid' : 'not present';
-  return out;
+    if (head.length < 0x150)
+        return null;
+    // Validate Nintendo logo start (0xCE 0xED 0x66 0x66) at 0x104 - cheap sanity check.
+    const logoOk = head[0x104] === 0xCE && head[0x105] === 0xED && head[0x106] === 0x66 && head[0x107] === 0x66;
+    const cgbFlag = head[0x143];
+    const titleLen = (cgbFlag === 0x80 || cgbFlag === 0xC0) ? 15 : 16;
+    let title = cleanAscii(head, 0x134, titleLen);
+    const out = { 'Format': 'Game Boy ROM' };
+    out['Title'] = title || '(none)';
+    if (cgbFlag === 0xC0)
+        out['Format'] = 'Game Boy Color ROM (CGB only)';
+    else if (cgbFlag === 0x80)
+        out['Format'] = 'Game Boy Color ROM (CGB+DMG)';
+    const sgb = head[0x146] === 0x03;
+    out['CGB support'] = cgbFlag === 0xC0 ? 'CGB only' : cgbFlag === 0x80 ? 'CGB enhanced' : 'no (DMG)';
+    out['SGB support'] = sgb ? 'yes' : 'no';
+    out['Cartridge type'] = GB_MBC[head[0x147]] || ('0x' + head[0x147].toString(16));
+    const romCode = head[0x148];
+    out['ROM size'] = romCode <= 8 ? fmtBytes(32768 << romCode) + ' (' + (2 << romCode) + ' banks)' : '0x' + romCode.toString(16);
+    out['RAM size'] = GB_RAM[head[0x149]] || ('0x' + head[0x149].toString(16));
+    out['Region'] = head[0x14A] === 0 ? 'Japan' : 'Non-Japan (overseas)';
+    // Licensee
+    const oldLic = head[0x14B];
+    if (oldLic === 0x33)
+        out['Licensee'] = 'New (' + cleanAscii(head, 0x144, 2) + ')';
+    else
+        out['Licensee'] = 'Old code 0x' + oldLic.toString(16);
+    out['Mask ROM version'] = head[0x14C];
+    // Header checksum: sum over 0x134..0x14C
+    let x = 0;
+    for (let i = 0x134; i <= 0x14C; i++)
+        x = (x - head[i] - 1) & 0xFF;
+    out['Header checksum'] = (x === head[0x14D] ? 'valid' : 'INVALID') + ' (0x' + head[0x14D].toString(16) + ')';
+    out['Nintendo logo'] = logoOk ? 'valid' : 'not present';
+    return out;
 }
-
 // ---------- Game Boy Advance ----------
 function parseGba(head) {
-  if (head.length < 0xC0) return null;
-  // Fixed value 0x96 at 0xB2 is the strongest GBA signature.
-  if (head[0xB2] !== 0x96) return null;
-  // First instruction is a branch (B) - opcode byte 0x03 at offset 3.
-  const out = { 'Format': 'Game Boy Advance ROM' };
-  out['Title'] = cleanAscii(head, 0xA0, 12) || '(none)';
-  out['Game code'] = cleanAscii(head, 0xAC, 4) || '-';
-  out['Maker code'] = cleanAscii(head, 0xB0, 2) || '-';
-  out['Fixed value (0xB2)'] = '0x96 (valid)';
-  out['Main unit code'] = head[0xB3];
-  out['Software version'] = head[0xBC];
-  // Header checksum over 0xA0..0xBC
-  let chk = 0;
-  for (let i = 0xA0; i <= 0xBC; i++) chk = (chk - head[i]) & 0xFF;
-  chk = (chk - 0x19) & 0xFF;
-  out['Header checksum'] = (chk === head[0xBD] ? 'valid' : 'INVALID') + ' (0x' + head[0xBD].toString(16) + ')';
-  return out;
+    if (head.length < 0xC0)
+        return null;
+    // Fixed value 0x96 at 0xB2 is the strongest GBA signature.
+    if (head[0xB2] !== 0x96)
+        return null;
+    // First instruction is a branch (B) - opcode byte 0x03 at offset 3.
+    const out = { 'Format': 'Game Boy Advance ROM' };
+    out['Title'] = cleanAscii(head, 0xA0, 12) || '(none)';
+    out['Game code'] = cleanAscii(head, 0xAC, 4) || '-';
+    out['Maker code'] = cleanAscii(head, 0xB0, 2) || '-';
+    out['Fixed value (0xB2)'] = '0x96 (valid)';
+    out['Main unit code'] = head[0xB3];
+    out['Software version'] = head[0xBC];
+    // Header checksum over 0xA0..0xBC
+    let chk = 0;
+    for (let i = 0xA0; i <= 0xBC; i++)
+        chk = (chk - head[i]) & 0xFF;
+    chk = (chk - 0x19) & 0xFF;
+    out['Header checksum'] = (chk === head[0xBD] ? 'valid' : 'INVALID') + ' (0x' + head[0xBD].toString(16) + ')';
+    return out;
 }
-
 // ---------- SNES ----------
 const SNES_REGION = {
-  0: 'Japan', 1: 'USA/Canada (NTSC)', 2: 'Europe/Oceania/Asia (PAL)', 3: 'Sweden/Scandinavia',
-  4: 'Finland', 5: 'Denmark', 6: 'France', 7: 'Netherlands', 8: 'Spain', 9: 'Germany',
-  10: 'Italy', 11: 'China', 13: 'South Korea', 14: 'Common', 15: 'Canada', 16: 'Brazil', 17: 'Australia'
+    0: 'Japan', 1: 'USA/Canada (NTSC)', 2: 'Europe/Oceania/Asia (PAL)', 3: 'Sweden/Scandinavia',
+    4: 'Finland', 5: 'Denmark', 6: 'France', 7: 'Netherlands', 8: 'Spain', 9: 'Germany',
+    10: 'Italy', 11: 'China', 13: 'South Korea', 14: 'Common', 15: 'Canada', 16: 'Brazil', 17: 'Australia'
 };
 function scoreSnesHeader(b, base) {
-  if (base + 0x30 > b.length) return -1;
-  let score = 0;
-  // Title region: mostly printable
-  let printable = 0;
-  for (let i = 0; i < 21; i++) { const c = b[base + 0x10 + i]; if (c >= 32 && c < 127) printable++; }
-  score += printable;
-  // Checksum + complement should sum to 0xFFFF
-  const chk = b[base + 0x2E] | (b[base + 0x2F] << 8);
-  const cmp = b[base + 0x2C] | (b[base + 0x2D] << 8);
-  if (((chk + cmp) & 0xFFFF) === 0xFFFF) score += 32;
-  return score;
+    if (base + 0x30 > b.length)
+        return -1;
+    let score = 0;
+    // Title region: mostly printable
+    let printable = 0;
+    for (let i = 0; i < 21; i++) {
+        const c = b[base + 0x10 + i];
+        if (c >= 32 && c < 127)
+            printable++;
+    }
+    score += printable;
+    // Checksum + complement should sum to 0xFFFF
+    const chk = b[base + 0x2E] | (b[base + 0x2F] << 8);
+    const cmp = b[base + 0x2C] | (b[base + 0x2D] << 8);
+    if (((chk + cmp) & 0xFFFF) === 0xFFFF)
+        score += 32;
+    return score;
 }
 async function parseSnes(file) {
-  const size = file.size;
-  // Detect 512-byte copier (SMC) header.
-  const hasCopier = (size % 1024) === 512;
-  const off = hasCopier ? 512 : 0;
-  // Header lives at 0x7FC0 (LoROM) or 0xFFC0 (HiROM), relative to ROM start.
-  const buf = await readSlice(file, off, 0x10000);
-  if (buf.length < 0x8000) return null;
-  const candidates = [['LoROM', 0x7FC0], ['HiROM', 0xFFC0]];
-  let best = null, bestScore = -1, bestMap = '';
-  for (const [map, base] of candidates) {
-    if (base + 0x30 > buf.length) continue;
-    const s = scoreSnesHeader(buf, base);
-    if (s > bestScore) { bestScore = s; best = base; bestMap = map; }
-  }
-  if (best == null || bestScore < 10) return null;
-  const out = { 'Format': 'SNES / Super Famicom ROM' };
-  if (hasCopier) out['Copier header'] = 'stripped 512-byte SMC header';
-  out['Internal title'] = cleanAscii(buf, best + 0x10, 21) || '(none)';
-  out['Mapping'] = bestMap + ((buf[best + 0x25] & 0x10) ? ' (FastROM)' : '');
-  const romCode = buf[best + 0x27];
-  out['ROM size'] = romCode ? fmtBytes(1024 << romCode) : '-';
-  const ramCode = buf[best + 0x28];
-  out['RAM size'] = ramCode ? fmtBytes(1024 << ramCode) : 'None';
-  out['Region'] = SNES_REGION[buf[best + 0x29]] || ('code ' + buf[best + 0x29]);
-  const lic = buf[best + 0x2A];
-  out['Licensee'] = lic === 0x33 ? 'New (extended header)' : '0x' + lic.toString(16);
-  out['Version'] = '1.' + buf[best + 0x2B];
-  const chk = buf[best + 0x2E] | (buf[best + 0x2F] << 8);
-  const cmp = buf[best + 0x2C] | (buf[best + 0x2D] << 8);
-  out['Checksum'] = '0x' + chk.toString(16).toUpperCase().padStart(4, '0') +
-    (((chk + cmp) & 0xFFFF) === 0xFFFF ? ' (valid pair)' : ' (mismatch)');
-  return out;
+    const size = file.size;
+    // Detect 512-byte copier (SMC) header.
+    const hasCopier = (size % 1024) === 512;
+    const off = hasCopier ? 512 : 0;
+    // Header lives at 0x7FC0 (LoROM) or 0xFFC0 (HiROM), relative to ROM start.
+    const buf = await readSlice(file, off, 0x10000);
+    if (buf.length < 0x8000)
+        return null;
+    const candidates = [['LoROM', 0x7FC0], ['HiROM', 0xFFC0]];
+    let best = null, bestScore = -1, bestMap = '';
+    for (const [map, base] of candidates) {
+        if (base + 0x30 > buf.length)
+            continue;
+        const s = scoreSnesHeader(buf, base);
+        if (s > bestScore) {
+            bestScore = s;
+            best = base;
+            bestMap = map;
+        }
+    }
+    if (best == null || bestScore < 10)
+        return null;
+    const out = { 'Format': 'SNES / Super Famicom ROM' };
+    if (hasCopier)
+        out['Copier header'] = 'stripped 512-byte SMC header';
+    out['Internal title'] = cleanAscii(buf, best + 0x10, 21) || '(none)';
+    out['Mapping'] = bestMap + ((buf[best + 0x25] & 0x10) ? ' (FastROM)' : '');
+    const romCode = buf[best + 0x27];
+    out['ROM size'] = romCode ? fmtBytes(1024 << romCode) : '-';
+    const ramCode = buf[best + 0x28];
+    out['RAM size'] = ramCode ? fmtBytes(1024 << ramCode) : 'None';
+    out['Region'] = SNES_REGION[buf[best + 0x29]] || ('code ' + buf[best + 0x29]);
+    const lic = buf[best + 0x2A];
+    out['Licensee'] = lic === 0x33 ? 'New (extended header)' : '0x' + lic.toString(16);
+    out['Version'] = '1.' + buf[best + 0x2B];
+    const chk = buf[best + 0x2E] | (buf[best + 0x2F] << 8);
+    const cmp = buf[best + 0x2C] | (buf[best + 0x2D] << 8);
+    out['Checksum'] = '0x' + chk.toString(16).toUpperCase().padStart(4, '0') +
+        (((chk + cmp) & 0xFFFF) === 0xFFFF ? ' (valid pair)' : ' (mismatch)');
+    return out;
 }
-
 // ---------- Nintendo DS / DSi ----------
 function parseNds(head) {
-  if (head.length < 0x170) return null;
-  const out = { 'Format': 'Nintendo DS / DSi ROM' };
-  out['Title'] = cleanAscii(head, 0x00, 12) || '(none)';
-  out['Game code'] = cleanAscii(head, 0x0C, 4) || '-';
-  out['Maker code'] = cleanAscii(head, 0x10, 2) || '-';
-  const unit = head[0x12];
-  out['Unit code'] = unit === 0 ? 'NDS' : unit === 2 ? 'NDS+DSi' : unit === 3 ? 'DSi only' : '0x' + unit.toString(16);
-  const cap = head[0x14];
-  out['Capacity'] = cap <= 0x10 ? fmtBytes(131072 << cap) : '0x' + cap.toString(16);
-  const region = head[0x1D];
-  out['Region'] = region === 0 ? 'Normal (worldwide)' : region === 0x40 ? 'Korea' : region === 0x80 ? 'China' : '0x' + region.toString(16);
-  out['ROM version'] = head[0x1E];
-  // DSi/NDS header CRC16 at 0x15E - just surface stored value
-  out['Header CRC16'] = '0x' + (head[0x15E] | (head[0x15F] << 8)).toString(16).toUpperCase().padStart(4, '0');
-  return out;
+    if (head.length < 0x170)
+        return null;
+    const out = { 'Format': 'Nintendo DS / DSi ROM' };
+    out['Title'] = cleanAscii(head, 0x00, 12) || '(none)';
+    out['Game code'] = cleanAscii(head, 0x0C, 4) || '-';
+    out['Maker code'] = cleanAscii(head, 0x10, 2) || '-';
+    const unit = head[0x12];
+    out['Unit code'] = unit === 0 ? 'NDS' : unit === 2 ? 'NDS+DSi' : unit === 3 ? 'DSi only' : '0x' + unit.toString(16);
+    const cap = head[0x14];
+    out['Capacity'] = cap <= 0x10 ? fmtBytes(131072 << cap) : '0x' + cap.toString(16);
+    const region = head[0x1D];
+    out['Region'] = region === 0 ? 'Normal (worldwide)' : region === 0x40 ? 'Korea' : region === 0x80 ? 'China' : '0x' + region.toString(16);
+    out['ROM version'] = head[0x1E];
+    // DSi/NDS header CRC16 at 0x15E - just surface stored value
+    out['Header CRC16'] = '0x' + (head[0x15E] | (head[0x15F] << 8)).toString(16).toUpperCase().padStart(4, '0');
+    return out;
 }
-
 // ---------- Nintendo 64 ----------
 function n64Order(head) {
-  // First 4 bytes encode byte order. Standard header word is 0x80371240.
-  const b = head;
-  if (b[0] === 0x80 && b[1] === 0x37 && b[2] === 0x12 && b[3] === 0x40) return 'z64'; // big-endian (native)
-  if (b[0] === 0x37 && b[1] === 0x80 && b[2] === 0x40 && b[3] === 0x12) return 'v64'; // byteswapped (16-bit)
-  if (b[0] === 0x40 && b[1] === 0x12 && b[2] === 0x37 && b[3] === 0x80) return 'n64'; // little-endian (32-bit)
-  return null;
+    // First 4 bytes encode byte order. Standard header word is 0x80371240.
+    const b = head;
+    if (b[0] === 0x80 && b[1] === 0x37 && b[2] === 0x12 && b[3] === 0x40)
+        return 'z64'; // big-endian (native)
+    if (b[0] === 0x37 && b[1] === 0x80 && b[2] === 0x40 && b[3] === 0x12)
+        return 'v64'; // byteswapped (16-bit)
+    if (b[0] === 0x40 && b[1] === 0x12 && b[2] === 0x37 && b[3] === 0x80)
+        return 'n64'; // little-endian (32-bit)
+    return null;
 }
 // Reorder a chunk into big-endian (z64) layout given a detected order.
 function n64ToBig(bytes, order) {
-  if (order === 'z64') return bytes;
-  const out = new Uint8Array(bytes.length);
-  if (order === 'v64') {           // swap each 2-byte pair
-    for (let i = 0; i + 1 < bytes.length; i += 2) { out[i] = bytes[i + 1]; out[i + 1] = bytes[i]; }
-  } else if (order === 'n64') {    // reverse each 4-byte word
-    for (let i = 0; i + 3 < bytes.length; i += 4) { out[i] = bytes[i + 3]; out[i + 1] = bytes[i + 2]; out[i + 2] = bytes[i + 1]; out[i + 3] = bytes[i]; }
-  }
-  return out;
+    if (order === 'z64')
+        return bytes;
+    const out = new Uint8Array(bytes.length);
+    if (order === 'v64') { // swap each 2-byte pair
+        for (let i = 0; i + 1 < bytes.length; i += 2) {
+            out[i] = bytes[i + 1];
+            out[i + 1] = bytes[i];
+        }
+    }
+    else if (order === 'n64') { // reverse each 4-byte word
+        for (let i = 0; i + 3 < bytes.length; i += 4) {
+            out[i] = bytes[i + 3];
+            out[i + 1] = bytes[i + 2];
+            out[i + 2] = bytes[i + 1];
+            out[i + 3] = bytes[i];
+        }
+    }
+    return out;
 }
 const N64_REGION = {
-  0x37: 'Beta', 0x41: 'Asia (NTSC)', 0x42: 'Brazil', 0x43: 'China', 0x44: 'Germany',
-  0x45: 'North America', 0x46: 'France', 0x47: 'Gateway 64 (NTSC)', 0x48: 'Netherlands',
-  0x49: 'Italy', 0x4A: 'Japan', 0x4B: 'Korea', 0x4C: 'Gateway 64 (PAL)', 0x4E: 'Canada',
-  0x50: 'Europe', 0x53: 'Spain', 0x55: 'Australia', 0x57: 'Scandinavia', 0x58: 'Europe', 0x59: 'Europe'
+    0x37: 'Beta', 0x41: 'Asia (NTSC)', 0x42: 'Brazil', 0x43: 'China', 0x44: 'Germany',
+    0x45: 'North America', 0x46: 'France', 0x47: 'Gateway 64 (NTSC)', 0x48: 'Netherlands',
+    0x49: 'Italy', 0x4A: 'Japan', 0x4B: 'Korea', 0x4C: 'Gateway 64 (PAL)', 0x4E: 'Canada',
+    0x50: 'Europe', 0x53: 'Spain', 0x55: 'Australia', 0x57: 'Scandinavia', 0x58: 'Europe', 0x59: 'Europe'
 };
 function parseN64(head) {
-  const order = n64Order(head);
-  if (!order || head.length < 0x40) return null;
-  const b = n64ToBig(head.subarray(0, 0x40), order);
-  const out = { 'Format': 'Nintendo 64 ROM' };
-  out['Byte order'] = order === 'z64' ? 'Big-endian (.z64, native)' : order === 'v64' ? 'Byteswapped (.v64)' : 'Little-endian (.n64)';
-  const r = new Reader(b);
-  r.seek(0x0C); // clock rate at 0x04, PC at 0x08, release at 0x0C
-  out['Internal title'] = cleanAscii(b, 0x20, 20) || '(none)';
-  out['Game serial'] = cleanAscii(b, 0x3B, 3) || '-';
-  out['Region'] = N64_REGION[b[0x3E]] || ('0x' + b[0x3E].toString(16));
-  out['Cartridge ID'] = cleanAscii(b, 0x3C, 2) || '-';
-  out['Clock rate'] = '0x' + (new Reader(b).seek(0x04).u32()).toString(16).toUpperCase();
-  out['CRC1'] = hex8(new Reader(b).seek(0x10).u32());
-  out['CRC2'] = hex8(new Reader(b).seek(0x14).u32());
-  return out;
+    const order = n64Order(head);
+    if (!order || head.length < 0x40)
+        return null;
+    const b = n64ToBig(head.subarray(0, 0x40), order);
+    const out = { 'Format': 'Nintendo 64 ROM' };
+    out['Byte order'] = order === 'z64' ? 'Big-endian (.z64, native)' : order === 'v64' ? 'Byteswapped (.v64)' : 'Little-endian (.n64)';
+    const r = new Reader(b);
+    r.seek(0x0C); // clock rate at 0x04, PC at 0x08, release at 0x0C
+    out['Internal title'] = cleanAscii(b, 0x20, 20) || '(none)';
+    out['Game serial'] = cleanAscii(b, 0x3B, 3) || '-';
+    out['Region'] = N64_REGION[b[0x3E]] || ('0x' + b[0x3E].toString(16));
+    out['Cartridge ID'] = cleanAscii(b, 0x3C, 2) || '-';
+    out['Clock rate'] = '0x' + (new Reader(b).seek(0x04).u32()).toString(16).toUpperCase();
+    out['CRC1'] = hex8(new Reader(b).seek(0x10).u32());
+    out['CRC2'] = hex8(new Reader(b).seek(0x14).u32());
+    return out;
 }
-
 // ---------- Sega Genesis / Mega Drive ----------
 async function parseGenesis(file) {
-  // "SEGA" sits at 0x100 in a plain de-interleaved ROM. Read 0x300 bytes to cover
-  // the header region.
-  const buf = await readSlice(file, 0, 0x300);
-  // Only the 0x100 (headerless) offset is checked here; copier-headered ROMs
-  // (SEGA at 0x300) are not detected.
-  let base = -1;
-  if (startsWithAscii(buf, 'SEGA', 0x100)) base = 0x100;
-  if (base < 0) return null;
-  const out = { 'Format': 'Sega Genesis / Mega Drive ROM' };
-  out['System'] = cleanAscii(buf, base, 16) || 'SEGA';
-  out['Copyright'] = cleanAscii(buf, base + 0x10, 16) || '-';
-  out['Domestic title'] = cleanAscii(buf, base + 0x20, 48) || '-';
-  out['Overseas title'] = cleanAscii(buf, base + 0x50, 48) || '-';
-  out['Serial / version'] = cleanAscii(buf, base + 0x80, 14) || '-';
-  out['Checksum'] = '0x' + ((buf[base + 0x8E] << 8) | buf[base + 0x8F]).toString(16).toUpperCase().padStart(4, '0');
-  out['Region'] = cleanAscii(buf, base + 0xF0, 16) || '-';
-  return out;
+    // "SEGA" sits at 0x100 in a plain de-interleaved ROM. Read 0x300 bytes to cover
+    // the header region.
+    const buf = await readSlice(file, 0, 0x300);
+    // Only the 0x100 (headerless) offset is checked here; copier-headered ROMs
+    // (SEGA at 0x300) are not detected.
+    let base = -1;
+    if (startsWithAscii(buf, 'SEGA', 0x100))
+        base = 0x100;
+    if (base < 0)
+        return null;
+    const out = { 'Format': 'Sega Genesis / Mega Drive ROM' };
+    out['System'] = cleanAscii(buf, base, 16) || 'SEGA';
+    out['Copyright'] = cleanAscii(buf, base + 0x10, 16) || '-';
+    out['Domestic title'] = cleanAscii(buf, base + 0x20, 48) || '-';
+    out['Overseas title'] = cleanAscii(buf, base + 0x50, 48) || '-';
+    out['Serial / version'] = cleanAscii(buf, base + 0x80, 14) || '-';
+    out['Checksum'] = '0x' + ((buf[base + 0x8E] << 8) | buf[base + 0x8F]).toString(16).toUpperCase().padStart(4, '0');
+    out['Region'] = cleanAscii(buf, base + 0xF0, 16) || '-';
+    return out;
 }
-
 // ---------- IPS patch ----------
 async function parseIps(file) {
-  const buf = new Uint8Array(await file.arrayBuffer());
-  if (!startsWithAscii(buf, 'PATCH')) return null;
-  let i = 5, records = 0, rle = 0, changed = 0, maxOff = 0, ok = true;
-  while (i + 3 <= buf.length) {
-    if (buf[i] === 0x45 && buf[i + 1] === 0x4F && buf[i + 2] === 0x46) { i += 3; break; } // "EOF"
-    const off = (buf[i] << 16) | (buf[i + 1] << 8) | buf[i + 2]; i += 3;
-    if (i + 2 > buf.length) { ok = false; break; }
-    const len = (buf[i] << 8) | buf[i + 1]; i += 2;
-    records++;
-    if (len === 0) {            // RLE record: 2-byte run length + 1 byte value
-      if (i + 3 > buf.length) { ok = false; break; }
-      const run = (buf[i] << 8) | buf[i + 1]; i += 3;
-      rle++; changed += run; maxOff = Math.max(maxOff, off + run);
-    } else {
-      i += len; changed += len; maxOff = Math.max(maxOff, off + len);
+    const buf = new Uint8Array(await file.arrayBuffer());
+    if (!startsWithAscii(buf, 'PATCH'))
+        return null;
+    let i = 5, records = 0, rle = 0, changed = 0, maxOff = 0, ok = true;
+    while (i + 3 <= buf.length) {
+        if (buf[i] === 0x45 && buf[i + 1] === 0x4F && buf[i + 2] === 0x46) {
+            i += 3;
+            break;
+        } // "EOF"
+        const off = (buf[i] << 16) | (buf[i + 1] << 8) | buf[i + 2];
+        i += 3;
+        if (i + 2 > buf.length) {
+            ok = false;
+            break;
+        }
+        const len = (buf[i] << 8) | buf[i + 1];
+        i += 2;
+        records++;
+        if (len === 0) { // RLE record: 2-byte run length + 1 byte value
+            if (i + 3 > buf.length) {
+                ok = false;
+                break;
+            }
+            const run = (buf[i] << 8) | buf[i + 1];
+            i += 3;
+            rle++;
+            changed += run;
+            maxOff = Math.max(maxOff, off + run);
+        }
+        else {
+            i += len;
+            changed += len;
+            maxOff = Math.max(maxOff, off + len);
+        }
+        if (records > 1_000_000)
+            break;
     }
-    if (records > 1_000_000) break;
-  }
-  return {
-    'Format': 'IPS ROM patch',
-    'Records': records,
-    'RLE records': rle,
-    'Bytes changed': changed.toLocaleString(),
-    'Highest patched offset': '0x' + maxOff.toString(16).toUpperCase(),
-    'EOF marker': ok ? 'found' : 'truncated / missing',
-  };
+    return {
+        'Format': 'IPS ROM patch',
+        'Records': records,
+        'RLE records': rle,
+        'Bytes changed': changed.toLocaleString(),
+        'Highest patched offset': '0x' + maxOff.toString(16).toUpperCase(),
+        'EOF marker': ok ? 'found' : 'truncated / missing',
+    };
 }
-
 // ---------- BPS patch ----------
 function readVarint(b, cur) {
-  let data = 0, shift = 1;
-  for (;;) {
-    const x = b[cur.i++];
-    data += (x & 0x7f) * shift;
-    if (x & 0x80) break;
-    shift <<= 7;
-    data += shift;
-  }
-  return data;
+    let data = 0, shift = 1;
+    for (;;) {
+        const x = b[cur.i++];
+        data += (x & 0x7f) * shift;
+        if (x & 0x80)
+            break;
+        shift <<= 7;
+        data += shift;
+    }
+    return data;
 }
 async function parseBps(file) {
-  const buf = new Uint8Array(await file.arrayBuffer());
-  if (!startsWithAscii(buf, 'BPS1')) return null;
-  const cur = { i: 4 };
-  let srcSize, tgtSize, metaSize;
-  try {
-    srcSize = readVarint(buf, cur);
-    tgtSize = readVarint(buf, cur);
-    metaSize = readVarint(buf, cur);
-  } catch (_) { return null; }
-  let meta = '';
-  if (metaSize > 0 && cur.i + metaSize <= buf.length) {
-    meta = latin1(buf.subarray(cur.i, cur.i + metaSize));
-  }
-  const out = {
-    'Format': 'BPS ROM patch',
-    'Source size': fmtBytes(srcSize),
-    'Target size': fmtBytes(tgtSize),
-  };
-  if (buf.length >= 12) {
-    const dv = new DataView(buf.buffer, buf.byteOffset);
-    out['Source CRC32'] = hex8(dv.getUint32(buf.length - 12, true));
-    out['Target CRC32'] = hex8(dv.getUint32(buf.length - 8, true));
-    out['Patch CRC32'] = hex8(dv.getUint32(buf.length - 4, true));
-  }
-  if (meta) out._sections = [{ title: 'Metadata', node: preBlock(meta.slice(0, 4000)) }];
-  return out;
+    const buf = new Uint8Array(await file.arrayBuffer());
+    if (!startsWithAscii(buf, 'BPS1'))
+        return null;
+    const cur = { i: 4 };
+    let srcSize, tgtSize, metaSize;
+    try {
+        srcSize = readVarint(buf, cur);
+        tgtSize = readVarint(buf, cur);
+        metaSize = readVarint(buf, cur);
+    }
+    catch (_) {
+        return null;
+    }
+    let meta = '';
+    if (metaSize > 0 && cur.i + metaSize <= buf.length) {
+        meta = latin1(buf.subarray(cur.i, cur.i + metaSize));
+    }
+    const out = {
+        'Format': 'BPS ROM patch',
+        'Source size': fmtBytes(srcSize),
+        'Target size': fmtBytes(tgtSize),
+    };
+    if (buf.length >= 12) {
+        const dv = new DataView(buf.buffer, buf.byteOffset);
+        out['Source CRC32'] = hex8(dv.getUint32(buf.length - 12, true));
+        out['Target CRC32'] = hex8(dv.getUint32(buf.length - 8, true));
+        out['Patch CRC32'] = hex8(dv.getUint32(buf.length - 4, true));
+    }
+    if (meta)
+        out._sections = [{ title: 'Metadata', node: preBlock(meta.slice(0, 4000)) }];
+    return out;
 }
-
 // ---------- UPS patch ----------
 async function parseUps(file) {
-  const buf = new Uint8Array(await file.arrayBuffer());
-  if (!startsWithAscii(buf, 'UPS1')) return null;
-  const cur = { i: 4 };
-  let inSize, outSize;
-  try { inSize = readVarint(buf, cur); outSize = readVarint(buf, cur); } catch (_) { return null; }
-  const out = {
-    'Format': 'UPS ROM patch',
-    'Input file size': fmtBytes(inSize),
-    'Output file size': fmtBytes(outSize),
-  };
-  if (buf.length >= 12) {
-    const dv = new DataView(buf.buffer, buf.byteOffset);
-    out['Input CRC32'] = hex8(dv.getUint32(buf.length - 12, true));
-    out['Output CRC32'] = hex8(dv.getUint32(buf.length - 8, true));
-    out['Patch CRC32'] = hex8(dv.getUint32(buf.length - 4, true));
-  }
-  return out;
+    const buf = new Uint8Array(await file.arrayBuffer());
+    if (!startsWithAscii(buf, 'UPS1'))
+        return null;
+    const cur = { i: 4 };
+    let inSize, outSize;
+    try {
+        inSize = readVarint(buf, cur);
+        outSize = readVarint(buf, cur);
+    }
+    catch (_) {
+        return null;
+    }
+    const out = {
+        'Format': 'UPS ROM patch',
+        'Input file size': fmtBytes(inSize),
+        'Output file size': fmtBytes(outSize),
+    };
+    if (buf.length >= 12) {
+        const dv = new DataView(buf.buffer, buf.byteOffset);
+        out['Input CRC32'] = hex8(dv.getUint32(buf.length - 12, true));
+        out['Output CRC32'] = hex8(dv.getUint32(buf.length - 8, true));
+        out['Patch CRC32'] = hex8(dv.getUint32(buf.length - 4, true));
+    }
+    return out;
 }
-
 // ---------- PPF patch ----------
 async function parsePpf(file) {
-  const buf = await readSlice(file, 0, 1024);
-  if (!startsWithAscii(buf, 'PPF')) return null;
-  const ver = buf[3] === 0x33 ? 3 : buf[3] === 0x32 ? 2 : buf[3] === 0x30 ? 1 : 0;
-  const out = { 'Format': 'PPF ROM/CD patch (v' + (ver || '?') + ')' };
-  out['Encoding method'] = buf[5];
-  out['Description'] = cleanAscii(buf, 6, 50) || '-';
-  return out;
+    const buf = await readSlice(file, 0, 1024);
+    if (!startsWithAscii(buf, 'PPF'))
+        return null;
+    const ver = buf[3] === 0x33 ? 3 : buf[3] === 0x32 ? 2 : buf[3] === 0x30 ? 1 : 0;
+    const out = { 'Format': 'PPF ROM/CD patch (v' + (ver || '?') + ')' };
+    out['Encoding method'] = buf[5];
+    out['Description'] = cleanAscii(buf, 6, 50) || '-';
+    return out;
 }
-
 // ---------- Doom WAD ----------
 async function parseWad(file) {
-  const head = await readSlice(file, 0, 12);
-  const id = ascii(head, 0, 4);
-  if (id !== 'IWAD' && id !== 'PWAD') return null;
-  const r = new Reader(head, true); r.seek(4);
-  const numLumps = r.u32();
-  const dirOff = r.u32();
-  const out = { 'Format': id === 'IWAD' ? 'Doom IWAD (full game)' : 'Doom PWAD (patch/mod)', 'Lumps': numLumps };
-  // Read the lump directory (16 bytes each: offset, size, 8-char name).
-  const dirSize = Math.min(numLumps * 16, 4 * 1024 * 1024);
-  const dir = await readSlice(file, dirOff, dirSize);
-  const names = [];
-  const maps = [];
-  const count = Math.min(numLumps, Math.floor(dir.length / 16));
-  for (let i = 0; i < count; i++) {
-    const nm = cleanAscii(dir, i * 16 + 8, 8);
-    names.push(nm);
-    if (/^E\dM\d$/.test(nm) || /^MAP\d\d$/.test(nm)) maps.push(nm);
-  }
-  out['Maps detected'] = maps.length + (maps.length ? ' (' + maps.slice(0, 12).join(', ') + (maps.length > 12 ? ', …' : '') + ')' : '');
-  if (names.length) out._sections = [{ title: 'Lump names (' + names.length + ', sample)', node: preBlock(names.slice(0, 400).join('\n')) }];
-  return out;
+    const head = await readSlice(file, 0, 12);
+    const id = ascii(head, 0, 4);
+    if (id !== 'IWAD' && id !== 'PWAD')
+        return null;
+    const r = new Reader(head, true);
+    r.seek(4);
+    const numLumps = r.u32();
+    const dirOff = r.u32();
+    const out = { 'Format': id === 'IWAD' ? 'Doom IWAD (full game)' : 'Doom PWAD (patch/mod)', 'Lumps': numLumps };
+    // Read the lump directory (16 bytes each: offset, size, 8-char name).
+    const dirSize = Math.min(numLumps * 16, 4 * 1024 * 1024);
+    const dir = await readSlice(file, dirOff, dirSize);
+    const names = [];
+    const maps = [];
+    const count = Math.min(numLumps, Math.floor(dir.length / 16));
+    for (let i = 0; i < count; i++) {
+        const nm = cleanAscii(dir, i * 16 + 8, 8);
+        names.push(nm);
+        if (/^E\dM\d$/.test(nm) || /^MAP\d\d$/.test(nm))
+            maps.push(nm);
+    }
+    out['Maps detected'] = maps.length + (maps.length ? ' (' + maps.slice(0, 12).join(', ') + (maps.length > 12 ? ', …' : '') + ')' : '');
+    if (names.length)
+        out._sections = [{ title: 'Lump names (' + names.length + ', sample)', node: preBlock(names.slice(0, 400).join('\n')) }];
+    return out;
 }
-
 // ---------- NBT (Minecraft) ----------
 const NBT_TYPES = ['End', 'Byte', 'Short', 'Int', 'Long', 'Float', 'Double', 'ByteArray', 'String', 'List', 'Compound', 'IntArray', 'LongArray'];
 // Minimal NBT walker: collects scalar tags by name into a flat map, capped.
 function walkNbt(b) {
-  const r = new Reader(b); // NBT is big-endian
-  const found = {};
-  let depth = 0, visited = 0;
-  function readName() {
-    const len = r.u16();
-    const s = ascii(r.bytes, r.pos, len); r.skip(len);
-    return s;
-  }
-  function readPayload(type, name) {
-    visited++;
-    if (visited > 20000) throw new Error('cap');
-    switch (type) {
-      case 1: { const v = r.i8(); record(name, v); break; }
-      case 2: { const v = r.i16(); record(name, v); break; }
-      case 3: { const v = r.i32(); record(name, v); break; }
-      case 4: { const v = r.u64(); record(name, v.toString()); break; }
-      case 5: { const v = r.f32(); record(name, v); break; }
-      case 6: { const v = r.f64(); record(name, v); break; }
-      case 7: { const n = r.u32(); r.skip(n); record(name, '[' + n + ' bytes]'); break; }
-      case 8: { const len = r.u16(); const s = ascii(r.bytes, r.pos, len); r.skip(len); record(name, s); break; }
-      case 9: {
-        const elemType = r.u8(); const n = r.u32();
-        record(name, NBT_TYPES[elemType] + '[' + n + ']');
-        depth++;
-        if (depth < 24) for (let i = 0; i < n && !r.eof && visited <= 20000; i++) readPayload(elemType, '');
-        else for (let i = 0; i < n && !r.eof && visited <= 20000; i++) skipPayload(elemType);
-        depth--;
-        break;
-      }
-      case 10: {
-        depth++;
-        if (depth > 48) throw new Error('depth');
-        for (;;) {
-          const t = r.u8();
-          if (t === 0) break;
-          const nm = readName();
-          readPayload(t, nm);
+    const r = new Reader(b); // NBT is big-endian
+    const found = {};
+    let depth = 0, visited = 0;
+    function readName() {
+        const len = r.u16();
+        const s = ascii(r.bytes, r.pos, len);
+        r.skip(len);
+        return s;
+    }
+    function readPayload(type, name) {
+        visited++;
+        if (visited > 20000)
+            throw new Error('cap');
+        switch (type) {
+            case 1: {
+                const v = r.i8();
+                record(name, v);
+                break;
+            }
+            case 2: {
+                const v = r.i16();
+                record(name, v);
+                break;
+            }
+            case 3: {
+                const v = r.i32();
+                record(name, v);
+                break;
+            }
+            case 4: {
+                const v = r.u64();
+                record(name, v.toString());
+                break;
+            }
+            case 5: {
+                const v = r.f32();
+                record(name, v);
+                break;
+            }
+            case 6: {
+                const v = r.f64();
+                record(name, v);
+                break;
+            }
+            case 7: {
+                const n = r.u32();
+                r.skip(n);
+                record(name, '[' + n + ' bytes]');
+                break;
+            }
+            case 8: {
+                const len = r.u16();
+                const s = ascii(r.bytes, r.pos, len);
+                r.skip(len);
+                record(name, s);
+                break;
+            }
+            case 9: {
+                const elemType = r.u8();
+                const n = r.u32();
+                record(name, NBT_TYPES[elemType] + '[' + n + ']');
+                depth++;
+                if (depth < 24)
+                    for (let i = 0; i < n && !r.eof && visited <= 20000; i++)
+                        readPayload(elemType, '');
+                else
+                    for (let i = 0; i < n && !r.eof && visited <= 20000; i++)
+                        skipPayload(elemType);
+                depth--;
+                break;
+            }
+            case 10: {
+                depth++;
+                if (depth > 48)
+                    throw new Error('depth');
+                for (;;) {
+                    const t = r.u8();
+                    if (t === 0)
+                        break;
+                    const nm = readName();
+                    readPayload(t, nm);
+                }
+                depth--;
+                break;
+            }
+            case 11: {
+                const n = r.u32();
+                r.skip(n * 4);
+                record(name, 'int[' + n + ']');
+                break;
+            }
+            case 12: {
+                const n = r.u32();
+                r.skip(n * 8);
+                record(name, 'long[' + n + ']');
+                break;
+            }
+            default: throw new Error('badtype');
         }
-        depth--;
-        break;
-      }
-      case 11: { const n = r.u32(); r.skip(n * 4); record(name, 'int[' + n + ']'); break; }
-      case 12: { const n = r.u32(); r.skip(n * 8); record(name, 'long[' + n + ']'); break; }
-      default: throw new Error('badtype');
     }
-  }
-  function skipPayload(type) {
-    visited++;
-    if (visited > 20000) throw new Error('cap');
-    switch (type) {
-      case 1: r.skip(1); break; case 2: r.skip(2); break; case 3: case 5: r.skip(4); break;
-      case 4: case 6: r.skip(8); break;
-      case 7: r.skip(r.u32()); break;
-      case 8: r.skip(r.u16()); break;
-      case 9: { const et = r.u8(); const n = r.u32(); for (let i = 0; i < n && !r.eof && visited <= 20000; i++) skipPayload(et); break; }
-      case 10: { for (; !r.eof && visited <= 20000;) { const t = r.u8(); if (t === 0) break; r.skip(r.u16()); skipPayload(t); } break; }
-      case 11: r.skip(r.u32() * 4); break; case 12: r.skip(r.u32() * 8); break;
-      default: throw new Error('badtype');
+    function skipPayload(type) {
+        visited++;
+        if (visited > 20000)
+            throw new Error('cap');
+        switch (type) {
+            case 1:
+                r.skip(1);
+                break;
+            case 2:
+                r.skip(2);
+                break;
+            case 3:
+            case 5:
+                r.skip(4);
+                break;
+            case 4:
+            case 6:
+                r.skip(8);
+                break;
+            case 7:
+                r.skip(r.u32());
+                break;
+            case 8:
+                r.skip(r.u16());
+                break;
+            case 9: {
+                const et = r.u8();
+                const n = r.u32();
+                for (let i = 0; i < n && !r.eof && visited <= 20000; i++)
+                    skipPayload(et);
+                break;
+            }
+            case 10: {
+                for (; !r.eof && visited <= 20000;) {
+                    const t = r.u8();
+                    if (t === 0)
+                        break;
+                    r.skip(r.u16());
+                    skipPayload(t);
+                }
+                break;
+            }
+            case 11:
+                r.skip(r.u32() * 4);
+                break;
+            case 12:
+                r.skip(r.u32() * 8);
+                break;
+            default: throw new Error('badtype');
+        }
     }
-  }
-  function record(name, v) {
-    if (!name) return;
-    if (Object.keys(found).length < 400 && found[name] === undefined) found[name] = v;
-  }
-  // Root: a single named compound (or list, in newer network NBT). Read tag id.
-  const rootType = r.u8();
-  if (rootType !== 10 && rootType !== 9) throw new Error('root');
-  readName(); // root name
-  if (rootType === 10) {
-    for (;;) {
-      const t = r.u8();
-      if (t === 0) break;
-      const nm = readName();
-      readPayload(t, nm);
+    function record(name, v) {
+        if (!name)
+            return;
+        if (Object.keys(found).length < 400 && found[name] === undefined)
+            found[name] = v;
     }
-  }
-  return found;
+    // Root: a single named compound (or list, in newer network NBT). Read tag id.
+    const rootType = r.u8();
+    if (rootType !== 10 && rootType !== 9)
+        throw new Error('root');
+    readName(); // root name
+    if (rootType === 10) {
+        for (;;) {
+            const t = r.u8();
+            if (t === 0)
+                break;
+            const nm = readName();
+            readPayload(t, nm);
+        }
+    }
+    return found;
 }
 async function parseNbt(file, ext) {
-  let bytes = new Uint8Array(await file.arrayBuffer());
-  // gzip-compressed (most .nbt level files) or raw.
-  if (bytes[0] === 0x1F && bytes[1] === 0x8B) {
-    const inflated = await gunzip(bytes);
-    if (inflated) bytes = inflated;
-  } else if (bytes[0] === 0x78) {
-    // zlib (schematics often). Try deflate via DecompressionStream wrapper.
+    let bytes = new Uint8Array(await file.arrayBuffer());
+    // gzip-compressed (most .nbt level files) or raw.
+    if (bytes[0] === 0x1F && bytes[1] === 0x8B) {
+        const inflated = await gunzip(bytes);
+        if (inflated)
+            bytes = inflated;
+    }
+    else if (bytes[0] === 0x78) {
+        // zlib (schematics often). Try deflate via DecompressionStream wrapper.
+        try {
+            const ds = new DecompressionStream('deflate');
+            const stream = new Blob([bytes]).stream().pipeThrough(ds);
+            bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+        }
+        catch (_) { /* keep raw */ }
+    }
+    let tags;
     try {
-      const ds = new DecompressionStream('deflate');
-      const stream = new Blob([bytes]).stream().pipeThrough(ds);
-      bytes = new Uint8Array(await new Response(stream).arrayBuffer());
-    } catch (_) { /* keep raw */ }
-  }
-  let tags;
-  try { tags = walkNbt(bytes); } catch (_) { return null; }
-  if (!tags) return null;
-  const out = { 'Format': ext === 'nbt' ? 'Minecraft NBT data' : 'Minecraft schematic (' + ext + ')' };
-  const pick = ['LevelName', 'Name', 'name', 'Author', 'author', 'DataVersion', 'Version', 'version', 'MCEdit', 'Width', 'Height', 'Length', 'GameType', 'Difficulty', 'seed', 'RandomSeed', 'SpawnX', 'SpawnY', 'SpawnZ', 'Time', 'DayTime'];
-  for (const k of pick) if (tags[k] !== undefined) out[k] = String(tags[k]);
-  out['Tags decoded'] = Object.keys(tags).length;
-  const dump = Object.entries(tags).slice(0, 120).map(([k, v]) => k + ': ' + v).join('\n');
-  out._sections = [{ title: 'NBT tags (' + Object.keys(tags).length + ', sample)', node: preBlock(dump) }];
-  return out;
+        tags = walkNbt(bytes);
+    }
+    catch (_) {
+        return null;
+    }
+    if (!tags)
+        return null;
+    const out = { 'Format': ext === 'nbt' ? 'Minecraft NBT data' : 'Minecraft schematic (' + ext + ')' };
+    const pick = ['LevelName', 'Name', 'name', 'Author', 'author', 'DataVersion', 'Version', 'version', 'MCEdit', 'Width', 'Height', 'Length', 'GameType', 'Difficulty', 'seed', 'RandomSeed', 'SpawnX', 'SpawnY', 'SpawnZ', 'Time', 'DayTime'];
+    for (const k of pick)
+        if (tags[k] !== undefined)
+            out[k] = String(tags[k]);
+    out['Tags decoded'] = Object.keys(tags).length;
+    const dump = Object.entries(tags).slice(0, 120).map(([k, v]) => k + ': ' + v).join('\n');
+    out._sections = [{ title: 'NBT tags (' + Object.keys(tags).length + ', sample)', node: preBlock(dump) }];
+    return out;
 }
-
 // ---------- Bedrock bundles (.mcworld/.mcpack/.mcaddon, ZIP) ----------
 async function parseMcZip(file, ext) {
-  let zip;
-  try { zip = await openZip(file); } catch (_) { return null; }
-  if (!zip || !zip.entries.length) return null;
-  const out = { 'Format': 'Minecraft Bedrock ' + ext.replace('mc', '') + ' (.' + ext + ')' };
-  out['Entries'] = zip.entries.length;
-  // manifest.json (anywhere in tree)
-  const manEntry = zip.entries.find((e) => /(^|\/)manifest\.json$/.test(e.name));
-  if (manEntry) {
+    let zip;
     try {
-      const txt = await zip.text(manEntry.name);
-      const j = JSON.parse(txt);
-      const h = j.header || {};
-      if (h.name) out['Pack name'] = String(h.name);
-      if (h.description) out['Description'] = String(h.description).slice(0, 200);
-      if (h.uuid) out['UUID'] = String(h.uuid);
-      if (Array.isArray(h.version)) out['Version'] = h.version.join('.');
-      if (Array.isArray(h.min_engine_version)) out['Min engine version'] = h.min_engine_version.join('.');
-      const mods = (j.modules || []).map((m) => m.type).filter(Boolean);
-      if (mods.length) out['Module types'] = mods.join(', ');
-    } catch (_) { /* ignore */ }
-  }
-  if (zip.has('levelname.txt')) {
-    try { out['Level name'] = (await zip.text('levelname.txt')).trim().slice(0, 120); } catch (_) {}
-  } else {
-    const lvl = zip.entries.find((e) => /levelname\.txt$/i.test(e.name));
-    if (lvl) { try { out['Level name'] = (await zip.text(lvl.name)).trim().slice(0, 120); } catch (_) {} }
-  }
-  out._sections = [{ title: 'Files (' + zip.entries.length + ', sample)', node: preBlock(zip.names().slice(0, 300).join('\n')) }];
-  return out;
+        zip = await openZip(file);
+    }
+    catch (_) {
+        return null;
+    }
+    if (!zip || !zip.entries.length)
+        return null;
+    const out = { 'Format': 'Minecraft Bedrock ' + ext.replace('mc', '') + ' (.' + ext + ')' };
+    out['Entries'] = zip.entries.length;
+    // manifest.json (anywhere in tree)
+    const manEntry = zip.entries.find((e) => /(^|\/)manifest\.json$/.test(e.name));
+    if (manEntry) {
+        try {
+            const txt = await zip.text(manEntry.name);
+            const j = JSON.parse(txt);
+            const h = j.header || {};
+            if (h.name)
+                out['Pack name'] = String(h.name);
+            if (h.description)
+                out['Description'] = String(h.description).slice(0, 200);
+            if (h.uuid)
+                out['UUID'] = String(h.uuid);
+            if (Array.isArray(h.version))
+                out['Version'] = h.version.join('.');
+            if (Array.isArray(h.min_engine_version))
+                out['Min engine version'] = h.min_engine_version.join('.');
+            const mods = (j.modules || []).map((m) => m.type).filter(Boolean);
+            if (mods.length)
+                out['Module types'] = mods.join(', ');
+        }
+        catch (_) { /* ignore */ }
+    }
+    if (zip.has('levelname.txt')) {
+        try {
+            out['Level name'] = (await zip.text('levelname.txt')).trim().slice(0, 120);
+        }
+        catch (_) { }
+    }
+    else {
+        const lvl = zip.entries.find((e) => /levelname\.txt$/i.test(e.name));
+        if (lvl) {
+            try {
+                out['Level name'] = (await zip.text(lvl.name)).trim().slice(0, 120);
+            }
+            catch (_) { }
+        }
+    }
+    out._sections = [{ title: 'Files (' + zip.entries.length + ', sample)', node: preBlock(zip.names().slice(0, 300).join('\n')) }];
+    return out;
 }
-
 // ---------- Aseprite ----------
 const ASE_DEPTH = { 8: 'Indexed (8bpp)', 16: 'Grayscale (16bpp)', 32: 'RGBA (32bpp)' };
 async function parseAseprite(file) {
-  const head = await readSlice(file, 0, 128);
-  const r = new Reader(head, true);
-  const fileSize = r.u32();
-  const magic = r.u16();
-  if (magic !== 0xA5E0) return null;
-  const frames = r.u16();
-  const w = r.u16();
-  const h = r.u16();
-  const depth = r.u16();
-  r.skip(4 + 2); // flags + speed (deprecated)
-  const out = { 'Format': 'Aseprite sprite' };
-  out['Canvas'] = w + ' x ' + h;
-  out['Color depth'] = ASE_DEPTH[depth] || (depth + 'bpp');
-  out['Frames'] = frames;
-  out['Declared size'] = fmtBytes(fileSize);
-  // Count layers by scanning frame 1 chunks (type 0x2004 = new layer chunk).
-  try {
-    const scanLen = Math.min(file.size, 1 << 20);
-    const buf = await readSlice(file, 0, scanLen);
-    const rr = new Reader(buf, true);
-    rr.seek(128); // frame 1 header at 0x80
-    rr.u32(); // frame bytes
-    const fmagic = rr.u16();
-    if (fmagic === 0xF1FA) {
-      const oldChunks = rr.u16();
-      rr.u16(); // duration
-      rr.skip(2);
-      const newChunks = rr.u32();
-      const nChunks = newChunks || oldChunks;
-      let layers = 0, tags = 0, palettes = 0;
-      for (let c = 0; c < nChunks && rr.pos + 6 <= buf.length; c++) {
-        const start = rr.pos;
-        const csize = rr.u32();
-        const ctype = rr.u16();
-        if (ctype === 0x2004) layers++;
-        else if (ctype === 0x2018) tags++;
-        else if (ctype === 0x2019 || ctype === 0x0004 || ctype === 0x0011) palettes++;
-        if (csize < 6) break;
-        rr.seek(start + csize);
-      }
-      out['Layers'] = layers;
-      if (tags) out['Tag chunks'] = tags;
+    const head = await readSlice(file, 0, 128);
+    const r = new Reader(head, true);
+    const fileSize = r.u32();
+    const magic = r.u16();
+    if (magic !== 0xA5E0)
+        return null;
+    const frames = r.u16();
+    const w = r.u16();
+    const h = r.u16();
+    const depth = r.u16();
+    r.skip(4 + 2); // flags + speed (deprecated)
+    const out = { 'Format': 'Aseprite sprite' };
+    out['Canvas'] = w + ' x ' + h;
+    out['Color depth'] = ASE_DEPTH[depth] || (depth + 'bpp');
+    out['Frames'] = frames;
+    out['Declared size'] = fmtBytes(fileSize);
+    // Count layers by scanning frame 1 chunks (type 0x2004 = new layer chunk).
+    try {
+        const scanLen = Math.min(file.size, 1 << 20);
+        const buf = await readSlice(file, 0, scanLen);
+        const rr = new Reader(buf, true);
+        rr.seek(128); // frame 1 header at 0x80
+        rr.u32(); // frame bytes
+        const fmagic = rr.u16();
+        if (fmagic === 0xF1FA) {
+            const oldChunks = rr.u16();
+            rr.u16(); // duration
+            rr.skip(2);
+            const newChunks = rr.u32();
+            const nChunks = newChunks || oldChunks;
+            let layers = 0, tags = 0, palettes = 0;
+            for (let c = 0; c < nChunks && rr.pos + 6 <= buf.length; c++) {
+                const start = rr.pos;
+                const csize = rr.u32();
+                const ctype = rr.u16();
+                if (ctype === 0x2004)
+                    layers++;
+                else if (ctype === 0x2018)
+                    tags++;
+                else if (ctype === 0x2019 || ctype === 0x0004 || ctype === 0x0011)
+                    palettes++;
+                if (csize < 6)
+                    break;
+                rr.seek(start + csize);
+            }
+            out['Layers'] = layers;
+            if (tags)
+                out['Tag chunks'] = tags;
+        }
     }
-  } catch (_) { /* best effort */ }
-  return out;
+    catch (_) { /* best effort */ }
+    return out;
 }
-
 // ---------- Godot PCK ----------
 async function parseGodotPck(file) {
-  const head = await readSlice(file, 0, 32);
-  if (ascii(head, 0, 4) !== 'GDPC') return null;
-  const r = new Reader(head, true); r.seek(4);
-  const fmtVer = r.u32();
-  const major = r.u32(), minor = r.u32(), patch = r.u32();
-  const out = {
-    'Format': 'Godot resource pack (.pck)',
-    'Pack format version': fmtVer,
-    'Godot version': major + '.' + minor + '.' + patch,
-  };
-  // File count location depends on pack version; v2 has a reserved area then count.
-  try {
-    const buf = await readSlice(file, 0, 200);
-    const rr = new Reader(buf, true);
-    rr.seek(16);
-    if (fmtVer >= 2) { const flags = rr.u32(); const fileBase = rr.u64(); rr.skip(16 * 4); }
-    else rr.skip(16 * 4);
-    const fileCount = rr.u32();
-    if (fileCount > 0 && fileCount < 1_000_000) out['Files'] = fileCount;
-  } catch (_) {}
-  return out;
+    const head = await readSlice(file, 0, 32);
+    if (ascii(head, 0, 4) !== 'GDPC')
+        return null;
+    const r = new Reader(head, true);
+    r.seek(4);
+    const fmtVer = r.u32();
+    const major = r.u32(), minor = r.u32(), patch = r.u32();
+    const out = {
+        'Format': 'Godot resource pack (.pck)',
+        'Pack format version': fmtVer,
+        'Godot version': major + '.' + minor + '.' + patch,
+    };
+    // File count location depends on pack version; v2 has a reserved area then count.
+    try {
+        const buf = await readSlice(file, 0, 200);
+        const rr = new Reader(buf, true);
+        rr.seek(16);
+        if (fmtVer >= 2) {
+            const flags = rr.u32();
+            const fileBase = rr.u64();
+            rr.skip(16 * 4);
+        }
+        else
+            rr.skip(16 * 4);
+        const fileCount = rr.u32();
+        if (fileCount > 0 && fileCount < 1_000_000)
+            out['Files'] = fileCount;
+    }
+    catch (_) { }
+    return out;
 }
-
 // ---------- Quake PACK (.pak) ----------
 async function parsePak(file) {
-  const head = await readSlice(file, 0, 12);
-  if (ascii(head, 0, 4) !== 'PACK') return null;
-  const r = new Reader(head, true); r.seek(4);
-  const dirOff = r.u32();
-  const dirLen = r.u32();
-  const count = Math.floor(dirLen / 64);
-  const out = { 'Format': 'Quake PACK archive (.pak)', 'Files': count };
-  if (count > 0 && count < 200000) {
-    const dir = await readSlice(file, dirOff, Math.min(dirLen, 4 * 1024 * 1024));
-    const names = [];
-    const n = Math.min(count, Math.floor(dir.length / 64));
-    for (let i = 0; i < n; i++) names.push(cleanAscii(dir, i * 64, 56));
-    out._sections = [{ title: 'Files (' + names.length + ', sample)', node: preBlock(names.slice(0, 300).join('\n')) }];
-  }
-  return out;
+    const head = await readSlice(file, 0, 12);
+    if (ascii(head, 0, 4) !== 'PACK')
+        return null;
+    const r = new Reader(head, true);
+    r.seek(4);
+    const dirOff = r.u32();
+    const dirLen = r.u32();
+    const count = Math.floor(dirLen / 64);
+    const out = { 'Format': 'Quake PACK archive (.pak)', 'Files': count };
+    if (count > 0 && count < 200000) {
+        const dir = await readSlice(file, dirOff, Math.min(dirLen, 4 * 1024 * 1024));
+        const names = [];
+        const n = Math.min(count, Math.floor(dir.length / 64));
+        for (let i = 0; i < n; i++)
+            names.push(cleanAscii(dir, i * 64, 56));
+        out._sections = [{ title: 'Files (' + names.length + ', sample)', node: preBlock(names.slice(0, 300).join('\n')) }];
+    }
+    return out;
 }
-
 // ---------- PK3 / PK4 (ZIP) ----------
 async function parsePk3(file, ext) {
-  let zip;
-  try { zip = await openZip(file); } catch (_) { return null; }
-  if (!zip || !zip.entries.length) return null;
-  const names = zip.names();
-  const out = { 'Format': (ext === 'pk4' ? 'id Tech 4' : 'id Tech 3') + ' archive (.' + ext + ', ZIP)', 'Entries': names.length };
-  out['BSP maps'] = zip.match(/\.bsp$/i).length;
-  out['MD3 models'] = zip.match(/\.md3$/i).length;
-  out['Textures'] = zip.match(/\/(textures|gfx)\//i).length;
-  out._sections = [{ title: 'Files (' + names.length + ', sample)', node: preBlock(names.slice(0, 300).join('\n')) }];
-  return out;
+    let zip;
+    try {
+        zip = await openZip(file);
+    }
+    catch (_) {
+        return null;
+    }
+    if (!zip || !zip.entries.length)
+        return null;
+    const names = zip.names();
+    const out = { 'Format': (ext === 'pk4' ? 'id Tech 4' : 'id Tech 3') + ' archive (.' + ext + ', ZIP)', 'Entries': names.length };
+    out['BSP maps'] = zip.match(/\.bsp$/i).length;
+    out['MD3 models'] = zip.match(/\.md3$/i).length;
+    out['Textures'] = zip.match(/\/(textures|gfx)\//i).length;
+    out._sections = [{ title: 'Files (' + names.length + ', sample)', node: preBlock(names.slice(0, 300).join('\n')) }];
+    return out;
 }
-
 // ---------- Source BSP ----------
 async function parseBsp(file) {
-  const head = await readSlice(file, 0, 1036);
-  const id = ascii(head, 0, 4);
-  const r = new Reader(head, true);
-  const out = { 'Format': 'Compiled map (BSP)' };
-  let lumpBase = 8, lumpCount = 64, entLumpIdx = 0;
-  if (id === 'VBSP') {           // Valve Source
-    r.seek(4);
-    const version = r.i32();
-    out['Engine'] = 'Valve Source (VBSP)';
-    out['Map version'] = version;
-    lumpBase = 8;
-  } else {
-    // GoldSrc/Quake: first int is BSP version (29/30/38/...)
-    r.seek(0);
-    const version = r.i32();
-    if (version < 0 || version > 100) return null;
-    out['Engine'] = version === 30 ? 'GoldSrc (Half-Life)' : version === 29 ? 'Quake' : version === 38 ? 'Quake II' : 'Quake-family';
-    out['BSP version'] = version;
-    lumpBase = 4;
-  }
-  // Entity lump is index 0; read its offset/length and scan classnames.
-  try {
-    const r2 = new Reader(head, true); r2.seek(lumpBase);
-    const entOff = r2.u32();
-    const entLen = r2.u32();
-    if (entOff > 0 && entLen > 0 && entLen < 16 * 1024 * 1024) {
-      const ent = await readSlice(file, entOff, Math.min(entLen, 512 * 1024));
-      const text = latin1(ent);
-      const classes = {};
-      let spawns = 0;
-      for (const m of text.matchAll(/"classname"\s*"([^"]+)"/g)) {
-        classes[m[1]] = (classes[m[1]] || 0) + 1; spawns++;
-      }
-      out['Entities'] = spawns;
-      const top = Object.entries(classes).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([k, v]) => k + ' x' + v).join('\n');
-      if (top) out._sections = [{ title: 'Entity classnames (' + Object.keys(classes).length + ' types)', node: preBlock(top) }];
+    const head = await readSlice(file, 0, 1036);
+    const id = ascii(head, 0, 4);
+    const r = new Reader(head, true);
+    const out = { 'Format': 'Compiled map (BSP)' };
+    let lumpBase = 8, lumpCount = 64, entLumpIdx = 0;
+    if (id === 'VBSP') { // Valve Source
+        r.seek(4);
+        const version = r.i32();
+        out['Engine'] = 'Valve Source (VBSP)';
+        out['Map version'] = version;
+        lumpBase = 8;
     }
-  } catch (_) {}
-  return out;
+    else {
+        // GoldSrc/Quake: first int is BSP version (29/30/38/...)
+        r.seek(0);
+        const version = r.i32();
+        if (version < 0 || version > 100)
+            return null;
+        out['Engine'] = version === 30 ? 'GoldSrc (Half-Life)' : version === 29 ? 'Quake' : version === 38 ? 'Quake II' : 'Quake-family';
+        out['BSP version'] = version;
+        lumpBase = 4;
+    }
+    // Entity lump is index 0; read its offset/length and scan classnames.
+    try {
+        const r2 = new Reader(head, true);
+        r2.seek(lumpBase);
+        const entOff = r2.u32();
+        const entLen = r2.u32();
+        if (entOff > 0 && entLen > 0 && entLen < 16 * 1024 * 1024) {
+            const ent = await readSlice(file, entOff, Math.min(entLen, 512 * 1024));
+            const text = latin1(ent);
+            const classes = {};
+            let spawns = 0;
+            for (const m of text.matchAll(/"classname"\s*"([^"]+)"/g)) {
+                classes[m[1]] = (classes[m[1]] || 0) + 1;
+                spawns++;
+            }
+            out['Entities'] = spawns;
+            const top = Object.entries(classes).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([k, v]) => k + ' x' + v).join('\n');
+            if (top)
+                out._sections = [{ title: 'Entity classnames (' + Object.keys(classes).length + ' types)', node: preBlock(top) }];
+        }
+    }
+    catch (_) { }
+    return out;
 }
-
 // ---------- Valve VPK ----------
 async function parseVpk(file) {
-  const head = await readSlice(file, 0, 28);
-  const r = new Reader(head, true);
-  const sig = r.u32();
-  if (sig !== 0x55AA1234) return null;
-  const version = r.u32();
-  const treeSize = r.u32();
-  const out = { 'Format': 'Valve Pak (.vpk)', 'Version': version, 'Directory tree size': fmtBytes(treeSize) };
-  if (version === 2) {
-    const fileDataSize = r.u32();
-    const archiveMD5 = r.u32();
-    const otherMD5 = r.u32();
-    const sigSize = r.u32();
-    out['File data section'] = fmtBytes(fileDataSize);
-  }
-  out['Note'] = 'Multi-part Valve archive (_dir.vpk indexes _NNN.vpk parts)';
-  return out;
+    const head = await readSlice(file, 0, 28);
+    const r = new Reader(head, true);
+    const sig = r.u32();
+    if (sig !== 0x55AA1234)
+        return null;
+    const version = r.u32();
+    const treeSize = r.u32();
+    const out = { 'Format': 'Valve Pak (.vpk)', 'Version': version, 'Directory tree size': fmtBytes(treeSize) };
+    if (version === 2) {
+        const fileDataSize = r.u32();
+        const archiveMD5 = r.u32();
+        const otherMD5 = r.u32();
+        const sigSize = r.u32();
+        out['File data section'] = fmtBytes(fileDataSize);
+    }
+    out['Note'] = 'Multi-part Valve archive (_dir.vpk indexes _NNN.vpk parts)';
+    return out;
 }
-
 // ---------- Valve VTF ----------
 const VTF_FORMATS = { 0: 'RGBA8888', 1: 'ABGR8888', 2: 'RGB888', 3: 'BGR888', 4: 'RGB565', 12: 'BGRA8888', 13: 'DXT1', 14: 'DXT3', 15: 'DXT5', 24: 'RGBA16161616F' };
 async function parseVtf(file) {
-  const head = await readSlice(file, 0, 64);
-  if (!(head[0] === 0x56 && head[1] === 0x54 && head[2] === 0x46 && head[3] === 0x00)) return null;
-  const r = new Reader(head, true); r.seek(4);
-  const vMaj = r.u32(), vMin = r.u32();
-  const headerSize = r.u32();
-  const width = r.u16(), height = r.u16();
-  const flags = r.u32();
-  const frames = r.u16();
-  const firstFrame = r.u16();
-  r.skip(4 + 12 + 4); // padding + reflectivity + padding
-  const bumpScale = r.f32();
-  const hiResFmt = r.i32();
-  const out = {
-    'Format': 'Valve Texture (.vtf v' + vMaj + '.' + vMin + ')',
-    'Dimensions': width + ' x ' + height,
-    'Frames': frames,
-    'Pixel format': VTF_FORMATS[hiResFmt] || ('format ' + hiResFmt),
-    'Flags': '0x' + (flags >>> 0).toString(16),
-  };
-  return out;
+    const head = await readSlice(file, 0, 64);
+    if (!(head[0] === 0x56 && head[1] === 0x54 && head[2] === 0x46 && head[3] === 0x00))
+        return null;
+    const r = new Reader(head, true);
+    r.seek(4);
+    const vMaj = r.u32(), vMin = r.u32();
+    const headerSize = r.u32();
+    const width = r.u16(), height = r.u16();
+    const flags = r.u32();
+    const frames = r.u16();
+    const firstFrame = r.u16();
+    r.skip(4 + 12 + 4); // padding + reflectivity + padding
+    const bumpScale = r.f32();
+    const hiResFmt = r.i32();
+    const out = {
+        'Format': 'Valve Texture (.vtf v' + vMaj + '.' + vMin + ')',
+        'Dimensions': width + ' x ' + height,
+        'Frames': frames,
+        'Pixel format': VTF_FORMATS[hiResFmt] || ('format ' + hiResFmt),
+        'Flags': '0x' + (flags >>> 0).toString(16),
+    };
+    return out;
 }
-
 // ---------- Valve VMT ----------
 async function parseVmt(file) {
-  const text = (await readText(file, 65536));
-  const shaderMatch = text.match(/^\s*"?([A-Za-z0-9_]+)"?\s*\{/m);
-  if (!shaderMatch) return null;
-  const out = { 'Format': 'Valve Material (.vmt)', 'Shader': shaderMatch[1] };
-  const params = {};
-  for (const m of text.matchAll(/"(\$[A-Za-z0-9_]+)"\s+"?([^"\r\n}]*)"?/g)) params[m[1]] = m[2].trim();
-  const keys = Object.keys(params);
-  out['Parameters'] = keys.length;
-  if (keys.length) out._sections = [{ title: 'Material parameters', node: preBlock(keys.map((k) => k + ' = ' + params[k]).join('\n')) }];
-  return out;
+    const text = (await readText(file, 65536));
+    const shaderMatch = text.match(/^\s*"?([A-Za-z0-9_]+)"?\s*\{/m);
+    if (!shaderMatch)
+        return null;
+    const out = { 'Format': 'Valve Material (.vmt)', 'Shader': shaderMatch[1] };
+    const params = {};
+    for (const m of text.matchAll(/"(\$[A-Za-z0-9_]+)"\s+"?([^"\r\n}]*)"?/g))
+        params[m[1]] = m[2].trim();
+    const keys = Object.keys(params);
+    out['Parameters'] = keys.length;
+    if (keys.length)
+        out._sections = [{ title: 'Material parameters', node: preBlock(keys.map((k) => k + ' = ' + params[k]).join('\n')) }];
+    return out;
 }
-
 // ---------- KTX / KTX2 ----------
 const KTX1 = [0xAB, 0x4B, 0x54, 0x58, 0x20, 0x31, 0x31, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A];
 const KTX2 = [0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A];
 const VK_FORMATS = { 0: 'UNDEFINED', 23: 'R8G8B8_UNORM', 37: 'R8G8B8A8_UNORM', 43: 'R8G8B8A8_SRGB', 131: 'BC1_RGB_UNORM', 137: 'BC3_UNORM', 145: 'BC7_UNORM', 147: 'BC7_SRGB', 157: 'ETC2_R8G8B8_UNORM', 184: 'ASTC_4x4_UNORM' };
 const KTX_SUPERCOMP = { 0: 'None', 1: 'BasisLZ', 2: 'Zstandard', 3: 'ZLIB' };
 async function parseKtx(file) {
-  const head = await readSlice(file, 0, 80);
-  if (matchMagic(head, KTX2)) {
-    const r = new Reader(head, true); r.seek(12);
-    const vkFormat = r.u32();
-    const typeSize = r.u32();
-    const w = r.u32(), h = r.u32(), d = r.u32();
-    const layers = r.u32(), faces = r.u32(), levels = r.u32();
-    const sc = r.u32();
-    return {
-      'Format': 'KTX2 GPU texture',
-      'Dimensions': w + ' x ' + (h || 1) + (d > 1 ? ' x ' + d : ''),
-      'VkFormat': VK_FORMATS[vkFormat] || ('VK ' + vkFormat),
-      'Mip levels': levels,
-      'Array layers': layers || 1,
-      'Faces': faces + (faces === 6 ? ' (cubemap)' : ''),
-      'Supercompression': KTX_SUPERCOMP[sc] || ('scheme ' + sc),
-    };
-  }
-  if (matchMagic(head, KTX1)) {
-    const r = new Reader(head, true); r.seek(12);
-    const endianness = r.u32();
-    const little = endianness === 0x04030201;
-    r.le(little);
-    const glType = r.u32(); r.u32(); r.u32();
-    const glInternalFormat = r.u32(); r.u32();
-    const w = r.u32(), h = r.u32(), d = r.u32();
-    const arrayElems = r.u32(), faces = r.u32(), levels = r.u32();
-    return {
-      'Format': 'KTX GPU texture (v1)',
-      'Dimensions': w + ' x ' + (h || 1) + (d > 1 ? ' x ' + d : ''),
-      'GL internal format': '0x' + glInternalFormat.toString(16),
-      'Mip levels': levels,
-      'Array elements': arrayElems || 1,
-      'Faces': faces + (faces === 6 ? ' (cubemap)' : ''),
-    };
-  }
-  return null;
+    const head = await readSlice(file, 0, 80);
+    if (matchMagic(head, KTX2)) {
+        const r = new Reader(head, true);
+        r.seek(12);
+        const vkFormat = r.u32();
+        const typeSize = r.u32();
+        const w = r.u32(), h = r.u32(), d = r.u32();
+        const layers = r.u32(), faces = r.u32(), levels = r.u32();
+        const sc = r.u32();
+        return {
+            'Format': 'KTX2 GPU texture',
+            'Dimensions': w + ' x ' + (h || 1) + (d > 1 ? ' x ' + d : ''),
+            'VkFormat': VK_FORMATS[vkFormat] || ('VK ' + vkFormat),
+            'Mip levels': levels,
+            'Array layers': layers || 1,
+            'Faces': faces + (faces === 6 ? ' (cubemap)' : ''),
+            'Supercompression': KTX_SUPERCOMP[sc] || ('scheme ' + sc),
+        };
+    }
+    if (matchMagic(head, KTX1)) {
+        const r = new Reader(head, true);
+        r.seek(12);
+        const endianness = r.u32();
+        const little = endianness === 0x04030201;
+        r.le(little);
+        const glType = r.u32();
+        r.u32();
+        r.u32();
+        const glInternalFormat = r.u32();
+        r.u32();
+        const w = r.u32(), h = r.u32(), d = r.u32();
+        const arrayElems = r.u32(), faces = r.u32(), levels = r.u32();
+        return {
+            'Format': 'KTX GPU texture (v1)',
+            'Dimensions': w + ' x ' + (h || 1) + (d > 1 ? ' x ' + d : ''),
+            'GL internal format': '0x' + glInternalFormat.toString(16),
+            'Mip levels': levels,
+            'Array elements': arrayElems || 1,
+            'Faces': faces + (faces === 6 ? ' (cubemap)' : ''),
+        };
+    }
+    return null;
 }
-
 // ---------- Tiled XML (.tmx / .tsx) ----------
 async function parseTiledXml(file, ext) {
-  const text = await readText(file, 1 << 20);
-  if (!/<(map|tileset)\b/.test(text)) return null;
-  const doc = new DOMParser().parseFromString(text, 'application/xml');
-  if (doc.querySelector('parsererror')) return null;
-  if (ext === 'tsx') {
-    const ts = doc.querySelector('tileset');
-    if (!ts) return null;
-    return {
-      'Format': 'Tiled tileset (.tsx)',
-      'Name': ts.getAttribute('name') || '-',
-      'Tile size': (ts.getAttribute('tilewidth') || '?') + ' x ' + (ts.getAttribute('tileheight') || '?'),
-      'Tile count': ts.getAttribute('tilecount') || '-',
-      'Columns': ts.getAttribute('columns') || '-',
+    const text = await readText(file, 1 << 20);
+    if (!/<(map|tileset)\b/.test(text))
+        return null;
+    const doc = new DOMParser().parseFromString(text, 'application/xml');
+    if (doc.querySelector('parsererror'))
+        return null;
+    if (ext === 'tsx') {
+        const ts = doc.querySelector('tileset');
+        if (!ts)
+            return null;
+        return {
+            'Format': 'Tiled tileset (.tsx)',
+            'Name': ts.getAttribute('name') || '-',
+            'Tile size': (ts.getAttribute('tilewidth') || '?') + ' x ' + (ts.getAttribute('tileheight') || '?'),
+            'Tile count': ts.getAttribute('tilecount') || '-',
+            'Columns': ts.getAttribute('columns') || '-',
+        };
+    }
+    const map = doc.querySelector('map');
+    if (!map)
+        return null;
+    const layers = doc.querySelectorAll('layer').length;
+    const objGroups = doc.querySelectorAll('objectgroup').length;
+    const objects = doc.querySelectorAll('object').length;
+    const tilesets = Array.from(doc.querySelectorAll('tileset')).map((t) => t.getAttribute('source') || t.getAttribute('name') || '(embedded)');
+    const out = {
+        'Format': 'Tiled map (.tmx)',
+        'Orientation': map.getAttribute('orientation') || '-',
+        'Map size': (map.getAttribute('width') || '?') + ' x ' + (map.getAttribute('height') || '?') + ' tiles',
+        'Tile size': (map.getAttribute('tilewidth') || '?') + ' x ' + (map.getAttribute('tileheight') || '?') + ' px',
+        'Tile layers': layers,
+        'Object groups': objGroups,
+        'Objects': objects,
+        'Tilesets': tilesets.length,
     };
-  }
-  const map = doc.querySelector('map');
-  if (!map) return null;
-  const layers = doc.querySelectorAll('layer').length;
-  const objGroups = doc.querySelectorAll('objectgroup').length;
-  const objects = doc.querySelectorAll('object').length;
-  const tilesets = Array.from(doc.querySelectorAll('tileset')).map((t) => t.getAttribute('source') || t.getAttribute('name') || '(embedded)');
-  const out = {
-    'Format': 'Tiled map (.tmx)',
-    'Orientation': map.getAttribute('orientation') || '-',
-    'Map size': (map.getAttribute('width') || '?') + ' x ' + (map.getAttribute('height') || '?') + ' tiles',
-    'Tile size': (map.getAttribute('tilewidth') || '?') + ' x ' + (map.getAttribute('tileheight') || '?') + ' px',
-    'Tile layers': layers,
-    'Object groups': objGroups,
-    'Objects': objects,
-    'Tilesets': tilesets.length,
-  };
-  if (tilesets.length) out._sections = [{ title: 'Tilesets', node: preBlock(tilesets.join('\n')) }];
-  return out;
+    if (tilesets.length)
+        out._sections = [{ title: 'Tilesets', node: preBlock(tilesets.join('\n')) }];
+    return out;
 }
-
 // ---------- Tiled JSON (.tmj / .tsj) ----------
 async function parseTiledJson(file, ext) {
-  let j; try { j = JSON.parse(await file.text()); } catch (_) { return null; }
-  if (ext === 'tsj' || j.type === 'tileset') {
-    return {
-      'Format': 'Tiled tileset (JSON)',
-      'Name': j.name || '-',
-      'Tile size': (j.tilewidth || '?') + ' x ' + (j.tileheight || '?'),
-      'Tile count': j.tilecount != null ? j.tilecount : '-',
-      'Columns': j.columns != null ? j.columns : '-',
+    let j;
+    try {
+        j = JSON.parse(await file.text());
+    }
+    catch (_) {
+        return null;
+    }
+    if (ext === 'tsj' || j.type === 'tileset') {
+        return {
+            'Format': 'Tiled tileset (JSON)',
+            'Name': j.name || '-',
+            'Tile size': (j.tilewidth || '?') + ' x ' + (j.tileheight || '?'),
+            'Tile count': j.tilecount != null ? j.tilecount : '-',
+            'Columns': j.columns != null ? j.columns : '-',
+        };
+    }
+    if (j.type !== 'map' && !(j.width && j.layers))
+        return null;
+    const layers = j.layers || [];
+    const objects = layers.reduce((a, l) => a + ((l.objects && l.objects.length) || 0), 0);
+    const out = {
+        'Format': 'Tiled map (JSON)',
+        'Orientation': j.orientation || '-',
+        'Map size': (j.width || '?') + ' x ' + (j.height || '?') + ' tiles',
+        'Tile size': (j.tilewidth || '?') + ' x ' + (j.tileheight || '?') + ' px',
+        'Layers': layers.length,
+        'Objects': objects,
+        'Tilesets': (j.tilesets || []).length,
+        'Tiled version': j.tiledversion || j.version || '-',
     };
-  }
-  if (j.type !== 'map' && !(j.width && j.layers)) return null;
-  const layers = j.layers || [];
-  const objects = layers.reduce((a, l) => a + ((l.objects && l.objects.length) || 0), 0);
-  const out = {
-    'Format': 'Tiled map (JSON)',
-    'Orientation': j.orientation || '-',
-    'Map size': (j.width || '?') + ' x ' + (j.height || '?') + ' tiles',
-    'Tile size': (j.tilewidth || '?') + ' x ' + (j.tileheight || '?') + ' px',
-    'Layers': layers.length,
-    'Objects': objects,
-    'Tilesets': (j.tilesets || []).length,
-    'Tiled version': j.tiledversion || j.version || '-',
-  };
-  return out;
+    return out;
 }
-
 // ---------- LÖVE (.love, ZIP) ----------
 async function parseLove(file) {
-  let zip;
-  try { zip = await openZip(file); } catch (_) { return null; }
-  if (!zip || !zip.entries.length) return null;
-  const names = zip.names();
-  const hasMain = names.some((n) => /(^|\/)main\.lua$/.test(n));
-  const hasConf = names.some((n) => /(^|\/)conf\.lua$/.test(n));
-  if (!hasMain && !hasConf) return null;
-  const out = { 'Format': 'LÖVE (Love2D) game (.love, ZIP)', 'Entries': names.length };
-  out['main.lua'] = hasMain ? 'present' : 'missing';
-  out['conf.lua'] = hasConf ? 'present' : 'missing';
-  // Asset breakdown by extension.
-  const byExt = {};
-  for (const n of names) { const m = n.match(/\.([a-z0-9]+)$/i); if (m) byExt[m[1].toLowerCase()] = (byExt[m[1].toLowerCase()] || 0) + 1; }
-  const breakdown = Object.entries(byExt).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => k + ': ' + v).join('  ');
-  out['Asset types'] = breakdown;
-  // Try to read game identity from conf.lua.
-  if (hasConf) {
+    let zip;
     try {
-      const confName = names.find((n) => /(^|\/)conf\.lua$/.test(n));
-      const conf = await zip.text(confName);
-      const title = conf && conf.match(/window\.title\s*=\s*["']([^"']+)["']/);
-      const ident = conf && conf.match(/\.identity\s*=\s*["']([^"']+)["']/);
-      if (title) out['Window title'] = title[1];
-      if (ident) out['Identity'] = ident[1];
-    } catch (_) {}
-  }
-  out._sections = [{ title: 'Files (' + names.length + ', sample)', node: preBlock(names.slice(0, 300).join('\n')) }];
-  return out;
+        zip = await openZip(file);
+    }
+    catch (_) {
+        return null;
+    }
+    if (!zip || !zip.entries.length)
+        return null;
+    const names = zip.names();
+    const hasMain = names.some((n) => /(^|\/)main\.lua$/.test(n));
+    const hasConf = names.some((n) => /(^|\/)conf\.lua$/.test(n));
+    if (!hasMain && !hasConf)
+        return null;
+    const out = { 'Format': 'LÖVE (Love2D) game (.love, ZIP)', 'Entries': names.length };
+    out['main.lua'] = hasMain ? 'present' : 'missing';
+    out['conf.lua'] = hasConf ? 'present' : 'missing';
+    // Asset breakdown by extension.
+    const byExt = {};
+    for (const n of names) {
+        const m = n.match(/\.([a-z0-9]+)$/i);
+        if (m)
+            byExt[m[1].toLowerCase()] = (byExt[m[1].toLowerCase()] || 0) + 1;
+    }
+    const breakdown = Object.entries(byExt).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => k + ': ' + v).join('  ');
+    out['Asset types'] = breakdown;
+    // Try to read game identity from conf.lua.
+    if (hasConf) {
+        try {
+            const confName = names.find((n) => /(^|\/)conf\.lua$/.test(n));
+            const conf = await zip.text(confName);
+            const title = conf && conf.match(/window\.title\s*=\s*["']([^"']+)["']/);
+            const ident = conf && conf.match(/\.identity\s*=\s*["']([^"']+)["']/);
+            if (title)
+                out['Window title'] = title[1];
+            if (ident)
+                out['Identity'] = ident[1];
+        }
+        catch (_) { }
+    }
+    out._sections = [{ title: 'Files (' + names.length + ', sample)', node: preBlock(names.slice(0, 300).join('\n')) }];
+    return out;
 }
-
 // ---------- PICO-8 cart (.p8) ----------
 async function parseP8(file) {
-  const text = await readText(file, 1 << 20);
-  if (!/^pico-8 cartridge/i.test(text)) return null;
-  const ver = (text.match(/version (\d+)/i) || [])[1];
-  const sections = ['__lua__', '__gfx__', '__gff__', '__label__', '__map__', '__sfx__', '__music__'];
-  const present = sections.filter((s) => text.includes(s));
-  const out = { 'Format': 'PICO-8 cartridge (.p8)', 'Cart version': ver || '?' };
-  out['Sections present'] = present.map((s) => s.replace(/__/g, '')).join(', ') || '(none)';
-  const luaIdx = text.indexOf('__lua__');
-  const nextIdx = text.indexOf('__gfx__', luaIdx);
-  if (luaIdx >= 0) {
-    const end = nextIdx >= 0 ? nextIdx : text.length;
-    out['Lua code size'] = fmtBytes(end - luaIdx - 8);
-  }
-  return out;
+    const text = await readText(file, 1 << 20);
+    if (!/^pico-8 cartridge/i.test(text))
+        return null;
+    const ver = (text.match(/version (\d+)/i) || [])[1];
+    const sections = ['__lua__', '__gfx__', '__gff__', '__label__', '__map__', '__sfx__', '__music__'];
+    const present = sections.filter((s) => text.includes(s));
+    const out = { 'Format': 'PICO-8 cartridge (.p8)', 'Cart version': ver || '?' };
+    out['Sections present'] = present.map((s) => s.replace(/__/g, '')).join(', ') || '(none)';
+    const luaIdx = text.indexOf('__lua__');
+    const nextIdx = text.indexOf('__gfx__', luaIdx);
+    if (luaIdx >= 0) {
+        const end = nextIdx >= 0 ? nextIdx : text.length;
+        out['Lua code size'] = fmtBytes(end - luaIdx - 8);
+    }
+    return out;
 }
-
 // ---------- identification-only (rare AND hard) ----------
 async function idOnly(file, ext) {
-  const notes = {
-    sc2replay: 'StarCraft II replay (MPQ container). Full parse needs an MPQ/StormLib reader + replay protocol decode.',
-    mpq: 'Blizzard MoPaQ archive. Hash/block tables are obfuscated; full listing needs an MPQ reader.',
-    cia: 'Nintendo 3DS CIA package. Encrypted NCCH content; identification only.',
-    nsp: 'Nintendo Switch package (PFS0). Encrypted NCA content; identification only.',
-    xci: 'Nintendo Switch gamecard image. Encrypted; identification only.',
-    rpa: 'Ren\'Py archive. Index is zlib-compressed and key-obfuscated; full listing needs the RPA reader.',
-    rgssad: 'RPG Maker XP/VX encrypted archive. Index is XOR-encrypted with a rolling key.',
-    rgss3a: 'RPG Maker VX Ace encrypted archive. Index is XOR-encrypted with a rolling key.',
-  };
-  const labels = {
-    sc2replay: 'StarCraft II replay (MPQ)', mpq: 'Blizzard MoPaQ archive',
-    cia: 'Nintendo 3DS CIA package', nsp: 'Nintendo Switch NSP package',
-    xci: 'Nintendo Switch XCI cartridge', rpa: 'Ren\'Py archive',
-    rgssad: 'RPG Maker XP/VX archive', rgss3a: 'RPG Maker VX Ace archive',
-  };
-  const head = await readSlice(file, 0, 8);
-  const out = { 'Format': labels[ext] || ext.toUpperCase() };
-  const sig = ascii(head, 0, 4).replace(/[^\x20-\x7e]/g, '.');
-  if (sig.trim()) out['Header signature'] = sig;
-  out['Note'] = notes[ext] || 'Identification only.';
-  return out;
+    const notes = {
+        sc2replay: 'StarCraft II replay (MPQ container). Full parse needs an MPQ/StormLib reader + replay protocol decode.',
+        mpq: 'Blizzard MoPaQ archive. Hash/block tables are obfuscated; full listing needs an MPQ reader.',
+        cia: 'Nintendo 3DS CIA package. Encrypted NCCH content; identification only.',
+        nsp: 'Nintendo Switch package (PFS0). Encrypted NCA content; identification only.',
+        xci: 'Nintendo Switch gamecard image. Encrypted; identification only.',
+        rpa: 'Ren\'Py archive. Index is zlib-compressed and key-obfuscated; full listing needs the RPA reader.',
+        rgssad: 'RPG Maker XP/VX encrypted archive. Index is XOR-encrypted with a rolling key.',
+        rgss3a: 'RPG Maker VX Ace encrypted archive. Index is XOR-encrypted with a rolling key.',
+    };
+    const labels = {
+        sc2replay: 'StarCraft II replay (MPQ)', mpq: 'Blizzard MoPaQ archive',
+        cia: 'Nintendo 3DS CIA package', nsp: 'Nintendo Switch NSP package',
+        xci: 'Nintendo Switch XCI cartridge', rpa: 'Ren\'Py archive',
+        rgssad: 'RPG Maker XP/VX archive', rgss3a: 'RPG Maker VX Ace archive',
+    };
+    const head = await readSlice(file, 0, 8);
+    const out = { 'Format': labels[ext] || ext.toUpperCase() };
+    const sig = ascii(head, 0, 4).replace(/[^\x20-\x7e]/g, '.');
+    if (sig.trim())
+        out['Header signature'] = sig;
+    out['Note'] = notes[ext] || 'Identification only.';
+    return out;
 }
-
 // ---------- dispatch ----------
 import { safe as wrap } from './parser-util.js';
-
 // The Sims / Maxis DBPF package (.package): Sims 2/3/4, SimCity 4, Spore all use
 // the Database Packed File container. The fixed little-endian header gives the
 // resource (index entry) count and index location without decoding contents.
 async function parsePackage(file) {
-  const b = await readSlice(file, 0, 96);
-  if (b.length < 68 || ascii(b, 0, 4) !== 'DBPF') return null;
-  const r = new Reader(b, true); r.seek(4);
-  const major = r.u32(), minor = r.u32();
-  r.seek(36); const indexCount = r.u32();
-  r.seek(44); const indexSize = r.u32();
-  const indexOffset = major >= 2 ? r.seek(64).u32() : r.seek(40).u32();
-  let game = 'Maxis DBPF';
-  if (major === 1) game = 'The Sims 2 / SimCity 4 / Spore';
-  else if (major === 2 && minor === 0) game = 'The Sims 3';
-  else if (major === 2 && minor === 1) game = 'The Sims 4';
-  return {
-    'Format': 'DBPF package',
-    'Game / app': game,
-    'DBPF version': major + '.' + minor,
-    'Resources (index entries)': indexCount.toLocaleString(),
-    'Index size': fmtBytes(indexSize),
-    'Index offset': '0x' + indexOffset.toString(16),
-    'Note': 'Database Packed File - a container of game resources (meshes, textures, tuning XML, CAS parts).',
-  };
+    const b = await readSlice(file, 0, 96);
+    if (b.length < 68 || ascii(b, 0, 4) !== 'DBPF')
+        return null;
+    const r = new Reader(b, true);
+    r.seek(4);
+    const major = r.u32(), minor = r.u32();
+    r.seek(36);
+    const indexCount = r.u32();
+    r.seek(44);
+    const indexSize = r.u32();
+    const indexOffset = major >= 2 ? r.seek(64).u32() : r.seek(40).u32();
+    let game = 'Maxis DBPF';
+    if (major === 1)
+        game = 'The Sims 2 / SimCity 4 / Spore';
+    else if (major === 2 && minor === 0)
+        game = 'The Sims 3';
+    else if (major === 2 && minor === 1)
+        game = 'The Sims 4';
+    return {
+        'Format': 'DBPF package',
+        'Game / app': game,
+        'DBPF version': major + '.' + minor,
+        'Resources (index entries)': indexCount.toLocaleString(),
+        'Index size': fmtBytes(indexSize),
+        'Index offset': '0x' + indexOffset.toString(16),
+        'Note': 'Database Packed File - a container of game resources (meshes, textures, tuning XML, CAS parts).',
+    };
 }
-
 // ---------- Unity asset bundle (.assets/.bundle/.resource) ----------
 // UnityFS (and legacy UnityRaw/UnityWeb) bundles begin with a NUL-terminated
 // signature string, a big-endian format version, then two NUL-terminated
 // version strings (Unity generation + full engine version).
 async function parseUnity(file) {
-  const head = await readSlice(file, 0, 256);
-  const sig = cleanAscii(head, 0, 16).split('\0')[0];
-  if (sig !== 'UnityFS' && sig !== 'UnityRaw' && sig !== 'UnityWeb' && sig !== 'UnityArchive') return null;
-  // Signature is NUL-terminated; walk past it.
-  let p = 0;
-  while (p < head.length && head[p] !== 0) p++;
-  p++; // skip the NUL
-  const r = new Reader(head, true); // big-endian
-  r.seek(p);
-  const formatVer = r.u32();
-  // Two NUL-terminated strings follow: Unity generation and engine version.
-  function cstr() {
-    let s = '';
-    while (r.pos < head.length) { const c = r.u8(); if (c === 0) break; if (c >= 32 && c < 127) s += String.fromCharCode(c); }
-    return s;
-  }
-  const genVer = cstr();
-  const engineVer = cstr();
-  const out = {
-    'Format': 'Unity asset bundle (' + sig + ')',
-    'Bundle version': formatVer,
-  };
-  if (genVer) out['Unity generation'] = genVer;
-  if (engineVer) out['Engine version'] = engineVer;
-  if (sig === 'UnityFS') {
-    // FS header continues with total file size (i64) and block-info sizes (u32).
-    out['Total size'] = fmtBytes(file.size);
-  }
-  out['Note'] = 'Serialised Unity objects (meshes, textures, audio, MonoBehaviours); contents are LZ4/LZMA-compressed.';
-  return out;
+    const head = await readSlice(file, 0, 256);
+    const sig = cleanAscii(head, 0, 16).split('\0')[0];
+    if (sig !== 'UnityFS' && sig !== 'UnityRaw' && sig !== 'UnityWeb' && sig !== 'UnityArchive')
+        return null;
+    // Signature is NUL-terminated; walk past it.
+    let p = 0;
+    while (p < head.length && head[p] !== 0)
+        p++;
+    p++; // skip the NUL
+    const r = new Reader(head, true); // big-endian
+    r.seek(p);
+    const formatVer = r.u32();
+    // Two NUL-terminated strings follow: Unity generation and engine version.
+    function cstr() {
+        let s = '';
+        while (r.pos < head.length) {
+            const c = r.u8();
+            if (c === 0)
+                break;
+            if (c >= 32 && c < 127)
+                s += String.fromCharCode(c);
+        }
+        return s;
+    }
+    const genVer = cstr();
+    const engineVer = cstr();
+    const out = {
+        'Format': 'Unity asset bundle (' + sig + ')',
+        'Bundle version': formatVer,
+    };
+    if (genVer)
+        out['Unity generation'] = genVer;
+    if (engineVer)
+        out['Engine version'] = engineVer;
+    if (sig === 'UnityFS') {
+        // FS header continues with total file size (i64) and block-info sizes (u32).
+        out['Total size'] = fmtBytes(file.size);
+    }
+    out['Note'] = 'Serialised Unity objects (meshes, textures, audio, MonoBehaviours); contents are LZ4/LZMA-compressed.';
+    return out;
 }
-
 // ---------- CHD (MAME compressed disc/hard-disk image) ----------
 const CHD_COMPRESSORS = {
-  0x6e6f6e65: 'none', 0x7a6c6962: 'zlib', 0x7a73746d: 'libzstd', 0x6c7a6d61: 'lzma',
-  0x666c6163: 'FLAC', 0x68756666: 'Huffman', 0x61766875: 'A/V Huffman',
-  0x63646c7a: 'CD LZMA', 0x63647a6c: 'CD zlib', 0x6364666c: 'CD FLAC',
+    0x6e6f6e65: 'none', 0x7a6c6962: 'zlib', 0x7a73746d: 'libzstd', 0x6c7a6d61: 'lzma',
+    0x666c6163: 'FLAC', 0x68756666: 'Huffman', 0x61766875: 'A/V Huffman',
+    0x63646c7a: 'CD LZMA', 0x63647a6c: 'CD zlib', 0x6364666c: 'CD FLAC',
 };
 async function parseChd(file) {
-  const head = await readSlice(file, 0, 124);
-  if (ascii(head, 0, 8) !== 'MComprHD') return null;
-  const r = new Reader(head, true); r.seek(8);
-  const headerLen = r.u32();
-  const version = r.u32();
-  const out = { 'Format': 'MAME CHD compressed image', 'CHD version': version };
-  // v5 layout: four 32-bit compressor codes at 0x10, then logical/map/meta sizes.
-  if (version >= 5) {
-    const comps = [];
-    for (let i = 0; i < 4; i++) { const c = r.u32(); if (c) comps.push(CHD_COMPRESSORS[c] || ('0x' + c.toString(16))); }
-    out['Compression'] = comps.length ? comps.join(', ') : 'none';
-    const logical = r.u64num();
-    out['Logical size'] = fmtBytes(logical);
-    r.seek(0x38); // hunkbytes (v5, u32 at offset 0x38)
-    out['Hunk size'] = fmtBytes(r.u32());
-  } else {
-    const flags = r.u32();
-    const compression = r.u32();
-    out['Compression'] = CHD_COMPRESSORS[compression] || ('code ' + compression);
-    out['Read-only'] = (flags & 0x02) ? 'no' : 'yes';
-  }
-  out['Header length'] = fmtBytes(headerLen);
-  return out;
+    const head = await readSlice(file, 0, 124);
+    if (ascii(head, 0, 8) !== 'MComprHD')
+        return null;
+    const r = new Reader(head, true);
+    r.seek(8);
+    const headerLen = r.u32();
+    const version = r.u32();
+    const out = { 'Format': 'MAME CHD compressed image', 'CHD version': version };
+    // v5 layout: four 32-bit compressor codes at 0x10, then logical/map/meta sizes.
+    if (version >= 5) {
+        const comps = [];
+        for (let i = 0; i < 4; i++) {
+            const c = r.u32();
+            if (c)
+                comps.push(CHD_COMPRESSORS[c] || ('0x' + c.toString(16)));
+        }
+        out['Compression'] = comps.length ? comps.join(', ') : 'none';
+        const logical = r.u64num();
+        out['Logical size'] = fmtBytes(logical);
+        r.seek(0x38); // hunkbytes (v5, u32 at offset 0x38)
+        out['Hunk size'] = fmtBytes(r.u32());
+    }
+    else {
+        const flags = r.u32();
+        const compression = r.u32();
+        out['Compression'] = CHD_COMPRESSORS[compression] || ('code ' + compression);
+        out['Read-only'] = (flags & 0x02) ? 'no' : 'yes';
+    }
+    out['Header length'] = fmtBytes(headerLen);
+    return out;
 }
-
 // ---------- CISO (compressed ISO: PSP / Dreamcast) ----------
 async function parseCiso(file) {
-  const head = await readSlice(file, 0, 24);
-  const magic = ascii(head, 0, 4);
-  if (magic !== 'CISO' && magic !== 'ZISO') return null;
-  const r = new Reader(head, true); r.seek(4); r.le(true);
-  const headerSize = r.u32();
-  const totalBytes = r.u64num();
-  const blockSize = r.u32();
-  const version = r.u8();
-  return {
-    'Format': (magic === 'ZISO' ? 'ZISO' : 'CISO') + ' compressed disc image',
-    'Version': version,
-    'Uncompressed size': fmtBytes(totalBytes),
-    'Block size': fmtBytes(blockSize),
-    'Note': 'Block-compressed ISO (PSP / Dreamcast); blocks are deflate-compressed.',
-  };
-}
-
-// ---------- FMOD sound bank (.fsb / .bank) ----------
-const FSB5_CODECS = {
-  0: 'none', 1: 'PCM8', 2: 'PCM16', 3: 'PCM24', 4: 'PCM32', 5: 'PCMFLOAT',
-  6: 'GCADPCM', 7: 'IMAADPCM', 8: 'VAG', 9: 'HEVAG', 10: 'XMA', 11: 'MPEG',
-  12: 'CELT', 13: 'AT9', 14: 'XWMA', 15: 'Vorbis', 16: 'FADPCM', 17: 'Opus',
-};
-async function parseFsb(file) {
-  const head = await readSlice(file, 0, 64);
-  // FMOD bank (.bank) wraps an FSB5 in a RIFF/FEV container; FSB5 magic may be
-  // at the start or appear shortly after a 'RIFF' header.
-  let base = -1;
-  if (ascii(head, 0, 4) === 'FSB5') base = 0;
-  else if (ascii(head, 0, 4) === 'RIFF') {
-    // Scan a window for an embedded FSB5 sound bank.
-    const scan = await readSlice(file, 0, Math.min(file.size, 1 << 16));
-    const idx = findBytes(scan, [0x46, 0x53, 0x42, 0x35]);
-    if (idx >= 0) base = idx;
-    if (base < 0) {
-      return {
-        'Format': 'FMOD bank (.bank, RIFF/FEV)',
-        'Note': 'FMOD Studio bank; embedded FSB5 audio not located in the scanned window.',
-      };
-    }
-  }
-  if (base < 0) return null;
-  const r = new Reader(base ? await readSlice(file, base, 64) : head, true);
-  r.seek(4); r.le(true);
-  const version = r.u32();
-  const numSamples = r.u32();
-  const sampleHeaderSize = r.u32();
-  const nameTableSize = r.u32();
-  const dataSize = r.u32();
-  const mode = r.u32();
-  const out = {
-    'Format': base ? 'FMOD bank (.bank) with FSB5' : 'FMOD sound bank (FSB5)',
-    'FSB version': version,
-    'Samples': numSamples,
-    'Codec': FSB5_CODECS[mode] || ('code ' + mode),
-    'Audio data': fmtBytes(dataSize),
-    'Names present': nameTableSize > 0 ? 'yes' : 'no',
-  };
-  return out;
-}
-
-// ---------- Wwise sound bank (.bnk) / audio (.wem) ----------
-async function parseWwise(file, ext) {
-  const head = await readSlice(file, 0, 64);
-  const id = ascii(head, 0, 4);
-  if (id === 'BKHD') {
-    const r = new Reader(head, true); r.seek(4); r.le(true);
-    const sectionLen = r.u32();
-    const bankVersion = r.u32();
-    const bankId = r.u32();
-    return {
-      'Format': 'Wwise sound bank (.bnk)',
-      'Bank version': bankVersion,
-      'Bank ID': '0x' + bankId.toString(16).toUpperCase(),
-      'BKHD section size': fmtBytes(sectionLen),
-      'Note': 'Audiokinetic Wwise SoundBank; sections (BKHD/DIDX/DATA/HIRC) index embedded WEM audio.',
-    };
-  }
-  if (id === 'RIFF' || id === 'RIFX') {
-    const little = id === 'RIFF';
-    const r = new Reader(head, little); r.seek(4);
-    const riffSize = r.u32();
-    const form = ascii(head, 8, 4);
-    return {
-      'Format': 'Wwise encoded audio (.wem)',
-      'Container': id + ' / ' + form,
-      'Byte order': little ? 'little-endian' : 'big-endian',
-      'RIFF size': fmtBytes(riffSize),
-      'Note': 'Wwise WEM audio (Vorbis/Opus/WAVE variant); codec lives in the fmt chunk.',
-    };
-  }
-  return null;
-}
-
-// ---------- Spine animation (.spine/.skel/.atlas) ----------
-async function parseSpine(file, ext) {
-  if (ext === 'atlas') {
-    const text = await readText(file, 1 << 18);
-    // .atlas is plain text: blank line, page image name, size:/format:, then regions.
-    const lines = text.split(/\r?\n/);
-    const pages = [];
-    let regions = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const ln = lines[i];
-      if (/\.(png|webp|jpg|jpeg)\s*$/i.test(ln.trim())) pages.push(ln.trim());
-      else if (ln && !/^\s/.test(ln) && !/:/.test(ln) && pages.length) regions++;
-    }
-    if (!pages.length && !/size:|format:/.test(text)) return null;
-    const out = { 'Format': 'Spine texture atlas (.atlas)', 'Pages': pages.length, 'Regions': regions };
-    if (pages.length) out._sections = [{ title: 'Atlas pages', node: preBlock(pages.slice(0, 50).join('\n')) }];
-    return out;
-  }
-  // .json export, or binary .skel.
-  let text = null;
-  try { text = await readText(file, 1 << 20); } catch (_) {}
-  if (text) {
-    try {
-      const j = JSON.parse(text);
-      if (j.skeleton && (j.bones || j.slots || j.animations)) {
-        const sk = j.skeleton;
-        const out = { 'Format': 'Spine skeleton (JSON)' };
-        if (sk.spine) out['Spine version'] = sk.spine;
-        if (sk.hash) out['Skeleton hash'] = sk.hash;
-        if (sk.width != null) out['Setup size'] = sk.width + ' x ' + sk.height;
-        out['Bones'] = (j.bones || []).length;
-        out['Slots'] = (j.slots || []).length;
-        out['Skins'] = j.skins ? (Array.isArray(j.skins) ? j.skins.length : Object.keys(j.skins).length) : 0;
-        const anims = j.animations ? Object.keys(j.animations) : [];
-        out['Animations'] = anims.length;
-        if (anims.length) out._sections = [{ title: 'Animations', node: preBlock(anims.slice(0, 80).join('\n')) }];
-        return out;
-      }
-    } catch (_) { /* not JSON - probably binary .skel */ }
-  }
-  // Binary .skel: first field is a NUL-terminated hash, then a version string.
-  const head = await readSlice(file, 0, 128);
-  // Spine 3.8+ binary starts with an 8-byte length-prefixed structure; surface
-  // any embedded printable version like "4.1.24" near the head.
-  const asciiHead = latin1(head);
-  const verMatch = asciiHead.match(/\b(\d\.\d+\.\d+)\b/);
-  if (!verMatch && !/skel/i.test(ext)) return null;
-  const out = { 'Format': 'Spine skeleton (binary .skel)' };
-  if (verMatch) out['Spine version'] = verMatch[1];
-  out['Note'] = 'Esoteric Software Spine binary skeleton; full bone/animation listing needs the SkeletonBinary reader.';
-  return out;
-}
-
-// ---------- GameMaker project (.yyp/.yy JSON, .gmx XML) ----------
-async function parseGameMaker(file, ext) {
-  const text = await readText(file, 2 << 20);
-  if (ext === 'gmx') {
-    if (!/<(assets|room|object|sprite|GameMakerProject)\b/i.test(text)) return null;
-    const doc = new DOMParser().parseFromString(text, 'application/xml');
-    if (doc.querySelector('parsererror')) return null;
-    const root = doc.documentElement;
-    const out = { 'Format': 'GameMaker Studio resource (.gmx)', 'Root element': root.tagName };
-    const counts = {};
-    for (const tag of ['sprite', 'object', 'room', 'sound', 'script', 'background', 'font', 'shader', 'timeline']) {
-      const n = doc.querySelectorAll(tag).length;
-      if (n) counts[tag] = n;
-    }
-    const summary = Object.entries(counts).map(([k, v]) => k + ': ' + v).join('  ');
-    if (summary) out['Resources'] = summary;
-    return out;
-  }
-  // .yyp / .yy are JSON5-ish (GameMaker writes trailing commas); parse leniently.
-  let j = null;
-  try { j = JSON.parse(text); } catch (_) {
-    try { j = JSON.parse(text.replace(/,(\s*[}\]])/g, '$1')); } catch (_) { /* give up */ }
-  }
-  if (!j || typeof j !== 'object') return null;
-  const isProject = Array.isArray(j.resources) || j.resourceType === 'GMProject';
-  const out = { 'Format': isProject ? 'GameMaker project (.yyp)' : 'GameMaker resource (.yy)' };
-  if (j.resourceType) out['Resource type'] = j.resourceType;
-  if (j.name) out['Name'] = String(j.name).slice(0, 120);
-  if (j.MetaData && j.MetaData.IDEVersion) out['IDE version'] = j.MetaData.IDEVersion;
-  if (Array.isArray(j.resources)) out['Resources'] = j.resources.length;
-  if (Array.isArray(j.RoomOrderNodes)) out['Rooms'] = j.RoomOrderNodes.length;
-  if (Array.isArray(j.AudioGroups)) out['Audio groups'] = j.AudioGroups.length;
-  if (Array.isArray(j.configs && j.configs.children)) out['Configs'] = j.configs.children.length;
-  return out;
-}
-
-// ---------- Unreal cooked assets (.utoc/.ucas/.uexp/.umd) ----------
-async function parseUnreal(file, ext) {
-  const head = await readSlice(file, 0, 32);
-  // .utoc IO store table-of-contents: 16-byte magic "-==--==--==--==-".
-  if (ext === 'utoc') {
-    const magic = ascii(head, 0, 16);
-    if (magic !== '-==--==--==--==-') return null;
-    const r = new Reader(head, true); r.seek(16); r.le(true);
+    const head = await readSlice(file, 0, 24);
+    const magic = ascii(head, 0, 4);
+    if (magic !== 'CISO' && magic !== 'ZISO')
+        return null;
+    const r = new Reader(head, true);
+    r.seek(4);
+    r.le(true);
+    const headerSize = r.u32();
+    const totalBytes = r.u64num();
+    const blockSize = r.u32();
     const version = r.u8();
     return {
-      'Format': 'Unreal IO Store TOC (.utoc)',
-      'TOC version': version,
-      'Note': 'Unreal Engine 4/5 cooked package index; pairs with a .ucas data container (entries are compressed/encrypted).',
+        'Format': (magic === 'ZISO' ? 'ZISO' : 'CISO') + ' compressed disc image',
+        'Version': version,
+        'Uncompressed size': fmtBytes(totalBytes),
+        'Block size': fmtBytes(blockSize),
+        'Note': 'Block-compressed ISO (PSP / Dreamcast); blocks are deflate-compressed.',
     };
-  }
-  const labels = {
-    ucas: 'Unreal IO Store container (.ucas)',
-    uexp: 'Unreal cooked export data (.uexp)',
-    umd: 'Unreal cooked asset (.umd)',
-  };
-  const notes = {
-    ucas: 'Bulk export/data blob indexed by a sibling .utoc; not standalone-parsable.',
-    uexp: 'Serialised UObject exports paired with a .uasset/.umap header.',
-    umd: 'Unreal cooked map/asset data; full parse needs the UE package serialiser.',
-  };
-  return {
-    'Format': labels[ext] || 'Unreal cooked asset',
-    'Note': notes[ext] || 'Unreal Engine cooked asset; identification only.',
-  };
 }
-
+// ---------- FMOD sound bank (.fsb / .bank) ----------
+const FSB5_CODECS = {
+    0: 'none', 1: 'PCM8', 2: 'PCM16', 3: 'PCM24', 4: 'PCM32', 5: 'PCMFLOAT',
+    6: 'GCADPCM', 7: 'IMAADPCM', 8: 'VAG', 9: 'HEVAG', 10: 'XMA', 11: 'MPEG',
+    12: 'CELT', 13: 'AT9', 14: 'XWMA', 15: 'Vorbis', 16: 'FADPCM', 17: 'Opus',
+};
+async function parseFsb(file) {
+    const head = await readSlice(file, 0, 64);
+    // FMOD bank (.bank) wraps an FSB5 in a RIFF/FEV container; FSB5 magic may be
+    // at the start or appear shortly after a 'RIFF' header.
+    let base = -1;
+    if (ascii(head, 0, 4) === 'FSB5')
+        base = 0;
+    else if (ascii(head, 0, 4) === 'RIFF') {
+        // Scan a window for an embedded FSB5 sound bank.
+        const scan = await readSlice(file, 0, Math.min(file.size, 1 << 16));
+        const idx = findBytes(scan, [0x46, 0x53, 0x42, 0x35]);
+        if (idx >= 0)
+            base = idx;
+        if (base < 0) {
+            return {
+                'Format': 'FMOD bank (.bank, RIFF/FEV)',
+                'Note': 'FMOD Studio bank; embedded FSB5 audio not located in the scanned window.',
+            };
+        }
+    }
+    if (base < 0)
+        return null;
+    const r = new Reader(base ? await readSlice(file, base, 64) : head, true);
+    r.seek(4);
+    r.le(true);
+    const version = r.u32();
+    const numSamples = r.u32();
+    const sampleHeaderSize = r.u32();
+    const nameTableSize = r.u32();
+    const dataSize = r.u32();
+    const mode = r.u32();
+    const out = {
+        'Format': base ? 'FMOD bank (.bank) with FSB5' : 'FMOD sound bank (FSB5)',
+        'FSB version': version,
+        'Samples': numSamples,
+        'Codec': FSB5_CODECS[mode] || ('code ' + mode),
+        'Audio data': fmtBytes(dataSize),
+        'Names present': nameTableSize > 0 ? 'yes' : 'no',
+    };
+    return out;
+}
+// ---------- Wwise sound bank (.bnk) / audio (.wem) ----------
+async function parseWwise(file, ext) {
+    const head = await readSlice(file, 0, 64);
+    const id = ascii(head, 0, 4);
+    if (id === 'BKHD') {
+        const r = new Reader(head, true);
+        r.seek(4);
+        r.le(true);
+        const sectionLen = r.u32();
+        const bankVersion = r.u32();
+        const bankId = r.u32();
+        return {
+            'Format': 'Wwise sound bank (.bnk)',
+            'Bank version': bankVersion,
+            'Bank ID': '0x' + bankId.toString(16).toUpperCase(),
+            'BKHD section size': fmtBytes(sectionLen),
+            'Note': 'Audiokinetic Wwise SoundBank; sections (BKHD/DIDX/DATA/HIRC) index embedded WEM audio.',
+        };
+    }
+    if (id === 'RIFF' || id === 'RIFX') {
+        const little = id === 'RIFF';
+        const r = new Reader(head, little);
+        r.seek(4);
+        const riffSize = r.u32();
+        const form = ascii(head, 8, 4);
+        return {
+            'Format': 'Wwise encoded audio (.wem)',
+            'Container': id + ' / ' + form,
+            'Byte order': little ? 'little-endian' : 'big-endian',
+            'RIFF size': fmtBytes(riffSize),
+            'Note': 'Wwise WEM audio (Vorbis/Opus/WAVE variant); codec lives in the fmt chunk.',
+        };
+    }
+    return null;
+}
+// ---------- Spine animation (.spine/.skel/.atlas) ----------
+async function parseSpine(file, ext) {
+    if (ext === 'atlas') {
+        const text = await readText(file, 1 << 18);
+        // .atlas is plain text: blank line, page image name, size:/format:, then regions.
+        const lines = text.split(/\r?\n/);
+        const pages = [];
+        let regions = 0;
+        for (let i = 0; i < lines.length; i++) {
+            const ln = lines[i];
+            if (/\.(png|webp|jpg|jpeg)\s*$/i.test(ln.trim()))
+                pages.push(ln.trim());
+            else if (ln && !/^\s/.test(ln) && !/:/.test(ln) && pages.length)
+                regions++;
+        }
+        if (!pages.length && !/size:|format:/.test(text))
+            return null;
+        const out = { 'Format': 'Spine texture atlas (.atlas)', 'Pages': pages.length, 'Regions': regions };
+        if (pages.length)
+            out._sections = [{ title: 'Atlas pages', node: preBlock(pages.slice(0, 50).join('\n')) }];
+        return out;
+    }
+    // .json export, or binary .skel.
+    let text = null;
+    try {
+        text = await readText(file, 1 << 20);
+    }
+    catch (_) { }
+    if (text) {
+        try {
+            const j = JSON.parse(text);
+            if (j.skeleton && (j.bones || j.slots || j.animations)) {
+                const sk = j.skeleton;
+                const out = { 'Format': 'Spine skeleton (JSON)' };
+                if (sk.spine)
+                    out['Spine version'] = sk.spine;
+                if (sk.hash)
+                    out['Skeleton hash'] = sk.hash;
+                if (sk.width != null)
+                    out['Setup size'] = sk.width + ' x ' + sk.height;
+                out['Bones'] = (j.bones || []).length;
+                out['Slots'] = (j.slots || []).length;
+                out['Skins'] = j.skins ? (Array.isArray(j.skins) ? j.skins.length : Object.keys(j.skins).length) : 0;
+                const anims = j.animations ? Object.keys(j.animations) : [];
+                out['Animations'] = anims.length;
+                if (anims.length)
+                    out._sections = [{ title: 'Animations', node: preBlock(anims.slice(0, 80).join('\n')) }];
+                return out;
+            }
+        }
+        catch (_) { /* not JSON - probably binary .skel */ }
+    }
+    // Binary .skel: first field is a NUL-terminated hash, then a version string.
+    const head = await readSlice(file, 0, 128);
+    // Spine 3.8+ binary starts with an 8-byte length-prefixed structure; surface
+    // any embedded printable version like "4.1.24" near the head.
+    const asciiHead = latin1(head);
+    const verMatch = asciiHead.match(/\b(\d\.\d+\.\d+)\b/);
+    if (!verMatch && !/skel/i.test(ext))
+        return null;
+    const out = { 'Format': 'Spine skeleton (binary .skel)' };
+    if (verMatch)
+        out['Spine version'] = verMatch[1];
+    out['Note'] = 'Esoteric Software Spine binary skeleton; full bone/animation listing needs the SkeletonBinary reader.';
+    return out;
+}
+// ---------- GameMaker project (.yyp/.yy JSON, .gmx XML) ----------
+async function parseGameMaker(file, ext) {
+    const text = await readText(file, 2 << 20);
+    if (ext === 'gmx') {
+        if (!/<(assets|room|object|sprite|GameMakerProject)\b/i.test(text))
+            return null;
+        const doc = new DOMParser().parseFromString(text, 'application/xml');
+        if (doc.querySelector('parsererror'))
+            return null;
+        const root = doc.documentElement;
+        const out = { 'Format': 'GameMaker Studio resource (.gmx)', 'Root element': root.tagName };
+        const counts = {};
+        for (const tag of ['sprite', 'object', 'room', 'sound', 'script', 'background', 'font', 'shader', 'timeline']) {
+            const n = doc.querySelectorAll(tag).length;
+            if (n)
+                counts[tag] = n;
+        }
+        const summary = Object.entries(counts).map(([k, v]) => k + ': ' + v).join('  ');
+        if (summary)
+            out['Resources'] = summary;
+        return out;
+    }
+    // .yyp / .yy are JSON5-ish (GameMaker writes trailing commas); parse leniently.
+    let j = null;
+    try {
+        j = JSON.parse(text);
+    }
+    catch (_) {
+        try {
+            j = JSON.parse(text.replace(/,(\s*[}\]])/g, '$1'));
+        }
+        catch (_) { /* give up */ }
+    }
+    if (!j || typeof j !== 'object')
+        return null;
+    const isProject = Array.isArray(j.resources) || j.resourceType === 'GMProject';
+    const out = { 'Format': isProject ? 'GameMaker project (.yyp)' : 'GameMaker resource (.yy)' };
+    if (j.resourceType)
+        out['Resource type'] = j.resourceType;
+    if (j.name)
+        out['Name'] = String(j.name).slice(0, 120);
+    if (j.MetaData && j.MetaData.IDEVersion)
+        out['IDE version'] = j.MetaData.IDEVersion;
+    if (Array.isArray(j.resources))
+        out['Resources'] = j.resources.length;
+    if (Array.isArray(j.RoomOrderNodes))
+        out['Rooms'] = j.RoomOrderNodes.length;
+    if (Array.isArray(j.AudioGroups))
+        out['Audio groups'] = j.AudioGroups.length;
+    if (Array.isArray(j.configs && j.configs.children))
+        out['Configs'] = j.configs.children.length;
+    return out;
+}
+// ---------- Unreal cooked assets (.utoc/.ucas/.uexp/.umd) ----------
+async function parseUnreal(file, ext) {
+    const head = await readSlice(file, 0, 32);
+    // .utoc IO store table-of-contents: 16-byte magic "-==--==--==--==-".
+    if (ext === 'utoc') {
+        const magic = ascii(head, 0, 16);
+        if (magic !== '-==--==--==--==-')
+            return null;
+        const r = new Reader(head, true);
+        r.seek(16);
+        r.le(true);
+        const version = r.u8();
+        return {
+            'Format': 'Unreal IO Store TOC (.utoc)',
+            'TOC version': version,
+            'Note': 'Unreal Engine 4/5 cooked package index; pairs with a .ucas data container (entries are compressed/encrypted).',
+        };
+    }
+    const labels = {
+        ucas: 'Unreal IO Store container (.ucas)',
+        uexp: 'Unreal cooked export data (.uexp)',
+        umd: 'Unreal cooked asset (.umd)',
+    };
+    const notes = {
+        ucas: 'Bulk export/data blob indexed by a sibling .utoc; not standalone-parsable.',
+        uexp: 'Serialised UObject exports paired with a .uasset/.umap header.',
+        umd: 'Unreal cooked map/asset data; full parse needs the UE package serialiser.',
+    };
+    return {
+        'Format': labels[ext] || 'Unreal cooked asset',
+        'Note': notes[ext] || 'Unreal Engine cooked asset; identification only.',
+    };
+}
 // ---------- Minecraft region (.mca Anvil / .mcr legacy) ----------
 async function parseMcRegion(file, ext) {
-  // A region file is a fixed 4 KiB location table + 4 KiB timestamp table, then
-  // chunk payloads. Each location entry is a 3-byte sector offset + 1-byte count.
-  if (file.size < 8192) return null;
-  const head = await readSlice(file, 0, 8192);
-  let populated = 0, maxSector = 0, totalSectors = 0;
-  for (let i = 0; i < 1024; i++) {
-    const off = (head[i * 4] << 16) | (head[i * 4 + 1] << 8) | head[i * 4 + 2];
-    const count = head[i * 4 + 3];
-    if (off !== 0 || count !== 0) { populated++; totalSectors += count; maxSector = Math.max(maxSector, off + count); }
-  }
-  // Sanity: a valid region has at least one chunk and offsets that fit the file.
-  if (populated === 0) return null;
-  if (maxSector * 4096 > file.size + 4096) return null;
-  // Read first populated chunk's compression byte for a format hint.
-  let compression = '-';
-  try {
-    const r = new Reader(head, true);
+    // A region file is a fixed 4 KiB location table + 4 KiB timestamp table, then
+    // chunk payloads. Each location entry is a 3-byte sector offset + 1-byte count.
+    if (file.size < 8192)
+        return null;
+    const head = await readSlice(file, 0, 8192);
+    let populated = 0, maxSector = 0, totalSectors = 0;
     for (let i = 0; i < 1024; i++) {
-      const off = (head[i * 4] << 16) | (head[i * 4 + 1] << 8) | head[i * 4 + 2];
-      if (off >= 2) {
-        const chunk = await readSlice(file, off * 4096, 5);
-        const comp = chunk[4];
-        compression = comp === 1 ? 'GZip' : comp === 2 ? 'Zlib' : comp === 3 ? 'uncompressed' : comp === 4 ? 'LZ4' : 'scheme ' + comp;
-        break;
-      }
+        const off = (head[i * 4] << 16) | (head[i * 4 + 1] << 8) | head[i * 4 + 2];
+        const count = head[i * 4 + 3];
+        if (off !== 0 || count !== 0) {
+            populated++;
+            totalSectors += count;
+            maxSector = Math.max(maxSector, off + count);
+        }
     }
-  } catch (_) {}
-  return {
-    'Format': ext === 'mcr' ? 'Minecraft region (.mcr, legacy)' : 'Minecraft region (.mca, Anvil)',
-    'Populated chunks': populated + ' / 1024',
-    'Chunk compression': compression,
-    'Data sectors used': totalSectors + ' (' + fmtBytes(totalSectors * 4096) + ')',
-    'Note': 'A 32x32 grid of chunks; coordinates come from the r.X.Z filename.',
-  };
+    // Sanity: a valid region has at least one chunk and offsets that fit the file.
+    if (populated === 0)
+        return null;
+    if (maxSector * 4096 > file.size + 4096)
+        return null;
+    // Read first populated chunk's compression byte for a format hint.
+    let compression = '-';
+    try {
+        const r = new Reader(head, true);
+        for (let i = 0; i < 1024; i++) {
+            const off = (head[i * 4] << 16) | (head[i * 4 + 1] << 8) | head[i * 4 + 2];
+            if (off >= 2) {
+                const chunk = await readSlice(file, off * 4096, 5);
+                const comp = chunk[4];
+                compression = comp === 1 ? 'GZip' : comp === 2 ? 'Zlib' : comp === 3 ? 'uncompressed' : comp === 4 ? 'LZ4' : 'scheme ' + comp;
+                break;
+            }
+        }
+    }
+    catch (_) { }
+    return {
+        'Format': ext === 'mcr' ? 'Minecraft region (.mcr, legacy)' : 'Minecraft region (.mca, Anvil)',
+        'Populated chunks': populated + ' / 1024',
+        'Chunk compression': compression,
+        'Data sectors used': totalSectors + ' (' + fmtBytes(totalSectors * 4096) + ')',
+        'Note': 'A 32x32 grid of chunks; coordinates come from the r.X.Z filename.',
+    };
 }
-
 // ---------- 3DS homebrew (.3dsx) ----------
 async function parse3dsx(file) {
-  const head = await readSlice(file, 0, 44);
-  if (ascii(head, 0, 4) !== '3DSX') return null;
-  const r = new Reader(head, true); r.seek(4); r.le(true);
-  const headerSize = r.u16();
-  const relocHeaderSize = r.u16();
-  const formatVer = r.u32();
-  const flags = r.u32();
-  const codeSegSize = r.u32();
-  const rodataSegSize = r.u32();
-  const dataSegSize = r.u32();
-  const bssSize = r.u32();
-  const out = {
-    'Format': '3DS homebrew executable (.3dsx)',
-    'Format version': formatVer,
-    'Code segment': fmtBytes(codeSegSize),
-    'Read-only data': fmtBytes(rodataSegSize),
-    'Data segment': fmtBytes(dataSegSize),
-    'BSS size': fmtBytes(bssSize),
-    'Extended header (SMDH)': headerSize > 32 ? 'present' : 'no',
-  };
-  return out;
+    const head = await readSlice(file, 0, 44);
+    if (ascii(head, 0, 4) !== '3DSX')
+        return null;
+    const r = new Reader(head, true);
+    r.seek(4);
+    r.le(true);
+    const headerSize = r.u16();
+    const relocHeaderSize = r.u16();
+    const formatVer = r.u32();
+    const flags = r.u32();
+    const codeSegSize = r.u32();
+    const rodataSegSize = r.u32();
+    const dataSegSize = r.u32();
+    const bssSize = r.u32();
+    const out = {
+        'Format': '3DS homebrew executable (.3dsx)',
+        'Format version': formatVer,
+        'Code segment': fmtBytes(codeSegSize),
+        'Read-only data': fmtBytes(rodataSegSize),
+        'Data segment': fmtBytes(dataSegSize),
+        'BSS size': fmtBytes(bssSize),
+        'Extended header (SMDH)': headerSize > 32 ? 'present' : 'no',
+    };
+    return out;
 }
-
 // ---------- Atari ROMs (.a78 / .lnx / .a26 / .j64) ----------
 async function parseAtari(file, ext) {
-  const head = await readSlice(file, 0, 128);
-  if (ext === 'a78') {
-    // A78 header v2/v3: byte 0 = version, "ATARI7800" at offset 1.
-    if (ascii(head, 1, 9) !== 'ATARI7800') return null;
-    const out = {
-      'Format': 'Atari 7800 ROM (.a78)',
-      'Header version': head[0],
-      'Title': cleanAscii(head, 17, 32) || '(none)',
-    };
-    const romSize = (head[49] << 24) | (head[50] << 16) | (head[51] << 8) | head[52];
-    if (romSize > 0) out['ROM size'] = fmtBytes(romSize);
-    out['Cartridge type'] = '0x' + ((head[53] << 8) | head[54]).toString(16);
-    return out;
-  }
-  if (ext === 'lnx') {
-    // Atari Lynx .lnx: "LYNX" magic at byte 0.
-    if (ascii(head, 0, 4) !== 'LYNX') return null;
-    const r = new Reader(head, true); r.seek(4); r.le(true);
-    const bank0 = r.u16();
-    const bank1 = r.u16();
-    const version = r.u16();
+    const head = await readSlice(file, 0, 128);
+    if (ext === 'a78') {
+        // A78 header v2/v3: byte 0 = version, "ATARI7800" at offset 1.
+        if (ascii(head, 1, 9) !== 'ATARI7800')
+            return null;
+        const out = {
+            'Format': 'Atari 7800 ROM (.a78)',
+            'Header version': head[0],
+            'Title': cleanAscii(head, 17, 32) || '(none)',
+        };
+        const romSize = (head[49] << 24) | (head[50] << 16) | (head[51] << 8) | head[52];
+        if (romSize > 0)
+            out['ROM size'] = fmtBytes(romSize);
+        out['Cartridge type'] = '0x' + ((head[53] << 8) | head[54]).toString(16);
+        return out;
+    }
+    if (ext === 'lnx') {
+        // Atari Lynx .lnx: "LYNX" magic at byte 0.
+        if (ascii(head, 0, 4) !== 'LYNX')
+            return null;
+        const r = new Reader(head, true);
+        r.seek(4);
+        r.le(true);
+        const bank0 = r.u16();
+        const bank1 = r.u16();
+        const version = r.u16();
+        return {
+            'Format': 'Atari Lynx ROM (.lnx)',
+            'Header version': version,
+            'Bank 0 page size': fmtBytes(bank0),
+            'Bank 1 page size': fmtBytes(bank1),
+            'Cartridge name': cleanAscii(head, 10, 32) || '(none)',
+            'Manufacturer': cleanAscii(head, 42, 16) || '-',
+        };
+    }
+    // .a26 (Atari 2600) and .j64 (Jaguar) are typically headerless raw dumps.
+    const labels = { a26: 'Atari 2600 ROM (.a26)', j64: 'Atari Jaguar ROM (.j64)' };
     return {
-      'Format': 'Atari Lynx ROM (.lnx)',
-      'Header version': version,
-      'Bank 0 page size': fmtBytes(bank0),
-      'Bank 1 page size': fmtBytes(bank1),
-      'Cartridge name': cleanAscii(head, 10, 32) || '(none)',
-      'Manufacturer': cleanAscii(head, 42, 16) || '-',
+        'Format': labels[ext] || 'Atari ROM',
+        'ROM size': fmtBytes(file.size),
+        'Note': ext === 'a26'
+            ? 'Atari 2600 cartridge; bank-switching scheme is inferred from size by the emulator.'
+            : 'Atari Jaguar cartridge image; headerless raw ROM.',
     };
-  }
-  // .a26 (Atari 2600) and .j64 (Jaguar) are typically headerless raw dumps.
-  const labels = { a26: 'Atari 2600 ROM (.a26)', j64: 'Atari Jaguar ROM (.j64)' };
-  return {
-    'Format': labels[ext] || 'Atari ROM',
-    'ROM size': fmtBytes(file.size),
-    'Note': ext === 'a26'
-      ? 'Atari 2600 cartridge; bank-switching scheme is inferred from size by the emulator.'
-      : 'Atari Jaguar cartridge image; headerless raw ROM.',
-  };
 }
-
 // ---------- Sega 8-bit (.sms Master System / .gg Game Gear) ----------
 const SMS_REGION = { 3: 'SMS Japan', 4: 'SMS Export', 5: 'GG Japan', 6: 'GG Export', 7: 'GG International' };
 async function parseSega8(file, ext) {
-  // The "TMR SEGA" header sits at 0x7FF0 (also mirrored at 0x1FF0 / 0x3FF0).
-  const size = file.size;
-  const candidates = [0x7FF0, 0x3FF0, 0x1FF0];
-  let base = -1, buf = null;
-  for (const c of candidates) {
-    if (c + 16 > size) continue;
-    const slice = await readSlice(file, c, 16);
-    if (ascii(slice, 0, 8) === 'TMR SEGA') { base = c; buf = slice; break; }
-  }
-  if (base < 0) {
-    // Header is optional - fall back to a size-based identification.
+    // The "TMR SEGA" header sits at 0x7FF0 (also mirrored at 0x1FF0 / 0x3FF0).
+    const size = file.size;
+    const candidates = [0x7FF0, 0x3FF0, 0x1FF0];
+    let base = -1, buf = null;
+    for (const c of candidates) {
+        if (c + 16 > size)
+            continue;
+        const slice = await readSlice(file, c, 16);
+        if (ascii(slice, 0, 8) === 'TMR SEGA') {
+            base = c;
+            buf = slice;
+            break;
+        }
+    }
+    if (base < 0) {
+        // Header is optional - fall back to a size-based identification.
+        return {
+            'Format': ext === 'gg' ? 'Sega Game Gear ROM (.gg)' : 'Sega Master System ROM (.sms)',
+            'ROM size': fmtBytes(size),
+            'Header': 'no TMR SEGA header found',
+        };
+    }
+    const r = new Reader(buf, true);
+    r.seek(10);
+    r.le(true);
+    const checksum = r.u16();
+    // BCD product code (2.5 bytes) + version nibble at 0x0E-0x0F.
+    const regByte = buf[15];
+    const region = regByte >> 4;
+    const romCode = regByte & 0x0F;
     return {
-      'Format': ext === 'gg' ? 'Sega Game Gear ROM (.gg)' : 'Sega Master System ROM (.sms)',
-      'ROM size': fmtBytes(size),
-      'Header': 'no TMR SEGA header found',
+        'Format': ext === 'gg' ? 'Sega Game Gear ROM (.gg)' : 'Sega Master System ROM (.sms)',
+        'TMR SEGA header': 'at 0x' + base.toString(16).toUpperCase(),
+        'Checksum': '0x' + checksum.toString(16).toUpperCase().padStart(4, '0'),
+        'Region': SMS_REGION[region] || ('code ' + region),
+        'ROM size code': '0x' + romCode.toString(16),
     };
-  }
-  const r = new Reader(buf, true); r.seek(10); r.le(true);
-  const checksum = r.u16();
-  // BCD product code (2.5 bytes) + version nibble at 0x0E-0x0F.
-  const regByte = buf[15];
-  const region = regByte >> 4;
-  const romCode = regByte & 0x0F;
-  return {
-    'Format': ext === 'gg' ? 'Sega Game Gear ROM (.gg)' : 'Sega Master System ROM (.sms)',
-    'TMR SEGA header': 'at 0x' + base.toString(16).toUpperCase(),
-    'Checksum': '0x' + checksum.toString(16).toUpperCase().padStart(4, '0'),
-    'Region': SMS_REGION[region] || ('code ' + region),
-    'ROM size code': '0x' + romCode.toString(16),
-  };
 }
-
 // ---------- WonderSwan (.ws / .wsc) ----------
 async function parseWonderSwan(file, ext) {
-  // Bandai WonderSwan stores a 16-byte footer in the last bytes of the ROM.
-  const size = file.size;
-  if (size < 16) return null;
-  const foot = await readSlice(file, size - 16, 16);
-  const publisher = foot[6];
-  const system = foot[7]; // 0 = mono, 1 = color
-  const gameId = foot[8];
-  const romSizeCode = foot[10];
-  const saveType = foot[11];
-  const flags = foot[12];
-  const checksum = foot[14] | (foot[15] << 8);
-  return {
-    'Format': ext === 'wsc' ? 'WonderSwan Color ROM (.wsc)' : 'WonderSwan ROM (.ws)',
-    'Publisher ID': '0x' + publisher.toString(16),
-    'System': system === 1 ? 'WonderSwan Color' : 'WonderSwan (mono)',
-    'Game ID': '0x' + gameId.toString(16),
-    'ROM size code': '0x' + romSizeCode.toString(16),
-    'Save type': '0x' + saveType.toString(16),
-    'Orientation': (flags & 0x01) ? 'vertical' : 'horizontal',
-    'Checksum': '0x' + checksum.toString(16).toUpperCase().padStart(4, '0'),
-  };
+    // Bandai WonderSwan stores a 16-byte footer in the last bytes of the ROM.
+    const size = file.size;
+    if (size < 16)
+        return null;
+    const foot = await readSlice(file, size - 16, 16);
+    const publisher = foot[6];
+    const system = foot[7]; // 0 = mono, 1 = color
+    const gameId = foot[8];
+    const romSizeCode = foot[10];
+    const saveType = foot[11];
+    const flags = foot[12];
+    const checksum = foot[14] | (foot[15] << 8);
+    return {
+        'Format': ext === 'wsc' ? 'WonderSwan Color ROM (.wsc)' : 'WonderSwan ROM (.ws)',
+        'Publisher ID': '0x' + publisher.toString(16),
+        'System': system === 1 ? 'WonderSwan Color' : 'WonderSwan (mono)',
+        'Game ID': '0x' + gameId.toString(16),
+        'ROM size code': '0x' + romSizeCode.toString(16),
+        'Save type': '0x' + saveType.toString(16),
+        'Orientation': (flags & 0x01) ? 'vertical' : 'horizontal',
+        'Checksum': '0x' + checksum.toString(16).toUpperCase().padStart(4, '0'),
+    };
 }
-
 // ---------- PC Engine / TurboGrafx-16 (.pce) ----------
 async function parsePce(file) {
-  // .pce is a raw HuCard dump; common copier header is 512 bytes (size % 1024 == 512).
-  const size = file.size;
-  const hasHeader = (size % 1024) === 512;
-  return {
-    'Format': 'PC Engine / TurboGrafx-16 ROM (.pce)',
-    'Copier header': hasHeader ? 'present (512 bytes, stripped by emulators)' : 'none',
-    'ROM size': fmtBytes(hasHeader ? size - 512 : size),
-    'Note': 'NEC HuCard image; some dumps store data bit-reversed and are de-swizzled on load.',
-  };
+    // .pce is a raw HuCard dump; common copier header is 512 bytes (size % 1024 == 512).
+    const size = file.size;
+    const hasHeader = (size % 1024) === 512;
+    return {
+        'Format': 'PC Engine / TurboGrafx-16 ROM (.pce)',
+        'Copier header': hasHeader ? 'present (512 bytes, stripped by emulators)' : 'none',
+        'ROM size': fmtBytes(hasHeader ? size - 512 : size),
+        'Note': 'NEC HuCard image; some dumps store data bit-reversed and are de-swizzled on load.',
+    };
 }
-
 // ---------- Warcraft III map (.w3x / .w3m, MPQ-based) ----------
 async function parseW3Map(file) {
-  const head = await readSlice(file, 0, 12);
-  if (ascii(head, 0, 4) !== 'HM3W') return null;
-  // After "HM3W" + 4 reserved bytes, a NUL-terminated map name follows at 0x08.
-  const buf = await readSlice(file, 0, 256);
-  let name = '';
-  for (let i = 8; i < buf.length; i++) { const c = buf[i]; if (c === 0) break; if (c >= 32 && c < 127) name += String.fromCharCode(c); }
-  const r = new Reader(buf, true); r.seek(8 + name.length + 1); r.le(true);
-  let flags = 0, maxPlayers = 0;
-  try { flags = r.u32(); maxPlayers = r.u32(); } catch (_) {}
-  return {
-    'Format': 'Warcraft III map (.w3x / .w3m)',
-    'Map name': name || '(none)',
-    'Max players': maxPlayers || '-',
-    'Flags': '0x' + (flags >>> 0).toString(16),
-    'Note': 'A Warcraft III map is an MPQ archive with an HM3W header; scripts/assets live inside the MPQ.',
-  };
+    const head = await readSlice(file, 0, 12);
+    if (ascii(head, 0, 4) !== 'HM3W')
+        return null;
+    // After "HM3W" + 4 reserved bytes, a NUL-terminated map name follows at 0x08.
+    const buf = await readSlice(file, 0, 256);
+    let name = '';
+    for (let i = 8; i < buf.length; i++) {
+        const c = buf[i];
+        if (c === 0)
+            break;
+        if (c >= 32 && c < 127)
+            name += String.fromCharCode(c);
+    }
+    const r = new Reader(buf, true);
+    r.seek(8 + name.length + 1);
+    r.le(true);
+    let flags = 0, maxPlayers = 0;
+    try {
+        flags = r.u32();
+        maxPlayers = r.u32();
+    }
+    catch (_) { }
+    return {
+        'Format': 'Warcraft III map (.w3x / .w3m)',
+        'Map name': name || '(none)',
+        'Max players': maxPlayers || '-',
+        'Flags': '0x' + (flags >>> 0).toString(16),
+        'Note': 'A Warcraft III map is an MPQ archive with an HM3W header; scripts/assets live inside the MPQ.',
+    };
 }
-
 // ---------- Ren'Py compiled script (.rpyc) ----------
 async function parseRpyc(file) {
-  const head = await readSlice(file, 0, 16);
-  // RPYC2 files begin with "RENPY RPC2".
-  if (!startsWithAscii(head, 'RENPY RPC2')) {
-    // Older .rpyc are a raw zlib stream (0x78) of a pickled AST - identify only.
-    if (head[0] === 0x78) {
-      return {
-        'Format': "Ren'Py compiled script (.rpyc, legacy)",
-        'Note': 'Zlib-compressed pickled AST (pre-RPC2 slot format); decompiling needs unrpyc.',
-      };
+    const head = await readSlice(file, 0, 16);
+    // RPYC2 files begin with "RENPY RPC2".
+    if (!startsWithAscii(head, 'RENPY RPC2')) {
+        // Older .rpyc are a raw zlib stream (0x78) of a pickled AST - identify only.
+        if (head[0] === 0x78) {
+            return {
+                'Format': "Ren'Py compiled script (.rpyc, legacy)",
+                'Note': 'Zlib-compressed pickled AST (pre-RPC2 slot format); decompiling needs unrpyc.',
+            };
+        }
+        return null;
     }
-    return null;
-  }
-  // RPC2 slot table: after the 10-byte magic, repeating (slot u32, offset u32,
-  // length u32) records terminated by a zero slot.
-  const buf = await readSlice(file, 0, 256);
-  const r = new Reader(buf, true); r.seek(10); r.le(true);
-  const slots = [];
-  try {
-    for (let i = 0; i < 16; i++) {
-      const slot = r.u32();
-      if (slot === 0) break;
-      const offset = r.u32();
-      const length = r.u32();
-      slots.push({ slot, offset, length });
+    // RPC2 slot table: after the 10-byte magic, repeating (slot u32, offset u32,
+    // length u32) records terminated by a zero slot.
+    const buf = await readSlice(file, 0, 256);
+    const r = new Reader(buf, true);
+    r.seek(10);
+    r.le(true);
+    const slots = [];
+    try {
+        for (let i = 0; i < 16; i++) {
+            const slot = r.u32();
+            if (slot === 0)
+                break;
+            const offset = r.u32();
+            const length = r.u32();
+            slots.push({ slot, offset, length });
+        }
     }
-  } catch (_) {}
-  return {
-    'Format': "Ren'Py compiled script (.rpyc, RPC2)",
-    'Slots': slots.length,
-    'Slot 1 payload': slots[0] ? fmtBytes(slots[0].length) + ' (zlib)' : '-',
-    'Note': 'Slot 1 holds the zlib-compressed pickled AST; .rpy source is recoverable with unrpyc.',
-  };
+    catch (_) { }
+    return {
+        'Format': "Ren'Py compiled script (.rpyc, RPC2)",
+        'Slots': slots.length,
+        'Slot 1 payload': slots[0] ? fmtBytes(slots[0].length) + ' (zlib)' : '-',
+        'Note': 'Slot 1 holds the zlib-compressed pickled AST; .rpy source is recoverable with unrpyc.',
+    };
 }
-
 // ---------- RPG Maker data (.rvdata2 / .rxdata, Ruby Marshal) ----------
 async function parseRubyMarshal(file, ext) {
-  const head = await readSlice(file, 0, 32);
-  // Ruby Marshal streams start with the version pair 0x04 0x08.
-  if (!(head[0] === 0x04 && head[1] === 0x08)) return null;
-  const TYPES = {
-    0x40: 'object link', 0x49: 'IVAR-wrapped', 0x5B: 'Array ([)', 0x7B: 'Hash ({)',
-    0x6F: 'Object (o)', 0x75: 'User-defined (u)', 0x55: 'User marshal (U)',
-    0x22: 'String (")', 0x3A: 'Symbol (:)', 0x69: 'Integer (i)',
-  };
-  const labels = { rvdata2: 'RPG Maker VX Ace data (.rvdata2)', rxdata: 'RPG Maker XP data (.rxdata)' };
-  const topType = head[2];
-  return {
-    'Format': labels[ext] || 'RPG Maker data',
-    'Marshal version': head[0] + '.' + head[1],
-    'Top-level object': TYPES[topType] || ('byte 0x' + topType.toString(16)),
-    'Size': fmtBytes(file.size),
-    'Note': 'Ruby Marshal dump (RGSS game data: maps, actors, items); full decode needs a Marshal reader.',
-  };
+    const head = await readSlice(file, 0, 32);
+    // Ruby Marshal streams start with the version pair 0x04 0x08.
+    if (!(head[0] === 0x04 && head[1] === 0x08))
+        return null;
+    const TYPES = {
+        0x40: 'object link', 0x49: 'IVAR-wrapped', 0x5B: 'Array ([)', 0x7B: 'Hash ({)',
+        0x6F: 'Object (o)', 0x75: 'User-defined (u)', 0x55: 'User marshal (U)',
+        0x22: 'String (")', 0x3A: 'Symbol (:)', 0x69: 'Integer (i)',
+    };
+    const labels = { rvdata2: 'RPG Maker VX Ace data (.rvdata2)', rxdata: 'RPG Maker XP data (.rxdata)' };
+    const topType = head[2];
+    return {
+        'Format': labels[ext] || 'RPG Maker data',
+        'Marshal version': head[0] + '.' + head[1],
+        'Top-level object': TYPES[topType] || ('byte 0x' + topType.toString(16)),
+        'Size': fmtBytes(file.size),
+        'Note': 'Ruby Marshal dump (RGSS game data: maps, actors, items); full decode needs a Marshal reader.',
+    };
 }
-
 // ---------- Pyxel Edit document (.pyxel, ZIP) ----------
 async function parsePyxel(file) {
-  let zip;
-  try { zip = await openZip(file); } catch (_) { return null; }
-  if (!zip || !zip.entries.length) return null;
-  const docEntry = zip.entries.find((e) => /docData\.json$/i.test(e.name));
-  if (!docEntry && !zip.names().some((n) => /\.(png|json)$/i.test(n))) return null;
-  const out = { 'Format': 'Pyxel Edit document (.pyxel, ZIP)', 'Entries': zip.entries.length };
-  if (docEntry) {
+    let zip;
     try {
-      const j = JSON.parse(await zip.text(docEntry.name));
-      if (j.tileset) out['Tile size'] = (j.tileset.tileWidth || '?') + ' x ' + (j.tileset.tileHeight || '?');
-      if (j.canvas) {
-        out['Canvas'] = (j.canvas.width || '?') + ' x ' + (j.canvas.height || '?');
-        if (j.canvas.numLayers != null) out['Layers'] = j.canvas.numLayers;
-      }
-      if (j.animations) out['Animations'] = Array.isArray(j.animations) ? j.animations.length : Object.keys(j.animations).length;
-      if (j.palette && j.palette.colors) out['Palette colours'] = j.palette.colors.length;
-    } catch (_) {}
-  }
-  out._sections = [{ title: 'Files (' + zip.entries.length + ', sample)', node: preBlock(zip.names().slice(0, 200).join('\n')) }];
-  return out;
+        zip = await openZip(file);
+    }
+    catch (_) {
+        return null;
+    }
+    if (!zip || !zip.entries.length)
+        return null;
+    const docEntry = zip.entries.find((e) => /docData\.json$/i.test(e.name));
+    if (!docEntry && !zip.names().some((n) => /\.(png|json)$/i.test(n)))
+        return null;
+    const out = { 'Format': 'Pyxel Edit document (.pyxel, ZIP)', 'Entries': zip.entries.length };
+    if (docEntry) {
+        try {
+            const j = JSON.parse(await zip.text(docEntry.name));
+            if (j.tileset)
+                out['Tile size'] = (j.tileset.tileWidth || '?') + ' x ' + (j.tileset.tileHeight || '?');
+            if (j.canvas) {
+                out['Canvas'] = (j.canvas.width || '?') + ' x ' + (j.canvas.height || '?');
+                if (j.canvas.numLayers != null)
+                    out['Layers'] = j.canvas.numLayers;
+            }
+            if (j.animations)
+                out['Animations'] = Array.isArray(j.animations) ? j.animations.length : Object.keys(j.animations).length;
+            if (j.palette && j.palette.colors)
+                out['Palette colours'] = j.palette.colors.length;
+        }
+        catch (_) { }
+    }
+    out._sections = [{ title: 'Files (' + zip.entries.length + ', sample)', node: preBlock(zip.names().slice(0, 200).join('\n')) }];
+    return out;
 }
-
 // ---------- TIC-80 cartridge (.tic) ----------
 const TIC_CHUNKS = {
-  1: 'tiles', 2: 'sprites', 3: 'cover (deprecated)', 4: 'map', 5: 'code', 6: 'flags',
-  9: 'samples (SFX)', 10: 'waveforms', 12: 'palette', 14: 'music patterns',
-  15: 'music tracks', 17: 'code (zip)', 18: 'default', 19: 'screen', 20: 'binary',
+    1: 'tiles', 2: 'sprites', 3: 'cover (deprecated)', 4: 'map', 5: 'code', 6: 'flags',
+    9: 'samples (SFX)', 10: 'waveforms', 12: 'palette', 14: 'music patterns',
+    15: 'music tracks', 17: 'code (zip)', 18: 'default', 19: 'screen', 20: 'binary',
 };
 async function parseTic(file) {
-  // A .tic cart is a flat list of chunks: 1 byte (bank<<5 | type), 16-bit size,
-  // 1 reserved byte, then payload.
-  const buf = await readSlice(file, 0, Math.min(file.size, 1 << 16));
-  if (buf.length < 4) return null;
-  const r = new Reader(buf, true); r.le(true);
-  const chunks = {};
-  let count = 0;
-  while (r.pos + 4 <= buf.length && count < 256) {
-    const tag = r.u8();
-    const type = tag & 0x1F;
-    const size = r.u16();
-    r.skip(1); // reserved
-    if (type === 0 && size === 0) break;
-    if (!TIC_CHUNKS[type] && type !== 0) { /* unknown but keep walking */ }
-    chunks[type] = (chunks[type] || 0) + 1;
-    count++;
-    if (size === 0) break;
-    r.skip(size);
-  }
-  if (!count) return null;
-  const present = Object.keys(chunks).map((t) => TIC_CHUNKS[t] || ('type ' + t));
-  return {
-    'Format': 'TIC-80 cartridge (.tic)',
-    'Chunks': count,
-    'Sections present': present.join(', ') || '(none)',
-    'Note': 'TIC-80 fantasy-console cart; code/graphics/sound stored as tagged chunks.',
-  };
+    // A .tic cart is a flat list of chunks: 1 byte (bank<<5 | type), 16-bit size,
+    // 1 reserved byte, then payload.
+    const buf = await readSlice(file, 0, Math.min(file.size, 1 << 16));
+    if (buf.length < 4)
+        return null;
+    const r = new Reader(buf, true);
+    r.le(true);
+    const chunks = {};
+    let count = 0;
+    while (r.pos + 4 <= buf.length && count < 256) {
+        const tag = r.u8();
+        const type = tag & 0x1F;
+        const size = r.u16();
+        r.skip(1); // reserved
+        if (type === 0 && size === 0)
+            break;
+        if (!TIC_CHUNKS[type] && type !== 0) { /* unknown but keep walking */ }
+        chunks[type] = (chunks[type] || 0) + 1;
+        count++;
+        if (size === 0)
+            break;
+        r.skip(size);
+    }
+    if (!count)
+        return null;
+    const present = Object.keys(chunks).map((t) => TIC_CHUNKS[t] || ('type ' + t));
+    return {
+        'Format': 'TIC-80 cartridge (.tic)',
+        'Chunks': count,
+        'Sections present': present.join(', ') || '(none)',
+        'Note': 'TIC-80 fantasy-console cart; code/graphics/sound stored as tagged chunks.',
+    };
 }
-
 // ---------- xdelta3 patch (.xdelta) ----------
 async function parseXdelta(file) {
-  const head = await readSlice(file, 0, 8);
-  // VCDIFF magic: 0xD6 0xC3 0xC4 (V|80 C|80 D|80) then a version byte (0x00).
-  if (!(head[0] === 0xD6 && head[1] === 0xC3 && head[2] === 0xC4)) return null;
-  return {
-    'Format': 'xdelta3 patch (VCDIFF)',
-    'VCDIFF version': head[3],
-    'Header indicator': '0x' + head[4].toString(16),
-    'Note': 'RFC 3284 VCDIFF binary delta (commonly an xdelta3 ROM patch); apply with the source file.',
-  };
+    const head = await readSlice(file, 0, 8);
+    // VCDIFF magic: 0xD6 0xC3 0xC4 (V|80 C|80 D|80) then a version byte (0x00).
+    if (!(head[0] === 0xD6 && head[1] === 0xC3 && head[2] === 0xC4))
+        return null;
+    return {
+        'Format': 'xdelta3 patch (VCDIFF)',
+        'VCDIFF version': head[3],
+        'Header indicator': '0x' + head[4].toString(16),
+        'Note': 'RFC 3284 VCDIFF binary delta (commonly an xdelta3 ROM patch); apply with the source file.',
+    };
 }
-
 // ---------- Basis Universal texture (.basis) ----------
 async function parseBasis(file) {
-  const head = await readSlice(file, 0, 24);
-  // Basis files start with the 2-byte signature 0x73 0x42 ('sB').
-  if (!(head[0] === 0x73 && head[1] === 0x42)) return null;
-  const r = new Reader(head, true); r.seek(2); r.le(true);
-  const headerSize = r.u16();
-  const headerCrc = r.u16();
-  const dataSize = r.u32();
-  return {
-    'Format': 'Basis Universal texture (.basis)',
-    'Header size': headerSize + ' bytes',
-    'Data size': fmtBytes(dataSize),
-    'Note': 'Binomial Basis Universal supercompressed GPU texture; transcodes to BCn/ASTC/ETC at load.',
-  };
+    const head = await readSlice(file, 0, 24);
+    // Basis files start with the 2-byte signature 0x73 0x42 ('sB').
+    if (!(head[0] === 0x73 && head[1] === 0x42))
+        return null;
+    const r = new Reader(head, true);
+    r.seek(2);
+    r.le(true);
+    const headerSize = r.u16();
+    const headerCrc = r.u16();
+    const dataSize = r.u32();
+    return {
+        'Format': 'Basis Universal texture (.basis)',
+        'Header size': headerSize + ' bytes',
+        'Data size': fmtBytes(dataSize),
+        'Note': 'Binomial Basis Universal supercompressed GPU texture; transcodes to BCn/ASTC/ETC at load.',
+    };
 }
-
 // ---------- LDtk level project (.ldtk JSON) ----------
 async function parseLdtk(file) {
-  let j; try { j = JSON.parse(await readText(file, 4 << 20)); } catch (_) { return null; }
-  if (!j || (!j.__header__ && !j.levels && j.jsonVersion === undefined)) return null;
-  const out = { 'Format': 'LDtk level project (.ldtk)' };
-  if (j.jsonVersion) out['LDtk version'] = j.jsonVersion;
-  if (j.defaultGridSize) out['Default grid size'] = j.defaultGridSize + ' px';
-  out['Levels'] = (j.levels || []).length;
-  if (j.defs) {
-    if (Array.isArray(j.defs.layers)) out['Layer definitions'] = j.defs.layers.length;
-    if (Array.isArray(j.defs.entities)) out['Entity definitions'] = j.defs.entities.length;
-    if (Array.isArray(j.defs.tilesets)) out['Tilesets'] = j.defs.tilesets.length;
-  }
-  if (j.worldGridWidth) out['World grid'] = j.worldGridWidth + ' x ' + (j.worldGridHeight || '?');
-  return out;
+    let j;
+    try {
+        j = JSON.parse(await readText(file, 4 << 20));
+    }
+    catch (_) {
+        return null;
+    }
+    if (!j || (!j.__header__ && !j.levels && j.jsonVersion === undefined))
+        return null;
+    const out = { 'Format': 'LDtk level project (.ldtk)' };
+    if (j.jsonVersion)
+        out['LDtk version'] = j.jsonVersion;
+    if (j.defaultGridSize)
+        out['Default grid size'] = j.defaultGridSize + ' px';
+    out['Levels'] = (j.levels || []).length;
+    if (j.defs) {
+        if (Array.isArray(j.defs.layers))
+            out['Layer definitions'] = j.defs.layers.length;
+        if (Array.isArray(j.defs.entities))
+            out['Entity definitions'] = j.defs.entities.length;
+        if (Array.isArray(j.defs.tilesets))
+            out['Tilesets'] = j.defs.tilesets.length;
+    }
+    if (j.worldGridWidth)
+        out['World grid'] = j.worldGridWidth + ' x ' + (j.worldGridHeight || '?');
+    return out;
 }
-
 // ---------- Emulator saves / movies (.srm/.state/.dsv/.dsm/.vbm/.fm2) ----------
 async function parseEmuSave(file, ext) {
-  const head = await readSlice(file, 0, Math.min(file.size, 256));
-  // FCEUX .fm2 movies are plain text key/value lines.
-  if (ext === 'fm2') {
-    const text = latin1(head);
-    if (!/^version\s+\d/m.test(text) && !/\bemuVersion\b/.test(text)) {
-      // Still likely an fm2 - read more thoroughly.
+    const head = await readSlice(file, 0, Math.min(file.size, 256));
+    // FCEUX .fm2 movies are plain text key/value lines.
+    if (ext === 'fm2') {
+        const text = latin1(head);
+        if (!/^version\s+\d/m.test(text) && !/\bemuVersion\b/.test(text)) {
+            // Still likely an fm2 - read more thoroughly.
+        }
+        const full = await readText(file, 1 << 16);
+        const get = (k) => (full.match(new RegExp('^' + k + '\\s+(.+)$', 'm')) || [])[1];
+        const out = { 'Format': 'FCEUX movie (.fm2)' };
+        if (get('version'))
+            out['Movie version'] = get('version').trim();
+        if (get('emuVersion'))
+            out['Emulator version'] = get('emuVersion').trim();
+        if (get('rerecordCount'))
+            out['Rerecords'] = get('rerecordCount').trim();
+        if (get('romFilename'))
+            out['ROM'] = get('romFilename').trim();
+        if (get('romChecksum'))
+            out['ROM checksum'] = get('romChecksum').trim();
+        const frames = (full.match(/^\|/gm) || []).length;
+        if (frames)
+            out['Input frames'] = frames;
+        return out;
     }
-    const full = await readText(file, 1 << 16);
-    const get = (k) => (full.match(new RegExp('^' + k + '\\s+(.+)$', 'm')) || [])[1];
-    const out = { 'Format': 'FCEUX movie (.fm2)' };
-    if (get('version')) out['Movie version'] = get('version').trim();
-    if (get('emuVersion')) out['Emulator version'] = get('emuVersion').trim();
-    if (get('rerecordCount')) out['Rerecords'] = get('rerecordCount').trim();
-    if (get('romFilename')) out['ROM'] = get('romFilename').trim();
-    if (get('romChecksum')) out['ROM checksum'] = get('romChecksum').trim();
-    const frames = (full.match(/^\|/gm) || []).length;
-    if (frames) out['Input frames'] = frames;
-    return out;
-  }
-  // DeSmuME .dsm movies are also text with a header block.
-  if (ext === 'dsm') {
-    const full = await readText(file, 1 << 16);
-    if (!/version\s+\d/i.test(full) && !/rerecordCount/i.test(full)) return null;
-    const get = (k) => (full.match(new RegExp('^' + k + '\\s+(.+)$', 'm')) || [])[1];
-    const out = { 'Format': 'DeSmuME movie (.dsm)' };
-    if (get('version')) out['Movie version'] = get('version').trim();
-    if (get('emuVersion')) out['Emulator version'] = get('emuVersion').trim();
-    if (get('rerecordCount')) out['Rerecords'] = get('rerecordCount').trim();
-    if (get('romSerial') || get('romFilename')) out['ROM'] = (get('romFilename') || get('romSerial')).trim();
-    return out;
-  }
-  // DeSmuME .dsv save has a "|-DESMUME SAVE-|" footer.
-  if (ext === 'dsv') {
-    const size = file.size;
-    const foot = await readSlice(file, Math.max(0, size - 16), 16);
-    const tag = latin1(foot);
-    const out = { 'Format': 'DeSmuME save (.dsv)', 'Save size': fmtBytes(size) };
-    out['Footer'] = /DESMUME SAVE/.test(tag) ? '|-DESMUME SAVE-| present' : 'not found';
-    return out;
-  }
-  // VisualBoyAdvance .vbm movie: "VBM\x1A" magic.
-  if (ext === 'vbm') {
-    if (!(head[0] === 0x56 && head[1] === 0x42 && head[2] === 0x4D && head[3] === 0x1A)) return null;
-    const r = new Reader(head, true); r.seek(4); r.le(true);
-    const version = r.u32();
-    const uid = r.u32();
-    const frameCount = r.u32();
-    const rerecords = r.u32();
-    const out = {
-      'Format': 'VisualBoyAdvance movie (.vbm)',
-      'Movie version': version,
-      'Frame count': frameCount,
-      'Rerecords': rerecords,
+    // DeSmuME .dsm movies are also text with a header block.
+    if (ext === 'dsm') {
+        const full = await readText(file, 1 << 16);
+        if (!/version\s+\d/i.test(full) && !/rerecordCount/i.test(full))
+            return null;
+        const get = (k) => (full.match(new RegExp('^' + k + '\\s+(.+)$', 'm')) || [])[1];
+        const out = { 'Format': 'DeSmuME movie (.dsm)' };
+        if (get('version'))
+            out['Movie version'] = get('version').trim();
+        if (get('emuVersion'))
+            out['Emulator version'] = get('emuVersion').trim();
+        if (get('rerecordCount'))
+            out['Rerecords'] = get('rerecordCount').trim();
+        if (get('romSerial') || get('romFilename'))
+            out['ROM'] = (get('romFilename') || get('romSerial')).trim();
+        return out;
+    }
+    // DeSmuME .dsv save has a "|-DESMUME SAVE-|" footer.
+    if (ext === 'dsv') {
+        const size = file.size;
+        const foot = await readSlice(file, Math.max(0, size - 16), 16);
+        const tag = latin1(foot);
+        const out = { 'Format': 'DeSmuME save (.dsv)', 'Save size': fmtBytes(size) };
+        out['Footer'] = /DESMUME SAVE/.test(tag) ? '|-DESMUME SAVE-| present' : 'not found';
+        return out;
+    }
+    // VisualBoyAdvance .vbm movie: "VBM\x1A" magic.
+    if (ext === 'vbm') {
+        if (!(head[0] === 0x56 && head[1] === 0x42 && head[2] === 0x4D && head[3] === 0x1A))
+            return null;
+        const r = new Reader(head, true);
+        r.seek(4);
+        r.le(true);
+        const version = r.u32();
+        const uid = r.u32();
+        const frameCount = r.u32();
+        const rerecords = r.u32();
+        const out = {
+            'Format': 'VisualBoyAdvance movie (.vbm)',
+            'Movie version': version,
+            'Frame count': frameCount,
+            'Rerecords': rerecords,
+        };
+        out['ROM title'] = cleanAscii(head, 0x40, 12) || '-';
+        return out;
+    }
+    // .srm / .state - generic battery save / save state.
+    const labels = { srm: 'Emulator battery save (.srm)', state: 'Emulator save state (.state)' };
+    return {
+        'Format': labels[ext] || 'Emulator save',
+        'Size': fmtBytes(file.size),
+        'Note': ext === 'srm'
+            ? 'Cartridge SRAM/battery save; size hints at the mapper (e.g. 8 KB, 32 KB, 128 KB).'
+            : 'Emulator save state; layout is emulator- and core-specific (often zlib-compressed).',
     };
-    out['ROM title'] = cleanAscii(head, 0x40, 12) || '-';
-    return out;
-  }
-  // .srm / .state - generic battery save / save state.
-  const labels = { srm: 'Emulator battery save (.srm)', state: 'Emulator save state (.state)' };
-  return {
-    'Format': labels[ext] || 'Emulator save',
-    'Size': fmtBytes(file.size),
-    'Note': ext === 'srm'
-      ? 'Cartridge SRAM/battery save; size hints at the mapper (e.g. 8 KB, 32 KB, 128 KB).'
-      : 'Emulator save state; layout is emulator- and core-specific (often zlib-compressed).',
-  };
 }
-
 // ---------- REDengine 4 (Cyberpunk 2077 / The Witcher) ----------
 // .archive: the engine's packed asset bundle. The 40-byte header is
 //   magic "RDAR"(4) version(u32) indexPosition(u64) indexSize(u32)
@@ -1691,276 +2077,290 @@ async function parseEmuSave(file, ext) {
 // count (index header: u32 unknown, u32 fileTableOffset, u32 fileTableSize,
 // u32 crc, u32 fileEntryCount).
 async function parseRedArchive(file) {
-  const head = await readSlice(file, 0, 40);
-  if (ascii(head, 0, 4) !== 'RDAR') return null;
-  const r = new Reader(head, true); r.seek(4);
-  const version = r.u32();
-  const indexPos = Number(r.u64());
-  const indexSize = r.u32();
-  r.skip(12); // debugPosition(8) + debugSize(4)
-  const fileSize = Number(r.u64());
-  const out = {
-    'Format': 'REDengine 4 archive (.archive)',
-    'Engine': 'REDengine 4 - Cyberpunk 2077 / The Witcher 3 (next-gen)',
-    'Archive version': version,
-    'Index position': '0x' + indexPos.toString(16).toUpperCase(),
-    'Index size': fmtBytes(indexSize),
-  };
-  if (fileSize) out['Declared size'] = fmtBytes(fileSize) + (fileSize === file.size ? ' (matches)' : '');
-  // Index sub-header: u32 headerSize, u32 fileTableSize, u64 checksum, then
-  // u32 fileEntryCount (0x10), u32 fileSegmentCount, u32 resourceDependencyCount.
-  if (indexPos > 0 && indexPos + 28 <= file.size && indexSize >= 28) {
-    try {
-      const idx = await readSlice(file, indexPos, 28);
-      const ir = new Reader(idx, true);
-      ir.skip(16);                      // headerSize + fileTableSize + checksum
-      const entryCount = ir.u32();      // fileEntryCount
-      const segmentCount = ir.u32();    // fileSegmentCount
-      if (entryCount > 0 && entryCount < 5_000_000) out['Files'] = entryCount.toLocaleString();
-      if (segmentCount > 0 && segmentCount < 50_000_000) out['Segments'] = segmentCount.toLocaleString();
-    } catch (_) {}
-  }
-  out['Note'] = 'Encrypted/compressed asset bundle (Oodle/Kraken). Contents are extracted with WolvenKit; identification + header only here.';
-  return out;
+    const head = await readSlice(file, 0, 40);
+    if (ascii(head, 0, 4) !== 'RDAR')
+        return null;
+    const r = new Reader(head, true);
+    r.seek(4);
+    const version = r.u32();
+    const indexPos = Number(r.u64());
+    const indexSize = r.u32();
+    r.skip(12); // debugPosition(8) + debugSize(4)
+    const fileSize = Number(r.u64());
+    const out = {
+        'Format': 'REDengine 4 archive (.archive)',
+        'Engine': 'REDengine 4 - Cyberpunk 2077 / The Witcher 3 (next-gen)',
+        'Archive version': version,
+        'Index position': '0x' + indexPos.toString(16).toUpperCase(),
+        'Index size': fmtBytes(indexSize),
+    };
+    if (fileSize)
+        out['Declared size'] = fmtBytes(fileSize) + (fileSize === file.size ? ' (matches)' : '');
+    // Index sub-header: u32 headerSize, u32 fileTableSize, u64 checksum, then
+    // u32 fileEntryCount (0x10), u32 fileSegmentCount, u32 resourceDependencyCount.
+    if (indexPos > 0 && indexPos + 28 <= file.size && indexSize >= 28) {
+        try {
+            const idx = await readSlice(file, indexPos, 28);
+            const ir = new Reader(idx, true);
+            ir.skip(16); // headerSize + fileTableSize + checksum
+            const entryCount = ir.u32(); // fileEntryCount
+            const segmentCount = ir.u32(); // fileSegmentCount
+            if (entryCount > 0 && entryCount < 5_000_000)
+                out['Files'] = entryCount.toLocaleString();
+            if (segmentCount > 0 && segmentCount < 50_000_000)
+                out['Segments'] = segmentCount.toLocaleString();
+        }
+        catch (_) { }
+    }
+    out['Note'] = 'Encrypted/compressed asset bundle (Oodle/Kraken). Contents are extracted with WolvenKit; identification + header only here.';
+    return out;
 }
-
 // .redscripts: compiled redscript bytecode cache (Final.redscripts).
 // Header: magic "REDS"(4) then a 4-byte version, file size and CRC.
 async function parseRedScripts(file) {
-  const head = await readSlice(file, 0, 16);
-  if (ascii(head, 0, 4) !== 'REDS') return null;
-  const r = new Reader(head, true); r.seek(4);
-  const version = r.u32();
-  return {
-    'Format': 'REDengine compiled scripts (.redscripts)',
-    'Engine': 'REDengine 4 - Cyberpunk 2077',
-    'Cache version': version,
-    'Note': 'Compiled redscript bytecode (the game\'s gameplay scripting), produced by the redscript compiler. Decompiled with redscript/RED4; identification only here.',
-  };
+    const head = await readSlice(file, 0, 16);
+    if (ascii(head, 0, 4) !== 'REDS')
+        return null;
+    const r = new Reader(head, true);
+    r.seek(4);
+    const version = r.u32();
+    return {
+        'Format': 'REDengine compiled scripts (.redscripts)',
+        'Engine': 'REDengine 4 - Cyberpunk 2077',
+        'Cache version': version,
+        'Note': 'Compiled redscript bytecode (the game\'s gameplay scripting), produced by the redscript compiler. Decompiled with redscript/RED4; identification only here.',
+    };
 }
-
 // .addcont_keystone: a small fixed binary token written beside REDengine DLC /
 // add-on content (ep1.addcont_keystone). 16 bytes of opaque key material.
 async function parseAddcontKeystone(file) {
-  const head = await readSlice(file, 0, Math.min(file.size, 64));
-  const hex = hexBytes(head.slice(0, 16), ' ');
-  return {
-    'Format': 'REDengine add-on content keystone (.addcont_keystone)',
-    'Engine': 'REDengine 4 - Cyberpunk 2077 (Phantom Liberty / DLC)',
-    'Token (first 16 bytes)': hex,
-    'Note': 'A small opaque token the launcher writes to register installed expansion / add-on content. Holds no asset data.',
-  };
+    const head = await readSlice(file, 0, Math.min(file.size, 64));
+    const hex = hexBytes(head.slice(0, 16), ' ');
+    return {
+        'Format': 'REDengine add-on content keystone (.addcont_keystone)',
+        'Engine': 'REDengine 4 - Cyberpunk 2077 (Phantom Liberty / DLC)',
+        'Token (first 16 bytes)': hex,
+        'Note': 'A small opaque token the launcher writes to register installed expansion / add-on content. Holds no asset data.',
+    };
 }
-
 // Content-gated by magic from app.js (these extensions are too generic to route
 // by name): an Oodle-compressed REDengine blob (oodle_dictionary.bin) and the
 // engine's compiled shader cache (shaderPS5.cache etc.).
 async function parseOodleDict(file) {
-  const head = await readSlice(file, 0, 16);
-  const r = new Reader(head, true); r.seek(4);
-  return {
-    'Format': 'Oodle-compressed data (REDengine)',
-    'Engine': 'REDengine 4 - Cyberpunk 2077',
-    'Magic': hexBytes(head.slice(0, 4), ' '),
-    'Note': 'An Oodle (Kraken/Leviathan) compressed blob - here a shader/oodle dictionary shipped with a generic .bin extension. The Oodle codec is proprietary (RAD Game Tools); contents are not decompressed in-browser.',
-  };
+    const head = await readSlice(file, 0, 16);
+    const r = new Reader(head, true);
+    r.seek(4);
+    return {
+        'Format': 'Oodle-compressed data (REDengine)',
+        'Engine': 'REDengine 4 - Cyberpunk 2077',
+        'Magic': hexBytes(head.slice(0, 4), ' '),
+        'Note': 'An Oodle (Kraken/Leviathan) compressed blob - here a shader/oodle dictionary shipped with a generic .bin extension. The Oodle codec is proprietary (RAD Game Tools); contents are not decompressed in-browser.',
+    };
 }
-
 async function parseRedShaderCache(file) {
-  const out = {
-    'Format': 'REDengine shader cache (.cache)',
-    'Engine': 'REDengine 4 - Cyberpunk 2077',
-  };
-  // Per-platform hint from the file name (shaderPS5 / staticshaderVulkan / ...).
-  const name = (file.name || '').toLowerCase();
-  const plat = name.match(/(ps4|ps5|vulkan|xboxone|xsx|dx12|pc)/);
-  if (plat) out['Platform'] = plat[1].toUpperCase();
-  if (/^static/.test(name.replace(/^.*[\\/]/, ''))) out['Kind'] = 'static (material) shader cache';
-  // Footer: "RDHS" magic + u32 version in the last 8 bytes.
-  if (file.size >= 8) {
-    try {
-      const tail = await readSlice(file, file.size - 8, 8);
-      if (ascii(tail, 0, 4) === 'RDHS') {
-        out['Footer magic'] = 'RDHS';
-        out['Cache version'] = new Reader(tail, true).seek(4).u32();
-      }
-    } catch (_) {}
-  }
-  out['Note'] = 'Pre-compiled GPU shader bytecode the engine caches per platform (shaderPS4/PS5/Vulkan/XSX). The leading bytes are a per-file hash; the format is identified by the trailing RDHS footer. Driver/platform-specific binary; identification only.';
-  return out;
+    const out = {
+        'Format': 'REDengine shader cache (.cache)',
+        'Engine': 'REDengine 4 - Cyberpunk 2077',
+    };
+    // Per-platform hint from the file name (shaderPS5 / staticshaderVulkan / ...).
+    const name = (file.name || '').toLowerCase();
+    const plat = name.match(/(ps4|ps5|vulkan|xboxone|xsx|dx12|pc)/);
+    if (plat)
+        out['Platform'] = plat[1].toUpperCase();
+    if (/^static/.test(name.replace(/^.*[\\/]/, '')))
+        out['Kind'] = 'static (material) shader cache';
+    // Footer: "RDHS" magic + u32 version in the last 8 bytes.
+    if (file.size >= 8) {
+        try {
+            const tail = await readSlice(file, file.size - 8, 8);
+            if (ascii(tail, 0, 4) === 'RDHS') {
+                out['Footer magic'] = 'RDHS';
+                out['Cache version'] = new Reader(tail, true).seek(4).u32();
+            }
+        }
+        catch (_) { }
+    }
+    out['Note'] = 'Pre-compiled GPU shader bytecode the engine caches per platform (shaderPS4/PS5/Vulkan/XSX). The leading bytes are a per-file hash; the format is identified by the trailing RDHS footer. Driver/platform-specific binary; identification only.';
+    return out;
 }
-
 // Inno Setup uninstall log (unins000.dat) - the binary record of everything an
 // Inno Setup installer placed, so its uninstaller can reverse it. The 64-byte
 // header is an ASCII id ("Inno Setup Uninstall Log (b)") plus the app id/name.
 async function parseInnoUninstall(file) {
-  const head = await readSlice(file, 0, 448);
-  const id = cleanAscii(head, 0, 64).replace(/\.+$/, '');
-  if (!/Inno Setup Uninstall Log/.test(id)) return null;
-  // AppId (64 bytes) at 0x40, then the app name (64 bytes) at 0x80.
-  const appId = cleanAscii(head, 0x40, 64);
-  const appName = cleanAscii(head, 0x80, 128);
-  const out = {
-    'Format': 'Inno Setup uninstall log (unins000.dat)',
-    'Header id': id,
-  };
-  if (appId.trim()) out['App id'] = appId;
-  if (appName.trim()) out['Application'] = appName;
-  out['Note'] = 'The binary log an Inno Setup installer writes so its uninstaller can undo every file, registry key and shortcut it created. Paired with unins000.exe.';
-  return out;
+    const head = await readSlice(file, 0, 448);
+    const id = cleanAscii(head, 0, 64).replace(/\.+$/, '');
+    if (!/Inno Setup Uninstall Log/.test(id))
+        return null;
+    // AppId (64 bytes) at 0x40, then the app name (64 bytes) at 0x80.
+    const appId = cleanAscii(head, 0x40, 64);
+    const appName = cleanAscii(head, 0x80, 128);
+    const out = {
+        'Format': 'Inno Setup uninstall log (unins000.dat)',
+        'Header id': id,
+    };
+    if (appId.trim())
+        out['App id'] = appId;
+    if (appName.trim())
+        out['Application'] = appName;
+    out['Note'] = 'The binary log an Inno Setup installer writes so its uninstaller can undo every file, registry key and shortcut it created. Paired with unins000.exe.';
+    return out;
 }
-
 // ---------- Source 2 (Valve: Deadlock / CS2 / Dota 2) text assets ----------
 // gameinfo.gi, *.kv3, *.vcfg, *.vqlayout, *.vsc, *.qss, *.signatures and the
 // *.vsnd_template / *.vnm_template / *.mks_template editor templates are all
 // human-readable text. We surface the KeyValues3 header (encoding + format) or
 // the gameinfo identity, and let the generic text preview show the source.
 const S2_LABELS = {
-  gi: 'Source 2 game info (gameinfo.gi)',
-  kv3: 'Valve KeyValues3 (.kv3)',
-  vcfg: 'Source 2 config (.vcfg)',
-  vqlayout: 'Source 2 tools layout (.vqlayout)',
-  vsc: 'Source 2 style colours (.vsc)',
-  qss: 'Qt style sheet (.qss)',
-  signatures: 'Source 2 function signatures (.signatures)',
-  vsnd_template: 'Source 2 sound-event template (.vsnd_template)',
-  vnm_template: 'Source 2 node-graph template (.vnm_template)',
-  mks_template: 'Source 2 sheet template (.mks_template)',
-  valveres: 'Valve resource / UI layout (.res)',
+    gi: 'Source 2 game info (gameinfo.gi)',
+    kv3: 'Valve KeyValues3 (.kv3)',
+    vcfg: 'Source 2 config (.vcfg)',
+    vqlayout: 'Source 2 tools layout (.vqlayout)',
+    vsc: 'Source 2 style colours (.vsc)',
+    qss: 'Qt style sheet (.qss)',
+    signatures: 'Source 2 function signatures (.signatures)',
+    vsnd_template: 'Source 2 sound-event template (.vsnd_template)',
+    vnm_template: 'Source 2 node-graph template (.vnm_template)',
+    mks_template: 'Source 2 sheet template (.mks_template)',
+    valveres: 'Valve resource / UI layout (.res)',
 };
 async function parseSource2(file, ext) {
-  const text = await file.slice(0, 64 * 1024).text().catch(() => '');
-  if (!text) return null;
-  const out = { 'Format': S2_LABELS[ext] || 'Source 2 asset', 'Engine': 'Source 2 (Valve)' };
-
-  // KeyValues3 header comment: <!-- kv3 encoding:text:version{...} format:generic:version{...} -->
-  const kv3 = text.match(/<!--\s*kv3\s+encoding:([\w-]+):[^>]*?format:([\w-]+):/i);
-  if (kv3) {
-    out['Container'] = 'KeyValues3 (text)';
-    out['KV3 encoding'] = kv3[1];
-    out['KV3 format'] = kv3[2];
-  } else if (/^\s*<!--\s*kv3/i.test(text)) {
-    out['Container'] = 'KeyValues3 (text)';
-  }
-
-  // gameinfo.gi identity (KeyValues v1).
-  if (ext === 'gi') {
-    const game = text.match(/^\s*game\s+"?([\w .-]+?)"?\s*$/im);
-    const title = text.match(/^\s*title\s+"?([\w .-]+?)"?\s*$/im);
-    const type = text.match(/^\s*type\s+"?([\w-]+)"?/im);
-    if (game) out['Game'] = game[1];
-    if (title) out['Title'] = title[1];
-    if (type) out['App type'] = type[1];
-    const mounts = (text.match(/\bGame\s+[a-z0-9_./]+/gi) || []).length;
-    if (mounts) out['Search-path mounts'] = mounts;
-  }
-
-  // Function-signature database: one signature/pattern per line.
-  if (ext === 'signatures') {
-    const lines = text.split('\n').filter((l) => l.trim() && !l.trim().startsWith('//'));
-    out['Entries (first 64 KB)'] = lines.length.toLocaleString();
-  }
-
-  // Qt style sheet: count rule blocks.
-  if (ext === 'qss') {
-    out['Container'] = 'Qt style sheet (CSS-like)';
-    const rules = (text.match(/\{/g) || []).length;
-    if (rules) out['Style rules'] = rules.toLocaleString();
-  }
-
-  out['Note'] = ext === 'signatures'
-    ? 'A signature/pattern database the engine or its tools use to locate functions in memory. Plain text.'
-    : 'A human-readable Source 2 text asset (Valve\'s KeyValues / tools format). Shown as source below.';
-  return out;
+    const text = await file.slice(0, 64 * 1024).text().catch(() => '');
+    if (!text)
+        return null;
+    const out = { 'Format': S2_LABELS[ext] || 'Source 2 asset', 'Engine': 'Source 2 (Valve)' };
+    // KeyValues3 header comment: <!-- kv3 encoding:text:version{...} format:generic:version{...} -->
+    const kv3 = text.match(/<!--\s*kv3\s+encoding:([\w-]+):[^>]*?format:([\w-]+):/i);
+    if (kv3) {
+        out['Container'] = 'KeyValues3 (text)';
+        out['KV3 encoding'] = kv3[1];
+        out['KV3 format'] = kv3[2];
+    }
+    else if (/^\s*<!--\s*kv3/i.test(text)) {
+        out['Container'] = 'KeyValues3 (text)';
+    }
+    // gameinfo.gi identity (KeyValues v1).
+    if (ext === 'gi') {
+        const game = text.match(/^\s*game\s+"?([\w .-]+?)"?\s*$/im);
+        const title = text.match(/^\s*title\s+"?([\w .-]+?)"?\s*$/im);
+        const type = text.match(/^\s*type\s+"?([\w-]+)"?/im);
+        if (game)
+            out['Game'] = game[1];
+        if (title)
+            out['Title'] = title[1];
+        if (type)
+            out['App type'] = type[1];
+        const mounts = (text.match(/\bGame\s+[a-z0-9_./]+/gi) || []).length;
+        if (mounts)
+            out['Search-path mounts'] = mounts;
+    }
+    // Function-signature database: one signature/pattern per line.
+    if (ext === 'signatures') {
+        const lines = text.split('\n').filter((l) => l.trim() && !l.trim().startsWith('//'));
+        out['Entries (first 64 KB)'] = lines.length.toLocaleString();
+    }
+    // Qt style sheet: count rule blocks.
+    if (ext === 'qss') {
+        out['Container'] = 'Qt style sheet (CSS-like)';
+        const rules = (text.match(/\{/g) || []).length;
+        if (rules)
+            out['Style rules'] = rules.toLocaleString();
+    }
+    out['Note'] = ext === 'signatures'
+        ? 'A signature/pattern database the engine or its tools use to locate functions in memory. Plain text.'
+        : 'A human-readable Source 2 text asset (Valve\'s KeyValues / tools format). Shown as source below.';
+    return out;
 }
-
 // ---------- Unity / IL2CPP ----------
 // il2cpp.usym: IL2CPP symbol map (managed method -> native address) used to
 // symbolicate native crash stacks. Header: magic "sym-"(4) u32 version u64 id.
 async function parseUsym(file) {
-  const head = await readSlice(file, 0, 16);
-  if (ascii(head, 0, 4) !== 'sym-') return null;
-  const r = new Reader(head, true); r.seek(4);
-  const version = r.u32();
-  const count = Number(r.u64());
-  const out = {
-    'Format': 'IL2CPP symbol map (.usym)',
-    'Engine': 'Unity (IL2CPP)',
-    'Version': version,
-  };
-  if (count > 0 && count < 50_000_000) out['Symbol entries'] = count.toLocaleString();
-  out['Note'] = 'Maps IL2CPP-compiled C# methods to native code addresses so a native crash stack can be symbolicated. Used by Unity / Backtrace.';
-  return out;
+    const head = await readSlice(file, 0, 16);
+    if (ascii(head, 0, 4) !== 'sym-')
+        return null;
+    const r = new Reader(head, true);
+    r.seek(4);
+    const version = r.u32();
+    const count = Number(r.u64());
+    const out = {
+        'Format': 'IL2CPP symbol map (.usym)',
+        'Engine': 'Unity (IL2CPP)',
+        'Version': version,
+    };
+    if (count > 0 && count < 50_000_000)
+        out['Symbol entries'] = count.toLocaleString();
+    out['Note'] = 'Maps IL2CPP-compiled C# methods to native code addresses so a native crash stack can be symbolicated. Used by Unity / Backtrace.';
+    return out;
 }
-
 // global-metadata.dat: the IL2CPP metadata blob (all type, method, string and
 // field definitions). Magic 0xFAB11BAF, then a u32 version. Content-gated by
 // app.js (the .dat extension is generic).
 const IL2CPP_UNITY = { 24: '2019', 27: '2020-2021', 29: '2021.3', 31: '2022.3+ / 2023' };
 async function parseIl2cppMeta(file) {
-  const head = await readSlice(file, 0, 8);
-  if (!(head[0] === 0xAF && head[1] === 0x1B && head[2] === 0xB1 && head[3] === 0xFA)) return null;
-  const version = new Reader(head, true).seek(4).u32();
-  const out = {
-    'Format': 'IL2CPP global metadata (global-metadata.dat)',
-    'Engine': 'Unity (IL2CPP)',
-    'Metadata version': version + (IL2CPP_UNITY[version] ? ' (~Unity ' + IL2CPP_UNITY[version] + ')' : ''),
-    'Magic': '0xFAB11BAF',
-    'Note': 'The metadata IL2CPP ships beside the native GameAssembly: every C# type, method, field and string literal. Paired with the compiled binary; identification + version only here.',
-  };
-  return out;
+    const head = await readSlice(file, 0, 8);
+    if (!(head[0] === 0xAF && head[1] === 0x1B && head[2] === 0xB1 && head[3] === 0xFA))
+        return null;
+    const version = new Reader(head, true).seek(4).u32();
+    const out = {
+        'Format': 'IL2CPP global metadata (global-metadata.dat)',
+        'Engine': 'Unity (IL2CPP)',
+        'Metadata version': version + (IL2CPP_UNITY[version] ? ' (~Unity ' + IL2CPP_UNITY[version] + ')' : ''),
+        'Magic': '0xFAB11BAF',
+        'Note': 'The metadata IL2CPP ships beside the native GameAssembly: every C# type, method, field and string literal. Paired with the compiled binary; identification + version only here.',
+    };
+    return out;
 }
-
 // Addressables content catalog (catalog.bin): a BinaryStorageBuffer. Magic
 // 0x0DE38942, then a u32 version. Content-gated by app.js (.bin is generic).
 async function parseAddrCatalog(file) {
-  const head = await readSlice(file, 0, 8);
-  if (!(head[0] === 0x42 && head[1] === 0x89 && head[2] === 0xE3 && head[3] === 0x0D)) return null;
-  const version = new Reader(head, true).seek(4).u32();
-  return {
-    'Format': 'Unity Addressables catalog (catalog.bin)',
-    'Engine': 'Unity (Addressables)',
-    'Buffer version': version,
-    'Magic': '0x0DE38942 (BinaryStorageBuffer)',
-    'Note': 'The binary content catalog the Addressables system loads at runtime to resolve asset keys to bundles/locations. Paired with catalog.hash.',
-  };
+    const head = await readSlice(file, 0, 8);
+    if (!(head[0] === 0x42 && head[1] === 0x89 && head[2] === 0xE3 && head[3] === 0x0D))
+        return null;
+    const version = new Reader(head, true).seek(4).u32();
+    return {
+        'Format': 'Unity Addressables catalog (catalog.bin)',
+        'Engine': 'Unity (Addressables)',
+        'Buffer version': version,
+        'Magic': '0x0DE38942 (BinaryStorageBuffer)',
+        'Note': 'The binary content catalog the Addressables system loads at runtime to resolve asset keys to bundles/locations. Paired with catalog.hash.',
+    };
 }
-
 // A renamed .NET metadata blob (Assembly-CSharp.pd_): the CLI metadata root,
 // signature "BSJB", carrying the runtime version string.
 async function parseBsjb(file, ext) {
-  const head = await readSlice(file, 0, 64);
-  if (ascii(head, 0, 4) !== 'BSJB') return null;
-  const r = new Reader(head, true); r.seek(4);
-  const major = r.u16(), minor = r.u16();
-  r.skip(4);                       // reserved
-  const verLen = r.u32();
-  let runtime = '';
-  if (verLen > 0 && verLen <= 255 && 16 + verLen <= head.length) runtime = cleanAscii(head, 16, verLen);
-  const out = {
-    'Format': '.NET assembly metadata (BSJB)' + (ext === 'pd_' ? ' (.pd_)' : ''),
-    'Engine': 'Unity / Mono / .NET',
-    'Metadata version': major + '.' + minor,
-  };
-  if (runtime) out['Runtime version'] = runtime;
-  out['Note'] = 'The CLI metadata stream (types, methods, strings) of a managed assembly. Here shipped under a renamed extension; identification only.';
-  return out;
+    const head = await readSlice(file, 0, 64);
+    if (ascii(head, 0, 4) !== 'BSJB')
+        return null;
+    const r = new Reader(head, true);
+    r.seek(4);
+    const major = r.u16(), minor = r.u16();
+    r.skip(4); // reserved
+    const verLen = r.u32();
+    let runtime = '';
+    if (verLen > 0 && verLen <= 255 && 16 + verLen <= head.length)
+        runtime = cleanAscii(head, 16, verLen);
+    const out = {
+        'Format': '.NET assembly metadata (BSJB)' + (ext === 'pd_' ? ' (.pd_)' : ''),
+        'Engine': 'Unity / Mono / .NET',
+        'Metadata version': major + '.' + minor,
+    };
+    if (runtime)
+        out['Runtime version'] = runtime;
+    out['Note'] = 'The CLI metadata stream (types, methods, strings) of a managed assembly. Here shipped under a renamed extension; identification only.';
+    return out;
 }
-
 // House Flipper thumbnail (.hfthumb): a JPEG/JFIF wrapped under a custom name.
 async function parseHfThumb(file) {
-  const head = await readSlice(file, 0, 4);
-  const isJpeg = head[0] === 0xFF && head[1] === 0xD8 && head[2] === 0xFF;
-  return {
-    'Format': 'House Flipper thumbnail (.hfthumb)',
-    'Engine': 'Unity (House Flipper)',
-    'Wrapped image': isJpeg ? 'JPEG (JFIF)' : 'unknown',
-    'Note': isJpeg
-      ? 'An in-game photo thumbnail stored as a plain JPEG under a custom extension - re-open it as a JPEG (offered above) for full EXIF, ICC and histogram analysis.'
-      : 'House Flipper in-game photo thumbnail.',
-  };
+    const head = await readSlice(file, 0, 4);
+    const isJpeg = head[0] === 0xFF && head[1] === 0xD8 && head[2] === 0xFF;
+    return {
+        'Format': 'House Flipper thumbnail (.hfthumb)',
+        'Engine': 'Unity (House Flipper)',
+        'Wrapped image': isJpeg ? 'JPEG (JFIF)' : 'unknown',
+        'Note': isJpeg
+            ? 'An in-game photo thumbnail stored as a plain JPEG under a custom extension - re-open it as a JPEG (offered above) for full EXIF, ICC and histogram analysis.'
+            : 'House Flipper in-game photo thumbnail.',
+    };
 }
-
 // ---------- Marathon / Aleph One ----------
 // The Marathon engine (and the open-source Aleph One that revives it) stores
 // maps, physics, shapes, sounds and recorded films in big-endian "wad"-style
@@ -1968,217 +2368,206 @@ async function parseHfThumb(file) {
 // so we read the version word and pull the embedded name string, which is the
 // useful identifier (e.g. "Map", "Marathon v1.2", "Standard", "Shapes").
 const MARATHON_KINDS = {
-  scen: 'Scenario / map', scea: 'Scenario / map',
-  appl: 'Application / plugin data',
-  phys: 'Physics model', phya: 'Physics model',
-  shps: 'Shapes collection (sprites / textures)', shpa: 'Shapes collection (sprites / textures)',
-  sndz: 'Sounds collection', snda: 'Sounds collection',
-  fila: 'Recorded film (saved replay)',
-  imga: 'Images / interface graphics',
+    scen: 'Scenario / map', scea: 'Scenario / map',
+    appl: 'Application / plugin data',
+    phys: 'Physics model', phya: 'Physics model',
+    shps: 'Shapes collection (sprites / textures)', shpa: 'Shapes collection (sprites / textures)',
+    sndz: 'Sounds collection', snda: 'Sounds collection',
+    fila: 'Recorded film (saved replay)',
+    imga: 'Images / interface graphics',
 };
 const PHYS_TAGS = { mons: 'monsters', effe: 'effects', proj: 'projectiles', phys: 'physics', weap: 'weapons' };
 async function parseMarathon(file, ext) {
-  const head = await readSlice(file, 0, 128);
-  if (head.length < 6) return null;
-  const r = new Reader(head, false);   // big-endian
-  const version = r.u16();
-  // Pull the first printable-ASCII run (>= 3 chars) from the header area.
-  let name = '';
-  let run = '';
-  for (let i = 2; i < Math.min(head.length, 80); i++) {
-    const c = head[i];
-    if (c >= 0x20 && c < 0x7f) { run += String.fromCharCode(c); }
-    else { if (run.length >= 3 && run.length > name.length) name = run; run = ''; }
-  }
-  if (run.length >= 3 && run.length > name.length) name = run;
-
-  const out = {
-    'Format': 'Marathon / Aleph One ' + (MARATHON_KINDS[ext] || 'data') + ' (.' + ext + ')',
-    'Engine': 'Marathon (Bungie) / Aleph One',
-  };
-  if (version <= 16) out['Wad version'] = version;
-  if (name) out[ext === 'appl' ? 'Title' : 'Internal name'] = name.trim();
-  // Physics files lead with a chunk tag (mons/effe/proj/phys/weap).
-  const tag0 = ascii(head, 0, 4);
-  if (PHYS_TAGS[tag0]) out['First definition block'] = tag0 + ' (' + PHYS_TAGS[tag0] + ')';
-  out['Note'] = 'Big-endian Marathon data container. Aleph One is the open-source engine that runs the original Bungie Marathon trilogy (Steam: Classic Marathon).';
-  return out;
+    const head = await readSlice(file, 0, 128);
+    if (head.length < 6)
+        return null;
+    const r = new Reader(head, false); // big-endian
+    const version = r.u16();
+    // Pull the first printable-ASCII run (>= 3 chars) from the header area.
+    let name = '';
+    let run = '';
+    for (let i = 2; i < Math.min(head.length, 80); i++) {
+        const c = head[i];
+        if (c >= 0x20 && c < 0x7f) {
+            run += String.fromCharCode(c);
+        }
+        else {
+            if (run.length >= 3 && run.length > name.length)
+                name = run;
+            run = '';
+        }
+    }
+    if (run.length >= 3 && run.length > name.length)
+        name = run;
+    const out = {
+        'Format': 'Marathon / Aleph One ' + (MARATHON_KINDS[ext] || 'data') + ' (.' + ext + ')',
+        'Engine': 'Marathon (Bungie) / Aleph One',
+    };
+    if (version <= 16)
+        out['Wad version'] = version;
+    if (name)
+        out[ext === 'appl' ? 'Title' : 'Internal name'] = name.trim();
+    // Physics files lead with a chunk tag (mons/effe/proj/phys/weap).
+    const tag0 = ascii(head, 0, 4);
+    if (PHYS_TAGS[tag0])
+        out['First definition block'] = tag0 + ' (' + PHYS_TAGS[tag0] + ')';
+    out['Note'] = 'Big-endian Marathon data container. Aleph One is the open-source engine that runs the original Bungie Marathon trilogy (Steam: Classic Marathon).';
+    return out;
 }
-
 export const PARSERS = {
-  // Marathon / Aleph One (lowercase keys: extFromName lowercases .sceA -> scea)
-  scen: wrap((c) => parseMarathon(c.file, c.ext)),
-  scea: wrap((c) => parseMarathon(c.file, c.ext)),
-  appl: wrap((c) => parseMarathon(c.file, c.ext)),
-  phys: wrap((c) => parseMarathon(c.file, c.ext)),
-  phya: wrap((c) => parseMarathon(c.file, c.ext)),
-  shps: wrap((c) => parseMarathon(c.file, c.ext)),
-  shpa: wrap((c) => parseMarathon(c.file, c.ext)),
-  sndz: wrap((c) => parseMarathon(c.file, c.ext)),
-  snda: wrap((c) => parseMarathon(c.file, c.ext)),
-  fila: wrap((c) => parseMarathon(c.file, c.ext)),
-  imga: wrap((c) => parseMarathon(c.file, c.ext)),
-
-  // Unity / IL2CPP
-  usym: wrap((c) => parseUsym(c.file)),
-  il2cppmeta: wrap((c) => parseIl2cppMeta(c.file)),
-  addrcatalog: wrap((c) => parseAddrCatalog(c.file)),
-  pd_: wrap((c) => parseBsjb(c.file, c.ext)),
-  hfthumb: wrap((c) => parseHfThumb(c.file)),
-
-  // Source 2 (Valve: Deadlock / CS2 / Dota 2)
-  gi: wrap((c) => parseSource2(c.file, c.ext)),
-  kv3: wrap((c) => parseSource2(c.file, c.ext)),
-  vcfg: wrap((c) => parseSource2(c.file, c.ext)),
-  vqlayout: wrap((c) => parseSource2(c.file, c.ext)),
-  vsc: wrap((c) => parseSource2(c.file, c.ext)),
-  qss: wrap((c) => parseSource2(c.file, c.ext)),
-  signatures: wrap((c) => parseSource2(c.file, c.ext)),
-  vsnd_template: wrap((c) => parseSource2(c.file, c.ext)),
-  vnm_template: wrap((c) => parseSource2(c.file, c.ext)),
-  mks_template: wrap((c) => parseSource2(c.file, c.ext)),
-  valveres: wrap((c) => parseSource2(c.file, c.ext)),
-
-  // REDengine 4 (Cyberpunk 2077 / The Witcher)
-  archive: wrap((c) => parseRedArchive(c.file)),
-  redscripts: wrap((c) => parseRedScripts(c.file)),
-  addcont_keystone: wrap((c) => parseAddcontKeystone(c.file)),
-  oodledict: wrap((c) => parseOodleDict(c.file)),
-  redshadercache: wrap((c) => parseRedShaderCache(c.file)),
-  innouninstall: wrap((c) => parseInnoUninstall(c.file)),
-
-  // ROM headers
-  nes: wrap((c) => parseNes(c.head)),
-  gb: wrap((c) => parseGb(c.head, c.ext)),
-  gbc: wrap((c) => parseGb(c.head, c.ext)),
-  gba: wrap((c) => parseGba(c.head)),
-  sfc: wrap((c) => parseSnes(c.file)),
-  smc: wrap((c) => parseSnes(c.file)),
-  nds: wrap((c) => parseNds(c.head)),
-  dsi: wrap((c) => parseNds(c.head)),
-  z64: wrap((c) => parseN64(c.head)),
-  n64: wrap((c) => parseN64(c.head)),
-  v64: wrap((c) => parseN64(c.head)),
-  gen: wrap((c) => parseGenesis(c.file)),
-  smd: wrap((c) => parseGenesis(c.file)),
-
-  // Patches
-  ips: wrap((c) => parseIps(c.file)),
-  bps: wrap((c) => parseBps(c.file)),
-  ups: wrap((c) => parseUps(c.file)),
-  ppf: wrap((c) => parsePpf(c.file)),
-
-  // Game data / engines
-  wad: wrap((c) => parseWad(c.file)),
-  nbt: wrap((c) => parseNbt(c.file, c.ext)),
-  schematic: wrap((c) => parseNbt(c.file, c.ext)),
-  schem: wrap((c) => parseNbt(c.file, c.ext)),
-  litematic: wrap((c) => parseNbt(c.file, c.ext)),
-  mcworld: wrap((c) => parseMcZip(c.file, c.ext)),
-  mcpack: wrap((c) => parseMcZip(c.file, c.ext)),
-  mcaddon: wrap((c) => parseMcZip(c.file, c.ext)),
-  ase: wrap((c) => parseAseprite(c.file)),
-  aseprite: wrap((c) => parseAseprite(c.file)),
-  pck: wrap((c) => parseGodotPck(c.file)),
-  pak: wrap((c) => parsePak(c.file)),
-  pk3: wrap((c) => parsePk3(c.file, c.ext)),
-  pk4: wrap((c) => parsePk3(c.file, c.ext)),
-
-  // Source / Valve
-  bsp: wrap((c) => parseBsp(c.file)),
-  vpk: wrap((c) => parseVpk(c.file)),
-  vtf: wrap((c) => parseVtf(c.file)),
-  vmt: wrap((c) => parseVmt(c.file)),
-
-  // GPU textures
-  ktx: wrap((c) => parseKtx(c.file)),
-  ktx2: wrap((c) => parseKtx(c.file)),
-
-  // Tiled
-  tmx: wrap((c) => parseTiledXml(c.file, c.ext)),
-  tmj: wrap((c) => parseTiledJson(c.file, c.ext)),
-  tsj: wrap((c) => parseTiledJson(c.file, c.ext)),
-
-  // LÖVE / fantasy console
-  love: wrap((c) => parseLove(c.file)),
-  p8: wrap((c) => parseP8(c.file)),
-  tic: wrap((c) => parseTic(c.file)),
-  package: wrap((c) => parsePackage(c.file)),
-
-  // Unity / Unreal engine assets
-  assets: wrap((c) => parseUnity(c.file)),
-  bundle: wrap((c) => parseUnity(c.file)),
-  resource: wrap((c) => parseUnity(c.file)),
-  utoc: wrap((c) => parseUnreal(c.file, c.ext)),
-  ucas: wrap((c) => parseUnreal(c.file, c.ext)),
-  uexp: wrap((c) => parseUnreal(c.file, c.ext)),
-  umd: wrap((c) => parseUnreal(c.file, c.ext)),
-
-  // Compressed disc images
-  cso: wrap((c) => parseCiso(c.file)),
-  chd: wrap((c) => parseChd(c.file)),
-
-  // Sound banks (FMOD / Wwise)
-  fsb: wrap((c) => parseFsb(c.file)),
-  bank: wrap((c) => parseFsb(c.file)),
-  bnk: wrap((c) => parseWwise(c.file, c.ext)),
-  wem: wrap((c) => parseWwise(c.file, c.ext)),
-
-  // Spine animation
-  spine: wrap((c) => parseSpine(c.file, c.ext)),
-  skel: wrap((c) => parseSpine(c.file, c.ext)),
-  atlas: wrap((c) => parseSpine(c.file, c.ext)),
-
-  // GameMaker
-  yyp: wrap((c) => parseGameMaker(c.file, c.ext)),
-  yy: wrap((c) => parseGameMaker(c.file, c.ext)),
-  gmx: wrap((c) => parseGameMaker(c.file, c.ext)),
-
-  // Minecraft region + Bedrock template bundle
-  mca: wrap((c) => parseMcRegion(c.file, c.ext)),
-  mcr: wrap((c) => parseMcRegion(c.file, c.ext)),
-  mctemplate: wrap((c) => parseMcZip(c.file, c.ext)),
-
-  // Console ROMs (more)
-  '3dsx': wrap((c) => parse3dsx(c.file)),
-  a78: wrap((c) => parseAtari(c.file, c.ext)),
-  lnx: wrap((c) => parseAtari(c.file, c.ext)),
-  a26: wrap((c) => parseAtari(c.file, c.ext)),
-  j64: wrap((c) => parseAtari(c.file, c.ext)),
-  sms: wrap((c) => parseSega8(c.file, c.ext)),
-  gg: wrap((c) => parseSega8(c.file, c.ext)),
-  ws: wrap((c) => parseWonderSwan(c.file, c.ext)),
-  wsc: wrap((c) => parseWonderSwan(c.file, c.ext)),
-  pce: wrap((c) => parsePce(c.file)),
-
-  // Maps / scripts / data
-  w3x: wrap((c) => parseW3Map(c.file)),
-  w3m: wrap((c) => parseW3Map(c.file)),
-  rpyc: wrap((c) => parseRpyc(c.file)),
-  rvdata2: wrap((c) => parseRubyMarshal(c.file, c.ext)),
-  rxdata: wrap((c) => parseRubyMarshal(c.file, c.ext)),
-  pyxel: wrap((c) => parsePyxel(c.file)),
-  ldtk: wrap((c) => parseLdtk(c.file)),
-
-  // Patches / textures
-  xdelta: wrap((c) => parseXdelta(c.file)),
-  basis: wrap((c) => parseBasis(c.file)),
-
-  // Emulator saves / movies
-  srm: wrap((c) => parseEmuSave(c.file, c.ext)),
-  state: wrap((c) => parseEmuSave(c.file, c.ext)),
-  dsv: wrap((c) => parseEmuSave(c.file, c.ext)),
-  dsm: wrap((c) => parseEmuSave(c.file, c.ext)),
-  vbm: wrap((c) => parseEmuSave(c.file, c.ext)),
-  fm2: wrap((c) => parseEmuSave(c.file, c.ext)),
-
-  // identification-only (rare + hard)
-  sc2replay: wrap((c) => idOnly(c.file, c.ext)),
-  mpq: wrap((c) => idOnly(c.file, c.ext)),
-  cia: wrap((c) => idOnly(c.file, c.ext)),
-  nsp: wrap((c) => idOnly(c.file, c.ext)),
-  xci: wrap((c) => idOnly(c.file, c.ext)),
-  rpa: wrap((c) => idOnly(c.file, c.ext)),
-  rgssad: wrap((c) => idOnly(c.file, c.ext)),
-  rgss3a: wrap((c) => idOnly(c.file, c.ext)),
+    // Marathon / Aleph One (lowercase keys: extFromName lowercases .sceA -> scea)
+    scen: wrap((c) => parseMarathon(c.file, c.ext)),
+    scea: wrap((c) => parseMarathon(c.file, c.ext)),
+    appl: wrap((c) => parseMarathon(c.file, c.ext)),
+    phys: wrap((c) => parseMarathon(c.file, c.ext)),
+    phya: wrap((c) => parseMarathon(c.file, c.ext)),
+    shps: wrap((c) => parseMarathon(c.file, c.ext)),
+    shpa: wrap((c) => parseMarathon(c.file, c.ext)),
+    sndz: wrap((c) => parseMarathon(c.file, c.ext)),
+    snda: wrap((c) => parseMarathon(c.file, c.ext)),
+    fila: wrap((c) => parseMarathon(c.file, c.ext)),
+    imga: wrap((c) => parseMarathon(c.file, c.ext)),
+    // Unity / IL2CPP
+    usym: wrap((c) => parseUsym(c.file)),
+    il2cppmeta: wrap((c) => parseIl2cppMeta(c.file)),
+    addrcatalog: wrap((c) => parseAddrCatalog(c.file)),
+    pd_: wrap((c) => parseBsjb(c.file, c.ext)),
+    hfthumb: wrap((c) => parseHfThumb(c.file)),
+    // Source 2 (Valve: Deadlock / CS2 / Dota 2)
+    gi: wrap((c) => parseSource2(c.file, c.ext)),
+    kv3: wrap((c) => parseSource2(c.file, c.ext)),
+    vcfg: wrap((c) => parseSource2(c.file, c.ext)),
+    vqlayout: wrap((c) => parseSource2(c.file, c.ext)),
+    vsc: wrap((c) => parseSource2(c.file, c.ext)),
+    qss: wrap((c) => parseSource2(c.file, c.ext)),
+    signatures: wrap((c) => parseSource2(c.file, c.ext)),
+    vsnd_template: wrap((c) => parseSource2(c.file, c.ext)),
+    vnm_template: wrap((c) => parseSource2(c.file, c.ext)),
+    mks_template: wrap((c) => parseSource2(c.file, c.ext)),
+    valveres: wrap((c) => parseSource2(c.file, c.ext)),
+    // REDengine 4 (Cyberpunk 2077 / The Witcher)
+    archive: wrap((c) => parseRedArchive(c.file)),
+    redscripts: wrap((c) => parseRedScripts(c.file)),
+    addcont_keystone: wrap((c) => parseAddcontKeystone(c.file)),
+    oodledict: wrap((c) => parseOodleDict(c.file)),
+    redshadercache: wrap((c) => parseRedShaderCache(c.file)),
+    innouninstall: wrap((c) => parseInnoUninstall(c.file)),
+    // ROM headers
+    nes: wrap((c) => parseNes(c.head)),
+    gb: wrap((c) => parseGb(c.head, c.ext)),
+    gbc: wrap((c) => parseGb(c.head, c.ext)),
+    gba: wrap((c) => parseGba(c.head)),
+    sfc: wrap((c) => parseSnes(c.file)),
+    smc: wrap((c) => parseSnes(c.file)),
+    nds: wrap((c) => parseNds(c.head)),
+    dsi: wrap((c) => parseNds(c.head)),
+    z64: wrap((c) => parseN64(c.head)),
+    n64: wrap((c) => parseN64(c.head)),
+    v64: wrap((c) => parseN64(c.head)),
+    gen: wrap((c) => parseGenesis(c.file)),
+    smd: wrap((c) => parseGenesis(c.file)),
+    // Patches
+    ips: wrap((c) => parseIps(c.file)),
+    bps: wrap((c) => parseBps(c.file)),
+    ups: wrap((c) => parseUps(c.file)),
+    ppf: wrap((c) => parsePpf(c.file)),
+    // Game data / engines
+    wad: wrap((c) => parseWad(c.file)),
+    nbt: wrap((c) => parseNbt(c.file, c.ext)),
+    schematic: wrap((c) => parseNbt(c.file, c.ext)),
+    schem: wrap((c) => parseNbt(c.file, c.ext)),
+    litematic: wrap((c) => parseNbt(c.file, c.ext)),
+    mcworld: wrap((c) => parseMcZip(c.file, c.ext)),
+    mcpack: wrap((c) => parseMcZip(c.file, c.ext)),
+    mcaddon: wrap((c) => parseMcZip(c.file, c.ext)),
+    ase: wrap((c) => parseAseprite(c.file)),
+    aseprite: wrap((c) => parseAseprite(c.file)),
+    pck: wrap((c) => parseGodotPck(c.file)),
+    pak: wrap((c) => parsePak(c.file)),
+    pk3: wrap((c) => parsePk3(c.file, c.ext)),
+    pk4: wrap((c) => parsePk3(c.file, c.ext)),
+    // Source / Valve
+    bsp: wrap((c) => parseBsp(c.file)),
+    vpk: wrap((c) => parseVpk(c.file)),
+    vtf: wrap((c) => parseVtf(c.file)),
+    vmt: wrap((c) => parseVmt(c.file)),
+    // GPU textures
+    ktx: wrap((c) => parseKtx(c.file)),
+    ktx2: wrap((c) => parseKtx(c.file)),
+    // Tiled
+    tmx: wrap((c) => parseTiledXml(c.file, c.ext)),
+    tmj: wrap((c) => parseTiledJson(c.file, c.ext)),
+    tsj: wrap((c) => parseTiledJson(c.file, c.ext)),
+    // LÖVE / fantasy console
+    love: wrap((c) => parseLove(c.file)),
+    p8: wrap((c) => parseP8(c.file)),
+    tic: wrap((c) => parseTic(c.file)),
+    package: wrap((c) => parsePackage(c.file)),
+    // Unity / Unreal engine assets
+    assets: wrap((c) => parseUnity(c.file)),
+    bundle: wrap((c) => parseUnity(c.file)),
+    resource: wrap((c) => parseUnity(c.file)),
+    utoc: wrap((c) => parseUnreal(c.file, c.ext)),
+    ucas: wrap((c) => parseUnreal(c.file, c.ext)),
+    uexp: wrap((c) => parseUnreal(c.file, c.ext)),
+    umd: wrap((c) => parseUnreal(c.file, c.ext)),
+    // Compressed disc images
+    cso: wrap((c) => parseCiso(c.file)),
+    chd: wrap((c) => parseChd(c.file)),
+    // Sound banks (FMOD / Wwise)
+    fsb: wrap((c) => parseFsb(c.file)),
+    bank: wrap((c) => parseFsb(c.file)),
+    bnk: wrap((c) => parseWwise(c.file, c.ext)),
+    wem: wrap((c) => parseWwise(c.file, c.ext)),
+    // Spine animation
+    spine: wrap((c) => parseSpine(c.file, c.ext)),
+    skel: wrap((c) => parseSpine(c.file, c.ext)),
+    atlas: wrap((c) => parseSpine(c.file, c.ext)),
+    // GameMaker
+    yyp: wrap((c) => parseGameMaker(c.file, c.ext)),
+    yy: wrap((c) => parseGameMaker(c.file, c.ext)),
+    gmx: wrap((c) => parseGameMaker(c.file, c.ext)),
+    // Minecraft region + Bedrock template bundle
+    mca: wrap((c) => parseMcRegion(c.file, c.ext)),
+    mcr: wrap((c) => parseMcRegion(c.file, c.ext)),
+    mctemplate: wrap((c) => parseMcZip(c.file, c.ext)),
+    // Console ROMs (more)
+    '3dsx': wrap((c) => parse3dsx(c.file)),
+    a78: wrap((c) => parseAtari(c.file, c.ext)),
+    lnx: wrap((c) => parseAtari(c.file, c.ext)),
+    a26: wrap((c) => parseAtari(c.file, c.ext)),
+    j64: wrap((c) => parseAtari(c.file, c.ext)),
+    sms: wrap((c) => parseSega8(c.file, c.ext)),
+    gg: wrap((c) => parseSega8(c.file, c.ext)),
+    ws: wrap((c) => parseWonderSwan(c.file, c.ext)),
+    wsc: wrap((c) => parseWonderSwan(c.file, c.ext)),
+    pce: wrap((c) => parsePce(c.file)),
+    // Maps / scripts / data
+    w3x: wrap((c) => parseW3Map(c.file)),
+    w3m: wrap((c) => parseW3Map(c.file)),
+    rpyc: wrap((c) => parseRpyc(c.file)),
+    rvdata2: wrap((c) => parseRubyMarshal(c.file, c.ext)),
+    rxdata: wrap((c) => parseRubyMarshal(c.file, c.ext)),
+    pyxel: wrap((c) => parsePyxel(c.file)),
+    ldtk: wrap((c) => parseLdtk(c.file)),
+    // Patches / textures
+    xdelta: wrap((c) => parseXdelta(c.file)),
+    basis: wrap((c) => parseBasis(c.file)),
+    // Emulator saves / movies
+    srm: wrap((c) => parseEmuSave(c.file, c.ext)),
+    state: wrap((c) => parseEmuSave(c.file, c.ext)),
+    dsv: wrap((c) => parseEmuSave(c.file, c.ext)),
+    dsm: wrap((c) => parseEmuSave(c.file, c.ext)),
+    vbm: wrap((c) => parseEmuSave(c.file, c.ext)),
+    fm2: wrap((c) => parseEmuSave(c.file, c.ext)),
+    // identification-only (rare + hard)
+    sc2replay: wrap((c) => idOnly(c.file, c.ext)),
+    mpq: wrap((c) => idOnly(c.file, c.ext)),
+    cia: wrap((c) => idOnly(c.file, c.ext)),
+    nsp: wrap((c) => idOnly(c.file, c.ext)),
+    xci: wrap((c) => idOnly(c.file, c.ext)),
+    rpa: wrap((c) => idOnly(c.file, c.ext)),
+    rgssad: wrap((c) => idOnly(c.file, c.ext)),
+    rgss3a: wrap((c) => idOnly(c.file, c.ext)),
 };
+//# sourceMappingURL=parsers-gaming.js.map

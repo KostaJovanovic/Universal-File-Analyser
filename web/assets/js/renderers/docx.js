@@ -1,207 +1,242 @@
 /* Analyser - DOCX viewer
    Reads .docx (Office Open XML) and renders a simplified document view
    with metadata, formatted text, tables, and text extraction. */
-
 import { el, row, rowHelp, buildReadout, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 import { HASH_FILE_MAX } from '../core/limits.js';
 import { openZip } from './zip.js';
 import { paginateFlow, pagedPreviewCard, pagedTextCard, pagePreviewSkeleton } from './paged.js';
-
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
-
 function wFirst(parent, name) {
-  return parent.getElementsByTagNameNS(W, name)[0] || null;
+    return parent.getElementsByTagNameNS(W, name)[0] || null;
 }
-
 function wChildren(parent, name) {
-  const out = [];
-  for (const c of parent.children)
-    if (c.localName === name && c.namespaceURI === W) out.push(c);
-  return out;
+    const out = [];
+    for (const c of parent.children)
+        if (c.localName === name && c.namespaceURI === W)
+            out.push(c);
+    return out;
 }
-
 function wAttr(elem, name) {
-  return elem.getAttributeNS(W, name) || elem.getAttribute('w:' + name) || '';
+    return elem.getAttributeNS(W, name) || elem.getAttribute('w:' + name) || '';
 }
-
 // ---------- Document XML → DOM ----------
-
 // Pull an embedded image out of a run's <w:drawing>/<a:blip> (or legacy
 // <v:imagedata>) and return an <img> sized from the drawing extent, or null.
 function runImage(run, imageMap) {
-  if (!imageMap) return null;
-  let rid = null;
-  const blip = run.getElementsByTagNameNS(A, 'blip')[0];
-  if (blip) rid = blip.getAttributeNS(R, 'embed') || blip.getAttribute('r:embed') || blip.getAttributeNS(R, 'link');
-  if (!rid) {
-    // legacy VML image (<v:imagedata r:id="...">)
-    for (const n of run.getElementsByTagName('*')) {
-      if (n.localName === 'imagedata') { rid = n.getAttributeNS(R, 'id') || n.getAttribute('r:id'); break; }
-    }
-  }
-  const url = rid && imageMap[rid];
-  if (!url) return null;
-  const im = document.createElement('img');
-  im.src = url;
-  im.loading = 'lazy';
-  im.title = 'Click to analyse as photo';
-  im.style.cssText = 'max-width:100%;height:auto;display:block;margin:10px 0;cursor:pointer;';
-  // Re-fetch the blob URL into a File and run the full photo pipeline on click.
-  im.addEventListener('click', async () => {
-    try {
-      const blob = await (await fetch(url)).blob();
-      const ext = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
-      if (window._anrHandleFile) window._anrHandleFile(new File([blob], 'docx-image.' + ext, { type: blob.type }), { nested: true });
-    } catch (_) {}
-  });
-  // Size from the drawing extent (EMU → px at 96dpi) when present.
-  let extent = null;
-  for (const n of run.getElementsByTagName('*')) { if (n.localName === 'extent') { extent = n; break; } }
-  if (extent) {
-    const cx = parseInt(extent.getAttribute('cx'), 10);
-    if (cx) im.style.width = Math.round(cx / 9525) + 'px';
-  }
-  return im;
-}
-
-function parseRuns(paragraph, imageMap) {
-  const frag = document.createDocumentFragment();
-  for (const child of paragraph.children) {
-    if (child.namespaceURI !== W) continue;
-    if (child.localName === 'r') {
-      const img = runImage(child, imageMap);
-      if (img) frag.appendChild(img);
-      if (wFirst(child, 'br')) frag.appendChild(document.createElement('br'));
-      if (wFirst(child, 'tab')) frag.appendChild(document.createTextNode('\t'));
-      let text = '';
-      for (const t of child.getElementsByTagNameNS(W, 't')) text += t.textContent;
-      if (!text) continue;
-      const rPr = wFirst(child, 'rPr');
-      if (rPr) {
-        const b = wFirst(rPr, 'b');
-        const i = wFirst(rPr, 'i');
-        const u = wFirst(rPr, 'u');
-        const strike = wFirst(rPr, 'strike');
-        const sz = wFirst(rPr, 'sz');
-        if (b || i || u || strike || sz) {
-          const span = document.createElement('span');
-          if (b && wAttr(b, 'val') !== '0') span.style.fontWeight = 'bold';
-          if (i && wAttr(i, 'val') !== '0') span.style.fontStyle = 'italic';
-          if (u) span.style.textDecoration = 'underline';
-          if (strike) span.style.textDecoration = 'line-through';
-          if (sz) {
-            const pts = parseInt(wAttr(sz, 'val'), 10);
-            if (pts) span.style.fontSize = (pts / 2) + 'pt';
-          }
-          span.textContent = text;
-          frag.appendChild(span);
-          continue;
+    if (!imageMap)
+        return null;
+    let rid = null;
+    const blip = run.getElementsByTagNameNS(A, 'blip')[0];
+    if (blip)
+        rid = blip.getAttributeNS(R, 'embed') || blip.getAttribute('r:embed') || blip.getAttributeNS(R, 'link');
+    if (!rid) {
+        // legacy VML image (<v:imagedata r:id="...">)
+        for (const n of run.getElementsByTagName('*')) {
+            if (n.localName === 'imagedata') {
+                rid = n.getAttributeNS(R, 'id') || n.getAttribute('r:id');
+                break;
+            }
         }
-      }
-      frag.appendChild(document.createTextNode(text));
-    } else if (child.localName === 'hyperlink') {
-      let text = '';
-      for (const t of child.getElementsByTagNameNS(W, 't')) text += t.textContent;
-      if (text) {
-        const span = document.createElement('span');
-        span.style.cssText = 'color:var(--accent);text-decoration:underline;';
-        span.textContent = text;
-        frag.appendChild(span);
-      }
     }
-  }
-  return frag;
+    const url = rid && imageMap[rid];
+    if (!url)
+        return null;
+    const im = document.createElement('img');
+    im.src = url;
+    im.loading = 'lazy';
+    im.title = 'Click to analyse as photo';
+    im.style.cssText = 'max-width:100%;height:auto;display:block;margin:10px 0;cursor:pointer;';
+    // Re-fetch the blob URL into a File and run the full photo pipeline on click.
+    im.addEventListener('click', async () => {
+        try {
+            const blob = await (await fetch(url)).blob();
+            const ext = (blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+            if (window._anrHandleFile)
+                window._anrHandleFile(new File([blob], 'docx-image.' + ext, { type: blob.type }), { nested: true });
+        }
+        catch (_) { }
+    });
+    // Size from the drawing extent (EMU → px at 96dpi) when present.
+    let extent = null;
+    for (const n of run.getElementsByTagName('*')) {
+        if (n.localName === 'extent') {
+            extent = n;
+            break;
+        }
+    }
+    if (extent) {
+        const cx = parseInt(extent.getAttribute('cx'), 10);
+        if (cx)
+            im.style.width = Math.round(cx / 9525) + 'px';
+    }
+    return im;
 }
-
+function parseRuns(paragraph, imageMap) {
+    const frag = document.createDocumentFragment();
+    for (const child of paragraph.children) {
+        if (child.namespaceURI !== W)
+            continue;
+        if (child.localName === 'r') {
+            const img = runImage(child, imageMap);
+            if (img)
+                frag.appendChild(img);
+            if (wFirst(child, 'br'))
+                frag.appendChild(document.createElement('br'));
+            if (wFirst(child, 'tab'))
+                frag.appendChild(document.createTextNode('\t'));
+            let text = '';
+            for (const t of child.getElementsByTagNameNS(W, 't'))
+                text += t.textContent;
+            if (!text)
+                continue;
+            const rPr = wFirst(child, 'rPr');
+            if (rPr) {
+                const b = wFirst(rPr, 'b');
+                const i = wFirst(rPr, 'i');
+                const u = wFirst(rPr, 'u');
+                const strike = wFirst(rPr, 'strike');
+                const sz = wFirst(rPr, 'sz');
+                if (b || i || u || strike || sz) {
+                    const span = document.createElement('span');
+                    if (b && wAttr(b, 'val') !== '0')
+                        span.style.fontWeight = 'bold';
+                    if (i && wAttr(i, 'val') !== '0')
+                        span.style.fontStyle = 'italic';
+                    if (u)
+                        span.style.textDecoration = 'underline';
+                    if (strike)
+                        span.style.textDecoration = 'line-through';
+                    if (sz) {
+                        const pts = parseInt(wAttr(sz, 'val'), 10);
+                        if (pts)
+                            span.style.fontSize = (pts / 2) + 'pt';
+                    }
+                    span.textContent = text;
+                    frag.appendChild(span);
+                    continue;
+                }
+            }
+            frag.appendChild(document.createTextNode(text));
+        }
+        else if (child.localName === 'hyperlink') {
+            let text = '';
+            for (const t of child.getElementsByTagNameNS(W, 't'))
+                text += t.textContent;
+            if (text) {
+                const span = document.createElement('span');
+                span.style.cssText = 'color:var(--accent);text-decoration:underline;';
+                span.textContent = text;
+                frag.appendChild(span);
+            }
+        }
+    }
+    return frag;
+}
 function renderParagraph(p, imageMap) {
-  const pPr = wFirst(p, 'pPr');
-  let tag = 'p';
-  let isList = false;
-  let listLevel = 0;
-  let align = '';
-
-  if (pPr) {
-    const pStyle = wFirst(pPr, 'pStyle');
-    if (pStyle) {
-      const val = wAttr(pStyle, 'val');
-      if (/^heading\s*1$/i.test(val)) tag = 'h2';
-      else if (/^heading\s*2$/i.test(val)) tag = 'h3';
-      else if (/^heading\s*3$/i.test(val)) tag = 'h4';
-      else if (/^heading\s*[4-6]$/i.test(val)) tag = 'h5';
-      else if (/^title$/i.test(val)) tag = 'h1';
-      else if (/^subtitle$/i.test(val)) tag = 'h3';
-      if (/listparagraph/i.test(val)) isList = true;
+    const pPr = wFirst(p, 'pPr');
+    let tag = 'p';
+    let isList = false;
+    let listLevel = 0;
+    let align = '';
+    if (pPr) {
+        const pStyle = wFirst(pPr, 'pStyle');
+        if (pStyle) {
+            const val = wAttr(pStyle, 'val');
+            if (/^heading\s*1$/i.test(val))
+                tag = 'h2';
+            else if (/^heading\s*2$/i.test(val))
+                tag = 'h3';
+            else if (/^heading\s*3$/i.test(val))
+                tag = 'h4';
+            else if (/^heading\s*[4-6]$/i.test(val))
+                tag = 'h5';
+            else if (/^title$/i.test(val))
+                tag = 'h1';
+            else if (/^subtitle$/i.test(val))
+                tag = 'h3';
+            if (/listparagraph/i.test(val))
+                isList = true;
+        }
+        const outLvl = wFirst(pPr, 'outlineLvl');
+        if (outLvl && tag === 'p') {
+            const lvl = parseInt(wAttr(outLvl, 'val'), 10);
+            if (lvl >= 0 && lvl <= 5)
+                tag = 'h' + Math.min(6, lvl + 2);
+        }
+        const numPr = wFirst(pPr, 'numPr');
+        if (numPr) {
+            isList = true;
+            const ilvl = wFirst(numPr, 'ilvl');
+            if (ilvl)
+                listLevel = parseInt(wAttr(ilvl, 'val'), 10) || 0;
+        }
+        const jc = wFirst(pPr, 'jc');
+        if (jc) {
+            const v = wAttr(jc, 'val');
+            if (v === 'center')
+                align = 'center';
+            else if (v === 'right' || v === 'end')
+                align = 'right';
+            else if (v === 'both')
+                align = 'justify';
+        }
     }
-    const outLvl = wFirst(pPr, 'outlineLvl');
-    if (outLvl && tag === 'p') {
-      const lvl = parseInt(wAttr(outLvl, 'val'), 10);
-      if (lvl >= 0 && lvl <= 5) tag = 'h' + Math.min(6, lvl + 2);
+    const elem = document.createElement(tag);
+    if (isList) {
+        elem.style.paddingLeft = (20 + listLevel * 20) + 'px';
+        elem.style.display = 'list-item';
+        elem.style.listStyleType = listLevel % 2 === 0 ? 'disc' : 'circle';
     }
-    const numPr = wFirst(pPr, 'numPr');
-    if (numPr) {
-      isList = true;
-      const ilvl = wFirst(numPr, 'ilvl');
-      if (ilvl) listLevel = parseInt(wAttr(ilvl, 'val'), 10) || 0;
-    }
-    const jc = wFirst(pPr, 'jc');
-    if (jc) {
-      const v = wAttr(jc, 'val');
-      if (v === 'center') align = 'center';
-      else if (v === 'right' || v === 'end') align = 'right';
-      else if (v === 'both') align = 'justify';
-    }
-  }
-
-  const elem = document.createElement(tag);
-  if (isList) {
-    elem.style.paddingLeft = (20 + listLevel * 20) + 'px';
-    elem.style.display = 'list-item';
-    elem.style.listStyleType = listLevel % 2 === 0 ? 'disc' : 'circle';
-  }
-  if (align) elem.style.textAlign = align;
-  elem.appendChild(parseRuns(p, imageMap));
-  if (!elem.textContent.trim() && !elem.querySelector('br') && !elem.querySelector('img')) elem.style.minHeight = '1em';
-  return elem;
+    if (align)
+        elem.style.textAlign = align;
+    elem.appendChild(parseRuns(p, imageMap));
+    if (!elem.textContent.trim() && !elem.querySelector('br') && !elem.querySelector('img'))
+        elem.style.minHeight = '1em';
+    return elem;
 }
-
 function renderTable(tbl, imageMap) {
-  const table = document.createElement('table');
-  table.style.cssText = 'border-collapse:collapse;width:100%;margin:12px 0;';
-  for (const tr of wChildren(tbl, 'tr')) {
-    const rowEl = document.createElement('tr');
-    for (const tc of wChildren(tr, 'tc')) {
-      const td = document.createElement('td');
-      td.style.cssText = 'border:1px solid var(--rule);padding:6px 8px;vertical-align:top;';
-      for (const child of tc.children) {
-        if (child.namespaceURI !== W) continue;
-        if (child.localName === 'p') td.appendChild(renderParagraph(child, imageMap));
-        else if (child.localName === 'tbl') td.appendChild(renderTable(child, imageMap));
-      }
-      rowEl.appendChild(td);
+    const table = document.createElement('table');
+    table.style.cssText = 'border-collapse:collapse;width:100%;margin:12px 0;';
+    for (const tr of wChildren(tbl, 'tr')) {
+        const rowEl = document.createElement('tr');
+        for (const tc of wChildren(tr, 'tc')) {
+            const td = document.createElement('td');
+            td.style.cssText = 'border:1px solid var(--rule);padding:6px 8px;vertical-align:top;';
+            for (const child of tc.children) {
+                if (child.namespaceURI !== W)
+                    continue;
+                if (child.localName === 'p')
+                    td.appendChild(renderParagraph(child, imageMap));
+                else if (child.localName === 'tbl')
+                    td.appendChild(renderTable(child, imageMap));
+            }
+            rowEl.appendChild(td);
+        }
+        table.appendChild(rowEl);
     }
-    table.appendChild(rowEl);
-  }
-  return table;
+    return table;
 }
-
 function renderDocumentXml(xmlStr, imageMap) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xmlStr, 'application/xml');
-  if (doc.querySelector('parsererror'))
-    return el('p', { class: 'anr-hint' }, 'Could not parse document XML.');
-  const body = doc.getElementsByTagNameNS(W, 'body')[0];
-  if (!body) return el('p', { class: 'anr-hint' }, 'Empty document.');
-  const container = document.createElement('div');
-  for (const child of body.children) {
-    if (child.namespaceURI !== W) continue;
-    if (child.localName === 'p') container.appendChild(renderParagraph(child, imageMap));
-    else if (child.localName === 'tbl') container.appendChild(renderTable(child, imageMap));
-  }
-  return container;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xmlStr, 'application/xml');
+    if (doc.querySelector('parsererror'))
+        return el('p', { class: 'anr-hint' }, 'Could not parse document XML.');
+    const body = doc.getElementsByTagNameNS(W, 'body')[0];
+    if (!body)
+        return el('p', { class: 'anr-hint' }, 'Empty document.');
+    const container = document.createElement('div');
+    for (const child of body.children) {
+        if (child.namespaceURI !== W)
+            continue;
+        if (child.localName === 'p')
+            container.appendChild(renderParagraph(child, imageMap));
+        else if (child.localName === 'tbl')
+            container.appendChild(renderTable(child, imageMap));
+    }
+    return container;
 }
-
 // Build a map of relationship-id → blob URL for every embedded raster image
 // referenced by the document. Relationship targets in word/_rels/document.xml.rels
 // are relative to word/.
@@ -210,352 +245,394 @@ function renderDocumentXml(xmlStr, imageMap) {
 // free the previous document's set when a new document is opened.
 const _docxImageUrls = new Set();
 function revokeDocxImageUrls() {
-  for (const u of _docxImageUrls) { try { URL.revokeObjectURL(u); } catch (_) {} }
-  _docxImageUrls.clear();
+    for (const u of _docxImageUrls) {
+        try {
+            URL.revokeObjectURL(u);
+        }
+        catch (_) { }
+    }
+    _docxImageUrls.clear();
 }
-
 async function buildImageMap(zip) {
-  const map = {};
-  if (!zip.has('word/_rels/document.xml.rels')) return map;
-  const relsXml = await zip.text('word/_rels/document.xml.rels');
-  if (!relsXml) return map;
-  const doc = new DOMParser().parseFromString(relsXml, 'application/xml');
-  for (const r of doc.getElementsByTagName('Relationship')) {
-    const id = r.getAttribute('Id');
-    const target = r.getAttribute('Target') || '';
-    if (!id || !target) continue;
-    if ((r.getAttribute('TargetMode') || '') === 'External' || /^https?:/i.test(target)) continue;
-    if (!/\.(png|jpe?g|gif|bmp|webp)$/i.test(target)) continue; // browser-renderable only
-    // Resolve relative to word/
-    const parts = ('word/' + target.replace(/^\.\//, '')).split('/');
-    const out = [];
-    for (const p of parts) { if (p === '..') out.pop(); else if (p !== '.' && p !== '') out.push(p); }
-    const path = out.join('/');
-    try {
-      const bytes = await zip.bytes(path);
-      if (bytes) {
-        const ext = (path.match(/\.(\w+)$/) || [, 'png'])[1].toLowerCase();
-        const url = URL.createObjectURL(new Blob([bytes], { type: 'image/' + (ext === 'jpg' ? 'jpeg' : ext) }));
-        _docxImageUrls.add(url);
-        map[id] = url;
-      }
-    } catch (_) { /* skip unreadable entry */ }
-  }
-  return map;
+    const map = {};
+    if (!zip.has('word/_rels/document.xml.rels'))
+        return map;
+    const relsXml = await zip.text('word/_rels/document.xml.rels');
+    if (!relsXml)
+        return map;
+    const doc = new DOMParser().parseFromString(relsXml, 'application/xml');
+    for (const r of doc.getElementsByTagName('Relationship')) {
+        const id = r.getAttribute('Id');
+        const target = r.getAttribute('Target') || '';
+        if (!id || !target)
+            continue;
+        if ((r.getAttribute('TargetMode') || '') === 'External' || /^https?:/i.test(target))
+            continue;
+        if (!/\.(png|jpe?g|gif|bmp|webp)$/i.test(target))
+            continue; // browser-renderable only
+        // Resolve relative to word/
+        const parts = ('word/' + target.replace(/^\.\//, '')).split('/');
+        const out = [];
+        for (const p of parts) {
+            if (p === '..')
+                out.pop();
+            else if (p !== '.' && p !== '')
+                out.push(p);
+        }
+        const path = out.join('/');
+        try {
+            const bytes = await zip.bytes(path);
+            if (bytes) {
+                const ext = (path.match(/\.(\w+)$/) || [, 'png'])[1].toLowerCase();
+                const url = URL.createObjectURL(new Blob([bytes], { type: 'image/' + (ext === 'jpg' ? 'jpeg' : ext) }));
+                _docxImageUrls.add(url);
+                map[id] = url;
+            }
+        }
+        catch (_) { /* skip unreadable entry */ }
+    }
+    return map;
 }
-
 // ---------- Metadata ----------
-
 async function extractMeta(zip) {
-  const fields = {};
-  if (zip.has('docProps/core.xml')) {
-    const xml = await zip.text('docProps/core.xml');
-    if (xml) {
-      const grab = (tag) => {
-        const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<'));
-        return m ? m[1].trim() : null;
-      };
-      const creator = grab('creator');
-      const title = grab('title');
-      const lastBy = grab('lastModifiedBy');
-      const created = grab('created');
-      const modified = grab('modified');
-      const revision = grab('revision');
-      if (creator) fields['Author'] = creator;
-      if (title) fields['Title'] = title;
-      if (lastBy) fields['Last modified by'] = lastBy;
-      if (created) fields['Created'] = created;
-      if (modified) fields['Modified'] = modified;
-      if (revision) fields['Revision'] = revision;
+    const fields = {};
+    if (zip.has('docProps/core.xml')) {
+        const xml = await zip.text('docProps/core.xml');
+        if (xml) {
+            const grab = (tag) => {
+                const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<'));
+                return m ? m[1].trim() : null;
+            };
+            const creator = grab('creator');
+            const title = grab('title');
+            const lastBy = grab('lastModifiedBy');
+            const created = grab('created');
+            const modified = grab('modified');
+            const revision = grab('revision');
+            if (creator)
+                fields['Author'] = creator;
+            if (title)
+                fields['Title'] = title;
+            if (lastBy)
+                fields['Last modified by'] = lastBy;
+            if (created)
+                fields['Created'] = created;
+            if (modified)
+                fields['Modified'] = modified;
+            if (revision)
+                fields['Revision'] = revision;
+        }
     }
-  }
-  if (zip.has('docProps/app.xml')) {
-    const xml = await zip.text('docProps/app.xml');
-    if (xml) {
-      const grab = (tag) => {
-        const m = xml.match(new RegExp('<' + tag + '[^>]*>([^<]+)<'));
-        return m ? m[1].trim() : null;
-      };
-      const app = grab('Application');
-      const appVer = grab('AppVersion');
-      if (app) fields['Application'] = app + (appVer ? ' ' + appVer : '');
-      if (grab('Pages')) fields['Pages'] = grab('Pages');
-      if (grab('Words')) fields['Words'] = grab('Words');
-      if (grab('Characters')) fields['Characters'] = grab('Characters');
-      if (grab('Paragraphs')) fields['Paragraphs'] = grab('Paragraphs');
+    if (zip.has('docProps/app.xml')) {
+        const xml = await zip.text('docProps/app.xml');
+        if (xml) {
+            const grab = (tag) => {
+                const m = xml.match(new RegExp('<' + tag + '[^>]*>([^<]+)<'));
+                return m ? m[1].trim() : null;
+            };
+            const app = grab('Application');
+            const appVer = grab('AppVersion');
+            if (app)
+                fields['Application'] = app + (appVer ? ' ' + appVer : '');
+            if (grab('Pages'))
+                fields['Pages'] = grab('Pages');
+            if (grab('Words'))
+                fields['Words'] = grab('Words');
+            if (grab('Characters'))
+                fields['Characters'] = grab('Characters');
+            if (grab('Paragraphs'))
+                fields['Paragraphs'] = grab('Paragraphs');
+        }
     }
-  }
-  return fields;
+    return fields;
 }
-
 // ---------- Collaboration / extra metadata (additive) ----------
-
 // Build a card surfacing comments, tracked changes, hyperlinks, protection
 // flags and extended document properties. Returns an .anr-card element, or
 // null when nothing of interest was found. Fully guarded so a failure here
 // never affects the main document rendering.
 async function buildCollabCard(zip) {
-  try {
-    const card = el('div', { class: 'anr-card' });
-    card.appendChild(el('h3', {}, 'Collaboration & metadata'));
-    const tbl = el('table', { class: 'anr-readout' });
-    const detailsBlocks = []; // collapsible blocks appended after the table
-    let any = false;
-
-    // --- Ghost authorship (creator != last editor) ---
-    // A document created by one person but last saved by another is a normal
-    // collaboration signal on its own, but worth surfacing - it's the simplest
-    // "this isn't all one author's work" tell.
     try {
-      if (zip.has('docProps/core.xml')) {
-        const xml = await zip.text('docProps/core.xml');
-        if (xml) {
-          const grab = (tag) => { const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
-          const creator = grab('creator');
-          const lastBy = grab('lastModifiedBy');
-          if (creator && lastBy && creator !== lastBy) {
-            tbl.appendChild(row('Authorship', '⚠ Created by "' + creator + '" but last saved by "' + lastBy + '"'));
-            any = true;
-          }
-        }
-      }
-    } catch (_) { /* ignore */ }
-
-    // --- Comments (word/comments.xml) ---
-    try {
-      if (zip.has('word/comments.xml')) {
-        const xml = await zip.text('word/comments.xml');
-        if (xml) {
-          const cdoc = new DOMParser().parseFromString(xml, 'application/xml');
-          const comments = cdoc.getElementsByTagNameNS(W, 'comment');
-          if (comments.length) {
-            const authors = new Set();
-            const snippets = [];
-            for (const c of comments) {
-              const a = wAttr(c, 'author');
-              if (a) authors.add(a);
-              let txt = '';
-              for (const t of c.getElementsByTagNameNS(W, 't')) txt += t.textContent;
-              txt = txt.trim();
-              if (txt) snippets.push({ author: a, text: txt });
+        const card = el('div', { class: 'anr-card' });
+        card.appendChild(el('h3', {}, 'Collaboration & metadata'));
+        const tbl = el('table', { class: 'anr-readout' });
+        const detailsBlocks = []; // collapsible blocks appended after the table
+        let any = false;
+        // --- Ghost authorship (creator != last editor) ---
+        // A document created by one person but last saved by another is a normal
+        // collaboration signal on its own, but worth surfacing - it's the simplest
+        // "this isn't all one author's work" tell.
+        try {
+            if (zip.has('docProps/core.xml')) {
+                const xml = await zip.text('docProps/core.xml');
+                if (xml) {
+                    const grab = (tag) => { const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+                    const creator = grab('creator');
+                    const lastBy = grab('lastModifiedBy');
+                    if (creator && lastBy && creator !== lastBy) {
+                        tbl.appendChild(row('Authorship', '⚠ Created by "' + creator + '" but last saved by "' + lastBy + '"'));
+                        any = true;
+                    }
+                }
             }
-            tbl.appendChild(row('Comments', comments.length + (authors.size ? ' (by ' + [...authors].join(', ') + ')' : '')));
-            any = true;
-            if (snippets.length) {
-              const det = el('details', { style: 'margin-top:8px;' });
-              det.appendChild(el('summary', {}, 'View comments (' + snippets.length + ')'));
-              for (const s of snippets.slice(0, 50)) {
-                const p = el('p', { style: 'margin:6px 0;' });
-                if (s.author) p.appendChild(el('strong', {}, s.author + ': '));
-                p.appendChild(document.createTextNode(s.text.length > 300 ? s.text.slice(0, 300) + '…' : s.text));
-                det.appendChild(p);
-              }
-              detailsBlocks.push(det);
+        }
+        catch (_) { /* ignore */ }
+        // --- Comments (word/comments.xml) ---
+        try {
+            if (zip.has('word/comments.xml')) {
+                const xml = await zip.text('word/comments.xml');
+                if (xml) {
+                    const cdoc = new DOMParser().parseFromString(xml, 'application/xml');
+                    const comments = cdoc.getElementsByTagNameNS(W, 'comment');
+                    if (comments.length) {
+                        const authors = new Set();
+                        const snippets = [];
+                        for (const c of comments) {
+                            const a = wAttr(c, 'author');
+                            if (a)
+                                authors.add(a);
+                            let txt = '';
+                            for (const t of c.getElementsByTagNameNS(W, 't'))
+                                txt += t.textContent;
+                            txt = txt.trim();
+                            if (txt)
+                                snippets.push({ author: a, text: txt });
+                        }
+                        tbl.appendChild(row('Comments', comments.length + (authors.size ? ' (by ' + [...authors].join(', ') + ')' : '')));
+                        any = true;
+                        if (snippets.length) {
+                            const det = el('details', { style: 'margin-top:8px;' });
+                            det.appendChild(el('summary', {}, 'View comments (' + snippets.length + ')'));
+                            for (const s of snippets.slice(0, 50)) {
+                                const p = el('p', { style: 'margin:6px 0;' });
+                                if (s.author)
+                                    p.appendChild(el('strong', {}, s.author + ': '));
+                                p.appendChild(document.createTextNode(s.text.length > 300 ? s.text.slice(0, 300) + '…' : s.text));
+                                det.appendChild(p);
+                            }
+                            detailsBlocks.push(det);
+                        }
+                    }
+                }
             }
-          }
         }
-      }
-    } catch (_) { /* ignore */ }
-
-    // --- Tracked changes (w:ins / w:del in document.xml) ---
-    try {
-      if (zip.has('word/document.xml')) {
-        const xml = await zip.text('word/document.xml');
-        if (xml) {
-          const ddoc = new DOMParser().parseFromString(xml, 'application/xml');
-          const ins = ddoc.getElementsByTagNameNS(W, 'ins');
-          const del = ddoc.getElementsByTagNameNS(W, 'del');
-          const n = ins.length + del.length;
-          if (n) {
-            // Tally insertions/deletions per author for an edit-density breakdown.
-            const byAuthor = new Map();   // author -> { ins, del }
-            const tally = (list, key) => {
-              for (const e of list) {
-                const a = wAttr(e, 'author') || '(unknown)';
-                const rec = byAuthor.get(a) || { ins: 0, del: 0 };
-                rec[key]++; byAuthor.set(a, rec);
-              }
-            };
-            tally(ins, 'ins'); tally(del, 'del');
-            const named = [...byAuthor.keys()].filter((a) => a !== '(unknown)');
-            tbl.appendChild(row('Tracked changes', n + (named.length ? ' (by ' + named.join(', ') + ')' : '')));
-            any = true;
-            // Edit density: rank authors by how much of the revision they own.
-            const ranked = [...byAuthor.entries()].sort((a, b) => (b[1].ins + b[1].del) - (a[1].ins + a[1].del));
-            if (ranked.length) {
-              const det = el('details', { style: 'margin-top:8px;' });
-              det.appendChild(el('summary', {}, 'Edits by author (' + ranked.length + ')'));
-              const et = el('table', { class: 'anr-readout' });
-              for (const [a, rec] of ranked) {
-                const tot = rec.ins + rec.del;
-                et.appendChild(row(a, tot + ' edits  (' + rec.ins + ' ins, ' + rec.del + ' del) · ' + Math.round(tot / n * 100) + '%'));
-              }
-              det.appendChild(et);
-              detailsBlocks.push(det);
+        catch (_) { /* ignore */ }
+        // --- Tracked changes (w:ins / w:del in document.xml) ---
+        try {
+            if (zip.has('word/document.xml')) {
+                const xml = await zip.text('word/document.xml');
+                if (xml) {
+                    const ddoc = new DOMParser().parseFromString(xml, 'application/xml');
+                    const ins = ddoc.getElementsByTagNameNS(W, 'ins');
+                    const del = ddoc.getElementsByTagNameNS(W, 'del');
+                    const n = ins.length + del.length;
+                    if (n) {
+                        // Tally insertions/deletions per author for an edit-density breakdown.
+                        const byAuthor = new Map(); // author -> { ins, del }
+                        const tally = (list, key) => {
+                            for (const e of list) {
+                                const a = wAttr(e, 'author') || '(unknown)';
+                                const rec = byAuthor.get(a) || { ins: 0, del: 0 };
+                                rec[key]++;
+                                byAuthor.set(a, rec);
+                            }
+                        };
+                        tally(ins, 'ins');
+                        tally(del, 'del');
+                        const named = [...byAuthor.keys()].filter((a) => a !== '(unknown)');
+                        tbl.appendChild(row('Tracked changes', n + (named.length ? ' (by ' + named.join(', ') + ')' : '')));
+                        any = true;
+                        // Edit density: rank authors by how much of the revision they own.
+                        const ranked = [...byAuthor.entries()].sort((a, b) => (b[1].ins + b[1].del) - (a[1].ins + a[1].del));
+                        if (ranked.length) {
+                            const det = el('details', { style: 'margin-top:8px;' });
+                            det.appendChild(el('summary', {}, 'Edits by author (' + ranked.length + ')'));
+                            const et = el('table', { class: 'anr-readout' });
+                            for (const [a, rec] of ranked) {
+                                const tot = rec.ins + rec.del;
+                                et.appendChild(row(a, tot + ' edits  (' + rec.ins + ' ins, ' + rec.del + ' del) · ' + Math.round(tot / n * 100) + '%'));
+                            }
+                            det.appendChild(et);
+                            detailsBlocks.push(det);
+                        }
+                    }
+                }
             }
-          }
         }
-      }
-    } catch (_) { /* ignore */ }
-
-    // --- External hyperlinks (word/_rels/document.xml.rels) ---
-    try {
-      if (zip.has('word/_rels/document.xml.rels')) {
-        const xml = await zip.text('word/_rels/document.xml.rels');
-        if (xml) {
-          const rdoc = new DOMParser().parseFromString(xml, 'application/xml');
-          const links = [];
-          for (const r of rdoc.getElementsByTagName('Relationship')) {
-            const type = r.getAttribute('Type') || '';
-            const target = r.getAttribute('Target') || '';
-            const ext = (r.getAttribute('TargetMode') || '') === 'External';
-            // Allow-list the scheme: an External relationship can carry a
-            // javascript:/data: target that would become a live href below.
-            if (/hyperlink/i.test(type) && (ext || /^https?:/i.test(target)) && /^(https?:|mailto:)/i.test(target)) links.push(target);
-          }
-          if (links.length) {
-            tbl.appendChild(row('External links', links.length));
-            any = true;
-            const det = el('details', { style: 'margin-top:8px;' });
-            det.appendChild(el('summary', {}, 'View links (' + links.length + ')'));
-            for (const u of links.slice(0, 100)) {
-              const a = el('a', { href: u, target: '_blank', rel: 'noopener noreferrer', style: 'display:block;word-break:break-all;color:var(--accent);' }, u);
-              det.appendChild(a);
+        catch (_) { /* ignore */ }
+        // --- External hyperlinks (word/_rels/document.xml.rels) ---
+        try {
+            if (zip.has('word/_rels/document.xml.rels')) {
+                const xml = await zip.text('word/_rels/document.xml.rels');
+                if (xml) {
+                    const rdoc = new DOMParser().parseFromString(xml, 'application/xml');
+                    const links = [];
+                    for (const r of rdoc.getElementsByTagName('Relationship')) {
+                        const type = r.getAttribute('Type') || '';
+                        const target = r.getAttribute('Target') || '';
+                        const ext = (r.getAttribute('TargetMode') || '') === 'External';
+                        // Allow-list the scheme: an External relationship can carry a
+                        // javascript:/data: target that would become a live href below.
+                        if (/hyperlink/i.test(type) && (ext || /^https?:/i.test(target)) && /^(https?:|mailto:)/i.test(target))
+                            links.push(target);
+                    }
+                    if (links.length) {
+                        tbl.appendChild(row('External links', links.length));
+                        any = true;
+                        const det = el('details', { style: 'margin-top:8px;' });
+                        det.appendChild(el('summary', {}, 'View links (' + links.length + ')'));
+                        for (const u of links.slice(0, 100)) {
+                            const a = el('a', { href: u, target: '_blank', rel: 'noopener noreferrer', style: 'display:block;word-break:break-all;color:var(--accent);' }, u);
+                            det.appendChild(a);
+                        }
+                        detailsBlocks.push(det);
+                    }
+                }
             }
-            detailsBlocks.push(det);
-          }
         }
-      }
-    } catch (_) { /* ignore */ }
-
-    // --- Settings: trackChanges / documentProtection ---
-    try {
-      if (zip.has('word/settings.xml')) {
-        const xml = await zip.text('word/settings.xml');
-        if (xml) {
-          const sdoc = new DOMParser().parseFromString(xml, 'application/xml');
-          if (sdoc.getElementsByTagNameNS(W, 'trackChanges').length) {
-            tbl.appendChild(row('Track changes', 'On (enabled in settings)'));
-            any = true;
-          }
-          const prot = sdoc.getElementsByTagNameNS(W, 'documentProtection')[0];
-          if (prot) {
-            const edit = wAttr(prot, 'edit');
-            tbl.appendChild(row('Document protection', edit ? 'Restricted: ' + edit : 'Enabled'));
-            any = true;
-          }
+        catch (_) { /* ignore */ }
+        // --- Settings: trackChanges / documentProtection ---
+        try {
+            if (zip.has('word/settings.xml')) {
+                const xml = await zip.text('word/settings.xml');
+                if (xml) {
+                    const sdoc = new DOMParser().parseFromString(xml, 'application/xml');
+                    if (sdoc.getElementsByTagNameNS(W, 'trackChanges').length) {
+                        tbl.appendChild(row('Track changes', 'On (enabled in settings)'));
+                        any = true;
+                    }
+                    const prot = sdoc.getElementsByTagNameNS(W, 'documentProtection')[0];
+                    if (prot) {
+                        const edit = wAttr(prot, 'edit');
+                        tbl.appendChild(row('Document protection', edit ? 'Restricted: ' + edit : 'Enabled'));
+                        any = true;
+                    }
+                }
+            }
         }
-      }
-    } catch (_) { /* ignore */ }
-
-    // --- Extended properties (app.xml: Company / Manager / TotalTime) ---
-    try {
-      if (zip.has('docProps/app.xml')) {
-        const xml = await zip.text('docProps/app.xml');
-        if (xml) {
-          const grab = (tag) => { const m = xml.match(new RegExp('<' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
-          const company = grab('Company'); if (company) { tbl.appendChild(row('Company', company)); any = true; }
-          const manager = grab('Manager'); if (manager) { tbl.appendChild(row('Manager', manager)); any = true; }
-          const total = grab('TotalTime');
-          if (total && total !== '0') { tbl.appendChild(row('Editing time', total + ' min')); any = true; }
+        catch (_) { /* ignore */ }
+        // --- Extended properties (app.xml: Company / Manager / TotalTime) ---
+        try {
+            if (zip.has('docProps/app.xml')) {
+                const xml = await zip.text('docProps/app.xml');
+                if (xml) {
+                    const grab = (tag) => { const m = xml.match(new RegExp('<' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+                    const company = grab('Company');
+                    if (company) {
+                        tbl.appendChild(row('Company', company));
+                        any = true;
+                    }
+                    const manager = grab('Manager');
+                    if (manager) {
+                        tbl.appendChild(row('Manager', manager));
+                        any = true;
+                    }
+                    const total = grab('TotalTime');
+                    if (total && total !== '0') {
+                        tbl.appendChild(row('Editing time', total + ' min'));
+                        any = true;
+                    }
+                }
+            }
         }
-      }
-    } catch (_) { /* ignore */ }
-
-    // --- Core: subject / keywords ---
-    try {
-      if (zip.has('docProps/core.xml')) {
-        const xml = await zip.text('docProps/core.xml');
-        if (xml) {
-          const grab = (tag) => { const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
-          const subject = grab('subject'); if (subject) { tbl.appendChild(row('Subject', subject)); any = true; }
-          const keywords = grab('keywords'); if (keywords) { tbl.appendChild(row('Keywords', keywords)); any = true; }
+        catch (_) { /* ignore */ }
+        // --- Core: subject / keywords ---
+        try {
+            if (zip.has('docProps/core.xml')) {
+                const xml = await zip.text('docProps/core.xml');
+                if (xml) {
+                    const grab = (tag) => { const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+                    const subject = grab('subject');
+                    if (subject) {
+                        tbl.appendChild(row('Subject', subject));
+                        any = true;
+                    }
+                    const keywords = grab('keywords');
+                    if (keywords) {
+                        tbl.appendChild(row('Keywords', keywords));
+                        any = true;
+                    }
+                }
+            }
         }
-      }
-    } catch (_) { /* ignore */ }
-
-    if (!any) return null;
-    card.appendChild(tbl);
-    for (const d of detailsBlocks) card.appendChild(d);
-    return card;
-  } catch (_) {
-    return null;
-  }
+        catch (_) { /* ignore */ }
+        if (!any)
+            return null;
+        card.appendChild(tbl);
+        for (const d of detailsBlocks)
+            card.appendChild(d);
+        return card;
+    }
+    catch (_) {
+        return null;
+    }
 }
-
 // ---------- Main render ----------
-
 export async function renderDocx(file, container) {
-  container.hidden = false;
-  container.innerHTML = '';
-  revokeDocxImageUrls();   // free the previous document's embedded-image object URLs
-  // Ghost sheets rather than a bare "Reading document…" line: unzipping, decoding
-  // the images and laying the flow onto pages all happen before a single real
-  // page exists, and the placeholder shows where they will land.
-  const skeleton = pagePreviewSkeleton({ note: 'Reading document…' });
-  container.appendChild(skeleton);
-
-  try {
-    // Read generously: embedded images (word/media/*) usually sit after
-    // document.xml in the archive, so a small cap would miss them.
-    const zip = await openZip(file, 128 * 1024 * 1024);
-    const meta = await extractMeta(zip);
-
-    if (!zip.has('word/document.xml')) {
-      container.innerHTML = '';
-      container.appendChild(errorCard('Could not find document content in this DOCX file.'));
-      return;
-    }
-    const docXml = await zip.text('word/document.xml');
-    if (!docXml) {
-      container.innerHTML = '';
-      container.appendChild(errorCard('Could not decompress document content. DecompressionStream may not be supported.'));
-      return;
-    }
-
+    container.hidden = false;
     container.innerHTML = '';
-    // Put the placeholder straight back: the collaboration card and the image map
-    // below are both awaited, so the pages are still some way off.
+    revokeDocxImageUrls(); // free the previous document's embedded-image object URLs
+    // Ghost sheets rather than a bare "Reading document…" line: unzipping, decoding
+    // the images and laying the flow onto pages all happen before a single real
+    // page exists, and the placeholder shows where they will land.
+    const skeleton = pagePreviewSkeleton({ note: 'Reading document…' });
     container.appendChild(skeleton);
-
-    const infoCard = el('div', { class: 'anr-card' });
-    infoCard.appendChild(el('h3', {}, 'Document info'));
-    infoCard.appendChild(buildReadout([
-      ['File', file.name],
-      ['Size', fmtBytes(file.size)],
-      file.type && rowHelp('MIME', file.type, "The MIME type is a short standard label for what kind of file this is - for example image/jpeg for a photo or audio/mpeg for an MP3. The browser guesses it from the file's extension or from the operating system, so it's a hint about the format, not proof."),
-      ...Object.entries(meta).map(([k, v]) =>
-        k === 'Revision'
-          ? rowHelp(k, v, 'The internal edit counter Word keeps - it rises by one each time the document is saved, so a high number just means it was saved many times. It is not a version name the writer chose.')
-          : [k, v]),
-      file.lastModified && ['Last modified', new Date(file.lastModified).toLocaleString()],
-    ]));
-    container.appendChild(infoCard);
-
     try {
-      const collab = await buildCollabCard(zip);
-      if (collab) container.appendChild(collab);
-    } catch (_) { /* never block document rendering */ }
-
-    const imageMap = await buildImageMap(zip);
-
-    // Render the document body, then lay it out onto page sheets (the PDF-style
-    // "Page previews" presentation). textContent must be read before paginating,
-    // since paginateFlow moves the blocks out of `rendered`.
-    const rendered = renderDocumentXml(docXml, imageMap);
-    const pages = paginateFlow(rendered);
-    const pageTexts = pages.map((p) => p.textContent);
-    skeleton.replaceWith(pagedPreviewCard(pages, { title: 'Page previews', label: 'Page' }));
-
-    if (pageTexts.some((t) => t.trim())) {
-      container.appendChild(pagedTextCard(pageTexts, { label: 'Page' }));
+        // Read generously: embedded images (word/media/*) usually sit after
+        // document.xml in the archive, so a small cap would miss them.
+        const zip = await openZip(file, 128 * 1024 * 1024);
+        const meta = await extractMeta(zip);
+        if (!zip.has('word/document.xml')) {
+            container.innerHTML = '';
+            container.appendChild(errorCard('Could not find document content in this DOCX file.'));
+            return;
+        }
+        const docXml = await zip.text('word/document.xml');
+        if (!docXml) {
+            container.innerHTML = '';
+            container.appendChild(errorCard('Could not decompress document content. DecompressionStream may not be supported.'));
+            return;
+        }
+        container.innerHTML = '';
+        // Put the placeholder straight back: the collaboration card and the image map
+        // below are both awaited, so the pages are still some way off.
+        container.appendChild(skeleton);
+        const infoCard = el('div', { class: 'anr-card' });
+        infoCard.appendChild(el('h3', {}, 'Document info'));
+        infoCard.appendChild(buildReadout([
+            ['File', file.name],
+            ['Size', fmtBytes(file.size)],
+            file.type && rowHelp('MIME', file.type, "The MIME type is a short standard label for what kind of file this is - for example image/jpeg for a photo or audio/mpeg for an MP3. The browser guesses it from the file's extension or from the operating system, so it's a hint about the format, not proof."),
+            ...Object.entries(meta).map(([k, v]) => k === 'Revision'
+                ? rowHelp(k, v, 'The internal edit counter Word keeps - it rises by one each time the document is saved, so a high number just means it was saved many times. It is not a version name the writer chose.')
+                : [k, v]),
+            file.lastModified && ['Last modified', new Date(file.lastModified).toLocaleString()],
+        ]));
+        container.appendChild(infoCard);
+        try {
+            const collab = await buildCollabCard(zip);
+            if (collab)
+                container.appendChild(collab);
+        }
+        catch (_) { /* never block document rendering */ }
+        const imageMap = await buildImageMap(zip);
+        // Render the document body, then lay it out onto page sheets (the PDF-style
+        // "Page previews" presentation). textContent must be read before paginating,
+        // since paginateFlow moves the blocks out of `rendered`.
+        const rendered = renderDocumentXml(docXml, imageMap);
+        const pages = paginateFlow(rendered);
+        const pageTexts = pages.map((p) => p.textContent);
+        skeleton.replaceWith(pagedPreviewCard(pages, { title: 'Page previews', label: 'Page' }));
+        if (pageTexts.some((t) => t.trim())) {
+            container.appendChild(pagedTextCard(pageTexts, { label: 'Page' }));
+        }
+        if (file.size <= HASH_FILE_MAX) {
+            container.appendChild(integrityCard(file));
+        }
     }
-
-    if (file.size <= HASH_FILE_MAX) {
-      container.appendChild(integrityCard(file));
+    catch (e) {
+        container.innerHTML = '';
+        container.appendChild(errorCard('Could not read document: ' + (e.message || 'unknown error')));
     }
-  } catch (e) {
-    container.innerHTML = '';
-    container.appendChild(errorCard('Could not read document: ' + (e.message || 'unknown error')));
-  }
 }
+//# sourceMappingURL=docx.js.map

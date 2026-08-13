@@ -1,0 +1,689 @@
+/* Analyser - spectrogram engine
+ * ===============================
+ *
+ * Pure-JS spectrogram pipeline with no audio-library dependency.
+ *
+ *
+ * What is an FFT?
+ * ---------------
+ * Audio is a stream of amplitude samples - how loud the speaker should push
+ * the air at each moment in time. That tells you *when* sound happened, but
+ * not *what frequencies* were in it.
+ *
+ * A Fourier transform answers the second question: given a chunk of samples,
+ * it decomposes them into a sum of sine waves at different frequencies and
+ * tells you how strong each frequency is. Loosely:
+ *
+ *     time-domain samples  ──FFT──►  frequency-domain bins
+ *     (loudness over time)            (energy at each pitch)
+ *
+ * The "F" in FFT is "Fast" - the naive algorithm is O(N²); the Fast Fourier
+ * Transform reorganises the work into a recursive butterfly that runs in
+ * O(N log N). For N=2048 that's the difference between ~4M operations and
+ * ~22k. Cheap enough to do hundreds of times per second.
+ *
+ * Below we use the radix-2 Cooley-Tukey variant: it requires N to be a power
+ * of two, runs in place on real+imag arrays, and is small enough to ship
+ * inline rather than pulling in a 50KB FFT library.
+ *
+ *
+ * What is a spectrogram?
+ * ----------------------
+ * A spectrogram is one FFT per short slice of the audio, stacked side by side.
+ * Each vertical column shows the frequency content at one instant; reading
+ * left-to-right plays the recording back as a heat-map. We slide a window of
+ * `fftSize` samples across the buffer in steps of `hopSize` (the "STFT" -
+ * Short-Time Fourier Transform), and colour each cell by the bin's magnitude.
+ *
+ *
+ * Pipeline
+ * --------
+ *   samples (Float32Array) ──► computeSpectrogram() ──► { data, frames, bins }
+ *                                       │
+ *                                       └── windowed STFT via radix-2 FFT,
+ *                                           per-cell magnitudes in dB.
+ *
+ *   spectrogram + canvas    ──► renderSpectrogram()  ──► pixels
+ *                                       │
+ *                                       └── for each pixel y, map to a frequency
+ *                                           (linear or log) and a bin index,
+ *                                           sample the row, run through a
+ *                                           colormap, blit.
+ *
+ *   Built-in colormaps: viridis · magma · inferno · grayscale · phosphor.
+ *   Window functions:   hann · hamming · blackman · rect. */
+
+// ---------- WINDOWS ----------
+/*
+ * A "window" fades each chunk of audio in and out at its edges before the FFT.
+ * Without it, the hard cut at the chunk's edges shows up as fake frequencies
+ * smeared across the spectrogram ("spectral leakage"). Fading the edges to zero
+ * removes that smear. The four windows fade in slightly different shapes:
+ *   hann     - smooth, balanced. The default and usually the right pick.
+ *   hamming  - similar to hann, with a slightly different leakage trade-off.
+ *   blackman - fades hardest: cleanest, but blurs nearby frequencies together.
+ *   rect     - no fade at all: sharpest detail, but the most leakage.
+ */
+export const windows = {
+  hann: (N) => {
+    const w = new Float32Array(N);
+    for (let i = 0; i < N; i++) w[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1));
+    return w;
+  },
+  hamming: (N) => {
+    const w = new Float32Array(N);
+    for (let i = 0; i < N; i++) w[i] = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (N - 1));
+    return w;
+  },
+  blackman: (N) => {
+    const w = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const x = (2 * Math.PI * i) / (N - 1);
+      w[i] = 0.42 - 0.5 * Math.cos(x) + 0.08 * Math.cos(2 * x);
+    }
+    return w;
+  },
+  rect: (N) => {
+    const w = new Float32Array(N);
+    w.fill(1);
+    return w;
+  }
+};
+
+// ---------- FFT (radix-2 in-place, complex) ----------
+/**
+ * Radix-2 Cooley-Tukey FFT.
+ *
+ * Operates in place on two equal-length arrays (real & imaginary). Length must
+ * be a power of two. After the call, `real[k]` / `imag[k]` hold the k-th
+ * frequency bin. ~O(N log N), no allocations inside the hot loop.
+ *
+ * Step 1: bit-reversal permutation (reorders inputs so the butterflies can
+ *         walk the array contiguously).
+ * Step 2: log2(N) passes of butterflies, doubling the sub-FFT size each pass.
+ */
+export function fft(real, imag) {
+  const n = real.length;
+  if ((n & (n - 1)) !== 0) throw new Error('FFT size must be a power of 2');
+
+  // bit reversal
+  let j = 0;
+  for (let i = 1; i < n; i++) {
+    let bit = n >> 1;
+    while (j & bit) { j ^= bit; bit >>= 1; }
+    j ^= bit;
+    if (i < j) {
+      [real[i], real[j]] = [real[j], real[i]];
+      [imag[i], imag[j]] = [imag[j], imag[i]];
+    }
+  }
+
+  // butterflies
+  for (let size = 2; size <= n; size <<= 1) {
+    const half = size >> 1;
+    const tableStep = -2 * Math.PI / size;
+    for (let i = 0; i < n; i += size) {
+      for (let k = 0; k < half; k++) {
+        const angle = tableStep * k;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const tre = real[i + k + half] * cos - imag[i + k + half] * sin;
+        const tim = real[i + k + half] * sin + imag[i + k + half] * cos;
+        real[i + k + half] = real[i + k] - tre;
+        imag[i + k + half] = imag[i + k] - tim;
+        real[i + k] += tre;
+        imag[i + k] += tim;
+      }
+    }
+  }
+}
+
+// ---------- STFT / spectrogram computation ----------
+/**
+ * Compute a short-time Fourier transform of `samples`.
+ *
+ *   options: { fftSize, hopSize, window }
+ *     fftSize  - power-of-two window length         (default 2048)
+ *     hopSize  - samples between consecutive frames (default fftSize/4)
+ *     window   - 'hann' | 'hamming' | 'blackman' | 'rect'
+ *
+ *   returns:  { frames, bins, sampleRate, fftSize, hopSize, data, dbMin, dbMax }
+ *     data is a row-major Float32Array of dB values, length frames*bins,
+ *     where row f, bin b lives at data[f*bins + b].
+ *
+ * Each frame is windowed, FFT'd, normalised so absolute dB values are
+ * comparable across window choices, then converted to dB (20 log10).
+ */
+export function computeSpectrogram(samples, sampleRate, options: any = {}) {
+  const fftSize  = options.fftSize  || 2048;
+  const hopSize  = options.hopSize  || Math.floor(fftSize / 4);
+  const winName  = options.window   || 'hann';
+  const win      = (windows[winName] || windows.hann)(fftSize);
+  // Optional accessor lets callers analyse a derived signal (for example a
+  // stereo stem blend) without materialising another full-track Float32Array.
+  const sampleAt = typeof options.sampleAt === 'function' ? options.sampleAt : null;
+
+  if (samples.length < fftSize) {
+    return { frames: 0, bins: 0, sampleRate, fftSize, hopSize, data: new Float32Array(0), dbMin: -100, dbMax: 0 };
+  }
+
+  const bins   = fftSize / 2;
+  const frames = 1 + Math.floor((samples.length - fftSize) / hopSize);
+  const data   = new Float32Array(frames * bins);
+
+  // Window normalization (so absolute dB values are comparable across windows)
+  let winSum = 0;
+  for (let i = 0; i < fftSize; i++) winSum += win[i];
+  const norm = 1 / Math.max(winSum, 1e-9);
+
+  const re = new Float32Array(fftSize);
+  const im = new Float32Array(fftSize);
+
+  let dbMin = Infinity, dbMax = -Infinity;
+
+  for (let f = 0; f < frames; f++) {
+    const start = f * hopSize;
+    for (let i = 0; i < fftSize; i++) {
+      re[i] = (sampleAt ? sampleAt(start + i) : samples[start + i]) * win[i];
+      im[i] = 0;
+    }
+    fft(re, im);
+
+    const row = f * bins;
+    for (let b = 0; b < bins; b++) {
+      const mag = Math.hypot(re[b], im[b]) * norm * 2; // *2 for one-sided
+      const db  = 20 * Math.log10(mag + 1e-12);
+      data[row + b] = db;
+      if (db < dbMin) dbMin = db;
+      if (db > dbMax) dbMax = db;
+    }
+  }
+
+  return { frames, bins, sampleRate, fftSize, hopSize, data, dbMin, dbMax };
+}
+
+// Cooperative twin of computeSpectrogram: identical maths and output, but the frame
+// loop runs in batches and hands the thread back between them, so a long file's STFT
+// no longer freezes the page for the whole compute. Each batch is a few hundred FFTs
+// (cheap); the yield in between lets input, scrolling and painting take a turn - the
+// "queue it up" behaviour rather than one uninterruptible block. onProgress(frac) is
+// called after each batch; opts.shouldAbort() is polled so a superseded compute (the
+// user changed a setting mid-run) can bail cleanly. Returns the same shape, or null
+// if aborted.
+export async function computeSpectrogramAsync(samples, sampleRate, options: any = {}) {
+  const fftSize  = options.fftSize  || 2048;
+  const hopSize  = options.hopSize  || Math.floor(fftSize / 4);
+  const winName  = options.window   || 'hann';
+  const win      = (windows[winName] || windows.hann)(fftSize);
+  const onProgress = options.onProgress;
+  const shouldAbort = options.shouldAbort;
+
+  if (samples.length < fftSize) {
+    return { frames: 0, bins: 0, sampleRate, fftSize, hopSize, data: new Float32Array(0), dbMin: -100, dbMax: 0 };
+  }
+
+  const bins   = fftSize / 2;
+  const frames = 1 + Math.floor((samples.length - fftSize) / hopSize);
+  const data   = new Float32Array(frames * bins);
+
+  let winSum = 0;
+  for (let i = 0; i < fftSize; i++) winSum += win[i];
+  const norm = 1 / Math.max(winSum, 1e-9);
+
+  const re = new Float32Array(fftSize);
+  const im = new Float32Array(fftSize);
+  let dbMin = Infinity, dbMax = -Infinity;
+
+  // Batch size: aim for ~8 ms of FFTs per slice so each turn is short enough to keep
+  // 60 fps input handling, but big enough that the per-yield overhead stays tiny.
+  const BATCH = Math.max(64, Math.round(65536 / fftSize) * 32);
+  for (let f = 0; f < frames; f++) {
+    const start = f * hopSize;
+    for (let i = 0; i < fftSize; i++) { re[i] = samples[start + i] * win[i]; im[i] = 0; }
+    fft(re, im);
+    const row = f * bins;
+    for (let b = 0; b < bins; b++) {
+      const mag = Math.hypot(re[b], im[b]) * norm * 2;
+      const db  = 20 * Math.log10(mag + 1e-12);
+      data[row + b] = db;
+      if (db < dbMin) dbMin = db;
+      if (db > dbMax) dbMax = db;
+    }
+    if (f % BATCH === BATCH - 1 || f === frames - 1) {
+      if (onProgress) onProgress((f + 1) / frames);
+      if (f !== frames - 1) {
+        await yieldFrame();
+        if (shouldAbort && shouldAbort()) return null;
+      }
+    }
+  }
+
+  return { frames, bins, sampleRate, fftSize, hopSize, data, dbMin, dbMax };
+}
+
+// Hand the thread back for one frame. rAF when visible (paints first), timeout as the
+// background-tab fallback so a hidden tab still drains the queue rather than stalling.
+function yieldFrame() {
+  return new Promise((r) => {
+    if (typeof document !== 'undefined' && document.hidden) { setTimeout(r, 0); return; }
+    let done = false;
+    const fin = () => { if (!done) { done = true; r(); } };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fin);
+    setTimeout(fin, 32);
+  });
+}
+
+// ---------- REASSIGNED STFT ----------
+/**
+ * Reassigned spectrogram (method of reassignment).
+ *
+ * A plain STFT is blurred on both axes by the analysis window: the uncertainty
+ * principle ties its time and frequency resolution to the window length, so you
+ * can sharpen one only by smearing the other. Reassignment sidesteps that. For
+ * every STFT cell it computes where that cell's energy *actually* sits in time
+ * and frequency - the local centre of gravity - and moves the energy there.
+ * Diffuse blobs collapse into thin ridges, sharpening BOTH time and frequency at
+ * once, without changing the underlying FFT.
+ *
+ * It needs three STFTs per frame, all reusing the radix-2 fft() above:
+ *   F   - with the window  w(t)
+ *   F_t - with the window  t·w(t)        (time-weighted)
+ *   F_d - with the window  dw/dt         (window derivative)
+ *
+ * then, per bin, with P = |F|²:
+ *   t̂ = t_frame + Re(F_t · conj(F)) / P              (reassigned time, seconds)
+ *   f̂ = f_bin   − Im(F_d · conj(F)) / P / (2π)       (reassigned freq, Hz)
+ * and the bin's power is accumulated into the output cell nearest (t̂, f̂).
+ *
+ * Low-energy bins are gated out per frame (their reassignment is dominated by
+ * noise and would scatter speckle across the image). The result uses the SAME
+ * { frames, bins, data, … } layout as computeSpectrogram(), so renderSpectrogram,
+ * the axes, and the stats all consume it unchanged.
+ *
+ * Refs: Auger & Flandrin 1995; Fulop & Fitz 2006. See FFT-SUBSTITUTES-RESEARCH.md
+ * (Part B - time-frequency representations that beat the fixed-window STFT).
+ */
+export function computeReassignedSpectrogram(samples, sampleRate, options: any = {}) {
+  const N        = options.fftSize || 2048;
+  const hopSize  = options.hopSize || Math.floor(N / 4);
+  const winName  = options.window  || 'hann';
+  const w        = (windows[winName] || windows.hann)(N);
+  const sampleAt = typeof options.sampleAt === 'function' ? options.sampleAt : null;
+
+  if (samples.length < N) {
+    return { frames: 0, bins: 0, sampleRate, fftSize: N, hopSize, data: new Float32Array(0), dbMin: -120, dbMax: 0 };
+  }
+
+  const bins   = N / 2;
+  const frames = 1 + Math.floor((samples.length - N) / hopSize);
+  const nyq    = sampleRate / 2;
+  const center = (N - 1) / 2;
+
+  // Time-weighted (seconds) and derivative (per-second) windows.
+  const wt = new Float32Array(N);
+  const wd = new Float32Array(N);
+  for (let i = 0; i < N; i++) wt[i] = ((i - center) / sampleRate) * w[i];
+  for (let i = 0; i < N; i++) {
+    const next = i + 1 < N ? w[i + 1] : 0;
+    const prev = i - 1 >= 0 ? w[i - 1] : 0;
+    wd[i] = (next - prev) * 0.5 * sampleRate;
+  }
+
+  let winSum = 0;
+  for (let i = 0; i < N; i++) winSum += w[i];
+  const norm = 1 / Math.max(winSum, 1e-9);
+
+  const reH = new Float32Array(N), imH = new Float32Array(N);
+  const reT = new Float32Array(N), imT = new Float32Array(N);
+  const reD = new Float32Array(N), imD = new Float32Array(N);
+  const mag2 = new Float32Array(bins);
+
+  // Accumulate reassigned power into a frames×bins grid (same layout as the STFT).
+  const power = new Float32Array(frames * bins);
+  const twoPi = 2 * Math.PI;
+
+  for (let f = 0; f < frames; f++) {
+    const start = f * hopSize;
+    for (let i = 0; i < N; i++) {
+      const s = sampleAt ? sampleAt(start + i) : samples[start + i];
+      reH[i] = s * w[i];  imH[i] = 0;
+      reT[i] = s * wt[i]; imT[i] = 0;
+      reD[i] = s * wd[i]; imD[i] = 0;
+    }
+    fft(reH, imH);
+    fft(reT, imT);
+    fft(reD, imD);
+
+    let fmax = 1e-30;
+    for (let b = 0; b < bins; b++) {
+      const p = reH[b] * reH[b] + imH[b] * imH[b];
+      mag2[b] = p;
+      if (p > fmax) fmax = p;
+    }
+    const gate = fmax * 1e-5;            // drop bins ~50 dB below the frame peak
+    const tFrame = (start + center) / sampleRate;
+
+    for (let b = 0; b < bins; b++) {
+      const p = mag2[b];
+      if (p < gate) continue;
+      const invP = 1 / p;
+      const reHb = reH[b], imHb = imH[b];
+
+      // t̂ = t_frame + Re(F_t · conj(F)) / P
+      const reTH = reT[b] * reHb + imT[b] * imHb;
+      const tHat = tFrame + reTH * invP;
+
+      // f̂ = f_bin − Im(F_d · conj(F)) / P / (2π)
+      const imDH = imD[b] * reHb - reD[b] * imHb;
+      const fHat = (b * sampleRate / N) - (imDH * invP) / twoPi;
+
+      if (fHat < 0 || fHat > nyq) continue;
+      let col = Math.round(tHat * sampleRate / hopSize);
+      if (col < 0) col = 0; else if (col >= frames) col = frames - 1;
+      let rowB = Math.round((fHat / nyq) * (bins - 1));
+      if (rowB < 0) rowB = 0; else if (rowB >= bins) rowB = bins - 1;
+
+      const mag = Math.sqrt(p) * norm * 2;
+      power[col * bins + rowB] += mag * mag;
+    }
+  }
+
+  const data = new Float32Array(frames * bins);
+  let dbMin = Infinity, dbMax = -Infinity;
+  for (let i = 0; i < data.length; i++) {
+    const db = 10 * Math.log10(power[i] + 1e-12);
+    data[i] = db;
+    if (power[i] > 0) {
+      if (db < dbMin) dbMin = db;
+      if (db > dbMax) dbMax = db;
+    }
+  }
+  if (!isFinite(dbMin)) { dbMin = -120; dbMax = 0; }
+
+  return { frames, bins, sampleRate, fftSize: N, hopSize, data, dbMin, dbMax };
+}
+
+// ---------- COMPLEX STFT (real-time stem crossfade) ----------
+/**
+ * Like computeSpectrogram, but keeps the raw complex bins (re/im) instead of
+ * collapsing each to a dB magnitude.
+ *
+ * The point: the STFT is LINEAR. Two signals analysed on the *same* grid
+ * (same fftSize / hop / window / length) can be linearly recombined bin by bin,
+ * and the magnitude of that recombination is the EXACT spectrogram of the
+ * recombined time-domain signal - no second FFT needed. For MDX stems this is
+ * especially clean because vocals + instrumental === original by construction,
+ * so at the "normal" mix the recombined magnitude is exactly |original|.
+ *
+ * That is what powers the vocal<->instrumental blend slider: analyse both stems
+ * once (here), then on every slider move just recombine + take magnitude
+ * (combineStftToDb) - cheap enough to redraw in real time.
+ *
+ *   returns { frames, bins, sampleRate, fftSize, hopSize, re, im, norm }
+ *     re / im : row-major Float32Array(frames*bins); cell (f,b) at f*bins + b
+ *     norm    : window-sum normalization (magnitude = hypot(re,im) * norm * 2)
+ */
+export function computeStftComplex(samples, sampleRate, options: any = {}) {
+  const fftSize = options.fftSize || 2048;
+  const hopSize = options.hopSize || Math.floor(fftSize / 4);
+  const winName = options.window  || 'hann';
+  const win     = (windows[winName] || windows.hann)(fftSize);
+  const sampleAt = typeof options.sampleAt === 'function' ? options.sampleAt : null;
+
+  if (samples.length < fftSize) {
+    return { frames: 0, bins: 0, sampleRate, fftSize, hopSize, re: new Float32Array(0), im: new Float32Array(0), norm: 1 };
+  }
+
+  const bins   = fftSize / 2;
+  const frames = 1 + Math.floor((samples.length - fftSize) / hopSize);
+  const re     = new Float32Array(frames * bins);
+  const im     = new Float32Array(frames * bins);
+
+  let winSum = 0;
+  for (let i = 0; i < fftSize; i++) winSum += win[i];
+  const norm = 1 / Math.max(winSum, 1e-9);
+
+  const fr = new Float32Array(fftSize);
+  const fi = new Float32Array(fftSize);
+
+  for (let f = 0; f < frames; f++) {
+    const start = f * hopSize;
+    for (let i = 0; i < fftSize; i++) {
+      fr[i] = (sampleAt ? sampleAt(start + i) : samples[start + i]) * win[i];
+      fi[i] = 0;
+    }
+    fft(fr, fi);
+    const row = f * bins;
+    for (let b = 0; b < bins; b++) { re[row + b] = fr[b]; im[row + b] = fi[b]; }
+  }
+  return { frames, bins, sampleRate, fftSize, hopSize, re, im, norm };
+}
+
+/**
+ * Recombine two complex STFTs (a, b - same grid from computeStftComplex) with
+ * per-stem gains into a dB spectrogram, written into `out` (a reused
+ * Float32Array(frames*bins), so a slider drag allocates nothing). Returns a
+ * { frames, bins, sampleRate, data } spec ready for renderSpectrogram.
+ */
+export function combineStftToDb(a, b, gainA, gainB, out) {
+  // Guard against any grid mismatch between the two stems: iterate only the
+  // cells both actually have (a length overrun would read `undefined` -> NaN ->
+  // an all-black image). frames is derived from what was filled.
+  const n = Math.min(a.re.length, b.re.length, out.length);
+  // Work in power: 20*log10(|z|*k) == 10*log10(|z|^2 * k^2), which drops the
+  // per-cell sqrt (this loop runs on every slider move, so it matters).
+  const k2 = (a.norm * 2) * (a.norm * 2);
+  const are = a.re, aim = a.im, bre = b.re, bim = b.im;
+  for (let i = 0; i < n; i++) {
+    const rr = gainA * are[i] + gainB * bre[i];
+    const ii = gainA * aim[i] + gainB * bim[i];
+    out[i] = 10 * Math.log10((rr * rr + ii * ii) * k2 + 1e-20);
+  }
+  const frames = a.bins ? Math.floor(n / a.bins) : 0;
+  return { frames, bins: a.bins, sampleRate: a.sampleRate, data: out };
+}
+
+// ---------- COLORMAPS ----------
+// Each returns [r,g,b] for t in [0,1]
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function makeRampMap(stops) {
+  // stops: [[t, r, g, b], ...] sorted by t
+  return (t) => {
+    if (t <= stops[0][0]) return [stops[0][1], stops[0][2], stops[0][3]];
+    for (let i = 1; i < stops.length; i++) {
+      if (t <= stops[i][0]) {
+        const lo = stops[i - 1], hi = stops[i];
+        const k = (t - lo[0]) / (hi[0] - lo[0]);
+        return [lerp(lo[1], hi[1], k), lerp(lo[2], hi[2], k), lerp(lo[3], hi[3], k)];
+      }
+    }
+    const last = stops[stops.length - 1];
+    return [last[1], last[2], last[3]];
+  };
+}
+
+export const colormaps = {
+  // matplotlib-inspired, ~7 stops each (close enough for a spectrogram)
+  viridis: makeRampMap([
+    [0.00,  68,   1,  84],
+    [0.20,  72,  35, 116],
+    [0.40,  64,  67, 135],
+    [0.60,  37, 131, 142],
+    [0.75,  53, 183, 121],
+    [0.90, 180, 222,  44],
+    [1.00, 253, 231,  37]
+  ]),
+  magma: makeRampMap([
+    [0.00,   0,   0,   4],
+    [0.20,  40,  11,  84],
+    [0.40, 101,  21, 110],
+    [0.60, 158,  47, 127],
+    [0.75, 212,  72, 109],
+    [0.90, 247, 130,  80],
+    [1.00, 252, 253, 191]
+  ]),
+  inferno: makeRampMap([
+    [0.00,   0,   0,   4],
+    [0.20,  40,   9,  88],
+    [0.40, 102,  16, 108],
+    [0.60, 174,  43, 105],
+    [0.75, 229,  80,  72],
+    [0.90, 252, 165,  29],
+    [1.00, 252, 255, 164]
+  ]),
+  grayscale: makeRampMap([
+    [0.00,   0,   0,   0],
+    [1.00, 255, 255, 255]
+  ]),
+  // phosphor: sajt90's powder blue glow on black
+  phosphor: makeRampMap([
+    [0.00,   0,   0,   0],
+    [0.30,  20,  40,  60],
+    [0.55, 128, 164, 186], // --color-mid
+    [0.80, 200, 220, 232], // --color-light-mid
+    [1.00, 247, 250, 252]  // --color-light
+  ])
+};
+
+// ---------- RENDERING ----------
+/**
+ * Paint a precomputed spectrogram onto a canvas.
+ *
+ *   opts: {
+ *     scale     - 'log' | 'linear'        (y-axis frequency mapping)
+ *     colormap  - 'viridis' | 'magma' | 'inferno' | 'grayscale' | 'phosphor'
+ *     dbFloor   - clamp values below this to colormap min  (default -90)
+ *     dbCeil    - clamp values above this to colormap max  (default -10)
+ *     minHz     - bottom of frequency axis                 (default 10)
+ *     maxHz     - top of frequency axis                    (default sampleRate/2)
+ *   }
+ *
+ * Strategy: for each output pixel (x, y) precompute the input frame index and
+ * fractional bin index, then sample with linear interpolation between adjacent
+ * bins. Writes pixels via a single ImageData blit.
+ */
+export function renderSpectrogram(canvas, spec, opts: any = {}) {
+  const { frames, bins, sampleRate, data } = spec;
+  if (!frames || !bins) {
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+
+  const scale     = opts.scale     || 'log';
+  const cmapName  = opts.colormap  || 'viridis';
+  const dbFloor   = opts.dbFloor   != null ? opts.dbFloor : -90;
+  const dbCeil    = opts.dbCeil    != null ? opts.dbCeil  : -10;
+  const minHz     = opts.minHz     != null ? opts.minHz   : 10;
+  const maxHz     = opts.maxHz     != null ? opts.maxHz   : sampleRate / 2;
+  const cmap      = colormaps[cmapName] || colormaps.viridis;
+
+  const w = canvas.width;
+  const h = canvas.height;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  const pixels = img.data;
+
+  const nyq = sampleRate / 2;
+  const dbRange = Math.max(1e-6, dbCeil - dbFloor);
+
+  // Precompute per-x time frame
+  const frameForX = new Int32Array(w);
+  for (let x = 0; x < w; x++) {
+    frameForX[x] = Math.min(frames - 1, Math.floor((x / w) * frames));
+  }
+
+  // Precompute per-y bin index (one per pixel row, top = high freq)
+  const binForY = new Float32Array(h);
+  if (scale === 'log') {
+    const logMin = Math.log10(Math.max(1, minHz));
+    const logMax = Math.log10(Math.max(logMin + 0.001, maxHz));
+    for (let y = 0; y < h; y++) {
+      const frac = 1 - y / (h - 1); // 0 at bottom, 1 at top
+      const hz = Math.pow(10, logMin + frac * (logMax - logMin));
+      binForY[y] = (hz / nyq) * bins;
+    }
+  } else {
+    for (let y = 0; y < h; y++) {
+      const frac = 1 - y / (h - 1);
+      const hz = minHz + frac * (maxHz - minHz);
+      binForY[y] = (hz / nyq) * bins;
+    }
+  }
+
+  for (let y = 0; y < h; y++) {
+    const binF = binForY[y];
+    const b0 = Math.max(0, Math.min(bins - 1, Math.floor(binF)));
+    const b1 = Math.max(0, Math.min(bins - 1, b0 + 1));
+    const kBin = binF - b0;
+
+    for (let x = 0; x < w; x++) {
+      const f = frameForX[x];
+      const row = f * bins;
+      const v0 = data[row + b0];
+      const v1 = data[row + b1];
+      const db = v0 + (v1 - v0) * kBin;
+      let t = (db - dbFloor) / dbRange;
+      if (t < 0) t = 0; else if (t > 1) t = 1;
+      const [r, g, bl] = cmap(t);
+      const o = (y * w + x) * 4;
+      pixels[o]     = r;
+      pixels[o + 1] = g;
+      pixels[o + 2] = bl;
+      pixels[o + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+}
+
+// ---------- AXIS LABELS (for HTML overlays) ----------
+export function frequencyTicks(minHz, maxHz, scale) {
+  if (scale === 'log') {
+    const ticks = [];
+    const decades = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+    for (const t of decades) {
+      if (t >= minHz && t <= maxHz) ticks.push(t);
+    }
+    return ticks;
+  }
+  // linear: pick ~6 round numbers
+  const ticks = [];
+  const step = niceStep((maxHz - minHz) / 6);
+  let v = Math.ceil(minHz / step) * step;
+  while (v <= maxHz) { ticks.push(v); v += step; }
+  return ticks;
+}
+
+function niceStep(rough) {
+  const exp = Math.floor(Math.log10(rough));
+  const base = Math.pow(10, exp);
+  const m = rough / base;
+  let nice;
+  if (m < 1.5) nice = 1;
+  else if (m < 3) nice = 2;
+  else if (m < 7) nice = 5;
+  else nice = 10;
+  return nice * base;
+}
+
+export function timeTicks(durationSec) {
+  const step = niceStep(durationSec / 6);
+  const ticks = [];
+  for (let t = 0; t <= durationSec + 1e-6; t += step) ticks.push(t);
+  return ticks;
+}
+
+export function formatHz(hz) {
+  if (hz >= 1000) return (hz / 1000).toFixed(hz >= 10000 ? 0 : 1) + 'k';
+  return Math.round(hz) + '';
+}
+
+export function formatTime(sec) {
+  if (sec < 60) return sec.toFixed(sec < 10 ? 2 : 1) + 's';
+  const m = Math.floor(sec / 60);
+  const s = sec - m * 60;
+  return m + ':' + s.toFixed(1).padStart(4, '0');
+}
