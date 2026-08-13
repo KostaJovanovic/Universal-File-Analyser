@@ -27,7 +27,7 @@ import {
 // main thread computed for Peak/RMS/Total samples. Rebuilt here rather than
 // copied across the worker boundary: it is one cheap linear pass, and sending
 // it would add another full copy of the audio to the transfer.
-function mergeMono(channels) {
+function mergeMono(channels: Float32Array[]) {
   const n = channels[0].length;
   const out = new Float32Array(n);
   for (let c = 0; c < channels.length; c++) {
@@ -44,7 +44,7 @@ function mergeMono(channels) {
 // so the added wall-time stays small while the page keeps painting. When no onTick is
 // given - the worker path, where blocking the worker thread is fine - it's null and
 // the passes run straight through. Exported so the passes share exactly one throttle.
-export function makeTick(onTick) {
+export function makeTick(onTick?: (() => void | Promise<void>) | null) {
   if (typeof onTick !== 'function') return null;
   let t = performance.now();
   return async () => {
@@ -69,7 +69,8 @@ export function makeTick(onTick) {
 // The worker passes neither `mono` (it derives one) nor `onTick` (nothing to
 // yield to on a dedicated thread), so both are optional.
 export async function* audioDspPasses({ channels, mono, sampleRate, needBpm, onTick }: {
-  channels: any; sampleRate: any; needBpm?: any; mono?: any; onTick?: any;
+  channels: Float32Array[]; sampleRate: number; needBpm?: boolean;
+  mono?: Float32Array | null; onTick?: (() => void | Promise<void>) | null;
 }) {
   const tick = makeTick(onTick);
   if (!mono) mono = mergeMono(channels);

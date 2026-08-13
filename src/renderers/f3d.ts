@@ -14,30 +14,35 @@
 import { el, row, rowHelp, h3help, fmtBytes, integrityCard, errorCard } from '../core/util.js';
 import { openZip } from './zip.js';
 
+/** The handle openZip() hands back, and the only two entry fields this reader
+    touches. Structural on purpose: zip.js infers its own shapes. */
+type ZipHandle = Awaited<ReturnType<typeof openZip>>;
+interface ZipEntry { name: string; uncompSize: number; }
+
 // docstruct.type / .subtype come through as kebab-case tokens; map the common
 // ones to a clean label and fall back to a prettified form for the rest.
-const DOC_TYPES = {
+const DOC_TYPES: Record<string, string> = {
   'part-design': 'Part design',
   'assembly-design': 'Assembly',
   'drawing-design': 'Drawing',
   'sheet-metal': 'Sheet metal part',
   'cam-design': 'Manufacture (CAM)',
 };
-const SUBTYPES = {
+const SUBTYPES: Record<string, string> = {
   'part-standard': 'Standard part',
   'part-sheetmetal': 'Sheet metal',
   'assembly-standard': 'Standard assembly',
 };
-function prettify(s) {
+function prettify(s: string) {
   return String(s || '').replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim();
 }
 
 // Pull readable strings out of the binary Manifest.dat (a mix of ASCII and
 // UTF-16LE runs). Used only for the human "document version" token (e.g.
 // "3-2-0-0") and description - the authoritative fields come from Properties.dat.
-function manifestStrings(bytes) {
+function manifestStrings(bytes: Uint8Array | null) {
   if (!bytes) return [];
-  const out = [];
+  const out: string[] = [];
   // ASCII runs
   let cur = '';
   for (let i = 0; i < bytes.length; i++) {
@@ -59,11 +64,11 @@ function manifestStrings(bytes) {
 
 // Suffix-match an entry name anywhere in the tree (depth-agnostic so the same
 // logic reads both a flat .f3d and the nested layout inside an .f3z archive).
-function findEntries(zip, re) {
-  return zip.entries.filter((e) => re.test(e.name) && e.uncompSize > 0);
+function findEntries(zip: ZipHandle, re: RegExp): ZipEntry[] {
+  return zip.entries.filter((e: ZipEntry) => re.test(e.name) && e.uncompSize > 0);
 }
 
-export async function renderF3d(file, resultsEl) {
+export async function renderF3d(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;   // the results container starts hidden (clearResultsUI)
   let zip;
   try {

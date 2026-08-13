@@ -28,9 +28,9 @@ class Reader {
   b: Uint8Array;
   p: number;
   dv: DataView;
-  constructor(bytes) { this.b = bytes; this.p = 0; this.dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength); }
+  constructor(bytes: Uint8Array) { this.b = bytes; this.p = 0; this.dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength); }
   get eof() { return this.p >= this.b.length; }
-  need(n) { if (this.p + n > this.b.length) throw new Error('unexpected end of NRBF stream'); }
+  need(n: number) { if (this.p + n > this.b.length) throw new Error('unexpected end of NRBF stream'); }
   u8() { this.need(1); return this.b[this.p++]; }
   i8() { this.need(1); return (this.b[this.p++] << 24) >> 24; }
   bool() { return this.u8() !== 0; }
@@ -62,20 +62,20 @@ class Reader {
   }
 }
 
-function bigToNum(v) {
+function bigToNum(v: number|bigint) {
   // Keep exact when within safe integer range, else fall back to a string.
   if (v >= -9007199254740991n && v <= 9007199254740991n) return Number(v);
   return v.toString();
 }
 
-let _dec = null;
-function utf8(bytes) {
+let _dec: TextDecoder|null = null;
+function utf8(bytes: Uint8Array) {
   try { (_dec = _dec || new TextDecoder('utf-8')); return _dec.decode(bytes); }
   catch (_) { let s = ''; for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]); return s; }
 }
 
 // .NET DateTime: 62-bit tick count (100 ns since 0001-01-01) + 2-bit kind.
-function decodeDateTime(dv, p) {
+function decodeDateTime(dv: DataView<ArrayBufferLike>, p: number) {
   const raw = dv.getBigUint64(p, true);
   const ticks = raw & 0x3FFFFFFFFFFFFFFFn;
   // Ticks from 0001-01-01 to Unix epoch (1970-01-01).
@@ -85,7 +85,7 @@ function decodeDateTime(dv, p) {
   return isNaN(d.getTime()) ? ticks.toString() + ' ticks' : d.toISOString();
 }
 
-export function parseNrbf(bytes) {
+export function parseNrbf(bytes: Uint8Array) {
   try {
     const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     const r = new Reader(input);
@@ -99,13 +99,13 @@ export function parseNrbf(bytes) {
     const classMeta = new Map();      // objectId -> { name, members:[{name,bt,ai}] }
     const libraries = new Map();      // libraryId -> name
     const pendingRefs = [];           // {set(val)} closures to resolve after the pass
-    const classNames = [];
+    const classNames: any[] = [];
     let count = 0;
 
-    const register = (id, val) => { if (id) { objects.set(id, val); if (++count > MAX_OBJECTS) throw new Error('object graph too large'); } return val; };
+    const register = (id: number, val: any[]) => { if (id) { objects.set(id, val); if (++count > MAX_OBJECTS) throw new Error('object graph too large'); } return val; };
 
     // Read the AdditionalInfo that follows a member's BinaryTypeEnum.
-    function readAdditional(bt) {
+    function readAdditional(bt: number) {
       if (bt === 0 || bt === 7) return r.u8();            // Primitive / PrimitiveArray -> PrimitiveTypeEnum
       if (bt === 3) return r.str();                        // SystemClass -> class name
       if (bt === 4) { const name = r.str(); const lib = r.i32(); return { name, lib }; } // Class -> name + libraryId
@@ -113,15 +113,15 @@ export function parseNrbf(bytes) {
     }
 
     // Read MemberTypeInfo for `n` members: the type-enum array, then their infos.
-    function readMemberTypeInfo(n) {
+    function readMemberTypeInfo(n: number) {
       const bts = [];
       for (let i = 0; i < n; i++) bts.push(r.u8());
-      const ais = [];
+      const ais: any[] = [];
       for (let i = 0; i < n; i++) ais.push(readAdditional(bts[i]));
       return bts.map((bt, i) => ({ bt, ai: ais[i] }));
     }
 
-    function readPrimitive(pt) {
+    function readPrimitive(pt: string|number) {
       switch (pt) {
         case 1: return r.bool();
         case 2: return r.u8();
@@ -155,7 +155,7 @@ export function parseNrbf(bytes) {
     }
 
     // Read the member values for a class given its layout, into an object.
-    function readClassValues(meta, id) {
+    function readClassValues(meta, id: number) {
       // Null-prototype accumulator: member names come from the untrusted .NET
       // stream, so a member literally named __proto__ must not be able to change
       // this object's prototype (prototype pollution).
@@ -174,7 +174,7 @@ export function parseNrbf(bytes) {
       return obj;
     }
 
-    function readClassWithMembersAndTypes(system) {
+    function readClassWithMembersAndTypes(system: boolean) {
       const id = r.i32();
       const name = r.str();
       const n = r.i32();
@@ -192,7 +192,7 @@ export function parseNrbf(bytes) {
 
     // Fill an already-registered array in place (so reference placeholders are
     // patched on the real array, and an array can even reference itself).
-    function fillArray(arr, length, readEl) {
+    function fillArray(arr: null[], length: number, readEl) {
       let i = 0;
       while (i < length) {
         // Object/String arrays may encode runs of nulls compactly.

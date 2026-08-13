@@ -1897,7 +1897,7 @@ function detectSlicer(comments) {
   return null;
 }
 
-export async function renderGcode(file, resultsEl, opts?) {
+export async function renderGcode(file: File, resultsEl: HTMLElement, opts?) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reconstructing the print from "${file.name}"…`));

@@ -32,14 +32,14 @@ function readAnalyticsQueue() {
   } catch (_) { return []; }
 }
 
-function writeAnalyticsQueue(list) {
+function writeAnalyticsQueue(list: string|any[]) {
   try {
     // Keep the most recent items if we somehow overflow the cap.
     localStorage.setItem(ANALYTICS_QUEUE_KEY, JSON.stringify(list.slice(-ANALYTICS_QUEUE_MAX)));
   } catch (_) { /* storage full / disabled - analytics is best-effort */ }
 }
 
-function enqueueAnalysed(ext, supported) {
+function enqueueAnalysed(ext, supported: boolean) {
   const q = readAnalyticsQueue();
   q.push({ ext: ext || '', supported: !!supported });
   writeAnalyticsQueue(q);
@@ -47,7 +47,7 @@ function enqueueAnalysed(ext, supported) {
 
 // POST one event. Resolves true only if the server actually recorded it (2xx and
 // not rate-limited); false means "try again later" (offline, blocked, throttled).
-function postAnalysed(ext, supported) {
+function postAnalysed(ext, supported: boolean) {
   return fetch(ANALYSED_EP, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -84,7 +84,7 @@ export function flushAnalyticsQueue() {
   })();
 }
 
-export function recordAnalysed(ext, supported) {
+export function recordAnalysed(ext, supported: boolean) {
   try {
     // Offline: skip the doomed request and bank it straight away.
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -146,7 +146,7 @@ export function recordFolderHistory(files) {
   } catch (_) { /* best-effort */ }
 }
 
-function relTime(ms) {
+function relTime(ms: number) {
   const s = Math.max(0, (Date.now() - ms) / 1000);
   if (s < 60) return 'just now';
   const m = s / 60; if (m < 60) return Math.floor(m) + ' min ago';

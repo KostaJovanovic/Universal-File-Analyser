@@ -14,7 +14,7 @@ import { fmtBytes, preBlock, fmtDate, readSlice } from '../core/util.js';
 import { Reader, ascii, latin1, utf8, hexBytes } from '../core/binutil.js';
 import { parsePlist } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
-import type { Row } from '../core/types.js';
+import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- small helpers ----------
 
@@ -41,7 +41,7 @@ async function sha256b64(bytes) {
 }
 
 // Read the whole file as text (capped) - most security formats here are small.
-async function readText(file, cap = 2_000_000) {
+async function readText(file: File, cap = 2_000_000) {
   return await file.slice(0, Math.min(file.size, cap)).text();
 }
 
@@ -66,7 +66,7 @@ async function parseOpenSshPub(text) {
   const m = text.trim().match(/^((?:ssh|ecdsa|sk)-[\w@.-]+)\s+([A-Za-z0-9+/=]+)(?:\s+(.*))?$/);
   if (!m) return null;
   const algo = m[1], blob = m[2], comment = (m[3] || '').trim();
-  const out = {
+  const out: Row = {
     'Format': 'OpenSSH public key',
     'Key type': algo,
   };
@@ -80,7 +80,7 @@ async function parseOpenSshPub(text) {
   return out;
 }
 
-async function parsePemKey(file, ext) {
+async function parsePemKey(file: File, ext: string) {
   const text = await readText(file, 200_000);
 
   // .pub may be an OpenSSH one-liner rather than PEM.
@@ -90,7 +90,7 @@ async function parsePemKey(file, ext) {
   }
   const banner = text.match(PEM_RE)[1].trim();
   const kind = pemKind(banner);
-  const out = {
+  const out: Row = {
     'Format': 'PEM ' + banner.toLowerCase(),
     'Key type': kind.type,
     'Encoding': kind.scheme,
@@ -127,13 +127,13 @@ async function parsePemKey(file, ext) {
 }
 
 // ---------- .p8 (PKCS#8) ----------
-async function parseP8(file) {
+async function parseP8(file: File) {
   const text = await readText(file, 200_000);
   const m = text.match(PEM_RE);
   if (!m) return null;
   const banner = m[1].trim();
   const encrypted = /ENCRYPTED/i.test(banner);
-  const out = {
+  const out: Row = {
     'Format': 'PKCS#8 key (' + banner.toLowerCase() + ')',
     'Encoding': 'PKCS#8',
     'Encrypted': encrypted ? 'yes (PBES2)' : 'no',
@@ -144,13 +144,13 @@ async function parseP8(file) {
 }
 
 // ---------- PEM identify-only: .csr / .crl / .p7b / .p7c ----------
-async function parsePemIdentify(file, label, banners, note) {
+async function parsePemIdentify(file: File, label, banners, note) {
   const text = await readText(file, 500_000);
   const m = text.match(PEM_RE);
   if (!m) return null;
   const banner = m[1].trim().toUpperCase();
   if (!banners.some((b) => banner.includes(b))) return null;
-  const out = { 'Format': label, 'PEM banner': m[1].trim() };
+  const out: Row = { 'Format': label, 'PEM banner': m[1].trim() };
   if (note) out['Note'] = note;
 
   // Best-effort: pull a CN out of the printable ASN.1 body for CSR/CRL.
@@ -165,11 +165,11 @@ async function parsePemIdentify(file, label, banners, note) {
 }
 
 // ---------- .ppk (PuTTY) ----------
-async function parsePpk(file) {
+async function parsePpk(file: File) {
   const text = await readText(file, 500_000);
   const m = text.match(/^PuTTY-User-Key-File-(\d+):\s*(.+)$/m);
   if (!m) return null;
-  const out = {
+  const out: Row = {
     'Format': 'PuTTY private key (.ppk)',
     'Format version': m[1],
     'Algorithm': m[2].trim(),
@@ -186,7 +186,7 @@ async function parsePpk(file) {
 }
 
 // ---------- .ovpn (OpenVPN) ----------
-async function parseOvpn(file) {
+async function parseOvpn(file: File) {
   const text = await readText(file, 1_000_000);
   if (!/^\s*(client|remote|dev\s+tun|dev\s+tap|tls-auth|proto)\b/m.test(text)) return null;
   const out: Row = { 'Format': 'OpenVPN profile (.ovpn)' };
@@ -215,7 +215,7 @@ async function parseOvpn(file) {
 }
 
 // ---------- WireGuard: .wg / .conf ----------
-async function parseWireguard(file, ext) {
+async function parseWireguard(file: File, ext: string) {
   const text = await readText(file, 200_000);
   const hasIface = /^\s*\[Interface\]/im.test(text);
   const hasKeys = /^\s*(PrivateKey|PublicKey)\s*=/im.test(text);
@@ -223,7 +223,7 @@ async function parseWireguard(file, ext) {
   if (ext === 'conf' && !(hasIface && hasKeys)) return null;
   if (!hasIface) return null;
   const peers = (text.match(/^\s*\[Peer\]/gim) || []).length;
-  const out = {
+  const out: Row = {
     'Format': 'WireGuard configuration',
     'Peers': peers,
   };
@@ -241,7 +241,7 @@ async function parseWireguard(file, ext) {
 
 // ---------- Java KeyStore: .jks / .keystore / .jceks ----------
 // The relevant attribute OIDs for a certificate's subject/issuer Distinguished Name.
-const X509_DN_ATTR = { '2.5.4.3': 'CN', '2.5.4.10': 'O', '2.5.4.11': 'OU', '2.5.4.6': 'C', '2.5.4.7': 'L', '2.5.4.8': 'ST', '1.2.840.113549.1.9.1': 'E' };
+const X509_DN_ATTR: Record<string, string> = { '2.5.4.3': 'CN', '2.5.4.10': 'O', '2.5.4.11': 'OU', '2.5.4.6': 'C', '2.5.4.7': 'L', '2.5.4.8': 'ST', '1.2.840.113549.1.9.1': 'E' };
 
 // Decode a DER Name (RDNSequence) node into a short "CN=.., O=.." string.
 function derName(b, nameNode) {
@@ -298,7 +298,7 @@ async function sha256hex(bytes) {
 // keys are password-encrypted and are NOT decrypted; the certificates are
 // plaintext, so we decode each X.509 (subject, issuer, validity) and compute its
 // SHA-256 fingerprint - the same detail `keytool -list -v` shows, no password needed.
-async function parseJks(file) {
+async function parseJks(file: File) {
   const bytes = await readSlice(file, 0, 16_000_000);
   if (bytes.length < 12) return null;
   const r = new Reader(bytes);          // big-endian
@@ -381,7 +381,7 @@ async function parseJks(file) {
 }
 
 // ---------- known_hosts / authorized_keys ----------
-async function parseSshKeyDb(file, ext) {
+async function parseSshKeyDb(file: File, ext: string) {
   const text = await readText(file, 1_000_000);
   const lines = text.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith('#'));
   if (!lines.length) return null;
@@ -393,7 +393,7 @@ async function parseSshKeyDb(file, ext) {
     if (m) algos[m[1]] = (algos[m[1]] || 0) + 1;
     if (/-cert-v01@openssh\.com/.test(l)) certs++;
   }
-  const out = {
+  const out: Row = {
     'Format': ext === 'authorized_keys' ? 'OpenSSH authorized_keys' : 'OpenSSH known_hosts',
     'Entries': lines.length,
     'Key algorithms': Object.entries(algos).map(([k, v]) => k + ' (' + v + ')').join(', ') || '-',
@@ -404,7 +404,7 @@ async function parseSshKeyDb(file, ext) {
 }
 
 // ---------- .mobileconfig (Apple config profile) ----------
-async function parseMobileconfig(file) {
+async function parseMobileconfig(file: File) {
   const res = await parsePlist(file);
   if (!res || !res.value || typeof res.value !== 'object') return null;
   const v = res.value;
@@ -425,7 +425,7 @@ async function parseMobileconfig(file) {
 }
 
 // ---------- .mobileprovision (CMS-wrapped plist) ----------
-async function parseMobileprovision(file) {
+async function parseMobileprovision(file: File) {
   const buf = await readSlice(file, 0, 4_000_000);
   const txt = latin1(buf);
   const start = txt.indexOf('<?xml');
@@ -435,7 +435,7 @@ async function parseMobileprovision(file) {
   const res = await parsePlist(new TextEncoder().encode(xml));
   if (!res || !res.value) return null;
   const v = res.value;
-  const out = { 'Format': 'Apple Provisioning Profile (.mobileprovision)' };
+  const out: Row = { 'Format': 'Apple Provisioning Profile (.mobileprovision)' };
   if (v.Name) out['Name'] = String(v.Name);
   if (v.AppIDName) out['App ID name'] = String(v.AppIDName);
   if (v.TeamName) out['Team name'] = String(v.TeamName);
@@ -458,7 +458,7 @@ async function parseMobileprovision(file) {
 }
 
 // ---------- .reg (Windows registry export) ----------
-async function parseReg(file) {
+async function parseReg(file: File) {
   const text = await readText(file, 2_000_000);
   if (!/^\s*(Windows Registry Editor Version|REGEDIT4)/m.test(text)) return null;
   const verLine = (text.match(/^\s*(Windows Registry Editor Version [\d.]+|REGEDIT4)/m) || [])[1];
@@ -488,7 +488,7 @@ async function parseReg(file) {
 }
 
 // ---------- .sldreg (SolidWorks Settings Wizard export - a REGEDIT4 file) ----------
-async function parseSldreg(file) {
+async function parseSldreg(file: File) {
   const text = await readText(file, 4_000_000);
   if (!/^\s*REGEDIT4/.test(text)) return null;
   const keys = Array.from(text.matchAll(/^\s*\[(-?)(HKEY[^\]]+)\]/gm));
@@ -523,7 +523,7 @@ async function parseSldreg(file) {
 }
 
 // ---------- pcap / pcapng (basic header) ----------
-const PCAP_LINKTYPES = { 0: 'NULL', 1: 'Ethernet', 6: 'Token Ring', 105: '802.11', 113: 'Linux SLL', 127: '802.11 radiotap', 228: 'IPv4', 229: 'IPv6', 276: 'Linux SLL2' };
+const PCAP_LINKTYPES: Record<number, string> = { 0: 'NULL', 1: 'Ethernet', 6: 'Token Ring', 105: '802.11', 113: 'Linux SLL', 127: '802.11 radiotap', 228: 'IPv4', 229: 'IPv6', 276: 'Linux SLL2' };
 function parsePcap(head) {
   if (head.length < 24) return null;
   const r0 = new Reader(head);
@@ -643,7 +643,7 @@ function derInt(b, n) {
   return v;
 }
 
-const PKCS12_OIDS = {
+const PKCS12_OIDS: Record<string, string> = {
   // SafeBag bag types (1.2.840.113549.1.12.10.1.x)
   '1.2.840.113549.1.12.10.1.1': 'keyBag',
   '1.2.840.113549.1.12.10.1.2': 'pkcs8ShroudedKeyBag',
@@ -652,7 +652,7 @@ const PKCS12_OIDS = {
   '1.2.840.113549.1.12.10.1.5': 'secretBag',
   '1.2.840.113549.1.12.10.1.6': 'safeContentsBag',
 };
-const ENC_OIDS = {
+const ENC_OIDS: Record<string, string> = {
   '1.2.840.113549.1.12.1.1': 'pbeWithSHA1And128BitRC4',
   '1.2.840.113549.1.12.1.2': 'pbeWithSHA1And40BitRC4',
   '1.2.840.113549.1.12.1.3': 'pbeWithSHA1And3-KeyTripleDES-CBC',
@@ -666,7 +666,7 @@ const ENC_OIDS = {
   '2.16.840.1.101.3.4.1.42': 'AES-256-CBC',
   '1.2.840.113549.3.7': '3DES-CBC',
 };
-const DIGEST_OIDS = {
+const DIGEST_OIDS: Record<string, string> = {
   '1.3.14.3.2.26': 'SHA-1',
   '2.16.840.1.101.3.4.2.1': 'SHA-256',
   '2.16.840.1.101.3.4.2.2': 'SHA-384',
@@ -676,7 +676,7 @@ const DIGEST_OIDS = {
 const PKCS7_DATA = '1.2.840.113549.1.7.1';
 const PKCS7_ENCRYPTED_DATA = '1.2.840.113549.1.7.6';
 
-async function parseP12(file) {
+async function parseP12(file: File) {
   // Read the whole file (these bundles are small); the MAC lives at the end so a
   // 4 KB head isn't enough. Cap generously.
   let b;
@@ -691,7 +691,7 @@ async function parseP12(file) {
     const top = [...derChildren(b, pfx.content, pfx.end)];
     if (top.length < 2) throw new Error('short PFX');
 
-    const out = { 'Format': 'PKCS#12 / PFX bundle' };
+    const out: Row = { 'Format': 'PKCS#12 / PFX bundle' };
 
     const version = derInt(b, top[0]);
     if (version != null) out['PFX version'] = 'v' + version;
@@ -826,7 +826,7 @@ function parseEvt(head) {
   const current = r.u32();
   const maxSize = r.u32();
   const flags = r.u32();
-  const out = {
+  const out: Row = {
     'Format': 'Windows Event Log (legacy .evt)',
     'Signature': 'LfLe',
     'Format version': major + '.' + minor,
@@ -849,7 +849,7 @@ function parseEvt(head) {
 }
 
 // ---------- YARA rules: .yar / .yara ----------
-async function parseYara(file) {
+async function parseYara(file: File) {
   const text = await readText(file, 2_000_000);
   // Must look like YARA: a `rule Name {` block (optionally global/private).
   const ruleRe = /^\s*(?:global\s+|private\s+)*rule\s+([A-Za-z_][A-Za-z0-9_]*)/gm;
@@ -875,7 +875,7 @@ async function parseYara(file) {
 }
 
 // ---------- Snort / Suricata IDS rules: .rules ----------
-async function parseRules(file) {
+async function parseRules(file: File) {
   const text = await readText(file, 4_000_000);
   const lines = text.split(/\r?\n/);
   const actionRe = /^\s*(alert|drop|reject|pass|log|sdrop|rejectsrc|rejectdst|rejectboth)\s+(\w+)\b/;
@@ -921,7 +921,7 @@ async function parseRules(file) {
 }
 
 // ---------- STIX threat intel: .stix (JSON) ----------
-async function parseStix(file) {
+async function parseStix(file: File) {
   const text = await readText(file, 8_000_000);
   let j;
   try { j = JSON.parse(text); } catch (_) { return null; }
@@ -953,7 +953,7 @@ async function parseStix(file) {
 }
 
 // ---------- OpenIOC: .ioc (XML) ----------
-async function parseIoc(file) {
+async function parseIoc(file: File) {
   const text = await readText(file, 4_000_000);
   if (!/<ioc\b/i.test(text)) return null;
   const out: Row = { 'Format': 'OpenIOC indicator (Mandiant)' };
@@ -984,7 +984,7 @@ async function parseIoc(file) {
 }
 
 // ---------- Fiddler session archive: .saz (ZIP) ----------
-async function parseSaz(file) {
+async function parseSaz(file: File) {
   let z;
   try { z = await openZip(file, 64 * 1024 * 1024); } catch (_) { return null; }
   const names = z.names();
@@ -1028,11 +1028,11 @@ async function parseSaz(file) {
 }
 
 // ---------- 1Password export: .1pux (ZIP) ----------
-async function parse1pux(file) {
+async function parse1pux(file: File) {
   let z;
   try { z = await openZip(file, 64 * 1024 * 1024); } catch (_) { return null; }
   if (!z.has('export.data') && !z.has('export.attributes')) return null;
-  const out = { 'Format': '1Password 8 export (.1pux)' };
+  const out: Row = { 'Format': '1Password 8 export (.1pux)' };
   const attrText = await z.text('export.attributes');
   if (attrText) {
     try {
@@ -1071,12 +1071,12 @@ async function parse1pux(file) {
 }
 
 // ---------- 1Password OPVault: .opvault (bundle / folder upload) ----------
-async function parseOpvault(file, ext, name) {
+async function parseOpvault(file: File, ext: string, name) {
   // .opvault is normally a directory bundle; if one inner file is opened we can
   // still recognise its profile.js / band JSON, but most often this is the
   // package itself which a browser delivers as an opaque blob - identify only.
   const fname = (name || file.name || '').toLowerCase();
-  const out = {
+  const out: Row = {
     'Format': '1Password OPVault',
     'Note': 'AgileBits OPVault is a directory bundle (default/profile.js + band_*.js + AES-GCM-encrypted item bands). Item contents are encrypted with a key derived from the master password (PBKDF2) and cannot be read here - identification only.',
   };
@@ -1096,7 +1096,7 @@ function parseKeychain(head) {
     const r = new Reader(head);            // big-endian
     r.seek(4);
     const version = head.length >= 8 ? r.u32() : null;
-    const out = {
+    const out: Row = {
       'Format': 'Apple Keychain (classic)',
       'Signature': 'kych',
     };
@@ -1130,14 +1130,14 @@ function parseAff(head) {
 }
 
 // ---------- AFF4 forensic image: .aff4 (ZIP + RDF-Turtle) ----------
-async function parseAff4(file) {
+async function parseAff4(file: File) {
   let z;
   try { z = await openZip(file, 64 * 1024 * 1024); } catch (_) { return null; }
   // AFF4 is a ZIP carrying an RDF "information.turtle" graph and a container.description.
   const hasTurtle = z.match(/information\.turtle$/i).length > 0;
   const hasDesc = z.has('container.description');
   if (!hasTurtle && !hasDesc) return null;
-  const out = { 'Format': 'AFF4 forensic image' };
+  const out: Row = { 'Format': 'AFF4 forensic image' };
   if (hasDesc) {
     const desc = await z.text('container.description');
     if (desc) out['Container URN'] = desc.trim().split(/\r?\n/)[0].slice(0, 120);
@@ -1162,8 +1162,8 @@ async function parseAff4(file) {
 }
 
 // ---------- OpenPGP: .pgp / .gpg / .sig / .asc ----------
-const PGP_PUBKEY_ALGOS = { 1: 'RSA', 2: 'RSA (encrypt-only)', 3: 'RSA (sign-only)', 16: 'Elgamal', 17: 'DSA', 18: 'ECDH', 19: 'ECDSA', 22: 'EdDSA', 23: 'X25519', 25: 'X448', 27: 'Ed25519', 28: 'Ed448' };
-const PGP_TAGS = {
+const PGP_PUBKEY_ALGOS: Record<string, string> = { 1: 'RSA', 2: 'RSA (encrypt-only)', 3: 'RSA (sign-only)', 16: 'Elgamal', 17: 'DSA', 18: 'ECDH', 19: 'ECDSA', 22: 'EdDSA', 23: 'X25519', 25: 'X448', 27: 'Ed25519', 28: 'Ed448' };
+const PGP_TAGS: Record<string, string> = {
   1: 'Public-Key Encrypted Session Key', 2: 'Signature', 3: 'Symmetric-Key Encrypted Session Key',
   4: 'One-Pass Signature', 5: 'Secret Key', 6: 'Public Key', 7: 'Secret Subkey',
   8: 'Compressed Data', 9: 'Symmetrically Encrypted Data', 10: 'Marker', 11: 'Literal Data',
@@ -1220,7 +1220,7 @@ function pgpWalk(b, limit) {
   return packets ? { tags, info } : null;
 }
 
-async function parsePgp(file, ext) {
+async function parsePgp(file: File, ext: string) {
   const head = await readSlice(file, 0, 1_000_000);
   const txt = latin1(head);
   const out: any = {};
@@ -1275,7 +1275,7 @@ function parseKdb(head) {
   const sig1 = r.u32();
   const sig2 = r.u32();
   if (sig1 !== 0x9AA2D903) return null;
-  const out = { 'Format': 'KeePass 1.x database (.kdb)' };
+  const out: Row = { 'Format': 'KeePass 1.x database (.kdb)' };
   // KDB (KeePass 1) second signature is 0xB54BFB65; KDBX share the first sig.
   if (sig2 === 0xB54BFB65) out['Variant'] = 'KeePass 1.x (KDB)';
   else out['Variant'] = 'KeePass (signature 2 = 0x' + sig2.toString(16).toUpperCase() + ')';
@@ -1300,7 +1300,7 @@ function parsePvk(head) {
   const encrypted = r.u32();
   const saltLen = r.u32();
   const keyLen = r.u32();
-  const out = {
+  const out: Row = {
     'Format': 'Microsoft private key (.pvk)',
     'Signature': '0x1EF1B5B0',
     'Key type': keyType === 1 ? 'AT_KEYEXCHANGE' : keyType === 2 ? 'AT_SIGNATURE' : 'type ' + keyType,
@@ -1319,7 +1319,7 @@ function idOnly(format, note) {
 }
 
 // ---------- dispatch ----------
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   // PEM keys
   key: (c) => parsePemKey(c.file, c.ext),
   pub: (c) => parsePemKey(c.file, c.ext),

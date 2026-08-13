@@ -15,14 +15,14 @@ async function loadSheetJs() {
   return window.XLSX || null;
 }
 
-function colName(n) {
+function colName(n: number): string {
   let s = '';
   n += 1;
   while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
   return s;
 }
 
-export async function renderXlsb(file, resultsEl) {
+export async function renderXlsb(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading Excel workbook "${file.name}"…`));
@@ -46,7 +46,7 @@ export async function renderXlsb(file, resultsEl) {
 
   resultsEl.innerHTML = '';
 
-  const names = wb.SheetNames || [];
+  const names: string[] = wb.SheetNames || [];
 
   // ---- Sheet tabs + table (same UI as .xlsx; leads the analysis - it's the
   // primary way to work with the data). ----
@@ -59,8 +59,8 @@ export async function renderXlsb(file, resultsEl) {
     sheetCard.appendChild(tableWrap);
     resultsEl.appendChild(sheetCard);
 
-    let tkHandle = null;
-    const renderSheet = (idx) => {
+    let tkHandle: any = null;
+    const renderSheet = (idx: number) => {
       if (tkHandle) { tkHandle.destroy(); tkHandle = null; }
       [...tabRow.children].forEach((c, i) => c.classList.toggle('is-active', i === idx));
       tableWrap.innerHTML = '';
@@ -73,7 +73,7 @@ export async function renderXlsb(file, resultsEl) {
         const v = (sheetRows[0] || [])[c];
         return v == null || v === '' ? colName(c) : String(v);
       });
-      const wbRows = sheetRows.slice(1).map((r) => Array.from({ length: maxCol + 1 }, (_, c) => (r[c] == null ? '' : String(r[c]))));
+      const wbRows = sheetRows.slice(1).map((r: any[]) => Array.from({ length: maxCol + 1 }, (_, c) => (r[c] == null ? '' : String(r[c]))));
       const tkHost = el('div');
       tableWrap.appendChild(tkHost);
       import('./tablekit.js').then(({ mountTableKit }) => {

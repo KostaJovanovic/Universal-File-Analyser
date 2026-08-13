@@ -12,7 +12,7 @@
 import { el, row, buildReadout, fmtBytes, rowHelp, integrityCard, errorCard } from '../core/util.js';
 import { HASH_FILE_MAX } from '../core/limits.js';
 
-function esc(s) {
+function esc(s: unknown): string {
   // Escape quotes too: mdInline() emits already-esc()'d text into href="..."
   // attributes, so an unescaped " would let a crafted markdown link break out
   // of the attribute and inject an event handler.
@@ -20,17 +20,17 @@ function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 // Strip ANSI colour escapes (common in stream output and tracebacks).
-function stripAnsi(s) {
+function stripAnsi(s: unknown): string {
   return String(s).replace(/\[[0-9;]*[A-Za-z]/g, '');
 }
 // `source` is a string or an array of line strings.
-function joinSrc(src) {
+function joinSrc(src: unknown): string {
   return Array.isArray(src) ? src.join('') : (src == null ? '' : String(src));
 }
 
 // ---------- minimal, safe markdown for narrative cells ----------
 // Operates on already-escaped text: inline code, bold, italic, links.
-function mdInline(escaped) {
+function mdInline(escaped: string): string {
   let s = escaped;
   s = s.replace(/`([^`]+)`/g, (m, c) => '<code class="anr-md-icode">' + c + '</code>');
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -39,11 +39,11 @@ function mdInline(escaped) {
     (m, t, h) => '<a class="anr-md-link" href="' + h + '" target="_blank" rel="noopener noreferrer">' + t + '</a>');
   return s;
 }
-function mdToEl(src) {
+function mdToEl(src: string) {
   const wrap = el('div', { class: 'anr-md-body anr-nb-md' });
   const lines = src.replace(/\r\n?/g, '\n').split('\n');
   let html = '';
-  let inList = false, inCode = false, para = [];
+  let inList = false, inCode = false, para: string[] = [];
   const flushPara = () => { if (para.length) { html += '<p>' + mdInline(esc(para.join(' '))) + '</p>'; para = []; } };
   const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
   for (const ln of lines) {
@@ -68,7 +68,7 @@ function mdToEl(src) {
 }
 
 // ---------- one output of a code cell ----------
-function renderOutput(out) {
+function renderOutput(out: any): HTMLElement | null {
   const t = out.output_type;
   if (t === 'stream') {
     const pre = el('pre', { class: 'anr-nb-out' + (out.name === 'stderr' ? ' anr-nb-out--err' : '') });
@@ -106,7 +106,7 @@ function renderOutput(out) {
   return null;
 }
 
-export async function renderNotebook(file, container) {
+export async function renderNotebook(file: File, container: HTMLElement) {
   container.hidden = false;
   container.innerHTML = '';
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading notebook...'));
@@ -127,7 +127,7 @@ export async function renderNotebook(file, container) {
     (meta.language_info && meta.language_info.name) || '';
   const langVer = meta.language_info && meta.language_info.version;
   const kernel = meta.kernelspec && meta.kernelspec.display_name;
-  const counts = { code: 0, markdown: 0, raw: 0 };
+  const counts: Record<string, number> = { code: 0, markdown: 0, raw: 0 };
   for (const c of cells) { const k = c.cell_type; if (counts[k] != null) counts[k]++; }
 
   container.innerHTML = '';
@@ -158,7 +158,7 @@ export async function renderNotebook(file, container) {
 
   const BATCH = 40;
   let shown = 0;
-  function addCell(i) {
+  function addCell(i: number) {
     const c = cells[i];
     const src = joinSrc(c.source || c.input);
     const block = el('div', { class: 'anr-nb-cell anr-nb-cell--' + (c.cell_type || 'raw') });
@@ -186,7 +186,7 @@ export async function renderNotebook(file, container) {
   btnRow.appendChild(moreBtn);
   btnRow.appendChild(allBtn);
   card.appendChild(btnRow);
-  function reveal(upTo) {
+  function reveal(upTo: number) {
     for (; shown < upTo && shown < cells.length; shown++) addCell(shown);
     if (shown >= cells.length) btnRow.hidden = true;
     else { btnRow.hidden = false; moreBtn.textContent = 'Show more cells (' + shown + '/' + cells.length + ')'; }

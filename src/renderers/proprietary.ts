@@ -10,10 +10,21 @@ import { FORMATS } from './proprietary-formats.js';
 import { EXT_VARIANTS, detectVariant } from '../core/formats.js';
 import { parseNrbf } from '../lib/nrbf.js';
 import { safe } from '../parsers/parser-util.js';
-import type { Row } from '../core/types.js';
+import type { Row, ParseFn, ParseCtx, RowSection } from '../core/types.js';
+
+/* One IMAGE_RESOURCE_DIRECTORY_ENTRY as read by extractPeIcon's `readDir`. */
+interface RsrcEntry { id: number; isDir: boolean; off: number }
+/* A resolved IMAGE_RESOURCE_DATA_ENTRY: a byte span inside the .rsrc slice. */
+interface RsrcLeaf { start: number; size: number }
+/* One .glif <point>, already parsed to numbers by renderGlifOutline. */
+interface GlifPoint { x: number; y: number; type: string | null }
+/* A drawing op for one .glif contour: line, quadratic or cubic, with its
+   control/end points as [x, y] pairs. */
+interface GlifOp { t: 'L' | 'Q' | 'C'; p: number[][] }
+interface GlifContour { start: number[]; ops: GlifOp[]; closed: boolean }
 
 // ---------- helpers ----------
-function extFromName(name) {
+function extFromName(name: string) {
   const dot = name.lastIndexOf('.');
   return dot > 0 ? name.slice(dot + 1).toLowerCase().replace(/^\./, '') : '';
 }
@@ -24,16 +35,16 @@ function extFromName(name) {
 // on a phone. Replace an existing viewport meta (a forced wide one defeats the
 // preview) or inject one after <head> / <html>, falling back to a prefix.
 const VIEWPORT_META = '<meta name="viewport" content="width=device-width, initial-scale=1">';
-function forceDeviceViewport(html) {
+function forceDeviceViewport(html: string) {
   const vpRe = /<meta\b[^>]*\bname\s*=\s*["']?viewport["']?[^>]*>/i;
   if (vpRe.test(html)) return html.replace(vpRe, VIEWPORT_META);
-  if (/<head\b[^>]*>/i.test(html)) return html.replace(/<head\b[^>]*>/i, (m) => m + VIEWPORT_META);
-  if (/<html\b[^>]*>/i.test(html)) return html.replace(/<html\b[^>]*>/i, (m) => m + '<head>' + VIEWPORT_META + '</head>');
+  if (/<head\b[^>]*>/i.test(html)) return html.replace(/<head\b[^>]*>/i, (m: string) => m + VIEWPORT_META);
+  if (/<html\b[^>]*>/i.test(html)) return html.replace(/<html\b[^>]*>/i, (m: string) => m + '<head>' + VIEWPORT_META + '</head>');
   return VIEWPORT_META + html;
 }
 
 // ---------- PSD header ----------
-function parsePsd(buf) {
+function parsePsd(buf: Uint8Array) {
   if (buf.length < 30) return null;
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const sig = ascii(buf, 0, 4);
@@ -43,7 +54,7 @@ function parsePsd(buf) {
   const height = view.getUint32(14);
   const width = view.getUint32(18);
   const depth = view.getUint16(22);
-  const modeMap = { 0: 'Bitmap', 1: 'Grayscale', 2: 'Indexed', 3: 'RGB', 4: 'CMYK', 7: 'Multichannel', 8: 'Duotone', 9: 'Lab' };
+  const modeMap: Record<number, string> = { 0: 'Bitmap', 1: 'Grayscale', 2: 'Indexed', 3: 'RGB', 4: 'CMYK', 7: 'Multichannel', 8: 'Duotone', 9: 'Lab' };
   const mode = modeMap[view.getUint16(24)] || 'Unknown';
   return {
     'Version': version === 2 ? 'PSB (Large Document)' : 'PSD',
@@ -55,9 +66,9 @@ function parsePsd(buf) {
 }
 
 // ---------- DWG version ----------
-function parseDwg(buf) {
+function parseDwg(buf: Uint8Array) {
   const ver = ascii(buf, 0, 6);
-  const versions = {
+  const versions: Record<string, string> = {
     'AC1032': '2018–2024', 'AC1027': '2013–2017', 'AC1024': '2010–2012',
     'AC1021': '2007–2009', 'AC1018': '2004–2006', 'AC1015': '2000–2003',
     'AC1014': 'R14', 'AC1012': 'R13', 'AC1009': 'R11/R12'
@@ -68,7 +79,7 @@ function parseDwg(buf) {
 }
 
 // ---------- Blender header ----------
-function parseBlender(buf) {
+function parseBlender(buf: Uint8Array) {
   const sig = ascii(buf, 0, 7);
   if (sig !== 'BLENDER') return null;
   const ptrSize = buf[7] === 0x5F ? '32-bit' : '64-bit';
@@ -84,7 +95,7 @@ function parseBlender(buf) {
 }
 
 // ---------- FBX ----------
-function parseFbx(buf) {
+function parseFbx(buf: Uint8Array) {
   const sig = ascii(buf, 0, 20);
   if (!sig.startsWith('Kaydara FBX Binary')) return null;
   if (buf.length < 27) return { 'Format': 'FBX Binary' };
@@ -97,7 +108,7 @@ function parseFbx(buf) {
 }
 
 // ---------- glTF / GLB ----------
-function parseGlb(buf) {
+function parseGlb(buf: Uint8Array) {
   if (buf.length < 12) return null;
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const magic = view.getUint32(0, true);
@@ -112,7 +123,7 @@ function parseGlb(buf) {
 }
 
 // ---------- STL ----------
-function parseStl(buf) {
+function parseStl(buf: Uint8Array) {
   const head = ascii(buf, 0, 5);
   if (head === 'solid') {
     const headerLine = ascii(buf, 0, Math.min(80, buf.length)).trim();
@@ -128,7 +139,7 @@ function parseStl(buf) {
 }
 
 // ---------- SWF ----------
-function parseSwf(buf) {
+function parseSwf(buf: Uint8Array) {
   if (buf.length < 8) return null;
   const sig = String.fromCharCode(buf[0]) + 'WS';
   if (buf[1] !== 0x57 || buf[2] !== 0x53) return null;
@@ -144,7 +155,7 @@ function parseSwf(buf) {
 }
 
 // ---------- XMP sidecar (XML) ----------
-async function parseXmp(file) {
+async function parseXmp(file: File) {
   try {
     const text = await file.text();
     const fields: any = {};
@@ -220,14 +231,14 @@ const PE_HELP = {
   'Installer': 'The installer framework that produced this executable. Installer stubs are typically 32-bit even when they deploy 64-bit software.'
 };
 
-function parsePe(buf) {
+function parsePe(buf: Uint8Array): Row | null {
   if (buf.length < 64 || buf[0] !== 0x4D || buf[1] !== 0x5A) return null;
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const peOffset = view.getUint32(0x3C, true);
   if (peOffset + 6 > buf.length) return { 'Format': 'MS-DOS / PE' };
   if (buf[peOffset] !== 0x50 || buf[peOffset + 1] !== 0x45) return { 'Format': 'MS-DOS executable' };
   const machine = view.getUint16(peOffset + 4, true);
-  const machines = { 0x14C: 'x86 (32-bit)', 0x8664: 'x64 (64-bit)', 0xAA64: 'ARM64' };
+  const machines: Record<number, string> = { 0x14C: 'x86 (32-bit)', 0x8664: 'x64 (64-bit)', 0xAA64: 'ARM64' };
   const arch = machines[machine] || '0x' + machine.toString(16);
   const numSections = view.getUint16(peOffset + 6, true);
   const timestamp = view.getUint32(peOffset + 8, true);
@@ -245,7 +256,7 @@ function parsePe(buf) {
 
   // COFF characteristics (peOffset + 22)
   const characteristics = view.getUint16(peOffset + 22, true);
-  const chFlags = [];
+  const chFlags: string[] = [];
   if (characteristics & 0x2000) chFlags.push('DLL');
   else if (characteristics & 0x0002) chFlags.push('Executable');
   if (characteristics & 0x0020) chFlags.push('Large-address-aware');
@@ -256,7 +267,7 @@ function parsePe(buf) {
   // Section names (table starts after the optional header)
   const sizeOfOptHdr = view.getUint16(peOffset + 20, true);
   const secTableOff = peOffset + 24 + sizeOfOptHdr;
-  const secNames = [];
+  const secNames: string[] = [];
   for (let s = 0; s < numSections && secTableOff + s * 40 + 8 <= buf.length; s++) {
     let nm = '';
     for (let b = 0; b < 8; b++) {
@@ -272,7 +283,7 @@ function parsePe(buf) {
   // 32-bit" surprise: NSIS / Inno stubs are 32-bit even when the bundled
   // software is 64-bit. Section names are the most reliable signal; otherwise
   // scan the head for the framework's ASCII marker.
-  let installer = null;
+  let installer: string | null = null;
   if (secNames.includes('.ndata')) installer = 'NSIS (Nullsoft Scriptable Install System)';
   else if (secNames.includes('.wixburn')) installer = 'WiX Burn bundle';
   else {
@@ -295,7 +306,7 @@ function parsePe(buf) {
     const subsysOff = optBase + 68;
     if (subsysOff + 2 <= buf.length) {
       const ss = view.getUint16(subsysOff, true);
-      const subsystems = { 1: 'Native', 2: 'Windows GUI', 3: 'Windows Console', 5: 'OS/2 Console', 7: 'POSIX Console', 9: 'Windows CE GUI', 10: 'EFI Application', 14: 'Xbox' };
+      const subsystems: Record<number, string> = { 1: 'Native', 2: 'Windows GUI', 3: 'Windows Console', 5: 'OS/2 Console', 7: 'POSIX Console', 9: 'Windows CE GUI', 10: 'EFI Application', 14: 'Xbox' };
       result['Subsystem'] = subsystems[ss] || 'Unknown (' + ss + ')';
     }
     // Subsystem version (optBase + 48 major / + 50 minor)
@@ -312,7 +323,7 @@ function parsePe(buf) {
     // DllCharacteristics (optBase + 70) - security mitigations
     if (optBase + 72 <= buf.length) {
       const dc = view.getUint16(optBase + 70, true);
-      const sec = [];
+      const sec: string[] = [];
       if (dc & 0x0020) sec.push('High-entropy ASLR');
       if (dc & 0x0040) sec.push('ASLR');
       if (dc & 0x0080) sec.push('Force-integrity');
@@ -391,8 +402,8 @@ function parsePe(buf) {
 // which rejects the same text appearing inside an embedded manifest/resource),
 // then read exactly the declared value length so we never spill into the next
 // entry or pick up alignment padding.
-function readUtf16Value(buf, key) {
-  const kb = [];
+function readUtf16Value(buf: Uint8Array, key: string) {
+  const kb: number[] = [];
   for (let i = 0; i < key.length; i++) { kb.push(key.charCodeAt(i) & 0xFF, 0); }
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   outer:
@@ -420,8 +431,8 @@ function readUtf16Value(buf, key) {
   return null;
 }
 
-async function parseExe(c) {
-  const result = parsePe(c.head) || {};
+async function parseExe(c: ParseCtx) {
+  const result: Row = parsePe(c.head) || {};
   // A .scr screensaver is a plain PE the OS launches with switches; flag it so the
   // readout frames the file as a screensaver rather than a bare executable.
   if (c.ext === 'scr') result['Screensaver'] = 'Runs with /s (show), /p (preview), /c (configure)';
@@ -466,7 +477,7 @@ async function parseExe(c) {
 // .ico, and rasterises it through the browser's own ICO decoder (which handles
 // the DIB AND-mask transparency we'd otherwise hand-roll). Returns null when
 // there's no icon or anything is malformed - it never throws.
-export async function extractPeIcon(file) {
+export async function extractPeIcon(file: File) {
   if (!file) return null;
   try {
     const head = new Uint8Array(await file.slice(0, 64 * 1024).arrayBuffer());
@@ -481,10 +492,10 @@ export async function extractPeIcon(file) {
 
     // One IMAGE_RESOURCE_DIRECTORY at rsrc-relative `dirOff` → its entries.
     // Sub-offsets are rsrc-relative; the high bit marks a subdirectory.
-    const readDir = (dirOff) => {
+    const readDir = (dirOff: number): RsrcEntry[] => {
       if (dirOff < 0 || dirOff + 16 > buf.length) return [];
       const total = dv.getUint16(dirOff + 12, true) + dv.getUint16(dirOff + 14, true);
-      const entries = [];
+      const entries: RsrcEntry[] = [];
       let p = dirOff + 16;
       for (let i = 0; i < total && p + 8 <= buf.length; i++, p += 8) {
         const nameField = dv.getUint32(p, true);
@@ -499,7 +510,7 @@ export async function extractPeIcon(file) {
     };
     // IMAGE_RESOURCE_DATA_ENTRY at rsrc-relative `leafOff` → bytes in `buf`.
     // OffsetToData is an image RVA, so subtract the section's own RVA.
-    const leafData = (leafOff) => {
+    const leafData = (leafOff: number): RsrcLeaf | null => {
       if (leafOff < 0 || leafOff + 16 > buf.length) return null;
       const start = dv.getUint32(leafOff, true) - rsrc.rva;
       const dataSize = dv.getUint32(leafOff + 4, true);
@@ -507,7 +518,7 @@ export async function extractPeIcon(file) {
       return { start, size: dataSize };
     };
     // Descend a name entry's language directory to its first real leaf.
-    const firstLeaf = (dirOff) => {
+    const firstLeaf = (dirOff: number): RsrcLeaf | null => {
       for (const e of readDir(dirOff)) {
         const d = e.isDir ? firstLeaf(e.off) : leafData(e.off);
         if (d) return d;
@@ -516,7 +527,7 @@ export async function extractPeIcon(file) {
     };
 
     const root = readDir(0);
-    const typeOff = (t) => { const e = root.find((x) => x.id === t && x.isDir); return e ? e.off : -1; };
+    const typeOff = (t: number) => { const e = root.find((x) => x.id === t && x.isDir); return e ? e.off : -1; };
     const groupTypeOff = typeOff(14), iconTypeOff = typeOff(3);
     if (groupTypeOff < 0 || iconTypeOff < 0) return null;
 
@@ -535,7 +546,7 @@ export async function extractPeIcon(file) {
     // width(1) height(1) colorCount(1) reserved(1) planes(2) bitCount(2)
     // bytesInRes(4) id(2). Pick the largest, then deepest-colour, member.
     const count = dv.getUint16(grp.start + 4, true);
-    let best = null;
+    let best: { w: number; h: number; planes: number; bitCount: number; id: number; score: number } | null = null;
     for (let i = 0; i < count; i++) {
       const e = grp.start + 6 + i * 14;
       if (e + 14 > buf.length) break;
@@ -567,9 +578,9 @@ export async function extractPeIcon(file) {
         const img = new Image();
         img.onload = () => {
           const cv = document.createElement('canvas');
-          cv.width = img.naturalWidth || best.w;
-          cv.height = img.naturalHeight || best.h;
-          cv.getContext('2d').drawImage(img, 0, 0);
+          cv.width = img.naturalWidth || best!.w;
+          cv.height = img.naturalHeight || best!.h;
+          cv.getContext('2d')!.drawImage(img, 0, 0);
           cv.toBlob(resolve, 'image/png');
         };
         img.onerror = () => resolve(null);
@@ -590,7 +601,7 @@ export async function extractPeIcon(file) {
 // GLIF is the XML one-glyph format inside a UFO (Unified Font Object), as used by
 // RoboFont, Glyphs, FontForge and fontTools. Read the glyph's name/unicode/advance
 // and outline structure, and draw the contours as a preview.
-async function parseGlif(file) {
+async function parseGlif(file: File) {
   let text;
   try { text = await file.slice(0, 4 * 1024 * 1024).text(); }
   catch (_) { return null; }
@@ -613,7 +624,7 @@ async function parseGlif(file) {
     if (h != null) fields['Advance height'] = h + ' units';
   }
 
-  const unis = [...glyph.querySelectorAll('unicode')].map((u) => u.getAttribute('hex')).filter(Boolean);
+  const unis = [...glyph.querySelectorAll('unicode')].map((u) => u.getAttribute('hex')).filter(Boolean) as string[];
   if (unis.length) {
     fields['Unicode'] = unis.map((h) => {
       const cp = parseInt(h, 16);
@@ -658,7 +669,7 @@ async function parseGlif(file) {
 // 'curve' a cubic (1-2 preceding off-curve controls); 'qcurve' a quadratic chain
 // (TrueType-style, with implied on-curve midpoints). Closed contours (no 'move')
 // are rotated to start on an on-curve point and wrap back to it.
-function glifContourSegments(pts) {
+function glifContourSegments(pts: GlifPoint[]): GlifContour | null {
   if (!pts.length) return null;
   const isOpen = pts[0].type === 'move';
   let ordered = pts;
@@ -668,8 +679,8 @@ function glifContourSegments(pts) {
     ordered = pts.slice(startIdx).concat(pts.slice(0, startIdx));
   }
   const start = ordered[0];
-  const ops = [];
-  let pending = [];
+  const ops: GlifOp[] = [];
+  let pending: number[][] = [];
   const seq = isOpen ? ordered.slice(1) : ordered.slice(1).concat([ordered[0]]);
   for (const p of seq) {
     if (!p.type) { pending.push([p.x, p.y]); continue; }
@@ -694,11 +705,11 @@ function glifContourSegments(pts) {
   return { start: [start.x, start.y], ops, closed: !isOpen };
 }
 
-function renderGlifOutline(contours) {
-  const parsed = [], all = [];
+function renderGlifOutline(contours: Element[]) {
+  const parsed: GlifContour[] = [], all: GlifPoint[] = [];
   for (const c of contours) {
     const pts = [...c.querySelectorAll('point')].map((p) => ({
-      x: parseFloat(p.getAttribute('x')), y: parseFloat(p.getAttribute('y')), type: p.getAttribute('type') || null,
+      x: parseFloat(p.getAttribute('x')!), y: parseFloat(p.getAttribute('y')!), type: p.getAttribute('type') || null,
     })).filter((p) => isFinite(p.x) && isFinite(p.y));
     if (!pts.length) continue;
     const segs = glifContourSegments(pts);
@@ -713,14 +724,14 @@ function renderGlifOutline(contours) {
   const W = 260, H = 260, pad = 26;
   const scale = Math.min((W - 2 * pad) / gw, (H - 2 * pad) / gh);
   const ox = (W - gw * scale) / 2, oy = (H - gh * scale) / 2;
-  const tx = (x) => ox + (x - minX) * scale;
-  const ty = (y) => H - (oy + (y - minY) * scale);   // font y-up -> canvas y-down
+  const tx = (x: number) => ox + (x - minX) * scale;
+  const ty = (y: number) => H - (oy + (y - minY) * scale);   // font y-up -> canvas y-down
 
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const canvas = document.createElement('canvas');
   canvas.width = W * dpr; canvas.height = H * dpr;
   canvas.style.cssText = 'width:' + W + 'px;height:' + H + 'px;display:block;';
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d')!;
   ctx.scale(dpr, dpr);
 
   const css = getComputedStyle(document.documentElement);
@@ -751,7 +762,7 @@ function renderGlifOutline(contours) {
 }
 
 // ---------- OLE compound doc (SolidWorks, old Office) ----------
-function parseOle(buf) {
+function parseOle(buf: Uint8Array) {
   if (buf.length < 512) return null;
   if (buf[0] !== 0xD0 || buf[1] !== 0xCF || buf[2] !== 0x11 || buf[3] !== 0xE0) return null;
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -763,7 +774,7 @@ function parseOle(buf) {
 // ---------- Font (TTF / OTF) ----------
 // Friendly names for the common OpenType variation axes (registered + popular
 // custom ones); unknown tags fall back to the raw 4-char tag.
-const AXIS_NAMES = {
+const AXIS_NAMES: Record<string, string> = {
   wght: 'Weight', wdth: 'Width', slnt: 'Slant', ital: 'Italic', opsz: 'Optical size',
   GRAD: 'Grade', XOPQ: 'Thick stroke', YOPQ: 'Thin stroke', XTRA: 'Counter width',
   YTAS: 'Ascender height', YTDE: 'Descender depth', YTLC: 'Lowercase height',
@@ -772,13 +783,13 @@ const AXIS_NAMES = {
 };
 
 // Read the OpenType `name` table at `nameOff` within `buf` into our label map.
-function readNameTable(buf, nameOff) {
+function readNameTable(buf: Uint8Array, nameOff: number) {
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const names: any = {};
   if (nameOff + 6 > buf.length) return names;
   const count = view.getUint16(nameOff + 2);
   const strOff = nameOff + view.getUint16(nameOff + 4);
-  const wanted = { 1: 'Family', 2: 'Style', 4: 'Full name', 5: 'Version', 8: 'Manufacturer', 9: 'Designer' };
+  const wanted: Record<number, string> = { 1: 'Family', 2: 'Style', 4: 'Full name', 5: 'Version', 8: 'Manufacturer', 9: 'Designer' };
   for (let i = 0; i < count && nameOff + 6 + i * 12 + 12 <= buf.length; i++) {
     const base = nameOff + 6 + i * 12;
     const pid = view.getUint16(base);
@@ -791,7 +802,7 @@ function readNameTable(buf, nameOff) {
     if (s + len > buf.length) continue;
     let text;
     if (pid === 3 || pid === 0) {
-      const codes = [];
+      const codes: number[] = [];
       for (let j = 0; j < len - 1; j += 2) codes.push(view.getUint16(s + j));
       text = String.fromCharCode(...codes);
     } else {
@@ -804,9 +815,9 @@ function readNameTable(buf, nameOff) {
 
 // Read the `fvar` table at `fvarOff` into a list of variation axes. Each record:
 // {tag(4) min(16.16) default(16.16) max(16.16) flags(2) nameID(2)}.
-function readFvarTable(buf, fvarOff) {
+function readFvarTable(buf: Uint8Array, fvarOff: number) {
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  const axes = [];
+  const axes: { tag: string; name: string; min: number; def: number; max: number }[] = [];
   if (fvarOff + 16 > buf.length) return axes;
   const axesOff = fvarOff + view.getUint16(fvarOff + 4);
   const axisCount = view.getUint16(fvarOff + 8);
@@ -825,7 +836,7 @@ function readFvarTable(buf, fvarOff) {
 
 // Map sfnt table tags -> absolute file offset, scanning the table directory at
 // `base` (0 for a plain font, or a member offset inside a TTC).
-function sfntTableOffsets(buf, base) {
+function sfntTableOffsets(buf: Uint8Array, base: number) {
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const offs: any = {};
   if (base + 6 > buf.length) return offs;
@@ -837,7 +848,7 @@ function sfntTableOffsets(buf, base) {
 }
 
 // zlib-inflate (WOFF stores each table zlib-compressed).
-async function inflateZlib(bytes) {
+async function inflateZlib(bytes: Uint8Array) {
   if (typeof DecompressionStream === 'undefined') throw new Error('no DecompressionStream');
   const ds = new DecompressionStream('deflate');
   const ab = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer();
@@ -847,7 +858,7 @@ async function inflateZlib(bytes) {
 // Pull (and decompress) the requested tables from a WOFF 1.0 file. Header is 44
 // bytes; each 20-byte dir entry is tag(4) offset(4) compLength(4) origLength(4)
 // origChecksum(4). A table is zlib-compressed when compLength < origLength.
-async function woffTables(buf, want) {
+async function woffTables(buf: Uint8Array, want: string[]) {
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const numTables = view.getUint16(12);
   const out: any = {};
@@ -867,13 +878,13 @@ async function woffTables(buf, want) {
 // Read a font's name + variation-axis metadata. Handles sfnt (TTF/OTF), TrueType
 // collections (TTC - first member), and WOFF 1.0 (zlib tables). WOFF2 (brotli +
 // table transforms) isn't decoded here, so it falls through to the generic card.
-async function parseFont(file) {
+async function parseFont(file: File) {
   const buf = new Uint8Array(await file.arrayBuffer());
   if (buf.length < 12) return null;
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const magic = view.getUint32(0);
   const tag4 = ascii(buf, 0, 4);
-  let names = null, axes = [];
+  let names: Row | null = null, axes: ReturnType<typeof readFvarTable> = [];
 
   if (magic === 0x00010000 || magic === 0x4F54544F || tag4 === 'true' || tag4 === 'typ1') {
     const offs = sfntTableOffsets(buf, 0);
@@ -907,13 +918,13 @@ async function parseFont(file) {
 // Decode an FLP text-event payload. Modern FL Studio (11.5+) stores strings as
 // UTF-16LE; older versions use single-byte text. Sniff by the density of NUL
 // bytes, then drop the trailing terminator.
-function decodeFlpText(bytes) {
+function decodeFlpText(bytes: Uint8Array) {
   if (!bytes.length) return '';
   let zeros = 0;
   for (let i = 0; i < bytes.length; i++) if (bytes[i] === 0) zeros++;
   let text;
   if (bytes.length >= 2 && zeros >= bytes.length / 3) {
-    const codes = [];
+    const codes: number[] = [];
     for (let i = 0; i + 1 < bytes.length; i += 2) codes.push(bytes[i] | (bytes[i + 1] << 8));
     text = String.fromCharCode(...codes);
   } else {
@@ -922,7 +933,7 @@ function decodeFlpText(bytes) {
   return text.replace(/\0+$/, '').trim();
 }
 
-async function parseFlp(file) {
+async function parseFlp(file: File) {
   // FLPs are small; read up to 8 MB to cover the whole event stream.
   const buf = new Uint8Array(await file.slice(0, Math.min(file.size, 8 * 1024 * 1024)).arrayBuffer());
   if (buf.length < 10 || ascii(buf, 0, 4) !== 'FLhd') return null;
@@ -931,7 +942,7 @@ async function parseFlp(file) {
   const format = view.getUint16(8, true);
   const channelCount = view.getUint16(10, true);
   const ppq = view.getUint16(12, true);
-  const fields = { 'Format': format === 0 ? 'Song' : 'Format ' + format };
+  const fields: Row = { 'Format': format === 0 ? 'Song' : 'Format ' + format };
   if (channelCount) fields['Channels'] = channelCount;
   if (ppq) fields['PPQ (ticks/beat)'] = ppq;
 
@@ -942,8 +953,8 @@ async function parseFlp(file) {
   pos += 8;
   const end = Math.min(buf.length, pos + dataLen);
 
-  const channelNames = [];
-  const plugins = new Set();
+  const channelNames: string[] = [];
+  const plugins = new Set<string>();
   let title, comment, version, tempo, genre, author;
 
   while (pos < end) {
@@ -957,7 +968,7 @@ async function parseFlp(file) {
       if (id === 0x9C && pos + 4 <= end) tempo = view.getUint32(pos, true) / 1000; // FineTempo
       pos += 4;
     } else {                                 // TEXT / DATA event (varint length)
-      let len = 0, shift = 0, b;
+      let len = 0, shift = 0, b: number;
       do { b = buf[pos++]; len |= (b & 0x7F) << shift; shift += 7; } while (b & 0x80 && pos < end);
       const data = buf.subarray(pos, pos + len);
       pos += len;
@@ -987,7 +998,7 @@ async function parseFlp(file) {
 }
 
 // ---------- RAR ----------
-function parseRar(buf) {
+function parseRar(buf: Uint8Array) {
   if (buf.length < 7) return null;
   const sig4 = ascii(buf, 0, 4);
   if (sig4 !== 'Rar!') return null;
@@ -997,14 +1008,14 @@ function parseRar(buf) {
 }
 
 // ---------- 7-Zip ----------
-function parse7z(buf) {
+function parse7z(buf: Uint8Array) {
   if (buf.length < 12) return null;
   if (buf[0] !== 0x37 || buf[1] !== 0x7A || buf[2] !== 0xBC || buf[3] !== 0xAF) return null;
   return { '7z version': buf[6] + '.' + buf[7] };
 }
 
 // ---------- SQLite ----------
-async function parseSqlite(buf, file) {
+async function parseSqlite(buf: Uint8Array, file: File) {
   if (buf.length < 100) return null;
   const sig = ascii(buf, 0, 15);
   if (sig !== 'SQLite format 3') return null;
@@ -1013,7 +1024,7 @@ async function parseSqlite(buf, file) {
   const ps = pageSize === 1 ? 65536 : pageSize;
   const writeVer = buf[18];
   const readVer = buf[19];
-  const journal = { 1: 'legacy (rollback)', 2: 'WAL' };
+  const journal: Record<number, string> = { 1: 'legacy (rollback)', 2: 'WAL' };
   const out: Row = {
     'Page size': ps.toLocaleString() + ' bytes',
     'Journal mode': journal[writeVer] || String(writeVer),
@@ -1039,7 +1050,7 @@ async function parseSqlite(buf, file) {
         if (a.triggers.length) out['Triggers'] = a.triggers.length;
         out['Total rows'] = totalRows.toLocaleString();
 
-        const sections = [];
+        const sections: RowSection[] = [];
         if (a.tables.length) {
           const t = el('table', { class: 'anr-readout' });
           t.appendChild(el('tr', {}, [el('th', {}, 'Table'), el('th', {}, 'Rows'), el('th', {}, 'Cols')]));
@@ -1092,7 +1103,7 @@ async function parseSqlite(buf, file) {
             : 'SELECT name FROM sqlite_master;';
           const runBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm' }, 'Run query');
           const resultEl = el('div', { class: 'anr-sql-result' });
-          let qdb = null, opening = null;
+          let qdb: any = null, opening: Promise<any> | null = null;
           const ensureDb = async () => {
             if (qdb) return qdb;
             if (!opening) { const { sqliteQuery } = await import('../lib/sqlite.js'); opening = sqliteQuery(file); }
@@ -1149,7 +1160,7 @@ async function parseSqlite(buf, file) {
 // 24-byte frame header + one database page. Shared-memory index (-shm): two
 // copies of a 48-byte WalIndexHdr plus a checkpoint-info block, in machine byte
 // order. Both are the rollback/recovery sidecars beside a WAL-mode SQLite DB.
-async function parseSqliteWal(head, file) {
+async function parseSqliteWal(head: Uint8Array, file: File) {
   if (!head || head.length < 32) return null;
   const dv = new DataView(head.buffer, head.byteOffset, head.byteLength);
   const magic = dv.getUint32(0);
@@ -1163,7 +1174,7 @@ async function parseSqliteWal(head, file) {
   const frameSize = 24 + pageSize;
   const size = file ? file.size : head.length;
   const maxFrames = pageSize > 0 ? Math.max(0, Math.floor((size - 32) / frameSize)) : 0;
-  const hex = (n) => '0x' + (n >>> 0).toString(16).padStart(8, '0');
+  const hex = (n: number) => '0x' + (n >>> 0).toString(16).padStart(8, '0');
 
   const out: Row = {
     'Format': 'SQLite Write-Ahead Log (-wal)',
@@ -1213,16 +1224,16 @@ async function parseSqliteWal(head, file) {
   return out;
 }
 
-function parseSqliteShm(head) {
+function parseSqliteShm(head: Uint8Array) {
   if (!head || head.length < 48) return null;
   // WalIndexHdr is written in machine byte order; detect it from iVersion, which
   // is 3007000 on every real file. Try little-endian first (the universal case).
   const dvv = new DataView(head.buffer, head.byteOffset, head.byteLength);
   let le = true, iVersion = dvv.getUint32(0, true);
   if (iVersion !== 3007000 && dvv.getUint32(0, false) === 3007000) { le = false; iVersion = 3007000; }
-  const u32 = (o) => dvv.getUint32(o, le);
-  const u16 = (o) => dvv.getUint16(o, le);
-  const readHdr = (b) => ({
+  const u32 = (o: number) => dvv.getUint32(o, le);
+  const u16 = (o: number) => dvv.getUint16(o, le);
+  const readHdr = (b: number) => ({
     iChange: u32(b + 8), isInit: head[b + 12], bigEndCksum: head[b + 13],
     szPage: u16(b + 14), mxFrame: u32(b + 16), nPage: u32(b + 20),
     salt1: u32(b + 32), salt2: u32(b + 36),
@@ -1230,9 +1241,9 @@ function parseSqliteShm(head) {
   const h0 = readHdr(0);
   const h1 = head.length >= 96 ? readHdr(48) : null;
   let ps = h0.szPage & 0xffff; if (ps === 0 || ps === 1) ps = 65536;
-  const hex = (n) => '0x' + (n >>> 0).toString(16).padStart(8, '0');
+  const hex = (n: number) => '0x' + (n >>> 0).toString(16).padStart(8, '0');
 
-  const out = {
+  const out: Row = {
     'Format': 'SQLite shared-memory WAL-index (-shm)',
     'Byte order': le ? 'little-endian' : 'big-endian',
     'Index version': iVersion === 3007000 ? '3007000 (SQLite 3.7.0+)' : String(iVersion),
@@ -1258,7 +1269,7 @@ function parseSqliteShm(head) {
 }
 
 // ---------- GIMP XCF ----------
-function parseXcf(buf) {
+function parseXcf(buf: Uint8Array) {
   const sig = ascii(buf, 0, 9);
   if (sig !== 'gimp xcf ') return null;
   const verStr = ascii(buf, 9, 5).replace(/\0/g, '');
@@ -1266,8 +1277,8 @@ function parseXcf(buf) {
   const width = buf.length >= 18 ? view.getUint32(14) : null;
   const height = buf.length >= 22 ? view.getUint32(18) : null;
   const colorMode = buf.length >= 26 ? view.getUint32(22) : null;
-  const modes = { 0: 'RGB', 1: 'Grayscale', 2: 'Indexed' };
-  const result = { 'XCF version': verStr || 'v0 (original)' };
+  const modes: Record<number, string> = { 0: 'RGB', 1: 'Grayscale', 2: 'Indexed' };
+  const result: Row = { 'XCF version': verStr || 'v0 (original)' };
   if (width && height) result['Dimensions'] = width + ' × ' + height;
   if (colorMode != null) result['Color mode'] = modes[colorMode] || 'Unknown';
   return result;
@@ -1282,18 +1293,18 @@ function parseXcf(buf) {
 // intact file signatures) - so it can't be decompressed or browsed here. The
 // honest fix is to convert it back to a raw .img with the tool that made it and
 // drop that in (Analyser mounts + carves raw images).
-function parseImc(buf) {
+function parseImc(buf: Uint8Array) {
   if (!buf || buf.length < 48) return null;
   if (buf[0] !== 0x1a || ascii(buf, 1, 20) !== 'RTS COMPRESSED IMAGE') return null;
   const version = ascii(buf, 23, 3).replace(/[^\d.]+$/, '');   // "2.0"
-  const out = {
+  const out: Row = {
     'Format': 'RTS Compressed Image' + (version ? ' V' + version : ''),
     'Created with': 'Runtime Software - GetDataBack / RTS Image Converter',
     'Compression': 'Proprietary and undocumented - the sector data cannot be decoded here',
   };
   // Two 32-bit sector counts follow the header string; the larger is the source
   // device's total sector count. Report the device size when it looks sane.
-  const u32 = (o) => (buf[o] | (buf[o + 1] << 8) | (buf[o + 2] << 16) | (buf[o + 3] * 0x1000000)) >>> 0;
+  const u32 = (o: number) => (buf[o] | (buf[o + 1] << 8) | (buf[o + 2] << 16) | (buf[o + 3] * 0x1000000)) >>> 0;
   const sectors = Math.max(u32(0x1c), u32(0x28));
   const bytes = sectors * 512;
   if (sectors > 0 && bytes < 4 * 1024 ** 4) {   // sane (< 4 TB) drive geometry
@@ -1310,11 +1321,11 @@ function parseImc(buf) {
 // here (scanning it for image signatures only finds noise inside the compressed
 // stream). Identify it, lift the UTF-16LE backup label the header carries, and point
 // the user at converting it to a raw .img to browse it.
-function parseAdi(buf) {
+function parseAdi(buf: Uint8Array) {
   if (!buf || buf.length < 8) return null;
   // BIFH magic = Active@ Disk Image / AOMEI compressed disk-image backup.
   if (buf[0] === 0x42 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x48) {
-    const out = {
+    const out: Row = {
       _app: 'Active@ Disk Image Backup',
       'Format': 'Active@ Disk Image backup (BIFH)',
       'Created with': 'Active@ Disk Image or AOMEI Backupper - a compressed disk-image backup',
@@ -1329,7 +1340,7 @@ function parseAdi(buf) {
   // text file of <FIELD:len>value tags. Identify that rather than mislabel it a disk image.
   const txt = ascii(buf, 0, Math.min(buf.length, 2048)).toLowerCase();
   if (/<eoh>|<eor>|<adif_ver|<call:/.test(txt)) {
-    const out = { _app: 'ADIF Amateur Radio Log', 'Format': 'ADIF (Amateur Data Interchange Format) - amateur-radio contact log' };
+    const out: Row = { _app: 'ADIF Amateur Radio Log', 'Format': 'ADIF (Amateur Data Interchange Format) - amateur-radio contact log' };
     const ver = /<adif_ver:\d+>([\d.]+)/.exec(txt);
     if (ver) out['ADIF version'] = ver[1];
     out['Shown as'] = 'A text log of QSO (contact) records - open it as text to read the entries.';
@@ -1340,7 +1351,7 @@ function parseAdi(buf) {
 
 // Longest run of ASCII-range UTF-16LE text (printable low byte + 0x00 high byte) in
 // [start, end), at least minChars long - lifts a readable label out of a binary header.
-function firstUtf16(buf, start, end, minChars = 2) {
+function firstUtf16(buf: Uint8Array, start: number, end: number, minChars = 2) {
   let best = '', cur = '';
   for (let i = start; i + 1 < end; i += 2) {
     const lo = buf[i], hi = buf[i + 1];
@@ -1360,7 +1371,7 @@ function firstUtf16(buf, start, end, minChars = 2) {
 // peak array follows. We identify it, read those fields, and draw the waveform.
 // (.pkf is also Adobe Audition's peak cache, a different "CDpk" format - identified
 // separately so it isn't mislabelled.)
-async function parsePkf({ file }) {
+async function parsePkf({ file }: ParseCtx) {
   let buf;
   try { buf = new Uint8Array(await file.arrayBuffer()); } catch (_) { return null; }
   if (buf.length < 32) return null;
@@ -1401,13 +1412,13 @@ async function parsePkf({ file }) {
 // Draw the peak float array [start, byteLen) as a waveform envelope. The values
 // alternate min/max per peak, so per-column min and max over the raw floats give the
 // envelope directly - robust to the exact pair phase. Returns a wrapped <canvas>.
-function drawPkfWaveform(dv, start, byteLen) {
+function drawPkfWaveform(dv: DataView, start: number, byteLen: number) {
   const n = Math.floor((byteLen - start) / 4);
   if (n < 8) return null;
   const W = 900, H = 180, mid = H / 2, pad = 3;
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
-  const ctx = cv.getContext('2d');
+  const ctx = cv.getContext('2d')!;
   const css = getComputedStyle(document.documentElement);
   const wave = (css.getPropertyValue('--accent') || '').trim() || '#39a2a2';
   // Global peak for vertical scaling.
@@ -1436,7 +1447,7 @@ function drawPkfWaveform(dv, start, byteLen) {
 }
 
 // ---------- ISO 9660 ----------
-function parseIso(buf) {
+function parseIso(buf: Uint8Array) {
   if (buf.length < 100) return null;
   const id = ascii(buf, 1, 5);
   if (id === 'CD001') {
@@ -1451,14 +1462,14 @@ function parseIso(buf) {
 
 // ---------- Adobe InDesign ----------
 // ---------- ZIP-based doc metadata (DOCX, XLSX, PPTX, EPUB, ODF) ----------
-async function parseZipMeta(file, ext) {
+async function parseZipMeta(file: File, ext: string) {
   try {
     const zip = await openZip(file, 131072);
     const fields: any = {};
     if (zip.has('docProps/core.xml')) {
       const xml = await zip.text('docProps/core.xml');
       if (xml) {
-        const grab = (tag) => { const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+        const grab = (tag: string) => { const m = xml.match(new RegExp('<(?:dc:|cp:)?' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
         const creator = grab('creator');
         const title = grab('title');
         const created = grab('created');
@@ -1476,7 +1487,7 @@ async function parseZipMeta(file, ext) {
     if (zip.has('docProps/app.xml')) {
       const xml = await zip.text('docProps/app.xml');
       if (xml) {
-        const grab = (tag) => { const m = xml.match(new RegExp('<' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+        const grab = (tag: string) => { const m = xml.match(new RegExp('<' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
         const app = grab('Application');
         const appVer = grab('AppVersion');
         const pages = grab('Pages');
@@ -1494,7 +1505,7 @@ async function parseZipMeta(file, ext) {
       if (opfEntry) {
         const xml = await zip.text(opfEntry.name);
         if (xml) {
-          const grab = (tag) => { const m = xml.match(new RegExp('<dc:' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+          const grab = (tag: string) => { const m = xml.match(new RegExp('<dc:' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
           const title = grab('title');
           const creator = grab('creator');
           const publisher = grab('publisher');
@@ -1512,12 +1523,12 @@ async function parseZipMeta(file, ext) {
     if (zip.has('meta.xml')) {
       const xml = await zip.text('meta.xml');
       if (xml) {
-        const grab = (tag) => { const m = xml.match(new RegExp('<meta:' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+        const grab = (tag: string) => { const m = xml.match(new RegExp('<meta:' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
         const gen = grab('generator');
         const created = grab('creation-date');
         if (gen) fields['Generator'] = gen;
         if (created && !fields['Created']) fields['Created'] = created;
-        const dcGrab = (tag) => { const m = xml.match(new RegExp('<dc:' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
+        const dcGrab = (tag: string) => { const m = xml.match(new RegExp('<dc:' + tag + '[^>]*>([^<]+)<')); return m ? m[1].trim() : null; };
         const title = dcGrab('title');
         const creator = dcGrab('creator');
         if (title && !fields['Title']) fields['Title'] = title;
@@ -1533,7 +1544,7 @@ async function parseZipMeta(file, ext) {
 // ---------- Android APK ----------
 // Well-known android: attribute resource IDs, for the case where aapt2 stripped
 // the attribute name strings (then only the resource-map entry identifies them).
-const AXML_KNOWN_ATTRS = {
+const AXML_KNOWN_ATTRS: Record<number, string> = {
   0x01010003: 'name', 0x01010001: 'label', 0x01010002: 'icon',
   0x0101000b: 'sharedUserId', 0x0101000f: 'debuggable', 0x01010009: 'protectionLevel',
   0x0101020c: 'minSdkVersion', 0x01010270: 'targetSdkVersion', 0x01010271: 'maxSdkVersion',
@@ -1545,14 +1556,14 @@ const AXML_KNOWN_ATTRS = {
 };
 
 // API level -> marketing Android version (major milestones).
-const ANDROID_API = {
+const ANDROID_API: Record<number, string> = {
   1: '1.0', 2: '1.1', 3: '1.5', 4: '1.6', 5: '2.0', 6: '2.0.1', 7: '2.1', 8: '2.2',
   9: '2.3', 10: '2.3.3', 11: '3.0', 12: '3.1', 13: '3.2', 14: '4.0', 15: '4.0.3',
   16: '4.1', 17: '4.2', 18: '4.3', 19: '4.4', 20: '4.4W', 21: '5.0', 22: '5.1',
   23: '6.0', 24: '7.0', 25: '7.1', 26: '8.0', 27: '8.1', 28: '9', 29: '10', 30: '11',
   31: '12', 32: '12L', 33: '13', 34: '14', 35: '15', 36: '16',
 };
-function androidApiLabel(v) {
+function androidApiLabel(v: string | number) {
   const n = parseInt(v, 10);
   if (isNaN(n)) return String(v);
   return 'API ' + n + (ANDROID_API[n] ? ' (Android ' + ANDROID_API[n] + ')' : '');
@@ -1560,18 +1571,18 @@ function androidApiLabel(v) {
 
 // Parse a binary AndroidManifest.xml (Android binary XML / AXML) into an ordered
 // list of element events: { type:'start', tag, attrs } / { type:'end', tag }.
-function parseAxml(bytes) {
+function parseAxml(bytes: Uint8Array) {
   if (!bytes || bytes.length < 8) return null;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const u16 = (p) => dv.getUint16(p, true);
-  const u32 = (p) => dv.getUint32(p, true) >>> 0;
+  const u16 = (p: number) => dv.getUint16(p, true);
+  const u32 = (p: number) => dv.getUint32(p, true) >>> 0;
   if (u16(0) !== 0x0003) return null;                  // RES_XML_TYPE
   const total = Math.min(u32(4), bytes.length);
 
-  let strings = null;
-  let resIds = null;
+  let strings: string[] | null = null;
+  let resIds: number[] | null = null;
 
-  const readStr = (p, isUtf8) => {
+  const readStr = (p: number, isUtf8: boolean) => {
     if (p < 0 || p >= bytes.length) return '';
     if (isUtf8) {
       let q = p;
@@ -1583,20 +1594,20 @@ function parseAxml(bytes) {
     let n = u16(q); q += 2; if (n & 0x8000) { n = ((n & 0x7fff) << 16) | u16(q); q += 2; }
     return utf16(bytes.subarray(q, q + n * 2), true);
   };
-  const readStringPool = (off) => {
+  const readStringPool = (off: number) => {
     const stringCount = u32(off + 8);
     const flags = u32(off + 16);
     const stringsStart = u32(off + 20);
     const isUtf8 = (flags & 0x100) !== 0;
-    const out = [];
+    const out: string[] = [];
     for (let i = 0; i < stringCount; i++) {
       out.push(readStr(off + stringsStart + u32(off + 28 + i * 4), isUtf8));
     }
     return out;
   };
-  const str = (ref) => (ref === 0xffffffff || !strings || ref >= strings.length) ? '' : (strings[ref] || '');
+  const str = (ref: number) => (ref === 0xffffffff || !strings || ref >= strings.length) ? '' : (strings[ref] || '');
 
-  const events = [];
+  const events: { type: string; tag: string; attrs?: Record<string, string> }[] = [];
   let pos = u16(2) || 8;
   while (pos + 8 <= total) {
     const type = u16(pos);
@@ -1623,7 +1634,7 @@ function parseAxml(bytes) {
         let key = str(aNameRef);
         if (!key && resIds && aNameRef < resIds.length) key = AXML_KNOWN_ATTRS[resIds[aNameRef]] || '';
         if (!key) continue;
-        let val;
+        let val: string;
         if (aRawRef !== 0xffffffff) val = str(aRawRef);
         else if (dataType === 0x03) val = str(data);
         else if (dataType === 0x12) val = data !== 0 ? 'true' : 'false';
@@ -1644,7 +1655,7 @@ function parseAxml(bytes) {
 // Read the ZIP central directory from the file tail for an authoritative entry
 // list (the windowed openZip only sees front-placed entries). Returns
 // { names, count, cdOff } or null (e.g. zip64).
-async function apkArchiveInfo(file) {
+async function apkArchiveInfo(file: File) {
   try {
     const tailLen = Math.min(file.size, 66000);
     const tail = new Uint8Array(await file.slice(file.size - tailLen).arrayBuffer());
@@ -1660,7 +1671,7 @@ async function apkArchiveInfo(file) {
     if (cdOff === 0xffffffff || cdSize === 0xffffffff) return null;   // zip64
     const cd = new Uint8Array(await file.slice(cdOff, cdOff + cdSize).arrayBuffer());
     const cv = new DataView(cd.buffer);
-    const names = [];
+    const names: string[] = [];
     let p = 0;
     while (p + 46 <= cd.length && cv.getUint32(p, true) === 0x02014b50) {
       const nameLen = cv.getUint16(p + 28, true);
@@ -1673,7 +1684,7 @@ async function apkArchiveInfo(file) {
   } catch (_) { return null; }
 }
 
-function apkDetailsBlock(title, items) {
+function apkDetailsBlock(title: string, items: string[]) {
   const det = el('details', { style: 'margin-top:12px;' });
   det.appendChild(el('summary', {}, title));
   const pre = el('pre', { class: 'anr-code', style: 'max-height:320px;overflow:auto;font-size:12px;' });
@@ -1682,28 +1693,28 @@ function apkDetailsBlock(title, items) {
   return det;
 }
 
-async function parseApk(file) {
-  let zip = null;
+async function parseApk(file: File) {
+  let zip: Awaited<ReturnType<typeof openZip>> | null = null;
   try { zip = await openZip(file, 4 * 1024 * 1024); } catch (_) { /* fall through */ }
 
   const fields: any = {};
   fields['Format'] = 'Android Application Package (APK)';
 
   // --- AndroidManifest.xml (binary XML) ---
-  let manifest = null;
+  let manifest: ReturnType<typeof parseAxml> = null;
   try {
     const mbytes = zip ? await zip.bytes('AndroidManifest.xml') : null;
     if (mbytes) manifest = parseAxml(mbytes);
   } catch (_) { /* ignore */ }
 
-  const permissions = [];
-  const features = [];
-  let launcher = null;
+  const permissions: string[] = [];
+  const features: string[] = [];
+  let launcher: string | null = null;
   if (manifest) {
-    let curActivity = null, inIntent = false, sawMain = false, sawLauncher = false;
+    let curActivity: string | null = null, inIntent = false, sawMain = false, sawLauncher = false;
     for (const ev of manifest.events) {
       if (ev.type === 'start') {
-        const a = ev.attrs;
+        const a = ev.attrs!;
         if (ev.tag === 'manifest') {
           if (a.package) fields['Package'] = a.package;
           if (a.versionName) fields['Version name'] = a.versionName;
@@ -1758,7 +1769,7 @@ async function parseApk(file) {
   if (contentNames) {
     const dex = contentNames.filter((n) => /^classes\d*\.dex$/.test(n));
     if (dex.length) fields['DEX files'] = String(dex.length);
-    const abis = new Set();
+    const abis = new Set<string>();
     for (const n of contentNames) { const m = n.match(/^lib\/([^/]+)\//); if (m) abis.add(m[1]); }
     if (abis.size) fields['Native code'] = [...abis].join(', ');
     if (contentNames.includes('resources.arsc')) fields['Resource table'] = 'resources.arsc';
@@ -1766,14 +1777,14 @@ async function parseApk(file) {
   }
 
   // --- Signing (APK Signature Scheme v2+ block sits before the central dir) ---
-  const schemes = [];
+  const schemes: string[] = [];
   if (info && info.cdOff >= 16) {
     try {
       const winStart = Math.max(0, info.cdOff - 262144);
       const blk = new Uint8Array(await file.slice(winStart, info.cdOff).arrayBuffer());
       const MAGIC = [65, 80, 75, 32, 83, 105, 103, 32, 66, 108, 111, 99, 107, 32, 52, 50]; // "APK Sig Block 42"
       if (findBytes(blk, new Uint8Array(MAGIC)) >= 0) {
-        const has = (b) => findBytes(blk, new Uint8Array(b)) >= 0;
+        const has = (b: number[]) => findBytes(blk, new Uint8Array(b)) >= 0;
         if (has([0x1a, 0x87, 0x09, 0x71])) schemes.push('v2');
         if (has([0xc0, 0x68, 0x53, 0xf0])) schemes.push('v3');
         if (has([0x61, 0xad, 0x93, 0x1b])) schemes.push('v3.1');
@@ -1787,7 +1798,7 @@ async function parseApk(file) {
   if (permissions.length) fields['Permissions'] = String(permissions.length);
 
   // --- Collapsible detail blocks (permissions, features, full contents) ---
-  const parts = [];
+  const parts: HTMLElement[] = [];
   if (permissions.length) {
     const shown = permissions.map((p) => p.replace(/^android\.permission\./, ''));
     parts.push(apkDetailsBlock('Permissions (' + permissions.length + ')', shown));
@@ -1802,7 +1813,7 @@ async function parseApk(file) {
 }
 
 // ---------- Generic text version detection ----------
-async function parseTextVersion(file) {
+async function parseTextVersion(file: File) {
   try {
     const text = await file.slice(0, 4096).text();
     const lines = text.split('\n').slice(0, 20);
@@ -1820,7 +1831,7 @@ async function parseTextVersion(file) {
 }
 
 // ---------- Gzipped XML project (Ableton .als, Premiere .prproj) ----------
-async function parseGzipXmlProject(file, ext) {
+async function parseGzipXmlProject(file: File, ext: string) {
   try {
     const head = new Uint8Array(await file.slice(0, 2).arrayBuffer());
     if (head[0] !== 0x1F || head[1] !== 0x8B) return null;
@@ -1900,13 +1911,13 @@ async function parseGzipXmlProject(file, ext) {
 }
 
 // ---------- Torrent ----------
-async function parseTorrent(file) {
+async function parseTorrent(file: File) {
   try {
     const raw = new Uint8Array(await file.arrayBuffer());
     let pos = 0;
     const td = new TextDecoder('latin1');
     function peek() { return td.decode(raw.subarray(pos, pos + 1)); }
-    function decode() {
+    function decode(): any {
       if (pos >= raw.length) return null;
       const ch = peek();
       if (ch === 'i') {
@@ -1919,7 +1930,7 @@ async function parseTorrent(file) {
       }
       if (ch === 'l') {
         pos++;
-        const list = [];
+        const list: any[] = [];
         while (pos < raw.length && peek() !== 'e') list.push(decode());
         pos++;
         return list;
@@ -1954,10 +1965,10 @@ async function parseTorrent(file) {
       if (info.length) {
         fields['Total size'] = fmtBytes(info.length);
       } else if (info.files) {
-        const total = info.files.reduce((s, f) => s + (f.length || 0), 0);
+        const total = info.files.reduce((s: number, f: any) => s + (f.length || 0), 0);
         fields['Total size'] = fmtBytes(total);
         fields['Files'] = info.files.length;
-        const fileList = info.files.slice(0, 20).map(f => {
+        const fileList = info.files.slice(0, 20).map((f: any) => {
           const path = Array.isArray(f.path) ? f.path.join('/') : f.path;
           return path + '  (' + fmtBytes(f.length) + ')';
         });
@@ -1982,7 +1993,7 @@ async function parseTorrent(file) {
 }
 
 // ---------- GCode ----------
-async function parseGcode(file) {
+async function parseGcode(file: File) {
   try {
     // Read a generous window so machining stats (tools, bounding box) are
     // representative, plus the tail (slicers/CAM often summarise at the end).
@@ -2007,8 +2018,8 @@ async function parseGcode(file) {
 }
 
 // 3D-printing G-code (slicer, nozzle/bed temps, filament, dimensions).
-function parseGcodePrinting(text) {
-  const fields = { 'G-code type': '3D printing (FFF/FDM)' };
+function parseGcodePrinting(text: string) {
+  const fields: Row = { 'G-code type': '3D printing (FFF/FDM)' };
   const slicerPatterns = [
     /generated by (PrusaSlicer[^\n]*)/i, /generated by (OrcaSlicer[^\n]*)/i,
     /generated by (BambuStudio[^\n]*)/i, /generated by (SuperSlicer[^\n]*)/i,
@@ -2039,7 +2050,7 @@ function parseGcodePrinting(text) {
     const m = text.match(re);
     if (m && !fields[label]) fields[label] = m[1].trim();
   }
-  const g = (re) => { const m = text.match(re); return m ? parseFloat(m[1]) : null; };
+  const g = (re: RegExp) => { const m = text.match(re); return m ? parseFloat(m[1]) : null; };
   const minx = g(/;\s*MINX:([0-9.-]+)/i), maxx = g(/;\s*MAXX:([0-9.-]+)/i);
   const miny = g(/;\s*MINY:([0-9.-]+)/i), maxy = g(/;\s*MAXY:([0-9.-]+)/i);
   const maxz = g(/;\s*MAXZ:([0-9.-]+)/i);
@@ -2057,7 +2068,7 @@ function parseGcodePrinting(text) {
 
 // CNC / machining G-code: identify the CAM post, controller, machine type, and
 // pull machining statistics (units, tools, spindle, feeds, work offsets, extent).
-function parseGcodeCnc(text, truncated) {
+function parseGcodeCnc(text: string, truncated: boolean) {
   const fields: any = {};
 
   // --- CAM software / post-processor (from header comments) ---
@@ -2105,7 +2116,7 @@ function parseGcodeCnc(text, truncated) {
     (hasSpindle && !hasZ && /\bM0?[34]\b[^;\n]*S/i.test(text));
 
   // --- Machine type inference ---
-  let machine;
+  let machine: string;
   if (/LightBurn|\blaser\b/i.test(text)) machine = 'Laser cutter / engraver';
   else if (/plasma|SheetCam/i.test(text)) machine = 'Plasma / oxy-fuel cutter';
   else if (hasX && hasZ && !hasY) machine = 'CNC lathe / turning';
@@ -2119,9 +2130,9 @@ function parseGcodeCnc(text, truncated) {
   // --- Stats over motion lines ---
   const lines = text.split('\n');
   let maxS = 0, maxF = 0, absolute = true, relativeSeen = false;
-  const tools = new Set<number>(), offsets = new Set<number>();
+  const tools = new Set<number>(), offsets = new Set<string>();
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
-  const numAfter = (line, letter) => {
+  const numAfter = (line: string, letter: string) => {
     const m = line.match(new RegExp(letter + '\\s*(-?\\d+\\.?\\d*)'));
     return m ? parseFloat(m[1]) : null;
   };
@@ -2161,7 +2172,7 @@ function parseGcodeCnc(text, truncated) {
 }
 
 // ---------- Log file origin ----------
-async function parseLogOrigin(file) {
+async function parseLogOrigin(file: File) {
   try {
     const text = await file.slice(0, 8192).text();
     const lines = text.split('\n').filter(l => l.trim()).slice(0, 30);
@@ -2191,7 +2202,7 @@ async function parseLogOrigin(file) {
       { name: 'Docker container log',
         re: /^\{"log":".*","stream":"(stdout|stderr)","time":"/ },
     ];
-    let matched = null, matchCount = 0;
+    let matched: { name: string; re: RegExp } | null = null, matchCount = 0;
     for (const pat of patterns) {
       let hits = 0;
       for (const line of lines) if (pat.re.test(line)) hits++;
@@ -2210,7 +2221,7 @@ async function parseLogOrigin(file) {
     if (Object.keys(levelCounts).length)
       fields['Log levels (sample)'] = Object.entries<number>(levelCounts)
         .sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ': ' + v).join(', ');
-    const ips = new Set();
+    const ips = new Set<string>();
     for (const line of lines) {
       const ipMatch = line.match(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g);
       if (ipMatch) for (const ip of ipMatch) ips.add(ip);
@@ -2225,8 +2236,8 @@ async function parseLogOrigin(file) {
 
 // Split a STEP entity's argument list into top-level args, respecting nested
 // parentheses and quoted strings ('' is an escaped quote inside a STEP string).
-function splitStepArgs(s) {
-  const args = [];
+function splitStepArgs(s: string) {
+  const args: string[] = [];
   let depth = 0, inStr = false, cur = '';
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
@@ -2249,7 +2260,7 @@ function splitStepArgs(s) {
 // Left in place they get captured as part of each argument value, so remove
 // them up front - taking care to honour string literals (with the doubled-''
 // escape) so a /* sequence inside a quoted string is preserved.
-function stripStepComments(text) {
+function stripStepComments(text: string) {
   let out = '', i = 0, inStr = false;
   while (i < text.length) {
     const c = text[i];
@@ -2273,7 +2284,7 @@ function stripStepComments(text) {
 }
 
 // Pull the (...) body of a STEP header entity by name, e.g. FILE_NAME(...).
-function stepEntityBody(text, name) {
+function stepEntityBody(text: string, name: string) {
   const m = new RegExp(name + '\\s*\\(', 'i').exec(text);
   if (!m) return null;
   let i = text.indexOf('(', m.index);
@@ -2291,27 +2302,27 @@ function stepEntityBody(text, name) {
 
 // Decode a STEP string literal: strip quotes, unescape '' and the \X2\..\X0\ /
 // \X\ unicode forms. '$' and '*' are the "unset" markers, treated as empty.
-function stepStr(tok) {
+function stepStr(tok: string) {
   if (!tok) return '';
   tok = tok.trim();
   if (tok === '$' || tok === '*') return '';
   const m = tok.match(/^'([\s\S]*)'$/);
   if (!m) return tok;
   return m[1].replace(/''/g, "'")
-    .replace(/\\X2\\([0-9A-Fa-f]+)\\X0\\/g, (_, h) => { let o = ''; for (let k = 0; k < h.length; k += 4) o += String.fromCharCode(parseInt(h.substr(k, 4), 16)); return o; })
-    .replace(/\\X\\([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/\\X2\\([0-9A-Fa-f]+)\\X0\\/g, (_: string, h: string) => { let o = ''; for (let k = 0; k < h.length; k += 4) o += String.fromCharCode(parseInt(h.substr(k, 4), 16)); return o; })
+    .replace(/\\X\\([0-9A-Fa-f]{2})/g, (_: string, h: string) => String.fromCharCode(parseInt(h, 16)))
     .trim();
 }
 
 // A STEP arg that is a list of strings, e.g. ('Alice','Bob') -> ['Alice','Bob'].
-function stepStrList(tok) {
+function stepStrList(tok: string) {
   if (!tok) return [];
   const inner = tok.trim().replace(/^\(/, '').replace(/\)$/, '');
   return splitStepArgs(inner).map(stepStr).filter(Boolean);
 }
 
 // Normalise an originating-system / preprocessor string to a known CAD product.
-function detectCadApp(s) {
+function detectCadApp(s: string) {
   const u = (s || '').toUpperCase();
   const map: [RegExp, string][] = [
     [/SOLIDWORKS/, 'SolidWorks'],
@@ -2341,7 +2352,7 @@ function detectCadApp(s) {
 
 // Map a FILE_SCHEMA name (or its embedded ISO 10303 part number) to its friendly
 // STEP application protocol.
-function stepProtocol(schema) {
+function stepProtocol(schema: string) {
   const u = (schema || '').toUpperCase();
   if (/MANAGED_MODEL_BASED_3D_ENGINEERING/.test(u) || /10303\s+242/.test(u)) return 'AP242 - Managed model-based 3D engineering';
   if (/AUTOMOTIVE_DESIGN/.test(u) || /10303\s+214/.test(u)) return 'AP214 - Automotive mechanical design';
@@ -2355,17 +2366,17 @@ function stepProtocol(schema) {
 // Parse the ISO-10303-21 HEADER (FILE_DESCRIPTION / FILE_NAME / FILE_SCHEMA),
 // surfacing the originating CAD system + version, preprocessor, author, schema
 // and application protocol.
-export function parseStepHeader(text) {
+export function parseStepHeader(text: string) {
   text = stripStepComments(text);
   const fdBody = stepEntityBody(text, 'FILE_DESCRIPTION');
   const fnBody = stepEntityBody(text, 'FILE_NAME');
   const fsBody = stepEntityBody(text, 'FILE_SCHEMA');
 
-  let descList = [], impl = '';
+  let descList: string[] = [], impl = '';
   if (fdBody) { const a = splitStepArgs(fdBody); descList = stepStrList(a[0]); impl = stepStr(a[1]); }
 
   // FILE_NAME(name, time_stamp, (authors), (orgs), preprocessor, originating_system, authorization)
-  let name = '', ts = '', authors = [], orgs = [], preproc = '', origSys = '', auth = '';
+  let name = '', ts = '', authors: string[] = [], orgs: string[] = [], preproc = '', origSys = '', auth = '';
   if (fnBody) {
     const a = splitStepArgs(fnBody);
     name = stepStr(a[0]); ts = stepStr(a[1]);
@@ -2373,7 +2384,7 @@ export function parseStepHeader(text) {
     preproc = stepStr(a[4]); origSys = stepStr(a[5]); auth = stepStr(a[6]);
   }
 
-  let schema = '', proto = '';
+  let schema = '', proto: string | null = '';
   if (fsBody) { schema = stepStrList(fsBody).join(', '); proto = stepProtocol(schema); }
 
   const app = detectCadApp(origSys + ' ' + preproc);
@@ -2394,7 +2405,7 @@ export function parseStepHeader(text) {
   return Object.keys(fields).length ? fields : null;
 }
 
-async function parseTextCad(file, format) {
+async function parseTextCad(file: File, format: string) {
   try {
     // The HEADER sits at the very start; read generously so a long
     // FILE_DESCRIPTION / author list still fits before the DATA section.
@@ -2418,11 +2429,11 @@ async function parseTextCad(file, format) {
 }
 
 // ---------- MSI (Windows Installer, OLE compound) ----------
-function parseMsi(head) {
+function parseMsi(head: Uint8Array): Row {
   if (head.length < 8 || head[0] !== 0xD0 || head[1] !== 0xCF || head[2] !== 0x11 || head[3] !== 0xE0) {
     return { 'Type': 'Windows Installer (MSI)' };
   }
-  const fields = { 'Type': 'Windows Installer database (OLE)' };
+  const fields: Row = { 'Type': 'Windows Installer database (OLE)' };
   const ole = parseOle(head);
   if (ole) Object.assign(fields, ole);
   // The SummaryInformation property set stores a Template like "Intel;1033" or
@@ -2439,7 +2450,7 @@ function parseMsi(head) {
 }
 
 // ---------- X.509 certificate (PEM / DER) ----------
-function parseCert(file) {
+function parseCert(file: File) {
   return file.arrayBuffer().then((ab) => {
     let der = new Uint8Array(ab);
     const fields: any = {};
@@ -2471,7 +2482,7 @@ function parseCert(file) {
 
 // Minimal ASN.1 DER walker, just enough to pull the interesting fields out of an
 // X.509 certificate (serial, validity, issuer/subject CN, algorithms, key size).
-function parseX509(der) {
+function parseX509(der: Uint8Array) {
   let p = 0;
   function readLen() {
     let len = der[p++];
@@ -2489,7 +2500,7 @@ function parseX509(der) {
     p += len;
     return { tag, len, start, end: start + len };
   }
-  function oidToStr(start, end) {
+  function oidToStr(start: number, end: number) {
     const bytes = der.subarray(start, end);
     const parts = [Math.floor(bytes[0] / 40), bytes[0] % 40];
     let val = 0;
@@ -2499,16 +2510,16 @@ function parseX509(der) {
     }
     return parts.join('.');
   }
-  const OIDS = {
+  const OIDS: Record<string, string> = {
     '1.2.840.113549.1.1.1': 'RSA', '1.2.840.113549.1.1.11': 'SHA-256 with RSA',
     '1.2.840.113549.1.1.5': 'SHA-1 with RSA', '1.2.840.113549.1.1.12': 'SHA-384 with RSA',
     '1.2.840.113549.1.1.13': 'SHA-512 with RSA', '1.2.840.10045.2.1': 'EC',
     '1.2.840.10045.4.3.2': 'ECDSA with SHA-256', '1.2.840.10045.4.3.3': 'ECDSA with SHA-384',
     '2.5.4.3': 'CN', '2.5.4.10': 'O', '2.5.4.11': 'OU', '2.5.4.6': 'C',
   };
-  function readName(end) {
+  function readName(end: number) {
     // SEQUENCE of RDNs; pull out CN/O if present.
-    const parts = [];
+    const parts: string[] = [];
     while (p < end) {
       const set = readTLV();             // SET
       const setEnd = set.end;
@@ -2526,10 +2537,10 @@ function parseX509(der) {
     }
     return parts.join(', ');
   }
-  function readTime(tlv) {
+  function readTime(tlv: { tag: number; len: number; start: number; end: number }) {
     const s = new TextDecoder().decode(der.subarray(tlv.start, tlv.end));
     // UTCTime YYMMDDHHMMSSZ or GeneralizedTime YYYYMMDD...
-    let yr, rest;
+    let yr: number, rest: string;
     if (tlv.tag === 0x17) { yr = parseInt(s.slice(0, 2), 10); yr += yr < 50 ? 2000 : 1900; rest = s.slice(2); }
     else { yr = parseInt(s.slice(0, 4), 10); rest = s.slice(4); }
     const mo = rest.slice(0, 2), da = rest.slice(2, 4), hh = rest.slice(4, 6), mm = rest.slice(6, 8);
@@ -2581,11 +2592,11 @@ function parseX509(der) {
 }
 
 // ---------- After Effects XML project (.aepx) ----------
-async function parseAepx(file) {
+async function parseAepx(file: File) {
   try {
     const text = await file.text();
     const fields: Row = { 'Format': 'After Effects XML project (AEPX)' };
-    const unesc = (s) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+    const unesc = (s: string) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
 
     // After Effects build / version string (e.g. <string>13.8x274</string> near
@@ -2633,7 +2644,7 @@ async function parseAepx(file) {
       .map(m => m[1]).filter(s => !s.startsWith('ADBE ') && /[a-zA-Z]/.test(s) && !/[;={}]/.test(s)))];
     if (names.length) fields['Named items'] = names.length;
 
-    const sections = [];
+    const sections: RowSection[] = [];
     if (uniqAssets.length) {
       sections.push({ title: 'Referenced assets (' + uniqAssets.length + ')',
         node: preBlock(uniqAssets.slice(0, 60).join('\n')) });
@@ -2662,7 +2673,7 @@ async function parseAepx(file) {
 // the form type 'Egg!'. The body is a tree of chunks (4-char FourCC + 4-byte BE
 // length, padded to even). We walk the tree and harvest cheap signals; the bulk
 // of the body (binary property blobs) stays opaque, which we note honestly.
-async function parseAep(file) {
+async function parseAep(file: File) {
   try {
     // RIFX files can be large; a few MB is plenty to harvest match-names, paths
     // and structure counts without pulling the whole project into memory.
@@ -2679,7 +2690,7 @@ async function parseAep(file) {
     // robustness against AE's deep nesting.
     let comps = 0, layers = 0, items = 0, folders = 0, footage = 0;
     const matchNames = new Set<string>();
-    let aeVersion = null;
+    let aeVersion: string | null = null;
 
     let p = 12; // past RIFX + size + form
     const end = buf.length;
@@ -2743,7 +2754,7 @@ async function parseAep(file) {
     if (paths.length) fields['Referenced asset paths'] = paths.length;
     if (cap < file.size) fields['Scanned'] = fmtBytes(cap) + ' of ' + fmtBytes(file.size);
 
-    const sections = [];
+    const sections: RowSection[] = [];
     if (effectNames.length) {
       sections.push({ title: 'Effects / plugins (' + effectNames.length + ')',
         node: preBlock(effectNames.slice(0, 80).join('\n')) });
@@ -2769,7 +2780,7 @@ async function parseAep(file) {
 }
 
 // Printable ASCII run (preserves position, used for windowed text sweeps).
-function asciiRun(buf, start, end) {
+function asciiRun(buf: Uint8Array, start: number, end: number) {
   let s = '';
   for (let i = start; i < end && i < buf.length; i++) {
     const c = buf[i];
@@ -2779,14 +2790,14 @@ function asciiRun(buf, start, end) {
 }
 
 // Best-effort UTF-16 decode of a binary buffer (tolerant), for path/string sweeps.
-function utf16Safe(buf) {
+function utf16Safe(buf: Uint8Array) {
   try { return utf16(buf, true) + '\n' + utf16(buf, false); } catch (_) { return ''; }
 }
 
 // Harvest plausible filesystem paths (Windows drive, UNC, or POSIX) from a binary
 // buffer by scanning both ASCII and UTF-16 string runs.
-function harvestPaths(buf) {
-  const out = new Set();
+function harvestPaths(buf: Uint8Array) {
+  const out = new Set<string>();
   const re = /(?:[A-Za-z]:\\|\\\\[^\s"<>|*?]+\\|\/(?:Users|Volumes|home|Applications|Movies)\/)[^\x00"<>|*?\n\r]{2,200}/g;
   // ASCII pass
   const aRun = asciiRun(buf, 0, buf.length);
@@ -2807,7 +2818,7 @@ function harvestPaths(buf) {
 // Sony / MAGIX VEGAS Pro project. The body is a proprietary RIFF-like / structured
 // binary. We confirm the signature and harvest any embedded version/build string
 // and referenced media paths via a string sweep. Deep parse is infeasible.
-async function parseVeg(file) {
+async function parseVeg(file: File) {
   try {
     const cap = Math.min(file.size, 4 * 1024 * 1024);
     const buf = new Uint8Array(await file.slice(0, cap).arrayBuffer());
@@ -2850,7 +2861,7 @@ async function parseVeg(file) {
 // A .drp may begin with a SQLite database ('SQLite format 3\0') or be a custom
 // binary (often a gzip/zstd blob or a DRP XML). We detect the container and
 // surface cheap signals: Resolve version, project/timeline name, media paths.
-async function parseDrp(file, ext) {
+async function parseDrp(file: File, ext: string) {
   try {
     const cap = Math.min(file.size, 4 * 1024 * 1024);
     const buf = new Uint8Array(await file.slice(0, cap).arrayBuffer());
@@ -2899,7 +2910,7 @@ async function parseDrp(file, ext) {
 // Newer Filmora projects are JSON (or wrap a JSON project model); older .wfp are
 // binary. Detect JSON vs binary and extract version/resolution/duration/tracks
 // for JSON; for binary, ID + any embedded version.
-async function parseFilmora(file, ext) {
+async function parseFilmora(file: File, ext: string) {
   try {
     const cap = Math.min(file.size, 6 * 1024 * 1024);
     const buf = new Uint8Array(await file.slice(0, cap).arrayBuffer());
@@ -2908,7 +2919,7 @@ async function parseFilmora(file, ext) {
 
     // Is there a JSON document (whole-file or embedded)? Find the first '{' that
     // begins a plausible Filmora model.
-    let jsonText = null;
+    let jsonText: string | null = null;
     const headStr = asciiRun(buf, 0, buf.length);
     const braceIdx = headStr.indexOf('{');
     if (braceIdx >= 0) {
@@ -2917,7 +2928,7 @@ async function parseFilmora(file, ext) {
       jsonText = extractJsonObject(candidate);
     }
 
-    let model = null;
+    let model: any = null;
     if (jsonText) { try { model = JSON.parse(jsonText); } catch (_) { model = null; } }
 
     if (model && typeof model === 'object') {
@@ -2974,7 +2985,7 @@ async function parseFilmora(file, ext) {
 }
 
 // Extract the first balanced top-level JSON object from a string (best effort).
-function extractJsonObject(s) {
+function extractJsonObject(s: string) {
   if (s[0] !== '{') return null;
   let depth = 0, inStr = false, esc = false;
   for (let i = 0; i < s.length && i < 6 * 1024 * 1024; i++) {
@@ -2996,7 +3007,7 @@ function extractJsonObject(s) {
 // CapCut desktop drafts are a folder with draft_content.json. We are handed it as
 // a .json file. The model has keys like materials, tracks, canvas_config, duration
 // (microseconds), draft_id, last_modified_platform / app version.
-function isCapcutModel(obj) {
+function isCapcutModel(obj: any) {
   if (!obj || typeof obj !== 'object') return false;
   // Require a couple of distinctive CapCut keys to avoid hijacking normal JSON.
   const hasMaterials = obj.materials && typeof obj.materials === 'object';
@@ -3007,8 +3018,8 @@ function isCapcutModel(obj) {
          (hasTracks && hasDraftId && (obj.duration !== undefined));
 }
 
-function buildCapcutFields(obj) {
-  const fields = { 'Application': 'CapCut (ByteDance)' };
+function buildCapcutFields(obj: any) {
+  const fields: Row = { 'Application': 'CapCut (ByteDance)' };
   fields['Format'] = 'CapCut draft (draft_content.json)';
 
   const platform = obj.last_modified_platform || obj.platform;
@@ -3051,8 +3062,8 @@ function buildCapcutFields(obj) {
   // Materials by type: CapCut groups them under named arrays in `materials`.
   const m = obj.materials;
   if (m && typeof m === 'object') {
-    const counts = [];
-    const pick = (key, label) => {
+    const counts: string[] = [];
+    const pick = (key: string, label: string) => {
       if (Array.isArray(m[key]) && m[key].length) counts.push(label + ': ' + m[key].length);
     };
     pick('videos', 'Videos');
@@ -3074,7 +3085,7 @@ function buildCapcutFields(obj) {
 
 // Given a .json file, return a CapCut readout if it is a CapCut draft, else null
 // (so normal JSON rendering proceeds untouched).
-async function parseCapcut(file) {
+async function parseCapcut(file: File) {
   try {
     // CapCut drafts can be large; cap the read but they are usually a few MB.
     if (file.size > 64 * 1024 * 1024) return null;
@@ -3086,7 +3097,7 @@ async function parseCapcut(file) {
       // Cheap probe failed and filename isn't the canonical one - not CapCut.
       if (!/"materials"[\s\S]{0,200}"tracks"|"tracks"[\s\S]{0,200}"segments"/.test(text.slice(0, 8192))) return null;
     }
-    let obj;
+    let obj: any;
     try { obj = JSON.parse(text); } catch (_) { return null; }
     if (!isCapcutModel(obj)) return null;
     return buildCapcutFields(obj);
@@ -3096,8 +3107,8 @@ async function parseCapcut(file) {
 }
 
 // ---------- Partial download (.part / .crdownload) ----------
-async function parsePart(file, head) {
-  const fields = { 'Status': 'Incomplete download' };
+async function parsePart(file: File, head: Uint8Array) {
+  const fields: Row = { 'Status': 'Incomplete download' };
   fields['Bytes present'] = fmtBytes(file.size);
   const sig = guessFromMagic(head);
   if (sig) fields['Detected original format'] = sig;
@@ -3108,7 +3119,7 @@ async function parsePart(file, head) {
 
 // Small magic-byte sniffer for the partial-download detector.
 function guessFromMagic(b: Uint8Array) {
-  const a = (s, l) => Array.from(b.subarray(s, s + l)).map(c => String.fromCharCode(c)).join('');
+  const a = (s: number, l: number) => Array.from(b.subarray(s, s + l)).map(c => String.fromCharCode(c)).join('');
   if (a(0, 4) === '%PDF') return 'PDF document';
   if (b[0] === 0x50 && b[1] === 0x4B) return 'ZIP / Office / archive';
   if (b[0] === 0x4D && b[1] === 0x5A) return 'Windows executable (PE)';
@@ -3129,17 +3140,17 @@ function guessFromMagic(b: Uint8Array) {
 }
 
 // ---------- Dolby Digital Plus / E-AC-3 (.ec3) ----------
-function parseEac3(head) {
+function parseEac3(head: Uint8Array) {
   // Find the 0x0B77 sync word, then read the bitstream header for acmod + lfe.
   let off = -1;
   for (let i = 0; i + 1 < Math.min(head.length, 4096); i++) {
     if (head[i] === 0x0B && head[i + 1] === 0x77) { off = i + 2; break; }
   }
-  const fields = { 'Codec': 'Dolby Digital Plus (E-AC-3)' };
+  const fields: Row = { 'Codec': 'Dolby Digital Plus (E-AC-3)' };
   if (off < 0 || off + 4 > head.length) return fields;
   // Bit reader starting at the byte after the sync word.
   let bitPos = off * 8;
-  const bits = (n) => {
+  const bits = (n: number) => {
     let v = 0;
     for (let i = 0; i < n; i++) {
       const byte = head[bitPos >> 3];
@@ -3157,16 +3168,16 @@ function parseEac3(head) {
   const acmod = bits(3);
   const lfeon = bits(1);
   const chans = [2, 1, 2, 3, 3, 4, 4, 5][acmod] + (lfeon ? 1 : 0);
-  const layout = { 1: 'Mono', 2: 'Stereo', 3: '3.0', 4: '3.0 (surround)', 6: '5.1', 5: '4.0' };
+  const layout: Record<number, string> = { 1: 'Mono', 2: 'Stereo', 3: '3.0', 4: '3.0 (surround)', 6: '5.1', 5: '4.0' };
   fields['Channels'] = lfeon ? (chans - 1) + '.1' : String(chans);
   if (acmod === 7) fields['Layout'] = lfeon ? '5.1 surround' : '5.0 surround';
-  const rates = { 0: '48 kHz', 1: '44.1 kHz', 2: '32 kHz' };
+  const rates: Record<number, string> = { 0: '48 kHz', 1: '44.1 kHz', 2: '32 kHz' };
   if (rates[fscod]) fields['Sample rate'] = rates[fscod];
   return fields;
 }
 
 // ---------- Dolby TrueHD / MLP (.thd / .mlp) ----------
-function parseTrueHd(head) {
+function parseTrueHd(head: Uint8Array) {
   // MLP major sync: format_sync at offset 4 is 0xF8726FBA (TrueHD) or 0xF8726FBB (MLP).
   for (let i = 0; i + 8 < Math.min(head.length, 4096); i++) {
     if (head[i + 4] === 0xF8 && head[i + 5] === 0x72 && head[i + 6] === 0x6F &&
@@ -3184,13 +3195,13 @@ function parseTrueHd(head) {
 // string "Hierarchy <version>" padded to 128 bytes; CDP4 / COMET (the ESA
 // concurrent-design platform) writes a SQLite / ZIP / JSON / XML container.
 // Detect the Criterium signature first, otherwise fall back to the COMET sniff.
-async function parseCdp(file, head) {
+async function parseCdp(file: File, head: Uint8Array) {
   const hierarchy = head[0] === 0x80 && head[1] === 0x00 &&
     String.fromCharCode(...head.subarray(2, 11)) === 'Hierarchy';
   if (hierarchy) return parseCriterium(file, head);
 
-  const fields = { _app: 'CDP4 (COMET Data Platform)' };
-  const a = (s, l) => Array.from<number>(head.subarray(s, s + l)).map(c => String.fromCharCode(c)).join('');
+  const fields: Row = { _app: 'CDP4 (COMET Data Platform)' };
+  const a = (s: number, l: number) => Array.from<number>(head.subarray(s, s + l)).map(c => String.fromCharCode(c)).join('');
   if (a(0, 15) === 'SQLite format 3') {
     fields['Container'] = 'SQLite database';
   } else if (head[0] === 0x50 && head[1] === 0x4B) {
@@ -3212,8 +3223,8 @@ async function parseCdp(file, head) {
 // alternatives) and any description. The interleaved pairwise-comparison cells
 // (runs of '!'/'0') and the built-in rating scales (padded, double-spaced) are
 // filtered out so only model-specific labels remain.
-async function parseCriterium(file, head) {
-  const fields = { _app: 'Criterium DecisionPlus' };
+async function parseCriterium(file: File, head: Uint8Array) {
+  const fields: Row = { _app: 'Criterium DecisionPlus' };
   const ver = String.fromCharCode(...head.subarray(2, 17)).replace(/[^\x20-\x7e]/g, '').trim();
   const m = ver.match(/^(\w+)\s+([\d.]+)$/);
   if (m) { fields['Model type'] = m[1]; fields['Format version'] = m[2]; }
@@ -3225,10 +3236,10 @@ async function parseCriterium(file, head) {
 
   const STRUCT = new Set(['goal', 'goal level', 'alternatives', 'criteria', 'subcriteria',
     'design alternatives', 'main criteria', 'sub criteria']);
-  const isStruct = (s) => STRUCT.has(s.toLowerCase()) || /^level\s*\d+$/i.test(s);
+  const isStruct = (s: string) => STRUCT.has(s.toLowerCase()) || /^level\s*\d+$/i.test(s);
 
-  const labels = [];
-  const seen = new Set();
+  const labels: string[] = [];
+  const seen = new Set<string>();
   for (let s of runs) {
     s = s.replace(/<[^>]*>/g, '').trim();        // drop <Note>/<Question>/<XID> tags
     if (!/[A-Za-z]{3}/.test(s)) continue;        // needs real words
@@ -3270,20 +3281,20 @@ async function parseCriterium(file, head) {
 // RankData and CyberRankData - into a readable gameplay summary, and dump the
 // full decoded data underneath. Unknown classes still get the generic dump.
 const UK_DIFFICULTIES = ['Harmless', 'Lenient', 'Standard', 'Violent', 'Brutal', 'UMD'];
-const UK_WEAPONS = { rev: 'Revolver', sho: 'Shotgun', nai: 'Nailgun', rai: 'Railcannon', rock: 'Rocket Launcher', arm: 'Arm' };
+const UK_WEAPONS: Record<string, string> = { rev: 'Revolver', sho: 'Shotgun', nai: 'Nailgun', rai: 'Railcannon', rock: 'Rocket Launcher', arm: 'Arm' };
 
-const isArr = (v) => Array.isArray(v);
-const countTruthy = (a) => isArr(a) ? a.filter((x) => x && x !== 0 && x !== -1).length : 0;
-function maxWithIndex(a) {
+const isArr = (v: any): v is any[] => Array.isArray(v);
+const countTruthy = (a: any) => isArr(a) ? a.filter((x) => x && x !== 0 && x !== -1).length : 0;
+function maxWithIndex(a: any) {
   if (!isArr(a) || !a.length) return null;
   let bi = -1, bv = -Infinity;
   a.forEach((x, i) => { const n = Number(x); if (n > bv) { bv = n; bi = i; } });
   return bv > 0 ? { value: bv, index: bi } : null;
 }
-const fmtTime = (s) => { const t = Number(s) || 0; const m = Math.floor(t / 60); return `${m}:${String(Math.floor(t % 60)).padStart(2, '0')}.${String(Math.round((t % 1) * 100)).padStart(2, '0')}`; };
-const diffName = (i) => UK_DIFFICULTIES[i] !== undefined ? `${UK_DIFFICULTIES[i]} (${i})` : String(i);
+const fmtTime = (s: any) => { const t = Number(s) || 0; const m = Math.floor(t / 60); return `${m}:${String(Math.floor(t % 60)).padStart(2, '0')}.${String(Math.round((t % 1) * 100)).padStart(2, '0')}`; };
+const diffName = (i: number) => UK_DIFFICULTIES[i] !== undefined ? `${UK_DIFFICULTIES[i]} (${i})` : String(i);
 
-function summariseBepis(cls, o, fields) {
+function summariseBepis(cls: string, o: any, fields: Row) {
   if (cls === 'GameProgressMoneyAndGear') {
     fields['Save type'] = 'General progress (money & gear)';
     if (typeof o.money === 'number') fields['Money'] = o.money.toLocaleString();
@@ -3295,7 +3306,7 @@ function summariseBepis(cls, o, fields) {
     }
     const fam = Object.keys(byFam).filter((f) => UK_WEAPONS[f]);
     if (fam.length) fields['Weapon variants unlocked'] = fam.map((f) => `${UK_WEAPONS[f]} ${byFam[f].n}/${byFam[f].t}`).join(', ');
-    const flags = [];
+    const flags: string[] = [];
     if (o.clashModeUnlocked) flags.push('Clash mode');
     if (o.ghostDroneModeUnlocked) flags.push('Ghost drone');
     if (o.tutorialBeat) flags.push('Tutorial beaten');
@@ -3311,17 +3322,17 @@ function summariseBepis(cls, o, fields) {
   } else if (cls === 'RankData') {
     fields['Save type'] = 'Per-level rank data';
     if (typeof o.levelNumber === 'number') fields['Level number'] = String(o.levelNumber);
-    if (isArr(o.ranks)) { const played = o.ranks.filter((x) => x !== -1).length; fields['Completions (per difficulty)'] = `${played} / ${o.ranks.length}`; }
+    if (isArr(o.ranks)) { const played = o.ranks.filter((x: any) => x !== -1).length; fields['Completions (per difficulty)'] = `${played} / ${o.ranks.length}`; }
     if (isArr(o.secretsFound)) fields['Secrets found'] = `${countTruthy(o.secretsFound)} / ${o.secretsAmount != null ? o.secretsAmount : o.secretsFound.length}`;
     if (o.challenge) fields['Challenge'] = 'Completed';
     if (isArr(o.majorAssists)) { const used = countTruthy(o.majorAssists); if (used) fields['Major assists used'] = `${used} difficulties`; }
     // Best stats from the populated RankScoreData entries.
     if (isArr(o.stats)) {
-      const best = o.stats.filter((s) => s && typeof s === 'object');
+      const best = o.stats.filter((s: any) => s && typeof s === 'object');
       if (best.length) {
-        const k = Math.max(...best.map((s) => Number(s.kills) || 0));
-        const st = Math.max(...best.map((s) => Number(s.style) || 0));
-        const times = best.map((s) => Number(s.time) || 0).filter((t) => t > 0);
+        const k = Math.max(...best.map((s: any) => Number(s.kills) || 0));
+        const st = Math.max(...best.map((s: any) => Number(s.style) || 0));
+        const times = best.map((s: any) => Number(s.time) || 0).filter((t: number) => t > 0);
         if (k) fields['Best kills'] = String(k);
         if (st) fields['Best style'] = st.toLocaleString();
         if (times.length) fields['Best time'] = fmtTime(Math.min(...times));
@@ -3338,8 +3349,8 @@ function summariseBepis(cls, o, fields) {
   }
 }
 
-async function parseBepis(file, head) {
-  const fields = { 'Game': 'ULTRAKILL', 'File type': 'Save data' };
+async function parseBepis(file: File, head: Uint8Array) {
+  const fields: Row = { 'Game': 'ULTRAKILL', 'File type': 'Save data' };
   const buf = new Uint8Array(await file.slice(0, Math.min(file.size, 4 * 1024 * 1024)).arrayBuffer());
 
   // Modern .bepis: a .NET BinaryFormatter (NRBF) stream (magic 00 01 00 00 00).
@@ -3370,7 +3381,7 @@ async function parseBepis(file, head) {
 
   // Fallback - pull printable ASCII runs (≥4 chars) as a hint at contents.
   fields['Container'] = 'Binary';
-  const strings = [];
+  const strings: string[] = [];
   let cur = '';
   for (let i = 0; i < buf.length; i++) {
     const c = buf[i];
@@ -3397,10 +3408,10 @@ async function parseBepis(file, head) {
 // identifies). It carries NO image data. Two variants:
 //   • per-folder (e.g. 107.CTG) - starts with the folder path "X:\DCIM\nnnCANON"
 //   • master    (D.CTG)         - starts with a uint32 folder count
-async function parseCtg(file) {
+async function parseCtg(file: File) {
   const buf = new Uint8Array(await file.slice(0, Math.min(file.size, 65536)).arrayBuffer());
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  const fields = { 'Vendor': 'Canon', 'File type': 'Camera catalog (DCIM index)' };
+  const fields: Row = { 'Vendor': 'Canon', 'File type': 'Camera catalog (DCIM index)' };
 
   // Per-folder catalog begins with a drive path like "D:\DCIM\107CANON".
   const isPath = buf.length > 8 &&
@@ -3431,7 +3442,7 @@ async function parseCtg(file) {
     // Entry-prefix table near the end: IMG_ (photos), MVI_ (movies), SND_ (the
     // voice-memo slot Canon pairs with each photo). Count by scanning the bytes.
     const txt = ascii(buf, 0, buf.length);
-    const n = (re) => (txt.match(re) || []).length;
+    const n = (re: RegExp) => (txt.match(re) || []).length;
     const nImg = n(/IMG_/g), nMvi = n(/MVI_/g), nSnd = n(/SND_/g);
     if (nImg) fields['Photo entries (IMG_)'] = String(nImg);
     if (nMvi) fields['Movie entries (MVI_)'] = String(nMvi);
@@ -3455,23 +3466,23 @@ async function parseCtg(file) {
 // StringData blocks (name / relative-path / working-dir / arguments / icon) that
 // the LinkFlags say are present. StringData is UTF-16 when the Unicode flag is set.
 const LNK_CLSID = [0x01,0x14,0x02,0x00,0x00,0x00,0x00,0x00,0xC0,0x00,0x00,0x00,0x00,0x00,0x00,0x46];
-function lnkFiletime(dv, off) {
+function lnkFiletime(dv: DataView, off: number) {
   const lo = dv.getUint32(off, true), hi = dv.getUint32(off + 4, true);
   const ft = hi * 4294967296 + lo;            // 100-ns ticks since 1601-01-01
   if (!ft) return null;
   const d = new Date(ft / 10000 - 11644473600000);
   return isNaN(d.getTime()) ? null : d.toLocaleString();
 }
-function lnkCStr(buf, start) {                  // null-terminated ANSI string
+function lnkCStr(buf: Uint8Array, start: number) {                  // null-terminated ANSI string
   if (start < 0 || start >= buf.length) return '';
   let end = start;
   while (end < buf.length && buf[end] !== 0) end++;
   return new TextDecoder('latin1').decode(buf.subarray(start, end));
 }
-function lnkHotkey(raw) {
+function lnkHotkey(raw: number) {
   const key = raw & 0xFF, mod = (raw >> 8) & 0xFF;
   if (!key) return null;
-  const parts = [];
+  const parts: string[] = [];
   if (mod & 0x02) parts.push('Ctrl');
   if (mod & 0x04) parts.push('Alt');
   if (mod & 0x01) parts.push('Shift');
@@ -3480,7 +3491,7 @@ function lnkHotkey(raw) {
   else parts.push('0x' + key.toString(16));
   return parts.join(' + ');
 }
-async function parseLnk(file) {
+async function parseLnk(file: File) {
   const buf = new Uint8Array(await file.slice(0, Math.min(file.size, 262144)).arrayBuffer());
   if (buf.length < 0x4C) return null;
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -3500,7 +3511,7 @@ async function parseLnk(file) {
     off += 2 + dv.getUint16(off, true);
   }
 
-  let localPath = null;
+  let localPath: string | null = null;
   if ((flags & 0x02) && off + 28 <= buf.length) {            // HasLinkInfo
     const li = off;
     const liSize = dv.getUint32(li, true);
@@ -3522,7 +3533,7 @@ async function parseLnk(file) {
     else       { for (let i = 0; i < n && off < buf.length; i++)     { s += String.fromCharCode(buf[off]); off += 1; } }
     return s;
   };
-  let name = null, rel = null, work = null, args = null, icon = null;
+  let name: string | null = null, rel: string | null = null, work: string | null = null, args: string | null = null, icon: string | null = null;
   if (flags & 0x04) name = readStr();           // HasName (description)
   if (flags & 0x08) rel  = readStr();           // HasRelativePath
   if (flags & 0x10) work = readStr();           // HasWorkingDir
@@ -3530,7 +3541,7 @@ async function parseLnk(file) {
   if (flags & 0x40) icon = readStr();           // HasIconLocation
 
   const isDir = !!(attrs & 0x10);
-  const fields = { 'Type': 'Windows shortcut (.LNK)' };
+  const fields: Row = { 'Type': 'Windows shortcut (.LNK)' };
   const target = localPath || rel;
   if (target) fields['Target'] = target;
   if (isDir) fields['Target type'] = 'Folder';
@@ -3540,7 +3551,7 @@ async function parseLnk(file) {
   if (name) fields['Description'] = name;
   if (icon) fields['Icon location'] = icon;
   if (!isDir && targetSize) fields['Target size'] = fmtBytes(targetSize);
-  const showMap = { 1: 'Normal window', 3: 'Maximized', 7: 'Minimized' };
+  const showMap: Record<number, string> = { 1: 'Normal window', 3: 'Maximized', 7: 'Minimized' };
   if (showMap[showCmd]) fields['Window'] = showMap[showCmd];
   const hk = lnkHotkey(hotkey);
   if (hk) fields['Hotkey'] = hk;
@@ -3550,10 +3561,10 @@ async function parseLnk(file) {
 }
 
 // ---------- Internet shortcut (.URL) ----------
-async function parseUrlShortcut(file) {
+async function parseUrlShortcut(file: File) {
   const text = await file.text();
-  const fields = { 'Type': 'Internet shortcut (.URL)' };
-  const grab = (re) => { const m = text.match(re); return m ? m[1].trim() : null; };
+  const fields: Row = { 'Type': 'Internet shortcut (.URL)' };
+  const grab = (re: RegExp) => { const m = text.match(re); return m ? m[1].trim() : null; };
   const url  = grab(/^\s*URL\s*=\s*(.+)$/im);
   const icon = grab(/^\s*IconFile\s*=\s*(.+)$/im);
   const idx  = grab(/^\s*IconIndex\s*=\s*(.+)$/im);
@@ -3564,10 +3575,10 @@ async function parseUrlShortcut(file) {
 }
 
 // ---------- macOS web shortcut (.webloc) ----------
-async function parseWebloc(file) {
+async function parseWebloc(file: File) {
   const buf = new Uint8Array(await file.slice(0, Math.min(file.size, 65536)).arrayBuffer());
   const text = new TextDecoder('latin1').decode(buf);
-  const fields = { 'Type': 'macOS web shortcut (.webloc)' };
+  const fields: Row = { 'Type': 'macOS web shortcut (.webloc)' };
   fields['Format'] = text.startsWith('bplist') ? 'Binary plist' : 'XML plist';
   const m = text.match(/<key>\s*URL\s*<\/key>\s*<string>([^<]+)<\/string>/i)
         || text.match(/<string>([^<]+)<\/string>/i)
@@ -3580,20 +3591,20 @@ async function parseWebloc(file) {
 // Decodes the partition scheme (MBR / GPT / none) and the first volume's
 // filesystem (FAT12/16/32, NTFS, exFAT) straight from the boot records, so a raw
 // card/USB/floppy image reports its real layout instead of just "disk image".
-const MBR_PART_TYPES = {
+const MBR_PART_TYPES: Record<number, string> = {
   0x01: 'FAT12', 0x04: 'FAT16 (<32M)', 0x05: 'Extended', 0x06: 'FAT16',
   0x07: 'NTFS / exFAT', 0x0b: 'FAT32 (CHS)', 0x0c: 'FAT32 (LBA)',
   0x0e: 'FAT16 (LBA)', 0x0f: 'Extended (LBA)', 0x82: 'Linux swap',
   0x83: 'Linux', 0xa5: 'FreeBSD', 0xaf: 'HFS / HFS+', 0xee: 'GPT protective',
   0xef: 'EFI System',
 };
-function fmtGuid(b, o) {
-  const h = (i) => b[o + i].toString(16).padStart(2, '0');
+function fmtGuid(b: Uint8Array, o: number) {
+  const h = (i: number) => b[o + i].toString(16).padStart(2, '0');
   return (h(3) + h(2) + h(1) + h(0) + '-' + h(5) + h(4) + '-' + h(7) + h(6) + '-' +
           h(8) + h(9) + '-' + h(10) + h(11) + h(12) + h(13) + h(14) + h(15)).toUpperCase();
 }
 // Parse a FAT boot sector (BPB) at offset `off` in buf. Returns a fields object.
-function parseFatVbr(buf, off) {
+function parseFatVbr(buf: Uint8Array, off: number) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const out: any = {};
   const oem = ascii(buf, off + 3, 8).trim();
@@ -3602,7 +3613,7 @@ function parseFatVbr(buf, off) {
   const totalSec = dv.getUint16(off + 0x13, true) || dv.getUint32(off + 0x20, true);
   const fs36 = ascii(buf, off + 0x36, 8).trim();
   const fs52 = ascii(buf, off + 0x52, 8).trim();
-  let fsType, label, serial;
+  let fsType: string | null, label: string, serial: number;
   if (fs52.startsWith('FAT32')) {
     fsType = 'FAT32'; label = ascii(buf, off + 0x47, 11).trim(); serial = dv.getUint32(off + 0x43, true);
   } else {
@@ -3618,8 +3629,8 @@ function parseFatVbr(buf, off) {
   if (serial) out['Volume serial'] = (serial >>> 0).toString(16).toUpperCase().padStart(8, '0').replace(/(.{4})(.{4})/, '$1-$2');
   return out;
 }
-async function parseDiskImage(file) {
-  const fields = { 'Type': 'Disk image' };
+async function parseDiskImage(file: File) {
+  const fields: Row = { 'Type': 'Disk image' };
   try {
     const sec0 = new Uint8Array(await file.slice(0, 512).arrayBuffer());
     const dv = new DataView(sec0.buffer, sec0.byteOffset, sec0.byteLength);
@@ -3634,7 +3645,7 @@ async function parseDiskImage(file) {
       fields['Partitioning'] = 'None (single volume / superfloppy)';
       Object.assign(fields, parseFatVbr(sec0, 0));
     } else if (has55aa) {
-      const parts = [];
+      const parts: { active: boolean; type: number; lba: number; count: number }[] = [];
       for (let p = 0; p < 4; p++) {
         const o = 0x1be + p * 16;
         const type = sec0[o + 4];
@@ -3652,7 +3663,7 @@ async function parseDiskImage(file) {
           const numEnt = gdv.getUint32(0x50, true);
           const entSz = gdv.getUint32(0x54, true);
           const arr = new Uint8Array(await file.slice(entLba * 512, entLba * 512 + Math.min(numEnt * entSz, 32768)).arrayBuffer());
-          const list = [];
+          const list: string[] = [];
           for (let i = 0; i + entSz <= arr.length && i / entSz < numEnt; i += entSz) {
             let empty = true;
             for (let j = 0; j < 16; j++) if (arr[i + j] !== 0) { empty = false; break; }
@@ -3698,14 +3709,14 @@ async function parseDiskImage(file) {
 // (GetDataBack, ReclaiMe) also save .rec session files. Sniff the bytes to tell
 // them apart. We pull only structural fields from session XML - never the embedded
 // license key.
-async function parseRec(file) {
+async function parseRec(file: File) {
   const head = new Uint8Array(await file.slice(0, Math.min(file.size, 8192)).arrayBuffer());
   const text = new TextDecoder('latin1').decode(head);
   const trimmed = text.replace(/^﻿/, '').trimStart();
   const fields: any = {};
 
   if (trimmed.startsWith('<?xml') || trimmed[0] === '<') {
-    const g = (re) => { const m = text.match(re); return m ? m[1].trim() : null; };
+    const g = (re: RegExp) => { const m = text.match(re); return m ? m[1].trim() : null; };
     if (/getdatabackrecovery/i.test(text)) {
       fields['Type'] = 'GetDataBack recovery session';
       const tool = g(/<recfilecreator>([^<]+)/i), ver = g(/<recfilecreatorversion>([^<]+)/i);
@@ -3737,7 +3748,7 @@ async function parseRec(file) {
 }
 
 // ---------- Rich Text Format (.rtf) ----------
-async function parseRtf(file) {
+async function parseRtf(file: File) {
   try {
     const text = await file.text();
     if (!text.startsWith('{\\rtf')) return { 'Type': 'Rich Text (header not found)' };
@@ -3761,7 +3772,7 @@ async function parseRtf(file) {
 }
 
 // Strip RTF control words and groups down to readable plain text.
-function stripRtf(rtf) {
+function stripRtf(rtf: string) {
   let out = '';
   let i = 0;
   const n = rtf.length;
@@ -3805,8 +3816,8 @@ function stripRtf(rtf) {
 
 // ---------- Font preview (live rendering via FontFace) ----------
 let fontPreviewSeq = 0;
-async function renderFontPreview(file, card, fontInfo) {
-  let face;
+async function renderFontPreview(file: File, card: HTMLElement, fontInfo: any) {
+  let face: FontFace;
   const family = 'anr-font-' + (++fontPreviewSeq);
   try {
     const buf = await file.arrayBuffer();
@@ -3837,20 +3848,20 @@ async function renderFontPreview(file, card, fontInfo) {
     }, 'Ag');
     varRow.appendChild(sample);
 
-    const apply = () => { sample.style.fontVariationSettings = axes.map((a) => `"${a.tag}" ${state[a.tag]}`).join(', '); };
+    const apply = () => { sample.style.fontVariationSettings = axes.map((a: any) => `"${a.tag}" ${state[a.tag]}`).join(', '); };
 
     // Build one self-contained, independently-animatable control per axis.
-    const makeAxis = (a) => {
+    const makeAxis = (a: any) => {
       state[a.tag] = a.def;
-      const fmt = (a.max - a.min) >= 10 ? (v) => String(Math.round(v)) : (v) => (Math.round(v * 100) / 100).toFixed(2);
+      const fmt = (a.max - a.min) >= 10 ? (v: number) => String(Math.round(v)) : (v: number) => (Math.round(v * 100) / 100).toFixed(2);
       const readout = el('span', { class: 'anr-range-readout' }, fmt(a.def));
       const slider = el('input', { type: 'range', min: String(a.min), max: String(a.max), value: String(a.def), step: 'any', 'aria-label': a.name });
       const playBtn = el('button', { type: 'button', class: 'anr-player-play' }, '▶');
       let playing = false, loopId = 0;
       const startLoop = () => {
         const id = ++loopId;
-        let t0 = null;
-        const step = (ts) => {
+        let t0: number | null = null;
+        const step = (ts: number) => {
           if (id !== loopId || !playing || !sample.isConnected) return;
           if (t0 === null) t0 = ts;
           const phase = ((ts - t0) % (period * 2)) / period;   // triangle 0->1->0
@@ -3862,7 +3873,7 @@ async function renderFontPreview(file, card, fontInfo) {
         };
         requestAnimationFrame(step);
       };
-      const setPlaying = (p) => {
+      const setPlaying = (p: boolean) => {
         playing = p;
         playBtn.textContent = p ? '❚❚' : '▶';
         playBtn.setAttribute('aria-label', (p ? 'Pause ' : 'Play ') + a.name + ' animation');
@@ -3885,7 +3896,7 @@ async function renderFontPreview(file, card, fontInfo) {
     const apis = axes.map(makeAxis);
     apply();
     // Auto-play the primary axis (weight if present, else the first).
-    const primaryIdx = Math.max(0, axes.findIndex((a) => a.tag === 'wght'));
+    const primaryIdx = Math.max(0, axes.findIndex((a: any) => a.tag === 'wght'));
     apis[primaryIdx].setPlaying(true);
     previewCard.appendChild(varRow);
   }
@@ -3925,7 +3936,7 @@ async function renderFontPreview(file, card, fontInfo) {
 // ---------- Valve KeyValues (.vdf / .acf) ----------
 // Steam/Source text format: nested "key" "value" pairs with { } blocks. Used by
 // appmanifest, libraryfolders, loginusers, config, etc.
-function prettyKV(obj, indent?) {
+function prettyKV(obj: any, indent?: number) {
   indent = indent || 0;
   const pad = '  '.repeat(indent);
   let s = '';
@@ -3940,8 +3951,8 @@ function prettyKV(obj, indent?) {
   return s;
 }
 
-async function parseVdf(file) {
-  let text;
+async function parseVdf(file: File) {
+  let text: string;
   try { text = await file.text(); } catch (_) { return null; }
   if (!text) return null;
 
@@ -3975,7 +3986,7 @@ async function parseVdf(file) {
     return obj;
   }
 
-  let rootKey = null, root = null;
+  let rootKey: string | null = null, root: any = null;
   if (tokens[0].t === 's' && tokens[1] && tokens[1].t === '{') {
     rootKey = tokens[0].v; i = 2; root = parseObj();
   } else {
@@ -3986,11 +3997,11 @@ async function parseVdf(file) {
   // Count leaves + surface notable fields found anywhere in the tree.
   let leaves = 0;
   const notable: any = {};
-  const NOTE = { appid: 'App ID', name: 'Name', installdir: 'Install dir',
+  const NOTE: Record<string, string> = { appid: 'App ID', name: 'Name', installdir: 'Install dir',
     buildid: 'Build ID', SizeOnDisk: 'Size on disk', LastUpdated: 'Last updated',
     LastOwner: 'Last owner', universe: 'Universe', PersonaName: 'Persona name',
     AccountName: 'Account name', language: 'Language', version: 'Version' };
-  (function walk(o) {
+  (function walk(o: any) {
     for (const k in o) {
       const v = o[k];
       if (v && typeof v === 'object') walk(v);
@@ -4018,7 +4029,7 @@ async function parseVdf(file) {
 // Maps an extension to a metadata parser. Functions receive { head, file, ext }
 // and may be sync or async (the caller awaits the result). To add a format,
 // drop a line here rather than extending a branch chain.
-const PARSERS = {
+const PARSERS: Record<string, ParseFn> = {
   vdf:   c => parseVdf(c.file),
   acf:   c => parseVdf(c.file),
   psd:   c => parsePsd(c.head),
@@ -4106,7 +4117,7 @@ const PARSERS = {
 };
 
 // ---------- main render ----------
-export async function renderProprietary(file, container, extOverride?) {
+export async function renderProprietary(file: File, container, extOverride?) {
   const ext = extOverride || extFromName(file.name);
   const fmt = FORMATS[ext];
   if (!fmt) return false;
@@ -4386,6 +4397,6 @@ export async function renderProprietary(file, container, extOverride?) {
 }
 
 // Check if a file extension is a known proprietary format
-export function isProprietaryExt(ext) {
+export function isProprietaryExt(ext: string) {
   return ext in FORMATS;
 }

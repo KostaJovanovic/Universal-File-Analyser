@@ -399,7 +399,7 @@ function arcPath(p, Y, col) {
 // Rows are [label, value] or [label, value, helpText]; a help string routes the
 // row through rowHelp for a local [?] tooltip (kept out of the shared LABEL_HELP
 // map, which would mis-attach to same-named rows elsewhere).
-function metaCard(title, helpText, rows, file, extra?) {
+function metaCard(title, helpText, rows, file: File, extra?) {
   const card = el('div', { class: 'anr-card' });
   const [h, help] = h3help(title, helpText);
   card.appendChild(h); card.appendChild(help);
@@ -426,7 +426,7 @@ function helpTh(label, help) {
 
 // ---- entry point ----------------------------------------------------------
 
-export async function renderAltium(file, resultsEl) {
+export async function renderAltium(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading Altium document "${file.name}"…`));
@@ -468,7 +468,7 @@ export async function renderAltium(file, resultsEl) {
 // SamacSys ECAD Model wrapper (.epw) - a small text stub the SamacSys / Mouser
 // "ECAD Part Wizard" expands into a real symbol + footprint. The last line is a
 // descriptor: <componentId>/<partId>/<version>/<pinCount>/<parts>/<category>.
-async function renderEpw(file, resultsEl) {
+async function renderEpw(file: File, resultsEl: HTMLElement) {
   resultsEl.innerHTML = '';
   let text = '';
   try { text = await file.text(); } catch (_) {}
@@ -523,7 +523,7 @@ function parsePrj(text, fileName) {
 
 // Altium project file (.PrjPcb) - an INI listing the member documents, the
 // configuration and the output-job template. Plain text, not an OLE file.
-async function renderPrjPcb(file, resultsEl) {
+async function renderPrjPcb(file: File, resultsEl: HTMLElement) {
   resultsEl.innerHTML = '';
   let text = '';
   try { text = await file.text(); } catch (_) {}
@@ -561,7 +561,7 @@ async function renderPrjPcb(file, resultsEl) {
 // Altium preview cache (.SchDocPreview / .PcbDocPreview) - an INI header naming
 // the cached thumbnail sizes, followed by the binary image data. We surface the
 // dimensions; the bitmap itself is an internal cache and is not decoded.
-async function renderPreview(file, resultsEl) {
+async function renderPreview(file: File, resultsEl: HTMLElement) {
   resultsEl.innerHTML = '';
   let head = '';
   try { head = (await file.slice(0, 512).text()); } catch (_) {}
@@ -582,7 +582,7 @@ async function renderPreview(file, resultsEl) {
   resultsEl.appendChild(el('div', { class: 'anr-info' }, 'Internal thumbnail cache - the matching .SchDoc / .PcbDoc opens as the full interactive view.'));
 }
 
-function renderSch(file, reader, resultsEl, ext) {
+function renderSch(file: File, reader, resultsEl: HTMLElement, ext: string) {
   const lib = ext === 'schlib';
   const parsed = parseSchematic(reader);
   const isLib = lib || !parsed || !parsed.objs.length;
@@ -645,7 +645,7 @@ function parsePcbLibData(reader) {
   return { prims, layers, pads: prims.filter((p) => p.kind === 'pad'), fpName };
 }
 
-function renderPcbLib(file, reader, resultsEl) {
+function renderPcbLib(file: File, reader, resultsEl: HTMLElement) {
   const { prims, layers, pads, fpName } = parsePcbLibData(reader);
 
   resultsEl.appendChild(metaCard('Altium footprint library', 'An Altium library of PCB footprints (.PcbLib) - the solder-pad patterns that components sit on. Analyser decodes each footprint’s pads, tracks and arcs and redraws them to scale.', [
@@ -720,7 +720,7 @@ function parsePcbDocData(reader) {
   return { prims, layers, outline, fields, boardW, boardH };
 }
 
-function renderPcbDoc(file, reader, resultsEl) {
+function renderPcbDoc(file: File, reader, resultsEl: HTMLElement) {
   const { prims, layers, outline, fields: f, boardW, boardH } = parsePcbDocData(reader);
 
   resultsEl.appendChild(metaCard('Altium PCB', 'An Altium Designer printed-circuit-board layout (.PcbDoc) - the physical board design. Analyser decodes the board outline and any routed copper wiring from its internal binary data and draws them to scale.', [

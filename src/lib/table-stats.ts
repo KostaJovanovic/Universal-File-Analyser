@@ -15,13 +15,13 @@ const DMY_SEP = /^(\d{1,2})[-/.](\d{1,2})[-/.]((?:19|20)\d{2})$/;       // 31-12
 // d is a valid day-of-month (1-31) and m a valid month (1-12). Used both ways
 // round: validDay(a, b) tests the day-first reading of a field pair, and
 // validDay(b, a) tests the month-first reading of the same pair.
-function validDay(d, m) { return d >= 1 && d <= 31 && m >= 1 && m <= 12; }
+function validDay(d: number, m: number) { return d >= 1 && d <= 31 && m >= 1 && m <= 12; }
 
 // A D/M/Y-shaped value is date-like if EITHER reading checks out - so a
 // genuinely American value like "8/25/2024" (invalid day-first: 25 is not a
 // month) still gets recognised as a date, not dismissed as text before
 // looksMonthFirst() below ever gets a chance to notice it proves month-first.
-function looksLikeDate(val) {
+function looksLikeDate(val: string) {
   if (YYYY_DOT_MM.test(val) || YYYY_SEP_MM_DD.test(val)) return true;
   const m = DMY_SEP.exec(val);
   if (!m) return false;
@@ -39,7 +39,7 @@ function looksLikeDate(val) {
 // looksMonthFirst). If the preferred reading isn't actually valid for this
 // particular value (e.g. toggled to month-first but this row only parses
 // day-first), the other reading is used instead rather than losing the date.
-export function parseDateValue(val, monthFirst?) {
+export function parseDateValue(val, monthFirst?: boolean|undefined) {
   const s = (val == null ? '' : String(val)).trim();
   let m;
   if ((m = YYYY_DOT_MM.exec(s))) return Date.UTC(+m[1], +m[2] - 1, 1);
@@ -65,7 +65,7 @@ export function parseDateValue(val, monthFirst?) {
 // initial day-first/month-first default; columns where every row is
 // ambiguous (both fields <= 12, e.g. "3/4/2024") keep the day-first default
 // and rely on the "Dates: D/M/Y" toggle instead.
-export function looksMonthFirst(rows, colCount, colTypes) {
+export function looksMonthFirst(rows, colCount: number, colTypes: string[]) {
   for (let c = 0; c < colCount; c++) {
     if (colTypes[c] !== 'date') continue;
     for (const r of rows) {
@@ -82,7 +82,7 @@ export function looksMonthFirst(rows, colCount, colTypes) {
 
 // Infer a per-column type from a sample of string rows: 'number' | 'date' |
 // 'text' | 'empty'. Matches csv.js's existing >80%-majority heuristic.
-export function inferColumnTypes(rows, colCount) {
+export function inferColumnTypes(rows: any[], colCount: number) {
   const types = [];
   for (let c = 0; c < colCount; c++) {
     let numCount = 0, dateCount = 0, textCount = 0;
@@ -115,7 +115,7 @@ export function toNumber(cell) {
 }
 
 // Typed, non-empty values of column c across rows, per its inferred type.
-export function columnValues(rows, c, type) {
+export function columnValues(rows: any[], c: number, type: string) {
   const out = [];
   for (const r of rows) {
     const raw = (r[c] || '').trim();
@@ -134,7 +134,7 @@ export function columnValues(rows, c, type) {
 }
 
 // Percentile from an ASCENDING-sorted numeric array (linear interpolation).
-export function percentile(sorted, p) {
+export function percentile(sorted: string|any[], p: number) {
   if (sorted.length === 0) return NaN;
   if (sorted.length === 1) return sorted[0];
   const idx = (sorted.length - 1) * p;
@@ -145,13 +145,13 @@ export function percentile(sorted, p) {
 }
 
 // {count,sum,mean,min,max,median,stddev,distinct} over a numeric array.
-export function describe(nums) {
+export function describe(nums: any[]|Iterable<unknown>|null|undefined) {
   const n = nums.length;
   if (n === 0) return { count: 0, sum: 0, mean: NaN, min: NaN, max: NaN, median: NaN, stddev: NaN, distinct: 0 };
-  const sorted = nums.slice().sort((a, b) => a - b);
+  const sorted = nums.slice().sort((a: number, b: number) => a - b);
   const sum = nums.reduce((s, v) => s + v, 0);
   const mean = sum / n;
-  const variance = nums.reduce((s, v) => s + (v - mean) * (v - mean), 0) / n;
+  const variance = nums.reduce((s: number, v: number) => s + (v - mean) * (v - mean), 0) / n;
   return {
     count: n,
     sum,
@@ -166,7 +166,7 @@ export function describe(nums) {
 
 // Pearson correlation coefficient, NaN-safe (returns NaN when either series has
 // zero variance or the paired, finite-value count is under 2).
-export function pearson(xs, ys) {
+export function pearson(xs: string|any[], ys: string|any[]) {
   const n = Math.min(xs.length, ys.length);
   const px = [], py = [];
   for (let i = 0; i < n; i++) {
@@ -188,7 +188,7 @@ export function pearson(xs, ys) {
 
 // Group rows by keyCol (as a string key), aggregating valCol with `agg`
 // (count|sum|avg|min|max|median). Returns [[key, value], ...] in first-seen order.
-export function groupBy(rows, keyCol, valCol, agg) {
+export function groupBy(rows, keyCol: number, valCol: number, agg: string) {
   const order = [];
   const buckets = new Map();
   for (const r of rows) {
@@ -213,7 +213,7 @@ export function groupBy(rows, keyCol, valCol, agg) {
     else if (agg === 'avg') value = vals.reduce((s, v) => s + v, 0) / vals.length;
     else if (agg === 'min') value = Math.min(...vals);
     else if (agg === 'max') value = Math.max(...vals);
-    else if (agg === 'median') value = percentile(vals.slice().sort((a, b) => a - b), 0.5);
+    else if (agg === 'median') value = percentile(vals.slice().sort((a: number, b: number) => a - b), 0.5);
     out.push([key, value]);
   }
   return out;

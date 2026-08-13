@@ -13,7 +13,7 @@ const FFLATE_URL = new URL('../../vendor/fflate.js', import.meta.url).href;
 const MOBI_URL = new URL('../../vendor/foliate/mobi.js', import.meta.url).href;
 
 // foliate metadata values can be a string, an array, or a localised object.
-function metaStr(v) {
+function metaStr(v: any): string {
   if (v == null) return '';
   if (typeof v === 'string') return v;
   if (Array.isArray(v)) return v.map(metaStr).filter(Boolean).join(', ');
@@ -21,7 +21,7 @@ function metaStr(v) {
   return String(v);
 }
 
-export async function renderMobi(file, resultsEl) {
+export async function renderMobi(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading e-book "${file.name}"…`));
@@ -89,7 +89,7 @@ export async function renderMobi(file, resultsEl) {
   resultsEl.insertBefore(view, _renderAnchor);
 
   let cur = -1, busy = false;
-  async function show(n) {
+  async function show(n: number) {
     if (busy) return;
     n = Math.max(0, Math.min(sections.length - 1, n));
     busy = true;

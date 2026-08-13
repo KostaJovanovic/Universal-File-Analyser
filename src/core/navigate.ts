@@ -14,9 +14,9 @@
   // value, so popstate can tell a same-page scroll from a real page change.
   var currentPath = location.pathname;
 
-  function isHomePath(path) { return path === '/' || path === '/index.html'; }
+  function isHomePath(path: string) { return path === '/' || path === '/index.html'; }
 
-  function swap(doc, arrivingHome) {
+  function swap(doc: Document, arrivingHome: boolean) {
     document.title = doc.title;
 
     // Swap the whole site-mark (kicker + title + byline + sub) so per-page
@@ -87,7 +87,7 @@
     }
   }
 
-  function navigateTo(url, push) {
+  function navigateTo(url: string, push: boolean) {
     var arrivingHome = isHomePath(new URL(url, location.href).pathname);
     fetch(url)
       .then(function (r) { return r.text(); })

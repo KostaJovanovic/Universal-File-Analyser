@@ -42,15 +42,15 @@ function menuShell() {
 }
 
 // ---- small DOM builders for the menus ----
-function menuLine(cls, text) { const d = document.createElement('div'); d.className = cls; d.textContent = text; return d; }
+function menuLine(cls: string, text: string|null) { const d = document.createElement('div'); d.className = cls; d.textContent = text; return d; }
 function menuRule() { const d = document.createElement('div'); d.className = 'anr-menu-rule'; return d; }
-function statChip(k, v, acc?) {
+function statChip(k: string|null, v: string|null, acc?: boolean|undefined) {
   const c = document.createElement('div'); c.className = 'anr-menu-chip';
   const kk = document.createElement('span'); kk.className = 'k'; kk.textContent = k;
   const vv = document.createElement('span'); vv.className = 'v' + (acc ? ' acc' : ''); vv.textContent = v;
   c.append(kk, vv); return c;
 }
-function menuButton(icon, label, onClick, primary?) {
+function menuButton(icon: string|null, label: string|null, onClick, primary?: boolean|undefined) {
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'anr-menu-btn' + (primary ? ' anr-menu-btn--primary' : '');
   const ic = document.createElement('span'); ic.className = 'ic'; ic.textContent = icon;

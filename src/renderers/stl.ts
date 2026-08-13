@@ -4,11 +4,12 @@
    volume). Self-contained - no external 3D library. */
 
 import { el, row, rowHelp, fmtBytes, errorCard, attachViewCube } from '../core/util.js';
+import type { FloatBuf } from '../core/types.js';
 
 // ---------- STL parsing ----------
 // Returns { format, positions:Float32Array, normals:Float32Array, count,
 //           bbox:{min,max}, area, volume } or null.
-function parseStlGeometry(buf) {
+function parseStlGeometry(buf: ArrayBuffer) {
   const bytes = new Uint8Array(buf);
   const headStr = new TextDecoder('latin1').decode(bytes.subarray(0, Math.min(512, bytes.length)));
   // Binary STL is 84 + 50*n bytes. ASCII starts with "solid" but so can binary,
@@ -45,7 +46,37 @@ export interface MeshGeometry {
   textureImage?: any;
 }
 
-export function makeResult(format, posArr, normArr): MeshGeometry {
+/** One entry in the parts picker `renderPartsViewer()` drives. `build()` is
+ *  called lazily (and cached) the first time its chip is selected. */
+export interface MeshPart {
+  key: string;
+  name: string;
+  build: () => MeshGeometry | null | undefined;
+}
+
+/** What `analyzeMeshIntegrity()` reports. Everything past `triN` is absent on
+ *  the `tooLarge` early-out, which is why the rest is optional. */
+export interface MeshIntegrity {
+  tooLarge: boolean;
+  triN: number;
+  weldedVerts?: number;
+  edgeCount?: number;
+  faces?: number;
+  boundaryEdges?: number;
+  nonManifoldEdges?: number;
+  degenerate?: number;
+  duplicate?: number;
+  dupCheck?: boolean;
+  flipped?: number;
+  holes?: number;
+  isClosed?: boolean;
+  isManifold?: boolean;
+  isWatertight?: boolean;
+  consistent?: boolean;
+  euler?: number;
+}
+
+export function makeResult(format: string, posArr: ArrayLike<number>, normArr: ArrayLike<number>): MeshGeometry {
   const count = posArr.length / 9;
   const positions = new Float32Array(posArr);
   const normals = new Float32Array(normArr);
@@ -75,7 +106,7 @@ export function makeResult(format, posArr, normArr): MeshGeometry {
   };
 }
 
-function parseBinaryStl(buf) {
+function parseBinaryStl(buf: ArrayBuffer) {
   if (buf.byteLength < 84) return null;
   const view = new DataView(buf);
   const count = view.getUint32(80, true);
@@ -99,8 +130,8 @@ function parseBinaryStl(buf) {
   return makeResult('STL (binary)', pos, nrm);
 }
 
-function parseAsciiStl(text) {
-  const pos = [], nrm = [];
+function parseAsciiStl(text: string) {
+  const pos: number[] = [], nrm: number[] = [];
   const re = /facet\s+normal\s+([^\n]+)[\s\S]*?outer\s+loop([\s\S]*?)endloop/gi;
   const numRe = /(-?\d+\.?\d*(?:[eE][-+]?\d+)?)/g;
   let m;
@@ -121,7 +152,7 @@ function parseAsciiStl(text) {
 }
 
 // Recompute any zero/degenerate facet normals from the triangle winding.
-function fixNormals(pos, nrm) {
+function fixNormals(pos: FloatBuf, nrm: FloatBuf) {
   for (let i = 0; i < pos.length; i += 9) {
     if (nrm[i] || nrm[i + 1] || nrm[i + 2]) continue;
     const ax = pos[i], ay = pos[i + 1], az = pos[i + 2];
@@ -137,20 +168,20 @@ function fixNormals(pos, nrm) {
 }
 
 // ---------- tiny mat4 helpers (column-major) ----------
-function mat4Multiply(a, b) {
+function mat4Multiply(a: FloatBuf, b: FloatBuf) {
   const o = new Float32Array(16);
   for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
     o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
   }
   return o;
 }
-function mat4Perspective(fovy, aspect, near, far) {
+function mat4Perspective(fovy: number, aspect: number, near: number, far: number) {
   const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
   return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0]);
 }
-function mat4RotX(a) { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]); }
-function mat4RotY(a) { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]); }
-function mat4Ortho(l, r, b, t, n, f) {
+function mat4RotX(a: number) { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]); }
+function mat4RotY(a: number) { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]); }
+function mat4Ortho(l: number, r: number, b: number, t: number, n: number, f: number) {
   return new Float32Array([2 / (r - l), 0, 0, 0, 0, 2 / (t - b), 0, 0, 0, 0, -2 / (f - n), 0, -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n), 1]);
 }
 
@@ -176,7 +207,7 @@ export interface StlViewer {
 }
 
 // ---------- WebGL viewer ----------
-function buildViewer(geo, opts: any = {}): StlViewer {
+function buildViewer(geo: MeshGeometry, opts: any = {}): StlViewer {
   const wrap = el('div', { class: 'anr-stl-viewport' });
   const canvas = el('canvas', { class: 'anr-stl-canvas' });
   wrap.appendChild(canvas);
@@ -264,8 +295,8 @@ function buildViewer(geo, opts: any = {}): StlViewer {
         c = mix(line, c*0.45, e);
       }
       gl_FragColor = vec4(c,1.0); }`;
-  function shader(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; }
-  const prog = gl.createProgram();
+  function shader(type: number, src: string) { const s = gl.createShader(type)!; gl.shaderSource(s, src); gl.compileShader(s); return s; }
+  const prog = gl.createProgram()!;
   gl.attachShader(prog, shader(gl.VERTEX_SHADER, vsrc));
   gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, fsrc));
   gl.linkProgram(prog);
@@ -299,7 +330,7 @@ function buildViewer(geo, opts: any = {}): StlViewer {
   // vertex colours). Defaults to white so the uniform colour drives the look when
   // a geometry carries none - keeping STL/STEP/3MF rendering identical.
   const hasVCol = !!(geo.colors && geo.colors.length === np.length);
-  const colArr = hasVCol ? geo.colors : (() => { const a = new Float32Array(np.length); a.fill(1); return a; })();
+  const colArr = hasVCol ? geo.colors! : (() => { const a = new Float32Array(np.length); a.fill(1); return a; })();
   const colBuf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, colBuf);
   gl.bufferData(gl.ARRAY_BUFFER, colArr, gl.STATIC_DRAW);
@@ -315,11 +346,11 @@ function buildViewer(geo, opts: any = {}): StlViewer {
   const aUV = gl.getAttribLocation(prog, 'aUV');
   if (aUV >= 0) { gl.enableVertexAttribArray(aUV); gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 0, 0); }
 
-  let tex = null;
+  let tex: WebGLTexture | null = null;
   if (geo.uvs && geo.textureImage) {
     try {
       const img = geo.textureImage;
-      const isPow2 = (n) => (n & (n - 1)) === 0;
+      const isPow2 = (n: number) => (n & (n - 1)) === 0;
       const wrap = (isPow2(img.width) && isPow2(img.height)) ? gl.REPEAT : gl.CLAMP_TO_EDGE;
       tex = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -349,8 +380,8 @@ function buildViewer(geo, opts: any = {}): StlViewer {
   // Spin can be turned off two ways - the button, or simply interacting with the
   // canvas (clicking/dragging stops it). Route every change through setSpin so any
   // listener (e.g. the button label) stays in sync no matter what triggered it.
-  const spinListeners = [];
-  function setSpin(v) {
+  const spinListeners: Array<(spin: boolean) => void> = [];
+  function setSpin(v: boolean) {
     if (state.spin === v) return;
     state.spin = v;
     dirty = true;
@@ -413,8 +444,8 @@ function buildViewer(geo, opts: any = {}): StlViewer {
   // finger orbits, two fingers pan + pinch-zoom.
   let dragging = false, panning = false, lx = 0, ly = 0;
   const panK = () => state.dist * 0.0018;
-  const down = (x, y, pan) => { dragging = true; panning = pan; lx = x; ly = y; setSpin(false); };
-  const move = (x, y) => {
+  const down = (x: number, y: number, pan: boolean) => { dragging = true; panning = pan; lx = x; ly = y; setSpin(false); };
+  const move = (x: number, y: number) => {
     if (!dragging) return;
     if (panning) {
       state.panX += (x - lx) * panK();
@@ -430,7 +461,7 @@ function buildViewer(geo, opts: any = {}): StlViewer {
   canvas.addEventListener('mousedown', (e) => down(e.clientX, e.clientY, e.button === 2 || e.shiftKey));
   // Named so dispose() can detach them - these live on window, so they outlive
   // the canvas unless explicitly removed.
-  const onWinMove = (e) => move(e.clientX, e.clientY);
+  const onWinMove = (e: MouseEvent) => move(e.clientX, e.clientY);
   window.addEventListener('mousemove', onWinMove);
   window.addEventListener('mouseup', up);
   // Touch: one finger orbits; two fingers pan + pinch-zoom.
@@ -456,7 +487,7 @@ function buildViewer(geo, opts: any = {}): StlViewer {
   canvas.addEventListener('touchend', (e) => { if (!e.touches.length) { up(); twoFinger = false; } });
   // Shared zoom step for the wheel and the manual +/- pad (identical to the G-code
   // viewer): factor < 1 moves the camera in, > 1 out, clamped to the orbit range.
-  function zoomBy(factor) { state.dist = Math.max(0.04, Math.min(150, state.dist * factor)); dirty = true; }
+  function zoomBy(factor: number) { state.dist = Math.max(0.04, Math.min(150, state.dist * factor)); dirty = true; }
 
   // Canvas-anchored camera stack, laid out exactly like the G-code viewer: the
   // manual zoom pad on top, the scroll-zoom toggle, then the fullscreen button at
@@ -483,10 +514,10 @@ function buildViewer(geo, opts: any = {}): StlViewer {
   // Manual zoom pad (+ over -): a press-and-hold repeats the zoom step on a timer,
   // so you can ride the camera in or out without spamming clicks. Pointer capture
   // keeps it zooming even if the finger/cursor drifts off the button mid-hold.
-  function holdZoom(btn, factor) {
-    let timer = null;
+  function holdZoom(btn: HTMLButtonElement, factor: number) {
+    let timer: ReturnType<typeof setInterval> | null = null;
     const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
-    btn.addEventListener('pointerdown', (e) => {
+    btn.addEventListener('pointerdown', (e: PointerEvent) => {
       e.preventDefault(); e.stopPropagation();
       try { btn.setPointerCapture(e.pointerId); } catch (_) {}
       zoomBy(factor);                                   // one step immediately on press
@@ -555,7 +586,7 @@ function buildViewer(geo, opts: any = {}): StlViewer {
     try { const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); } catch (_) { /* ignore */ }
   }
 
-  const api = {
+  const api: StlViewer = {
     wrap, ok: true, state, resize, setSpin, snapshot, dispose,
     onSpinChange: (cb) => spinListeners.push(cb),
     start: () => { resize(); requestAnimationFrame(loop); },
@@ -570,7 +601,7 @@ function buildViewer(geo, opts: any = {}): StlViewer {
 // appends viewCard to the DOM, then calls startViewer(viewer) once it's attached
 // (the viewer measures its container, so it must be in the document first).
 // Reused by the STL, STEP/IGES and 3MF renderers.
-export function buildViewerCard(geo, title = '3D model', opts: any = {}) {
+export function buildViewerCard(geo: MeshGeometry, title = '3D model', opts: any = {}) {
   const viewCard = el('div', { class: 'anr-card' });
   viewCard.appendChild(el('h3', {}, title));
   let viewer = buildViewer(geo, opts);
@@ -579,7 +610,7 @@ export function buildViewerCard(geo, title = '3D model', opts: any = {}) {
   if (viewer.ok) {
     const controls = el('div', { class: 'anr-btn-row', style: 'margin-top:10px;align-items:center;flex-wrap:wrap;' });
     const spinBtn = el('button', { type: 'button', class: 'anr-btn' }, viewer.state.spin ? 'Pause spin' : 'Resume spin');
-    const updateSpin = (spinning) => { spinBtn.textContent = spinning ? 'Pause spin' : 'Resume spin'; };
+    const updateSpin = (spinning: boolean) => { spinBtn.textContent = spinning ? 'Pause spin' : 'Resume spin'; };
     // Toggle via the button, but also reflect spin stopping when the user clicks
     // into the canvas - onSpinChange fires for either trigger.
     spinBtn.addEventListener('click', () => viewer.setSpin(!viewer.state.spin));
@@ -589,7 +620,7 @@ export function buildViewerCard(geo, title = '3D model', opts: any = {}) {
     // Toggling MSAA needs a fresh WebGL context, so rebuild the viewer on a new
     // canvas and carry the camera/display state across; every control reads
     // `viewer` by binding, so they keep working after the swap.
-    function applyMSAA(on) {
+    function applyMSAA(on: boolean) {
       const s = viewer.state;
       const keep = { yaw: s.yaw, pitch: s.pitch, dist: s.dist, panX: s.panX, panY: s.panY, color: s.color, spin: s.spin, ortho: s.ortho, wire: s.wire, real: s.real, bg: s.bg, ssaa: s.ssaa, upZ: s.upZ };
       const next = buildViewer(geo, { antialias: on, zUp: opts.zUp });
@@ -607,7 +638,7 @@ export function buildViewerCard(geo, title = '3D model', opts: any = {}) {
     const qBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Quality');
     const qPanel = el('div', { class: 'anr-aa-panel is-hidden' });
     qPanel.appendChild(el('div', { class: 'anr-aa-title' }, 'Quality'));
-    const aaBtn = (label, get, set) => {
+    const aaBtn = (label: string, get: () => boolean, set: (v: boolean) => void) => {
       const btn = el('button', { type: 'button', class: 'anr-btn anr-aa-btn' }, label);
       const sync = () => btn.classList.toggle('is-on', !!get());
       sync();
@@ -633,7 +664,7 @@ export function buildViewerCard(geo, title = '3D model', opts: any = {}) {
       while (dyaw < -Math.PI) dyaw += 2 * Math.PI;
       const dur = 320; let t0 = 0;
       if (resetBtn._anim) cancelAnimationFrame(resetBtn._anim);
-      const tick = (ts) => {
+      const tick = (ts: number) => {
         if (!t0) t0 = ts;
         const k = Math.min(1, (ts - t0) / dur);
         const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;   // ease-in-out, matching the view-cube
@@ -693,7 +724,7 @@ export function buildViewerCard(geo, title = '3D model', opts: any = {}) {
 }
 
 // Start a viewer once its card is attached to the document.
-export function startViewer(viewer) {
+export function startViewer(viewer: StlViewer | null | undefined) {
   if (!viewer || !viewer.ok) return;
   viewer.start();
   window.addEventListener('resize', viewer.resize);
@@ -703,7 +734,7 @@ export function startViewer(viewer) {
 
 // Expand an indexed mesh (flat vertex xyz + triangle index triples) into the
 // non-indexed positions + per-triangle face normals the WebGL viewer wants.
-export function buildGeoFromIndexed(verts, tris, format) {
+export function buildGeoFromIndexed(verts: ArrayLike<number>, tris: ArrayLike<number>, format: string) {
   const triCount = tris.length / 3;
   const positions = new Float32Array(triCount * 9);
   const normals = new Float32Array(triCount * 9);
@@ -727,7 +758,7 @@ export function buildGeoFromIndexed(verts, tris, format) {
 }
 
 // A geometry-stats card (triangles, bounding box, area, volume, hash).
-export function geoStatsCard(geo, file, format, unit) {
+export function geoStatsCard(geo: MeshGeometry, file: File, format: string, unit?: string) {
   const u = unit || 'units';
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Geometry'));
@@ -756,7 +787,7 @@ export function geoStatsCard(geo, file, format, unit) {
 // Returns a metrics object, or { tooLarge:true } for meshes above BODY_SPLIT_CAP,
 // or null for an empty mesh. Universal: every renderer's geometry carries the same
 // non-indexed `positions` buffer, so this one function covers all 3D file types.
-export function analyzeMeshIntegrity(positions, step) {
+export function analyzeMeshIntegrity(positions: ArrayLike<number>, step: number): MeshIntegrity | null {
   const nCorners = positions.length / 3;
   const triN = nCorners / 3;
   if (!triN) return null;
@@ -764,7 +795,7 @@ export function analyzeMeshIntegrity(positions, step) {
   const s = step || 1;
 
   // Weld corners -> a compact welded-vertex id per corner.
-  const map = new Map();
+  const map = new Map<string, number>();
   const wid = new Int32Array(nCorners);
   for (let i = 0; i < nCorners; i++) {
     const k = Math.round(positions[i * 3] / s) + '|' + Math.round(positions[i * 3 + 1] / s) + '|' + Math.round(positions[i * 3 + 2] / s);
@@ -778,18 +809,18 @@ export function analyzeMeshIntegrity(positions, step) {
   // dirSum sums +1 for a face traversing lo->hi and -1 for hi->lo. A well-formed
   // 2-manifold edge is used by exactly two faces in opposite directions (dirSum 0);
   // dirSum != 0 on a 2-use edge means the two faces disagree on winding (one flipped).
-  const edges = new Map();
-  const addEdge = (a, b) => {
+  const edges = new Map<number, [number, number]>();
+  const addEdge = (a: number, b: number) => {
     const lo = a < b ? a : b, hi = a < b ? b : a;
     const key = lo * V + hi;
     let e = edges.get(key);
-    if (!e) { e = [0, 0]; edges.set(key, e); }
+    if (!e) { e = [0, 0] as [number, number]; edges.set(key, e); }
     e[0]++; e[1] += (a < b) ? 1 : -1;
   };
   // Duplicate-face detection is a string-keyed Set, so gate it to a smaller mesh to
   // keep memory bounded; the edge/manifold checks always run up to BODY_SPLIT_CAP.
   const dupCheck = triN <= 300000;
-  const seenTri = dupCheck ? new Set() : null;
+  const seenTri = dupCheck ? new Set<string>() : null;
   let degenerate = 0, duplicate = 0;
   for (let t = 0; t < triN; t++) {
     const a = wid[t * 3], b = wid[t * 3 + 1], c = wid[t * 3 + 2];
@@ -808,7 +839,7 @@ export function analyzeMeshIntegrity(positions, step) {
   // Tally edge classes and collect boundary edges for hole-loop counting.
   let boundaryEdges = 0, nonManifoldEdges = 0, flipped = 0;
   const edgeCount = edges.size;
-  const boundaryKeys = [];
+  const boundaryKeys: number[] = [];
   for (const [key, e] of edges) {
     if (e[0] === 1) { boundaryEdges++; boundaryKeys.push(key); }
     else if (e[0] === 2) { if (e[1] !== 0) flipped++; }
@@ -819,9 +850,9 @@ export function analyzeMeshIntegrity(positions, step) {
   // hole). Union-find over just the welded vertices that touch a boundary edge.
   let holes = 0;
   if (boundaryEdges && boundaryEdges <= 500000) {
-    const comp = new Map();
-    const find = (x) => { let r = x; while (comp.get(r) !== r) r = comp.get(r); while (comp.get(x) !== r) { const n = comp.get(x); comp.set(x, r); x = n; } return r; };
-    const ensure = (x) => { if (!comp.has(x)) comp.set(x, x); };
+    const comp = new Map<number, number>();
+    const find = (x: number) => { let r = x; while (comp.get(r) !== r) r = comp.get(r)!; while (comp.get(x) !== r) { const n = comp.get(x)!; comp.set(x, r); x = n; } return r; };
+    const ensure = (x: number) => { if (!comp.has(x)) comp.set(x, x); };
     for (const key of boundaryKeys) {
       const hi = key % V, lo = (key - hi) / V;
       ensure(lo); ensure(hi);
@@ -854,7 +885,7 @@ export function analyzeMeshIntegrity(positions, step) {
 // card, not the forensic .anr-sig-flag alert. `opts.span` overrides the weld
 // tolerance basis (defaults to the geometry's bbox span). Shown by every 3D
 // renderer beneath the geometry stats.
-export function meshIntegrityCard(geo, opts: any = {}) {
+export function meshIntegrityCard(geo: MeshGeometry, opts: any = {}) {
   const span = (opts.span || geoSpan(geo));
   const a = analyzeMeshIntegrity(geo.positions, span * 1e-6);
   const card = el('div', { class: 'anr-card anr-mesh-card' });
@@ -894,8 +925,8 @@ export function meshIntegrityCard(geo, opts: any = {}) {
     card.appendChild(el('p', { class: 'anr-sig-flag-note' },
       'No topological errors were detected, so the reported volume is reliable.'));
   } else {
-    const pl = (n, one, many?) => `${n.toLocaleString()} ${n === 1 ? one : (many || one + 's')}`;
-    const issues = [];
+    const pl = (n: number, one: string, many?: string) => `${n.toLocaleString()} ${n === 1 ? one : (many || one + 's')}`;
+    const issues: string[] = [];
     if (a.boundaryEdges) issues.push(pl(a.boundaryEdges, 'open edge') + (a.holes ? ` across ${pl(a.holes, 'hole')}` : ''));
     if (a.nonManifoldEdges) issues.push(pl(a.nonManifoldEdges, 'non-manifold edge'));
     if (a.flipped) issues.push(pl(a.flipped, 'inconsistently wound edge'));
@@ -921,12 +952,12 @@ export const BODY_SPLIT_CAP = 800000;
 // then triangles sharing a welded vertex are union-found together. Returns an
 // array of triangle-index arrays, largest body first. `step` is the weld
 // tolerance (typically bbox span * 1e-6).
-export function splitBodiesIndexed(verts, tris, step) {
+export function splitBodiesIndexed(verts: ArrayLike<number>, tris: ArrayLike<number>, step: number): number[][] {
   const nV = verts.length / 3;
   const triN = tris.length / 3;
   if (!triN) return [];
   const s = step || 1;
-  const map = new Map();
+  const map = new Map<string, number>();
   const wid = new Int32Array(nV);
   for (let v = 0; v < nV; v++) {
     const k = Math.round(verts[v * 3] / s) + '|' + Math.round(verts[v * 3 + 1] / s) + '|' + Math.round(verts[v * 3 + 2] / s);
@@ -936,13 +967,13 @@ export function splitBodiesIndexed(verts, tris, step) {
   }
   const parent = new Int32Array(map.size);
   for (let i = 0; i < parent.length; i++) parent[i] = i;
-  const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
-  const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[a] = b; };
+  const find = (a: number) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+  const union = (a: number, b: number) => { a = find(a); b = find(b); if (a !== b) parent[a] = b; };
   for (let t = 0; t < triN; t++) {
     const a = wid[tris[t * 3]], b = wid[tris[t * 3 + 1]], c = wid[tris[t * 3 + 2]];
     union(a, b); union(b, c);
   }
-  const groups = new Map();
+  const groups = new Map<number, number[]>();
   for (let t = 0; t < triN; t++) {
     const r = find(wid[tris[t * 3]]);
     let g = groups.get(r);
@@ -954,7 +985,7 @@ export function splitBodiesIndexed(verts, tris, step) {
 
 // Same, for a non-indexed position buffer (count*9 floats, as STL produces):
 // treat each triangle's three corners as consecutive vertices.
-export function splitBodiesFromPositions(positions, step) {
+export function splitBodiesFromPositions(positions: ArrayLike<number>, step: number) {
   const nV = positions.length / 3;
   const tris = new Int32Array(nV);
   for (let i = 0; i < nV; i++) tris[i] = i;
@@ -962,7 +993,7 @@ export function splitBodiesFromPositions(positions, step) {
 }
 
 // Pull a subset of triangle index-triples out of a flat index array.
-export function subTris(tris, triIndices) {
+export function subTris(tris: ArrayLike<number>, triIndices: number[]) {
   const out = new Array(triIndices.length * 3);
   let o = 0;
   for (const t of triIndices) { out[o++] = tris[t * 3]; out[o++] = tris[t * 3 + 1]; out[o++] = tris[t * 3 + 2]; }
@@ -971,7 +1002,7 @@ export function subTris(tris, triIndices) {
 
 // Build a geometry from a subset of triangles of a non-indexed positions/normals
 // pair (keeps the original facet normals).
-export function geoFromTriSubset(positions, normals, triIndices, format) {
+export function geoFromTriSubset(positions: ArrayLike<number>, normals: ArrayLike<number>, triIndices: number[], format: string) {
   const pos = new Float32Array(triIndices.length * 9);
   const nrm = new Float32Array(triIndices.length * 9);
   let o = 0;
@@ -984,7 +1015,7 @@ export function geoFromTriSubset(positions, normals, triIndices, format) {
 }
 
 // The bbox span of a geometry, used to scale the weld tolerance to the model.
-export function geoSpan(geo) {
+export function geoSpan(geo: MeshGeometry) {
   return Math.max(
     geo.bbox.max[0] - geo.bbox.min[0],
     geo.bbox.max[1] - geo.bbox.min[1],
@@ -1001,8 +1032,8 @@ export function geoSpan(geo) {
 // by the 3MF/AMF container renderers.
 // Only `parts` is required; each caller (3MF, AMF, STEP, ...) supplies whatever
 // labelling its format has and leaves the rest to the defaults below.
-export function renderPartsViewer(file, resultsEl, { metaCard, parts, format, unitLabel, partsTitle, partsHint, zUp }: {
-  parts: any[];
+export function renderPartsViewer(file: File, resultsEl: HTMLElement, { metaCard, parts, format, unitLabel, partsTitle, partsHint, zUp }: {
+  parts: MeshPart[];
   metaCard?: any; format?: any; unitLabel?: any;
   partsTitle?: any; partsHint?: any; zUp?: any;
 }) {
@@ -1025,9 +1056,9 @@ export function renderPartsViewer(file, resultsEl, { metaCard, parts, format, un
   resultsEl.appendChild(statsCardEl);
   resultsEl.appendChild(integCardEl);
   if (metaCard) resultsEl.appendChild(metaCard);
-  const geoCache = new Map();
+  const geoCache = new Map<string, MeshGeometry | null | undefined>();
 
-  async function showPart(part, chip) {
+  async function showPart(part: MeshPart, chip: Element | null) {
     chipRow.querySelectorAll('.anr-part-chip').forEach((b) => b.classList.remove('is-active'));
     if (chip) chip.classList.add('is-active');
     const loading = el('div', { class: 'anr-card' }, [el('div', { class: 'anr-info' }, 'Building mesh…')]);
@@ -1068,19 +1099,19 @@ export function renderPartsViewer(file, resultsEl, { metaCard, parts, format, un
 
 // Helper: from a whole-model geometry plus a list of detected body triangle-groups
 // (largest first), build the parts array a renderPartsViewer expects.
-export function bodyParts(whole, bodies, makeBodyGeo) {
-  const parts = [{ key: 'all', name: `Whole model (${bodies.length} bodies)`, build: () => whole }];
-  bodies.forEach((g, i) => parts.push({ key: 'b' + i, name: 'Body ' + (i + 1), build: () => makeBodyGeo(g, i) }));
+export function bodyParts(whole: MeshGeometry, bodies: number[][], makeBodyGeo: (g: number[], i: number) => MeshGeometry | null): MeshPart[] {
+  const parts: MeshPart[] = [{ key: 'all', name: `Whole model (${bodies.length} bodies)`, build: () => whole }];
+  bodies.forEach((g: number[], i: number) => parts.push({ key: 'b' + i, name: 'Body ' + (i + 1), build: () => makeBodyGeo(g, i) }));
   return parts;
 }
 
 // ---------- entry point ----------
-export async function renderStl(file, resultsEl) {
+export async function renderStl(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading 3D model "${file.name}"…`));
 
-  let geo;
+  let geo: MeshGeometry | null;
   try {
     const buf = await file.arrayBuffer();
     geo = parseStlGeometry(buf);
@@ -1100,7 +1131,7 @@ export async function renderStl(file, resultsEl) {
   // viewer (like 3MF parts) instead of only the merged mesh.
   const bodies = geo.count <= BODY_SPLIT_CAP ? splitBodiesFromPositions(geo.positions, geoSpan(geo) * 1e-6) : [];
   if (bodies.length > 1) {
-    const parts = bodyParts(geo, bodies, (g) => geoFromTriSubset(geo.positions, geo.normals, g, geo.format));
+    const parts = bodyParts(geo, bodies, (g) => geoFromTriSubset(geo!.positions, geo!.normals, g, geo!.format));
     renderPartsViewer(file, resultsEl, {
       parts, format: geo.format, unitLabel: 'units', partsTitle: 'Bodies', zUp: true,
       partsHint: `This STL contains ${bodies.length} separate bodies. Pick one to view on its own, or see them all together.`,

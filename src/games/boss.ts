@@ -18,7 +18,7 @@ import { makeUfo } from './ufos.js';
 
 // Hoisted (restart() -> spawnWave() runs during init and must be able to call this).
 // Scripted opener bosses on 5 / 8 / 11, then one every 7 waves (18, 25, ...).
-export function isBossWave(w) { return w === 5 || w === 8 || w === 11 || (w > 11 && (w - 11) % 7 === 0); }
+export function isBossWave(w: number) { return w === 5 || w === 8 || w === 11 || (w > 11 && (w - 11) % 7 === 0); }
 
 export function nextBossType() {
   if (!g.bossBag.length) {
@@ -30,7 +30,7 @@ export function nextBossType() {
 
 // The first three encounters are a fixed gauntlet that introduces each type in turn;
 // every boss wave past 10 is a random pick from the shuffle bag.
-export function bossTypeForWave(w) {
+export function bossTypeForWave(w: number) {
   if (w === 5) return 'mothership';
   if (w === 8) return 'segmented';
   if (w === 11) return 'megastructure';
@@ -39,14 +39,14 @@ export function bossTypeForWave(w) {
 
 // Encounters past wave 11 ramp up a little each cycle (every 7 waves): tougher nodes.
 // 1.0 through the scripted gauntlet, then +18% per cycle (wave 18 = 1.18x), capped at 2x.
-export function bossBuff(w) { return w > 11 ? Math.min(2, 1 + 0.18 * Math.floor((w - 11) / 7)) : 1; }
+export function bossBuff(w: number) { return w > 11 ? Math.min(2, 1 + 0.18 * Math.floor((w - 11) / 7)) : 1; }
 
 // Human-readable names for the HUD / health bar.
 export const BOSS_NAMES = { mothership: 'MOTHERSHIP', segmented: 'SERPENT', megastructure: 'MEGA' };
 
 // Re-pin the megastructure to the centre of its shorter edge, hanging just outside so
 // only the inner arc peeks in. Called every frame so the boss stays glued through a resize.
-export function megaAnchor(b) {
+export function megaAnchor(b: Boss) {
   const { cx, cy, HW, HH } = g;
   const hidden = b.r * 0.4 - b.r * 0.82;   // -0.42r: parked outside, inner arc peeks in by 0.4r
   const exposed = -b.r * 0.06;             // centre stays just outside - the core only peeks through
@@ -59,7 +59,7 @@ export function megaAnchor(b) {
 
 // Once the mega's core is exposed it runs a radar attack: expanding ping rings plus a beam
 // that sweeps around the field, punching the player toward the far side when it passes over.
-export function updateMegaRadar(b, dt) {
+export function updateMegaRadar(b, dt: number) {
   const { cx, cy, S, ship, asteroids } = g;
   const idx = cx - b.x, idy = cy - b.y, il = Math.hypot(idx, idy) || 1;   // inward push direction
   const dirx = idx / il, diry = idy / il;
@@ -154,7 +154,7 @@ export function startMegaOutro() {
   }
   burst(b.x, b.y, '#fff', { count: 26, speed: 220, life: 0.9, lines: true });
 }
-export function updateMegaOutro(dt) {
+export function updateMegaOutro(dt: number) {
   const { cx, cy, HW, HH, S } = g;
   const b = g.boss; b.outroT += dt; const t = b.outroT;
   const DET = 4;   // explosions build for DET seconds, then the detonation flash plays
@@ -274,7 +274,7 @@ export interface Boss {
   [k: string]: any;
 }
 
-export function spawnBoss(forcedType?) {
+export function spawnBoss(forcedType?: string|undefined) {
   const { cx, cy, HW, HH, R, S } = g;
   const type = forcedType || bossTypeForWave(g.wave);
   const buff = forcedType ? 1 : bossBuff(g.wave);   // scripted/debug spawns stay at base toughness
@@ -342,7 +342,7 @@ export function bossDead(b) {
   if (b.type === 'segmented') return b.nodes.every((n) => n.kind === 'head' || n.dead);   // all body segments gone
   return b.nodes.some((n) => n.kind === 'core' && n.dead);   // megastructure: core destroyed
 }
-export function damageBossNode(b, n, dmg, hx, hy, byRam?) {
+export function damageBossNode(b, n, dmg: number, hx: number, hy: number, byRam?: boolean|undefined) {
   if (n.dead) return;
   if (b.type === 'megastructure' && n.kind === 'core' && !byRam) return;   // core destroyed only by the ram
   n.hp -= dmg;
@@ -350,7 +350,7 @@ export function damageBossNode(b, n, dmg, hx, hy, byRam?) {
   if (n.hp <= 0) { n.dead = true; burst(hx, hy, BOSS_COLOR, { count: 10, speed: 120, life: 0.5, lines: true }); }
 }
 // Damage the first vulnerable node containing (x,y) within padR; true if it hit.
-export function hitBossAt(x, y, padR, dmg) {
+export function hitBossAt(x: number, y: number, padR: number, dmg: number) {
   const boss = g.boss;
   if (!boss) return false;
   for (const n of boss.nodes) {
@@ -383,7 +383,7 @@ function snakeFollow(b) {
 
 // Serpent boss: head drives forward at constant speed and can only pivot; the body chain
 // follows via shortest-wrapped-delta so it feeds cleanly through the toroidal seam.
-export function updateSnake(b, dt) {
+export function updateSnake(b, dt: number) {
   const { cx, cy, HW, HH, S } = g;
   const head = b.nodes[0];
   const W = HW * 2, H2 = HH * 2;
@@ -426,7 +426,7 @@ export function updateSnake(b, dt) {
 // where it was eaten; a WHITE rock heals 3% of the serpent's full HP. Only the head feeds, and only
 // once every SNAKE_EAT_CD seconds - after a meal it has to digest before it can swallow again.
 const SNAKE_EAT_CD = 5;
-export function serpentEat(b, dt) {
+export function serpentEat(b, dt: number) {
   if (b.eatCd > 0) { b.eatCd -= dt; return; }   // still digesting the last meal
   const head = b.nodes[0];
   for (let ai = g.asteroids.length - 1; ai >= 0; ai--) {
@@ -477,7 +477,7 @@ export function startSnakeOutro() {
     if (g.startToggleBtn) g.startToggleBtn.style.display = '';
   }
 }
-export function updateSnakeOutro(dt) {
+export function updateSnakeOutro(dt: number) {
   const b = g.boss; b.dieT += dt;
   if (!b.exploded) {
     // Carve a circle at the normal cruising speed and turn rate; the spine (every node position)
@@ -521,7 +521,7 @@ export function finishSnakeOutro() {
   spawnWave();
 }
 
-export function updateBoss(dt) {
+export function updateBoss(dt: number) {
   const boss = g.boss;
   if (!boss) return;
   if (boss.dying) {   // cinematic playing out - hold here
@@ -662,7 +662,7 @@ export function drawBossOutline(b) {
 // clipped to the field, so off-screen pixels are never painted - but gating a draw on this
 // also skips the (wasted) shadow-blur / stroke work for elements that hang entirely outside,
 // e.g. the megastructure's core, which sits off-field until the structure slides in.
-function onField(x, y, r) {
+function onField(x: number, y: number, r: number) {
   const { cx, cy, HW, HH } = g;
   return x + r >= cx - HW && x - r <= cx + HW && y + r >= cy - HH && y - r <= cy + HH;
 }

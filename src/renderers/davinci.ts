@@ -63,7 +63,7 @@ function hexDouble(h) {
 }
 
 // ---- ZIP reading (central directory + raw-deflate, all browser-native) ----
-async function readZip(file) {
+async function readZip(file: File) {
   const size = file.size;
   const tailLen = Math.min(size, 65557);
   const tail = new DataView(await file.slice(size - tailLen).arrayBuffer());
@@ -92,7 +92,7 @@ async function readZip(file) {
   return entries;
 }
 
-async function readEntryText(file, e) {
+async function readEntryText(file: File, e) {
   if (e.uncompSize > MAX_ENTRY) throw new Error('entry too large');
   const lh = new DataView(await file.slice(e.lho, e.lho + 30).arrayBuffer());
   if (lh.getUint32(0, true) !== 0x04034b50) throw new Error('bad local header');
@@ -449,7 +449,7 @@ function parseProject(xml) {
   return m;
 }
 
-export async function renderDavinci(file, resultsEl) {
+export async function renderDavinci(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));

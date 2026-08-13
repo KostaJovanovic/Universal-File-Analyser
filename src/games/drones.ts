@@ -11,19 +11,27 @@ import { damageUfo } from './ufos.js';
 import { wrapDelta, wrap } from './geometry.js';
 import { spawnBulletAt, spawnMissileFrom, nearestSeekTarget } from './weapons.js';
 
-export function makeDrone(forcedWeapon) {
-  return { x: g.ship.x, y: g.ship.y, angle: g.ship.angle, hp: 3, timer: POWERUP_DEF.drone.dur, fireCd: rand(0, 0.5), weapon: forcedWeapon || pick(DRONE_WEAPONS) };
+/** A drone wingman. As with the other entities the tail of the shape is attached
+ *  later - `perm` once the squad reaches three, `dead` when it is killed. */
+export interface Drone {
+  x: number; y: number; angle: number; hp: number;
+  timer: number; fireCd: number; weapon: string;
+  [k: string]: any;
+}
+
+export function makeDrone(forcedWeapon: string|undefined): Drone {
+  return { x: g.ship.x, y: g.ship.y, angle: g.ship.angle, hp: 3, timer: POWERUP_DEF.drone.dur!, fireCd: rand(0, 0.5), weapon: forcedWeapon || pick(DRONE_WEAPONS) };
 }
 
 // Add a wingman with a specific weapon (sandbox), mirroring a pickup: tops up the squad
 // timer and adds one if there's room.
-export function addDrone(weapon?) {
-  g.drones.forEach((d) => { d.timer = POWERUP_DEF.drone.dur; });
+export function addDrone(weapon?: string|undefined) {
+  g.drones.forEach((d) => { d.timer = POWERUP_DEF.drone.dur!; });
   if (g.drones.length < DRONE_MAX) g.drones.push(makeDrone(weapon));
 }
 
 // Fire a wingman's own weapon toward ang; returns the cooldown until its next shot.
-export function droneFire(d, ang) {
+export function droneFire(d: Drone, ang: number) {
   const S = g.S;
   if (d.weapon === 'triple') {
     const sp = 20 * Math.PI / 180;
@@ -50,7 +58,7 @@ export function droneHurt(d) {
 
 // Each drone trails its formation slot, fires at the nearest threat, and smashes what it
 // touches. Removed at 0 hp or when its own timer runs out.
-export function updateDrones(dt) {
+export function updateDrones(dt: number) {
   const { ship, S, drones, ufos, asteroids } = g;
   const ca = Math.cos(ship.angle), sa = Math.sin(ship.angle);
   const k = Math.min(1, dt * 6), dr = 12 * S;

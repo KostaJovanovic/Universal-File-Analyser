@@ -60,7 +60,7 @@ function findAllBoxes(dv, start, end, type) {
   return result;
 }
 
-async function findMoov(file) {
+async function findMoov(file: File) {
   if (file.size < 12) return null;
   const head = new DataView(await file.slice(0, Math.min(file.size, 64)).arrayBuffer());
   if (fcc(head, 4) !== 'ftyp') return null;
@@ -255,7 +255,7 @@ function gpmfWalk(dv, start, end, scope, acc, baseT, dur) {
   }
 }
 
-export async function extractGpmf(file) {
+export async function extractGpmf(file: File) {
   const moov = await findMoov(file);
   if (!moov || moov.size > MAX_MOOV) return null;
   const dv = new DataView(await file.slice(moov.offset, moov.offset + moov.size).arrayBuffer());
@@ -286,7 +286,7 @@ export async function extractGpmf(file) {
 
 // ---------- CAMM ----------
 
-export async function extractCamm(file) {
+export async function extractCamm(file: File) {
   const moov = await findMoov(file);
   if (!moov || moov.size > MAX_MOOV) return null;
   const dv = new DataView(await file.slice(moov.offset, moov.offset + moov.size).arrayBuffer());
@@ -334,7 +334,7 @@ export async function extractCamm(file) {
 
 // Turn raw accumulated GPS/IMU into the card-ready shape (decimated motion trace
 // + GPS stats), shared by GPMF and CAMM.
-function finishTelemetry(source, acc, table, file, gyroName, accelName) {
+function finishTelemetry(source, acc, table, file: File, gyroName, accelName) {
   const durationSec = table.durationSec || (acc.gps.length ? acc.gps[acc.gps.length - 1].t : 0) || 1;
 
   let motion = null;
@@ -396,7 +396,7 @@ function parseISO6709(str) {
   return { lat, lon, alt };
 }
 
-export async function extractContainerLocation(file) {
+export async function extractContainerLocation(file: File) {
   const moov = await findMoov(file);
   if (!moov || moov.size > MAX_MOOV) return null;
   const dv = new DataView(await file.slice(moov.offset, moov.offset + moov.size).arrayBuffer());
@@ -607,7 +607,7 @@ function buildLocationCard(loc) {
 // Appends whichever is present. `opts.hasExifGps` suppresses the single-point
 // card when the renderer already showed a GPS card from exifr. Returns true if
 // any telemetry/location card was appended.
-export async function appendTelemetryCards(file, resultsEl, opts: any = {}) {
+export async function appendTelemetryCards(file: File, resultsEl: HTMLElement, opts: any = {}) {
   try {
     let d = null;
     try { d = await extractGpmf(file); } catch (_) {}

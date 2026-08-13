@@ -10,6 +10,8 @@ import { sniffGitObject } from '../renderers/gitobject.js';
 // so a file with no extension (or an extension that lies) can still be analysed
 // correctly. Returns { kind, ext, label } where kind is a ROUTES key and ext
 // drives the proprietary/comic renderers, or null if nothing is recognised.
+// Blob, not File: callers routinely sniff a *slice* of a file (the trailing-data
+// forensic card sniffs everything past the logical end), and only the bytes matter.
 export async function sniffFileType(file) {
     let b;
     try {

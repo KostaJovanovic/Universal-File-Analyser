@@ -10,10 +10,12 @@
    to generic handling. A parser should never need to throw - `safe()` turns a
    throw into a graceful decline so one bad parser can't reject the whole render. */
 
+import type { ParseCtx, ParseFn, Row } from '../core/types.js';
+
 // Wrap a parser so a throw becomes null instead of rejecting renderProprietary.
 // Applied uniformly to both the built-in PARSERS map and the lazy chunk maps, so
 // a built-in parser throw is swallowed the same way a chunk parser throw already
 // was. (undefined and null are treated identically by the renderer downstream.)
-export function safe(fn) {
+export function safe(fn: ParseFn): (c: ParseCtx) => Promise<Row | null | undefined> {
   return async (c) => { try { return await fn(c); } catch (_) { return null; } };
 }

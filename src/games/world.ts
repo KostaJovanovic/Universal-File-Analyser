@@ -30,7 +30,7 @@ export interface Asteroid {
   [k: string]: any;
 }
 
-export function makeAsteroid(x, y, size, label): Asteroid {
+export function makeAsteroid(x: number, y: number, size: number, label: string): Asteroid {
   const S = g.S;
   const radius = (size === 3 ? 46 : size === 2 ? 30 : 19) * S;
   const n = 7 + size * 2 + ((Math.random() * 3) | 0);
@@ -59,7 +59,7 @@ export function spawnWave() {
   const units = Math.min(20, g.wave + 2);
   const bigs = Math.floor(units / 2), mediums = units % 2;
   const safe = 150 * S;   // keep a clear ring around the ship so a fresh asteroid never spawns on top
-  const spawnAt = (size) => {
+  const spawnAt = (size: number) => {
     let x, y, tries = 0;
     do {
       x = cx + rand(-HW, HW) * 0.92; y = cy + rand(-HH, HH) * 0.92;
@@ -111,7 +111,16 @@ export function choosePowerupType() {
   return type;
 }
 
-export function makePowerup(x, y, forcedType?) {
+/** A dropped power-up box. Same convention as Asteroid: the members below exist
+ *  from the moment it is made, and the index signature covers what the boss code
+ *  tacks on (the mega's parked ram pickup rewrites `life` to Infinity). */
+export interface Powerup {
+  x: number; y: number; type: string; color: string; letter: string;
+  radius: number; life: number; vx: number; vy: number;
+  [k: string]: any;
+}
+
+export function makePowerup(x: number, y: number, forcedType?: string|undefined): Powerup {
   const type = forcedType || choosePowerupType();
   const dir = rand(0, TAU), spd = rand(8, 22) * g.S;
   return {
@@ -120,7 +129,7 @@ export function makePowerup(x, y, forcedType?) {
   };
 }
 
-export function applyPowerup(type) {
+export function applyPowerup(type: string) {
   if (type === 'health') {
     // Heal, or - if already at full HP - grant a temporary shield instead.
     if (g.lives < MAX_LIVES) g.lives++;
@@ -136,9 +145,15 @@ export function applyPowerup(type) {
   } else { g.weapon = type; g.weaponTimer = POWERUP_DEF[type].dur; g.homingLeft = 0; }
 }
 
+/** An active black hole (Singularity power-up). */
+export interface Singularity {
+  x: number; y: number; vx: number; vy: number; life: number; max: number;
+  [k: string]: any;
+}
+
 // Drop a black hole a little ahead of the ship on a slow random drift. The pull/crush/drift
 // simulation runs each frame in update.js (updateSingularities); this just seeds the entity.
-export function spawnSingularity() {
+export function spawnSingularity(): void {
   const { ship, S } = g;
   const ahead = 60 * S, dir = rand(0, TAU), spd = SING_DRIFT * S;
   g.singularities.push({
@@ -147,6 +162,12 @@ export function spawnSingularity() {
     vx: Math.cos(dir) * spd, vy: Math.sin(dir) * spd,
     life: SING_DUR, max: SING_DUR
   });
+}
+
+/** The tumbling hull a nuke leaves where the ship was. */
+export interface Wreck {
+  x: number; y: number; vx: number; vy: number; angle: number; spin: number; fade: number;
+  [k: string]: any;
 }
 
 // Detonate: wipe the board, advance a wave at a cost of one life, start the white flash.
@@ -171,7 +192,7 @@ export function triggerNuke() {
   };
 }
 
-export function resetShip(invuln) {
+export function resetShip(invuln: number) {
   const { ship, cx, cy } = g;
   ship.x = cx; ship.y = cy; ship.vx = 0; ship.vy = 0; ship.angle = -Math.PI / 2;
   ship.invuln = invuln; ship.dead = false;
@@ -199,8 +220,21 @@ export function restart() {
   spawnWave();
 }
 
+/** One debris particle - a line shard (len > 0) or a dot spark. */
+export interface Particle {
+  x: number; y: number; vx: number; vy: number;
+  life: number; max: number; color: string;
+  ang: number; spin: number; len: number;
+  [k: string]: any;
+}
+
+/** Tuning for a burst(): how many shards, how fast, how long, and whether they
+ *  are line shards rather than dots. Every field is optional - the defaults below
+ *  are the plain dot spray. */
+export interface BurstOpts { count?: number; speed?: number; life?: number; lines?: boolean }
+
 // A short-lived burst of debris - line shards (lines:true) or dot sparks.
-export function burst(x, y, color, opts) {
+export function burst(x: number, y: number, color: string, opts?: BurstOpts) {
   const o = opts || {};
   const S = g.S;
   const count = o.count || 12, speed = (o.speed || 140) * S, life = o.life || 0.45, lines = !!o.lines;
@@ -214,7 +248,7 @@ export function burst(x, y, color, opts) {
   }
 }
 
-export function destroyAsteroid(ai) {
+export function destroyAsteroid(ai: number) {
   const { asteroids, powerups, ACCENT } = g;
   const a = asteroids[ai];
   if (!g.sandbox) {
@@ -238,6 +272,12 @@ export function loseLife() {
   burst(g.ship.x, g.ship.y, LINE, { count: 16, speed: 185, life: 0.85, lines: true });
   burst(g.ship.x, g.ship.y, g.ACCENT, { count: 12, speed: 130, life: 0.6 });
   g.ship.dead = true; g.deathTimer = 0.9;   // animate the wreck before respawning / game over
+}
+
+/** A background squadron ship - decorative, no hitbox. */
+export interface Flyer {
+  x: number; y: number; vx: number; vy: number; angle: number; alpha: number;
+  [k: string]: any;
 }
 
 // Launch a squadron: a travel direction, a lateral chord offset, and 1-5 ships in a
@@ -268,7 +308,7 @@ export function spawnFlyers() {
 }
 
 // Drift the squadron across and retire it once it has cleared the far rim.
-export function updateFlyers(dt) {
+export function updateFlyers(dt: number) {
   const { cx, cy, HW, HH, flyers } = g;
   g.flyerTimer -= dt;
   if (g.flyerTimer <= 0 && flyers.length === 0) { spawnFlyers(); g.flyerTimer = rand(5, 12); }
@@ -280,7 +320,7 @@ export function updateFlyers(dt) {
 }
 
 // Drift the nuke wreck at constant velocity (no drag), tumbling, until it has fully faded.
-export function updateWreck(dt) {
+export function updateWreck(dt: number) {
   if (!g.wreck) return;
   const w = g.wreck;
   w.x += w.vx * dt; w.y += w.vy * dt; wrap(w);
@@ -294,7 +334,7 @@ export function updateWreck(dt) {
 
 // Keep the asteroids drifting (and spinning/wrapping) on the game-over screen, without
 // the collision/firing logic. The UFOs keep flying their paths too.
-export function driftAsteroids(dt) {
+export function driftAsteroids(dt: number) {
   for (const a of g.asteroids) {
     a.x += a.vx * dt; a.y += a.vy * dt; a.angleR += a.spin * dt; wrap(a);
   }

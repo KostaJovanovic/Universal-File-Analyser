@@ -74,7 +74,7 @@ function shortType(mime) {
   return m.replace(/^application\//, '').replace(/^text\//, '').replace(/^image\//, 'img/');
 }
 
-export async function renderHar(file, container) {
+export async function renderHar(file: File, container) {
   container.hidden = false;
   container.innerHTML = '';
   container.appendChild(el('div', { class: 'anr-info' }, 'Reading HAR capture...'));
@@ -153,7 +153,7 @@ export async function renderHar(file, container) {
 
 // ---------- JSON supersets (JSON5 / JSONC / Hjson) ----------
 const JSON_LABELS = { json5: 'JSON5', jsonc: 'JSON with comments (JSONC)', hjson: 'Hjson' };
-export async function renderJsonData(file, container) {
+export async function renderJsonData(file: File, container) {
   container.hidden = false;
   container.innerHTML = '';
   const ext = (file.name.split('.').pop() || '').toLowerCase();
@@ -212,7 +212,7 @@ export async function renderJsonData(file, container) {
 }
 
 // ---------- NFO (CP437 ASCII art) ----------
-export async function renderNfo(file, container) {
+export async function renderNfo(file: File, container) {
   container.hidden = false;
   container.innerHTML = '';
   try {

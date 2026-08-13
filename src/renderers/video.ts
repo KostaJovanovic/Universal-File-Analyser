@@ -126,7 +126,7 @@ function stepLoader(text) {
 // downloads it as a PNG. `getFps` returns the current detected frame rate (it may
 // update asynchronously). Returns { wrap, refresh }; call refresh() when fps
 // becomes known so the frame field of the timecode is accurate.
-function buildFrameControls(playerEl, getFps, file) {
+function buildFrameControls(playerEl, getFps, file: File) {
   const ctx = curVctx();   // capture at build time for the deferred Analyse-frame handler
   const fps = () => { const f = getFps(); return (f && isFinite(f) && f > 0) ? f : 30; };
   const pad = (n) => String(n).padStart(2, '0');
@@ -429,7 +429,7 @@ export async function loadFFmpeg(onProgress?) {
   }
 }
 
-async function ffmpegExtractAudio(file, container) {
+async function ffmpegExtractAudio(file: File, container) {
   const barEl = el('div', { class: 'anr-progress-bar' }, '[                    ]');
   const labelEl = el('div', { class: 'anr-progress-label' }, 'loading ffmpeg');
   const wrap = el('div', { class: 'anr-progress' }, [barEl, labelEl]);
@@ -476,7 +476,7 @@ async function ffmpegExtractAudio(file, container) {
 // under the heap. Output is H.264 + AAC MP4 (yuv420p) so it plays anywhere.
 // `onLoad` reports 0..1 core-download progress; `onEnc` reports 0..1 progress.
 // Returns a video/mp4 Blob, or null if nothing could be produced.
-async function ffmpegReverseVideo(file, onLoad, onEnc, signal) {
+async function ffmpegReverseVideo(file: File, onLoad, onEnc, signal) {
   const ff = await loadFFmpeg(onLoad);
   if (signal && signal.aborted) return null;
   const aborted = () => signal && signal.aborted;
@@ -624,7 +624,7 @@ async function ffmpegReverseVideo(file, onLoad, onEnc, signal) {
 // 4:2:2, ...) so they can be played and fully analysed. Plain streaming transcode
 // (no whole-video buffering), so memory stays flat regardless of length. Returns a
 // video/mp4 Blob, or null. `onLoad`/`onEnc` report 0..1 progress.
-async function ffmpegTranscodeToH264(file, onLoad, onEnc, signal, opts: any = {}) {
+async function ffmpegTranscodeToH264(file: File, onLoad, onEnc, signal, opts: any = {}) {
   // Fast viewing/analysis proxy by default: downscale to a 720p box, ultrafast
   // preset, cap 30 fps - encode time scales with pixels x frames, so this is
   // typically several times faster than a full-resolution re-encode. The Advanced
@@ -675,7 +675,7 @@ async function ffmpegTranscodeToH264(file, onLoad, onEnc, signal, opts: any = {}
 // Card with a button that reverses the playable video on demand, then shows a
 // reversed player + MP4 download. `file` is the browser-playable file (original or
 // the remuxed MP4). `signal` revokes the result URL on teardown.
-function buildReverseVideoCard(file, signal) {
+function buildReverseVideoCard(file: File, signal) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Reverse'));
   card.appendChild(el('p', { class: 'anr-hint' },
@@ -763,7 +763,7 @@ function buildReverseVideoCard(file, signal) {
 // the captured FFmpeg output so the caller can show WHY a remux didn't produce a
 // file instead of silently dropping to the unplayable card. Large inputs are
 // mounted via WORKERFS (read by seeking) rather than copied whole into WASM heap.
-async function ffmpegRemuxToMp4(file, signal, rawKind, fps) {
+async function ffmpegRemuxToMp4(file: File, signal, rawKind, fps) {
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return { blob: null, log: '' };
   const demuxer = rawKind === 'h265' ? 'hevc' : 'h264';
@@ -839,7 +839,7 @@ async function ffmpegRemuxToMp4(file, signal, rawKind, fps) {
 // AC-3 or LPCM, which an MP4 can't carry for in-browser playback. +genpts repairs
 // the timestamps some camcorder TS files omit; faststart moves the moov atom to
 // the front. Returns { blob, log } like ffmpegRemuxToMp4 (blob null on failure).
-async function ffmpegRemuxTsToMp4(file, signal) {
+async function ffmpegRemuxTsToMp4(file: File, signal) {
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return { blob: null, log: '' };
   const outName = 'out.mp4';
@@ -914,7 +914,7 @@ function isParamNal(t, h265) { return h265 ? (t === 32 || t === 33 || t === 34) 
 // Pull the parameter sets (SPS/PPS, plus HEVC VPS) out of the stream head and
 // return them as one Annex B blob with 4-byte start codes, ready to prepend to a
 // chunk. Returns null if the essential sets aren't found.
-async function extractRawParamSets(file, h265, signal) {
+async function extractRawParamSets(file: File, h265, signal) {
   const HEAD = Math.min(file.size, 1024 * 1024);
   const buf = new Uint8Array(await file.slice(0, HEAD).arrayBuffer());
   if (signal && signal.aborted) return null;
@@ -980,7 +980,7 @@ function videoTrackFromStream(info) {
 // windows (so a multi-GB file is read by seeking, never copied whole). Windows
 // overlap by 4 bytes so a start code straddling a boundary isn't missed. Returns
 // null if none within maxSpan.
-async function findNextIdrOffset(file, from, h265, signal, maxSpan = 128 * 1024 * 1024) {
+async function findNextIdrOffset(file: File, from, h265, signal, maxSpan = 128 * 1024 * 1024) {
   const WIN = 8 * 1024 * 1024;
   const limit = Math.min(file.size, from + maxSpan);
   let pos = Math.max(0, from);
@@ -1002,7 +1002,7 @@ async function findNextIdrOffset(file, from, h265, signal, maxSpan = 128 * 1024 
 // Work out where to cut a large stream: parameter sets + a list of byte
 // boundaries, each on an IDR, sized ~TARGET so every produced MP4 fits in memory.
 // Returns null if the stream can't be split (no param sets, or no keyframes found).
-async function planRawSegments(file, h265, signal) {
+async function planRawSegments(file: File, h265, signal) {
   const paramSets = await extractRawParamSets(file, h265, signal);
   if (!paramSets) return null;
   const TARGET = 256 * 1024 * 1024;
@@ -1028,7 +1028,7 @@ async function planRawSegments(file, h265, signal) {
 // prepended (so the chunk decodes even though it starts mid-file), stream-copied.
 // loaderLabel (optional): when set, the bottom loader bar shows that text while
 // this part is being read + remuxed (foreground parts only - not prefetches).
-async function remuxRawSegment(file, start, end, paramSets, h265, signal, loaderLabel, fps) {
+async function remuxRawSegment(file: File, start, end, paramSets, h265, signal, loaderLabel, fps) {
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return null;
   if (loaderLabel) showFfmpegLoader(loaderLabel, true);
@@ -1142,7 +1142,7 @@ function buildRawSceneCard(playerEl, signal) {
 // Player for an over-size raw stream: scan -> split at keyframes -> lazily remux
 // each part and play them back-to-back. Throws if FFmpeg/scan fails so the caller
 // can fall back to the "open in VLC" note.
-async function renderSegmentedRawVideo(file, header, resultsEl, kind, signal) {
+async function renderSegmentedRawVideo(file: File, header, resultsEl: HTMLElement, kind, signal) {
   const h265 = kind === 'H.265';
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' },
@@ -1313,7 +1313,7 @@ async function renderSegmentedRawVideo(file, header, resultsEl, kind, signal) {
 // decode. Prefers a WORKERFS mount so multi-GB files are read by seeking rather
 // than copied whole into WASM memory; falls back to an in-memory copy for
 // smaller files. Returns null if nothing usable could be extracted. Fully guarded.
-async function ffmpegFirstFrame(file, signal) {
+async function ffmpegFirstFrame(file: File, signal) {
   const ff = await loadFFmpeg();
   if (signal && signal.aborted) return null;
 
@@ -1646,7 +1646,7 @@ const BROWSER_UNPLAYABLE_AUDIO = new Set(['twos','sowt','lpcm','in16','in24','in
 // Cheaply find the audio track's codec fourCC by walking only box HEADERS over the
 // File (seeking past mdat by size, never reading its bytes), so it's fast even on a
 // multi-GB clip whose moov sits at the tail. Returns the lowercase-ish fourCC or ''.
-async function sniffMp4AudioCodec(file) {
+async function sniffMp4AudioCodec(file: File) {
   const u32 = (b, p) => (b[p] << 24 | b[p+1] << 16 | b[p+2] << 8 | b[p+3]) >>> 0;
   const fourcc = (b, p) => String.fromCharCode(b[p], b[p+1], b[p+2], b[p+3]);
   // Locate the top-level moov box by reading 8-16 byte headers and jumping.
@@ -1693,7 +1693,7 @@ async function sniffMp4AudioCodec(file) {
 // register it as the synced audio companion so the muted <video> still has sound.
 // Best-effort and fully in the background: silent on any failure. Skipped above a
 // size cap (the whole file must be read into memory to extract PCM).
-async function attachPcmAudioCompanion(file, playerCard, signal) {
+async function attachPcmAudioCompanion(file: File, playerCard, signal) {
   const ctx = curVctx();   // capture now: this runs fire-and-forget, resolving after renderVideo returns
   const COMPANION_MAX_BYTES = 2 * 1024 * 1024 * 1024;   // 2 GB: cap the in-memory decode
   try {
@@ -1717,7 +1717,7 @@ async function attachPcmAudioCompanion(file, playerCard, signal) {
 
 // ---------- container detection from magic bytes ----------
 
-async function peekVideoContainer(file) {
+async function peekVideoContainer(file: File) {
   const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
   const ascii = (s, l) => String.fromCharCode(...head.slice(s, s + l));
 
@@ -1776,7 +1776,7 @@ async function peekVideoContainer(file) {
 // element. This used to blind-scan the first 4 MB for the two-byte element ids,
 // which both over-read and could match the same bytes anywhere in the file; the
 // EBML walk seeks straight to Info and reads the title and creation date too.
-async function readMatroskaApps(file) {
+async function readMatroskaApps(file: File) {
   const mkv = await detectVideoTracks(file);
   if (!mkv) return {};
   const out: any = {};
@@ -1789,7 +1789,7 @@ async function readMatroskaApps(file) {
 
 // AVI stores the authoring software as an ISFT entry inside a LIST INFO chunk -
 // usually in the header LIST near the start, occasionally in a trailing INFO list.
-async function readAviSoftware(file) {
+async function readAviSoftware(file: File) {
   const scan = (b) => {
     for (let i = 0; i + 8 < b.length; i++) {
       if (b[i] === 0x49 && b[i + 1] === 0x53 && b[i + 2] === 0x46 && b[i + 3] === 0x54) { // 'ISFT'
@@ -1814,7 +1814,7 @@ async function readAviSoftware(file) {
 // MP4 / MOV record the encoding tool in the iTunes-style "©too" atom, inside
 // moov/udta/meta/ilst. moov can sit at the head or the tail, so scan both. The
 // atom is "©too" then a "data" child: [size][data][flags][reserved][UTF-8 value].
-async function readMp4Encoder(file) {
+async function readMp4Encoder(file: File) {
   const find = (b) => {
     for (let i = 0; i + 24 < b.length; i++) {
       if (b[i] !== 0xA9 || b[i + 1] !== 0x74 || b[i + 2] !== 0x6F || b[i + 3] !== 0x6F) continue; // '©too'
@@ -1834,7 +1834,7 @@ async function readMp4Encoder(file) {
   return s ? { software: s } : {};
 }
 
-async function readContainerSoftware(file, container) {
+async function readContainerSoftware(file: File, container) {
   try {
     if (/Matroska|WebM/i.test(container || '')) return await readMatroskaApps(file);
     if (container === 'AVI') return await readAviSoftware(file);
@@ -1862,7 +1862,7 @@ function appendCreatorRows(tbl, header) {
 
 // ---------- frame rate detection ----------
 
-async function detectFpsFromContainer(file) {
+async function detectFpsFromContainer(file: File) {
   if (file.size < 12) return null;
   const headBuf = await file.slice(0, Math.min(file.size, 64)).arrayBuffer();
   const hv = new DataView(headBuf);
@@ -1991,7 +1991,7 @@ function rotationFromMatrix(a, b, c, d) {
   return ((deg % 360) + 360) % 360;
 }
 
-async function detectIsobmffTracks(file) {
+async function detectIsobmffTracks(file: File) {
   if (file.size < 12) return null;
   const headBuf = await file.slice(0, Math.min(file.size, 64)).arrayBuffer();
   const hv = new DataView(headBuf);
@@ -2248,7 +2248,7 @@ async function detectIsobmffTracks(file) {
 // the file being described is still the original, so trusting the caller's label
 // would read an MKV with the MP4 walk and come back with nothing.
 const trackCache = new WeakMap();
-async function detectVideoTracks(file) {
+async function detectVideoTracks(file: File) {
   if (!file || file.size < 12) return null;
   if (trackCache.has(file)) return trackCache.get(file);
   const pending = (async () => {
@@ -2379,7 +2379,7 @@ function appendTrackRows(tbl, tracks) {
 
 // A byte-range reader over a File for the recovery helpers (which are source-
 // agnostic: the same code runs over Node fs in tests).
-function fileRangeReader(file) {
+function fileRangeReader(file: File) {
   return async (start, end) => new Uint8Array(await file.slice(start, end).arrayBuffer());
 }
 
@@ -2402,7 +2402,7 @@ function clearVideoPreviewBoot() {
   if (pv && pv.querySelector('.anr-inline-loader')) pv.innerHTML = '';
 }
 
-async function renderMoovlessRecovery(file, header, det, resultsEl, signal) {
+async function renderMoovlessRecovery(file: File, header, det, resultsEl: HTMLElement, signal) {
   const mctx = curVctx();   // preserve inline/compare when re-rendering the carved stream
   clearVideoPreviewBoot();
   resultsEl.innerHTML = '';
@@ -2534,7 +2534,7 @@ async function renderMoovlessRecovery(file, header, det, resultsEl, signal) {
 // metadata read straight from the file, with a plain explanation of why it won't
 // play and how to make it playable. Degrades gracefully for non-ISOBMFF files
 // (shows name / size / container only).
-async function renderUnplayableVideoInfo(file, header, resultsEl, signal, rawInfo?) {
+async function renderUnplayableVideoInfo(file: File, header, resultsEl: HTMLElement, signal, rawInfo?) {
   clearVideoPreviewBoot();
   const ctx = curVctx();
   let tracks = null;
@@ -2772,7 +2772,7 @@ async function renderUnplayableVideoInfo(file, header, resultsEl, signal, rawInf
   if (unplayableAdvCard && !(signal && signal.aborted)) resultsEl.appendChild(unplayableAdvCard);
 }
 
-async function detectFpsWithFfmpeg(file, onProgress) {
+async function detectFpsWithFfmpeg(file: File, onProgress) {
   const ff = await loadFFmpeg(onProgress);
   const { fetchFile } = await import(new URL('../../vendor/ffmpeg/ffmpeg-util.js', import.meta.url).href);
   await ff.writeFile('probe', await fetchFile(file));
@@ -2787,12 +2787,12 @@ async function detectFpsWithFfmpeg(file, onProgress) {
   return null;
 }
 
-async function detectFps(file, fpsCell?) {
+async function detectFps(file: File, fpsCell?) {
   const containerFps = await detectFpsFromContainer(file);
   if (containerFps) return containerFps;
   if (fpsCell) fpsCell.textContent = 'loading ffmpeg…';
   try {
-    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 30000));
+    const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 30000));
     const detect = detectFpsWithFfmpeg(file, (p) => {
       const pct = Math.round(p * 100);
       if (fpsCell) fpsCell.textContent = pct >= 100 ? 'initialising ffmpeg…' : 'loading ffmpeg… ' + pct + '%';
@@ -3094,7 +3094,7 @@ function seekAndPaint(video, t, timeoutMs = 12000) {
 // container/resolution/duration read straight off the loaded element, an
 // on-demand frame grab into the photo section, and a SHA-256. Returns true if
 // the player loaded (so the caller skips the error), false otherwise.
-async function renderVisibleVideoFallback(file, url, header, resultsEl, signal) {
+async function renderVisibleVideoFallback(file: File, url, header, resultsEl: HTMLElement, signal) {
   const ctx = curVctx();
   const playerCard = el('div', { class: 'anr-card', style: 'position:relative;' });
   playerCard.appendChild(el('h3', {}, 'Player'));
@@ -3443,7 +3443,7 @@ function renderBitrateGraph(perSecKbps) {
   return cv;
 }
 
-async function buildVideoAdvancedCard(file) {
+async function buildVideoAdvancedCard(file: File) {
   let s = null;
   try { s = await analyzeMp4Structure(file); } catch (_) { return null; }
   if (!s) return null;
@@ -3654,7 +3654,7 @@ function appendBitstreamPanel(card, bs) {
 // file is analysed.
 let videoRenderAbort = null;
 
-export async function renderVideo(file, resultsEl, opts: any = {}) {
+export async function renderVideo(file: File, resultsEl: HTMLElement, opts: any = {}) {
   // Inline mode (compare view's side-by-side panels): isolate the abort controller
   // so two videos don't cancel each other, and route every cross-section target to
   // a local slot inside this panel with player-sync/companion off. See DEFAULT_VCTX.
@@ -4942,7 +4942,7 @@ export async function renderVideo(file, resultsEl, opts: any = {}) {
 
 // ---------- setup ----------
 export function initVideo({ dropEl, inputEl, resultsEl, onFile }) {
-  const handle = onFile || ((file) => renderVideo(file, resultsEl));
+  const handle = onFile || ((file: File) => renderVideo(file, resultsEl));
   inputEl.addEventListener('change', (e) => {
     const file = e.target.files && e.target.files[0];
     if (file) handle(file);

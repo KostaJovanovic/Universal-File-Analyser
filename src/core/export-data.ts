@@ -27,7 +27,7 @@ const TEXT_CAP = 5000;
 // hold a section's visuals (photo preview / histogram / OCR, video preview). Each
 // becomes one titled section in the export, in this order, when it has content.
 function exportRoots() {
-  const byId = (id) => document.getElementById(id);
+  const byId = (id: string) => document.getElementById(id);
   return [
     { title: 'File',  main: byId('unknownResults'), extras: [] },
     // leadExtras render BEFORE the main results - the photo preview leads the
@@ -40,19 +40,19 @@ function exportRoots() {
   ];
 }
 
-const isVisible = (node) => !!node && !node.hidden && node.childElementCount > 0
+const isVisible = (node: HTMLElement|null) => !!node && !node.hidden && node.childElementCount > 0
   && node.getClientRects().length > 0;
 
 // Read a single readout cell as plain text: drop the [?] help button + tooltip and
 // any copy buttons, then collapse whitespace so values stay on one line.
-function cellText(cell) {
+function cellText(cell: Element) {
   if (!cell) return '';
-  const clone = cell.cloneNode(true);
+  const clone = cell.cloneNode(true) as Element;
   clone.querySelectorAll('button, .anr-tip, script, style').forEach((n) => n.remove());
   return (clone.textContent || '').replace(/\s+/g, ' ').trim();
 }
 
-function capText(text) {
+function capText(text: string|null) {
   const t = String(text == null ? '' : text);
   return t.length > TEXT_CAP ? t.slice(0, TEXT_CAP) + '\n…(truncated, ' + (t.length - TEXT_CAP) + ' more characters)' : t;
 }
@@ -61,10 +61,10 @@ function capText(text) {
 // nearest preceding heading. Readout tables are taken whole (not recursed into, so
 // their inner th/td aren't double-counted); other tables, <pre> text and
 // canvas/img visuals are captured too. Everything else is recursed.
-function collectBlocks(root, fallbackHeading) {
+function collectBlocks(root: Element|null, fallbackHeading: string) {
   const blocks = [];
   const ctx = { heading: fallbackHeading };
-  const pushImage = (heading, dataUrl, imgEl) => blocks.push({ type: 'image', heading, dataUrl, imgEl });
+  const pushImage = (heading: string, dataUrl, imgEl: Element|null) => blocks.push({ type: 'image', heading, dataUrl, imgEl });
 
   function walk(node: Element) {
     for (const child of Array.from(node.children)) {
@@ -146,7 +146,7 @@ function collectSections() {
   const out = [];
   for (const root of exportRoots()) {
     if (!isVisible(root.main)) continue;
-    let blocks = [];
+    let blocks: any[] = [];
     for (const lead of (root.leadExtras || [])) {
       if (isVisible(lead)) blocks = blocks.concat(collectBlocks(lead, root.title));
     }
@@ -191,7 +191,7 @@ function hasSha(section) {
 // Ensure the video section carries a SHA-256 of the file. The video renderer only
 // shows one for smaller files (and behind an async/button path), so the export
 // computes it from the stored File when it is missing.
-async function augmentVideoSha(sections) {
+async function augmentVideoSha(sections: any[]) {
   const file = window._anrLastFile;
   const a = window._anrLastAnalysis;
   if (!file || !a || a.category !== 'video') return;
@@ -244,7 +244,7 @@ function csvField(v) {
   return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
 }
 
-function buildCsv(sections) {
+function buildCsv(sections: any[]) {
   const lines = [['Section', 'Group', 'Field', 'Value'].map(csvField).join(',')];
   const a = window._anrLastAnalysis;
   if (a && a.name) lines.push(['File', 'Source', 'Name', a.name].map(csvField).join(','));
@@ -275,7 +275,7 @@ function buildCsv(sections) {
 // ordered list of typed blocks. kv readouts become a `fields` map; other tables
 // keep their `rows`; <pre> payloads become `text` (already capped); visuals are
 // noted by label only (the base64 lives in the Complete HTML export instead).
-async function buildJson(sections) {
+async function buildJson(sections: any[]) {
   const a = window._anrLastAnalysis;
   const vd = await verificationData();
   const doc = {
@@ -324,7 +324,7 @@ async function buildJson(sections) {
 // streams this same markup into a window.open('') tab, and about:blank inherits
 // this page's origin - so an unescaped quote in a src= is script execution here,
 // not in a sandbox.
-function esc(s) {
+function esc(s: string|null) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
@@ -333,7 +333,7 @@ function esc(s) {
 // Resolve an <img> to a base64 data URI so the report stays self-contained. Most
 // previews are blob:/object URLs (same-origin, fetchable); a fetch failure falls
 // back to repainting the image onto a canvas.
-function imgToDataUrl(img) {
+function imgToDataUrl(img: HTMLImageElement) {
   const src = img.currentSrc || img.src || '';
   if (!src) return Promise.resolve(null);
   if (src.startsWith('data:')) return Promise.resolve(src);
@@ -401,7 +401,7 @@ const REPORT_CSS = [
   '@media print{.verify{background:#fff}body{font-size:12px}.wrap{padding:0}}',
 ].join('');
 
-async function buildHtml(sections) {
+async function buildHtml(sections: any[]) {
   const a = window._anrLastAnalysis;
   const fileName = (a && a.name) ? a.name : 'this file';
   const parts = [];
@@ -431,7 +431,7 @@ async function buildHtml(sections) {
         parts.push('<div class="tablewrap"><table>' + b.rows.map(([l, v]) =>
           '<tr><th>' + esc(l) + '</th><td>' + esc(v) + '</td></tr>').join('') + '</table></div>');
       } else if (b.type === 'table') {
-        parts.push('<div class="tablewrap"><table class="generic">' + b.rows.map((row) =>
+        parts.push('<div class="tablewrap"><table class="generic">' + b.rows.map((row: any[]) =>
           '<tr>' + row.map((c) => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table></div>');
       } else if (b.type === 'text') {
         parts.push('<pre>' + esc(b.text) + '</pre>');
@@ -474,7 +474,7 @@ function showChooser() {
   _open = true;
 
   // Filled once preparation + collection finish; the format buttons close over it.
-  let sections = [];
+  let sections: any[] = [];
 
   const closeBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, 'Cancel');
   // Holds the "preparing" status, then the format choices.

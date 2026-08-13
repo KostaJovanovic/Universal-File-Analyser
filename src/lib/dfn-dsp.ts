@@ -16,6 +16,7 @@
    satisfies the Princen-Bradley identity w^2[n] + w^2[n+N/2] = 1 at 50% overlap. */
 
 import { makeFft } from './mdx-stft.js';
+import type { FloatBuf } from '../core/types.js';
 
 export const DFN = {
   sr: 48000,
@@ -32,8 +33,8 @@ export const DFN = {
 
 // ERB scale (libDF): freq2erb / erb2freq with the 9.265 constant.
 const ERB_A = 9.265;
-export function freq2erb(f) { return ERB_A * Math.log(1 + f / (24.7 * ERB_A)); }
-export function erb2freq(e) { return 24.7 * ERB_A * (Math.exp(e / ERB_A) - 1); }
+export function freq2erb(f: number) { return ERB_A * Math.log(1 + f / (24.7 * ERB_A)); }
+export function erb2freq(e: number) { return 24.7 * ERB_A * (Math.exp(e / ERB_A) - 1); }
 
 /* ERB band widths: how many contiguous FFT bins each of the 32 bands spans. Exact
    port of libDF erb_fb(): step the ERB axis in nb_bands equal steps, round each
@@ -66,7 +67,7 @@ export function erbWidths(sr = DFN.sr, fftSize = DFN.fftSize, nbBands = DFN.nbEr
 // libDF normalisation state seeds, linearly interpolated across bands/bins.
 export const MEAN_NORM_INIT = [-60, -90];      // ERB feature (dB) running-mean seed
 export const UNIT_NORM_INIT = [0.001, 0.0001]; // complex-feature magnitude seed
-function linspace(a, b, n) {
+function linspace(a: number, b: number, n: number) {
   const o = new Float32Array(n);
   for (let i = 0; i < n; i++) o[i] = a + (b - a) * (n === 1 ? 0 : i / (n - 1));
   return o;
@@ -74,7 +75,7 @@ function linspace(a, b, n) {
 
 // Vorbis window: w[i] = sin(pi/2 * sin^2(pi*(i+0.5)/N)). Symmetric, peaks at 1,
 // and (with 50% overlap) sum-of-squares over the two overlapping frames == 1.
-export function vorbisWindow(n) {
+export function vorbisWindow(n: number) {
   const w = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     const s = Math.sin(Math.PI / n * (i + 0.5));
@@ -100,13 +101,13 @@ export function makeDfnStft(fftSize = DFN.fftSize, hop = DFN.hop) {
   const fr = new Float64Array(fftSize), fi = new Float64Array(fftSize);
 
   // Forward: windowed frame -> one-sided re/im (length nBins), wnorm-scaled.
-  function frameFwd(frame, re, im) {
+  function frameFwd(frame: FloatBuf, re: FloatBuf, im: FloatBuf) {
     for (let i = 0; i < fftSize; i++) { fr[i] = frame[i] * win[i]; fi[i] = 0; }
     const spec = fft(fr, fi, false);
     for (let b = 0; b < nBins; b++) { re[b] = spec.re[b] * wnorm; im[b] = spec.im[b] * wnorm; }
   }
   // Inverse: one-sided re/im -> windowed time frame (length fftSize) into `out`.
-  function frameInv(re, im, out) {
+  function frameInv(re: FloatBuf, im: FloatBuf, out: FloatBuf) {
     for (let b = 0; b < nBins; b++) { fr[b] = re[b]; fi[b] = im[b]; }
     // Hermitian-mirror the negative frequencies.
     for (let b = 1; b < fftSize - nBins + 1; b++) { fr[fftSize - b] = re[b]; fi[fftSize - b] = -im[b]; }
@@ -120,7 +121,7 @@ export function makeDfnStft(fftSize = DFN.fftSize, hop = DFN.hop) {
    instance per channel per processing pass; the state is seeded from *_NORM_INIT
    and updated every frame (an exponential moving average), so a segment restart
    needs a short warm-up of frames before its kept output (dfn-enhance.js). */
-export function makeFeatureState(erb) {
+export function makeFeatureState(erb: string|any[]) {
   const nbErb = erb.length;
   const nbDf = DFN.nbDf;
   const alpha = DFN.alpha;
@@ -130,7 +131,7 @@ export function makeFeatureState(erb) {
   // feat_erb: mean power per ERB band -> dB -> subtract running mean, scale by 40.
   // (libDF compute_band_corr divides each band by its width, then feat_erb does
   //  10*log10(x+1e-10) and band_mean_norm_erb: s=x*(1-a)+s*a; x=(x-s)/40.)
-  function featErb(re, im, out) {
+  function featErb(re: FloatBuf, im: FloatBuf, out: FloatBuf) {
     let bc = 0;
     for (let b = 0; b < nbErb; b++) {
       const bs = erb[b], k = 1 / bs;
@@ -144,7 +145,7 @@ export function makeFeatureState(erb) {
   }
   // feat_cplx: first nbDf complex bins, each divided by sqrt of the running mean
   // of its magnitude (libDF band_unit_norm: s=|x|*(1-a)+s*a; x/=sqrt(s)).
-  function featCplx(re, im, outRe, outIm) {
+  function featCplx(re: number[], im: number[], outRe: number[], outIm: number[]) {
     for (let k = 0; k < nbDf; k++) {
       const mag = Math.hypot(re[k], im[k]);
       unitState[k] = mag * (1 - alpha) + unitState[k] * alpha;
@@ -158,7 +159,7 @@ export function makeFeatureState(erb) {
 // Apply a 32-band ERB gain to a full one-sided spectrum in place: each band's gain
 // multiplies every bin it spans (libDF apply_interp_band_gain - replication, no
 // interpolation). re/im are one frame (length nBins).
-export function applyErbGain(re, im, gains, erb) {
+export function applyErbGain(re: number[]|Float32Array, im: number[]|Float32Array, gains: any[], erb: string|any[]) {
   let bc = 0;
   for (let b = 0; b < erb.length; b++) {
     const g = gains[b], bs = erb[b];

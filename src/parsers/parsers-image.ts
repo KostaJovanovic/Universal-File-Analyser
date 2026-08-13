@@ -17,13 +17,13 @@
 
 import { el, row, fmtBytes, preBlock, loadScript, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, findBytes, latin1, hexByte } from '../core/binutil.js';
-import type { Row } from '../core/types.js';
+import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- shared helpers ----------
 
 const MAX_EDGE = 1024;   // cap decoded preview's longest edge
 
-async function readAll(file, cap = 32 * 1024 * 1024) {
+async function readAll(file: File, cap = 32 * 1024 * 1024) {
   return await readSlice(file, 0, cap);
 }
 
@@ -77,7 +77,7 @@ function wrapPreview(canvas, w, h) {
 // =====================================================================
 //                   TGA (Truevision Targa)
 // =====================================================================
-async function parseTga(file) {
+async function parseTga(file: File) {
   const b = await readAll(file);
   if (b.length < 18) return null;
   const idLen = b[0];
@@ -104,7 +104,7 @@ async function parseTga(file) {
   const grayscale = imageType === 3 || imageType === 11;
   const indexed = imageType === 1 || imageType === 9;
 
-  const TYPE_NAMES = { 1: 'color-mapped', 2: 'true-color', 3: 'grayscale', 9: 'RLE color-mapped', 10: 'RLE true-color', 11: 'RLE grayscale' };
+  const TYPE_NAMES: Record<number, string> = { 1: 'color-mapped', 2: 'true-color', 3: 'grayscale', 9: 'RLE color-mapped', 10: 'RLE true-color', 11: 'RLE grayscale' };
 
   const out: Row = {
     'Format': 'Truevision TGA',
@@ -220,7 +220,7 @@ function decodeTga(b, h) {
 // =====================================================================
 //                   QOI
 // =====================================================================
-async function parseQoi(file) {
+async function parseQoi(file: File) {
   const b = await readAll(file);
   if (b.length < 14 || ascii(b, 0, 4) !== 'qoif') return null;
   const r = new Reader(b); // big-endian
@@ -292,7 +292,7 @@ function decodeQoi(b, width, height) {
 // =====================================================================
 //                   Netpbm (P1-P6) + PAM (P7)
 // =====================================================================
-async function parseNetpbm(file) {
+async function parseNetpbm(file: File) {
   const b = await readAll(file, 48 * 1024 * 1024);
   if (b.length < 3 || b[0] !== 0x50) return null;   // 'P'
   const t = b[1];
@@ -322,7 +322,7 @@ async function parseNetpbm(file) {
   if (!width || !height || width > 60000 || height > 60000) return null;
   pos++; // single whitespace after last header token (for binary variants)
 
-  const NAMES = { 1: 'P1 (PBM, ASCII bitmap)', 2: 'P2 (PGM, ASCII grayscale)', 3: 'P3 (PPM, ASCII color)', 4: 'P4 (PBM, binary bitmap)', 5: 'P5 (PGM, binary grayscale)', 6: 'P6 (PPM, binary color)' };
+  const NAMES: Record<number, string> = { 1: 'P1 (PBM, ASCII bitmap)', 2: 'P2 (PGM, ASCII grayscale)', 3: 'P3 (PPM, ASCII color)', 4: 'P4 (PBM, binary bitmap)', 5: 'P5 (PGM, binary grayscale)', 6: 'P6 (PPM, binary color)' };
   const out: Row = {
     'Format': 'Netpbm ' + NAMES[type],
     'Dimensions': width + ' × ' + height,
@@ -447,7 +447,7 @@ function parsePam(b) {
 // =====================================================================
 //                   PCX (ZSoft PC Paintbrush)
 // =====================================================================
-async function parsePcx(file) {
+async function parsePcx(file: File) {
   const b = await readAll(file);
   if (b.length < 128 || b[0] !== 0x0a) return null;
   const ver = b[1];
@@ -463,7 +463,7 @@ async function parsePcx(file) {
   const width = xmax - xmin + 1;
   const height = ymax - ymin + 1;
   if (width <= 0 || height <= 0 || width > 30000 || height > 30000) return null;
-  const VERS = { 0: 'v2.5', 2: 'v2.8 w/palette', 3: 'v2.8 no palette', 4: 'Paintbrush for Windows', 5: 'v3.0+' };
+  const VERS: Record<number, string> = { 0: 'v2.5', 2: 'v2.8 w/palette', 3: 'v2.8 no palette', 4: 'Paintbrush for Windows', 5: 'v3.0+' };
   const out: Row = {
     'Format': 'PCX (ZSoft PC Paintbrush)',
     'Version': VERS[ver] || ('byte ' + ver),
@@ -555,7 +555,7 @@ function decodePcx(b, h) {
 // =====================================================================
 //                   farbfeld (.ff)
 // =====================================================================
-async function parseFarbfeld(file) {
+async function parseFarbfeld(file: File) {
   const b = await readAll(file);
   if (b.length < 16 || ascii(b, 0, 8) !== 'farbfeld') return null;
   const r = new Reader(b); // big-endian
@@ -588,7 +588,7 @@ async function parseFarbfeld(file) {
 // =====================================================================
 //                   WBMP (Wireless Bitmap)
 // =====================================================================
-async function parseWbmp(file) {
+async function parseWbmp(file: File) {
   const b = await readAll(file, 8 * 1024 * 1024);
   if (b.length < 4) return null;
   if (b[0] !== 0x00) return null;             // type 0 = B/W, no compression
@@ -631,7 +631,7 @@ async function parseWbmp(file) {
 // =====================================================================
 //                   XBM (X BitMap, C source)
 // =====================================================================
-async function parseXbm(file) {
+async function parseXbm(file: File) {
   const text = await readText(file, 8 * 1024 * 1024);
   const wm = text.match(/#define\s+\w*_?width\s+(\d+)/i);
   const hm = text.match(/#define\s+\w*_?height\s+(\d+)/i);
@@ -675,7 +675,7 @@ async function parseXbm(file) {
 // =====================================================================
 //                   XPM (X PixMap, C source)
 // =====================================================================
-async function parseXpm(file) {
+async function parseXpm(file: File) {
   const text = await readText(file, 8 * 1024 * 1024);
   if (!/XPM/.test(text) && !/static\s+char/.test(text)) return null;
   // Collect the quoted strings forming the data array.
@@ -703,7 +703,7 @@ async function parseXpm(file) {
       let mm;
       if ((mm = name.match(/^#([0-9a-fA-F]{6})$/))) { const v = parseInt(mm[1], 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255, 255]; }
       if ((mm = name.match(/^#([0-9a-fA-F]{12})$/))) return [parseInt(mm[1].slice(0, 2), 16), parseInt(mm[1].slice(4, 6), 16), parseInt(mm[1].slice(8, 10), 16), 255];
-      const NAMED = { black: [0, 0, 0], white: [255, 255, 255], red: [255, 0, 0], green: [0, 128, 0], blue: [0, 0, 255], gray: [128, 128, 128], grey: [128, 128, 128], yellow: [255, 255, 0], cyan: [0, 255, 255], magenta: [255, 0, 255] };
+      const NAMED: Record<string, number[]> = { black: [0, 0, 0], white: [255, 255, 255], red: [255, 0, 0], green: [0, 128, 0], blue: [0, 0, 255], gray: [128, 128, 128], grey: [128, 128, 128], yellow: [255, 255, 0], cyan: [0, 255, 255], magenta: [255, 0, 255] };
       const n = NAMED[name.toLowerCase()];
       return n ? [n[0], n[1], n[2], 255] : [128, 128, 128, 255];
     };
@@ -739,7 +739,7 @@ async function parseXpm(file) {
 // =====================================================================
 //                   Sun raster (.ras / .sun)
 // =====================================================================
-async function parseSunRaster(file) {
+async function parseSunRaster(file: File) {
   const b = await readAll(file);
   if (b.length < 32) return null;
   const r = new Reader(b); // big-endian
@@ -753,7 +753,7 @@ async function parseSunRaster(file) {
   const maptype = r.u32();
   const maplength = r.u32();
   if (!width || !height || width > 30000 || height > 30000) return null;
-  const TYPES = { 0: 'old', 1: 'standard', 2: 'byte-encoded (RLE)', 3: 'RGB', 4: 'TIFF', 5: 'IFF' };
+  const TYPES: Record<number, string> = { 0: 'old', 1: 'standard', 2: 'byte-encoded (RLE)', 3: 'RGB', 4: 'TIFF', 5: 'IFF' };
   const out: Row = {
     'Format': 'Sun Raster',
     'Dimensions': width + ' × ' + height,
@@ -789,7 +789,7 @@ async function parseSunRaster(file) {
 // =====================================================================
 //                   SGI / IRIS RGB (.sgi / .bw)
 // =====================================================================
-async function parseSgi(file) {
+async function parseSgi(file: File) {
   const b = await readAll(file);
   if (b.length < 512) return null;
   const r = new Reader(b); // big-endian
@@ -842,11 +842,11 @@ async function parseSgi(file) {
 // =====================================================================
 //                   Radiance HDR / .pic (metadata only)
 // =====================================================================
-async function parseHdr(file) {
+async function parseHdr(file: File) {
   const b = await readAll(file, 64 * 1024);
   const txt = latin1(b);
   if (!/^#\?(RADIANCE|RGBE)/.test(txt)) return null;
-  const out = { 'Format': 'Radiance HDR (RGBE)' };
+  const out: Row = { 'Format': 'Radiance HDR (RGBE)' };
   const get = (k) => { const m = txt.match(new RegExp('^' + k + '=\\s*(.+)$', 'im')); return m ? m[1].trim() : null; };
   const fmt = get('FORMAT'); if (fmt) out['Pixel format'] = fmt;
   const exp = get('EXPOSURE'); if (exp) out['Exposure'] = exp;
@@ -871,7 +871,7 @@ async function parseHdr(file) {
 //   plain uncompressed RGBA/BGRA surfaces are decoded to a <canvas> in
 //   pure JS. BC6H/BC7 and other unsupported layouts stay metadata-only.
 // =====================================================================
-async function parseDds(file) {
+async function parseDds(file: File) {
   // Read enough to cover the header plus the first mip level of a large
   // texture (4 bpp BC across a 4K surface is ~8 MB); cap generously.
   const b = await readAll(file, 64 * 1024 * 1024);
@@ -984,7 +984,7 @@ function dxgiKind(n) {
   return null;
 }
 function dxgiName(n) {
-  const M = { 71: ' (BC1/DXT1)', 72: ' (BC1 sRGB)', 74: ' (BC2/DXT3)', 75: ' (BC2 sRGB)', 77: ' (BC3/DXT5)', 78: ' (BC3 sRGB)', 80: ' (BC4)', 81: ' (BC4 SNORM)', 83: ' (BC5)', 84: ' (BC5 SNORM)', 95: ' (BC6H)', 96: ' (BC6H)', 98: ' (BC7)', 99: ' (BC7)', 28: ' (R8G8B8A8)', 87: ' (B8G8R8A8)' };
+  const M: Record<string, string> = { 71: ' (BC1/DXT1)', 72: ' (BC1 sRGB)', 74: ' (BC2/DXT3)', 75: ' (BC2 sRGB)', 77: ' (BC3/DXT5)', 78: ' (BC3 sRGB)', 80: ' (BC4)', 81: ' (BC4 SNORM)', 83: ' (BC5)', 84: ' (BC5 SNORM)', 95: ' (BC6H)', 96: ' (BC6H)', 98: ' (BC7)', 99: ' (BC7)', 28: ' (R8G8B8A8)', 87: ' (B8G8R8A8)' };
   return M[n] || '';
 }
 
@@ -1145,14 +1145,14 @@ function decodeDdsUncompressed(b, off, width, height, rMask, gMask, bMask, aMask
 // =====================================================================
 //                   OpenEXR (metadata only)
 // =====================================================================
-async function parseExr(file) {
+async function parseExr(file: File) {
   const b = await readAll(file, 64 * 1024);
   if (!(b[0] === 0x76 && b[1] === 0x2f && b[2] === 0x31 && b[3] === 0x01)) return null;
   const r = new Reader(b, true);
   r.seek(4);
   const version = r.u8();
   const flags = b[5] | (b[6] << 8) | (b[7] << 16);
-  const out = {
+  const out: Row = {
     'Format': 'OpenEXR',
     'Version': version,
     'Type': (flags & 0x200) ? 'tiled' : 'scanline',
@@ -1201,9 +1201,9 @@ async function parseExr(file) {
 // =====================================================================
 //                   JPEG 2000 family (metadata only)
 // =====================================================================
-async function parseJp2(file, ext) {
+async function parseJp2(file: File, ext: string) {
   const b = await readAll(file, 64 * 1024);
-  const out = { 'Format': 'JPEG 2000' };
+  const out: Row = { 'Format': 'JPEG 2000' };
   // Raw codestream (.j2k/.j2c/.jpc) starts FF 4F FF 51 (SOC + SIZ)
   const isCodestream = (b[0] === 0xff && b[1] === 0x4f) || ext === 'j2k' || ext === 'j2c' || ext === 'jpc';
   if (b[0] === 0xff && b[1] === 0x4f) {
@@ -1265,7 +1265,7 @@ async function parseJp2(file, ext) {
 // OpenJPEG WASM codec. Additive + fully guarded: on any failure the metadata
 // readout is left untouched (with a note), and existing image handling is never
 // affected. The ~360 KB decoder only loads when a JPEG 2000 file is opened.
-async function decodeJp2Preview(file, out) {
+async function decodeJp2Preview(file: File, out) {
   try {
     const { decodeJ2K } = await import('../lib/openjpeg-loader.js');
     const bytes = await readAll(file, 96 * 1024 * 1024);
@@ -1298,14 +1298,14 @@ function readSiz(b, off, out) {
 // =====================================================================
 //                   JPEG XR (.jxr/.wdp/.hdp, metadata only)
 // =====================================================================
-async function parseJxr(file) {
+async function parseJxr(file: File) {
   const b = await readAll(file, 64 * 1024);
   // II + 0xBC + version
   if (!(b[0] === 0x49 && b[1] === 0x49 && b[2] === 0xbc)) return null;
   const r = new Reader(b, true);
   r.seek(4);
   const ifdOff = r.u32();
-  const out = { 'Format': 'JPEG XR (HD Photo)' };
+  const out: Row = { 'Format': 'JPEG XR (HD Photo)' };
   try {
     if (ifdOff && ifdOff + 2 <= b.length) {
       const rr = new Reader(b, true); rr.seek(ifdOff);
@@ -1348,7 +1348,7 @@ const JXR_PF = {
 // =====================================================================
 //                   EPS / PostScript (metadata only)
 // =====================================================================
-async function parseEps(file, ext) {
+async function parseEps(file: File, ext: string) {
   const head = await readAll(file, 32 * 1024);
   let txt;
   // EPS may have a binary DOS header (C5 D0 D3 C6); the PS stream offset is at byte 4.
@@ -1423,7 +1423,7 @@ async function parseEps(file, ext) {
 // =====================================================================
 //                   WMF / EMF / EMZ (metadata only)
 // =====================================================================
-async function parseMetafile(file, ext) {
+async function parseMetafile(file: File, ext: string) {
   let b = await readAll(file, 256 * 1024);
   if (ext === 'emz') {
     // gzip-wrapped EMF
@@ -1466,7 +1466,7 @@ async function parseMetafile(file, ext) {
     r.seek(72);
     const descLen = r.u32();
     const descOff = r.u32();
-    const out = {
+    const out: Row = {
       'Format': 'Enhanced Metafile (EMF)',
       'Device bounds': boundsL + ',' + boundsT + ' – ' + boundsR + ',' + boundsB,
       'Dimensions': (boundsR - boundsL) + ' × ' + (boundsB - boundsT) + ' px',
@@ -1488,7 +1488,7 @@ async function parseMetafile(file, ext) {
 // =====================================================================
 //                   ICNS (Apple Icon Image)
 // =====================================================================
-const ICNS_TYPES = {
+const ICNS_TYPES: Record<string, string> = {
   'ICON': '32×32 1-bit', 'ICN#': '32×32 1-bit+mask', 'icm#': '16×12', 'icm4': '16×12 4-bit', 'icm8': '16×12 8-bit',
   'ics#': '16×16 1-bit', 'ics4': '16×16 4-bit', 'ics8': '16×16 8-bit', 'is32': '16×16 RGB', 's8mk': '16×16 mask',
   'icl4': '32×32 4-bit', 'icl8': '32×32 8-bit', 'il32': '32×32 RGB', 'l8mk': '32×32 mask',
@@ -1499,7 +1499,7 @@ const ICNS_TYPES = {
   'ic11': '32×32@2x', 'ic12': '64×64@2x', 'ic13': '256×256@2x', 'ic14': '512×512@2x',
   'TOC ': 'table of contents', 'icnV': 'icon composer version', 'info': 'info plist',
 };
-async function parseIcns(file) {
+async function parseIcns(file: File) {
   const b = await readAll(file, 4 * 1024 * 1024);
   if (ascii(b, 0, 4) !== 'icns') return null;
   const r = new Reader(b); // big-endian
@@ -1544,7 +1544,7 @@ async function parseIcns(file) {
 // =====================================================================
 //                   CUR / ANI (Windows cursors)
 // =====================================================================
-async function parseCur(file) {
+async function parseCur(file: File) {
   const b = await readAll(file, 256 * 1024);
   // ICO/CUR header: reserved(0) type(2=CUR) count
   if (!(b[0] === 0 && b[1] === 0 && b[2] === 0x02 && b[3] === 0)) return null;
@@ -1565,10 +1565,10 @@ async function parseCur(file) {
   return out;
 }
 
-async function parseAni(file) {
+async function parseAni(file: File) {
   const b = await readAll(file, 1024 * 1024);
   if (ascii(b, 0, 4) !== 'RIFF' || ascii(b, 8, 4) !== 'ACON') return null;
-  const out = { 'Format': 'Windows Animated Cursor (.ani)' };
+  const out: Row = { 'Format': 'Windows Animated Cursor (.ani)' };
   try {
     let p = 12;
     let frames = 0, steps = 0, rate = null, jifRate = null;
@@ -1600,7 +1600,7 @@ async function parseAni(file) {
 // =====================================================================
 //                   MNG (Multiple-image Network Graphics)
 // =====================================================================
-async function parseMng(file) {
+async function parseMng(file: File) {
   const b = await readAll(file, 64 * 1024);
   if (!(b[0] === 0x8a && b[1] === 0x4d && b[2] === 0x4e && b[3] === 0x47)) return null;  // \212 MNG
   // MHDR chunk follows the 8-byte signature.
@@ -1616,7 +1616,7 @@ async function parseMng(file) {
   const layerCount = r.u32();
   const frameCount = r.u32();
   const playTime = r.u32();
-  const out = {
+  const out: Row = {
     'Format': 'MNG (Multiple-image Network Graphics)',
     'Dimensions': width + ' × ' + height,
     'Ticks per second': ticks || 'unspecified',
@@ -1631,7 +1631,7 @@ async function parseMng(file) {
 // =====================================================================
 //                   Lottie (.lottie / Bodymovin JSON)
 // =====================================================================
-async function parseLottie(file) {
+async function parseLottie(file: File) {
   // dotLottie = ZIP container (PK magic) -> identify only.
   const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
   if (head[0] === 0x50 && head[1] === 0x4b) {
@@ -1656,7 +1656,7 @@ async function parseLottie(file) {
   if (Array.isArray(j.assets)) out['Assets'] = j.assets.length;
   if (Array.isArray(j.markers) && j.markers.length) out['Markers'] = j.markers.length;
   // Layer type breakdown
-  const LTYPE = { 0: 'precomp', 1: 'solid', 2: 'image', 3: 'null', 4: 'shape', 5: 'text', 6: 'audio' };
+  const LTYPE: Record<string, string> = { 0: 'precomp', 1: 'solid', 2: 'image', 3: 'null', 4: 'shape', 5: 'text', 6: 'audio' };
   const byType: any = {};
   for (const ly of layers) { const t = LTYPE[ly.ty] || ('type ' + ly.ty); byType[t] = (byType[t] || 0) + 1; }
   const sects = [];
@@ -1706,7 +1706,7 @@ function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
 // =====================================================================
 //                   dispatch
 // =====================================================================
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   // --- fully decoded (pure-JS) ---
   tga: (c) => parseTga(c.file),
   icb: (c) => parseTga(c.file),

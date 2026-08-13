@@ -20,19 +20,34 @@
 
 import { el, wheelZoomToggle } from '../core/util.js';
 
+/** Data-space bounding box, the shape every EDA geometry builder accumulates
+ *  and hands back to buildViewer(). */
+export interface BBox { minx: number; miny: number; maxx: number; maxy: number; }
+/** One entry in the viewer's layer-toggle bar. `id` is numeric for Altium and a
+ *  dotted layer name for KiCad - both go through cssEsc() in the selector. */
+export interface EdaLayer { id: string | number; name: string; color: string; }
+/** Per-caller viewer tuning - see the file header for what each knob does. */
+export interface ViewerOpts {
+  layers?: EdaLayer[] | null;
+  padAdd?: number;
+  clampDim?: number;
+}
+/** SVG attribute bag: values are stringified by setAttribute. */
+type SvgAttrs = Record<string, string | number>;
+
 const SVGNS = 'http://www.w3.org/2000/svg';
-const svg = (tag, attrs) => {
+const svg = (tag: string, attrs?: SvgAttrs | null): SVGElement => {
   const n = document.createElementNS(SVGNS, tag);
-  if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k] as string);
   return n;
 };
 
 // CSS.escape-lite for a [data-layer="..."] selector value: escape " and \.
-const cssEsc = (s) => String(s).replace(/["\\]/g, '\\$&');
+const cssEsc = (s: string | number) => String(s).replace(/["\\]/g, '\\$&');
 
 // Round to a "nice" 1/2/5 x 10^n step so the grid reads like graph paper
 // whatever the document's unit scale (sheet units, mm, or a tiny footprint).
-function niceStep(x) {
+function niceStep(x: number) {
   if (!(x > 0)) return 1;
   const p = Math.pow(10, Math.floor(Math.log10(x))), f = x / p;
   return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p;
@@ -40,7 +55,7 @@ function niceStep(x) {
 // Draw a graph-paper grid (minor lines + a heavier line every 5th) behind the
 // geometry, emulating the Altium / KiCad sheet. Lines are in document space so
 // they pan/zoom with the board, but use non-scaling strokes so they stay 1px.
-function addPaperGrid(parent, bbox) {
+function addPaperGrid(parent: SVGElement, bbox: BBox) {
   const w = bbox.maxx - bbox.minx, h = bbox.maxy - bbox.miny;
   const span = Math.max(w, h);
   if (!(span > 0) || !Number.isFinite(span)) return;
@@ -49,7 +64,7 @@ function addPaperGrid(parent, bbox) {
   const y0 = Math.floor((bbox.miny - pad) / step) * step, y1 = Math.ceil((bbox.maxy + pad) / step) * step;
   if ((x1 - x0) / step > 2000 || (y1 - y0) / step > 2000) return;   // safety cap
   const g = svg('g', { class: 'anr-eda-grid' });
-  const line = (x1_, y1_, x2_, y2_, major) => svg('line', { x1: x1_, y1: y1_, x2: x2_, y2: y2_,
+  const line = (x1_: number, y1_: number, x2_: number, y2_: number, major: boolean) => svg('line', { x1: x1_, y1: y1_, x2: x2_, y2: y2_,
     stroke: major ? 'rgba(36,50,80,0.26)' : 'rgba(36,50,80,0.12)', 'stroke-width': major ? 0.9 : 0.5, 'vector-effect': 'non-scaling-stroke' });
   for (let x = x0, i = Math.round(x0 / step); x <= x1 + 1e-6; x += step, i++) g.appendChild(line(x, y0, x, y1, i % 5 === 0));
   for (let y = y0, i = Math.round(y0 / step); y <= y1 + 1e-6; y += step, i++) g.appendChild(line(x0, y, x1, y, i % 5 === 0));
@@ -61,14 +76,14 @@ function addPaperGrid(parent, bbox) {
  *  to map a reference to a position. */
 export interface EdaViewer {
   wrap: HTMLDivElement;
-  centerOn: (cx: any, cy: any, w: any) => void;
-  flash: (cx: any, cy: any) => void;
+  centerOn: (cx: number, cy: number, w?: number) => void;
+  flash: (cx: number, cy: number) => void;
   /** The initial viewBox, in data units - what "Fit" returns to. */
   home: { x: number; y: number; w: number; h: number };
-  focus?: (ref: any) => boolean;
+  focus?: (ref: string) => boolean;
 }
 
-export function buildViewer(build, opts: any = {}): EdaViewer {
+export function buildViewer(build: (root: SVGElement) => BBox, opts: ViewerOpts = {}): EdaViewer {
   // build(group) populates an SVG <g> and returns the data bbox {minx,miny,maxx,maxy}.
   const wrap = el('div', { class: 'anr-altium-wrap' });
   const s = svg('svg', { class: 'anr-altium-svg' });
@@ -98,7 +113,7 @@ export function buildViewer(build, opts: any = {}): EdaViewer {
   // axis with the spare letterbox margin move at the wrong rate - hence panning
   // felt slower on one axis. Map through the single uniform scale + its centring
   // offset instead.
-  const screenToUser = (r) => {
+  const screenToUser = (r: DOMRect) => {
     const scale = Math.min(r.width / vb.w, r.height / vb.h);
     return { scale, offX: (r.width - vb.w * scale) / 2, offY: (r.height - vb.h * scale) / 2 };
   };
@@ -115,7 +130,7 @@ export function buildViewer(build, opts: any = {}): EdaViewer {
     vb.w *= k; vb.h *= k; apply();
   }, { passive: false });
   // drag pan
-  let drag = null;
+  let drag: { x: number; y: number } | null = null;
   s.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; s.setPointerCapture(e.pointerId); s.classList.add('is-grabbing'); });
   s.addEventListener('pointermove', (e) => {
     if (!drag) return;
@@ -141,20 +156,20 @@ export function buildViewer(build, opts: any = {}): EdaViewer {
       chip.appendChild(document.createTextNode(name));
       chip.addEventListener('click', () => {
         const on = chip.classList.toggle('is-on');
-        root.querySelectorAll(`[data-layer="${cssEsc(id)}"]`).forEach((n) => { n.style.display = on ? '' : 'none'; });
+        root.querySelectorAll<SVGElement>(`[data-layer="${cssEsc(id)}"]`).forEach((n) => { n.style.display = on ? '' : 'none'; });
       });
       bar.appendChild(chip);
     }
   }
   // Programmatic pan/zoom (used by the project view's cross-probe): centre the
   // viewBox on a data-space point, optionally tightening to a target width.
-  function centerOn(cx, cy, w) {
+  function centerOn(cx: number, cy: number, w?: number) {
     if (w && w > 0) { const aspect = vb.h / vb.w; vb.w = w; vb.h = w * aspect; }
     vb.x = cx - vb.w / 2; vb.y = cy - vb.h / 2; apply();
   }
   // Drop a short-lived "ping" ring at a data-space point to draw the eye there.
-  let flashNode = null, flashTimer = null;
-  function flash(cx, cy) {
+  let flashNode: SVGElement | null = null, flashTimer: ReturnType<typeof setTimeout> | null = null;
+  function flash(cx: number, cy: number) {
     if (flashNode) flashNode.remove();
     const span = Math.max(vb.w, vb.h);
     flashNode = svg('circle', { class: 'anr-altium-ping', cx, cy, r: span * 0.05,
@@ -169,9 +184,9 @@ export function buildViewer(build, opts: any = {}): EdaViewer {
   return { wrap, centerOn, flash, home: { ...home } };
 }
 
-export function fitBox() { return { minx: Infinity, miny: Infinity, maxx: -Infinity, maxy: -Infinity }; }
-export function grow(b, x, y) { if (x < b.minx) b.minx = x; if (y < b.miny) b.miny = y; if (x > b.maxx) b.maxx = x; if (y > b.maxy) b.maxy = y; }
-export function safeBox(b, { degenPad = 50, fallback = 100 } : any = {}) {
+export function fitBox(): BBox { return { minx: Infinity, miny: Infinity, maxx: -Infinity, maxy: -Infinity }; }
+export function grow(b: BBox, x: number, y: number) { if (x < b.minx) b.minx = x; if (y < b.miny) b.miny = y; if (x > b.maxx) b.maxx = x; if (y > b.maxy) b.maxy = y; }
+export function safeBox(b: BBox, { degenPad = 50, fallback = 100 }: { degenPad?: number; fallback?: number } = {}): BBox {
   if (!Number.isFinite(b.minx)) return { minx: -fallback, miny: -fallback, maxx: fallback, maxy: fallback };
   if (b.minx === b.maxx) { b.minx -= degenPad; b.maxx += degenPad; }
   if (b.miny === b.maxy) { b.miny -= degenPad; b.maxy += degenPad; }

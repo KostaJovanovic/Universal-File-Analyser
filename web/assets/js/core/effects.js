@@ -48,7 +48,7 @@ function splitText(container, baseWeight) {
         const s = document.createElement('span');
         s.textContent = ch;
         s.style.display = 'inline-block';
-        s.style.fontWeight = baseWeight;
+        s.style.fontWeight = String(baseWeight);
         s.style.letterSpacing = spacing;
         word.appendChild(s);
         spans.push({ el: s, base: baseWeight });

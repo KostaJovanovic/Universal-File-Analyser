@@ -8,27 +8,52 @@
 import { roundFps } from '../core/util.js';
 import { AVI_EXTRACT_MAX } from '../core/limits.js';
 
+/** The `strf` WAVEFORMATEX fields the audio path needs. */
+export interface AviAudioFormat {
+  formatTag: number;
+  channels: number;
+  sampleRate: number;
+  avgBytesPerSec: number;
+  blockAlign: number;
+  bitsPerSample: number;
+}
+
+/** What parseAviHeader() reports. Every member is optional: the header chunks
+    it reads are each independently present or absent, and only `width` is
+    required for the result to be returned at all. */
+export interface AviHeaderInfo {
+  microSecPerFrame?: number;
+  totalFrames?: number;
+  width?: number;
+  height?: number;
+  fps?: number;
+  duration?: number;
+  codec?: string;
+  audioCodec?: string;
+  audioFormat?: AviAudioFormat;
+}
+
 // Shared, lazily-created AudioContext used only as a createBuffer factory. A
 // fresh one per file would exhaust iOS Safari's ~4-context cap across a session.
-let _aviAudioCtx = null;
+let _aviAudioCtx: AudioContext | null = null;
 function aviAudioCtx() {
-  if (!_aviAudioCtx) _aviAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!_aviAudioCtx) _aviAudioCtx = new (window.AudioContext || window.webkitAudioContext!)();
   return _aviAudioCtx;
 }
 
 // Read just the AVI header chunks (avih/strh/strf) from the first 8 KB. Returns
 // { width, height, fps, duration, totalFrames, codec, audioCodec, audioFormat }
 // or null if the file isn't an AVI / has no video stream.
-export async function parseAviHeader(file) {
+export async function parseAviHeader(file: File) {
   const size = Math.min(file.size, 8192);
   const buf = await file.slice(0, size).arrayBuffer();
   const view = new DataView(buf);
   const u8 = new Uint8Array(buf);
-  const tag = (o) => String.fromCharCode(u8[o], u8[o+1], u8[o+2], u8[o+3]);
+  const tag = (o: number) => String.fromCharCode(u8[o], u8[o+1], u8[o+2], u8[o+3]);
   if (tag(0) !== 'RIFF' || tag(8) !== 'AVI ') return null;
 
-  const info: any = {};
-  let lastStreamType = null;
+  const info: AviHeaderInfo = {};
+  let lastStreamType: string | null = null;
   let pos = 12;
   while (pos + 8 < size) {
     const ckId = tag(pos);
@@ -73,12 +98,12 @@ export async function parseAviHeader(file) {
 // standalone JPEG) and PCM audio (01wb). When the audio is uncompressed PCM
 // (formatTag 1), decode it into an AudioBuffer. Returns { videoFrames, audioBuffer? }
 // or null. Capped at 500 MB since it reads the whole file into memory.
-export async function extractAviData(file, aviInfo) {
+export async function extractAviData(file: File, aviInfo: AviHeaderInfo | null | undefined) {
   if (file.size > AVI_EXTRACT_MAX) return null;
   const buf = await file.arrayBuffer();
   const view = new DataView(buf);
   const u8 = new Uint8Array(buf);
-  const tag = (o) => (o + 4 <= buf.byteLength)
+  const tag = (o: number) => (o + 4 <= buf.byteLength)
     ? String.fromCharCode(u8[o], u8[o+1], u8[o+2], u8[o+3]) : '';
 
   let moviStart = -1, moviEnd = -1, pos = 12;
@@ -143,13 +168,13 @@ export async function extractAviData(file, aviInfo) {
 
 // Encode an AudioBuffer as a 16-bit PCM WAV Blob (interleaved), so the extracted
 // AVI audio can be handed to a normal <audio> element.
-export function encodeWav(audioBuf) {
+export function encodeWav(audioBuf: AudioBuffer) {
   const ch = audioBuf.numberOfChannels, sr = audioBuf.sampleRate, len = audioBuf.length;
   const block = ch * 2, dataSize = len * block;
   const buf = new ArrayBuffer(44 + dataSize);
   const v = new DataView(buf);
   let o = 0;
-  const ws = (s) => { for (let i = 0; i < s.length; i++) v.setUint8(o++, s.charCodeAt(i)); };
+  const ws = (s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o++, s.charCodeAt(i)); };
   ws('RIFF'); v.setUint32(o, 36 + dataSize, true); o += 4; ws('WAVEfmt ');
   v.setUint32(o, 16, true); o += 4;
   v.setUint16(o, 1, true); o += 2;

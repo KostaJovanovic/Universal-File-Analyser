@@ -21,7 +21,7 @@ export function rememberedName() {
   } catch (_) {}
   return '';
 }
-export function rememberName(name) {
+export function rememberName(name: string) {
   try { localStorage.setItem(NAME_KEY, JSON.stringify({ name, ts: Date.now() })); } catch (_) {}
 }
 const dayBucket = () => Math.floor(Date.now() / DAY_MS);
@@ -56,7 +56,7 @@ function endHeaderNodes() {
 }
 
 // Build a <ol> of the top 5, highlighting the player's own freshly-posted row.
-function leaderboardList(top, mineIdx) {
+function leaderboardList(top: any[], mineIdx: number) {
   const ol = document.createElement('ol');
   ol.className = 'anr-score-list';
   if (!top || !top.length) {
@@ -64,7 +64,7 @@ function leaderboardList(top, mineIdx) {
     li.textContent = 'No scores yet'; li.style.justifyContent = 'center'; li.style.color = g.MUTED;
     ol.appendChild(li); return ol;
   }
-  top.forEach((s, i) => {
+  top.forEach((s, i: number) => {
     const li = document.createElement('li');
     if (i === mineIdx) li.className = 'me';
     const r = document.createElement('span'); r.className = 'r'; r.textContent = (i + 1) + '.';
@@ -76,7 +76,7 @@ function leaderboardList(top, mineIdx) {
 }
 
 // After submit or skip: show the board plus play-again / exit.
-function showLeaderboardView(top, mineName) {
+function showLeaderboardView(top: any[], mineName: string|null) {
   if (!g.endPanel) return;
   g.nameEntry = false;
   g.endPanel.innerHTML = '';
@@ -127,7 +127,7 @@ async function skipToLeaderboard() {
 }
 
 // POST this run's score under `name`, then show the returned board.
-async function submitScore(name, msgEl, submitBtn) {
+async function submitScore(name: string, msgEl: HTMLDivElement, submitBtn: HTMLButtonElement) {
   if (submitBtn) submitBtn.disabled = true;
   if (msgEl) { msgEl.className = 'anr-score-msg'; msgEl.textContent = 'Sending...'; }
   try {

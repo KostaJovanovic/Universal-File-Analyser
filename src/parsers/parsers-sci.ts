@@ -9,12 +9,12 @@
 
 import { el, row, fmtBytes, preBlock, readSlice } from '../core/util.js';
 import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, gunzip } from '../core/binutil.js';
-import type { Row } from '../core/types.js';
+import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- small helpers ----------
 
 // Read up to maxBytes of a File as text (UTF-8, lossy).
-async function readText(file, maxBytes = 2_000_000) {
+async function readText(file: File, maxBytes = 2_000_000) {
   const slice = file.size > maxBytes ? file.slice(0, maxBytes) : file;
   try { return await slice.text(); } catch (_) { return null; }
 }
@@ -102,7 +102,7 @@ function percentileBounds(samples, count, loP = 0.005, hiP = 0.995) {
 // DICOM (.dcm / .dicom)
 // ============================================================================
 // Minimal VR dictionary for the few elements we surface. (group,element) hex.
-const DICOM_TAGS = {
+const DICOM_TAGS: Record<string, string> = {
   '00080020': 'StudyDate',
   '00080060': 'Modality',
   '00080070': 'Manufacturer',
@@ -128,7 +128,7 @@ const DICOM_TAGS = {
 };
 // VRs that store length as a 4-byte field (explicit VR, with a 2-byte reserved).
 const DICOM_VR_LONG = new Set(['OB', 'OW', 'OF', 'OD', 'OL', 'SQ', 'UT', 'UN', 'UC', 'UR']);
-const TRANSFER_SYNTAX = {
+const TRANSFER_SYNTAX: Record<string, string> = {
   '1.2.840.10008.1.2': 'Implicit VR Little Endian',
   '1.2.840.10008.1.2.1': 'Explicit VR Little Endian',
   '1.2.840.10008.1.2.1.99': 'Deflated Explicit VR Little Endian',
@@ -142,7 +142,7 @@ const TRANSFER_SYNTAX = {
   '1.2.840.10008.1.2.5': 'RLE Lossless',
 };
 
-async function parseDicom(file) {
+async function parseDicom(file: File) {
   const buf = await readSlice(file, 0, Math.min(file.size, 1_000_000));
   if (buf.length < 132) return null;
   if (!(buf[128] === 0x44 && buf[129] === 0x49 && buf[130] === 0x43 && buf[131] === 0x4d)) return null; // "DICM"
@@ -262,7 +262,7 @@ async function parseDicom(file) {
 }
 
 // Decode the first frame of an uncompressed DICOM image to a <canvas>.
-async function renderDicomPreview(file, found, px) {
+async function renderDicomPreview(file: File, found, px) {
   const cols = found.Columns | 0, rows = found.Rows | 0;
   if (!cols || !rows || cols > 20000 || rows > 20000) return null;
   if (px.offset < 0 || px.offset > file.size) return null;
@@ -334,7 +334,7 @@ async function renderDicomPreview(file, found, px) {
 // ============================================================================
 // FIT (.fit) - Garmin / ANT. Disambiguated from FITS via SIMPLE sniff.
 // ============================================================================
-function parseFit(head, file) {
+function parseFit(head, file: File) {
   // FITS astronomy files reuse .fit; their header begins "SIMPLE  =".
   if (startsWithAscii(head, 'SIMPLE') && /^SIMPLE\s*=/.test(ascii(head, 0, 16))) {
     return parseFits(head, file);
@@ -350,7 +350,7 @@ function parseFit(head, file) {
   if (magic !== '.FIT') return null;
   let headerCrc = null;
   if (headerSize >= 14) headerCrc = r.u16At(12);
-  const out = {
+  const out: Row = {
     'Format': 'FIT activity file (Garmin/ANT)',
     'Header size': headerSize + ' bytes',
     'Protocol version': (protocol >> 4) + '.' + (protocol & 0x0f),
@@ -394,7 +394,7 @@ function fitsHeaderBytes(head) {
   return -1;
 }
 
-async function parseFits(head, file) {
+async function parseFits(head, file: File) {
   if (!startsWithAscii(head, 'SIMPLE')) return null;
   const c = fitsCards(head);
   if (!('SIMPLE' in c)) return null;
@@ -402,7 +402,7 @@ async function parseFits(head, file) {
   out['SIMPLE'] = c.SIMPLE;
   if (c.BITPIX) {
     const bp = parseInt(c.BITPIX, 10);
-    const map = { 8: 'uint8', 16: 'int16', 32: 'int32', 64: 'int64', '-32': 'float32', '-64': 'float64' };
+    const map: Record<string, string> = { 8: 'uint8', 16: 'int16', 32: 'int32', 64: 'int64', '-32': 'float32', '-64': 'float64' };
     out['BITPIX'] = c.BITPIX + (map[c.BITPIX] ? ' (' + map[c.BITPIX] + ')' : '');
   }
   const naxis = parseInt(c.NAXIS || '0', 10);
@@ -423,7 +423,7 @@ async function parseFits(head, file) {
   const ny = parseInt(c.NAXIS2 || '0', 10);
   const bzero = c.BZERO != null ? parseFloat(c.BZERO) : 0;
   const bscale = c.BSCALE != null ? parseFloat(c.BSCALE) : 1;
-  const FITS_BPV = { 8: 1, 16: 2, 32: 4, '-32': 4, 64: 8, '-64': 8 };
+  const FITS_BPV: Record<number, number> = { 8: 1, 16: 2, 32: 4, '-32': 4, 64: 8, '-64': 8 };
   const bpv = FITS_BPV[bitpix];
   const hdrBytes = file ? fitsHeaderBytes(head) : -1;
   if (file && bpv && naxis >= 2 && nx > 0 && ny > 0 && nx <= 16384 && ny <= 16384 && hdrBytes > 0) {
@@ -441,7 +441,7 @@ async function parseFits(head, file) {
   return out;
 }
 
-async function renderFitsImage(file, h) {
+async function renderFitsImage(file: File, h) {
   const px = h.nx * h.ny;
   const dataBytes = px * h.bpv;
   if (dataBytes <= 0 || dataBytes > 96 * 1024 * 1024) return null;
@@ -479,7 +479,7 @@ async function renderFitsImage(file, h) {
 // ============================================================================
 // TCX (.tcx) - Training Center XML
 // ============================================================================
-async function parseTcx(file) {
+async function parseTcx(file: File) {
   const text = await readText(file, 8_000_000);
   if (!text || !/<TrainingCenterDatabase|<Activities|<Activity\b/.test(text)) return null;
   const sport = (text.match(/<Activity[^>]*\bSport="([^"]+)"/i) || [])[1];
@@ -500,7 +500,7 @@ async function parseTcx(file) {
   };
   const hr = range(/<HeartRateBpm>(?:[^<]*<Value>)?\s*(\d+)\s*</gi);
   const cad = range(/<Cadence>(\d+)<\/Cadence>/gi);
-  const out = { 'Format': 'Training Center XML (TCX)' };
+  const out: Row = { 'Format': 'Training Center XML (TCX)' };
   if (sport) out['Sport'] = sport;
   out['Laps'] = laps;
   out['Trackpoints'] = trackpoints.toLocaleString();
@@ -533,7 +533,7 @@ function guessSeqType(seq) {
   return 'unknown';
 }
 
-async function parseFasta(file) {
+async function parseFasta(file: File) {
   const text = await readText(file, 4_000_000);
   if (!text) return null;
   const trimmed = text.replace(/^\s+/, '');
@@ -559,7 +559,7 @@ async function parseFasta(file) {
   }
   flush();
   if (!records) return null;
-  const out = {
+  const out: Row = {
     'Format': 'FASTA sequence',
     'Records': records.toLocaleString(),
     'Total length': totalLen.toLocaleString() + ' residues',
@@ -570,7 +570,7 @@ async function parseFasta(file) {
   return out;
 }
 
-async function parseFastq(file) {
+async function parseFastq(file: File) {
   const text = await readText(file, 4_000_000);
   if (!text) return null;
   if (text.replace(/^\s+/, '')[0] !== '@') return null;
@@ -606,7 +606,7 @@ async function parseFastq(file) {
     else if (qMin >= 59 && qMin < 64) encoding = 'Phred+64 (Solexa)';
     else encoding = 'Phred+33';
   }
-  const out = {
+  const out: Row = {
     'Format': 'FASTQ sequencing reads',
     'Reads': records.toLocaleString(),
     'Total bases': totalLen.toLocaleString(),
@@ -620,7 +620,7 @@ async function parseFastq(file) {
 // ============================================================================
 // Chemistry: MOL / SDF / MOL2
 // ============================================================================
-async function parseMol(file, ext) {
+async function parseMol(file: File, ext: string) {
   const text = await readText(file, 4_000_000);
   if (!text) return null;
   if (ext === 'mol2') return parseMol2(text);
@@ -658,7 +658,7 @@ async function parseMol(file, ext) {
 }
 
 function parseMol2(text) {
-  const out = { 'Format': 'MOL2 chemical structure (Tripos)' };
+  const out: Row = { 'Format': 'MOL2 chemical structure (Tripos)' };
   const nameM = text.match(/@<TRIPOS>MOLECULE\s*\r?\n([^\r\n]*)/);
   if (nameM && nameM[1].trim()) out['Molecule name'] = nameM[1].trim().slice(0, 80);
   // The line after the name holds: num_atoms num_bonds ...
@@ -672,10 +672,10 @@ function parseMol2(text) {
 // ============================================================================
 // Chemistry: CIF / mmCIF
 // ============================================================================
-async function parseCif(file) {
+async function parseCif(file: File) {
   const text = await readText(file, 4_000_000);
   if (!text || !/^\s*data_/m.test(text)) return null;
-  const out = { 'Format': 'Crystallographic Information File (CIF)' };
+  const out: Row = { 'Format': 'Crystallographic Information File (CIF)' };
   const dataBlock = (text.match(/^\s*data_(\S+)/m) || [])[1];
   if (dataBlock) out['Data block'] = dataBlock;
   const grab = (key) => {
@@ -710,7 +710,7 @@ async function parseCif(file) {
 // ============================================================================
 // Chemistry: XYZ (sniff + null fallback for the ambiguous .xyz extension)
 // ============================================================================
-async function parseXyz(file) {
+async function parseXyz(file: File) {
   const text = await readText(file, 1_000_000);
   if (!text) return null;
   const lines = text.split(/\r?\n/);
@@ -751,14 +751,14 @@ async function parseXyz(file) {
 // ============================================================================
 // EDA: Gerber (.gbr / .gbl / .gtl)
 // ============================================================================
-async function parseGerber(file) {
+async function parseGerber(file: File) {
   const text = await readText(file, 2_000_000);
   if (!text) return null;
   if (!/%FS|%MO|G04|^\s*X[\d-]/m.test(text) && !/\*%/.test(text)) {
     // weak check; require at least a Gerber-ish token
     if (!/%ADD|%FS|%MO|%TF/.test(text)) return null;
   }
-  const out = { 'Format': 'Gerber RS-274X (PCB)' };
+  const out: Row = { 'Format': 'Gerber RS-274X (PCB)' };
   const fs = text.match(/%FS([LT]?)([AI]?)X(\d)(\d)Y(\d)(\d)\*/);
   if (fs) out['Format spec'] = 'X' + fs[3] + '.' + fs[4] + ' Y' + fs[5] + '.' + fs[6] + (fs[1] === 'L' ? ' (leading-zero suppr.)' : fs[1] === 'T' ? ' (trailing-zero suppr.)' : '');
   const mo = text.match(/%MO(MM|IN)\*/);
@@ -777,7 +777,7 @@ async function parseGerber(file) {
 // ============================================================================
 // EDA: Excellon drill (.drl / .xln)
 // ============================================================================
-async function parseExcellon(file) {
+async function parseExcellon(file: File) {
   const text = await readText(file, 2_000_000);
   if (!text) return null;
   if (!/M48|^T\d+C[\d.]/m.test(text) && !/INCH|METRIC/.test(text)) return null;
@@ -808,14 +808,14 @@ async function parseExcellon(file) {
 // ============================================================================
 // SPICE netlist (.cir / .sp / .spi / .spice)
 // ============================================================================
-async function parseSpice(file) {
+async function parseSpice(file: File) {
   const text = await readText(file, 2_000_000);
   if (!text) return null;
   const lines = text.split(/\r?\n/);
   if (!lines.length) return null;
   // First non-blank line is conventionally the title.
   const title = (lines.find((l) => l.trim()) || '').trim();
-  const compTypes = { R: 'Resistors', C: 'Capacitors', L: 'Inductors', D: 'Diodes', Q: 'BJTs', M: 'MOSFETs', V: 'Voltage sources', I: 'Current sources', X: 'Subckt instances', E: 'VCVS', G: 'VCCS', J: 'JFETs', K: 'Coupled inductors' };
+  const compTypes: Record<string, string> = { R: 'Resistors', C: 'Capacitors', L: 'Inductors', D: 'Diodes', Q: 'BJTs', M: 'MOSFETs', V: 'Voltage sources', I: 'Current sources', X: 'Subckt instances', E: 'VCVS', G: 'VCCS', J: 'JFETs', K: 'Coupled inductors' };
   const counts: any = {};
   let any = false;
   for (const l of lines) {
@@ -825,7 +825,7 @@ async function parseSpice(file) {
     if (compTypes[u]) { counts[u] = (counts[u] || 0) + 1; any = true; }
   }
   if (!any && !/\.(model|subckt|tran|ac|dc|op|end)\b/i.test(text)) return null;
-  const out = { 'Format': 'SPICE netlist' };
+  const out: Row = { 'Format': 'SPICE netlist' };
   out['Title'] = title.slice(0, 100) || '-';
   let dialect = 'Generic SPICE';
   if (/\.(asc|tran|meas)\b/i.test(text) && /Version 4|LTspice|XVII/i.test(text)) dialect = 'LTspice';
@@ -844,7 +844,7 @@ async function parseSpice(file) {
 // ============================================================================
 // Biosignals: EDF / BDF (ASCII header)
 // ============================================================================
-async function parseEdf(file, ext) {
+async function parseEdf(file: File, ext: string) {
   const buf = await readSlice(file, 0, 256);
   if (buf.length < 256) return null;
   // EDF version field: "0       "; BDF: byte0=0xFF then "BIOSEMI".
@@ -886,14 +886,14 @@ async function parseEdf(file, ext) {
 // ============================================================================
 // Spectroscopy: JCAMP-DX (.jdx / .dx)
 // ============================================================================
-async function parseJcamp(file) {
+async function parseJcamp(file: File) {
   const text = await readText(file, 2_000_000);
   if (!text || !/##TITLE\s*=/i.test(text)) return null;
   const grab = (key) => {
     const m = text.match(new RegExp('##' + key.replace(/[.$]/g, '\\$&') + '\\s*=\\s*([^\\r\\n]*)', 'i'));
     return m ? m[1].trim() : null;
   };
-  const out = { 'Format': 'JCAMP-DX spectrum' };
+  const out: Row = { 'Format': 'JCAMP-DX spectrum' };
   const title = grab('TITLE'); if (title) out['Title'] = title;
   const dt = grab('DATA TYPE') || grab('DATATYPE'); if (dt) out['Data type'] = dt;
   const xu = grab('XUNITS'); if (xu) out['X units'] = xu;
@@ -912,7 +912,7 @@ async function parseJcamp(file) {
 // ============================================================================
 // Stats datasets: SPSS .sav
 // ============================================================================
-async function parseSav(file) {
+async function parseSav(file: File) {
   const buf = await readSlice(file, 0, 200_000);
   if (ascii(buf, 0, 4) !== '$FL2' && ascii(buf, 0, 4) !== '$FL3') return null;
   const r = new Reader(buf, true);
@@ -969,7 +969,7 @@ async function parseSav(file) {
 // ============================================================================
 // Stats datasets: Stata .dta
 // ============================================================================
-async function parseDta(file) {
+async function parseDta(file: File) {
   const buf = await readSlice(file, 0, 4096);
   if (buf.length < 8) return null;
   // New format (>=117) is XML-ish: "<stata_dta><header><release>117".
@@ -977,7 +977,7 @@ async function parseDta(file) {
     const text = latin1(buf);
     const release = (text.match(/<release>(\d+)<\/release>/) || [])[1];
     const byteorder = (text.match(/<byteorder>(\w+)<\/byteorder>/) || [])[1];
-    const out = { 'Format': 'Stata dataset (.dta)' };
+    const out: Row = { 'Format': 'Stata dataset (.dta)' };
     out['Release'] = release || '-';
     out['Byte order'] = byteorder === 'MSF' ? 'big-endian' : byteorder === 'LSF' ? 'little-endian' : (byteorder || '-');
     // nvar/nobs are binary inside the tags; decode from the raw bytes.
@@ -999,12 +999,12 @@ async function parseDta(file) {
   // Old format: first byte = release code (113,114,115), byteorder, filetype.
   const release = buf[0];
   if (![0x69, 0x6e, 0x71, 0x72, 0x73].includes(release)) return null; // 105,110,113,114,115
-  const relMap = { 0x69: '105', 0x6e: '110', 0x71: '113', 0x72: '114', 0x73: '115' };
+  const relMap: Record<number, string> = { 0x69: '105', 0x6e: '110', 0x71: '113', 0x72: '114', 0x73: '115' };
   const little = buf[1] === 0x02;
   const dv = new DataView(buf.buffer, buf.byteOffset);
   const nvar = dv.getUint16(2, little);
   const nobs = dv.getUint32(4, little);
-  const out = {
+  const out: Row = {
     'Format': 'Stata dataset (.dta, legacy)',
     'Release': relMap[release] || release,
     'Byte order': little ? 'little-endian' : 'big-endian',
@@ -1020,14 +1020,14 @@ async function parseDta(file) {
 // Stats datasets: SAS .sas7bdat
 // ============================================================================
 const SAS7BDAT_MAGIC = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xc2, 0xea, 0x81, 0x60, 0xb3, 0x14, 0x11, 0xcf, 0xbd, 0x92, 0x08, 0, 0x09, 0xc7, 0x31, 0x8c, 0x18, 0x1f, 0x10, 0x11];
-async function parseSas(file) {
+async function parseSas(file: File) {
   const buf = await readSlice(file, 0, 1024);
   if (!matchMagic(buf, SAS7BDAT_MAGIC, 0)) return null;
   // alignment + endianness flags
   const a1 = buf[32] === 0x33 ? 4 : 0;   // u64 alignment
   const a2 = buf[35] === 0x33 ? 4 : 0;
   const little = buf[37] === 0x01;
-  const out = { 'Format': 'SAS dataset (.sas7bdat)' };
+  const out: Row = { 'Format': 'SAS dataset (.sas7bdat)' };
   // Dataset name at offset 92 (32 bytes), filetype at 124.
   const dsName = ascii(buf, 92, 32).trim();
   if (dsName) out['Dataset name'] = dsName;
@@ -1045,13 +1045,13 @@ async function parseSas(file) {
 // ============================================================================
 // VTK (.vtk legacy + .vtu/.vtp/.vti/.vts/.vtr XML)
 // ============================================================================
-async function parseVtk(file, ext) {
+async function parseVtk(file: File, ext: string) {
   const text = await readText(file, 1_000_000);
   if (!text) return null;
   if (ext === 'vtk') {
     if (!/^#\s*vtk DataFile Version/i.test(text)) return null;
     const lines = text.split(/\r?\n/);
-    const out = { 'Format': 'VTK legacy' };
+    const out: Row = { 'Format': 'VTK legacy' };
     const ver = (lines[0].match(/Version\s+([\d.]+)/i) || [])[1];
     if (ver) out['Version'] = ver;
     if (lines[1]) out['Title'] = lines[1].trim().slice(0, 100);
@@ -1068,7 +1068,7 @@ async function parseVtk(file, ext) {
   if (!/<VTKFile/i.test(text)) return null;
   const typeM = text.match(/<VTKFile[^>]*\btype="([^"]+)"/i);
   const verM = text.match(/<VTKFile[^>]*\bversion="([^"]+)"/i);
-  const out = { 'Format': 'VTK XML (' + (typeM ? typeM[1] : ext.toUpperCase()) + ')' };
+  const out: Row = { 'Format': 'VTK XML (' + (typeM ? typeM[1] : ext.toUpperCase()) + ')' };
   if (verM) out['Version'] = verM[1];
   out['Pieces'] = (text.match(/<Piece\b/gi) || []).length;
   const np = Array.from<RegExpMatchArray>(text.matchAll(/NumberOfPoints="(\d+)"/gi)).reduce((a, m) => a + parseInt(m[1], 10), 0);
@@ -1083,8 +1083,8 @@ async function parseVtk(file, ext) {
 // ============================================================================
 // NIfTI (.nii / .nii.gz)
 // ============================================================================
-const NIFTI_DTYPES = { 2: 'uint8', 4: 'int16', 8: 'int32', 16: 'float32', 32: 'complex64', 64: 'float64', 256: 'int8', 512: 'uint16', 768: 'uint32', 1024: 'int64', 1280: 'uint64' };
-async function parseNifti(file) {
+const NIFTI_DTYPES: Record<number, string> = { 2: 'uint8', 4: 'int16', 8: 'int32', 16: 'float32', 32: 'complex64', 64: 'float64', 256: 'int8', 512: 'uint16', 768: 'uint32', 1024: 'int64', 1280: 'uint64' };
+async function parseNifti(file: File) {
   let buf = await readSlice(file, 0, 1024);
   if (buf.length < 4) return null;
   // gzip-wrapped (.nii.gz) -> inflate at least the header.
@@ -1152,7 +1152,7 @@ async function parseNifti(file) {
 }
 
 // Datatypes we can render: bytes-per-voxel + reader.
-const NIFTI_RENDER_DTYPES = {
+const NIFTI_RENDER_DTYPES: Record<string, number> = {
   2:   { bpv: 1, read: (dv, o, le) => dv.getUint8(o) },         // uint8
   256: { bpv: 1, read: (dv, o, le) => dv.getInt8(o) },          // int8
   4:   { bpv: 2, read: (dv, o, le) => dv.getInt16(o, le) },     // int16
@@ -1163,7 +1163,7 @@ const NIFTI_RENDER_DTYPES = {
   64:  { bpv: 8, read: (dv, o, le) => dv.getFloat64(o, le) },   // float64
 };
 
-async function renderNiftiSlice(file, h) {
+async function renderNiftiSlice(file: File, h) {
   const dt = NIFTI_RENDER_DTYPES[h.datatype];
   if (!dt) return null;
   const sliceVox = h.nx * h.ny;
@@ -1202,25 +1202,25 @@ async function renderNiftiSlice(file, h) {
 // ============================================================================
 function idOnly(format, note) { return () => ({ 'Format': format, 'Note': note }); }
 
-async function parseSegy(file) {
+async function parseSegy(file: File) {
   // EBCDIC 3200-byte textual header + 400-byte binary header. Just identify.
   const buf = await readSlice(file, 3200, 60);
   const dv = buf.length >= 26 ? new DataView(buf.buffer, buf.byteOffset) : null;
-  const out = { 'Format': 'SEG-Y seismic data' };
+  const out: Row = { 'Format': 'SEG-Y seismic data' };
   if (dv) {
     const sampleInterval = dv.getUint16(16, false); // bytes 3217-3218 (BE)
     const samples = dv.getUint16(20, false);
     const fmtCode = dv.getUint16(24, false);
     if (sampleInterval) out['Sample interval'] = sampleInterval + ' µs';
     if (samples) out['Samples/trace'] = samples;
-    const fmts = { 1: 'IBM float', 2: 'int32', 3: 'int16', 5: 'IEEE float', 8: 'int8' };
+    const fmts: Record<number, string> = { 1: 'IBM float', 2: 'int32', 3: 'int16', 5: 'IEEE float', 8: 'int8' };
     if (fmtCode && fmts[fmtCode]) out['Data format'] = fmts[fmtCode];
   }
   out['Note'] = 'EBCDIC header + trace decode not implemented (seismic render dep)';
   return out;
 }
 
-async function parseSamVcf(file, ext) {
+async function parseSamVcf(file: File, ext: string) {
   if (ext === 'bam' || ext === 'bcf') {
     const buf = await readSlice(file, 0, 8);
     // BAM = gzip(BGZF) then "BAM\1"; BCF = "BCF\2". Just identify.
@@ -1230,7 +1230,7 @@ async function parseSamVcf(file, ext) {
   if (!text) return null;
   if (ext === 'vcf') {
     if (!/^##fileformat=VCF/m.test(text)) return null;
-    const out = { 'Format': 'VCF genomics variants' };
+    const out: Row = { 'Format': 'VCF genomics variants' };
     const ver = (text.match(/^##fileformat=(VCFv[\d.]+)/m) || [])[1];
     if (ver) out['Version'] = ver;
     out['Contigs'] = (text.match(/^##contig=/gm) || []).length;
@@ -1244,7 +1244,7 @@ async function parseSamVcf(file, ext) {
   }
   // SAM is TSV text with @HD/@SQ header lines.
   if (!/^@HD\t|^@SQ\t/m.test(text)) return null;
-  const out = { 'Format': 'SAM genomics alignment' };
+  const out: Row = { 'Format': 'SAM genomics alignment' };
   out['Reference sequences'] = (text.match(/^@SQ\t/gm) || []).length;
   out['Read groups'] = (text.match(/^@RG\t/gm) || []).length;
   out['Programs'] = (text.match(/^@PG\t/gm) || []).length;
@@ -1252,14 +1252,14 @@ async function parseSamVcf(file, ext) {
   return out;
 }
 
-async function parseHea(file) {
+async function parseHea(file: File) {
   // WFDB .hea: "record nsig fs nsamp" on line 1.
   const text = await readText(file, 100_000);
   if (!text) return null;
   const first = (text.split(/\r?\n/).find((l) => l.trim() && !l.startsWith('#')) || '').trim();
   const m = first.match(/^(\S+)\s+(\d+)(?:\s+([\d./]+))?(?:\s+(\d+))?/);
   if (!m) return null;
-  const out = { 'Format': 'WFDB header (PhysioNet)' };
+  const out: Row = { 'Format': 'WFDB header (PhysioNet)' };
   out['Record'] = m[1];
   out['Signals'] = parseInt(m[2], 10);
   if (m[3]) out['Sampling frequency'] = m[3] + ' Hz';
@@ -1271,13 +1271,13 @@ async function parseHea(file) {
 // ============================================================================
 // R serialized objects: .rds / .RData / .rda  (RDX2/RDX3 + XDR / gzip)
 // ============================================================================
-const R_SEXP = {
+const R_SEXP: Record<number, string> = {
   0: 'NULL', 1: 'symbol', 2: 'pairlist', 3: 'closure', 4: 'environment',
   6: 'language', 9: 'char', 10: 'logical', 13: 'integer', 14: 'double',
   15: 'complex', 16: 'character', 19: 'list', 20: 'expression', 24: 'raw',
   25: 'S4 object', 238: 'altrep',
 };
-async function parseRds(file, ext) {
+async function parseRds(file: File, ext: string) {
   let buf = await readSlice(file, 0, Math.min(file.size, 4096));
   if (buf.length < 6) return null;
   // R serialization files may be gzip ('\x1f\x8b'), bzip2 ('BZh') or raw. We can
@@ -1296,7 +1296,7 @@ async function parseRds(file, ext) {
   // After (optional) decompression the stream begins with the serialization
   // format byte: 'X'(0x58)=XDR binary, 'A'=ASCII, 'B'=binary, or the workspace
   // wrapper 'RDX2'/'RDX3' (older .RData prepend "RDX2\n").
-  const out = { 'Format': ext === 'rds' ? 'R serialized object (.rds)' : 'R workspace (.RData)' };
+  const out: Row = { 'Format': ext === 'rds' ? 'R serialized object (.rds)' : 'R workspace (.RData)' };
   if (compression !== 'none') out['Compression'] = compression;
   let fmt = null, off = 0;
   if (buf) {
@@ -1334,7 +1334,7 @@ async function parseRds(file, ext) {
 // ============================================================================
 // ABIF / AB1 sequencing trace (Applied Biosystems)
 // ============================================================================
-async function parseAb1(file) {
+async function parseAb1(file: File) {
   const buf = await readSlice(file, 0, Math.min(file.size, 131072));
   if (buf.length < 128 || ascii(buf, 0, 4) !== 'ABIF') return null;
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -1343,7 +1343,7 @@ async function parseAb1(file) {
   // elemsize(i16) numelements(i32) datasize(i32) dataoffset(i32) ...
   const dirEntries = dv.getInt32(6 + 12, false);
   const dirOffset = dv.getInt32(6 + 20, false);
-  const out = { 'Format': 'ABIF sequencing trace (AB1)' };
+  const out: Row = { 'Format': 'ABIF sequencing trace (AB1)' };
   out['Version'] = (version / 100).toFixed(2);
   out['Directory entries'] = dirEntries;
   // ABIF string values: pString = len byte + chars; cString = NUL-terminated.
@@ -1354,7 +1354,7 @@ async function parseAb1(file) {
     if (type === 2) return ascii(buf, off, size).replace(/\0+$/, '');                        // char array
     return null;
   };
-  const want = {
+  const want: Record<string, string | null> = {
     SMPL1: 'Sample name', MCHN1: 'Machine', MODL1: 'Instrument model',
     DySN1: 'Dye set', RUND1: 'Run date', RUNT1: 'Run time', PBAS2: null,
   };
@@ -1387,7 +1387,7 @@ async function parseAb1(file) {
 // ============================================================================
 // DFT structures: POSCAR (VASP), .cube (Gaussian), .xsf (XCrySDen) - text
 // ============================================================================
-async function parsePoscar(file) {
+async function parsePoscar(file: File) {
   const text = await readText(file, 1_000_000);
   if (!text) return null;
   const lines = text.split(/\r?\n/);
@@ -1401,7 +1401,7 @@ async function parsePoscar(file) {
   if (a.length !== 3 || b.length !== 3 || c.length !== 3 ||
       a.concat(b, c).some((n) => !Number.isFinite(n))) return null;
   const len = (v) => Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) * (scale > 0 ? scale : 1);
-  const out = { 'Format': 'VASP POSCAR/CONTCAR (DFT structure)' };
+  const out: Row = { 'Format': 'VASP POSCAR/CONTCAR (DFT structure)' };
   const comment = (lines[0] || '').trim();
   if (comment) out['Comment'] = comment.slice(0, 100);
   out['Scale'] = scale;
@@ -1421,7 +1421,7 @@ async function parsePoscar(file) {
   return out;
 }
 
-async function parseCube(file) {
+async function parseCube(file: File) {
   const text = await readText(file, 1_000_000);
   if (!text) return null;
   const lines = text.split(/\r?\n/);
@@ -1438,7 +1438,7 @@ async function parseCube(file) {
   const nx = parseInt(g1[0], 10), ny = parseInt(g2[0], 10), nz = parseInt(g3[0], 10);
   if (![natoms, nx, ny, nz].every(Number.isFinite)) return null;
   if (!Number.isFinite(parseFloat(a3[1])) || nx <= 0 || ny <= 0 || nz <= 0) return null;
-  const out = { 'Format': 'Gaussian cube (volumetric)' };
+  const out: Row = { 'Format': 'Gaussian cube (volumetric)' };
   const c1 = (lines[0] || '').trim(), c2 = (lines[1] || '').trim();
   if (c1) out['Comment'] = c1.slice(0, 100);
   if (c2 && c2 !== c1) out['Subtitle'] = c2.slice(0, 100);
@@ -1448,13 +1448,13 @@ async function parseCube(file) {
   return out;
 }
 
-async function parseXsf(file) {
+async function parseXsf(file: File) {
   const text = await readText(file, 1_000_000);
   if (!text) return null;
   // XCrySDen Structure File: keyword-driven (CRYSTAL/SLAB/MOLECULE/ATOMS/
   // PRIMVEC/BEGIN_BLOCK_DATAGRID_3D ...).
   if (!/\b(CRYSTAL|SLAB|POLYMER|MOLECULE|ATOMS|PRIMVEC|CONVVEC|ANIMSTEPS|BEGIN_BLOCK_DATAGRID)\b/.test(text)) return null;
-  const out = { 'Format': 'XCrySDen Structure File (XSF)' };
+  const out: Row = { 'Format': 'XCrySDen Structure File (XSF)' };
   const periodic = (text.match(/^\s*(CRYSTAL|SLAB|POLYMER|MOLECULE)\b/m) || [])[1];
   if (periodic) out['Dimensionality'] = periodic;
   const anim = (text.match(/^\s*ANIMSTEPS\s+(\d+)/m) || [])[1];
@@ -1474,11 +1474,11 @@ async function parseXsf(file) {
 // ============================================================================
 // ChemDraw: .cdx (binary) / .cdxml (XML)
 // ============================================================================
-async function parseCdx(file, ext) {
+async function parseCdx(file: File, ext: string) {
   if (ext === 'cdxml') {
     const text = await readText(file, 2_000_000);
     if (!text || !/<CDXML\b/i.test(text)) return null;
-    const out = { 'Format': 'ChemDraw XML (CDXML)' };
+    const out: Row = { 'Format': 'ChemDraw XML (CDXML)' };
     const ver = (text.match(/<CDXML[^>]*\bCreationProgram="([^"]+)"/i) || [])[1];
     if (ver) out['Creator'] = ver.slice(0, 80);
     out['Fragments'] = (text.match(/<fragment\b/gi) || []).length;
@@ -1489,7 +1489,7 @@ async function parseCdx(file, ext) {
   }
   const buf = await readSlice(file, 0, 64);
   if (ascii(buf, 0, 8) !== 'VjCD0100') return null;
-  const out = { 'Format': 'ChemDraw binary (CDX)' };
+  const out: Row = { 'Format': 'ChemDraw binary (CDX)' };
   out['Signature'] = 'VjCD0100';
   out['Note'] = 'Object-tree decode is a future ChemDraw dep';
   return out;
@@ -1498,14 +1498,14 @@ async function parseCdx(file, ext) {
 // ============================================================================
 // Axon Binary File (.abf) - Molecular Devices pCLAMP
 // ============================================================================
-const ABF_OP_MODES = { 1: 'event-driven variable-length', 2: 'event-driven fixed-length', 3: 'gap-free', 4: 'high-speed oscilloscope', 5: 'episodic stimulation' };
-async function parseAbf(file) {
+const ABF_OP_MODES: Record<number, string> = { 1: 'event-driven variable-length', 2: 'event-driven fixed-length', 3: 'gap-free', 4: 'high-speed oscilloscope', 5: 'episodic stimulation' };
+async function parseAbf(file: File) {
   const buf = await readSlice(file, 0, 512);
   if (buf.length < 16) return null;
   const sig = ascii(buf, 0, 4);
   if (sig !== 'ABF ' && sig !== 'ABF2') return null;
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  const out = { 'Format': 'Axon Binary File (pCLAMP)' };
+  const out: Row = { 'Format': 'Axon Binary File (pCLAMP)' };
   if (sig === 'ABF2') {
     // ABF2: 'ABF2', then version as 4 bytes (mantissa/build) at offset 4.
     out['Format version'] = 'ABF2';
@@ -1529,11 +1529,11 @@ async function parseAbf(file) {
 // ============================================================================
 // NI TDMS (.tdms) - National Instruments LabVIEW
 // ============================================================================
-async function parseTdms(file) {
+async function parseTdms(file: File) {
   const buf = await readSlice(file, 0, 28);
   if (buf.length < 28 || ascii(buf, 0, 4) !== 'TDSm') return null;
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  const out = { 'Format': 'NI TDMS (LabVIEW measurement)' };
+  const out: Row = { 'Format': 'NI TDMS (LabVIEW measurement)' };
   // ToC bitmask @4, version @8, next-segment offset @12 (u64), raw-data offset @20.
   const toc = dv.getUint32(4, true);
   const version = dv.getUint32(8, true);
@@ -1555,12 +1555,12 @@ async function parseTdms(file) {
 // ============================================================================
 // BrainVision EEG: .vhdr (header INI), .vmrk (markers) - text
 // ============================================================================
-async function parseBrainVision(file, ext) {
+async function parseBrainVision(file: File, ext: string) {
   const text = await readText(file, 1_000_000);
   if (!text) return null;
   if (ext === 'vmrk') {
     if (!/Brain\s*Vision/i.test(text) && !/\[Marker Infos\]/i.test(text)) return null;
-    const out = { 'Format': 'BrainVision markers (.vmrk)' };
+    const out: Row = { 'Format': 'BrainVision markers (.vmrk)' };
     const dataFile = (text.match(/DataFile=([^\r\n]+)/i) || [])[1];
     if (dataFile) out['Data file'] = dataFile.trim();
     const markers = (text.match(/^Mk\d+=/gim) || []).length;
@@ -1593,7 +1593,7 @@ async function parseBrainVision(file, ext) {
 // ============================================================================
 // Generic EEG container (.eeg / .cnt) - fail-soft identification
 // ============================================================================
-async function parseEeg(file, ext) {
+async function parseEeg(file: File, ext: string) {
   const buf = await readSlice(file, 0, 900);
   if (buf.length < 16) return null;
   if (ext === 'cnt') {
@@ -1601,7 +1601,7 @@ async function parseEeg(file, ext) {
     const head = ascii(buf, 0, 20);
     if (!/^Version 3\.\d/.test(head)) return null;
     const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-    const out = { 'Format': 'Neuroscan continuous EEG (.cnt)' };
+    const out: Row = { 'Format': 'Neuroscan continuous EEG (.cnt)' };
     out['Header tag'] = head.replace(/\0+$/, '').trim();
     // Channel count is a u16 at offset 370 in the Neuroscan SETUP structure.
     const nchan = dv.getUint16(370, true);
@@ -1623,14 +1623,14 @@ async function parseEeg(file, ext) {
 // EEGLAB .set - careful: also a generic extension. .set is a MAT-file (CFBF or
 // MAT 5 "MATLAB 5.0"), or HDF5 (v7.3). Fail soft otherwise.
 // ============================================================================
-async function parseEeglabSet(file) {
+async function parseEeglabSet(file: File) {
   const buf = await readSlice(file, 0, 128);
   if (buf.length < 16) return null;
   const head = ascii(buf, 0, 19);
   const isMat5 = head.startsWith('MATLAB 5.0 MAT-file');
   const isHdf5 = buf[0] === 0x89 && ascii(buf, 1, 3) === 'HDF';
   if (!isMat5 && !isHdf5) return null; // not an EEGLAB MAT-file - bail
-  const out = { 'Format': 'EEGLAB dataset (.set)' };
+  const out: Row = { 'Format': 'EEGLAB dataset (.set)' };
   out['Container'] = isHdf5 ? 'HDF5 (MAT v7.3)' : 'MAT-file v5';
   if (isMat5) {
     const desc = ascii(buf, 0, 116).replace(/\0+$/, '').trim();
@@ -1643,10 +1643,10 @@ async function parseEeglabSet(file) {
 // ============================================================================
 // FEA / CFD decks: Gmsh .msh, Abaqus/Nastran .inp, ANSYS .cdb - text
 // ============================================================================
-async function parseMsh(file) {
+async function parseMsh(file: File) {
   const text = await readText(file, 2_000_000);
   if (!text || !/\$MeshFormat/.test(text)) return null;
-  const out = { 'Format': 'Gmsh mesh (.msh)' };
+  const out: Row = { 'Format': 'Gmsh mesh (.msh)' };
   const fmt = text.match(/\$MeshFormat\s*\r?\n\s*([\d.]+)\s+(\d+)\s+(\d+)/);
   if (fmt) {
     out['Version'] = fmt[1];
@@ -1668,7 +1668,7 @@ async function parseMsh(file) {
   return out;
 }
 
-async function parseInp(file) {
+async function parseInp(file: File) {
   const text = await readText(file, 2_000_000);
   if (!text) return null;
   // Abaqus/Nastran/CalculiX decks are keyword text. Abaqus uses "*KEYWORD";
@@ -1677,7 +1677,7 @@ async function parseInp(file) {
   const isAbaqus = /^\s*\*(NODE|ELEMENT|MATERIAL|STEP|HEADING|PART|INSTANCE)\b/im.test(text);
   const isNastran = /^\s*(BEGIN BULK|GRID\b|CHEXA|CTETRA|CQUAD4|SOL\s+\d)/im.test(text);
   if (!isAbaqus && !isNastran) return null;
-  const out = { 'Format': isAbaqus ? 'Abaqus input deck (.inp)' : 'Nastran bulk data (.inp)' };
+  const out: Row = { 'Format': isAbaqus ? 'Abaqus input deck (.inp)' : 'Nastran bulk data (.inp)' };
   if (isAbaqus) {
     const heading = (text.match(/^\s*\*HEADING\s*\r?\n([^\r\n*]+)/im) || [])[1];
     if (heading) out['Heading'] = heading.trim().slice(0, 100);
@@ -1697,13 +1697,13 @@ async function parseInp(file) {
   return out;
 }
 
-async function parseCdb(file) {
+async function parseCdb(file: File) {
   const text = await readText(file, 2_000_000);
   if (!text) return null;
   // ANSYS CDB archive: command-stream text with NBLOCK/EBLOCK and a leading
   // /COM or /PREP7 banner. Fail soft - .cdb is also a generic database ext.
   if (!/NBLOCK|EBLOCK|\/PREP7|\/COM,ANSYS|ET\s*,\s*\d/i.test(text)) return null;
-  const out = { 'Format': 'ANSYS CDB archive (.cdb)' };
+  const out: Row = { 'Format': 'ANSYS CDB archive (.cdb)' };
   const banner = (text.match(/^\/COM,([^\r\n]+)/im) || [])[1];
   if (banner) out['Banner'] = banner.trim().slice(0, 100);
   // NBLOCK line is "NBLOCK,6,SOLID,    maxnode,    numnodes".
@@ -1721,13 +1721,13 @@ async function parseCdb(file) {
 // ============================================================================
 // Oscilloscope waveform (.wfm) - Tektronix / generic
 // ============================================================================
-async function parseWfm(file) {
+async function parseWfm(file: File) {
   const buf = await readSlice(file, 0, 16);
   if (buf.length < 4) return null;
   // Tektronix WFM: bytes 0-1 = byte-order verifier (':WFM' rare); modern files
   // start with ':WFM#003' or 0x0F0F (endian) marker. Keep it identify-only.
   const head = ascii(buf, 0, 8);
-  const out = { 'Format': 'Oscilloscope waveform (.wfm)' };
+  const out: Row = { 'Format': 'Oscilloscope waveform (.wfm)' };
   if (/^:WFM/.test(head) || head.startsWith(':WFM#')) {
     out['Signature'] = head.replace(/[^\x20-\x7e]/g, '').slice(0, 8);
     out['Vendor'] = 'Tektronix';
@@ -1739,7 +1739,7 @@ async function parseWfm(file) {
 }
 
 // ---------- dispatch ----------
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   // Medical imaging
   dcm: (c) => parseDicom(c.file),
   dicom: (c) => parseDicom(c.file),

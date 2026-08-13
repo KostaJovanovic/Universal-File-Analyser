@@ -3,7 +3,14 @@
    spectral centroid, LUFS loudness, pitch (YIN), tempo, and stereo metrics.
    No DOM, no Web Audio - just arrays in, numbers out. */
 
-export function computeStats(samples) {
+import type { FloatBuf } from '../core/types.js';
+
+/** The shared cooperative-yield handle every heavy pass awaits inside its hot
+    loops. `makeTick()` in audio-dsp.js builds one; it is null/undefined on the
+    worker path, where there is nothing to yield to. */
+export type Tick = (() => Promise<void>) | null | undefined;
+
+export function computeStats(samples: FloatBuf) {
   let peak = 0, sumSq = 0, clipped = 0;
   for (let i = 0; i < samples.length; i++) {
     const a = Math.abs(samples[i]);
@@ -25,8 +32,8 @@ export function computeStats(samples) {
 // whole-file passes in this file (and they run over every sample of the track).
 // The values only depend on the FFT size, so they are built once and reused.
 // Results are bit-identical: same angles, same order, just looked up.
-const _fftCache = new Map();
-function fftTables(N) {
+const _fftCache = new Map<number, { cosT: Float64Array; sinT: Float64Array; win: Float64Array; half: number }>();
+function fftTables(N: number) {
   let t = _fftCache.get(N);
   if (t) return t;
   const half = N >> 1;
@@ -43,7 +50,7 @@ function fftTables(N) {
   return t;
 }
 
-export async function computeCentroid(samples, sampleRate, tick) {
+export async function computeCentroid(samples: FloatBuf, sampleRate: number, tick?: Tick) {
   const N = 4096;
   const frames = Math.floor(samples.length / N);
   if (frames === 0) return null;
@@ -82,7 +89,7 @@ export async function computeCentroid(samples, sampleRate, tick) {
 }
 
 // --- Pitch detection (YIN autocorrelation) ---
-export function detectPitch(samples, sampleRate) {
+export function detectPitch(samples: Float32Array, sampleRate: number) {
   const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
   const W = 4096;
   const threshold = 0.15;
@@ -165,7 +172,7 @@ export function detectPitch(samples, sampleRate) {
 }
 
 // --- BPM / Tempo detection (onset detection + autocorrelation) ---
-export async function detectBPM(samples, sampleRate, tick) {
+export async function detectBPM(samples: FloatBuf, sampleRate: number, tick?: Tick) {
   const N = 1024;                    // FFT window size
   const hop = N / 2;                 // 50 % overlap
   const halfN = N / 2;
@@ -276,7 +283,7 @@ export async function detectBPM(samples, sampleRate, tick) {
 }
 
 // --- Stereo analysis: phase correlation, width, vectorscope ---
-export function computeStereoStats(left, right) {
+export function computeStereoStats(left: FloatBuf, right: FloatBuf) {
   let sumLR = 0, sumLL = 0, sumRR = 0;
   let sumMid = 0, sumSide = 0;
   const n = Math.min(left.length, right.length);

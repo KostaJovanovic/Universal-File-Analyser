@@ -102,7 +102,7 @@ function paragraphsFromXml(doc) {
   return paras.join('\n');
 }
 
-async function extractHwpx(file) {
+async function extractHwpx(file: File) {
   const zip = await openZip(file, 64 * 1024 * 1024);
   const sections = zip.match(/Contents\/section\d+\.xml$/i).sort((a, b) => a.name.localeCompare(b.name));
   let text = '';
@@ -173,7 +173,7 @@ function extractMhtmlHtml(text) {
 }
 
 // ---------- main ----------
-export async function renderTextDoc(file, container, kind, ext) {
+export async function renderTextDoc(file: File, container, kind, ext: string) {
   container.hidden = false;
   container.innerHTML = '';
   // Ghost sheets stand in while the file is read, decoded and paginated.
@@ -242,9 +242,9 @@ export async function renderTextDoc(file, container, kind, ext) {
   }
 }
 
-export const renderRtf = (f, c, ext) => renderTextDoc(f, c, 'rtf', ext || 'rtf');
-export const renderAbw = (f, c, ext) => renderTextDoc(f, c, 'abw', ext || 'abw');
-export const renderFb2 = (f, c, ext) => renderTextDoc(f, c, 'fb2', ext || 'fb2');
-export const renderHwpx = (f, c, ext) => renderTextDoc(f, c, 'hwpx', ext || 'hwpx');
-export const renderMhtml = (f, c, ext) => renderTextDoc(f, c, 'mhtml', ext || 'mht');
-export const renderMarkup = (f, c, ext) => renderTextDoc(f, c, 'markup', ext);
+export const renderRtf = (f, c, ext: string) => renderTextDoc(f, c, 'rtf', ext || 'rtf');
+export const renderAbw = (f, c, ext: string) => renderTextDoc(f, c, 'abw', ext || 'abw');
+export const renderFb2 = (f, c, ext: string) => renderTextDoc(f, c, 'fb2', ext || 'fb2');
+export const renderHwpx = (f, c, ext: string) => renderTextDoc(f, c, 'hwpx', ext || 'hwpx');
+export const renderMhtml = (f, c, ext: string) => renderTextDoc(f, c, 'mhtml', ext || 'mht');
+export const renderMarkup = (f, c, ext: string) => renderTextDoc(f, c, 'markup', ext);

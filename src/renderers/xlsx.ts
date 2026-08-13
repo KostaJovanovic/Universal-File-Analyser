@@ -113,7 +113,7 @@ function serialToDate(serial) {
   return d.toISOString().slice(0, 16).replace('T', ' ');
 }
 
-export async function renderXlsx(file, resultsEl) {
+export async function renderXlsx(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading spreadsheet "${file.name}"…`));

@@ -284,7 +284,7 @@ function mergePanels(aBlocks, bBlocks, mount) {
 // even for large files.
 const HASH_AUTO_LIMIT = 50 * 1024 * 1024;
 const CRC_DESC = 'CRC-32 is a fast, non-cryptographic checksum - the same one ZIP, PNG and gzip embed, and what SFV checksum files store. It reliably catches accidental corruption, but unlike the hashes below it is not collision-resistant, so it is not proof against deliberate tampering.';
-async function crc32Of(file) { return crc32Hex(new Uint8Array(await file.arrayBuffer())); }
+async function crc32Of(file: File) { return crc32Hex(new Uint8Array(await file.arrayBuffer())); }
 async function appendHashExtras(mergedRoot, fileA, fileB, shaMatch) {
   let table = null, shaRow = null;
   for (const t of mergedRoot.querySelectorAll('table.anr-readout.anr-cmp')) {
@@ -360,7 +360,7 @@ function buildSection(num, title) {
   return { el: el('section', { class: 'anr-cmp-section' }, [head, body]), body };
 }
 
-export async function renderCompare(fileA, fileB, resultsEl, deps: any = {}) {
+export async function renderCompare(fileA, fileB, resultsEl: HTMLElement, deps: any = {}) {
   const classify = deps.classify || (() => 'unknown');
   const routes = deps.routes || {};
 
@@ -421,7 +421,7 @@ export async function renderCompare(fileA, fileB, resultsEl, deps: any = {}) {
   resultsEl.appendChild(stagingA);
   resultsEl.appendChild(stagingB);
 
-  async function renderInto(file, staging, kind) {
+  async function renderInto(file: File, staging, kind) {
     const route = routes[kind] || routes.unknown;
     if (!route || typeof route.render !== 'function') {
       staging.appendChild(errorCard('No analyser is available for this file type.'));

@@ -89,7 +89,7 @@ export function launchAsteroids() {
   // Theme: pull the site's own tokens so the easter egg matches Analyser - the dark-control
   // palette the fullscreen spectrogram uses, sharp corners, and --accent for the vectors.
   const root = getComputedStyle(document.documentElement);
-  const cssVar = (name, fallback) => (root.getPropertyValue(name) || fallback).trim();
+  const cssVar = (name: string, fallback: string) => (root.getPropertyValue(name) || fallback).trim();
   g.ACCENT = cssVar('--accent', '#e60023');
   g.ACCENT_FG = cssVar('--accent-fg', '#ffffff');
   g.MEDIA_BG = cssVar('--media-bg', '#0a0a0a');
@@ -243,7 +243,7 @@ export function launchAsteroids() {
 
   // ---- Loop ----
   let raf = 0, last = performance.now(), paused = false;
-  function frame(t) {
+  function frame(t: number) {
     if (!active) return;
     raf = requestAnimationFrame(frame);
     if (paused) { last = t; return; }
@@ -266,7 +266,7 @@ export function launchAsteroids() {
   // ---- Sandbox builder ----
   function buildSandbox() {
     const { BORDER, ON_DARK, MUTED, SURFACE } = g;
-    const sbSpawnPowerup = (type) => {
+    const sbSpawnPowerup = (type: string) => {
       let x, y, tries = 0;
       do { x = g.cx + rand(-g.HW, g.HW) * 0.8; y = g.cy + rand(-g.HH, g.HH) * 0.8; }
       while (Math.hypot(x - g.ship.x, y - g.ship.y) < 80 * g.S && ++tries < 20);
@@ -287,13 +287,13 @@ export function launchAsteroids() {
     panel.style.cssText = 'position:absolute; top:60px; right:16px; z-index:3; width:188px; display:none; ' +
       'flex-direction:column; gap:7px; padding:12px; background:rgba(10,10,10,0.92); border:1px solid ' + BORDER +
       '; font-family:' + MONO + '; color:' + ON_DARK + '; max-height:calc(100vh - 84px); overflow:auto;';
-    const head = (t) => {
+    const head = (t: string|null) => {
       const h = document.createElement('div');
       h.textContent = t;
       h.style.cssText = 'font-size:10px; letter-spacing:.18em; color:' + MUTED + '; margin-top:4px;';
       return h;
     };
-    const mkBtn = (label, onClick) => {
+    const mkBtn = (label: string|null, onClick) => {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'anr-game-btn';
       b.textContent = label;
@@ -301,7 +301,7 @@ export function launchAsteroids() {
       b.addEventListener('click', (e) => { e.preventDefault(); onClick(b); b.blur(); });
       return b;
     };
-    const gridOf = (btns) => {
+    const gridOf = (btns: any[]) => {
       const grd = document.createElement('div');
       grd.style.cssText = 'display:grid; grid-template-columns:1fr 1fr; gap:6px;';
       btns.forEach((b) => grd.appendChild(b));
@@ -466,7 +466,7 @@ export function launchAsteroids() {
     const hint = document.createElement('div');
     hint.style.cssText = 'font-size:10px; color:' + MUTED + '; text-align:center;';
 
-    const clamp = (n) => Math.max(1, Math.min(maxStartWave(), n | 0));
+    const clamp = (n: number) => Math.max(1, Math.min(maxStartWave(), n | 0));
     const syncBtn = () => { btn.textContent = 'START W' + g.startWavePref; btn.classList.toggle('on', g.startWavePref > 1); };
     const syncPop = () => {
       g.startWavePref = clamp(g.startWavePref);
@@ -476,7 +476,7 @@ export function launchAsteroids() {
       dec.disabled = g.startWavePref <= 1; inc.disabled = g.startWavePref >= max;
       dec.style.opacity = dec.disabled ? '0.4' : ''; inc.style.opacity = inc.disabled ? '0.4' : '';
     };
-    const setPref = (n) => {
+    const setPref = (n: number) => {
       g.startWavePref = clamp(n);
       try { localStorage.setItem(STARTWAVE_KEY, String(g.startWavePref)); } catch (_) {}
       syncBtn(); syncPop();

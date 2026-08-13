@@ -104,7 +104,7 @@ const MIME_MAP = {
   txt: 'text/plain', csv: 'text/csv', md: 'text/markdown', zip: 'application/zip',
 };
 
-function guessMime(ext) {
+function guessMime(ext: string) {
   return MIME_MAP[ext] || 'application/octet-stream';
 }
 
@@ -332,7 +332,7 @@ function entryRatio(e) {
 // opts.embedded: true when this view is appended UNDER another analysis (the
 // "browse as archive" feature). In that mode the whole-file SHA-256 card is
 // skipped, since the primary analysis above already shows the file's hash.
-export async function renderArchive(file, resultsEl, opts: any = {}) {
+export async function renderArchive(file: File, resultsEl: HTMLElement, opts: any = {}) {
   const embedded = !!opts.embedded;
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
@@ -702,7 +702,7 @@ function extLower(name) {
   return m ? m[1].toLowerCase() : '';
 }
 
-async function renderLibarchive(file, resultsEl, opts) {
+async function renderLibarchive(file: File, resultsEl: HTMLElement, opts) {
   const label = (opts && opts.label) || 'Archive';
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
@@ -732,7 +732,7 @@ async function renderLibarchive(file, resultsEl, opts) {
 // with click-to-analyse. Shared by renderLibarchive and the compressed-tarball
 // path so neither has to re-open the archive. Also reused by the disk-image
 // browser (diskimage.js), which passes its own entry list + opts.summaryRows.
-export function renderHandleTree(handle, fileEntries, file, resultsEl, opts) {
+export function renderHandleTree(handle, fileEntries, file: File, resultsEl: HTMLElement, opts) {
   const label = (opts && opts.label) || 'Archive';
   const items = fileEntries.map((e) => {
     const ext = extLower(e.name);
@@ -792,7 +792,7 @@ export function renderHandleTree(handle, fileEntries, file, resultsEl, opts) {
 // libarchive-shaped handle (flat entries + lazy getBytes) to reuse its tree,
 // treemap and click-to-analyse UI. Members are COFF .obj objects (and, in an
 // import library, short-import stubs), so opening one lands on identification.
-async function extractAr(file) {
+async function extractAr(file: File) {
   const b = new Uint8Array(await file.arrayBuffer());
   const MAGIC = [0x21, 0x3c, 0x61, 0x72, 0x63, 0x68, 0x3e, 0x0a]; // !<arch>\n
   if (b.length < 8 || MAGIC.some((c, i) => b[i] !== c)) throw new Error('Not an ar archive');
@@ -844,7 +844,7 @@ async function extractAr(file) {
   return { names: entries.map((e) => e.name), entries, close() {} };
 }
 
-async function renderArEmbedded(file, resultsEl, opts) {
+async function renderArEmbedded(file: File, resultsEl: HTMLElement, opts) {
   const label = (opts && opts.label) || 'Library';
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
@@ -869,7 +869,7 @@ async function renderArEmbedded(file, resultsEl, opts) {
 // inner filename, or null if the codec has no in-browser decoder (bzip2) or the
 // magic is unknown. The tar/tarball case never reaches here - libarchive handles
 // it directly (it bundles the gzip/xz/zstd/bzip2 read filters).
-async function decompressStream(file) {
+async function decompressStream(file: File) {
   const head = new Uint8Array(await file.slice(0, 13).arrayBuffer());
   const is = (sig) => sig.every((v, i) => head[i] === v);
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -891,7 +891,7 @@ async function decompressStream(file) {
 // Browse/open a TAR or compressed stream: libarchive reads tar + tarballs
 // (.tar.gz/.tgz/.tar.xz/.tar.zst/.tar.bz2) directly; a bare single compressed
 // file is decompressed so the file inside can be analysed.
-async function renderCompressedEmbedded(file, container, label) {
+async function renderCompressedEmbedded(file: File, container, label) {
   const wrap = el('div', {});
   container.appendChild(wrap);
   wrap.appendChild(el('div', { class: 'anr-info' }, `Reading ${label} contents…`));
@@ -932,7 +932,7 @@ async function renderCompressedEmbedded(file, container, label) {
 // container we can open. `opts.mode` is 'zip' (pure-JS path), 'libarchive'
 // (RAR/7z/etc.), or 'compressed' (TAR + gz/xz/zst/bz2 tarballs and single
 // streams); `opts.label` names the format.
-export async function renderArchiveEmbedded(file, container, opts: any = {}) {
+export async function renderArchiveEmbedded(file: File, container, opts: any = {}) {
   const compressed = opts.mode === 'compressed';
   const label = opts.label || (opts.mode === 'zip' ? 'ZIP' : 'archive');
   const head = el('div', { class: 'anr-card' });

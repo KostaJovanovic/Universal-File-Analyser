@@ -44,7 +44,7 @@ const UNDISPLAYABLE_IMAGES = {
   cdr: 'CorelDRAW', wmf: 'Windows Metafile', emf: 'Enhanced Metafile', farbfeld: 'farbfeld',
 };
 
-function undecodableImageBanner(ext) {
+function undecodableImageBanner(ext: string) {
   const name = UNDISPLAYABLE_IMAGES[ext];
   const msg = name
     ? name + ' images can’t be decoded by web browsers, so the picture can’t be shown here. The file is fine - convert it to PNG or JPEG to view it. Any metadata below was read straight from the file.'
@@ -111,7 +111,7 @@ function browserCanvasSuspicious(img) {
   } catch (_) { return true; }                          // tainted/unreadable - confirm to be safe
 }
 
-async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
+async function renderPhotoRecovery(file: File, bytes, diag, resultsEl: HTMLElement, signal) {
   resultsEl.innerHTML = '';
   const base = (file.name || 'image').replace(/\.[^/.]+$/, '');
 
@@ -349,7 +349,7 @@ async function renderPhotoRecovery(file, bytes, diag, resultsEl, signal) {
   out.appendChild(gallery.grid);
 }
 
-async function renderUndisplayableImage(file, ext, resultsEl, bannerNode?) {
+async function renderUndisplayableImage(file: File, ext: string, resultsEl: HTMLElement, bannerNode?) {
   resultsEl.appendChild(bannerNode || undecodableImageBanner(ext));
   const info = el('div', { class: 'anr-card' });
   info.appendChild(el('h3', {}, 'File info'));
@@ -601,7 +601,7 @@ function approxAspect(w, h) {
   return landscape ? `${a}:${b}` : `${b}:${a}`;
 }
 
-function loadImageFromFile(file) {
+function loadImageFromFile(file: File) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -873,7 +873,7 @@ function buildExifSections(exif) {
 // Samsung Motion Photo, Ultra HDR gain maps, depth maps - from the parsed EXIF/
 // XMP plus a scan of the file head + tail for the markers/trailers they use.
 // Returns [[label, value], ...]; empty when nothing is found.
-async function detectComputational(file, exif) {
+async function detectComputational(file: File, exif) {
   const rows = [];
   const ext = (file.name.split('.').pop() || '').toLowerCase();
   let blob = '';
@@ -925,7 +925,7 @@ const VIDEO_BRANDS = ['isom', 'iso2', 'mp41', 'mp42', 'mmp4', 'M4V ', 'M4VH', 'a
 //   3. Marker-gated full scan - Samsung/Apple trailers with no usable offset: read
 //      the whole file and find an ISO-BMFF box whose major brand is a *video* brand
 //      (which naturally skips a HEIC's own leading `ftyp`, brand heic/mif1/avif).
-async function detectLiveVideo(file) {
+async function detectLiveVideo(file: File) {
   const size = file.size;
   if (size < 65536) return null;
   let xmp = '';
@@ -995,7 +995,7 @@ async function liveClipHasAudio(clipFile) {
 
 // On-demand: carve the trailer with file.slice (no full in-memory copy) and hand it
 // to the real video + audio renderers, each in its own sub-section.
-async function analyseLivePhoto(file, found, container) {
+async function analyseLivePhoto(file: File, found, container) {
   container.innerHTML = '';
   const isQt = /qt/i.test(found.brand || '') || /Live Photo/i.test(found.kind);
   const clipFile = new File([file.slice(found.start)],
@@ -1034,7 +1034,7 @@ async function analyseLivePhoto(file, found, container) {
 // The "Analyse live photo" button (lives beside the preview, like the RAW demosaic
 // button): detects the clip in the background and reveals itself only if one is
 // found; on click it renders the video + audio sections at the foot of the column.
-function wireLivePhotoButton(file, previewSlot, resultsEl, signal) {
+function wireLivePhotoButton(file: File, previewSlot, resultsEl: HTMLElement, signal) {
   const btn = el('button', { type: 'button', class: 'anr-btn', style: 'margin-top:10px;font-size:11px;width:100%;', hidden: '' }, 'Analyse live photo');
   const slot = el('div', { class: 'anr-live-slot' });
   let found = null;
@@ -1647,7 +1647,7 @@ async function ensureTesseract() {
   return window.Tesseract;
 }
 
-function makeOcrCard(file, img) {
+function makeOcrCard(file: File, img) {
   const card = el('div', { class: 'anr-card' });
   const det = el('details');
   // The "?" help now lives in the language picker popup (see pickOcrLanguage).
@@ -2532,7 +2532,7 @@ function parseBmpContainer(bytes) {
 
 // Sniff format from magic bytes and dispatch. Async because PNG zTXt/compressed
 // iTXt prompts need inflate(). Returns { rows, ai } or null.
-async function peekImageContainer(file) {
+async function peekImageContainer(file: File) {
   // A 4 MiB head covers every container header and any reasonable text/prompt
   // chunk; AI prompts in PNG sit near the front, before the IDAT pixel data.
   const SLICE = 4 * 1024 * 1024;
@@ -2659,7 +2659,7 @@ export function revealPhotoSection() {
 // Frames are decoded on demand via source.get() so a long animation never holds
 // every frame in memory at once. `signal` aborts the playback loop and closes the
 // source on teardown. `opts`: { kindLabel?: 'animated GIF' }.
-function buildFrameViewerCard(file, source, resultsEl, signal, opts: any = {}) {
+function buildFrameViewerCard(file: File, source, resultsEl: HTMLElement, signal, opts: any = {}) {
   const kindLabel = opts.kindLabel || 'animated GIF';
   const { width, height, count, loop, anyTransparency, delaysMs } = source;
   const n = count;
@@ -2865,7 +2865,7 @@ function buildFrameViewerCard(file, source, resultsEl, signal, opts: any = {}) {
 // source), and a reversed-GIF download encoded from those frames. Mirrors the
 // audio/video reverse controls. `source` is the same lazy frame source the forward
 // viewer used; `opts` carries kindLabel.
-function buildReverseAnimationCard(file, source, resultsEl, signal, opts: any = {}) {
+function buildReverseAnimationCard(file: File, source, resultsEl: HTMLElement, signal, opts: any = {}) {
   const kindLabel = opts.kindLabel || 'animated GIF';
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, 'Reverse'));
@@ -2921,7 +2921,7 @@ function buildReverseAnimationCard(file, source, resultsEl, signal, opts: any = 
 // requestAnimationFrame loop) when a new file is analysed or the page navigates.
 let photoRenderAbort = null;
 
-export async function renderPhoto(file, resultsEl, opts: any = {}) {
+export async function renderPhoto(file: File, resultsEl: HTMLElement, opts: any = {}) {
   // Inline renders (e.g. the compare view's side-by-side panels) must NOT touch
   // the shared abort controller - otherwise a second render would cancel the
   // first's in-flight async (EXIF/OCR/histogram). They get their own isolated
@@ -4055,7 +4055,7 @@ export async function renderPhoto(file, resultsEl, opts: any = {}) {
 
 // ---------- setup ----------
 export function initPhoto({ dropEl, inputEl, resultsEl, onFile }) {
-  const handle = onFile || ((file) => renderPhoto(file, resultsEl));
+  const handle = onFile || ((file: File) => renderPhoto(file, resultsEl));
   inputEl.addEventListener('change', (e) => {
     const file = e.target.files && e.target.files[0];
     if (file) handle(file);

@@ -14,7 +14,7 @@ async function loadDjVu() {
   return window.DjVu || null;
 }
 
-export async function renderDjvu(file, resultsEl) {
+export async function renderDjvu(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading DjVu document "${file.name}"…`));

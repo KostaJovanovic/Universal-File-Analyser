@@ -76,7 +76,7 @@ async function zstdInflate(raw) {
 // each entry is { name, method, compSize, uncompSize, dataStart } indexing into
 // buf. Reads up to maxBytes. Used only when the central directory is absent or
 // unusable (truncated / headerless archives).
-export async function readZipEntries(file, maxBytes = 32 * 1024 * 1024) {
+export async function readZipEntries(file: File, maxBytes = 32 * 1024 * 1024) {
   const maxRead = Math.min(file.size, maxBytes);
   const buf = new Uint8Array(await file.slice(0, maxRead).arrayBuffer());
   const view = new DataView(buf.buffer);
@@ -107,7 +107,7 @@ export async function readZipEntries(file, maxBytes = 32 * 1024 * 1024) {
 // { name, method, compSize, uncompSize, lho } (lho = local-header offset), or
 // null when there is no usable EOCD (empty tail, ZIP64, or corrupt) - the caller
 // then falls back to readZipEntries. Only the tail + directory bytes are read.
-async function readCentralDirectory(file) {
+async function readCentralDirectory(file: File) {
   const tailLen = Math.min(file.size, 65557 + 22); // max ZIP comment (65535) + EOCD (22)
   if (tailLen < 22) return null;
   const tailStart = file.size - tailLen;
@@ -154,7 +154,7 @@ async function readCentralDirectory(file) {
 // their data in `buf` at `dataStart`; central-directory entries carry `lho` and
 // are fetched with a ranged read of the local header (whose name/extra lengths
 // can differ from the central record) plus the compressed data.
-async function readEntryRaw(file, buf, entry) {
+async function readEntryRaw(file: File, buf, entry) {
   if (entry.dataStart != null && buf) {
     return buf.slice(entry.dataStart, entry.dataStart + entry.compSize);
   }
@@ -167,7 +167,7 @@ async function readEntryRaw(file, buf, entry) {
   return new Uint8Array(await file.slice(ds, ds + entry.compSize).arrayBuffer());
 }
 
-async function decodeEntry(file, buf, entry) {
+async function decodeEntry(file: File, buf, entry) {
   const raw = await readEntryRaw(file, buf, entry);
   if (raw == null) return null;
   if (entry.method === 0) return raw;
@@ -179,7 +179,7 @@ async function decodeEntry(file, buf, entry) {
 // Open an archive as a name -> entry map. Reads the central directory first
 // (order-independent, ranged), falling back to the sequential local-header walk.
 // `maxBytes` bounds only the fallback buffer read.
-export async function openZip(file, maxBytes?) {
+export async function openZip(file: File, maxBytes?) {
   let entries;
   let buf = null;
   try { entries = await readCentralDirectory(file); } catch (_) { entries = null; }

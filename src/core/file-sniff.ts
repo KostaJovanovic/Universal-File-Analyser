@@ -12,12 +12,14 @@ import { sniffGitObject } from '../renderers/gitobject.js';
 // so a file with no extension (or an extension that lies) can still be analysed
 // correctly. Returns { kind, ext, label } where kind is a ROUTES key and ext
 // drives the proprietary/comic renderers, or null if nothing is recognised.
-export async function sniffFileType(file) {
+// Blob, not File: callers routinely sniff a *slice* of a file (the trailing-data
+// forensic card sniffs everything past the logical end), and only the bytes matter.
+export async function sniffFileType(file: Blob) {
   let b;
   try { b = new Uint8Array(await file.slice(0, 264).arrayBuffer()); } catch (_) { return null; }
   if (!b.length) return null;
-  const a = (s, n) => { let r = ''; for (let i = s; i < s + n && i < b.length; i++) r += String.fromCharCode(b[i]); return r; };
-  const m = (sig, off = 0) => { for (let i = 0; i < sig.length; i++) if (b[off + i] !== sig[i]) return false; return true; };
+  const a = (s: number, n: number) => { let r = ''; for (let i = s; i < s + n && i < b.length; i++) r += String.fromCharCode(b[i]); return r; };
+  const m = (sig: string|any[], off = 0) => { for (let i = 0; i < sig.length; i++) if (b[off + i] !== sig[i]) return false; return true; };
 
   if (a(0, 5) === '%PDF-') return { kind: 'pdf', ext: 'pdf', label: 'PDF document' };
   if (m([0x89, 0x50, 0x4E, 0x47])) return { kind: 'photo', ext: 'png', label: 'PNG image' };
@@ -80,12 +82,12 @@ export async function sniffFileType(file) {
 // scan's verdict can never drift from what actually opens. Returns
 // { kind, sniffedExt }; kind is a ROUTES key, or 'unknown' when nothing matched
 // (the caller then keeps the file's extension-based kind, e.g. 'extensionless').
-export async function resolveByContent(file) {
+export async function resolveByContent(file: File) {
   let kind = 'unknown';
   let sniffedExt = null;
   try {
     const head = new Uint8Array(await file.slice(0, 128).arrayBuffer());
-    const a = (s, l) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
+    const a = (s: number|undefined, l: number) => Array.from(head.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
     const lowerExt = fileExt(file.name);
     const lowerName = (file.name || '').toLowerCase().replace(/^.*[\\/]/, '');
     if (a(0, 4) === '%PDF') kind = 'pdf';
@@ -119,14 +121,14 @@ export async function resolveByContent(file) {
     // CSV / TSV heuristic: consistent comma/tab counts across the first lines.
     if (kind === 'unknown') {
       const peekText = await file.slice(0, 2048).text().catch(() => '');
-      const lines = peekText.split('\n').filter((l) => l.trim()).slice(0, 10);
+      const lines = peekText.split('\n').filter((l: string) => l.trim()).slice(0, 10);
       if (lines.length >= 2) {
-        const commas = lines.map((l) => (l.match(/,/g) || []).length);
-        const tabs = lines.map((l) => (l.match(/\t/g) || []).length);
+        const commas = lines.map((l: string) => (l.match(/,/g) || []).length);
+        const tabs = lines.map((l: string) => (l.match(/\t/g) || []).length);
         const avgCommas = commas.reduce((s, n) => s + n, 0) / commas.length;
         const avgTabs = tabs.reduce((s, n) => s + n, 0) / tabs.length;
-        const commaConsistent = avgCommas >= 1 && commas.every((c) => Math.abs(c - avgCommas) <= 1);
-        const tabConsistent = avgTabs >= 1 && tabs.every((c) => Math.abs(c - avgTabs) <= 1);
+        const commaConsistent = avgCommas >= 1 && commas.every((c: number) => Math.abs(c - avgCommas) <= 1);
+        const tabConsistent = avgTabs >= 1 && tabs.every((c: number) => Math.abs(c - avgTabs) <= 1);
         if (commaConsistent || tabConsistent) kind = 'csv';
       }
     }

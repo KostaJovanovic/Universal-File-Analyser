@@ -52,7 +52,7 @@ const CARVE_MIME = { jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', web
 const CARVE_EXT  = { jpeg: 'jpg', png: 'png', gif: 'gif', webp: 'webp', bmp: 'bmp' };
 
 // ---------- main render ----------
-export async function renderDiskImage(file, resultsEl, opts: any = {}) {
+export async function renderDiskImage(file: File, resultsEl: HTMLElement, opts: any = {}) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading disk image "${file.name}"…`));
@@ -222,7 +222,7 @@ export async function renderDiskImage(file, resultsEl, opts: any = {}) {
 // a deleted file whose chain was cleared falls back to the contiguous carve.
 // Opt-in: the scan starts from a button, not automatically - it reads the whole
 // image and carves every signature, so it stays out of the way until asked.
-function carvedImageGallery(readFull, file, resultsEl, vol) {
+function carvedImageGallery(readFull, file: File, resultsEl: HTMLElement, vol) {
   const card = el('div', { class: 'anr-card anr-collapsible' });
   const [cardH, cardHelp] = h3help('Images in this disk', 'Scans every raw sector of the image for embedded picture signatures, so it finds photos regardless of the filesystem - including deleted and orphaned files the directory no longer lists, plus MJPEG video frames and thumbnails. It can therefore show more, or different, files than the tree above. Fragmented files are reassembled from the filesystem when their allocation map survives; a deleted file whose map was cleared can only be read straight through, so it may come back partly garbled or without a preview.');
   card.appendChild(cardH);
@@ -426,7 +426,7 @@ function openCarveLightboxAt(pos) {
 }
 
 // Run the full analysis on a carved region (registers a Back-nav restore first).
-function analyseCarve(img, c, idx, file, vol) {
+function analyseCarve(img, c, idx, file: File, vol) {
   const f = carvedFile(img, c, idx, vol);
   if (window._anrPushNav) window._anrPushNav(file.name || 'disk image', () => { if (window._anrHandleFile) window._anrHandleFile(file, {}); });
   if (window._anrHandleFile) window._anrHandleFile(f, { nested: true });
@@ -533,7 +533,7 @@ function recoverViaChain(img, vol, c) {
 // actions sit overlaid on the image and only appear on hover, matching the PDF
 // page previews. The caption lines go underneath. Clicking the thumbnail itself
 // opens the lightbox, so the buttons stop their click from reaching it.
-function carveCell(img, file, c, idx, io, vol) {
+function carveCell(img, file: File, c, idx, io, vol) {
   const cell = el('div', { class: 'anr-carve-cell' });
   if (c.frame) cell.dataset.frame = '1';
 

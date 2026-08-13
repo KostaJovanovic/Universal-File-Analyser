@@ -304,7 +304,7 @@ function readElst(view, box) {
 // drop-frame flag, timescale, frame duration and frames/second; the first sample
 // (in mdat) is a 32-bit frame number. Needs one small file read for that sample.
 
-async function readTimecode(file, view, trakStart, trakEnd) {
+async function readTimecode(file: File, view, trakStart, trakEnd) {
   const stsd = first(view, trakStart, trakEnd, 'stsd');
   if (!stsd) return null;
   const entryStart = stsd.start + stsd.headerSize + 8;   // full-box hdr + entry count
@@ -426,7 +426,7 @@ function computeGopMap(view, trakStart, trakEnd, timescale) {
 
 // ---------- top-level walk over the File (slice-based) ----------
 
-async function topLevelBoxes(file) {
+async function topLevelBoxes(file: File) {
   const boxes = [];
   let pos = 0;
   const max = file.size;
@@ -452,7 +452,7 @@ async function topLevelBoxes(file) {
   return boxes;
 }
 
-function readFtyp(file, box) {
+function readFtyp(file: File, box) {
   return file.slice(box.start, box.start + Math.min(box.size, 256)).arrayBuffer().then((buf) => {
     const v = new DataView(buf);
     const d = 8;   // box header is 8 bytes here (ftyp never uses 64-bit size)
@@ -500,7 +500,7 @@ interface BitstreamFacts {
 
 // Analyse the container structure of an ISOBMFF file. Returns null for
 // non-ISOBMFF input or when no moov is found. Never throws.
-export async function analyzeMp4Structure(file) {
+export async function analyzeMp4Structure(file: File) {
   if (!file || file.size < 16) return null;
   let top;
   try { top = await topLevelBoxes(file); } catch (_) { return null; }
@@ -786,7 +786,7 @@ function containerVideoFacts(view, ts, te, seRange) {
 }
 
 // Read the first video sample's leading bytes from mdat (for the SEI scan).
-async function readFirstSample(file, view, ts, te) {
+async function readFirstSample(file: File, view, ts, te) {
   const stco = first(view, ts, te, 'stco') || first(view, ts, te, 'co64');
   const stsz = first(view, ts, te, 'stsz');
   if (!stco || !stsz) return null;
@@ -823,7 +823,7 @@ function parseDvcC(view, box) {
 
 // Detect a C2PA / Content Credentials manifest in a top-level uuid box by scanning
 // its head for the JUMBF/C2PA markers (the exact usertype UUID varies by tool).
-async function detectC2pa(file, top) {
+async function detectC2pa(file: File, top) {
   for (const b of top.filter((x) => x.type === 'uuid')) {
     let buf;
     try { buf = new Uint8Array(await file.slice(b.start, b.start + Math.min(b.size, 65536)).arrayBuffer()); } catch (_) { continue; }
@@ -837,7 +837,7 @@ async function detectC2pa(file, top) {
   return null;
 }
 
-export async function analyzeBitstream(file) {
+export async function analyzeBitstream(file: File) {
   if (!file || file.size < 16) return null;
   let top;
   try { top = await topLevelBoxes(file); } catch (_) { return null; }

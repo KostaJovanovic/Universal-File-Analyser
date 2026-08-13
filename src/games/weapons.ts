@@ -11,21 +11,43 @@ import { burst, destroyAsteroid } from './world.js';
 import { damageUfo } from './ufos.js';
 import { bossNodeVulnerable, bossNodePos, damageBossNode } from './boss.js';
 
-export function spawnBullet(angle, speed, life, sniper, pierce?) {
+/** A round in flight, from the ship or a drone. `pierce` counts the extra
+ *  asteroids it punches through before dying (sniper rounds only). */
+export interface Bullet {
+  x: number; y: number; vx: number; vy: number;
+  life: number; sniper: boolean; pierce: number;
+  [k: string]: any;
+}
+
+/** One frame of the laser beam flash - a segment that fades over `max` seconds. */
+export interface Laser {
+  x1: number; y1: number; x2: number; y2: number; life: number; max: number;
+  [k: string]: any;
+}
+
+/** A homing missile. `target` is whatever it has claimed (an asteroid, a reward
+ *  UFO or a boss node - see the retarget pass below), or null while unassigned. */
+export interface Missile {
+  x: number; y: number; angle: number; life: number;
+  target: any; avoidBoss: boolean;
+  [k: string]: any;
+}
+
+export function spawnBullet(angle: number, speed: number, life: number, sniper: boolean, pierce?: number|undefined) {
   if (g.bullets.length >= MAX_BULLETS) return;
   const { ship, S } = g;
   const c = Math.cos(angle), s = Math.sin(angle);
   g.bullets.push({
     x: ship.x + c * 14 * S, y: ship.y + s * 14 * S,
     vx: c * speed + ship.vx, vy: s * speed + ship.vy, life, sniper: !!sniper,
-    pierce: pierce | 0   // extra asteroids this round punches through before dying
+    pierce: pierce! | 0   // extra asteroids this round punches through before dying (omitted -> 0)
   });
 }
 // Like spawnBullet but from an arbitrary origin (the drone), with no inherited ship velocity.
-export function spawnBulletAt(x, y, angle, speed, life, sniper?, pierce?) {
+export function spawnBulletAt(x: number, y: number, angle: number, speed: number, life: number, sniper?: boolean|undefined, pierce?: number|undefined) {
   if (g.bullets.length >= MAX_BULLETS) return;
   const c = Math.cos(angle), s = Math.sin(angle);
-  g.bullets.push({ x, y, vx: c * speed, vy: s * speed, life, sniper: !!sniper, pierce: pierce | 0 });
+  g.bullets.push({ x, y, vx: c * speed, vy: s * speed, life, sniper: !!sniper, pierce: pierce! | 0 });
 }
 
 export function fireLaser() {
@@ -59,7 +81,7 @@ export function fireLaser() {
 export function findLightningTarget() {
   const { ship, boss } = g;
   let best = null, bestD = Infinity;
-  const consider = (o) => {
+  const consider = (o: { x: number; y: number }) => {
     const [dx, dy] = wrapDelta(ship.x, ship.y, o.x, o.y);
     const dist = Math.hypot(dx, dy);
     if (dist > lightningRange() || dist >= bestD) return;
@@ -102,17 +124,17 @@ export function fireWeapon() {
 // at anything but the boss while another target is on the field, so the swarm never pours
 // itself entirely into the boss and ignores the rocks around the ship.
 let missileSeq = 0;
-export function spawnMissileFrom(x, y, angle) {
+export function spawnMissileFrom(x: number, y: number, angle: number) {
   if (g.missiles.length >= 64) return;
   const c = Math.cos(angle), s = Math.sin(angle);
   const avoidBoss = (missileSeq++ % 4) === 3;
   g.missiles.push({ x: x + c * 14 * g.S, y: y + s * 14 * g.S, angle, life: 3.5, target: null, avoidBoss });
 }
-export function spawnMissile(angle) { spawnMissileFrom(g.ship.x, g.ship.y, angle); }
+export function spawnMissile(angle: number) { spawnMissileFrom(g.ship.x, g.ship.y, angle); }
 
 // Nearest solid asteroid or reward UFO to a point, measured across the toroidal seam (ambient
 // escorts skipped - a missile can't hurt them).
-export function nearestSeekTarget(x, y) {
+export function nearestSeekTarget(x: number, y: number) {
   const { boss } = g;
   let best = null, bestD = Infinity;
   for (const a of g.asteroids) {
@@ -147,7 +169,10 @@ export function nearestSeekTarget(x, y) {
 // never wasted and never dogpiles a single rock it could have spread across.
 
 // Is this claimed target still a valid thing to fly at?
-function targetAlive(t) {
+// `t` is deliberately untyped: a claimed target is whichever of three unrelated
+// entities (asteroid / reward UFO / boss node) the missile locked on to, and this
+// identifies which by membership rather than by shape.
+function targetAlive(t: any) {
   if (!t) return false;
   if (g.asteroids.includes(t)) return t.grace <= 0;
   if (g.ufos.includes(t)) return t.kind === 'reward' && t.appear >= 1 && t.hp > 0;
@@ -157,15 +182,19 @@ function targetAlive(t) {
 }
 
 // Current position of a target (boss nodes ride the boss body, so recompute).
-function targetPos(t) {
+function targetPos(t: any) {
   const boss = g.boss;
   if (boss && boss.nodes.includes(t)) return bossNodePos(boss, t);
   return [t.x, t.y];
 }
 
+/** One entry in the per-frame target roster: the entity, how many missiles it
+ *  still wants filled to death, where it is, and whether it belongs to the boss. */
+interface SeekSlot { obj: any; need: number; x: number; y: number; boss: boolean }
+
 // Every valid target with the missile count it wants (fill-to-death) and its position.
-function collectTargets() {
-  const out = [];
+function collectTargets(): SeekSlot[] {
+  const out: SeekSlot[] = [];
   for (const a of g.asteroids) { if (a.grace > 0) continue; out.push({ obj: a, need: 1, x: a.x, y: a.y, boss: false }); }
   for (const u of g.ufos) { if (u.kind !== 'reward' || u.appear < 1 || u.hp <= 0) continue; out.push({ obj: u, need: Math.max(1, Math.ceil(u.hp)), x: u.x, y: u.y, boss: false }); }
   const boss = g.boss;
@@ -189,7 +218,7 @@ function retargetMissiles() {
   if (!targets.length) return;   // nothing to lock onto - free missiles keep their heading
   // A boss-averse missile ignores the boss whenever a non-boss target is on the field.
   const nonBossExists = targets.some((t) => !t.boss);
-  const eligible = (m, t) => !(m.avoidBoss && t.boss && nonBossExists);
+  const eligible = (m: Missile, t: SeekSlot) => !(m.avoidBoss && t.boss && nonBossExists);
   // Remaining capacity per target = its need minus the missiles already committed to it.
   const cap = new Map();
   for (const t of targets) cap.set(t.obj, t.need);
@@ -217,7 +246,7 @@ function retargetMissiles() {
 
 // Missiles travel slowly but turn toward their claimed target each frame, so they curve
 // in; they detonate on the first thing they touch.
-export function updateMissiles(dt) {
+export function updateMissiles(dt: number) {
   const { cx, cy, HW, HH, S, missiles, asteroids, ufos, boss } = g;
   const spd = 300 * S, turn = 8 * dt;
   const homingColor = POWERUP_DEF.homing.color;

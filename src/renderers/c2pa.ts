@@ -311,7 +311,7 @@ export function parseC2paStore(storeBytes) {
 }
 
 // Read a File and return decoded manifests, or null if there's no C2PA data.
-export async function readC2pa(file) {
+export async function readC2pa(file: File) {
   const b = new Uint8Array(await file.arrayBuffer());
   const store = extractC2pa(b);
   if (!store) return null;
@@ -324,7 +324,7 @@ const C2PA_HELP = 'Content Credentials (C2PA) is a built-in history that some ca
 // `manifests` is optional: pass an already-parsed readC2pa() result to avoid
 // re-reading and re-parsing the file (photo.js shares one read across this card
 // and the AI-signals card). Omit it and the card reads the file itself.
-export async function buildC2paCard(file, manifests) {
+export async function buildC2paCard(file: File, manifests) {
   if (manifests === undefined) {
     try { manifests = await readC2pa(file); } catch (_) { return null; }
   }

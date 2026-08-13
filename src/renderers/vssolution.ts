@@ -110,7 +110,7 @@ function parseSln(text): Solution | null {
   return { version: verLine ? verLine[1] : '', vs: vsComment ? vsComment[1].trim() : '', vsVersion: vsVersion ? vsVersion[1].trim() : '', minVersion: minVersion ? minVersion[1].trim() : '', projects, solutionConfigs };
 }
 
-export async function renderVsSolution(file, resultsEl) {
+export async function renderVsSolution(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));

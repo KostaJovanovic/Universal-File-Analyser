@@ -16,14 +16,14 @@
 import { el, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, latin1, utf8, utf16, inflate } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
-import type { Row } from '../core/types.js';
+import type { Row, ParseFn } from '../core/types.js';
 
 // Lazily imported on first OLE/CFBF document; cached at module scope.
 let openCfbf;
 
 // ---------- small shared helpers ----------
 
-async function fileText(file, cap = 4 * 1024 * 1024) {
+async function fileText(file: File, cap = 4 * 1024 * 1024) {
   return readText(file, cap);
 }
 
@@ -151,7 +151,7 @@ function parseComicInfo(xml) {
 }
 
 // ---------- CBZ (Comic Book ZIP) ----------
-async function parseCbz(file) {
+async function parseCbz(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const imgEntries = zip.entries
     .filter((e) => /\.(jpe?g|png|gif|webp|bmp|avif)$/i.test(e.name) && !/\/$/.test(e.name))
@@ -244,7 +244,7 @@ function tarMembers(b) {
 // ---------- CBR / CB7 (Comic Book RAR / 7-Zip, via libarchive WASM) ----------
 // Mirrors parseCbz but extracts through the lazily-loaded libarchive worker.
 // Returns null on any failure so the caller falls back to identification rows.
-async function parseComicArchive(file, ext) {
+async function parseComicArchive(file: File, ext: string) {
   let extractArchive;
   try {
     ({ extractArchive } = await import('../lib/libarchive-loader.js'));
@@ -312,7 +312,7 @@ async function parseComicArchive(file, ext) {
 }
 
 // ---------- CBT (Comic Book TAR) ----------
-async function parseCbt(file) {
+async function parseCbt(file: File) {
   const cap = Math.min(file.size, 32 * 1024 * 1024);
   const b = new Uint8Array(await file.slice(0, cap).arrayBuffer());
   // Validate a plausible tar.
@@ -361,10 +361,10 @@ function opcCore(out, coreXml) {
 }
 
 // ---------- XPS / OpenXPS ----------
-async function parseXps(file, ext) {
+async function parseXps(file: File, ext: string) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const names = zip.names();
-  const out = { 'Format': ext === 'oxps' ? 'OpenXPS document (.oxps)' : 'XML Paper Specification (.xps)' };
+  const out: Row = { 'Format': ext === 'oxps' ? 'OpenXPS document (.oxps)' : 'XML Paper Specification (.xps)' };
   // FixedDocument / page parts.
   const pages = zip.entries.filter((e) => /\/Pages\/.+\.fpage$/i.test(e.name) || /\.fpage$/i.test(e.name));
   const docs = zip.entries.filter((e) => /\.fdoc$/i.test(e.name));
@@ -379,9 +379,9 @@ async function parseXps(file, ext) {
 }
 
 // ---------- HWPX (Hangul OWPML) ----------
-async function parseHwpx(file) {
+async function parseHwpx(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
-  const out = { 'Format': 'Hangul Word Processor XML (.hwpx, OWPML)' };
+  const out: Row = { 'Format': 'Hangul Word Processor XML (.hwpx, OWPML)' };
   const version = await zip.text('version.xml');
   if (version) {
     const v = pick(version, /(?:app|target)Version="([^"]+)"/i) || pick(version, /version="([^"]+)"/i);
@@ -403,9 +403,9 @@ async function parseHwpx(file) {
 }
 
 // ---------- FB3 (FictionBook 3) ----------
-async function parseFb3(file) {
+async function parseFb3(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
-  const out = { 'Format': 'FictionBook 3 (.fb3)' };
+  const out: Row = { 'Format': 'FictionBook 3 (.fb3)' };
   const descName = zip.names().find((n) => /description\.xml$/i.test(n)) ||
                    zip.names().find((n) => /core\.xml$/i.test(n));
   if (descName) {
@@ -431,9 +431,9 @@ async function parseFb3(file) {
 }
 
 // ---------- iBooks (.ibooks) ----------
-async function parseIbooks(file) {
+async function parseIbooks(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
-  const out = { 'Format': 'Apple iBooks Author book (.ibooks)' };
+  const out: Row = { 'Format': 'Apple iBooks Author book (.ibooks)' };
   const opfName = zip.names().find((n) => /\.opf$/i.test(n));
   if (opfName) {
     const opf = await zip.text(opfName);
@@ -450,7 +450,7 @@ async function parseIbooks(file) {
 }
 
 // ---------- Scrivener (.scriv / .scrivx) ----------
-async function parseScriv(file, ext) {
+async function parseScriv(file: File, ext: string) {
   // .scrivx is the XML; .scriv is the package folder (when dropped as a file it's
   // rare, but treat its text as the scrivx).
   const text = await fileText(file, 8 * 1024 * 1024);
@@ -471,7 +471,7 @@ async function parseScriv(file, ext) {
 }
 
 // ---------- AbiWord (.abw / .zabw) ----------
-async function parseAbw(file, ext) {
+async function parseAbw(file: File, ext: string) {
   let text;
   if (ext === 'zabw') {
     // .zabw is gzip-compressed .abw; try DecompressionStream.
@@ -485,7 +485,7 @@ async function parseAbw(file, ext) {
   }
   if (!text) text = await fileText(file, 8 * 1024 * 1024);
   if (!/<abiword/i.test(text)) return null;
-  const out = { 'Format': 'AbiWord document (.' + ext + ')' };
+  const out: Row = { 'Format': 'AbiWord document (.' + ext + ')' };
   const ver = pick(text, /<abiword[^>]*\bfileformat="([^"]+)"/i) || pick(text, /<abiword[^>]*\bversion="([^"]+)"/i);
   if (ver) out['File format'] = ver;
   // Dublin-core metadata lives in <m key="dc.title">value</m>.
@@ -499,10 +499,10 @@ async function parseAbw(file, ext) {
 }
 
 // ---------- StarOffice / OOo 1.x (.sxw .sxc .sxi .sxd) ----------
-const SX_APP = { sxw: 'Writer', sxc: 'Calc', sxi: 'Impress', sxd: 'Draw', sxg: 'Master', stw: 'Writer template', stc: 'Calc template', sti: 'Impress template' };
-async function parseSx(file, ext) {
+const SX_APP: Record<string, string> = { sxw: 'Writer', sxc: 'Calc', sxi: 'Impress', sxd: 'Draw', sxg: 'Master', stw: 'Writer template', stc: 'Calc template', sti: 'Impress template' };
+async function parseSx(file: File, ext: string) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
-  const out = { 'Format': 'StarOffice / OpenOffice.org 1.x ' + (SX_APP[ext] || '') + ' (.' + ext + ')' };
+  const out: Row = { 'Format': 'StarOffice / OpenOffice.org 1.x ' + (SX_APP[ext] || '') + ' (.' + ext + ')' };
   const mimetype = await zip.text('mimetype');
   if (mimetype) out['MIME type'] = mimetype.trim();
   const meta = await zip.text('meta.xml');
@@ -511,10 +511,10 @@ async function parseSx(file, ext) {
 }
 
 // ---------- ODF templates (.ott .ots .otp .otg) ----------
-const OTT_APP = { ott: 'Writer', ots: 'Calc', otp: 'Impress', otg: 'Draw' };
-async function parseOtt(file, ext) {
+const OTT_APP: Record<string, string> = { ott: 'Writer', ots: 'Calc', otp: 'Impress', otg: 'Draw' };
+async function parseOtt(file: File, ext: string) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
-  const out = { 'Format': 'OpenDocument ' + (OTT_APP[ext] || '') + ' template (.' + ext + ')' };
+  const out: Row = { 'Format': 'OpenDocument ' + (OTT_APP[ext] || '') + ' template (.' + ext + ')' };
   const mimetype = await zip.text('mimetype');
   if (mimetype) out['MIME type'] = mimetype.trim();
   const meta = await zip.text('meta.xml');
@@ -545,11 +545,11 @@ function odfMeta(out, meta) {
 }
 
 // ---------- ODF Flat XML (.fodt .fods .fodp .fodg) ----------
-const FODT_APP = { fodt: 'Text', fods: 'Spreadsheet', fodp: 'Presentation', fodg: 'Drawing' };
-async function parseFodt(file, ext) {
+const FODT_APP: Record<string, string> = { fodt: 'Text', fods: 'Spreadsheet', fodp: 'Presentation', fodg: 'Drawing' };
+async function parseFodt(file: File, ext: string) {
   const text = await fileText(file, 8 * 1024 * 1024);
   if (!/office:document\b/i.test(text)) return null;
-  const out = { 'Format': 'OpenDocument Flat XML ' + (FODT_APP[ext] || '') + ' (.' + ext + ')' };
+  const out: Row = { 'Format': 'OpenDocument Flat XML ' + (FODT_APP[ext] || '') + ' (.' + ext + ')' };
   const mt = pick(text, /office:mimetype="([^"]+)"/i);
   if (mt) out['MIME type'] = mt;
   // Metadata lives inline under <office:meta>.
@@ -559,9 +559,9 @@ async function parseFodt(file, ext) {
 }
 
 // ---------- Word templates (.dotx / .dotm) ----------
-async function parseDotx(file, ext) {
+async function parseDotx(file: File, ext: string) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
-  const out = { 'Format': 'Word template (.' + ext + ')' };
+  const out: Row = { 'Format': 'Word template (.' + ext + ')' };
   const core = await zip.text('docProps/core.xml');
   if (core) opcCore(out, core);
   const app = await zip.text('docProps/app.xml');
@@ -577,9 +577,9 @@ async function parseDotx(file, ext) {
 }
 
 // ---------- Visio (.vsdx) ----------
-async function parseVsdx(file) {
+async function parseVsdx(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
-  const out = { 'Format': 'Microsoft Visio drawing (.vsdx)' };
+  const out: Row = { 'Format': 'Microsoft Visio drawing (.vsdx)' };
   const core = await zip.text('docProps/core.xml');
   if (core) opcCore(out, core);
   const pages = zip.entries.filter((e) => /visio\/pages\/page\d+\.xml$/i.test(e.name));
@@ -591,7 +591,7 @@ async function parseVsdx(file) {
 }
 
 // ---------- TeX / LaTeX (.tex .latex .sty .cls) ----------
-async function parseTex(file, ext) {
+async function parseTex(file: File, ext: string) {
   const text = await fileText(file, 4 * 1024 * 1024);
   const out: Row = { 'Format': (ext === 'sty' ? 'LaTeX package (.sty)' : ext === 'cls' ? 'LaTeX class (.cls)' : 'TeX / LaTeX source (.' + ext + ')') };
   const docclass = pick(text, /\\documentclass(?:\[[^\]]*\])?\{([^}]+)\}/);
@@ -616,7 +616,7 @@ async function parseTex(file, ext) {
 }
 
 // ---------- BibTeX (.bib) ----------
-async function parseBib(file) {
+async function parseBib(file: File) {
   const text = await fileText(file, 8 * 1024 * 1024);
   const entries = Array.from(text.matchAll(/@(\w+)\s*\{\s*([^,\s]+)\s*,/g));
   if (!entries.length) return null;
@@ -641,7 +641,7 @@ async function parseBib(file) {
 
 // ---------- reStructuredText (.rst) ----------
 const RST_UNDERLINE = /^[=\-`:.'"~^_*+#]{3,}\s*$/;
-async function parseRst(file) {
+async function parseRst(file: File) {
   const text = await fileText(file, 4 * 1024 * 1024);
   const lines = text.split(/\r?\n/);
   const out: Row = { 'Format': 'reStructuredText (.rst)' };
@@ -662,7 +662,7 @@ async function parseRst(file) {
 }
 
 // ---------- AsciiDoc (.adoc / .asciidoc) ----------
-async function parseAdoc(file) {
+async function parseAdoc(file: File) {
   const text = await fileText(file, 4 * 1024 * 1024);
   const lines = text.split(/\r?\n/);
   const out: Row = { 'Format': 'AsciiDoc (.adoc)' };
@@ -687,7 +687,7 @@ async function parseAdoc(file) {
 }
 
 // ---------- Emacs Org-mode (.org) ----------
-async function parseOrg(file) {
+async function parseOrg(file: File) {
   const text = await fileText(file, 4 * 1024 * 1024);
   const out: Row = { 'Format': 'Emacs Org-mode (.org)' };
   const title = pick(text, /^#\+TITLE:\s*(.+)$/im); if (title) out['Title'] = title;
@@ -708,7 +708,7 @@ async function parseOrg(file) {
 }
 
 // ---------- Textile (.textile) ----------
-async function parseTextile(file) {
+async function parseTextile(file: File) {
   const text = await fileText(file, 4 * 1024 * 1024);
   const out: Row = { 'Format': 'Textile markup (.textile)' };
   const headings = (text.match(/^h[1-6]\.\s+.+$/gm) || []);
@@ -721,10 +721,10 @@ async function parseTextile(file) {
 }
 
 // ---------- TEI XML (.tei) ----------
-async function parseTei(file) {
+async function parseTei(file: File) {
   const text = await fileText(file, 6 * 1024 * 1024);
   if (!/<TEI[\s>]/i.test(text) && !/<teiHeader/i.test(text)) return null;
-  const out = { 'Format': 'TEI XML (Text Encoding Initiative)' };
+  const out: Row = { 'Format': 'TEI XML (Text Encoding Initiative)' };
   const t = tag(text, 'title'); if (t) out['Title'] = t;
   const author = tag(text, 'author'); if (author) out['Author'] = author;
   const pub = tag(text, 'publisher'); if (pub) out['Publisher'] = pub;
@@ -736,9 +736,9 @@ async function parseTei(file) {
 }
 
 // ---------- R Markdown / Quarto (.rmd / .qmd) ----------
-async function parseRmd(file, ext) {
+async function parseRmd(file: File, ext: string) {
   const text = await fileText(file, 4 * 1024 * 1024);
-  const out = { 'Format': ext === 'qmd' ? 'Quarto document (.qmd)' : 'R Markdown (.rmd)' };
+  const out: Row = { 'Format': ext === 'qmd' ? 'Quarto document (.qmd)' : 'R Markdown (.rmd)' };
   // YAML front-matter between leading --- fences.
   const ym = text.match(/^---\s*\n([\s\S]*?)\n---\s*\n/);
   if (ym) {
@@ -761,11 +761,11 @@ async function parseRmd(file, ext) {
 }
 
 // ---------- Apple RTFD (.rtfd) ----------
-async function parseRtfd(file) {
+async function parseRtfd(file: File) {
   // .rtfd is a package; if dropped as a file it may be a flattened bundle. Treat
   // best-effort: look for an inner TXT.rtf header in the bytes.
   const text = await fileText(file, 2 * 1024 * 1024);
-  const out = { 'Format': 'Apple RTFD document (.rtfd)' };
+  const out: Row = { 'Format': 'Apple RTFD document (.rtfd)' };
   if (/\{\\rtf/i.test(text)) {
     out['Inner RTF'] = 'TXT.rtf present';
     const ansicpg = pick(text, /\\ansicpg(\d+)/i); if (ansicpg) out['Code page'] = 'cp' + ansicpg;
@@ -778,7 +778,7 @@ async function parseRtfd(file) {
 }
 
 // ---------- MHTML / MHT web archive ----------
-async function parseMht(file) {
+async function parseMht(file: File) {
   const text = await fileText(file, 4 * 1024 * 1024);
   if (!/Content-Type:\s*multipart\/related/i.test(text) && !/^From:\s*<Saved by/im.test(text)) {
     if (!/MIME-Version:/i.test(text)) return null;
@@ -803,7 +803,7 @@ async function parseMht(file) {
 }
 
 // ---------- WARC (.warc) ----------
-async function parseWarc(file, ext) {
+async function parseWarc(file: File, ext: string) {
   // .warc.gz handled as identification (gz wrapper) unless plain; try plain text.
   if (ext === 'warc.gz' || /\.gz$/i.test((file.name || ''))) {
     return { 'Format': 'Web ARChive (gzip-compressed, .warc.gz)', 'Note': 'Each record is individually gzipped; decompress to enumerate (browser DecompressionStream can inflate per-record).' };
@@ -828,9 +828,9 @@ async function parseWarc(file, ext) {
 }
 
 // ---------- MAFF (.maff) ----------
-async function parseMaff(file) {
+async function parseMaff(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
-  const out = { 'Format': 'Mozilla Archive Format (.maff)' };
+  const out: Row = { 'Format': 'Mozilla Archive Format (.maff)' };
   const rdfName = zip.names().find((n) => /index\.rdf$/i.test(n));
   if (rdfName) {
     const rdf = await zip.text(rdfName);
@@ -850,7 +850,7 @@ async function parseMaff(file) {
 }
 
 // ---------- JATS / NXML journal article ----------
-async function parseJats(file) {
+async function parseJats(file: File) {
   const text = await fileText(file, 6 * 1024 * 1024);
   if (!/<article\b/i.test(text) && !/JATS|journalpublishing/i.test(text)) return null;
   const out: Row = { 'Format': 'JATS journal article XML' };
@@ -872,7 +872,7 @@ async function parseJats(file) {
 }
 
 // ---------- DVI (.dvi) ----------
-async function parseDvi(file) {
+async function parseDvi(file: File) {
   const b = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
   // Preamble opcode 247, then version (2 = standard, 3 = XeTeX).
   if (b[0] !== 0xf7) return null;
@@ -883,7 +883,7 @@ async function parseDvi(file) {
   const mag = r.u32();    // magnification
   const cmtLen = r.u8();
   const comment = ascii(b, 15, cmtLen);
-  const out = {
+  const out: Row = {
     'Format': 'TeX DVI (Device Independent)',
     'DVI version': version + (version === 2 ? ' (standard)' : version === 3 ? ' (XeTeX)' : version === 5 ? ' (pTeX)' : ''),
     'Magnification': (mag / 1000).toFixed(3) + '×',
@@ -897,7 +897,7 @@ async function parseDvi(file) {
 }
 
 // ---------- DITA topic / map (.dita / .ditamap) ----------
-async function parseDita(file, ext) {
+async function parseDita(file: File, ext: string) {
   const text = await fileText(file, 6 * 1024 * 1024);
   if (!/<(?:[\w.-]+:)?(?:dita|topic|concept|task|reference|glossentry|map|bookmap)\b/i.test(text) &&
       !/-\/\/OASIS\/\/DTD DITA/i.test(text)) return null;
@@ -930,7 +930,7 @@ async function parseDita(file, ext) {
 }
 
 // ---------- Scribus document (.sla / .scd) ----------
-async function parseScribus(file, ext) {
+async function parseScribus(file: File, ext: string) {
   // .sla is XML (sometimes gzip-compressed); .scd is the legacy variant.
   let bytes = await readSlice(file, 0, 16 * 1024 * 1024);
   let text;
@@ -940,7 +940,7 @@ async function parseScribus(file, ext) {
   }
   if (!text) text = latin1(bytes.subarray(0, 4 * 1024 * 1024));
   if (!/<SCRIBUSUTF8NEW\b/i.test(text) && !/<SCRIBUS\b/i.test(text)) return null;
-  const out = { 'Format': 'Scribus document (.' + ext + ')' };
+  const out: Row = { 'Format': 'Scribus document (.' + ext + ')' };
   const ver = pick(text, /<SCRIBUSUTF8NEW[^>]*\bVersion="([^"]+)"/i) || pick(text, /<SCRIBUS[^>]*\bVersion="([^"]+)"/i);
   if (ver) out['Scribus version'] = ver;
   // DOCUMENT element carries author/title/page geometry.
@@ -973,7 +973,7 @@ function oleSummary(out, bytes) {
     if (secOff + 8 > bytes.length) return;
     const numProps = dv.getUint32(secOff + 4, true);
     if (numProps > 256) return;
-    const PID = { 2: 'Title', 3: 'Subject', 4: 'Author', 5: 'Keywords', 6: 'Comments', 8: 'Last author' };
+    const PID: Record<number, string> = { 2: 'Title', 3: 'Subject', 4: 'Author', 5: 'Keywords', 6: 'Comments', 8: 'Last author' };
     for (let i = 0; i < numProps; i++) {
       const e = secOff + 8 + i * 8;
       if (e + 8 > bytes.length) break;
@@ -993,7 +993,7 @@ function oleSummary(out, bytes) {
   } catch (_) {}
 }
 
-const OLE_DOC = {
+const OLE_DOC: Record<string, string> = {
   wps: 'Microsoft Works word processor (.wps)',
   wpt: 'Microsoft Works template (.wpt)',
   wri: 'Windows Write (.wri)',
@@ -1002,14 +1002,14 @@ const OLE_DOC = {
   sdc: 'StarOffice 5.x Calc (.sdc)',
   sdd: 'StarOffice 5.x Impress / Draw (.sdd)',
 };
-async function parseOleDoc(file, ext) {
+async function parseOleDoc(file: File, ext: string) {
   // .wri is a flat binary (not CFBF) with a 0x31BE / 0x32BE magic.
   const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
   const isCfbf = head[0] === 0xd0 && head[1] === 0xcf && head[2] === 0x11 && head[3] === 0xe0;
   if (ext === 'wri' && !isCfbf) {
     const w0 = head[0] | (head[1] << 8);
     if (w0 !== 0xbe31 && w0 !== 0xbe32) return null;
-    const out = { 'Format': OLE_DOC.wri };
+    const out: Row = { 'Format': OLE_DOC.wri };
     out['Signature'] = '0x' + w0.toString(16).toUpperCase() + (w0 === 0xbe32 ? ' (with OLE objects)' : ' (text only)');
     // Word count of the document text is at offset 0x60 (fcMac - 0x80 region varies);
     // surface only what is reliable: the magic + a note.
@@ -1019,7 +1019,7 @@ async function parseOleDoc(file, ext) {
   if (!isCfbf) return null;
   let cf; try { ({ openCfbf } = await import('../lib/cfbf.js')); cf = await openCfbf(file); } catch (_) { return null; }
   if (!cf) return null;
-  const out = { 'Format': OLE_DOC[ext] || ('OLE document (.' + ext + ')') };
+  const out: Row = { 'Format': OLE_DOC[ext] || ('OLE document (.' + ext + ')') };
   out['Container'] = 'OLE2 / CFBF v' + cf.version;
   const names = cf.names();
   // Identify the embedded application from characteristic stream names.
@@ -1039,14 +1039,14 @@ async function parseOleDoc(file, ext) {
 }
 
 // ---------- Shanda Bambook ebook (.snb) ----------
-async function parseSnb(file) {
+async function parseSnb(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const names = zip.names();
   if (!names.some((n) => /snbf\//i.test(n)) && !names.some((n) => /^(?:snbf|snbc)/i.test(n))) {
     // Some SNB are not plain ZIP; bail to identification.
     return null;
   }
-  const out = { 'Format': 'Shanda Bambook e-book (.snb)' };
+  const out: Row = { 'Format': 'Shanda Bambook e-book (.snb)' };
   const bookName = names.find((n) => /book\.snbf$/i.test(n)) || names.find((n) => /snbf\/book/i.test(n));
   if (bookName) {
     const xml = await zip.text(bookName);
@@ -1062,14 +1062,14 @@ async function parseSnb(file) {
 }
 
 // ---------- Sony BBeB book (.lrf / .lrx) ----------
-async function parseLrf(file, ext) {
+async function parseLrf(file: File, ext: string) {
   const b = new Uint8Array(await file.slice(0, 0x60).arrayBuffer());
   // Magic: 'L','R','F' as UTF-16LE 'LRF\0' -> bytes 4C 00 52 00 46 00 ...
   // The first 8 bytes are the L/R/F GUID-style signature; check 'L\0R\0F\0'.
   const sigOk = b[0] === 0x4c && b[2] === 0x52 && b[4] === 0x46;
   if (!sigOk && !(b[0] === 0x4c && b[1] === 0x52 && b[2] === 0x46)) return null;
   const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  const out = { 'Format': ext === 'lrx' ? 'Sony BBeB book - DRM (.lrx)' : 'Sony BBeB book (.lrf)' };
+  const out: Row = { 'Format': ext === 'lrx' ? 'Sony BBeB book - DRM (.lrx)' : 'Sony BBeB book (.lrf)' };
   // Version at offset 0x08 (u16 LE).
   const version = dv.getUint16(0x08, true);
   if (version) out['BBeB version'] = version;
@@ -1080,11 +1080,11 @@ async function parseLrf(file, ext) {
 }
 
 // ---------- Psion / EBookwise TCR (.tcr) ----------
-async function parseTcr(file) {
+async function parseTcr(file: File) {
   const b = new Uint8Array(await file.slice(0, 16).arrayBuffer());
   const sig = ascii(b, 0, 8);
   if (sig !== 'BOOKDOUG' && sig !== '!!8-Bit!') return null;
-  const out = { 'Format': 'Psion / EBookwise TCR e-book (.tcr)' };
+  const out: Row = { 'Format': 'Psion / EBookwise TCR e-book (.tcr)' };
   out['Signature'] = sig === 'BOOKDOUG' ? 'BOOKDOUG' : '!!8-Bit!!';
   out['Compression'] = 'PalmDoc-style dictionary (256 entries)';
   out['Note'] = 'Compressed text book; body needs the embedded code dictionary to expand.';
@@ -1092,14 +1092,14 @@ async function parseTcr(file) {
 }
 
 // ---------- FrameMaker (.mif / .fm / .book) ----------
-async function parseFrame(file, ext) {
+async function parseFrame(file: File, ext: string) {
   const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
   const headStr = ascii(head, 0, 16);
   // MIF is text ('<MIFFile N.NN>'); binary .fm/.book start with '<MakerFile'.
   if (/^<MIFFile/i.test(headStr) || ext === 'mif') {
     const text = await fileText(file, 4 * 1024 * 1024);
     if (!/<MIFFile/i.test(text)) return null;
-    const out = { 'Format': 'FrameMaker Interchange Format (.mif)' };
+    const out: Row = { 'Format': 'FrameMaker Interchange Format (.mif)' };
     const ver = pick(text, /<MIFFile\s+([\d.]+)/i); if (ver) out['MIF version'] = ver;
     out['Fonts (PgfFont/Font)'] = countRe(text, /<PgfFont\b|<Font\b/gi) || undefined;
     out['Paragraph formats'] = countRe(text, /<Pgf\b/gi) || undefined;
@@ -1110,7 +1110,7 @@ async function parseFrame(file, ext) {
     return out;
   }
   if (/^<MakerFile/i.test(headStr) || /^<MakerDictionary/i.test(headStr) || /^<MakerScreenFont/i.test(headStr)) {
-    const out = { 'Format': ext === 'book' ? 'FrameMaker book (.book)' : 'FrameMaker binary document (.fm)' };
+    const out: Row = { 'Format': ext === 'book' ? 'FrameMaker book (.book)' : 'FrameMaker binary document (.fm)' };
     const sig = headStr.match(/^<Maker\w+/i);
     if (sig) out['Signature'] = sig[0] + ' ...';
     // Version string follows the signature on the first line, e.g. "<MakerFile 12.0>".
@@ -1126,7 +1126,7 @@ async function parseFrame(file, ext) {
 function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
 
 // ---------- dispatch ----------
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   // Comic books
   cbz: (c) => parseCbz(c.file),
   cbt: (c) => parseCbt(c.file),

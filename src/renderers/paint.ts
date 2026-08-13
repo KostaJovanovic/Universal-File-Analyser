@@ -40,7 +40,7 @@ function parseKraMain(text) {
 }
 
 // Append the embedded preview image as a card with an "analyse this image" hop.
-function appendPreview(resultsEl, bytes, ext, heading) {
+function appendPreview(resultsEl: HTMLElement, bytes, ext: string, heading) {
   const mime = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
   const blob = new Blob([bytes], { type: mime });
   const pcard = el('div', { class: 'anr-card' });
@@ -54,7 +54,7 @@ function appendPreview(resultsEl, bytes, ext, heading) {
   resultsEl.insertBefore(pcard, resultsEl.firstChild);
 }
 
-async function renderKra(file, zip, resultsEl) {
+async function renderKra(file: File, zip, resultsEl: HTMLElement) {
   let main = null;
   const mainEntry = zip.entries.find((e) => /(^|\/)maindoc\.xml$/i.test(e.name));
   if (mainEntry) {
@@ -99,7 +99,7 @@ function findSizeToken(node, seen) {
   return '';
 }
 
-async function renderProcreate(file, zip, resultsEl) {
+async function renderProcreate(file: File, zip, resultsEl: HTMLElement) {
   let size = '';
   const archive = zip.entries.find((e) => /(^|\/)document\.archive$/i.test(e.name));
   if (archive) {
@@ -136,7 +136,7 @@ function b64ToBytes(s) {
   return out;
 }
 
-async function renderPdn(file, resultsEl) {
+async function renderPdn(file: File, resultsEl: HTMLElement) {
   // Header: 'PDN3' (4) + uint24 LE XML length (3) + that many bytes of UTF-8 XML.
   let head;
   try { head = new Uint8Array(await file.slice(0, 7).arrayBuffer()); } catch (_) { head = null; }
@@ -171,7 +171,7 @@ async function renderPdn(file, resultsEl) {
   resultsEl.appendChild(integrityCard(file));
 }
 
-export async function renderPaint(file, resultsEl) {
+export async function renderPaint(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));

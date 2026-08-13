@@ -48,6 +48,8 @@ export const WRECK_FADE = 3; // wreck fade duration, once it begins (on respawn)
 // Power-up catalogue. Each is colour-coded; picked up by flying over it. Weapon
 // power-ups are timed and mutually exclusive (a new one replaces the current);
 // health is instant. Letters keep them readable at small size.
+// Typed as a keyed record (not the literal) because the drop picker, the sandbox
+// panel and the HUD all look entries up by a runtime string.
 export const POWERUP_DEF = {
     health: { color: '#3fb950', letter: '+', label: 'HEALTH' },
     machine: { color: '#e3b341', letter: 'M', label: 'MACHINE GUN', dur: 10 },

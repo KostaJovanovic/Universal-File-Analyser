@@ -32,7 +32,7 @@ let lbUrl = null;
 // Open a carve full-size in the shared photo lightbox. photo.js is imported at
 // click time, not up front: unknown.js is the fallback for files we can't
 // identify and must not pull in the (large) photo module just to list carves.
-function openCarve(file, salvageUrl) {
+function openCarve(file: File, salvageUrl) {
   const prev = lbUrl;
   // A carve the browser couldn't decode was shown from the salvage decoder; the
   // lightbox opens that recovered raster (a data URL, no revoke) rather than the
@@ -47,7 +47,7 @@ function openCarve(file, salvageUrl) {
 
 // Save a carve. The URL is built on click and released afterwards, so a gallery
 // of 48 carves doesn't hold 48 object URLs open for the life of the page.
-function downloadCarve(file) {
+function downloadCarve(file: File) {
   downloadBlob(file.name, file);
 }
 

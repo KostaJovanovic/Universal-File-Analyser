@@ -28,7 +28,7 @@ function live() {
   for (const v of players) if (!v.isConnected) players.delete(v);   // drop detached players
   return [...players];
 }
-function others(self) { return live().filter((v) => v !== self); }
+function others(self: HTMLMediaElement) { return live().filter((v) => v !== self); }
 
 // --- standalone (exclusive) players -----------------------------------------
 // A "loner" is a player that must NOT join the synced group above: it never
@@ -50,7 +50,7 @@ function pauseSynced() {
 }
 
 // Register a <video> as a standalone exclusive preview. Returns an unregister fn.
-export function registerExclusiveVideo(video) {
+export function registerExclusiveVideo(video: HTMLMediaElement) {
   if (!video || loners.has(video)) return () => {};
   loners.add(video);
   const onPlay = () => {
@@ -80,9 +80,9 @@ export function registerExclusiveVideo(video) {
 // pictures that are not on screen.
 const visible = new WeakMap<HTMLMediaElement, boolean>();   // video -> is it in (or near) the viewport
 const pendingTime = new WeakMap<HTMLMediaElement, number>();   // video -> time to adopt when it next appears
-let observer = null;
+let observer: IntersectionObserver|null = null;
 
-function seen(v) {
+function seen(v: HTMLMediaElement) {
   // No IntersectionObserver (very old browser): treat everything as visible, i.e.
   // exactly the old behaviour, rather than silently never playing a follower.
   return typeof IntersectionObserver === 'undefined' ? true : visible.get(v) !== false;
@@ -95,7 +95,7 @@ function transportPlaying() {
   return !!(o && !o.paused);
 }
 
-function watch(video) {
+function watch(video: HTMLMediaElement) {
   if (typeof IntersectionObserver === 'undefined') return;
   if (!observer) {
     observer = new IntersectionObserver((entries) => {
@@ -121,7 +121,7 @@ function watch(video) {
   observer.observe(video);
 }
 
-function unwatch(video) {
+function unwatch(video: HTMLMediaElement) {
   if (observer) try { observer.unobserve(video); } catch (_) {}
   visible.delete(video);
   pendingTime.delete(video);
@@ -129,7 +129,7 @@ function unwatch(video) {
 
 // --- exclusive audio ownership ---------------------------------------------
 // The one synced video allowed to make sound. null until the user starts a clip.
-let audioOwner = null;
+let audioOwner: HTMLMediaElement|null = null;
 let onOwner = null;   // callback so the volume system re-applies level/mute on change
 
 export function getAudioOwner() {
@@ -138,13 +138,13 @@ export function getAudioOwner() {
   if (audioOwner && !audioOwner.isConnected) audioOwner = null;
   return audioOwner;
 }
-export function isSynced(video) { return players.has(video); }
+export function isSynced(video: HTMLMediaElement) { return players.has(video); }
 // Register a callback fired whenever the audio owner changes (the volume system
 // uses it to push the shared level/mute onto the new owner and mute the rest).
 export function onAudioOwner(cb) { onOwner = cb; }
 
 // Make `video` the sole audio source: unmute it, mute every other synced player.
-export function claimAudio(video) {
+export function claimAudio(video: HTMLMediaElement) {
   if (!video || !players.has(video)) return;
   audioOwner = video;
   for (const v of live()) { try { v.muted = (v !== video); } catch (_) {} }
@@ -165,7 +165,7 @@ export function setAudioCompanion(audioEl) {
   if (onOwner) try { onOwner(companion); } catch (_) {}   // let the volume system adopt it
 }
 export function getAudioCompanion() { return companion; }
-function shadow(t, play?) {
+function shadow(t: number, play?: boolean|undefined) {
   if (!companion) return;
   if (isFinite(t) && Math.abs(companion.currentTime - t) > 0.15) { try { companion.currentTime = t; } catch (_) {} }
   if (play === true) { if (companion.paused) { const p = companion.play(); if (p && p.catch) p.catch(() => {}); } }
@@ -174,7 +174,7 @@ function shadow(t, play?) {
 
 // Push src's time onto target, but only if meaningfully different, and tag the
 // resulting 'seeking' as an echo so it isn't propagated back.
-function pushTime(target, t) {
+function pushTime(target: HTMLMediaElement, t: number) {
   if (!isFinite(t) || Math.abs(target.currentTime - t) < 0.06) return;
   target.__syncSeek = (target.__syncSeek || 0) + 1;
   try { target.currentTime = t; } catch (_) { target.__syncSeek = Math.max(0, (target.__syncSeek || 1) - 1); }
@@ -182,7 +182,7 @@ function pushTime(target, t) {
 
 // Register a <video> so it stays in sync with every other registered player.
 // Returns an unregister function. Safe to call more than once per element.
-export function registerSyncedVideo(video) {
+export function registerSyncedVideo(video: HTMLMediaElement) {
   if (!video || players.has(video)) return () => {};
   live();                       // prune stale entries from previous analyses
   players.add(video);

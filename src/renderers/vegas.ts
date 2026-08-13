@@ -132,7 +132,7 @@ function parseVegas(buf) {
     genInstances: generators.reduce((n, g) => n + g.count, 0) };
 }
 
-export async function renderVegas(file, resultsEl) {
+export async function renderVegas(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));

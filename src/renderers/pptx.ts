@@ -56,7 +56,7 @@ function resolveRel(basePath, target) {
   return out.join('/');
 }
 
-export async function renderPptx(file, resultsEl) {
+export async function renderPptx(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading presentation "${file.name}"…`));

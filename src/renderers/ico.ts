@@ -12,7 +12,7 @@ import { buildEmbeddedImagesCard } from './embedded-images.js';
 // { type /* 1 icon, 2 cursor */, entries:[{ w, h, bitCount, colorCount, planes,
 // bytesInRes, imageOffset, isPng, blob /* 1-entry .ico */, png /* Blob|null */ }] }
 // or null if the bytes aren't a valid ICO/CUR.
-export function parseIcoEntries(buf) {
+export function parseIcoEntries(buf: ArrayBuffer | null | undefined) {
   if (!buf || buf.byteLength < 6) return null;
   const dv = new DataView(buf);
   const bytes = new Uint8Array(buf);
@@ -65,7 +65,7 @@ export function parseIcoEntries(buf) {
 }
 
 // Build the "Embedded images" card for an ICO/CUR, or null if not one.
-export async function buildIcoImagesCard(file, signal, resultsEl) {
+export async function buildIcoImagesCard(file: File, signal: AbortSignal | null | undefined, resultsEl: HTMLElement) {
   let parsed = null;
   try { parsed = parseIcoEntries(await file.arrayBuffer()); } catch (_) { parsed = null; }
   if (!parsed) return null;

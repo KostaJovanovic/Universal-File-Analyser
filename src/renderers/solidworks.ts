@@ -19,21 +19,26 @@
 import { el, row, rowHelp, h3help, fmtBytes, integrityCard } from '../core/util.js';
 import { openCfbf } from '../lib/cfbf.js';
 
-const KIND_LABEL = {
+/** A preview image lifted out of the file: the bytes plus what they decode as. */
+interface SwPreview { bytes: Uint8Array; mime: string; }
+/** Just the field of a CFBF directory entry the predicates below look at. */
+interface CfEntryName { name: string; }
+
+const KIND_LABEL: Record<string, string> = {
   sldprt: 'SolidWorks part',
   sldasm: 'SolidWorks assembly',
   slddrw: 'SolidWorks drawing',
 };
-function swLabel(ext) { return KIND_LABEL[(ext || '').toLowerCase()] || 'SolidWorks document'; }
+function swLabel(ext: string) { return KIND_LABEL[(ext || '').toLowerCase()] || 'SolidWorks document'; }
 
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-function isPng(b) { return b && b.length > 8 && PNG_MAGIC.every((v, i) => b[i] === v); }
+function isPng(b: Uint8Array | null | undefined) { return b && b.length > 8 && PNG_MAGIC.every((v, i) => b[i] === v); }
 
-function decodeLpwstr(bytes) { try { return new TextDecoder('utf-16le').decode(bytes).replace(/\0+$/, '').trim(); } catch (_) { return ''; } }
-function decodeLpstr(bytes) { try { return new TextDecoder('latin1').decode(bytes).replace(/\0+$/, '').trim(); } catch (_) { return ''; } }
+function decodeLpwstr(bytes: Uint8Array) { try { return new TextDecoder('utf-16le').decode(bytes).replace(/\0+$/, '').trim(); } catch (_) { return ''; } }
+function decodeLpstr(bytes: Uint8Array) { try { return new TextDecoder('latin1').decode(bytes).replace(/\0+$/, '').trim(); } catch (_) { return ''; } }
 
 // FILETIME (100ns ticks since 1601-01-01 UTC) -> a readable date, or '' if absurd.
-function filetimeToDate(lo, hi) {
+function filetimeToDate(lo: number, hi: number) {
   const ticks = hi * 0x100000000 + lo;
   if (!ticks) return '';
   const ms = ticks / 10000 - 11644473600000;
@@ -44,7 +49,7 @@ function filetimeToDate(lo, hi) {
 
 // A clipboard DIB (BITMAPINFOHEADER + palette + pixels, no 14-byte file header)
 // needs that header prepended to be a viewable .bmp. Returns null if implausible.
-function dibToBmp(dib) {
+function dibToBmp(dib: Uint8Array | null | undefined) {
   try {
     if (!dib || dib.length < 44) return null;
     const dv = new DataView(dib.buffer, dib.byteOffset, dib.byteLength);
@@ -67,8 +72,8 @@ function dibToBmp(dib) {
 // Decode the SummaryInformation property set: text fields, save/create dates, and
 // the thumbnail (PIDSI_THUMBNAIL, VT_CF). Mirrors the property-table walk used for
 // legacy Office (parsers-docs.js oleSummary), extended for FILETIME + VT_CF.
-function parseSummary(bytes) {
-  const out = { fields: {}, thumb: null };
+function parseSummary(bytes: Uint8Array | null) {
+  const out: { fields: Record<string, string>; thumb: SwPreview | null } = { fields: {}, thumb: null };
   if (!bytes || bytes.length < 48) return out;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   try {
@@ -77,7 +82,7 @@ function parseSummary(bytes) {
     if (secOff + 8 > bytes.length) return out;
     const numProps = dv.getUint32(secOff + 4, true);
     if (numProps > 256) return out;
-    const PID = { 2: 'Title', 3: 'Subject', 4: 'Author', 5: 'Keywords', 6: 'Comments', 8: 'Last saved by', 9: 'Revision', 12: 'Created', 13: 'Last saved' };
+    const PID: Record<number, string> = { 2: 'Title', 3: 'Subject', 4: 'Author', 5: 'Keywords', 6: 'Comments', 8: 'Last saved by', 9: 'Revision', 12: 'Created', 13: 'Last saved' };
     for (let i = 0; i < numProps; i++) {
       const e = secOff + 8 + i * 8;
       if (e + 8 > bytes.length) break;
@@ -120,7 +125,7 @@ function parseSummary(bytes) {
 
 // Append the geometry note + integrity card, the parts every SolidWorks readout
 // ends with regardless of era.
-function appendTail(file, resultsEl, encrypted) {
+function appendTail(file: File, resultsEl: HTMLElement, encrypted: boolean) {
   const note = el('div', { class: 'anr-card' });
   const [nh, nhelp] = h3help('About the geometry', encrypted
     ? 'This is a modern (2015 or newer) SolidWorks file: its contents are encrypted with Dassault Systemes’ proprietary scheme, so neither the model, the metadata nor the preview thumbnail can be read outside SolidWorks.'
@@ -132,7 +137,7 @@ function appendTail(file, resultsEl, encrypted) {
   resultsEl.appendChild(integrityCard(file));
 }
 
-export async function renderSolidworks(file, resultsEl) {
+export async function renderSolidworks(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;   // the results container starts hidden (clearResultsUI)
   const ext = (file.name.split('.').pop() || '').toLowerCase();
   const label = swLabel(ext);
@@ -162,8 +167,8 @@ export async function renderSolidworks(file, resultsEl) {
   // Older OLE2 file: read metadata + preview.
   t.appendChild(rowHelp('Container', 'OLE2 / CFBF v' + cf.version,
     'The underlying file structure that stores the SolidWorks document - an OLE2 / Compound File Binary container, the same wrapper older Microsoft Office files use.'));
-  const sumStream = cf.readStream((e) => /SummaryInformation$/i.test(e.name) && !/Document/i.test(e.name));
-  const sum = sumStream ? parseSummary(sumStream) : { fields: {}, thumb: null };
+  const sumStream = cf.readStream((e: CfEntryName) => /SummaryInformation$/i.test(e.name) && !/Document/i.test(e.name));
+  const sum = sumStream ? parseSummary(sumStream) : { fields: {} as Record<string, string>, thumb: null as SwPreview | null };
   for (const [k, v] of Object.entries(sum.fields)) t.appendChild(row(k, v));
   t.appendChild(rowHelp('Streams', String(cf.entries.filter((e) => e.type === 2).length), 'The number of separate data streams stored inside the file’s OLE2 container. Each stream holds one part of the document - metadata, the preview image, geometry and so on - a bit like files inside a folder.'));
   t.appendChild(row('File size', fmtBytes(file.size)));
@@ -172,8 +177,8 @@ export async function renderSolidworks(file, resultsEl) {
 
   // Preview: a dedicated PreviewPNG stream wins; otherwise the SummaryInformation
   // thumbnail (PNG or a reconstructed BMP).
-  let preview = null;
-  const pngStream = cf.readStream((e) => /^PreviewPNG$/i.test(e.name) || /Preview.*PNG$/i.test(e.name));
+  let preview: SwPreview | null = null;
+  const pngStream = cf.readStream((e: CfEntryName) => /^PreviewPNG$/i.test(e.name) || /Preview.*PNG$/i.test(e.name));
   if (pngStream && isPng(pngStream)) preview = { bytes: pngStream, mime: 'image/png' };
   else if (sum.thumb) preview = sum.thumb;
 
@@ -181,7 +186,9 @@ export async function renderSolidworks(file, resultsEl) {
     const pv = el('div', { class: 'anr-card' });
     const [ph, phelp] = h3help('Preview', 'The thumbnail image SolidWorks saved inside the file, so it can be shown without opening the full model.');
     pv.appendChild(ph); pv.appendChild(phelp);
-    const url = URL.createObjectURL(new Blob([preview.bytes], { type: preview.mime }));
+    // Cast only: these bytes always come from a File read, never shared memory,
+    // so the ArrayBufferLike backing store is an ArrayBuffer in practice.
+    const url = URL.createObjectURL(new Blob([preview.bytes as BlobPart], { type: preview.mime }));
     const img = el('img', {
       src: url, alt: label + ' preview', loading: 'lazy',
       style: 'max-width:100%; height:auto; border:1px solid var(--rule); background:var(--surface);',

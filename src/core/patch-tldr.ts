@@ -675,7 +675,7 @@ const PATCH_DIGEST_NEW = [
 // Render a digest note: HTML-escape it, then turn **keyword** into
 // <strong>keyword</strong>. Content is author-controlled static text, but the
 // escape keeps any stray <, > or & literal before the emphasis pass runs.
-function emphasise(text) {
+function emphasise(text: string) {
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
 }

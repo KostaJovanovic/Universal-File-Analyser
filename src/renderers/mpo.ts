@@ -10,7 +10,7 @@ import { buildEmbeddedImagesCard } from './embedded-images.js';
 
 // Read width/height from a JPEG's SOF marker within [start,end). Returns
 // { w, h } or null.
-function jpegDims(bytes, start, end) {
+function jpegDims(bytes: Uint8Array, start: number, end: number) {
   let p = start + 2;                              // skip SOI
   while (p + 4 < end) {
     if (bytes[p] !== 0xFF) { p++; continue; }
@@ -35,7 +35,7 @@ function jpegDims(bytes, start, end) {
 
 // Parse the MPF index. Returns an array of { offset, size } (file-absolute byte
 // ranges of each embedded JPEG) with two or more entries, or null.
-export function parseMpfEntries(buf) {
+export function parseMpfEntries(buf: ArrayBuffer) {
   const bytes = new Uint8Array(buf);
   const n = bytes.length;
   if (n < 4 || bytes[0] !== 0xFF || bytes[1] !== 0xD8) return null;
@@ -104,11 +104,12 @@ export function parseMpfEntries(buf) {
 }
 
 // Build the "Embedded images" card for an MPO / multi-picture JPEG, or null.
-export async function buildMpoImagesCard(file, signal, resultsEl) {
-  let ranges = null, buf = null;
+export async function buildMpoImagesCard(file: File, signal: AbortSignal | null | undefined, resultsEl: HTMLElement) {
+  let ranges: { offset: number; size: number }[] | null = null;
+  let buf: ArrayBuffer | null = null;
   try { buf = await file.arrayBuffer(); ranges = parseMpfEntries(buf); } catch (_) { ranges = null; }
   if (!ranges) return null;
-  const bytes = new Uint8Array(buf);
+  const bytes = new Uint8Array(buf!);
   const baseName = (file.name || 'image').replace(/\.[^/.]+$/, '');
 
   const items = ranges.map((r, i) => {

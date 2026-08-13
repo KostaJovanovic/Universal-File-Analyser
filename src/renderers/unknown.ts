@@ -207,7 +207,7 @@ function formatXml(node, indent) {
   return out;
 }
 
-export async function renderUnknown(file, resultsEl, opts) {
+export async function renderUnknown(file: File, resultsEl: HTMLElement, opts) {
   opts = opts || {};
   // "Extensionless" mode: a file with no extension that didn't match any magic
   // route. Same inspector, but framed as an expected category (shown as text,
@@ -517,7 +517,7 @@ export async function renderUnknown(file, resultsEl, opts) {
 // reports the mean/range with a plain-language assessment. Reads up to a cap so a
 // huge blob can't blow the heap.
 const ENTROPY_SCAN_CAP = SCAN_MED;
-async function appendEntropyCard(file, resultsEl) {
+async function appendEntropyCard(file: File, resultsEl: HTMLElement) {
   if (file.size < 256) return;   // too small for a meaningful profile
   let bytes;
   try { bytes = new Uint8Array(await file.slice(0, Math.min(file.size, ENTROPY_SCAN_CAP)).arrayBuffer()); }
@@ -584,7 +584,7 @@ const CARVE_MIME = { jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', web
 // `host` is an empty div already sitting in the right place in the results, so
 // the card can be filled in late without the page reordering under the reader.
 // `resultsEl` stays the target for the drill-in when an Analyse button is used.
-async function appendEmbeddedImagesCard(file, resultsEl, host) {
+async function appendEmbeddedImagesCard(file: File, resultsEl: HTMLElement, host) {
   const bytes = new Uint8Array(await file.slice(0, Math.min(file.size, CARVE_SCAN_CAP)).arrayBuffer());
   const carved = carveImages(bytes, { max: 48 });
   if (!carved.length) return;

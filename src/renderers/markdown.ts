@@ -298,7 +298,7 @@ function mdToHtml(md) {
 }
 
 // ---------- entry point ----------
-export async function renderMarkdown(file, resultsEl) {
+export async function renderMarkdown(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Rendering "${file.name}"…`));

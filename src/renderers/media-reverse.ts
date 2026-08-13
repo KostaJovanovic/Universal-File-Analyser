@@ -11,11 +11,11 @@
 
 import { encodeWav } from './video-avi.js';
 
-let _ac = null;
-function ac() { return _ac || (_ac = new (window.AudioContext || window.webkitAudioContext)()); }
+let _ac: AudioContext | null = null;
+function ac() { return _ac || (_ac = new (window.AudioContext || window.webkitAudioContext!)()); }
 
 // Reverse every channel of an AudioBuffer and return the result as a WAV Blob.
-export function reverseAudioBufferToWav(audioBuffer) {
+export function reverseAudioBufferToWav(audioBuffer: AudioBuffer) {
   const ch = audioBuffer.numberOfChannels, len = audioBuffer.length, sr = audioBuffer.sampleRate;
   const out = ac().createBuffer(ch, len, sr);
   for (let c = 0; c < ch; c++) {

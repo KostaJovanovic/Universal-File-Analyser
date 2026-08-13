@@ -21,7 +21,7 @@ const MAX_DICT = 128 * 1024 * 1024;     // 128 MB dictionary window
 // Decompress a legacy .lzma byte buffer. Returns the decompressed Uint8Array, or
 // null on any failure (unsupported, corrupt, over a cap, or load error) so the
 // caller can fall back to header-only identification.
-export async function lzmaDecompress(bytes) {
+export async function lzmaDecompress(bytes: Uint8Array) {
   try {
     if (!(window.LZMA && window.LZMA.Decoder)) {
       await loadScript('assets/vendor/lzma/lzma-decode.js');
@@ -44,14 +44,14 @@ export async function lzmaDecompress(bytes) {
     // Output stream: collect window flushes (the WASM-free core reuses one window
     // buffer, so each chunk must be copied) and enforce the output cap.
     let total = 0;
-    const chunks = [];
+    const chunks: Uint8Array[] = [];
     const outStream = {
-      writeBytes(buf, len) {
+      writeBytes(buf: string|any[], len: number) {
         if (total + len > MAX_OUTPUT) throw new Error('lzma output too large');
         chunks.push(buf.slice(0, len));
         total += len;
       },
-      writeByte(b) {
+      writeByte(b: number) {
         if (total + 1 > MAX_OUTPUT) throw new Error('lzma output too large');
         chunks.push(new Uint8Array([b]));
         total += 1;

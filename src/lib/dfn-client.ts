@@ -12,7 +12,7 @@ import { DFN_SR } from './dfn-enhance.js';
 
 const STALL_MS = 5 * 60 * 1000;
 const RUNTIME_STALL_MS = 2 * 60 * 1000;
-let worker = null;
+let worker: Worker|null = null;
 let jobSeq = 0;
 let jobQueue: Promise<unknown> = Promise.resolve();
 
@@ -37,7 +37,7 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 
 // Resample to 48 kHz (stereo, or mono if that's all there is) via an
 // OfflineAudioContext, returning detachable Float32Array channels.
-async function toModelChannels(audioBuffer, signal) {
+async function toModelChannels(audioBuffer: AudioBuffer|null, signal) {
   throwIfAborted(signal);
   const nCh = Math.min(2, audioBuffer.numberOfChannels);
   if (audioBuffer.sampleRate === DFN_SR) {
@@ -73,7 +73,7 @@ export interface DenoiseResult {
   sampleRate: number;
 }
 
-function runWorker(channels, sampleRate, { onProgress, signal }): Promise<DenoiseResult> {
+function runWorker(channels: any[], sampleRate: number, { onProgress, signal }): Promise<DenoiseResult> {
   const w = getWorker();
   const jobId = ++jobSeq;
   return new Promise<DenoiseResult>((resolve, reject) => {
@@ -91,17 +91,17 @@ function runWorker(channels, sampleRate, { onProgress, signal }): Promise<Denois
       w.removeEventListener('messageerror', onMessageError);
       if (signal) signal.removeEventListener('abort', onAbort);
     };
-    const finish = (fn, value) => {
+    const finish = (fn, value: DOMException) => {
       if (settled) return;
       settled = true;
       cleanup();
       fn(value);
     };
-    const failWorker = (err) => {
+    const failWorker = (err: Error) => {
       detachWorker();
       finish(reject, err);
     };
-    const armStallTimer = (phase) => {
+    const armStallTimer = (phase: string) => {
       clearTimeout(stallTimer);
       stallTimer = setTimeout(() => failWorker(
         new Error('Denoise worker stopped responding during model initialisation or processing')
@@ -150,7 +150,7 @@ function runWorker(channels, sampleRate, { onProgress, signal }): Promise<Denois
  * @param {{ onProgress?: (phase:'model'|'model-cache'|'cache'|'cache-warning'|'runtime'|'infer', frac:number)=>void, signal?: AbortSignal }} [opts]
  * @returns {Promise<{ clean: Float32Array[], noise: Float32Array[], sampleRate: number }>}
  */
-export function enhanceAudio(audioBuffer, { onProgress, signal } : any = {}) {
+export function enhanceAudio(audioBuffer: AudioBuffer|null, { onProgress, signal } : any = {}) {
   return enqueue(async () => {
     throwIfAborted(signal);
     const { channels, sampleRate } = await toModelChannels(audioBuffer, signal);

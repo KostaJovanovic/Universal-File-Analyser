@@ -11,12 +11,12 @@
 import { Reader } from '../core/binutil.js';
 
 // ---------- XML plist ----------
-function parseXmlPlist(text) {
+function parseXmlPlist(text: string) {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror')) return null;
   const root = doc.querySelector('plist > *') || doc.querySelector('plist');
   if (!root) return null;
-  const node = (el) => {
+  const node = (el: Element) => {
     switch (el.tagName) {
       case 'dict': {
         const o: any = {};
@@ -41,19 +41,19 @@ function parseXmlPlist(text) {
 }
 
 // ---------- binary plist (bplist00) ----------
-function parseBinaryPlist(bytes) {
+function parseBinaryPlist(bytes: Uint8Array|null) {
   if (bytes.length < 40) return null;
   const r = new Reader(bytes);          // big-endian
   // trailer: last 32 bytes
   const tStart = bytes.length - 32;
   const offsetSize = bytes[tStart + 6];
   const objRefSize = bytes[tStart + 7];
-  const readBE = (off, size) => { let v = 0; for (let i = 0; i < size; i++) v = v * 256 + bytes[off + i]; return v; };
+  const readBE = (off: number, size: number) => { let v = 0; for (let i = 0; i < size; i++) v = v * 256 + bytes[off + i]; return v; };
   const numObjects = readBE(tStart + 8, 8);
   const topObject = readBE(tStart + 16, 8);
   const offTableOff = readBE(tStart + 24, 8);
   if (numObjects > 5_000_000) return null;   // sanity guard
-  const offsets = [];
+  const offsets: number[] = [];
   for (let i = 0; i < numObjects; i++) offsets.push(readBE(offTableOff + i * offsetSize, offsetSize));
 
   // Cycle guard + memoisation. bplist allows the same object to be referenced
@@ -62,7 +62,7 @@ function parseBinaryPlist(bytes) {
   // re-expansion, and track in-progress indices to break true reference cycles.
   const memo = new Map();
   const inProgress = new Set();
-  function obj(index) {
+  function obj(index: unknown) {
     if (index >= offsets.length || inProgress.has(index)) return null;
     if (memo.has(index)) return memo.get(index);
     inProgress.add(index);
@@ -71,7 +71,7 @@ function parseBinaryPlist(bytes) {
     memo.set(index, result);
     return result;
   }
-  function build(index) {
+  function build(index: string|number) {
     let p = offsets[index];
     const marker = bytes[p++];
     const type = marker >> 4, info = marker & 0x0f;
@@ -114,7 +114,7 @@ function parseBinaryPlist(bytes) {
 
 // Parse a File (or Uint8Array) into a plist value tree. Returns
 // { format: 'xml' | 'binary', value } or null.
-export async function parsePlist(input) {
+export async function parsePlist(input: Uint8Array|Blob) {
   let bytes;
   if (input instanceof Uint8Array) bytes = input;
   else bytes = new Uint8Array(await input.arrayBuffer());

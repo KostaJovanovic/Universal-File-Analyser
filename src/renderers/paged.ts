@@ -21,6 +21,42 @@
 
 import { el, row, openOverlayBack } from '../core/util.js';
 
+/** Layout knobs for paginateFlow / paginateText. `mono` is read by
+    paginateText only; the rest are passed straight through. */
+export interface PaginateOpts {
+  pageHeight?: number;
+  maxPages?: number;
+  mono?: boolean;
+}
+
+/** Options for pagedPreviewCard / pagedTextCard. */
+export interface PagedCardOpts {
+  title?: string;
+  label?: string;
+  initial?: number;
+  batch?: number;
+}
+
+/** Options for pagePreviewSkeleton. */
+export interface SkeletonOpts {
+  title?: string;
+  note?: string;
+  count?: number;
+}
+
+/** The document lightbox overlay, plus the handles it hangs off itself so the
+    keyboard/toolbar wiring built once can be driven on every later open. */
+interface DocOverlay extends HTMLDivElement {
+  _hide: () => void;
+  _close: () => void;
+  _backClose: (() => void) | null;
+  _resetZoom: () => void;
+  _toggleZoom: (clientX: number, clientY: number) => void;
+  _prev?: () => void;
+  _next?: () => void;
+  _zoomBtn?: HTMLButtonElement;
+}
+
 // A4 at ~96dpi is 794x1123; we trim to a slightly narrower sheet that reads
 // well inside a card and still keeps the 1:1.414 proportion.
 export const PAGE_W = 760;
@@ -28,7 +64,7 @@ export const PAGE_H = 1075;
 
 // Build an empty A4 page sheet. `variant` tweaks the look ('slide' = landscape
 // presentation page, 'sheet' = spreadsheet page that may grow tall).
-export function makePage(variant?) {
+export function makePage(variant?: string) {
   const p = el('div', { class: 'anr-page' + (variant ? ' anr-page--' + variant : '') });
   return p;
 }
@@ -36,7 +72,7 @@ export function makePage(variant?) {
 // Lay flowing block content onto page sheets. Mutates contentEl (moves its
 // children into the returned pages), so callers must read any whole-document
 // text BEFORE calling this.
-export function paginateFlow(contentEl, opts: any = {}) {
+export function paginateFlow(contentEl: Element, opts: PaginateOpts = {}) {
   const pageH = opts.pageHeight || PAGE_H;
   const maxPages = opts.maxPages || 600;
 
@@ -46,9 +82,9 @@ export function paginateFlow(contentEl, opts: any = {}) {
   });
   document.body.appendChild(host);
 
-  const pages = [];
-  const blocks = Array.from<HTMLElement>(contentEl.children);
-  let page = makePage();
+  const pages: HTMLDivElement[] = [];
+  const blocks = Array.from<HTMLElement>(contentEl.children as HTMLCollectionOf<HTMLElement>);
+  let page: HTMLDivElement | null = makePage();
   // Declared out here so the catch below can rescue anything left inside it -
   // the blocks live in this sheet until they are dealt out, so letting it go
   // down with the host on an error would lose the document rather than
@@ -79,7 +115,7 @@ export function paginateFlow(contentEl, opts: any = {}) {
     // scrollHeight used to be compared against pageH including padding, so the
     // usable content height is the sheet minus its own padding.
     const capacity = Math.max(50, pageH - padV);
-    const tops = [], heights = [];
+    const tops: number[] = [], heights: number[] = [];
     for (const b of blocks) { tops.push(b.offsetTop); heights.push(b.offsetHeight); }
     // --- write pass ---
 
@@ -87,13 +123,13 @@ export function paginateFlow(contentEl, opts: any = {}) {
     for (let i = 0; i < blocks.length; i++) {
       // Same rule as before: a block that overflows moves to the next page,
       // unless it is the only thing on this one.
-      if (page.childElementCount > 0 && (tops[i] + heights[i] - pageTop) > capacity + 2) {
-        pages.push(page);
+      if (page!.childElementCount > 0 && (tops[i] + heights[i] - pageTop) > capacity + 2) {
+        pages.push(page!);
         if (pages.length >= maxPages) { page = null; break; }
         page = makePage();
         pageTop = tops[i];
       }
-      page.appendChild(blocks[i]);
+      page!.appendChild(blocks[i]);
     }
   } catch (_) {
     // Fall through with whatever we paginated, keeping any unplaced blocks.
@@ -110,7 +146,7 @@ export function paginateFlow(contentEl, opts: any = {}) {
 // Lay plain text onto page sheets. `mono` keeps source formatting (one block
 // per line, monospace, whitespace preserved); otherwise each line becomes a
 // prose paragraph. Returns page nodes ready for pagedPreviewCard.
-export function paginateText(text, opts: any = {}) {
+export function paginateText(text: unknown, opts: PaginateOpts = {}) {
   const container = document.createElement('div');
   const lines = String(text == null ? '' : text).split('\n');
   if (opts.mono) {
@@ -139,10 +175,13 @@ export function paginateText(text, opts: any = {}) {
 // The amount a double-click / double-tap zooms the page in.
 const DOC_ZOOM = 2;
 
-export function openDocLightbox(pages, startIndex, label) {
-  let overlay = document.getElementById('anr-doc-viewer');
+export function openDocLightbox(pages: HTMLElement[], startIndex: number, label?: string) {
+  // Cast straight to DocOverlay (not `| null`): the very next branch builds it
+  // when it is missing, so every later reference - including the ones inside the
+  // handlers below, where TypeScript cannot follow the narrowing - is non-null.
+  let overlay = document.getElementById('anr-doc-viewer') as DocOverlay;
   if (!overlay) {
-    overlay = el('div', { id: 'anr-doc-viewer', class: 'lightbox anr-doc-lightbox' });
+    overlay = el('div', { id: 'anr-doc-viewer', class: 'lightbox anr-doc-lightbox' }) as DocOverlay;
     const closeBtn = el('button', { type: 'button', class: 'lightbox-close' }, 'Close');
     const center = el('div', { class: 'lightbox-center' });
     const stage = el('div', { class: 'anr-doc-stage' });
@@ -179,7 +218,7 @@ export function openDocLightbox(pages, startIndex, label) {
     // selectable, it just doesn't re-flow) and adds the same scaled overflow to
     // the stage, so the pan math is unchanged. Supported browsers keep `zoom`. ---
     const hasCssZoom = !!(window.CSS && CSS.supports && CSS.supports('zoom', '2'));
-    const applyScale = (sheet, factor) => {
+    const applyScale = (sheet: HTMLElement | null, factor: number) => {
       if (!sheet) return;
       if (!factor || factor === 1) {
         if (hasCssZoom) sheet.style.zoom = '';
@@ -192,9 +231,9 @@ export function openDocLightbox(pages, startIndex, label) {
       }
     };
     let zoomed = false;
-    overlay._resetZoom = () => { zoomed = false; applyScale(stage.firstElementChild, 1); };
-    function toggleZoom(clientX, clientY) {
-      const sheet = stage.firstElementChild;
+    overlay._resetZoom = () => { zoomed = false; applyScale(stage.firstElementChild as HTMLElement | null, 1); };
+    function toggleZoom(clientX: number, clientY: number) {
+      const sheet = stage.firstElementChild as HTMLElement | null;
       if (!sheet) return;
       zoomed = !zoomed;
       if (!zoomed) { applyScale(sheet, 1); return; }
@@ -224,19 +263,19 @@ export function openDocLightbox(pages, startIndex, label) {
     document.body.appendChild(overlay);
   }
 
-  const stage = overlay.querySelector('.anr-doc-stage');
-  const toolbar = overlay.querySelector('.lightbox-toolbar');
-  const meta = overlay.querySelector('.lightbox-meta');
+  const stage = overlay.querySelector<HTMLElement>('.anr-doc-stage')!;
+  const toolbar = overlay.querySelector<HTMLElement>('.lightbox-toolbar')!;
+  const meta = overlay.querySelector<HTMLElement>('.lightbox-meta')!;
   toolbar.innerHTML = '';
 
   let current = startIndex;
-  function show(idx) {
+  function show(idx: number) {
     current = Math.max(0, Math.min(pages.length - 1, idx));
     overlay._resetZoom();
     stage.innerHTML = '';
     stage.scrollTop = 0; stage.scrollLeft = 0;
     // Clone so the inline thumbnail keeps its node; lightbox content is static.
-    const sheet = pages[current].cloneNode(true);
+    const sheet = pages[current].cloneNode(true) as HTMLElement;
     sheet.classList.add('anr-page--lightbox');
     stage.appendChild(sheet);
     meta.textContent = (label || 'Page') + ' ' + (current + 1) + ' / ' + pages.length +
@@ -281,7 +320,7 @@ export function thumbWidth() {
 // One empty page-shaped tile. Grids that aren't the A4 page grid (PPTX slides,
 // comic pages) build their own `.anr-ghost-sheet` div at their own size - the
 // placeholder is a CSS idiom, so it doesn't need to come through here.
-function ghostSheet(w, h) {
+function ghostSheet(w: number, h: number) {
   const box = el('div', { class: 'anr-ghost-sheet' });
   box.style.width = w + 'px';
   box.style.height = h + 'px';
@@ -295,7 +334,7 @@ function ghostSheet(w, h) {
 // when a tall card lands on top of them. Callers keep the returned node and
 // `.replaceWith()` the real card (or the "nothing to preview" one) onto it.
 // opts: { title, note, count }
-export function pagePreviewSkeleton(opts: any = {}) {
+export function pagePreviewSkeleton(opts: SkeletonOpts = {}) {
   const count = Math.max(1, Math.min(opts.count || 4, 12));
   const w = thumbWidth();
   const h = Math.round(w * (PAGE_H / PAGE_W));
@@ -320,7 +359,7 @@ export function pagePreviewSkeleton(opts: any = {}) {
 // Build the "Page previews" card from an array of .anr-page nodes. Pages are
 // revealed in batches so a long document doesn't lay out every sheet up front.
 // opts: { title, label, initial, batch }
-export function pagedPreviewCard(pages, opts: any = {}) {
+export function pagedPreviewCard(pages: HTMLElement[], opts: PagedCardOpts = {}) {
   const title = opts.title || 'Page previews';
   const label = opts.label || 'Page';
   const batch = opts.batch || 12;
@@ -346,7 +385,7 @@ export function pagedPreviewCard(pages, opts: any = {}) {
   card.appendChild(btnRow);
 
   let shown = 0;
-  function addPage(i) {
+  function addPage(i: number) {
     const inner = el('div', { class: 'anr-page-thumb-inner' });
     inner.appendChild(pages[i]);
     const box = el('div', { class: 'anr-page-thumb', title: 'Click to view full size' });
@@ -367,7 +406,7 @@ export function pagedPreviewCard(pages, opts: any = {}) {
     const h = pages[i].offsetHeight || PAGE_H;
     box.style.height = Math.min(Math.round(THUMB_W * 1.6), Math.round(h * scale)) + 'px';
   }
-  function reveal(upTo) {
+  function reveal(upTo: number) {
     for (; shown < upTo && shown < pages.length; shown++) addPage(shown);
     if (shown >= pages.length) {
       btnRow.hidden = true;
@@ -387,7 +426,7 @@ export function pagedPreviewCard(pages, opts: any = {}) {
 // Build a "Text content" card of per-page, selectable + copyable text blocks
 // (the same shape the PDF viewer uses), revealed in batches. `pageTexts` is one
 // string per page. opts: { title, label, initial, batch }
-export function pagedTextCard(pageTexts, opts: any = {}) {
+export function pagedTextCard(pageTexts: string[], opts: PagedCardOpts = {}) {
   const label = opts.label || 'Page';
   const batch = opts.batch || 5;
   const total = pageTexts.length;
@@ -428,7 +467,7 @@ export function pagedTextCard(pageTexts, opts: any = {}) {
   }
 
   let shown = 0;
-  function block(i) {
+  function block(i: number) {
     const b = el('div', { class: 'anr-pagetext-block' });
     const head = el('div', { class: 'anr-pagetext-head' });
     head.appendChild(el('span', { class: 'anr-pagetext-label' }, label + ' ' + (i + 1)));
@@ -448,7 +487,7 @@ export function pagedTextCard(pageTexts, opts: any = {}) {
     b.appendChild(pre);
     wrap.appendChild(b);
   }
-  function reveal(upTo) {
+  function reveal(upTo: number) {
     for (; shown < upTo && shown < total; shown++) block(shown);
     if (shown >= total) { btnRow.hidden = true; }
     else { btnRow.hidden = false; moreBtn.textContent = 'Show next ' + batch + ' (' + shown + '/' + total + ')'; }

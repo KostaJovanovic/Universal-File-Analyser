@@ -11,7 +11,7 @@
 
 import { el, fmtBytes, preBlock, fmtDate, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, cp437, latin1, utf8 } from '../core/binutil.js';
-import type { Row } from '../core/types.js';
+import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- small helpers ----------
 // A monospace block that preserves ASCII art (no wrapping, horizontal scroll).
@@ -51,7 +51,7 @@ function xmlText(doc, sel) {
 }
 
 // ---------- OPML ----------
-async function parseOpml(file) {
+async function parseOpml(file: File) {
   const text = await file.text();
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror') || !doc.querySelector('opml')) return null;
@@ -85,7 +85,7 @@ async function parseOpml(file) {
 }
 
 // ---------- RSS / Atom ----------
-async function parseFeed(file) {
+async function parseFeed(file: File) {
   const text = await file.text();
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror')) return null;
@@ -142,12 +142,12 @@ async function parseFeed(file) {
 }
 
 // ---------- .desktop (freedesktop entry) ----------
-async function parseDesktop(file) {
+async function parseDesktop(file: File) {
   const text = await file.text();
   if (!/\[Desktop Entry\]/.test(text)) return null;
   const { sections } = parseIni(text);
   const e = sections['Desktop Entry'] || {};
-  const out = { 'Format': 'Freedesktop .desktop entry' };
+  const out: Record<string, string> = { 'Format': 'Freedesktop .desktop entry' };
   for (const [k, label] of [['Type', 'Type'], ['Name', 'Name'], ['GenericName', 'Generic name'],
     ['Comment', 'Comment'], ['Exec', 'Exec'], ['TryExec', 'TryExec'], ['Icon', 'Icon'],
     ['Categories', 'Categories'], ['MimeType', 'MIME types'], ['Terminal', 'Terminal'],
@@ -158,7 +158,7 @@ async function parseDesktop(file) {
 }
 
 // ---------- .nfo (CP437 scene art, or XML sidecar) ----------
-async function parseNfo(file) {
+async function parseNfo(file: File) {
   const bytes = await readSlice(file, 0, 2_000_000);
   // Skip a UTF-8/UTF-16 BOM when deciding XML-vs-art.
   let i = 0;
@@ -185,7 +185,7 @@ async function parseNfo(file) {
 }
 
 // ---------- systemd .service unit ----------
-async function parseService(file) {
+async function parseService(file: File) {
   const text = await file.text();
   if (!/\[Unit\]|\[Service\]|\[Install\]/.test(text)) return null;
   const { sections } = parseIni(text);
@@ -210,7 +210,7 @@ async function parseService(file) {
 }
 
 // ---------- .crash / Apple .ips crash report ----------
-async function parseCrash(file) {
+async function parseCrash(file: File) {
   const text = await readText(file, 2_000_000);
   const trimmed = text.replace(/^﻿/, '').trimStart();
 
@@ -295,14 +295,14 @@ function parseTextCrash(text) {
 }
 
 // ---------- .ab Android Backup ----------
-async function parseAb(file) {
+async function parseAb(file: File) {
   const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
   if (ascii(head, 0, 14) !== 'ANDROID BACKUP') return null;
   // Format: 5 newline-terminated text lines: magic, version, compressed flag,
   // encryption algorithm, [encryption params...]. Then the tar payload.
   const text = latin1(head);
   const lines = text.split('\n');
-  const out = { 'Format': 'Android Backup (.ab)' };
+  const out: Row = { 'Format': 'Android Backup (.ab)' };
   const version = lines[1] || '';
   const compressed = lines[2] || '';
   const encryption = lines[3] || '';
@@ -318,7 +318,7 @@ async function parseAb(file) {
 }
 
 // ---------- .job Windows Task Scheduler (legacy v1) ----------
-async function parseJob(file) {
+async function parseJob(file: File) {
   const b = await readSlice(file, 0, 8192);
   if (b.length < 0x44) return null;
   const r = new Reader(b, true); // little-endian
@@ -339,8 +339,8 @@ async function parseJob(file) {
   const status = r.u32();
   const flags = r.u32();
 
-  const PRODUCTS = { 0x0400: 'Windows NT 4.0', 0x0500: 'Windows 2000', 0x0501: 'Windows XP', 0x0600: 'Windows Vista' };
-  const out = {
+  const PRODUCTS: Record<number, string> = { 0x0400: 'Windows NT 4.0', 0x0500: 'Windows 2000', 0x0501: 'Windows XP', 0x0600: 'Windows Vista' };
+  const out: Row = {
     'Format': 'Windows Task Scheduler job (.job v1)',
     'Product version': PRODUCTS[productVersion] || ('0x' + productVersion.toString(16)),
     'File format version': fileVersion,
@@ -379,7 +379,7 @@ async function parseJob(file) {
 }
 
 // ---------- .pol Group Policy Registry.pol ----------
-async function parsePol(file) {
+async function parsePol(file: File) {
   const b = await readSlice(file, 0, 1_000_000);
   // Header: "PReg" (0x67655250 LE) + version u32.
   if (!(b[0] === 0x50 && b[1] === 0x52 && b[2] === 0x65 && b[3] === 0x67)) return null;
@@ -406,7 +406,7 @@ async function parsePol(file) {
 // PostScript-comment header (%!Adobe-FontList <ver>) then one %BeginFont /
 // %EndFont block per font, each a set of Key:Value lines (FontType, FamilyName,
 // OutlineFileName, FileLength, WeightClass, WritingScript, native names, ...).
-async function parseFontList(file) {
+async function parseFontList(file: File) {
   const text = await readText(file, 16_000_000);
   const verM = text.match(/^%!Adobe-FontList\s+([\d.]+)/);
   if (!verM) return null;                                   // not an Adobe font list
@@ -507,7 +507,7 @@ function identSdb() {
 // Android stores app settings as <map> XML (<string>/<int>/<boolean>/<float>
 // children). Google Camera ports (GCam) ship their tuning as .agc files in this
 // exact shape, so read the entry counts by type and the key list.
-async function parseAndroidPrefs(file, ext) {
+async function parseAndroidPrefs(file: File, ext: string) {
   const text = (await file.text()).slice(0, 4_000_000);
   if (!/<map\b/.test(text)) return null;
   const doc = new DOMParser().parseFromString(text, 'application/xml');
@@ -532,10 +532,10 @@ async function parseAndroidPrefs(file, ext) {
 // Knox-encrypted blobs from a Samsung phone backup. .penc (packed encrypted app)
 // has a fixed 00 10 00 10 header; .enc (Secure Folder self item) has none. The
 // payload is AES-encrypted with a device-bound key, so this is identification only.
-async function parseSamsungEncrypted(file, ext) {
+async function parseSamsungEncrypted(file: File, ext: string) {
   const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
   const penc = head[0] === 0x00 && head[1] === 0x10 && head[2] === 0x00 && head[3] === 0x10;
-  const out = {
+  const out: Row = {
     'Format': ext === 'penc'
       ? 'Samsung Secure Folder encrypted package (.penc)'
       : 'Samsung Secure Folder / Smart Switch encrypted item (.' + ext + ')',
@@ -548,7 +548,7 @@ async function parseSamsungEncrypted(file, ext) {
 }
 
 // ---------- Samsung Smart Switch backup container (.bk) ----------
-async function parseSamsungBackup(file) {
+async function parseSamsungBackup(file: File) {
   return {
     'Format': 'Backup container (.bk)',
     'Likely origin': 'Samsung Smart Switch / Kies device backup',
@@ -558,7 +558,7 @@ async function parseSamsungBackup(file) {
 }
 
 // ---------- dispatch ----------
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   opml: (c) => parseOpml(c.file),
   rss: (c) => parseFeed(c.file),
   atom: (c) => parseFeed(c.file),

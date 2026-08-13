@@ -398,7 +398,7 @@ const tcLabel = (t) => { const m = Math.floor(t / 60), s = Math.floor(t % 60), c
 function seekVideo(v, t) {
   return new Promise<void>((res) => { const on = () => { v.removeEventListener('seeked', on); res(); }; v.addEventListener('seeked', on); try { v.currentTime = t; } catch (_) { res(); } });
 }
-async function extractVideoFrames(file, count, maxW) {
+async function extractVideoFrames(file: File, count, maxW) {
   const url = URL.createObjectURL(file);
   const v = document.createElement('video');
   v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
@@ -418,7 +418,7 @@ async function extractVideoFrames(file, count, maxW) {
     return { frames, W, H };
   } finally { URL.revokeObjectURL(url); }
 }
-async function loadImageFrame(file, maxW) {
+async function loadImageFrame(file: Blob, maxW) {
   const bmp = await createImageBitmap(file);
   const scale = Math.min(1, maxW / bmp.width), W = Math.max(1, Math.round(bmp.width * scale)), H = Math.max(1, Math.round(bmp.height * scale));
   const cap = document.createElement('canvas'); cap.width = W; cap.height = H;
@@ -588,7 +588,7 @@ function buildTryout(sample) {
 }
 
 // ------------------------------------------------------------------------------
-export async function renderLut(file, resultsEl) {
+export async function renderLut(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Reading "${file.name}"…`));

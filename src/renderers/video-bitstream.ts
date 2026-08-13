@@ -746,7 +746,7 @@ function parseMkvTrackEntry(b, start, end) {
 // reading the media data) rather than scanning bytes. Returns the same shape as
 // the ISOBMFF moov walk in video.js - { video, audio, durationSec, ... } - plus a
 // full `tracks` list, which Matroska files routinely have several of.
-export async function parseMatroskaTracks(file) {
+export async function parseMatroskaTracks(file: File) {
   if (!file || file.size < 64) return null;
   const head = new Uint8Array(await file.slice(0, Math.min(file.size, 4096)).arrayBuffer());
   if (!(head[0] === 0x1A && head[1] === 0x45 && head[2] === 0xDF && head[3] === 0xA3)) return null;

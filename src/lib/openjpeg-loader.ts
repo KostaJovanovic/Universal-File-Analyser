@@ -27,7 +27,7 @@ import { loadScript } from '../core/util.js';
 const WASM_URL = 'assets/vendor/openjpeg/openjpegwasm.wasm';
 const JS_URL = 'assets/vendor/openjpeg/openjpegwasm.js';
 
-let _modulePromise = null;   // cached Promise<EmscriptenModule>
+let _modulePromise: Promise<any>|null = null;   // cached Promise<EmscriptenModule>
 
 // Lazily load the Emscripten factory and instantiate the module once.
 async function getModule() {
@@ -41,7 +41,7 @@ async function getModule() {
       throw new Error('OpenJPEG factory not found');
     }
     return factory({
-      locateFile: (path) => (path && path.endsWith('.wasm')) ? WASM_URL : path,
+      locateFile: (path: string) => (path && path.endsWith('.wasm')) ? WASM_URL : path,
     });
   })();
   // Don't cache a rejected promise - allow a later retry.
@@ -50,14 +50,14 @@ async function getModule() {
 }
 
 // Scale a single sample from `bitDepth` bits down to 8-bit (0..255).
-function scaleTo8(v, bitDepth) {
+function scaleTo8(v: number, bitDepth: number) {
   if (bitDepth <= 8) return v & 0xff;
   const shift = bitDepth - 8;
   return (v >> shift) & 0xff;
 }
 
 /* Decode a JPEG 2000 codestream/JP2 to RGBA. Returns null on any failure. */
-export async function decodeJ2K(bytes) {
+export async function decodeJ2K(bytes: string|any[]) {
   let decoder = null;
   try {
     if (!bytes || !bytes.length) return null;
@@ -96,9 +96,9 @@ export async function decodeJ2K(bytes) {
     // Read a sample (interleaved layout, little-endian) at sample index `i`.
     let read;
     if (bytesPerSample === 1) {
-      read = (i) => decoded[i];
+      read = (i: string|number) => decoded[i];
     } else {
-      read = (i) => {
+      read = (i: number) => {
         const o = i * bytesPerSample;
         let v = 0;
         for (let k = 0; k < bytesPerSample; k++) v |= decoded[o + k] << (8 * k);

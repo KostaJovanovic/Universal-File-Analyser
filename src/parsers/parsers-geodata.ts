@@ -13,16 +13,16 @@
 import { row, fmtBytes, preBlock } from '../core/util.js';
 import { Reader, ascii, latin1 } from '../core/binutil.js';
 import { sqliteSummary } from '../lib/sqlite.js';
-import type { Row } from '../core/types.js';
+import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- small helpers ----------
 
 // Read up to `max` bytes of the file as text (UTF-8, lossy).
-async function readText(file, max = 1_000_000) {
+async function readText(file: File, max = 1_000_000) {
   return await file.slice(0, Math.min(file.size, max)).text();
 }
 // Read up to `max` bytes of the file as a Uint8Array.
-async function readBytes(file, max) {
+async function readBytes(file: File, max) {
   const n = max == null ? file.size : Math.min(file.size, max);
   return new Uint8Array(await file.slice(0, n).arrayBuffer());
 }
@@ -43,10 +43,10 @@ function topCounts(map, n = 12) {
 // =====================================================================
 //  TopoJSON
 // =====================================================================
-async function parseTopojson(file) {
+async function parseTopojson(file: File) {
   let j; try { j = JSON.parse(await readText(file, 16_000_000)); } catch (_) { return null; }
   if (!j || j.type !== 'Topology' || typeof j.objects !== 'object') return null;
-  const out = { 'Format': 'TopoJSON (D3 topology)' };
+  const out: Row = { 'Format': 'TopoJSON (D3 topology)' };
   const layers = Object.keys(j.objects || {});
   out['Objects / layers'] = layers.length + (layers.length ? ': ' + layers.slice(0, 12).join(', ') : '');
   out['Arcs'] = Array.isArray(j.arcs) ? j.arcs.length.toLocaleString() : 0;
@@ -73,10 +73,10 @@ async function parseTopojson(file) {
 // =====================================================================
 //  OSM XML
 // =====================================================================
-async function parseOsm(file) {
+async function parseOsm(file: File) {
   const text = await readText(file, 8_000_000);
   if (!/<osm\b/.test(text)) return null;
-  const out = { 'Format': 'OpenStreetMap XML' };
+  const out: Row = { 'Format': 'OpenStreetMap XML' };
   const gen = (text.match(/<osm\b[^>]*\bgenerator\s*=\s*"([^"]*)"/) || [])[1];
   const ver = (text.match(/<osm\b[^>]*\bversion\s*=\s*"([^"]*)"/) || [])[1];
   if (ver) out['API version'] = ver;
@@ -102,7 +102,7 @@ async function parseOsm(file) {
 // =====================================================================
 //  Shapefile family
 // =====================================================================
-const SHP_TYPES = {
+const SHP_TYPES: Record<number, string> = {
   0: 'Null', 1: 'Point', 3: 'PolyLine', 5: 'Polygon', 8: 'MultiPoint',
   11: 'PointZ', 13: 'PolyLineZ', 15: 'PolygonZ', 18: 'MultiPointZ',
   21: 'PointM', 23: 'PolyLineM', 25: 'PolygonM', 28: 'MultiPointM', 31: 'MultiPatch',
@@ -124,11 +124,11 @@ function shpHeader(head) {
   return { wordLen, version, shapeType, minX, minY, maxX, maxY, minZ, maxZ, minM, maxM };
 }
 
-async function parseShp(file) {
+async function parseShp(file: File) {
   const head = await readBytes(file, 100);
   const h = shpHeader(head);
   if (!h) return null;
-  const out = {
+  const out: Row = {
     'Format': 'ESRI Shapefile (.shp geometry)',
     'Shape type': (SHP_TYPES[h.shapeType] || 'type ' + h.shapeType),
     'File length': fmtBytes(h.wordLen * 2),
@@ -158,7 +158,7 @@ async function parseShp(file) {
   return out;
 }
 
-async function parseShx(file) {
+async function parseShx(file: File) {
   const head = await readBytes(file, 100);
   const h = shpHeader(head);
   if (!h) return null;
@@ -175,10 +175,10 @@ async function parseShx(file) {
 }
 
 // dBASE field type names.
-const DBF_TYPES = { C: 'Character', N: 'Numeric', F: 'Float', L: 'Logical', D: 'Date', M: 'Memo', B: 'Binary', G: 'General', P: 'Picture', '@': 'Timestamp', I: 'Integer', '+': 'Autoincrement', O: 'Double', T: 'DateTime', Y: 'Currency' };
-const DBF_VERSIONS = { 0x02: 'FoxBASE', 0x03: 'dBASE III+', 0x04: 'dBASE IV', 0x05: 'dBASE V', 0x30: 'Visual FoxPro', 0x31: 'Visual FoxPro (autoinc)', 0x43: 'dBASE IV SQL table', 0x83: 'dBASE III+ with memo', 0x8b: 'dBASE IV with memo', 0xf5: 'FoxPro 2 with memo', 0xfb: 'FoxPro' };
+const DBF_TYPES: Record<string, string> = { C: 'Character', N: 'Numeric', F: 'Float', L: 'Logical', D: 'Date', M: 'Memo', B: 'Binary', G: 'General', P: 'Picture', '@': 'Timestamp', I: 'Integer', '+': 'Autoincrement', O: 'Double', T: 'DateTime', Y: 'Currency' };
+const DBF_VERSIONS: Record<number, string> = { 0x02: 'FoxBASE', 0x03: 'dBASE III+', 0x04: 'dBASE IV', 0x05: 'dBASE V', 0x30: 'Visual FoxPro', 0x31: 'Visual FoxPro (autoinc)', 0x43: 'dBASE IV SQL table', 0x83: 'dBASE III+ with memo', 0x8b: 'dBASE IV with memo', 0xf5: 'FoxPro 2 with memo', 0xfb: 'FoxPro' };
 
-async function parseDbf(file) {
+async function parseDbf(file: File) {
   const head = await readBytes(file, 4096);
   if (head.length < 32) return null;
   const ver = head[0];
@@ -217,7 +217,7 @@ async function parseDbf(file) {
   return out;
 }
 
-async function parsePrj(file) {
+async function parsePrj(file: File) {
   const text = (await readText(file, 64_000)).trim();
   if (!/^(GEOGCS|PROJCS|GEOGCRS|PROJCRS|BOUNDCRS|COMPD_CS|LOCAL_CS|VERTCS|ENGCRS)/i.test(text)) return null;
   const out: Row = { 'Format': 'Projection / WKT CRS (.prj)' };
@@ -241,7 +241,7 @@ async function parsePrj(file) {
   return out;
 }
 
-async function parseCpg(file) {
+async function parseCpg(file: File) {
   const enc = (await readText(file, 256)).trim();
   if (!enc || enc.length > 64 || /[\x00]/.test(enc)) return null;
   return {
@@ -254,7 +254,7 @@ async function parseCpg(file) {
 // =====================================================================
 //  World files (.pgw / .tfw / .jgw / .wld / etc.)
 // =====================================================================
-async function parseWorldFile(file, ext) {
+async function parseWorldFile(file: File, ext: string) {
   const text = (await readText(file, 4096)).trim();
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
   if (lines.length < 6) return null;
@@ -276,12 +276,12 @@ async function parseWorldFile(file, ext) {
 // =====================================================================
 //  GML
 // =====================================================================
-async function parseGml(file) {
+async function parseGml(file: File) {
   const text = await readText(file, 8_000_000);
   if (!/<(?:\w+:)?(?:FeatureCollection|featureMember|gml:|boundedBy)/i.test(text) && !/xmlns[^=]*=["'][^"']*\/gml/i.test(text)) {
     if (!/\bgml\b/i.test(text)) return null;
   }
-  const out = { 'Format': 'Geography Markup Language (GML)' };
+  const out: Row = { 'Format': 'Geography Markup Language (GML)' };
   const members = (text.match(/<(?:\w+:)?featureMember[\s>]/gi) || []).length
     + (text.match(/<(?:\w+:)?member[\s>]/gi) || []).length;
   if (members) out['Feature members'] = members.toLocaleString();
@@ -328,7 +328,7 @@ function nmeaCoord(val, hemi) {
   if (hemi === 'S' || hemi === 'W') dec = -dec;
   return dec;
 }
-async function parseNmea(file) {
+async function parseNmea(file: File) {
   const text = await readText(file, 4_000_000);
   const lines = text.split(/\r?\n/);
   let fixes = 0, csOk = 0, csBad = 0, sats = 0, hdop = null;
@@ -362,7 +362,7 @@ async function parseNmea(file) {
   }
   if (!looksNmea) return null;
   const fmtTime = (t) => t && t.length >= 6 ? t.slice(0, 2) + ':' + t.slice(2, 4) + ':' + t.slice(4, 6) + ' UTC' : (t || '-');
-  const out = {
+  const out: Row = {
     'Format': 'NMEA 0183 GPS log',
     'Sentences': sentences.toLocaleString(),
     'Sentence types': topCounts(seenType, 10),
@@ -389,13 +389,13 @@ function igcCoord(d) {
   let lon = +m[5] + (+m[6] + +m[7] / 1000) / 60; if (m[8] === 'W') lon = -lon;
   return { lat, lon };
 }
-async function parseIgc(file) {
+async function parseIgc(file: File) {
   const text = await readText(file, 8_000_000);
   if (!/^[AHBLG]/m.test(text) || !/\bH[FP]/.test(text) && !/^B\d{6}/m.test(text)) {
     if (!/^B\d{6}\d{7}[NS]/m.test(text)) return null;
   }
   const lines = text.split(/\r?\n/);
-  const out = { 'Format': 'IGC flight log (FAI)' };
+  const out: Row = { 'Format': 'IGC flight log (FAI)' };
   const headers: any = {};
   let bcount = 0, firstT = null, lastT = null;
   let minAlt = Infinity, maxAlt = -Infinity;
@@ -434,7 +434,7 @@ async function parseIgc(file) {
 // =====================================================================
 //  MapInfo TAB / MIF
 // =====================================================================
-async function parseTab(file) {
+async function parseTab(file: File) {
   const text = await readText(file, 256_000);
   if (!/!table/i.test(text) && !/^\s*!version/im.test(text)) return null;
   const out: Row = { 'Format': 'MapInfo TAB' };
@@ -454,10 +454,10 @@ async function parseTab(file) {
   if (links.length) out['Linked files'] = Array.from(new Set(links)).slice(0, 8).join(', ');
   return out;
 }
-async function parseMif(file) {
+async function parseMif(file: File) {
   const text = await readText(file, 4_000_000);
   if (!/\bVersion\b/i.test(text) || !/\b(Columns|CoordSys|Data)\b/i.test(text)) return null;
-  const out = { 'Format': 'MapInfo Interchange (.mif)' };
+  const out: Row = { 'Format': 'MapInfo Interchange (.mif)' };
   const ver = (text.match(/^\s*Version\s+(\d+)/im) || [])[1];
   if (ver) out['Version'] = ver;
   const charset = (text.match(/^\s*Charset\s+"?([\w-]+)"?/im) || [])[1];
@@ -480,7 +480,7 @@ async function parseMif(file) {
 // =====================================================================
 //  GDAL VRT
 // =====================================================================
-async function parseVrt(file) {
+async function parseVrt(file: File) {
   const text = await readText(file, 2_000_000);
   if (!/<VRTDataset\b/.test(text)) return null;
   const out: Row = { 'Format': 'GDAL Virtual Raster (.vrt)' };
@@ -512,14 +512,14 @@ async function parseVrt(file) {
 // =====================================================================
 //  PMTiles
 // =====================================================================
-const PMTILES_TILETYPE = { 0: 'Unknown', 1: 'Mapbox Vector Tile (MVT)', 2: 'PNG', 3: 'JPEG', 4: 'WebP', 5: 'AVIF' };
-async function parsePmtiles(file) {
+const PMTILES_TILETYPE: Record<number, string> = { 0: 'Unknown', 1: 'Mapbox Vector Tile (MVT)', 2: 'PNG', 3: 'JPEG', 4: 'WebP', 5: 'AVIF' };
+async function parsePmtiles(file: File) {
   const b = await readBytes(file, 127);
   if (b.length < 127 || ascii(b, 0, 7) !== 'PMTiles') return null;
   const r = new Reader(b, true);
   r.seek(7);
   const spec = r.u8();
-  const out = { 'Format': 'PMTiles (Protomaps)', 'Spec version': spec };
+  const out: Row = { 'Format': 'PMTiles (Protomaps)', 'Spec version': spec };
   if (spec === 3) {
     r.seek(7 + 1);
     // Skip 8 u64 offset/length pairs (root dir, metadata, leaf dirs, tile data) = 8*8 = ... actually layout:
@@ -546,7 +546,7 @@ async function parsePmtiles(file) {
     out['Clustered'] = clustered ? 'yes' : 'no';
     out['Bounds (lon/lat)'] = fmtBBox(minLonE7 / 1e7, minLatE7 / 1e7, maxLonE7 / 1e7, maxLatE7 / 1e7);
     out['Center'] = fc(centerLonE7 / 1e7) + ', ' + fc(centerLatE7 / 1e7) + ' @ z' + centerZoom;
-    const COMP = { 0: 'unknown', 1: 'none', 2: 'gzip', 3: 'brotli', 4: 'zstd' };
+    const COMP: Record<number, string> = { 0: 'unknown', 1: 'none', 2: 'gzip', 3: 'brotli', 4: 'zstd' };
     out['Compression'] = 'tiles ' + (COMP[tileComp] || tileComp) + ', dirs ' + (COMP[internalComp] || internalComp);
   } else {
     out['Note'] = 'Older PMTiles spec (v' + spec + ') - header layout not decoded';
@@ -566,11 +566,11 @@ function dtedAngle(s) {
   if (m[4] === 'S' || m[4] === 'W') v = -v;
   return v;
 }
-async function parseDted(file) {
+async function parseDted(file: File) {
   const b = await readBytes(file, 3428);
   if (ascii(b, 0, 3) !== 'UHL') return null;
   const txt = latin1(b.subarray(0, 80));
-  const out = { 'Format': 'DTED (Digital Terrain Elevation Data)' };
+  const out: Row = { 'Format': 'DTED (Digital Terrain Elevation Data)' };
   // UHL: bytes 4-12 lon origin, 12-20 lat origin (SW corner).
   const lonOrigin = dtedAngle(latin1(b.subarray(4, 12)));
   const latOrigin = dtedAngle(latin1(b.subarray(12, 20)));
@@ -594,10 +594,10 @@ async function parseDted(file) {
 // =====================================================================
 //  Esri ASCII grid (.asc / .grd)
 // =====================================================================
-async function parseEsriAscii(file) {
+async function parseEsriAscii(file: File) {
   const head = await readText(file, 65_536);
   if (!/^\s*ncols\b/i.test(head)) return null;
-  const out = { 'Format': 'Esri ASCII grid' };
+  const out: Row = { 'Format': 'Esri ASCII grid' };
   const grab = (kw) => { const m = head.match(new RegExp('^\\s*' + kw + '\\s+(\\S+)', 'im')); return m ? m[1] : null; };
   const ncols = +grab('ncols'), nrows = +grab('nrows');
   const cellsize = parseFloat(grab('cellsize'));
@@ -644,9 +644,9 @@ async function parseEsriAscii(file) {
 // =====================================================================
 //  SRTM .hgt
 // =====================================================================
-async function parseHgt(file, fileObj) {
+async function parseHgt(file: File, fileObj) {
   const name = (fileObj && fileObj.name) || '';
-  const out = { 'Format': 'SRTM height tile (.hgt)' };
+  const out: Row = { 'Format': 'SRTM height tile (.hgt)' };
   // Tile origin from filename: e.g. N37W122.hgt -> SW corner of 1°×1° tile.
   const m = name.match(/([NS])(\d{2})([EW])(\d{3})/i);
   if (m) {
@@ -691,7 +691,7 @@ function q(db, sql) {
   } catch (_) { return null; }
 }
 
-async function parseGpkg(file, ext) {
+async function parseGpkg(file: File, ext: string) {
   let summary = null;
   try {
     summary = await sqliteSummary(file);
@@ -768,7 +768,7 @@ async function parseGpkg(file, ext) {
   }
 }
 
-async function parseMbtiles(file, ext) {
+async function parseMbtiles(file: File, ext: string) {
   let summary = null;
   try {
     summary = await sqliteSummary(file);
@@ -816,7 +816,7 @@ async function parseMbtiles(file, ext) {
 // =====================================================================
 //  OSM o5m / o5c (osmconvert binary)
 // =====================================================================
-async function parseO5m(file, ext) {
+async function parseO5m(file: File, ext: string) {
   const b = await readBytes(file, Math.min(file.size, 8_000_000));
   // o5m: 0xFF reset then 0xE0 'o5m2' header; o5c (change) uses the same framing.
   if (b.length < 6 || b[0] !== 0xff) return null;
@@ -826,7 +826,7 @@ async function parseO5m(file, ext) {
     const s = ascii(b, i, 4);
     if (s === 'o5m2' || s === 'o5c2') { magic = s; break; }
   }
-  const out = {
+  const out: Row = {
     'Format': ext === 'o5c'
       ? 'OSM o5c change file (osmconvert binary)'
       : 'OSM o5m binary (osmconvert)',
@@ -857,7 +857,7 @@ async function parseO5m(file, ext) {
 // =====================================================================
 //  Esri Layer files: .lyr (OLE binary) / .lyrx (ArcGIS Pro JSON)
 // =====================================================================
-async function parseLyrx(file) {
+async function parseLyrx(file: File) {
   let j; try { j = JSON.parse(await readText(file, 16_000_000)); } catch (_) { return null; }
   if (!j || typeof j !== 'object') return null;
   // ArcGIS Pro .lyrx documents carry a "version" and a "layerDefinitions" array.
@@ -889,7 +889,7 @@ async function parseLyrx(file) {
   return out;
 }
 
-async function parseLyr(file) {
+async function parseLyr(file: File) {
   const b = await readBytes(file, 64);
   // Esri .lyr is an OLE2 / Compound File: D0 CF 11 E0 A1 B1 1A E1.
   const OLE = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
@@ -906,7 +906,7 @@ async function parseLyr(file) {
 // =====================================================================
 //  QGIS project: .qgs (XML) / .qgz (ZIP wrapping a .qgs)
 // =====================================================================
-async function parseQgs(file) {
+async function parseQgs(file: File) {
   const text = await readText(file, 8_000_000);
   if (!/<qgis\b/i.test(text)) return null;
   const out: Row = { 'Format': 'QGIS project (.qgs, XML)' };
@@ -946,7 +946,7 @@ async function parseQgs(file) {
   return out;
 }
 
-async function parseQgz(file) {
+async function parseQgz(file: File) {
   // .qgz is a ZIP (PK\x03\x04) bundling the .qgs project plus a .qgd attribute DB.
   const b = await readBytes(file, 64);
   if (b.length < 4 || b[0] !== 0x50 || b[1] !== 0x4b) return null;
@@ -961,7 +961,7 @@ async function parseQgz(file) {
 // =====================================================================
 //  Shapefile spatial index: .sbn / .sbx (Esri binary)
 // =====================================================================
-async function parseSbn(file, ext) {
+async function parseSbn(file: File, ext: string) {
   const b = await readBytes(file, 100);
   if (b.length < 32) return null;
   const r = new Reader(b); // big-endian header, like .shp/.shx
@@ -974,7 +974,7 @@ async function parseSbn(file, ext) {
   r.le(true);
   r.seek(36);
   const minX = r.f64(), minY = r.f64(), maxX = r.f64(), maxY = r.f64();
-  const out = {
+  const out: Row = {
     'Format': ext === 'sbx'
       ? 'Shapefile spatial index offsets (.sbx, Esri)'
       : 'Shapefile spatial bin index (.sbn, Esri)',
@@ -992,7 +992,7 @@ async function parseSbn(file, ext) {
 // =====================================================================
 //  GMT / GDAL colour palette table (.cpt)
 // =====================================================================
-async function parseCpt(file) {
+async function parseCpt(file: File) {
   const text = await readText(file, 256_000);
   const lines = text.split(/\r?\n/);
   // A CPT is text: comment/keyword lines (#) plus "z0 r g b z1 r g b" slice rows,
@@ -1023,7 +1023,7 @@ async function parseCpt(file) {
     }
   }
   if (!looksCpt || !slices) return null;
-  const out = {
+  const out: Row = {
     'Format': 'Colour palette table (.cpt, GMT / GDAL)',
     'Colour model': colourModel,
     'Colour slices': slices.toLocaleString(),
@@ -1038,8 +1038,8 @@ async function parseCpt(file) {
 //  ENVI / Esri band-interleaved rasters: .bil / .bip / .bsq
 //  (raw binary bands paired with a text .hdr header sidecar)
 // =====================================================================
-async function parseBandRaster(file, ext) {
-  const INTERLEAVE = {
+async function parseBandRaster(file: File, ext: string) {
+  const INTERLEAVE: Record<string, string> = {
     bil: 'BIL - band interleaved by line',
     bip: 'BIP - band interleaved by pixel',
     bsq: 'BSQ - band sequential',
@@ -1060,8 +1060,8 @@ async function parseBandRaster(file, ext) {
 // =====================================================================
 //  Identification-only (rare AND hard, or needs a SQLite reader)
 // =====================================================================
-function idOnly(file, ext) {
-  const NOTES = {
+function idOnly(file: File, ext: string) {
+  const NOTES: Record<string, string> = {
     grib: 'WMO gridded binary (GRIB1). Edition/centre/message decode needs a GRIB section walker - not yet implemented.',
     grb: 'WMO gridded binary (GRIB1). Edition/centre/message decode needs a GRIB section walker - not yet implemented.',
     grib2: 'WMO GRIB2 gridded binary. Discipline/parameter/grid decode needs a GRIB2 section walker - not yet implemented.',
@@ -1075,7 +1075,7 @@ function idOnly(file, ext) {
     ecw: 'Enhanced Compression Wavelet raster (Hexagon/ERDAS). Decode is proprietary - identification only.',
     gdb: 'Esri File Geodatabase is a folder of .gdbtable members - drop the folder, not a single file.',
   };
-  const NAMES = {
+  const NAMES: Record<string, string> = {
     grib: 'GRIB (WMO gridded binary)', grb: 'GRIB (WMO gridded binary)', grib2: 'GRIB2 (WMO gridded binary)',
     nc: 'NetCDF', cdf: 'NetCDF (classic)', nc4: 'NetCDF-4',
     pbf: 'OSM PBF (protobuf)', gpkg: 'GeoPackage (SQLite)', mbtiles: 'MBTiles (SQLite)',
@@ -1087,7 +1087,7 @@ function idOnly(file, ext) {
 // =====================================================================
 //  dispatch
 // =====================================================================
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   // Full parsers
   topojson: (c) => parseTopojson(c.file),
   osm: (c) => parseOsm(c.file),

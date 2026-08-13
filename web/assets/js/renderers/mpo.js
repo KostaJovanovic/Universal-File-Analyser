@@ -145,7 +145,8 @@ export function parseMpfEntries(buf) {
 }
 // Build the "Embedded images" card for an MPO / multi-picture JPEG, or null.
 export async function buildMpoImagesCard(file, signal, resultsEl) {
-    let ranges = null, buf = null;
+    let ranges = null;
+    let buf = null;
     try {
         buf = await file.arrayBuffer();
         ranges = parseMpfEntries(buf);

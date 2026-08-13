@@ -9,7 +9,7 @@ import { loadScript } from '../core/util.js';
 const OCCT_VERSION = '0.0.23';
 const OCCT_BASE = `https://cdn.jsdelivr.net/npm/occt-import-js@${OCCT_VERSION}/dist/`;
 
-let _occtPromise = null;
+let _occtPromise: Promise<any>|null = null;
 
 // Resolve to the initialised occt module (memoised). The UMD script defines a
 // global `occtimportjs` factory; calling it (with locateFile pointing the loader
@@ -20,7 +20,7 @@ export function loadOcct() {
     await loadScript(OCCT_BASE + 'occt-import-js.js');
     const factory = (typeof self !== 'undefined' && self.occtimportjs) || window.occtimportjs;
     if (typeof factory !== 'function') throw new Error('occt-import-js failed to load');
-    return factory({ locateFile: (path) => OCCT_BASE + path });
+    return factory({ locateFile: (path: string) => OCCT_BASE + path });
   })();
   // Don't cache a failed load - let the next open retry.
   _occtPromise.catch(() => { _occtPromise = null; });

@@ -392,7 +392,7 @@ function scanUrls(bytes, set) {
 
 // ---------- shared shell ----------
 
-function infoCard(file, appLabel, extraRows, links) {
+function infoCard(file: File, appLabel, extraRows, links) {
   const card = el('div', { class: 'anr-card' });
   card.appendChild(el('h3', {}, appLabel));
   card.appendChild(buildReadout([
@@ -415,7 +415,7 @@ function infoCard(file, appLabel, extraRows, links) {
   return card;
 }
 
-export async function renderLegacyOffice(file, container, kind) {
+export async function renderLegacyOffice(file: File, container, kind) {
   container.hidden = false;
   container.innerHTML = '';
   // Ghost sheets stand in while the OLE2 container is opened and its streams are
@@ -492,6 +492,6 @@ export async function renderLegacyOffice(file, container, kind) {
   }
 }
 
-export const renderDoc = (file, container) => renderLegacyOffice(file, container, 'doc');
-export const renderXls = (file, container) => renderLegacyOffice(file, container, 'xls');
-export const renderPpt = (file, container) => renderLegacyOffice(file, container, 'ppt');
+export const renderDoc = (file: File, container) => renderLegacyOffice(file, container, 'doc');
+export const renderXls = (file: File, container) => renderLegacyOffice(file, container, 'xls');
+export const renderPpt = (file: File, container) => renderLegacyOffice(file, container, 'ppt');

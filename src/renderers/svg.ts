@@ -122,7 +122,7 @@ function detectSvgCreator(text) {
   return '';
 }
 
-export async function renderSvg(file, resultsEl) {
+export async function renderSvg(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Inspecting SVG "${file.name}"…`));

@@ -20,7 +20,7 @@ function fmtTime(sec) {
   return m + ':' + s.toFixed(2).padStart(5, '0');
 }
 
-export async function renderLrc(file, resultsEl) {
+export async function renderLrc(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
 

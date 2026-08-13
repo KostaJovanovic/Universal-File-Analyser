@@ -272,7 +272,7 @@ function truncate(s, n = 24) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
-export async function renderCsv(file, resultsEl) {
+export async function renderCsv(file: File, resultsEl: HTMLElement) {
   resultsEl.hidden = false;
   resultsEl.innerHTML = '';
   resultsEl.appendChild(el('div', { class: 'anr-info' }, `Parsing "${file.name}"…`));

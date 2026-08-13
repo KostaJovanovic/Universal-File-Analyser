@@ -33,7 +33,7 @@ const T_UNKNOWN = 0, T_STORAGE = 1, T_STREAM = 2, T_ROOT = 5;
 
 // Coerce the input into a Uint8Array. Accepts a Blob/File, ArrayBuffer or
 // Uint8Array. Returns null if it can't.
-async function toBytes(input) {
+async function toBytes(input: ArrayBuffer|null) {
   try {
     if (input == null) return null;
     if (input instanceof Uint8Array) return input;
@@ -56,7 +56,7 @@ async function toBytes(input) {
    readStream accepts an exact stream name, or a predicate (entry) => boolean for
    matching by path / suffix. It assembles the stream by walking the FAT (or the
    mini-FAT for streams below the 4096-byte cutoff). */
-export async function openCfbf(input) {
+export async function openCfbf(input: File) {
   try {
     const bytes = await toBytes(input);
     if (!bytes || bytes.length < 512) return null;
@@ -66,8 +66,8 @@ export async function openCfbf(input) {
     const MAGIC = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
     for (let i = 0; i < 8; i++) if (bytes[i] !== MAGIC[i]) return null;
 
-    const u32 = (off) => (off + 4 <= bytes.length ? view.getUint32(off, true) >>> 0 : FREESECT);
-    const u16 = (off) => (off + 2 <= bytes.length ? view.getUint16(off, true) : 0);
+    const u32 = (off: number) => (off + 4 <= bytes.length ? view.getUint32(off, true) >>> 0 : FREESECT);
+    const u16 = (off: number) => (off + 2 <= bytes.length ? view.getUint16(off, true) : 0);
 
     const minorVersion  = u16(0x18);
     const majorVersion  = u16(0x1A);
@@ -94,7 +94,7 @@ export async function openCfbf(input) {
 
     // Byte offset of regular sector `id` (sectors are numbered from after the
     // 512-byte header). Returns -1 if out of range.
-    const sectorOffset = (id) => {
+    const sectorOffset = (id: number) => {
       if (id > MAXREGSECT) return -1;
       const off = 512 + id * sectorSize;
       if (off < 0 || off + sectorSize > bytes.length + 1) return -1;
@@ -141,7 +141,7 @@ export async function openCfbf(input) {
 
     // Walk a FAT chain from `start`, returning the ordered list of sector ids.
     // Guarded against loops and runaway lengths.
-    const fatChain = (start, maxSectors) => {
+    const fatChain = (start: number, maxSectors: number|null) => {
       const out = [];
       let s = start >>> 0;
       const seen = new Set();
@@ -157,7 +157,7 @@ export async function openCfbf(input) {
     };
 
     // Read a whole FAT-allocated stream (start sector + byte size) into bytes.
-    const readFatStream = (start, size) => {
+    const readFatStream = (start: number, size: number) => {
       if (size <= 0) return new Uint8Array(0);
       const need = Math.ceil(size / sectorSize);
       const chain = fatChain(start, need + 1);
@@ -194,7 +194,7 @@ export async function openCfbf(input) {
     const dirView = new DataView(dirBytes.buffer, dirBytes.byteOffset, dirBytes.byteLength);
 
     // Parse 128-byte directory entries.
-    const rawEntries = [];
+    const rawEntries: any[] = [];
     const entryCount = Math.floor(dirBytes.length / 128);
     for (let i = 0; i < entryCount; i++) {
       const o = i * 128;
@@ -251,7 +251,7 @@ export async function openCfbf(input) {
     }
 
     // Read a mini-FAT-allocated stream (start mini-sector + size) from the mini-stream.
-    const readMiniStream = (start, size) => {
+    const readMiniStream = (start: number, size: number) => {
       if (size <= 0) return new Uint8Array(0);
       const out = new Uint8Array(size);
       let written = 0;
@@ -283,10 +283,10 @@ export async function openCfbf(input) {
     // ---- build paths via the red-black sibling/child tree ----
     // Each storage's `child` points at the root of a red-black tree of its
     // immediate children (linked by left/right). Walk it to assign full paths.
-    const assignPaths = (nodeIndex, prefix, depth) => {
+    const assignPaths = (nodeIndex: number, prefix: string, depth: number) => {
       if (nodeIndex === NOSTREAM || nodeIndex >= rawEntries.length) return;
       if (depth > rawEntries.length) return;          // safety
-      const visit = (idx, seen) => {
+      const visit = (idx: number, seen: Set<unknown>) => {
         if (idx === NOSTREAM || idx >= rawEntries.length || seen.has(idx)) return;
         seen.add(idx);
         const e = rawEntries[idx];

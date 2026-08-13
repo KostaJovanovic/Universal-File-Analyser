@@ -24,7 +24,7 @@ export const CATEGORY_LABELS = {
   document: 'Document', archive: 'Archive', other: 'Other',
 };
 
-export function categorizeExt(ext) {
+export function categorizeExt(ext: string) {
   if (!ext) return 'other';
   ext = ext.toLowerCase();
   if (PHOTO_EXTS.has(ext) || ext === 'psd' || ext === 'svg') return 'photo';
@@ -85,12 +85,12 @@ export function buildCategoryBreakdown(items) {
 
 const VISIBLE_EXT_COUNT = 5;
 
-function fmtExtRow(ext, data) {
+function fmtExtRow(ext: string, data) {
   const dot = ext === '(no ext)' ? ext : '.' + ext;
   return row(dot, data.count + (data.count === 1 ? ' file' : ' files') + '  (' + fmtBytes(data.size) + ')');
 }
 
-export function renderBreakdownCards(items, resultsEl, extraSummaryRows?) {
+export function renderBreakdownCards(items, resultsEl: HTMLElement, extraSummaryRows?) {
   const breakdown = buildCategoryBreakdown(items);
   const totalSize = items.reduce((s, i) => s + i.size, 0);
 
@@ -179,7 +179,7 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
   // on the right.
   const controls = el('div', { class: 'anr-view-controls' });
   let activeExt = null;
-  const fmtExtLabel = (ext) => ext === '(no ext)' ? ext : '.' + ext;
+  const fmtExtLabel = (ext: string) => ext === '(no ext)' ? ext : '.' + ext;
   const filterBtn = el('button', { type: 'button', class: 'anr-btn anr-btn-sm anr-treemap-filterbtn' }, 'Filter by type');
   function updateFilterBtn() {
     filterBtn.textContent = activeExt ? ('Filter: ' + fmtExtLabel(activeExt)) : 'Filter by type';
@@ -282,7 +282,7 @@ export function renderViewToggle(container, items, treeObj, treeOpts, onFileClic
     currentRO = ro;
   }
 
-  function setFilter(ext) {
+  function setFilter(ext: string) {
     activeExt = ext;
     updateFilterBtn();
     mount();

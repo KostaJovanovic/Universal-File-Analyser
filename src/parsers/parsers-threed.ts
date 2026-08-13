@@ -13,15 +13,16 @@ import { fmtBytes, preBlock } from '../core/util.js';
 import { Reader, ascii, latin1, utf8, utf16, gunzip } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 import { openCfbf } from '../lib/cfbf.js';
+import type { Row, ParseFn } from '../core/types.js';
 
 // ---------- small helpers ----------
 
 // Read the first `n` bytes of a file as a Uint8Array (clamped to file size).
-async function head(file, n) {
+async function head(file: File, n) {
   return new Uint8Array(await file.slice(0, Math.min(file.size, n)).arrayBuffer());
 }
 // Read the first `n` bytes as text.
-async function headText(file, n) {
+async function headText(file: File, n) {
   return file.slice(0, Math.min(file.size, n)).text();
 }
 
@@ -43,7 +44,7 @@ function newBbox() {
 const SAMPLE = 2 * 1024 * 1024;   // bytes scanned for line-based formats / bbox
 
 // ---------- Wavefront OBJ ----------
-async function parseObj(file) {
+async function parseObj(file: File) {
   const text = await headText(file, Math.min(file.size, SAMPLE));
   let v = 0, vn = 0, vt = 0, f = 0;
   const groups = new Set(), objects = new Set(), mtllibs = new Set();
@@ -68,7 +69,7 @@ async function parseObj(file) {
   }
   if (!v && !f) return null;
   const truncated = file.size > SAMPLE;
-  const out = {
+  const out: Row = {
     'Format': 'Wavefront OBJ' + (truncated ? ' (first 2 MB sampled)' : ''),
     'Vertices (v)': v.toLocaleString(),
     'Normals (vn)': vn.toLocaleString(),
@@ -85,7 +86,7 @@ async function parseObj(file) {
 }
 
 // ---------- PLY (Stanford) ----------
-async function parsePly(file) {
+async function parsePly(file: File) {
   const text = await headText(file, 65536);
   if (!/^ply\s/.test(text)) return null;
   const endIdx = text.indexOf('end_header');
@@ -110,10 +111,10 @@ async function parsePly(file) {
       if (name === 'red' || name === 'green' || name === 'blue' || name === 'r' || name === 'g' || name === 'b') hasColor = true;
     }
   }
-  const fmtMap = { ascii: 'ASCII', binary_little_endian: 'binary (little-endian)', binary_big_endian: 'binary (big-endian)' };
+  const fmtMap: Record<string, string> = { ascii: 'ASCII', binary_little_endian: 'binary (little-endian)', binary_big_endian: 'binary (big-endian)' };
   const vtx = elements.find((e) => e.name === 'vertex');
   const face = elements.find((e) => e.name === 'face');
-  const out = {
+  const out: Row = {
     'Format': 'Stanford PLY',
     'Encoding': (fmtMap[format] || format) + (version ? ' ' + version : ''),
   };
@@ -129,7 +130,7 @@ async function parsePly(file) {
 }
 
 // ---------- OFF ----------
-async function parseOff(file) {
+async function parseOff(file: File) {
   const text = await headText(file, 8192);
   const lines = text.split(/\r?\n/);
   let i = 0;
@@ -151,7 +152,7 @@ async function parseOff(file) {
   const nums = countsLine.split(/\s+/).map((n) => parseInt(n, 10));
   if (nums.length < 2 || !isFinite(nums[0])) return null;
   const [nv, nf, ne] = nums;
-  const out = {
+  const out: Row = {
     'Format': 'OFF mesh' + (dim4 ? ' (4D)' : ''),
     'Vertices': (nv || 0).toLocaleString(),
     'Faces': (nf || 0).toLocaleString(),
@@ -163,12 +164,12 @@ async function parseOff(file) {
 }
 
 // ---------- glTF (JSON) ----------
-async function parseGltf(file) {
+async function parseGltf(file: File) {
   let j;
   try { j = JSON.parse(await file.slice(0, Math.min(file.size, 8 * 1024 * 1024)).text()); } catch (_) { return null; }
   if (!j || !j.asset) return null;
   const a = j.asset;
-  const out = { 'Format': 'glTF (JSON)' };
+  const out: Row = { 'Format': 'glTF (JSON)' };
   if (a.version) out['glTF version'] = a.version;
   if (a.generator) out['Generator'] = a.generator;
   if (a.copyright) out['Copyright'] = a.copyright;
@@ -192,13 +193,13 @@ async function parseGltf(file) {
 }
 
 // ---------- 3MF ----------
-async function parse3mf(file) {
+async function parse3mf(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const modelName = zip.names().find((n) => /3D\/.*\.model$/i.test(n)) || zip.names().find((n) => /\.model$/i.test(n));
   if (!modelName) return null;
   let xml; try { xml = await zip.text(modelName); } catch (_) { return null; }
   if (!xml) return null;
-  const out = { 'Format': '3MF (3D Manufacturing Format)' };
+  const out: Row = { 'Format': '3MF (3D Manufacturing Format)' };
   const unit = (xml.match(/\bunit\s*=\s*"([^"]+)"/) || [])[1];
   if (unit) out['Units'] = unit;
   const meta = (k) => (xml.match(new RegExp('<metadata[^>]*name="(?:[^":]*:)?' + k + '"[^>]*>([^<]*)</metadata>', 'i')) || [])[1];
@@ -217,7 +218,7 @@ async function parse3mf(file) {
 }
 
 // ---------- AMF ----------
-async function parseAmf(file) {
+async function parseAmf(file: File) {
   // AMF may be raw XML or a zip wrapping a .amf
   const sig = await head(file, 4);
   let xml = null;
@@ -231,7 +232,7 @@ async function parseAmf(file) {
     xml = await headText(file, Math.min(file.size, SAMPLE));
   }
   if (!xml || !/<amf/i.test(xml)) return null;
-  const out = { 'Format': 'AMF (Additive Manufacturing File)' };
+  const out: Row = { 'Format': 'AMF (Additive Manufacturing File)' };
   const unit = (xml.match(/<amf[^>]*\bunit\s*=\s*"([^"]+)"/i) || [])[1];
   if (unit) out['Units'] = unit;
   const ver = (xml.match(/<amf[^>]*\bversion\s*=\s*"([^"]+)"/i) || [])[1];
@@ -247,12 +248,12 @@ async function parseAmf(file) {
 }
 
 // ---------- MagicaVoxel VOX ----------
-async function parseVox(file) {
+async function parseVox(file: File) {
   const b = await head(file, Math.min(file.size, 1024 * 1024));
   if (ascii(b, 0, 4) !== 'VOX ') return null;
   const r = new Reader(b, true); r.seek(4);
   const version = r.u32();
-  const out = { 'Format': 'MagicaVoxel VOX', 'Version': version };
+  const out: Row = { 'Format': 'MagicaVoxel VOX', 'Version': version };
   const sizes = []; let voxels = 0, models = 0, paletteCustom = false;
   try {
     // expect MAIN chunk
@@ -287,7 +288,7 @@ async function parseVox(file) {
 
 // ---------- COLLADA (.dae) / ZAE ----------
 function parseDaeXml(xml) {
-  const out = { 'Format': 'COLLADA (DAE)' };
+  const out: Row = { 'Format': 'COLLADA (DAE)' };
   const tool = (xml.match(/<authoring_tool>([^<]*)<\/authoring_tool>/i) || [])[1];
   if (tool) out['Authoring tool'] = tool;
   const up = (xml.match(/<up_axis>([^<]*)<\/up_axis>/i) || [])[1];
@@ -310,12 +311,12 @@ function parseDaeXml(xml) {
   if (anims) out['Animations'] = anims;
   return out;
 }
-async function parseDae(file) {
+async function parseDae(file: File) {
   const xml = await headText(file, Math.min(file.size, SAMPLE));
   if (!/<COLLADA/i.test(xml)) return null;
   return parseDaeXml(xml);
 }
-async function parseZae(file) {
+async function parseZae(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const daeName = zip.names().find((n) => /\.dae$/i.test(n));
   if (!daeName) return null;
@@ -330,12 +331,12 @@ async function parseZae(file) {
 }
 
 // ---------- USD Crate (.usdc binary) ----------
-async function parseUsdc(file) {
+async function parseUsdc(file: File) {
   const b = await head(file, 64);
   if (ascii(b, 0, 8) !== 'PXR-USDC') return null;
   const r = new Reader(b, true); r.seek(8);
   const major = r.u8(), minor = r.u8(), patch = r.u8();
-  const out = {
+  const out: Row = {
     'Format': 'USD Crate (binary)',
     'Version': major + '.' + minor + '.' + patch,
     'Note': 'Pixar Universal Scene Description, binary crate',
@@ -362,7 +363,7 @@ async function parseUsdc(file) {
 }
 
 // ---------- X3D / VRML ----------
-async function parseX3d(file, ext) {
+async function parseX3d(file: File, ext: string) {
   const text = await headText(file, Math.min(file.size, SAMPLE));
   const isVrml = /^#VRML/i.test(text) || ext === 'wrl' || ext === 'vrml';
   const isX3d = /<X3D/i.test(text) || ext === 'x3d' || ext === 'x3dv';
@@ -393,12 +394,12 @@ async function parseX3d(file, ext) {
 }
 
 // ---------- LightWave LWO / LWS ----------
-async function parseLwo(file, ext) {
+async function parseLwo(file: File, ext: string) {
   const b = await head(file, Math.min(file.size, SAMPLE));
   if (ext === 'lws') {
     const text = latin1(b);
     if (!/^LWSC/.test(text)) return null;
-    const out = { 'Format': 'LightWave Scene (LWS)' };
+    const out: Row = { 'Format': 'LightWave Scene (LWS)' };
     const ver = (text.match(/^LWSC\s*\r?\n?\s*(\d+)/) || [])[1];
     if (ver) out['Version'] = ver;
     out['Objects'] = (text.match(/^(LoadObjectLayer|AddNullObject|LoadObject)\b/gm) || []).length;
@@ -415,7 +416,7 @@ async function parseLwo(file, ext) {
   const formLen = r.u32();
   const formType = r.ascii(4);
   if (!/^(LWO2|LWOB|LWO3|LWLO)$/.test(formType)) return null;
-  const out = {
+  const out: Row = {
     'Format': 'LightWave Object (LWO)',
     'IFF type': formType + (formType === 'LWOB' ? ' (v5.x)' : formType === 'LWO2' ? ' (v6+)' : ''),
   };
@@ -442,10 +443,10 @@ async function parseLwo(file, ext) {
 }
 
 // ---------- draw.io / diagrams.net ----------
-async function parseDrawio(file) {
+async function parseDrawio(file: File) {
   const text = await headText(file, Math.min(file.size, SAMPLE));
   if (!/<mxfile|<mxGraphModel/i.test(text)) return null;
-  const out = { 'Format': 'draw.io / diagrams.net diagram' };
+  const out: Row = { 'Format': 'draw.io / diagrams.net diagram' };
   const host = (text.match(/<mxfile[^>]*\bhost="([^"]+)"/i) || [])[1];
   if (host) out['Host'] = host;
   const date = (text.match(/<mxfile[^>]*\bmodified="([^"]+)"/i) || [])[1];
@@ -490,7 +491,7 @@ async function parseDrawio(file) {
 }
 
 // ---------- Quake models md2 / md3 / mdl ----------
-async function parseQuakeModel(file, ext) {
+async function parseQuakeModel(file: File, ext: string) {
   const b = await head(file, Math.min(file.size, 1024 * 1024));
   const magic = ascii(b, 0, 4);
   const r = new Reader(b, true);
@@ -549,7 +550,7 @@ async function parseQuakeModel(file, ext) {
 }
 
 // ---------- LAS / LAZ point cloud ----------
-async function parseLas(file, ext) {
+async function parseLas(file: File, ext: string) {
   const b = await head(file, 384);
   if (ascii(b, 0, 4) !== 'LASF') return null;
   const r = new Reader(b, true); r.seek(4);
@@ -578,7 +579,7 @@ async function parseLas(file, ext) {
   }
   const fmtHasGps = pointFormat === 1 || pointFormat >= 3;
   const fmtHasRgb = pointFormat === 2 || pointFormat === 3 || pointFormat === 5 || pointFormat === 7 || pointFormat === 8 || pointFormat === 10;
-  const out = {
+  const out: Row = {
     'Format': ext === 'laz' ? 'LAZ (compressed LAS)' : 'LAS point cloud',
     'LAS version': verMajor + '.' + verMinor,
     'Point format': pointFormat + ' (' + pointLen + ' bytes/point)',
@@ -600,14 +601,14 @@ async function parseLas(file, ext) {
 }
 
 // ---------- PCD (Point Cloud Data) ----------
-async function parsePcd(file) {
+async function parsePcd(file: File) {
   const text = await headText(file, 8192);
   if (!/(^|\n)\s*(#|VERSION|FIELDS)/i.test(text.slice(0, 200)) && !/POINTS/.test(text)) return null;
   const line = (kw) => { const m = text.match(new RegExp('^' + kw + '\\s+(.+)$', 'mi')); return m ? m[1].trim() : null; };
   const fields = line('FIELDS');
   const points = line('POINTS');
   if (!fields && !points) return null;
-  const out = { 'Format': 'PCD (Point Cloud Data)' };
+  const out: Row = { 'Format': 'PCD (Point Cloud Data)' };
   const version = line('VERSION'); if (version) out['Version'] = version;
   if (fields) out['Fields'] = fields;
   const size = line('SIZE'); if (size) out['Field sizes'] = size;
@@ -621,7 +622,7 @@ async function parsePcd(file) {
 }
 
 // ---------- PTS / PTX ASCII point clouds ----------
-async function parsePtsPtx(file, ext) {
+async function parsePtsPtx(file: File, ext: string) {
   const text = await headText(file, Math.min(file.size, SAMPLE));
   const lines = text.split(/\r?\n/);
   let i = 0;
@@ -630,7 +631,7 @@ async function parsePtsPtx(file, ext) {
     // PTX: cols, rows, then 4 lines scanner position (1x3) + 3x3 axes, then 4x4 transform
     const cols = nextNonEmpty(), rows = nextNonEmpty();
     if (!/^\d+$/.test(cols || '') || !/^\d+$/.test(rows || '')) return null;
-    const out = { 'Format': 'PTX point cloud (Leica/Cyclone)' };
+    const out: Row = { 'Format': 'PTX point cloud (Leica/Cyclone)' };
     out['Grid'] = cols + ' cols x ' + rows + ' rows';
     out['Declared points'] = (parseInt(cols, 10) * parseInt(rows, 10)).toLocaleString();
     // 4 lines scanner registration (position + 3 axis vectors), then 4 lines matrix
@@ -649,7 +650,7 @@ async function parsePtsPtx(file, ext) {
   // PTS: optional count header then rows of "x y z [intensity] [r g b]"
   const first = nextNonEmpty();
   if (!first) return null;
-  const out = { 'Format': 'PTS point cloud' };
+  const out: Row = { 'Format': 'PTS point cloud' };
   let dataLine = first;
   if (/^\d+$/.test(first)) { out['Declared points'] = parseInt(first, 10).toLocaleString(); dataLine = nextNonEmpty(); }
   if (!dataLine) return null;
@@ -676,7 +677,7 @@ function describePtsCols(n) {
 }
 
 // ---------- E57 ----------
-async function parseE57(file) {
+async function parseE57(file: File) {
   const b = await head(file, 64);
   if (ascii(b, 0, 8) !== 'ASTM-E57') return null;
   const r = new Reader(b, true); r.seek(8);
@@ -684,7 +685,7 @@ async function parseE57(file) {
   const fileLen = Number(r.u64());
   const xmlOffset = Number(r.u64());
   const xmlLength = Number(r.u64());
-  const out = {
+  const out: Row = {
     'Format': 'E57 point cloud (ASTM E57)',
     'Version': verMajor + '.' + verMinor,
     'File length': fmtBytes(fileLen),
@@ -712,7 +713,7 @@ async function parseE57(file) {
 
 // ---------- IFC (STEP) / IFCZIP ----------
 function parseIfcText(text) {
-  const out = { 'Format': 'IFC (Industry Foundation Classes)' };
+  const out: Row = { 'Format': 'IFC (Industry Foundation Classes)' };
   const schema = (text.match(/FILE_SCHEMA\s*\(\s*\(\s*'([^']+)'/i) || [])[1];
   if (schema) out['Schema'] = schema;
   const nameM = text.match(/FILE_NAME\s*\(([\s\S]*?)\)\s*;/i);
@@ -731,14 +732,14 @@ function parseIfcText(text) {
   out['IfcBuildingStorey'] = count('IFCBUILDINGSTOREY');
   return out;
 }
-async function parseIfc(file) {
+async function parseIfc(file: File) {
   const text = await headText(file, Math.min(file.size, SAMPLE));
   if (!/ISO-10303-21|FILE_SCHEMA/i.test(text)) return null;
   const out = parseIfcText(text);
   if (file.size > SAMPLE) out['Note'] = 'entity counts from first 2 MB';
   return out;
 }
-async function parseIfcZip(file) {
+async function parseIfcZip(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const name = zip.names().find((n) => /\.ifc$/i.test(n));
   if (!name) return null;
@@ -751,7 +752,7 @@ async function parseIfcZip(file) {
 }
 
 // ---------- VRM (glTF + VRM extension) ----------
-async function parseVrm(file) {
+async function parseVrm(file: File) {
   // VRM is a GLB; the JSON chunk holds the VRM extension.
   const b = await head(file, Math.min(file.size, 4 * 1024 * 1024));
   if (ascii(b, 0, 4) !== 'glTF') return null;
@@ -771,7 +772,7 @@ async function parseVrm(file) {
   if (!json) return null;
   let j; try { j = JSON.parse(json); } catch (_) { return null; }
   const ext = (j.extensions && (j.extensions.VRM || j.extensions.VRMC_vrm)) || null;
-  const out = { 'Format': 'VRM avatar (glTF)' };
+  const out: Row = { 'Format': 'VRM avatar (glTF)' };
   if (j.asset && j.asset.generator) out['Generator'] = j.asset.generator;
   const meta = ext && (ext.meta || ext);
   if (meta) {
@@ -793,12 +794,12 @@ async function parseVrm(file) {
 }
 
 // ---------- JT (Jupiter Tessellation) ----------
-async function parseJt(file) {
+async function parseJt(file: File) {
   const b = await head(file, 80);
   // Version header is an 80-byte ASCII string starting with "Version"
   const hdr = latin1(b.subarray(0, 80));
   if (!/^Version\s/i.test(hdr)) return null;
-  const out = { 'Format': 'JT (Jupiter Tessellation)' };
+  const out: Row = { 'Format': 'JT (Jupiter Tessellation)' };
   const ver = (hdr.match(/^Version\s+([\d.]+)/i) || [])[1];
   if (ver) out['JT version'] = ver;
   out['Version header'] = hdr.replace(/\0+/g, '').trim().slice(0, 80);
@@ -820,14 +821,14 @@ async function parseJt(file) {
 }
 
 // ---------- Gaussian splats: .splat / .spz ----------
-async function parseSplat(file) {
+async function parseSplat(file: File) {
   // Antimatter15 .splat: packed 32-byte records (pos f32x3, scale f32x3, rgba u8x4, rot u8x4)
   if (file.size < 32 || file.size % 32 !== 0) {
     // still report if close - but require exact multiple to identify
     if (file.size % 32 !== 0) return { 'Format': 'Gaussian splat (.splat)', 'Note': 'size not a multiple of 32 - non-standard layout', 'File size': fmtBytes(file.size) };
   }
   const count = Math.floor(file.size / 32);
-  const out = {
+  const out: Record<string, string> = {
     'Format': 'Gaussian splat (.splat)',
     'Splats': count.toLocaleString(),
     'Record size': '32 bytes',
@@ -848,7 +849,7 @@ async function parseSplat(file) {
   } catch (_) {}
   return out;
 }
-async function parseSpz(file) {
+async function parseSpz(file: File) {
   const raw = await head(file, 64);
   let b = raw;
   // SPZ payload is gzip-compressed.
@@ -881,7 +882,7 @@ async function parseSpz(file) {
 }
 
 // ---------- Draco compressed mesh (.drc) ----------
-async function parseDraco(file) {
+async function parseDraco(file: File) {
   // Header: 'DRACO' magic, major u8, minor u8, encoderType u8, encoderMethod u8,
   //         flags u16 (all big-endian).
   const b = await head(file, 16);
@@ -890,7 +891,7 @@ async function parseDraco(file) {
   const major = r.u8(), minor = r.u8();
   const encoderType = r.u8();
   const encoderMethod = r.u8();
-  const out = {
+  const out: Row = {
     'Format': 'Draco compressed mesh',
     'Draco version': major + '.' + minor,
   };
@@ -902,7 +903,7 @@ async function parseDraco(file) {
 }
 
 // ---------- DirectX model (.x - text 'xof ' or binary) ----------
-async function parseDirectX(file) {
+async function parseDirectX(file: File) {
   const b = await head(file, Math.min(file.size, SAMPLE));
   if (ascii(b, 0, 4) !== 'xof ') return null;
   // 16-byte header: 'xof ', 4-byte version (e.g. '0303'), 4-byte format
@@ -911,8 +912,8 @@ async function parseDirectX(file) {
   const verMaj = hdr.slice(4, 6), verMin = hdr.slice(6, 8);
   const format = hdr.slice(8, 12).trim();
   const floatBits = hdr.slice(12, 16);
-  const fmtMap = { txt: 'text', bin: 'binary', tzip: 'compressed text', bzip: 'compressed binary' };
-  const out = {
+  const fmtMap: Record<string, string> = { txt: 'text', bin: 'binary', tzip: 'compressed text', bzip: 'compressed binary' };
+  const out: Row = {
     'Format': 'DirectX model (.x)',
     'Version': verMaj + '.' + verMin,
     'Encoding': (fmtMap[format] || format) + (/^\d+$/.test(floatBits) ? ' (' + parseInt(floatBits, 10) + '-bit floats)' : ''),
@@ -932,7 +933,7 @@ async function parseDirectX(file) {
 }
 
 // ---------- Qubicle Binary (.qb) ----------
-async function parseQb(file) {
+async function parseQb(file: File) {
   // Header: version u32 (e.g. 0x01010000), colorFormat u32, zAxisOrientation u32,
   //         compressed u32, visibilityMaskEncoded u32, numMatrices u32. Then per
   //         matrix: nameLen u8, name, sizeX/Y/Z u32, posX/Y/Z i32, voxel data.
@@ -947,7 +948,7 @@ async function parseQb(file) {
   r.u32(); // visibilityMaskEncoded
   const numMatrices = r.u32();
   if (numMatrices === 0 || numMatrices > 100000) return null;
-  const out = {
+  const out: Row = {
     'Format': 'Qubicle Binary (voxel)',
     'Version': version,
     'Colour format': colorFormat === 0 ? 'RGBA' : 'BGRA',
@@ -979,7 +980,7 @@ async function parseQb(file) {
 }
 
 // ---------- ksplat (block-compressed Gaussian splat) ----------
-async function parseKsplat(file) {
+async function parseKsplat(file: File) {
   // GaussianSplats3D / SuperSplat .ksplat: 4096-byte header. Common layout has a
   // version major/minor near the start and a max-section-count; section headers
   // follow. Layout has changed across versions, so we identify + read conservatively.
@@ -999,7 +1000,7 @@ async function parseKsplat(file) {
 }
 
 // ---------- Universal 3D (.u3d, ECMA-363) ----------
-async function parseU3d(file) {
+async function parseU3d(file: File) {
   // First block is the File Header block: blockType u32 = 0x00443355, then dataSize
   // u32, metaDataSize u32, then version i16 (major), i16 (minor), profile u32.
   const b = await head(file, 64);
@@ -1015,7 +1016,7 @@ async function parseU3d(file) {
   if (profile & 0x1) profiles.push('extensible');
   if (profile & 0x2) profiles.push('no compression');
   if (profile & 0x4) profiles.push('defined units');
-  const out = {
+  const out: Row = {
     'Format': 'Universal 3D (ECMA-363)',
     'Version': verMajor + (verMinor ? '.' + verMinor : ''),
     'Header data size': dataSize,
@@ -1026,7 +1027,7 @@ async function parseU3d(file) {
 }
 
 // ---------- 3DXML (Dassault, ZIP/XML) ----------
-async function parse3dxml(file) {
+async function parse3dxml(file: File) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const names = zip.names();
   const rootName = names.find((n) => /\.3dxml$/i.test(n)) || names.find((n) => /^[^/]+\.3dxml$/i.test(n));
@@ -1037,7 +1038,7 @@ async function parse3dxml(file) {
     try { const t = await zip.text(cand); if (t && /<\w/.test(t)) { xml = t; used = cand; break; } } catch (_) {}
   }
   if (!xml) return null;
-  const out = { 'Format': '3DXML (Dassault)' };
+  const out: Row = { 'Format': '3DXML (Dassault)' };
   if (used) out['Root document'] = used;
   const app = (xml.match(/<Application[^>]*>([^<]+)<\/Application>/i) || [])[1] ||
               (xml.match(/applicationName="([^"]+)"/i) || [])[1];
@@ -1057,13 +1058,13 @@ async function parse3dxml(file) {
 }
 
 // ---------- Wings3D (.wings - Erlang term binary, gzipped) ----------
-async function parseWings(file) {
+async function parseWings(file: File) {
   const raw = await head(file, Math.min(file.size, 1024 * 1024));
   // File starts with the ASCII tag '#!WINGS-1.0\r\n' then a gzip stream of an
   // Erlang external term (which itself begins with 0x83).
   const tag = latin1(raw.subarray(0, 16));
   if (!/^#!WINGS/i.test(tag)) return null;
-  const out = { 'Format': 'Wings3D model' };
+  const out: Row = { 'Format': 'Wings3D model' };
   const verM = tag.match(/^#!WINGS-([\d.]+)/i);
   if (verM) out['File tag version'] = verM[1];
   // Locate the gzip stream after the tag and inflate.
@@ -1088,11 +1089,11 @@ async function parseWings(file) {
 }
 
 // ---------- Autodesk Revit (.rvt/.rfa/.rte/.rft - OLE/CFBF) ----------
-const REVIT_KIND = { rvt: 'Revit project', rfa: 'Revit family', rte: 'Revit project template', rft: 'Revit family template' };
-async function parseRevit(file, ext) {
+const REVIT_KIND: Record<string, string> = { rvt: 'Revit project', rfa: 'Revit family', rte: 'Revit project template', rft: 'Revit family template' };
+async function parseRevit(file: File, ext: string) {
   let cfbf; try { cfbf = await openCfbf(file); } catch (_) { cfbf = null; }
   if (!cfbf) return null;
-  const out = { 'Format': REVIT_KIND[ext] || 'Autodesk Revit document' };
+  const out: Row = { 'Format': REVIT_KIND[ext] || 'Autodesk Revit document' };
   // BasicFileInfo stream holds a UTF-16 blob with the Revit build/version string.
   let bytes = null;
   try { bytes = cfbf.readStream((c) => /BasicFileInfo/i.test(c.name)); } catch (_) {}
@@ -1117,11 +1118,11 @@ async function parseRevit(file, ext) {
 }
 
 // ---------- Solid Edge (.par/.psm/.pwd - OLE/CFBF) ----------
-const SE_KIND = { par: 'Solid Edge Part', psm: 'Solid Edge Sheet Metal', pwd: 'Solid Edge Weldment' };
-async function parseSolidEdge(file, ext) {
+const SE_KIND: Record<string, string> = { par: 'Solid Edge Part', psm: 'Solid Edge Sheet Metal', pwd: 'Solid Edge Weldment' };
+async function parseSolidEdge(file: File, ext: string) {
   let cfbf; try { cfbf = await openCfbf(file); } catch (_) { cfbf = null; }
   if (!cfbf) return null;
-  const out = { 'Format': SE_KIND[ext] || 'Solid Edge document' };
+  const out: Row = { 'Format': SE_KIND[ext] || 'Solid Edge document' };
   // SummaryInformation / document streams carry the application + version.
   let ver = null;
   try {
@@ -1139,10 +1140,10 @@ async function parseSolidEdge(file, ext) {
 }
 
 // ---------- legacy Visio binary (.vsd - OLE/CFBF) ----------
-async function parseVsd(file) {
+async function parseVsd(file: File) {
   let cfbf; try { cfbf = await openCfbf(file); } catch (_) { cfbf = null; }
   if (!cfbf) return null;
-  const out = { 'Format': 'Visio Drawing (legacy binary)' };
+  const out: Row = { 'Format': 'Visio Drawing (legacy binary)' };
   const names = cfbf.entries.map((e) => e.name);
   const visio = names.some((n) => /VisioDocument/i.test(n));
   if (!visio) return null;
@@ -1153,13 +1154,13 @@ async function parseVsd(file) {
 }
 
 // ---------- Autodesk Navisworks (.nwd/.nwf/.nwc) ----------
-const NW_KIND = { nwd: 'published model', nwf: 'aggregated file set', nwc: 'cache file' };
-async function parseNavisworks(file, ext) {
+const NW_KIND: Record<string, string> = { nwd: 'published model', nwf: 'aggregated file set', nwc: 'cache file' };
+async function parseNavisworks(file: File, ext: string) {
   const b = await head(file, 256);
   const text = latin1(b);
   // Navisworks files open with an XML-ish header line naming the product/version.
   const isNw = /Navisworks|LcOp|\bRoamer\b/i.test(text) || /^<\?xml/.test(text) && /nwd|nwc|nwf/i.test(text);
-  const out = {
+  const out: Row = {
     'Format': 'Autodesk Navisworks (' + (NW_KIND[ext] || ext) + ')',
   };
   const verM = text.match(/Navisworks[^0-9]*([0-9]{1,4}(?:\.[0-9]+)?)/i);
@@ -1173,7 +1174,7 @@ async function parseNavisworks(file, ext) {
 }
 
 // ---------- CATIA V4 (.model/.exp/.dlv/.session) ----------
-async function parseCatiaV4(file, ext) {
+async function parseCatiaV4(file: File, ext: string) {
   const b = await head(file, 512);
   const text = latin1(b);
   // CATIA V4 files carry a 'CATIA' / 'V4' signature in the leading record.
@@ -1184,7 +1185,7 @@ async function parseCatiaV4(file, ext) {
       'Note': 'Dassault CATIA V4 legacy geometry - proprietary binary, identification only.',
     };
   }
-  const out = { 'Format': 'CATIA V4 ' + ext.toUpperCase() };
+  const out: Row = { 'Format': 'CATIA V4 ' + ext.toUpperCase() };
   const verM = text.match(/V4[^0-9]*([0-9]+(?:\.[0-9]+)?)/i) || text.match(/RELEASE[^0-9]*([0-9.]+)/i);
   if (verM) out['Version'] = verM[1];
   out['Note'] = 'Dassault CATIA V4 legacy geometry - identification only.';
@@ -1231,7 +1232,7 @@ function parseIdeaMaker(c) {
 function ident(name, note) {
   return () => ({ 'Format': name, 'Note': note });
 }
-async function parseAbc(file) {
+async function parseAbc(file: File) {
   const b = await head(file, 16);
   // Ogawa: 'Ogawa' magic; HDF5: \x89HDF
   let variant = 'unknown';
@@ -1243,7 +1244,7 @@ async function parseAbc(file) {
     'Note': 'Animated 3D cache (Maya/Houdini). Full hierarchy decode needs the Alembic library.',
   };
 }
-async function parseVdb(file) {
+async function parseVdb(file: File) {
   const b = await head(file, 16);
   // OpenVDB magic: 0x56 0x44 0x42 0x00 ... (or starts with 0x20 0x42 0x44 0x56 LE)
   return {
@@ -1256,8 +1257,8 @@ async function parseVdb(file) {
 // ArchiCAD 17 and newer write the 8-byte magic "ROF FDB "; older versions begin
 // with "MM", "WW" or "mm". The model body is a proprietary Graphisoft database, so
 // this is header identification only.
-const ARCHICAD_KIND = { pln: 'solo project', pla: 'archive project' };
-async function parseArchicad(file, ext) {
+const ARCHICAD_KIND: Record<string, string> = { pln: 'solo project', pla: 'archive project' };
+async function parseArchicad(file: File, ext: string) {
   const b = await head(file, 4096);
   if (b.length < 8) return null;
   const NEW = [0x52, 0x4F, 0x46, 0x20, 0x46, 0x44, 0x42, 0x20]; // "ROF FDB "
@@ -1275,7 +1276,7 @@ async function parseArchicad(file, ext) {
 }
 
 // ---------- dispatch ----------
-export const PARSERS = {
+export const PARSERS: Record<string, ParseFn> = {
   // meshes / scenes (already in FORMATS as identification - add richer parse)
   obj:   (c) => parseObj(c.file),
   ply:   (c) => parsePly(c.file),

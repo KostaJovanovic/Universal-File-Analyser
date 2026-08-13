@@ -3,7 +3,7 @@
    - Acts as the page-wide drop target (until the first file lands)
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
-const COMMIT_COUNT = 272;
+const COMMIT_COUNT = 273;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -1563,7 +1563,7 @@ function boot() {
         }
         function anrGet(key) {
             try {
-                var ts = parseInt(localStorage.getItem(key + ':ts'), 10);
+                var ts = parseInt(localStorage.getItem(key + ':ts') || '', 10);
                 if (!ts || Date.now() - ts > ANR_TTL) {
                     localStorage.removeItem(key);
                     localStorage.removeItem(key + ':ts');
@@ -1608,7 +1608,7 @@ function boot() {
                     var k = localStorage.key(i);
                     if (!k || !k.startsWith('anr-') || k.endsWith(':ts') || anrPermanent(k))
                         continue;
-                    var ts = parseInt(localStorage.getItem(k + ':ts'), 10);
+                    var ts = parseInt(localStorage.getItem(k + ':ts') || '', 10);
                     if (!ts || now - ts > ANR_TTL) {
                         localStorage.removeItem(k);
                         localStorage.removeItem(k + ':ts');
