@@ -22,7 +22,7 @@
    deliberately do NOT continuously correct drift - play / pause / seek is enough
    and a continuous corrector is exactly what caused the storm. */
 
-const players = new Set();
+const players = new Set<HTMLMediaElement>();
 
 function live() {
   for (const v of players) if (!v.isConnected) players.delete(v);   // drop detached players
@@ -37,7 +37,7 @@ function others(self) { return live().filter((v) => v !== self); }
 // though: starting a loner pauses the synced group, and starting any synced player
 // pauses the loners. That is the whole relationship - "either this one or that one,
 // never both", with nothing shared between them.
-const loners = new Set();
+const loners = new Set<HTMLMediaElement>();
 
 function pauseLoners() {
   for (const v of loners) {
@@ -78,8 +78,8 @@ export function registerExclusiveVideo(video) {
 // position and, if the transport is still running, starts. Visible followers
 // behave exactly as before - the feature is intact, it just stops paying for
 // pictures that are not on screen.
-const visible = new WeakMap();   // video -> is it in (or near) the viewport
-const pendingTime = new WeakMap();   // video -> time to adopt when it next appears
+const visible = new WeakMap<HTMLMediaElement, boolean>();   // video -> is it in (or near) the viewport
+const pendingTime = new WeakMap<HTMLMediaElement, number>();   // video -> time to adopt when it next appears
 let observer = null;
 
 function seen(v) {
@@ -100,7 +100,7 @@ function watch(video) {
   if (!observer) {
     observer = new IntersectionObserver((entries) => {
       for (const e of entries) {
-        const v = e.target;
+        const v = e.target as HTMLMediaElement;
         const was = visible.get(v);
         visible.set(v, e.isIntersecting);
         if (!e.isIntersecting || was === true) continue;

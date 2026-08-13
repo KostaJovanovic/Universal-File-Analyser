@@ -23,9 +23,12 @@ or the `tools/*.mjs` generators that import the emitted `core/formats.js` break.
 - `npx tsc -p tsconfig.json && npx tsc -p tsconfig.worker.json` - build once.
   Both configs are needed: the three module workers compile separately because
   `lib.dom` and `lib.webworker` cannot share a program.
-- `node tools/check-build.mjs` - the real build gate; fails when output is
-  missing or stale. `tsc`'s own exit code is non-zero by design while the
-  migration to full `strict` is in progress, and does not mean a broken build.
+- `node tools/check-build.mjs` - a build gate; fails when output is missing or
+  stale relative to `src/`.
+- The tree compiles **clean** under both configs, so `tsc` exiting non-zero means
+  something is actually wrong - fix it. `strict` stays off deliberately:
+  `strictNullChecks` + `noImplicitAny` report ~5,400 mostly-null-guard sites,
+  which is its own project (see `CLAUDE.md`).
 
 - `server.bat` - start the development server at `http://localhost:3000` plus two `tsc --watch` windows; use it instead of `python -m http.server` because `serve.py` mirrors production clean-URL and SPA routing. Without a watcher running, edits to `src/` have no effect on the served site.
 - `node tools/prerender-formats.mjs` - regenerate the static formats hub when working on its generator inputs.

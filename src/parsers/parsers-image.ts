@@ -17,6 +17,7 @@
 
 import { el, row, fmtBytes, preBlock, loadScript, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, findBytes, latin1, hexByte } from '../core/binutil.js';
+import type { Row } from '../core/types.js';
 
 // ---------- shared helpers ----------
 
@@ -105,7 +106,7 @@ async function parseTga(file) {
 
   const TYPE_NAMES = { 1: 'color-mapped', 2: 'true-color', 3: 'grayscale', 9: 'RLE color-mapped', 10: 'RLE true-color', 11: 'RLE grayscale' };
 
-  const out = {
+  const out: Row = {
     'Format': 'Truevision TGA',
     'Image type': TYPE_NAMES[imageType] || ('type ' + imageType),
     'Dimensions': width + ' × ' + height,
@@ -229,7 +230,7 @@ async function parseQoi(file) {
   const channels = r.u8();
   const colorspace = r.u8();
   if (!width || !height || width > 60000 || height > 60000) return null;
-  const out = {
+  const out: Row = {
     'Format': 'QOI (Quite OK Image)',
     'Dimensions': width + ' × ' + height,
     'Channels': channels === 4 ? '4 (RGBA)' : channels === 3 ? '3 (RGB)' : channels,
@@ -322,7 +323,7 @@ async function parseNetpbm(file) {
   pos++; // single whitespace after last header token (for binary variants)
 
   const NAMES = { 1: 'P1 (PBM, ASCII bitmap)', 2: 'P2 (PGM, ASCII grayscale)', 3: 'P3 (PPM, ASCII color)', 4: 'P4 (PBM, binary bitmap)', 5: 'P5 (PGM, binary grayscale)', 6: 'P6 (PPM, binary color)' };
-  const out = {
+  const out: Row = {
     'Format': 'Netpbm ' + NAMES[type],
     'Dimensions': width + ' × ' + height,
     'Channels': isBitmap ? '1 (bilevel)' : isGray ? '1 (gray)' : '3 (RGB)',
@@ -415,7 +416,7 @@ function parsePam(b) {
   const maxval = parseInt(get('MAXVAL'), 10) || 255;
   const tupltype = get('TUPLTYPE') || '';
   if (!width || !height) return null;
-  const out = {
+  const out: Row = {
     'Format': 'Netpbm P7 (PAM)',
     'Dimensions': width + ' × ' + height,
     'Depth (channels)': depth,
@@ -463,7 +464,7 @@ async function parsePcx(file) {
   const height = ymax - ymin + 1;
   if (width <= 0 || height <= 0 || width > 30000 || height > 30000) return null;
   const VERS = { 0: 'v2.5', 2: 'v2.8 w/palette', 3: 'v2.8 no palette', 4: 'Paintbrush for Windows', 5: 'v3.0+' };
-  const out = {
+  const out: Row = {
     'Format': 'PCX (ZSoft PC Paintbrush)',
     'Version': VERS[ver] || ('byte ' + ver),
     'Dimensions': width + ' × ' + height,
@@ -562,7 +563,7 @@ async function parseFarbfeld(file) {
   const width = r.u32();
   const height = r.u32();
   if (!width || !height || width > 30000 || height > 30000) return null;
-  const out = {
+  const out: Row = {
     'Format': 'farbfeld (suckless)',
     'Dimensions': width + ' × ' + height,
     'Channels': '4 (RGBA, 16-bit)',
@@ -600,7 +601,7 @@ async function parseWbmp(file) {
   const width = mb();
   const height = mb();
   if (!width || !height || width > 30000 || height > 30000) return null;
-  const out = {
+  const out: Row = {
     'Format': 'WBMP (Wireless Bitmap, WAP)',
     'Type': '0 (monochrome, uncompressed)',
     'Dimensions': width + ' × ' + height,
@@ -640,7 +641,7 @@ async function parseXbm(file) {
   if (!width || !height || width > 30000 || height > 30000) return null;
   const hotXm = text.match(/_x_hot\s+(\d+)/i);
   const hotYm = text.match(/_y_hot\s+(\d+)/i);
-  const out = {
+  const out: Row = {
     'Format': 'XBM (X BitMap)',
     'Dimensions': width + ' × ' + height,
     'Bit depth': '1 bpp (C source array)',
@@ -686,7 +687,7 @@ async function parseXpm(file) {
   const vals = strings[0].trim().split(/\s+/).map(Number);
   const [width, height, ncolors, cpp] = vals;
   if (!width || !height || !ncolors || !cpp || width > 30000 || height > 30000) return null;
-  const out = {
+  const out: Row = {
     'Format': 'XPM (X PixMap)',
     'Dimensions': width + ' × ' + height,
     'Colors': ncolors,
@@ -753,7 +754,7 @@ async function parseSunRaster(file) {
   const maplength = r.u32();
   if (!width || !height || width > 30000 || height > 30000) return null;
   const TYPES = { 0: 'old', 1: 'standard', 2: 'byte-encoded (RLE)', 3: 'RGB', 4: 'TIFF', 5: 'IFF' };
-  const out = {
+  const out: Row = {
     'Format': 'Sun Raster',
     'Dimensions': width + ' × ' + height,
     'Depth': depth + '-bit',
@@ -803,7 +804,7 @@ async function parseSgi(file) {
   r.seek(24);
   const name = ascii(b, 24, 80).replace(/\0.*$/, '').trim();
   if (!xsize || !ysize || xsize > 30000 || ysize > 30000) return null;
-  const out = {
+  const out: Row = {
     'Format': 'SGI / IRIS RGB Image',
     'Dimensions': xsize + ' × ' + ysize,
     'Channels': zsize + (zsize === 1 ? ' (grayscale)' : zsize === 3 ? ' (RGB)' : zsize === 4 ? ' (RGBA)' : ''),
@@ -895,7 +896,7 @@ async function parseDds(file) {
   const aMask = (() => { const rr = new Reader(b, true); rr.seek(104); return rr.u32(); })();
   // caps @ 108..
   const caps2 = (() => { const rr = new Reader(b, true); rr.seek(112); return rr.u32(); })();
-  const out = {
+  const out: Row = {
     'Format': 'DDS (DirectDraw Surface)',
     'Dimensions': width + ' × ' + height,
     'Mipmaps': (flags & 0x20000) ? mipmaps : 1,
@@ -1360,7 +1361,7 @@ async function parseEps(file, ext) {
   }
   if (!/%!PS/.test(txt) && !/%!/.test(txt)) return null;
   const isEps = ext === 'eps' || ext === 'epsf' || ext === 'epsi' || /EPSF-/.test(txt);
-  const out = { 'Format': isEps ? 'Encapsulated PostScript (EPS)' : 'PostScript' };
+  const out: Row = { 'Format': isEps ? 'Encapsulated PostScript (EPS)' : 'PostScript' };
   const m1 = txt.match(/%!PS-Adobe-([\d.]+)(?:\s+EPSF-([\d.]+))?/);
   if (m1) { out['PostScript level'] = 'Adobe ' + m1[1]; if (m1[2]) out['EPSF version'] = m1[2]; }
   const dsc = (k) => { const m = txt.match(new RegExp('^%%' + k + ':\\s*(.+)$', 'im')); return m ? m[1].trim() : null; };
@@ -1504,7 +1505,7 @@ async function parseIcns(file) {
   const r = new Reader(b); // big-endian
   r.seek(4);
   const total = r.u32();
-  const out = { 'Format': 'Apple Icon Image (ICNS)', 'File size (header)': fmtBytes(total) };
+  const out: Row = { 'Format': 'Apple Icon Image (ICNS)', 'File size (header)': fmtBytes(total) };
   const entries = [];
   let pngEntry = null;
   try {
@@ -1550,7 +1551,7 @@ async function parseCur(file) {
   const r = new Reader(b, true);
   r.seek(4);
   const count = r.u16();
-  const out = { 'Format': 'Windows Cursor (.cur)', 'Images': count };
+  const out: Row = { 'Format': 'Windows Cursor (.cur)', 'Images': count };
   const list = [];
   for (let i = 0; i < count && i < 64; i++) {
     const off = 6 + i * 16;
@@ -1639,7 +1640,7 @@ async function parseLottie(file) {
   let j;
   try { j = JSON.parse(await readText(file, 16 * 1024 * 1024)); } catch (_) { return null; }
   if (!j || (j.v == null && !Array.isArray(j.layers))) return null;   // not a Bodymovin doc
-  const out = { 'Format': 'Lottie (Bodymovin JSON)' };
+  const out: Row = { 'Format': 'Lottie (Bodymovin JSON)' };
   if (j.v) out['Bodymovin version'] = j.v;
   if (j.nm) out['Name'] = j.nm;
   if (j.w && j.h) out['Composition size'] = j.w + ' × ' + j.h;

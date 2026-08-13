@@ -72,6 +72,11 @@ const STD = (() => {
 // stopping cleanly at any real marker (restart, EOI, or corruption). `hitMarker`
 // tells the decode loop the stream ended so it can finish the partial picture.
 class BitReader {
+    data;
+    pos;
+    cur;
+    count;
+    hitMarker;
     constructor(data, pos) { this.data = data; this.pos = pos; this.cur = 0; this.count = 0; this.hitMarker = false; }
     bit() {
         if (this.count === 0) {

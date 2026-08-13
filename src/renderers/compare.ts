@@ -316,7 +316,7 @@ async function appendHashExtras(mergedRoot, fileA, fileB, shaMatch) {
       const [ca, cb] = await Promise.all([crc32Of(fileA), crc32Of(fileB)]);
       ra = [['CRC-32', ca, CRC_DESC]]; rb = [['CRC-32', cb]];
     }
-    const bMap = new Map(rb.map(([label, hex]) => [label, hex]));
+    const bMap = new Map<string, string>(rb.map(([label, hex]) => [label, hex]));
     for (const [label, hex] of ra) {
       const bHex = bMap.has(label) ? bMap.get(label) : null;
       const differ = bHex == null || hex !== bHex;

@@ -56,7 +56,7 @@ async function turnstileChallenge(box, setStatus) {
   if (!(await probeOnline())) throw 'offline';
   let ts;
   try { ts = await loadTurnstile(); } catch (_) { throw 'offline'; }
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     let wid = null;
     const drop = () => { if (wid != null) { try { ts.remove(wid); } catch (_) {} wid = null; } };
     wid = ts.render(box, {
@@ -343,7 +343,7 @@ function showShareModal(ctx) {
 
   const closeBtn = el('button', { type: 'button', class: 'anr-modal-btn anr-modal-cancel' }, 'Cancel');
 
-  const cardKids = [
+  const cardKids: HTMLElement[] = [
     el('p', { class: 'anr-modal-kicker' }, 'Share'),
     el('p', { class: 'anr-modal-title' }, 'Enjoying Analyser? Pass it on.'),
     el('p', { class: 'anr-share-lead' }, 'Here’s the link - send it off with one tap, or grab a copy below. Thanks for spreading the word.'),
@@ -458,7 +458,7 @@ export function hideShareNudge() {
 // inside the click gesture (awaiting toBlob first would break the gesture on Safari).
 function spectrogramFile(name) {
   return new Promise((resolve) => {
-    const canvas = document.querySelector('.anr-spec-canvas');
+    const canvas = document.querySelector<HTMLCanvasElement>('.anr-spec-canvas');
     if (!canvas || !canvas.width || !canvas.toBlob) { resolve(null); return; }
     try {
       canvas.toBlob((blob) => {
@@ -550,7 +550,7 @@ function probeOnline() {
 }
 
 function applyNetStatus(online) {
-  document.querySelectorAll('.net-status').forEach((dd) => {
+  document.querySelectorAll<HTMLElement>('.net-status').forEach((dd) => {
     dd.classList.toggle('is-offline', !online);
     const label = dd.querySelector('.net-label');
     if (label) label.textContent = online ? 'Online' : 'Offline';

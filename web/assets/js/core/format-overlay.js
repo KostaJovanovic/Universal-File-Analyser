@@ -44,7 +44,7 @@ export function setupFormatOverlay() {
         if (mode === 'bare')
             elm.textContent = String(fmtN);
         else if (elm.dataset.fmtCountTpl)
-            elm.textContent = elm.dataset.fmtCountTpl.replace('{n}', fmtN);
+            elm.textContent = elm.dataset.fmtCountTpl.replace('{n}', String(fmtN));
         else
             elm.textContent = fmtN + ' supported formats';
     });

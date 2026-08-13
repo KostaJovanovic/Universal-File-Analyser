@@ -537,7 +537,7 @@ export function pickOcrLanguage(opts = {}) {
             helpPanel.hidden = !showHelp;
             list.hidden = showHelp;
             hintP.hidden = showHelp;
-            helpBtn.classList.toggle('is-active', showHelp);
+            helpBtn.classList.toggle('is-active', !!showHelp);
         });
         const cancelBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Cancel');
         const runBtn = el('button', { type: 'button', class: 'anr-btn anr-ocr-lang-run' }, 'Run OCR');

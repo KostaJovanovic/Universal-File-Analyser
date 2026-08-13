@@ -98,7 +98,7 @@ export async function renderMtl(file, resultsEl) {
         det.appendChild(el('summary', {}, `Referenced texture files (${textures.size})`));
         const ul = el('ul', { class: 'anr-hint', style: 'margin:8px 0 0;padding-left:18px;font-size:12px;word-break:break-all;' });
         for (const t of textures)
-            ul.appendChild(el('li', {}, t));
+            ul.appendChild(el('li', {}, String(t)));
         det.appendChild(ul);
         sum.appendChild(det);
     }

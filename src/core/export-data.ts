@@ -66,7 +66,7 @@ function collectBlocks(root, fallbackHeading) {
   const ctx = { heading: fallbackHeading };
   const pushImage = (heading, dataUrl, imgEl) => blocks.push({ type: 'image', heading, dataUrl, imgEl });
 
-  function walk(node) {
+  function walk(node: Element) {
     for (const child of Array.from(node.children)) {
       const tag = child.tagName;
       if (/^H[1-6]$/.test(tag)) { ctx.heading = cellText(child) || ctx.heading; continue; }
@@ -75,12 +75,12 @@ function collectBlocks(root, fallbackHeading) {
       if (child.classList && child.classList.contains('anr-export-gallery')) {
         const heading = child.getAttribute('data-export-heading') || ctx.heading;
         const items = [];
-        child.querySelectorAll('canvas, img').forEach((node2) => {
+        child.querySelectorAll<HTMLCanvasElement | HTMLImageElement>('canvas, img').forEach((node2) => {
           const label = node2.getAttribute('data-export-label') || '';
           if (node2.tagName === 'CANVAS') {
             if (!node2.width || !node2.height) return;
             let url = null;
-            try { url = node2.toDataURL('image/png'); } catch (_) { url = null; }
+            try { url = (node2 as HTMLCanvasElement).toDataURL('image/png'); } catch (_) { url = null; }
             if (url) items.push({ dataUrl: url, imgEl: null, label });
           } else if (node2.getClientRects().length) {
             items.push({ dataUrl: null, imgEl: node2, label });
@@ -115,14 +115,15 @@ function collectBlocks(root, fallbackHeading) {
         continue;
       }
       if (tag === 'CANVAS') {
-        if (child.width && child.height) {
+        const cv = child as HTMLCanvasElement;
+        if (cv.width && cv.height) {
           let url = null;
           try {
             // A 3D viewer canvas exposes _anrSnapshot(), which renders a framed
             // isometric still; everything else just reads its current pixels.
-            url = (typeof child._anrSnapshot === 'function')
-              ? child._anrSnapshot()
-              : child.toDataURL('image/png');
+            url = (typeof cv._anrSnapshot === 'function')
+              ? cv._anrSnapshot()
+              : cv.toDataURL('image/png');
           } catch (_) { url = null; }
           if (url) pushImage(ctx.heading, url, null);
         }
@@ -168,7 +169,7 @@ async function prepForExport() {
   // 1. Open all closed sections.
   document.querySelectorAll('.anr-card.is-collapsed').forEach((c) => c.classList.remove('is-collapsed'));
   for (const root of exportRoots()) {
-    if (root.main) root.main.querySelectorAll('details:not([open])').forEach((d) => { d.open = true; });
+    if (root.main) root.main.querySelectorAll<HTMLDetailsElement>('details:not([open])').forEach((d) => { d.open = true; });
   }
 
   // 2. Video contact sheet, if the video section is present.

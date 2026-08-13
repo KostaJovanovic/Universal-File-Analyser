@@ -51,7 +51,7 @@ function sanitizeSvg(doc) {
 
   let handlers = 0, jsLinks = 0, extRefs = 0, cssRefs = 0;
   for (const node of doc.querySelectorAll('*')) {
-    for (const attr of Array.from(node.attributes)) {
+    for (const attr of Array.from<any>(node.attributes)) {
       const name = attr.name.toLowerCase();
       const val = (attr.value || '').trim();
       if (name.startsWith('on')) { node.removeAttribute(attr.name); handlers++; continue; }
@@ -200,7 +200,7 @@ export async function renderSvg(file, resultsEl) {
   const elementTypes = ['path', 'rect', 'circle', 'ellipse', 'line', 'polyline',
     'polygon', 'text', 'tspan', 'g', 'use', 'defs', 'clipPath', 'mask',
     'linearGradient', 'radialGradient', 'pattern', 'image', 'filter'];
-  const counts: any = {};
+  const counts: Record<string, number> = {};
   for (const tag of elementTypes) {
     const els = doc.getElementsByTagName(tag);
     if (els.length > 0) counts[tag] = els.length;
@@ -276,7 +276,7 @@ export async function renderSvg(file, resultsEl) {
   resultsEl.appendChild(rasterCard);
 
   // --- Color palette card ---
-  const colors = new Set();
+  const colors = new Set<string>();
   for (const node of allElements) {
     const fill = node.getAttribute('fill');
     const stroke = node.getAttribute('stroke');

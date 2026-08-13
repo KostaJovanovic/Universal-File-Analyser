@@ -48,7 +48,7 @@
       // applies even when the main below gets preserved rather than discarded -
       // a preserved analysis must go silent while off-page too (pausing keeps
       // currentTime, so position survives).
-      try { oldMain.querySelectorAll('audio, video').forEach(function (m) { try { m.pause(); } catch (_) {} }); } catch (_) {}
+      try { oldMain.querySelectorAll<HTMLMediaElement>('audio, video').forEach(function (m) { try { m.pause(); } catch (_) {} }); } catch (_) {}
       if (window._anrMediaStoppers) {
         for (var stop of window._anrMediaStoppers) { try { stop(); } catch (_) {} }
         window._anrMediaStoppers.clear();
@@ -119,7 +119,7 @@
     // navigating). Honour that - hijacking it here would swap the page out from
     // under the picker and break the pending-file hand-off home.
     if (e.defaultPrevented) return;
-    var link = e.target.closest('a[href]');
+    var link = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href]');
     if (!link) return;
     var href = link.getAttribute('href');
     if (!href) return;

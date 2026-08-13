@@ -264,8 +264,11 @@ export async function computeSpectrogramAsync(samples, sampleRate, options: any 
 // Hand the thread back for one frame. rAF when visible (paints first), timeout as the
 // background-tab fallback so a hidden tab still drains the queue rather than stalling.
 function yieldFrame() {
-  return new Promise((r) => {
-    if (typeof document !== 'undefined' && document.hidden) { setTimeout(r, 0); return; }
+  return new Promise<void>((r) => {
+    // Reached through globalThis: this module is also pulled into the DSP
+    // worker, where `document` is not declared at all.
+    const doc = (globalThis as any).document;
+    if (doc && doc.hidden) { setTimeout(r, 0); return; }
     let done = false;
     const fin = () => { if (!done) { done = true; r(); } };
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fin);

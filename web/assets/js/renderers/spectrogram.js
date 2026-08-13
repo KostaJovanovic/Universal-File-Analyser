@@ -261,7 +261,10 @@ export async function computeSpectrogramAsync(samples, sampleRate, options = {})
 // background-tab fallback so a hidden tab still drains the queue rather than stalling.
 function yieldFrame() {
     return new Promise((r) => {
-        if (typeof document !== 'undefined' && document.hidden) {
+        // Reached through globalThis: this module is also pulled into the DSP
+        // worker, where `document` is not declared at all.
+        const doc = globalThis.document;
+        if (doc && doc.hidden) {
             setTimeout(r, 0);
             return;
         }

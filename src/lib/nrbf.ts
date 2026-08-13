@@ -25,6 +25,9 @@ const MAX_OBJECTS = 200000;     // graph-size guard
 const MAX_ARRAY = 5000000;      // per-array element guard
 
 class Reader {
+  b: Uint8Array;
+  p: number;
+  dv: DataView;
   constructor(bytes) { this.b = bytes; this.p = 0; this.dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength); }
   get eof() { return this.p >= this.b.length; }
   need(n) { if (this.p + n > this.b.length) throw new Error('unexpected end of NRBF stream'); }

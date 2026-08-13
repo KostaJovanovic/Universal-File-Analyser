@@ -716,6 +716,7 @@ function attachFullscreen(card, fsBtn, allowFs, sig, onChange) {
 // --- Custom player (replaces native <audio>/<video> controls) ---
 // --- Spectrogram UI panel (shared for file + recording) ---
 export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
+    // firstPaint rides on the card so callers can await the deferred compute.
     const card = el('div', { class: 'anr-card anr-spec-card anr-spec-fillable' });
     const panelListenerOpts = opts.signal ? { signal: opts.signal } : undefined;
     // Isolate-frequencies state. Declared up here because the pan/seek guards below
@@ -879,6 +880,12 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
     let blendActive = false; // true while the blend owns the spectrogram (analysed -> cleanup)
     let blendSeek = null; // (frac) => seek the blend; while active, canvas/playhead seeks route here
     let blendPause = null; // () => pause the blend (mutual exclusion with the file transport)
+    // Tears the blend view down (stops playback, frees the stems, hands the canvas
+    // back). Assigned by the AI-separation block far below, but declared HERE: the
+    // abort handler at the end of this function calls it too, and while it lived in
+    // the inner block that call was an out-of-scope ReferenceError that killed the
+    // rest of the abort path (the media stopper was never unregistered).
+    let blendCleanup = null;
     let specTransport = null; // the under-spectrogram makePlayer; the blend delegates to it while active
     let blendApplyIso = null; // set while blend owns audio: re-route its stems through the isolate band-stop
     let blendReanalyse = null; // set while blend owns the canvas: re-run the stem STFTs for new fft/window/mode
@@ -1956,7 +1963,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts = {}) {
         // Unlike the EQ presets, this runs a real source-separation model in a worker
         // and produces two playable/downloadable stems. Everything heavy (runtime +
         // model) is lazy-loaded on first click and cached for offline use.
-        let aiRunning = false, aiUrls = [], aiResourceCleanups = [], blendCleanup = null;
+        let aiRunning = false, aiUrls = [], aiResourceCleanups = [];
         // Display config per AI job. Both jobs produce two stems shown in the same
         // blend view; only the labels/keys differ. The result object always carries the
         // left stem as result.vocals and the right as result.instrumental (denoise maps
@@ -3187,6 +3194,7 @@ function buildCoverArtCard(art, file, resultsEl) {
 }
 export function buildWaveformCard(file, mono, audioBuffer, audioEl, signal) {
     const sr = audioBuffer.sampleRate;
+    // renderWave rides on the card: the resize/zoom paths call it by name.
     const waveCard = el('div', { class: 'anr-card' });
     const [waveH, waveHelp] = h3help('Waveform', 'Amplitude over time. Click and drag to select a region - then drag its edges to fine-tune, drag the middle to move it, or type exact start/end times. Zoom in or export the selection as a WAV file. The white playhead line shows the current playback position; drag it, or use the transport below, to scrub.');
     waveCard.appendChild(waveH);
@@ -5458,6 +5466,8 @@ async function startLive(resultsEl, liveBtn) {
 // dropEl / inputEl are optional: the single "any file" hero layout wires only the
 // Record / Live buttons here (its drop + picker go through initVideo instead), so
 // each piece is guarded rather than assumed present.
+// The hero controls wire only recordBtn/liveBtn, the Sound section wires the
+// full set - so every member is optional.
 export function initAudio({ dropEl, inputEl, recordBtn, liveBtn, resultsEl, onFile }) {
     const handle = onFile || ((file) => renderAudio(file, resultsEl));
     if (inputEl)

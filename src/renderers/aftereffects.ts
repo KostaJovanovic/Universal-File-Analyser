@@ -103,7 +103,8 @@ function parseAep(buf) {
         const sc = (c.cur && c.cur.scale) || SCALE;
         const dn = (off) => u32(ds + off) || sc;   // each rational's own denominator (per-layer time scale)
         const labelIdx = buf[ds + 61];            // AE label-colour index (1..16; 0 = None)
-        const L = {
+        // tIn/tOut are added just below, once start has been read.
+        const L: Record<string, any> = {
           start: i32(ds + 12) / dn(16), in: i32(ds + 20) / dn(24), out: i32(ds + 28) / dn(32),
           threeD: !!(a[1] & 4), src: u32(ds + 40),
           labelIdx: labelIdx <= 16 ? labelIdx : 0,
@@ -392,7 +393,7 @@ export async function renderAep(file, resultsEl) {
   }
 
   // ---- Legend ----
-  const usedLabels = [...new Set(data.comps.flatMap((c) => (c.real || []).map((l) => l.labelIdx)).filter(Boolean))].sort((a, b) => a - b);
+  const usedLabels = [...new Set<number>(data.comps.flatMap((c) => (c.real || []).map((l) => l.labelIdx)).filter(Boolean))].sort((a, b) => a - b);
   const swatches = usedLabels.map((i) =>
     `<span style="display:inline-block;width:10px;height:10px;background:${AE_LABEL_COLOURS[i]};vertical-align:middle;margin:0 5px 0 10px"></span>${AE_LABEL_NAMES[i]}`).join('');
   const [legH, legP] = h3help('Legend',

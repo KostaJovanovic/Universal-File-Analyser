@@ -102,7 +102,7 @@ function collectStyles(doc, into) {
 // Object URLs minted for embedded Pictures/* images. They are global and would
 // otherwise leak one Blob per image on every re-render (a document can hold many),
 // so track them and revoke the previous document's set when a new one is opened.
-const _odfImageUrls = new Set();
+const _odfImageUrls = new Set<string>();
 function revokeOdfImageUrls() {
   for (const u of _odfImageUrls) { try { URL.revokeObjectURL(u); } catch (_) {} }
   _odfImageUrls.clear();

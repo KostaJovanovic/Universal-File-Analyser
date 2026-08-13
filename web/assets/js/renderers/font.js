@@ -103,6 +103,8 @@ function specimenCard(family, axes, font) {
         // view, and self-stops when the card leaves the DOM (collection member
         // switch, SPA navigation) via the isConnected guard - no manual teardown.
         const PLAY = '▶', PAUSE = '❚❚'; // filled triangle / double bar
+        // Variation axes currently animating, each with its slider and readout and
+        // the phase offset that keeps them from moving in lock-step.
         const playing = new Set();
         let rafId = 0;
         const PERIOD = 4200; // ms for one full min -> max -> min sweep
@@ -185,7 +187,7 @@ function specimenCard(family, axes, font) {
                     playing.delete(a);
                     syncButtons();
                 }
-                val.textContent = (Math.round(input.value * 100) / 100).toString();
+                val.textContent = (Math.round(Number(input.value) * 100) / 100).toString();
                 applyAxes();
             });
             playBtn.addEventListener('click', () => toggle(a));

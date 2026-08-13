@@ -66,7 +66,9 @@ function isSofMarker(m) { return m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0
 export function scanJpeg(bytes, start = 0) {
   const n = bytes.length;
   if (start + 2 > n || bytes[start] !== 0xFF || bytes[start + 1] !== 0xD8) return null;
-  const out = { soi: start, segments: [], sof: null, dqt: 0, dht: 0, dri: null, sosAt: -1, scanStart: -1, scanEnd: n, hasEOI: false, progressive: false, truncated: false };
+  // eoiAt is only set once the end-of-image marker is actually found.
+  const out: { [k: string]: any; eoiAt?: number } =
+    { soi: start, segments: [], sof: null, dqt: 0, dht: 0, dri: null, sosAt: -1, scanStart: -1, scanEnd: n, hasEOI: false, progressive: false, truncated: false };
   let p = start + 2;
   while (p + 1 < n) {
     if (bytes[p] !== 0xFF) { out.truncated = true; break; }       // lost marker sync

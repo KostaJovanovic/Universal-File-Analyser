@@ -240,7 +240,7 @@ try {
     localStorage.removeItem(VOL_KEY);
 }
 catch (_) { }
-const volPlayers = new Set(); // { mediaEl, wrap, sync }
+const volPlayers = new Set();
 // A native <audio>/<video> element's own .volume is hard-capped at 1.0, so going
 // past 100% needs a Web Audio GainNode inserted after it. But an element may have
 // only ONE MediaElementSource for its whole life, so every effect that taps a

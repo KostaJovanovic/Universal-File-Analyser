@@ -120,6 +120,7 @@ export async function extractAviData(file, aviInfo) {
         }
         pos += 8 + ckSize + (ckSize & 1);
     }
+    // audioBuffer is attached below only when the AVI carried a decodable stream.
     const result = { videoFrames };
     const fmt = aviInfo && aviInfo.audioFormat;
     if (audioChunks.length && fmt && fmt.formatTag === 1 && fmt.bitsPerSample) {

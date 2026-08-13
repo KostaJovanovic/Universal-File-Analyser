@@ -95,7 +95,7 @@ function decodeThumb(thumb) {
     thumb.addEventListener('click', () => openCarve(file, salvaged ? thumb._salvageUrl : null));
   };
   const fail = () => { if (placeholder) placeholder.textContent = (thumb._carveFmt || 'DATA') + ' · no preview'; };
-  return new Promise((done) => {
+  return new Promise<void>((done) => {
     const salvage = async () => {
       if (!isJpeg) { fail(); done(); return; }
       try {

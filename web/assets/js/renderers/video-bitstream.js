@@ -46,6 +46,11 @@ export const isSpecifiedColourCode = (n) => n != null && n !== 2 && n !== 0;
 // Reads past the end return 0 and latch `overrun`, so a truncated or misparsed
 // NAL yields a flagged-incomplete result instead of nonsense that looks real.
 class BitReader {
+    b;
+    pos;
+    end;
+    /** Latched when a read runs past the end - see the note above. */
+    overrun;
     constructor(bytes) { this.b = bytes; this.pos = 0; this.end = bytes.length * 8; this.overrun = false; }
     bit() {
         if (this.pos >= this.end) {

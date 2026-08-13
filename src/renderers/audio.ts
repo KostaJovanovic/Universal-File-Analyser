@@ -682,7 +682,9 @@ function attachFullscreen(card, fsBtn, allowFs, sig, onChange) {
 // --- Custom player (replaces native <audio>/<video> controls) ---
 // --- Spectrogram UI panel (shared for file + recording) ---
 export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
-  const card = el('div', { class: 'anr-card anr-spec-card anr-spec-fillable' });
+  // firstPaint rides on the card so callers can await the deferred compute.
+  const card = el('div', { class: 'anr-card anr-spec-card anr-spec-fillable' }) as
+    HTMLDivElement & { firstPaint?: Promise<void> };
   const panelListenerOpts = opts.signal ? { signal: opts.signal } : undefined;
 
   // Isolate-frequencies state. Declared up here because the pan/seek guards below
@@ -799,7 +801,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     ctl('Window', winSel),
   ]));
 
-  const actions = [ctl('', saveBtn)];
+  const actions: HTMLElement[] = [ctl('', saveBtn)];
   if (revBtn) actions.push(ctl('', revBtn));
   // Isolate frequencies (band-stop) - only offered when driving file playback.
   const isoBtn = opts.audioEl
@@ -845,6 +847,12 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
   let blendActive = false;      // true while the blend owns the spectrogram (analysed -> cleanup)
   let blendSeek = null;         // (frac) => seek the blend; while active, canvas/playhead seeks route here
   let blendPause = null;        // () => pause the blend (mutual exclusion with the file transport)
+  // Tears the blend view down (stops playback, frees the stems, hands the canvas
+  // back). Assigned by the AI-separation block far below, but declared HERE: the
+  // abort handler at the end of this function calls it too, and while it lived in
+  // the inner block that call was an out-of-scope ReferenceError that killed the
+  // rest of the abort path (the media stopper was never unregistered).
+  let blendCleanup = null;
   let specTransport = null;     // the under-spectrogram makePlayer; the blend delegates to it while active
   let blendApplyIso = null;     // set while blend owns audio: re-route its stems through the isolate band-stop
   let blendReanalyse = null;    // set while blend owns the canvas: re-run the stem STFTs for new fft/window/mode
@@ -929,7 +937,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     scrollEl.addEventListener('pointerdown', (e) => {
       if (isoActive) return;                         // isolate mode captures the drag itself
       if (e.button !== 0 || e.pointerType === 'touch') return;
-      if (e.target.closest && e.target.closest('.anr-playhead')) return;
+      if ((e.target as HTMLElement).closest && (e.target as HTMLElement).closest('.anr-playhead')) return;
       pid = e.pointerId; startX = e.clientX; startScroll = scrollEl.scrollLeft;
       panMoved = false;
     });
@@ -996,7 +1004,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
 
   let state = {
     mode: 'stft', scale: 'log', cmap: 'magma', fftSize: 2048, winName: 'hann',
-    zoom: 1, height: 320, dbFloor: -90
+    zoom: 1, height: 320 as number | 'fill', dbFloor: -90
   };
   let cached = null;
   // Loudest-moment figure for the Peak stat - signal-only, so compute it once. The
@@ -1358,7 +1366,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     const lowMemory = typeof navigator.deviceMemory === 'number' && navigator.deviceMemory <= 4;
     const preferLite = mobileInput || lowMemory;
     let aiModelId = preferLite ? 'lite' : 'standard';
-    const aiModelBtns: any = {};
+    const aiModelBtns: Record<string, HTMLButtonElement> = {};
     const aiModelSeg = el('div', { class: 'anr-btn-row anr-iso-modelseg' });
     [
       ['standard', 'Standard', 'Kim Vocal 2 - cleaner separation, about 85 MB to download once'],
@@ -1627,7 +1635,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     canvasWrap.addEventListener('pointerdown', (e) => {
       if (!isoActive || e.button !== 0) return;
       // Leave the playhead to its own grab-scrub handler so it stays draggable here.
-      if (e.target.closest && e.target.closest('.anr-playhead')) return;
+      if ((e.target as HTMLElement).closest && (e.target as HTMLElement).closest('.anr-playhead')) return;
       selPid = e.pointerId;
       selStart = fracAt(e.clientY);
       selEl = el('div', { class: 'anr-spec-bandsel' });
@@ -1709,7 +1717,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
       isoMode = 'karaoke';
       rebuildGraph();
     }
-    const PRESETS = [
+    const PRESETS: { key: string; label: string; run: () => void; stereoOnly?: boolean }[] = [
       // One-tap character effects: keep or cut ranges of pitch to colour the track.
       { key: 'underwater', label: 'Underwater', run: () => soloRange(1, 400) },      // muffled low-pass
       { key: 'radio',      label: 'Radio',      run: () => soloRange(500, 3400) },   // tinny band-pass
@@ -1794,7 +1802,7 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
     // Unlike the EQ presets, this runs a real source-separation model in a worker
     // and produces two playable/downloadable stems. Everything heavy (runtime +
     // model) is lazy-loaded on first click and cached for offline use.
-    let aiRunning = false, aiUrls = [], aiResourceCleanups = [], blendCleanup = null;
+    let aiRunning = false, aiUrls = [], aiResourceCleanups = [];
     // Display config per AI job. Both jobs produce two stems shown in the same
     // blend view; only the labels/keys differ. The result object always carries the
     // left stem as result.vocals and the right as result.instrumental (denoise maps
@@ -2696,6 +2704,16 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
   return card;
 }
 
+/** A readout row that shows a progress bar until its value lands. The three
+ *  controls ride on the <tr> itself, so the DSP queue can drive a row it was
+ *  handed without a separate wrapper. */
+interface PendingRow extends HTMLTableRowElement {
+  progress: (step: number) => void;
+  fill: (value: string, extra?: Node) => void;
+  drop: () => void;
+  done?: boolean;
+}
+
 // A readout row whose value isn't ready yet: renders its label immediately with a
 // progress bar where the number goes, so File info can be shown in full before the
 // slow analysis passes have finished.
@@ -2706,8 +2724,8 @@ export function makeSpectrogramPanel(samples, sampleRate, opts: any = {}) {
 // whole run; one waiting on the second pass is full almost immediately. Call fill()
 // with the value once it lands, or drop() if there turned out to be nothing to
 // report.
-function pendingRow(label, help, atStep) {
-  const tr = rowHelp(label, '', help);
+function pendingRow(label, help, atStep): PendingRow {
+  const tr = rowHelp(label, '', help) as PendingRow;
   const td = tr.querySelector('td');
   td.textContent = '';
   const bar = asciiBar();
@@ -2775,7 +2793,9 @@ function buildCoverArtCard(art, file, resultsEl?) {
 
 export function buildWaveformCard(file, mono, audioBuffer, audioEl, signal) {
   const sr = audioBuffer.sampleRate;
-  const waveCard = el('div', { class: 'anr-card' });
+  // renderWave rides on the card: the resize/zoom paths call it by name.
+  const waveCard = el('div', { class: 'anr-card' }) as
+    HTMLDivElement & { renderWave?: () => void };
   const [waveH, waveHelp] = h3help('Waveform', 'Amplitude over time. Click and drag to select a region - then drag its edges to fine-tune, drag the middle to move it, or type exact start/end times. Zoom in or export the selection as a WAV file. The white playhead line shows the current playback position; drag it, or use the transport below, to scrub.');
   waveCard.appendChild(waveH); waveCard.appendChild(waveHelp);
   const waveCanvas = el('canvas', { class: 'anr-waveform' });
@@ -4906,7 +4926,11 @@ async function startLive(resultsEl, liveBtn) {
 // dropEl / inputEl are optional: the single "any file" hero layout wires only the
 // Record / Live buttons here (its drop + picker go through initVideo instead), so
 // each piece is guarded rather than assumed present.
-export function initAudio({ dropEl, inputEl, recordBtn, liveBtn, resultsEl, onFile }) {
+// The hero controls wire only recordBtn/liveBtn, the Sound section wires the
+// full set - so every member is optional.
+export function initAudio({ dropEl, inputEl, recordBtn, liveBtn, resultsEl, onFile }: {
+  dropEl?: any; inputEl?: any; recordBtn?: any; liveBtn?: any; resultsEl?: any; onFile?: any;
+}) {
   const handle = onFile || ((file) => renderAudio(file, resultsEl));
 
   if (inputEl) inputEl.addEventListener('change', (e) => {

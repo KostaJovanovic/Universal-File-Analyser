@@ -10,6 +10,90 @@
    path, the MP4 moov walk and the Matroska walk without three copies drifting
    apart. */
 
+// ---------- result shapes ----------
+// Every parser below builds its answer field by field as the bitstream reveals
+// it, so each key is optional: an SPS that stops parsing cleanly half way still
+// returns what it managed to read. Values are mostly `any` because they come
+// straight off untyped bit reads and codec-config walks - the value of naming
+// the keys here is that a typo in one of the ~30 field names is now a build
+// error rather than a silently undefined row.
+
+/** A single elementary video/audio stream, as described by an SPS, an avcC /
+ *  hvcC config record, or a Matroska track entry. */
+export interface StreamInfo {
+  codec?: string;
+  codecName?: any;
+  profileIdc?: number;
+  profile?: string;
+  tier?: any;
+  levelIdc?: number;
+  level?: any;
+  progressive?: any;
+  temporalLayers?: number;
+  chromaIdc?: number;
+  chroma?: any;
+  bitDepth?: any;
+  bitDepthLuma?: number;
+  bitDepthChroma?: number;
+  width?: any;
+  height?: any;
+  fps?: number;
+  fpsSource?: string;
+  fullRange?: boolean;
+  range?: any;
+  primaries?: any;
+  transfer?: any;
+  matrix?: any;
+  matrixName?: any;
+  aspectRatioIdc?: number;
+  sarWidth?: number;
+  sarHeight?: number;
+  pixelAspect?: string;
+  hdr?: any;
+  maxCll?: any;
+  maxFall?: any;
+  mdcv?: any;
+  sps?: any;
+  // Filled in by the MP4/MOV moov walk in video.ts, which builds the same shape
+  // from sample-entry boxes rather than from a raw SPS.
+  avgBitrate?: any;
+  maxBitrate?: any;
+  clli?: any;
+  dvProfile?: any;
+  dvLevel?: any;
+  dvBlCompatible?: any;
+  paramSets?: any;
+  partialParse?: any;
+  partial?: any;
+  rotation?: any;
+  // Audio-only members (Matroska A_ tracks share this shape).
+  channels?: any;
+  sampleRate?: any;
+  language?: any;
+}
+
+/** The MP4/MOV moov walk's answer: the first video and audio stream plus the
+ *  movie-level duration. */
+export interface MoovInfo {
+  video: StreamInfo | null;
+  audio: StreamInfo | null;
+  durationSec?: number;
+}
+
+/** What the Matroska/WebM walk returns: the promoted first video and audio
+ *  streams, every track it saw, and the segment-level metadata. */
+export interface MatroskaInfo {
+  container: string;
+  video: StreamInfo | null;
+  audio: StreamInfo | null;
+  tracks: any[];
+  muxingApp?: string;
+  writingApp?: string;
+  title?: string;
+  dateUtc?: any;
+  durationSec?: number;
+}
+
 // ---------- shared code-point tables (ISO/IEC 23001-8) ----------
 
 const CHROMA_FORMATS = { 0: 'monochrome', 1: '4:2:0', 2: '4:2:2', 3: '4:4:4' };
@@ -56,6 +140,11 @@ export const isSpecifiedColourCode = (n) => n != null && n !== 2 && n !== 0;
 // Reads past the end return 0 and latch `overrun`, so a truncated or misparsed
 // NAL yields a flagged-incomplete result instead of nonsense that looks real.
 class BitReader {
+  b: Uint8Array;
+  pos: number;
+  end: number;
+  /** Latched when a read runs past the end - see the note above. */
+  overrun: boolean;
   constructor(bytes) { this.b = bytes; this.pos = 0; this.end = bytes.length * 8; this.overrun = false; }
   bit() {
     if (this.pos >= this.end) { this.overrun = true; return 0; }
@@ -219,7 +308,7 @@ function hevcVui(br, out) {
 // parse cleanly enough to trust the essentials.
 export function parseHevcSps(rbsp) {
   const br = new BitReader(rbsp);
-  const out = { codec: 'hevc' };
+  const out: StreamInfo = { codec: 'hevc' };
   br.skip(4);                                       // sps_video_parameter_set_id
   const maxSubLayersMinus1 = br.bits(3);
   br.bit();                                         // sps_temporal_id_nesting_flag
@@ -330,7 +419,7 @@ function avcVui(br, out) {
 // emulation-prevention bytes stripped.
 export function parseAvcSps(rbsp) {
   const br = new BitReader(rbsp);
-  const out = { codec: 'avc' };
+  const out: StreamInfo = { codec: 'avc' };
   const profileIdc = br.bits(8);
   br.skip(8);                                       // constraint flags + reserved
   const levelIdc = br.bits(8);
@@ -390,7 +479,7 @@ export function parseAvcSps(rbsp) {
 // an MP4 or a Matroska CodecPrivate without touching the media data.
 export function parseHvcC(u8) {
   if (!u8 || u8.length < 23) return null;
-  const out = { codec: 'hevc' };
+  const out: StreamInfo = { codec: 'hevc' };
   const b1 = u8[1];
   out.tier = (b1 & 0x20) ? 'High' : 'Main';
   out.profileIdc = b1 & 0x1f;
@@ -429,7 +518,7 @@ export function parseHvcC(u8) {
 // avcC (ISO/IEC 14496-15 §5.3.3.1), same idea: config bytes plus the SPS itself.
 export function parseAvcC(u8) {
   if (!u8 || u8.length < 7) return null;
-  const out = { codec: 'avc' };
+  const out: StreamInfo = { codec: 'avc' };
   out.profileIdc = u8[1];
   out.profile = AVC_PROFILES[out.profileIdc] || ('profile ' + out.profileIdc);
   out.levelIdc = u8[3];
@@ -682,7 +771,7 @@ export async function parseMatroskaTracks(file) {
 
   // Walk the Segment's children, reading only the headers, and pull just the
   // Info and Tracks elements into memory.
-  const out = { video: null, audio: null, tracks: [], container: 'Matroska' };
+  const out: MatroskaInfo = { video: null, audio: null, tracks: [], container: 'Matroska' };
   let timecodeScale = 1000000, rawDuration = 0;
   let pos = segStart, guard = 0, infoDone = false, tracksDone = false;
   while (pos < segEnd && guard++ < 4096 && !(infoDone && tracksDone)) {
@@ -737,7 +826,7 @@ export async function parseMatroskaTracks(file) {
     if (t.defaultDurationNs > 0) t.fps = 1e9 / t.defaultDurationNs;
 
     if (t.type === 1 && !out.video) {
-      const v = { codec: t.codecId, codecName: t.codecLabel, width: t.width, height: t.height };
+      const v: StreamInfo = { codec: t.codecId, codecName: t.codecLabel, width: t.width, height: t.height };
       if (t.fps) { v.fps = t.fps; v.fpsSource = 'Matroska DefaultDuration'; }
       // DisplayWidth/Height give the shape the picture should be shown at. When
       // that disagrees with the stored pixel size the video is anamorphic, and

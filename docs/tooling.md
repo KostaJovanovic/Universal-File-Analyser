@@ -80,17 +80,17 @@ action argument (`save.bat save`, `save.bat commit` for commit-without-push,
    runs before the generators because four of them import the emitted
    `core/formats.js` into Node.
 
-   `tsc`'s own exit code is deliberately **not** the gate - it is non-zero
-   while the migration to full `strict` is in progress even though the emitted
-   JS is correct. Instead the two error classes are treated differently:
+   `tsc`'s own exit code is deliberately **not** the gate, because the two
+   error classes mean very different things:
 
    - **Syntax errors (TS1xxx)** are **fatal**. The parse failed, so the
      emitted JS for that file may be wrong or truncated and must never ship.
      The offending lines are printed and the commit aborts.
-   - **Type errors (TS2xxx)** do not block a commit. They are expected
-     mid-migration, so the console shows only a one-line count rather than
-     thousands of lines; the full log stays at `%TEMP%\anr-tsc-all.log` for
-     when you want to work through them.
+   - **Type errors (TS2xxx)** do not block a commit - `tsc` emitted correct JS
+     either way, and stopping a commit over one is more disruptive than the
+     error is. The tree does compile clean, though, so a non-zero count means
+     something genuinely broke; it is printed prominently, with the full log
+     at `%TEMP%\anr-tsc-all.log`.
 
    `tools/check-build.mjs` is the second gate and is also **fatal** (unlike
    every generator below): it verifies each source has output no older than

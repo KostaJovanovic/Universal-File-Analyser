@@ -19,8 +19,8 @@ import { wireFooterContact } from './popups.js';
 
   // ----- Size the linkback gif to match the "valjdakosta.com · 2026" line
   //       above it, same as app.js does for every other page's footer.
-  var copyright = document.querySelector('.footer-copyright');
-  var linkback = document.querySelector('.footer-linkback');
+  var copyright = document.querySelector<HTMLElement>('.footer-copyright');
+  var linkback = document.querySelector<HTMLElement>('.footer-linkback');
   if (copyright && linkback) linkback.style.width = copyright.offsetWidth + 'px';
 
   // ----- Dark-mode toggle (label shows the CURRENT mode, like the main site) -----
@@ -62,7 +62,7 @@ import { wireFooterContact } from './popups.js';
       var toggle = btns.length === 1 && actives.length === 1;
       if (!radio && !toggle) return;   // action-only row - CSS :active is enough
       row.addEventListener('click', function (e) {
-        var btn = e.target && e.target.closest ? e.target.closest('.anr-btn') : null;
+        var btn = e.target && (e.target as HTMLElement).closest ? (e.target as HTMLElement).closest<HTMLButtonElement>('.anr-btn') : null;
         if (!btn || btn.disabled || !row.contains(btn)) return;
         if (radio) {
           for (var i = 0; i < btns.length; i++) btns[i].classList.remove('is-active');
@@ -75,7 +75,7 @@ import { wireFooterContact } from './popups.js';
   }
 
   // ----- Sidebar filter: hide pages (and empty groups) that don't match -----
-  var filter = document.getElementById('docsFilter');
+  var filter = (document.getElementById('docsFilter') as HTMLInputElement);
   if (filter) {
     filter.addEventListener('input', function () {
       var q = filter.value.trim().toLowerCase();

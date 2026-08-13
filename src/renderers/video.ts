@@ -17,6 +17,7 @@ import {
   parseHvcC, parseAvcC, parseAnnexBStreamInfo, parseMatroskaTracks,
   COLOUR_PRIMARIES, TRANSFER_CHARS, MATRIX_COEFFS, isSpecifiedColourCode
 } from './video-bitstream.js';
+import type { StreamInfo, MoovInfo } from './video-bitstream.js';
 
 // iOS (iPhone/iPad) detection. On iOS the custom scrubber's touch handling is
 // unreliable, so we show the native <video> controls there; everywhere else the
@@ -27,6 +28,23 @@ function isIOS() {
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
+/** Where a video render puts its sub-results and how it registers its player.
+ *  The page version targets the real Photo/Sound sections and joins the sync
+ *  group; the inline (/compare) version targets local slots and opts out, so
+ *  the sync/exclusive hooks there are no-ops that return nothing. */
+interface VideoCtx {
+  inline: boolean;
+  compare: boolean;
+  photoTarget: () => HTMLElement;
+  audioTarget: () => HTMLElement;
+  previewTarget: () => HTMLElement;
+  afterPhoto: () => void;
+  photoOpts: (base: any) => any;
+  sync: (playerEl?: any) => unknown;
+  exclusive: (playerEl?: any) => unknown;
+  companion: (c?: any) => unknown;
+}
+
 // Render context - lets the same renderer run normally (targets the fixed photo/
 // audio/video section slots, syncs players, scrolls to the photo section) OR run
 // "inline" for the compare view's side-by-side panels, where every target is a
@@ -35,7 +53,7 @@ function isIOS() {
 // and CAPTURED synchronously by each helper/handler at build time, so deferred
 // button clicks use the context of their own render even after a second render
 // swaps the module-level value. It resets to the default on every renderVideo call.
-const DEFAULT_VCTX = {
+const DEFAULT_VCTX: VideoCtx = {
   inline: false,
   compare: false,
   photoTarget: () => document.getElementById('photoResults'),
@@ -150,9 +168,9 @@ function buildFrameControls(playerEl, getFps, file) {
     playerEl.currentTime = Math.max(0, t);
     refresh();
   }
-  tc.addEventListener('click', (e) => { if (!editing && !editWrap.contains(e.target)) enterEdit(); });
+  tc.addEventListener('click', (e) => { if (!editing && !editWrap.contains(e.target as Node)) enterEdit(); });
   tc.addEventListener('keydown', (e) => { if (!editing && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); enterEdit(); } });
-  editWrap.addEventListener('focusout', (e) => { if (!editWrap.contains(e.relatedTarget)) commit(); });
+  editWrap.addEventListener('focusout', (e) => { if (!editWrap.contains((e as FocusEvent).relatedTarget as Node)) commit(); });
   const order = [sH, sM, sS, sF];
   for (const seg of order) {
     seg.addEventListener('input', () => {
@@ -200,7 +218,7 @@ function buildFrameControls(playerEl, getFps, file) {
     const cv = grabCanvas(); if (!cv) return;
     analyseBtn.disabled = true; analyseBtn.textContent = 'Capturing…';
     try {
-      const blob = await new Promise((r) => cv.toBlob(r, 'image/png'));
+      const blob = await new Promise<Blob | null>((r) => cv.toBlob(r, 'image/png'));
       const frameFile = new File([blob], `frame_${playerEl.currentTime.toFixed(3)}s.png`, { type: 'image/png' });
       const pr = ctx.photoTarget();
       if (pr) { renderPhoto(frameFile, pr, ctx.photoOpts(undefined)); ctx.afterPhoto(); }
@@ -211,7 +229,7 @@ function buildFrameControls(playerEl, getFps, file) {
     const cv = grabCanvas(); if (!cv) return;
     grabBtn.disabled = true;
     try {
-      const blob = await new Promise((r) => cv.toBlob(r, 'image/png'));
+      const blob = await new Promise<Blob | null>((r) => cv.toBlob(r, 'image/png'));
       // Name the grab after the timecode (HH-MM-SS-FF; ':' is illegal in filenames).
       const p = parts(playerEl.currentTime);
       const tc = `${pad(p.h)}-${pad(p.m)}-${pad(p.s)}-${pad(p.f)}`;
@@ -934,7 +952,7 @@ async function extractRawParamSets(file, h265, signal) {
 function videoTrackFromStream(info) {
   if (!info) return null;
   const hevc = info.codec === 'hevc';
-  const v = {
+  const v: StreamInfo = {
     codec: hevc ? 'hvc1' : 'avc1',
     codecName: hevc ? 'H.265 / HEVC' : 'H.264 / AVC',
     width: info.width, height: info.height
@@ -1998,7 +2016,7 @@ async function detectIsobmffTracks(file) {
 
   const moovBuf = await file.slice(moovOffset, moovOffset + moovSize).arrayBuffer();
   const view = new DataView(moovBuf);
-  const result = { video: null, audio: null };
+  const result: MoovInfo = { video: null, audio: null };
 
   const traks = findAllBoxes(view, 8, moovSize, 'trak');
   for (const trak of traks) {
@@ -2018,7 +2036,7 @@ async function detectIsobmffTracks(file) {
     const codecFcc = fcc(view, entryStart + 4);
 
     if (isVideo && !result.video) {
-      const v = { codec: codecFcc, codecName: VIDEO_CODEC_NAMES[codecFcc] || codecFcc };
+      const v: StreamInfo = { codec: codecFcc, codecName: VIDEO_CODEC_NAMES[codecFcc] || codecFcc };
 
       // Stored pixel dimensions from the VisualSampleEntry: box hdr(8) +
       // SampleEntry(8) + 16 pre-defined/reserved, then width(2) height(2).
@@ -2163,7 +2181,7 @@ async function detectIsobmffTracks(file) {
 
       result.video = v;
     } else if (isAudio && !result.audio) {
-      const a = { codec: codecFcc, codecName: AUDIO_CODEC_NAMES[codecFcc] || codecFcc };
+      const a: StreamInfo = { codec: codecFcc, codecName: AUDIO_CODEC_NAMES[codecFcc] || codecFcc };
       try {
         // AudioSampleEntry: box hdr(8) + reserved(6) + data_ref_index(2) +
         // version(2) + revision(2) + vendor(4), then channelcount(2),
@@ -3011,7 +3029,7 @@ function segList(segs, dur) {
 // fires only on a real painted frame; we gate every capture on it (with a
 // rAF + timeout fallback for browsers/situations where it's unavailable).
 function whenFramePainted(video) {
-  return new Promise((resolve) => {
+  return new Promise<void>((resolve) => {
     let done = false;
     const finish = () => { if (!done) { done = true; resolve(); } };
     if ('requestVideoFrameCallback' in video) video.requestVideoFrameCallback(() => finish());
@@ -3660,7 +3678,7 @@ export async function renderVideo(file, resultsEl, opts: any = {}) {
   // audio under the Sound section and the grabbed frame under the Photo section,
   // matching the normal single-file layout.
   const localSlot = (key) => localSlots[key] || (localSlots[key] = resultsEl.appendChild(el('div', { class: 'anr-results anr-cmp-subslot anr-cmp-sub-' + key })));
-  const vctx = inline ? {
+  const vctx: VideoCtx = inline ? {
     inline: true,
     compare: !!opts.compare,
     photoTarget: () => localSlot('photo'),

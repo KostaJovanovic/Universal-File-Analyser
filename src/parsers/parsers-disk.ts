@@ -17,6 +17,7 @@
 
 import { fmtBytes, preBlock, fmtDate } from '../core/util.js';
 import { Reader, ascii, findBytes, latin1, utf8, utf16, fmtGuid } from '../core/binutil.js';
+import type { Row } from '../core/types.js';
 
 // ---------- small shared helpers ----------
 
@@ -48,7 +49,7 @@ function xmlAttr(xml, tag, attr) {
 
 // ---------- OVF descriptor (XML) ----------
 function parseOvfXml(xml) {
-  const out = { 'Format': 'OVF (Open Virtualization Format)' };
+  const out: Row = { 'Format': 'OVF (Open Virtualization Format)' };
   const vsId = xmlAttr(xml, 'VirtualSystem', 'ovf:id') || xmlAttr(xml, 'VirtualSystem', 'id');
   if (vsId) out['VM name'] = vsId;
   const prodName = xmlText(xml, 'Product');
@@ -153,7 +154,7 @@ async function parseOva(file) {
 async function parseVbox(file) {
   const text = await file.slice(0, Math.min(file.size, 2 * 1024 * 1024)).text();
   if (!/<VirtualBox\b/i.test(text) && !/<Machine\b/i.test(text)) return null;
-  const out = { 'Format': 'VirtualBox machine settings (.vbox)' };
+  const out: Row = { 'Format': 'VirtualBox machine settings (.vbox)' };
   const name = xmlAttr(text, 'Machine', 'name');
   if (name) out['VM name'] = name;
   const uuid = xmlAttr(text, 'Machine', 'uuid');
@@ -190,7 +191,7 @@ async function parseVbox(file) {
 // ---------- VMware VM config (.vmx key=value) ----------
 async function parseVmx(file) {
   const text = await file.slice(0, Math.min(file.size, 1024 * 1024)).text();
-  const kv: any = {};
+  const kv: Record<string, string> = {};
   let lines = 0;
   for (const line of text.split(/\r?\n/)) {
     const m = line.match(/^\s*([\w:.]+)\s*=\s*"?(.*?)"?\s*$/);
@@ -199,7 +200,7 @@ async function parseVmx(file) {
   if (lines < 2) return null;
   // Sanity: a real vmx almost always carries config.version / virtualHW.version.
   if (!('config.version' in kv) && !('virtualhw.version' in kv) && !('displayname' in kv)) return null;
-  const out = { 'Format': 'VMware VM config (.vmx)' };
+  const out: Row = { 'Format': 'VMware VM config (.vmx)' };
   if (kv['displayname']) out['Display name'] = kv['displayname'];
   if (kv['guestos']) out['Guest OS'] = kv['guestos'];
   if (kv['memsize']) out['Memory'] = kv['memsize'] + ' MB';
@@ -246,7 +247,7 @@ async function parseCue(file) {
     else if ((m = line.match(/^(TITLE|PERFORMER|SONGWRITER)\s+"?(.+?)"?\s*$/i))) cdtext.push(m[1] + ': ' + m[2]);
   }
   if (!files.length && !tracks) return null;
-  const out = {
+  const out: Row = {
     'Format': 'Cue sheet (CD/DVD TOC)',
     'Referenced files': files.length ? files.join(', ') : '-',
     'Tracks': tracks,
@@ -641,7 +642,7 @@ async function parseGpt(file) {
   const partEntryLba = Number(r.seek(hdrOff + 72).u64());
   const numParts = r.u32();
   const partSize = r.u32();
-  const out = {
+  const out: Row = {
     'Format': 'GUID Partition Table (GPT)',
     'Revision': (revision >>> 16) + '.' + (revision & 0xffff),
     'Disk GUID': diskGuid,
@@ -879,7 +880,7 @@ async function parseTrx(file) {
   const flagsVer = r.u32();
   const version = (flagsVer >>> 16) & 0xff;     // low byte of high half
   const flags = flagsVer & 0xffff;
-  const out = {
+  const out: Row = {
     'Format': 'TRX firmware (Broadcom / OpenWrt)',
     'Header version': version || 1,
     'Image length': fmtBytes(length),
@@ -1097,7 +1098,7 @@ async function parseVmsd(file) {
     if (m) { kv[m[1].toLowerCase()] = m[2]; lines++; }
   }
   if (lines < 1 || !('snapshot.numsnapshots' in kv) && !('snapshot.current' in kv) && !Object.keys(kv).some((k) => /^snapshot\d+\./.test(k))) return null;
-  const out = { 'Format': 'VMware snapshot metadata (.vmsd)' };
+  const out: Row = { 'Format': 'VMware snapshot metadata (.vmsd)' };
   if (kv['snapshot.numsnapshots'] != null) out['Snapshots'] = kv['snapshot.numsnapshots'];
   if (kv['snapshot.current'] != null) out['Current snapshot UID'] = kv['snapshot.current'];
   // snapshotN.displayName / .createTimeHigh / .filename
@@ -1208,7 +1209,7 @@ async function parseOvfManifest(file) {
     algos[m[1].toUpperCase()] = (algos[m[1].toUpperCase()] || 0) + 1;
   }
   if (!entries.length) return null;
-  const out = {
+  const out: Row = {
     'Format': 'OVF manifest (.mf)',
     'Files': entries.length,
     'Algorithm': Object.entries(algos).map(([k, v]) => k + ' (' + v + ')').join(', '),

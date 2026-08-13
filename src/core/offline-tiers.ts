@@ -401,7 +401,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
     TIER_ORDER.forEach((t, i) => { if (state[t] != null) cachedIdx = Math.max(cachedIdx, i); });
     const cachedMb = cachedIdx >= 0 ? TIER_MB[TIER_ORDER[cachedIdx]] : 0;
 
-    document.querySelectorAll('.offline-btn').forEach((btn) => {
+    document.querySelectorAll<HTMLElement>('.offline-btn').forEach((btn) => {
       if (btn.classList.contains('is-active')) return;
       const tier = btn.dataset.tier;
       const idx = TIER_ORDER.indexOf(tier);
@@ -433,7 +433,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   // stop them before wiping the cache they are writing into - otherwise a running
   // download keeps repopulating the just-cleared cache and records the tier as
   // cached again, making the clear look inert.
-  const activeDownloads = new Set();
+  const activeDownloads = new Set<AbortController>();
 
   // Download (or, with force, re-download) every file in a tier into the
   // 'analyser-offline' cache, driving the button's progress bar. Records the
@@ -674,7 +674,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
   // for upgrades), so let refreshTierButtons own them - it reads the saved state.
   refreshTierButtons();
 
-  document.querySelectorAll('.offline-options .offline-btn').forEach(btn => {
+  document.querySelectorAll<HTMLElement>('.offline-options .offline-btn').forEach(btn => {
     // The Complete tier opens the feature-pack popup instead of downloading directly.
     if (btn.dataset.tier === 'complete') {
       btn.addEventListener('click', () => {
@@ -723,7 +723,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
     await pruneRetiredAiStorage();
     let state = readOfflineState();
     const buttons: any = {};
-    document.querySelectorAll('.offline-btn').forEach(b => { buttons[b.dataset.tier] = b; });
+    document.querySelectorAll<HTMLElement>('.offline-btn').forEach(b => { buttons[b.dataset.tier] = b; });
 
     // Self-heal: if nothing is recorded (a tier cached before this record
     // existed, or localStorage was wiped) but files are actually in the offline
@@ -749,31 +749,39 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
 
   // ----- PWA install prompt -----
   const installBtn = document.getElementById('offlineInstall');
+/** setupOfflineTiers() re-runs on every SPA navigation, so it parks the
+ *  "already wired the window listeners" flag and the stashed
+ *  beforeinstallprompt event on itself rather than in module state. */
+type OfflineTiersState = typeof setupOfflineTiers & {
+  _winWired?: boolean;
+  _deferredPrompt?: any;
+};
+
   // The beforeinstallprompt/appinstalled listeners are window-level, but
   // setupOfflineTiers() re-runs on every SPA navigation - so wire them once (they
   // resolve the current button by id at fire time) instead of stacking a new pair
   // per navigation. deferredPrompt is stashed on the function object so the click
   // handler below and a later navigation's handler share the same captured event.
-  if (!setupOfflineTiers._winWired) {
-    setupOfflineTiers._winWired = true;
+  if (!(setupOfflineTiers as OfflineTiersState)._winWired) {
+    (setupOfflineTiers as OfflineTiersState)._winWired = true;
     window.addEventListener('beforeinstallprompt', e => {
       e.preventDefault();
-      setupOfflineTiers._deferredPrompt = e;
+      (setupOfflineTiers as OfflineTiersState)._deferredPrompt = e;
     });
     window.addEventListener('appinstalled', () => {
       const b = document.getElementById('offlineInstall');
       if (b) b.textContent = 'Installed ✓';
-      setupOfflineTiers._deferredPrompt = null;
+      (setupOfflineTiers as OfflineTiersState)._deferredPrompt = null;
     });
   }
   if (installBtn) {
     installBtn.addEventListener('click', async () => {
-      const deferredPrompt = setupOfflineTiers._deferredPrompt;
+      const deferredPrompt = (setupOfflineTiers as OfflineTiersState)._deferredPrompt;
       if (deferredPrompt) {
         deferredPrompt.prompt();
         const result = await deferredPrompt.userChoice;
         if (result.outcome === 'accepted') installBtn.textContent = 'Installed ✓';
-        setupOfflineTiers._deferredPrompt = null;
+        (setupOfflineTiers as OfflineTiersState)._deferredPrompt = null;
         return;
       }
       installBtn.textContent = installHint();
@@ -842,7 +850,7 @@ export function setupOfflineTiers(COMMIT_COUNT, RELEASE_COMMITS, analyserVersion
       try {
         if (indexedDB.databases) {
           const dbs = await indexedDB.databases();
-          await Promise.all(dbs.map(d => d.name && new Promise(res => {
+          await Promise.all(dbs.map(d => d.name && new Promise<void>(res => {
             const req = indexedDB.deleteDatabase(d.name);
             req.onsuccess = req.onerror = req.onblocked = () => res();
           })));

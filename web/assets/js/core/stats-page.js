@@ -97,7 +97,7 @@ export async function setupStatsPage() {
                 const run = [];
                 if (s.ts) {
                     const d = new Date(s.ts * 1000);
-                    if (!isNaN(d))
+                    if (!isNaN(d.getTime()))
                         run.push(d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }));
                 }
                 const waveN = Number(s.wave);
@@ -236,7 +236,7 @@ function svgEl(tag, attrs, kids) {
 }
 const _fmtDay = (s, opts) => {
     const d = new Date(s + 'T00:00:00Z');
-    return isNaN(d) ? s : d.toLocaleDateString('en-GB', opts || { day: 'numeric', month: 'short' });
+    return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', opts || { day: 'numeric', month: 'short' });
 };
 // The two series the chart can show. `key` matches data-series in the legend.
 const _TREND_SERIES = ['visitors', 'files'];

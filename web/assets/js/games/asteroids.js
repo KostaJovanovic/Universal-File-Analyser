@@ -594,6 +594,7 @@ export function launchAsteroids() {
         }
         // Drop out of fullscreen if we put ourselves there.
         try {
+            // webkitExitFullscreen (Safari) returns nothing, the standard one a Promise.
             if (document.fullscreenElement) {
                 const r = (document.exitFullscreen || document.webkitExitFullscreen).call(document);
                 if (r && r.catch)

@@ -98,7 +98,7 @@ async function parseApe(file) {
   if (ascii(head, 0, 4) !== 'MAC ') return null;
   const r = new Reader(head, true); r.seek(4);
   const version = r.u16();
-  const out = { 'Format': "Monkey's Audio (.ape)" };
+  const out: Row = { 'Format': "Monkey's Audio (.ape)" };
   out['Version'] = (version / 1000).toFixed(2);
   let rate = 0, channels = 0, bits = 0, totalFrames = 0, blocksPerFrame = 0, finalBlocks = 0, compression = 0;
   if (version >= 3980) {
@@ -160,7 +160,7 @@ async function parseWavpack(file) {
   r.u32(); // block index
   r.u32(); // block samples
   const flags = r.u32();
-  const out = { 'Format': 'WavPack (.wv)' };
+  const out: Row = { 'Format': 'WavPack (.wv)' };
   out['Version'] = '0x' + verNeeded.toString(16);
   // flags: bits 0-1 bytes/sample-1 ; bit2 mono ; bit3 hybrid ; bit23-26 sample rate index
   const bytesPerSample = (flags & 0x03) + 1;
@@ -181,7 +181,7 @@ async function parseWavpack(file) {
 async function parseTak(file) {
   const head = await readSlice(file, 0, 64);
   if (ascii(head, 0, 4) !== 'tBaK') return null;
-  const out = { 'Format': 'TAK - Tom\'s lossless Audio Kompressor (.tak)' };
+  const out: Row = { 'Format': 'TAK - Tom\'s lossless Audio Kompressor (.tak)' };
   // TAK metadata blocks follow; the STREAMINFO block (type 1) holds rate/channels.
   // Block header: 1 byte type+flags, 3 bytes size (LE), then payload.
   try {
@@ -214,7 +214,7 @@ async function parseTak(file) {
 async function parseTta(file) {
   const head = await readSlice(file, 0, 32);
   if (ascii(head, 0, 3) !== 'TTA') return null;
-  const out = { 'Format': 'True Audio (.tta)' };
+  const out: Row = { 'Format': 'True Audio (.tta)' };
   // TTA1 header: "TTA1", u16 format, u16 channels, u16 bits, u32 rate, u32 samples, u32 crc
   const r = new Reader(head, true);
   if (head[3] === 0x31) { // '1'
@@ -327,7 +327,7 @@ async function parseDff(file) {
 async function parseMusepack(file, ext) {
   const head = await readSlice(file, 0, 32);
   const sig = ascii(head, 0, 4);
-  const out = { 'Format': 'Musepack (.' + ext + ')' };
+  const out: Row = { 'Format': 'Musepack (.' + ext + ')' };
   if (sig === 'MPCK') {
     // SV8: packet-based. First packet "SH" (stream header).
     out['Stream version'] = 'SV8';
@@ -757,7 +757,7 @@ async function parseSfz(file) {
   const count = (re) => (text.match(re) || []).length;
   const samples = Array.from(text.matchAll(/sample=([^\r\n]+)/gi)).map((m) => m[1].trim());
   const keys = Array.from(text.matchAll(/(?:lokey|hikey|key)=([A-Ga-g#\d-]+)/gi)).map((m) => m[1]);
-  const out = {
+  const out: Row = {
     'Format': 'SFZ instrument (.sfz)',
     'Regions': count(/<region>/gi),
     'Groups': count(/<group>/gi),
@@ -904,7 +904,7 @@ async function parseMod(file) {
     if (m) channels = parseInt(m[1], 10);
   }
   if (channels == null) return null; // not a 31-sample MOD
-  const out = { 'Format': 'Amiga module (.mod)' };
+  const out: Row = { 'Format': 'Amiga module (.mod)' };
   out['Format tag'] = tag;
   out['Channels'] = channels;
   out['Title'] = cleanAscii(head, 0, 20) || '(none)';
@@ -945,7 +945,7 @@ async function parseXm(file) {
 async function parseIt(file) {
   const head = await readSlice(file, 0, 256);
   if (ascii(head, 0, 4) !== 'IMPM') return null;
-  const out = { 'Format': 'Impulse Tracker (.it)' };
+  const out: Row = { 'Format': 'Impulse Tracker (.it)' };
   out['Song name'] = cleanAscii(head, 4, 26) || '(none)';
   const r = new Reader(head, true); r.seek(32);
   const ordNum = r.u16();
@@ -1149,7 +1149,7 @@ async function parseSpc(file) {
 }
 
 // ---------- VGM / VGZ ----------
-const VGM_CHIPS = [
+const VGM_CHIPS: [number, string][] = [
   [0x0C, 'SN76489 (PSG)'], [0x10, 'YM2413 (OPLL)'], [0x2C, 'YM2612 (OPN2)'], [0x30, 'YM2151 (OPM)'],
   [0x38, 'Sega PCM'], [0x40, 'RF5C68'], [0x44, 'YM2203 (OPN)'], [0x48, 'YM2608 (OPNA)'],
   [0x4C, 'YM2610 (OPNB)'], [0x50, 'YM3812 (OPL2)'], [0x54, 'YM3526 (OPL)'], [0x5C, 'YMF262 (OPL3)'],
@@ -1268,7 +1268,7 @@ async function parseYm(file) {
 async function parseAup(file) {
   const text = await readText(file, 1 << 20);
   if (!/<project\b/i.test(text) && !/audacityproject/i.test(text)) return null;
-  const out = { 'Format': 'Audacity project (.aup)' };
+  const out: Row = { 'Format': 'Audacity project (.aup)' };
   const rate = (text.match(/rate="([\d.]+)"/) || [])[1];
   const ver = (text.match(/(?:projname[^>]*version|version)="([\d.]+)"/i) || [])[1];
   if (rate) out['Sample rate'] = fmtRate(parseFloat(rate));
@@ -1301,7 +1301,7 @@ async function parseAup3(file) {
     if (!summary || !summary.db) return aup3IdOnly();
     const db = summary.db;
     try {
-      const out = { 'Format': 'Audacity 3 project (.aup3)', 'Container': 'SQLite database' };
+      const out: Row = { 'Format': 'Audacity 3 project (.aup3)', 'Container': 'SQLite database' };
 
       // The `project` table holds a single row with a `dict` + `doc` blob: the
       // project XML (mirrors the old .aup). Surface sample rate / version / track
@@ -1379,6 +1379,7 @@ async function idOnly(file, ext) {
 
 // ---------- dispatch ----------
 import { safe as wrap } from './parser-util.js';
+import type { Row } from '../core/types.js';
 
 export const PARSERS = {
   // Lossless / hi-res

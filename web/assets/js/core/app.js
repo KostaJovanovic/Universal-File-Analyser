@@ -3,7 +3,7 @@
    - Acts as the page-wide drop target (until the first file lands)
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
-const COMMIT_COUNT = 271;
+const COMMIT_COUNT = 272;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -779,10 +779,11 @@ function boot() {
         // The Photo/Sound/Video nav links only make sense when their section is on the
         // page. Grey out + disable any whose section is now hidden (a non-media file
         // hides them); Home and Search are separate controls and always stay live.
-        [['#photo', sectionPhoto], ['#audio', sectionAudio], ['#video', sectionVideo]].forEach(([href, sec]) => {
+        const navPairs = [['#photo', sectionPhoto], ['#audio', sectionAudio], ['#video', sectionVideo]];
+        navPairs.forEach(([href, sec]) => {
             const link = document.querySelector('.site-nav a[href="' + href + '"]');
             if (link)
-                link.classList.toggle('is-disabled', !sec || sec.hidden);
+                link.classList.toggle('is-disabled', !sec || !!sec.hidden);
         });
         // Only flip the nav to its inverted palette when at least one section link is
         // still live. If every link is greyed out (a non-media file with no section on

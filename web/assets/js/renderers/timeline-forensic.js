@@ -21,7 +21,7 @@
 import { el, row, wireInfoToggle, fmtDate, timeAnomalies } from '../core/util.js';
 import { ascii } from '../core/binutil.js';
 const MAC_EPOCH = 2082844800; // seconds between 1904-01-01 and 1970-01-01 (UTC)
-const okDate = (d) => d instanceof Date && !isNaN(d) && d.getTime() > 0;
+const okDate = (d) => d instanceof Date && !isNaN(d.getTime()) && d.getTime() > 0;
 // ---------- MP4 / QuickTime movie header ----------
 async function readBoxHeader(file, pos) {
     const hdr = new Uint8Array(await file.slice(pos, pos + 16).arrayBuffer());
@@ -96,7 +96,7 @@ async function pngTime(file) {
         const ds = i + 8;
         if (type === 'tIME' && len >= 7 && ds + 7 <= b.length) {
             const d = new Date(Date.UTC(dv.getUint16(ds), b[ds + 2] - 1, b[ds + 3], b[ds + 4], b[ds + 5], b[ds + 6]));
-            return isNaN(d) ? null : d;
+            return isNaN(d.getTime()) ? null : d;
         }
         if (type === 'IEND')
             break;
@@ -110,7 +110,7 @@ function pickTag(xml, tag) {
     if (!m)
         return null;
     const d = new Date(m[1].trim());
-    return isNaN(d) ? null : d;
+    return isNaN(d.getTime()) ? null : d;
 }
 async function zipDocDates(file) {
     const { openZip } = await import('./zip.js');

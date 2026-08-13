@@ -13,6 +13,7 @@
 import { row, fmtBytes, preBlock } from '../core/util.js';
 import { Reader, ascii, latin1 } from '../core/binutil.js';
 import { sqliteSummary } from '../lib/sqlite.js';
+import type { Row } from '../core/types.js';
 
 // ---------- small helpers ----------
 
@@ -35,7 +36,7 @@ function fmtBBox(minX, minY, maxX, maxY) {
 
 // Tally occurrences and render the top-N as "key (n)".
 function topCounts(map, n = 12) {
-  return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, n)
+  return Object.entries<number>(map).sort((a, b) => b[1] - a[1]).slice(0, n)
     .map(([k, v]) => k + ' (' + v + ')').join(', ');
 }
 
@@ -189,7 +190,7 @@ async function parseDbf(file) {
   const headerLen = r.u16();
   const recordLen = r.u16();
   const year = yy < 80 ? 2000 + yy : 1900 + yy;
-  const out = {
+  const out: Row = {
     'Format': 'dBASE table (.dbf)',
     'Version': DBF_VERSIONS[versionByte] || ('byte 0x' + versionByte.toString(16)),
     'Last update': year + '-' + String(mm).padStart(2, '0') + '-' + String(dd).padStart(2, '0'),
@@ -219,7 +220,7 @@ async function parseDbf(file) {
 async function parsePrj(file) {
   const text = (await readText(file, 64_000)).trim();
   if (!/^(GEOGCS|PROJCS|GEOGCRS|PROJCRS|BOUNDCRS|COMPD_CS|LOCAL_CS|VERTCS|ENGCRS)/i.test(text)) return null;
-  const out = { 'Format': 'Projection / WKT CRS (.prj)' };
+  const out: Row = { 'Format': 'Projection / WKT CRS (.prj)' };
   const grab = (kw) => { const m = text.match(new RegExp(kw + '\\s*\\[\\s*"([^"]+)"', 'i')); return m ? m[1] : null; };
   const projcs = grab('PROJCS') || grab('PROJCRS');
   const geogcs = grab('GEOGCS') || grab('GEOGCRS');
@@ -436,7 +437,7 @@ async function parseIgc(file) {
 async function parseTab(file) {
   const text = await readText(file, 256_000);
   if (!/!table/i.test(text) && !/^\s*!version/im.test(text)) return null;
-  const out = { 'Format': 'MapInfo TAB' };
+  const out: Row = { 'Format': 'MapInfo TAB' };
   const ver = (text.match(/!version\s+(\d+)/i) || [])[1];
   if (ver) out['Version'] = ver;
   const charset = (text.match(/!charset\s+"?([\w-]+)"?/i) || [])[1];
@@ -482,7 +483,7 @@ async function parseMif(file) {
 async function parseVrt(file) {
   const text = await readText(file, 2_000_000);
   if (!/<VRTDataset\b/.test(text)) return null;
-  const out = { 'Format': 'GDAL Virtual Raster (.vrt)' };
+  const out: Row = { 'Format': 'GDAL Virtual Raster (.vrt)' };
   const dm = text.match(/<VRTDataset\b[^>]*\brasterXSize\s*=\s*"(\d+)"[^>]*\brasterYSize\s*=\s*"(\d+)"/);
   if (dm) out['Raster size'] = dm[1] + ' × ' + dm[2] + ' px';
   const srs = (text.match(/<SRS[^>]*>([\s\S]*?)<\/SRS>/i) || [])[1];
@@ -697,7 +698,7 @@ async function parseGpkg(file, ext) {
     if (!summary || !summary.db) return idOnly(file, ext);
     const db = summary.db;
     try {
-      const out = { 'Format': 'GeoPackage (OGC GeoPackage, SQLite)' };
+      const out: Row = { 'Format': 'GeoPackage (OGC GeoPackage, SQLite)' };
       // application_id / user_version from PRAGMA.
       const appId = q(db, 'PRAGMA application_id');
       if (appId && appId.values && appId.values[0]) {
@@ -774,7 +775,7 @@ async function parseMbtiles(file, ext) {
     if (!summary || !summary.db) return idOnly(file, ext);
     const db = summary.db;
     try {
-      const out = { 'Format': 'MBTiles (Mapbox tile database, SQLite)' };
+      const out: Row = { 'Format': 'MBTiles (Mapbox tile database, SQLite)' };
       // metadata: key/value pairs.
       const meta: any = {};
       const md = q(db, 'SELECT name, value FROM metadata');
@@ -861,7 +862,7 @@ async function parseLyrx(file) {
   if (!j || typeof j !== 'object') return null;
   // ArcGIS Pro .lyrx documents carry a "version" and a "layerDefinitions" array.
   if (!Array.isArray(j.layerDefinitions) && j.type !== 'CIMLayerDocument') return null;
-  const out = { 'Format': 'Esri ArcGIS Pro Layer (.lyrx, CIM JSON)' };
+  const out: Row = { 'Format': 'Esri ArcGIS Pro Layer (.lyrx, CIM JSON)' };
   if (j.version) out['CIM version'] = String(j.version);
   if (j.build) out['Build'] = String(j.build);
   const defs = Array.isArray(j.layerDefinitions) ? j.layerDefinitions : [];
@@ -908,7 +909,7 @@ async function parseLyr(file) {
 async function parseQgs(file) {
   const text = await readText(file, 8_000_000);
   if (!/<qgis\b/i.test(text)) return null;
-  const out = { 'Format': 'QGIS project (.qgs, XML)' };
+  const out: Row = { 'Format': 'QGIS project (.qgs, XML)' };
   const ver = (text.match(/<qgis\b[^>]*\bversion\s*=\s*"([^"]*)"/i) || [])[1];
   if (ver) out['QGIS version'] = ver;
   const title = (text.match(/<title>([^<]*)<\/title>/i) || [])[1];

@@ -101,7 +101,8 @@ function parsePremiere(xml) {
   const sequences = [];
   for (const seqEl of doc.getElementsByTagName('Sequence')) {
     if (!seqEl.getAttribute('ObjectUID')) continue;        // skip <Sequence ObjectRef> pointers
-    const seq = { name: txt(seqEl, 'Name') || 'Sequence', id: txt(seqEl, 'ID'), w: 0, h: 0, fps: 0, tracks: [] };
+    // dur/clipCount are derived from the tracks once they have all been read.
+    const seq: Record<string, any> = { name: txt(seqEl, 'Name') || 'Sequence', id: txt(seqEl, 'ID'), w: 0, h: 0, fps: 0, tracks: [] };
 
     const groups = kids(kid(seqEl, 'TrackGroups'), 'TrackGroup')
       .map((g) => ref(g, 'Second'))

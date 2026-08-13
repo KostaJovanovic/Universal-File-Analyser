@@ -668,6 +668,7 @@ export function mountTableKit(host, model, opts = {}) {
         hidden: new Set(),
         sort: { col: -1, dir: 0 },
         globalSearch: '',
+        // col index -> either a substring match or a numeric range.
         colFilters: {},
     };
     let activeTarget = null;

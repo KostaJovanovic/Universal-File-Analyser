@@ -9,6 +9,11 @@
 // (network/most container order); pass little:true for LE formats. Multi-byte
 // reads advance the cursor; the *At variants don't.
 export class Reader {
+    bytes;
+    view;
+    pos;
+    little;
+    length;
     constructor(buf, little = false) {
         if (buf instanceof Uint8Array) {
             this.bytes = buf;

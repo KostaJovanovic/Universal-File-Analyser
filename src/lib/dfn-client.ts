@@ -14,7 +14,7 @@ const STALL_MS = 5 * 60 * 1000;
 const RUNTIME_STALL_MS = 2 * 60 * 1000;
 let worker = null;
 let jobSeq = 0;
-let jobQueue = Promise.resolve();
+let jobQueue: Promise<unknown> = Promise.resolve();
 
 function getWorker() {
   if (!worker) worker = new Worker(new URL('./dfn-worker.js', import.meta.url), { type: 'module' });
@@ -29,7 +29,7 @@ function throwIfAborted(signal) {
   if (signal && signal.aborted) throw abortError();
 }
 
-function enqueue(task) {
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
   const queued = jobQueue.then(task, task);
   jobQueue = queued.catch(() => {});
   return queued;
@@ -65,10 +65,18 @@ async function toModelChannels(audioBuffer, signal) {
   return { channels: chs, sampleRate: DFN_SR };
 }
 
-function runWorker(channels, sampleRate, { onProgress, signal }) {
+/** What the worker's `done` message carries back: the two separated stems as
+ *  per-channel Float32Arrays, at the model's own sample rate. */
+export interface DenoiseResult {
+  clean: Float32Array[];
+  noise: Float32Array[];
+  sampleRate: number;
+}
+
+function runWorker(channels, sampleRate, { onProgress, signal }): Promise<DenoiseResult> {
   const w = getWorker();
   const jobId = ++jobSeq;
-  return new Promise((resolve, reject) => {
+  return new Promise<DenoiseResult>((resolve, reject) => {
     let settled = false;
     let stallTimer = 0;
 

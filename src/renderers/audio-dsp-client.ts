@@ -48,7 +48,7 @@ export function canOffloadDsp(audioBuffer) {
  * @returns {Promise<void>} resolves when every pass has landed
  */
 export function runAudioDsp(audioBuffer, { needBpm, signal, onPass }) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     let w;
     try { w = getWorker(); } catch (e) { reject(e); return; }
     const jobId = ++_jobSeq;

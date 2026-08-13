@@ -306,7 +306,7 @@ async function parseMbox(file) {
     if (!msgs.length)
         return null;
     // Date range + top senders.
-    const dates = msgs.map((m) => new Date(m.date)).filter((d) => !isNaN(d));
+    const dates = msgs.map((m) => new Date(m.date)).filter((d) => !isNaN(d.getTime()));
     const senders = {};
     for (const m of msgs) {
         const e = (m.from.match(/[\w.+-]+@[\w.-]+/) || [m.from])[0] || '(unknown)';
@@ -319,7 +319,8 @@ async function parseMbox(file) {
         'Messages (sampled)': msgs.length + (file.size > SAMPLE ? ' (head only)' : ''),
     };
     if (dates.length) {
-        const min = new Date(Math.min(...dates)), max = new Date(Math.max(...dates));
+        const min = new Date(Math.min(...dates.map((d) => d.getTime())));
+        const max = new Date(Math.max(...dates.map((d) => d.getTime())));
         out['Date range'] = min.toLocaleDateString() + ' → ' + max.toLocaleDateString();
     }
     out['Distinct senders'] = Object.keys(senders).length;

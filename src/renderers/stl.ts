@@ -26,7 +26,26 @@ function parseStlGeometry(buf) {
     : parseBinaryStl(buf);
 }
 
-export function makeResult(format, posArr, normArr) {
+/** A parsed mesh. makeResult() fills the geometry; the per-format parsers add
+ *  whatever else their file carried - vertex colours, UVs, a texture - so those
+ *  ride as optional members rather than a separate object the viewer would have
+ *  to thread through alongside the mesh. */
+export interface MeshGeometry {
+  format: any;
+  positions: Float32Array;
+  normals: Float32Array;
+  count: number;
+  bbox: { min: number[]; max: number[] };
+  area: number;
+  volume: number;
+  /** Per-vertex RGB, when the format carries it (3MF, AMF, PLY, OBJ+MTL). */
+  colors?: Float32Array;
+  /** Per-vertex texture coordinates, with textureImage below. */
+  uvs?: Float32Array;
+  textureImage?: any;
+}
+
+export function makeResult(format, posArr, normArr): MeshGeometry {
   const count = posArr.length / 9;
   const positions = new Float32Array(posArr);
   const normals = new Float32Array(normArr);
@@ -135,8 +154,29 @@ function mat4Ortho(l, r, b, t, n, f) {
   return new Float32Array([2 / (r - l), 0, 0, 0, 0, 2 / (t - b), 0, 0, 0, 0, -2 / (f - n), 0, -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n), 1]);
 }
 
+// The object buildViewer hands back. Two shapes: on WebGL failure only
+// { wrap, ok:false } exists, and every caller checks `.ok` before touching the
+// rest - so the failure path is asserted into this type rather than modelled as
+// a discriminated union (which would not narrow anyway: `viewer` is a reassigned
+// `let` captured by the toolbar handlers, and TypeScript drops narrowing of a
+// mutable binding inside a closure). `state` is deliberately `any` - a bag of
+// live render flags the toolbar pokes at by name, fully checked inside
+// buildViewer where it is a plain inferred literal.
+export interface StlViewer {
+  wrap: HTMLDivElement;
+  ok: boolean;
+  state: any;
+  resize: () => void;
+  setSpin: (v: boolean) => void;
+  snapshot: () => string | null;
+  dispose: () => void;
+  onSpinChange: (cb: (spin: boolean) => void) => void;
+  start: () => void;
+  markDirty: () => void;
+}
+
 // ---------- WebGL viewer ----------
-function buildViewer(geo, opts: any = {}) {
+function buildViewer(geo, opts: any = {}): StlViewer {
   const wrap = el('div', { class: 'anr-stl-viewport' });
   const canvas = el('canvas', { class: 'anr-stl-canvas' });
   wrap.appendChild(canvas);
@@ -158,7 +198,7 @@ function buildViewer(geo, opts: any = {}) {
     || canvas.getContext('experimental-webgl', glOpts)) as WebGLRenderingContext;
   if (!gl) {
     wrap.appendChild(el('p', { class: 'anr-error' }, 'WebGL is not available in this browser.'));
-    return { wrap, ok: false };
+    return { wrap, ok: false } as StlViewer;
   }
 
   // Normalise geometry: centre on origin and scale longest edge to 1.
@@ -578,7 +618,7 @@ export function buildViewerCard(geo, title = '3D model', opts: any = {}) {
     aaBtn('Hardware MSAA', () => viewer.state.msaa, (v) => applyMSAA(v));
     aaBtn('Supersampling', () => viewer.state.ssaa, (v) => { viewer.state.ssaa = v; viewer.resize(); viewer.markDirty(); });
     qBtn.addEventListener('click', (e) => { e.stopPropagation(); qPanel.classList.toggle('is-hidden'); });
-    document.addEventListener('click', (e) => { if (!qWrap.contains(e.target)) qPanel.classList.add('is-hidden'); });
+    document.addEventListener('click', (e) => { if (!qWrap.contains(e.target as Node)) qPanel.classList.add('is-hidden'); });
     qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
     const resetBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Reset view');
     resetBtn.addEventListener('click', () => {
@@ -959,7 +999,13 @@ export function geoSpan(geo) {
 // { key, name, build() -> geo } and is built lazily + cached. The viewer sits
 // above the textual readouts. Reused by STL/OBJ/PLY/OFF/STEP body-splitting and
 // by the 3MF/AMF container renderers.
-export function renderPartsViewer(file, resultsEl, { metaCard, parts, format, unitLabel, partsTitle, partsHint, zUp }) {
+// Only `parts` is required; each caller (3MF, AMF, STEP, ...) supplies whatever
+// labelling its format has and leaves the rest to the defaults below.
+export function renderPartsViewer(file, resultsEl, { metaCard, parts, format, unitLabel, partsTitle, partsHint, zUp }: {
+  parts: any[];
+  metaCard?: any; format?: any; unitLabel?: any;
+  partsTitle?: any; partsHint?: any; zUp?: any;
+}) {
   resultsEl.innerHTML = '';
   if (!parts.length) { resultsEl.appendChild(errorCard('No models found in this file.')); return; }
 

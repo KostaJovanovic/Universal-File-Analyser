@@ -88,7 +88,7 @@ export async function setupStatsPage() {
         const children = [el('span', { class: 'stats-score-name' }, String(s.name))];
         // Inline next to the name: date, then wave survived, then the killing file / nuke.
         const run = [];
-        if (s.ts) { const d = new Date(s.ts * 1000); if (!isNaN(d)) run.push(d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })); }
+        if (s.ts) { const d = new Date(s.ts * 1000); if (!isNaN(d.getTime())) run.push(d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })); }
         const waveN = Number(s.wave);
         if (Number.isFinite(waveN) && waveN > 0) run.push('W' + waveN);
         if (s.cause) run.push(causeText(s.cause));
@@ -210,7 +210,7 @@ function svgEl(tag, attrs, kids?) {
 
 const _fmtDay = (s, opts?) => {
   const d = new Date(s + 'T00:00:00Z');
-  return isNaN(d) ? s : d.toLocaleDateString('en-GB', opts || { day: 'numeric', month: 'short' });
+  return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', opts || { day: 'numeric', month: 'short' });
 };
 
 // The two series the chart can show. `key` matches data-series in the legend.
@@ -313,7 +313,7 @@ function renderStatsTrends(daily, totals) {
   if (modesEl && !modesEl._wired) {
     modesEl._wired = true;
     modesEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('.stats-trends-mode');
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('.stats-trends-mode');
       if (!btn) return;
       const next = btn.dataset.mode === 'cumulative' ? 'cumulative' : 'daily';
       if (next === mode) return;
@@ -337,7 +337,7 @@ function renderStatsTrends(daily, totals) {
   if (legendEl && !legendEl._wired) {
     legendEl._wired = true;
     legendEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('.stats-trends-key');
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('.stats-trends-key');
       if (!btn) return;
       const key = btn.dataset.series;
       const turningOn = !visible[key];

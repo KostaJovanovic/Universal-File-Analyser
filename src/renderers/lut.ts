@@ -25,7 +25,13 @@ const rgbCss = (r, g, b) => `rgb(${to255(r)},${to255(g)},${to255(b)})`;
 
 // ---- parse a .cube file ------------------------------------------------------
 function parseCubeLut(text) {
-  const lut = { title: '', type: null, size: 0, domainMin: [0, 0, 0], domainMax: [1, 1, 1], comments: [], data: null };
+  // The head is read from the .cube preamble; the tail is filled in once the
+  // data rows have been counted, so it stays optional.
+  const lut: {
+    title: string; type: any; size: number;
+    domainMin: number[]; domainMax: number[]; comments: any[]; data: any;
+    expected?: number; count?: number; complete?: boolean; range?: number[];
+  } = { title: '', type: null, size: 0, domainMin: [0, 0, 0], domainMax: [1, 1, 1], comments: [], data: null };
   const rows = [];
   let expected = 0;
   const lines = text.split(/\r?\n/);
@@ -252,7 +258,7 @@ function paintChart(canvas, sample, apply) {
 }
 
 // ---- memory-colour swatches, before vs after ---------------------------------
-const SWATCHES = [
+const SWATCHES: [string, number, number, number][] = [
   ['White', 0.90, 0.90, 0.90], ['Mid grey', 0.50, 0.50, 0.50], ['Shadow', 0.18, 0.18, 0.18],
   ['Skin (light)', 0.86, 0.66, 0.55], ['Skin (deep)', 0.52, 0.34, 0.26], ['Sky blue', 0.33, 0.52, 0.73],
   ['Foliage', 0.30, 0.44, 0.22], ['Pure red', 0.85, 0.10, 0.10], ['Pure blue', 0.12, 0.20, 0.78],
@@ -390,14 +396,14 @@ function applyLut(src, sample) {
 const tcLabel = (t) => { const m = Math.floor(t / 60), s = Math.floor(t % 60), c = Math.round((t % 1) * 100); return `${m}:${String(s).padStart(2, '0')}.${String(c).padStart(2, '0')}`; };
 
 function seekVideo(v, t) {
-  return new Promise((res) => { const on = () => { v.removeEventListener('seeked', on); res(); }; v.addEventListener('seeked', on); try { v.currentTime = t; } catch (_) { res(); } });
+  return new Promise<void>((res) => { const on = () => { v.removeEventListener('seeked', on); res(); }; v.addEventListener('seeked', on); try { v.currentTime = t; } catch (_) { res(); } });
 }
 async function extractVideoFrames(file, count, maxW) {
   const url = URL.createObjectURL(file);
   const v = document.createElement('video');
   v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
   try {
-    await new Promise((res, rej) => { v.onloadeddata = () => res(); v.onerror = () => rej(new Error('the browser could not decode this video codec')); });
+    await new Promise<void>((res, rej) => { v.onloadeddata = () => res(); v.onerror = () => rej(new Error('the browser could not decode this video codec')); });
     const dur = v.duration || 0, vw = v.videoWidth || 1280, vh = v.videoHeight || 720;
     const scale = Math.min(1, maxW / vw), W = Math.max(1, Math.round(vw * scale)), H = Math.max(1, Math.round(vh * scale));
     const cap = document.createElement('canvas'); cap.width = W; cap.height = H;
@@ -513,10 +519,10 @@ function buildTryout(sample) {
     // Bind the shared chrome to THIS render's items. Re-done on every open, so a
     // second LUT analysed on the same page drives the same overlay with its own
     // frames instead of the first one's.
-    const img = overlay.querySelector('.lightbox-img-wrap img');
+    const img = overlay.querySelector<HTMLImageElement>('.lightbox-img-wrap img');
     const meta = overlay.querySelector('.lightbox-meta');
-    const prevBtn = overlay.querySelector('.anr-lut-prev');
-    const nextBtn = overlay.querySelector('.anr-lut-next');
+    const prevBtn = overlay.querySelector<HTMLElement>('.anr-lut-prev');
+    const nextBtn = overlay.querySelector<HTMLElement>('.anr-lut-next');
     const show = (i) => {
       overlay._i = i;
       if (overlay._zoom) overlay._zoom.reset();

@@ -67,7 +67,7 @@ function parseHls(text, ext) {
   const isHls = /#EXT-X-/.test(text);
   if (!isHls) return null; // basic .m3u handled elsewhere
   const lines = text.split(/\r?\n/);
-  const out = { 'Format': 'HLS playlist (.' + ext + ')' };
+  const out: Row = { 'Format': 'HLS playlist (.' + ext + ')' };
   const ver = (text.match(/#EXT-X-VERSION:(\d+)/) || [])[1];
   if (ver) out['HLS version'] = ver;
 
@@ -141,7 +141,7 @@ function parseDash(text) {
   if (!doc) return null;
   const mpd = doc.querySelector('MPD');
   if (!mpd) return null;
-  const out = { 'Format': 'MPEG-DASH manifest (.mpd)' };
+  const out: Row = { 'Format': 'MPEG-DASH manifest (.mpd)' };
   const profiles = mpd.getAttribute('profiles');
   if (profiles) out['Profiles'] = profiles.split(',').map((p) => p.split(':').pop()).join(', ');
   out['Type'] = mpd.getAttribute('type') || 'static';
@@ -215,7 +215,7 @@ function parseSmooth(text) {
   const root = doc.querySelector('SmoothStreamingMedia, smil\\:smil, smil');
   const ssm = doc.querySelector('SmoothStreamingMedia');
   if (!ssm && !/SmoothStreamingMedia|<smil/i.test(text)) return null;
-  const out = { 'Format': 'Smooth Streaming manifest' };
+  const out: Row = { 'Format': 'Smooth Streaming manifest' };
   if (ssm) {
     out['Manifest'] = '.ismc (client manifest)';
     const ver = ssm.getAttribute('MajorVersion');
@@ -265,7 +265,7 @@ function parseF4m(text) {
   const doc = parseXml(text);
   if (!doc) return null;
   if (!/<manifest/i.test(text)) return null;
-  const out = { 'Format': 'Adobe HDS manifest (.f4m)' };
+  const out: Row = { 'Format': 'Adobe HDS manifest (.f4m)' };
   const id = doc.querySelector('id'); if (id) out['Stream ID'] = id.textContent.trim();
   const dur = doc.querySelector('duration'); if (dur) { const d = parseFloat(dur.textContent); if (d) out['Duration'] = fmtDuration(d); }
   const stype = doc.querySelector('streamType'); if (stype) out['Stream type'] = stype.textContent.trim();
@@ -293,7 +293,7 @@ function parsePlaylist(text, ext) {
     if (!/\[playlist\]/i.test(text)) return null;
     const files = Array.from(text.matchAll(/^File\d+\s*=\s*(.+)$/gim)).map((m) => m[1].trim());
     const titles = Array.from(text.matchAll(/^Title\d+\s*=\s*(.+)$/gim)).map((m) => m[1].trim());
-    const out = {
+    const out: Row = {
       'Format': 'PLS playlist (Winamp/SHOUTcast)',
       'Entries': (text.match(/^NumberOfEntries\s*=\s*(\d+)/im) || [])[1] || files.length,
       'Tracks / streams': files.length,
@@ -308,7 +308,7 @@ function parsePlaylist(text, ext) {
     const entries = (text.match(/<entry\b/gi) || []).length;
     const refs = Array.from(text.matchAll(/<ref\b[^>]*href\s*=\s*"([^"]+)"/gi)).map((m) => m[1]);
     const titles = Array.from(text.matchAll(/<title\b[^>]*>([^<]*)<\/title>/gi)).map((m) => m[1].trim());
-    const out = {
+    const out: Row = {
       'Format': 'ASX playlist (Windows Media)',
       'Entries': entries || refs.length,
       'Stream references': refs.length,
@@ -322,7 +322,7 @@ function parsePlaylist(text, ext) {
     if (!doc || !/<smil/i.test(text)) return null;
     const media = Array.from(doc.querySelectorAll('media')).map((m) => m.getAttribute('src')).filter(Boolean);
     const title = doc.querySelector('title');
-    const out = {
+    const out: Row = {
       'Format': 'WPL playlist (Windows Media Player)',
       'Title': title ? title.textContent.trim() : '-',
       'Tracks': media.length,
@@ -334,7 +334,7 @@ function parsePlaylist(text, ext) {
     if (!doc || !/<playlist/i.test(text)) return null;
     const tracks = Array.from(doc.querySelectorAll('track'));
     const title = doc.querySelector('playlist > title');
-    const out = {
+    const out: Row = {
       'Format': 'XSPF playlist (XML Shareable Playlist)',
       'Playlist title': title ? title.textContent.trim() : '-',
       'Tracks': tracks.length,
@@ -873,6 +873,8 @@ async function parseMpegVideo(file, ext) {
 
 // ---------- Exp-Golomb reader (for H.264/H.265 SPS) ----------
 class BitReader {
+  b: Uint8Array;
+  pos: number;
   constructor(bytes) { this.b = bytes; this.pos = 0; }
   bit() { const byte = this.b[this.pos >> 3]; const off = 7 - (this.pos & 7); this.pos++; return (byte >> off) & 1; }
   bits(n) { let v = 0; for (let i = 0; i < n; i++) v = (v << 1) | this.bit(); return v >>> 0; }
@@ -1094,7 +1096,7 @@ async function parseMpegTs(file, ext) {
   // Collect PMT PIDs from PAT (PID 0), then stream types from PMTs.
   const pmtPids = new Set();
   const programs = [];
-  const streamTypes = new Set();
+  const streamTypes = new Set<number>();
   let scanned = 0;
   for (let o = off; o + pktSize <= buf.length && scanned < 4000; o += pktSize, scanned++) {
     let p = o;
@@ -1309,6 +1311,7 @@ async function parseYuv(file) {
 // ============================================================================
 
 import { safe as wrap } from './parser-util.js';
+import type { Row } from '../core/types.js';
 
 // Text-manifest dispatch reads the file once and routes by extension.
 function textParser(fn) {

@@ -27,7 +27,7 @@ function escAttr(s) {
  *
  * Returns a short human-readable label like "PNG image" or "ZIP container".
  */
-export function guessFormat(b) {
+export function guessFormat(b: Uint8Array) {
   if (!b || b.length < 4) return 'unknown';
   const a = (s, l) => Array.from(b.slice(s, s + l)).map((c) => String.fromCharCode(c)).join('');
 
@@ -184,7 +184,7 @@ function formatXml(node, indent) {
   for (const aNode of node.attributes) {
     attrs += ' <span class="anr-syn-attr">' + esc(aNode.name) + '</span>=<span class="anr-syn-str">"' + escAttr(aNode.value) + '"</span>';
   }
-  const children = Array.from(node.childNodes);
+  const children = Array.from<Node>(node.childNodes);
   const meaningful = children.filter(c =>
     c.nodeType === Node.ELEMENT_NODE ||
     (c.nodeType === Node.TEXT_NODE && c.textContent.trim()) ||
@@ -229,7 +229,7 @@ export async function renderUnknown(file, resultsEl, opts) {
   }
 
   const hex   = hexBytes(headBytes, ' ');
-  const ascii = Array.from(headBytes).map((b) => (b >= 0x20 && b <= 0x7E) ? String.fromCharCode(b) : '.').join('');
+  const ascii = Array.from<number>(headBytes).map((b) => (b >= 0x20 && b <= 0x7E) ? String.fromCharCode(b) : '.').join('');
   const guess = guessFormat(headBytes);
 
   resultsEl.innerHTML = '';

@@ -44,15 +44,24 @@ hand: `npx tsc -p tsconfig.json && npx tsc -p tsconfig.worker.json`.
 (Two configs because `lib.dom` and `lib.webworker` can't share one program - the
 three module workers compile under `tsconfig.worker.json`.)
 
-The migration is mid-flight: `strict` is off and there are outstanding type
-errors by design. They do **not** block the build - `tsc` still emits correct JS
-- so don't treat a red `tsc` as a broken build, and `save.bat` prints only a
-count rather than the whole dump (full log path is printed with the count).
+**The tree compiles clean** - both configs, zero errors. Keep it that way: a new
+error is a real one, not migration backlog, so fix it rather than adding it to a
+pile. `save.bat` prints the count prominently when it isn't zero.
 
-Two things *are* fatal at commit time. **Syntax errors (TS1xxx)** mean the parse
+`strict` is deliberately still off, and that is not laziness - it is two very
+different asks wearing one flag. The cheap half (`noImplicitThis`,
+`strictBindCallApply`) is already on. The expensive half is `strictNullChecks` +
+`noImplicitAny`, which together report **~5,400** sites, nearly all of the form
+"this `querySelector` / parse result might be null". They're right, but each one
+needs a real guard rather than an annotation, and adding guards changes runtime
+behaviour in a codebase with **no tests**. Treat it as its own project: one
+directory at a time (`core` -> `lib` -> `parsers` -> `games` -> `renderers`),
+never bundled with another change.
+
+Two things are fatal at commit time. **Syntax errors (TS1xxx)** mean the parse
 failed, so the emitted JS may be wrong or truncated - `save.bat` prints those
 lines and aborts. And `tools/check-build.mjs` fails when output is missing or
-stale relative to `src/`. Everything else is advisory.
+stale relative to `src/`. Type errors are reported loudly but don't block.
 
 - **Run locally**: `server.bat` launches
   `serve.py` on port **3000** and opens a browser. Use this, not

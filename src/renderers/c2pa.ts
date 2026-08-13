@@ -234,8 +234,19 @@ function certsFromCose(cose) {
   return [];
 }
 
+/** One C2PA manifest, flattened. The lists are always present; everything else
+ *  depends on which assertions and which claim fields the manifest carries. */
+interface C2paManifest {
+  label: any;
+  actions: any[]; ingredients: any[]; assertions: any[]; ai: any[];
+  creativeWork?: any; trainingMining?: any;
+  generator?: any; title?: any; format?: any; instanceId?: any; alg?: any;
+  signer?: any; certCount?: number;
+  [k: string]: any;
+}
+
 function parseManifest(node) {
-  const out = { label: node.label, actions: [], ingredients: [], assertions: [], ai: [] };
+  const out: C2paManifest = { label: node.label, actions: [], ingredients: [], assertions: [], ai: [] };
   const assertionStore = findByTag(node.children, 'c2as', 'c2pa.assertions');
   if (assertionStore) {
     for (const a of assertionStore.children || []) {

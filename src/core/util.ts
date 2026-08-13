@@ -158,6 +158,10 @@ export const LABEL_HELP = {
   'Recovery ID': 'A small extra value kept with some signatures that lets the signer’s public key be worked out from the signature itself.',
 };
 
+/** A function that parks its "already wired the document listener" flag on
+ *  itself. Assigned inside the function body, so it needs naming here. */
+type OnceWired<F> = F & { _init?: boolean };
+
 // Build a <th> for a readout row. If `helpText` is given (passed explicitly via
 // rowHelp, or looked up in LABEL_HELP by row()), the label gets the standard [?]
 // info button + click-to-reveal tooltip - the same affordance everywhere, so the
@@ -165,8 +169,8 @@ export const LABEL_HELP = {
 function helpTh(label, helpText) {
   const th = el('th', {});
   if (!helpText) { th.textContent = label; return th; }
-  if (!helpTh._init) {
-    helpTh._init = true;
+  if (!(helpTh as OnceWired<typeof helpTh>)._init) {
+    (helpTh as OnceWired<typeof helpTh>)._init = true;
     document.addEventListener('click', () => {
       document.querySelectorAll('.anr-tip.is-active').forEach(t => t.classList.remove('is-active'));
     });
@@ -266,6 +270,18 @@ export function errorCard(message) {
   return el('div', { class: 'anr-error' }, message);
 }
 
+/** The ASCII progress-bar element, with its controls attached. Built by
+ *  asciiBar() and passed around as a plain node, so the methods travel with
+ *  the element rather than in a wrapper object. */
+export interface AsciiBar extends HTMLDivElement {
+  /** Determinate fill, 0-1. */
+  set: (frac: number) => void;
+  /** Bouncing window, for work of unknown length. */
+  indeterminate: () => void;
+  /** Halt the animation. */
+  stop: () => void;
+}
+
 // Monospace ASCII progress bar - the [////////        ] look used everywhere a
 // loading bar appears. Two modes share the same glyphs so every loader reads the
 // same way:
@@ -275,13 +291,13 @@ export function errorCard(message) {
 //   bar.stop()           halt the animation
 // The indeterminate animation runs on rAF and stops itself once the element is
 // detached from the DOM, so callers don't have to tear it down.
-export function asciiBar(opts: any = {}) {
+export function asciiBar(opts: any = {}): AsciiBar {
   if (typeof opts === 'number') opts = { width: opts };   // back-compat
   const fit = !!opts.fit;            // size to fill the parent (e.g. popup card)
   const SWEEP = 1900;                // ms for one left→right pass (indeterminate)
   let W = opts.width || 20;
   let win = Math.max(4, Math.round(W * 0.25));
-  const bar = el('div', { class: 'anr-progress-bar' });
+  const bar = el('div', { class: 'anr-progress-bar' }) as AsciiBar;
   let raf = null, seen = false, t0 = null;
 
   // fit:true → recompute the character count so the bar spans its container.
@@ -359,7 +375,7 @@ export function inlineLoader(text) {
 // render would wedge with the drop loader stuck on screen. The timeout only ever
 // makes us continue early, never late, so it is safe to lose the race.
 export function yieldToMain(timeoutMs = 200) {
-  return new Promise((r) => {
+  return new Promise<void>((r) => {
     if (document.hidden) { setTimeout(r, 0); return; }
     let done = false;
     const finish = () => { if (done) return; done = true; r(); };
@@ -376,7 +392,7 @@ export function yieldToMain(timeoutMs = 200) {
 // of a real paint. Use this before handing the thread to a long blocking job whose
 // "working…" indicator has to be visible while it runs.
 export function afterPaint(timeoutMs = 400) {
-  return new Promise((r) => {
+  return new Promise<void>((r) => {
     if (document.hidden) { setTimeout(r, 0); return; }
     let done = false;
     const finish = () => { if (done) return; done = true; r(); };
@@ -423,7 +439,7 @@ export function timeAnomalies(opts: any = {}) {
   const now = opts.now || new Date();
   const DAY = 86400000;
   const SKEW = 2 * DAY;   // tolerate clock/timezone slop on "in the future" checks
-  const ok = (d) => d instanceof Date && !isNaN(d) && d.getTime() > 0;
+  const ok = (d) => d instanceof Date && !isNaN(d.getTime()) && d.getTime() > 0;
   const stamp = (d) => d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
   const out = [];
   const labels = { captured: 'Capture date', created: 'Creation date', modified: 'Modification date' };
@@ -465,7 +481,7 @@ export function preBlock(text, cls?) {
 }
 
 // Format a Date for display, tolerating non-Date / invalid values.
-export const fmtDate = (d) => (d instanceof Date && !isNaN(d)) ? d.toLocaleString() : String(d);
+export const fmtDate = (d) => (d instanceof Date && !isNaN(d.getTime())) ? d.toLocaleString() : String(d);
 
 // Copy text to the clipboard, with an execCommand fallback for insecure/old
 // contexts where navigator.clipboard is absent. Resolves true on success.
@@ -678,7 +694,7 @@ export function attachViewCube(viewer) {
     hotKey = key;
     for (const h of hotspots) h.classList.toggle('is-hot', key != null && h._key === key);
   };
-  box.addEventListener('mouseover', (e) => setHot(e.target.closest('.anr-viewcube-face, .anr-viewcube-edge, .anr-viewcube-corner')));
+  box.addEventListener('mouseover', (e) => setHot((e.target as HTMLElement).closest('.anr-viewcube-face, .anr-viewcube-edge, .anr-viewcube-corner')));
   box.addEventListener('mouseleave', () => setHot(null));
 
   // Keep the cube's orientation in lock-step with the camera.
@@ -754,8 +770,8 @@ export async function readText(file, cap = 262144) {
 // open, which works whether the caller wired before or after inserting the
 // button into the DOM (h3help wires before; most manual sites wire after).
 export function wireInfoToggle(btn, panel) {
-  if (!wireInfoToggle._init) {
-    wireInfoToggle._init = true;
+  if (!(wireInfoToggle as OnceWired<typeof wireInfoToggle>)._init) {
+    (wireInfoToggle as OnceWired<typeof wireInfoToggle>)._init = true;
     document.addEventListener('click', () => {
       document.querySelectorAll('.anr-info-panel.is-active').forEach(p => p.classList.remove('is-active'));
     });
@@ -1162,20 +1178,20 @@ export function buildFileTree(obj, opts) {
 // resolving once it's ready (and immediately if already present). Used to pull
 // in heavy optional libraries (Leaflet, Tesseract, heic2any, jsQR) on demand.
 export function loadCss(href) {
-  return new Promise((resolve) => {
+  return new Promise<void>((resolve) => {
     if (document.querySelector(`link[href="${href}"]`)) return resolve();
     const l = document.createElement('link');
     l.rel = 'stylesheet'; l.href = href;
-    l.onload = resolve; l.onerror = resolve;
+    l.onload = () => resolve(); l.onerror = () => resolve();
     document.head.appendChild(l);
   });
 }
 export function loadScript(src) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) return resolve();
     const s = document.createElement('script');
     s.src = src;
-    s.onload = resolve; s.onerror = reject;
+    s.onload = () => resolve(); s.onerror = reject;
     document.head.appendChild(s);
   });
 }

@@ -698,7 +698,7 @@ async function parseE57(file) {
       const guid = (xml.match(/<guid[^>]*>([^<]+)<\/guid>/i) || [])[1];
       const sensorVendor = (xml.match(/<sensorVendor[^>]*>([^<]+)<\/sensorVendor>/i) || [])[1];
       const sensorModel = (xml.match(/<sensorModel[^>]*>([^<]+)<\/sensorModel>/i) || [])[1];
-      const records = Array.from(xml.matchAll(/<records\b[^>]*>(\d+)<\/records>/gi)).reduce((a, m) => a + (parseInt(m[1], 10) || 0), 0);
+      const records = Array.from<RegExpMatchArray>(xml.matchAll(/<records\b[^>]*>(\d+)<\/records>/gi)).reduce((a, m) => a + (parseInt(m[1], 10) || 0), 0);
       const ts = (xml.match(/<dateTimeValue[^>]*>([^<]+)<\/dateTimeValue>/i) || [])[1];
       if (scans) out['Scans (data3D)'] = scans;
       if (records) out['Total point records'] = records.toLocaleString();

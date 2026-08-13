@@ -22,6 +22,8 @@ const rgbHex = (r, g, b) => '#' + hex2(to255(r)) + hex2(to255(g)) + hex2(to255(b
 const rgbCss = (r, g, b) => `rgb(${to255(r)},${to255(g)},${to255(b)})`;
 // ---- parse a .cube file ------------------------------------------------------
 function parseCubeLut(text) {
+    // The head is read from the .cube preamble; the tail is filled in once the
+    // data rows have been counted, so it stays optional.
     const lut = { title: '', type: null, size: 0, domainMin: [0, 0, 0], domainMax: [1, 1, 1], comments: [], data: null };
     const rows = [];
     let expected = 0;

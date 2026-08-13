@@ -56,7 +56,19 @@ function addPaperGrid(parent, bbox) {
   parent.insertBefore(g, parent.firstChild);
 }
 
-export function buildViewer(build, opts: any = {}) {
+/** The shared pan/zoom viewer. `focus` is not set here: the schematic and board
+ *  renderers attach their own designator lookup on top, since only they know how
+ *  to map a reference to a position. */
+export interface EdaViewer {
+  wrap: HTMLDivElement;
+  centerOn: (cx: any, cy: any, w: any) => void;
+  flash: (cx: any, cy: any) => void;
+  /** The initial viewBox, in data units - what "Fit" returns to. */
+  home: { x: number; y: number; w: number; h: number };
+  focus?: (ref: any) => boolean;
+}
+
+export function buildViewer(build, opts: any = {}): EdaViewer {
   // build(group) populates an SVG <g> and returns the data bbox {minx,miny,maxx,maxy}.
   const wrap = el('div', { class: 'anr-altium-wrap' });
   const s = svg('svg', { class: 'anr-altium-svg' });

@@ -25,7 +25,7 @@ function isWebKit() {
   try {
     const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
     const iOS = /iP(hone|ad|od)/.test(ua)
-      || (/Macintosh/.test(ua) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
+      || (/Macintosh/.test(ua) && typeof navigator !== 'undefined' && (navigator as any).maxTouchPoints > 1);
     const appleWebKit = /AppleWebKit/.test(ua) && !/Chrom(e|ium)|Android/.test(ua);
     return iOS || appleWebKit;
   } catch (_) { return false; }

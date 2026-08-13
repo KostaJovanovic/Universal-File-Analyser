@@ -127,14 +127,15 @@ function collectBlocks(root, fallbackHeading) {
                 continue;
             }
             if (tag === 'CANVAS') {
-                if (child.width && child.height) {
+                const cv = child;
+                if (cv.width && cv.height) {
                     let url = null;
                     try {
                         // A 3D viewer canvas exposes _anrSnapshot(), which renders a framed
                         // isometric still; everything else just reads its current pixels.
-                        url = (typeof child._anrSnapshot === 'function')
-                            ? child._anrSnapshot()
-                            : child.toDataURL('image/png');
+                        url = (typeof cv._anrSnapshot === 'function')
+                            ? cv._anrSnapshot()
+                            : cv.toDataURL('image/png');
                     }
                     catch (_) {
                         url = null;

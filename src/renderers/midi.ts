@@ -55,7 +55,7 @@ export async function renderMidi(file, resultsEl) {
   const tempos = [];                 // real set-tempo events {tick, us}
   let timeSig = null, keySig = null;
   const trackNames = [], instrNames = [];
-  const programs = new Set();        // GM program numbers used (melodic)
+  const programs = new Set<number>();        // GM program numbers used (melodic)
   let hasDrums = false;
   const channels = new Set();
   let noteOns = 0;

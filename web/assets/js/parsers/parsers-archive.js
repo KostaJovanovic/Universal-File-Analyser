@@ -1690,7 +1690,9 @@ async function parseBr(file) {
     try {
         if (typeof DecompressionStream !== 'undefined' && file.size <= 64 * 1024 * 1024) {
             const comp = await readBytes(file, file.size);
-            const decoded = await inflate(comp, 'br'); // null where 'br' is unsupported
+            // 'br' is only a CompressionFormat where the browser ships Brotli; inflate()
+            // returns null on the ones that don't.
+            const decoded = await inflate(comp, 'br');
             if (decoded && decoded.length) {
                 out['Decompressed size'] = fmtBytes(decoded.length);
                 if (file.size > 0)

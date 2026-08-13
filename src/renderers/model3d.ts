@@ -80,7 +80,7 @@ export async function renderMtl(file, resultsEl) {
     const det = el('details', { style: 'margin-top:12px;' });
     det.appendChild(el('summary', {}, `Referenced texture files (${textures.size})`));
     const ul = el('ul', { class: 'anr-hint', style: 'margin:8px 0 0;padding-left:18px;font-size:12px;word-break:break-all;' });
-    for (const t of textures) ul.appendChild(el('li', {}, t));
+    for (const t of textures) ul.appendChild(el('li', {}, String(t)));
     det.appendChild(ul);
     sum.appendChild(det);
   }
@@ -399,7 +399,7 @@ async function render3mf(file, resultsEl) {
     const unzipped = ffl.unzipSync(data, { filter: (f) => /\.model$/i.test(f.name) || /(?:model_settings|project_settings)\.config$/i.test(f.name) });
     files = new Map();
     const dec = new TextDecoder('utf-8');
-    for (const [name, bytes] of Object.entries(unzipped)) files.set(name, dec.decode(bytes));
+    for (const [name, bytes] of Object.entries<Uint8Array>(unzipped)) files.set(name, dec.decode(bytes));
     const mainKey = [...files.keys()].find((k) => /(^|\/)3dmodel\.model$/i.test(k)) || [...files.keys()].find((k) => /\.model$/i.test(k));
     mainText = files.get(mainKey);
     model = parseMainModel(mainText);
@@ -491,7 +491,7 @@ async function render3mfNoModel(file, resultsEl, ffl, data, metaCard) {
     for (const g of gcodes) {
       const btn = el('button', { type: 'button', class: 'anr-btn' }, 'Open ' + g.short);
       btn.addEventListener('click', async () => {
-        for (const b of btnRow.children) b.disabled = false;   // let the user switch plates
+        for (const b of btnRow.children as HTMLCollectionOf<HTMLButtonElement>) b.disabled = false;   // let the user switch plates
         btn.disabled = true;
         host.innerHTML = '';
         const gfile = new File([g.bytes], g.short, { type: 'text/plain' });
@@ -904,7 +904,7 @@ function objMaterialsPrompt(file, resultsEl, parsed) {
   // its materials, optionally decode the first matching map_Kd texture image, then
   // re-render the model in colour.
   async function applyFiles(fileList) {
-    const files = Array.from(fileList || []);
+    const files: File[] = Array.from(fileList || []);
     if (!files.length) return;
     const mtlFile = files.find((f) => /\.mtl$/i.test(f.name));
     if (!mtlFile) { status.textContent = 'No .mtl among the chosen files.'; return; }

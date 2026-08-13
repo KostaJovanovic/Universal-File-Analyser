@@ -93,6 +93,8 @@ function orientImage(imgEl, orientation, signal) {
 // list view, matching the carve/salvage "Analyse" buttons).
 // `help` (optional): concise explanation folded behind a [?] on the heading, so
 // callers can keep the always-visible `hint` short (or drop it entirely).
+// `items` is the only required member; ICO/MPO/TIFF each supply whatever
+// heading and help text their format warrants.
 export function buildEmbeddedImagesCard({ title, hint, help, items, signal, resultsEl, sourceFile }) {
     const card = el('div', { class: 'anr-card' });
     if (help) {

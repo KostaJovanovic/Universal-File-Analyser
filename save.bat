@@ -98,9 +98,9 @@ rem exit code is not the gate - tools/check-build.mjs is. It verifies every
 rem source has fresh output, which is the failure that actually ships bad code.
 rem (Once the migration reaches full strict, make these two calls fatal too.)
 rem TS1xxx vs TS2xxx matters here. TS2xxx are TYPE errors: tsc still emits
-rem correct JS, and there are plenty of them mid-migration, so they must not
-rem block a commit. TS1xxx are SYNTAX/grammar errors: the parse failed, so the
-rem emitted JS for that file may be wrong or truncated - that must never ship.
+rem correct JS, so they are reported but do not block a commit. TS1xxx are
+rem SYNTAX/grammar errors: the parse failed, so the emitted JS for that file may
+rem be wrong or truncated - that must never ship.
 echo [build] tsc src -^> web/assets/js
 call npx tsc -p tsconfig.json > "%TEMP%\anr-tsc.log" 2>&1
 call npx tsc -p tsconfig.worker.json > "%TEMP%\anr-tsc-w.log" 2>&1
@@ -110,14 +110,19 @@ rem Syntax errors first - the parse failed, so the emitted JS may be wrong.
 findstr /R /C:"error TS1[0-9][0-9][0-9]:" "%TEMP%\anr-tsc-all.log" >nul
 if not errorlevel 1 goto syntaxfail
 
-rem Type errors are expected while the migration to full strict is in progress.
-rem Print a one-line count instead of thousands of lines of console noise; the
-rem full log stays on disk for when you actually want to work through them.
+rem The tree compiles clean, so a type error now means something actually broke
+rem rather than migration backlog. It still does not abort the commit - tsc
+rem emitted correct JS either way, and stopping a commit over a type error is
+rem more disruptive than the error is - but the count is printed loudly enough
+rem to notice. If it is ever non-zero, fix it before it accumulates again.
 rem NB: goto rather than an if(...) block - see the parenthesis note further down.
 set TSERRS=0
 for /f %%c in ('type "%TEMP%\anr-tsc-all.log" ^| find /c "error TS"') do set TSERRS=%%c
 if "%TSERRS%"=="0" goto tsclean
-echo [build] emitted OK - %TSERRS% type error(s) outstanding, see %TEMP%\anr-tsc-all.log
+echo.
+echo [build] *** %TSERRS% TYPE ERROR(S) - the tree was clean, so this is new. ***
+echo [build]     Full log: %TEMP%\anr-tsc-all.log
+echo.
 goto tsdone
 :tsclean
 echo [build] emitted OK - no type errors
@@ -131,8 +136,8 @@ goto buildok
 echo.
 echo [FATAL] TypeScript SYNTAX errors - aborting commit.
 echo         These are parse failures, so the emitted JS may be wrong or
-echo         truncated. Type errors are expected mid-migration and do NOT stop
-echo         a commit; only these do:
+echo         truncated. Type errors are reported but do NOT stop a commit;
+echo         only these do:
 echo.
 findstr /R /C:"error TS1[0-9][0-9][0-9]:" "%TEMP%\anr-tsc-all.log"
 pause

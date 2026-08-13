@@ -4850,7 +4850,7 @@ async function parseVdf(file) {
             v = fmtBytes(Number(v));
         if ((k === 'LastUpdated' || k === 'LastOwner') && /^\d{9,}$/.test(v)) {
             const d = new Date(Number(v) * 1000);
-            if (!isNaN(d))
+            if (!isNaN(d.getTime()))
                 v = v + '  (' + d.toLocaleString() + ')';
         }
         res[NOTE[k]] = v;

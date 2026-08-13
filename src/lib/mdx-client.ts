@@ -10,14 +10,16 @@ const RUNTIME_STALL_MS = 2 * 60 * 1000;
 const FIRST_INFER_STALL_MS = 2 * 60 * 1000;
 let worker = null;
 let jobSeq = 0;
-let jobQueue = Promise.resolve();
+let jobQueue: Promise<unknown> = Promise.resolve();
 
 function abortError() {
   return new DOMException('separation aborted', 'AbortError');
 }
 
 function workerError(message, code) {
-  const err = new Error(message);
+  // The renderer switches on err.code to tell 'model download failed' from a
+  // genuine processing failure, so the tag rides along on the Error.
+  const err = new Error(message) as Error & { code?: any };
   err.code = code;
   return err;
 }
@@ -41,7 +43,7 @@ function isAppleWebKit() {
 
 // Serialise callers before they resample: compare/inline panels share one worker
 // and its single mutable ONNX session.
-function enqueue(task) {
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
   const queued = jobQueue.then(task, task);
   jobQueue = queued.catch(() => {});
   return queued;

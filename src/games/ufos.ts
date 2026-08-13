@@ -29,7 +29,16 @@ export function ufoPathPos(u) {
   return [cx + nx * kx, cy + ny * ky];
 }
 
-export function makeUfo(kind) {
+/** A UFO. As with Asteroid and Boss, the tail of the shape is attached later
+ *  by whatever spawned it (boss escorts carry `fromBoss`, ambient ones do not). */
+export interface Ufo {
+  kind: any; pattern: any; rot: number; t: number; period: number;
+  radius: number; hp: number; color: string; appear: number;
+  leaving: boolean; lvx: number; lvy: number; x: number; y: number;
+  [k: string]: any;
+}
+
+export function makeUfo(kind): Ufo {
   const u = {
     kind, pattern: pick(UFO_PATTERNS), rot: rand(0, TAU), t: Math.random(),
     period: rand(20, 34), radius: 16 * g.S, hp: kind === 'reward' ? 2 : Infinity,

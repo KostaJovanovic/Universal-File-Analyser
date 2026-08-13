@@ -52,7 +52,7 @@ function decodeWords(s) {
         bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
       } else {
         const q = data.replace(/_/g, ' ').replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
-        bytes = Uint8Array.from(q, (ch) => ch.charCodeAt(0));
+        bytes = Uint8Array.from<string>(q, (ch) => ch.charCodeAt(0));
       }
       return new TextDecoder(/utf-?8/i.test(cs) ? 'utf-8' : 'iso-8859-1').decode(bytes);
     } catch (_) { return m; }
@@ -68,11 +68,11 @@ function decodeBody(body, encoding, charset) {
   const enc = (encoding || '').toLowerCase();
   let bytes;
   if (enc.includes('base64')) {
-    try { const bin = atob(body.replace(/\s+/g, '')); bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0)); }
+    try { const bin = atob(body.replace(/\s+/g, '')); bytes = Uint8Array.from<any>(bin, (c) => c.charCodeAt(0)); }
     catch (_) { return body; }
   } else if (enc.includes('quoted-printable')) {
     const q = body.replace(/=\r?\n/g, '').replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
-    bytes = Uint8Array.from(q, (c) => c.charCodeAt(0));
+    bytes = Uint8Array.from<string>(q, (c) => c.charCodeAt(0));
   } else {
     return body;
   }

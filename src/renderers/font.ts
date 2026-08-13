@@ -21,7 +21,7 @@ let _faceSeq = 0;
 // - each analysed font (and every collection-member switch) would otherwise
 // accumulate one more live face forever. Track them and drop the previous
 // render's set when a new font is analysed.
-const _addedFaces = new Set();
+const _addedFaces = new Set<FontFace>();
 function clearAddedFaces() {
   for (const f of _addedFaces) { try { document.fonts.delete(f); } catch (_) {} }
   _addedFaces.clear();
@@ -90,7 +90,12 @@ function specimenCard(family, axes, font) {
     // view, and self-stops when the card leaves the DOM (collection member
     // switch, SPA navigation) via the isConnected guard - no manual teardown.
     const PLAY = '▶', PAUSE = '❚❚';   // filled triangle / double bar
-    const playing = new Set();
+    // Variation axes currently animating, each with its slider and readout and
+    // the phase offset that keeps them from moving in lock-step.
+    const playing = new Set<{
+      min: number; max: number; _off: number;
+      input: HTMLInputElement; val: HTMLElement;
+    }>();
     let rafId = 0;
     const PERIOD = 4200;   // ms for one full min -> max -> min sweep
 
@@ -157,7 +162,7 @@ function specimenCard(family, axes, font) {
       input.addEventListener('input', () => {
         // A manual drag takes the wheel - stop that axis animating.
         if (playing.has(a)) { playing.delete(a); syncButtons(); }
-        val.textContent = (Math.round(input.value * 100) / 100).toString();
+        val.textContent = (Math.round(Number(input.value) * 100) / 100).toString();
         applyAxes();
       });
       playBtn.addEventListener('click', () => toggle(a));

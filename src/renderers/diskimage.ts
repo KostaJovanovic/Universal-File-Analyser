@@ -311,7 +311,7 @@ function carvedImageGallery(readFull, file, resultsEl, vol) {
         'Hide frames & thumbnails (' + frameShown + ')');
       toggle.addEventListener('click', () => {
         hidden = !hidden;
-        for (const cell of grid.children) {
+        for (const cell of grid.children as HTMLCollectionOf<HTMLElement>) {
           if (cell.dataset && cell.dataset.frame === '1') cell.style.display = hidden ? 'none' : '';
         }
         toggle.textContent = (hidden ? 'Show' : 'Hide') + ' frames & thumbnails (' + frameShown + ')';

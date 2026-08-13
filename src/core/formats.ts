@@ -661,7 +661,7 @@ function fmtItem(r, opts: any = {}) {
     // Each extension links to its own /formats/<ext> landing page. navigate.js
     // intercepts the click for an SPA hop (and suppresses the parent <details>
     // toggle); the id="ext-<ext>" deep-link anchor is preserved on the about page.
-    const attrs = { class: 'fmt-item-ext', href: formatPageHref(t) };
+    const attrs: Record<string, any> = { class: 'fmt-item-ext', href: formatPageHref(t) };
     if (opts.anchors) attrs.id = 'ext-' + t.toLowerCase();
     extNodes.push(el('a', attrs, t));
   });
@@ -681,7 +681,7 @@ function fmtItem(r, opts: any = {}) {
     ]),
     badge,
   ]);
-  const detailsAttrs = { class: 'fmt-item', 'data-tags': r.tags || '', 'data-cat': r.cat || '' };
+  const detailsAttrs: Record<string, any> = { class: 'fmt-item', 'data-tags': r.tags || '', 'data-cat': r.cat || '' };
   if (opts.anchors) detailsAttrs.id = 'fmt-' + slugify(r.label);
   return el('details', detailsAttrs, [
     summary,

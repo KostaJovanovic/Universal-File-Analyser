@@ -69,7 +69,7 @@ export function normalizeArchive(entries) {
 
 export function buildCategoryBreakdown(items) {
   const byCategory: any = {};
-  const byExt: any = {};
+  const byExt: Record<string, { count: number; size: number }> = {};
   for (const cat of CATEGORIES) byCategory[cat] = { count: 0, size: 0 };
   for (const item of items) {
     byCategory[item.category].count += 1;
