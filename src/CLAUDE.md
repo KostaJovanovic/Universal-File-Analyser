@@ -13,8 +13,16 @@ source (`import { el } from '../core/util.js'`) - TypeScript resolves that to th
 `.ts` file and emits the specifier verbatim, which is what keeps the module graph
 and the offline manifest intact. Keep writing them that way.
 
-The migration to full type coverage is in progress: `strict` is off and there are
-outstanding type errors. They don't block the build - see the root `CLAUDE.md`.
+**The tree compiles clean** - zero errors under both configs. A new error is a
+real one, so fix it rather than letting a pile start again. `strict` is still
+off on purpose (`strictNullChecks` + `noImplicitAny` would report ~5,400 sites
+needing real null guards, not annotations) - see the root `CLAUDE.md`.
+
+Shared types live in `core/types.d.ts` - `Kind`, `Route`/`RouteTable`,
+`Renderer`, `Row` (the parser row bag, including the `_sections`/`_previewNode`
+payload keys) and the worker message protocols. It's a `.d.ts` on purpose: it
+emits no `.js`, so it needs no `sw.js` `SHELL` entry and adds no runtime weight.
+Import from it with `import type { Row } from '../core/types.js'`.
 
 One module per top-level type: `classify.js` maps a dropped file to a kind,
 `ROUTES` in `core/app.js` maps that kind to a renderer here.

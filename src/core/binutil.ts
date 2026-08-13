@@ -10,6 +10,11 @@
 // (network/most container order); pass little:true for LE formats. Multi-byte
 // reads advance the cursor; the *At variants don't.
 export class Reader {
+  bytes: Uint8Array;
+  view: DataView;
+  pos: number;
+  little: boolean;
+  length: number;
   constructor(buf, little = false) {
     if (buf instanceof Uint8Array) {
       this.bytes = buf;
@@ -171,7 +176,7 @@ export function cp437(bytes) {
 // Inflate a stream via the browser's DecompressionStream. `format` is
 // 'gzip' | 'deflate' | 'deflate-raw'. Returns a Uint8Array, or null if the
 // platform lacks DecompressionStream or the data is corrupt.
-export async function inflate(bytes, format = 'gzip') {
+export async function inflate(bytes, format: CompressionFormat = 'gzip') {
   if (typeof DecompressionStream === 'undefined') return null;
   try {
     const ds = new DecompressionStream(format);

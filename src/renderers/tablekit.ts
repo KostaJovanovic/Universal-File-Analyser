@@ -532,7 +532,8 @@ export function mountTableKit(host, model, opts: any = {}) {
     hidden: new Set(),
     sort: { col: -1, dir: 0 },
     globalSearch: '',
-    colFilters: {},
+    // col index -> either a substring match or a numeric range.
+    colFilters: {} as Record<string, { text?: string; min?: number; max?: number }>,
   };
   let activeTarget = null;
   let currentSpec = null;
@@ -873,7 +874,7 @@ export function mountTableKit(host, model, opts: any = {}) {
     let selRect = null;
     function cellFromEvent(e) {
       const target = document.elementFromPoint(e.clientX, e.clientY);
-      const td = target && target.closest && target.closest('td.anr-tk-cell');
+      const td = target && target.closest && target.closest<HTMLElement>('td.anr-tk-cell');
       if (!td || !tbody.contains(td)) return null;
       return { r: +td.dataset.r, c: +td.dataset.c };
     }
@@ -886,11 +887,11 @@ export function mountTableKit(host, model, opts: any = {}) {
       thead.querySelectorAll('.is-selected').forEach((n) => n.classList.remove('is-selected'));
       const rect = selRect;
       if (!rect) return;
-      tbody.querySelectorAll('td.anr-tk-cell').forEach((td) => {
+      tbody.querySelectorAll<HTMLElement>('td.anr-tk-cell').forEach((td) => {
         const r = +td.dataset.r, c = +td.dataset.c;
         if (r >= rect.r0 && r <= rect.r1 && c >= rect.c0 && c <= rect.c1) td.classList.add('is-selected');
       });
-      tbody.querySelectorAll('th.anr-tk-rownum').forEach((th) => {
+      tbody.querySelectorAll<HTMLElement>('th.anr-tk-rownum').forEach((th) => {
         const r = +th.dataset.r;
         if (r >= rect.r0 && r <= rect.r1) th.classList.add('is-selected');
       });
@@ -1259,9 +1260,9 @@ export function mountTableKit(host, model, opts: any = {}) {
     const dateCol = cols.find((c) => colTypes[c] === 'date');
     const textCol = cols.find((c) => colTypes[c] === 'text');
     const xDefault = dateCol != null ? dateCol : (textCol != null ? textCol : cols[0]);
-    if (xDefault != null) { const rb = xList.querySelector(`input[data-col="${xDefault}"]`); if (rb) rb.checked = true; }
+    if (xDefault != null) { const rb = xList.querySelector<HTMLInputElement>(`input[data-col="${xDefault}"]`); if (rb) rb.checked = true; }
     const firstNum = cols.find((c) => colTypes[c] === 'number');
-    if (firstNum != null) { const cb = yList.querySelector(`input[data-col="${firstNum}"]`); if (cb) cb.checked = true; }
+    if (firstNum != null) { const cb = yList.querySelector<HTMLInputElement>(`input[data-col="${firstNum}"]`); if (cb) cb.checked = true; }
     const defType = xDefault != null && colTypes[xDefault] === 'text' ? 'bar' : 'line';
     activeChartType = defType;
     setActiveType();
@@ -1288,7 +1289,7 @@ export function mountTableKit(host, model, opts: any = {}) {
       if (ka == null && kb == null) return 0;
       if (ka == null) return 1;
       if (kb == null) return -1;
-      return typeof ka === 'string' ? ka.localeCompare(kb) : ka - kb;
+      return typeof ka === 'string' ? ka.localeCompare(kb as string) : (ka as number) - (kb as number);
     });
     const xLabels = ordered.map((r) => r[xCol]);
     const xValues = xIsNumeric ? ordered.map((r) => xKey(r)) : undefined;
@@ -1326,9 +1327,9 @@ export function mountTableKit(host, model, opts: any = {}) {
 
   function buildSpecFromPickers() {
     const type = activeChartType;
-    const xRadio = xList.querySelector('input[type=radio]:checked');
+    const xRadio = xList.querySelector<HTMLElement>('input[type=radio]:checked');
     const xCol = xRadio ? +xRadio.dataset.col : -1;
-    const yCols = [...yList.querySelectorAll('input[type=checkbox]:checked')].map((cb) => +cb.dataset.col);
+    const yCols = [...yList.querySelectorAll<HTMLElement>('input[type=checkbox]:checked')].map((cb) => +cb.dataset.col);
     const sample = sampleRowsArr();
     if (type === 'heatmap') {
       const numCols = headers.map((_, i) => i).filter((i) => colTypes[i] === 'number');

@@ -14,6 +14,7 @@ import { fmtBytes, preBlock, fmtDate, readSlice } from '../core/util.js';
 import { Reader, ascii, latin1, utf8, hexBytes } from '../core/binutil.js';
 import { parsePlist } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
+import type { Row } from '../core/types.js';
 
 // ---------- small helpers ----------
 
@@ -188,7 +189,7 @@ async function parsePpk(file) {
 async function parseOvpn(file) {
   const text = await readText(file, 1_000_000);
   if (!/^\s*(client|remote|dev\s+tun|dev\s+tap|tls-auth|proto)\b/m.test(text)) return null;
-  const out = { 'Format': 'OpenVPN profile (.ovpn)' };
+  const out: Row = { 'Format': 'OpenVPN profile (.ovpn)' };
   const remotes = Array.from(text.matchAll(/^\s*remote\s+(\S+)(?:\s+(\d+))?(?:\s+(\S+))?/gm))
     .map((m) => m[1] + (m[2] ? ':' + m[2] : '') + (m[3] ? '/' + m[3] : ''));
   if (remotes.length) out['Remote endpoints'] = remotes.length;
@@ -321,7 +322,7 @@ async function parseJks(file) {
   const version = r.u32();
   const count = r.u32();
 
-  const out = { 'Format': 'Java KeyStore', 'Keystore type': type, 'Version': version };
+  const out: Row = { 'Format': 'Java KeyStore', 'Keystore type': type, 'Version': version };
 
   const entries = [];
   let keys = 0, trusted = 0, truncated = false;
@@ -407,7 +408,7 @@ async function parseMobileconfig(file) {
   const res = await parsePlist(file);
   if (!res || !res.value || typeof res.value !== 'object') return null;
   const v = res.value;
-  const out = { 'Format': 'Apple Configuration Profile (.mobileconfig)' };
+  const out: Row = { 'Format': 'Apple Configuration Profile (.mobileconfig)' };
   if (v.PayloadDisplayName) out['Name'] = String(v.PayloadDisplayName);
   if (v.PayloadOrganization) out['Organization'] = String(v.PayloadOrganization);
   if (v.PayloadIdentifier) out['Identifier'] = String(v.PayloadIdentifier);
@@ -443,7 +444,7 @@ async function parseMobileprovision(file) {
   if (v.ExpirationDate) {
     const d = v.ExpirationDate instanceof Date ? v.ExpirationDate : new Date(v.ExpirationDate);
     out['Expires'] = fmtDate(d);
-    if (d instanceof Date && !isNaN(d)) out['Status'] = d < new Date() ? 'EXPIRED' : 'valid';
+    if (d instanceof Date && !isNaN(d.getTime())) out['Status'] = d < new Date() ? 'EXPIRED' : 'valid';
   }
   if (v.ProvisionsAllDevices) out['Provisions all devices'] = 'yes';
   if (Array.isArray(v.ProvisionedDevices)) out['Provisioned UDIDs'] = v.ProvisionedDevices.length;
@@ -470,7 +471,7 @@ async function parseReg(file) {
     else if (t.startsWith('hex')) t = 'hex/binary';
     types[t] = (types[t] || 0) + 1;
   }
-  const out = {
+  const out: Row = {
     'Format': 'Windows Registry export',
     'Version': verLine || '-',
     'Keys': keys.length,
@@ -503,7 +504,7 @@ async function parseSldreg(file) {
     const mm = m[2].match(/\\SolidWorks(?:\\SOLIDWORKS \d{4})?\\([^\\]+)/i);
     if (mm) groups.add(mm[1]);
   }
-  const out = {
+  const out: Row = {
     'Format': 'SolidWorks settings backup (.sldreg)',
     'Exported by': /;\s*SolidWorks Settings Wizard/i.test(text) ? 'SolidWorks Settings Wizard' : 'Registry export (REGEDIT4)',
     'SOLIDWORKS version': versions.length ? versions.join(', ') : '-',
@@ -860,7 +861,7 @@ async function parseYara(file) {
   const strings = (text.match(/^\s*\$[A-Za-z0-9_]*\s*=/gm) || []).length;
   const conditions = (text.match(/^\s*condition\s*:/gm) || []).length;
   const metaAuthors = Array.from(new Set(Array.from(text.matchAll(/^\s*author\s*=\s*"([^"]*)"/gm)).map((m) => m[1]).filter(Boolean)));
-  const out = {
+  const out: Row = {
     'Format': 'YARA rules',
     'Rules': names.length,
     'String definitions': strings,
@@ -901,8 +902,8 @@ async function parseRules(file) {
     const ct = (r.line.match(/classtype\s*:\s*([^;]+);/) || [])[1];
     if (ct) classtypes[ct.trim()] = (classtypes[ct.trim()] || 0) + 1;
   }
-  const fmtTally = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
-  const out = {
+  const fmtTally = (o) => Object.entries<number>(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
+  const out: Row = {
     'Format': 'Snort / Suricata IDS rules',
     'Rules': rules.length,
     'By action': fmtTally(actions),
@@ -933,11 +934,11 @@ async function parseStix(file) {
   // Confirm it smells like STIX (objects carry a `type` and most a stix id).
   const looksStix = objects.some((o) => o && typeof o.type === 'string' && (/^[a-z0-9-]+--/.test(o.id || '') || j.spec_version));
   if (!looksStix && !(j && j.spec_version)) return null;
-  const out = { 'Format': 'STIX threat intelligence' };
+  const out: Row = { 'Format': 'STIX threat intelligence' };
   if (j.spec_version) out['Spec version'] = String(j.spec_version);
   else out['Spec version'] = '2.0 (inferred)';
   out['Objects'] = objects.length;
-  const byType: any = {};
+  const byType: Record<string, number> = {};
   for (const o of objects) { const t = (o && o.type) || '?'; byType[t] = (byType[t] || 0) + 1; }
   out['Object types'] = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
   const indicators = objects.filter((o) => o && o.type === 'indicator');
@@ -955,7 +956,7 @@ async function parseStix(file) {
 async function parseIoc(file) {
   const text = await readText(file, 4_000_000);
   if (!/<ioc\b/i.test(text)) return null;
-  const out = { 'Format': 'OpenIOC indicator (Mandiant)' };
+  const out: Row = { 'Format': 'OpenIOC indicator (Mandiant)' };
   const id = (text.match(/<ioc\b[^>]*\bid\s*=\s*"([^"]+)"/i) || [])[1];
   if (id) out['IOC id'] = id;
   const grab = (tag) => (text.match(new RegExp('<' + tag + '\\b[^>]*>([\\s\\S]*?)<\\/' + tag + '>', 'i')) || [])[1];
@@ -966,7 +967,7 @@ async function parseIoc(file) {
   const authored = grab('authored_date');
   if (authored) out['Authored'] = authored.trim();
   // Indicator leaf terms: <IndicatorItem ...><Context document="FileItem" search="..."/>
-  const contexts: any = {};
+  const contexts: Record<string, number> = {};
   for (const m of text.matchAll(/<Context\b[^>]*\bdocument\s*=\s*"([^"]+)"/gi)) {
     contexts[m[1]] = (contexts[m[1]] || 0) + 1;
   }
@@ -991,7 +992,7 @@ async function parseSaz(file) {
   // Sessions live under raw/<n>_c.txt (client request) and _s.txt (server reply).
   const requests = z.match(/raw\/\d+_c\.txt$/i);
   if (!requests.length && !z.has('_index.htm')) return null;
-  const out = { 'Format': 'Fiddler session archive (.saz)' };
+  const out: Row = { 'Format': 'Fiddler session archive (.saz)' };
   out['Sessions'] = requests.length || z.match(/raw\/\d+_/i).length;
   const methods: any = {};
   const statuses: any = {};
@@ -1014,7 +1015,7 @@ async function parseSaz(file) {
     const m = t.match(/^HTTP\/[\d.]+\s+(\d{3})/);
     if (m) statuses[m[1]] = (statuses[m[1]] || 0) + 1;
   }
-  const fmtTally = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
+  const fmtTally = (o) => Object.entries<number>(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
   if (Object.keys(methods).length) out['Methods'] = fmtTally(methods);
   if (Object.keys(statuses).length) out['Status codes'] = fmtTally(statuses);
   const hostList = Array.from(hosts).filter(Boolean).sort();
@@ -1040,7 +1041,7 @@ async function parse1pux(file) {
       if (a.description) out['Description'] = String(a.description);
       if (a.createdAt != null) {
         const d = new Date(Number(a.createdAt) * (Number(a.createdAt) > 1e12 ? 1 : 1000));
-        if (!isNaN(d)) out['Created'] = fmtDate(d);
+        if (!isNaN(d.getTime())) out['Created'] = fmtDate(d);
       }
     } catch (_) {}
   }
@@ -1208,7 +1209,7 @@ function pgpWalk(b, limit) {
       const created = (b[body + 1] << 24) | (b[body + 2] << 16) | (b[body + 3] << 8) | b[body + 4];
       const algo = b[body + 5];
       if (PGP_PUBKEY_ALGOS[algo]) info.keyAlgo = PGP_PUBKEY_ALGOS[algo];
-      if (created > 0) { const d = new Date(created * 1000); if (!isNaN(d)) info.created = d; }
+      if (created > 0) { const d = new Date(created * 1000); if (!isNaN(d.getTime())) info.created = d; }
     }
     if (tag === 13 && !info.userId) {         // User ID packet body is UTF-8 text
       try { info.userId = utf8(b.subarray(body, body + Math.min(len, 200))); } catch (_) {}

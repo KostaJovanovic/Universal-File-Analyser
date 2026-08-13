@@ -29,7 +29,7 @@ export async function sniffSpiceRaw(file) {
 }
 
 // --- SI-prefixed value formatting (volts, amps, seconds, hertz). ---
-const SI = [
+const SI: [number, string][] = [
   [1e12, 'T'], [1e9, 'G'], [1e6, 'M'], [1e3, 'k'], [1, ''],
   [1e-3, 'm'], [1e-6, 'u'], [1e-9, 'n'], [1e-12, 'p'], [1e-15, 'f'],
 ];

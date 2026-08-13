@@ -18,7 +18,7 @@
 
 import { audioDspPasses } from './audio-dsp.js';
 
-self.addEventListener('message', async (e) => {
+self.addEventListener('message', async (e: MessageEvent) => {
   const m = e.data;
   if (!m || m.type !== 'run') return;
   const { jobId, channels, sampleRate, needBpm } = m;

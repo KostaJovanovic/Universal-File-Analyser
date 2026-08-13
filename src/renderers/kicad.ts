@@ -381,7 +381,7 @@ function drawSchField(g, f, b) {
   if (f.key === 'Reference' && /^#/.test(f.value)) return;       // power/hidden pseudo-refs
   if (f.key !== 'Reference' && f.key !== 'Value') return;        // KiCad hides the rest by default
   const col = f.key === 'Reference' ? SCH.ref : SCH.val;
-  const a = { x: f.x, y: f.y, 'font-size': f.size || 1.27, fill: col, 'dominant-baseline': 'central' };
+  const a: Record<string, any> = { x: f.x, y: f.y, 'font-size': f.size || 1.27, fill: col, 'dominant-baseline': 'central' };
   a['text-anchor'] = f.justify.includes('right') ? 'end' : f.justify.includes('left') ? 'start' : 'middle';
   if (f.rot === 90 || f.rot === 270) a.transform = `rotate(${-f.rot} ${f.x} ${f.y})`;
   const t = svg('text', a); t.textContent = f.value; g.appendChild(t);
@@ -977,7 +977,7 @@ function buildBoard3D(pcb, opts: any = {}) {
     // The view cube (below) lives inside the stage and drives the camera itself.
     // It stops the mouse/touch events it knows about, but not pointer ones, so
     // without this a drag on the cube would also be read as a drag on the board.
-    if (e.target.closest('.anr-viewcube')) return;
+    if ((e.target as HTMLElement).closest('.anr-viewcube')) return;
     setSpin(false);            // touching the board stops auto-rotate, as in the other 3D viewers
     stage.setPointerCapture(e.pointerId);
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1013,7 +1013,7 @@ function buildBoard3D(pcb, opts: any = {}) {
   const wheelZoom = wheelZoomToggle();
   stage.appendChild(wheelZoom.el);
   stage.addEventListener('wheel', (e) => { if (!wheelZoom.enabled()) return; e.preventDefault(); view.zoom = Math.max(ZMIN, Math.min(ZMAX, view.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); applyCam(); }, { passive: false });
-  stage.addEventListener('dblclick', (e) => { if (e.target.closest('.anr-viewcube')) return; resetView(); });
+  stage.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('.anr-viewcube')) return; resetView(); });
 
   // ---- Orientation gizmo: the same view cube the STL / G-code viewers carry ----
   // The cube speaks those viewers' camera - yaw/pitch in radians, Y up - while this
@@ -1072,7 +1072,7 @@ function buildBoard3D(pcb, opts: any = {}) {
   msaaBtn.disabled = true;
   qPanel.appendChild(msaaBtn);
   qBtn.addEventListener('click', (e) => { e.stopPropagation(); qPanel.classList.toggle('is-hidden'); });
-  document.addEventListener('click', (e) => { if (!qWrap.contains(e.target)) qPanel.classList.add('is-hidden'); });
+  document.addEventListener('click', (e) => { if (!qWrap.contains(e.target as Node)) qPanel.classList.add('is-hidden'); });
   qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
   bar.appendChild(flip); bar.appendChild(spinBtn); bar.appendChild(reset); bar.appendChild(qWrap);
   // The wheel only zooms once the scroll-zoom pill is armed (it starts off so the
@@ -1127,7 +1127,7 @@ function boardView(pcb) {
     // Putting the cached node back has to start it again, or the board comes back
     // still with the Auto-rotate button reading as on.
     if (node._anrResumeSpin) node._anrResumeSpin();
-    for (const btn of bar.querySelectorAll('button[data-mode]')) btn.classList.toggle('is-on', btn.dataset.mode === mode);
+    for (const btn of bar.querySelectorAll<HTMLElement>('button[data-mode]')) btn.classList.toggle('is-on', btn.dataset.mode === mode);
   };
   for (const [mode, label] of [['3d', '3D board'], ['top', 'Top'], ['bottom', 'Bottom']]) {
     const btn = el('button', { class: 'anr-btn anr-board-mode', type: 'button', 'data-mode': mode }, label);

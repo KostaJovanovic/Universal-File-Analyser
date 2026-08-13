@@ -263,12 +263,23 @@ export function spawnBossPowerup() {
   g.powerups.push(makePowerup(x, y));
 }
 
+/** A boss. The head of the shape is common to all of them; everything past it
+ *  is per-type (the megastructure's rim state, the mothership's launch timer,
+ *  the serpent's segments) and is attached by the branch that builds it - so
+ *  the extras ride on an index signature rather than a union of ten shapes. */
+export interface Boss {
+  type: string; x: number; y: number; angle: number;
+  vx: number; vy: number; spin: number; t: number; r: number;
+  nodes: any[]; grace: number;
+  [k: string]: any;
+}
+
 export function spawnBoss(forcedType?) {
   const { cx, cy, HW, HH, R, S } = g;
   const type = forcedType || bossTypeForWave(g.wave);
   const buff = forcedType ? 1 : bossBuff(g.wave);   // scripted/debug spawns stay at base toughness
   const u = 100 * S;                       // "large" size unit
-  const b = { type, x: cx, y: cy - HH * 0.45, angle: 0, vx: 0, vy: 0, spin: 0, t: 0, r: u, nodes: [], grace: WAVE_GRACE };
+  const b: Boss = { type, x: cx, y: cy - HH * 0.45, angle: 0, vx: 0, vy: 0, spin: 0, t: 0, r: u, nodes: [], grace: WAVE_GRACE };
   // The megastructure traps you in a walled arena, so it pelts the field with asteroids far
   // faster; the serpent spawns them briskly too (it feeds on them - see serpentEat).
   b.astCd = type === 'megastructure' ? rand(4, 7) : type === 'segmented' ? rand(7, 13) : rand(12, 17);

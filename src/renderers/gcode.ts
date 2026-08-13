@@ -137,7 +137,7 @@ function parseGcode(text, opts) {
   let curFil = 0, maxFil = 0, sawTool = false;
   // Tool-change marks for the progress slider: { at: move index, label } per change.
   const toolMarks = [];
-  const filUsed = new Set();
+  const filUsed = new Set<number>();
   let filColRaw = '', extColRaw = '';
   // Machine / bed metadata, read from the slicer config block (Prusa/Orca/Bambu dump it
   // as `;` header/footer comments). printable_area / bed_shape is a polygon of "XxY"
@@ -149,12 +149,12 @@ function parseGcode(text, opts) {
   let x = 0, y = 0, z = 0, e = 0, feed = 0;
   let curH = 0.2, lastExtrudeZ = 0;
   let curType = 7, sawTypes = false, printTime = '';
-  const featureSet = new Set();
+  const featureSet = new Set<number>();
   let forcedW = 0, forcedH = 0;          // ;WIDTH: / ;HEIGHT: hints
   let minx = Infinity, miny = Infinity, minz = Infinity, maxx = -Infinity, maxy = -Infinity, maxz = -Infinity;
   let extrudeMM = 0, cutMM = 0, fmin = Infinity, fmax = 0;
   let nRapid = 0, nFeed = 0, nExtrude = 0, nArc = 0;
-  const layerZ = new Set();
+  const layerZ = new Set<number>();
   // Full-line comments: the leading header block (until the first real command) and
   // the trailing config block (the contiguous run of comments at end of file, where
   // PrusaSlicer/Orca dump the slice settings). Captured separately so per-move
@@ -706,11 +706,43 @@ function boxTemplate() {
 // One source of truth so the interactive reset and the recorded clip can't drift.
 const HOME_YAW = -0.78, HOME_PITCH = 0.6;
 
+// The object buildViewer hands back. It has two shapes: on WebGL failure only
+// { wrap, ok:false } exists, and every caller checks `.ok` before touching the
+// rest - so the failure path is asserted into this type rather than modelled as
+// a discriminated union. A real union would not narrow here anyway: `viewer` is
+// a reassigned `let` (the MSAA rebuild swaps it) captured by every button
+// handler, and TypeScript discards narrowing of a mutable binding inside a
+// closure. `state` stays `any` deliberately: it is a ~60-key bag of live render
+// flags that the toolbar poke at by name, and it is fully checked *inside*
+// buildViewer, where it is a plain inferred literal.
+interface GcodeViewer {
+  wrap: HTMLDivElement;
+  ok: boolean;
+  state: any;
+  hasTravel: boolean;
+  instanced: boolean;
+  snapshot: () => string | null;
+  refreshLegend: () => void;
+  colourPanel: HTMLDivElement;
+  topLeft: HTMLDivElement;
+  draw: () => void;
+  canvas: HTMLCanvasElement;
+  setExportSize: (w: number, h: number) => void;
+  dispose: () => void;
+  resize: () => void;
+  setSpin: (v: boolean) => void;
+  onSpinChange: (cb: (spin: boolean) => void) => void;
+  resetView: () => void;
+  start: () => void;
+  markDirty: () => void;
+  fit: (fill?: number) => void;
+}
+
 // ---------- WebGL viewer (instanced filament beads) ----------
 // opts.antialias toggles hardware MSAA (set at context creation, so changing it
 // rebuilds the viewer). The other anti-aliasing controls (supersampling, minimum
 // line width, distant-bead flattening) are live state flags read each frame.
-function buildViewer(data, opts: any = {}) {
+function buildViewer(data, opts: any = {}): GcodeViewer {
   const wrap = el('div', { class: 'anr-stl-viewport' });
   const canvas = el('canvas', { class: 'anr-stl-canvas' });
   wrap.appendChild(canvas);
@@ -727,7 +759,7 @@ function buildViewer(data, opts: any = {}) {
   // RenderingContext union. Both branches really are a WebGL context.
   const gl = (canvas.getContext('webgl', glOpts)
     || canvas.getContext('experimental-webgl', glOpts)) as WebGLRenderingContext;
-  if (!gl) { wrap.appendChild(el('p', { class: 'anr-error' }, 'WebGL is not available in this browser.')); return { wrap, ok: false }; }
+  if (!gl) { wrap.appendChild(el('p', { class: 'anr-error' }, 'WebGL is not available in this browser.')); return { wrap, ok: false } as GcodeViewer; }
   const inst = gl.getExtension('ANGLE_instanced_arrays');
 
   // Normalise to a unit cube, remapping printer Z to viewer up (Y).
@@ -996,7 +1028,7 @@ function buildViewer(data, opts: any = {}) {
 
   // Print-bed renderer (a thin line program, shared by both draw paths). Draws the grid
   // dim and the printable-area outline brighter, alpha-blended, at machine Z=0.
-  let drawBed = () => {};
+  let drawBed: (mvp?: any) => void = () => {};
   if (bedGrid) {
     const bedProg = makeProg(
       'attribute vec3 aPos; uniform mat4 uMVP; void main(){ gl_Position = uMVP*vec4(aPos,1.0); }',
@@ -1007,7 +1039,7 @@ function buildViewer(data, opts: any = {}) {
     const oBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, oBuf); gl.bufferData(gl.ARRAY_BUFFER, bedOutline, gl.STATIC_DRAW);
 
     // Info-label quad pasted flat onto the plate: a textured (printer/size/plate) panel.
-    let drawBedLabel = () => {};
+    let drawBedLabel: (mvp?: any) => void = () => {};
     if (bedLabelQuad && bedLabelCanvas) {
       const texProg = makeProg(
         'attribute vec3 aPos; attribute vec2 aUV; uniform mat4 uMVP; varying vec2 vUV; void main(){ vUV = aUV; gl_Position = uMVP*vec4(aPos,1.0); }',
@@ -1983,7 +2015,7 @@ export async function renderGcode(file, resultsEl, opts?) {
       aaBtn('Flatten distant beads', () => viewer.state.flatten, (v) => { viewer.state.flatten = v; viewer.markDirty(); });
       aaBtn('Translucent travel lines', () => viewer.state.translucentTravel, (v) => { viewer.state.translucentTravel = v; viewer.markDirty(); });
       qBtn.addEventListener('click', (e) => { e.stopPropagation(); qPanel.classList.toggle('is-hidden'); });
-      document.addEventListener('click', (e) => { if (!qWrap.contains(e.target)) qPanel.classList.add('is-hidden'); });
+      document.addEventListener('click', (e) => { if (!qWrap.contains(e.target as Node)) qPanel.classList.add('is-hidden'); });
       qWrap.appendChild(qBtn); qWrap.appendChild(qPanel);
       // Colour mode + its legend live in a top-right overlay built inside the viewer.
       const travelBtn = el('button', { type: 'button', class: 'anr-btn' }, isPrint ? 'Travel' : 'Rapids');
@@ -2291,7 +2323,7 @@ export async function renderGcode(file, resultsEl, opts?) {
         viewer.markDirty();
       });
 
-      const LINE_PRESETS = [[100, '100 lines/s'], [500, '500 lines/s'], [1000, '1k lines/s'], [5000, '5k lines/s'], [10000, '10k lines/s'], [20000, '20k lines/s']];
+      const LINE_PRESETS: [number, string][] = [[100, '100 lines/s'], [500, '500 lines/s'], [1000, '1k lines/s'], [5000, '5k lines/s'], [10000, '10k lines/s'], [20000, '20k lines/s']];
       const LEN_PRESETS = [10, 20, 30, 60, 120];
 
       const spdWrap = el('span', { class: 'anr-aa-wrap' });
@@ -2358,7 +2390,7 @@ export async function renderGcode(file, resultsEl, opts?) {
       };
       const closeSpd = () => { spdPanel.classList.add('is-hidden'); dockSpd(); };
       spdBtn.addEventListener('click', (e) => { e.stopPropagation(); if (spdPanel.classList.contains('is-hidden')) openSpd(); else closeSpd(); });
-      document.addEventListener('click', (e) => { if (!spdWrap.contains(e.target) && !spdPanel.contains(e.target)) closeSpd(); });
+      document.addEventListener('click', (e) => { if (!spdWrap.contains(e.target as Node) && !spdPanel.contains(e.target as Node)) closeSpd(); });
       document.addEventListener('fullscreenchange', () => closeSpd());   // dock back when entering/leaving fullscreen
       spdWrap.appendChild(spdBtn); spdWrap.appendChild(spdPanel);
       // Default the whole job to a fixed 30s playback (real time stays available as a
@@ -2737,7 +2769,7 @@ export async function renderGcode(file, resultsEl, opts?) {
             const base = { width: W, height: H, bitrate: clipRate(W, H), framerate: fps, contentHint: 'detail' };
             let cfgEnc = null;
             for (const prof of ['avc1.42e0', 'avc1.4d40', 'avc1.6400']) {
-              const cand = { ...base, codec: prof + clipLevel(W, H), avc: { format: 'avc' } };
+              const cand = { ...base, codec: prof + clipLevel(W, H), avc: { format: 'avc' } } as VideoEncoderConfig;
               const sup = await VideoEncoder.isConfigSupported(cand).catch(() => null);
               if (sup && sup.supported) { cfgEnc = cand; break; }
             }
@@ -2794,7 +2826,7 @@ export async function renderGcode(file, resultsEl, opts?) {
               // a higher bitrate; ffmpeg re-encodes to H.264 afterwards anyway.
               cfgEnc = null;
               for (const vc of ['vp09.00.10.08', 'vp8']) {
-                const cand = { ...base, codec: vc, latencyMode: 'realtime', bitrate: Math.round(clipRate(W, H) * 1.5) };
+                const cand = { ...base, codec: vc, latencyMode: 'realtime', bitrate: Math.round(clipRate(W, H) * 1.5) } as VideoEncoderConfig;
                 const sup = await VideoEncoder.isConfigSupported(cand).catch(() => null);
                 if (sup && sup.supported) { cfgEnc = cand; break; }
               }
@@ -3173,7 +3205,7 @@ export async function renderGcode(file, resultsEl, opts?) {
       // offset tracking the toolbar's live height (the bar grows and shrinks with
       // More/Fewer controls, legend rows, window size).
       const liftCamBtns = () => {
-        const cam = viewer && viewer.wrap.querySelector('.anr-cam');
+        const cam = viewer && viewer.wrap.querySelector<HTMLElement>('.anr-cam');
         if (!cam) return;
         const fs = document.fullscreenElement === viewer.wrap && toolbar.parentNode === viewer.wrap;
         cam.style.bottom = fs ? (toolbar.offsetHeight + 12) + 'px' : '';

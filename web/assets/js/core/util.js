@@ -422,7 +422,7 @@ export function timeAnomalies(opts = {}) {
     const now = opts.now || new Date();
     const DAY = 86400000;
     const SKEW = 2 * DAY; // tolerate clock/timezone slop on "in the future" checks
-    const ok = (d) => d instanceof Date && !isNaN(d) && d.getTime() > 0;
+    const ok = (d) => d instanceof Date && !isNaN(d.getTime()) && d.getTime() > 0;
     const stamp = (d) => d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
     const out = [];
     const labels = { captured: 'Capture date', created: 'Creation date', modified: 'Modification date' };
@@ -463,7 +463,7 @@ export function preBlock(text, cls) {
     }, text || '');
 }
 // Format a Date for display, tolerating non-Date / invalid values.
-export const fmtDate = (d) => (d instanceof Date && !isNaN(d)) ? d.toLocaleString() : String(d);
+export const fmtDate = (d) => (d instanceof Date && !isNaN(d.getTime())) ? d.toLocaleString() : String(d);
 // Copy text to the clipboard, with an execCommand fallback for insecure/old
 // contexts where navigator.clipboard is absent. Resolves true on success.
 export async function copyText(text) {
@@ -1208,8 +1208,8 @@ export function loadCss(href) {
         const l = document.createElement('link');
         l.rel = 'stylesheet';
         l.href = href;
-        l.onload = resolve;
-        l.onerror = resolve;
+        l.onload = () => resolve();
+        l.onerror = () => resolve();
         document.head.appendChild(l);
     });
 }
@@ -1219,7 +1219,7 @@ export function loadScript(src) {
             return resolve();
         const s = document.createElement('script');
         s.src = src;
-        s.onload = resolve;
+        s.onload = () => resolve();
         s.onerror = reject;
         document.head.appendChild(s);
     });

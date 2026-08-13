@@ -66,7 +66,11 @@ export function makeTick(onTick) {
  *   passes it straight in, so only the worker (which is sent the channels
  *   alone) pays to rebuild it. onTick, when given, is the main-thread yield.
  */
-export async function* audioDspPasses({ channels, mono, sampleRate, needBpm, onTick }) {
+// The worker passes neither `mono` (it derives one) nor `onTick` (nothing to
+// yield to on a dedicated thread), so both are optional.
+export async function* audioDspPasses({ channels, mono, sampleRate, needBpm, onTick }: {
+  channels: any; sampleRate: any; needBpm?: any; mono?: any; onTick?: any;
+}) {
   const tick = makeTick(onTick);
   if (!mono) mono = mergeMono(channels);
 

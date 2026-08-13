@@ -11,14 +11,14 @@ import { el, openOverlayBack } from './util.js';
 import { renderFmtOverlay, renderAboutFormats, formatCount, catalogGrouped, CATEGORIES } from './formats.js';
 import { setupFmtHeaderFx } from './effects.js';
 
-function $(id) { return document.getElementById(id); }
+function $<T extends HTMLElement = HTMLElement>(id): T { return document.getElementById(id) as T; }
 
 // Coalesce rapid input events. The catalog filter re-checks ~1,359 entries and
 // re-parses their innerHTML for highlighting on every keystroke; without this a
 // fast typist queues a full sweep per character and the overlay janks.
 function debounce(fn, ms) {
   let t;
-  return function (...args) {
+  return function (this: any, ...args) {
     clearTimeout(t);
     t = setTimeout(() => fn.apply(this, args), ms);
   };
@@ -45,10 +45,10 @@ export function setupFormatOverlay() {
   // element keeps its template text with {n} substituted, or falls back to
   // "N supported formats".
   const fmtN = formatCount();
-  document.querySelectorAll('[data-fmt-count]').forEach(elm => {
+  document.querySelectorAll<HTMLElement>('[data-fmt-count]').forEach(elm => {
     const mode = elm.getAttribute('data-fmt-count');
     if (mode === 'bare') elm.textContent = String(fmtN);
-    else if (elm.dataset.fmtCountTpl) elm.textContent = elm.dataset.fmtCountTpl.replace('{n}', fmtN);
+    else if (elm.dataset.fmtCountTpl) elm.textContent = elm.dataset.fmtCountTpl.replace('{n}', String(fmtN));
     else elm.textContent = fmtN + ' supported formats';
   });
 
@@ -82,13 +82,13 @@ export function setupFormatOverlay() {
   // about.html, so this runs per-navigation.
   const fmtOverlay = $('fmtOverlay');
   const fmtClose = $('fmtOverlayClose');
-  const fmtSearch = $('fmtSearch');
+  const fmtSearch = $<HTMLInputElement>('fmtSearch');
   if (fmtOverlay) {
-    const items = fmtOverlay.querySelectorAll('.fmt-item');
-    const labels = fmtOverlay.querySelectorAll('.fmt-section-label');
+    const items = fmtOverlay.querySelectorAll<HTMLDetailsElement>('.fmt-item');
+    const labels = fmtOverlay.querySelectorAll<HTMLElement>('.fmt-section-label');
     const fmtChips = $('fmtChips');
     const fmtResultCount = $('fmtResultCount');
-    const fmtToggleAll = $('fmtToggleAll');
+    const fmtToggleAll = $<HTMLButtonElement>('fmtToggleAll');
     const fmtBody = $('fmtBody');
     let activeCat = 'all';
 
@@ -133,7 +133,7 @@ export function setupFormatOverlay() {
         }, c.label);
         btn.addEventListener('click', () => {
           activeCat = c.key;
-          fmtChips.querySelectorAll('.fmt-chip').forEach((b) => {
+          fmtChips.querySelectorAll<HTMLElement>('.fmt-chip').forEach((b) => {
             const sel = b.dataset.cat === activeCat;
             b.classList.toggle('is-active', sel);
             b.setAttribute('aria-selected', sel ? 'true' : 'false');
@@ -249,7 +249,7 @@ export function setupFormatOverlay() {
     if (!fmtOverlay._extNavWired) {
       fmtOverlay._extNavWired = true;
       fmtOverlay.addEventListener('click', (e) => {
-        const a = e.target.closest('a.fmt-item-ext');
+        const a = (e.target as HTMLElement).closest('a.fmt-item-ext');
         if (!a || !fmtOverlay.contains(a)) return;
         e.preventDefault();
         e.stopPropagation();
@@ -322,11 +322,11 @@ export function setupFormatOverlay() {
   // Filters the on-page catalog list (the same .fmt-item markup the overlay uses)
   // live, so visitors can narrow the whole catalog without opening the popup. An
   // AND match across the label, extension list, search tags and description.
-  const fmtPageSearch = $('fmtPageSearch');
+  const fmtPageSearch = $<HTMLInputElement>('fmtPageSearch');
   if (fmtPageSearch && !fmtPageSearch._wired) {
     fmtPageSearch._wired = true;
-    const pItems = Array.from(document.querySelectorAll('.formats-page .fmt-item'));
-    const pLabels = Array.from(document.querySelectorAll('.formats-page .fmt-section-label'));
+    const pItems = Array.from(document.querySelectorAll<HTMLDetailsElement>('.formats-page .fmt-item'));
+    const pLabels = Array.from(document.querySelectorAll<HTMLElement>('.formats-page .fmt-section-label'));
     const pStatus = $('fmtPageSearchStatus');
     const applyPageFilter = () => {
       const raw = fmtPageSearch.value.trim();

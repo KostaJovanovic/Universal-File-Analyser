@@ -60,7 +60,7 @@ function parseUnity(text, ext, name) {
 
   const docs = splitDocs(text);
   // Histogram of object classes.
-  const counts: any = {};
+  const counts: Record<string, number> = {};
   for (const d of docs) counts[d.className] = (counts[d.className] || 0) + 1;
   const histogram = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ name: k, count: v }));
 

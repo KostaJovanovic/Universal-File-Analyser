@@ -525,7 +525,7 @@ export function pickOcrLanguage(opts: any = {}) {
       helpPanel.hidden = !showHelp;
       list.hidden = showHelp;
       hintP.hidden = showHelp;
-      helpBtn.classList.toggle('is-active', showHelp);
+      helpBtn.classList.toggle('is-active', !!showHelp);
     });
     const cancelBtn = el('button', { type: 'button', class: 'anr-btn' }, 'Cancel');
     const runBtn = el('button', { type: 'button', class: 'anr-btn anr-ocr-lang-run' }, 'Run OCR');
@@ -569,7 +569,7 @@ function aspectRatio(w, h) {
 
 // Decode a blob to its pixel dimensions via a throwaway <img>. Used by the EXIF
 // thumbnail-proportion check; resolves null if the browser can't decode it.
-function decodeImageDims(blob) {
+function decodeImageDims(blob): Promise<{ w: number; h: number } | null> {
   return new Promise((resolve) => {
     const u = URL.createObjectURL(blob);
     const im = new Image();
@@ -1489,7 +1489,7 @@ async function detectCodes(img) {
   const results = [];
   try {
     if ('BarcodeDetector' in window) {
-      const det = new window.BarcodeDetector();
+      const det = new (window as any).BarcodeDetector();
       const found = await det.detect(img);
       for (const f of found) if (f.rawValue) results.push({ format: f.format, data: f.rawValue });
     }
@@ -1732,7 +1732,7 @@ function makeOcrCard(file, img) {
       if (good.length === 0) {
         out.textContent = '(no text detected)';
       } else {
-        const lines: any = {};
+        const lines: Record<string, string[]> = {};
         for (const w of good) {
           const key = w.line ? w.line.text : '_';
           if (!lines[key]) lines[key] = [];
@@ -2030,7 +2030,7 @@ function ensureLightbox() {
     cancelAnimationFrame(resizeRaf);
     resizeRaf = requestAnimationFrame(() => {
       if (lbZoom) lbZoom.reset();
-      const im = wrap.querySelector('img:first-child');
+      const im = wrap.querySelector<HTMLImageElement>('img:first-child');
       if (im && im.naturalWidth) sizeWrap(wrap, im.naturalWidth, im.naturalHeight);
     });
   });
@@ -2726,7 +2726,7 @@ function buildFrameViewerCard(file, source, resultsEl, signal, opts: any = {}) {
     const c = document.createElement('canvas');
     c.width = width; c.height = height;
     c.getContext('2d').putImageData(new ImageData(data, width, height), 0, 0);
-    return new Promise((res) => c.toBlob(res, 'image/png'));
+    return new Promise<Blob | null>((res) => c.toBlob(res, 'image/png'));
   };
   const base = (file.name || 'image').replace(/\.[^.]+$/, '');
 

@@ -13,6 +13,8 @@ function abortError() {
     return new DOMException('separation aborted', 'AbortError');
 }
 function workerError(message, code) {
+    // The renderer switches on err.code to tell 'model download failed' from a
+    // genuine processing failure, so the tag rides along on the Error.
     const err = new Error(message);
     err.code = code;
     return err;

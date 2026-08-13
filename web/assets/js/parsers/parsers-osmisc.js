@@ -142,7 +142,7 @@ async function parseFeed(file) {
             }
         }
     }
-    const valid = dates.filter((d) => d instanceof Date && !isNaN(d));
+    const valid = dates.filter((d) => d instanceof Date && !isNaN(d.getTime()));
     if (valid.length) {
         const min = new Date(Math.min(...valid)), max = new Date(Math.max(...valid));
         out['Date range'] = fmtDate(min) + '  →  ' + fmtDate(max);

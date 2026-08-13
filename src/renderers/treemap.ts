@@ -152,7 +152,7 @@ function layoutNode(node, rect, depth, out) {
   if (depth > MAX_DEPTH || rect.w < 2 || rect.h < 2) return;
 
   const entries = [];
-  for (const child of Object.values(node.children)) {
+  for (const child of Object.values<any>(node.children)) {
     if (child.totalSize > 0) entries.push({ size: child.totalSize, dir: child });
   }
   for (const f of node.files) {

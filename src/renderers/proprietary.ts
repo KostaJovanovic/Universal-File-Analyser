@@ -10,6 +10,7 @@ import { FORMATS } from './proprietary-formats.js';
 import { EXT_VARIANTS, detectVariant } from '../core/formats.js';
 import { parseNrbf } from '../lib/nrbf.js';
 import { safe } from '../parsers/parser-util.js';
+import type { Row } from '../core/types.js';
 
 // ---------- helpers ----------
 function extFromName(name) {
@@ -234,7 +235,7 @@ function parsePe(buf) {
   const optMagic = peOffset + 24 < buf.length ? view.getUint16(peOffset + 24, true) : 0;
   const is64 = optMagic === 0x20B;
   const peType = is64 ? 'PE32+ (64-bit)' : optMagic === 0x10B ? 'PE32 (32-bit)' : 'PE';
-  const result = {
+  const result: Row = {
     'Format': peType,
     'Architecture': arch,
     'Sections': numSections,
@@ -562,7 +563,7 @@ export async function extractPeIcon(file) {
 
     const url = URL.createObjectURL(new Blob([ico], { type: 'image/x-icon' }));
     try {
-      const png = await new Promise((resolve) => {
+      const png = await new Promise<Blob | null>((resolve) => {
         const img = new Image();
         img.onload = () => {
           const cv = document.createElement('canvas');
@@ -1013,7 +1014,7 @@ async function parseSqlite(buf, file) {
   const writeVer = buf[18];
   const readVer = buf[19];
   const journal = { 1: 'legacy (rollback)', 2: 'WAL' };
-  const out = {
+  const out: Row = {
     'Page size': ps.toLocaleString() + ' bytes',
     'Journal mode': journal[writeVer] || String(writeVer),
     'SQLite version': view.getUint32(96) ? String(view.getUint32(96)) : undefined,
@@ -1164,7 +1165,7 @@ async function parseSqliteWal(head, file) {
   const maxFrames = pageSize > 0 ? Math.max(0, Math.floor((size - 32) / frameSize)) : 0;
   const hex = (n) => '0x' + (n >>> 0).toString(16).padStart(8, '0');
 
-  const out = {
+  const out: Row = {
     'Format': 'SQLite Write-Ahead Log (-wal)',
     'Header magic': hex(magic) + (magic === 0x377f0683 ? ' (big-endian checksums)' : ' (little-endian checksums)'),
     'WAL format': fmt === 3007000 ? '3007000 (SQLite 3.7.0+)' : String(fmt),
@@ -1182,7 +1183,7 @@ async function parseSqliteWal(head, file) {
   if (file && maxFrames > 0) {
     try {
       const n = Math.min(maxFrames, 200000);
-      const pages = new Set();
+      const pages = new Set<number>();
       let commits = 0, lastDbSize = 0, valid = 0;
       for (let i = 0; i < n; i++) {
         const off = 32 + i * frameSize;
@@ -1379,7 +1380,7 @@ async function parsePkf({ file }) {
   const peakCount = dv.getUint32(24, true);
   const samplesPerPeak = dv.getUint32(28, true) || 128;
   const HEADER = 56;   // (fileSize - 56) is an exact multiple of the 8-byte min/max peak pair
-  const out = {
+  const out: Row = {
     _app: 'DJI Waveform Peak File',
     'Format': 'DJI waveform peak / overview cache (magic "k$!") - the precomputed waveform a DJI recorder writes beside its audio, not the audio itself',
     'Channels': channels === 1 ? 'Mono' : channels === 2 ? 'Stereo' : String(channels),
@@ -2018,7 +2019,7 @@ function parseGcodePrinting(text) {
     const m = text.match(re);
     if (m) { fields['Slicer'] = m[1].trim(); break; }
   }
-  const kvPat = [
+  const kvPat: [RegExp, string][] = [
     [/;\s*printer_model\s*=\s*(.+)/i, 'Printer'],
     [/;\s*nozzle_diameter\s*=\s*([0-9.]+)/i, 'Nozzle'],
     [/;\s*layer_height\s*=\s*([0-9.]+)/i, 'Layer height'],
@@ -2060,7 +2061,7 @@ function parseGcodeCnc(text, truncated) {
   const fields: any = {};
 
   // --- CAM software / post-processor (from header comments) ---
-  const camPatterns = [
+  const camPatterns: [RegExp, string][] = [
     [/\(T\d+\s+D=[\d.]+\s+CR=/i, 'Autodesk Fusion 360 / HSM'],
     [/Autodesk\s+(?:Fusion|HSM|Inventor\s+CAM)/i, 'Autodesk Fusion 360 / HSM'],
     [/MASTERCAM|\(MCX FILE/i, 'Mastercam'],
@@ -2118,7 +2119,7 @@ function parseGcodeCnc(text, truncated) {
   // --- Stats over motion lines ---
   const lines = text.split('\n');
   let maxS = 0, maxF = 0, absolute = true, relativeSeen = false;
-  const tools = new Set(), offsets = new Set();
+  const tools = new Set<number>(), offsets = new Set<number>();
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
   const numAfter = (line, letter) => {
     const m = line.match(new RegExp(letter + '\\s*(-?\\d+\\.?\\d*)'));
@@ -2207,7 +2208,7 @@ async function parseLogOrigin(file) {
       if (m) { const lvl = m[0].toUpperCase(); levelCounts[lvl] = (levelCounts[lvl] || 0) + 1; }
     }
     if (Object.keys(levelCounts).length)
-      fields['Log levels (sample)'] = Object.entries(levelCounts)
+      fields['Log levels (sample)'] = Object.entries<number>(levelCounts)
         .sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ': ' + v).join(', ');
     const ips = new Set();
     for (const line of lines) {
@@ -2312,7 +2313,7 @@ function stepStrList(tok) {
 // Normalise an originating-system / preprocessor string to a known CAD product.
 function detectCadApp(s) {
   const u = (s || '').toUpperCase();
-  const map = [
+  const map: [RegExp, string][] = [
     [/SOLIDWORKS/, 'SolidWorks'],
     [/CATIA/, 'CATIA'],
     [/UNIGRAPHICS|\bNX\b|SIEMENS\s*NX/, 'Siemens NX'],
@@ -2542,7 +2543,7 @@ function parseX509(der) {
   // [0] version (optional, EXPLICIT)
   if (der[p] === 0xA0) { const v = readTLV(); const vi = readTLV(); fields['Version'] = 'v' + (der[vi.start] + 1); }
   const serial = readTLV();            // INTEGER serial
-  const serialHex = Array.from(der.subarray(serial.start, serial.end)).map(b => b.toString(16).padStart(2, '0')).join(':');
+  const serialHex = Array.from<number>(der.subarray(serial.start, serial.end)).map(b => b.toString(16).padStart(2, '0')).join(':');
   if (serialHex) fields['Serial'] = serialHex.length > 48 ? serialHex.slice(0, 48) + '…' : serialHex;
   const sigAlg = readTLV();            // SEQUENCE { OID }
   const sigOid = readTLV();
@@ -2583,7 +2584,7 @@ function parseX509(der) {
 async function parseAepx(file) {
   try {
     const text = await file.text();
-    const fields = { 'Format': 'After Effects XML project (AEPX)' };
+    const fields: Row = { 'Format': 'After Effects XML project (AEPX)' };
     const unesc = (s) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
 
@@ -2670,14 +2671,14 @@ async function parseAep(file) {
     if (ascii(buf, 0, 4) !== 'RIFX') return null;
     const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
     const form = ascii(buf, 8, 4);
-    const fields = { 'Container': 'RIFX (big-endian RIFF)' };
+    const fields: Row = { 'Container': 'RIFX (big-endian RIFF)' };
     fields['Form type'] = form + (form === 'Egg!' ? '  (After Effects project)' : '');
 
     // Walk top-level + nested chunks (bounded) counting structural FourCCs and
     // collecting tdmn match-names. We do a flat scan over the captured window for
     // robustness against AE's deep nesting.
     let comps = 0, layers = 0, items = 0, folders = 0, footage = 0;
-    const matchNames = new Set();
+    const matchNames = new Set<string>();
     let aeVersion = null;
 
     let p = 12; // past RIFX + size + form
@@ -2810,7 +2811,7 @@ async function parseVeg(file) {
   try {
     const cap = Math.min(file.size, 4 * 1024 * 1024);
     const buf = new Uint8Array(await file.slice(0, cap).arrayBuffer());
-    const fields = { 'Application': 'VEGAS Pro (Sony / MAGIX)' };
+    const fields: Row = { 'Application': 'VEGAS Pro (Sony / MAGIX)' };
 
     // VEG files commonly begin with RIFF/RIFX or a 'Vegas'/'VEG' marker; surface
     // whatever signature is present.
@@ -2854,7 +2855,7 @@ async function parseDrp(file, ext) {
     const cap = Math.min(file.size, 4 * 1024 * 1024);
     const buf = new Uint8Array(await file.slice(0, cap).arrayBuffer());
     const isTimeline = ext === 'drt';
-    const fields = { 'Application': 'DaVinci Resolve (Blackmagic Design)' };
+    const fields: Row = { 'Application': 'DaVinci Resolve (Blackmagic Design)' };
     fields['Kind'] = isTimeline ? 'Timeline (.drt)' : 'Project (.drp)';
 
     if (ascii(buf, 0, 15) === 'SQLite format 3') {
@@ -2902,7 +2903,7 @@ async function parseFilmora(file, ext) {
   try {
     const cap = Math.min(file.size, 6 * 1024 * 1024);
     const buf = new Uint8Array(await file.slice(0, cap).arrayBuffer());
-    const fields = { 'Application': 'Wondershare Filmora' };
+    const fields: Row = { 'Application': 'Wondershare Filmora' };
     fields['Kind'] = ext === 'wsp' ? 'Sub-project (.wsp)' : 'Project (.wfp)';
 
     // Is there a JSON document (whole-file or embedded)? Find the first '{' that
@@ -3101,12 +3102,12 @@ async function parsePart(file, head) {
   const sig = guessFromMagic(head);
   if (sig) fields['Detected original format'] = sig;
   else fields['Detected original format'] = 'Unrecognised (' +
-    Array.from(head.subarray(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(' ') + ')';
+    Array.from<number>(head.subarray(0, 8)).map(b => b.toString(16).padStart(2, '0')).join(' ') + ')';
   return fields;
 }
 
 // Small magic-byte sniffer for the partial-download detector.
-function guessFromMagic(b) {
+function guessFromMagic(b: Uint8Array) {
   const a = (s, l) => Array.from(b.subarray(s, s + l)).map(c => String.fromCharCode(c)).join('');
   if (a(0, 4) === '%PDF') return 'PDF document';
   if (b[0] === 0x50 && b[1] === 0x4B) return 'ZIP / Office / archive';
@@ -3189,7 +3190,7 @@ async function parseCdp(file, head) {
   if (hierarchy) return parseCriterium(file, head);
 
   const fields = { _app: 'CDP4 (COMET Data Platform)' };
-  const a = (s, l) => Array.from(head.subarray(s, s + l)).map(c => String.fromCharCode(c)).join('');
+  const a = (s, l) => Array.from<number>(head.subarray(s, s + l)).map(c => String.fromCharCode(c)).join('');
   if (a(0, 15) === 'SQLite format 3') {
     fields['Container'] = 'SQLite database';
   } else if (head[0] === 0x50 && head[1] === 0x4B) {
@@ -3997,7 +3998,7 @@ async function parseVdf(file) {
     }
   })(root);
 
-  const res = { 'Format': 'Valve KeyValues (VDF)' };
+  const res: Row = { 'Format': 'Valve KeyValues (VDF)' };
   if (rootKey) res['Root key'] = rootKey;
   res['Total entries'] = leaves.toLocaleString();
   for (const k in notable) {
@@ -4005,7 +4006,7 @@ async function parseVdf(file) {
     if (k === 'SizeOnDisk' && /^\d+$/.test(v)) v = fmtBytes(Number(v));
     if ((k === 'LastUpdated' || k === 'LastOwner') && /^\d{9,}$/.test(v)) {
       const d = new Date(Number(v) * 1000);
-      if (!isNaN(d)) v = v + '  (' + d.toLocaleString() + ')';
+      if (!isNaN(d.getTime())) v = v + '  (' + d.toLocaleString() + ')';
     }
     res[NOTE[k]] = v;
   }

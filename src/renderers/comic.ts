@@ -77,7 +77,7 @@ function parseComicInfo(xml) {
 
 // Page object URLs from the previous comic. They persist in a per-render cache for
 // the reader's lifetime, so free the last comic's set when a new one is opened.
-const _comicPageUrls = new Set();
+const _comicPageUrls = new Set<string>();
 function revokeComicPageUrls() {
   for (const u of _comicPageUrls) { try { URL.revokeObjectURL(u); } catch (_) {} }
   _comicPageUrls.clear();
@@ -175,7 +175,7 @@ export async function renderComic(file, resultsEl, extOverride) {
       });
       document.body.appendChild(overlay);
     }
-    const img = overlay.querySelector('.lightbox-img-wrap img');
+    const img = overlay.querySelector<HTMLImageElement>('.lightbox-img-wrap img');
     const toolbar = overlay.querySelector('.lightbox-toolbar');
     const meta = overlay.querySelector('.lightbox-meta');
     toolbar.innerHTML = '';

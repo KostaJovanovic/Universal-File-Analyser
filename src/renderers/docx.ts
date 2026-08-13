@@ -208,7 +208,7 @@ function renderDocumentXml(xmlStr, imageMap) {
 // Object URLs minted for embedded images. They are global and used later as <img>
 // srcs elsewhere in the render, so they can't be revoked on load; track them and
 // free the previous document's set when a new document is opened.
-const _docxImageUrls = new Set();
+const _docxImageUrls = new Set<string>();
 function revokeDocxImageUrls() {
   for (const u of _docxImageUrls) { try { URL.revokeObjectURL(u); } catch (_) {} }
   _docxImageUrls.clear();

@@ -9,6 +9,7 @@
 
 import { el, row, fmtBytes, preBlock, readSlice } from '../core/util.js';
 import { Reader, ascii, findBytes, matchMagic, startsWithAscii, latin1, gunzip } from '../core/binutil.js';
+import type { Row } from '../core/types.js';
 
 // ---------- small helpers ----------
 
@@ -220,7 +221,7 @@ async function parseDicom(file) {
     }
   } catch (_) { /* partial parse is fine */ }
 
-  const out = { 'Format': 'DICOM medical image' };
+  const out: Row = { 'Format': 'DICOM medical image' };
   if (found.Modality) out['Modality'] = found.Modality;
   if (found.StudyDescription) out['Study description'] = found.StudyDescription;
   if (found.StudyDate) out['Study date'] = found.StudyDate;
@@ -397,7 +398,7 @@ async function parseFits(head, file) {
   if (!startsWithAscii(head, 'SIMPLE')) return null;
   const c = fitsCards(head);
   if (!('SIMPLE' in c)) return null;
-  const out = { 'Format': 'FITS (Flexible Image Transport System)' };
+  const out: Row = { 'Format': 'FITS (Flexible Image Transport System)' };
   out['SIMPLE'] = c.SIMPLE;
   if (c.BITPIX) {
     const bp = parseInt(c.BITPIX, 10);
@@ -629,7 +630,7 @@ async function parseMol(file, ext) {
   const counts = lines[3];
   // V2000 counts line: aaabbb...; V3000 uses "V30 COUNTS".
   const v2 = counts.match(/^\s*(\d+)\s*(\d+).*(V2000|V3000)?\s*$/);
-  const out = { 'Format': ext === 'sdf' ? 'SDF chemical structure (MDL)' : 'MOL chemical structure (MDL)' };
+  const out: Row = { 'Format': ext === 'sdf' ? 'SDF chemical structure (MDL)' : 'MOL chemical structure (MDL)' };
   const name = lines[0].trim();
   if (name) out['Molecule name'] = name.slice(0, 80);
   const prog = lines[1].trim();
@@ -780,7 +781,7 @@ async function parseExcellon(file) {
   const text = await readText(file, 2_000_000);
   if (!text) return null;
   if (!/M48|^T\d+C[\d.]/m.test(text) && !/INCH|METRIC/.test(text)) return null;
-  const out = { 'Format': 'Excellon drill (PCB)' };
+  const out: Row = { 'Format': 'Excellon drill (PCB)' };
   const units = text.match(/\b(INCH|METRIC)\b/);
   if (units) out['Units'] = units[1] === 'METRIC' ? 'metric (mm)' : 'inch';
   // Tool table: T<n>C<diameter>
@@ -862,7 +863,7 @@ async function parseEdf(file, ext) {
   const numRecords = parseInt(ascii(buf, 236, 8).trim(), 10);
   const recDur = parseFloat(ascii(buf, 244, 8).trim());
   const numSignals = parseInt(ascii(buf, 252, 4).trim(), 10);
-  const out = { 'Format': isBdf ? 'BDF biosignal (BioSemi)' : 'EDF biosignal (European Data Format)' };
+  const out: Row = { 'Format': isBdf ? 'BDF biosignal (BioSemi)' : 'EDF biosignal (European Data Format)' };
   if (reserved) out['Subtype'] = reserved;
   out['Patient ID'] = patient || '-';
   out['Recording ID'] = recording || '-';
@@ -929,7 +930,7 @@ async function parseSav(file) {
   const creationDate = ascii(buf, r.tell(), 9).trim(); r.skip(9);
   const creationTime = ascii(buf, r.tell(), 8).trim(); r.skip(8);
   const fileLabel = ascii(buf, r.tell(), 64).trim();
-  const out = { 'Format': 'SPSS data file (.sav)' };
+  const out: Row = { 'Format': 'SPSS data file (.sav)' };
   if (productName) out['Created by'] = productName;
   out['Variables (nominal)'] = caseSize >= 0 ? caseSize : '-';
   out['Cases'] = ncases >= 0 ? ncases.toLocaleString() : 'unknown (streamed)';
@@ -1070,8 +1071,8 @@ async function parseVtk(file, ext) {
   const out = { 'Format': 'VTK XML (' + (typeM ? typeM[1] : ext.toUpperCase()) + ')' };
   if (verM) out['Version'] = verM[1];
   out['Pieces'] = (text.match(/<Piece\b/gi) || []).length;
-  const np = Array.from(text.matchAll(/NumberOfPoints="(\d+)"/gi)).reduce((a, m) => a + parseInt(m[1], 10), 0);
-  const nc = Array.from(text.matchAll(/NumberOfCells="(\d+)"/gi)).reduce((a, m) => a + parseInt(m[1], 10), 0);
+  const np = Array.from<RegExpMatchArray>(text.matchAll(/NumberOfPoints="(\d+)"/gi)).reduce((a, m) => a + parseInt(m[1], 10), 0);
+  const nc = Array.from<RegExpMatchArray>(text.matchAll(/NumberOfCells="(\d+)"/gi)).reduce((a, m) => a + parseInt(m[1], 10), 0);
   if (np) out['Points'] = np.toLocaleString();
   if (nc) out['Cells'] = nc.toLocaleString();
   const compress = text.match(/compressor="([^"]+)"/i);
@@ -1123,7 +1124,7 @@ async function parseNifti(file) {
   const sclSlope = r.f32();   // 112
   const sclInter = r.f32();   // 116
   const shape = dim.slice(0, Math.max(0, Math.min(ndim, 7)));
-  const out = {
+  const out: Row = {
     'Format': 'NIfTI neuroimaging (' + (magic[1] === '+' ? 'single-file' : 'paired') + ')',
     'Magic': magic.replace(/\0+$/, ''),
     'Dimensions': ndim + 'D (' + shape.join(' × ') + ')',
@@ -1570,7 +1571,7 @@ async function parseBrainVision(file, ext) {
   }
   // .vhdr - INI-style "Brain Vision Data Exchange Header File".
   if (!/Brain\s*Vision/i.test(text) && !/\[Common Infos\]/i.test(text)) return null;
-  const out = { 'Format': 'BrainVision header (.vhdr)' };
+  const out: Row = { 'Format': 'BrainVision header (.vhdr)' };
   const grab = (key) => { const m = text.match(new RegExp('^' + key + '=([^\\r\\n]+)', 'im')); return m ? m[1].trim() : null; };
   const dataFile = grab('DataFile'); if (dataFile) out['Data file'] = dataFile;
   const markerFile = grab('MarkerFile'); if (markerFile) out['Marker file'] = markerFile;

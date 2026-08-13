@@ -6,6 +6,7 @@
 
 import { preBlock, readSlice, readText } from '../core/util.js';
 import { parsePlist } from '../lib/plist.js';
+import type { Row } from '../core/types.js';
 
 // Apple Photos .aae adjustments sidecar (XML or binary plist).
 async function parseAae(file) {
@@ -27,7 +28,7 @@ async function parsePp3(file) {
   if (!/\[(Version|General|Exposure|RAW|White Balance)\]/i.test(text)) return null;
   const ver = (text.match(/AppVersion\s*=\s*([^\r\n]+)/i) || [])[1] || (text.match(/^Version\s*=\s*([^\r\n]+)/im) || [])[1];
   const sections = Array.from(text.matchAll(/^\[([^\]]+)\]/gm)).map((m) => m[1]);
-  const out = { 'Format': 'RawTherapee profile (PP3)' };
+  const out: Row = { 'Format': 'RawTherapee profile (PP3)' };
   if (ver) out['RawTherapee version'] = ver;
   out['Adjustment sections'] = sections.length;
   if (sections.length) out._sections = [{ title: 'Applied tool sections', node: preBlock(sections.join('\n')) }];

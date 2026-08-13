@@ -17,7 +17,20 @@ import { addDrone } from './drones.js';
 import { clearEndPanel } from './leaderboard.js';
 import { clearMenus } from './menus.js';
 
-export function makeAsteroid(x, y, size, label) {
+/** A field asteroid. The listed members are what every asteroid has from the
+ *  moment it is made; the index signature covers the flags the wave and boss
+ *  code tacks on afterwards (grace periods, `solo`, split bookkeeping) - a game
+ *  entity genuinely grows members as it goes, and pinning every one of them
+ *  here would be a fiction that drifts. */
+export interface Asteroid {
+  x: number; y: number; size: number; label: string; radius: number;
+  verts: { a: number; r: number }[];
+  angleR: number; spin: number; vx: number; vy: number;
+  font: number; fontStr: string; grace: number;
+  [k: string]: any;
+}
+
+export function makeAsteroid(x, y, size, label): Asteroid {
   const S = g.S;
   const radius = (size === 3 ? 46 : size === 2 ? 30 : 19) * S;
   const n = 7 + size * 2 + ((Math.random() * 3) | 0);

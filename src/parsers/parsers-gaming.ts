@@ -160,7 +160,7 @@ async function parseSnes(file) {
   // Header lives at 0x7FC0 (LoROM) or 0xFFC0 (HiROM), relative to ROM start.
   const buf = await readSlice(file, off, 0x10000);
   if (buf.length < 0x8000) return null;
-  const candidates = [['LoROM', 0x7FC0], ['HiROM', 0xFFC0]];
+  const candidates: [string, number][] = [['LoROM', 0x7FC0], ['HiROM', 0xFFC0]];
   let best = null, bestScore = -1, bestMap = '';
   for (const [map, base] of candidates) {
     if (base + 0x30 > buf.length) continue;
@@ -327,7 +327,7 @@ async function parseBps(file) {
   if (metaSize > 0 && cur.i + metaSize <= buf.length) {
     meta = latin1(buf.subarray(cur.i, cur.i + metaSize));
   }
-  const out = {
+  const out: Row = {
     'Format': 'BPS ROM patch',
     'Source size': fmtBytes(srcSize),
     'Target size': fmtBytes(tgtSize),
@@ -382,7 +382,7 @@ async function parseWad(file) {
   const r = new Reader(head, true); r.seek(4);
   const numLumps = r.u32();
   const dirOff = r.u32();
-  const out = { 'Format': id === 'IWAD' ? 'Doom IWAD (full game)' : 'Doom PWAD (patch/mod)', 'Lumps': numLumps };
+  const out: Row = { 'Format': id === 'IWAD' ? 'Doom IWAD (full game)' : 'Doom PWAD (patch/mod)', 'Lumps': numLumps };
   // Read the lump directory (16 bytes each: offset, size, 8-char name).
   const dirSize = Math.min(numLumps * 16, 4 * 1024 * 1024);
   const dir = await readSlice(file, dirOff, dirSize);
@@ -498,7 +498,7 @@ async function parseNbt(file, ext) {
   let tags;
   try { tags = walkNbt(bytes); } catch (_) { return null; }
   if (!tags) return null;
-  const out = { 'Format': ext === 'nbt' ? 'Minecraft NBT data' : 'Minecraft schematic (' + ext + ')' };
+  const out: Row = { 'Format': ext === 'nbt' ? 'Minecraft NBT data' : 'Minecraft schematic (' + ext + ')' };
   const pick = ['LevelName', 'Name', 'name', 'Author', 'author', 'DataVersion', 'Version', 'version', 'MCEdit', 'Width', 'Height', 'Length', 'GameType', 'Difficulty', 'seed', 'RandomSeed', 'SpawnX', 'SpawnY', 'SpawnZ', 'Time', 'DayTime'];
   for (const k of pick) if (tags[k] !== undefined) out[k] = String(tags[k]);
   out['Tags decoded'] = Object.keys(tags).length;
@@ -512,7 +512,7 @@ async function parseMcZip(file, ext) {
   let zip;
   try { zip = await openZip(file); } catch (_) { return null; }
   if (!zip || !zip.entries.length) return null;
-  const out = { 'Format': 'Minecraft Bedrock ' + ext.replace('mc', '') + ' (.' + ext + ')' };
+  const out: Row = { 'Format': 'Minecraft Bedrock ' + ext.replace('mc', '') + ' (.' + ext + ')' };
   out['Entries'] = zip.entries.length;
   // manifest.json (anywhere in tree)
   const manEntry = zip.entries.find((e) => /(^|\/)manifest\.json$/.test(e.name));
@@ -623,7 +623,7 @@ async function parsePak(file) {
   const dirOff = r.u32();
   const dirLen = r.u32();
   const count = Math.floor(dirLen / 64);
-  const out = { 'Format': 'Quake PACK archive (.pak)', 'Files': count };
+  const out: Row = { 'Format': 'Quake PACK archive (.pak)', 'Files': count };
   if (count > 0 && count < 200000) {
     const dir = await readSlice(file, dirOff, Math.min(dirLen, 4 * 1024 * 1024));
     const names = [];
@@ -640,7 +640,7 @@ async function parsePk3(file, ext) {
   try { zip = await openZip(file); } catch (_) { return null; }
   if (!zip || !zip.entries.length) return null;
   const names = zip.names();
-  const out = { 'Format': (ext === 'pk4' ? 'id Tech 4' : 'id Tech 3') + ' archive (.' + ext + ', ZIP)', 'Entries': names.length };
+  const out: Row = { 'Format': (ext === 'pk4' ? 'id Tech 4' : 'id Tech 3') + ' archive (.' + ext + ', ZIP)', 'Entries': names.length };
   out['BSP maps'] = zip.match(/\.bsp$/i).length;
   out['MD3 models'] = zip.match(/\.md3$/i).length;
   out['Textures'] = zip.match(/\/(textures|gfx)\//i).length;
@@ -653,7 +653,7 @@ async function parseBsp(file) {
   const head = await readSlice(file, 0, 1036);
   const id = ascii(head, 0, 4);
   const r = new Reader(head, true);
-  const out = { 'Format': 'Compiled map (BSP)' };
+  const out: Row = { 'Format': 'Compiled map (BSP)' };
   let lumpBase = 8, lumpCount = 64, entLumpIdx = 0;
   if (id === 'VBSP') {           // Valve Source
     r.seek(4);
@@ -678,7 +678,7 @@ async function parseBsp(file) {
     if (entOff > 0 && entLen > 0 && entLen < 16 * 1024 * 1024) {
       const ent = await readSlice(file, entOff, Math.min(entLen, 512 * 1024));
       const text = latin1(ent);
-      const classes: any = {};
+      const classes: Record<string, number> = {};
       let spawns = 0;
       for (const m of text.matchAll(/"classname"\s*"([^"]+)"/g)) {
         classes[m[1]] = (classes[m[1]] || 0) + 1; spawns++;
@@ -741,7 +741,7 @@ async function parseVmt(file) {
   const text = (await readText(file, 65536));
   const shaderMatch = text.match(/^\s*"?([A-Za-z0-9_]+)"?\s*\{/m);
   if (!shaderMatch) return null;
-  const out = { 'Format': 'Valve Material (.vmt)', 'Shader': shaderMatch[1] };
+  const out: Row = { 'Format': 'Valve Material (.vmt)', 'Shader': shaderMatch[1] };
   const params: any = {};
   for (const m of text.matchAll(/"(\$[A-Za-z0-9_]+)"\s+"?([^"\r\n}]*)"?/g)) params[m[1]] = m[2].trim();
   const keys = Object.keys(params);
@@ -818,7 +818,7 @@ async function parseTiledXml(file, ext) {
   const objGroups = doc.querySelectorAll('objectgroup').length;
   const objects = doc.querySelectorAll('object').length;
   const tilesets = Array.from(doc.querySelectorAll('tileset')).map((t) => t.getAttribute('source') || t.getAttribute('name') || '(embedded)');
-  const out = {
+  const out: Row = {
     'Format': 'Tiled map (.tmx)',
     'Orientation': map.getAttribute('orientation') || '-',
     'Map size': (map.getAttribute('width') || '?') + ' x ' + (map.getAttribute('height') || '?') + ' tiles',
@@ -869,11 +869,11 @@ async function parseLove(file) {
   const hasMain = names.some((n) => /(^|\/)main\.lua$/.test(n));
   const hasConf = names.some((n) => /(^|\/)conf\.lua$/.test(n));
   if (!hasMain && !hasConf) return null;
-  const out = { 'Format': 'LÖVE (Love2D) game (.love, ZIP)', 'Entries': names.length };
+  const out: Row = { 'Format': 'LÖVE (Love2D) game (.love, ZIP)', 'Entries': names.length };
   out['main.lua'] = hasMain ? 'present' : 'missing';
   out['conf.lua'] = hasConf ? 'present' : 'missing';
   // Asset breakdown by extension.
-  const byExt: any = {};
+  const byExt: Record<string, number> = {};
   for (const n of names) { const m = n.match(/\.([a-z0-9]+)$/i); if (m) byExt[m[1].toLowerCase()] = (byExt[m[1].toLowerCase()] || 0) + 1; }
   const breakdown = Object.entries(byExt).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => k + ': ' + v).join('  ');
   out['Asset types'] = breakdown;
@@ -938,6 +938,7 @@ async function idOnly(file, ext) {
 
 // ---------- dispatch ----------
 import { safe as wrap } from './parser-util.js';
+import type { Row } from '../core/types.js';
 
 // The Sims / Maxis DBPF package (.package): Sims 2/3/4, SimCity 4, Spore all use
 // the Database Packed File container. The fixed little-endian header gives the
@@ -1144,7 +1145,7 @@ async function parseSpine(file, ext) {
       else if (ln && !/^\s/.test(ln) && !/:/.test(ln) && pages.length) regions++;
     }
     if (!pages.length && !/size:|format:/.test(text)) return null;
-    const out = { 'Format': 'Spine texture atlas (.atlas)', 'Pages': pages.length, 'Regions': regions };
+    const out: Row = { 'Format': 'Spine texture atlas (.atlas)', 'Pages': pages.length, 'Regions': regions };
     if (pages.length) out._sections = [{ title: 'Atlas pages', node: preBlock(pages.slice(0, 50).join('\n')) }];
     return out;
   }
@@ -1156,7 +1157,7 @@ async function parseSpine(file, ext) {
       const j = JSON.parse(text);
       if (j.skeleton && (j.bones || j.slots || j.animations)) {
         const sk = j.skeleton;
-        const out = { 'Format': 'Spine skeleton (JSON)' };
+        const out: Row = { 'Format': 'Spine skeleton (JSON)' };
         if (sk.spine) out['Spine version'] = sk.spine;
         if (sk.hash) out['Skeleton hash'] = sk.hash;
         if (sk.width != null) out['Setup size'] = sk.width + ' x ' + sk.height;
@@ -1513,7 +1514,7 @@ async function parsePyxel(file) {
   if (!zip || !zip.entries.length) return null;
   const docEntry = zip.entries.find((e) => /docData\.json$/i.test(e.name));
   if (!docEntry && !zip.names().some((n) => /\.(png|json)$/i.test(n))) return null;
-  const out = { 'Format': 'Pyxel Edit document (.pyxel, ZIP)', 'Entries': zip.entries.length };
+  const out: Row = { 'Format': 'Pyxel Edit document (.pyxel, ZIP)', 'Entries': zip.entries.length };
   if (docEntry) {
     try {
       const j = JSON.parse(await zip.text(docEntry.name));

@@ -63,15 +63,23 @@ function labelOf(cell) {
   return v.replace(/\s+/g, ' ').trim();
 }
 
+// A drawio vertex: the geometry as authored, plus the centre point the edge
+// router below works from.
+interface MxVert {
+  id: string; x: number; y: number; w: number; h: number;
+  style: string; label: string;
+  cx?: number; cy?: number;
+}
+
 function renderMxModel(model) {
-  const cells = Array.from(model.getElementsByTagName('mxCell'));
+  const cells = Array.from<Element>(model.getElementsByTagName('mxCell'));
   const verts = [];
   const edges = [];
   const byId: any = {};
   for (const c of cells) {
     const geo = c.getElementsByTagName('mxGeometry')[0];
     if (c.getAttribute('vertex') === '1' && geo && geo.getAttribute('width')) {
-      const v = { id: c.getAttribute('id'), x: num(geo.getAttribute('x')), y: num(geo.getAttribute('y')),
+      const v: MxVert = { id: c.getAttribute('id'), x: num(geo.getAttribute('x')), y: num(geo.getAttribute('y')),
         w: num(geo.getAttribute('width')), h: num(geo.getAttribute('height')),
         style: c.getAttribute('style') || '', label: labelOf(c) };
       v.cx = v.x + v.w / 2; v.cy = v.y + v.h / 2;
@@ -261,7 +269,7 @@ export async function renderDxf(file, container) {
     const verMatch = /\$ACADVER\s*\n\s*1\s*\n\s*(AC\d+)/.exec(text);
     const r = dxfToSvg(entities);
 
-    const typeList = Object.entries(r.counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' x' + v).join(', ');
+    const typeList = Object.entries<number>(r.counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' x' + v).join(', ');
     info.appendChild(buildReadout([
       ['File', file.name],
       ['Size', fmtBytes(file.size)],

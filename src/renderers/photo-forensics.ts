@@ -113,7 +113,7 @@ export async function computeElaCanvas(src, { quality = 0.9, amplify = 18, maxDi
   const orig = ctx.getImageData(0, 0, w, h);
 
   // Recompress this exact raster as JPEG and read it back.
-  const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', quality));
+  const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/jpeg', quality));
   if (!blob) return null;
   const url = URL.createObjectURL(blob);
   let recImg;
@@ -277,7 +277,7 @@ export async function computeJpegGhosts(src, { qualities, maxDim = 1024, block =
   const bw = Math.ceil(w / block), bh = Math.ceil(h / block);
   const maps = [];
   for (const q of qualities) {
-    const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', q / 100));
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', q / 100));
     if (!blob) continue;
     const url = URL.createObjectURL(blob);
     let im;

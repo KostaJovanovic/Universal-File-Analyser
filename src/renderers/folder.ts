@@ -328,8 +328,8 @@ function renderScanReport(host, total, failures, cancelled, checked) {
   host.appendChild(list);
 }
 
-function readEntries(reader) {
-  return new Promise((resolve, reject) => {
+function readEntries(reader): Promise<any[]> {
+  return new Promise<any[]>((resolve, reject) => {
     const all = [];
     (function read() {
       reader.readEntries(entries => {
@@ -341,8 +341,8 @@ function readEntries(reader) {
   });
 }
 
-function entryToFile(entry) {
-  return new Promise((resolve, reject) => entry.file(resolve, reject));
+function entryToFile(entry): Promise<File> {
+  return new Promise<File>((resolve, reject) => entry.file(resolve, reject));
 }
 
 // How many FileSystem API calls to keep in flight at once. Every entry.file()
@@ -356,10 +356,10 @@ const WALK_CONCURRENCY = 32;
 // has no bound at all, and the walk has to finish before anything is shown.
 export const FOLDER_ENTRY_CAP = 100000;
 
-function mapLimited(items, limit, fn) {
+function mapLimited<T>(items, limit, fn: (item: any, index?: number) => Promise<T>): Promise<T[]> {
   // Small bounded-concurrency map: keeps `limit` promises in flight, preserving
   // input order in the result.
-  return new Promise((resolve) => {
+  return new Promise<T[]>((resolve) => {
     const out = new Array(items.length);
     let next = 0, done = 0;
     if (!items.length) return resolve(out);
@@ -382,13 +382,16 @@ function mapLimited(items, limit, fn) {
 async function walkTree(roots, opts: any = {}) {
   const shouldStop = opts.shouldStop || (() => false);
   const onProgress = opts.onProgress;
-  const out = [];
+  // The walk result is an array of entries that also carries two end-of-walk
+  // flags, so the caller can tell "these are all the files" from "we hit the
+  // cap" or "the user cancelled" without a second return value.
+  const out: any[] & { truncated?: boolean; cancelled?: boolean } = [];
   let level = roots.map((entry) => ({ entry, path: '' }));
   let truncated = false;
 
   while (level.length && !shouldStop() && out.length < FOLDER_ENTRY_CAP) {
     // List every directory at this depth concurrently.
-    const listings = await mapLimited(level, WALK_CONCURRENCY, async (d) => {
+    const listings = await mapLimited(level, WALK_CONCURRENCY, async (d): Promise<{ d: any; children: any[] }> => {
       try { return { d, children: await readEntries(d.entry.createReader()) }; }
       catch (_) { return { d, children: [] }; }
     });
@@ -410,9 +413,9 @@ async function walkTree(roots, opts: any = {}) {
       if (shouldStop()) break;
       if (out.length >= FOLDER_ENTRY_CAP) { truncated = true; break; }
       const batch = fileEntries.slice(i, i + WALK_CONCURRENCY * 8);
-      const resolved = await mapLimited(batch, WALK_CONCURRENCY, async (fe) => {
+      const resolved = await mapLimited(batch, WALK_CONCURRENCY, async (fe): Promise<any> => {
         try {
-          const file = await entryToFile(fe.entry);
+          const file: File = await entryToFile(fe.entry);
           return { path: fe.path, size: file.size, file };
         } catch (_) { return null; }
       });
@@ -564,7 +567,7 @@ export function renderFolder(files, resultsEl) {
         // frame each - yield only when ~a frame has passed since the last paint.
         const now = performance.now();
         if (now - lastPaint > 60) {
-          await new Promise((r) => requestAnimationFrame(() => r()));
+          await new Promise<void>((r) => requestAnimationFrame(() => r()));
           lastPaint = performance.now();
         }
       }

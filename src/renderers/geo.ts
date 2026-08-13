@@ -362,7 +362,7 @@ export async function renderGeo(file, resultsEl) {
         });
       } else {
         // Union of keys + count of features carrying each.
-        const counts: any = {};
+        const counts: Record<string, number> = {};
         g.features.forEach((f) => Object.keys(f.props || {}).forEach((k) => { counts[k] = (counts[k] || 0) + 1; }));
         ptbl.appendChild(rowHelp('Features', g.features.length.toLocaleString(), 'In GeoJSON, a feature is one item on the map - a single shape (a point, line or area) together with the labels and values attached to it. This is how many the file holds.'));
         Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 40)

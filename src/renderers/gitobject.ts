@@ -53,7 +53,7 @@ export async function sniffGitObject(file) {
   if (hasInflate() && (head[0] & 0x0f) === 8 && ((((head[0] << 8) | head[1]) % 31) === 0)) {         // zlib stream
     try {
       const dec = await inflatePrefix(file.slice(0, 1024), 40);
-      const s = String.fromCharCode.apply(null, dec.subarray(0, Math.min(dec.length, 40)));
+      const s = String.fromCharCode.apply(null, dec.subarray(0, Math.min(dec.length, 40)) as unknown as number[]);
       const sp = s.indexOf(' '), nul = s.indexOf('\0');
       if (sp > 0 && nul > sp && TYPES.has(s.slice(0, sp)) && /^\d+$/.test(s.slice(sp + 1, nul))) return 'loose';
     } catch (_) {}

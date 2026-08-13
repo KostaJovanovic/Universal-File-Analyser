@@ -2,6 +2,24 @@
    Sniffs the container/codec from a file header, and wraps raw AAC (ADTS)
    in a minimal M4A container so browsers that won't decode bare ADTS can. */
 
+/** What the per-codec detail passes report. Each starts from the few fields its
+ *  header always carries and adds the rest as the frame scan finds them, so
+ *  everything is optional. */
+export interface CodecDetail {
+  codec?: string;
+  mpegVersion?: string;
+  mpegLayer?: string;
+  channelMode?: string;
+  sampleRate?: number;
+  channels?: number;
+  bitrate?: number;
+  bitrateText?: string;
+  encoder?: string;
+  frameCount?: number;
+  durationEst?: number;
+  durationEstimated?: boolean;
+}
+
 // --- File header peek (sample rate, bit depth, codec hints) ---
 export async function peekContainer(file) {
   const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
@@ -167,7 +185,7 @@ async function detailMp3(file) {
   const chName = chMode === 0 ? 'stereo' : chMode === 1 ? 'joint stereo'
               : chMode === 2 ? 'dual channel' : 'mono';
 
-  const out = {
+  const out: CodecDetail = {
     codec: `${verName} Audio Layer ${layer}`,
     mpegVersion: verName,
     mpegLayer: 'Layer ' + layer,
@@ -285,7 +303,7 @@ async function detailAac(file) {
   const headScan = scanAdts(head, headStart);
   if (!headScan || !headScan.first) return {};
   const first = headScan.first;
-  const out = {
+  const out: CodecDetail = {
     codec: 'AAC-' + (AAC_PROFILES[first.profile] || ('OT' + first.profile)) + ' (ADTS)',
     sampleRate: AAC_RATES[first.freqIdx] || 44100,
   };

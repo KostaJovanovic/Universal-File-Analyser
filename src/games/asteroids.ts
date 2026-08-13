@@ -194,7 +194,7 @@ export function launchAsteroids() {
   function tryFullscreen() {
     if (fsDone) return;
     if (document.fullscreenElement) { fsDone = true; return; }
-    const req = overlay.requestFullscreen || overlay.webkitRequestFullscreen;
+    const req = overlay.requestFullscreen || (overlay as any).webkitRequestFullscreen;
     if (!req) { fsDone = true; return; }   // unsupported (e.g. iOS Safari) - drop it quietly
     try {
       const p = req.call(overlay);
@@ -524,7 +524,8 @@ export function launchAsteroids() {
     if (g._layoutHintTimer) { clearTimeout(g._layoutHintTimer); g._layoutHintTimer = null; }
     // Drop out of fullscreen if we put ourselves there.
     try {
-      if (document.fullscreenElement) { const r = (document.exitFullscreen || document.webkitExitFullscreen).call(document); if (r && r.catch) r.catch(() => {}); }
+      // webkitExitFullscreen (Safari) returns nothing, the standard one a Promise.
+      if (document.fullscreenElement) { const r: any = (document.exitFullscreen || document.webkitExitFullscreen).call(document); if (r && r.catch) r.catch(() => {}); }
     } catch (_) {}
     clearEndPanel();
     overlay.remove();

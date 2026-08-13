@@ -16,6 +16,7 @@ import { fmtBytes, preBlock, fmtDate, loadScript, readSlice } from '../core/util
 import { Reader, ascii, matchMagic, latin1, utf8, gunzip, inflate, hexBytes } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
 import { xzDecompress } from '../lib/xz-loader.js';
+import type { Row } from '../core/types.js';
 
 // ---------- zstd decompression (lazy fzstd) ----------
 // Decompress a zstd byte buffer using the vendored fzstd UMD library, loaded on
@@ -124,7 +125,7 @@ async function parseTar(file) {
   }
   if (members === 0 && !hasUstar) return null;
   if (cap < file.size) truncated = true;
-  const out = {
+  const out: Row = {
     'Format': 'TAR archive' + (hasUstar ? ' (ustar / POSIX)' : ' (old-style)'),
     'Members': members.toLocaleString() + (truncated ? '+ (truncated)' : ''),
     'Total uncompressed': fmtBytes(total) + (truncated ? '+' : ''),
@@ -164,7 +165,7 @@ async function parseGzip(file, ext) {
     const tail = await readRange(file, file.size - 4, file.size);
     isize = (tail[0] | (tail[1] << 8) | (tail[2] << 16) | (tail[3] << 24)) >>> 0;
   } catch (_) {}
-  const out = {
+  const out: Row = {
     'Format': 'gzip compressed' + (ext === 'tgz' ? ' (tarball)' : ''),
   };
   if (fname) out['Original filename'] = fname;
@@ -206,7 +207,7 @@ function parseBzip2(head) {
 // the first bytes / detected inner type. Decompression failures leave the
 // header-only result intact.
 const XZ_CHECK = { 0: 'none', 1: 'CRC32', 4: 'CRC64', 10: 'SHA-256' };
-function parseXzHeader(head) {
+function parseXzHeader(head): Row {
   // Magic: FD 37 7A 58 5A 00
   if (!matchMagic(head, [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00])) return null;
   const flags = head[7]; // stream flags: low nibble of 2nd byte = check type
@@ -284,7 +285,7 @@ async function parseZstd(head, file, ext) {
   return out;
 }
 
-function parseZstdHeader(head) {
+function parseZstdHeader(head): Row {
   // Frame magic 0x28 0xB5 0x2F 0xFD (LE).
   if (!(head[0] === 0x28 && head[1] === 0xb5 && head[2] === 0x2f && head[3] === 0xfd)) {
     // Skippable frame magic range 0x184D2A50..5F
@@ -450,7 +451,7 @@ async function parseCpio(file) {
     }
   } catch (_) {}
   if (cap < file.size) truncated = true;
-  const out = {
+  const out: Row = {
     'Format': 'cpio archive (' + variant + ')',
     'Entries': variant === 'bin' ? 'n/a (binary variant)' : count.toLocaleString() + (truncated ? '+' : ''),
   };
@@ -517,7 +518,7 @@ async function parseLib(file) {
   const objs = ar.members.filter((m) => m.name !== '' && m.name !== '/' && m.name !== '__.SYMDEF');
   let importCount = 0, objCount = 0;
   const dlls = new Set();
-  const machines = new Set();
+  const machines = new Set<number>();
   for (const m of objs) {
     if (m.dataStart + 4 > b.length) continue;
     const sig1 = b[m.dataStart] | (b[m.dataStart + 1] << 8);
@@ -546,7 +547,7 @@ async function parseLib(file) {
   const kind = importCount ? 'Import library (links against a DLL)'
     : objCount ? 'Static library (object code)'
     : 'COFF library';
-  const out = {
+  const out: Row = {
     'Format': 'Microsoft COFF library (.lib)',
     'Kind': kind,
     'Members': objs.length.toLocaleString(),
@@ -574,7 +575,7 @@ function parseControlFields(text) {
 async function parseDeb(file) {
   const ar = await parseArMembers(file);
   if (!ar) return null;
-  const out = { 'Format': 'Debian package (.deb)' };
+  const out: Row = { 'Format': 'Debian package (.deb)' };
   const verMember = ar.members.find((m) => m.name === 'debian-binary');
   if (verMember) out['Package format'] = ascii(ar.buf, verMember.dataStart, verMember.size).trim();
   const ctrl = ar.members.find((m) => /^control\.tar/.test(m.name));
@@ -669,7 +670,7 @@ async function parseRpm(file) {
   const type = r.u16(); // 0 = binary, 1 = source
   const arch = r.u16();
   const name = tarStr(b, 10, 66);
-  const out = {
+  const out: Row = {
     'Format': 'RPM package',
     'RPM version': major + '.' + minor,
     'Type': type === 1 ? 'source (.src.rpm)' : 'binary',
@@ -731,7 +732,7 @@ async function parseGem(file) {
   const b = await readBytes(file, cap);
   // A .gem is itself an (uncompressed) tar containing metadata.gz + data.tar.gz.
   if (ascii(b, 257, 5) !== 'ustar' && octal(b, 124, 12) <= 0) return null;
-  const out = { 'Format': 'RubyGems package (.gem)' };
+  const out: Row = { 'Format': 'RubyGems package (.gem)' };
   const metaGz = findTarMember(b, 'metadata.gz');
   if (metaGz) {
     try {
@@ -770,7 +771,7 @@ async function parseCab(file) {
   const flags = r.u16();
   const setID = r.u16();
   const iCabinet = r.u16();
-  const out = {
+  const out: Row = {
     'Format': 'Microsoft Cabinet (.cab)',
     'Version': verMajor + '.' + verMinor,
     'Folders': cFolders,
@@ -813,7 +814,7 @@ function jsonTry(s) { try { return JSON.parse(s); } catch (_) { return null; } }
 async function parseWhl(file) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const metaEntry = zip.entries.find((e) => /\.dist-info\/METADATA$/.test(e.name));
-  const out = { 'Format': 'Python wheel (.whl)' };
+  const out: Row = { 'Format': 'Python wheel (.whl)' };
   if (metaEntry) {
     const text = await zipText(zip, metaEntry.name);
     if (text) {
@@ -840,7 +841,7 @@ async function parseWhl(file) {
 async function parseNupkg(file) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   const nuspec = zip.entries.find((e) => /\.nuspec$/i.test(e.name) && !e.name.includes('/'));
-  const out = { 'Format': 'NuGet package (.nupkg)' };
+  const out: Row = { 'Format': 'NuGet package (.nupkg)' };
   if (nuspec) {
     const xml = await zipText(zip, nuspec.name);
     if (xml) {
@@ -876,7 +877,7 @@ async function parseCrx(file) {
     const headerLen = r.u32();
     zipOffset = 12 + headerLen;
   }
-  const out = { 'Format': 'Chrome extension (.crx)', 'CRX version': version };
+  const out: Row = { 'Format': 'Chrome extension (.crx)', 'CRX version': version };
   try {
     const innerBlob = file.slice(zipOffset);
     const zip = await openZip(new File([innerBlob], 'inner.zip'));
@@ -900,7 +901,7 @@ async function parseCrx(file) {
 // .xpi (Firefox add-on)
 async function parseXpi(file) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
-  const out = { 'Format': 'Firefox add-on (.xpi)' };
+  const out: Row = { 'Format': 'Firefox add-on (.xpi)' };
   const mtext = await zipText(zip, 'manifest.json');
   const m = mtext && jsonTry(mtext);
   if (m) {
@@ -954,7 +955,7 @@ async function parseVsix(file) {
 // .asar (Electron) - pickle header -> JSON file tree.
 function walkAsarTree(node, prefix, out, sizeRef) {
   if (!node || !node.files) return;
-  for (const [name, info] of Object.entries(node.files)) {
+  for (const [name, info] of Object.entries<any>(node.files)) {
     const path = prefix + name;
     if (info.files) walkAsarTree(info, path + '/', out, sizeRef);
     else {
@@ -981,7 +982,7 @@ async function parseAsar(file) {
   if (!json || !json.files) return null;
   const items = []; const ref = { total: 0, count: 0 };
   walkAsarTree(json, '', items, ref);
-  const out = {
+  const out: Row = {
     'Format': 'Electron ASAR archive',
     'Files': ref.count.toLocaleString() + (items.length >= 1000 ? '+' : ''),
     'Total size': fmtBytes(ref.total),
@@ -1004,7 +1005,7 @@ async function parseAsar(file) {
 // .appx / .msix (Windows App Package)
 async function parseAppx(file) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
-  const out = { 'Format': 'Windows App Package (.appx / .msix)' };
+  const out: Row = { 'Format': 'Windows App Package (.appx / .msix)' };
   const xml = await zipText(zip, 'AppxManifest.xml');
   if (xml) {
     const attr = (re) => { const m = xml.match(re); return m ? m[1] : null; };
@@ -1050,7 +1051,7 @@ async function parseXapk(file, ext) {
   const kindLabel = ext === 'apkm' ? 'APKMirror bundle (.apkm)'
     : ext === 'apks' ? 'Android App Set (.apks, bundletool)'
     : 'APKPure app bundle (.xapk)';
-  const out = { 'Format': 'Android app bundle - ' + kindLabel };
+  const out: Row = { 'Format': 'Android app bundle - ' + kindLabel };
 
   const manifest = jsonTry(await zipText(zip, 'manifest.json')) || {};
   const info = jsonTry(await zipText(zip, 'info.json')) || {};
@@ -1103,7 +1104,7 @@ async function parseXapk(file, ext) {
 // .conda (zip wrapping zstd-compressed tarballs)
 async function parseConda(file) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
-  const out = { 'Format': 'Conda package (.conda)' };
+  const out: Row = { 'Format': 'Conda package (.conda)' };
   const inner = zip.names().filter((n) => /\.tar\.zst$/.test(n));
   out['Inner archives'] = inner.join(', ') || '-';
   const meta = await zipText(zip, 'metadata.json');
@@ -1158,7 +1159,7 @@ async function parseXar(file, ext) {
   const cksumAlg = r.u32();
   const CKSUM = { 0: 'none', 1: 'SHA-1', 2: 'MD5', 3: 'SHA-256', 4: 'SHA-512' };
   const isPkg = ext === 'pkg' || ext === 'mpkg';
-  const out = {
+  const out: Row = {
     'Format': isPkg ? 'macOS Installer package (.' + ext + ', XAR)' : 'XAR archive (eXtensible ARchive)',
     'XAR version': version,
     'TOC checksum': CKSUM[cksumAlg] != null ? CKSUM[cksumAlg] : 'alg ' + cksumAlg,
@@ -1384,7 +1385,9 @@ async function parseBr(file) {
   try {
     if (typeof DecompressionStream !== 'undefined' && file.size <= 64 * 1024 * 1024) {
       const comp = await readBytes(file, file.size);
-      const decoded = await inflate(comp, 'br'); // null where 'br' is unsupported
+      // 'br' is only a CompressionFormat where the browser ships Brotli; inflate()
+    // returns null on the ones that don't.
+    const decoded = await inflate(comp, 'br' as CompressionFormat);
       if (decoded && decoded.length) {
         out['Decompressed size'] = fmtBytes(decoded.length);
         if (file.size > 0) out['Ratio'] = (decoded.length / file.size).toFixed(2) + '×';
@@ -1406,7 +1409,7 @@ function ident(name, note) { return () => ({ 'Format': name, 'Note': note }); }
 // member tree; otherwise surface the leading signature.
 async function parseObb(file) {
   const head = await readBytes(file, 16);
-  const out = { 'Format': 'Android APK expansion file (OBB)', 'Size': fmtBytes(file.size) };
+  const out: Row = { 'Format': 'Android APK expansion file (OBB)', 'Size': fmtBytes(file.size) };
   if (head[0] === 0x50 && head[1] === 0x4B) {
     out['Container'] = 'ZIP';
     try {

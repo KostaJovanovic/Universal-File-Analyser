@@ -1102,6 +1102,8 @@ export function geoSpan(geo) {
 // { key, name, build() -> geo } and is built lazily + cached. The viewer sits
 // above the textual readouts. Reused by STL/OBJ/PLY/OFF/STEP body-splitting and
 // by the 3MF/AMF container renderers.
+// Only `parts` is required; each caller (3MF, AMF, STEP, ...) supplies whatever
+// labelling its format has and leaves the rest to the defaults below.
 export function renderPartsViewer(file, resultsEl, { metaCard, parts, format, unitLabel, partsTitle, partsHint, zUp }) {
     resultsEl.innerHTML = '';
     if (!parts.length) {

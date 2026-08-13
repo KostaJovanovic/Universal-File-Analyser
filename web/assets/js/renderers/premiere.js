@@ -110,6 +110,7 @@ function parsePremiere(xml) {
     for (const seqEl of doc.getElementsByTagName('Sequence')) {
         if (!seqEl.getAttribute('ObjectUID'))
             continue; // skip <Sequence ObjectRef> pointers
+        // dur/clipCount are derived from the tracks once they have all been read.
         const seq = { name: txt(seqEl, 'Name') || 'Sequence', id: txt(seqEl, 'ID'), w: 0, h: 0, fps: 0, tracks: [] };
         const groups = kids(kid(seqEl, 'TrackGroups'), 'TrackGroup')
             .map((g) => ref(g, 'Second'))

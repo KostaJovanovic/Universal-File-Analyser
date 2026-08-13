@@ -22,6 +22,9 @@ const REC = {
 const MAX_OBJECTS = 200000; // graph-size guard
 const MAX_ARRAY = 5000000; // per-array element guard
 class Reader {
+    b;
+    p;
+    dv;
     constructor(bytes) { this.b = bytes; this.p = 0; this.dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength); }
     get eof() { return this.p >= this.b.length; }
     need(n) { if (this.p + n > this.b.length)

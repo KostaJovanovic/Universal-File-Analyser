@@ -16,6 +16,7 @@
 import { el, fmtBytes, preBlock, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, latin1, utf8, utf16, inflate } from '../core/binutil.js';
 import { openZip } from '../renderers/zip.js';
+import type { Row } from '../core/types.js';
 
 // Lazily imported on first OLE/CFBF document; cached at module scope.
 let openCfbf;
@@ -156,7 +157,7 @@ async function parseCbz(file) {
     .filter((e) => /\.(jpe?g|png|gif|webp|bmp|avif)$/i.test(e.name) && !/\/$/.test(e.name))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
   if (!imgEntries.length && !zip.has('ComicInfo.xml')) return null;
-  const out = { 'Format': 'Comic Book ZIP (.cbz)' };
+  const out: Row = { 'Format': 'Comic Book ZIP (.cbz)' };
   out['Pages'] = imgEntries.length;
   // Format breakdown.
   const byFmt: any = {};
@@ -260,7 +261,7 @@ async function parseComicArchive(file, ext) {
     if (!imgEntries.length && !ciEntry) return null;
 
     const label = ext === 'cb7' ? 'Comic Book 7-Zip (.cb7)' : 'Comic Book RAR (.cbr)';
-    const out = { 'Format': label };
+    const out: Row = { 'Format': label };
     out['Pages'] = imgEntries.length;
 
     // Format breakdown.
@@ -322,7 +323,7 @@ async function parseCbt(file) {
     .filter((m) => /\.(jpe?g|png|gif|webp|bmp|avif)$/i.test(m.name))
     .sort((a, c) => a.name.localeCompare(c.name, undefined, { numeric: true, sensitivity: 'base' }));
   if (!imgs.length) return null;
-  const out = { 'Format': 'Comic Book TAR (.cbt)' };
+  const out: Row = { 'Format': 'Comic Book TAR (.cbt)' };
   out['Pages'] = imgs.length;
   const byFmt: any = {};
   for (const m of imgs) { const ex = (m.name.match(/\.([^.]+)$/) || [])[1].toLowerCase(); byFmt[ex] = (byFmt[ex] || 0) + 1; }
@@ -454,7 +455,7 @@ async function parseScriv(file, ext) {
   // rare, but treat its text as the scrivx).
   const text = await fileText(file, 8 * 1024 * 1024);
   if (!/<ScrivenerProject/i.test(text) && !/<Binder\b/i.test(text)) return null;
-  const out = { 'Format': 'Scrivener project (' + (ext === 'scriv' ? '.scriv' : '.scrivx') + ')' };
+  const out: Row = { 'Format': 'Scrivener project (' + (ext === 'scriv' ? '.scriv' : '.scrivx') + ')' };
   const ver = pick(text, /Version="([^"]+)"/i);
   if (ver) out['Version'] = ver;
   const items = countRe(text, /<BinderItem\b/gi);
@@ -592,7 +593,7 @@ async function parseVsdx(file) {
 // ---------- TeX / LaTeX (.tex .latex .sty .cls) ----------
 async function parseTex(file, ext) {
   const text = await fileText(file, 4 * 1024 * 1024);
-  const out = { 'Format': (ext === 'sty' ? 'LaTeX package (.sty)' : ext === 'cls' ? 'LaTeX class (.cls)' : 'TeX / LaTeX source (.' + ext + ')') };
+  const out: Row = { 'Format': (ext === 'sty' ? 'LaTeX package (.sty)' : ext === 'cls' ? 'LaTeX class (.cls)' : 'TeX / LaTeX source (.' + ext + ')') };
   const docclass = pick(text, /\\documentclass(?:\[[^\]]*\])?\{([^}]+)\}/);
   if (docclass) out['Document class'] = docclass;
   if (ext === 'cls') { const p = pick(text, /\\ProvidesClass\{([^}]+)\}(?:\[([^\]]*)\])?/); if (p) out['Provides class'] = p; }
@@ -619,9 +620,9 @@ async function parseBib(file) {
   const text = await fileText(file, 8 * 1024 * 1024);
   const entries = Array.from(text.matchAll(/@(\w+)\s*\{\s*([^,\s]+)\s*,/g));
   if (!entries.length) return null;
-  const out = { 'Format': 'BibTeX bibliography (.bib)' };
+  const out: Row = { 'Format': 'BibTeX bibliography (.bib)' };
   out['Entries'] = entries.filter((m) => !/^(string|preamble|comment)$/i.test(m[1])).length;
-  const byType: any = {}; const keys = []; const dupKeys = new Set(); const seen = new Set();
+  const byType: Record<string, number> = {}; const keys = []; const dupKeys = new Set(); const seen = new Set();
   for (const m of entries) {
     const type = m[1].toLowerCase();
     if (/^(string|preamble|comment)$/.test(type)) continue;
@@ -643,7 +644,7 @@ const RST_UNDERLINE = /^[=\-`:.'"~^_*+#]{3,}\s*$/;
 async function parseRst(file) {
   const text = await fileText(file, 4 * 1024 * 1024);
   const lines = text.split(/\r?\n/);
-  const out = { 'Format': 'reStructuredText (.rst)' };
+  const out: Row = { 'Format': 'reStructuredText (.rst)' };
   const headings = [];
   for (let i = 1; i < lines.length; i++) {
     if (RST_UNDERLINE.test(lines[i]) && lines[i - 1].trim() && lines[i].trim()[0] && lines[i].length >= lines[i - 1].trim().length - 2) {
@@ -664,7 +665,7 @@ async function parseRst(file) {
 async function parseAdoc(file) {
   const text = await fileText(file, 4 * 1024 * 1024);
   const lines = text.split(/\r?\n/);
-  const out = { 'Format': 'AsciiDoc (.adoc)' };
+  const out: Row = { 'Format': 'AsciiDoc (.adoc)' };
   const titleLine = lines.find((l) => /^=\s+\S/.test(l));
   if (titleLine) out['Title'] = titleLine.replace(/^=\s+/, '').trim();
   // Line right after a doc title (no markup) is author; revision starts with 'v'.
@@ -688,7 +689,7 @@ async function parseAdoc(file) {
 // ---------- Emacs Org-mode (.org) ----------
 async function parseOrg(file) {
   const text = await fileText(file, 4 * 1024 * 1024);
-  const out = { 'Format': 'Emacs Org-mode (.org)' };
+  const out: Row = { 'Format': 'Emacs Org-mode (.org)' };
   const title = pick(text, /^#\+TITLE:\s*(.+)$/im); if (title) out['Title'] = title;
   const author = pick(text, /^#\+AUTHOR:\s*(.+)$/im); if (author) out['Author'] = author;
   const date = pick(text, /^#\+DATE:\s*(.+)$/im); if (date) out['Date'] = date;
@@ -709,7 +710,7 @@ async function parseOrg(file) {
 // ---------- Textile (.textile) ----------
 async function parseTextile(file) {
   const text = await fileText(file, 4 * 1024 * 1024);
-  const out = { 'Format': 'Textile markup (.textile)' };
+  const out: Row = { 'Format': 'Textile markup (.textile)' };
   const headings = (text.match(/^h[1-6]\.\s+.+$/gm) || []);
   out['Headings'] = headings.length;
   out['Links'] = countRe(text, /"[^"]+":\S+/g);
@@ -782,12 +783,12 @@ async function parseMht(file) {
   if (!/Content-Type:\s*multipart\/related/i.test(text) && !/^From:\s*<Saved by/im.test(text)) {
     if (!/MIME-Version:/i.test(text)) return null;
   }
-  const out = { 'Format': 'MHTML web archive (.mht / .mhtml)' };
+  const out: Row = { 'Format': 'MHTML web archive (.mht / .mhtml)' };
   const subject = pick(text, /^Subject:\s*(.+)$/im); if (subject) out['Title'] = subject.trim();
   const date = pick(text, /^Date:\s*(.+)$/im); if (date) out['Saved'] = date.trim();
   const snapshot = pick(text, /^Snapshot-Content-Location:\s*(.+)$/im); if (snapshot) out['Original URL'] = snapshot.trim();
   // Resource inventory by Content-Type.
-  const types: any = {};
+  const types: Record<string, number> = {};
   for (const m of text.matchAll(/^Content-Type:\s*([^;\r\n]+)/gim)) {
     const ct = m[1].trim().toLowerCase();
     if (/multipart/.test(ct)) continue;
@@ -809,8 +810,8 @@ async function parseWarc(file, ext) {
   }
   const text = await fileText(file, 6 * 1024 * 1024);
   if (!/^WARC\/\d/m.test(text)) return null;
-  const out = { 'Format': 'Web ARChive (.warc)' };
-  const types: any = {}; const urls = new Set(); const hosts = new Set(); const dates = [];
+  const out: Row = { 'Format': 'Web ARChive (.warc)' };
+  const types: Record<string, number> = {}; const urls = new Set(); const hosts = new Set(); const dates = [];
   for (const m of text.matchAll(/^WARC-Type:\s*(\S+)/gim)) types[m[1].toLowerCase()] = (types[m[1].toLowerCase()] || 0) + 1;
   for (const m of text.matchAll(/^WARC-Target-URI:\s*(\S+)/gim)) {
     const u = m[1].trim(); urls.add(u);
@@ -852,7 +853,7 @@ async function parseMaff(file) {
 async function parseJats(file) {
   const text = await fileText(file, 6 * 1024 * 1024);
   if (!/<article\b/i.test(text) && !/JATS|journalpublishing/i.test(text)) return null;
-  const out = { 'Format': 'JATS journal article XML' };
+  const out: Row = { 'Format': 'JATS journal article XML' };
   const meta = (text.match(/<article-meta>([\s\S]*?)<\/article-meta>/i) || [])[1] || text;
   const title = tag(meta, 'article-title'); if (title) out['Title'] = title;
   const journal = tag(text, 'journal-title'); if (journal) out['Journal'] = journal;
@@ -901,7 +902,7 @@ async function parseDita(file, ext) {
   if (!/<(?:[\w.-]+:)?(?:dita|topic|concept|task|reference|glossentry|map|bookmap)\b/i.test(text) &&
       !/-\/\/OASIS\/\/DTD DITA/i.test(text)) return null;
   const isMap = ext === 'ditamap' || /<(?:[\w.-]+:)?(?:map|bookmap)\b/i.test(text);
-  const out = { 'Format': isMap ? 'DITA map (.ditamap)' : 'DITA topic (.dita)' };
+  const out: Row = { 'Format': isMap ? 'DITA map (.ditamap)' : 'DITA topic (.dita)' };
   // Root element after the prolog gives the topic / map type.
   const rootM = text.match(/<((?:[\w.-]+:)?(?:dita|topic|concept|task|reference|glossentry|troubleshooting|map|bookmap|subjectScheme)\b)/i);
   if (rootM) out['Root type'] = rootM[1];

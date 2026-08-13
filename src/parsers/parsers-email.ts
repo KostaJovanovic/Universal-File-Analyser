@@ -18,6 +18,7 @@ import { findBytes, latin1, utf8, utf16, filetimeToDate } from '../core/binutil.
 import { parsePlist } from '../lib/plist.js';
 import { openCfbf } from '../lib/cfbf.js';
 import { openZip } from '../renderers/zip.js';
+import type { Row } from '../core/types.js';
 
 // ---------- shared helpers ----------
 
@@ -279,8 +280,8 @@ async function parseMbox(file) {
   if (!msgs.length) return null;
 
   // Date range + top senders.
-  const dates = msgs.map((m) => new Date(m.date)).filter((d) => !isNaN(d));
-  const senders: any = {};
+  const dates = msgs.map((m) => new Date(m.date)).filter((d) => !isNaN(d.getTime()));
+  const senders: Record<string, number> = {};
   for (const m of msgs) {
     const e = (m.from.match(/[\w.+-]+@[\w.-]+/) || [m.from])[0] || '(unknown)';
     senders[e] = (senders[e] || 0) + 1;
@@ -288,12 +289,13 @@ async function parseMbox(file) {
   const topSenders = Object.entries(senders).sort((a, b) => b[1] - a[1]).slice(0, 10)
     .map(([k, v]) => v + '  ' + k).join('\n');
 
-  const out = {
+  const out: Row = {
     'Format': 'Mbox mailbox',
     'Messages (sampled)': msgs.length + (file.size > SAMPLE ? ' (head only)' : ''),
   };
   if (dates.length) {
-    const min = new Date(Math.min(...dates)), max = new Date(Math.max(...dates));
+    const min = new Date(Math.min(...dates.map((d) => d.getTime())));
+  const max = new Date(Math.max(...dates.map((d) => d.getTime())));
     out['Date range'] = min.toLocaleDateString() + ' → ' + max.toLocaleDateString();
   }
   out['Distinct senders'] = Object.keys(senders).length;
@@ -342,7 +344,7 @@ async function parseIcs(file) {
     if (!/BEGIN:V/i.test(text || '')) return null;
   }
   const lines = unfoldIcal(text).map(icalLine).filter(Boolean);
-  const out = { 'Format': 'iCalendar' };
+  const out: Row = { 'Format': 'iCalendar' };
 
   let prodid = '', version = '', method = '';
   const counts = { VEVENT: 0, VTODO: 0, VJOURNAL: 0, VALARM: 0, VFREEBUSY: 0, VTIMEZONE: 0 };
@@ -445,7 +447,7 @@ async function parseVcf(file) {
   }
   if (!cards.length) return null;
 
-  const out = { 'Format': 'vCard', 'Cards': cards.length };
+  const out: Row = { 'Format': 'vCard', 'Cards': cards.length };
 
   // Detail the first few cards.
   let photoDataUrl = null;
@@ -506,7 +508,7 @@ async function parseLdif(file) {
     else logical.push(line);
   }
   let entries = 0, changes = 0;
-  const objectClasses: any = {};
+  const objectClasses: Record<string, number> = {};
   const sample = [];
   let curDn = null, curCn = null, curMail = null;
   const flush = () => {
@@ -530,7 +532,7 @@ async function parseLdif(file) {
   flush();
   if (!entries) return null;
 
-  const out = {
+  const out: Row = {
     'Format': 'LDIF (LDAP Data Interchange Format)',
     'Entries': entries,
   };
@@ -572,7 +574,7 @@ async function parseContact(file) {
   const phones = allText('Number');
   const bday = textOf('Birthday');
 
-  const out = { 'Format': 'Windows Contact (.contact)' };
+  const out: Row = { 'Format': 'Windows Contact (.contact)' };
   if (name) out['Name'] = name;
   if (emails.length) out['Emails'] = emails.length;
   if (phones.length) out['Phone numbers'] = phones.length;
@@ -674,7 +676,7 @@ async function parseMsg(file) {
     ? (senderEm ? senderNm + ' <' + senderEm + '>' : senderNm)
     : (senderEm || '');
 
-  const out = { 'Format': 'Outlook Message (.msg, CFBF/OLE)' };
+  const out: Row = { 'Format': 'Outlook Message (.msg, CFBF/OLE)' };
   if (subject)  out['Subject'] = subject;
   if (from)     out['From'] = from;
   if (toRecip)  out['To'] = toRecip;
@@ -710,7 +712,7 @@ async function parseOlm(file) {
   const totalUncomp = ents.reduce((s, e) => s + (e.uncompSize || 0), 0);
 
   // Folder tree from member paths (top two levels).
-  const folders: any = {};
+  const folders: Record<string, number> = {};
   for (const e of ents) {
     const top = e.name.split('/')[0];
     if (!top) continue;
@@ -719,7 +721,7 @@ async function parseOlm(file) {
   const folderList = Object.entries(folders).sort((a, b) => b[1] - a[1]).slice(0, 25)
     .map(([k, v]) => v + '  ' + k).join('\n');
 
-  const out = {
+  const out: Row = {
     'Format': 'Outlook for Mac archive (.olm, ZIP)',
     'ZIP members': ents.length.toLocaleString(),
     'Message XML files': msgXml.length.toLocaleString(),
@@ -823,7 +825,7 @@ async function parseP7(file, ext) {
 function parseMork(text) {
   // Atom dictionaries: <(KEY=VALUE)(KEY=VALUE)...> ; values may contain $XX hex
   // escapes and \) escapes. Collect KEY -> decoded VALUE.
-  const atoms: any = {};
+  const atoms: Record<string, string> = {};
   const unescape = (v) => v
     .replace(/\\\r?\n/g, '')                                   // line continuation
     .replace(/\\([)\\$])/g, '$1')                              // escaped metachars
@@ -852,7 +854,7 @@ async function parseMsf(file) {
   if (!/<!--\s*<mdb:mork|^\/\/\s*<!--\s*<mdb:mork|BeMs/m.test(text.slice(0, 4000)) && text.indexOf('mork') < 0) return null;
   const { emails, texty, rowCount, tableCount, atomCount } = parseMork(text);
 
-  const out = {
+  const out: Row = {
     'Format': 'Mozilla Mail Summary (.msf, Mork)',
     'Application': 'Thunderbird / Netscape / SeaMonkey',
     'Atoms (dictionary)': atomCount.toLocaleString(),
@@ -881,7 +883,7 @@ async function parseMab(file) {
   const phones = [...new Set(Object.values(atoms).filter((v) => /^[+()\d][\d\s().+-]{5,}$/.test(v)))];
   const names = texty.filter((v) => /[A-Za-z]/.test(v) && v.indexOf('@') < 0 && v.length >= 2);
 
-  const out = {
+  const out: Row = {
     'Format': 'Mozilla Address Book (.mab, Mork)',
     'Application': 'Thunderbird / Netscape / SeaMonkey',
     'Atoms (dictionary)': atomCount.toLocaleString(),
@@ -930,7 +932,7 @@ async function parseToc(file) {
   // but carries readable subject/sender strings. Heuristic identification only.
   const printable = txt.replace(/[^\x20-\x7E]+/g, ' ').split(/\s{2,}/).map((s) => s.trim())
     .filter((s) => s.length >= 4 && /[A-Za-z]/.test(s));
-  const out = {
+  const out: Row = {
     'Format': 'Eudora table of contents (.toc)',
     'Application': 'Qualcomm Eudora',
     'Role': 'Binary index of an accompanying .mbx mailbox',
@@ -995,7 +997,7 @@ async function parseVmg(file) {
   const get = (n) => { const p = props.find((x) => x.name === n); return p ? maybeQp(p.value, p.params) : ''; };
 
   const blocks = (text.match(/BEGIN:VMSG/gi) || []).length;
-  const out = { 'Format': 'vMessage SMS backup (.vmg)', 'Application': 'Nokia / Sony Ericsson / Siemens phones' };
+  const out: Row = { 'Format': 'vMessage SMS backup (.vmg)', 'Application': 'Nokia / Sony Ericsson / Siemens phones' };
   if (blocks > 1) out['Messages'] = blocks;
 
   // VMSG carries VENV/VBODY/VCARD sub-blocks. Pull common fields.
@@ -1025,7 +1027,7 @@ async function parseVnt(file) {
   const props = parseVobjectText(text);
   const get = (n) => { const p = props.find((x) => x.name === n); return p ? maybeQp(p.value, p.params) : ''; };
 
-  const out = { 'Format': 'vNote (.vnt)', 'Application': 'Nokia / Sony / Samsung phones' };
+  const out: Row = { 'Format': 'vNote (.vnt)', 'Application': 'Nokia / Sony / Samsung phones' };
   const body = get('BODY');
   const created = get('DCREATED') || get('CREATED');
   const modified = get('LAST-MODIFIED');
@@ -1046,7 +1048,7 @@ async function parseXcal(file) {
   let doc; try { doc = new DOMParser().parseFromString(text, 'application/xml'); } catch (_) { return null; }
   if (!doc || doc.querySelector('parsererror')) return null;
   const tag = (n) => doc.getElementsByTagName(n).length || [...doc.getElementsByTagName('*')].filter((e) => e.localName === n).length;
-  const out = {
+  const out: Row = {
     'Format': 'xCal - iCalendar in XML (RFC 6321)',
     'Events (vevent)': tag('vevent'),
     'To-dos (vtodo)': tag('vtodo'),
@@ -1077,7 +1079,7 @@ async function parseJcal(file) {
     if (Array.isArray(subs)) for (const s of subs) walk(s);
   };
   walk(data);
-  const out = {
+  const out: Row = {
     'Format': 'jCal - iCalendar in JSON (RFC 7265)',
     'Events (vevent)': counts.vevent || 0,
     'To-dos (vtodo)': counts.vtodo || 0,
@@ -1095,7 +1097,7 @@ async function parseXcard(file) {
   if (!doc || doc.querySelector('parsererror')) return null;
   const cards = [...doc.getElementsByTagName('*')].filter((e) => e.localName === 'vcard');
   if (!cards.length) return null;
-  const out = { 'Format': 'xCard - vCard in XML (RFC 6351)', 'Cards': cards.length };
+  const out: Row = { 'Format': 'xCard - vCard in XML (RFC 6351)', 'Cards': cards.length };
   const detail = [];
   cards.slice(0, 5).forEach((card, i) => {
     const localText = (ln) => { const e = [...card.getElementsByTagName('*')].find((x) => x.localName === ln); return e ? e.textContent.trim() : ''; };
@@ -1118,7 +1120,7 @@ async function parseJcard(file) {
   const cards = (Array.isArray(data) && data[0] === 'vcard') ? [data]
     : (Array.isArray(data) && data.every((d) => Array.isArray(d) && d[0] === 'vcard')) ? data : null;
   if (!cards || !cards.length) return null;
-  const out = { 'Format': 'jCard - vCard in JSON (RFC 7095)', 'Cards': cards.length };
+  const out: Row = { 'Format': 'jCard - vCard in JSON (RFC 7095)', 'Cards': cards.length };
   const detail = [];
   cards.slice(0, 5).forEach((card, i) => {
     const props = Array.isArray(card[1]) ? card[1] : [];

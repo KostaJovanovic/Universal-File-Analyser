@@ -112,20 +112,24 @@ export interface Row {
   _readableText?: string;
   /** Detected library/toolchain that produced the file. */
   _lib?: string;
-  /** Help/explanatory note rendered alongside the fields. */
-  _help?: string;
+  /** Per-field help text: label -> explanation, merged over LABEL_HELP for
+      this parser's rows. (A few parsers pass a single string instead.) */
+  _help?: Record<string, string> | string;
   /** Embedded font details. */
-  _font?: unknown;
+  _font?: any;
   /** Classic Mac resource-fork details. */
-  _rsrc?: unknown;
+  _rsrc?: any;
   /** Archive/container member listing. */
-  _fileList?: unknown;
+  _fileList?: any;
   /** Index/TOC payload. */
-  _index?: unknown;
+  _index?: any;
   /** Directory payload. */
-  _dir?: unknown;
-  /** Every other key is a display field: label -> already-formatted value. */
-  [field: string]: unknown;
+  _dir?: any;
+  /** Every other key is a display field: label -> already-formatted value.
+     `any`, not `unknown`: a parser routinely stashes a working value under a
+     label and reads it back a few lines later, and making all ~290 of those
+     sites cast would buy nothing - the renderer stringifies whatever it finds. */
+  [field: string]: any;
 }
 
 /* --------------------------------------------------------- worker protocol -- */

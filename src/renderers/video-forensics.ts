@@ -220,7 +220,7 @@ function readStsz(view, box) {
 function readStss(view, box) {
   const d = box.start + box.headerSize;
   const count = view.getUint32(d + 4);
-  const set = new Set();
+  const set = new Set<number>();
   for (let i = 0; i < count; i++) {
     const p = d + 8 + i * 4;
     if (p + 4 > box.start + box.size) break;
@@ -390,7 +390,7 @@ function computeGopMap(view, trakStart, trakEnd, timescale) {
   for (const v of perSecKbps) if (v > peakKbps) peakKbps = v;
 
   // Keyframe interval stats.
-  let keyframes;
+  let keyframes: number[] | null;
   if (sync) keyframes = [...sync].sort((a, b) => a - b);
   else keyframes = null;   // all-intra
   let avgGop, maxGop, keyCount;
@@ -467,6 +467,35 @@ function readFtyp(file, box) {
   }).catch(() => null);
 }
 
+/** What analyzeMp4Structure() reports: the top-level box layout plus a row per
+ *  track. Both grow members as the moov walk finds the boxes that carry them,
+ *  so everything past the head is optional. */
+interface Mp4Track {
+  index: number;
+  handler?: any; handlerName?: any;
+  codec?: any; codecName?: any;
+  timescale?: any; language?: any; durationSec?: any;
+  enabled?: any; sampleCount?: any; editList?: any;
+  timecode?: any; dropFrame?: any;
+}
+
+interface Mp4Structure {
+  top: any; ftyp: any; tree: any[];
+  faststart: boolean; mdatCount: any;
+  padBytes: any; padCount: any; fragmented: any;
+  trailing: { type: any; size: any };
+  tracks: Mp4Track[]; gop: any;
+  movieDurationSec?: number;
+}
+
+/** What analyzeBitstream() reports for the first video track. */
+interface BitstreamFacts {
+  codec: any; sps: any; consistency: any[];
+  encoder: any; hdr: any; c2pa: any;
+  /** avcC/hvcC NAL length prefix size, needed to walk the first sample. */
+  lenSize?: number;
+}
+
 // ---------- public entry point ----------
 
 // Analyse the container structure of an ISOBMFF file. Returns null for
@@ -492,7 +521,7 @@ export async function analyzeMp4Structure(file) {
   const trailing = lastBox && lastBox.type !== 'mdat' && lastBox.type !== 'moov'
     ? { type: lastBox.type, size: lastBox.size } : null;
 
-  const result = {
+  const result: Mp4Structure = {
     top, ftyp, tree: [],
     faststart, mdatCount: mdatBoxes.length,
     padBytes: padBoxes.reduce((a, b) => a + b.size, 0), padCount: padBoxes.length,
@@ -543,7 +572,7 @@ export async function analyzeMp4Structure(file) {
     const trak = traks[ti];
     const ts = trak.start + trak.headerSize;
     const te = trak.start + trak.size;
-    const track = { index: ti + 1 };
+    const track: Mp4Track = { index: ti + 1 };
     try {
       const hdlr = first(moovView, ts, te, 'hdlr');
       let handler = null;
@@ -832,7 +861,7 @@ export async function analyzeBitstream(file) {
 
   const isAvc = /^avc[13]$/.test(codecFcc);
   const isHevc = /^(hvc1|hev1|dvh1|dvhe)$/.test(codecFcc);
-  const result = { codec: codecFcc, sps: null, consistency: [], encoder: null, hdr: null, c2pa: null };
+  const result: BitstreamFacts = { codec: codecFcc, sps: null, consistency: [], encoder: null, hdr: null, c2pa: null };
   const seRange = videoSampleEntryRange(view, ts, te);
 
   // SPS parse from avcC / hvcC (inside the sample entry).

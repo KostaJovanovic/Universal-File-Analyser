@@ -525,7 +525,7 @@ async function parseMobileprovision(file) {
     if (v.ExpirationDate) {
         const d = v.ExpirationDate instanceof Date ? v.ExpirationDate : new Date(v.ExpirationDate);
         out['Expires'] = fmtDate(d);
-        if (d instanceof Date && !isNaN(d))
+        if (d instanceof Date && !isNaN(d.getTime()))
             out['Status'] = d < new Date() ? 'EXPIRED' : 'valid';
     }
     if (v.ProvisionsAllDevices)
@@ -1261,7 +1261,7 @@ async function parse1pux(file) {
                 out['Description'] = String(a.description);
             if (a.createdAt != null) {
                 const d = new Date(Number(a.createdAt) * (Number(a.createdAt) > 1e12 ? 1 : 1000));
-                if (!isNaN(d))
+                if (!isNaN(d.getTime()))
                     out['Created'] = fmtDate(d);
             }
         }
@@ -1477,7 +1477,7 @@ function pgpWalk(b, limit) {
                 info.keyAlgo = PGP_PUBKEY_ALGOS[algo];
             if (created > 0) {
                 const d = new Date(created * 1000);
-                if (!isNaN(d))
+                if (!isNaN(d.getTime()))
                     info.created = d;
             }
         }

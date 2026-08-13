@@ -58,7 +58,34 @@ declare global {
     turnstile?: any;     // Cloudflare Turnstile widget (stats page)
     xzwasm?: any;        // vendor/xzwasm/xzwasm.min.js (via lib/xz-loader.js)
     Buffer?: any;        // shimmed by a couple of vendor bundles
+
+    /* --- vendor-prefixed DOM APIs that lib.dom does not declare ---
+       Real browser APIs, just legacy-WebKit ones: every use here is a fallback
+       guarded by `window.AudioContext || window.webkitAudioContext`. Unlike the
+       Element block below, these are genuinely absent from the DOM lib rather
+       than a symptom of an under-narrowed query result. */
+    webkitAudioContext?: typeof AudioContext;
+    webkitOfflineAudioContext?: typeof OfflineAudioContext;
   }
+
+  interface Document {
+    /* Safari's pre-standard fullscreen exit, called behind a capability check. */
+    webkitExitFullscreen?: () => void;
+  }
+
+  interface Navigator {
+    /* Chromium-only device-memory hint, read by core/limits.js for tiering. */
+    deviceMemory?: number;
+    /* iOS Safari's "launched from the home screen" flag (PWA detection). */
+    standalone?: boolean;
+    /* Keyboard Lock / getLayoutMap - Chromium only. */
+    keyboard?: any;
+  }
+
+  /* UMD vendor globals used bare (not via window.): Leaflet's L in the geo
+     renderer and exifr in the photo path both load from a plain <script> tag. */
+  var L: any;
+  var exifr: any;
 
   /* lib/openjpeg-loader.js attaches the WASM module to globalThis, not window. */
   var OpenJPEGWASM: any;
@@ -77,7 +104,9 @@ declare global {
      the honest fix is to narrow at the call site. Declaring them here would
      silence a real class of error and lie about the DOM. */
   interface Element {
-    __syncPlay?: any;
+    _advLazyRan?: any;
+    _anim?: any;
+    _anrCt?: any;
     _anrEnsure?: any;
     _anrFx?: any;
     _anrFxLetters?: any;
@@ -85,25 +114,43 @@ declare global {
     _anrFxSplit?: any;
     _anrInfoBtn?: any;
     _anrLetterFx?: any;
+    _anrLightboxClose?: any;
     _anrLoading?: any;
+    _anrResumeSpin?: any;
     _anrSectionFx?: any;
+    _anrSnapshot?: any;
+    _anrTransport?: any;
     _anrWired?: any;
     _backClose?: any;
+    _busy?: any;
+    _carve?: any;
+    _carveFile?: any;
+    _carveFmt?: any;
     _close?: any;
     _confirmBound?: any;
+    _corrupt?: any;
+    _elaStats?: any;
     _extNavWired?: any;
     _fmtRandWired?: any;
     _fmtWired?: any;
     _hide?: any;
     _i?: any;
+    _input?: any;
     _next?: any;
     _prev?: any;
+    _realFrac?: any;
     _resetZoom?: any;
+    _roTimer?: any;
     _show?: any;
+    __syncPause?: any;
+    __syncPlay?: any;
+    _thumb?: any;
     _tldrBound?: any;
     _toggleZoom?: any;
+    _totals?: any;
     _trimHScroll?: any;
     _updatePanCursor?: any;
+    _value?: any;
     _wired?: any;
     _zoom?: any;
     _zoomBtn?: any;

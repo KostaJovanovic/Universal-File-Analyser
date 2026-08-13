@@ -99,7 +99,7 @@ function pdfDate(d) {
   let iso = `${Y}-${Mo}-${D}T${H}:${Mi}:${S}`;
   iso += (!tz || tz === 'Z') ? 'Z' : `${tz}${tzh}:${tzm}`;
   const dt = new Date(iso);
-  return isNaN(dt) ? null : dt;
+  return isNaN(dt.getTime()) ? null : dt;
 }
 
 // Scan the raw PDF bytes for forensic signals pdf.js does not surface: how many
@@ -431,7 +431,7 @@ export async function renderPdf(file, resultsEl, opts: any = {}) {
     try {
       const cap = Math.min(pdf.numPages, 15);
       const fonts = new Map();   // id -> { name, embedded, type }
-      const resolveFont = (page, id) => new Promise((resolve) => {
+      const resolveFont = (page, id) => new Promise<any>((resolve) => {
         let done = false;
         const finish = (v) => { if (!done) { done = true; resolve(v); } };
         try {
@@ -728,9 +728,9 @@ export async function renderPdf(file, resultsEl, opts: any = {}) {
       document.body.appendChild(overlay);
     }
     const stage = overlay.querySelector('.anr-pdf-stage');
-    const pagebox = overlay.querySelector('.anr-pdf-pagebox');
+    const pagebox = overlay.querySelector<HTMLElement>('.anr-pdf-pagebox');
     const cv = pagebox.querySelector('canvas');
-    const textLayer = pagebox.querySelector('.textLayer');
+    const textLayer = pagebox.querySelector<HTMLElement>('.textLayer');
     const toolbar = overlay.querySelector('.lightbox-toolbar');
     const meta = overlay.querySelector('.lightbox-meta');
     toolbar.innerHTML = '';

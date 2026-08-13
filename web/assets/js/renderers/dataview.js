@@ -188,6 +188,8 @@ export async function renderJsonData(file, container) {
             const treeCard = el('div', { class: 'anr-card' });
             treeCard.appendChild(el('h3', {}, 'Value tree'));
             const tree = el('div', { class: 'anr-json-tree' });
+            // A scalar at the root renders as a plain <div>, so only expand when the
+            // tree really did come back as a <details>.
             const rootDetails = jsonTree(parsed);
             if (rootDetails.tagName === 'DETAILS')
                 rootDetails.open = true;

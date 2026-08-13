@@ -1045,6 +1045,8 @@ async function parseMpegVideo(file, ext) {
 }
 // ---------- Exp-Golomb reader (for H.264/H.265 SPS) ----------
 class BitReader {
+    b;
+    pos;
     constructor(bytes) { this.b = bytes; this.pos = 0; }
     bit() { const byte = this.b[this.pos >> 3]; const off = 7 - (this.pos & 7); this.pos++; return (byte >> off) & 1; }
     bits(n) { let v = 0; for (let i = 0; i < n; i++)

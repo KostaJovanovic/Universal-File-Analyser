@@ -4,7 +4,7 @@
    - Classifies dropped files into photo / audio / video / unknown
    - Renders a basic dump for unknown formats */
 
-const COMMIT_COUNT = 271;
+const COMMIT_COUNT = 272;
 // Versioning: every commit is its own version. Pre-1.0 commits read 0.01, 0.02,
 // 0.03 … (the part after the dot is the commit's 1-based position, zero-padded to
 // two digits - 0.09, 0.10, 0.11). Each commit listed in RELEASE_COMMITS bumps the
@@ -56,7 +56,7 @@ import {
   formatPageHref, hasFormatPage, detectVariant
 } from './formats.js';
 
-function $(id) { return document.getElementById(id); }
+function $<T extends HTMLElement = HTMLElement>(id): T { return document.getElementById(id) as T; }
 
 // Transient overlay UI (anrConfirm, drop loader, type-suggestion, link-confirm)
 // lives in ./overlays.js - imported at the top of this file.
@@ -340,6 +340,16 @@ function ensureExifr() {
   return _exifrPromise;
 }
 
+/** boot() carries its one-time-setup guards on itself - see "SPA navigation" in
+ *  CLAUDE.md. Named here because the assignments live inside boot()'s own body,
+ *  which is out of reach of TypeScript's expando inference for functions. */
+type BootGuards = {
+  _once?: boolean;
+  _stuckResizeWired?: boolean;
+  _cardToggleWired?: boolean;
+  _soundNavResizeWired?: boolean;
+};
+
 function boot() {
 
   // Fade out the boot splash (index.html only) now that the app's JS is running.
@@ -372,7 +382,7 @@ function boot() {
     // playing - and most players on the site (music, video, reversed, sonified,
     // the muted-video PCM companion) ultimately sound through one - so without
     // this the previous file's audio carries on over a newly imported file.
-    document.querySelectorAll('audio, video').forEach((m) => { try { m.pause(); } catch (_) {} });
+    document.querySelectorAll<HTMLMediaElement>('audio, video').forEach((m) => { try { m.pause(); } catch (_) {} });
     // Playback that runs through raw Web Audio instead of a media element (the AI
     // vocal/instrumental blend plays buffer sources straight to the destination)
     // isn't stopped by pausing elements, so each such player registers a stopper
@@ -406,7 +416,7 @@ function boot() {
     document.querySelectorAll('.nav-link.is-disabled').forEach(link => link.classList.remove('is-disabled'));
 
     // Hide the "About .EXT files" footer link until the next analysis fills it.
-    const guideCta = $('formatGuideCta');
+    const guideCta = $<HTMLAnchorElement>('formatGuideCta');
     if (guideCta) guideCta.hidden = true;
   }
 
@@ -448,7 +458,7 @@ function boot() {
   // Once a file is loaded the three pick-a-file dropzones are redundant, so swap
   // them for a single "Analyse next file?" button that reloads to a fresh page.
   function showAnalyseNext() {
-    const grid = document.querySelector('.quickdrop');
+    const grid = document.querySelector<HTMLElement>('.quickdrop');
     const btn = $('analyseNext');
     const jump = $('scrollToData');
     const exp = $('exportData');
@@ -458,7 +468,7 @@ function boot() {
     if (exp) exp.hidden = false;
   }
   function restoreQuickdrop() {
-    const grid = document.querySelector('.quickdrop');
+    const grid = document.querySelector<HTMLElement>('.quickdrop');
     const btn = $('analyseNext');
     const jump = $('scrollToData');
     const exp = $('exportData');
@@ -495,7 +505,7 @@ function boot() {
   // a renderer populates them, so the first visible .anr-results with children is
   // the first section with data (document order: unknown, photo, audio, video).
   function scrollToFirstData() {
-    for (const res of document.querySelectorAll('.anr-results')) {
+    for (const res of document.querySelectorAll<HTMLElement>('.anr-results')) {
       if (!res.hidden && res.childElementCount > 0) {
         (res.closest('.section') || res).scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
@@ -695,7 +705,7 @@ function boot() {
     const navMap = { photo: '#photo', audio: '#audio', video: '#video' };
     const href = navMap[kind];
     if (href) {
-      const link = document.querySelector('.site-nav a[href="' + href + '"]');
+      const link = document.querySelector<HTMLElement>('.site-nav a[href="' + href + '"]');
       if (link) {
         link.classList.remove('is-flash');
         void link.offsetWidth;
@@ -704,7 +714,7 @@ function boot() {
     }
 
     function markNav(selector) {
-      const el = document.querySelector('.site-nav a[href="' + selector + '"]');
+      const el = document.querySelector<HTMLElement>('.site-nav a[href="' + selector + '"]');
       if (el) el.classList.add('has-data');
     }
 
@@ -730,9 +740,10 @@ function boot() {
     // The Photo/Sound/Video nav links only make sense when their section is on the
     // page. Grey out + disable any whose section is now hidden (a non-media file
     // hides them); Home and Search are separate controls and always stay live.
-    [['#photo', sectionPhoto], ['#audio', sectionAudio], ['#video', sectionVideo]].forEach(([href, sec]) => {
+    const navPairs: [string, HTMLElement][] = [['#photo', sectionPhoto], ['#audio', sectionAudio], ['#video', sectionVideo]];
+    navPairs.forEach(([href, sec]) => {
       const link = document.querySelector('.site-nav a[href="' + href + '"]');
-      if (link) link.classList.toggle('is-disabled', !sec || sec.hidden);
+      if (link) link.classList.toggle('is-disabled', !sec || !!sec.hidden);
     });
 
     // Only flip the nav to its inverted palette when at least one section link is
@@ -961,7 +972,7 @@ function boot() {
       // analysed extension's own /formats guide page. A forced re-analyse (sniff
       // popup) passes the true extension; otherwise use the file's own. Stays
       // hidden when the extension has no catalog page (or there's no extension).
-      const guideCta = $('formatGuideCta');
+      const guideCta = $<HTMLAnchorElement>('formatGuideCta');
       if (guideCta) {
         const guideExt = ((extOverride || analysed.ext) || '').toLowerCase();
         if (guideExt && hasFormatPage(guideExt)) {
@@ -1162,7 +1173,7 @@ window._anrReadableText = isReadableText;
         // Only the description text opens the picker - never the results/controls
         // below it, which stay interactive.
         section.addEventListener('click', (e) => {
-          if (!e.target.closest('.section-head, .section-lede, .section-meta-head, .section-num, .section-kicker')) return;
+          if (!(e.target as HTMLElement).closest('.section-head, .section-lede, .section-meta-head, .section-num, .section-kicker')) return;
           anrConfirm(s.prompt).then((ok) => { if (ok) input.click(); });
         });
         section.classList.add('is-tappable');
@@ -1176,7 +1187,7 @@ window._anrReadableText = isReadableText;
   // and SPA-navigate to '/', where boot() below reads window._anrPendingFile and
   // analyses it. Re-bound every navigation (the element is swapped on SPA nav);
   // a flag guards against double-binding when boot re-runs on the same element.
-  const fmtPick = $('fmtPick'), fmtPickInput = $('fmtPickInput');
+  const fmtPick = $('fmtPick'), fmtPickInput = $<HTMLInputElement>('fmtPickInput');
   if (fmtPick && fmtPickInput && !fmtPick._anrWired) {
     fmtPick._anrWired = true;
     fmtPick.addEventListener('click', (e) => { e.preventDefault(); fmtPickInput.click(); });
@@ -1211,7 +1222,7 @@ window._anrReadableText = isReadableText;
     if (samplePop) samplePop.classList.remove('is-on');
   };
 
-  document.querySelectorAll('.sample-chip:not(.sample-chip--more)').forEach((card) => {
+  document.querySelectorAll<HTMLElement>('.sample-chip:not(.sample-chip--more)').forEach((card) => {
     if (card._anrWired) return;
     card._anrWired = true;
     card.addEventListener('pointerenter', (e) => {
@@ -1291,13 +1302,13 @@ window._anrReadableText = isReadableText;
       if (gallery) gallery.classList.add('is-expanded');
       sampleMore.setAttribute('aria-expanded', 'true');
       sampleMore.hidden = true;
-      const firstExtra = gallery && gallery.querySelector('.sample-chip--extra');
+      const firstExtra = gallery && gallery.querySelector<HTMLElement>('.sample-chip--extra');
       if (firstExtra) firstExtra.focus();
     });
   }
 
   // ----- Page-level drag/drop (window listeners added once) -----
-  if (!boot._once) {
+  if (!(boot as typeof boot & BootGuards)._once) {
     let dragCounter = 0;
     // The /compare page: its two zones (A/B) are the real targets, so the
     // page-level drop handling is skipped entirely - no full-page overlay to
@@ -1653,14 +1664,14 @@ window._anrReadableText = isReadableText;
       // Never steal space from typing, nor from a control that space natively
       // activates (button, link, checkbox, select, <summary>) - taking it there
       // would break the keyboard interface of every control on the page.
-      const t = e.target;
+      const t = e.target as HTMLElement;
       if (t && (t.isContentEditable
         || (t.closest && t.closest('input, textarea, select, button, a[href], summary, [contenteditable="true"], [role="button"]')))) return;
       // Separation stems (data-anr-stem) opt out: they sit earlier in the DOM than
       // the main track's audio element, so without this the space bar would jump to
       // a stem after an AI separation. Space stays on the main track; the stems keep
       // their own play buttons.
-      const all = [...document.querySelectorAll('audio, video')].filter((m) => !m.hasAttribute('data-anr-stem'));
+      const all = [...document.querySelectorAll<HTMLMediaElement>('audio, video')].filter((m) => !m.hasAttribute('data-anr-stem'));
       if (!all.length) return;
       // Whatever is audible wins, so space always pauses what you can actually
       // hear; otherwise take the first player on the page.
@@ -1673,7 +1684,7 @@ window._anrReadableText = isReadableText;
       else media.pause();
     });
 
-    boot._once = true;
+    (boot as typeof boot & BootGuards)._once = true;
   } // end one-time guard
 
   // A file dropped on the About / Changelog page stashes itself here and
@@ -1727,8 +1738,8 @@ window._anrReadableText = isReadableText;
   // CSS alone can't size one flex item to a specific sibling's content width
   // when another item (the nav columns) has to render between them on mobile.
   (function sizeFooterLinkback() {
-    const copyright = document.querySelector('.footer-copyright');
-    const linkback = document.querySelector('.footer-linkback');
+    const copyright = document.querySelector<HTMLElement>('.footer-copyright');
+    const linkback = document.querySelector<HTMLElement>('.footer-linkback');
     if (copyright && linkback) linkback.style.width = copyright.offsetWidth + 'px';
   })();
   // Nav "Share" button (header is swapped on every navigation).
@@ -1739,7 +1750,7 @@ window._anrReadableText = isReadableText;
   // SPA hop). Bound to whichever .site-sub is on the current page (the header is
   // swapped on navigation), guarded so it only binds once per element.
   (function wireTapEgg() {
-    const sub = document.querySelector('.site-sub');
+    const sub = document.querySelector<HTMLElement>('.site-sub');
     if (!sub || sub.dataset.eggBound) return;
     sub.dataset.eggBound = '1';
     let taps = 0, tapTimer = 0;
@@ -1802,7 +1813,7 @@ window._anrReadableText = isReadableText;
   // Dev-only "Reset cache" button on /atari - mirrors the in-game hard-reload: unregister
   // the service worker and delete every cache bucket, then reload so all modules refetch.
   // Hidden in production; shown only on localhost, a private LAN IP, or the :3000 dev server.
-  const atariReset = $('atariReset');
+  const atariReset = $<HTMLButtonElement>('atariReset');
   if (atariReset && !atariReset._wired) {
     atariReset._wired = true;
     const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ||
@@ -1862,7 +1873,7 @@ window._anrReadableText = isReadableText;
   // ----- Scroll-spy for the sticky nav (re-binds per page) -----
   const links = Array.from(document.querySelectorAll('.site-nav a[href^="#"]'));
   const sections = links
-    .map((a) => ({ a, el: document.querySelector(a.getAttribute('href')) }))
+    .map((a) => ({ a, el: document.querySelector<HTMLElement>(a.getAttribute('href')) }))
     .filter((s) => s.el);
   // The bar is position:sticky/top:0, so its bounding top reaches 0 exactly when
   // it pins to the viewport top. That drives the inverted palette (together with
@@ -1891,8 +1902,8 @@ window._anrReadableText = isReadableText;
   _scrollHandler();
   // Re-evaluate the stuck state on resize too (the header above the bar can change
   // height, moving where it pins). Bound once; calls whatever the latest handler is.
-  if (!boot._stuckResizeWired) {
-    boot._stuckResizeWired = true;
+  if (!(boot as typeof boot & BootGuards)._stuckResizeWired) {
+    (boot as typeof boot & BootGuards)._stuckResizeWired = true;
     window.addEventListener('resize', () => { if (_scrollHandler) _scrollHandler(); }, { passive: true });
   }
 
@@ -1903,11 +1914,11 @@ window._anrReadableText = isReadableText;
   // "Text file previews" card), so users can open them. Every other card is a
   // static, always-open section. .is-collapsed hides the body via CSS. Clicks on
   // interactive controls in a title don't toggle.
-  if (!boot._cardToggleWired) {
-    boot._cardToggleWired = true;
+  if (!(boot as typeof boot & BootGuards)._cardToggleWired) {
+    (boot as typeof boot & BootGuards)._cardToggleWired = true;
     document.addEventListener('click', (e) => {
-      if (e.target.closest('a, button, input, select, textarea, label')) return;
-      const h3 = e.target.closest('h3');
+      if ((e.target as HTMLElement).closest('a, button, input, select, textarea, label')) return;
+      const h3 = (e.target as HTMLElement).closest('h3');
       if (!h3) return;
       const card = h3.parentElement;
       if (card && card.classList.contains('anr-card') && card.classList.contains('anr-collapsible')) {
@@ -1921,7 +1932,7 @@ window._anrReadableText = isReadableText;
   // programmatic/animated autoscroll.
 
   // ----- Desktop only: match the Sound nav button to the sound dropzone width -----
-  const soundLink = document.querySelector('.site-nav a[href="#audio"]');
+  const soundLink = document.querySelector<HTMLElement>('.site-nav a[href="#audio"]');
   const soundDrop = $('audioDrop');
   if (soundLink && soundDrop) {
     _alignSoundNav = () => {
@@ -1937,8 +1948,8 @@ window._anrReadableText = isReadableText;
     // moment the window changes size - and the narrow branch, which clears it
     // again, could never run at all while this was a one-shot call. Bound once;
     // calls whatever the latest boot() installed, like the stuck-nav resize above.
-    if (!boot._soundNavResizeWired) {
-      boot._soundNavResizeWired = true;
+    if (!(boot as typeof boot & BootGuards)._soundNavResizeWired) {
+      (boot as typeof boot & BootGuards)._soundNavResizeWired = true;
       window.addEventListener('resize', () => { if (_alignSoundNav) _alignSoundNav(); }, { passive: true });
     }
   } else {

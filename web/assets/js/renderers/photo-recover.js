@@ -72,6 +72,7 @@ export function scanJpeg(bytes, start = 0) {
     const n = bytes.length;
     if (start + 2 > n || bytes[start] !== 0xFF || bytes[start + 1] !== 0xD8)
         return null;
+    // eoiAt is only set once the end-of-image marker is actually found.
     const out = { soi: start, segments: [], sof: null, dqt: 0, dht: 0, dri: null, sosAt: -1, scanStart: -1, scanEnd: n, hasEOI: false, progressive: false, truncated: false };
     let p = start + 2;
     while (p + 1 < n) {

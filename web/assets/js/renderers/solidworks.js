@@ -44,7 +44,7 @@ function filetimeToDate(lo, hi) {
         return '';
     const ms = ticks / 10000 - 11644473600000;
     const d = new Date(ms);
-    if (isNaN(d) || d.getUTCFullYear() < 1985 || d.getUTCFullYear() > 2100)
+    if (isNaN(d.getTime()) || d.getUTCFullYear() < 1985 || d.getUTCFullYear() > 2100)
         return '';
     return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }

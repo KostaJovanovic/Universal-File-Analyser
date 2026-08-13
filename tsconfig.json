@@ -15,10 +15,21 @@
     "sourceMap": true,
     "inlineSources": true,
 
-    // Phase 1 posture: loosest settings that still catch arity and
-    // property-existence errors. Tightened per-directory in Phase 3.
+    // The tree compiles CLEAN at this posture - keep it that way, and treat any
+    // new error as a real one rather than migration noise.
+    //
+    // `strict` stays off because it is really two very different asks. The
+    // cheap half is on below. The expensive half is strictNullChecks +
+    // noImplicitAny, which together report ~5,400 sites: mostly "this DOM query
+    // / parse result might be null", which is true but needs a real guard at
+    // each site, not an annotation. Adding those guards changes runtime
+    // behaviour in a codebase with no tests, so it is its own piece of work -
+    // do it a directory at a time (core -> lib -> parsers -> games ->
+    // renderers), never alongside another change.
     "strict": false,
     "noImplicitAny": false,
+    "noImplicitThis": true,
+    "strictBindCallApply": true,
 
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,

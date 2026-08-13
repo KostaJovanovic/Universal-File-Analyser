@@ -345,7 +345,7 @@ export async function demosaicRaw(file, container) {
     ctx.putImageData(out, 0, 0);
     try { if (raw.close) await raw.close(); } catch (_) {}
 
-    const blob = await new Promise((res) => cv.toBlob(res, 'image/jpeg', 0.95));
+    const blob = await new Promise<Blob | null>((res) => cv.toBlob(res, 'image/jpeg', 0.95));
     setBar(1);
     wrap.remove();
     return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });

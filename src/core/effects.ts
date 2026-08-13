@@ -310,7 +310,7 @@ export function setupSectionFx() {
       fxT = setTimeout(() => { for (const l of letters) l.el.style.transition = ''; }, 200);
       if (!running) { running = true; raf = requestAnimationFrame(frame); }
     });
-    section.addEventListener('mousemove', (e) => { mx = e.clientX; my = e.clientY; });
+    section.addEventListener('mousemove', (e) => { mx = (e as any).clientX; my = (e as any).clientY; });
     section.addEventListener('mouseleave', () => { inside = false; });
   });
 }

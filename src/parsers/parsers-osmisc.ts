@@ -11,6 +11,7 @@
 
 import { el, fmtBytes, preBlock, fmtDate, readSlice, readText } from '../core/util.js';
 import { Reader, ascii, cp437, latin1, utf8 } from '../core/binutil.js';
+import type { Row } from '../core/types.js';
 
 // ---------- small helpers ----------
 // A monospace block that preserves ASCII art (no wrapping, horizontal scroll).
@@ -54,7 +55,7 @@ async function parseOpml(file) {
   const text = await file.text();
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror') || !doc.querySelector('opml')) return null;
-  const out = { 'Format': 'OPML outline' };
+  const out: Row = { 'Format': 'OPML outline' };
   const head = doc.querySelector('head');
   if (head) {
     const title = xmlText(head, 'title');
@@ -105,7 +106,7 @@ async function parseFeed(file) {
     for (const e of items) {
       const d = xmlText(e, 'updated') || xmlText(e, 'published');
       if (d) dates.push(new Date(d));
-      for (const l of Array.from(e.querySelectorAll('link'))) {
+      for (const l of Array.from<Element>(e.querySelectorAll('link'))) {
         if (l.getAttribute('rel') === 'enclosure' && l.getAttribute('href')) {
           enclosures.push({ url: l.getAttribute('href'), len: l.getAttribute('length') });
         }
@@ -121,13 +122,13 @@ async function parseFeed(file) {
     for (const it of items) {
       const d = xmlText(it, 'pubDate') || xmlText(it, 'date');
       if (d) dates.push(new Date(d));
-      for (const en of Array.from(it.querySelectorAll('enclosure'))) {
+      for (const en of Array.from<Element>(it.querySelectorAll('enclosure'))) {
         if (en.getAttribute('url')) enclosures.push({ url: en.getAttribute('url'), len: en.getAttribute('length') });
       }
     }
   }
 
-  const valid = dates.filter((d) => d instanceof Date && !isNaN(d));
+  const valid = dates.filter((d) => d instanceof Date && !isNaN(d.getTime()));
   if (valid.length) {
     const min = new Date(Math.min(...valid)), max = new Date(Math.max(...valid));
     out['Date range'] = fmtDate(min) + '  →  ' + fmtDate(max);
@@ -172,7 +173,7 @@ async function parseNfo(file) {
     textOut = cp437(bytes);
   }
   const lines = textOut.split(/\r?\n/);
-  const out = {
+  const out: Row = {
     'Format': isXml ? 'NFO (XML sidecar)' : 'NFO (scene info, CP437)',
     'Encoding': isXml ? 'UTF-8 / XML' : 'CP437 (DOS OEM)',
     'Lines': lines.length,
@@ -189,7 +190,7 @@ async function parseService(file) {
   if (!/\[Unit\]|\[Service\]|\[Install\]/.test(text)) return null;
   const { sections } = parseIni(text);
   const unit = sections['Unit'] || {}, svc = sections['Service'] || {}, inst = sections['Install'] || {};
-  const out = { 'Format': 'systemd unit file' };
+  const out: Row = { 'Format': 'systemd unit file' };
   if (unit['Description']) out['Description'] = unit['Description'];
   if (svc['Type']) out['Service type'] = svc['Type'];
   if (svc['ExecStart']) out['ExecStart'] = svc['ExecStart'];
@@ -240,7 +241,7 @@ function parseAppleCrash(text) {
   }
   if (!header && !body) return null;
   const h = header || {}, b = body || {};
-  const out = { 'Format': 'Apple crash report (.ips)' };
+  const out: Row = { 'Format': 'Apple crash report (.ips)' };
   const app = b.procName || h.app_name || (b.application_specific_information && b.app_name);
   if (app) out['Process / app'] = app;
   if (h.app_version || b.bundleInfo) out['Version'] = h.app_version || (b.bundleInfo && b.bundleInfo.CFBundleShortVersionString) || '-';
@@ -270,9 +271,9 @@ function parseAppleCrash(text) {
 }
 
 function parseTextCrash(text) {
-  const out = { 'Format': 'Crash report (text)' };
+  const out: Row = { 'Format': 'Crash report (text)' };
   const grab = (re) => { const m = text.match(re); return m ? m[1].trim() : null; };
-  const fields = [
+  const fields: [string, RegExp][] = [
     ['Process', /^Process:\s*(.+)$/m],
     ['Identifier', /^Identifier:\s*(.+)$/m],
     ['Version', /^Version:\s*(.+)$/m],
@@ -439,7 +440,7 @@ async function parseFontList(file) {
     if (f.hasSVG === 'yes') svg++;
     if (f.FamilyName) families.add(f.FamilyName.trim());
   }
-  const brk = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
+  const brk = (o) => Object.entries<number>(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join(', ');
   out['Unique families'] = String(families.size);
   if (Object.keys(tally).length) out['Font types'] = brk(tally);
   if (Object.keys(scripts).length) out['Writing scripts'] = brk(scripts);
@@ -448,7 +449,7 @@ async function parseFontList(file) {
   if (totalBytes) out['Total font data'] = fmtBytes(totalBytes);
 
   // Source roots: the common directories the catalogued fonts live in.
-  const roots: any = {};
+  const roots: Record<string, number> = {};
   for (const f of fonts) {
     const p = (f.OutlineFileName || '').trim();
     if (!p) continue;
@@ -517,7 +518,7 @@ async function parseAndroidPrefs(file, ext) {
   const byTag: any = {};
   for (const k of kids) byTag[k.tagName] = (byTag[k.tagName] || 0) + 1;
   const gcam = ext === 'agc' || /\b(lib_luma|sabre|hdr|libpatcher|saturation|awb)\b/i.test(text);
-  const out = {
+  const out: Row = {
     'Format': gcam ? 'Google Camera (GCam) config (.agc)' : 'Android shared-preferences XML',
     'Entries': kids.length,
   };

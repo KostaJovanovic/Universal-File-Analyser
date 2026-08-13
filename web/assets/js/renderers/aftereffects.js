@@ -117,6 +117,7 @@ function parseAep(buf) {
                 const sc = (c.cur && c.cur.scale) || SCALE;
                 const dn = (off) => u32(ds + off) || sc; // each rational's own denominator (per-layer time scale)
                 const labelIdx = buf[ds + 61]; // AE label-colour index (1..16; 0 = None)
+                // tIn/tOut are added just below, once start has been read.
                 const L = {
                     start: i32(ds + 12) / dn(16), in: i32(ds + 20) / dn(24), out: i32(ds + 28) / dn(32),
                     threeD: !!(a[1] & 4), src: u32(ds + 40),

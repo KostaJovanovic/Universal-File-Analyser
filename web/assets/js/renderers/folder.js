@@ -465,6 +465,9 @@ function mapLimited(items, limit, fn) {
 async function walkTree(roots, opts = {}) {
     const shouldStop = opts.shouldStop || (() => false);
     const onProgress = opts.onProgress;
+    // The walk result is an array of entries that also carries two end-of-walk
+    // flags, so the caller can tell "these are all the files" from "we hit the
+    // cap" or "the user cancelled" without a second return value.
     const out = [];
     let level = roots.map((entry) => ({ entry, path: '' }));
     let truncated = false;

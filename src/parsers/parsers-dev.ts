@@ -11,6 +11,7 @@ import { Reader, ascii } from '../core/binutil.js';
 import { SCAN_SMALL } from '../core/limits.js';
 import { parsePlist } from '../lib/plist.js';
 import { openZip } from '../renderers/zip.js';
+import type { Row, RowSection } from '../core/types.js';
 
 // ---------- small helpers ----------
 function b64urlToBytes(s) {
@@ -35,7 +36,7 @@ async function parseJwt(file) {
   let header, payload;
   try { header = JSON.parse(b64urlToStr(parts[0])); } catch (_) { return null; }
   try { payload = JSON.parse(b64urlToStr(parts[1])); } catch (_) { payload = null; }
-  const out = { 'Token type': 'JSON Web Token' };
+  const out: Row = { 'Token type': 'JSON Web Token' };
   if (header.alg) out['Algorithm'] = header.alg;
   if (header.typ) out['Header typ'] = header.typ;
   if (header.kid) out['Key ID (kid)'] = header.kid;
@@ -54,7 +55,7 @@ async function parseJwt(file) {
   if (String(header.alg).toLowerCase() === 'none') warn.push('alg: none - token is unsigned (accept with caution)');
   if (out['Status'] === 'EXPIRED') warn.push('Token is expired');
   if (warn.length) out['⚠ Warning'] = warn.join('; ');
-  const sections = [{ title: 'Header', node: preBlock(JSON.stringify(header, null, 2)) }];
+  const sections: RowSection[] = [{ title: 'Header', node: preBlock(JSON.stringify(header, null, 2)) }];
   if (payload) sections.push({ title: 'Payload claims (' + claims.length + ')', node: preBlock(JSON.stringify(payload, null, 2)), open: true });
   out._sections = sections;
   return out;
@@ -65,11 +66,11 @@ async function parseHar(file) {
   let j; try { j = JSON.parse(await file.text()); } catch (_) { return null; }
   const log = j.log; if (!log) return null;
   const entries = log.entries || [];
-  const out = { 'Format': 'HTTP Archive (HAR ' + (log.version || '?') + ')' };
+  const out: Row = { 'Format': 'HTTP Archive (HAR ' + (log.version || '?') + ')' };
   if (log.creator) out['Creator'] = (log.creator.name || '') + ' ' + (log.creator.version || '');
   out['Requests'] = entries.length;
   let bytes = 0, slow = 0, secrets = 0;
-  const status: any = {}, types: any = {};
+  const status: Record<string, number> = {}, types: any = {};
   for (const e of entries) {
     const r = e.response || {};
     bytes += (r.content && r.content.size) || 0;
@@ -83,7 +84,7 @@ async function parseHar(file) {
   out['Slow requests (>1s)'] = slow;
   if (secrets) out['⚠ Auth/cookie headers'] = secrets + ' request(s) carry credentials';
   const topStatus = Object.entries(status).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ': ' + v).join('  ');
-  const topTypes = Object.entries(types).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => k + ' (' + v + ')').join('\n');
+  const topTypes = Object.entries<number>(types).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => k + ' (' + v + ')').join('\n');
   out['Status codes'] = topStatus;
   out._sections = [{ title: 'Content types', node: preBlock(topTypes) }];
   return out;
@@ -233,7 +234,7 @@ async function parseSafetensors(file) {
     dtypes[t.dtype] = (dtypes[t.dtype] || 0) + 1;
     params += (t.shape.length ? t.shape.reduce((a, b) => a * b, 1) : 0);
   }
-  const out = {
+  const out: Row = {
     'Format': 'Safetensors',
     'Tensors': names.length,
     'Parameters': params.toLocaleString(),
@@ -316,7 +317,7 @@ async function parseSql(file) {
     tables.push({ name, cols });
   }
 
-  const out = {
+  const out: Row = {
     'Format': 'SQL dump' + (truncated ? ' (first 5 MB scanned)' : ''),
     'Dialect': dialect,
     'Tables (CREATE)': creates,
@@ -361,7 +362,7 @@ async function parseDotnetProj(file) {
   const pkgs = Array.from(doc.querySelectorAll('PackageReference')).map((n) => (n.getAttribute('Include') || '') + (n.getAttribute('Version') ? ' ' + n.getAttribute('Version') : ''));
   const projRefs = doc.querySelectorAll('ProjectReference').length;
   const outType = (doc.querySelector('OutputType') || {}).textContent;
-  const out = {
+  const out: Row = {
     'Format': '.NET project (MSBuild)',
     'SDK': sdk || '-',
     'Target framework': tf || '-',
@@ -490,7 +491,7 @@ async function parsePlistRows(file) {
   const res = await parsePlist(file);
   if (!res) return null;
   const v = res.value;
-  const out = { 'Format': 'Property List (' + res.format + ')' };
+  const out: Row = { 'Format': 'Property List (' + res.format + ')' };
   const topKeys = (v && typeof v === 'object' && !Array.isArray(v)) ? Object.keys(v) : [];
   if (topKeys.length) out['Root keys'] = topKeys.length;
   for (const k of ['CFBundleIdentifier', 'CFBundleName', 'CFBundleShortVersionString', 'CFBundleVersion', 'PayloadType', 'URL']) {
@@ -607,7 +608,7 @@ async function parseMsgpack(file) {
   const b = await readSlice(file, 0, 65536);
   if (!b.length) return null;
   const r = new Reader(b);            // MessagePack is big-endian
-  const counts: any = {};
+  const counts: Record<string, number> = {};
   let n = 0;
   // Walk values depth-first, recording a type histogram. Stop after a budget.
   function val() {
@@ -646,7 +647,7 @@ async function parseMsgpack(file) {
   }
   try { val(); } catch (_) {}
   const top = mpTypeName(b[0]);
-  const out = {
+  const out: Row = {
     'Format': 'MessagePack',
     'Top-level type': top,
     'Values walked': n.toLocaleString() + (n > 20000 ? '+ (budget reached)' : ''),
@@ -662,7 +663,7 @@ async function parseCbor(file) {
   if (!b.length) return null;
   const MAJOR = ['unsigned int', 'negative int', 'byte string', 'text string', 'array', 'map', 'tag', 'simple/float'];
   const r = new Reader(b);            // CBOR is big-endian
-  const counts: any = {}; const tags: any = {}; let n = 0;
+  const counts: Record<string, number> = {}; const tags: Record<string, number> = {}; let n = 0;
   function argLen(ai) {
     if (ai < 24) return ai;
     if (ai === 24) return r.u8();
@@ -688,7 +689,7 @@ async function parseCbor(file) {
   try { val(); } catch (_) {}
   const ib0 = b[0];
   const isSelfDesc = ib0 === 0xd9 && b[1] === 0xd9 && b[2] === 0xf7;     // tag 55799 self-describe magic
-  const out = {
+  const out: Row = {
     'Format': 'CBOR (Concise Binary Object Representation)',
     'Top-level major type': MAJOR[ib0 >> 5],
     'Items walked': n.toLocaleString() + (n > 20000 ? '+ (budget reached)' : ''),
@@ -741,7 +742,7 @@ async function parseBson(file) {
       }
     }
   } catch (_) {}
-  const out = {
+  const out: Row = {
     'Format': 'BSON (Binary JSON / MongoDB)',
     'Document length': fmtBytes(docLen),
     'Top-level elements': n,
@@ -799,7 +800,7 @@ async function parsePb(file, ext) {
   const lines = []; const stats = { fields: 0, wires: {} };
   const ok = pbWalk(b, 0, b.length, 0, lines, stats);
   if (!ok || stats.fields === 0) return null;
-  const out = {
+  const out: Row = {
     'Format': ext === 'desc' ? 'Protobuf FileDescriptorSet (.desc)' : 'Protobuf wire-format message',
     'Top-level fields': stats.fields.toLocaleString() + (stats.fields >= 4000 ? '+ (budget reached)' : ''),
     'Wire types': Object.entries(stats.wires).map(([k, v]) => k + ' (' + v + ')').join(', '),
@@ -834,7 +835,7 @@ async function parsePickle(file) {
     // Doesn't look like a pickle opener (protocol 0/1 start with '(','c','] ','}','{').
     return null;
   }
-  const opHist: any = {}; const globals = []; let scanned = 0;
+  const opHist: Record<string, number> = {}; const globals = []; let scanned = 0;
   const cur = { i: 0 };
   // Light opcode scan: record opcode frequency and capture GLOBAL imports.
   try {
@@ -854,7 +855,7 @@ async function parsePickle(file) {
       // (other opcodes' args are skipped implicitly; this is a histogram, not a VM)
     }
   } catch (_) {}
-  const out = {
+  const out: Row = {
     'Format': 'Python pickle',
     'Protocol version': proto || '0/1 (text)',
     'Opcodes scanned': scanned.toLocaleString(),
@@ -903,7 +904,7 @@ async function parseJavaArchive(file, ext) {
   let zip; try { zip = await openZip(file); } catch (_) { return null; }
   if (!zip.entries.length) return null;
   const classes = zip.entries.filter((e) => /\.class$/i.test(e.name));
-  const out = {
+  const out: Row = {
     'Format': ({ jar: 'Java JAR', war: 'Java Web Archive (WAR)', ear: 'Java Enterprise Archive (EAR)' })[ext] || 'Java archive',
     'Entries': zip.entries.length,
     'Class files': classes.length,
@@ -975,7 +976,7 @@ async function parseCapnp(file) {
 async function parseHcl(file) {
   const text = await file.text();
   // Generic HCL: count top-level blocks by their leading keyword.
-  const blocks: any = {};
+  const blocks: Record<string, number> = {};
   for (const m of text.matchAll(/^\s*([a-zA-Z_]\w*)\s+(?:"[^"]*"\s*)*\{/gm)) blocks[m[1]] = (blocks[m[1]] || 0) + 1;
   const total = Object.values(blocks).reduce((a, b) => a + b, 0);
   let tool = 'Generic HCL';
@@ -983,7 +984,7 @@ async function parseHcl(file) {
   else if (/\bjob\s+"|\btask\s+"|\bgroup\s+"/.test(text)) tool = 'Nomad';
   else if (/\bpath\s+"|\bsecret\s+"/.test(text)) tool = 'Vault / Consul';
   else if (/\bbuild\s*\{|\bsource\s+"/.test(text)) tool = 'Packer';
-  const out = {
+  const out: Row = {
     'Format': 'HashiCorp HCL',
     'Tool (guess)': tool,
     'Total blocks': total,
@@ -1024,7 +1025,7 @@ async function parseRdb(file) {
   const b = new Uint8Array(await file.slice(0, 256).arrayBuffer());
   if (ascii(b, 0, 5) !== 'REDIS') return null;
   const ver = ascii(b, 5, 4);
-  const out = {
+  const out: Row = {
     'Format': 'Redis RDB dump',
     'RDB version': ver,
   };
@@ -1315,7 +1316,7 @@ async function parseIdl(file) {
   const uuids = (text.match(/\buuid\s*\(/gi) || []).length;
   const methods = (text.match(/\bHRESULT\b/g) || []).length;
   const ms = /import\s+["']oaidl|["']ocidl|\bdispinterface\b|\bcoclass\b/.test(text);
-  const out = {
+  const out: Row = {
     'Format': ms ? 'Microsoft COM / OLE interface definition (MIDL .idl)' : 'Interface Definition Language (.idl)',
     'Interfaces': interfaces.length,
   };

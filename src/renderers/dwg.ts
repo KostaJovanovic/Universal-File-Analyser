@@ -65,7 +65,7 @@ export async function renderDwg(file, resultsEl) {
   const layers = layerTable && (layerTable.entries || layerTable.records || layerTable.items);
   if (layers && layers.length != null) tbl.appendChild(rowHelp('Layers', String(layers.length), 'Named layers the drawing is organised into. Like transparent overlays, each groups related elements (walls, dimensions, text and so on) so they can be shown, hidden or styled together.'));
   // Top entity types (LINE, CIRCLE, LWPOLYLINE, TEXT, ...).
-  const types: any = {};
+  const types: Record<string, number> = {};
   for (const e of ents) { const t = (e && e.type) || '?'; types[t] = (types[t] || 0) + 1; }
   const topTypes = Object.entries(types).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t, n]) => t + ' ×' + n).join(', ');
   if (topTypes) tbl.appendChild(rowHelp('Entity types', topTypes, 'The most common kinds of drawing element (lines, arcs, circles and so on) found in the main drawing area (model space).'));

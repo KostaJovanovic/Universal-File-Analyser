@@ -117,7 +117,7 @@ function pdfDate(d) {
     let iso = `${Y}-${Mo}-${D}T${H}:${Mi}:${S}`;
     iso += (!tz || tz === 'Z') ? 'Z' : `${tz}${tzh}:${tzm}`;
     const dt = new Date(iso);
-    return isNaN(dt) ? null : dt;
+    return isNaN(dt.getTime()) ? null : dt;
 }
 // Scan the raw PDF bytes for forensic signals pdf.js does not surface: how many
 // times the file was saved (each save appends an %%EOF marker), whether it is

@@ -47,7 +47,7 @@ export function paginateFlow(contentEl, opts: any = {}) {
   document.body.appendChild(host);
 
   const pages = [];
-  const blocks = Array.from(contentEl.children);
+  const blocks = Array.from<HTMLElement>(contentEl.children);
   let page = makePage();
   // Declared out here so the catch below can rescue anything left inside it -
   // the blocks live in this sheet until they are dealt out, so letting it go

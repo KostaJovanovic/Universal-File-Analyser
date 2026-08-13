@@ -205,7 +205,7 @@ const MAX_VOL = 2.25;
 let sharedVol = 1, sharedMuted = false, lastNonZero = 1;
 // Drop any level saved by earlier builds so a stale value can't leak back in.
 try { localStorage.removeItem(VOL_KEY); } catch (_) {}
-const volPlayers = new Set();   // { mediaEl, wrap, sync }
+const volPlayers = new Set<{ mediaEl: any; wrap: HTMLElement; sync: () => void }>();
 
 // A native <audio>/<video> element's own .volume is hard-capped at 1.0, so going
 // past 100% needs a Web Audio GainNode inserted after it. But an element may have
@@ -319,7 +319,7 @@ onAudioOwner(() => applyShared());
 // Anything that wants to react to the shared LEVEL changing (e.g. the spectrogram
 // mirroring a boost into its display sensitivity) subscribes here. The callback
 // gets the current level (0..MAX_VOL) and mute flag; returns an unsubscribe fn.
-const volListeners = new Set();
+const volListeners = new Set<(vol: number, muted: boolean) => void>();
 export function onSharedVolume(cb) { volListeners.add(cb); return () => volListeners.delete(cb); }
 export function sharedVolume() { return sharedVol; }
 

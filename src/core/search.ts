@@ -3,7 +3,7 @@
    expansion, prev/next navigation, and a separate mobile overlay. */
 
 export function initSearch() {
-  const searchInput = document.getElementById('navSearch');
+  const searchInput = (document.getElementById('navSearch') as HTMLInputElement);
   const searchWrap = document.getElementById('navSearchWrap');
   const searchBtn = document.getElementById('navSearchBtn');
   if (searchInput && searchWrap && searchBtn) {
@@ -12,7 +12,13 @@ export function initSearch() {
     // window, so both survive a nav and would accumulate one copy per page.
     // Tear down the previous run's before creating this one's.
     document.querySelectorAll('.search-overlay').forEach((n) => n.remove());
-    if (initSearch._resize) { window.removeEventListener('resize', initSearch._resize); initSearch._resize = null; }
+/** initSearch() re-runs per navigation and needs to unbind the resize
+ *  listener it added last time, so it keeps the handle on itself. */
+type SearchState = typeof initSearch & {
+  _resize?: any;
+};
+
+    if ((initSearch as SearchState)._resize) { window.removeEventListener('resize', (initSearch as SearchState)._resize); (initSearch as SearchState)._resize = null; }
     const nav = searchWrap.closest('nav');
     let debounceTimer = null;
     let matches = [];
@@ -40,7 +46,7 @@ export function initSearch() {
       nextBtn.style.width = h;
     }
     sizeSearch();
-    initSearch._resize = sizeSearch;
+    (initSearch as SearchState)._resize = sizeSearch;
     window.addEventListener('resize', sizeSearch);
 
     // Mobile: overlay
@@ -53,7 +59,7 @@ export function initSearch() {
       + '<button type="button" class="search-overlay-close">&times;</button>'
       + '</div>';
     document.body.appendChild(mobileOverlay);
-    const mobileInput = mobileOverlay.querySelector('.search-overlay-input');
+    const mobileInput = mobileOverlay.querySelector<HTMLInputElement>('.search-overlay-input');
     const mobilePrev = mobileOverlay.querySelector('.search-overlay-prev');
     const mobileNext = mobileOverlay.querySelector('.search-overlay-next');
     const mobileClose = mobileOverlay.querySelector('.search-overlay-close');
@@ -416,7 +422,7 @@ export function initSearch() {
       matchIdx = -1;
       if (!q) return;
       const terms = expandQuery(q);
-      for (const container of document.querySelectorAll('.anr-results')) {
+      for (const container of document.querySelectorAll<HTMLElement>('.anr-results')) {
         if (container.hidden) continue;
         for (const card of container.querySelectorAll('.anr-card')) {
           // Prefer highlighting the specific matching rows inside a card (any

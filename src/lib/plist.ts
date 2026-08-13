@@ -20,7 +20,7 @@ function parseXmlPlist(text) {
     switch (el.tagName) {
       case 'dict': {
         const o: any = {};
-        const kids = Array.from(el.children);
+        const kids = Array.from<Element>(el.children);
         for (let i = 0; i < kids.length; i += 2) {
           if (kids[i] && kids[i].tagName === 'key') o[kids[i].textContent] = node(kids[i + 1]);
         }

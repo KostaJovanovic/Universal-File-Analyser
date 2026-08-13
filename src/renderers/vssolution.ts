@@ -45,7 +45,16 @@ function slnxProjectKind(path, typeAttr) {
   return EXT_TYPES[ext] || 'Project';
 }
 
-function parseSlnx(text) {
+/** A parsed solution manifest. The XML (.slnx) and classic text (.sln) parsers
+ *  fill in different subsets, so only `projects` is common to both. */
+interface Solution {
+  projects: any[];
+  slnx?: boolean;
+  version?: any; vs?: any; vsVersion?: any; minVersion?: any;
+  folders?: any; solutionConfigs?: any[];
+}
+
+function parseSlnx(text): Solution | null {
   let doc;
   try { doc = new DOMParser().parseFromString(text, 'application/xml'); } catch (_) { return null; }
   if (!doc || doc.querySelector('parsererror')) return null;
@@ -76,7 +85,7 @@ function parseSlnx(text) {
   return { slnx: true, version: '', vs: '', vsVersion: '', minVersion: '', projects, folders, solutionConfigs };
 }
 
-function parseSln(text) {
+function parseSln(text): Solution | null {
   const verLine = text.match(/Format Version\s+([\d.]+)/i);
   const vsComment = text.match(/#\s*Visual Studio\s+(.+)/i);
   const vsVersion = text.match(/^VisualStudioVersion\s*=\s*(.+)$/m);
